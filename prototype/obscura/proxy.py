@@ -64,7 +64,7 @@ def _mask_and_log(text: str, vault: Vault, customer: str) -> str:
     spans = DETECTOR.detect(text)
     for span in spans:
         token = vault.tokenize(span.value, span.entity_type)
-        AUDIT.record(customer, span.entity_type, token, span.value)
+        AUDIT.record(customer, "", span.entity_type, token, span.value)
     return mask_text(text, vault, spans)
 
 

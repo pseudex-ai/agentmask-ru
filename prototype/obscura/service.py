@@ -36,21 +36,23 @@ def _vault(org_id: str) -> Vault:
     return vault
 
 
-def _mask_one(text: str, vault: Vault, org_id: str) -> str:
+def _mask_one(text: str, vault: Vault, org_id: str, agent_id: str) -> str:
     spans = DETECTOR.detect(text)
     for span in spans:
         token = vault.tokenize(span.value, span.entity_type)
-        AUDIT.record(org_id, span.entity_type, token, span.value)
+        AUDIT.record(org_id, agent_id, span.entity_type, token, span.value)
     return mask_text(text, vault, spans)
 
 
-def _mask_messages(messages: list[dict[str, object]], vault: Vault, org_id: str) -> list[dict[str, object]]:
+def _mask_messages(
+    messages: list[dict[str, object]], vault: Vault, org_id: str, agent_id: str
+) -> list[dict[str, object]]:
     masked: list[dict[str, object]] = []
     for message in messages:
         new_message = dict(message)
         content = new_message.get("content")
         if isinstance(content, str):
-            new_message["content"] = _mask_one(content, vault, org_id)
+            new_message["content"] = _mask_one(content, vault, org_id, agent_id)
         tool_calls = new_message.get("tool_calls")
         if isinstance(tool_calls, list):
             new_calls: list[object] = []
@@ -59,7 +61,7 @@ def _mask_messages(messages: list[dict[str, object]], vault: Vault, org_id: str)
                 if isinstance(new_call, dict) and isinstance(new_call.get("function"), dict):
                     fn = dict(new_call["function"])
                     if isinstance(fn.get("arguments"), str):
-                        fn["arguments"] = _mask_one(fn["arguments"], vault, org_id)
+                        fn["arguments"] = _mask_one(fn["arguments"], vault, org_id, agent_id)
                     new_call["function"] = fn
                 new_calls.append(new_call)
             new_message["tool_calls"] = new_calls
@@ -96,10 +98,11 @@ async def health() -> dict[str, str]:
 async def mask(request: Request) -> JSONResponse:
     body = await request.json()
     org_id = str(body.get("org_id", "")) or "default"
+    agent_id = str(body.get("agent_id", ""))
     messages = body.get("messages")
     if not isinstance(messages, list):
         return JSONResponse({"error": "messages must be a list"}, status_code=400)
-    return JSONResponse({"messages": _mask_messages(messages, _vault(org_id), org_id)})
+    return JSONResponse({"messages": _mask_messages(messages, _vault(org_id), org_id, agent_id)})
 
 
 @app.post("/unmask")
@@ -114,5 +117,18 @@ async def unmask(request: Request) -> JSONResponse:
 
 @app.get("/usage")
 async def usage(request: Request) -> JSONResponse:
+    """Org-wide stats. Pass ?agent_id=... to scope to a single agent."""
     org_id = request.query_params.get("org_id", "default")
-    return JSONResponse({"protected_counts": AUDIT.counts(org_id), "recent": AUDIT.recent(org_id, 50)})
+    agent_id = request.query_params.get("agent_id")
+    if agent_id:
+        return JSONResponse({
+            "org_id": org_id,
+            "agent_id": agent_id,
+            "protected_counts": AUDIT.counts_for_agent(org_id, agent_id),
+            "recent": AUDIT.recent_for_agent(org_id, agent_id, 50),
+        })
+    return JSONResponse({
+        "org_id": org_id,
+        "protected_counts": AUDIT.counts(org_id),
+        "recent": AUDIT.recent(org_id, 50),
+    })

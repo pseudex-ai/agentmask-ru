@@ -11,12 +11,17 @@ from obscura.vault import Vault
 def test_audit() -> None:
     pathlib.Path("a.db").unlink(missing_ok=True)
     audit = AuditLog("a.db")
-    audit.record("acme", "PHONE", "+79185702864", "+79991234567")
-    audit.record("acme", "NAME", "Полина Жукова", "Иван Петров")
-    assert audit.counts("acme") == {"PHONE": 1, "NAME": 1}
+    audit.record("acme", "ag1", "PHONE", "+79185702864", "+79991234567")
+    audit.record("acme", "ag1", "NAME", "Полина Жукова", "Иван Петров")
+    audit.record("acme", "ag2", "EMAIL", "tok@x.ru", "real@x.ru")
+    assert audit.counts("acme") == {"PHONE": 1, "NAME": 1, "EMAIL": 1}
+    assert audit.counts_for_agent("acme", "ag1") == {"PHONE": 1, "NAME": 1}
     recent = audit.recent("acme", 10)
-    assert len(recent) == 2 and "•" in recent[0]["preview"]
-    print(f"audit OK — counts {audit.counts('acme')}; preview '+79991234567' -> '{_preview('+79991234567')}'")
+    assert len(recent) == 3 and "•" in recent[0]["preview"]
+    agent_recent = audit.recent_for_agent("acme", "ag1", 10)
+    assert len(agent_recent) == 2 and all(r["type"] in ("PHONE", "NAME") for r in agent_recent)
+    print(f"audit OK — org counts {audit.counts('acme')}; ag1 counts {audit.counts_for_agent('acme', 'ag1')}; "
+          f"preview '+79991234567' -> '{_preview('+79991234567')}'")
     pathlib.Path("a.db").unlink(missing_ok=True)
 
 
