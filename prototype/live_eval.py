@@ -15,6 +15,7 @@ from make_dataset import (
     CITIES, NAMES, STREETS,
     gen_card, gen_date, gen_email, gen_inn10, gen_passport, gen_phone, gen_snils,
 )
+from make_addr_real import realistic_address
 
 import random
 
@@ -94,10 +95,9 @@ def _builders() -> list:
                 "tool": "schedule_visit", "pii": [("NAME", name), ("PHONE", ph), ("DATE", dt)]}
 
     def delivery() -> dict[str, object]:
-        city, street = random.choice(CITIES), random.choice(STREETS)
-        addr = f"{street}, дом {random.randint(1, 99)}, {city}"
+        addr = realistic_address()  # rich free-form RU address (problem B)
         return {"user": f"Оформите доставку по адресу: {addr}.",
-                "tool": "arrange_delivery", "pii": [("LOC", city), ("LOC", street)]}
+                "tool": "arrange_delivery", "pii": [("LOC", addr)]}
 
     return [phone, email, snils, inn, card, passport, visit, delivery]
 

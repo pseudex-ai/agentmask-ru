@@ -13,9 +13,6 @@ import json
 import random
 import sys
 
-_OUT = sys.argv[1] if len(sys.argv) > 1 else "addr_real.json"
-random.seed(int(sys.argv[2]) if len(sys.argv) > 2 else 7)
-
 CITIES = ["Москва", "Санкт-Петербург", "Казань", "Екатеринбург", "Новосибирск",
           "Нижний Новгород", "Самара", "Ростов-на-Дону", "Уфа", "Краснодар",
           "Воронеж", "Пермь", "Волгоград", "Сочи", "Тюмень", "Омск", "Челябинск"]
@@ -144,9 +141,16 @@ def build() -> dict[str, object]:
             "entities": [], "negatives": [val if val not in CITIES else val]}
 
 
+def realistic_address() -> str:
+    """Public entry for other harnesses (e.g. live_eval) — one rich RU address."""
+    return _address()
+
+
 def main() -> None:
+    out = sys.argv[1] if len(sys.argv) > 1 else "addr_real.json"
+    random.seed(int(sys.argv[2]) if len(sys.argv) > 2 else 7)
     cases = [build() for _ in range(350)]
-    with open(_OUT, "w", encoding="utf-8") as handle:
+    with open(out, "w", encoding="utf-8") as handle:
         json.dump(cases, handle, ensure_ascii=False, indent=2)
     loc = sum(1 for c in cases if c["entities"])
     print(f"wrote {len(cases)} cases | LOC-carrying: {loc} | non-address: {len(cases) - loc}")
