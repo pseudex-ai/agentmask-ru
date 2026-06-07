@@ -14,6 +14,8 @@ the full RussianNameVariants / russiannames dictionaries (32k names) — same co
 
 import re
 
+import pymorphy3
+
 from obscura.detect import Span
 
 _FIRST_NAMES = [
@@ -60,13 +62,21 @@ def _translit(text: str) -> str:
 _NAME_SET = set(_FIRST_NAMES) | set(_DIMINUTIVES)
 _NAME_SET |= {_translit(name) for name in _NAME_SET}
 
+_MORPH = pymorphy3.MorphAnalyzer()
+
+
+def _lemma(word: str) -> str:
+    """Normal form, so declensions match the gazetteer (Ивана -> иван)."""
+    return _MORPH.parse(word)[0].normal_form
+
 _WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё]+")
 _INITIALS_RE = re.compile(r"[А-ЯЁ][а-яё]+\s+[А-ЯЁ]\.\s?[А-ЯЁ]\.?")
 _LATIN_PAIR_RE = re.compile(r"\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\b")
 
 
 def is_known_name(word: str) -> bool:
-    return word.lower() in _NAME_SET
+    low = word.lower()
+    return low in _NAME_SET or _lemma(low) in _NAME_SET
 
 
 def is_surname_shaped(word: str) -> bool:
@@ -104,7 +114,8 @@ def gazetteer_names(text: str) -> list[Span]:
     """Catch names NER misses: known names (any case), Latin pairs, initials."""
     spans: list[Span] = []
     for match in _WORD_RE.finditer(text):
-        if match.group().lower() in _NAME_SET:
+        low = match.group().lower()
+        if low in _NAME_SET or _lemma(low) in _NAME_SET:
             spans.append(Span(match.start(), match.end(), "NAME", match.group()))
     for match in _LATIN_PAIR_RE.finditer(text):
         if match.group(1).lower() in _NAME_SET:

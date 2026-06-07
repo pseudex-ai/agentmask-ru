@@ -8,7 +8,9 @@ from obscura.context import location_is_pii, suppress
 from obscura.detect import Span, detect_pii
 from obscura.names import gazetteer_names, keep_location, keep_person
 from obscura.normalize import normalize
+from obscura.quasi import detect_quasi
 from obscura.ru_pii import detect_address, detect_structured
+from obscura.structured import detect_structured_kv
 
 # Higher = more trusted; wins overlaps. Checksum-validated IDs outrank phone so
 # a valid INN/СНИЛС/card is never mislabeled as a bare phone.
@@ -67,6 +69,8 @@ class Detector:
             + self._ner_spans(norm)
             + detect_address(norm)
             + gazetteer_names(norm)
+            + detect_structured_kv(norm)   # Layer 1: JSON/forms (key types the value)
+            + detect_quasi(norm)           # quasi: DOB/age/medical
         )
         # Suppress denied phones BEFORE resolving, else a phone that wins the
         # overlap (priority) and is then suppressed leaves the real entity
