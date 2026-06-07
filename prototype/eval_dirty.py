@@ -8,11 +8,13 @@ import re
 import sys
 
 from obscura.detect_all import Detector
+from obscura.normalize import normalize
 
 _NUMERIC = {"PHONE", "SNILS", "INN", "CARD", "PASSPORT", "DATE"}
 
 
 def _norm(entity_type: str, value: str) -> str:
+    value = normalize(value)  # compare semantically (homoglyph «О»->0)
     if entity_type in _NUMERIC:
         return re.sub(r"\D", "", value)
     return value.strip().lower()
@@ -23,6 +25,13 @@ def _match(a_type: str, a_val: str, b_type: str, b_val: str) -> bool:
         return False
     a, b = _norm(a_type, a_val), _norm(b_type, b_val)
     return bool(a) and bool(b) and (a == b or a in b or b in a)
+
+
+def _val_match(a: str, b: str) -> bool:
+    """Type-agnostic value match — was this PII value masked by ANY entity type?"""
+    na = re.sub(r"[^0-9a-zа-яё]", "", normalize(a).lower())
+    nb = re.sub(r"[^0-9a-zа-яё]", "", normalize(b).lower())
+    return len(na) >= 2 and len(nb) >= 2 and (na in nb or nb in na)
 
 
 def _f2(recall: float, precision: float) -> float:
@@ -44,19 +53,26 @@ def main() -> None:
     det = {t: 0 for t in types}
     cor = {t: 0 for t in types}
     false_pos: list[str] = []
-    false_neg: list[str] = []
+    true_leaks: list[str] = []
     neg_total = 0
     neg_fp = 0
+    quasi_total = 0
+    quasi_cov = 0
 
     for case in cases:
         gold = [(e["type"], e["value"]) for e in case["entities"]]
         preds = [(s.entity_type, s.value) for s in detector.detect(case["text"])]
+        pred_vals = [p_val for _, p_val in preds]
         for g_type, g_val in gold:
             gt[g_type] = gt.get(g_type, 0) + 1
             if any(_match(g_type, g_val, p_type, p_val) for p_type, p_val in preds):
                 found[g_type] += 1
-            else:
-                false_neg.append(f"{g_type}: {g_val!r}  in: {case['text'][:60]!r}")
+            if not any(_val_match(g_val, pv) for pv in pred_vals):  # value-level (real leak)
+                true_leaks.append(f"{g_type}: {g_val!r}  in: {case['text'][:55]!r}")
+        for quasi in case.get("quasi", []):
+            quasi_total += 1
+            if any(_val_match(quasi["value"], pv) for pv in pred_vals):
+                quasi_cov += 1
         for p_type, p_val in preds:
             if p_type in det:
                 det[p_type] += 1
@@ -85,13 +101,16 @@ def main() -> None:
     rec = tfound / tgt; pre = tcor / tdet if tdet else 0
     print("-" * 37)
     print(f"{'OVERALL':<10}{tgt:>5}{rec:>7.0%}{pre:>7.0%}{_f2(rec, pre):>7.0%}")
-    print(f"MISSED (leak): {tgt - tfound}/{tgt} | HARD-NEG false-mask: {neg_fp}/{neg_total}")
+    print(f"type-aware miss: {tgt - tfound}/{tgt} | HARD-NEG false-mask: {neg_fp}/{neg_total}")
+    print(f"TRUE-LEAK (value not masked by ANY type): {len(true_leaks)}/{tgt}")
+    if quasi_total:
+        print(f"QUASI-IDENTIFIERS caught: {quasi_cov}/{quasi_total}  (known gap)")
 
-    print("\n--- FALSE NEGATIVES (missed, would leak) ---")
-    for line in false_neg[:18]:
+    print("\n--- TRUE LEAKS (PII value actually reached the model) ---")
+    for line in true_leaks[:20]:
         print(" ", line)
     print("\n--- FALSE POSITIVES (over-masked) ---")
-    for line in false_pos[:18]:
+    for line in false_pos[:12]:
         print(" ", line)
 
 

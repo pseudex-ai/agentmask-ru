@@ -7,6 +7,7 @@ from natasha import Doc, NewsEmbedding, NewsNERTagger, Segmenter
 from obscura.context import location_is_pii, suppress
 from obscura.detect import Span, detect_pii
 from obscura.names import gazetteer_names, keep_location, keep_person
+from obscura.normalize import normalize
 from obscura.ru_pii import detect_address, detect_structured
 
 # Higher = more trusted; wins overlaps. Checksum-validated IDs outrank phone so
@@ -58,11 +59,16 @@ class Detector:
         return spans
 
     def detect(self, text: str) -> list[Span]:
+        # Layer 0: offset-safe normalization (1:1) so spans map back to original.
+        norm = normalize(text)
         spans = (
-            detect_pii(text)
-            + detect_structured(text)
-            + self._ner_spans(text)
-            + detect_address(text)
-            + gazetteer_names(text)
+            detect_pii(norm)
+            + detect_structured(norm)
+            + self._ner_spans(norm)
+            + detect_address(norm)
+            + gazetteer_names(norm)
         )
-        return suppress(text, _resolve(spans))
+        # Suppress denied phones BEFORE resolving, else a phone that wins the
+        # overlap (priority) and is then suppressed leaves the real entity
+        # (e.g. a passport it overlapped) undetected.
+        return _resolve(suppress(norm, spans))

@@ -9,11 +9,16 @@ import re
 
 from obscura.detect import Span
 
-# Words that mark a nearby bare number as NON-PII (order/track/amount/article).
-_DENY = ("трек", "заказ", "артикул", "сумма", "руб", "чек", "талон", "sku", "№", "арт.")
-# Cues that a nearby bare number IS a phone.
-_PHONE_TRIGGER = ("тел", "моб", "звон", "ватсап", "whatsapp", "вайбер")
-_BARE_PHONE = re.compile(r"9\d{9}")
+# Words that, directly before a number, mean it is NOT a phone — either a non-PII
+# code (order/track/amount) or a DIFFERENT PII type handled by its own detector
+# (паспорт/инн/снилс/счёт/полис). Dropping the PHONE label here is safe: it is
+# either not PII, or the right detector already tagged it.
+_DENY = (
+    "трек", "заказ", "артикул", "сумма", "руб", "чек", "талон", "sku", "№", "арт",
+    "паспорт", "инн", "снилс", "счёт", "счет", "imei", "имей", "полис", "омс",
+)
+# Cues that a nearby number IS a phone.
+_PHONE_TRIGGER = ("тел", "моб", "звон", "ватсап", "whatsapp", "вайбер", "перезвон", "контакт")
 _LAST_WORD = re.compile(r"([а-яёa-z]+)[\s№:.\-]*$")
 
 # Location-as-PII rule (HIPAA granularity x GDPR/152-ФЗ person-link).
@@ -52,16 +57,14 @@ def suppress(text: str, spans: list[Span]) -> list[Span]:
     kept: list[Span] = []
     for span in spans:
         if span.entity_type == "PHONE":
-            # A "phone" that is a slice of a longer digit run (e.g. the first 11
-            # digits of a 14-digit postal track) is not a phone.
+            # (a) a "phone" that is a slice of a longer digit run (e.g. the first
+            # 11 digits of a 14-digit postal track) is not a phone.
             before = text[span.start - 1] if span.start > 0 else ""
             after = text[span.end] if span.end < len(text) else ""
             if before.isdigit() or after.isdigit():
                 continue
-        if span.entity_type == "PHONE" and _BARE_PHONE.fullmatch(span.value):
-            # Deny only when the word DIRECTLY before the number is an order/track
-            # word ("заказа 9676"), so "не пришёл заказ, мой 9676" (last word "мой")
-            # is correctly kept.
+            # (b) deny when the word DIRECTLY before is an ID/non-PII word
+            # ("паспорт 4509…", "заказа 9676…") — unless a phone cue is present.
             match = _LAST_WORD.search(text[:span.start].lower())
             last_word = match.group(1) if match else ""
             window = text[max(0, span.start - 25): span.end + 25].lower()
