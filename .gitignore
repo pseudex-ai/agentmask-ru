@@ -1,0 +1,17 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Local state / generated artifacts (reproducible from make_*.py)
+*.db
+proxy.log
+used_pii.txt
+dirty.json
+holdout*.json
+dataset.json
+
+# Tooling
+.playwright-mcp/
+.thumbnail
+render-check-*.png

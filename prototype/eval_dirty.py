@@ -1,0 +1,99 @@
+"""Detection eval on the DIRTY dataset — per-type recall/precision/F2, plus a
+dump of the actual false positives and false negatives so fixes are data-driven,
+not guesswork. Also the hard-negative false-mask rate.
+"""
+
+import json
+import re
+import sys
+
+from obscura.detect_all import Detector
+
+_NUMERIC = {"PHONE", "SNILS", "INN", "CARD", "PASSPORT", "DATE"}
+
+
+def _norm(entity_type: str, value: str) -> str:
+    if entity_type in _NUMERIC:
+        return re.sub(r"\D", "", value)
+    return value.strip().lower()
+
+
+def _match(a_type: str, a_val: str, b_type: str, b_val: str) -> bool:
+    if a_type != b_type:
+        return False
+    a, b = _norm(a_type, a_val), _norm(b_type, b_val)
+    return bool(a) and bool(b) and (a == b or a in b or b in a)
+
+
+def _f2(recall: float, precision: float) -> float:
+    if recall == 0 and precision == 0:
+        return 0.0
+    return 5 * precision * recall / (4 * precision + recall)
+
+
+def main() -> None:
+    path = sys.argv[1] if len(sys.argv) > 1 else "dirty.json"
+    print(f"dataset: {path}")
+    with open(path, encoding="utf-8") as handle:
+        cases = json.load(handle)
+
+    detector = Detector()
+    types = ["NAME", "PHONE", "EMAIL", "SNILS", "INN", "CARD", "PASSPORT", "DATE", "LOC"]
+    gt = {t: 0 for t in types}
+    found = {t: 0 for t in types}
+    det = {t: 0 for t in types}
+    cor = {t: 0 for t in types}
+    false_pos: list[str] = []
+    false_neg: list[str] = []
+    neg_total = 0
+    neg_fp = 0
+
+    for case in cases:
+        gold = [(e["type"], e["value"]) for e in case["entities"]]
+        preds = [(s.entity_type, s.value) for s in detector.detect(case["text"])]
+        for g_type, g_val in gold:
+            gt[g_type] = gt.get(g_type, 0) + 1
+            if any(_match(g_type, g_val, p_type, p_val) for p_type, p_val in preds):
+                found[g_type] += 1
+            else:
+                false_neg.append(f"{g_type}: {g_val!r}  in: {case['text'][:60]!r}")
+        for p_type, p_val in preds:
+            if p_type in det:
+                det[p_type] += 1
+                if any(_match(p_type, p_val, g_type, g_val) for g_type, g_val in gold):
+                    cor[p_type] += 1
+                else:
+                    false_pos.append(f"{p_type}: {p_val!r}  in: {case['text'][:60]!r}")
+        for neg in case["negatives"]:
+            neg_total += 1
+            neg_norm = re.sub(r"\D", "", neg) or neg.lower()
+            for _, p_val in preds:
+                pv = re.sub(r"\D", "", p_val) or p_val.lower()
+                if neg_norm and (neg_norm in pv or pv in neg_norm):
+                    neg_fp += 1
+                    break
+
+    print(f"{'TYPE':<10}{'GT':>5}{'RECALL':>8}{'PREC':>7}{'F2':>7}")
+    tgt = tfound = tdet = tcor = 0
+    for t in types:
+        if gt[t] == 0 and det[t] == 0:
+            continue
+        rec = found[t] / gt[t] if gt[t] else 0.0
+        pre = cor[t] / det[t] if det[t] else 0.0
+        print(f"{t:<10}{gt[t]:>5}{rec:>7.0%}{pre:>7.0%}{_f2(rec, pre):>7.0%}")
+        tgt += gt[t]; tfound += found[t]; tdet += det[t]; tcor += cor[t]
+    rec = tfound / tgt; pre = tcor / tdet if tdet else 0
+    print("-" * 37)
+    print(f"{'OVERALL':<10}{tgt:>5}{rec:>7.0%}{pre:>7.0%}{_f2(rec, pre):>7.0%}")
+    print(f"MISSED (leak): {tgt - tfound}/{tgt} | HARD-NEG false-mask: {neg_fp}/{neg_total}")
+
+    print("\n--- FALSE NEGATIVES (missed, would leak) ---")
+    for line in false_neg[:18]:
+        print(" ", line)
+    print("\n--- FALSE POSITIVES (over-masked) ---")
+    for line in false_pos[:18]:
+        print(" ", line)
+
+
+if __name__ == "__main__":
+    main()
