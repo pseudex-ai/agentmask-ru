@@ -30,23 +30,33 @@ def normalize(text: str) -> str:
     text = _DASH_RE.sub("-", text)
     text = _SPACE_RE.sub(" ", text)
     text = _ZW_RE.sub(" ", text)  # replace (not delete) -> length preserved
+    # Fold look-alikes to digits ONLY inside a phone/ID-like region: a maximal run
+    # of [digits | look-alikes | phone separators] containing >=5 real digits.
+    # This catches obfuscated phones/IDs even when the look-alike sits at a group
+    # boundary ("8-924-45О-56-12", "8 935 О44 69 47"), while a short house letter
+    # ("156Б" -> 3 digits) and any alphabetic word ("Циолковского") — whose real
+    # letters break the run — are left untouched.
     chars = list(text)
-    for index, char in enumerate(chars):
-        replacement = _LOOKALIKE.get(char)
-        if replacement is None:
+    n = len(chars)
+    index = 0
+    while index < n:
+        if not _in_region_alpha(chars[index]):
+            index += 1
             continue
-        prev = _neighbor(chars, index, -1)
-        nxt = _neighbor(chars, index, 1)
-        if prev.isdigit() or nxt.isdigit() or prev in "+()":
-            chars[index] = replacement
+        end = index
+        while end < n and _in_region_alpha(chars[end]):
+            end += 1
+        if sum(1 for c in chars[index:end] if c.isdigit()) >= 5:
+            for k in range(index, end):
+                if chars[k] in _LOOKALIKE:
+                    chars[k] = _LOOKALIKE[chars[k]]
+        index = end
     return "".join(chars)
 
 
-def _neighbor(chars: list[str], index: int, step: int) -> str:
-    """Nearest non-space character in the given direction, or empty string."""
-    position = index + step
-    while 0 <= position < len(chars):
-        if not chars[position].isspace():
-            return chars[position]
-        position += step
-    return ""
+_SEPARATORS = frozenset(" -+()")
+
+
+def _in_region_alpha(char: str) -> bool:
+    """A char that can be part of a phone/ID number region."""
+    return char.isdigit() or char in _LOOKALIKE or char in _SEPARATORS

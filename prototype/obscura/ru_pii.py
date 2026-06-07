@@ -105,33 +105,3 @@ def detect_structured(text: str) -> list[Span]:
     for match in _DATE_RE.finditer(text):
         spans.append(Span(match.start(), match.end(), "DATE", match.group()))
     return spans
-
-
-# Address: a street-type marker followed by a Capitalized name (+ optional
-# house/apt tail). Markers are WHOLE words (\w+ tail) or period-abbreviations,
-# so "пр" can never match inside "пришёл" — the previous precision bug.
-_STREET = (
-    r"(?:улиц\w+|проспект\w*|переул\w+|шоссе|бульвар\w*|набережн\w+|проезд\w*"
-    r"|микрорайон\w*|мкр\b|площад\w+|ул\.|пр-кт|пр\.|пер\.|наб\.|б-р)"
-)
-_ADDR_NAME = r"[А-ЯЁ][а-яё\-]+(?:\s+[А-ЯЁ][а-яё\-]+)?"
-_HOUSE = (
-    r"(?:[,\s]+(?:дом|д\.?|корпус|корп\.?|строение|стр\.?|квартира|кв\.?)\s*\d+[а-яё/]*)*"
-)
-_ADDR_MARKER_FIRST = re.compile(rf"(?i:{_STREET})\s+{_ADDR_NAME}{_HOUSE}")
-# Marker-less: Capitalized name + house number anchored by an apartment/house word
-# ("Ленина 5 кв 3"). The кв/дом anchor keeps precision.
-_ADDR_BARE = re.compile(
-    r"[А-ЯЁ][а-яё]+\s+\d+[а-я]?[,\s]+(?:кв|квартира|дом|корпус|корп|стр|д)\.?\s*\d+",
-    re.IGNORECASE,
-)
-
-
-def detect_address(text: str) -> list[Span]:
-    """Detect street addresses (marker-based and marker-less кв/дом-anchored)."""
-    spans: list[Span] = []
-    for match in _ADDR_MARKER_FIRST.finditer(text):
-        spans.append(Span(match.start(), match.end(), "LOC", match.group()))
-    for match in _ADDR_BARE.finditer(text):
-        spans.append(Span(match.start(), match.end(), "LOC", match.group()))
-    return spans
