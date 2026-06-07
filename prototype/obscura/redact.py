@@ -27,3 +27,30 @@ def unmask_text(text: str, vault: Vault) -> str:
             if value is not None:
                 result = result.replace(token, value)
     return result
+
+
+# Longest token across our format-preserving tokens is well under this.
+_STREAM_KEEP = 64
+
+
+class StreamDetokenizer:
+    """Detokenizes a streamed response. Carries a tail buffer so a token split
+    across SSE chunks is still replaced. Privacy note: streaming only affects the
+    RESPONSE leg (fake tokens -> real for the user); the model already received a
+    fully-masked request, so a rare split is cosmetic, never a real-PII leak."""
+
+    def __init__(self, vault: Vault) -> None:
+        self._vault = vault
+        self._raw = ""
+
+    def feed(self, chunk: str) -> str:
+        self._raw += chunk
+        if len(self._raw) <= _STREAM_KEEP:
+            return ""
+        head, self._raw = self._raw[:-_STREAM_KEEP], self._raw[-_STREAM_KEEP:]
+        return unmask_text(head, self._vault)
+
+    def flush(self) -> str:
+        out = unmask_text(self._raw, self._vault)
+        self._raw = ""
+        return out
