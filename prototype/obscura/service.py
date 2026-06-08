@@ -54,6 +54,13 @@ def _mask_messages(
     masked: list[dict[str, object]] = []
     for message in messages:
         new_message = dict(message)
+        # Never mask the system prompt: it carries the agent's instructions,
+        # not user PII. Running NER over it is the bulk of the per-call cost
+        # (tens of KB on every LLM call of a turn) and could corrupt the
+        # instructions sent to the model. Pass it through untouched.
+        if message.get("role") == "system":
+            masked.append(new_message)
+            continue
         content = new_message.get("content")
         if isinstance(content, str):
             new_message["content"] = _mask_one(content, vault, org_id, agent_id)
