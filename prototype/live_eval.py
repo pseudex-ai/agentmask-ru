@@ -106,7 +106,12 @@ def _delivered(value: str, argstr: str) -> bool:
     if value in argstr:
         return True
     digits = re.sub(r"\D", "", value)
-    return bool(digits) and digits in re.sub(r"\D", "", argstr)
+    arg_digits = re.sub(r"\D", "", argstr)
+    if digits and digits in arg_digits:
+        return True
+    # RU phone identity is the last 10 digits — country code 8 / +7 are equivalent,
+    # so "85260181590" and the canonical "+75260181590" are the same number.
+    return len(digits) >= 10 and digits[-10:] in arg_digits
 
 
 def main() -> None:

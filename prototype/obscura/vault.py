@@ -139,3 +139,21 @@ class Vault:
             "SELECT token FROM tokens WHERE customer=?", (self._customer,)
         ).fetchall()
         return [row[0] for row in rows]
+
+    def numeric_index(self) -> dict[str, str]:
+        """Map a numeric token's digit signature -> real value, so a token the
+        model REFORMATTED (phone 8XXX -> +7XXX, or separators stripped) still
+        detokenizes. Phone also keys on its last 10 digits (country code varies)."""
+        rows = self._conn.execute(
+            "SELECT token, canonical, entity_type FROM tokens WHERE customer=? "
+            "AND entity_type IN ('PHONE','CARD','SNILS','INN','PASSPORT')",
+            (self._customer,),
+        ).fetchall()
+        index: dict[str, str] = {}
+        for token, canonical, entity_type in rows:
+            digits = re.sub(r"\D", "", token)
+            if digits:
+                index[digits] = canonical
+            if entity_type == "PHONE" and len(digits) >= 10:
+                index[digits[-10:]] = canonical
+        return index

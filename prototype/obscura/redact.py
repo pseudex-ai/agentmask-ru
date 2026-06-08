@@ -5,8 +5,14 @@ proxy can use the full ensemble (regex + checksum + NER) and tests can use a
 lighter one. Reverse uses longest-token-first to avoid prefix collisions.
 """
 
+import re
+
 from obscura.detect import Span
 from obscura.vault import Vault
+
+# A number-like run (digits + phone separators), >=7 digits — a candidate for
+# digit-core detokenization when the model reformatted a numeric token.
+_NUM_RUN = re.compile(r"(?<![\d])[+(]?\d[\d\s().\-]{5,}\d(?!\d)")
 
 
 def mask_text(text: str, vault: Vault, spans: list[Span]) -> str:
@@ -19,14 +25,27 @@ def mask_text(text: str, vault: Vault, spans: list[Span]) -> str:
 
 
 def unmask_text(text: str, vault: Vault) -> str:
-    """Replace known tokens with their real values (longest token first)."""
+    """Replace known tokens with their real values (longest token first), then
+    catch numeric tokens the model REFORMATTED via a digit-signature match."""
     result = text
     for token in sorted(vault.known_tokens(), key=len, reverse=True):
         if token in result:
             value = vault.detokenize(token)
             if value is not None:
                 result = result.replace(token, value)
-    return result
+    index = vault.numeric_index()
+    if not index:
+        return result
+
+    def _restore(match: re.Match) -> str:
+        run = match.group(0)
+        digits = re.sub(r"\D", "", run)
+        for key in (digits, digits[-10:] if len(digits) >= 10 else ""):
+            if key and key in index:
+                return index[key]
+        return run
+
+    return _NUM_RUN.sub(_restore, result)
 
 
 # Longest token across our format-preserving tokens is well under this.
