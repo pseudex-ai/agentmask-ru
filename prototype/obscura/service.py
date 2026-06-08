@@ -12,6 +12,7 @@ Streaming chunk detok is phase 2 (needs per-stream carry state).
 """
 
 import copy
+import os
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -21,8 +22,11 @@ from obscura.detect_all import Detector
 from obscura.redact import mask_text, unmask_text
 from obscura.vault import Vault
 
+# Persistent vault + audit live under OBSCURA_DB_DIR (a mounted volume in
+# production) so tokens stay reversible across restarts and workers.
+_DB_DIR = os.environ.get("OBSCURA_DB_DIR", ".")
 DETECTOR = Detector()
-AUDIT = AuditLog("audit.db")
+AUDIT = AuditLog(os.path.join(_DB_DIR, "audit.db"))
 _VAULTS: dict[str, Vault] = {}
 
 app = FastAPI(title="Obscura sidecar")
@@ -31,7 +35,7 @@ app = FastAPI(title="Obscura sidecar")
 def _vault(org_id: str) -> Vault:
     vault = _VAULTS.get(org_id)
     if vault is None:
-        vault = Vault("vault.db", org_id)
+        vault = Vault(os.path.join(_DB_DIR, "vault.db"), org_id)
         _VAULTS[org_id] = vault
     return vault
 

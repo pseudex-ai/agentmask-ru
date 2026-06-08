@@ -1,5 +1,7 @@
 fastapi
+uvicorn[standard]
 httpx
 phonenumbers
 pymorphy3
-uvicorn[standard]
+pymorphy3-dicts-ru
+natasha
