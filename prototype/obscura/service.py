@@ -167,3 +167,17 @@ async def usage(request: Request) -> JSONResponse:
         "protected_counts": AUDIT.counts(org_id),
         "recent": AUDIT.recent(org_id, 50),
     })
+
+
+@app.post("/reveal")
+async def reveal(request: Request) -> JSONResponse:
+    """Reveal the real value behind a token. The operator's organisation is the
+    data controller and is entitled to see the original; the value is fetched
+    only on explicit request and is never stored in the audit log (the audit
+    keeps a masked preview). Body: {org_id, token} -> {value: <real> | null}."""
+    body = await request.json()
+    org_id = str(body.get("org_id", "")) or "default"
+    token = body.get("token")
+    if not isinstance(token, str) or not token:
+        return JSONResponse({"error": "token must be a non-empty string"}, status_code=400)
+    return JSONResponse({"value": _vault(org_id).detokenize(token)})
