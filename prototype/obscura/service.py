@@ -17,7 +17,7 @@ import os
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from obscura.audit import AuditLog
+from obscura.audit import AuditLog, _preview
 from obscura.detect_all import Detector
 from obscura.redact import mask_text, unmask_text
 from obscura.vault import Vault
@@ -73,6 +73,23 @@ def _mask_messages(
     return masked
 
 
+def _spans_for(text: str, vault: Vault) -> list[dict[str, object]]:
+    """PII spans for UI highlighting — offsets map into the ORIGINAL text
+    (normalization is 1:1), so the caller highlights text[start:end]. token is
+    what the value was replaced with for the model (None if never masked).
+    Read-only: does NOT mint tokens or write audit."""
+    out: list[dict[str, object]] = []
+    for span in DETECTOR.detect(text):
+        out.append({
+            "start": span.start,
+            "end": span.end,
+            "type": span.entity_type,
+            "token": vault.peek_token(span.value, span.entity_type),
+            "preview": _preview(span.value),
+        })
+    return out
+
+
 def _unmask_response(response: dict[str, object], vault: Vault) -> dict[str, object]:
     result = copy.deepcopy(response)
     choices = result.get("choices")
@@ -117,6 +134,20 @@ async def unmask(request: Request) -> JSONResponse:
     if not isinstance(response, dict):
         return JSONResponse({"error": "response must be an object"}, status_code=400)
     return JSONResponse({"response": _unmask_response(response, _vault(org_id))})
+
+
+@app.post("/spans")
+async def spans(request: Request) -> JSONResponse:
+    """PII spans per text for dialog highlighting (read-only).
+    Body: {org_id, texts: [str]} -> {results: [[{start,end,type,token,preview}], ...]}."""
+    body = await request.json()
+    org_id = str(body.get("org_id", "")) or "default"
+    texts = body.get("texts")
+    if not isinstance(texts, list):
+        return JSONResponse({"error": "texts must be a list"}, status_code=400)
+    vault = _vault(org_id)
+    results = [_spans_for(text, vault) if isinstance(text, str) else [] for text in texts]
+    return JSONResponse({"results": results})
 
 
 @app.get("/usage")

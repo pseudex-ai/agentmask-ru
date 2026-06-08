@@ -127,6 +127,19 @@ class Vault:
             self._conn.commit()
             return token
 
+    def peek_token(self, value: str, entity_type: str) -> str | None:
+        """Return the existing token for a value WITHOUT creating one (read-only).
+
+        For UI highlighting: shows what a value WAS replaced with if it has been
+        masked before; None if it never went through the model. Never mutates the
+        vault, so rendering a dialog can't mint tokens."""
+        canonical = canonicalize(entity_type, value)
+        row = self._conn.execute(
+            "SELECT token FROM tokens WHERE customer=? AND canonical=?",
+            (self._customer, canonical),
+        ).fetchone()
+        return row[0] if row is not None else None
+
     def detokenize(self, token: str) -> str | None:
         row = self._conn.execute(
             "SELECT canonical FROM tokens WHERE customer=? AND token=?",
