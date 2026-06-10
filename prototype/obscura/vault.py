@@ -134,34 +134,41 @@ class Vault:
         masked before; None if it never went through the model. Never mutates the
         vault, so rendering a dialog can't mint tokens."""
         canonical = canonicalize(entity_type, value)
-        row = self._conn.execute(
-            "SELECT token FROM tokens WHERE customer=? AND canonical=?",
-            (self._customer, canonical),
-        ).fetchone()
+        # Hold the lock around the SQLite read: the single connection is shared
+        # across worker threads (check_same_thread=False), so reads must be
+        # serialized with writes or sqlite3 can raise / interleave cursors.
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT token FROM tokens WHERE customer=? AND canonical=?",
+                (self._customer, canonical),
+            ).fetchone()
         return row[0] if row is not None else None
 
     def detokenize(self, token: str) -> str | None:
-        row = self._conn.execute(
-            "SELECT canonical FROM tokens WHERE customer=? AND token=?",
-            (self._customer, token),
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT canonical FROM tokens WHERE customer=? AND token=?",
+                (self._customer, token),
+            ).fetchone()
         return row[0] if row is not None else None
 
     def known_tokens(self) -> list[str]:
-        rows = self._conn.execute(
-            "SELECT token FROM tokens WHERE customer=?", (self._customer,)
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT token FROM tokens WHERE customer=?", (self._customer,)
+            ).fetchall()
         return [row[0] for row in rows]
 
     def numeric_index(self) -> dict[str, str]:
         """Map a numeric token's digit signature -> real value, so a token the
         model REFORMATTED (phone 8XXX -> +7XXX, or separators stripped) still
         detokenizes. Phone also keys on its last 10 digits (country code varies)."""
-        rows = self._conn.execute(
-            "SELECT token, canonical, entity_type FROM tokens WHERE customer=? "
-            "AND entity_type IN ('PHONE','CARD','SNILS','INN','PASSPORT')",
-            (self._customer,),
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT token, canonical, entity_type FROM tokens WHERE customer=? "
+                "AND entity_type IN ('PHONE','CARD','SNILS','INN','PASSPORT')",
+                (self._customer,),
+            ).fetchall()
         index: dict[str, str] = {}
         for token, canonical, entity_type in rows:
             digits = re.sub(r"\D", "", token)
