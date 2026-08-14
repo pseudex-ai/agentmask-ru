@@ -1,0 +1,22 @@
+# TLS, HSTS and the security headers a static front door should own.
+# Certificates are obtained and renewed automatically; there is no cron job here
+# whose silent failure would expire the site.
+
+{$SITE_HOST} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+		# Django sets its own CSP per response; this removes the header Caddy
+		# would otherwise leave for a proxy to guess at.
+		-Server
+	}
+
+	reverse_proxy storefront:8000 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Real-IP {remote_host}
+	}
+}

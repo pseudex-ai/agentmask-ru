@@ -1,0 +1,139 @@
+# Our side of the product: the licensing server, the storefront, their database
+# and a TLS front door. The customer's side is one container they run
+# themselves, and nothing here ever talks to it — the traffic is one way, from
+# their container to /v1/lease.
+#
+# DESIGNED TO RUN WITHOUT US. Every service restarts on its own, states its own
+# health, and fails in a direction that is safe: the licensing server going down
+# does not stop customers (they have a 24h lease and 48h of grace), and the
+# storefront going down does not stop anything at all.
+
+name: veilgate
+
+x-logging: &logging
+  # Bounded, or a year of uptime fills the disk and takes the licensing server
+  # down with it — the one outage that eventually stops every customer.
+  driver: json-file
+  options: { max-size: "50m", max-file: "5" }
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-veilgate}
+      POSTGRES_USER: ${POSTGRES_USER:-veilgate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-veilgate}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    # Not published. The only things that need it are on this network.
+    expose: ["5432"]
+
+  license:
+    build:
+      context: ../prototype
+      dockerfile: licensing/Dockerfile
+    image: veilgate-licensing:${VERSION:-latest}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      # The signing key is the root of trust for every bundle we ever issue.
+      # Injected, never baked, and rotating it invalidates every deployed
+      # binary — so it is the one secret with no automated rotation.
+      VEILGATE_SIGNING_KEY: ${VEILGATE_SIGNING_KEY:?set VEILGATE_SIGNING_KEY}
+      VEILGATE_LICENSE_DB: /data/license.db
+      VEILGATE_LEASE_TTL_SECONDS: ${LEASE_TTL:-86400}
+      VEILGATE_GRACE_SECONDS: ${GRACE:-172800}
+      VEILGATE_LICENSE_CERT: /certs/server.crt
+      VEILGATE_LICENSE_KEYFILE: /certs/server.key
+    volumes:
+      - license-data:/data
+      - ./certs:/certs:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import httpx,sys; sys.exit(0 if httpx.get('http://127.0.0.1:9443/admin/list',timeout=5).status_code==200 else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    ports:
+      # Public: this is what every customer container calls.
+      - "443:8443"
+    # The admin app stays on the internal network only. Publishing it would put
+    # key issuance on the internet.
+    expose: ["9443"]
+
+  storefront:
+    build:
+      context: ../storefront
+    image: veilgate-storefront:${VERSION:-latest}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      VEILGATE_SECRET_KEY: ${VEILGATE_SECRET_KEY:?set VEILGATE_SECRET_KEY}
+      VEILGATE_DEBUG: "0"
+      VEILGATE_ALLOWED_HOSTS: ${SITE_HOST:?set SITE_HOST}
+      VEILGATE_CSRF_ORIGINS: https://${SITE_HOST}
+      VEILGATE_ADMIN_PATH: ${ADMIN_PATH:-admin}
+      VEILGATE_DB_HOST: postgres
+      VEILGATE_DB_NAME: ${POSTGRES_DB:-veilgate}
+      VEILGATE_DB_USER: ${POSTGRES_USER:-veilgate}
+      VEILGATE_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      VEILGATE_LICENSING_ADMIN_URL: http://license:9443
+      VEILGATE_DOCKER_IMAGE: ${CUSTOMER_IMAGE:-cr.yandex/veilgate/veilgate:1.0.0}
+      VEILGATE_SMTP_HOST: ${SMTP_HOST:-}
+      VEILGATE_SMTP_USER: ${SMTP_USER:-}
+      VEILGATE_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      VEILGATE_FROM_EMAIL: ${FROM_EMAIL:-veilgate <noreply@veilgate.ru>}
+    depends_on:
+      postgres: { condition: service_healthy }
+      license: { condition: service_started }
+    expose: ["8000"]
+
+  caddy:
+    # TLS with automatic certificates and renewal. Chosen over nginx+certbot
+    # because renewal is the part that silently stops working, and here it is
+    # not a cron job that can fail unnoticed.
+    image: caddy:2-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      SITE_HOST: ${SITE_HOST}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "80:80"
+      - "8443:443"
+    depends_on:
+      - storefront
+
+  backup:
+    # Both databases, nightly, kept for a month. The licensing database is the
+    # one that matters: losing it means every customer's key stops leasing and
+    # no amount of code fixes that.
+    image: postgres:17-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./backups:/backups
+      - license-data:/license:ro
+      - ./backup.sh:/backup.sh:ro
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+volumes:
+  postgres-data:
+  license-data:
+  caddy-data:
+  caddy-config:
