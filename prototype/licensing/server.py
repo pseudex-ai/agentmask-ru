@@ -18,6 +18,7 @@ import logging
 import os
 import secrets
 import time
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -63,18 +64,13 @@ PUBLIC_KEY = encode_public(SIGNING_KEY.public_key())
 _PLAINTEXT = build_plaintext()
 _PLAINTEXT_HASH = plaintext_hash(_PLAINTEXT)
 
-_STATUS_RESPONSE = {
-    STATUS_UNPAID: (402, "license_unpaid", "subscription is not paid"),
-    STATUS_REVOKED: (403, "license_revoked", "key has been revoked"),
-    STATUS_SUSPENDED: (403, "license_revoked", "key is suspended"),
-}
 
-app = FastAPI(title="Obscura licensing")
-admin_app = FastAPI(title="Obscura licensing admin")
-
-
-@app.on_event("startup")
-async def _announce() -> None:
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """Announce what this instance is. A lifespan rather than the deprecated
+    `@app.on_event("startup")` — the same replacement this change already made in
+    `obscura/proxy.py`, and the modes announced below are exactly the ones nobody
+    should ever discover by surprise."""
     _log.info("licensing server up: bundle=%s ttl=%ss grace=%ss pubkey=%s",
               _PLAINTEXT_HASH[:12], _TTL_SECONDS, _GRACE_SECONDS, PUBLIC_KEY)
     if _FAULT:
@@ -82,6 +78,18 @@ async def _announce() -> None:
                      "returning broken leases. Never run this in production.", _FAULT)
     if _LOG_RAW_BODY:
         _log.warning("RAW BODY LOGGING ACTIVE — lease request bodies go to the log.")
+    yield
+
+
+_STATUS_RESPONSE = {
+    STATUS_UNPAID: (402, "license_unpaid", "subscription is not paid"),
+    STATUS_REVOKED: (403, "license_revoked", "key has been revoked"),
+    STATUS_SUSPENDED: (403, "license_revoked", "key is suspended"),
+}
+
+
+app = FastAPI(title="Obscura licensing", lifespan=_lifespan)
+admin_app = FastAPI(title="Obscura licensing admin")
 
 
 @app.get("/health")
@@ -136,7 +144,16 @@ async def lease(request: Request) -> JSONResponse:
         return JSONResponse({"error": "license_invalid", "detail": "unknown key"},
                             status_code=403)
     if record.status != STATUS_ACTIVE:
-        status_code, error, detail = _STATUS_RESPONSE[record.status]
+        # `.get` with a REFUSING default, not `[...]`. A status outside the three
+        # known values — a stray space, a hand-repaired row, a value added later —
+        # raised KeyError, which FastAPI turns into a 500. The client counts 500
+        # as OUR outage and grants the full 48 h grace, so a key in a broken state
+        # kept working for two days: the kill switch failing OPEN, which is the
+        # one direction it must never fail.
+        status_code, error, detail = _STATUS_RESPONSE.get(
+            record.status,
+            (403, "license_invalid", f"key is in an unusable state ({record.status!r})"),
+        )
         return JSONResponse({"error": error, "detail": detail}, status_code=status_code)
 
     engine_version = str(body.get("engine_version", ""))

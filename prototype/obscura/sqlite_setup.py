@@ -28,9 +28,13 @@ created with check_same_thread=False.
 import sqlite3
 import time
 
-# Long enough to ride out a slow fsync under load, short enough that a genuine
-# deadlock surfaces as an error instead of hanging a request forever.
-_BUSY_TIMEOUT_MS = 5000
+# Long enough to ride out a WRITE STORM from several worker processes, short
+# enough that a genuine deadlock still surfaces as an error rather than hanging a
+# request forever. Raised from 5 s after four workers under a 16-way burst
+# produced `database is locked` on 46 of 64 requests: in a fail-closed gateway a
+# request that waits is strictly better than one that 500s, because the
+# customer's gateway has to block the user either way.
+_BUSY_TIMEOUT_MS = 15000
 
 # The journal-mode switch is retried by hand — see `_enable_wal`.
 _WAL_ATTEMPTS = 40
@@ -84,4 +88,11 @@ def connect(db_path: str) -> sqlite3.Connection:
     # `:memory:` databases do not support WAL; tests use them heavily.
     if db_path != ":memory:":
         _enable_wal(connection)
+        # In WAL mode this is the documented safe setting: a commit no longer
+        # waits for an fsync, and the only exposure is losing the last few
+        # transactions on a power cut — not corruption. It matters here because
+        # several worker PROCESSES share these files and every masked entity is a
+        # write; with the default `FULL` the per-commit fsync was most of the
+        # contention that produced `database is locked` under a burst.
+        connection.execute("PRAGMA synchronous=NORMAL")
     return connection

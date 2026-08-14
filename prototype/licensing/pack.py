@@ -20,6 +20,7 @@ usage: python3 -m licensing.pack [--out bundle.bin]
 import argparse
 import hashlib
 import json
+import re
 import sys
 import zlib
 from pathlib import Path
@@ -87,9 +88,34 @@ def build_payload() -> dict[str, object]:
         "priority": assets_source.PRIORITY,
         "lookalike": assets_source.LOOKALIKE,
     }
+    _check_lookalike_table()
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
     payload["version"] = hashlib.sha256(canonical).hexdigest()[:16]
     return payload
+
+
+def _check_lookalike_table() -> None:
+    """Fail the build if a look-alike glyph was entered twice.
+
+    A dict literal silently keeps the last value for a repeated key, so the
+    duplicate is invisible in the built bundle — it only shows as a MISSING
+    character, which is exactly how Greek small omicron went absent while
+    Cyrillic 'о' appeared twice. Counting the source lines is the only place the
+    two can still be told apart."""
+    source = (Path(__file__).resolve().parent / "assets_source.py").read_text(encoding="utf-8")
+    block = source.split("LOOKALIKE: dict[str, str] = {", 1)[1].split("}", 1)[0]
+    declared = re.findall(r'^\s*"(.)"\s*:', block, re.MULTILINE)
+    duplicates = {char for char in declared if declared.count(char) > 1}
+    if duplicates:
+        raise ValueError(
+            "LOOKALIKE declares the same glyph twice: "
+            + ", ".join(f"{char!r} (U+{ord(char):04X})" for char in sorted(duplicates))
+        )
+    if len(declared) != len(assets_source.LOOKALIKE):
+        raise ValueError(
+            f"LOOKALIKE has {len(declared)} declared entries but "
+            f"{len(assets_source.LOOKALIKE)} survive in the dict"
+        )
 
 
 def build_plaintext() -> bytes:

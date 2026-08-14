@@ -280,11 +280,30 @@ PRIORITY: dict[str, int] = {
 # --- normalization -------------------------------------------------------
 
 # Cyrillic / Greek / Latin glyphs that look like digits.
+#
+# WRITTEN AS ESCAPES ON PURPOSE. As literals these characters are visually
+# identical to each other, and the table shipped with Cyrillic 'о' (U+043E)
+# entered TWICE while Greek small omicron (U+03BF) was missing entirely — a
+# silent dict overwrite that no reader could see. The cost was real: `+7 9ο9
+# 123-45-67` written with the Greek letter never folded to digits, the run never
+# reached five digits, and the phone went to the model unmasked.
 LOOKALIKE: dict[str, str] = {
-    "О": "0", "о": "0", "O": "0", "o": "0", "Ο": "0", "о": "0",
-    "З": "3", "з": "3",
-    "б": "6", "Б": "6",
-    "Ч": "4", "ч": "4",
-    "I": "1", "l": "1", "І": "1", "і": "1",
-    "B": "8", "В": "8",
+    "О": "0",  # CYRILLIC CAPITAL O
+    "о": "0",  # CYRILLIC SMALL O
+    "O": "0",  # LATIN CAPITAL O
+    "o": "0",  # LATIN SMALL O
+    "Ο": "0",  # GREEK CAPITAL OMICRON
+    "ο": "0",  # GREEK SMALL OMICRON  <- was missing
+    "З": "3",  # CYRILLIC CAPITAL ZE
+    "з": "3",  # CYRILLIC SMALL ZE
+    "б": "6",  # CYRILLIC SMALL BE
+    "Б": "6",  # CYRILLIC CAPITAL BE
+    "Ч": "4",  # CYRILLIC CAPITAL CHE
+    "ч": "4",  # CYRILLIC SMALL CHE
+    "I": "1",  # LATIN CAPITAL I
+    "l": "1",  # LATIN SMALL L
+    "І": "1",  # CYRILLIC CAPITAL BYELORUSSIAN-UKRAINIAN I
+    "і": "1",  # CYRILLIC SMALL BYELORUSSIAN-UKRAINIAN I
+    "B": "8",  # LATIN CAPITAL B
+    "В": "8",  # CYRILLIC CAPITAL VE
 }

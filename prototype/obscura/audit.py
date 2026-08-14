@@ -44,6 +44,33 @@ class AuditLog:
         if "agent_id" not in columns:
             self._conn.execute("ALTER TABLE events ADD COLUMN agent_id TEXT DEFAULT ''")
 
+    def record_many(self, customer: str, agent_id: str,
+                    events: list[tuple[str, str, str]]) -> None:
+        """All spans of ONE message in ONE transaction.
+
+        `record` commits per span, which the note below has flagged since it was
+        written. It stopped being a latency remark and became a correctness bug
+        once several worker PROCESSES shared the file: a message with eight
+        entities was eight commits, and four workers under a 16-way burst turned
+        that into `sqlite3.OperationalError: database is locked` on 46 of 64
+        requests. In a fail-closed gateway every one of those is a blocked user
+        request.
+
+        `events` is (entity_type, token, real_value); only a masked preview of
+        the value is stored, as with `record`."""
+        if not events:
+            return
+        now = time.time()
+        rows = [(now, customer, agent_id, entity_type, token, _preview(real_value))
+                for entity_type, token, real_value in events]
+        with stage("audit.record_many"), self._lock:
+            self._conn.executemany(
+                "INSERT INTO events (ts, customer, agent_id, entity_type, token, preview) "
+                "VALUES (?,?,?,?,?,?)",
+                rows,
+            )
+            self._conn.commit()
+
     def record(self, customer: str, agent_id: str, entity_type: str, token: str, real_value: str) -> None:
         # NOTE: one commit — hence one fsync — per DETECTED SPAN. A message with
         # 10 entities pays 10 fsyncs on the request's critical path. The audit is
@@ -77,9 +104,16 @@ class AuditLog:
         deliberately shaped so that it cannot carry personal data: counts and a
         total, no tokens, no previews, no free-text fields. Gate L12 greps the
         request body for every injected value to keep it that way."""
-        rows = self._conn.execute(
-            "SELECT entity_type, COUNT(*) FROM events GROUP BY entity_type"
-        ).fetchall()
+        # Under the lock, unlike the other read paths: this one is called from the
+        # LICENCE THREAD on every renewal while mask workers are writing on the
+        # same connection. sqlite3 with check_same_thread=False does not make a
+        # connection concurrent — interleaving an aggregate with a locked
+        # INSERT+commit raises ProgrammingError or returns a torn count, and the
+        # exception would surface inside the renewal path.
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT entity_type, COUNT(*) FROM events GROUP BY entity_type"
+            ).fetchall()
         entities = {row[0]: row[1] for row in rows}
         return {"requests": sum(entities.values()), "entities": entities}
 

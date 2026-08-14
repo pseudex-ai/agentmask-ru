@@ -51,17 +51,34 @@ _FAKE_LAST = [
     "Панов", "Рыбаков", "Сазонов", "Тарасов", "Устинов", "Фомин", "Хвостов",
     "Цветков", "Чижов", "Шилов", "Щукин", "Юдин", "Яровой", "Бирюков",
 ]
-# Places stay a literal list: it is matched literally by TOKEN_RE, and a
-# generic "capitalised Cyrillic word" pattern there would make every ordinary
-# word in a reply a detokenization candidate.
-_FAKE_PLACES = [
+# LOC IS COMBINATORIAL, and it has to be. A flat list of 33 places meant the
+# 34th distinct address an organisation ever sent could not be minted:
+# `_unique_token` burned its attempts on collisions and raised, so a fail-closed
+# 5xx on every message containing a new address, permanently, for that customer.
+# Any delivery or logistics client crosses 33 addresses on day one — this was the
+# same defect as the old five-name pool, still live on the type most exposed to
+# it.
+#
+# Streets carry a house number, which is what makes the space large; cities stay
+# bare because "Суздале, 47" is not a city. Both remain literal enough for
+# TOKEN_RE to match precisely — a generic "capitalised Cyrillic word" there would
+# make every ordinary word in a reply a detokenization candidate.
+_FAKE_CITIES = [
     "Зеленограде", "Светлогорске", "Приозерске", "Гатчине", "Кинешме",
     "Торжке", "Валдае", "Бологом", "Кимрах", "Сортавале", "Луге", "Тихвине",
     "Мышкине", "Угличе", "Плёсе", "Суздале", "Ельце", "Задонске", "Данкове",
     "Венёве", "Алексине", "Белёве", "Крапивне", "Одоеве", "Черни",
-    "улице Берёзовой", "улице Кленовой", "улице Ольховой", "улице Рябиновой",
-    "улице Вязовой", "улице Тополиной", "улице Липовой", "улице Ясеневой",
 ]
+_FAKE_STREETS = [
+    "Берёзовой", "Кленовой", "Ольховой", "Рябиновой", "Вязовой", "Тополиной",
+    "Липовой", "Ясеневой", "Сосновой", "Еловой", "Кедровой", "Пихтовой",
+    "Ивовой", "Вишнёвой", "Грушевой", "Абрикосовой", "Каштановой", "Буковой",
+    "Осиновой", "Черёмуховой", "Барбарисовой", "Жасминовой", "Сиреневой",
+    "Лавандовой", "Мятной", "Полевой", "Луговой", "Озёрной", "Речной",
+    "Родниковой",
+]
+# 30 streets x 199 numbers + 25 cities = 5995 distinct LOC tokens per customer.
+_FAKE_HOUSE_MAX = 199
 
 
 def _rand_digits(count: int) -> str:
@@ -115,7 +132,15 @@ def _fake_card() -> str:
 # a genuinely exhausted pool fails fast instead of stalling the caller.
 _TOKEN_MINT_ATTEMPTS = 200
 
-_NUMERIC_TYPES = ("PHONE", "CARD", "SNILS", "INN", "PASSPORT")
+# Every type whose token is DIGITS and which a model may therefore reformat.
+# The six document types were added when they were introduced and this tuple was
+# not: their rows got NULL signatures, so a driver's licence echoed back as
+# `9912345678` instead of `99 12 345678` resolved to nothing and the tool ran on
+# the FAKE number — which this file elsewhere calls worse than a miss.
+_NUMERIC_TYPES = (
+    "PHONE", "CARD", "SNILS", "INN", "PASSPORT",
+    "OMS", "ACCOUNT", "DRIVER_LICENSE", "VEHICLE_DOC", "INTL_PASSPORT", "OGRN",
+)
 
 
 def _digit_signatures(token: str, entity_type: str) -> tuple[str | None, str | None]:
@@ -130,6 +155,26 @@ def _digit_signatures(token: str, entity_type: str) -> tuple[str | None, str | N
         return None, None
     tail = digits[-10:] if entity_type == "PHONE" and len(digits) >= 10 else None
     return digits, tail
+
+
+def _fake_phone() -> str:
+    """A mobile number whose 11 digits are deliberately NOT a valid СНИЛС.
+
+    Both are 11-digit runs, so about 1% of random phone tokens pass the СНИЛС
+    checksum — measured: 198 of 20 000. When that happened the token came back in
+    a later turn, СНИЛС outranked PHONE in overlap resolution (6 against 5), and
+    the re-masking guard missed it because detection reports the digits without
+    the leading `+` while the minted token has it. The phone was then re-masked
+    into a fake СНИЛС: the person's number changed mid-conversation and
+    detokenization returned the wrong value to the tool.
+
+    This is the same rule the СНИЛС, ИНН and card generators already follow — a
+    token must never be a valid instance of ANY type, not just its own."""
+    for _ in range(200):
+        candidate = "+79" + _rand_digits(9)
+        if not validate_snils(candidate[1:]):
+            return candidate
+    raise RuntimeError("could not generate a phone that is not a valid СНИЛС")
 
 
 def _fake_ogrn(length: int) -> str:
@@ -162,15 +207,19 @@ def _render_token(entity_type: str) -> str:
         return (secrets.choice(letters) + _rand_digits(3)
                 + "".join(secrets.choice(letters) for _ in range(2)) + _rand_digits(3))
     if entity_type == "IP":
-        # 198.51.100.0/24 is TEST-NET-2 (RFC 5737) — reserved for documentation,
-        # so a token can never address a real host.
-        return f"198.51.100.{secrets.randbelow(254) + 1}"
+        # 198.18.0.0/15 is the RFC 2544 benchmarking range: reserved, must never
+        # appear on the public internet, so a token can never address a real host.
+        # Chosen over the RFC 5737 documentation /24 it replaced for size alone —
+        # that range holds 254 addresses, and the 255th distinct IP a customer
+        # logged became an unmintable token and a permanent 5xx.
+        return (f"198.{secrets.choice((18, 19))}."
+                f"{secrets.randbelow(256)}.{secrets.randbelow(254) + 1}")
     if entity_type == "BIRTH_CERT":
         roman = secrets.choice(("I", "II", "III", "IV", "V", "VI"))
         cyr = "АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЩЭЮЯ"
         return f"{roman}-{secrets.choice(cyr)}{secrets.choice(cyr)} №{_rand_digits(6)}"
     if entity_type == "PHONE":
-        return "+79" + _rand_digits(9)
+        return _fake_phone()
     if entity_type == "EMAIL":
         return "".join(secrets.choice(string.ascii_lowercase) for _ in range(8)) + "@example.ru"
     if entity_type == "SNILS":
@@ -186,7 +235,12 @@ def _render_token(entity_type: str) -> str:
     if entity_type == "NAME":
         return f"{secrets.choice(_FAKE_FIRST)} {secrets.choice(_FAKE_LAST)}"
     if entity_type == "LOC":
-        return secrets.choice(_FAKE_PLACES)
+        # Mostly streets, because that is where the combinations are; a bare city
+        # occasionally, because a bare city is what some LOC spans actually are.
+        if secrets.randbelow(100) < 15:
+            return secrets.choice(_FAKE_CITIES)
+        return (f"улице {secrets.choice(_FAKE_STREETS)}, "
+                f"{secrets.randbelow(_FAKE_HOUSE_MAX) + 1}")
     return f"REDACTED{secrets.token_hex(3)}"
 
 
@@ -211,9 +265,13 @@ TOKEN_RE = re.compile("|".join([
     # way, and over-matching a real person with the same given name is harmless:
     # the candidate simply fails the vault lookup.
     r"\b(?:" + "|".join(_FAKE_FIRST) + r") [А-ЯЁ][а-яё]+",   # NAME
-    *(re.escape(value) for value in _FAKE_PLACES),                 # LOC
+    # LOC, both families. The street form carries its house number so the
+    # numbered token is matched whole; without the number the vault lookup would
+    # be handed a prefix that is not a key.
+    r"улице (?:" + "|".join(_FAKE_STREETS) + r"), \d{1,3}",        # LOC (street)
+    *(re.escape(value) for value in _FAKE_CITIES),                 # LOC (city)
     r"\d{2} \d{2} \d{6}",                        # DRIVER_LICENSE / VEHICLE_DOC / PASSPORT
-    r"198\.51\.100\.\d{1,3}",                     # IP (RFC 5737 TEST-NET-2)
+    r"198\.1[89]\.\d{1,3}\.\d{1,3}",              # IP (RFC 2544 benchmarking)
     r"[IVX]{1,4}-[А-ЯЁ]{2} №\d{6}",               # BIRTH_CERT
     r"[АВЕКМНОРСТУХ]\d{3}[АВЕКМНОРСТУХ]{2}\d{3}", # PLATE
     r"\d{4} \d{4} \d{4} \d{4}",                   # CARD

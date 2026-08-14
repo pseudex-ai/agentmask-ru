@@ -419,18 +419,36 @@ def gate_l6() -> bool:
 
 
 _LEASED_RSS_KB = 0
-_LEASED_PID = -1
+_LEASED_PIDS: set[int] = set()
+
+
+def worker_pids(probes: int) -> set[int]:
+    """Which worker processes are answering right now.
+
+    A SET, not one PID. The container runs N workers behind one SO_REUSEPORT
+    socket, so consecutive /health calls are answered by different processes —
+    comparing a single pid across two moments reports a change that is just the
+    kernel balancing, and L14b failed on exactly that. What the gate actually
+    wants to know is whether the workers that were serving are still serving."""
+    seen: set[int] = set()
+    for _ in range(probes):
+        try:
+            seen.add(int(httpx.get(f"{SIDECAR}/health", timeout=10).json()["pid"]))
+        except (httpx.HTTPError, KeyError, ValueError):
+            continue
+    return seen
 
 
 def gate_l14a() -> bool:
     """Precondition for L14b: while leased, the marker IS in the worker's memory
     and the scanner can see it. Without this, L14b's verdict would be worthless —
     a scanner that can never find anything reports every process as clean."""
-    global _LEASED_RSS_KB, _LEASED_PID
+    global _LEASED_RSS_KB, _LEASED_PIDS
     hits, _LEASED_RSS_KB = _memscan()
-    _LEASED_PID = httpx.get(f"{SIDECAR}/health", timeout=15).json()["pid"]
+    _LEASED_PIDS = worker_pids(24)
     return gate("L14a marker present in memory while leased", hits > 0,
-                f"regions={hits} rss={_LEASED_RSS_KB // 1024}MB pid={_LEASED_PID}")
+                f"regions={hits} rss={_LEASED_RSS_KB // 1024}MB "
+                f"workers={sorted(_LEASED_PIDS)}")
 
 
 def _memscan() -> tuple[int, int]:
@@ -509,17 +527,20 @@ def gate_l14b() -> bool:
                        json={"org_id": ORG, "texts": ["Иван Петров"]})
     # Still alive and still useful for the customer's own data — this is what
     # separates "gave up the assets" from "the process fell over".
-    health = httpx.get(f"{SIDECAR}/health", timeout=15).json()
+    still_alive = worker_pids(24)
     unmasked = httpx.post(f"{SIDECAR}/unmask", timeout=60, json={
         "org_id": ORG, "response": {"choices": [{"message": {"content": "нет токенов"}}]},
     })
+    # Every worker that was serving must still be serving: none of them died to
+    # produce this state, they gave the assets up and stayed.
+    workers_intact = bool(_LEASED_PIDS) and _LEASED_PIDS <= still_alive
     ok = (state["assets_loaded"] is False
           and masked.status_code == 503 and spans.status_code == 503
-          and unmasked.status_code == 200 and health.get("pid") == _LEASED_PID)
+          and unmasked.status_code == 200 and workers_intact)
     return gate("L14b assets given up by a live process", ok,
                 f"assets_loaded={state['assets_loaded']} mask={masked.status_code} "
                 f"spans={spans.status_code} unmask={unmasked.status_code} "
-                f"same_pid={health.get('pid') == _LEASED_PID} "
+                f"workers {sorted(_LEASED_PIDS)}->{sorted(still_alive)} "
                 f"| observed only: rss {_LEASED_RSS_KB // 1024}->{rss // 1024}MB, "
                 f"{hits} freed-heap remnant region(s)")
 
@@ -631,10 +652,26 @@ def gate_l10() -> bool:
     state = license_state()
     # The whole point: it must NOT have taken the grace window.
     bypassed_grace = elapsed < GRACE_SECONDS
-    ok = stopped and bypassed_grace and state.get("code") == "license_revoked"
+    revoked_ok = stopped and bypassed_grace and state.get("code") == "license_revoked"
+
+    # AND IT MUST COME BACK. Paying an invoice cannot require restarting every
+    # container, so the licence thread has to survive the terminal state and keep
+    # asking. This half is not decoration: the loop referenced an undefined
+    # constant on exactly this path, so the thread died of a NameError the moment
+    # a licence was revoked. Everything the gate checked above still passed —
+    # `_terminal_code` is set before the crash and the state is read from it — so
+    # a dead renewal thread looked identical to a healthy one from outside.
+    container_before = compose(["ps", "-q", "sidecar"], False, 30).stdout.strip()
     httpx.post(f"{ADMIN}/admin/resume", json={"org_id": ORG}, timeout=15)
-    return gate("L10 revocation bypasses grace", ok,
-                f"stopped_after={elapsed:.0f}s (grace={GRACE_SECONDS}s) code={state.get('code')}")
+    recovered = wait_until(lambda: post_mask(90).status_code == 200,
+                           TTL_SECONDS * 4, 5, "service to resume after payment")
+    same_container = compose(["ps", "-q", "sidecar"], False, 30).stdout.strip() == container_before
+
+    ok = revoked_ok and recovered and same_container
+    return gate("L10 revocation bypasses grace, payment restores without restart", ok,
+                f"stopped_after={elapsed:.0f}s (grace={GRACE_SECONDS}s) "
+                f"code={state.get('code')} recovered={recovered} "
+                f"same_container={same_container}")
 
 
 # --- gates: integrity and counters ---------------------------------------

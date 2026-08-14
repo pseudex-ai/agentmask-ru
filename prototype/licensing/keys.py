@@ -37,6 +37,12 @@ _log = logging.getLogger("licensing.keys")
 # Re-exported so the server and the tooling have one name for it; the parser
 # itself lives in obscura/bundle.py because the ENGINE needs it and cannot import
 # anything from this package.
+#
+# A second `def decode_public` below this line used to shadow the alias, so the
+# comment described one implementation while callers got another — a raw
+# `binascii.Error` on a malformed key instead of the BundleError the shared
+# parser raises, and two copies free to drift apart. The alias is the only
+# definition now.
 decode_public = decode_public_key
 
 
@@ -48,10 +54,6 @@ def encode_private(key: Ed25519PrivateKey) -> str:
 def encode_public(key: Ed25519PublicKey) -> str:
     raw = key.public_bytes(Encoding.Raw, PublicFormat.Raw)
     return base64.b64encode(raw).decode("ascii")
-
-
-def decode_public(encoded: str) -> Ed25519PublicKey:
-    return Ed25519PublicKey.from_public_bytes(base64.b64decode(encoded))
 
 
 def load_signing_key() -> Ed25519PrivateKey:

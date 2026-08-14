@@ -29,6 +29,9 @@ _WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё]+")
 _INITIALS_RE = re.compile(r"[А-ЯЁ][а-яё]+\s+[А-ЯЁ]\.\s?[А-ЯЁ]\.?")
 _LATIN_PAIR_RE = re.compile(r"\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\b")
 _INITIAL_RE = re.compile(r"[А-ЯЁA-Z]\.?")
+# Tokens WITH their offsets, so a trimmed span can be sliced out of the original
+# text instead of rebuilt from pieces — see trim_person_span.
+_NON_SPACE_RE = re.compile(r"\S+")
 _NAME_TAGS = {"Name", "Surn", "Patr"}
 
 
@@ -116,15 +119,29 @@ def trim_person_span(value: str) -> tuple[int, str]:
     must not be exposed in order to fix a boundary.
 
     Returns (leading_offset, trimmed_value) because dropping a leading token
-    moves the span start, and the caller mints the token at that offset."""
+    moves the span start, and the caller mints the token at that offset.
+
+    THE RESULT IS A SLICE OF `value`, never a rebuilt string. It used to be
+    `" ".join(parts)`, which silently collapsed runs of whitespace: on
+    `Иван  Петров` (double space — ordinary in CRM exports and pasted forms) the
+    returned value was one character shorter than the text it came from, the
+    caller built the span from `len(trimmed)`, and masking replaced one character
+    too few. What went to the model was a fake name with a dangling `в` — a
+    fragment of the real surname, left in place by the code meant to remove it.
+    The left-hand trim had the same flaw: it advanced the offset by
+    `len(token) + 1`, assuming exactly one separator character."""
     names = ASSETS.get().names
-    parts = value.split()
-    while len(parts) > 2 and not _is_name_part(parts[-1], names):
-        parts.pop()
-    leading = 0
-    while len(parts) > 2 and not _is_name_part(parts[0], names):
-        leading += len(parts.pop(0)) + 1
-    return leading, " ".join(parts)
+    tokens = [(match.start(), match.end(), match.group())
+              for match in _NON_SPACE_RE.finditer(value)]
+    if len(tokens) <= 2:
+        return 0, value
+    first, last = 0, len(tokens) - 1
+    while last - first + 1 > 2 and not _is_name_part(tokens[last][2], names):
+        last -= 1
+    while last - first + 1 > 2 and not _is_name_part(tokens[first][2], names):
+        first += 1
+    start, end = tokens[first][0], tokens[last][1]
+    return start, value[start:end]
 
 
 def keep_person(value: str) -> bool:

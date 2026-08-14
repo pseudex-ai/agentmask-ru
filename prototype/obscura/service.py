@@ -160,11 +160,21 @@ def _context(org_id: str, agent_id: str) -> MaskContext:
 def _mask_request(
     messages: list[dict[str, object]],
     tools: object,
-    context: MaskContext,
+    org_id: str,
+    agent_id: str,
     skip_template: bool,
 ) -> tuple[list[dict[str, object]], object]:
     """One unit of CPU-heavy work, so messages and tools share a single hop onto
-    the worker thread instead of paying the offload twice."""
+    the worker thread instead of paying the offload twice.
+
+    Takes the IDS, not a ready MaskContext, and resolves the vault HERE. Building
+    the context at the call site looked harmless but ran on the event loop: the
+    first request for a new org constructs a Vault, which opens SQLite and may
+    wait out another worker's journal-mode switch — up to ten seconds of
+    `time.sleep` on the loop, stalling /health and every other in-flight request
+    in this worker. That is the exact failure the threadpool offload exists to
+    prevent."""
+    context = _context(org_id, agent_id)
     return (
         mask_messages(messages, context, skip_template),
         mask_tools(tools, context, skip_template),
@@ -288,7 +298,7 @@ async def mask(request: Request) -> JSONResponse:
     # core at once. FAIL-CLOSED is preserved: any exception in masking propagates
     # to a 5xx, which the caller treats as a block (it never sees raw PII).
     masked_messages, masked_tools = await anyio.to_thread.run_sync(
-        _mask_request, messages, tools, _context(org_id, agent_id), skip_template,
+        _mask_request, messages, tools, org_id, agent_id, skip_template,
         limiter=_MASK_LIMITER,
     )
     payload: dict[str, object] = {"messages": masked_messages}
@@ -307,7 +317,7 @@ async def unmask(request: Request) -> JSONResponse:
     # Detokenization is indexed lookups now, but still SQLite I/O per answer —
     # offload so it never blocks the loop.
     result = await anyio.to_thread.run_sync(
-        unmask_response, response, _vault(org_id), limiter=_MASK_LIMITER
+        _unmask_for, response, org_id, limiter=_MASK_LIMITER
     )
     return JSONResponse({"response": result})
 
@@ -330,14 +340,26 @@ async def unmask_chunk(request: Request) -> JSONResponse:
     if not isinstance(delta, str) or not isinstance(carry, str):
         return JSONResponse({"error": "delta and carry must be strings"}, status_code=400)
     text, new_carry = await anyio.to_thread.run_sync(
-        unmask_stream_chunk, delta, carry, _vault(org_id), bool(body.get("flush", False)),
+        _unmask_chunk_for, delta, carry, org_id, bool(body.get("flush", False)),
         limiter=_MASK_LIMITER,
     )
     return JSONResponse({"text": text, "carry": new_carry})
 
 
-def _spans_for_texts(texts: list[object], vault: Vault) -> list[list[dict[str, object]]]:
+def _spans_for_texts(texts: list[object], org_id: str) -> list[list[dict[str, object]]]:
+    vault = _vault(org_id)
     return [_spans_for(text, vault) if isinstance(text, str) else [] for text in texts]
+
+
+def _unmask_for(response: dict[str, object], org_id: str) -> dict[str, object]:
+    """Vault resolved inside the worker thread — see _mask_request."""
+    return unmask_response(response, _vault(org_id))
+
+
+def _unmask_chunk_for(delta: str, carry: str, org_id: str,
+                      flush: bool) -> tuple[str, str]:
+    """Vault resolved inside the worker thread — see _mask_request."""
+    return unmask_stream_chunk(delta, carry, _vault(org_id), flush)
 
 
 @app.post("/spans")
@@ -354,7 +376,7 @@ async def spans(request: Request) -> JSONResponse:
         return JSONResponse({"error": "texts must be a list"}, status_code=400)
     # Detection runs morphology per text -> offload off the loop.
     results = await anyio.to_thread.run_sync(
-        _spans_for_texts, texts, _vault(org_id), limiter=_MASK_LIMITER
+        _spans_for_texts, texts, org_id, limiter=_MASK_LIMITER
     )
     return JSONResponse({"results": results})
 

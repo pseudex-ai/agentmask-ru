@@ -163,11 +163,17 @@ def _context(customer_id: str) -> MaskContext:
 def _mask_request(
     messages: list[dict[str, object]],
     tools: object,
-    context: MaskContext,
+    customer_id: str,
 ) -> tuple[list[dict[str, object]], object]:
     """The PUBLIC leg never skips the template: here the customer writes the
     system prompt and the tool schemas, so PII in either MUST be masked or it
-    reaches the provider raw."""
+    reaches the provider raw.
+
+    Resolves the vault HERE rather than taking a ready context, so the lazy
+    SQLite open (which can wait out another worker's journal-mode switch) happens
+    on the worker thread and not on the event loop — same reasoning as the
+    sidecar leg."""
+    context = _context(customer_id)
     return (
         mask_messages(messages, context, False),
         mask_tools(tools, context, False),
@@ -348,7 +354,7 @@ async def chat_completions(request: Request):
     # burst QUEUES instead of thrashing every core. FAIL-CLOSED is preserved: any
     # exception propagates to a 5xx and nothing is forwarded upstream.
     masked_messages, masked_tools = await anyio.to_thread.run_sync(
-        _mask_request, body["messages"], body.get("tools"), _context(tenant.customer_id),
+        _mask_request, body["messages"], body.get("tools"), tenant.customer_id,
         limiter=_MASK_LIMITER,
     )
     masked_body = dict(body)

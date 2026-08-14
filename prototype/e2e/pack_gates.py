@@ -297,14 +297,19 @@ def gate_p5(workers: int) -> bool:
     with ThreadPoolExecutor(max_workers=16) as pool:
         pids = set(pool.map(health_pid, range(120)))
 
-    def one_mask(index: int) -> tuple[bool, float]:
-        started = time.monotonic()
+    def one_mask(index: int) -> tuple[bool, str]:
+        """Returns (ok, reason). The REASON matters: a burst failing because the
+        machine is busy and a burst failing because the service returned 5xx are
+        opposite verdicts, and a bare failure count cannot tell them apart — it
+        invites 'probably contention', which is a guess."""
         try:
             response = httpx.post(f"{SIDECAR}/mask", timeout=120,
                                   json=fixtures.mask_body_variant("load", index))
-            return response.status_code == 200, (time.monotonic() - started) * 1000
-        except httpx.HTTPError:
-            return False, (time.monotonic() - started) * 1000
+            if response.status_code == 200:
+                return True, ""
+            return False, f"HTTP {response.status_code}: {response.text[:120]}"
+        except httpx.HTTPError as error:
+            return False, f"{type(error).__name__}: {error}"
 
     health_latencies: list[float] = []
 
@@ -323,13 +328,15 @@ def gate_p5(workers: int) -> bool:
         outcomes = list(pool.map(one_mask, range(64)))
         probe.result()
 
-    failures = [ok for ok, _ in outcomes if not ok]
+    reasons = [reason for ok, reason in outcomes if not ok]
     health_p95 = sorted(health_latencies)[int(len(health_latencies) * 0.95) - 1]
     spread_ok = len(pids) >= max(2, workers - 1)
-    ok = not failures and spread_ok and health_p95 < 1000
+    ok = not reasons and spread_ok and health_p95 < 1000
+    distinct = sorted({reason.split(":")[0] for reason in reasons})
     return gate("P5 N processes share the port and absorb a burst", ok,
-                f"distinct_pids={len(pids)}/{workers} mask_failures={len(failures)}/64 "
-                f"health_p95={health_p95:.0f}ms")
+                f"distinct_pids={len(pids)}/{workers} mask_failures={len(reasons)}/64 "
+                f"health_p95={health_p95:.0f}ms"
+                + (f" reasons={distinct} first={reasons[0][:90]!r}" if reasons else ""))
 
 
 def gate_p6() -> bool:

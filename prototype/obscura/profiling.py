@@ -24,7 +24,7 @@ import os
 import threading
 import time
 from collections import deque
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 
 ENABLED = os.environ.get("OBSCURA_PROFILE", "") == "1"
 
@@ -117,7 +117,7 @@ class _Timer:
         STAGES.record(self._name, time.perf_counter() - self._start)
 
 
-def stage(name: str):
+def stage(name: str) -> AbstractContextManager[None]:
     """Time a block as `name`. No-op unless OBSCURA_PROFILE=1."""
     return _Timer(name) if ENABLED else _NULL
 

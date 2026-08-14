@@ -47,13 +47,26 @@ def mask_one(text: str, context: MaskContext) -> str:
     PII gateway that risk is unacceptable, and the cache already removes the
     repeated-work cost, so detection is never skipped."""
     def _compute() -> str:
-        spans = context.detector.detect(text)
+        # Spans whose value is one of OUR OWN tokens are dropped BEFORE anything
+        # is minted or recorded. `mask_text` already refuses to replace them, but
+        # this loop ran first and did not: an echoed token got a vault row of its
+        # own (fake -> another fake, burning a slot in a finite pool) and an audit
+        # event, which is the number the licensing server bills on. In a
+        # multi-turn agent the model quotes its own tokens constantly, so the
+        # inflation was proportional to conversation length.
+        spans = [span for span in context.detector.detect(text)
+                 if not context.vault.is_minted_token(span.value)]
         with stage("mask.tokenize_and_audit"):
-            for span in spans:
-                token = context.vault.tokenize(span.value, span.entity_type)
-                context.audit.record(
-                    context.org_id, context.agent_id, span.entity_type, token, span.value
-                )
+            # Collected first, written once: one commit per MESSAGE instead of one
+            # per entity. See AuditLog.record_many — per-span commits made four
+            # workers under load fail most requests with `database is locked`.
+            events = [
+                (span.entity_type,
+                 context.vault.tokenize(span.value, span.entity_type),
+                 span.value)
+                for span in spans
+            ]
+            context.audit.record_many(context.org_id, context.agent_id, events)
         with stage("mask.splice"):
             return mask_text(text, context.vault, spans)
 
@@ -121,7 +134,13 @@ def mask_messages(
         if skip_template and message.get("role") == "system":
             masked.append(new_message)
             continue
-        new_message["content"] = _mask_content(new_message.get("content"), context)
+        # Only touch `content` if the message HAD one. Assigning unconditionally
+        # added `"content": null` to assistant turns that carry only `tool_calls`
+        # — a message shape neither leg produced before. Strict providers reject
+        # the extra null field, and it also perturbs the byte-identical prefix
+        # that prefix-cache accounting depends on.
+        if "content" in new_message:
+            new_message["content"] = _mask_content(new_message["content"], context)
         if "tool_calls" in new_message:
             new_message["tool_calls"] = _mask_tool_calls(
                 new_message["tool_calls"], context

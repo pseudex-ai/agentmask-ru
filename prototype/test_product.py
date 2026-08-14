@@ -1,11 +1,18 @@
 """Offline tests for the product layer: API-key tenancy + streaming detok."""
 
 import pathlib
+import re
+import tempfile
 
+from obscura.assets import ASSETS
 from obscura.audit import AuditLog, _preview
 from obscura.detect_all import Detector
+from obscura.envelope import MaskContext, mask_one
+from obscura.maskcache import MaskCache
+from obscura.names import is_known_name, trim_person_span
+from obscura.normalize import normalize
 from obscura.redact import StreamDetokenizer, mask_text, unmask_text
-from obscura.names import is_known_name
+from obscura.ru_pii import validate_inn, validate_luhn, validate_ogrn, validate_snils
 from obscura.tenants import Tenants
 from obscura.vault import _FAKE_FIRST, _FAKE_LAST, TOKEN_RE, _render_token, Vault
 from testkit import load_dev_bundle
@@ -135,11 +142,137 @@ def test_fake_names_are_self_recognised() -> None:
 
 
 def test_token_pool_does_not_exhaust() -> None:
-    """Minting must stay bounded and unique well past any plausible org size."""
+    """Minting must stay bounded and unique well past any plausible org size.
+
+    EVERY high-cardinality type, not just NAME. This test used to cover names
+    only, which is why it passed while LOC could mint just 33 tokens and IP just
+    254: the 34th distinct address an organisation sent raised out of
+    `_unique_token` and became a permanent fail-closed 5xx for that customer.
+    A delivery or logistics client crosses 33 addresses on its first day."""
     vault = Vault(":memory:", "pool")
-    tokens = {vault.tokenize(f"Человек Номер{index}", "NAME") for index in range(300)}
-    assert len(tokens) == 300, f"minted only {len(tokens)} unique tokens for 300 people"
-    print(f"token pool OK — 300 distinct people -> {len(tokens)} unique tokens, no hang")
+    for entity_type, sample in (("NAME", "Человек Номер{}"),
+                                ("LOC", "улица Тестовая {}, кв 1"),
+                                ("IP", "10.{}.{}.1")):
+        values = [sample.format(index, index) for index in range(300)]
+        tokens = {vault.tokenize(value, entity_type) for value in values}
+        assert len(tokens) == 300, (
+            f"{entity_type}: minted only {len(tokens)} unique tokens for 300 values"
+        )
+    print("token pool OK — NAME/LOC/IP each mint 300 distinct tokens, no exhaustion")
+
+
+def test_reformatted_document_tokens_resolve() -> None:
+    """REGRESSION: the six document types were added to `_render_token` but not
+    to `_NUMERIC_TYPES`, so their rows carried NULL digit signatures.
+
+    A model that echoes a driver's licence as `9912345678` instead of
+    `99 12 345678` then resolved to nothing, and the tool executed on the FAKE
+    document number — which vault.py itself calls worse than a miss."""
+    vault = Vault(":memory:", "docs")
+    originals = {
+        "DRIVER_LICENSE": "77 15 998877",
+        "VEHICLE_DOC": "50 22 445566",
+        "OMS": "7712345678901234",
+        "ACCOUNT": "40817810099910004312",
+        "INTL_PASSPORT": "750123456",
+    }
+    for entity_type, original in originals.items():
+        token = vault.tokenize(original, entity_type)
+        stripped = re.sub(r"\D", "", token)
+        restored = unmask_text(f"проверьте {stripped}", vault)
+        assert original in restored, (
+            f"{entity_type}: reformatted token {stripped} did not resolve back "
+            f"to {original} (got {restored!r})"
+        )
+    print(f"reformatted document tokens OK — {len(originals)} types survive "
+          f"separator stripping")
+
+
+def test_trim_person_span_keeps_offsets() -> None:
+    """REGRESSION: `trim_person_span` rebuilt the value with `\" \".join(...)`,
+    collapsing runs of whitespace. The caller sizes the span from
+    `len(trimmed)`, so on `Иван  Петров` (double space — ordinary in CRM
+    exports) masking replaced one character too few and left a fragment of the
+    real surname in the text sent to the model."""
+    for value in ("Иван  Петров Спасибо", "Получатель Иван Петров",
+                  "Иван\nПетров Спасибо", "Ольга Смирнов Мои"):
+        leading, trimmed = trim_person_span(value)
+        assert value[leading:leading + len(trimmed)] == trimmed, (
+            f"{value!r}: trimmed {trimmed!r} is not the slice at offset {leading}"
+        )
+    print("person-span offsets OK — trimmed value is always a slice of the source")
+
+
+def test_echoed_token_is_not_billed() -> None:
+    """REGRESSION: `mask_one` tokenized and audited EVERY detected span, then
+    `mask_text` skipped the ones that were already our own tokens.
+
+    So an echoed token still minted a vault row (fake -> another fake, burning a
+    slot in a finite pool) and still recorded an audit event — and audit counts
+    are what the licensing server bills on. In a multi-turn agent the model
+    quotes its own tokens constantly, so the overcount grew with conversation
+    length."""
+    directory = tempfile.mkdtemp(prefix="obscura_echo_")
+    audit = AuditLog(pathlib.Path(directory, "audit.db").as_posix())
+    vault = Vault(pathlib.Path(directory, "vault.db").as_posix(), "echo")
+    context = MaskContext(detector=Detector(), vault=vault, audit=audit,
+                          cache=MaskCache(64), org_id="echo", agent_id="a")
+
+    masked = mask_one("Клиент Иван Петров просит перезвонить", context)
+    before = dict(audit.counts("echo"))
+    # The model echoes the token back inside DIFFERENT text, so the content cache
+    # cannot hide the second pass.
+    mask_one(f"Уточните у {masked.split('Клиент ')[1].split(' просит')[0]} детали", context)
+    after = dict(audit.counts("echo"))
+
+    assert after.get("NAME", 0) == before.get("NAME", 0), (
+        f"echoing our own token was billed again: NAME {before.get('NAME')} -> "
+        f"{after.get('NAME')}"
+    )
+    print("echoed-token accounting OK — re-detecting our own token bills nothing")
+
+
+def test_tokens_are_not_valid_documents() -> None:
+    """A token must never be a valid instance of ANY type, not just its own.
+
+    The rule was applied to the СНИЛС/ИНН/card generators and missed on PHONE,
+    whose 11 digits are the same shape as a СНИЛС — about 1% passed that
+    checksum. Those tokens were re-masked as СНИЛС when the model echoed them
+    (СНИЛС outranks PHONE, and the re-masking guard misses because detection
+    reports the digits without the leading `+`), so the number changed
+    mid-conversation and the tool received the wrong value.
+
+    Sampled rather than reasoned about: the generators are random, and a 1-in-100
+    collision is invisible in a single draw — which is exactly why this went
+    unnoticed until a test happened to roll one."""
+    samples = 5000
+    collisions = [token for token in (_render_token("PHONE") for _ in range(samples))
+                  if validate_snils(token.lstrip("+"))]
+    assert not collisions, (
+        f"{len(collisions)}/{samples} PHONE tokens are valid СНИЛС, e.g. {collisions[:3]}"
+    )
+    for entity_type, checker in (("SNILS", validate_snils), ("INN", validate_inn),
+                                 ("OGRN", validate_ogrn)):
+        bad = [token for token in (_render_token(entity_type) for _ in range(500))
+               if checker(token)]
+        assert not bad, f"{entity_type} minted a CHECKSUM-VALID token: {bad[:3]}"
+    cards = [token for token in (_render_token("CARD") for _ in range(500))
+             if validate_luhn(token)]
+    assert not cards, f"CARD minted a Luhn-VALID token: {cards[:3]}"
+    print(f"token/document collisions OK — {samples} PHONE samples, none a valid СНИЛС")
+
+
+def test_lookalike_table_is_complete() -> None:
+    """REGRESSION: the digit-lookalike table had Cyrillic 'о' twice and was
+    therefore MISSING Greek small omicron — a dict literal silently keeps the
+    last value for a repeated key. An obfuscated phone written with the Greek
+    letter never folded to digits and reached the model unmasked."""
+    obfuscated = "+7 9" + chr(0x3BF) + "9 123-45-67"
+    assert normalize(obfuscated) == "+7 909 123-45-67", (
+        f"Greek small omicron not folded: {normalize(obfuscated)!r}"
+    )
+    assert chr(0x3BF) in ASSETS.get().lookalike
+    print("lookalike table OK — Greek small omicron folds to a digit")
 
 
 def test_masking_own_token_is_stable() -> None:
@@ -157,7 +290,12 @@ def test_masking_own_token_is_stable() -> None:
     which is what a real agent turn does."""
     detector = Detector()
     vault = Vault(":memory:", "echo")
-    real = "Клиент Иван Петров просит перезвонить, телефон +7 999 123-45-67"
+    # Address included on purpose: the LOC token is now a generated street with a
+    # house number rather than a value from a flat list, so re-detection has a
+    # real chance of carving it up differently — and a differently-carved span is
+    # not literally a minted token, which is exactly how the guard gets missed.
+    real = ("Клиент Иван Петров просит перезвонить, телефон +7 999 123-45-67, "
+            "адрес улица Ленина 5, кв 12")
 
     first = mask_text(real, vault, detector.detect(real))
     # Different surrounding text each pass -> the cache cannot mask the bug.
@@ -196,3 +334,8 @@ if __name__ == "__main__":
     test_token_pool_does_not_exhaust()
     test_masking_own_token_is_stable()
     test_unmask_reformatted_phone()
+    test_reformatted_document_tokens_resolve()
+    test_trim_person_span_keeps_offsets()
+    test_echoed_token_is_not_billed()
+    test_tokens_are_not_valid_documents()
+    test_lookalike_table_is_complete()

@@ -71,6 +71,11 @@ _GRACE_WORTHY_STATUS = frozenset({408, 409, 429, 500, 502, 503, 504})
 _STARTUP_ATTEMPTS = 3
 _STARTUP_BACKOFF_SECONDS = 2.0
 
+# How often a REVOKED or UNPAID licence re-asks. Slower than a normal renewal —
+# the answer is unlikely to change minute to minute — but never never: a customer
+# who pays their invoice must come back without restarting every container.
+_TERMINAL_RETRY_SECONDS = 60.0
+
 
 class LicenseError(RuntimeError):
     """The process may not run: no valid lease could be obtained at startup."""
@@ -256,6 +261,11 @@ class LicenseClient:
         last_transient: Exception | None = None
         for attempt in range(1, _STARTUP_ATTEMPTS + 1):
             try:
+                # Recorded even on the attempt that fails: the renewal loop paces
+                # itself off the last ATTEMPT, and leaving it unset made the loop
+                # fire a second, redundant lease the instant it started — one
+                # extra full bundle sealed per worker on every container start.
+                self._last_attempt_monotonic = time.monotonic()
                 self._apply(self._request_lease())
                 _log.info("lease acquired: %s bundle=%s ttl=%ss grace=%ss",
                           self._lease_id, self._bundle_version,
@@ -336,11 +346,28 @@ class LicenseClient:
                 # restart every container to come back — the kill switch is meant
                 # to stop the service NOW, not to make recovery a support ticket.
                 due = max(due, _TERMINAL_RETRY_SECONDS)
-            last_ok = self._last_attempt_monotonic
-            if last_ok is None or time.monotonic() - last_ok >= due:
-                self._last_attempt_monotonic = time.monotonic()
-                self._renew()
-            self._tick()
+            last_attempt = self._last_attempt_monotonic
+            try:
+                if last_attempt is None or time.monotonic() - last_attempt >= due:
+                    self._last_attempt_monotonic = time.monotonic()
+                    self._renew()
+                self._tick()
+            except Exception:  # noqa: BLE001 — see below
+                # THIS THREAD MUST NOT DIE. It is the only thing that renews the
+                # lease, enters STALE, and eventually unloads the assets; if it
+                # stops, the worker serves on the last bundle until TTL+grace and
+                # then 503s with no recorded reason — a healthy-looking process
+                # that quietly stopped masking.
+                #
+                # A bare except is right here and nowhere else: `_renew` already
+                # handles the failures it can name, so anything arriving here is
+                # by definition one we did not anticipate (a truncated bundle
+                # raising zlib.error, a malformed signature raising
+                # binascii.Error, a store error from the usage provider). Losing
+                # the loop over an unanticipated error is strictly worse than
+                # logging it and trying again.
+                self._last_error = "unexpected error in the licence loop"
+                _log.exception("unexpected error in the licence loop; continuing")
             # Wake often enough that EXPIRED is entered promptly even with no
             # traffic — the assets must go away on time, not on the next request.
             self._stop.wait(min(5.0, max(1.0, due / 4.0)))
