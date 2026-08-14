@@ -232,26 +232,33 @@ function CheckResult({ check }) {
     </div>`;
 }
 
-function Status({ status, engineDown, org, goSandbox }) {
+function Status({ status, engineDown, org, goSandbox, onBlocked }) {
   const [check, setCheck] = useState(null);
   const [checking, setChecking] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
 
   const runCheck = useCallback(async () => {
+    // Refused before it is attempted when we already know it cannot work. The
+    // engine would answer 503 anyway, but sending a request in order to be told
+    // something the screen already displays is the kind of thing that makes an
+    // operator doubt what the screen says.
+    if (engineDown || status?.license?.state === 'expired') {
+      onBlocked(engineDown ? 'down' : 'expired');
+      return;
+    }
     setChecking(true);
     setError('');
     try {
       setCheck(await enginePost('/selfcheck', {}));
     } catch (problem) {
       setCheck(null);
-      setError(problem.body?.error === 'license_expired' || problem.status === 503
-        ? 'Маскирование сейчас остановлено: движок отвечает 503. Оплатите подписку или проверьте связь с лицензионным сервером.'
-        : `Проверка не выполнилась: ${problem.status || ''} ${problem.body?.detail || problem.body?.error || ''}`);
+      if (problem.status === 503) { onBlocked('expired'); return; }
+      setError(`Проверка не выполнилась: ${problem.status || ''} ${problem.body?.detail || problem.body?.error || ''}`);
     } finally {
       setChecking(false);
     }
-  }, []);
+  }, [engineDown, status, onBlocked]);
 
   const copy = useCallback(() => {
     navigator.clipboard?.writeText('docker logs veilgate --tail 200');
@@ -572,6 +579,26 @@ function Log({ org, onReveal }) {
 
 /* ---------- reveal modal ---------- */
 
+function BlockedModal({ reason, onClose }) {
+  return html`
+    <div class="scrim" onClick=${(e) => e.target === e.currentTarget && onClose()}>
+      <div class="modal">
+        <div class="modal-head">
+          <div class="tag pink">ПРОВЕРКА НЕВОЗМОЖНА</div>
+          <h2>Маскирование сейчас остановлено</h2>
+          <p>
+            ${reason === 'down'
+              ? 'Движок не отвечает. Запустите контейнер и повторите: docker start veilgate'
+              : 'Лицензия истекла, поэтому /mask возвращает 503. Оплатите подписку в кабинете — аренда продлится в течение минуты.'}
+          </p>
+        </div>
+        <div class="modal-foot">
+          <button class="btn md" onClick=${onClose}>ЗАКРЫТЬ</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 function RevealModal({ event, org, onClose }) {
   const [value, setValue] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -626,9 +653,66 @@ function RevealModal({ event, org, onClose }) {
 
 /* ---------- stats ---------- */
 
+/* The period report: what the operator hands to their own auditor or security
+ * officer. Counts only — organisation, period, how many requests, how many
+ * values of each type — and by construction it CANNOT contain a token, a
+ * preview or a value, which is what makes it safe to print and file.
+ *
+ * Rendered into the page and printed from there rather than downloaded: a PDF
+ * generator would need a native toolchain in the release image for one screen,
+ * and the browser already has one. */
+function PeriodReport({ org, data, days, onClose }) {
+  useEffect(() => {
+    const escape = (event) => { if (event.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', escape);
+    return () => document.removeEventListener('keydown', escape);
+  }, [onClose]);
+
+  const types = Object.entries(data?.by_type || {}).sort((a, b) => b[1] - a[1]);
+  const totalValues = types.reduce((sum, [, count]) => sum + count, 0);
+  const first = data?.days?.[0]?.day || '—';
+  const last = data?.days?.[data.days.length - 1]?.day || '—';
+
+  return html`
+    <div class="scrim report-scrim" onClick=${(e) => e.target === e.currentTarget && onClose()}>
+      <div class="report-sheet">
+        <div class="report-actions">
+          <button class="btn md primary" onClick=${() => window.print()}>ПЕЧАТЬ / PDF</button>
+          <button class="btn md" onClick=${onClose}>ЗАКРЫТЬ</button>
+        </div>
+        <div class="report-body">
+          <h2>Отчёт о защите персональных данных</h2>
+          <div class="report-meta">
+            организация <b>${org}</b> · период <b>${first} — ${last}</b> (${days} дней)<br />
+            сформирован ${new Date().toLocaleString('ru-RU', { hour12: false })}
+          </div>
+          <table class="report-table">
+            <tr><th>Показатель</th><th>Значение</th></tr>
+            <tr><td>Обращений обработано</td><td>${num(data?.requests_total)}</td></tr>
+            <tr><td>Значений защищено</td><td>${num(totalValues)}</td></tr>
+          </table>
+          <h3>По типам персональных данных</h3>
+          <table class="report-table">
+            <tr><th>Тип</th><th>Защищено значений</th></tr>
+            ${types.map(([name, count]) => html`
+              <tr><td>${name}</td><td>${num(count)}</td></tr>`)}
+            ${!types.length && html`<tr><td colspan="2">Данных за период нет.</td></tr>`}
+          </table>
+          <p class="report-note">
+            Отчёт сформирован локально, внутри контура организации. Он содержит
+            только количественные показатели: ни текстов сообщений, ни токенов,
+            ни самих значений в нём нет и по устройству системы быть не может.
+            Персональные данные не покидали периметр организации.
+          </p>
+        </div>
+      </div>
+    </div>`;
+}
+
 function Stats({ org }) {
   const [data, setData] = useState(null);
   const [days, setDays] = useState(14);
+  const [report, setReport] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -673,6 +757,7 @@ function Stats({ org }) {
                link.click();
                URL.revokeObjectURL(url);
              }}>ВЫГРУЗИТЬ CSV</a>
+          <button class="btn sm primary" onClick=${() => setReport(true)}>ОТЧЁТ ЗА ПЕРИОД</button>
         </div>
       </div>
 
@@ -709,6 +794,8 @@ function Stats({ org }) {
           <div class="hint">Выгрузка CSV — печатная форма для внутренней проверки: период, число обращений и сколько значений защищено. Токенов и значений в ней нет.</div>
         </div>
       </div>
+      ${report && html`<${PeriodReport} org=${org} data=${data} days=${days}
+                                        onClose=${() => setReport(false)} />`}
     </div>`;
 }
 
@@ -839,6 +926,7 @@ function App() {
   const [status, setStatus] = useState(null);
   const [engineDown, setEngineDown] = useState(false);
   const [reveal, setReveal] = useState(null);
+  const [blocked, setBlocked] = useState('');
   const [age, setAge] = useState(0);
   const timer = useRef(null);
 
@@ -929,7 +1017,9 @@ function App() {
               <div class="tag">${banner.tag}</div>
               <p>${banner.text}</p>
             </div>`}
-          ${tab === 'status' && html`<${Status} status=${status} engineDown=${engineDown} org=${org} goSandbox=${() => setTab('sandbox')} />`}
+          ${tab === 'status' && html`<${Status} status=${status} engineDown=${engineDown} org=${org}
+                                                goSandbox=${() => setTab('sandbox')}
+                                                onBlocked=${setBlocked} />`}
           ${tab === 'sandbox' && html`<${Sandbox} org=${org} />`}
           ${tab === 'log' && html`<${Log} org=${org} onReveal=${setReveal} />`}
           ${tab === 'stats' && html`<${Stats} org=${org} />`}
@@ -939,6 +1029,7 @@ function App() {
       </div>
 
       ${reveal && html`<${RevealModal} event=${reveal} org=${org} onClose=${() => setReveal(null)} />`}
+      ${blocked && html`<${BlockedModal} reason=${blocked} onClose=${() => setBlocked('')} />`}
     </div>`;
 }
 

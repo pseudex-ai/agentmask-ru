@@ -320,3 +320,30 @@ h1.title { font-size: 26px; font-weight: 800; letter-spacing: -.025em; margin: 0
   .rail button.on { border-left: 0; border-bottom-color: var(--accent); }
   .rail-foot { display: none; }
 }
+
+/* ---- period report ---- */
+/* White paper, black text: this is printed and filed by someone who does not
+   care about our dark theme, and a dark background wastes a cartridge. */
+.report-scrim { align-items: flex-start; overflow-y: auto; }
+.report-sheet { background: #fff; color: #111; width: 760px; max-width: 100%; margin: 24px 0; }
+.report-actions { display: flex; gap: 10px; padding: 16px 24px; background: var(--panel-2); }
+.report-body { padding: 32px 36px 40px; font-family: Inter, system-ui, sans-serif; }
+.report-body h2 { margin: 0 0 6px; font-size: 21px; color: #111; }
+.report-body h3 { margin: 26px 0 8px; font-size: 15px; color: #111; }
+.report-meta { color: #555; font-size: 13px; line-height: 1.7; margin-bottom: 20px; }
+.report-meta b { color: #111; }
+.report-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.report-table th, .report-table td { border: 1px solid #bbb; padding: 7px 10px; text-align: left; }
+.report-table th { background: #f2f2f2; font-weight: 600; }
+.report-table td:last-child, .report-table th:last-child { text-align: right; width: 180px; }
+.report-note { margin-top: 22px; padding-top: 14px; border-top: 1px solid #ddd; color: #444; font-size: 12px; line-height: 1.6; }
+
+@media print {
+  /* Everything except the report is hidden rather than the report being moved:
+     moving it would reflow the app underneath and print a blank second page. */
+  body > #root > .shell { display: none; }
+  .scrim { position: static; background: none; padding: 0; display: block; }
+  .report-sheet { width: auto; margin: 0; }
+  .report-actions { display: none; }
+  .report-body { padding: 0; }
+}
