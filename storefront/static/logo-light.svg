@@ -1,0 +1,8 @@
+<!-- The mark on a light background, for invoices, акты and anything that gets
+     printed. The accent is darkened to #6f6486: #b3a0ea is tuned for a #17171a
+     page and drops below readable contrast on white, which is exactly where a
+     logo ends up on a document a customer's accountant looks at. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect x="3" y="11" width="18" height="18" rx="5" fill="#6f6486"/>
+  <rect x="11" y="3" width="18" height="18" rx="5" fill="#e8e7ec" stroke="#6f6486" stroke-width="2.6"/>
+</svg>

@@ -1,0 +1,9 @@
+<!-- Variant 02 · SWAP, favicon geometry from the design's logo sheet.
+     Not the header mark scaled down: at 16px the outlined square loses its
+     stroke and the two shapes merge into a blob. This version inverts — solid
+     accent tile, shapes knocked out — which is what the sheet specifies. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect width="32" height="32" fill="#b3a0ea"/>
+  <rect x="4" y="12" width="16" height="16" rx="4.5" fill="#17171a"/>
+  <rect x="12" y="4" width="16" height="16" rx="4.5" fill="#b3a0ea" stroke="#17171a" stroke-width="2.4"/>
+</svg>
