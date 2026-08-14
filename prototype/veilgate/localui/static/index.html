@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>veilgate — локальный интерфейс</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/app.css">
+<!-- Bare specifiers resolved here rather than by rewriting the vendored files,
+     so preact/htm stay byte-identical to what was published and can be diffed
+     against upstream during a security review. -->
+<script type="importmap">
+{"imports": {
+  "preact": "/static/vendor/preact.mjs",
+  "preact/hooks": "/static/vendor/hooks.mjs",
+  "htm": "/static/vendor/htm.mjs"
+}}
+</script>
+<script type="module" src="/static/app.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<noscript>Интерфейсу нужен JavaScript. Данные при этом никуда не уходят — страница обращается только к этому же контейнеру.</noscript>
+</body>
+</html>

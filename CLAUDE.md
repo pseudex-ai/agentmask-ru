@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Obscura is a **reversible PII-tokenization gateway for LLM agents** on the RU market (152-ФЗ).
+Veilgate is a **reversible PII-tokenization gateway for LLM agents** on the RU market (152-ФЗ).
 Real personal data is replaced with format-preserving fake tokens before the model sees it, and
 detokenized server-side so the agent's **tool calls still execute on real values**. The tool-call
 loop is the product — plain text masking is table stakes.
@@ -12,7 +12,7 @@ loop is the product — plain text masking is table stakes.
 Everything shippable lives in `prototype/`. `docs/` is the product spec (RU), `research/` is the
 evidence archive behind every design decision (why a layer exists, what SOTA does).
 
-**The engine ships EMPTY.** `prototype/obscura/` contains the rules; the tuned data those rules
+**The engine ships EMPTY.** `prototype/veilgate/` contains the rules; the tuned data those rules
 consume (gazetteers, street vocabulary, cue words, priority table) lives in `prototype/licensing/`,
 never ships, and is leased to the running container as an encrypted bundle that exists only in
 memory. `docs/tz-license-packaging.md` is the spec for that; `docs/spec.md` §2 is the product
@@ -40,6 +40,7 @@ python3 test_loop.py           # core proof: no PII to model + tool-call round-t
 python3 test_product.py        # tenancy, audit, streaming detok
 python3 vault_test.py          # canonicalization + persistence across restart
 python3 test_perf_masking.py   # cache/audit-dedup/leak-regression/loop-responsiveness vs the real FastAPI app
+python3 test_localui.py        # operator surface is closed, reveals audited, requests billed apart from entities
 ```
 
 Detection quality (needs generated datasets — all gitignored, regenerate before use):
@@ -56,7 +57,7 @@ Performance:
 
 ```bash
 python3 bench_masking.py       # O(n^2) growing-transcript cost, cache on vs off
-python3 profile_latency.py     # part1 offline per-message cost; part2 real A/B (needs OBSCURA_UPSTREAM_KEY)
+python3 profile_latency.py     # part1 offline per-message cost; part2 real A/B (needs VEILGATE_UPSTREAM_KEY)
 ```
 
 Licensing and packaging (`docs/tz-license-packaging.md`). The gates are the definition of done —
@@ -72,8 +73,8 @@ python3 e2e/pack_gates.py                         # P1-P8, packaging (builds bot
 
 # The verification key is COMPILED INTO the release binary, so a fresh key forces
 # a full Nuitka rebuild. Pass the key an image was built with to reuse it:
-OBSCURA_SIGNING_KEY=<base64> python3 e2e/gates.py --image obscura:compiled --skip-build
-OBSCURA_SIGNING_KEY=<base64> python3 e2e/pack_gates.py --skip-build
+VEILGATE_SIGNING_KEY=<base64> python3 e2e/gates.py --image veilgate:compiled --skip-build
+VEILGATE_SIGNING_KEY=<base64> python3 e2e/pack_gates.py --skip-build
 ```
 
 Two images, and the difference is only HOW the engine is built — `Dockerfile`
@@ -97,28 +98,28 @@ Run the two deployment shapes:
 
 ```bash
 # A) OpenAI-compatible reverse proxy (we call the provider)
-export OBSCURA_UPSTREAM_BASE_URL=https://openrouter.ai/api/v1 OBSCURA_UPSTREAM_KEY=sk-...
-uvicorn obscura.proxy:app --port 4000
+export VEILGATE_UPSTREAM_BASE_URL=https://openrouter.ai/api/v1 VEILGATE_UPSTREAM_KEY=sk-...
+uvicorn veilgate.proxy:app --port 4000
 python3 issue_key.py acme https://openrouter.ai/api/v1 sk-...   # mint a real tenant key
 
 # B) Sidecar behind a host gateway (the host calls the provider)
-OBSCURA_DB_DIR=/tmp/obscura uvicorn obscura.service:app --port 8000
-docker build -t obscura:latest . && docker run -p 8000:8000 -v obscura-data:/data obscura:latest
+VEILGATE_DB_DIR=/tmp/veilgate uvicorn veilgate.service:app --port 8000
+docker build -t veilgate:latest . && docker run -p 8000:8000 -v veilgate-data:/data veilgate:latest
 ```
 
 Scripts needing a live LLM (`agent_demo.py`, `response_test.py`, `live_eval.py`) expect the proxy
-running on `localhost:4000` with a seeded `obscura-dev` tenant.
+running on `localhost:4000` with a seeded `veilgate-dev` tenant.
 
 ## Architecture
 
 ### Two entry points, one core
 
-`obscura/proxy.py` and `obscura/service.py` are **parallel deployment shapes**, not layers:
+`veilgate/proxy.py` and `veilgate/service.py` are **parallel deployment shapes**, not layers:
 
 | | `proxy.py` | `service.py` (sidecar) |
 |---|---|---|
-| Who calls the provider | Obscura | the host gateway (e.g. Diva's LiteLLM callback) |
-| Auth / tenancy | `sk-obsc-…` key → `Tenants` → upstream URL+key | `org_id` in the request body |
+| Who calls the provider | Veilgate | the host gateway (e.g. Diva's LiteLLM callback) |
+| Auth / tenancy | `sk-vg-…` key → `Tenants` → upstream URL+key | `org_id` in the request body |
 | Surface | `POST /v1/chat/completions`, `GET /usage` | `/mask`, `/unmask`, `/spans`, `/reveal`, `/usage` |
 | Streaming | yes (`StreamDetokenizer`; tool-call requests buffered) | not yet (phase 2) |
 
@@ -127,16 +128,50 @@ implementations are **duplicated on purpose but have drifted** — `service.py` 
 content blocks, `skip_system`, the mask cache, and the threadpool offload; `proxy.py` does not.
 When you change masking semantics, decide explicitly whether both need it.
 
-### The lease (`licensing/` → `obscura/assets.py`)
+### Two surfaces on the sidecar, with different auth
+
+`service.py` serves two audiences and they are gated differently on purpose:
+
+| | gateway surface | operator surface (`veilgate/operator.py`) |
+|---|---|---|
+| Paths | `/mask`, `/unmask`, `/unmask_chunk`, `/spans`, `/health` | `/status`, `/events`, `/stats`, `/stats.csv`, `/reveals`, `/subscription`, `/diagnostics`, `/selfcheck`, `/reveal` |
+| Auth | none — the customer's own gateway calls it every request | `Authorization: Bearer $VEILGATE_ADMIN_TOKEN` |
+| Why | a credential there buys nothing against someone already on the contour network | these disclose real values and the list of what exists to disclose |
+
+`VEILGATE_ADMIN_TOKEN` **must be set by `entrypoint.sh`, once, for all workers.** Each worker
+generating its own would mean N valid tokens for one SO_REUSEPORT port, and the interface would
+401 at random as the kernel moved it between workers.
+
+### The local interface (`veilgate/localui/`)
+
+A separate ASGI app on **:8081**, started by `entrypoint.sh` as the same binary under
+`VEILGATE_ROLE=ui`. It is a separate process so it can report "движок не отвечает" — a UI inside
+the thing that is down cannot. It never imports `veilgate.service` and never leases.
+
+- Sign-in: a startup token printed with a URL, Jupyter-style, reusable for the process lifetime.
+  `VEILGATE_UI_PASSWORD` for a shared team. Generated in `entrypoint.sh` so a UI restart does not
+  invalidate the link the operator already followed.
+- The session token rides in the **Authorization header, never a cookie** — a cookie would make
+  `/reveal` reachable by CSRF, and then a CSRF token would be needed to defend a mechanism chosen
+  for convenience.
+- The engine proxy is an **allowlist of exact paths**, not a prefix match: it holds a credential
+  the page does not, so a pass-through would be an open relay into the container's network.
+- Page files ship at `/app/ui` in the release image, **never under a directory called `veilgate`** —
+  gate P1 asserts `/app/veilgate` does not exist as evidence the Python package did not ship.
+- Rendering uses vendored Preact+htm (no build step). Not a style preference: every screen renders
+  values from the customer's own traffic, and string-concatenated `innerHTML` would execute markup
+  arriving inside a name or a preview, in a page holding a session that can reveal personal data.
+
+### The lease (`licensing/` → `veilgate/assets.py`)
 
 ```
 licensing/assets_source.py   the authored data: gazetteers, street vocabulary, cue words,
                              priority table, key->type map, look-alike table. NEVER SHIPS.
 licensing/pack.py            builds it into zlib(JSON); version = content hash
 licensing/server.py          POST /v1/lease -> seals the bundle to ONE process, signs it
-obscura/bundle.py            the wire format, shared by both sides
-obscura/license.py           process keypair, renewal loop, degradation ladder
-obscura/assets.py            in-memory registry; compiles every regex ONCE at load
+veilgate/bundle.py            the wire format, shared by both sides
+veilgate/license.py           process keypair, renewal loop, degradation ladder
+veilgate/assets.py            in-memory registry; compiles every regex ONCE at load
 ```
 
 - The worker generates an X25519 keypair **in memory** and the server seals the bundle to it. A
@@ -180,7 +215,7 @@ sitting inside a street name; it is remapped back to `LOC` after resolution.
 - **Format-preserving, checksum-INVALID tokens**: a fake СНИЛС/ИНН/card is deliberately generated
   to fail its own checksum, so a token can never collide with a real person's ID.
 - Persistent SQLite keyed by `(customer, canonical)` — survives restarts and is shared across
-  uvicorn workers via the mounted `OBSCURA_DB_DIR`.
+  uvicorn workers via the mounted `VEILGATE_DB_DIR`.
 - `unmask_text` also does a **digit-signature reindex** so a numeric token the model *reformatted*
   (`+7…` → `8…`, separators stripped) still detokenizes.
 
@@ -203,6 +238,17 @@ sitting inside a street name; it is remapped back to `LOC` after resolution.
   write audit.
 - Audit stores type + token + a masked preview only. It is not a second PII surface; the full
   value lives only in the vault (and `/reveal`, on explicit request).
+- **Every `/reveal` is recorded, and `actor` is required.** The record holds who / which token /
+  when — never the value, or the access log becomes the second copy of the data the vault exists
+  to contain. Misses are recorded too: a sweep of guessed tokens leaves no other trace. The ENGINE
+  writes it, not the UI — a log written by the caller about itself is not a log, and `curl` against
+  the sidecar is a supported shape.
+- **`requests` is a request counter, not `sum(entities)`.** It was the latter, so a plan sold as
+  "100 000 запросов" was consumed once per detected VALUE — several times faster than quoted and
+  impossible to reconcile against the customer's own gateway log. A request that finds no PII is
+  still billable, so it cannot be derived from the events table.
+- The self-check runs the REAL `/mask` + `/unmask` under `SELFCHECK_ORG`, which `billing_totals`
+  excludes: a customer proving our product works must not pay for it.
 - **No bundle means no detection, not less detection.** `names.py` used to treat an empty
   dictionary as a supported state; that is inverted now. A gateway detecting with half its
   gazetteer leaks silently, which is worse than a stopped service.
@@ -210,9 +256,9 @@ sitting inside a street name; it is remapped back to `LOC` after resolution.
   `re.IGNORECASE` uniformly at compile time turned the marker-less address pattern's
   `[А-ЯЁ][а-яё]+` from "a Capitalised word" into "any word" — "течение 12" became an address, and
   those inflated LOC spans outranked NAME and swallowed real people (-12 PERSON on NEREL).
-- **`obscura/` must never import from `licensing/`.** The licensing package holds the assets; an
+- **`veilgate/` must never import from `licensing/`.** The licensing package holds the assets; an
   import would drag them into the image and defeat the lease. Shared code goes the other way
-  (`obscura/bundle.py` is imported BY the server).
+  (`veilgate/bundle.py` is imported BY the server).
 - The engine writes nothing to its own filesystem (`PYTHONDONTWRITEBYTECODE=1`), so "did the
   container write a file" has a clean answer — gate L5 depends on it.
 
@@ -227,7 +273,9 @@ a `CapacityLimiter` so `/health` stays responsive and bursts queue instead of th
 is what keeps tokens consistent across workers. Audit is recorded on the cache **miss** only — the
 same value re-sent in a growing transcript is one protected value, not N.
 
-Env knobs: `OBSCURA_DB_DIR`, `OBSCURA_WORKERS`, `OBSCURA_MASK_CONCURRENCY`, `OBSCURA_MASK_CACHE_SIZE`.
+Env knobs: `VEILGATE_DB_DIR`, `VEILGATE_WORKERS`, `VEILGATE_MASK_CONCURRENCY`, `VEILGATE_MASK_CACHE_SIZE`,
+`VEILGATE_ADMIN_TOKEN`, `VEILGATE_UI_PORT`, `VEILGATE_UI_TOKEN`, `VEILGATE_UI_PASSWORD`, `VEILGATE_UI`,
+`VEILGATE_UI_ORG`, `VEILGATE_UI_STATIC`, `VEILGATE_ROLE`.
 
 ## Eval discipline
 

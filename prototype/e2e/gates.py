@@ -19,10 +19,10 @@ cheats is worse than no gate:
 
 usage:
     python3 e2e/gates.py                    # source image
-    python3 e2e/gates.py --image obscura:compiled          # gate P7
+    python3 e2e/gates.py --image veilgate:compiled          # gate P7
     python3 e2e/gates.py --only L4,L5       # a subset, for iterating
 
-    OBSCURA_SIGNING_KEY=... python3 e2e/gates.py --image obscura:compiled --skip-build
+    VEILGATE_SIGNING_KEY=... python3 e2e/gates.py --image veilgate:compiled --skip-build
 
 The verification key is compiled into the release binary, so a fresh key means a
 fresh Nuitka compile. Pass the key the image was built with, plus --skip-build,
@@ -55,8 +55,9 @@ _COMPOSE = _HERE / "compose.yml"
 _ENV_FILE = _HERE / ".env"
 
 SIDECAR = "http://127.0.0.1:18000"
+UI = "http://127.0.0.1:18081"
 ADMIN = "http://127.0.0.1:19443"
-NETWORK = "obscura-e2e_default"
+NETWORK = "veilgate-e2e_default"
 ORG = "acme"
 
 TTL_SECONDS = 60
@@ -137,7 +138,7 @@ def run_disposable_sidecar(image: str, env: dict[str, str], timeout: int) -> tup
     Used by the startup gates. Returns (exit_code, logs). A container still alive
     at the timeout is reported as exit code 0, which those gates treat as a
     failure — 'it kept running' is exactly what must not happen."""
-    name = f"obscura-oneshot-{int(time.monotonic() * 1000)}"
+    name = f"veilgate-oneshot-{int(time.monotonic() * 1000)}"
     args = ["docker", "run", "--name", name, "--network", NETWORK,
             "-v", f"{_HERE / 'certs'}:/certs:ro"]
     for key, value in env.items():
@@ -162,6 +163,21 @@ def gate(name: str, ok: bool, detail: str) -> bool:
     return ok
 
 
+def run_gate(name: str, fn, *args) -> None:
+    """Call one gate so that a bug IN THE GATE cannot hide the other fifteen.
+
+    A gate that raises used to abort the whole suite: an empty sign-in token
+    flowed into an Authorization header, httpx raised, and a run that had
+    already proved fourteen things reported nothing but a stack trace. An
+    exception here is a failure of that gate and of nothing else — and it is
+    reported with its type and message, so it is still diagnosable.
+    """
+    try:
+        fn(*args)
+    except Exception as error:  # noqa: BLE001 — a gate may fail any way it likes
+        gate(name, False, f"gate raised {type(error).__name__}: {error}")
+
+
 # --- setup ---------------------------------------------------------------
 
 def build_stand(image: str, workers: int, skip_build: bool) -> str:
@@ -170,7 +186,7 @@ def build_stand(image: str, workers: int, skip_build: bool) -> str:
     # A fixed key can be supplied so an already-built image stays valid: the
     # verification key is compiled in, so generating a fresh one would force a
     # full Nuitka recompile of the release image on every run.
-    existing = os.environ.get("OBSCURA_SIGNING_KEY", "")
+    existing = os.environ.get("VEILGATE_SIGNING_KEY", "")
     signing_key = (Ed25519PrivateKey.from_private_bytes(base64.b64decode(existing))
                    if existing else Ed25519PrivateKey.generate())
     private_b64 = encode_private(signing_key)
@@ -181,34 +197,34 @@ def build_stand(image: str, workers: int, skip_build: bool) -> str:
     print("  self-signed CA + server cert written")
 
     sh(["docker", "build", "-f", str(_ROOT / "licensing" / "Dockerfile"),
-        "-t", "obscura-licensing:e2e", str(_ROOT)], True, 1200)
+        "-t", "veilgate-licensing:e2e", str(_ROOT)], True, 1200)
     if skip_build:
         print(f"  reusing the existing {image}")
-    elif image == "obscura:source":
+    elif image == "veilgate:source":
         # The verification key is baked in at BUILD time, as it is for a release:
         # a key the customer could override in the environment would let them
         # sign their own bundles.
         sh(["docker", "build", "-f", str(_ROOT / "Dockerfile"),
-            "--build-arg", f"OBSCURA_LICENSE_PUBKEY={public_b64}",
+            "--build-arg", f"VEILGATE_LICENSE_PUBKEY={public_b64}",
             "-t", image, str(_ROOT)], True, 1800)
         print(f"  images built ({image})")
     else:
         sh(["docker", "build", "-f", str(_ROOT / "Dockerfile.nuitka"),
-            "--build-arg", f"OBSCURA_LICENSE_PUBKEY={public_b64}",
+            "--build-arg", f"VEILGATE_LICENSE_PUBKEY={public_b64}",
             "-t", image, str(_ROOT)], True, 3600)
         print(f"  images built ({image})")
 
     _ENV_FILE.write_text(
-        f"OBSCURA_SIGNING_KEY={private_b64}\n"
-        f"OBSCURA_IMAGE={image}\n"
-        f"OBSCURA_KEY=\n"
-        f"OBSCURA_WORKERS={workers}\n"
-        f"OBSCURA_LEASE_TTL_SECONDS={TTL_SECONDS}\n"
-        f"OBSCURA_GRACE_SECONDS={GRACE_SECONDS}\n"
-        f"OBSCURA_FAULT_INJECT=\n"
-        f"OBSCURA_LOG_RAW_BODY=\n"
-        f"OBSCURA_LD_PRELOAD=\n"
-        f"OBSCURA_FAKETIME_FILE=\n"
+        f"VEILGATE_SIGNING_KEY={private_b64}\n"
+        f"VEILGATE_IMAGE={image}\n"
+        f"VEILGATE_KEY=\n"
+        f"VEILGATE_WORKERS={workers}\n"
+        f"VEILGATE_LEASE_TTL_SECONDS={TTL_SECONDS}\n"
+        f"VEILGATE_GRACE_SECONDS={GRACE_SECONDS}\n"
+        f"VEILGATE_FAULT_INJECT=\n"
+        f"VEILGATE_LOG_RAW_BODY=\n"
+        f"VEILGATE_LD_PRELOAD=\n"
+        f"VEILGATE_FAKETIME_FILE=\n"
     )
     compose(["up", "-d", "license"], True, 600)
     if not wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
@@ -217,7 +233,7 @@ def build_stand(image: str, workers: int, skip_build: bool) -> str:
 
     key = httpx.post(f"{ADMIN}/admin/issue", json={"org_id": ORG}, timeout=15).json()["key"]
     print(f"  key issued for {ORG}: {key[:18]}...")
-    set_env("OBSCURA_KEY", key)
+    set_env("VEILGATE_KEY", key)
     return key
 
 
@@ -240,8 +256,8 @@ def start_sidecar() -> bool:
 
 def gate_l1(image: str) -> bool:
     code, output = run_disposable_sidecar(image, {
-        "OBSCURA_LICENSE_URL": "https://license:8443",
-        "OBSCURA_LICENSE_CA": "/certs/ca.pem",
+        "VEILGATE_LICENSE_URL": "https://license:8443",
+        "VEILGATE_LICENSE_CA": "/certs/ca.pem",
     }, 90)
     served = _port_answered()
     return gate("L1 no key -> refuses to start",
@@ -251,9 +267,9 @@ def gate_l1(image: str) -> bool:
 
 def gate_l2(image: str) -> bool:
     code, output = run_disposable_sidecar(image, {
-        "OBSCURA_LICENSE_URL": "https://license:8443",
-        "OBSCURA_LICENSE_CA": "/certs/ca.pem",
-        "OBSCURA_LICENSE_KEY": "obsc_live_totally_made_up_key",
+        "VEILGATE_LICENSE_URL": "https://license:8443",
+        "VEILGATE_LICENSE_CA": "/certs/ca.pem",
+        "VEILGATE_LICENSE_KEY": "vg_live_totally_made_up_key",
     }, 90)
     return gate("L2 unknown key -> refuses to start",
                 code != 0 and "license_invalid" in output,
@@ -269,13 +285,13 @@ def gate_l2b(image: str, key: str) -> bool:
     bakes the key at build time and must ignore the environment entirely — which
     shows up as a container that starts NORMALLY even when the variable is set to
     garbage."""
-    name = f"obscura-keytest-{int(time.monotonic() * 1000)}"
+    name = f"veilgate-keytest-{int(time.monotonic() * 1000)}"
     args = ["docker", "run", "-d", "--name", name, "--network", NETWORK,
             "-v", f"{_HERE / 'certs'}:/certs:ro",
-            "-e", "OBSCURA_LICENSE_URL=https://license:8443",
-            "-e", "OBSCURA_LICENSE_CA=/certs/ca.pem",
-            "-e", f"OBSCURA_LICENSE_KEY={key}",
-            "-e", "OBSCURA_LICENSE_PUBKEY=bm90LW91ci1rZXktYXQtYWxs",
+            "-e", "VEILGATE_LICENSE_URL=https://license:8443",
+            "-e", "VEILGATE_LICENSE_CA=/certs/ca.pem",
+            "-e", f"VEILGATE_LICENSE_KEY={key}",
+            "-e", "VEILGATE_LICENSE_PUBKEY=bm90LW91ci1rZXktYXQtYWxs",
             image]
     sh(args, False, 120)
 
@@ -300,9 +316,9 @@ def gate_l3(image: str, key: str) -> bool:
     compose(["stop", "license"], True, 120)
     try:
         code, output = run_disposable_sidecar(image, {
-            "OBSCURA_LICENSE_URL": "https://license:8443",
-            "OBSCURA_LICENSE_CA": "/certs/ca.pem",
-            "OBSCURA_LICENSE_KEY": key,
+            "VEILGATE_LICENSE_URL": "https://license:8443",
+            "VEILGATE_LICENSE_CA": "/certs/ca.pem",
+            "VEILGATE_LICENSE_KEY": key,
         }, 150)
     finally:
         compose(["start", "license"], True, 120)
@@ -379,7 +395,7 @@ def gate_l5() -> bool:
     found = sidecar_exec(["sh", "-c",
                           f"grep -rlF '{marker}' /app /data /tmp /var /etc /root /home /usr "
                           f"2>/dev/null | head -5 || true"]).stdout.strip()
-    data_dir = sidecar_exec(["sh", "-c", "ls /app/obscura/data 2>&1 || true"]).stdout
+    data_dir = sidecar_exec(["sh", "-c", "ls /app/veilgate/data 2>&1 || true"]).stdout
 
     ok = not found and not outside_data and "No such file" in data_dir
     return gate("L5 bundle never touches disk", ok,
@@ -458,7 +474,7 @@ def _memscan() -> tuple[int, int]:
     proc = sh(["docker", "run", "--rm", f"--pid=container:{container_id}",
                "--cap-add=SYS_PTRACE", "-v", f"{_HERE}:/e2e:ro",
                # "serve" matches both shapes of the worker: `python serve_main.py`
-               # in the source image and `./obscura-serve` in the compiled one.
+               # in the source image and `./veilgate-serve` in the compiled one.
                "python:3.12-slim", "python", "/e2e/memscan.py", marker, "serve"], False, 300)
     hits = re.search(r"HITS (\d+)", proc.stdout)
     rss = re.search(r"RSS_KB (\d+)", proc.stdout)
@@ -596,8 +612,8 @@ def gate_l11() -> bool:
                     "libfaketime unavailable — the scenario could not be run")
 
     _FAKETIME_TS.write_text("+0\n")
-    set_env("OBSCURA_LD_PRELOAD", _FAKETIME_SO)
-    set_env("OBSCURA_FAKETIME_FILE", "/faketime/ts")
+    set_env("VEILGATE_LD_PRELOAD", _FAKETIME_SO)
+    set_env("VEILGATE_FAKETIME_FILE", "/faketime/ts")
     compose(["up", "-d", "--force-recreate", "sidecar"], True, 600)
     if not wait_until(lambda: license_state()["state"] == "active", 240, 3,
                       "sidecar active under libfaketime"):
@@ -633,8 +649,8 @@ def gate_l11() -> bool:
 
 
 def _clear_faketime() -> None:
-    set_env("OBSCURA_LD_PRELOAD", "")
-    set_env("OBSCURA_FAKETIME_FILE", "")
+    set_env("VEILGATE_LD_PRELOAD", "")
+    set_env("VEILGATE_FAKETIME_FILE", "")
     compose(["up", "-d", "--force-recreate", "sidecar"], False, 600)
     wait_until(lambda: license_state()["state"] in ("active", "stale", "expired"),
                240, 3, "sidecar back without libfaketime")
@@ -676,20 +692,139 @@ def gate_l10() -> bool:
 
 # --- gates: integrity and counters ---------------------------------------
 
+def ui_signin_token() -> str:
+    """The sign-in token, read the way the customer is told to read it.
+
+    Returns "" when the line is absent, and the callers report that as a plain
+    failure. The first version let the empty string flow into an Authorization
+    header, where httpx raised `Illegal header value b'Bearer '` — the gate died
+    mid-suite and took every result after it with it, so a real product bug (the
+    UI process had no logging configuration, and the line was never printed)
+    surfaced as a stack trace instead of as the FAIL that names it.
+    """
+    for line in logs("sidecar").splitlines():
+        if "?token=" in line:
+            return line.split("?token=", 1)[1].strip()
+    return ""
+
+
+def ui_session() -> tuple[str, str]:
+    """(session, why_not). Never raises, never returns a half-usable header."""
+    token = ui_signin_token()
+    if not token:
+        return "", "no sign-in url in the container log"
+    response = httpx.post(f"{UI}/api/signin", timeout=15, json={"secret": token})
+    if response.status_code != 200:
+        return "", f"signin returned {response.status_code}"
+    session = response.json().get("session", "")
+    return (session, "") if session else ("", "signin returned no session")
+
+
+def gate_l16() -> bool:
+    """The operator interface, in the real container, end to end.
+
+    Three things that only a container can prove, because each of them is a
+    property of how the image is assembled rather than of the code:
+
+      * the page and its files actually SHIPPED — the release image builds them
+        into /app/ui by a different mechanism than the source image, and a
+        missing --include-data-dir shows up here and nowhere else;
+      * the sign-in token is discoverable the way the customer is told to find
+        it, by reading the container log;
+      * one operator token is shared by every worker. With SO_REUSEPORT the
+        kernel moves consecutive calls between processes, so a per-process token
+        passes any single-request check and then 401s in production.
+    """
+    page = httpx.get(f"{UI}/", timeout=15)
+    assets = [httpx.get(f"{UI}/static/{name}", timeout=15)
+              for name in ("app.js", "app.css", "vendor/preact.mjs")]
+    anonymous = httpx.get(f"{UI}/api/engine/status", timeout=15)
+
+    # The customer's own instruction is "read the log", so the gate reads it.
+    session, why_not = ui_session()
+    if not session:
+        return gate("L16 operator interface works in the container", False,
+                    f"page={page.status_code} anon={anonymous.status_code} "
+                    f"could_not_sign_in={why_not}")
+    auth = {"Authorization": f"Bearer {session}"}
+
+    # Ten calls, because one proves nothing about a per-worker token: the point
+    # is that the kernel hands these to different processes and every one of
+    # them accepts the same credential.
+    codes = {httpx.get(f"{UI}/api/engine/status", timeout=30, headers=auth,
+                       params={"org_id": ORG}).status_code for _ in range(10)}
+    body = httpx.get(f"{UI}/api/engine/status", timeout=30, headers=auth,
+                     params={"org_id": ORG}).json() if codes == {200} else {}
+    workers = {process["pid"] for process in body.get("engine", {}).get("processes", [])}
+
+    ok = (page.status_code == 200 and all(a.status_code == 200 for a in assets)
+          and anonymous.status_code == 401 and codes == {200}
+          and len(workers) >= 2)
+    return gate("L16 operator interface works in the container", ok,
+                f"page={page.status_code} assets={[a.status_code for a in assets]} "
+                f"anon={anonymous.status_code} signed_in=True "
+                f"status_codes={sorted(codes)} workers_seen={len(workers)}")
+
+
+def gate_l17() -> bool:
+    """A reveal through the interface is recorded, and the record cannot lie.
+
+    The access log is the thing that keeps this product from handing the
+    customer an unaudited disclosure channel, so the gate checks the property
+    that makes it worth having: the actor is stamped by the server, not chosen
+    by whoever is at the keyboard.
+    """
+    session, why_not = ui_session()
+    if not session:
+        return gate("L17 reveals are audited and the actor cannot be forged",
+                    False, f"could_not_sign_in={why_not}")
+    auth = {"Authorization": f"Bearer {session}"}
+
+    events = httpx.get(f"{UI}/api/engine/events", timeout=30, headers=auth,
+                       params={"org_id": ORG, "limit": 5}).json()
+    if not events.get("events"):
+        return gate("L17 reveals are audited and the actor cannot be forged",
+                    False, "no events in the log to reveal")
+    target = events["events"][0]
+
+    revealed = httpx.post(f"{UI}/api/engine/reveal", timeout=30, headers=auth, json={
+        "org_id": ORG, "token": target["token"], "actor": "кто-то другой",
+    })
+    log = httpx.get(f"{UI}/api/engine/reveals", timeout=30, headers=auth,
+                    params={"org_id": ORG}).json()
+    latest = log.get("reveals", [{}])[0]
+    value = revealed.json().get("value") if revealed.status_code == 200 else None
+
+    # Straight at the engine, with no operator token: the disclosure endpoint
+    # must not be open to anything that can merely reach the port.
+    direct = httpx.post(f"{SIDECAR}/reveal", timeout=15,
+                        json={"org_id": ORG, "token": target["token"], "actor": "x"})
+
+    ok = (revealed.status_code == 200 and value
+          and latest.get("actor", "").startswith("ui:")
+          and latest.get("actor") != "кто-то другой"
+          and str(value) not in json.dumps(log, ensure_ascii=False)
+          and direct.status_code == 401)
+    return gate("L17 reveals are audited and the actor cannot be forged", ok,
+                f"reveal={revealed.status_code} actor={latest.get('actor')!r} "
+                f"value_in_log={str(value) in json.dumps(log, ensure_ascii=False)} "
+                f"unauthenticated_direct={direct.status_code}")
+
+
 def gate_l13(image: str) -> bool:
     """A broken bundle must stop the process, not half-configure the detector."""
     compose_down()
-    set_env("OBSCURA_FAULT_INJECT", "corrupt_bundle")
+    set_env("VEILGATE_FAULT_INJECT", "corrupt_bundle")
     compose(["up", "-d", "license"], True, 600)
     wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
                120, 2, "licensing admin")
     key = httpx.post(f"{ADMIN}/admin/issue", json={"org_id": ORG}, timeout=15).json()["key"]
     code, output = run_disposable_sidecar(image, {
-        "OBSCURA_LICENSE_URL": "https://license:8443",
-        "OBSCURA_LICENSE_CA": "/certs/ca.pem",
-        "OBSCURA_LICENSE_KEY": key,
+        "VEILGATE_LICENSE_URL": "https://license:8443",
+        "VEILGATE_LICENSE_CA": "/certs/ca.pem",
+        "VEILGATE_LICENSE_KEY": key,
     }, 150)
-    set_env("OBSCURA_FAULT_INJECT", "")
+    set_env("VEILGATE_FAULT_INJECT", "")
     ok = code != 0 and "bundle_corrupt" in output
     return gate("L13 corrupt bundle -> refuses, never degrades", ok,
                 f"exit={code} bundle_corrupt={'bundle_corrupt' in output}")
@@ -698,12 +833,12 @@ def gate_l13(image: str) -> bool:
 def gate_l12() -> bool:
     """Counters must reach us, match the sidecar, and carry no personal data."""
     compose_down()
-    set_env("OBSCURA_LOG_RAW_BODY", "1")
+    set_env("VEILGATE_LOG_RAW_BODY", "1")
     compose(["up", "-d", "license"], True, 600)
     wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
                120, 2, "licensing admin")
     key = httpx.post(f"{ADMIN}/admin/issue", json={"org_id": ORG}, timeout=15).json()["key"]
-    set_env("OBSCURA_KEY", key)
+    set_env("VEILGATE_KEY", key)
     if not start_sidecar():
         return gate("L12 counters match and carry no PII", False, "sidecar did not start")
 
@@ -729,7 +864,7 @@ def gate_l12() -> bool:
     entity_types = set(remote["usage"]["entities"]) if remote["usage"]["entities"] else set()
     local_types = set(local.get("protected_counts", {}))
     ok = reported and not on_wire and entity_types and entity_types <= local_types
-    set_env("OBSCURA_LOG_RAW_BODY", "")
+    set_env("VEILGATE_LOG_RAW_BODY", "")
     return gate("L12 counters match and carry no PII", ok,
                 f"reports={remote['usage']['reports']} entities={len(entity_types)} "
                 f"subset_of_local={entity_types <= local_types} pii_on_wire={on_wire}")
@@ -746,13 +881,13 @@ def gate_l15() -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--image", default="obscura:source")
+    parser.add_argument("--image", default="veilgate:source")
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--only", default="")
     parser.add_argument("--keep", action="store_true",
                         help="leave the stand running for inspection")
     parser.add_argument("--skip-build", action="store_true",
-                        help="reuse the existing image (needs a matching OBSCURA_SIGNING_KEY)")
+                        help="reuse the existing image (needs a matching VEILGATE_SIGNING_KEY)")
     args = parser.parse_args()
     selected = {name.strip() for name in args.only.split(",") if name.strip()}
 
@@ -766,48 +901,52 @@ def main() -> None:
     try:
         print("== startup refusal ==")
         if wanted("L1"):
-            gate_l1(args.image)
+            run_gate("L1", gate_l1, args.image)
         if wanted("L2"):
-            gate_l2(args.image)
+            run_gate("L2", gate_l2, args.image)
         if wanted("L2b"):
-            gate_l2b(args.image, key)
+            run_gate("L2b", gate_l2b, args.image, key)
         if wanted("L3"):
-            gate_l3(args.image, key)
+            run_gate("L3", gate_l3, args.image, key)
 
         print("== healthy instance ==")
         if not start_sidecar():
             gate("SETUP sidecar reaches active", False, "never became active")
             raise SystemExit(_report(started))
         if wanted("L4"):
-            gate_l4()
+            run_gate("L4", gate_l4)
         if wanted("L5"):
-            gate_l5()
+            run_gate("L5", gate_l5)
         if wanted("L14"):
-            gate_l14a()
+            run_gate("L14a", gate_l14a)
         if wanted("L6"):
-            gate_l6()
+            run_gate("L6", gate_l6)
+        if wanted("L16"):
+            run_gate("L16", gate_l16)
+        if wanted("L17"):
+            run_gate("L17", gate_l17)
 
         print("== degradation ladder ==")
         if wanted("L7"):
-            gate_l7()
+            run_gate("L7", gate_l7)
         if wanted("L8"):
-            gate_l8()
+            run_gate("L8", gate_l8)
         if wanted("L14"):
-            gate_l14b()
+            run_gate("L14b", gate_l14b)
         if wanted("L9"):
-            gate_l9()
+            run_gate("L9", gate_l9)
         if wanted("L11"):
-            gate_l11()
+            run_gate("L11", gate_l11)
         if wanted("L10"):
-            gate_l10()
+            run_gate("L10", gate_l10)
 
         print("== integrity and counters ==")
         if wanted("L13"):
-            gate_l13(args.image)
+            run_gate("L13", gate_l13, args.image)
         if wanted("L12"):
-            gate_l12()
+            run_gate("L12", gate_l12)
         if wanted("L15"):
-            gate_l15()
+            run_gate("L15", gate_l15)
     finally:
         if not args.keep:
             compose(["down", "-v"], False, 300)

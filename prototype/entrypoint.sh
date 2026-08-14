@@ -1,5 +1,5 @@
 #!/bin/sh
-# Obscura sidecar entrypoint — N independent worker processes, one shared port.
+# Veilgate sidecar entrypoint — N independent worker processes, one shared port.
 #
 # Real CPU parallelism comes from PROCESSES, not threads: pymorphy3 holds the GIL
 # during morphology, so N threads in one process still serialize on one core.
@@ -11,7 +11,7 @@
 # see serve_main.py.
 #
 # MEMORY/THROUGHPUT TRADEOFF (measured ~300 MB resident per worker for the model
-# stack): pick OBSCURA_WORKERS so N*300 MB fits the container memory limit with
+# stack): pick VEILGATE_WORKERS so N*300 MB fits the container memory limit with
 # headroom, and N <= vCPU count.
 #
 # Each worker LEASES ITS OWN BUNDLE: its X25519 keypair never leaves its memory,
@@ -26,31 +26,69 @@
 
 set -e
 
-if [ -n "$OBSCURA_WORKERS" ]; then
-    WORKERS="$OBSCURA_WORKERS"
+if [ -n "$VEILGATE_WORKERS" ]; then
+    WORKERS="$VEILGATE_WORKERS"
 else
     WORKERS="$(nproc 2>/dev/null || echo 1)"
 fi
 
 # One id per CONTAINER, so the licensing server can tell "eight workers of one
 # deployment" from "eight deployments".
-if [ -z "$OBSCURA_INSTANCE_ID" ]; then
-    OBSCURA_INSTANCE_ID="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-    export OBSCURA_INSTANCE_ID
+if [ -z "$VEILGATE_INSTANCE_ID" ]; then
+    VEILGATE_INSTANCE_ID="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    export VEILGATE_INSTANCE_ID
 fi
 
-echo "obscura: starting ${WORKERS} worker(s), instance ${OBSCURA_INSTANCE_ID}"
+# The operator token gates /reveal and the whole log/statistics surface. It MUST
+# be generated here, once, and inherited: each worker generating its own would
+# mean N different valid tokens for one port, and SO_REUSEPORT would hand the
+# interface a different worker on the next connection — the log would work and
+# then 401 at random.
+if [ -z "$VEILGATE_ADMIN_TOKEN" ]; then
+    VEILGATE_ADMIN_TOKEN="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    export VEILGATE_ADMIN_TOKEN
+fi
+# Sign-in token for the interface. Generated here rather than in the UI process
+# so it survives a UI restart: an operator who followed the link from the log
+# should not be locked out because that process was restarted at 03:00.
+if [ -z "$VEILGATE_UI_TOKEN" ]; then
+    VEILGATE_UI_TOKEN="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    export VEILGATE_UI_TOKEN
+fi
+
+echo "veilgate: starting ${WORKERS} worker(s), instance ${VEILGATE_INSTANCE_ID}"
 
 pids=""
 for i in $(seq 1 "${WORKERS}"); do
-    ${OBSCURA_SERVE_CMD:-./obscura-serve} &
+    ${VEILGATE_SERVE_CMD:-./veilgate-serve} &
     pids="$pids $!"
 done
+
+# The interface is supervised separately and deliberately does NOT join `pids`.
+# A worker exiting means "no valid licence" and must stop the container; the
+# interface failing means one screen is unavailable while masking is fine, and
+# taking a working gateway down over it would be the wrong trade. It is
+# restarted instead — and its restart is exactly the moment the operator needs
+# it, since "движок не отвечает" is a state only the interface can report.
+ui_pid=""
+if [ "${VEILGATE_UI:-1}" = "1" ]; then
+    (
+        while :; do
+            VEILGATE_ROLE=ui ${VEILGATE_SERVE_CMD:-./veilgate-serve} || true
+            echo "veilgate: local interface exited — restarting in 3s"
+            sleep 3
+        done
+    ) &
+    ui_pid=$!
+fi
 
 # Any worker exiting takes the container down: exiting is how a worker reports
 # "I have no valid licence", and that verdict applies to all of them.
 terminate() {
     for pid in $pids; do kill "$pid" 2>/dev/null || true; done
+    # The supervisor subshell is killed first, or it would helpfully restart the
+    # interface while the container is on its way down.
+    [ -n "$ui_pid" ] && kill "$ui_pid" 2>/dev/null || true
     wait 2>/dev/null || true
 }
 trap terminate INT TERM
@@ -65,7 +103,7 @@ while :; do
         if ! kill -0 "$pid" 2>/dev/null; then
             status=0
             wait "$pid" || status=$?
-            echo "obscura: worker ${pid} exited with status ${status} — stopping the container"
+            echo "veilgate: worker ${pid} exited with status ${status} — stopping the container"
             terminate
             exit "${status}"
         fi
