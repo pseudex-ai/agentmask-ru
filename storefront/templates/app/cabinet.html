@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Кабинет — veilgate{% endblock %}
+{% block nav %}{% endblock %}
+{% block content %}
+<section>
+  <div class="sec-head">
+    <div>
+      <h2>{{ organization.display_name }}</h2>
+      <div class="sec-meta" style="margin-top:8px">org_id <span class="mono" style="color:var(--text-3)">{{ organization.id }}</span></div>
+    </div>
+    {% if subscription %}
+      <div>
+        {% if subscription.state == 'trial' %}<span class="pill warn">ПРОБНЫЙ ПЕРИОД ДО {{ subscription.trial_ends_at|date:"d.m.Y" }}</span>
+        {% elif subscription.state == 'active' %}<span class="pill ok">АКТИВНА</span>
+        {% elif subscription.state == 'past_due' %}<span class="pill bad">НЕ ОПЛАЧЕНА — СЕРВИС ОСТАНОВЛЕН</span>
+        {% else %}<span class="pill">ОТМЕНЕНА</span>{% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="app">
+    <div>
+      <div class="label" style="margin-bottom:14px">ТАРИФ</div>
+      {% if subscription %}
+        <div class="kv"><span class="k">план</span><span class="v">{{ subscription.plan.title }}</span></div>
+        <div class="kv"><span class="k">в месяц</span><span class="v">{{ subscription.plan.monthly_price|floatformat:0 }} ₽</span></div>
+        <div class="kv"><span class="k">включено запросов</span><span class="v">{{ included }}</span></div>
+        <div class="kv"><span class="k">период до</span><span class="v">{{ subscription.current_period_end|date:"d.m.Y" }}</span></div>
+      {% endif %}
+    </div>
+    <div>
+      <div class="label" style="margin-bottom:14px">ИСПОЛЬЗОВАНО</div>
+      {% if unreachable %}
+        <div style="font-size:14px;color:var(--amber);line-height:1.6">Счётчики сейчас недоступны — лицензионный сервер не отвечает. Это не влияет на работу вашего контейнера: он продолжает маскировать на выданной аренде.</div>
+      {% else %}
+        <div style="font-size:30px;font-weight:900;letter-spacing:-.02em">{{ used }}</div>
+        <div style="font-size:12.5px;color:var(--dim-2);margin-top:2px">запросов за период · из {{ included }}</div>
+        <div class="meter"><i class="{% if percent >= 100 %}over{% endif %}" style="width:{{ percent }}%"></i></div>
+        <div style="font-size:13px;color:var(--dim-2);margin-top:12px;line-height:1.6">Цифра приходит из ваших же контейнеров вместе с продлением аренды. Мы её не измеряем и измерить не можем.</div>
+      {% endif %}
+    </div>
+    <div>
+      <div class="label" style="margin-bottom:14px">БЫСТРЫЙ СТАРТ</div>
+      <div style="font-size:13.5px;color:var(--dim);line-height:1.6;margin-bottom:12px">Команда запуска для этой организации:</div>
+      <div class="copybar" style="margin-top:0">
+        <code data-copy="docker run -d --name veilgate -p 8000:8000 -p 8081:8081 -v veilgate-data:/data -e VEILGATE_LICENSE_KEY=&lt;ваш ключ&gt; {{ image }}">docker run … {{ image }}</code>
+        <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
+      </div>
+    </div>
+  </div>
+
+  <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Ключи</h3>
+  <table class="list">
+    <tr><th>ПРЕФИКС</th><th>НАЗВАНИЕ</th><th>СРЕДА</th><th>ВЫПУЩЕН</th><th></th></tr>
+    {% for key in keys %}
+    <tr>
+      <td class="mono">{{ key.prefix }}…</td>
+      <td>{{ key.label|default:"—" }}</td>
+      <td class="mono">{{ key.get_environment_display }}</td>
+      <td class="mono">{{ key.created_at|date:"d.m.Y" }}</td>
+      <td style="text-align:right">
+        <form method="post" action="{% url 'revoke_key' key.id %}" style="display:inline">{% csrf_token %}
+          <button class="btn" type="submit">ОТОЗВАТЬ</button>
+        </form>
+      </td>
+    </tr>
+    {% empty %}<tr><td colspan="5" style="color:var(--dim-2)">Ключей нет.</td></tr>{% endfor %}
+  </table>
+  <form method="post" action="{% url 'new_key' %}" style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center">
+    {% csrf_token %}
+    <input class="field" style="width:220px" type="text" name="label" placeholder="название (например, прод)">
+    <select class="field" style="width:auto" name="environment"><option value="live">прод</option><option value="test">стенд</option></select>
+    <button class="btn accent" type="submit">ВЫПУСТИТЬ КЛЮЧ</button>
+    <span style="font-size:13px;color:var(--dim-2)">Новый ключ показывается один раз.</span>
+  </form>
+
+  <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Счета и закрывающие</h3>
+  <table class="list">
+    <tr><th>НОМЕР</th><th>ПЕРИОД</th><th>СУММА</th><th>СТАТУС</th><th></th></tr>
+    {% for invoice in invoices %}
+    <tr>
+      <td class="mono">{{ invoice.number }}</td>
+      <td class="mono">{{ invoice.period_start|date:"d.m.Y" }} — {{ invoice.period_end|date:"d.m.Y" }}</td>
+      <td class="mono">{{ invoice.total }} ₽</td>
+      <td>{% if invoice.state == 'paid' %}<span class="pill ok">ОПЛАЧЕН</span>{% elif invoice.state == 'issued' %}<span class="pill warn">ВЫСТАВЛЕН</span>{% else %}<span class="pill">{{ invoice.get_state_display|upper }}</span>{% endif %}</td>
+      <td style="text-align:right"><a class="btn" href="{% url 'invoice_detail' invoice.number %}">ОТКРЫТЬ</a></td>
+    </tr>
+    {% empty %}<tr><td colspan="5" style="color:var(--dim-2)">Счетов пока нет — первый выставится по окончании пробного периода.</td></tr>{% endfor %}
+  </table>
+
+  <div style="margin-top:40px;padding:22px;border:1px solid var(--line-2);font-size:14px;color:var(--dim);line-height:1.7">
+    <b style="color:var(--text-3)">Здесь нет ваших диалогов, токенов и значений — и не будет.</b><br>
+    Всё это живёт только в вашем контуре, в локальном интерфейсе на порту 8081. Если бы мы показывали это здесь, мы стали бы обработчиком ваших персональных данных, и весь смысл продукта пропал бы.
+  </div>
+</section>
+{% endblock %}
+{% block script %}{% load static %}<script src="{% static 'landing.js' %}"></script>{% endblock %}

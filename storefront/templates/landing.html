@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section>
+  <div class="eyebrow"><i></i><span>МАСКИРОВАНИЕ ПД В КОНТУРЕ КЛИЕНТА</span></div>
+  <h1 class="hero">Модель не видит персональных данных. <span>Инструменты&nbsp;— видят.</span></h1>
+  <div class="hero-grid">
+    <div>
+      <p class="lede">Veilgate находит персональные данные в запросе и подменяет их правдоподобными фейками того же формата. Модель работает как обычно, а когда агент вызывает ваш инструмент, настоящий телефон и настоящий адрес возвращаются на место. Контейнер стоит внутри вашего периметра: к нам уходят только счётчики.</p>
+      <div style="display:flex;gap:12px;margin-top:36px;flex-wrap:wrap">
+        <a class="btn accent lg" href="#start">НАЧАТЬ ЗА 15 МИНУТ</a>
+        <a class="btn lg" href="#how">КАК ЭТО РАБОТАЕТ →</a>
+      </div>
+      <div class="copybar">
+        <code data-copy="docker run -d -p 8000:8000 -p 8081:8081 {{ image }}"><span style="color:#b3a0ea">$</span> docker run -d -p 8000:8000 -p 8081:8081 {{ image }}</code>
+        <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
+      </div>
+      <div class="fineprint">Пробный период {{ trial_days }} дней · карта не нужна · ключ выдаётся сразу · хостинг в РФ</div>
+    </div>
+    <div class="card">
+      <div class="label" style="margin-bottom:16px">ВСЁ, ЧТО МЫ ВИДИМ СО СВОЕЙ СТОРОНЫ</div>
+      <pre class="report">{"org_id": "org_4f3a8c",
+ "instance_id": "8f3c…",
+ "requests": 184203,
+ "entities": {"PHONE": 12043,
+              "NAME": 8871,
+              "LOC": 3310}}</pre>
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--line);font-size:13.5px;line-height:1.6;color:var(--dim)">Ни текстов, ни токенов, ни значений. Только счётчики в составе продления аренды.</div>
+    </div>
+  </div>
+</section>
+
+<section id="demo">
+  <div class="sec-head">
+    <h2>Что уйдёт в модель</h2>
+    <div class="sec-meta">ЗАГОТОВЛЕННЫЕ ПРИМЕРЫ · СЧИТАЕТСЯ У НАС</div>
+  </div>
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-demo="0">ФИО И ТЕЛЕФОН</button>
+    <button role="tab" aria-selected="false" data-demo="1">JSON ЗАКАЗА</button>
+    <button role="tab" aria-selected="false" data-demo="2">АДРЕС</button>
+    <button role="tab" aria-selected="false" data-demo="3">ДОКУМЕНТЫ</button>
+  </div>
+  <div class="demo">
+    <div>
+      <div class="label" style="margin-bottom:18px">ЧТО НАПИСАЛ ПОЛЬЗОВАТЕЛЬ</div>
+      <div class="body" id="demo-orig"></div>
+    </div>
+    <div>
+      <div class="label" style="margin-bottom:18px;color:var(--accent)">ЧТО УВИДИТ МОДЕЛЬ</div>
+      <div class="body" id="demo-masked"></div>
+    </div>
+  </div>
+  <div class="notes">
+    <div><b>Поле нельзя редактировать, и это принципиально.</b> Разрешив ввод своего текста, мы начали бы принимать чужие персональные данные на свой сервер — то есть потеряли бы ровно то, что продаём. Свой текст проверяется в локальной песочнице, внутри вашего контура.</div>
+    <div><b>Подмена формат-сохраняющая.</b> Модель видит валидный по виду телефон и валидный адрес, поэтому продолжает работать как обычно. Всё ломается тогда, когда на месте телефона стоит <span class="mono" style="color:var(--amber)">[PHONE_1]</span>.</div>
+  </div>
+</section>
+
+<section id="problem">
+  <div class="rows">
+    <div class="sec-meta">ПРОБЛЕМА</div>
+    <div>
+      <div class="numbered"><div class="n">01</div><div>
+        <h3>152-ФЗ запрещает отдавать ПД в зарубежную модель</h3>
+        <p>Передача персональных данных в модель за пределами РФ — это трансграничная передача с согласием, уведомлением и ответственностью. Для большинства продуктов этот путь просто закрыт.</p>
+      </div></div>
+      <div class="numbered"><div class="n">02</div><div>
+        <h3>Обычное маскирование ломает вызов инструмента</h3>
+        <p>Агент должен позвонить на настоящий телефон и доставить на настоящий адрес. Заменив их на [PHONE_1], вы получаете модель, которая не может выполнить задачу.</p>
+      </div></div>
+      <div class="numbered"><div class="n">03</div><div>
+        <h3>Собственный инференс стоит как отдел</h3>
+        <p>Держать свою модель ради соответствия закону — миллионы в год на железо и людей. Передовые модели при этом остаются недоступными.</p>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <h2 style="margin-bottom:12px">Как это работает</h2>
+  <p class="sub">Два прохода через сайдкар: на пути к модели и на пути к инструменту. Больше в вашем коде ничего не меняется.</p>
+  <div class="flow">
+    <div>пользователь <i>→</i> <em>[veilgate: находит ПД, подменяет на правдоподобные фейки]</em> <i>→</i> модель</div>
+    <div>модель <i>→</i> вызов инструмента с фейками <i>→</i> <em>[veilgate: возвращает настоящие]</em> <i>→</i> инструмент</div>
+  </div>
+  <div class="trio">
+    <div><div class="step">ШАГ 1</div><h3>Находим</h3><p>23 типа персональных данных: ФИО, телефоны, адреса, документы, email, номера карт. Русская морфология и разбор адресов — не набор регулярок.</p></div>
+    <div><div class="step">ШАГ 2</div><h3>Подменяем</h3><p>Каждое значение получает правдоподобный фейк того же формата и того же вида. Модель не догадывается, что данные подменены, и работает как обычно.</p></div>
+    <div><div class="step">ШАГ 3</div><h3>Возвращаем</h3><p>Когда модель вызывает ваш инструмент, Veilgate подставляет настоящие значения обратно. Инструмент отрабатывает на реальных данных, модель их не видела.</p></div>
+  </div>
+</section>
+
+<section id="legal">
+  <div class="split">
+    <div style="min-width:0">
+      <div class="sec-meta" style="margin-bottom:24px">152-ФЗ</div>
+      <h2 style="margin-bottom:24px">Мы не становимся обработчиком ваших данных</h2>
+      <p style="margin:0 0 20px;font-size:17px;line-height:1.65;color:var(--text-3);max-width:640px">Контейнер работает внутри вашего периметра. Персональные данные не покидают его: маскирование, волт и раскрытие значений живут на вашем железе. К нам уходит одно тело запроса — агрегатные счётчики в составе продления аренды.</p>
+      <p style="margin:0 0 32px;font-size:17px;line-height:1.65;color:var(--dim);max-width:640px">Поэтому у нас нет и не может быть экрана, на котором видно ваше сообщение, токен или значение. Оператор персональных данных — вы, и остаётесь им один.</p>
+      <div class="boundary">
+        <div class="row"><div>Ключи, тарифы, счета</div><div class="yes">да</div><div class="no">нет</div></div>
+        <div class="row"><div>Агрегатные счётчики</div><div class="yes">да</div><div class="yes">да</div></div>
+        <div class="row"><div>Тексты сообщений</div><div class="no">нет</div><div class="yes">да</div></div>
+        <div class="row"><div>Токены</div><div class="no">нет</div><div class="yes">да</div></div>
+        <div class="row"><div>Превью оригиналов</div><div class="no">нет</div><div class="yes">да</div></div>
+        <div class="row"><div>Раскрытие значения по токену</div><div class="no">нет</div><div class="yes">да</div></div>
+        <div class="row head"><div>ГДЕ ЖИВЁТ</div><div>САЙТ</div><div>ВАШ КОНТУР</div></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="label" style="margin-bottom:16px">ТЕЛО ОТЧЁТА, ДОСЛОВНО</div>
+        <pre class="report">{"org_id": "org_4f3a8c", "instance_id": "8f3c…",
+ "requests": 184203,
+ "entities": {"PHONE": 12043,
+              "NAME": 8871,
+              "LOC": 3310}}</pre>
+      </div>
+      <div class="warnbox">
+        <div class="label">FAIL-CLOSED</div>
+        <p>Аренда суточная. При неоплате сервис работает ещё 48 часов с предупреждениями, потом маскирование останавливается и шлюз перестаёт пропускать запросы. Данные не утекут даже в аварии: если маскировать нечем, запрос не уходит.</p>
+      </div>
+      <div style="border:1px solid var(--line-2);padding:22px;margin-top:20px">
+        <div class="label" style="margin-bottom:14px">ДЛЯ ВАШЕГО БЕЗОПАСНИКА</div>
+        <div style="display:grid;gap:10px;font-size:14.5px;color:var(--text-3)">
+          <div>Описание архитектуры «мы не обработчик» — документом</div>
+          <div>Проверка подписи образа: <span class="mono" style="color:var(--accent)">cosign verify</span></div>
+          <div>Политика обработки и оферта — постоянно доступны</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="start">
+  <div class="sec-head">
+    <h2>Быстрый старт</h2>
+    <div class="sec-meta">КЛЮЧ ДО ОПЛАТЫ · {{ trial_days }} ДНЕЙ ПРОБЫ</div>
+  </div>
+  <p class="sub">Ключ выдаётся сразу после регистрации по email, до оплаты. Команда запуска приходит уже с подставленным ключом — подставлять переменные вручную не нужно.</p>
+
+  <form method="post" action="{% url 'signup' %}" class="signup" style="margin-bottom:44px">
+    {% csrf_token %}
+    <input type="email" name="email" required placeholder="рабочий email" autocomplete="email">
+    <input type="text" name="company" placeholder="компания (необязательно)" autocomplete="organization">
+    <select name="plan">
+      {% for plan in plans %}<option value="{{ plan.code }}">{{ plan.title }} — {{ plan.monthly_price|floatformat:0 }} ₽/мес</option>{% endfor %}
+    </select>
+    <button class="btn accent" type="submit">ПОЛУЧИТЬ КЛЮЧ</button>
+    <div class="wide" style="font-size:13px;color:var(--dim-2);line-height:1.6">Карта не спрашивается. Ключ работает сразу и {{ trial_days }} дней бесплатно; счёт выставляется потом, по безналу.</div>
+  </form>
+
+  <div class="steps">
+    <div>
+      <div class="what"><div class="step">01</div><h3>Поднять контейнер</h3><div class="note">ключ уже подставлен</div></div>
+      <pre data-copy="docker run -d -p 8000:8000 -p 8081:8081 -v veilgate-data:/data \
+  -e VEILGATE_LICENSE_KEY=vg_live_… \
+  {{ image }}">docker run -d -p 8000:8000 -p 8081:8081 -v veilgate-data:/data \
+  -e VEILGATE_LICENSE_KEY=vg_live_… \
+  {{ image }}</pre>
+      <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
+    </div>
+    <div>
+      <div class="what"><div class="step">02</div><h3>Проверить, что живой</h3><div class="note">и открыть локальный интерфейс</div></div>
+      <pre data-copy="curl localhost:8000/health
+docker logs veilgate | grep 'локальный интерфейс' -A2">curl localhost:8000/health
+docker logs veilgate | grep 'локальный интерфейс' -A2
+# → http://localhost:8081/?token=9f3c1a…</pre>
+      <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
+    </div>
+    <div>
+      <div class="what"><div class="step">03</div><h3>Включить в шлюз</h3><div class="note">callback для LiteLLM или сырой HTTP</div></div>
+      <pre data-copy='masked = post("http://veilgate:8000/mask", {"org_id": org, "messages": messages})'>masked = post("http://veilgate:8000/mask",
+              {"org_id": org, "messages": messages})
+# → модель → обратно через /unmask</pre>
+      <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="sec-head">
+    <h2>Цены</h2>
+    <div class="sec-meta">ЦЕНА НА САЙТЕ. БЕЗ «СВЯЖИТЕСЬ С НАМИ»</div>
+  </div>
+  <div class="plans">
+    {% for plan in plans %}
+    <div class="plan{% if plan.code == 'prod' %} featured{% endif %}">
+      <div>
+        <div class="tag">{{ plan.title|upper }}</div>
+        <div class="price">{{ plan.monthly_price|floatformat:0 }} ₽</div>
+        <div class="per">в месяц · до {{ plan.included_requests }} запросов</div>
+      </div>
+      <ul>
+        <li>до {{ plan.max_instances }} инстанс(ов), {{ plan.max_keys }} ключ(а)</li>
+        <li>23 типа ПД, обратимые токены</li>
+        <li>Локальный интерфейс и журнал</li>
+        <li>Превышение — {{ plan.overage_per_1k }} ₽ за 1000 запросов</li>
+      </ul>
+      <form method="post" action="{% url 'signup' %}">
+        {% csrf_token %}
+        <input type="hidden" name="plan" value="{{ plan.code }}">
+        <input type="email" name="email" required placeholder="email" style="margin-bottom:8px">
+        <button class="btn {% if plan.code == 'prod' %}accent{% endif %} block" type="submit">НАЧАТЬ ПРОБУ</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="pricing-foot">
+    <div>Оплата безналом по счёту, акты и закрывающие — в кабинете</div>
+    <div>Пробный период {{ trial_days }} дней</div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="rows">
+    <div>
+      <h2>FAQ</h2>
+      <p style="margin:16px 0 0;font-size:15px;line-height:1.6;color:var(--dim)">Остальное — на почту. Чата поддержки нет намеренно: клиентов пока единицы, и отвечаем мы сами.</p>
+    </div>
+    <div style="border-top:1px solid var(--line)">
+      <details class="faq"><summary>Что вы видите со своей стороны?</summary><p>Только то тело отчёта, которое показано выше: идентификатор организации, идентификатор инстанса, число запросов и счётчики по типам сущностей. Ни текстов, ни токенов, ни значений — их физически нет на нашей стороне.</p></details>
+      <details class="faq"><summary>Где хранятся данные?</summary><p>В вашем volume, внутри вашего периметра. Волт токенов, журнал и статистика лежат рядом с контейнером и наружу не уходят.</p></details>
+      <details class="faq"><summary>Что если у вас упадёт сервер?</summary><p>Аренда суточная, поэтому падение лицензионного сервера не останавливает маскирование сразу: сервис работает ещё 48 часов и продолжает продлевать аренду, когда связь вернётся.</p></details>
+      <details class="faq"><summary>Можно ли on-prem без интернета?</summary><p>Да, отдельной лицензией с офлайн-активацией. В этом режиме счётчики никуда не отправляются, а срок проверяется по подписанному файлу лицензии.</p></details>
+      <details class="faq"><summary>Какие модели поддерживаются?</summary><p>Любые, к которым вы ходите по HTTP: OpenAI-совместимые API, Anthropic, LiteLLM как прокси, собственный шлюз. Veilgate стоит до модели и ничего о ней не знает.</p></details>
+      <details class="faq"><summary>Что с производительностью?</summary><p>Маскирование добавляет единицы миллисекунд на сообщение обычной длины, обработка идёт в нескольких процессах. Кэш значений устраняет повторную работу в растущем транскрипте.</p></details>
+      <details class="faq"><summary>Как отказаться?</summary><p>Отключить продление в кабинете. Ключ продолжает работать до конца оплаченного периода, потом сервис останавливается fail-closed. Данные остаются у вас — они и так никогда не были у нас.</p></details>
+    </div>
+  </div>
+</section>
+
+<section style="display:flex;align-items:center;justify-content:space-between;gap:40px;flex-wrap:wrap">
+  <div>
+    <h2 style="font-size:clamp(32px,5vw,56px);max-width:780px">Пятнадцать минут до первого замаскированного запроса</h2>
+    <div style="margin-top:18px" class="sec-meta">Пробный период {{ trial_days }} дней · карта не спрашивается · хостинг в РФ</div>
+  </div>
+  <a class="btn accent lg" href="#start">СОЗДАТЬ АККАУНТ</a>
+</section>
+{% endblock %}
+
+{% block script %}
+{% load static %}
+<script src="{% static 'landing.js' %}"></script>
+{% endblock %}

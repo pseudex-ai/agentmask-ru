@@ -1,0 +1,220 @@
+"""Storefront settings.
+
+READ THIS BEFORE ADDING A FIELD, A LOG LINE OR AN INTEGRATION.
+
+This service must never receive personal data belonging to a customer's
+customers. Not in a form, not in a support attachment, not in an error report.
+That is not a privacy preference — it is what keeps us outside the perimeter
+under 152-ФЗ, and it is the thing the product sells. Every setting below that
+looks unusually strict is strict for that reason:
+
+  * no third-party error reporter that would ship request bodies off-box;
+  * no analytics that would beacon from a page a logged-in customer is on;
+  * `DEBUG` cannot be enabled by accident in production, because a Django error
+    page prints the whole request.
+
+Anything a customer might paste that could contain personal data belongs in
+their own local interface, on port 8081, inside their contour.
+"""
+
+import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _env(name: str, default: str = "") -> str:
+    return os.environ.get(name, default)
+
+
+def _flag(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    return default if raw is None else raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+# --- core ----------------------------------------------------------------
+
+# No default in production. A framework that ships a working secret key is a
+# framework where someone forgets to set one, and session forgery follows.
+SECRET_KEY = _env("VEILGATE_SECRET_KEY")
+DEBUG = _flag("VEILGATE_DEBUG", False)
+if not SECRET_KEY:
+    if not DEBUG:
+        raise RuntimeError("VEILGATE_SECRET_KEY must be set when DEBUG is off")
+    SECRET_KEY = "dev-only-not-a-secret"
+
+ALLOWED_HOSTS = [host for host in _env("VEILGATE_ALLOWED_HOSTS", "").split(",") if host]
+if DEBUG and not ALLOWED_HOSTS:
+    ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"]
+
+# Django needs the scheme here, and a bare hostname silently fails CSRF on POST.
+CSRF_TRUSTED_ORIGINS = [
+    origin for origin in _env("VEILGATE_CSRF_ORIGINS", "").split(",") if origin
+]
+
+INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "django.contrib.sites",
+    "allauth",
+    "allauth.account",
+    "accounts",
+    "billing",
+    "storefront_web",
+]
+
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "allauth.account.middleware.AccountMiddleware",
+    "storefront_web.middleware.SecurityHeadersMiddleware",
+]
+
+ROOT_URLCONF = "veilgate_site.urls"
+WSGI_APPLICATION = "veilgate_site.wsgi.application"
+
+TEMPLATES = [{
+    "BACKEND": "django.template.backends.django.DjangoTemplates",
+    "DIRS": [BASE_DIR / "templates"],
+    "APP_DIRS": True,
+    "OPTIONS": {"context_processors": [
+        "django.template.context_processors.debug",
+        "django.template.context_processors.request",
+        "django.contrib.auth.context_processors.auth",
+        "django.contrib.messages.context_processors.messages",
+    ]},
+}]
+
+# SQLite by default so a developer (and the smoke test) needs no database
+# server; Postgres in production via the URL.
+if _env("VEILGATE_DB_HOST"):
+    DATABASES = {"default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": _env("VEILGATE_DB_NAME", "veilgate"),
+        "USER": _env("VEILGATE_DB_USER", "veilgate"),
+        "PASSWORD": _env("VEILGATE_DB_PASSWORD"),
+        "HOST": _env("VEILGATE_DB_HOST"),
+        "PORT": _env("VEILGATE_DB_PORT", "5432"),
+        "CONN_MAX_AGE": 60,
+    }}
+else:
+    DATABASES = {"default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": _env("VEILGATE_DB_PATH", str(BASE_DIR / "storefront.sqlite3")),
+    }}
+
+AUTH_USER_MODEL = "accounts.User"
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+
+LANGUAGE_CODE = "ru-ru"
+TIME_ZONE = "Europe/Moscow"
+USE_I18N = True
+USE_TZ = True
+
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_DIRS = [BASE_DIR / "static"]
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# --- auth ----------------------------------------------------------------
+
+SITE_ID = 1
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+    "allauth.account.auth_backends.AuthenticationBackend",
+]
+
+# Email only, and a link rather than a password. The sign-up form asks for one
+# thing because every additional field is a place to lose someone on the way to
+# the single metric this site is measured by — fifteen minutes to the first
+# masked request. A password would also be a credential we then have to hold.
+ACCOUNT_LOGIN_METHODS = {"email"}
+ACCOUNT_SIGNUP_FIELDS = ["email*"]
+ACCOUNT_EMAIL_VERIFICATION = "optional"
+ACCOUNT_LOGIN_BY_CODE_ENABLED = True
+ACCOUNT_UNIQUE_EMAIL = True
+ACCOUNT_RATE_LIMITS = {
+    # The sign-in form is the one unauthenticated write on the site.
+    "login_failed": "5/5m",
+    "login_by_code_request": "3/5m",
+}
+LOGIN_REDIRECT_URL = "/app/"
+LOGOUT_REDIRECT_URL = "/"
+
+EMAIL_BACKEND = (
+    "django.core.mail.backends.smtp.EmailBackend" if _env("VEILGATE_SMTP_HOST")
+    else "django.core.mail.backends.console.EmailBackend"
+)
+EMAIL_HOST = _env("VEILGATE_SMTP_HOST")
+EMAIL_PORT = int(_env("VEILGATE_SMTP_PORT", "587"))
+EMAIL_HOST_USER = _env("VEILGATE_SMTP_USER")
+EMAIL_HOST_PASSWORD = _env("VEILGATE_SMTP_PASSWORD")
+EMAIL_USE_TLS = _flag("VEILGATE_SMTP_TLS", True)
+DEFAULT_FROM_EMAIL = _env("VEILGATE_FROM_EMAIL", "veilgate <noreply@veilgate.ru>")
+
+# --- transport security --------------------------------------------------
+
+# Behind a TLS-terminating proxy, so Django learns the real scheme from the
+# header the proxy sets. Without it `request.is_secure()` is False, the secure
+# cookie flags below never apply, and a session cookie goes out in the clear.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"
+SECURE_SSL_REDIRECT = not DEBUG
+SECURE_HSTS_SECONDS = 0 if DEBUG else 31536000
+SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
+SECURE_HSTS_PRELOAD = not DEBUG
+# Sessions are short: this account can stop a production gateway.
+SESSION_COOKIE_AGE = 60 * 60 * 12
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+
+# --- veilgate ------------------------------------------------------------
+
+# The licensing server's ADMIN app, which is never published. This is the only
+# outbound call the storefront makes, and it carries an org id and a status —
+# never anything about a customer's traffic.
+LICENSING_ADMIN_URL = _env("VEILGATE_LICENSING_ADMIN_URL", "http://127.0.0.1:9443")
+LICENSING_CA = _env("VEILGATE_LICENSING_CA", "")
+
+YOOKASSA_SHOP_ID = _env("VEILGATE_YOOKASSA_SHOP_ID")
+YOOKASSA_SECRET_KEY = _env("VEILGATE_YOOKASSA_SECRET_KEY")
+
+DOCKER_IMAGE = _env("VEILGATE_DOCKER_IMAGE", "cr.yandex/veilgate/veilgate:1.0.0")
+
+# Our back office. Configurable because a fixed /admin/ is the first path every
+# scanner tries; moving it is not security, but it removes the background noise
+# that hides a real attempt in the logs.
+ADMIN_PATH = _env("VEILGATE_ADMIN_PATH", "admin").strip("/")
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {"plain": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}},
+    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "plain"}},
+    "root": {"handlers": ["console"], "level": _env("VEILGATE_LOG_LEVEL", "INFO")},
+}

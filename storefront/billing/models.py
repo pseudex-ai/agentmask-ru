@@ -1,0 +1,192 @@
+"""Plans, subscriptions, keys and invoices.
+
+The billing model is deliberately small — three flat plans and one overage
+line — because that is what is actually sold. A usage-based billing engine was
+considered and rejected in `docs/tz-site-stack.md`: it would have added a
+service without removing the part that is genuinely hard here, which is Russian
+invoicing.
+
+WHAT LIVES HERE AND WHAT DOES NOT. The licensing server owns whether a key may
+lease and how many requests were made. This module owns what the customer
+bought and what they owe. `Subscription.state` is a MIRROR for rendering and is
+never consulted to decide whether service continues.
+"""
+
+import hashlib
+import secrets
+from decimal import Decimal
+
+from django.db import models
+from django.utils import timezone
+
+from accounts.models import Organization
+
+
+class Plan(models.Model):
+    """A tariff. Rows, not constants, so that changing a price does not need a
+    deploy and an existing subscription can keep the terms it was sold on."""
+
+    code = models.SlugField(primary_key=True, max_length=32)
+    title = models.CharField(max_length=100)
+    monthly_price = models.DecimalField(max_digits=10, decimal_places=2)
+    included_requests = models.BigIntegerField()
+    # Per 1000 requests above the included volume.
+    overage_per_1k = models.DecimalField(max_digits=10, decimal_places=2,
+                                         default=Decimal("0.40"))
+    max_instances = models.PositiveIntegerField(default=1)
+    max_keys = models.PositiveIntegerField(default=2)
+    is_public = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order"]
+
+    def __str__(self) -> str:
+        return f"{self.title} ({self.code})"
+
+
+class Subscription(models.Model):
+    """What an organisation bought, and where it is in its lifecycle."""
+
+    TRIAL = "trial"
+    ACTIVE = "active"
+    PAST_DUE = "past_due"
+    CANCELLED = "cancelled"
+    STATES = [
+        (TRIAL, "пробный период"),
+        (ACTIVE, "активна"),
+        (PAST_DUE, "не оплачена"),
+        (CANCELLED, "отменена"),
+    ]
+
+    organization = models.OneToOneField(Organization, on_delete=models.CASCADE,
+                                        related_name="subscription")
+    plan = models.ForeignKey(Plan, on_delete=models.PROTECT, related_name="subscriptions")
+    state = models.CharField(max_length=16, choices=STATES, default=TRIAL)
+    trial_ends_at = models.DateTimeField()
+    # Set when the customer turns off renewal. Service continues to the end of
+    # the paid period: stopping at the moment of cancellation would be charging
+    # for time and then not delivering it.
+    cancel_at_period_end = models.BooleanField(default=False)
+    current_period_start = models.DateTimeField(default=timezone.now)
+    current_period_end = models.DateTimeField()
+
+    class Meta:
+        ordering = ["-current_period_start"]
+
+    def __str__(self) -> str:
+        return f"{self.organization_id}: {self.plan_id} ({self.state})"
+
+    @property
+    def is_serving(self) -> bool:
+        """Whether the customer should be able to work right now.
+
+        A rendering helper. The authority is the licensing server, and the two
+        agreeing is a consequence of every state change going through
+        `billing.services`, never of this property being consulted.
+        """
+        if self.state in (self.TRIAL, self.ACTIVE):
+            return True
+        return False
+
+
+class LicenseKey(models.Model):
+    """A key the customer can use, stored so it can be RECOGNISED but not read.
+
+    Only a prefix and a hash are kept. The full key is shown once, at issue
+    time, and never again — the same reason a password is not recoverable. It is
+    a bearer credential for the customer's whole gateway, and a support screen
+    that can display it turns every person with access to our admin into someone
+    who can start a container as that customer.
+
+    Losing it is recoverable by issuing a new one, which is cheap. Leaking it is
+    not recoverable at all.
+    """
+
+    ENVIRONMENTS = [("live", "прод"), ("test", "стенд")]
+
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE,
+                                     related_name="keys")
+    label = models.CharField(max_length=100, blank=True)
+    environment = models.CharField(max_length=8, choices=ENVIRONMENTS, default="live")
+    prefix = models.CharField(max_length=24)
+    key_hash = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.prefix}… ({self.organization_id})"
+
+    @staticmethod
+    def fingerprint(key: str) -> str:
+        return hashlib.sha256(key.encode()).hexdigest()
+
+    @classmethod
+    def record(cls, organization: Organization, key: str, label: str,
+               environment: str) -> "LicenseKey":
+        return cls.objects.create(
+            organization=organization,
+            label=label,
+            environment=environment,
+            prefix=key[:16],
+            key_hash=cls.fingerprint(key),
+        )
+
+
+class Invoice(models.Model):
+    """A счёт, and after payment the basis for an акт.
+
+    Amounts are `Decimal`, never float: a rounding error in a figure a customer
+    reconciles against their bank statement is not a cosmetic bug, it is a
+    dispute.
+    """
+
+    DRAFT = "draft"
+    ISSUED = "issued"
+    PAID = "paid"
+    VOID = "void"
+    STATES = [
+        (DRAFT, "черновик"), (ISSUED, "выставлен"),
+        (PAID, "оплачен"), (VOID, "аннулирован"),
+    ]
+
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT,
+                                     related_name="invoices")
+    number = models.CharField(max_length=32, unique=True)
+    state = models.CharField(max_length=16, choices=STATES, default=DRAFT)
+    period_start = models.DateField()
+    period_end = models.DateField()
+
+    plan_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    overage_requests = models.BigIntegerField(default=0)
+    overage_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+
+    issued_at = models.DateTimeField(null=True, blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    due_at = models.DateField(null=True, blank=True)
+
+    # Whatever the payment provider calls this. Nullable because a customer
+    # paying by bank transfer against a счёт never gets one.
+    payment_ref = models.CharField(max_length=128, blank=True)
+
+    class Meta:
+        ordering = ["-period_start", "-number"]
+
+    def __str__(self) -> str:
+        return f"{self.number} — {self.organization_id} — {self.total} ₽"
+
+    @staticmethod
+    def next_number(when=None) -> str:
+        """`VG-2026-08-4f3a`. Sequential-looking but not sequential.
+
+        A strictly sequential invoice number tells every customer how many
+        invoices we have issued, which for a young company is information we do
+        not owe them. Uniqueness is enforced by the column, not by the format.
+        """
+        when = when or timezone.now()
+        return f"VG-{when:%Y-%m}-{secrets.token_hex(2)}"

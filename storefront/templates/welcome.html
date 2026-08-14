@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Ключ выпущен — veilgate{% endblock %}
+{% block content %}
+<section>
+  <div class="eyebrow"><i></i><span>КЛЮЧ ВЫПУЩЕН</span></div>
+  <h2>Ключ работает прямо сейчас</h2>
+  <p class="sub" style="margin-top:16px">Оплата не нужна: {{ trial_days }} дней проба. Команда ниже уже содержит ваш ключ — подставлять ничего не надо.</p>
+
+  <div class="keybox">
+    <div class="label">ВАШ КЛЮЧ · ПОКАЗЫВАЕТСЯ ОДИН РАЗ</div>
+    <div class="value">{{ key }}</div>
+    <div class="warn">Сохраните его сейчас. Мы храним только префикс и хеш, поэтому показать его повторно не сможем — ни в кабинете, ни в поддержке. Потеряете — выпустите новый, это одна кнопка.</div>
+  </div>
+
+  <div class="steps" style="margin-top:32px">
+    <div>
+      <div class="what"><div class="step">01</div><h3>Запустить</h3><div class="note">ключ подставлен</div></div>
+      <pre data-copy="docker run -d --name veilgate -p 8000:8000 -p 8081:8081 -v veilgate-data:/data -e VEILGATE_LICENSE_KEY={{ key }} {{ image }}">docker run -d --name veilgate \
+  -p 8000:8000 -p 8081:8081 -v veilgate-data:/data \
+  -e VEILGATE_LICENSE_KEY={{ key }} \
+  {{ image }}</pre>
+      <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
+    </div>
+    <div>
+      <div class="what"><div class="step">02</div><h3>Открыть интерфейс</h3><div class="note">ссылка печатается в лог контейнера</div></div>
+      <pre data-copy="docker logs veilgate 2>&1 | grep 'локальный интерфейс' -A2">docker logs veilgate 2>&1 | grep 'локальный интерфейс' -A2
+# → http://localhost:8081/?token=…</pre>
+      <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
+    </div>
+    <div>
+      <div class="what"><div class="step">03</div><h3>Первый запрос</h3><div class="note">org_id — ваш идентификатор</div></div>
+      <pre data-copy='curl -s localhost:8000/mask -H "Content-Type: application/json" -d "{\"org_id\":\"{{ org_id }}\",\"messages\":[{\"role\":\"user\",\"content\":\"Позвоните Иванову Петру на +7 916 214-88-03\"}]}"'>curl -s localhost:8000/mask \
+  -H "Content-Type: application/json" \
+  -d '{"org_id":"{{ org_id }}",
+       "messages":[{"role":"user",
+         "content":"Позвоните Иванову Петру на +7 916 214-88-03"}]}'</pre>
+      <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
+    </div>
+  </div>
+
+  <p style="margin-top:32px;font-size:15px;color:var(--dim)">Чтобы вернуться в кабинет позже — <a href="{% url 'account_login' %}">войдите по email</a>, пароль не нужен.</p>
+</section>
+{% endblock %}
+{% block script %}{% load static %}<script src="{% static 'landing.js' %}"></script>{% endblock %}

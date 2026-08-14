@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Счёт {{ invoice.number }} — veilgate{% endblock %}
+{% block nav %}{% endblock %}
+{% block content %}
+<section>
+  <div class="sec-head">
+    <div><h2>Счёт {{ invoice.number }}</h2>
+      <div class="sec-meta" style="margin-top:8px">{{ invoice.period_start|date:"d.m.Y" }} — {{ invoice.period_end|date:"d.m.Y" }}</div></div>
+    <a class="btn" href="{% url 'cabinet' %}">← В КАБИНЕТ</a>
+  </div>
+  <div class="app">
+    <div>
+      <div class="label" style="margin-bottom:14px">ПОЗИЦИИ</div>
+      <div class="kv"><span class="k">{{ invoice.organization.subscription.plan.title }}, месяц</span><span class="v">{{ invoice.plan_amount }} ₽</span></div>
+      {% if invoice.overage_requests %}
+      <div class="kv"><span class="k">превышение, {{ invoice.overage_requests }} запросов</span><span class="v">{{ invoice.overage_amount }} ₽</span></div>
+      {% endif %}
+      <div class="kv" style="border-bottom:0;padding-top:16px"><span class="k" style="color:var(--text)">итого</span><span class="v" style="font-size:18px;color:var(--text)">{{ invoice.total }} ₽</span></div>
+    </div>
+    <div>
+      <div class="label" style="margin-bottom:14px">РЕКВИЗИТЫ ПЛАТЕЛЬЩИКА</div>
+      {% if organization.is_billable %}
+        <div class="kv"><span class="k">наименование</span><span class="v">{{ organization.legal_name }}</span></div>
+        <div class="kv"><span class="k">ИНН</span><span class="v">{{ organization.inn }}</span></div>
+        {% if organization.kpp %}<div class="kv"><span class="k">КПП</span><span class="v">{{ organization.kpp }}</span></div>{% endif %}
+      {% else %}
+        <div style="font-size:14px;color:var(--amber);line-height:1.6">Чтобы выставить счёт, нужны наименование и ИНН. Мы не спрашивали их при регистрации специально — до покупки они не нужны. Напишите нам, и мы добавим.</div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}
