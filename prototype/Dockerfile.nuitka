@@ -1,0 +1,129 @@
+# Obscura sidecar — RELEASE image. The engine as a native binary.
+#
+#   docker build -f Dockerfile.nuitka --build-arg OBSCURA_LICENSE_PUBKEY=... \
+#                -t obscura:compiled .
+#
+# Nuitka translates Python to C and compiles it, so there is no bytecode to
+# decompile. That raises the cost of reading the engine from minutes to weeks —
+# it does not make it impossible, and the honest planning assumption is that it
+# is a delay, not a wall. The real protection is that the engine is EMPTY: the
+# gazetteers, street vocabulary and priority table are leased at runtime and
+# exist only in memory. A perfectly reverse-engineered binary still cannot detect
+# anything without a lease that we can stop renewing.
+#
+# NOT --onefile: it unpacks itself into a temp directory on every start, which is
+# both slower and the very thing we avoid — assets and code materialising on the
+# customer's disk. --standalone keeps a plain directory inside the image.
+
+# BOTH STAGES ARE PINNED TO THE SAME DEBIAN RELEASE, and that is not cosmetic.
+# A Nuitka binary links against the build stage's glibc, so a runtime with an
+# older one refuses to start:
+#   /app/obscura-serve: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.38' not found
+# That is exactly what happened with `python:3.12-slim` (which had moved on to
+# trixie, glibc 2.41) over `debian:12-slim` (bookworm, glibc 2.36) — the floating
+# tag silently changed underneath a pinned one. Change these two together or not
+# at all.
+FROM python:3.12-slim-trixie AS build
+
+# patchelf is required by Nuitka standalone to fix up the RPATHs of the bundled
+# shared objects (pyrage and cryptography are compiled extensions).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential patchelf ccache \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip setuptools \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir nuitka
+
+COPY obscura/ ./obscura/
+COPY serve_main.py build_strip_docstrings.py ./
+
+# Same guard as the source image, before anything is compiled: the engine must
+# not be able to reach the package that holds the assets.
+RUN if [ -d ./obscura/data ]; then echo "obscura/data must not ship"; exit 1; fi
+RUN if grep -rn "^[[:space:]]*\(from\|import\)[[:space:]]\+licensing" ./obscura/; then \
+        echo "obscura/ must never import licensing/"; exit 1; \
+    fi
+
+# Baked before compilation, so the verification key ends up INSIDE the binary
+# rather than in a file next to it.
+ARG OBSCURA_LICENSE_PUBKEY
+RUN test -n "$OBSCURA_LICENSE_PUBKEY" || (echo "OBSCURA_LICENSE_PUBKEY build-arg is required" && exit 1) \
+    && printf 'LICENSE_PUBKEY = "%s"\n' "$OBSCURA_LICENSE_PUBKEY" > ./obscura/_release.py
+
+# pymorphy3's dictionaries and natasha's NER models are DATA inside third-party
+# packages; Nuitka does not follow them unless told. They ship in the image on
+# purpose — they are open artifacts, not our moat, so leasing them would buy
+# nothing and cost startup time.
+#
+# `pymorphy3_dicts_ru` needs BOTH --include-package (its code) and
+# --include-package-data (its .dawg files). pymorphy3 resolves it at runtime
+# through an entry point, so static analysis never sees the import: with only the
+# data flag the package arrives without its `__init__.py` and the binary dies at
+# startup with `module 'pymorphy3_dicts_ru' has no attribute 'get_path'`.
+# Docstrings out BEFORE compilation. `--python-flag=no_docstrings` (passed below)
+# only stops the compiled module from setting `__doc__` — the literals still land
+# in Nuitka's constants blob, where `grep -a` finds them verbatim. Measured on a
+# built image: "Connector to the leased asset state" and friends, present.
+#
+# They matter more than the code. This repo's docstrings ARE the design record:
+# which alternative was rejected, what was measured, where the sharp edges are.
+# Shipping them means handing over the reasoning and withholding only syntax.
+RUN python build_strip_docstrings.py ./obscura ./serve_main.py
+
+ARG NUITKA_JOBS=6
+RUN python -m nuitka \
+        --standalone \
+        --assume-yes-for-downloads \
+        --jobs=${NUITKA_JOBS} \
+        --output-filename=obscura-serve \
+        --include-package=obscura \
+        --include-package=uvicorn \
+        --include-package=fastapi \
+        --include-package=pymorphy3_dicts_ru \
+        --include-package-data=pymorphy3_dicts_ru \
+        --include-package-data=natasha \
+        --include-package-data=navec \
+        --include-package-data=slovnet \
+        --include-package-data=razdel \
+        --include-package-data=yargy \
+        --nofollow-import-to=tkinter \
+        --nofollow-import-to=unittest \
+        --nofollow-import-to=pydoc \
+        --include-module=_json \
+        --include-module=_bisect \
+        serve_main.py
+
+# `_json` and `_bisect` are forced back in because Nuitka's anti-bloat plugin
+# drops them by default, and it says so only in a passing log line:
+#   "Not including '_json' ... may slow down by using fallback implementation"
+# `_json` is the C accelerator behind json.loads/dumps, and this service parses
+# and re-serializes a JSON body on every single request — losing it trades a
+# little image size for a permanent latency tax on the hot path.
+
+# Runtime carries no Python at all: the standalone build brings its own libpython.
+# Must be the SAME Debian release as the build stage — see the note at the top.
+FROM debian:trixie-slim
+
+WORKDIR /app
+COPY --from=build /src/serve_main.dist/ /app/
+COPY entrypoint.sh /app/
+RUN chmod +x /app/entrypoint.sh /app/obscura-serve
+
+# Same guarantee, re-checked on the RUNTIME layer because this is the image that
+# actually ships: no detection assets on disk, ever.
+RUN if [ -d /app/obscura/data ]; then echo "obscura/data must not ship"; exit 1; fi
+
+ENV OBSCURA_DB_DIR=/data
+RUN mkdir -p /data
+
+ENV OBSCURA_WORKERS="" \
+    OBSCURA_MASK_CONCURRENCY=8 \
+    OBSCURA_MASK_CACHE_SIZE=20000 \
+    OBSCURA_SERVE_CMD="/app/obscura-serve"
+
+EXPOSE 8000
+
+CMD ["./entrypoint.sh"]

@@ -1,0 +1,20 @@
+# Keep the build context small and, more importantly, keep things OUT of images.
+.venv/
+__pycache__/
+*.pyc
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# Generated eval datasets — large and reproducible from make_*.py.
+dataset.json
+dirty.json
+holdout*.json
+stress*.json
+
+# Secrets and stand state.
+.env
+.env.*
+e2e/certs/
+e2e/.env
