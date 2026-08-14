@@ -17,7 +17,9 @@ def main() -> None:
     token_a = vault.tokenize("+7 999 111 22 33", "PHONE")
     token_b = vault.tokenize("89991112233", "PHONE")  # same number, other format
     print("same number / different format -> one token:", token_a == token_b, "|", token_a)
-    print("tool would receive (canonical):", vault.detokenize(token_a))
+    # Canonicalization is the DEDUP KEY (both spellings share one token), but what
+    # the tool receives is the surface form the user actually typed.
+    print("tool would receive (as user typed):", vault.detokenize(token_a))
 
     del vault
     reopened = Vault(DB, "demo")  # simulate restart / second instance

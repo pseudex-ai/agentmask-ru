@@ -6,31 +6,26 @@ from obscura import _morph_compat  # noqa: F401  (pymorphy2->pymorphy3 BEFORE na
 from natasha import Doc, NewsEmbedding, NewsNERTagger, Segmenter
 
 from obscura.address import detect_address
+from obscura.assets import ASSETS
 from obscura.context import location_is_pii, suppress
 from obscura.detect import Span, detect_pii
-from obscura.names import gazetteer_names, keep_location, keep_person
+from obscura.names import gazetteer_names, keep_location, keep_person, trim_person_span
 from obscura.normalize import normalize
+from obscura.profiling import stage
 from obscura.quasi import detect_quasi
-from obscura.ru_pii import detect_structured
+from obscura.ru_pii import detect_plates, detect_structured
 from obscura.structured import detect_structured_kv
 
-# Higher = more trusted; wins overlaps. Checksum-validated IDs outrank phone so
-# a valid INN/СНИЛС/card is never mislabeled as a bare phone.
-# A marker/house-anchored ADDR span is high-confidence and must beat a NAME that
-# sits inside it (the street name), so the whole address — incl. the house number
-# — is masked, not just the surname. Bare NER-city LOC stays low (a coincidental
-# city should lose to a real name).
-_PRIORITY: dict[str, int] = {
-    "SNILS": 6, "INN": 6, "CARD": 6,
-    "PHONE": 5, "EMAIL": 5, "ADDR": 4,
-    "NAME": 3, "DATE": 2, "PASSPORT": 2, "LOC": 2,
-}
+# The priority table is LEASED (obscura/assets.py). It is the arbiter of every
+# overlap — which recognizer wins when two of them claim the same characters —
+# and it was tuned on real mistyping incidents, so it belongs with the assets
+# rather than in the shipped engine.
 
 
-def _resolve(spans: list[Span]) -> list[Span]:
+def _resolve(spans: list[Span], priority: dict[str, int]) -> list[Span]:
     ordered = sorted(
         spans,
-        key=lambda s: (_PRIORITY.get(s.entity_type, 1), s.end - s.start),
+        key=lambda s: (priority.get(s.entity_type, 1), s.end - s.start),
         reverse=True,
     )
     kept: list[Span] = []
@@ -56,7 +51,14 @@ class Detector:
             if span.type == "PER":
                 value = text[span.start:span.stop]
                 if keep_person(value):  # drop verb over-tags ("Оформите", "Не")
-                    spans.append(Span(span.start, span.stop, "NAME", value))
+                    # NER swallows a capitalised word that follows a surname
+                    # (it looks like a patronymic). Because masking is
+                    # reversible, that extra word comes back attached to the
+                    # value and the tool acts on the wrong person — so the span
+                    # is trimmed to the actual name before it is minted.
+                    lead, trimmed = trim_person_span(value)
+                    start = span.start + lead
+                    spans.append(Span(start, start + len(trimmed), "NAME", trimmed))
             elif span.type == "LOC":
                 value = text[span.start:span.stop]
                 # Drop verb over-tags AND non-PII place references (city as a
@@ -67,23 +69,36 @@ class Detector:
         return spans
 
     def detect(self, text: str) -> list[Span]:
-        # Layer 0: offset-safe normalization (1:1) so spans map back to original.
-        norm = normalize(text)
-        # Address spans are typed ADDR (priority 4) so they outrank a NAME sitting
-        # inside the street; remapped back to LOC after overlap resolution.
-        address = [Span(s.start, s.end, "ADDR", s.value) for s in detect_address(norm)]
-        spans = (
-            detect_pii(norm)
-            + detect_structured(norm)
-            + self._ner_spans(norm)
-            + address
-            + gazetteer_names(norm)
-            + detect_structured_kv(norm)   # Layer 1: JSON/forms (key types the value)
-            + detect_quasi(norm)           # quasi: DOB/age/medical
-        )
-        # Suppress denied phones BEFORE resolving, else a phone that wins the
-        # overlap (priority) and is then suppressed leaves the real entity
-        # (e.g. a passport it overlapped) undetected.
-        resolved = _resolve(suppress(norm, spans))
-        return [Span(s.start, s.end, "LOC", s.value) if s.entity_type == "ADDR" else s
-                for s in resolved]
+        # Every layer is timed separately: detection is the whole CPU cost of the
+        # product, and "masking is slow" is only actionable once you know WHICH
+        # recognizer owns the time. Zero overhead unless OBSCURA_PROFILE=1.
+        with stage("detect.total"):
+            # Layer 0: offset-safe normalization (1:1) so spans map back to original.
+            with stage("detect.normalize"):
+                norm = normalize(text)
+            # Address spans are typed ADDR (priority 4) so they outrank a NAME
+            # sitting inside the street; remapped back to LOC after resolution.
+            with stage("detect.address"):
+                address = [Span(s.start, s.end, "ADDR", s.value) for s in detect_address(norm)]
+            with stage("detect.regex"):
+                spans = detect_pii(norm)
+            with stage("detect.structured_id"):
+                spans += detect_structured(norm)
+                # RAW text on purpose — see detect_plates.
+                spans += detect_plates(text)
+            with stage("detect.ner"):
+                spans += self._ner_spans(norm)
+            spans += address
+            with stage("detect.gazetteer"):
+                spans += gazetteer_names(norm)
+            with stage("detect.structured_kv"):   # Layer 1: JSON/forms
+                spans += detect_structured_kv(norm)
+            with stage("detect.quasi"):           # quasi: DOB/age/medical
+                spans += detect_quasi(norm)
+            # Suppress denied phones BEFORE resolving, else a phone that wins the
+            # overlap (priority) and is then suppressed leaves the real entity
+            # (e.g. a passport it overlapped) undetected.
+            with stage("detect.resolve"):
+                resolved = _resolve(suppress(norm, spans), ASSETS.get().priority)
+            return [Span(s.start, s.end, "LOC", s.value) if s.entity_type == "ADDR" else s
+                    for s in resolved]

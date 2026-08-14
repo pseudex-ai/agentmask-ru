@@ -18,6 +18,7 @@ from obscura.detect_all import Detector
 from obscura.maskcache import MaskCache, content_key
 from obscura.redact import mask_text
 from obscura.vault import Vault
+from testkit import load_dev_bundle
 
 _PII_MSG = "Здравствуйте, меня зовут Иван Петров, телефон +7 999 123-45-67, доставьте на улицу Ленина 5, кв 12."
 _PLAIN_MSG = "thanks, that works for me, please proceed with the plan as discussed above"
@@ -63,6 +64,7 @@ def _turn_cost_cached(turns: int, det: Detector) -> float:
 
 
 def main() -> None:
+    load_dev_bundle()
     det = Detector()
     det.detect("warm")  # warm the dictionaries
 

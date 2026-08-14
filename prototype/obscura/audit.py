@@ -11,9 +11,11 @@ value — the only place that lives is the in-RF vault. So the audit log is not 
 second PII exposure surface.
 """
 
-import sqlite3
 import threading
 import time
+
+from obscura.profiling import stage
+from obscura.sqlite_setup import connect as sqlite_connect
 
 
 def _preview(value: str) -> str:
@@ -28,7 +30,7 @@ class AuditLog:
 
     def __init__(self, db_path: str) -> None:
         self._lock = threading.Lock()
-        self._conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._conn = sqlite_connect(db_path)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS events ("
             "ts REAL, customer TEXT, agent_id TEXT, entity_type TEXT, token TEXT, preview TEXT)"
@@ -43,7 +45,12 @@ class AuditLog:
             self._conn.execute("ALTER TABLE events ADD COLUMN agent_id TEXT DEFAULT ''")
 
     def record(self, customer: str, agent_id: str, entity_type: str, token: str, real_value: str) -> None:
-        with self._lock:
+        # NOTE: one commit — hence one fsync — per DETECTED SPAN. A message with
+        # 10 entities pays 10 fsyncs on the request's critical path. The audit is
+        # not needed to answer the request, so batching it behind a queue with a
+        # background writer is the obvious win; see docs/spec.md §4.2. Profile
+        # first: this stage tells you whether it actually costs anything here.
+        with stage("audit.record"), self._lock:
             self._conn.execute(
                 "INSERT INTO events (ts, customer, agent_id, entity_type, token, preview) "
                 "VALUES (?,?,?,?,?,?)",
@@ -58,6 +65,23 @@ class AuditLog:
             (customer,),
         ).fetchall()
         return {row[0]: row[1] for row in rows}
+
+    def billing_totals(self) -> dict[str, object]:
+        """Instance-wide aggregates for the licensing server.
+
+        Instance-wide, not per-org: the licence is bought by the organisation that
+        runs the container, and the org_id inside it is that customer's own
+        tenancy — not something we bill separately.
+
+        This is the ONLY thing that leaves the customer's contour, so it is
+        deliberately shaped so that it cannot carry personal data: counts and a
+        total, no tokens, no previews, no free-text fields. Gate L12 greps the
+        request body for every injected value to keep it that way."""
+        rows = self._conn.execute(
+            "SELECT entity_type, COUNT(*) FROM events GROUP BY entity_type"
+        ).fetchall()
+        entities = {row[0]: row[1] for row in rows}
+        return {"requests": sum(entities.values()), "entities": entities}
 
     def counts_for_agent(self, customer: str, agent_id: str) -> dict[str, int]:
         """Counts per entity type for a single agent."""

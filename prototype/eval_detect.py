@@ -6,6 +6,7 @@ import json
 import re
 
 from obscura.detect_all import Detector
+from testkit import load_dev_bundle
 
 _NUMERIC = {"PHONE", "SNILS", "INN", "CARD", "PASSPORT", "DATE"}
 
@@ -26,6 +27,7 @@ def _match(a_type: str, a_val: str, b_type: str, b_val: str) -> bool:
 
 
 def main() -> None:
+    load_dev_bundle()
     with open("dataset.json", encoding="utf-8") as handle:
         cases = json.load(handle)
 

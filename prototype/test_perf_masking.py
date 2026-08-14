@@ -17,6 +17,7 @@ Run: OBSCURA_DB_DIR=$(mktemp -d) python3 test_perf_masking.py
 import asyncio
 import json
 import os
+import re
 import tempfile
 import time
 
@@ -24,6 +25,13 @@ import time
 os.environ.setdefault("OBSCURA_DB_DIR", tempfile.mkdtemp(prefix="obscura_perf_"))
 
 import httpx  # noqa: E402
+
+from testkit import load_dev_bundle, start_local_license  # noqa: E402
+
+# BEFORE importing the app: it reads its licensing configuration at import time,
+# and this file drives `service.app` through an ASGI transport, which never runs
+# the lifespan that would otherwise acquire the lease.
+start_local_license()  # noqa: E402
 
 from obscura.detect_all import Detector  # noqa: E402
 from obscura.maskcache import MaskCache, content_key  # noqa: E402
@@ -100,8 +108,13 @@ async def _mask(client: httpx.AsyncClient, org: str, messages: list, skip_system
 
 
 async def _async_tests() -> None:
+    # The ASGI transport does not run the lifespan, so the two things the
+    # lifespan does are done here explicitly against the real licensing server
+    # started in main(): acquire a lease, then start renewing it.
+    service.LICENSE.acquire()
+    service.LICENSE.start()
     async with _client() as client:
-        # warm models once (lifespan startup) by hitting health-then-mask
+        # warm models once by hitting health-then-mask
         await client.get("/health")
 
         # 1. NO LEAK + idempotency: masking the same message twice yields the
@@ -209,8 +222,86 @@ async def _async_tests() -> None:
         assert max_health < 200, f"/health starved during /mask (max {max_health:.0f} ms) — event loop blocked"
         print("event-loop responsiveness OK")
 
+        # 6. TOOL SCHEMAS: a worked example in a tool description is PII that
+        #    reaches the provider on EVERY call. It must be masked on the public
+        #    leg and left alone when the caller flags it as the agent's template.
+        org6 = "tools_org"
+        tools = [{"type": "function", "function": {
+            "name": "find_order",
+            "description": "Найти заказ. Пример: телефон +7 999 123-45-67",
+            "parameters": {"type": "object", "properties": {
+                "phone": {"type": "string", "description": "Телефон, например +7 999 123-45-67"},
+            }}}}]
+        body = await _post(client, "/mask", {
+            "org_id": org6, "agent_id": "ag",
+            "messages": [{"role": "user", "content": "привет"}], "tools": tools})
+        masked_fn = body["tools"][0]["function"]
+        assert "+7 999 123-45-67" not in masked_fn["description"], "LEAK: PII in tool description"
+        assert "+7 999 123-45-67" not in masked_fn["parameters"]["properties"]["phone"]["description"], \
+            "LEAK: PII in parameter description"
+        assert masked_fn["name"] == "find_order", "tool name must never be masked (breaks dispatch)"
+        skipped = await _post(client, "/mask", {
+            "org_id": org6, "agent_id": "ag", "skip_system": True,
+            "messages": [{"role": "user", "content": "привет"}], "tools": tools})
+        assert skipped["tools"] == tools, "engine leg must leave the agent's own template untouched"
+        print(f"tool-schema masking OK — {masked_fn['description']!r}")
+
+        # 7. STREAMING LEG: a token split across two SSE deltas must still be
+        #    detokenized, and the carry must be caller-owned (stateless).
+        org7 = "stream_org"
+        masked7 = await _mask(client, org7, [{"role": "user", "content": "мой телефон +7 999 123-45-67"}])
+        token = re.search(r"\+79\d{9}", masked7[0]["content"]).group()
+        carry, out = "", ""
+        for delta in ["Перезвоню на ", token[:5], token[5:], " завтра, всё в силе, до связи."]:
+            chunk = await _post(client, "/unmask_chunk",
+                                {"org_id": org7, "delta": delta, "carry": carry})
+            out += chunk["text"]
+            carry = chunk["carry"]
+        tail = await _post(client, "/unmask_chunk",
+                           {"org_id": org7, "delta": "", "carry": carry, "flush": True})
+        out += tail["text"]
+        assert tail["carry"] == "", "flush must drain the carry"
+        assert "+7 999 123-45-67" in out, f"split token not detokenized in stream: {out!r}"
+        assert token not in out, "fake token leaked to the user in the stream"
+        print(f"/unmask_chunk OK — {out!r}")
+
+
+def test_generic_name_key_does_not_over_mask() -> None:
+    """REGRESSION (found by the BFCL paired run, not by our own eval sets).
+
+    The structured-KV layer types a value from its key, and `name` is the one
+    genuinely ambiguous key: in English payloads it almost always means the name
+    OF A THING. Agents pass `{"name": "ideas.txt"}` constantly, and typing that
+    as NAME rewrote the agent's own file arguments into Russian personal names —
+    corrupting tasks that had nothing to do with PII. A NAME-typed value must
+    also LOOK like a person.
+
+    Both directions matter: under-masking here is a leak, over-masking is task
+    damage, and this layer exists precisely to catch names NER misses inside
+    structure — so the person cases must keep working."""
+    detector = Detector()
+    # Filenames and paths only — the gate is narrow on purpose. Bare ambiguous
+    # words (`test`, `config`) intentionally stay masked: over-masking is the
+    # safe side of this trade, and widening the gate silently stopped masking
+    # `{"name": "johnsecret"}` (see the leak regression below).
+    must_not_mask = ['{"name": "ideas.txt"}', '{"name": "TeamNotes.txt"}',
+                     '{"name": "log.txt"}', '{"name": "workspace/notes.md"}']
+    must_mask = ['{"имя": "Анна Смирнова"}', '{"name": "John Smith"}',
+                 '{"имя": "Смирнова"}', '{"фио": "Кузнецова М.И."}',
+                 '{"name": "johnsecret"}']
+    for text in must_not_mask:
+        spans = [s for s in detector.detect(text) if s.entity_type == "NAME"]
+        assert not spans, f"over-masked an identifier: {text} -> {[s.value for s in spans]}"
+    for text in must_mask:
+        spans = [s for s in detector.detect(text) if s.entity_type == "NAME"]
+        assert spans, f"LEAK: person name not masked in {text}"
+    print(f"generic-name-key OK — {len(must_not_mask)} identifiers left alone, "
+          f"{len(must_mask)} person names still caught")
+
 
 def main() -> None:
+    load_dev_bundle()
+    test_generic_name_key_does_not_over_mask()
     test_cache_hit_skips_compute()
     test_cache_org_isolation()
     test_cache_lru_bound()

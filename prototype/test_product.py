@@ -3,9 +3,20 @@
 import pathlib
 
 from obscura.audit import AuditLog, _preview
-from obscura.redact import StreamDetokenizer
+from obscura.detect_all import Detector
+from obscura.redact import StreamDetokenizer, mask_text, unmask_text
+from obscura.names import is_known_name
 from obscura.tenants import Tenants
-from obscura.vault import Vault
+from obscura.vault import _FAKE_FIRST, _FAKE_LAST, TOKEN_RE, _render_token, Vault
+from testkit import load_dev_bundle
+
+# Every type any detector can emit. quasi.py's DOB/AGE/MEDICAL and any future
+# type fall through to the REDACTED… fallback shape.
+_ENTITY_TYPES = ("PHONE", "EMAIL", "SNILS", "INN", "CARD", "PASSPORT", "DATE",
+                 "NAME", "LOC", "DOB", "AGE", "MEDICAL", "OPAQUE",
+                 # Document types added after the 152-ФЗ coverage checklist.
+                 "OMS", "ACCOUNT", "DRIVER_LICENSE", "VEHICLE_DOC",
+                 "INTL_PASSPORT", "OGRN", "PLATE", "IP", "BIRTH_CERT")
 
 
 def test_audit() -> None:
@@ -53,7 +64,135 @@ def test_stream_detok_split_token() -> None:
     print("stream detok OK — split token restored to real value")
 
 
+def test_token_shapes() -> None:
+    """LOAD-BEARING INVARIANT: unmask_text finds tokens by shape instead of
+    scanning the vault, so every token _render_token can mint MUST be matched by
+    TOKEN_RE in full. A shape that escapes it stops being reversible — and on the
+    response leg that means a tool runs on a FAKE value. Tokens are random, so
+    each type is sampled repeatedly."""
+    for entity_type in _ENTITY_TYPES:
+        for _ in range(200):
+            token = _render_token(entity_type)
+            assert TOKEN_RE.fullmatch(token), f"{entity_type} token {token!r} escapes TOKEN_RE"
+    print(f"token shapes OK — {len(_ENTITY_TYPES)} types x200 samples all matched by TOKEN_RE")
+
+
+def test_unmask_scales_with_text_not_vault() -> None:
+    """Detokenization must stay correct when the vault is large, and must not
+    resolve a value that was never tokenized for this customer."""
+    vault = Vault(":memory:", "big")
+    target = vault.tokenize("+7 999 123-45-67", "PHONE")
+    for index in range(2000):  # noise the response never mentions
+        vault.tokenize(f"+7 916 {index:03d}-11-22", "PHONE")
+    restored = unmask_text(f"Ваш номер {target}, перезвоним.", vault)
+    assert "+7 999 123-45-67" in restored, f"target token not restored: {restored!r}"
+    assert target not in restored, "fake token leaked to user"
+    untouched = unmask_text("Заказ 4512 и трек 77012345678901", vault)
+    assert untouched == "Заказ 4512 и трек 77012345678901", f"over-restored: {untouched!r}"
+    print(f"unmask OK on a 2001-token vault — {restored!r}")
+
+
+def test_tool_receives_original_surface_form() -> None:
+    """The tool must get the value EXACTLY as the user typed it.
+
+    Without Obscura in the path a tool would receive the user's own string, so
+    handing it a re-formatted one is a behaviour change we impose — a CRM that
+    matches phone numbers as strings would silently fail to find the record.
+    Canonicalization stays, but only as the dedup key: both spellings still
+    collapse to ONE token so the model sees one identity."""
+    vault = Vault(":memory:", "surface")
+    written = "+7 999 123-45-67"
+    token = vault.tokenize(written, "PHONE")
+    assert vault.detokenize(token) == written, \
+        f"tool got {vault.detokenize(token)!r}, user wrote {written!r}"
+
+    # Same number, other spelling -> same token (dedup key still canonical),
+    # and the FIRST-seen form is kept so the tool sees a stable value.
+    assert vault.tokenize("89991234567", "PHONE") == token, "formats must share one token"
+    assert vault.detokenize(token) == written, "first-seen surface form must win"
+
+    restored = unmask_text(f"Звоню на {token}", vault)
+    assert written in restored, f"round-trip lost the original form: {restored!r}"
+    print(f"surface form OK — user wrote {written!r}, tool receives {vault.detokenize(token)!r}")
+
+
+def test_fake_names_are_self_recognised() -> None:
+    """Every fake first name must be one OUR OWN detector recognises.
+
+    The re-masking guard compares a detected span against the minted token, so
+    the token has to be detected AS A WHOLE. Unusual names broke that: the
+    gazetteer did not know `Аглая`, detection found only the surname `Котов`,
+    that is not a minted token, so it was masked again and the person's identity
+    drifted mid-conversation. Also checks the pool is big enough that an org
+    cannot exhaust it — a flat five-name list used to hang the request path on
+    the sixth distinct person."""
+    unknown = [name for name in _FAKE_FIRST if not is_known_name(name)]
+    assert not unknown, f"fake first names our own gazetteer cannot see: {unknown}"
+    combinations = len(_FAKE_FIRST) * len(_FAKE_LAST)
+    assert combinations >= 1000, f"NAME pool too small ({combinations}) — exhaustion is a hang"
+    print(f"fake-name pool OK — {len(_FAKE_FIRST)}x{len(_FAKE_LAST)}={combinations} "
+          f"combinations, all gazetteer-visible")
+
+
+def test_token_pool_does_not_exhaust() -> None:
+    """Minting must stay bounded and unique well past any plausible org size."""
+    vault = Vault(":memory:", "pool")
+    tokens = {vault.tokenize(f"Человек Номер{index}", "NAME") for index in range(300)}
+    assert len(tokens) == 300, f"minted only {len(tokens)} unique tokens for 300 people"
+    print(f"token pool OK — 300 distinct people -> {len(tokens)} unique tokens, no hang")
+
+
+def test_masking_own_token_is_stable() -> None:
+    """REGRESSION (found by the DeepSeek paired run): a multi-turn agent echoes
+    our token back inside NEW text, so detection meets it again.
+
+    A fake NAME or LOC is by construction a well-formed name or place, so it is
+    re-detected — and re-masking it mints a fresh token. Consequences, worst
+    first: detokenization then returns the intermediate TOKEN, so the tool acts
+    on a plausible but WRONG person; the person's identity changes every turn;
+    and the provider's prefix cache dies because the prefix stops being stable.
+
+    Note this is NOT covered by re-masking the same raw string — that is a
+    content-cache hit. The token has to arrive inside different surrounding text,
+    which is what a real agent turn does."""
+    detector = Detector()
+    vault = Vault(":memory:", "echo")
+    real = "Клиент Иван Петров просит перезвонить, телефон +7 999 123-45-67"
+
+    first = mask_text(real, vault, detector.detect(real))
+    # Different surrounding text each pass -> the cache cannot mask the bug.
+    second = mask_text(first, vault, detector.detect(first))
+    third = mask_text(f"Повтор: {second}", vault, detector.detect(f"Повтор: {second}"))
+
+    assert first == second, f"re-masking our own token changed it: {first!r} -> {second!r}"
+    assert second in third, f"token unstable inside new context: {third!r}"
+    assert "Иван Петров" not in second and "+7 999 123-45-67" not in second, "LEAK"
+
+    restored = unmask_text(third, vault)
+    assert "Иван Петров" in restored, f"real name not restored: {restored!r}"
+    assert "+7 999 123-45-67" in restored, f"real phone not restored: {restored!r}"
+    print(f"token stability OK — {first!r} survives re-masking and round-trips")
+
+
+def test_unmask_reformatted_phone() -> None:
+    """The model rewrites +7… as 8… — the digit signature must still resolve it."""
+    vault = Vault(":memory:", "reformat")
+    token = vault.tokenize("+7 999 123-45-67", "PHONE")
+    rewritten = "8" + token[2:]  # +79021384756 -> 89021384756
+    restored = unmask_text(f"Звоню на {rewritten}", vault)
+    assert "+7 999 123-45-67" in restored, f"reformatted token not restored: {restored!r}"
+    print(f"reformatted-token detok OK — {rewritten} -> {restored!r}")
+
+
 if __name__ == "__main__":
+    load_dev_bundle()
     test_tenants()
     test_stream_detok_split_token()
     test_audit()
+    test_token_shapes()
+    test_unmask_scales_with_text_not_vault()
+    test_tool_receives_original_surface_form()
+    test_fake_names_are_self_recognised()
+    test_token_pool_does_not_exhaust()
+    test_masking_own_token_is_stable()
+    test_unmask_reformatted_phone()

@@ -5,3 +5,7 @@ phonenumbers
 pymorphy3
 pymorphy3-dicts-ru
 natasha
+# Bundle transport: age sealed boxes (pyrage keeps all crypto in Rust) and
+# Ed25519 signatures. See obscura/bundle.py for why both are needed.
+pyrage
+cryptography

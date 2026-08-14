@@ -8,89 +8,68 @@ This module adds a gazetteer (known first names + diminutives + their Latin
 transliterations) and a gate: a single-token NER person is kept only if it is a
 known name or has a Russian surname shape — otherwise dropped.
 
-NOTE: the name list here is a compact, representative seed. In production swap in
-the full RussianNameVariants / russiannames dictionaries (32k names) — same code.
+The gazetteers themselves are LEASED, not shipped: they arrive in the detection
+bundle and live only in memory (`obscura/assets.py`). This module holds the rules
+that consume them. Asking for them without a valid lease raises `BundleNotLeased`
+rather than degrading to a smaller list — a half-equipped gazetteer on a PII
+gateway leaks silently, which is worse than not answering at all.
+
+The frozen struct is fetched ONCE per public call and threaded down into the
+helpers: `gazetteer_names` inspects every word of the message, and re-fetching
+per word would put a registry lookup on the hottest loop in the product.
 """
 
 import re
 
-import pymorphy3
-
+from obscura.assets import ASSETS, NameAssets
 from obscura.detect import Span
-
-_FIRST_NAMES = [
-    "александр", "алексей", "анатолий", "андрей", "антон", "артур", "борис",
-    "вадим", "валентин", "валерий", "василий", "виктор", "виталий", "владимир",
-    "владислав", "вячеслав", "геннадий", "георгий", "глеб", "григорий", "даниил",
-    "денис", "дмитрий", "евгений", "егор", "иван", "игорь", "илья", "кирилл",
-    "константин", "леонид", "максим", "марк", "михаил", "никита", "николай",
-    "олег", "павел", "пётр", "петр", "роман", "руслан", "сергей", "станислав",
-    "степан", "тимофей", "фёдор", "федор", "юрий", "ярослав",
-    "александра", "алёна", "алина", "алиса", "анастасия", "анна", "валентина",
-    "валерия", "вера", "вероника", "виктория", "галина", "дарья", "екатерина",
-    "елена", "елизавета", "ирина", "карина", "кристина", "ксения", "лариса",
-    "любовь", "людмила", "маргарита", "марина", "мария", "надежда", "наталья",
-    "нина", "оксана", "ольга", "полина", "светлана", "софия", "татьяна", "юлия",
-]
-_DIMINUTIVES = [
-    "саша", "лёша", "леша", "толя", "андрюша", "тоша", "вадик", "валя", "вася",
-    "витя", "вова", "влад", "слава", "гена", "гоша", "гриша", "даня", "дениска",
-    "дима", "женя", "ваня", "игорёк", "костя", "лёня", "макс", "миша", "коля",
-    "паша", "петя", "рома", "сергунь", "серёжа", "сережа", "стёпа", "юра",
-    "настя", "аня", "валя", "вика", "галя", "даша", "катя", "лена", "лиза",
-    "ира", "кристи", "ксюша", "люба", "люда", "рита", "маша", "надя", "наташа",
-    "оля", "поля", "света", "соня", "таня", "юля",
-]
-_SURNAME_SUFFIXES = (
-    "ов", "ова", "ев", "ева", "ёв", "ёва", "ин", "ина", "ын", "ына",
-    "ский", "ская", "цкий", "цкая", "ко", "ук", "юк", "ян", "дзе", "швили", "ич",
-)
-
-_TRANSLIT = {
-    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
-    "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
-    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
-    "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sch",
-    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
-}
-
-
-def _translit(text: str) -> str:
-    return "".join(_TRANSLIT.get(char, char) for char in text.lower())
-
-
-_NAME_SET = set(_FIRST_NAMES) | set(_DIMINUTIVES)
-_NAME_SET |= {_translit(name) for name in _NAME_SET}
-
-_MORPH = pymorphy3.MorphAnalyzer()
-
-
-def _lemma(word: str) -> str:
-    """Normal form, so declensions match the gazetteer (Ивана -> иван)."""
-    return _MORPH.parse(word)[0].normal_form
+from obscura.morph import MORPH
 
 _WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё]+")
 _INITIALS_RE = re.compile(r"[А-ЯЁ][а-яё]+\s+[А-ЯЁ]\.\s?[А-ЯЁ]\.?")
 _LATIN_PAIR_RE = re.compile(r"\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\b")
+_INITIAL_RE = re.compile(r"[А-ЯЁA-Z]\.?")
+_NAME_TAGS = {"Name", "Surn", "Patr"}
+
+
+def _lemma(word: str) -> str:
+    """Normal form, so declensions match the gazetteer (Ивана -> иван)."""
+    return MORPH.parse(word)[0].normal_form
+
+
+def _name_set_hit(word: str, low: str, lemma: str, before: str, names: NameAssets) -> bool:
+    """Seed-list match. An ordinary-word name (вера, роман, света) needs either a
+    capital letter or a naming cue right before it — `имя света` is a person,
+    `вера в успех` is not. Without the cue path a lowercase diminutive leaked:
+    the dirty set's `Оформите заказ, имя света.` went to the model unmasked."""
+    for candidate in (low, lemma):
+        if candidate not in names.name_set:
+            continue
+        if candidate in names.ambiguous and not word[:1].isupper():
+            if not any(cue in before for cue in names.cues):
+                continue
+        return True
+    return False
+
+
+def _is_known_name(word: str, names: NameAssets) -> bool:
+    low = word.lower()
+    return low in names.name_set or _lemma(low) in names.name_set
+
+
+def _is_surname_shaped(word: str, names: NameAssets) -> bool:
+    low = word.lower()
+    if low in names.dict_surnames:
+        return True
+    return len(low) > 4 and low.endswith(names.surname_suffixes)
 
 
 def is_known_name(word: str) -> bool:
-    low = word.lower()
-    return low in _NAME_SET or _lemma(low) in _NAME_SET
+    return _is_known_name(word, ASSETS.get().names)
 
 
 def is_surname_shaped(word: str) -> bool:
-    low = word.lower()
-    return len(low) > 4 and low.endswith(_SURNAME_SUFFIXES)
-
-
-# Sentence-initial imperatives / fillers NER mislabels as a person or place.
-_STOPWORDS = {
-    "доставьте", "оформите", "проверьте", "запишите", "уточните", "верните",
-    "отмените", "перенесите", "подскажите", "помогите", "скажите", "найдите",
-    "сделайте", "добавьте", "измените", "пришлите", "не", "да", "здравствуйте",
-    "спасибо", "пожалуйста", "клиент", "заказ",
-}
+    return _is_surname_shaped(word, ASSETS.get().names)
 
 
 def keep_location(value: str) -> bool:
@@ -98,7 +77,54 @@ def keep_location(value: str) -> bool:
     parts = value.split()
     if len(parts) >= 2:
         return True
-    return parts[0].lower() not in _STOPWORDS
+    return parts[0].lower() not in ASSETS.get().names.stopwords
+
+
+def _is_name_part(word: str, names: NameAssets) -> bool:
+    """True if this token can plausibly belong to a person's full name."""
+    low = word.lower()
+    if (low in names.name_set or _is_surname_shaped(word, names)
+            or low.endswith(names.patronymic_suffixes)):
+        return True
+    if _INITIAL_RE.fullmatch(word):
+        return True
+    parse = MORPH.parse(word)[0]
+    if _NAME_TAGS & set(parse.tag.grammemes):
+        return True
+    # A word morphology does NOT recognise is more likely a rare surname than a
+    # stray ordinary word, so it counts as a name part. Fail-closed: keeping it
+    # over-masks, dropping it would leak.
+    return not parse.is_known
+
+
+def trim_person_span(value: str) -> tuple[int, str]:
+    """Drop trailing tokens an NER person span swallowed that cannot be part of a name.
+
+    Natasha reads `Получатель Иван Петров Спасибо за помощь` as the three-part
+    span `Иван Петров Спасибо`, because a capitalised word right after a surname
+    looks exactly like a patronymic. That is not a cosmetic labelling error:
+    masking is REVERSIBLE, so the whole swallowed string gets one token and comes
+    back attached — the tool is then called with `Иван Петров Спасибо` instead of
+    `Иван Петров`, fails its own identity check, and the business operation runs
+    against the wrong person. Measured on BFCL as `execution_response_mismatch`
+    ("Expected Ольга Смирнов, got Ольга Смирнов Мои").
+
+    Trimmed from BOTH ends — the same swallow happens on the left, where a role
+    word precedes the name (`Получатель Цхведиани Ираклий`). Only while at least
+    two tokens remain, and only when morphology positively recognises the word as
+    an ordinary one. A word it does not know stays in the span: a rare surname
+    must not be exposed in order to fix a boundary.
+
+    Returns (leading_offset, trimmed_value) because dropping a leading token
+    moves the span start, and the caller mints the token at that offset."""
+    names = ASSETS.get().names
+    parts = value.split()
+    while len(parts) > 2 and not _is_name_part(parts[-1], names):
+        parts.pop()
+    leading = 0
+    while len(parts) > 2 and not _is_name_part(parts[0], names):
+        leading += len(parts.pop(0)) + 1
+    return leading, " ".join(parts)
 
 
 def keep_person(value: str) -> bool:
@@ -107,18 +133,35 @@ def keep_person(value: str) -> bool:
     parts = value.split()
     if len(parts) >= 2:
         return True
-    return is_known_name(parts[0]) or is_surname_shaped(parts[0])
+    names = ASSETS.get().names
+    return _is_known_name(parts[0], names) or _is_surname_shaped(parts[0], names)
 
 
 def gazetteer_names(text: str) -> list[Span]:
-    """Catch names NER misses: known names (any case), Latin pairs, initials."""
+    """Catch names NER misses: known names (any case), Latin pairs, initials,
+    and — for CAPITALISED words only — the bulk dictionary.
+
+    The 28k/197k bulk dictionaries are matched only when the word is capitalised.
+    The seed lists stay case-insensitive because a diminutive is normally written
+    lowercase ("перезвони свете"), but applying that to 225k entries would mask
+    every sentence containing an ordinary word that happens to also be a surname.
+    Entries that ARE ordinary Russian words are dropped when the bundle is built."""
+    names = ASSETS.get().names
     spans: list[Span] = []
     for match in _WORD_RE.finditer(text):
-        low = match.group().lower()
-        if low in _NAME_SET or _lemma(low) in _NAME_SET:
-            spans.append(Span(match.start(), match.end(), "NAME", match.group()))
+        word = match.group()
+        low = word.lower()
+        lemma = _lemma(low)
+        before = text[max(0, match.start() - 20):match.start()].lower()
+        if _name_set_hit(word, low, lemma, before, names):
+            spans.append(Span(match.start(), match.end(), "NAME", word))
+        elif word[:1].isupper() and (
+            low in names.dict_first or low in names.dict_surnames
+            or lemma in names.dict_first or lemma in names.dict_surnames
+        ):
+            spans.append(Span(match.start(), match.end(), "NAME", word))
     for match in _LATIN_PAIR_RE.finditer(text):
-        if match.group(1).lower() in _NAME_SET:
+        if match.group(1).lower() in names.name_set:
             spans.append(Span(match.start(), match.end(), "NAME", match.group()))
     for match in _INITIALS_RE.finditer(text):
         spans.append(Span(match.start(), match.end(), "NAME", match.group()))

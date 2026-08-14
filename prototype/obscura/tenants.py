@@ -7,9 +7,10 @@ forward to. So a customer plugs us in with one URL + one key, and we bill per ke
 """
 
 import secrets
-import sqlite3
 import threading
 from dataclasses import dataclass
+
+from obscura.sqlite_setup import connect as sqlite_connect
 
 
 @dataclass(frozen=True)
@@ -24,7 +25,7 @@ class Tenants:
 
     def __init__(self, db_path: str) -> None:
         self._lock = threading.Lock()
-        self._conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._conn = sqlite_connect(db_path)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS tenants ("
             "obscura_key TEXT PRIMARY KEY, customer_id TEXT, "

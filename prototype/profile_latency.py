@@ -15,6 +15,7 @@ import time
 from obscura.detect_all import Detector
 from obscura.redact import mask_text, unmask_text
 from obscura.vault import Vault
+from testkit import load_dev_bundle
 
 
 def _pct(values: list[float], p: float) -> float:
@@ -82,5 +83,6 @@ def part2() -> None:
 
 
 if __name__ == "__main__":
+    load_dev_bundle()
     part1()
     part2()

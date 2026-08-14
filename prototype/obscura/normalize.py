@@ -9,19 +9,14 @@ so real Cyrillic in names is never touched.
 
 import re
 
+from obscura.assets import ASSETS
+
 _DASH_RE = re.compile("[‐‑‒–—―−­]")  # ‐‑‒–—―−, soft hyphen
 _SPACE_RE = re.compile("[         ]")
 _ZW_RE = re.compile("[​‌‍﻿]")
 
-# Cyrillic / Greek / Latin glyphs that look like digits.
-_LOOKALIKE: dict[str, str] = {
-    "О": "0", "о": "0", "O": "0", "o": "0", "Ο": "0", "о": "0",
-    "З": "3", "з": "3",
-    "б": "6", "Б": "6",
-    "Ч": "4", "ч": "4",
-    "I": "1", "l": "1", "І": "1", "і": "1",
-    "B": "8", "В": "8",
-}
+# The digit look-alike table is LEASED (obscura/assets.py): WHICH glyphs an
+# obfuscator actually substitutes is a tuned list, not a published fact.
 
 
 def normalize(text: str) -> str:
@@ -36,20 +31,21 @@ def normalize(text: str) -> str:
     # boundary ("8-924-45О-56-12", "8 935 О44 69 47"), while a short house letter
     # ("156Б" -> 3 digits) and any alphabetic word ("Циолковского") — whose real
     # letters break the run — are left untouched.
+    lookalike = ASSETS.get().lookalike
     chars = list(text)
     n = len(chars)
     index = 0
     while index < n:
-        if not _in_region_alpha(chars[index]):
+        if not _in_region_alpha(chars[index], lookalike):
             index += 1
             continue
         end = index
-        while end < n and _in_region_alpha(chars[end]):
+        while end < n and _in_region_alpha(chars[end], lookalike):
             end += 1
         if sum(1 for c in chars[index:end] if c.isdigit()) >= 5:
             for k in range(index, end):
-                if chars[k] in _LOOKALIKE:
-                    chars[k] = _LOOKALIKE[chars[k]]
+                if chars[k] in lookalike:
+                    chars[k] = lookalike[chars[k]]
         index = end
     return "".join(chars)
 
@@ -57,6 +53,6 @@ def normalize(text: str) -> str:
 _SEPARATORS = frozenset(" -+()")
 
 
-def _in_region_alpha(char: str) -> bool:
+def _in_region_alpha(char: str, lookalike: dict[str, str]) -> bool:
     """A char that can be part of a phone/ID number region."""
-    return char.isdigit() or char in _LOOKALIKE or char in _SEPARATORS
+    return char.isdigit() or char in lookalike or char in _SEPARATORS

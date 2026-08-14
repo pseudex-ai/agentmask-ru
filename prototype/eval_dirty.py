@@ -9,6 +9,7 @@ import sys
 
 from obscura.detect_all import Detector
 from obscura.normalize import normalize
+from testkit import load_dev_bundle
 
 _NUMERIC = {"PHONE", "SNILS", "INN", "CARD", "PASSPORT", "DATE"}
 
@@ -41,6 +42,7 @@ def _f2(recall: float, precision: float) -> float:
 
 
 def main() -> None:
+    load_dev_bundle()
     path = sys.argv[1] if len(sys.argv) > 1 else "dirty.json"
     print(f"dataset: {path}")
     with open(path, encoding="utf-8") as handle:
