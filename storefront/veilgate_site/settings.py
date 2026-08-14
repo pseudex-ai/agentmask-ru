@@ -204,6 +204,25 @@ LICENSING_CA = _env("VEILGATE_LICENSING_CA", "")
 YOOKASSA_SHOP_ID = _env("VEILGATE_YOOKASSA_SHOP_ID")
 YOOKASSA_SECRET_KEY = _env("VEILGATE_YOOKASSA_SECRET_KEY")
 
+# Our own details, printed on every счёт and акт. Configuration rather than a
+# template literal: they change (a bank, an address, an ОГРН correction) and a
+# change to a legal requisite must not require a deploy of the whole site.
+SELLER = {
+    "name": _env("VEILGATE_SELLER_NAME", "ООО «Вейлгейт»"),
+    "inn": _env("VEILGATE_SELLER_INN", ""),
+    "kpp": _env("VEILGATE_SELLER_KPP", ""),
+    "ogrn": _env("VEILGATE_SELLER_OGRN", ""),
+    "address": _env("VEILGATE_SELLER_ADDRESS", ""),
+    "bank": _env("VEILGATE_SELLER_BANK", ""),
+    "bik": _env("VEILGATE_SELLER_BIK", ""),
+    "account": _env("VEILGATE_SELLER_ACCOUNT", ""),
+    "corr_account": _env("VEILGATE_SELLER_CORR_ACCOUNT", ""),
+    # УСН by default: a company on the simplified system must NOT print a VAT
+    # line, and printing "НДС не облагается" when it does not apply is just as
+    # wrong. Stated explicitly so nobody guesses.
+    "vat": _env("VEILGATE_SELLER_VAT", "Без НДС (УСН)"),
+}
+
 DOCKER_IMAGE = _env("VEILGATE_DOCKER_IMAGE", "cr.yandex/veilgate/veilgate:1.0.0")
 
 # Our back office. Configurable because a fixed /admin/ is the first path every

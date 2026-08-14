@@ -165,7 +165,7 @@ def run_checks(client) -> None:
           anonymous.status_code == 302 and "/accounts/login" in anonymous.url,
           f"status={anonymous.status_code}")
 
-    from accounts.models import User
+    from accounts.models import Membership, User
     client.force_login(User.objects.get(email="buyer@acme.ru"))
     cabinet = client.get("/app/")
     cabinet_body = cabinet.content.decode()
@@ -203,10 +203,49 @@ def run_checks(client) -> None:
           Organization.objects.filter(memberships__user__email="buyer@acme.ru").count() == 1,
           f"orgs={Organization.objects.filter(memberships__user__email='buyer@acme.ru').count()}")
 
+    # Invoices and the printable form.
+    from datetime import date, timedelta
+    from billing.services import build_invoice
+    client.force_login(User.objects.get(email="buyer@acme.ru"))
+    org = Organization.objects.filter(memberships__user__email="buyer@acme.ru").first()
+    invoice = build_invoice(org, date.today() - timedelta(days=30), date.today())
+    check("an invoice is drafted from the licensing server's counters",
+          invoice.total == invoice.organization.subscription.plan.monthly_price,
+          f"total={invoice.total} overage={invoice.overage_requests}")
+
+    printed = client.get(f"/app/invoices/{invoice.number}/print")
+    printed_body = printed.content.decode()
+    check("the printable form renders", printed.status_code == 200)
+    check("the printable form warns when requisites are missing",
+          "Реквизиты не заполнены" in printed_body,
+          "ИНН is asked for at purchase, not at sign-up")
+    check("an unpaid invoice is not also an act",
+          "акт выполненных работ" not in printed_body.lower())
+
+    # Another organisation must not reach it. Checked as a DIFFERENT user: the
+    # first version of this line re-fetched as the owner and asserted 200, which
+    # proved nothing at all.
+    intruder = User.objects.create_user(email="intruder@example.com")
+    intruder_org = Organization.objects.create(display_name="Чужая")
+    Membership.objects.create(user=intruder, organization=intruder_org)
+    client.force_login(intruder)
+    outsider = client.get(f"/app/invoices/{invoice.number}/print")
+    check("the printable form is scoped to its owner", outsider.status_code == 404,
+          f"status={outsider.status_code}")
+    client.force_login(User.objects.get(email="buyer@acme.ru"))
+
+    # The webhook must not be a way to mark invoices paid by asserting so.
+    forged = client.post("/hooks/yookassa",
+                         data='{"object": {"id": "made-up", "status": "succeeded"}}',
+                         content_type="application/json")
+    invoice.refresh_from_db()
+    check("a forged payment notification cannot mark an invoice paid",
+          invoice.state != "paid" and forged.status_code in (200, 502),
+          f"status={forged.status_code} invoice={invoice.state}")
+
     # A second organisation must not be able to read the first one's invoices.
     other_user = User.objects.create_user(email="stranger@example.com")
     other_org = Organization.objects.create(display_name="Другая")
-    from accounts.models import Membership
     Membership.objects.create(user=other_user, organization=other_org)
     client.force_login(other_user)
     leaked = client.get(f"/app/invoices/DOES-NOT-EXIST")

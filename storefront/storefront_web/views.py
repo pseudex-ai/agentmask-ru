@@ -7,6 +7,9 @@ absence is the product's legal position, not a missing feature, so a view added
 later must be checked against it rather than against convenience.
 """
 
+import json
+import logging
+
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -16,11 +19,14 @@ from django.db import transaction
 from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from accounts.models import Membership, Organization
-from billing import licensing, services
+from billing import licensing, payments, services
 from billing.models import Invoice, LicenseKey, Plan
+
+_log = logging.getLogger("storefront")
 
 
 def _organization(request) -> Organization:
@@ -239,6 +245,107 @@ def invoice_detail(request, number: str):
     return render(request, "app/invoice.html", {
         "invoice": invoice,
         "organization": organization,
+    })
+
+
+@login_required
+@require_POST
+def pay_invoice(request, number: str):
+    """Send the customer to ЮKassa for this invoice."""
+    organization = _organization(request)
+    invoice = organization.invoices.filter(number=number).first()
+    if invoice is None:
+        raise Http404("счёт не найден")
+    if invoice.state == Invoice.PAID:
+        messages.info(request, "Этот счёт уже оплачен.")
+        return redirect("invoice_detail", number=number)
+    try:
+        payment_id, confirmation = payments.create_payment(
+            invoice, request.build_absolute_uri(f"/app/invoices/{number}")
+        )
+    except payments.PaymentError as error:
+        _log.error("payment for %s failed: %s", number, error)
+        messages.error(request, "Не удалось начать оплату картой. Счёт можно "
+                                "оплатить по реквизитам — форма ниже.")
+        return redirect("invoice_detail", number=number)
+    invoice.payment_ref = payment_id
+    invoice.save(update_fields=["payment_ref"])
+    return redirect(confirmation)
+
+
+@csrf_exempt
+@require_POST
+def yookassa_webhook(request):
+    """Payment notification.
+
+    Machine-to-machine, so CSRF does not apply — there is no session and no
+    browser. The body is NOT trusted: it supplies an id, and the status is read
+    back from ЮKassa over an authenticated connection. Anyone can post this
+    shape at us; nobody can make ЮKassa agree.
+
+    Always answers 200 once the notification is understood. A provider that gets
+    a 500 retries, and retrying a notification we have already acted on is how a
+    customer's service gets resumed twice and an invoice marked paid twice.
+    """
+    try:
+        body = json.loads(request.body or b"{}")
+        payment_id = str(body.get("object", {}).get("id", ""))
+    except (ValueError, AttributeError):
+        return HttpResponse("bad body", status=400)
+    if not payment_id:
+        return HttpResponse("no payment id", status=400)
+
+    try:
+        status, amount, number = payments.fetch_status(payment_id)
+    except payments.PaymentError as error:
+        # 502 rather than 200: we could not establish the truth, so the provider
+        # SHOULD retry. This is the one case where a retry is what we want.
+        _log.error("could not verify payment %s: %s", payment_id, error)
+        return HttpResponse("could not verify", status=502)
+
+    if status != "succeeded":
+        return HttpResponse("ignored", status=200)
+
+    invoice = Invoice.objects.filter(number=number).first()
+    if invoice is None:
+        _log.error("payment %s references unknown invoice %r", payment_id, number)
+        return HttpResponse("unknown invoice", status=200)
+    if invoice.state == Invoice.PAID:
+        return HttpResponse("already paid", status=200)
+    # Underpayment must not resume service. Amounts come back as Decimal from
+    # both sides, so this is an exact comparison and not a float near-miss.
+    if amount < invoice.total:
+        _log.error("payment %s underpays %s: %s < %s",
+                   payment_id, number, amount, invoice.total)
+        return HttpResponse("amount mismatch", status=200)
+
+    invoice.payment_ref = payment_id
+    invoice.save(update_fields=["payment_ref"])
+    services.mark_paid(invoice)
+    _log.info("invoice %s paid via %s", number, payment_id)
+    return HttpResponse("ok", status=200)
+
+
+@login_required
+def invoice_print(request, number: str):
+    """Печатная форма счёта — the page an accountant prints or saves as PDF.
+
+    HTML with a print stylesheet rather than a generated PDF. WeasyPrint and
+    friends need pango/cairo, which do not import on a developer machine at all,
+    so the one artefact a customer's accountant looks at would have first run in
+    production. A page can be opened by a test with an HTTP GET.
+    """
+    organization = _organization(request)
+    invoice = organization.invoices.filter(number=number).first()
+    if invoice is None:
+        raise Http404("счёт не найден")
+    return render(request, "app/print_invoice.html", {
+        "invoice": invoice,
+        "organization": organization,
+        "seller": settings.SELLER,
+        # An акт only exists once the work is paid for; before that this is a
+        # счёт and nothing else.
+        "act": invoice.state == Invoice.PAID,
     })
 
 

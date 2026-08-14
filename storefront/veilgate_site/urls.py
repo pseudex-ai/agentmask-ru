@@ -26,6 +26,12 @@ urlpatterns = [
     path("app/keys/new", views.new_key, name="new_key"),
     path("app/keys/<int:key_id>/revoke", views.revoke_key, name="revoke_key"),
     path("app/invoices/<str:number>", views.invoice_detail, name="invoice_detail"),
+    path("app/invoices/<str:number>/print", views.invoice_print, name="invoice_print"),
+    path("app/invoices/<str:number>/pay", views.pay_invoice, name="pay_invoice"),
+
+    # Machine endpoint, outside /app/: no session, no CSRF, and deliberately not
+    # under a path that login_required covers.
+    path("hooks/yookassa", views.yookassa_webhook, name="yookassa_webhook"),
 
     path("accounts/", include("allauth.urls")),
     path(f"{settings.ADMIN_PATH}/", admin.site.urls),

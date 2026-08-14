@@ -11,3 +11,8 @@ httpx==0.28.1
 # pays against. Stripe is not an option in this market, so the abstraction that
 # would let us swap gateways would be abstraction over a set of one.
 yookassa==3.5.0
+# Deliberately NOT weasyprint or reportlab. Documents are print-ready HTML that
+# the browser turns into a PDF: WeasyPrint needs pango/cairo, which cannot be
+# imported on the development machine at all, so the one part of this service a
+# customer's accountant looks at would first run in production. Печатная форма
+# is testable with an HTTP GET.

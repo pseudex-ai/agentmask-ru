@@ -1,0 +1,129 @@
+{% load static %}<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>{% if act %}Счёт и акт{% else %}Счёт{% endif %} {{ invoice.number }} — veilgate</title>
+<style>
+/* A печатная форма, not a screen. White paper, black text, no brand palette:
+   this document is printed, filed, and looked at by an accountant who has no
+   interest in our dark theme — and a dark background wastes a cartridge. */
+  @page { size: A4; margin: 18mm 15mm; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: #fff; color: #111;
+    font-family: Inter, system-ui, sans-serif; font-size: 12px; line-height: 1.5;
+  }
+  .sheet { max-width: 780px; margin: 0 auto; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .brand img { width: 26px; height: 26px; }
+  .brand b { font-size: 19px; letter-spacing: -.02em; }
+  h1 { font-size: 20px; margin: 22px 0 4px; }
+  .when { color: #555; margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th, td { border: 1px solid #bbb; padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f2f2f2; font-weight: 600; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  .party { margin: 14px 0; }
+  .party .role { color: #555; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  .party .body { margin-top: 3px; }
+  .total { font-size: 15px; font-weight: 700; margin-top: 10px; text-align: right; }
+  .words { margin-top: 4px; color: #333; text-align: right; }
+  .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 46px; }
+  .sign div { border-top: 1px solid #111; padding-top: 6px; color: #555; }
+  .note { margin-top: 26px; padding-top: 12px; border-top: 1px solid #ddd; color: #555; font-size: 11px; }
+  .missing { color: #a33; }
+  .actions { margin-bottom: 20px; }
+  .actions button, .actions a {
+    font: inherit; padding: 8px 14px; border: 1px solid #111; background: #111;
+    color: #fff; cursor: pointer; text-decoration: none; margin-right: 8px;
+  }
+  .actions a { background: #fff; color: #111; }
+  @media print { .actions { display: none; } body { padding: 0; } }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <div class="actions">
+    <button type="button" onclick="window.print()">Печать / сохранить в PDF</button>
+    <a href="{% url 'invoice_detail' invoice.number %}">← назад</a>
+  </div>
+
+  <div class="brand">
+    <img src="{% static 'logo-light.svg' %}" alt="">
+    <b>veilgate</b>
+  </div>
+
+  <h1>Счёт № {{ invoice.number }}{% if act %} и акт выполненных работ{% endif %}</h1>
+  <div class="when">
+    от {{ invoice.issued_at|default:invoice.period_start|date:"d.m.Y" }} ·
+    период {{ invoice.period_start|date:"d.m.Y" }} — {{ invoice.period_end|date:"d.m.Y" }}
+    {% if invoice.due_at and not act %} · оплатить до {{ invoice.due_at|date:"d.m.Y" }}{% endif %}
+  </div>
+
+  <div class="party">
+    <div class="role">Исполнитель</div>
+    <div class="body">
+      {{ seller.name }}{% if seller.inn %}, ИНН {{ seller.inn }}{% endif %}{% if seller.kpp %}, КПП {{ seller.kpp }}{% endif %}{% if seller.ogrn %}, ОГРН {{ seller.ogrn }}{% endif %}<br>
+      {{ seller.address }}
+      {% if seller.account %}<br>р/с {{ seller.account }}, {{ seller.bank }}, БИК {{ seller.bik }}{% if seller.corr_account %}, к/с {{ seller.corr_account }}{% endif %}{% endif %}
+    </div>
+  </div>
+
+  <div class="party">
+    <div class="role">Заказчик</div>
+    <div class="body">
+      {% if organization.is_billable %}
+        {{ organization.legal_name }}, ИНН {{ organization.inn }}{% if organization.kpp %}, КПП {{ organization.kpp }}{% endif %}<br>
+        {{ organization.legal_address }}
+      {% else %}
+        <span class="missing">Реквизиты не заполнены — счёт нельзя предъявить к оплате.
+        Добавьте наименование и ИНН в кабинете.</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <table>
+    <tr><th style="width:34px">№</th><th>Наименование работ, услуг</th><th class="num" style="width:70px">Кол-во</th><th class="num" style="width:110px">Цена, ₽</th><th class="num" style="width:120px">Сумма, ₽</th></tr>
+    <tr>
+      <td>1</td>
+      <td>Право использования ПО «veilgate», тариф «{{ invoice.organization.subscription.plan.title }}», период {{ invoice.period_start|date:"d.m.Y" }} — {{ invoice.period_end|date:"d.m.Y" }}</td>
+      <td class="num">1</td>
+      <td class="num">{{ invoice.plan_amount }}</td>
+      <td class="num">{{ invoice.plan_amount }}</td>
+    </tr>
+    {% if invoice.overage_requests %}
+    <tr>
+      <td>2</td>
+      <td>Обработка запросов сверх включённого объёма — {{ invoice.overage_requests }} запросов</td>
+      <td class="num">{{ invoice.overage_requests }}</td>
+      <td class="num">{{ invoice.organization.subscription.plan.overage_per_1k }} / 1000</td>
+      <td class="num">{{ invoice.overage_amount }}</td>
+    </tr>
+    {% endif %}
+  </table>
+
+  <div class="total">Итого: {{ invoice.total }} ₽</div>
+  <div class="words">{{ seller.vat }}</div>
+
+  {% if act %}
+    <div class="note">
+      Работы выполнены полностью и в срок. Заказчик претензий по объёму, качеству
+      и срокам не имеет. Оплата поступила {{ invoice.paid_at|date:"d.m.Y" }}.
+    </div>
+    <div class="sign">
+      <div>Исполнитель — {{ seller.name }}</div>
+      <div>Заказчик — {% if organization.is_billable %}{{ organization.legal_name }}{% else %}______________________{% endif %}</div>
+    </div>
+  {% else %}
+    <div class="note">
+      Оплата означает согласие с офертой. Счёт действителен к оплате до
+      {{ invoice.due_at|date:"d.m.Y" }}. В назначении платежа укажите номер счёта
+      {{ invoice.number }}.<br><br>
+      Объём обработанных запросов рассчитан по счётчикам, которые ваши собственные
+      контейнеры передают при продлении аренды. Персональные данные при этом не
+      передаются и нам недоступны.
+    </div>
+  {% endif %}
+</div>
+</body>
+</html>
