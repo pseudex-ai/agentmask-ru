@@ -1,0 +1,793 @@
+"""The closing gate for the licensing layer: L1-L15 against a real local instance.
+
+RULES THIS FILE OBEYS (docs/tz-license-packaging.md §4.1), because a gate that
+cheats is worse than no gate:
+
+  * No unit tests. Every scenario talks to a container over the network.
+  * No mock licensing server. The stand runs the same `licensing/` image that
+    would go to production, with shorter TTL/grace supplied as CONFIGURATION.
+  * No test hooks in the product. Time is never faked inside the app — the clock
+    rollback gate lies to the running process from OUTSIDE, with libfaketime
+    injected through the environment.
+  * No collateral damage to the machine. The first version of that gate used
+    `cap_add: SYS_TIME` and `date -s`; the kernel does not isolate the clock per
+    container, so it moved the whole Docker VM's wall clock and every unrelated
+    container with it.
+  * No manual step. One command, from a clean state, exit code decides.
+  * Every gate proves its PRECONDITION before checking its consequence — a gate
+    that passes because the container never reached the state is a false green.
+
+usage:
+    python3 e2e/gates.py                    # source image
+    python3 e2e/gates.py --image obscura:compiled          # gate P7
+    python3 e2e/gates.py --only L4,L5       # a subset, for iterating
+
+    OBSCURA_SIGNING_KEY=... python3 e2e/gates.py --image obscura:compiled --skip-build
+
+The verification key is compiled into the release binary, so a fresh key means a
+fresh Nuitka compile. Pass the key the image was built with, plus --skip-build,
+to reuse it.
+"""
+
+import argparse
+import base64
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+import httpx
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
+
+from e2e import certs, fixtures  # noqa: E402
+from licensing.keys import encode_private, encode_public  # noqa: E402
+
+_HERE = Path(__file__).resolve().parent
+_ROOT = _HERE.parent
+_COMPOSE = _HERE / "compose.yml"
+_ENV_FILE = _HERE / ".env"
+
+SIDECAR = "http://127.0.0.1:18000"
+ADMIN = "http://127.0.0.1:19443"
+NETWORK = "obscura-e2e_default"
+ORG = "acme"
+
+TTL_SECONDS = 60
+GRACE_SECONDS = 120
+# The ladder needs TTL + grace + one tick to be certain, plus slack for a slow
+# machine. Everything that waits for expiry uses this.
+EXPIRY_WAIT = TTL_SECONDS + GRACE_SECONDS + 45
+
+
+@dataclass
+class Result:
+    name: str
+    ok: bool
+    detail: str
+
+
+RESULTS: list[Result] = []
+
+
+# --- plumbing ------------------------------------------------------------
+
+def sh(args: list[str], check: bool, timeout: int) -> subprocess.CompletedProcess:
+    return subprocess.run(args, capture_output=True, text=True, check=check, timeout=timeout)
+
+
+def compose(args: list[str], check: bool, timeout: int) -> subprocess.CompletedProcess:
+    return sh(["docker", "compose", "-f", str(_COMPOSE), *args], check, timeout)
+
+
+def logs(service: str) -> str:
+    return compose(["logs", "--no-color", service], False, 60).stdout
+
+
+# Some gates need a fresh stand, and `down -v` throws the logs away with it. L15
+# has to see EVERY scenario's output, not just the last one, so logs are archived
+# before anything is torn down.
+_LOG_ARCHIVE: list[str] = []
+
+
+def compose_down() -> None:
+    for service in ("sidecar", "license"):
+        _LOG_ARCHIVE.append(logs(service))
+    compose(["down", "-v"], True, 300)
+
+
+def all_logs() -> str:
+    return "\n".join(_LOG_ARCHIVE) + logs("sidecar") + logs("license")
+
+
+def sidecar_exec(args: list[str]) -> subprocess.CompletedProcess:
+    return compose(["exec", "-T", "sidecar", *args], False, 120)
+
+
+def post_mask(timeout: float) -> httpx.Response:
+    return httpx.post(f"{SIDECAR}/mask", json=fixtures.mask_body(ORG), timeout=timeout)
+
+
+def license_state() -> dict[str, object]:
+    return httpx.get(f"{SIDECAR}/license", timeout=10).json()
+
+
+def wait_until(predicate, timeout: float, interval: float, what: str) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            if predicate():
+                return True
+        except (httpx.HTTPError, KeyError, ValueError):
+            pass
+        time.sleep(interval)
+    print(f"      timed out waiting for {what} after {timeout:.0f}s")
+    return False
+
+
+def run_disposable_sidecar(image: str, env: dict[str, str], timeout: int) -> tuple[int, str]:
+    """Start a one-shot sidecar and report how it died.
+
+    Used by the startup gates. Returns (exit_code, logs). A container still alive
+    at the timeout is reported as exit code 0, which those gates treat as a
+    failure — 'it kept running' is exactly what must not happen."""
+    name = f"obscura-oneshot-{int(time.monotonic() * 1000)}"
+    args = ["docker", "run", "--name", name, "--network", NETWORK,
+            "-v", f"{_HERE / 'certs'}:/certs:ro"]
+    for key, value in env.items():
+        args += ["-e", f"{key}={value}"]
+    args.append(image)
+    try:
+        proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        code = proc.returncode
+        output = proc.stdout + proc.stderr
+    except subprocess.TimeoutExpired:
+        sh(["docker", "kill", name], False, 30)
+        output = sh(["docker", "logs", name], False, 30).stdout
+        code = 0  # still running at the deadline
+    finally:
+        sh(["docker", "rm", "-f", name], False, 30)
+    return code, output
+
+
+def gate(name: str, ok: bool, detail: str) -> bool:
+    RESULTS.append(Result(name, ok, detail))
+    print(f"  {'PASS' if ok else 'FAIL'}  {name}  {detail}")
+    return ok
+
+
+# --- setup ---------------------------------------------------------------
+
+def build_stand(image: str, workers: int, skip_build: bool) -> str:
+    """Sign, certify, build, start. Returns the issued customer key."""
+    print("== stand ==")
+    # A fixed key can be supplied so an already-built image stays valid: the
+    # verification key is compiled in, so generating a fresh one would force a
+    # full Nuitka recompile of the release image on every run.
+    existing = os.environ.get("OBSCURA_SIGNING_KEY", "")
+    signing_key = (Ed25519PrivateKey.from_private_bytes(base64.b64decode(existing))
+                   if existing else Ed25519PrivateKey.generate())
+    private_b64 = encode_private(signing_key)
+    public_b64 = encode_public(signing_key.public_key())
+    print(f"  signing key {'reused' if existing else 'generated'}, public {public_b64[:16]}...")
+
+    certs.generate(_HERE / "certs", "license")
+    print("  self-signed CA + server cert written")
+
+    sh(["docker", "build", "-f", str(_ROOT / "licensing" / "Dockerfile"),
+        "-t", "obscura-licensing:e2e", str(_ROOT)], True, 1200)
+    if skip_build:
+        print(f"  reusing the existing {image}")
+    elif image == "obscura:source":
+        # The verification key is baked in at BUILD time, as it is for a release:
+        # a key the customer could override in the environment would let them
+        # sign their own bundles.
+        sh(["docker", "build", "-f", str(_ROOT / "Dockerfile"),
+            "--build-arg", f"OBSCURA_LICENSE_PUBKEY={public_b64}",
+            "-t", image, str(_ROOT)], True, 1800)
+        print(f"  images built ({image})")
+    else:
+        sh(["docker", "build", "-f", str(_ROOT / "Dockerfile.nuitka"),
+            "--build-arg", f"OBSCURA_LICENSE_PUBKEY={public_b64}",
+            "-t", image, str(_ROOT)], True, 3600)
+        print(f"  images built ({image})")
+
+    _ENV_FILE.write_text(
+        f"OBSCURA_SIGNING_KEY={private_b64}\n"
+        f"OBSCURA_IMAGE={image}\n"
+        f"OBSCURA_KEY=\n"
+        f"OBSCURA_WORKERS={workers}\n"
+        f"OBSCURA_LEASE_TTL_SECONDS={TTL_SECONDS}\n"
+        f"OBSCURA_GRACE_SECONDS={GRACE_SECONDS}\n"
+        f"OBSCURA_FAULT_INJECT=\n"
+        f"OBSCURA_LOG_RAW_BODY=\n"
+        f"OBSCURA_LD_PRELOAD=\n"
+        f"OBSCURA_FAKETIME_FILE=\n"
+    )
+    compose(["up", "-d", "license"], True, 600)
+    if not wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
+                      120, 2, "licensing admin"):
+        raise SystemExit("licensing server did not come up")
+
+    key = httpx.post(f"{ADMIN}/admin/issue", json={"org_id": ORG}, timeout=15).json()["key"]
+    print(f"  key issued for {ORG}: {key[:18]}...")
+    set_env("OBSCURA_KEY", key)
+    return key
+
+
+def set_env(name: str, value: str) -> None:
+    lines = [line for line in _ENV_FILE.read_text().splitlines()
+             if not line.startswith(f"{name}=")]
+    lines.append(f"{name}={value}")
+    _ENV_FILE.write_text("\n".join(lines) + "\n")
+
+
+def start_sidecar() -> bool:
+    compose(["up", "-d", "sidecar"], True, 600)
+    return wait_until(
+        lambda: httpx.get(f"{SIDECAR}/health", timeout=5).json()["license"] == "active",
+        180, 3, "sidecar to reach license=active",
+    )
+
+
+# --- gates: startup refuses ----------------------------------------------
+
+def gate_l1(image: str) -> bool:
+    code, output = run_disposable_sidecar(image, {
+        "OBSCURA_LICENSE_URL": "https://license:8443",
+        "OBSCURA_LICENSE_CA": "/certs/ca.pem",
+    }, 90)
+    served = _port_answered()
+    return gate("L1 no key -> refuses to start",
+                code != 0 and "license_missing" in output and not served,
+                f"exit={code} license_missing={'license_missing' in output}")
+
+
+def gate_l2(image: str) -> bool:
+    code, output = run_disposable_sidecar(image, {
+        "OBSCURA_LICENSE_URL": "https://license:8443",
+        "OBSCURA_LICENSE_CA": "/certs/ca.pem",
+        "OBSCURA_LICENSE_KEY": "obsc_live_totally_made_up_key",
+    }, 90)
+    return gate("L2 unknown key -> refuses to start",
+                code != 0 and "license_invalid" in output,
+                f"exit={code} license_invalid={'license_invalid' in output}")
+
+
+def gate_l2b(image: str, key: str) -> bool:
+    """The customer cannot substitute their own verification key.
+
+    The whole signature is worthless if the key that checks it can be replaced
+    from the environment: anyone could then run their own server, sign their own
+    bundle, and keep a cancelled subscription alive forever. The release image
+    bakes the key at build time and must ignore the environment entirely — which
+    shows up as a container that starts NORMALLY even when the variable is set to
+    garbage."""
+    name = f"obscura-keytest-{int(time.monotonic() * 1000)}"
+    args = ["docker", "run", "-d", "--name", name, "--network", NETWORK,
+            "-v", f"{_HERE / 'certs'}:/certs:ro",
+            "-e", "OBSCURA_LICENSE_URL=https://license:8443",
+            "-e", "OBSCURA_LICENSE_CA=/certs/ca.pem",
+            "-e", f"OBSCURA_LICENSE_KEY={key}",
+            "-e", "OBSCURA_LICENSE_PUBKEY=bm90LW91ci1rZXktYXQtYWxs",
+            image]
+    sh(args, False, 120)
+
+    def _leased() -> bool:
+        logs_now = sh(["docker", "logs", name], False, 60)
+        return "lease acquired" in logs_now.stdout + logs_now.stderr
+
+    # Polled rather than slept: a fixed wait long enough for the source image is
+    # not necessarily long enough for the compiled one on a loaded machine, and
+    # "we did not wait long enough" would read as "the key was rejected".
+    wait_until(_leased, 180, 3, "the container to acquire a lease")
+    output = sh(["docker", "logs", name], False, 60)
+    running = sh(["docker", "inspect", "-f", "{{.State.Running}}", name], False, 60).stdout.strip()
+    combined = output.stdout + output.stderr
+    sh(["docker", "rm", "-f", name], False, 60)
+    ok = running == "true" and "lease acquired" in combined
+    return gate("L2b baked verification key ignores the environment", ok,
+                f"running={running} leased={'lease acquired' in combined}")
+
+
+def gate_l3(image: str, key: str) -> bool:
+    compose(["stop", "license"], True, 120)
+    try:
+        code, output = run_disposable_sidecar(image, {
+            "OBSCURA_LICENSE_URL": "https://license:8443",
+            "OBSCURA_LICENSE_CA": "/certs/ca.pem",
+            "OBSCURA_LICENSE_KEY": key,
+        }, 150)
+    finally:
+        compose(["start", "license"], True, 120)
+        wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
+                   120, 2, "licensing admin back up")
+    return gate("L3 cold start with our server down -> refuses (no grace)",
+                code != 0 and "bundle_unavailable" in output,
+                f"exit={code} bundle_unavailable={'bundle_unavailable' in output}")
+
+
+def _port_answered() -> bool:
+    try:
+        httpx.get(f"{SIDECAR}/health", timeout=3)
+        return True
+    except httpx.HTTPError:
+        return False
+
+
+# --- gates: healthy ------------------------------------------------------
+
+def gate_l4() -> bool:
+    health = httpx.get(f"{SIDECAR}/health", timeout=15).json()
+    response = post_mask(90)
+    masked = json.dumps(response.json(), ensure_ascii=False)
+    leaked = [value for value in fixtures.PII_PAYLOAD.values() if value in masked]
+
+    # Round trip: what the tool would receive must be the ORIGINAL surface form.
+    content = response.json()["messages"][0]["content"]
+    restored = httpx.post(f"{SIDECAR}/unmask", timeout=60, json={
+        "org_id": ORG, "response": {"choices": [{"message": {"content": content}}]},
+    }).json()["response"]["choices"][0]["message"]["content"]
+    round_tripped = [value for value in fixtures.PII_PAYLOAD.values() if value in restored]
+
+    ok = (health.get("license") == "active" and response.status_code == 200
+          and not leaked and len(round_tripped) >= 6)
+    return gate("L4 happy path masks and round-trips", ok,
+                f"health={health.get('license')} leaked={leaked} "
+                f"restored={len(round_tripped)}/{len(fixtures.PII_PAYLOAD)}")
+
+
+def gate_l5() -> bool:
+    marker = fixtures.marker_surname()
+    for _ in range(20):
+        post_mask(90)
+
+    # `docker diff` is the strong check and it covers the WHOLE image: anything
+    # the process created or modified anywhere shows up here. /data is the vault
+    # volume and is expected to change; the rest must not.
+    container_id = compose(["ps", "-q", "sidecar"], False, 30).stdout.strip().splitlines()[0]
+    changed = sh(["docker", "diff", container_id], False, 120).stdout
+    # Deliberately narrow ignore list, so this stays a real check: /data is the
+    # vault volume, /certs is the stand's read-only mount, and the
+    # ca-certificates entry is injected by the local Docker provider (OrbStack).
+    # Anything else appearing in the container's filesystem is a finding — which
+    # is why the image sets PYTHONDONTWRITEBYTECODE, so bytecode caches do not
+    # bury one in 80 lines of noise.
+    # /faketime is the stand's own mount for gate L11's libfaketime injection.
+    ignored = ("/data", "/tmp", "/run", "/certs", "/faketime",
+               # The local Docker provider (OrbStack) injects its own root CA into
+               # every container it starts. Matched by these exact paths rather
+               # than by ignoring /etc wholesale, so a file written under /etc by
+               # the engine would still be caught.
+               "/usr/local/share/ca-certificates", "/etc/ssl/certs/orbstack-root.crt",
+               "/etc/ca-certificates/trust-source")
+    outside_data = [
+        line for line in changed.splitlines()
+        if line.split(" ", 1)[0] == "A" and not line.split(" ", 1)[-1].startswith(ignored)
+    ]
+
+    # Then a content grep of every writable location, for the marker that exists
+    # ONLY in the leased dictionary. Scoped to real directories rather than `/`:
+    # a full-root walk spends its time in /proc and /sys, which are not files the
+    # process could have written the bundle to.
+    found = sidecar_exec(["sh", "-c",
+                          f"grep -rlF '{marker}' /app /data /tmp /var /etc /root /home /usr "
+                          f"2>/dev/null | head -5 || true"]).stdout.strip()
+    data_dir = sidecar_exec(["sh", "-c", "ls /app/obscura/data 2>&1 || true"]).stdout
+
+    ok = not found and not outside_data and "No such file" in data_dir
+    return gate("L5 bundle never touches disk", ok,
+                f"marker_on_disk={found or 'none'} changed_outside_data={len(outside_data)} "
+                f"data_dir_absent={'No such file' in data_dir}")
+
+
+def gate_l6() -> bool:
+    """Renewal must be invisible: no failed request, and the SAME token for the
+    same input across it — a token that moved would mean the bundle changed."""
+    before = post_mask(90).json()["messages"][0]["content"]
+    start_renewals = logs("sidecar").count("lease renewed")
+    # Two independent signals, because they fail differently: the log proves the
+    # customer can SEE renewals happening, and the lease id proves they actually
+    # ARE. The first run of this gate had renewals working perfectly and the log
+    # completely silent.
+    first_lease = license_state()["lease_id"]
+    errors = 0
+    calls = 0
+    deadline = time.monotonic() + TTL_SECONDS * 4 + 30
+    while time.monotonic() < deadline:
+        try:
+            if post_mask(90).status_code != 200:
+                errors += 1
+        except httpx.HTTPError:
+            errors += 1
+        calls += 1
+        time.sleep(2)
+    after = post_mask(90).json()["messages"][0]["content"]
+    renewals = logs("sidecar").count("lease renewed") - start_renewals
+    last_lease = license_state()["lease_id"]
+
+    ok = renewals >= 3 and last_lease != first_lease and errors == 0 and before == after
+    return gate("L6 renewal is invisible and tokens are stable", ok,
+                f"renewals_logged={renewals} lease_id_changed={last_lease != first_lease} "
+                f"calls={calls} errors={errors} token_stable={before == after}")
+
+
+_LEASED_RSS_KB = 0
+_LEASED_PID = -1
+
+
+def gate_l14a() -> bool:
+    """Precondition for L14b: while leased, the marker IS in the worker's memory
+    and the scanner can see it. Without this, L14b's verdict would be worthless —
+    a scanner that can never find anything reports every process as clean."""
+    global _LEASED_RSS_KB, _LEASED_PID
+    hits, _LEASED_RSS_KB = _memscan()
+    _LEASED_PID = httpx.get(f"{SIDECAR}/health", timeout=15).json()["pid"]
+    return gate("L14a marker present in memory while leased", hits > 0,
+                f"regions={hits} rss={_LEASED_RSS_KB // 1024}MB pid={_LEASED_PID}")
+
+
+def _memscan() -> tuple[int, int]:
+    """(regions containing the marker, total RSS in KB) across the workers."""
+    marker = fixtures.marker_surname()
+    container_id = compose(["ps", "-q", "sidecar"], False, 30).stdout.strip().splitlines()[0]
+    proc = sh(["docker", "run", "--rm", f"--pid=container:{container_id}",
+               "--cap-add=SYS_PTRACE", "-v", f"{_HERE}:/e2e:ro",
+               # "serve" matches both shapes of the worker: `python serve_main.py`
+               # in the source image and `./obscura-serve` in the compiled one.
+               "python:3.12-slim", "python", "/e2e/memscan.py", marker, "serve"], False, 300)
+    hits = re.search(r"HITS (\d+)", proc.stdout)
+    rss = re.search(r"RSS_KB (\d+)", proc.stdout)
+    if hits is None:
+        print(f"      memscan produced no verdict: {proc.stdout.strip()} "
+              f"{proc.stderr.strip()[:200]}")
+        return -1, 0
+    return int(hits.group(1)), int(rss.group(1)) if rss else 0
+
+
+# --- gates: degradation --------------------------------------------------
+
+def gate_l7() -> bool:
+    compose(["stop", "license"], True, 120)
+    reached_stale = wait_until(lambda: license_state()["state"] == "stale",
+                               TTL_SECONDS + 40, 3, "state=stale")
+    status = post_mask(90).status_code
+    health = httpx.get(f"{SIDECAR}/health", timeout=15).json()
+    warned = "license STALE" in logs("sidecar")
+    ok = reached_stale and status == 200 and health.get("license") == "stale" and warned
+    return gate("L7 our outage -> grace, still serving", ok,
+                f"stale={reached_stale} mask={status} health={health.get('license')} warned={warned}")
+
+
+def gate_l8() -> bool:
+    reached = wait_until(lambda: license_state()["state"] == "expired",
+                         EXPIRY_WAIT, 5, "state=expired")
+    response = post_mask(90)
+    body = response.json()
+    health = httpx.get(f"{SIDECAR}/health", timeout=15)
+    assets = license_state()["assets_loaded"]
+    leaked = [v for v in fixtures.PII_PAYLOAD.values() if v in json.dumps(body, ensure_ascii=False)]
+    ok = (reached and response.status_code == 503 and health.status_code == 503
+          and assets is False and not leaked)
+    return gate("L8 grace exhausted -> 503, assets unloaded", ok,
+                f"expired={reached} mask={response.status_code} health={health.status_code} "
+                f"assets_loaded={assets} error={body.get('error')}")
+
+
+def gate_l14b() -> bool:
+    """The assets were GIVEN UP by a process that is still alive and healthy.
+
+    That is the distinction worth testing. A process that died would also stop
+    detecting, and so would a flag flip — but only a genuine unload produces all
+    of: same process still running, still answering the endpoints that read the
+    customer's own vault, registry reporting nothing loaded, and BOTH detection
+    endpoints refusing.
+
+    TWO THINGS THIS DELIBERATELY DOES NOT CLAIM, because neither is true:
+
+      * that the marker's bytes are gone from the address space. `free()` does
+        not scrub, so freed pages keep their contents until the allocator reuses
+        them. Asserting byte-absence gave a gate that passed or failed depending
+        on how much unrelated traffic had churned the heap — it measured luck.
+      * that RSS drops by the size of the gazetteers. Measured: 490 MB -> 487 MB.
+        CPython's allocator returns an arena to the OS only when it is entirely
+        free, and 225k small strings are spread across arenas that also hold live
+        objects. The memory is available for reuse, not returned.
+
+    Both were assumptions written before measuring; the numbers say otherwise, so
+    the claims go rather than the numbers."""
+    hits, rss = _memscan()
+    state = license_state()
+    masked = post_mask(90)
+    spans = httpx.post(f"{SIDECAR}/spans", timeout=60,
+                       json={"org_id": ORG, "texts": ["Иван Петров"]})
+    # Still alive and still useful for the customer's own data — this is what
+    # separates "gave up the assets" from "the process fell over".
+    health = httpx.get(f"{SIDECAR}/health", timeout=15).json()
+    unmasked = httpx.post(f"{SIDECAR}/unmask", timeout=60, json={
+        "org_id": ORG, "response": {"choices": [{"message": {"content": "нет токенов"}}]},
+    })
+    ok = (state["assets_loaded"] is False
+          and masked.status_code == 503 and spans.status_code == 503
+          and unmasked.status_code == 200 and health.get("pid") == _LEASED_PID)
+    return gate("L14b assets given up by a live process", ok,
+                f"assets_loaded={state['assets_loaded']} mask={masked.status_code} "
+                f"spans={spans.status_code} unmask={unmasked.status_code} "
+                f"same_pid={health.get('pid') == _LEASED_PID} "
+                f"| observed only: rss {_LEASED_RSS_KB // 1024}->{rss // 1024}MB, "
+                f"{hits} freed-heap remnant region(s)")
+
+
+def gate_l9() -> bool:
+    pid_before = sidecar_exec(["sh", "-c", "echo $$"]).stdout.strip()
+    started = compose(["ps", "-q", "sidecar"], False, 30).stdout.strip()
+    compose(["start", "license"], True, 120)
+    recovered = wait_until(lambda: post_mask(90).status_code == 200,
+                           TTL_SECONDS * 3, 5, "mask to work again")
+    same_container = compose(["ps", "-q", "sidecar"], False, 30).stdout.strip() == started
+    restarts = sh(["docker", "inspect", "-f", "{{.RestartCount}}", started], False, 30).stdout.strip()
+    ok = recovered and same_container and restarts == "0"
+    return gate("L9 recovers without a restart", ok,
+                f"recovered={recovered} same_container={same_container} restarts={restarts} "
+                f"pid_probe={pid_before != ''}")
+
+
+_FAKETIME_DIR = _HERE / "faketime"
+_FAKETIME_SO = "/faketime/libfaketime.so.1"
+_FAKETIME_TS = _FAKETIME_DIR / "ts"
+
+
+def prepare_faketime() -> bool:
+    """Extract libfaketime from a Debian image into a directory the stand mounts.
+
+    Injected, not baked in: the image under test must stay byte-identical to the
+    one that ships. This also models the threat honestly — someone who wants free
+    grace controls the container's environment, not our Dockerfile."""
+    _FAKETIME_DIR.mkdir(exist_ok=True)
+    if not (_FAKETIME_DIR / "libfaketime.so.1").exists():
+        result = sh(["docker", "run", "--rm", "-v", f"{_FAKETIME_DIR}:/out",
+                     "debian:12-slim", "sh", "-c",
+                     "apt-get update -qq >/dev/null 2>&1 && "
+                     "apt-get install -y -qq faketime >/dev/null 2>&1 && "
+                     "cp \"$(find / -name 'libfaketime.so.1' 2>/dev/null | head -1)\" /out/ && "
+                     "chmod 644 /out/libfaketime.so.1"], False, 900)
+        if result.returncode != 0:
+            print(f"      could not extract libfaketime: {result.stderr.strip()[:200]}")
+    _FAKETIME_TS.write_text("+0\n")
+    return (_FAKETIME_DIR / "libfaketime.so.1").exists()
+
+
+def gate_l11() -> bool:
+    """Winding the wall clock back must not buy grace.
+
+    Grace is counted with `time.monotonic()`, which the kernel will not move
+    backwards, and a restart discards the in-memory bundle and needs a fresh
+    lease — so there is no persisted expiry to edit. This gate proves that from
+    the outside, by actually lying to the process about what time it is."""
+    if not prepare_faketime():
+        return gate("L11 clock rollback does not extend grace", False,
+                    "libfaketime unavailable — the scenario could not be run")
+
+    _FAKETIME_TS.write_text("+0\n")
+    set_env("OBSCURA_LD_PRELOAD", _FAKETIME_SO)
+    set_env("OBSCURA_FAKETIME_FILE", "/faketime/ts")
+    compose(["up", "-d", "--force-recreate", "sidecar"], True, 600)
+    if not wait_until(lambda: license_state()["state"] == "active", 240, 3,
+                      "sidecar active under libfaketime"):
+        _clear_faketime()
+        return gate("L11 clock rollback does not extend grace", False,
+                    "sidecar did not start with libfaketime preloaded")
+
+    # Prove the lie actually lands, otherwise a passing gate would only mean
+    # "nothing happened".
+    before = sidecar_exec(["date", "-u", "+%s"]).stdout.strip()
+    compose(["stop", "license"], True, 120)
+    if not wait_until(lambda: license_state()["state"] == "stale",
+                      TTL_SECONDS + 40, 3, "state=stale before the clock moves"):
+        compose(["start", "license"], True, 120)
+        _clear_faketime()
+        return gate("L11 clock rollback does not extend grace", False, "never reached stale")
+
+    _FAKETIME_TS.write_text("-72h\n")
+    time.sleep(3)
+    after = sidecar_exec(["date", "-u", "+%s"]).stdout.strip()
+    moved = (before.isdigit() and after.isdigit()
+             and int(before) - int(after) > 60 * 60 * 71)
+
+    expired = wait_until(lambda: license_state()["state"] == "expired",
+                         EXPIRY_WAIT, 5, "state=expired despite the clock going backwards")
+
+    _FAKETIME_TS.write_text("+0\n")
+    compose(["start", "license"], True, 120)
+    _clear_faketime()
+    wait_until(lambda: post_mask(90).status_code == 200, TTL_SECONDS * 3, 5, "recovery")
+    return gate("L11 clock rollback does not extend grace", moved and expired,
+                f"clock_moved_back={moved} ({before}->{after}) expired_on_time={expired}")
+
+
+def _clear_faketime() -> None:
+    set_env("OBSCURA_LD_PRELOAD", "")
+    set_env("OBSCURA_FAKETIME_FILE", "")
+    compose(["up", "-d", "--force-recreate", "sidecar"], False, 600)
+    wait_until(lambda: license_state()["state"] in ("active", "stale", "expired"),
+               240, 3, "sidecar back without libfaketime")
+
+
+def gate_l10() -> bool:
+    """Revocation is an ANSWER, not an outage: it must bypass grace entirely."""
+    if not wait_until(lambda: license_state()["state"] == "active", 120, 3, "active before revoke"):
+        return gate("L10 revocation bypasses grace", False, "sidecar was not active")
+    httpx.post(f"{ADMIN}/admin/revoke", json={"org_id": ORG}, timeout=15)
+    revoked_at = time.monotonic()
+    stopped = wait_until(lambda: post_mask(90).status_code == 503,
+                         TTL_SECONDS * 2 + 30, 3, "mask to start refusing")
+    elapsed = time.monotonic() - revoked_at
+    state = license_state()
+    # The whole point: it must NOT have taken the grace window.
+    bypassed_grace = elapsed < GRACE_SECONDS
+    ok = stopped and bypassed_grace and state.get("code") == "license_revoked"
+    httpx.post(f"{ADMIN}/admin/resume", json={"org_id": ORG}, timeout=15)
+    return gate("L10 revocation bypasses grace", ok,
+                f"stopped_after={elapsed:.0f}s (grace={GRACE_SECONDS}s) code={state.get('code')}")
+
+
+# --- gates: integrity and counters ---------------------------------------
+
+def gate_l13(image: str) -> bool:
+    """A broken bundle must stop the process, not half-configure the detector."""
+    compose_down()
+    set_env("OBSCURA_FAULT_INJECT", "corrupt_bundle")
+    compose(["up", "-d", "license"], True, 600)
+    wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
+               120, 2, "licensing admin")
+    key = httpx.post(f"{ADMIN}/admin/issue", json={"org_id": ORG}, timeout=15).json()["key"]
+    code, output = run_disposable_sidecar(image, {
+        "OBSCURA_LICENSE_URL": "https://license:8443",
+        "OBSCURA_LICENSE_CA": "/certs/ca.pem",
+        "OBSCURA_LICENSE_KEY": key,
+    }, 150)
+    set_env("OBSCURA_FAULT_INJECT", "")
+    ok = code != 0 and "bundle_corrupt" in output
+    return gate("L13 corrupt bundle -> refuses, never degrades", ok,
+                f"exit={code} bundle_corrupt={'bundle_corrupt' in output}")
+
+
+def gate_l12() -> bool:
+    """Counters must reach us, match the sidecar, and carry no personal data."""
+    compose_down()
+    set_env("OBSCURA_LOG_RAW_BODY", "1")
+    compose(["up", "-d", "license"], True, 600)
+    wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
+               120, 2, "licensing admin")
+    key = httpx.post(f"{ADMIN}/admin/issue", json={"org_id": ORG}, timeout=15).json()["key"]
+    set_env("OBSCURA_KEY", key)
+    if not start_sidecar():
+        return gate("L12 counters match and carry no PII", False, "sidecar did not start")
+
+    calls = 12
+    for _ in range(calls):
+        post_mask(90)
+    local = httpx.get(f"{SIDECAR}/usage", params={"org_id": ORG}, timeout=30).json()
+
+    # Counters ride on the renewal, so wait for one to happen — specifically for
+    # one carrying DATA. Waiting merely for "a report arrived" fires on the first
+    # renewal, which legitimately reports zero because it happens before any
+    # traffic; the gate then read those zeros and called it a failure.
+    reported = wait_until(
+        lambda: httpx.get(f"{ADMIN}/admin/usage", params={"org_id": ORG},
+                          timeout=15).json()["usage"]["requests"] > 0,
+        TTL_SECONDS * 4, 5, "a usage report carrying counters",
+    )
+    remote = httpx.get(f"{ADMIN}/admin/usage", params={"org_id": ORG}, timeout=15).json()
+
+    raw_bodies = "\n".join(line for line in logs("license").splitlines()
+                           if "RAW_LEASE_BODY" in line)
+    on_wire = [value for value in fixtures.leak_values() if value in raw_bodies]
+    entity_types = set(remote["usage"]["entities"]) if remote["usage"]["entities"] else set()
+    local_types = set(local.get("protected_counts", {}))
+    ok = reported and not on_wire and entity_types and entity_types <= local_types
+    set_env("OBSCURA_LOG_RAW_BODY", "")
+    return gate("L12 counters match and carry no PII", ok,
+                f"reports={remote['usage']['reports']} entities={len(entity_types)} "
+                f"subset_of_local={entity_types <= local_types} pii_on_wire={on_wire}")
+
+
+def gate_l15() -> bool:
+    combined = all_logs()
+    leaked = [value for value in fixtures.leak_values() if value in combined]
+    return gate("L15 no PII in any container log", not leaked,
+                f"leaked={leaked or 'none'} log_bytes={len(combined)}")
+
+
+# --- driver --------------------------------------------------------------
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--image", default="obscura:source")
+    parser.add_argument("--workers", type=int, default=2)
+    parser.add_argument("--only", default="")
+    parser.add_argument("--keep", action="store_true",
+                        help="leave the stand running for inspection")
+    parser.add_argument("--skip-build", action="store_true",
+                        help="reuse the existing image (needs a matching OBSCURA_SIGNING_KEY)")
+    args = parser.parse_args()
+    selected = {name.strip() for name in args.only.split(",") if name.strip()}
+
+    def wanted(name: str) -> bool:
+        return not selected or name in selected
+
+    started = time.monotonic()
+    compose(["down", "-v"], False, 300)
+    key = build_stand(args.image, args.workers, args.skip_build)
+
+    try:
+        print("== startup refusal ==")
+        if wanted("L1"):
+            gate_l1(args.image)
+        if wanted("L2"):
+            gate_l2(args.image)
+        if wanted("L2b"):
+            gate_l2b(args.image, key)
+        if wanted("L3"):
+            gate_l3(args.image, key)
+
+        print("== healthy instance ==")
+        if not start_sidecar():
+            gate("SETUP sidecar reaches active", False, "never became active")
+            raise SystemExit(_report(started))
+        if wanted("L4"):
+            gate_l4()
+        if wanted("L5"):
+            gate_l5()
+        if wanted("L14"):
+            gate_l14a()
+        if wanted("L6"):
+            gate_l6()
+
+        print("== degradation ladder ==")
+        if wanted("L7"):
+            gate_l7()
+        if wanted("L8"):
+            gate_l8()
+        if wanted("L14"):
+            gate_l14b()
+        if wanted("L9"):
+            gate_l9()
+        if wanted("L11"):
+            gate_l11()
+        if wanted("L10"):
+            gate_l10()
+
+        print("== integrity and counters ==")
+        if wanted("L13"):
+            gate_l13(args.image)
+        if wanted("L12"):
+            gate_l12()
+        if wanted("L15"):
+            gate_l15()
+    finally:
+        if not args.keep:
+            compose(["down", "-v"], False, 300)
+
+    raise SystemExit(_report(started))
+
+
+def _report(started: float) -> int:
+    print("\n" + "=" * 64)
+    failed = [result for result in RESULTS if not result.ok]
+    for result in RESULTS:
+        print(f"  {'PASS' if result.ok else 'FAIL'}  {result.name}")
+    print("=" * 64)
+    print(f"{len(RESULTS) - len(failed)}/{len(RESULTS)} gates passed "
+          f"in {(time.monotonic() - started) / 60:.1f} min")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    main()

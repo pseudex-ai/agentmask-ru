@@ -1,0 +1,64 @@
+# The e2e stand: a real licensing server and a real sidecar, nothing mocked.
+#
+# TTL and grace are compressed (60 s / 120 s instead of 24 h / 48 h) so the whole
+# ladder can be observed in one run — but they are compressed by the SERVER's
+# configuration, and they travel to the client inside the signed lease. The client
+# has no knob for either, which is the point: the code under test is exactly the
+# code that runs on a 24-hour lease.
+name: obscura-e2e
+
+services:
+  license:
+    image: obscura-licensing:e2e
+    environment:
+      OBSCURA_LEASE_TTL_SECONDS: "${OBSCURA_LEASE_TTL_SECONDS:-60}"
+      OBSCURA_GRACE_SECONDS: "${OBSCURA_GRACE_SECONDS:-120}"
+      OBSCURA_SIGNING_KEY: "${OBSCURA_SIGNING_KEY}"
+      OBSCURA_LICENSE_CERT: /certs/server.pem
+      OBSCURA_LICENSE_KEYFILE: /certs/server.key
+      # Set only by gate L13, which needs a lease whose ciphertext is broken.
+      OBSCURA_FAULT_INJECT: "${OBSCURA_FAULT_INJECT:-}"
+      # Set only by gate L12, which greps the ACTUAL request body for personal data.
+      OBSCURA_LOG_RAW_BODY: "${OBSCURA_LOG_RAW_BODY:-}"
+    volumes:
+      - ./certs:/certs:ro
+      - license-data:/data
+    ports:
+      - "18443:8443"   # public API, TLS
+      - "19443:9443"   # admin, plain HTTP, never published outside the stand
+
+  sidecar:
+    image: "${OBSCURA_IMAGE:-obscura:source}"
+    environment:
+      OBSCURA_LICENSE_URL: https://license:8443
+      OBSCURA_LICENSE_KEY: "${OBSCURA_KEY}"
+      OBSCURA_LICENSE_CA: /certs/ca.pem
+      OBSCURA_INSTANCE_ID: e2e-instance
+      OBSCURA_WORKERS: "${OBSCURA_WORKERS:-2}"
+      # Gate L11 only. libfaketime is injected from a mount rather than baked
+      # into the image, so the image under test is byte-identical to the one that
+      # ships — the stand changes the process's ENVIRONMENT, which is exactly what
+      # a customer wanting free grace would do.
+      #
+      # NOT `cap_add: SYS_TIME` + `date -s`: the kernel does not isolate the clock
+      # per container, so that moved the whole Docker VM's wall clock and every
+      # other container on the machine with it.
+      LD_PRELOAD: "${OBSCURA_LD_PRELOAD:-}"
+      FAKETIME_TIMESTAMP_FILE: "${OBSCURA_FAKETIME_FILE:-}"
+      FAKETIME_NO_CACHE: "1"
+      # The real threat is a wall clock moved backwards. CLOCK_MONOTONIC cannot
+      # go backwards on a live kernel, so faking it too would test a threat that
+      # does not exist and would prove nothing about the design.
+      FAKETIME_DONT_FAKE_MONOTONIC: "1"
+    volumes:
+      - ./certs:/certs:ro
+      - ./faketime:/faketime
+      - sidecar-data:/data
+    ports:
+      - "18000:8000"
+    depends_on:
+      - license
+
+volumes:
+  license-data:
+  sidecar-data:
