@@ -11,7 +11,7 @@ masked while leaving a bare toponym / landmark unmasked.
 **[D]** my inference.
 
 Companion notes in repo: `dd2-notes-C-disambiguation.md`, `deep-dive-detection-upgrade.md`,
-`legal-152fz-developer-liability.md`. Prototype: `prototype/obscura/ru_pii.py`.
+`legal-152fz-developer-liability.md`. Prototype: `prototype/veilgate/ru_pii.py`.
 
 ---
 

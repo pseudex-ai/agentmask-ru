@@ -13,12 +13,12 @@ forwards the request itself or hands it back to a host gateway.
 
 from dataclasses import dataclass
 
-from obscura.audit import AuditLog
-from obscura.detect_all import Detector
-from obscura.maskcache import MaskCache, content_key
-from obscura.profiling import stage
-from obscura.redact import mask_text, unmask_text
-from obscura.vault import Vault
+from veilgate.audit import AuditLog
+from veilgate.detect_all import Detector
+from veilgate.maskcache import MaskCache, content_key
+from veilgate.profiling import stage
+from veilgate.redact import mask_text, unmask_text
+from veilgate.vault import Vault
 
 
 @dataclass(frozen=True)

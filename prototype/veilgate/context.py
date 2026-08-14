@@ -7,11 +7,11 @@ are never touched here (they're handled by priority in detect_all).
 
 import re
 
-from obscura.assets import ASSETS, ContextAssets
-from obscura.detect import Span
+from veilgate.assets import ASSETS, ContextAssets
+from veilgate.detect import Span
 
 # The deny list, the phone cues, the region set and the address/place vocabulary
-# are LEASED (obscura/assets.py). This module holds the rules that read them.
+# are LEASED (veilgate/assets.py). This module holds the rules that read them.
 _LAST_WORD = re.compile(r"([а-яёa-z]+)[\s№:.\-]*$")
 _REGION_SUFFIXES = ("область", "край", "округ")
 

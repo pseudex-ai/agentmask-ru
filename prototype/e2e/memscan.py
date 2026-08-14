@@ -96,7 +96,7 @@ def _rss_kb(pid: int) -> int:
 def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit(__doc__)
-    name_filter = sys.argv[2] if len(sys.argv) > 2 else "obscura"
+    name_filter = sys.argv[2] if len(sys.argv) > 2 else "veilgate"
     pids = _pids(name_filter)
     if not pids:
         print("NO_TARGET_PROCESS")

@@ -1,4 +1,4 @@
-# Obscura — prototype
+# Veilgate — prototype
 
 Reversible PII tokenization for LLM agents. Real personal data is replaced with
 format-preserving fake tokens before the model sees anything; the agent's tool
@@ -6,16 +6,16 @@ calls are detokenized server-side, so **the tools still run on real values**.
 
 Two deployment shapes over one core:
 
-| | `obscura.proxy` | `obscura.service` (sidecar) |
+| | `veilgate.proxy` | `veilgate.service` (sidecar) |
 |---|---|---|
-| Who calls the provider | Obscura | the host gateway |
-| Auth | `sk-obsc-…` key → tenant → upstream URL + key | `org_id` in the body |
+| Who calls the provider | Veilgate | the host gateway |
+| Auth | `sk-vg-…` key → tenant → upstream URL + key | `org_id` in the body |
 | Surface | `POST /v1/chat/completions` | `/mask`, `/unmask`, `/spans`, `/reveal` |
 | Streaming | yes | not yet |
 
 ## The engine ships empty
 
-`obscura/` holds the detection RULES. The tuned data those rules consume — 28k
+`veilgate/` holds the detection RULES. The tuned data those rules consume — 28k
 given names, 197k surnames, the street gazetteer, cue words, the overlap priority
 table — lives in `licensing/`, never ships, and is leased to a running container
 as an encrypted bundle that exists only in memory.
@@ -43,13 +43,13 @@ back to the real values, and `PASS`.
 # 1. the licensing server (ours; on a stand it can be local)
 python3 -m licensing.devserver                       # :8443 public, :9443 admin
 curl -X POST localhost:9443/admin/issue -H 'content-type: application/json' \
-     -d '{"org_id":"acme"}'                          # -> obsc_live_...
+     -d '{"org_id":"acme"}'                          # -> vg_live_...
 
 # 2. the sidecar, in the customer's contour
-docker build --build-arg OBSCURA_LICENSE_PUBKEY=<our public key> -t obscura:source .
-docker run -p 8000:8000 -v obscura-data:/data \
-  -e OBSCURA_LICENSE_URL=https://license.example \
-  -e OBSCURA_LICENSE_KEY=obsc_live_... obscura:source
+docker build --build-arg VEILGATE_LICENSE_PUBKEY=<our public key> -t veilgate:source .
+docker run -p 8000:8000 -v veilgate-data:/data \
+  -e VEILGATE_LICENSE_URL=https://license.example \
+  -e VEILGATE_LICENSE_KEY=vg_live_... veilgate:source
 ```
 
 Without a valid key the container does not start. If the lease stops renewing it

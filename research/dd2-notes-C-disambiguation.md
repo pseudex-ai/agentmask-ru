@@ -16,7 +16,7 @@ Evidence grades: **[A]** = read in source · **[B]** = official docs · **[C]** 
 **[D]** = inference. Per-claim URL/file-path inline.
 
 Companion notes already in repo: `dd-notes-2-presidio.md` (Presidio core architecture),
-`ru-pii-dataset-and-detectors.md`. Prototype detector: `prototype/obscura/ru_pii.py`
+`ru-pii-dataset-and-detectors.md`. Prototype detector: `prototype/veilgate/ru_pii.py`
 (regex + СНИЛС/ИНН/Luhn checksums, NO context disambiguation yet).
 
 ---
@@ -264,7 +264,7 @@ Three-phase pipeline directly aimed at numeric collisions:
 
 ### 3.2 Checksum + context as the precision backbone (commercial practice)
 - Checksum is the strongest deterministic disambiguator we already have:
-  `prototype/obscura/ru_pii.py` does СНИЛС (mod 101), ИНН (weight vectors, mod 11),
+  `prototype/veilgate/ru_pii.py` does СНИЛС (mod 101), ИНН (weight vectors, mod 11),
   Luhn (card). **[A]**
 - Commercial tools combine checksum-style validators with hotword context exactly as DLP's
   built-in infoTypes do (e.g. credit card built-in uses Luhn AND a card hotword to lift
@@ -355,7 +355,7 @@ Three viable integrations, increasing invasiveness:
   (boost AND deny) — the "proper" Presidio extension point, but more code and it operates
   on the lemma window (needs the RU lemmatizer wired). **[A]/[D]**
 
-> For Obscura's regex-first prototype (`ru_pii.py` already returns its own `Span` objects,
+> For Veilgate's regex-first prototype (`ru_pii.py` already returns its own `Span` objects,
 > not via Presidio), the cleanest move is option (b)-style: keep the checksum gating you
 > have, ADD a `_deny_in_window()` and `_trigger_in_window()` char-scan around each numeric
 > Span, and a 14-digit hard-drop. This buys the DLP/Macie behavior with ~30 lines and zero
@@ -421,7 +421,7 @@ PRIMARY source code [A]:
 - `presidio-analyzer/.../context_aware_enhancers/context_aware_enhancer.py`
 - `presidio-analyzer/presidio_analyzer/analyzer_engine.py` (allow_list, threshold, enhance)
 - `presidio-analyzer/presidio_analyzer/pattern_recognizer.py` (validate/invalidate, flags)
-- `prototype/obscura/ru_pii.py` (existing checksum gating)
+- `prototype/veilgate/ru_pii.py` (existing checksum gating)
 Official docs [B]:
 - Google DLP rules: https://docs.cloud.google.com/sensitive-data-protection/docs/creating-custom-infotypes-rules
 - Google DLP likelihood: https://cloud.google.com/sensitive-data-protection/docs/creating-custom-infotypes-likelihood

@@ -9,9 +9,9 @@ Proves the two load-bearing properties:
 import json
 import re
 
-from obscura.detect import detect_pii
-from obscura.redact import mask_text, unmask_text
-from obscura.vault import Vault
+from veilgate.detect import detect_pii
+from veilgate.redact import mask_text, unmask_text
+from veilgate.vault import Vault
 
 
 def main() -> None:

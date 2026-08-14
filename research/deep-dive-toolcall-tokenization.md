@@ -1,6 +1,6 @@
 # Deep-Dive: Tool-Call PII Tokenization Middleware — Frontier Practices & Reference Architecture
 
-**Date:** 2026-06-07 · **For:** Obscura (152-ФЗ PII gateway for LLM agents, CIS) · **Method:** /deep-dive — 4 parallel primary-source excavations (Skyflow / Presidio core / OSS proxies+MCP / FPE+RU-detection), lead-synthesized with adversarial analysis.
+**Date:** 2026-06-07 · **For:** Veilgate (152-ФЗ PII gateway for LLM agents, CIS) · **Method:** /deep-dive — 4 parallel primary-source excavations (Skyflow / Presidio core / OSS proxies+MCP / FPE+RU-detection), lead-synthesized with adversarial analysis.
 **Raw notes:** `dd-notes-1-skyflow.md`, `dd-notes-2-presidio.md`, `dd-notes-3-proxies-mcp.md`, `dd-notes-4-fpe-ru-detection.md`.
 **Evidence grades:** [A] read in primary source / [B] single primary, limited / [C] asserted by primary as rationale / [D] folklore or our inference.
 
@@ -91,10 +91,10 @@
 
 ---
 
-## Reference architecture for Obscura (the synthesized gold)
+## Reference architecture for Veilgate (the synthesized gold)
 
 ```
-┌─────────── Obscura Gateway (in RF) ───────────────────────────────┐
+┌─────────── Veilgate Gateway (in RF) ───────────────────────────────┐
 │  Interceptor: OpenAI-compatible proxy  +  MCP-gateway mode         │
 │      │                                                             │
 │  1) Inbound (user msg + RAG context)                              │

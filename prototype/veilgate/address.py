@@ -25,13 +25,13 @@ import os
 import re
 import threading
 
-from obscura import _morph_compat  # noqa: F401  (aliases pymorphy2->pymorphy3 before natasha)
+from veilgate import _morph_compat  # noqa: F401  (aliases pymorphy2->pymorphy3 before natasha)
 
-from obscura.assets import ASSETS, AddressAssets
-from obscura.detect import Span
-from obscura.morph import MORPH
+from veilgate.assets import ASSETS, AddressAssets
+from veilgate.detect import Span
+from veilgate.morph import MORPH
 
-_log = logging.getLogger("obscura.address")
+_log = logging.getLogger("veilgate.address")
 
 # Natasha's AddrExtractor is a Yargy grammar, and it is EXPENSIVE: measured at
 # ~137 ms per 1000 characters, ~100% of it inside the rule automaton (the morph
@@ -44,7 +44,7 @@ _log = logging.getLogger("obscura.address")
 # ZERO additional entities — the regex + morphology arms already caught every
 # one, at 1/8th the cost.
 #
-# OBSCURA_ADDR_EXTRACTOR:
+# VEILGATE_ADDR_EXTRACTOR:
 #   off     (default) regex + morphology only — fast
 #   on                union with the extractor — the original behaviour
 #   shadow            union is used for MASKING (so recall is never reduced),
@@ -55,10 +55,10 @@ _log = logging.getLogger("obscura.address")
 # with the regex arm. Run `shadow` at a canary; if the log stays silent on real
 # traffic, `off` is safe. Never infer that from the synthetic sets alone —
 # dropping a recall arm from a fail-closed gateway is a one-way door.
-_MODE = os.environ.get("OBSCURA_ADDR_EXTRACTOR", "off").lower()
+_MODE = os.environ.get("VEILGATE_ADDR_EXTRACTOR", "off").lower()
 if _MODE not in ("off", "on", "shadow"):
     raise ValueError(
-        f"OBSCURA_ADDR_EXTRACTOR must be off|on|shadow, got {_MODE!r}"
+        f"VEILGATE_ADDR_EXTRACTOR must be off|on|shadow, got {_MODE!r}"
     )
 
 USE_EXTRACTOR = _MODE in ("on", "shadow")
@@ -81,7 +81,7 @@ def _extractor():
     return _EXTRACTOR
 
 # The street gazetteer, the core-part vocabulary and every pattern below are
-# LEASED (see obscura/assets.py) — this module holds the rules that consume them,
+# LEASED (see veilgate/assets.py) — this module holds the rules that consume them,
 # not the vocabulary itself. Patterns are compiled once when the bundle loads.
 _WORD_SPLIT_RE = re.compile(r"[\s-]")
 

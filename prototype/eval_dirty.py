@@ -7,8 +7,8 @@ import json
 import re
 import sys
 
-from obscura.detect_all import Detector
-from obscura.normalize import normalize
+from veilgate.detect_all import Detector
+from veilgate.normalize import normalize
 from testkit import load_dev_bundle
 
 _NUMERIC = {"PHONE", "SNILS", "INN", "CARD", "PASSPORT", "DATE"}

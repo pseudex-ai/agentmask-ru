@@ -12,10 +12,10 @@ both images and compares the results digit for digit.
 usage:
     python3 e2e/pack_gates.py                       # builds both images
     python3 e2e/pack_gates.py --only P1,P2
-    OBSCURA_SIGNING_KEY=... python3 e2e/pack_gates.py --skip-build
+    VEILGATE_SIGNING_KEY=... python3 e2e/pack_gates.py --skip-build
 
 The verification key is compiled into the binary, so a fresh key means a fresh
-~30-minute Nuitka compile. Pass a fixed OBSCURA_SIGNING_KEY to keep the built
+~30-minute Nuitka compile. Pass a fixed VEILGATE_SIGNING_KEY to keep the built
 image valid across runs while iterating.
 """
 
@@ -45,15 +45,15 @@ _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent
 _ENV_FILE = _HERE / ".env"
 
-SOURCE_IMAGE = "obscura:source"
-COMPILED_IMAGE = "obscura:compiled"
+SOURCE_IMAGE = "veilgate:source"
+COMPILED_IMAGE = "veilgate:compiled"
 # NOT 5000, the conventional registry port: on macOS it is already held by
 # ControlCenter (AirPlay Receiver), so the registry silently never becomes
 # reachable and the gate fails with "registry never came up".
-REGISTRY_PORT = int(os.environ.get("OBSCURA_REGISTRY_PORT", "5555"))
+REGISTRY_PORT = int(os.environ.get("VEILGATE_REGISTRY_PORT", "5555"))
 REGISTRY = f"localhost:{REGISTRY_PORT}"
-REGISTRY_CONTAINER = "obscura-e2e-registry"
-REGISTRY_USER = "obscura"
+REGISTRY_CONTAINER = "veilgate-e2e-registry"
+REGISTRY_USER = "veilgate"
 REGISTRY_PASSWORD = "e2e-registry-secret"
 
 
@@ -63,9 +63,9 @@ def build_images(skip_build: bool) -> str:
     print("== building ==")
     # The verification key is compiled INTO the binary, so a fresh key on every
     # run invalidates the Nuitka layer and forces a ~30 min recompile. Passing
-    # OBSCURA_SIGNING_KEY in keeps the image cached across runs, which is what
+    # VEILGATE_SIGNING_KEY in keeps the image cached across runs, which is what
     # makes `--skip-build` usable while iterating on the gates themselves.
-    existing = os.environ.get("OBSCURA_SIGNING_KEY", "")
+    existing = os.environ.get("VEILGATE_SIGNING_KEY", "")
     signing_key = (Ed25519PrivateKey.from_private_bytes(base64.b64decode(existing))
                    if existing else Ed25519PrivateKey.generate())
     private_b64 = encode_private(signing_key)
@@ -76,25 +76,25 @@ def build_images(skip_build: bool) -> str:
     # seconds, and skipping it would silently test yesterday's server against
     # today's client.
     sh(["docker", "build", "-f", str(_ROOT / "licensing" / "Dockerfile"),
-        "-t", "obscura-licensing:e2e", str(_ROOT)], True, 1800)
+        "-t", "veilgate-licensing:e2e", str(_ROOT)], True, 1800)
     if not skip_build:
         for dockerfile, tag in ((_ROOT / "Dockerfile", SOURCE_IMAGE),
                                 (_ROOT / "Dockerfile.nuitka", COMPILED_IMAGE)):
             started = time.monotonic()
             sh(["docker", "build", "-f", str(dockerfile),
-                "--build-arg", f"OBSCURA_LICENSE_PUBKEY={public_b64}",
+                "--build-arg", f"VEILGATE_LICENSE_PUBKEY={public_b64}",
                 "-t", tag, str(_ROOT)], True, 5400)
             print(f"  {tag} built in {(time.monotonic() - started) / 60:.1f} min")
 
     _ENV_FILE.write_text(
-        f"OBSCURA_SIGNING_KEY={private_b64}\n"
-        f"OBSCURA_IMAGE={COMPILED_IMAGE}\n"
-        f"OBSCURA_KEY=\n"
-        f"OBSCURA_WORKERS=4\n"
-        f"OBSCURA_LEASE_TTL_SECONDS=600\n"
-        f"OBSCURA_GRACE_SECONDS=600\n"
-        f"OBSCURA_FAULT_INJECT=\n"
-        f"OBSCURA_LOG_RAW_BODY=\n"
+        f"VEILGATE_SIGNING_KEY={private_b64}\n"
+        f"VEILGATE_IMAGE={COMPILED_IMAGE}\n"
+        f"VEILGATE_KEY=\n"
+        f"VEILGATE_WORKERS=4\n"
+        f"VEILGATE_LEASE_TTL_SECONDS=600\n"
+        f"VEILGATE_GRACE_SECONDS=600\n"
+        f"VEILGATE_FAULT_INJECT=\n"
+        f"VEILGATE_LOG_RAW_BODY=\n"
     )
     return public_b64
 
@@ -102,13 +102,13 @@ def build_images(skip_build: bool) -> str:
 def start_stand(image: str, workers: int) -> float:
     """Bring up the stand on `image`. Returns seconds from up to license=active."""
     compose(["down", "-v"], False, 300)
-    set_env("OBSCURA_IMAGE", image)
-    set_env("OBSCURA_WORKERS", str(workers))
+    set_env("VEILGATE_IMAGE", image)
+    set_env("VEILGATE_WORKERS", str(workers))
     compose(["up", "-d", "license"], True, 600)
     wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
                120, 2, "licensing admin")
     key = httpx.post(f"{ADMIN}/admin/issue", json={"org_id": ORG}, timeout=15).json()["key"]
-    set_env("OBSCURA_KEY", key)
+    set_env("VEILGATE_KEY", key)
     started = time.monotonic()
     compose(["up", "-d", "sidecar"], True, 600)
     ok = wait_until(lambda: httpx.get(f"{SIDECAR}/health", timeout=5).json()["license"] == "active",
@@ -138,9 +138,9 @@ def gate_p1() -> bool:
     listing = sh(["docker", "run", "--rm", "--entrypoint", "sh", COMPILED_IMAGE, "-c",
                   "find / -xdev \\( -name '*.py' -o -name '*.pyc' \\) 2>/dev/null | head -50"],
                  False, 300).stdout
-    ours = [line for line in listing.splitlines() if "obscura" in line or "serve_main" in line]
-    has_obscura_dir = sh(["docker", "run", "--rm", "--entrypoint", "sh", COMPILED_IMAGE, "-c",
-                          "ls /app/obscura 2>&1 || true"], False, 120).stdout
+    ours = [line for line in listing.splitlines() if "veilgate" in line or "serve_main" in line]
+    has_veilgate_dir = sh(["docker", "run", "--rm", "--entrypoint", "sh", COMPILED_IMAGE, "-c",
+                          "ls /app/veilgate 2>&1 || true"], False, 120).stdout
 
     # Probes taken from the real tree: two docstrings and two statements that
     # exist verbatim in our sources and nowhere else.
@@ -154,7 +154,7 @@ def gate_p1() -> bool:
     # appends a SECOND zero on its own line — which then parsed as a finding and
     # failed the gate on a clean binary. `|| true` keeps the single count.
     checks = " ; ".join(
-        f"echo \"{probe}|$(grep -c -a -F -- '{probe}' /app/obscura-serve 2>/dev/null || true)\""
+        f"echo \"{probe}|$(grep -c -a -F -- '{probe}' /app/veilgate-serve 2>/dev/null || true)\""
         for probe in probes
     )
     found = []
@@ -164,7 +164,7 @@ def gate_p1() -> bool:
         if probe and count.strip().isdigit() and int(count) > 0:
             found.append(probe)
 
-    ok = not ours and "No such file" in has_obscura_dir and not found
+    ok = not ours and "No such file" in has_veilgate_dir and not found
     return gate("P1 no source text or docstrings in the release image", ok,
                 f"our_py_files={ours[:2] or 'none'} readable_in_binary={found or 'none'}")
 
@@ -354,14 +354,14 @@ def gate_p6() -> bool:
         "-p", f"{REGISTRY_PORT}:5000",
         "-v", f"{auth_dir}:/auth",
         "-e", "REGISTRY_AUTH=htpasswd",
-        "-e", "REGISTRY_AUTH_HTPASSWD_REALM=obscura",
+        "-e", "REGISTRY_AUTH_HTPASSWD_REALM=veilgate",
         "-e", "REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd",
         "registry:2"], True, 600)
     if not wait_until(lambda: httpx.get(f"http://{REGISTRY}/v2/", timeout=5).status_code == 401,
                       120, 2, "registry to demand credentials"):
         return gate("P6 private registry and signature", False, "registry never came up")
 
-    tag = f"{REGISTRY}/obscura:compiled"
+    tag = f"{REGISTRY}/veilgate:compiled"
     sh(["docker", "tag", COMPILED_IMAGE, tag], True, 60)
 
     # 1. Anonymous push must be refused.

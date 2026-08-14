@@ -7,9 +7,9 @@ lighter one. Reverse uses longest-token-first to avoid prefix collisions.
 
 import re
 
-from obscura.detect import Span
-from obscura.profiling import stage
-from obscura.vault import TOKEN_RE, Vault
+from veilgate.detect import Span
+from veilgate.profiling import stage
+from veilgate.vault import TOKEN_RE, Vault
 
 # A number-like run (digits + phone separators), >=7 digits — a candidate for
 # digit-core detokenization when the model reformatted a numeric token.

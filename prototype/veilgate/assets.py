@@ -29,7 +29,7 @@ import threading
 import zlib
 from dataclasses import dataclass
 
-from obscura.morph import MORPH
+from veilgate.morph import MORPH
 
 
 class BundleNotLeased(RuntimeError):

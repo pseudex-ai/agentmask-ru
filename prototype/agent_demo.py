@@ -1,6 +1,6 @@
-"""A real tool-using agent pointed at the Obscura proxy.
+"""A real tool-using agent pointed at the Veilgate proxy.
 
-The agent talks to a real LLM (via OpenRouter, through Obscura). It proves:
+The agent talks to a real LLM (via OpenRouter, through Veilgate). It proves:
   - the model only ever receives tokens (verified separately by grepping the
     proxy log for the real PII used here, written to used_pii.txt);
   - the agent's tool receives the REAL phone (proxy detokenized the args).
@@ -11,7 +11,7 @@ import json
 from openai import OpenAI
 
 MODEL = "openai/gpt-4.1-mini"
-client = OpenAI(base_url="http://localhost:4000/v1", api_key="obscura-dev")
+client = OpenAI(base_url="http://localhost:4000/v1", api_key="veilgate-dev")
 
 TOOLS = [
     {

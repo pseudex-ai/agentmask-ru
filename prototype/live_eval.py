@@ -22,7 +22,7 @@ import random
 random.seed(7)
 N = 32
 MODEL = "openai/gpt-4.1-mini"
-client = OpenAI(base_url="http://localhost:4000/v1", api_key="obscura-dev")
+client = OpenAI(base_url="http://localhost:4000/v1", api_key="veilgate-dev")
 
 SYSTEM = (
     "Ты ассистент службы поддержки. Тебе даны инструменты. Чтобы выполнить запрос "

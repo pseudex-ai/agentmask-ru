@@ -14,10 +14,10 @@ Run: python3 bench_masking.py
 import hashlib
 import time
 
-from obscura.detect_all import Detector
-from obscura.maskcache import MaskCache, content_key
-from obscura.redact import mask_text
-from obscura.vault import Vault
+from veilgate.detect_all import Detector
+from veilgate.maskcache import MaskCache, content_key
+from veilgate.redact import mask_text
+from veilgate.vault import Vault
 from testkit import load_dev_bundle
 
 _PII_MSG = "Здравствуйте, меня зовут Иван Петров, телефон +7 999 123-45-67, доставьте на улицу Ленина 5, кв 12."

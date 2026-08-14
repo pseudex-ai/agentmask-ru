@@ -8,8 +8,8 @@ so the entire value is masked. Offsets are taken straight from the regex match
 
 import re
 
-from obscura.assets import ASSETS, StructuredAssets
-from obscura.detect import Span
+from veilgate.assets import ASSETS, StructuredAssets
+from veilgate.detect import Span
 
 # A filename/extension or a path separator. No person's name contains either, so
 # rejecting these is free of recall risk.
@@ -20,7 +20,7 @@ def _is_filename(value: str) -> bool:
     return bool(_FILENAME_RE.search(value))
 
 
-# The key->type map is LEASED (obscura/assets.py); the shapes below are the
+# The key->type map is LEASED (veilgate/assets.py); the shapes below are the
 # structure of JSON and of a form field, not tuned vocabulary.
 # Types whose value is meaningless without digits.
 _NUMERIC_KEY_TYPES = frozenset({"PHONE", "SNILS", "INN", "CARD", "PASSPORT"})

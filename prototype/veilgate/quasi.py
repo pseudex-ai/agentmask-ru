@@ -6,8 +6,8 @@ no equivalence class, so k-anonymity is undefined — per dd4-C).
 
 import re
 
-from obscura.assets import ASSETS
-from obscura.detect import Span
+from veilgate.assets import ASSETS
+from veilgate.detect import Span
 
 _YEAR_RE = re.compile(r"\b(19\d{2}|20\d{2})\b")
 _AGE_RE = re.compile(r"\b(\d{2,3})\s*(?:лет|года|год)\b")

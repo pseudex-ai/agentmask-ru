@@ -1,11 +1,11 @@
 """OpenAI-compatible reverse proxy — multi-tenant, with streaming.
 
 Drop-in: a customer points their agent's `base_url` at this server and uses an
-Obscura API key we issued (sk-obsc-…). The key resolves to that customer's
+Veilgate API key we issued (sk-vg-…). The key resolves to that customer's
 upstream provider + key (we forward there) and their own token vault. Real PII is
 masked before the model and restored on the way back, so tools get real values.
 
-Dev: if OBSCURA_UPSTREAM_BASE_URL/KEY are set, a tenant "obscura-dev" is seeded.
+Dev: if VEILGATE_UPSTREAM_BASE_URL/KEY are set, a tenant "veilgate-dev" is seeded.
 """
 
 import json
@@ -20,19 +20,19 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from obscura.assets import BundleNotLeased
-from obscura.audit import AuditLog
-from obscura.detect_all import Detector
-from obscura.envelope import MaskContext, mask_messages, mask_tools, unmask_response
-from obscura.license import LicenseClient, LicenseError
-from obscura.maskcache import MaskCache
-from obscura.profiling import snapshot as profiling_snapshot, stage
-from obscura.redact import StreamDetokenizer
-from obscura.tenants import Tenant, Tenants
-from obscura.vault import Vault
+from veilgate.assets import BundleNotLeased
+from veilgate.audit import AuditLog
+from veilgate.detect_all import Detector
+from veilgate.envelope import MaskContext, mask_messages, mask_tools, unmask_response
+from veilgate.license import LicenseClient, LicenseError
+from veilgate.maskcache import MaskCache
+from veilgate.profiling import snapshot as profiling_snapshot, stage
+from veilgate.redact import StreamDetokenizer
+from veilgate.tenants import Tenant, Tenants
+from veilgate.vault import Vault
 
 logging.basicConfig(level=logging.INFO)
-_log = logging.getLogger("obscura")
+_log = logging.getLogger("veilgate")
 
 DETECTOR = Detector()
 TENANTS = Tenants("tenants.db")
@@ -43,16 +43,16 @@ _VAULTS: dict[str, Vault] = {}
 # bundle, on the same terms, with the same ladder. Without this leg the licence
 # would be trivially bypassable by choosing the other entry point.
 LICENSE = LicenseClient(
-    base_url=os.environ.get("OBSCURA_LICENSE_URL", "https://license.obscura.ru"),
-    key=os.environ.get("OBSCURA_LICENSE_KEY", ""),
-    instance_id=os.environ.get("OBSCURA_INSTANCE_ID", "") or uuid.uuid4().hex[:12],
-    ca_path=os.environ.get("OBSCURA_LICENSE_CA", ""),
+    base_url=os.environ.get("VEILGATE_LICENSE_URL", "https://license.veilgate.ru"),
+    key=os.environ.get("VEILGATE_LICENSE_KEY", ""),
+    instance_id=os.environ.get("VEILGATE_INSTANCE_ID", "") or uuid.uuid4().hex[:12],
+    ca_path=os.environ.get("VEILGATE_LICENSE_CA", ""),
     usage_provider=lambda: AUDIT.billing_totals(),
 )
 
 # Same tuning knobs as the sidecar — this leg runs the identical morphology.
-_MASK_CACHE = MaskCache(int(os.environ.get("OBSCURA_MASK_CACHE_SIZE", "20000")))
-_MASK_CONCURRENCY = int(os.environ.get("OBSCURA_MASK_CONCURRENCY", "8"))
+_MASK_CACHE = MaskCache(int(os.environ.get("VEILGATE_MASK_CACHE_SIZE", "20000")))
+_MASK_CONCURRENCY = int(os.environ.get("VEILGATE_MASK_CONCURRENCY", "8"))
 
 # Guards lazy creation of per-customer Vaults: without it two concurrent requests
 # for the same customer could open two SQLite connections (two locks, one map).
@@ -87,10 +87,10 @@ def _upstream_client() -> httpx.AsyncClient:
 @asynccontextmanager
 async def _lifespan(_app: "FastAPI"):
     global _UPSTREAM
-    base_url = os.environ.get("OBSCURA_UPSTREAM_BASE_URL")
-    key = os.environ.get("OBSCURA_UPSTREAM_KEY")
+    base_url = os.environ.get("VEILGATE_UPSTREAM_BASE_URL")
+    key = os.environ.get("VEILGATE_UPSTREAM_KEY")
     if base_url is not None and key is not None:
-        TENANTS.upsert("obscura-dev", "demo", base_url, key)
+        TENANTS.upsert("veilgate-dev", "demo", base_url, key)
     _UPSTREAM = httpx.AsyncClient(
         timeout=httpx.Timeout(300.0, connect=10.0),
         limits=httpx.Limits(max_connections=64, max_keepalive_connections=32),
@@ -114,13 +114,13 @@ async def _lifespan(_app: "FastAPI"):
 
 
 def _acquire_license() -> None:
-    if not os.environ.get("OBSCURA_LICENSE_KEY"):
-        raise LicenseError("license_missing", "OBSCURA_LICENSE_KEY is not set")
+    if not os.environ.get("VEILGATE_LICENSE_KEY"):
+        raise LicenseError("license_missing", "VEILGATE_LICENSE_KEY is not set")
     LICENSE.acquire()
     LICENSE.start()
 
 
-app = FastAPI(title="Obscura proxy", lifespan=_lifespan)
+app = FastAPI(title="Veilgate proxy", lifespan=_lifespan)
 
 # Bounded semaphore created on the running loop (anyio limiter is loop-bound).
 _MASK_LIMITER = anyio.CapacityLimiter(_MASK_CONCURRENCY)
@@ -140,15 +140,15 @@ def _get_vault(customer_id: str) -> Vault:
 
 def _tenant(request: Request) -> Tenant:
     header = request.headers.get("authorization", "")
-    obscura_key = header[7:] if header.lower().startswith("bearer ") else header
-    tenant = TENANTS.resolve(obscura_key.strip())
+    veilgate_key = header[7:] if header.lower().startswith("bearer ") else header
+    tenant = TENANTS.resolve(veilgate_key.strip())
     if tenant is None:
-        raise HTTPException(status_code=401, detail="invalid Obscura API key")
+        raise HTTPException(status_code=401, detail="invalid Veilgate API key")
     return tenant
 
 
 def _context(customer_id: str) -> MaskContext:
-    """This leg has no per-agent attribution — the Obscura key identifies the
+    """This leg has no per-agent attribution — the Veilgate key identifies the
     customer, and everything under it is one audit scope."""
     return MaskContext(
         detector=DETECTOR,
@@ -303,7 +303,7 @@ async def _bundle_not_leased(_request: Request, error: BundleNotLeased) -> JSONR
 
 @app.get("/profile")
 async def profile() -> dict[str, object]:
-    """Per-stage timings for this leg. Empty unless OBSCURA_PROFILE=1. The proxy
+    """Per-stage timings for this leg. Empty unless VEILGATE_PROFILE=1. The proxy
     needs this as much as the sidecar: it carries the same masking work plus the
     upstream call, so a stall here has to be attributable without guesswork."""
     snapshot = profiling_snapshot()

@@ -2,21 +2,21 @@
 priority-based overlap resolution (checksum-validated IDs beat weak regex).
 """
 
-from obscura import _morph_compat  # noqa: F401  (pymorphy2->pymorphy3 BEFORE natasha import)
+from veilgate import _morph_compat  # noqa: F401  (pymorphy2->pymorphy3 BEFORE natasha import)
 from natasha import Doc, NewsEmbedding, NewsNERTagger, Segmenter
 
-from obscura.address import detect_address
-from obscura.assets import ASSETS
-from obscura.context import location_is_pii, suppress
-from obscura.detect import Span, detect_pii
-from obscura.names import gazetteer_names, keep_location, keep_person, trim_person_span
-from obscura.normalize import normalize
-from obscura.profiling import stage
-from obscura.quasi import detect_quasi
-from obscura.ru_pii import detect_plates, detect_structured
-from obscura.structured import detect_structured_kv
+from veilgate.address import detect_address
+from veilgate.assets import ASSETS
+from veilgate.context import location_is_pii, suppress
+from veilgate.detect import Span, detect_pii
+from veilgate.names import gazetteer_names, keep_location, keep_person, trim_person_span
+from veilgate.normalize import normalize
+from veilgate.profiling import stage
+from veilgate.quasi import detect_quasi
+from veilgate.ru_pii import detect_plates, detect_structured
+from veilgate.structured import detect_structured_kv
 
-# The priority table is LEASED (obscura/assets.py). It is the arbiter of every
+# The priority table is LEASED (veilgate/assets.py). It is the arbiter of every
 # overlap — which recognizer wins when two of them claim the same characters —
 # and it was tuned on real mistyping incidents, so it belongs with the assets
 # rather than in the shipped engine.
@@ -71,7 +71,7 @@ class Detector:
     def detect(self, text: str) -> list[Span]:
         # Every layer is timed separately: detection is the whole CPU cost of the
         # product, and "masking is slow" is only actionable once you know WHICH
-        # recognizer owns the time. Zero overhead unless OBSCURA_PROFILE=1.
+        # recognizer owns the time. Zero overhead unless VEILGATE_PROFILE=1.
         with stage("detect.total"):
             # Layer 0: offset-safe normalization (1:1) so spans map back to original.
             with stage("detect.normalize"):

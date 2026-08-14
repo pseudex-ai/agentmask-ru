@@ -28,10 +28,10 @@ def serve(app: object, port: int, certfile: str, keyfile: str) -> uvicorn.Server
 
 
 def main() -> None:
-    certfile = os.environ.get("OBSCURA_LICENSE_CERT", "")
-    keyfile = os.environ.get("OBSCURA_LICENSE_KEYFILE", "")
-    public_port = int(os.environ.get("OBSCURA_LICENSE_PORT", "8443"))
-    admin_port = int(os.environ.get("OBSCURA_LICENSE_ADMIN_PORT", "9443"))
+    certfile = os.environ.get("VEILGATE_LICENSE_CERT", "")
+    keyfile = os.environ.get("VEILGATE_LICENSE_KEYFILE", "")
+    public_port = int(os.environ.get("VEILGATE_LICENSE_PORT", "8443"))
+    admin_port = int(os.environ.get("VEILGATE_LICENSE_ADMIN_PORT", "9443"))
 
     # Admin is plain HTTP on a separate port: it is reachable only from inside
     # the deployment network and never published.

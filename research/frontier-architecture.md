@@ -1,4 +1,4 @@
-# Obscura — Frontier Detection Architecture (path to 99%+ on noisy RU PII)
+# Veilgate — Frontier Detection Architecture (path to 99%+ on noisy RU PII)
 
 **Date:** 2026-06-07 · Synthesis of proven/SOTA research (dd2-A..D, dd3, dd4-A/B/C + this doc's primary checks) into one combined stack. Every layer is a *battle-tested* component, combined for diversity.
 

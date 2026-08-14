@@ -9,13 +9,13 @@ so real Cyrillic in names is never touched.
 
 import re
 
-from obscura.assets import ASSETS
+from veilgate.assets import ASSETS
 
 _DASH_RE = re.compile("[‐‑‒–—―−­]")  # ‐‑‒–—―−, soft hyphen
 _SPACE_RE = re.compile("[         ]")
 _ZW_RE = re.compile("[​‌‍﻿]")
 
-# The digit look-alike table is LEASED (obscura/assets.py): WHICH glyphs an
+# The digit look-alike table is LEASED (veilgate/assets.py): WHICH glyphs an
 # obfuscator actually substitutes is a tuned list, not a published fact.
 
 

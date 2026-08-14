@@ -1,4 +1,4 @@
-# Deep-Dive: Fixing Obscura's RU PII Detection (names, addresses, collisions, recall)
+# Deep-Dive: Fixing Veilgate's RU PII Detection (names, addresses, collisions, recall)
 
 **Date:** 2026-06-07 · **Method:** /deep-dive — 4 parallel primary-source excavations (RU NER / address / disambiguation / architecture+eval), lead-synthesized with adversarial analysis.
 **Raw notes:** `dd2-notes-A-ru-ner.md`, `dd2-notes-B-ru-address.md`, `dd2-notes-C-disambiguation.md`, `dd2-notes-D-architecture-eval.md`.
@@ -83,7 +83,7 @@
 
 ---
 
-## Recommended upgrade for Obscura (synthesis)
+## Recommended upgrade for Veilgate (synthesis)
 
 | Layer | Action | Source-of-gold |
 |---|---|---|

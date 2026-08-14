@@ -5,7 +5,7 @@ This is the fix for the cross-session "order not found / wrong number" failure.
 
 import pathlib
 
-from obscura.vault import Vault
+from veilgate.vault import Vault
 
 DB = "vault_test.db"
 

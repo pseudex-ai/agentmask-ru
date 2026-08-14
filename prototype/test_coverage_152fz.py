@@ -24,7 +24,7 @@ rather than a bare number.
 Run: python3 test_coverage_152fz.py
 """
 
-from obscura.detect_all import Detector
+from veilgate.detect_all import Detector
 from testkit import load_dev_bundle
 
 # (text as a user would actually write it, expected entity type)

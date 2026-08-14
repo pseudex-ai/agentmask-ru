@@ -3,7 +3,7 @@
 WHY THIS EXISTS RATHER THAN `--python-flag=no_docstrings`: that flag is real and
 we pass it, but it only stops the compiled module from SETTING `__doc__` — the
 string literals still end up in Nuitka's constants blob, and
-`grep -a "Connector to the leased asset state" obscura-serve` finds them.
+`grep -a "Connector to the leased asset state" veilgate-serve` finds them.
 
 That matters more than the code itself. This repo's docstrings are the design
 record: they say which alternative was rejected and why, what was measured, and

@@ -1,11 +1,11 @@
 """Stage-level profiler for the masking hot path.
 
-WHY THIS EXISTS: masking is the only CPU-heavy thing Obscura does, and "it feels
+WHY THIS EXISTS: masking is the only CPU-heavy thing Veilgate does, and "it feels
 slow" is not actionable. This records where the time actually goes, per stage,
 under REAL load — so optimization targets come from measurement instead of guesses.
 
 Three levels, escalating (see docs/spec.md §4.1):
-  1. THIS MODULE — always available, `OBSCURA_PROFILE=1`, near-zero cost when off.
+  1. THIS MODULE — always available, `VEILGATE_PROFILE=1`, near-zero cost when off.
      Answers "which stage". `GET /profile` on the sidecar.
   2. `profile_deep.py --mode=function` — yappi, answers "which function".
      yappi rather than cProfile because detection runs in a threadpool and
@@ -26,10 +26,10 @@ import time
 from collections import deque
 from contextlib import AbstractContextManager, nullcontext
 
-ENABLED = os.environ.get("OBSCURA_PROFILE", "") == "1"
+ENABLED = os.environ.get("VEILGATE_PROFILE", "") == "1"
 
 # Samples retained per stage for percentile estimation.
-_CAPACITY = int(os.environ.get("OBSCURA_PROFILE_SAMPLES", "4096"))
+_CAPACITY = int(os.environ.get("VEILGATE_PROFILE_SAMPLES", "4096"))
 
 
 class StageStats:
@@ -118,7 +118,7 @@ class _Timer:
 
 
 def stage(name: str) -> AbstractContextManager[None]:
-    """Time a block as `name`. No-op unless OBSCURA_PROFILE=1."""
+    """Time a block as `name`. No-op unless VEILGATE_PROFILE=1."""
     return _Timer(name) if ENABLED else _NULL
 
 

@@ -1,7 +1,7 @@
 """Tests for the high-load masking optimizations (perf/high-load-masking).
 
 Covers, against the REAL production stack (real Detector + Vault + AuditLog +
-the actual FastAPI app, on a temp OBSCURA_DB_DIR — no mocks, no SQLite stand-in):
+the actual FastAPI app, on a temp VEILGATE_DB_DIR — no mocks, no SQLite stand-in):
 
   - cache correctness: idempotency, no PII leak, audit de-dup (count once per
     unique (org, content), not once per resend)
@@ -10,7 +10,7 @@ the actual FastAPI app, on a temp OBSCURA_DB_DIR — no mocks, no SQLite stand-i
   - event-loop responsiveness: /health stays fast while a large /mask is in flight
   - unmask round-trip after masking (Vault token determinism end to end)
 
-Run: OBSCURA_DB_DIR=$(mktemp -d) python3 test_perf_masking.py
+Run: VEILGATE_DB_DIR=$(mktemp -d) python3 test_perf_masking.py
 (the harness sets a temp dir itself, so just `python3 test_perf_masking.py`).
 """
 
@@ -22,7 +22,7 @@ import tempfile
 import time
 
 # Each test process gets a fresh DB dir so audit/vault counts are deterministic.
-os.environ.setdefault("OBSCURA_DB_DIR", tempfile.mkdtemp(prefix="obscura_perf_"))
+os.environ.setdefault("VEILGATE_DB_DIR", tempfile.mkdtemp(prefix="veilgate_perf_"))
 
 import httpx  # noqa: E402
 
@@ -33,9 +33,9 @@ from testkit import load_dev_bundle, start_local_license  # noqa: E402
 # the lifespan that would otherwise acquire the lease.
 start_local_license()  # noqa: E402
 
-from obscura.detect_all import Detector  # noqa: E402
-from obscura.maskcache import MaskCache, content_key  # noqa: E402
-from obscura import service  # noqa: E402
+from veilgate.detect_all import Detector  # noqa: E402
+from veilgate.maskcache import MaskCache, content_key  # noqa: E402
+from veilgate import service  # noqa: E402
 
 _PII_MSG = "Здравствуйте, меня зовут Иван Петров, телефон +7 999 123-45-67, доставьте на улицу Ленина 5."
 
@@ -93,7 +93,7 @@ def test_cache_lru_bound() -> None:
 # --------------------------------------------------------------------------- #
 def _client() -> httpx.AsyncClient:
     transport = httpx.ASGITransport(app=service.app)
-    return httpx.AsyncClient(transport=transport, base_url="http://obscura")
+    return httpx.AsyncClient(transport=transport, base_url="http://veilgate")
 
 
 async def _post(client: httpx.AsyncClient, path: str, payload: dict) -> dict:

@@ -9,7 +9,7 @@ transliterations) and a gate: a single-token NER person is kept only if it is a
 known name or has a Russian surname shape — otherwise dropped.
 
 The gazetteers themselves are LEASED, not shipped: they arrive in the detection
-bundle and live only in memory (`obscura/assets.py`). This module holds the rules
+bundle and live only in memory (`veilgate/assets.py`). This module holds the rules
 that consume them. Asking for them without a valid lease raises `BundleNotLeased`
 rather than degrading to a smaller list — a half-equipped gazetteer on a PII
 gateway leaks silently, which is worse than not answering at all.
@@ -21,9 +21,9 @@ per word would put a registry lookup on the hottest loop in the product.
 
 import re
 
-from obscura.assets import ASSETS, NameAssets
-from obscura.detect import Span
-from obscura.morph import MORPH
+from veilgate.assets import ASSETS, NameAssets
+from veilgate.detect import Span
+from veilgate.morph import MORPH
 
 _WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё]+")
 _INITIALS_RE = re.compile(r"[А-ЯЁ][а-яё]+\s+[А-ЯЁ]\.\s?[А-ЯЁ]\.?")

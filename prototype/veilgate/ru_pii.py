@@ -7,8 +7,8 @@ if its checksum passes.
 
 import re
 
-from obscura.assets import ASSETS
-from obscura.detect import Span
+from veilgate.assets import ASSETS
+from veilgate.detect import Span
 
 
 def _digits(text: str) -> str:
@@ -84,7 +84,7 @@ def validate_ogrn(text: str) -> bool:
 # masking: mistyping a licence as a phone replaces it with a fake PHONE, and the
 # model then reads a phone number where a document should be.
 #
-# The cue vocabulary is LEASED (obscura/assets.py); the checksum algorithms and
+# The cue vocabulary is LEASED (veilgate/assets.py); the checksum algorithms and
 # the published digit shapes below stay in the engine, because a regulation
 # anyone can look up is not something a customer needs a subscription for.
 

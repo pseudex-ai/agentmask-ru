@@ -4,7 +4,7 @@ even though the model only ever saw the fake one.
 
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:4000/v1", api_key="obscura-dev")
+client = OpenAI(base_url="http://localhost:4000/v1", api_key="veilgate-dev")
 MODEL = "openai/gpt-4.1-mini"
 
 REAL = "+7 999 123-45-67"

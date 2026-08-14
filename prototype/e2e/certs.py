@@ -1,6 +1,6 @@
 """Self-signed CA + server certificate for the stand.
 
-The lease travels over TLS in production, and `OBSCURA_LICENSE_CA` is a real code
+The lease travels over TLS in production, and `VEILGATE_LICENSE_CA` is a real code
 path in the client. Running the stand over plain HTTP would leave that path
 untested, so the stand issues its own CA and the sidecar is given it.
 
@@ -36,7 +36,7 @@ def generate(out_dir: Path, hostname: str) -> tuple[Path, Path, Path]:
     now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
     ca_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "obscura-e2e-ca")])
+    ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "veilgate-e2e-ca")])
     ca_cert = (
         x509.CertificateBuilder()
         .subject_name(ca_name)

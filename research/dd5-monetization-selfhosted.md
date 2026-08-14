@@ -254,7 +254,7 @@ support and limits foreign royalty outflow (<30% of revenue).
   PII or sensitive information." Because we're open-core, this claim is **grep-verifiable**.
 - **Two delivery modes (ship both, like Vault):**
   - *Connected:* optional ~24h outbound HTTPS of the counters blob for auto true-up.
-  - *Air-gapped (default-safe for RU):* a `obscura utilization export` CLI producing a signed
+  - *Air-gapped (default-safe for RU):* a `veilgate utilization export` CLI producing a signed
     counters file the customer reviews and submits **monthly/quarterly by email/portal**
     (GitLab Offline Cloud License pattern). No automatic egress at all.
 - **Enforcement** stays soft (honor + contractual audit + the signed-license feature gate),
