@@ -259,10 +259,10 @@ def cabinet(request):
         reported, unreachable = {}, True
     if not isinstance(reported, dict):
         reported = {}
-    entities = reported.get("entities") or {}
-    # What is billed: protected values. Requests are shown beside it because the
-    # operator recognises them, but the bar tracks the meter.
-    used = sum(int(n) for n in entities.values()) if isinstance(entities, dict) else 0
+    # What is billed: protected values, from the monotonic accumulator. Requests
+    # are shown beside it because the operator recognises them, but the bar
+    # tracks the meter.
+    used = int(reported.get("values", 0))
     requests = int(reported.get("requests", 0))
     included = subscription.plan.included_values if subscription else 0
     return render(request, "app/cabinet.html", {

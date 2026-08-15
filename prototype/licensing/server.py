@@ -126,6 +126,7 @@ def _store_usage(instance_id: str, org_id: str, usage: object) -> None:
     STORE.record_usage(
         org_id, instance_id, int(usage.get("requests", 0)),
         entities if isinstance(entities, dict) else {},
+        int(usage.get("values", 0)),
     )
 
 

@@ -13,6 +13,7 @@ an unsalted digest is what lets a lookup be a single indexed point query.
 
 import hashlib
 import json
+import logging
 import secrets
 import threading
 import time
@@ -21,6 +22,8 @@ from dataclasses import dataclass
 from pseudex.sqlite_setup import connect as sqlite_connect
 
 KEY_PREFIX = "ps_live_"
+
+_log = logging.getLogger("licensing.store")
 
 STATUS_ACTIVE = "active"
 STATUS_REVOKED = "revoked"
@@ -72,7 +75,13 @@ class LicenseStore:
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS usage ("
             "org_id TEXT, instance_id TEXT, updated_at REAL, reports INTEGER, "
-            "requests INTEGER, entities TEXT, PRIMARY KEY (org_id, instance_id))"
+            "requests INTEGER, entities TEXT, "
+            # The billed quantity, accumulated MONOTONICALLY on our side.
+            # `values_reported` is the last number the installation sent;
+            # `values_total` never decreases.
+            "values_reported INTEGER DEFAULT 0, values_total INTEGER DEFAULT 0, "
+            "resets INTEGER DEFAULT 0, "
+            "PRIMARY KEY (org_id, instance_id))"
         )
         self._conn.commit()
 
@@ -127,17 +136,64 @@ class LicenseStore:
             )
             self._conn.commit()
 
+    def _accumulate_values(self, org_id: str, instance_id: str, reported: int) -> int:
+        """Fold a new reading into a counter that never goes backwards.
+
+        The vault lives on the customer's volume, so `docker volume rm` restarts
+        `first_seen` and the reported count drops to zero. Billing the reported
+        number directly would make deleting the vault a way not to pay.
+
+        A drop is treated as a NEW INSTALLATION rather than as a correction: the
+        growth since the reset is added on top of what was already accumulated.
+        Re-protecting the same people after a reset therefore counts again,
+        which is the honest reading — the engine did the work a second time.
+
+        It is not evidence of anything. A vault can be lost honestly, in a
+        migration or a disk failure. It is recorded as a `reset` so a pattern is
+        visible, and a pattern is a conversation, not an accusation.
+        """
+        row = self._conn.execute(
+            "SELECT values_reported, values_total, resets FROM usage "
+            "WHERE org_id=? AND instance_id=?", (org_id, instance_id),
+        ).fetchone()
+        if row is None:
+            return reported
+        previous, total, resets = int(row[0] or 0), int(row[1] or 0), int(row[2] or 0)
+        if reported >= previous:
+            return total + (reported - previous)
+        _log.warning("usage counter went backwards for org=%s instance=%s: "
+                     "%d -> %d (vault reset or restore); accumulating on top",
+                     org_id, instance_id, previous, reported)
+        self._conn.execute(
+            "UPDATE usage SET resets=? WHERE org_id=? AND instance_id=?",
+            (resets + 1, org_id, instance_id),
+        )
+        return total + reported
+
     def record_usage(self, org_id: str, instance_id: str, requests: int,
-                     entities: dict[str, int]) -> None:
-        """Overwrite this instance's cumulative totals with the newest report."""
+                     entities: dict[str, int], values: int) -> None:
+        """Record the newest report.
+
+        `requests` and `entities` are OVERWRITTEN — each report restates the
+        instance's own cumulative totals, so the latest one is the truth.
+
+        `values` is different, because it is what the invoice is computed from:
+        it is folded into a counter that never decreases, so a customer who
+        deletes their vault does not thereby delete what they owe. See
+        docs/billing-integrity.md §2.1.
+        """
         with self._lock:
+            accumulated = self._accumulate_values(org_id, instance_id, values)
             self._conn.execute(
-                "INSERT INTO usage (org_id, instance_id, updated_at, reports, requests, entities) "
-                "VALUES (?,?,?,1,?,?) "
+                "INSERT INTO usage (org_id, instance_id, updated_at, reports, requests, "
+                "entities, values_reported, values_total) VALUES (?,?,?,1,?,?,?,?) "
                 "ON CONFLICT(org_id, instance_id) DO UPDATE SET "
                 "updated_at=excluded.updated_at, reports=usage.reports+1, "
-                "requests=excluded.requests, entities=excluded.entities",
-                (org_id, instance_id, time.time(), requests, json.dumps(entities)),
+                "requests=excluded.requests, entities=excluded.entities, "
+                "values_reported=excluded.values_reported, "
+                "values_total=excluded.values_total",
+                (org_id, instance_id, time.time(), requests, json.dumps(entities),
+                 values, accumulated),
             )
             self._conn.commit()
 
@@ -148,19 +204,27 @@ class LicenseStore:
         work); summing reports would not be, because each report restates the same
         cumulative total."""
         rows = self._conn.execute(
-            "SELECT instance_id, reports, requests, entities FROM usage WHERE org_id=?",
+            "SELECT instance_id, reports, requests, entities, values_total, resets "
+            "FROM usage WHERE org_id=?",
             (org_id,),
         ).fetchall()
         entities: dict[str, int] = {}
-        requests = 0
-        reports = 0
-        for _instance, row_reports, row_requests, row_entities in rows:
+        requests = reports = values = resets = 0
+        for _instance, row_reports, row_requests, row_entities, row_values, row_resets in rows:
             requests += row_requests
             reports += row_reports
+            values += int(row_values or 0)
+            resets += int(row_resets or 0)
             for entity_type, count in json.loads(row_entities).items():
                 entities[entity_type] = entities.get(entity_type, 0) + count
         return {"org_id": org_id, "instances": len(rows), "reports": reports,
-                "requests": requests, "entities": entities}
+                "requests": requests, "entities": entities,
+                # THE BILLED QUANTITY. Monotonic and summed across instances,
+                # because two containers are two deployments doing real work.
+                "values": values,
+                # Times an instance's counter went backwards. Not evidence — a
+                # vault can be lost honestly — but a pattern worth seeing.
+                "resets": resets}
 
     def instances(self, org_id: str) -> list[dict[str, object]]:
         rows = self._conn.execute(

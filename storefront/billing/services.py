@@ -151,11 +151,12 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     reported = licensing.usage(organization.id).get("usage", {})
     if not isinstance(reported, dict):
         reported = {}
-    # The billed quantity is PROTECTED VALUES — the sum of the per-type entity
-    # counters the customer's own containers report. `requests` is kept for the
-    # cabinet and for the rate guardrail, but nothing is charged on it.
-    entities = reported.get("entities") or {}
-    values = sum(int(count) for count in entities.values()) if isinstance(entities, dict) else 0
+    # The billed quantity comes from the licensing server's MONOTONIC
+    # accumulator, not from the raw report and not from the entity counters.
+    # Entities move with the mask cache; the raw report drops to zero when a
+    # customer deletes their vault. `values` never decreases — see
+    # docs/billing-integrity.md.
+    values = int(reported.get("values", 0))
     requests = int(reported.get("requests", 0))
 
     # The counter is CUMULATIVE since the installation's first report. What this
