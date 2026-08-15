@@ -1,0 +1,80 @@
+# The whole product on one machine, for walking through it as a customer would.
+#
+# NOT the production stack — deploy/compose.yml is that. The differences are
+# deliberate and each removes a step that has nothing to teach during a manual
+# walkthrough:
+#
+#   * the licensing server speaks plain HTTP (no self-signed CA to install);
+#   * the storefront runs with DEBUG on and SQLite (no Postgres to provision);
+#   * the customer container is started BY HAND, from the key the site issues —
+#     that is the part being tested, so it must not be pre-wired here.
+#
+# WHAT IS NOT FAKED: the licensing server, the storefront and the engine are the
+# real ones. The key you get from the site is a real key, the lease is a real
+# lease, and the masking is real masking. A walkthrough against stubs would
+# prove that the stubs agree with each other.
+#
+#   docker compose -f deploy/compose.local.yml up --build
+#   open http://localhost:8080
+#
+name: veilgate-local
+
+services:
+  license:
+    build:
+      context: ../prototype
+      dockerfile: licensing/Dockerfile
+    environment:
+      # Fixed so restarting the stack does not invalidate a key you were given
+      # five minutes ago. Development only — in production this is a secret with
+      # no automated rotation, because its public half is compiled into every
+      # released binary.
+      VEILGATE_SIGNING_KEY: ${VEILGATE_SIGNING_KEY:?run deploy/local.sh, which generates one}
+      VEILGATE_LICENSE_DB: /data/license.db
+      # Short, so the degradation ladder is walkable in a coffee break rather
+      # than over two days: lease 5 min, grace 10 min.
+      VEILGATE_LEASE_TTL_SECONDS: "300"
+      VEILGATE_GRACE_SECONDS: "600"
+      VEILGATE_LICENSE_CERT: ""
+      VEILGATE_LICENSE_KEYFILE: ""
+    volumes:
+      - license-data:/data
+    ports:
+      # Published so the hand-started customer container can reach it from the
+      # host as host.docker.internal:8443.
+      - "8443:8443"
+      - "9443:9443"
+
+  storefront:
+    build:
+      context: ../storefront
+    environment:
+      VEILGATE_DEBUG: "1"
+      VEILGATE_SECRET_KEY: local-walkthrough-only
+      VEILGATE_ALLOWED_HOSTS: localhost,127.0.0.1
+      VEILGATE_CSRF_ORIGINS: http://localhost:8080
+      VEILGATE_LICENSING_ADMIN_URL: http://license:9443
+      VEILGATE_DB_PATH: /data/storefront.sqlite3
+      # What the site tells the customer to run. Points at the image built from
+      # this checkout, not at the registry.
+      VEILGATE_DOCKER_IMAGE: veilgate:source
+      # Console backend: sign-in links appear in `docker compose logs storefront`
+      # instead of needing a mail server.
+      VEILGATE_SMTP_HOST: ""
+    volumes:
+      - storefront-data:/data
+    ports:
+      - "8080:8000"
+    depends_on:
+      - license
+    # Migrations and the three tariffs on every start. Idempotent, and it means
+    # `up` is the only command needed.
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py seed_plans &&
+             gunicorn veilgate_site.wsgi:application --bind 0.0.0.0:8000
+                      --workers 2 --threads 4 --access-logfile - --error-logfile -"
+
+volumes:
+  license-data:
+  storefront-data:
