@@ -11,23 +11,20 @@ ROOT="$(cd "$HERE/.." && pwd)"
 KEYFILE="$HERE/.local-signing-key"
 
 if [ ! -f "$KEYFILE" ]; then
-    "$ROOT/prototype/.venv/bin/python" - > "$KEYFILE" <<'PY'
+    # Run from prototype/ so `licensing` is importable: __file__ is stdin here,
+    # so the path trick that looked right resolved to the wrong directory.
+    (cd "$ROOT/prototype" && ./.venv/bin/python -c "
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-import sys, pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from licensing.keys import encode_private, encode_public
-key = Ed25519PrivateKey.generate()
-print(encode_private(key))
-print(encode_public(key.public_key()), file=sys.stderr)
-PY
+from licensing.keys import encode_private
+print(encode_private(Ed25519PrivateKey.generate()))
+") > "$KEYFILE"
     echo "generated a local signing key -> $KEYFILE"
 fi
 
 VEILGATE_SIGNING_KEY="$(head -1 "$KEYFILE")"
 export VEILGATE_SIGNING_KEY
-PUBKEY="$("$ROOT/prototype/.venv/bin/python" -c "
-import base64, sys
-sys.path.insert(0, '$ROOT/prototype')
+PUBKEY="$(cd "$ROOT/prototype" && ./.venv/bin/python -c "
+import base64
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from licensing.keys import encode_public
 print(encode_public(Ed25519PrivateKey.from_private_bytes(base64.b64decode('$VEILGATE_SIGNING_KEY')).public_key()))
