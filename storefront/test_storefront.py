@@ -236,10 +236,14 @@ def run_checks(client) -> None:
     client.force_login(User.objects.get(email="buyer@acme.ru"))
     org = Organization.objects.filter(memberships__user__email="buyer@acme.ru").first()
     invoice = build_invoice(org, date.today() - timedelta(days=30), date.today())
-    from billing.pricing import PLATFORM_FEE
-    check("an invoice is drafted from the licensing server's counters",
-          invoice.total == PLATFORM_FEE and invoice.overage_values == 0,
-          f"total={invoice.total} values={invoice.overage_values}")
+    # The invoice IS the subscription: the plan's own monthly price, and nothing
+    # derived from any counter. Asserted against the plan row rather than a
+    # constant, so a price change cannot make this pass while the customer is
+    # charged something else.
+    check("an invoice charges the plan price and nothing per value",
+          invoice.total == org.subscription.plan.monthly_price
+          and invoice.plan_amount == invoice.total,
+          f"total={invoice.total} plan={org.subscription.plan.monthly_price}")
 
     printed = client.get(f"/app/invoices/{invoice.number}/print")
     printed_body = printed.content.decode()
@@ -292,10 +296,10 @@ def run_checks(client) -> None:
     invoice.state = InvoiceModel.ISSUED
     invoice.save(update_fields=["values_at_period_end", "state"])
     second = build_invoice(org, date.today(), date.today() + timedelta(days=30))
-    check("the next invoice bills the period, not the lifetime total",
-          second.overage_values == 0,
+    check("the next invoice reports the period's values, not the lifetime total",
+          second.values_in_period == 0,
           f"watermark=500 reported={second.values_at_period_end} "
-          f"billed={second.overage_values}")
+          f"in_period={second.values_in_period}")
 
     # 54-ФЗ splits our customers in two, and only the payer kind tells them
     # apart. A receipt sent where none is required fiscalises a transaction that

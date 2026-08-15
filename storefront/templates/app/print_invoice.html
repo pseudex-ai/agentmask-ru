@@ -91,15 +91,6 @@
       <td class="num">{{ invoice.plan_amount }}</td>
       <td class="num">{{ invoice.plan_amount }}</td>
     </tr>
-    {% if invoice.overage_values %}
-    <tr>
-      <td>2</td>
-      <td>Защита персональных данных — {{ invoice.overage_values }} значений</td>
-      <td class="num">{{ invoice.overage_values }}</td>
-      <td class="num">по шкале</td>
-      <td class="num">{{ invoice.overage_amount }}</td>
-    </tr>
-    {% endif %}
   </table>
 
   <div class="total">Итого: {{ invoice.total }} ₽</div>
@@ -118,10 +109,12 @@
     <div class="note">
       Оплата означает согласие с офертой. Счёт действителен к оплате до
       {{ invoice.due_at|date:"d.m.Y" }}. В назначении платежа укажите номер счёта
-      {{ invoice.number }}.<br><br>
-      Объём обработанных запросов рассчитан по счётчикам, которые ваши собственные
-      контейнеры передают при продлении аренды. Персональные данные при этом не
-      передаются и нам недоступны.
+      {{ invoice.number }}.
+      {% if invoice.values_in_period %}<br><br>
+      Справочно: за период защищено {{ invoice.values_in_period }} значений
+      персональных данных. Сумма счёта от этого числа не зависит — оплачивается
+      подписка на период. Сами персональные данные нам не передаются и
+      недоступны.{% endif %}
     </div>
   {% endif %}
 </div>

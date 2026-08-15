@@ -20,8 +20,8 @@ from billing.models import Invoice, LicenseKey, Plan, Subscription
 
 @admin.register(Plan)
 class PlanAdmin(admin.ModelAdmin):
-    list_display = ("code", "title", "monthly_price", "included_values",
-                    "overage_per_1k", "rpm_limit", "max_keys", "is_public")
+    list_display = ("code", "title", "monthly_price", "max_instances",
+                    "included_values", "rpm_limit", "max_keys", "is_public")
     list_editable = ("monthly_price", "included_values", "is_public")
 
 

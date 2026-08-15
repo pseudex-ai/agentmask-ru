@@ -20,10 +20,10 @@
     <div>
       <div class="label" style="margin-bottom:14px">ПОЗИЦИИ</div>
       <div class="kv"><span class="k">{{ invoice.organization.subscription.plan.title }}, месяц</span><span class="v">{{ invoice.plan_amount }} ₽</span></div>
-      {% if invoice.overage_requests %}
-      <div class="kv"><span class="k">превышение, {{ invoice.overage_requests }} запросов</span><span class="v">{{ invoice.overage_amount }} ₽</span></div>
-      {% endif %}
       <div class="kv" style="border-bottom:0;padding-top:16px"><span class="k" style="color:var(--text)">итого</span><span class="v" style="font-size:18px;color:var(--text)">{{ invoice.total }} ₽</span></div>
+      {% if invoice.values_in_period %}
+      <div style="margin-top:16px;font-size:13.5px;color:var(--dim);line-height:1.6">За период защищено <b style="color:var(--text-3)">{{ invoice.values_in_period }}</b> значений. Это справка, а не позиция счёта: подписка не зависит от объёма.</div>
+      {% endif %}
     </div>
     <div>
       <div class="label" style="margin-bottom:14px">РЕКВИЗИТЫ ПЛАТЕЛЬЩИКА</div>

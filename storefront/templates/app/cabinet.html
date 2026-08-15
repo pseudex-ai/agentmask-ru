@@ -24,7 +24,7 @@
       {% if subscription %}
         <div class="kv"><span class="k">план</span><span class="v">{{ subscription.plan.title }}</span></div>
         <div class="kv"><span class="k">в месяц</span><span class="v">{{ subscription.plan.monthly_price|floatformat:0 }} ₽</span></div>
-        <div class="kv"><span class="k">включено запросов</span><span class="v">{{ included }}</span></div>
+        <div class="kv"><span class="k">контейнеров по тарифу</span><span class="v">{{ subscription.plan.max_instances }}</span></div>
         <div class="kv"><span class="k">период до</span><span class="v">{{ subscription.current_period_end|date:"d.m.Y" }}</span></div>
       {% endif %}
     </div>
@@ -34,9 +34,10 @@
         <div style="font-size:14px;color:var(--amber);line-height:1.6">Счётчики сейчас недоступны — лицензионный сервер не отвечает. Это не влияет на работу вашего контейнера: он продолжает маскировать на выданной аренде.</div>
       {% else %}
         <div style="font-size:30px;font-weight:900;letter-spacing:-.02em">{{ used }}</div>
-        <div style="font-size:12.5px;color:var(--dim-2);margin-top:2px">запросов за период · из {{ included }}</div>
+        <div style="font-size:12.5px;color:var(--dim-2);margin-top:2px">значений защищено · ориентир тарифа {{ included }}</div>
         <div class="meter"><i class="{% if percent >= 100 %}over{% endif %}" style="width:{{ percent }}%"></i></div>
-        <div style="font-size:13px;color:var(--dim-2);margin-top:12px;line-height:1.6">Цифра приходит из ваших же контейнеров вместе с продлением аренды. Мы её не измеряем и измерить не можем.</div>
+        <div style="font-size:12.5px;color:var(--dim-2);margin-top:10px">запросов через шлюз: {{ requests }}</div>
+        <div style="font-size:13px;color:var(--dim-2);margin-top:12px;line-height:1.6">Ориентир, а не лимит: превышение не ограничивает работу и не меняет счёт — подписка не зависит от объёма. Цифра приходит из ваших же контейнеров вместе с продлением аренды; мы её не измеряем и измерить не можем.</div>
       {% endif %}
     </div>
     <div>

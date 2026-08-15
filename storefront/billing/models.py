@@ -30,28 +30,19 @@ class Plan(models.Model):
     title = models.CharField(max_length=100)
     monthly_price = models.DecimalField(max_digits=10, decimal_places=2)
 
-    # THE METER IS PROTECTED VALUES, NOT REQUESTS, and the reason is in our own
-    # architecture: audit is written on the cache MISS only, so "the same value
-    # re-sent in a growing transcript is one protected value, not N". Billing on
-    # requests contradicted the engine's own model of what happened.
-    #
-    # It is also what the customer buys — "this real personal datum did not
-    # cross the border" — while a request count is a function of their agent
-    # loop. A framework doing six tool-call round trips per user turn billed 6×
-    # for the same data: a tax on exactly the architecture this product serves.
-    # And it was gameable: batching N messages into one request cut the bill
-    # N-fold and changed nothing about the protection delivered.
+    # A GUIDE, NOT A METER. Nothing is charged per value and nothing is refused
+    # for exceeding this — it exists so a customer can tell which tier is theirs
+    # before buying. Every number describing the customer's own traffic is
+    # produced inside their container, on their hardware, under their root; a
+    # boundary built on such a number is not a boundary. There is no
+    # `overage_per_1k` for the same reason: if nothing is charged per unit,
+    # there is no unit to lie about, and the whole class of counter disputes
+    # disappears. See docs/billing-integrity.md.
     included_values = models.BigIntegerField(default=0)
-    overage_per_1k = models.DecimalField(max_digits=10, decimal_places=2,
-                                         default=Decimal("0"))
-
-    # Requests survive as a GUARDRAIL, not a meter: a rate ceiling is what
-    # actually forces an upgrade, and it is enforceable inside the customer's
-    # perimeter without trusting a self-reported counter — which matters,
-    # because pseudex cannot see payloads and every number it reports about
-    # itself comes from the customer's own container.
     rpm_limit = models.PositiveIntegerField(default=60)
 
+    # THE TIER. The only boundary decided on OUR side: the licensing server
+    # knows which instance ids leased recently and refuses one beyond the plan.
     max_instances = models.PositiveIntegerField(default=1)
     max_keys = models.PositiveIntegerField(default=2)
     is_public = models.BooleanField(default=True)
@@ -181,8 +172,12 @@ class Invoice(models.Model):
     period_end = models.DateField()
 
     plan_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
-    overage_values = models.BigIntegerField(default=0)
-    overage_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    # INFORMATION, never a charge: what the subscription protected this period.
+    # It rides on the invoice because it is the answer to "what did I get for
+    # the money", and because a figure far above the plan's guide is what
+    # prompts an upgrade conversation. It is deliberately NOT a line item —
+    # a table row priced at 0 ₽ reads to an accountant like a billing error.
+    values_in_period = models.BigIntegerField(default=0)
     total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
 
     issued_at = models.DateTimeField(null=True, blank=True)

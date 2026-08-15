@@ -125,6 +125,10 @@ LANGUAGE_CODE = "ru-ru"
 TIME_ZONE = "Europe/Moscow"
 USE_I18N = True
 USE_TZ = True
+# "11900 ₽" on a price card and on a счёт reads as a typo. With ru-ru this
+# groups by a non-breaking space and keeps the decimal comma, which is the
+# form an accountant reconciles against a bank statement.
+USE_THOUSAND_SEPARATOR = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
