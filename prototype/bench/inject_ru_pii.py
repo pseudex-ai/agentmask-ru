@@ -2,7 +2,7 @@
 measures masking instead of measuring a network hop.
 
 WHY: BFCL ships English tasks about file systems and trading bots. Running them
-through Veilgate fired the detector 6 times in a whole 29-task run — so Δ was
+through Pseudex fired the detector 6 times in a whole 29-task run — so Δ was
 dominated by proxy overhead and said nothing about whether masking breaks agents.
 Contact data goes into every task; identifier substitution targets the 50
 TravelAPI entries, whose state carries a cardholder name, a card number and a
@@ -40,7 +40,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from veilgate.ru_pii import validate_inn, validate_luhn  # noqa: E402
+from pseudex.ru_pii import validate_inn, validate_luhn  # noqa: E402
 
 _DATA_FILE = "BFCL_v4_multi_turn_base.json"
 _ANSWER_SUBDIR = "possible_answer"

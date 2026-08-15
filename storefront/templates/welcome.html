@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Ключ выпущен — veilgate{% endblock %}
+{% block title %}Ключ выпущен — pseudex{% endblock %}
 {% block content %}
 <section>
   <div class="eyebrow"><i></i><span>КЛЮЧ ВЫПУЩЕН</span></div>
@@ -15,15 +15,15 @@
   <div class="steps" style="margin-top:32px">
     <div>
       <div class="what"><div class="step">01</div><h3>Запустить</h3><div class="note">ключ подставлен</div></div>
-      <pre data-copy="docker run -d --name veilgate -p 8000:8000 -p 127.0.0.1:8081:8081 -v veilgate-data:/data -e VEILGATE_LICENSE_KEY={{ key }} {{ image }}">docker run -d --name veilgate \
-  -p 8000:8000 -p 127.0.0.1:8081:8081 -v veilgate-data:/data \
-  -e VEILGATE_LICENSE_KEY={{ key }} \
+      <pre data-copy="docker run -d --name pseudex -p 8000:8000 -p 127.0.0.1:8081:8081 -v pseudex-data:/data -e PSEUDEX_LICENSE_KEY={{ key }} {{ image }}">docker run -d --name pseudex \
+  -p 8000:8000 -p 127.0.0.1:8081:8081 -v pseudex-data:/data \
+  -e PSEUDEX_LICENSE_KEY={{ key }} \
   {{ image }}</pre>
       <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
     </div>
     <div>
       <div class="what"><div class="step">02</div><h3>Открыть интерфейс</h3><div class="note">ссылка печатается в лог контейнера</div></div>
-      <pre data-copy="docker logs veilgate 2>&1 | grep 'локальный интерфейс' -A2">docker logs veilgate 2>&1 | grep 'локальный интерфейс' -A2
+      <pre data-copy="docker logs pseudex 2>&1 | grep 'локальный интерфейс' -A2">docker logs pseudex 2>&1 | grep 'локальный интерфейс' -A2
 # → http://localhost:8081/?token=…</pre>
       <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
     </div>

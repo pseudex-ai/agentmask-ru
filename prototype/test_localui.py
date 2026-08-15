@@ -20,11 +20,11 @@ import sys
 import tempfile
 import time
 
-os.environ.setdefault("VEILGATE_ADMIN_TOKEN", "test-admin-token")
-os.environ.setdefault("VEILGATE_GATEWAY_TOKEN", "test-gateway-token")
-_TMP = tempfile.mkdtemp(prefix="veilgate-ui-test-")
-os.environ["VEILGATE_DB_DIR"] = _TMP
-os.environ["VEILGATE_UI_ORG"] = "acme"
+os.environ.setdefault("PSEUDEX_ADMIN_TOKEN", "test-admin-token")
+os.environ.setdefault("PSEUDEX_GATEWAY_TOKEN", "test-gateway-token")
+_TMP = tempfile.mkdtemp(prefix="pseudex-ui-test-")
+os.environ["PSEUDEX_DB_DIR"] = _TMP
+os.environ["PSEUDEX_UI_ORG"] = "acme"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -34,13 +34,13 @@ import testkit  # noqa: E402
 # licence gate is the thing that makes /mask answer 503, so switching it off to
 # test the endpoints around it would leave the interesting interaction — an
 # operator surface that must stay readable while masking is stopped — untested.
-# Must run before `veilgate.service` is imported: it reads its configuration
+# Must run before `pseudex.service` is imported: it reads its configuration
 # from the environment at import time.
-os.environ["VEILGATE_LICENSE_KEY"] = testkit.start_local_license()
+os.environ["PSEUDEX_LICENSE_KEY"] = testkit.start_local_license()
 testkit.load_dev_bundle()
 
-from veilgate import service  # noqa: E402
-from veilgate.localui import server as ui_server  # noqa: E402
+from pseudex import service  # noqa: E402
+from pseudex.localui import server as ui_server  # noqa: E402
 
 service.LICENSE.acquire()
 
@@ -64,8 +64,8 @@ def _client() -> TestClient:
     return TestClient(service.app)
 
 
-AUTH = {"Authorization": f"Bearer {os.environ['VEILGATE_ADMIN_TOKEN']}"}
-GATEWAY = {"Authorization": f"Bearer {os.environ['VEILGATE_GATEWAY_TOKEN']}"}
+AUTH = {"Authorization": f"Bearer {os.environ['PSEUDEX_ADMIN_TOKEN']}"}
+GATEWAY = {"Authorization": f"Bearer {os.environ['PSEUDEX_GATEWAY_TOKEN']}"}
 
 
 def test_operator_surface_is_closed(client: TestClient) -> None:
@@ -160,7 +160,7 @@ def test_reveal_requires_an_actor(client: TestClient) -> None:
 
 def test_requests_are_counted_apart_from_entities(client: TestClient) -> None:
     """Three requests carrying six entities must bill as three, not nine."""
-    from veilgate.audit import AuditLog
+    from pseudex.audit import AuditLog
 
     fresh = AuditLog(os.path.join(_TMP, "billing.db"))
     for _ in range(3):

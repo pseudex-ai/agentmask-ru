@@ -15,8 +15,8 @@ RETAIN_DAYS="${RETAIN_DAYS:-30}"
 while :; do
     stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 
-    if pg_dump -h postgres -U "${POSTGRES_USER:-veilgate}" \
-               -d "${POSTGRES_DB:-veilgate}" -Fc \
+    if pg_dump -h postgres -U "${POSTGRES_USER:-pseudex}" \
+               -d "${POSTGRES_DB:-pseudex}" -Fc \
                > "/backups/storefront-${stamp}.dump.tmp"; then
         mv "/backups/storefront-${stamp}.dump.tmp" "/backups/storefront-${stamp}.dump"
         echo "backup: storefront ${stamp} ok"

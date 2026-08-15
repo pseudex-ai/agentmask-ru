@@ -2,7 +2,7 @@
 
 Everything here was tuned against benchmarks and false-positive reports: name
 gazetteers, street vocabulary, cue words, the priority table. It is the product.
-The engine (`veilgate/`) knows the SCHEMA of these assets and how to compile them,
+The engine (`pseudex/`) knows the SCHEMA of these assets and how to compile them,
 but holds none of the values — it receives them as a leased bundle at runtime.
 
 The split rule (docs/tz-license-packaging.md §2.2):
@@ -10,7 +10,7 @@ The split rule (docs/tz-license-packaging.md §2.2):
     In the bundle — everything we tuned.
     In the binary — everything published, and every algorithm.
 
-So the СНИЛС checksum and the card regex stay in `veilgate/ru_pii.py` (published
+So the СНИЛС checksum and the card regex stay in `pseudex/ru_pii.py` (published
 formats, nothing to steal), while the 28k first names, the street gazetteer and
 the phone-deny list live here.
 

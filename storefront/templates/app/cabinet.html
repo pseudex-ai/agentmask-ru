@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Кабинет — veilgate{% endblock %}
+{% block title %}Кабинет — pseudex{% endblock %}
 {% block nav %}{% endblock %}
 {% block content %}
 <section>
@@ -43,7 +43,7 @@
       <div class="label" style="margin-bottom:14px">БЫСТРЫЙ СТАРТ</div>
       <div style="font-size:13.5px;color:var(--dim);line-height:1.6;margin-bottom:12px">Команда запуска для этой организации:</div>
       <div class="copybar" style="margin-top:0">
-        <code data-copy="docker run -d --name veilgate -p 8000:8000 -p 127.0.0.1:8081:8081 -v veilgate-data:/data -e VEILGATE_LICENSE_KEY=&lt;ваш ключ&gt; {{ image }}">docker run … {{ image }}</code>
+        <code data-copy="docker run -d --name pseudex -p 8000:8000 -p 127.0.0.1:8081:8081 -v pseudex-data:/data -e PSEUDEX_LICENSE_KEY=&lt;ваш ключ&gt; {{ image }}">docker run … {{ image }}</code>
         <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
       </div>
     </div>

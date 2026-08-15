@@ -14,7 +14,7 @@ instantly. `--wait` blocks until they do.
     python3 deploy/simulate.py --customers 3 --requests 40
     python3 deploy/simulate.py --customers 1 --requests 2000 --wait --invoice
 
-Prerequisites: deploy/local.sh is up, and a veilgate container is running on
+Prerequisites: deploy/local.sh is up, and a pseudex container is running on
 :8000 pointed at the local licensing server.
 """
 
@@ -80,7 +80,7 @@ def register(client: httpx.Client, index: int) -> tuple[str, str]:
         headers={"Referer": SITE + "/"},
         follow_redirects=True,
     )
-    key = re.search(r"(vg_live_[A-Za-z0-9_\-]+)", response.text)
+    key = re.search(r"(ps_live_[A-Za-z0-9_\-]+)", response.text)
     if key is None:
         raise SystemExit(
             f"sign-up did not return a key for {email}. The storefront throttles "
@@ -94,9 +94,9 @@ def gateway_token() -> str:
     """The gateway credential, read from the container's log — the same place
     the customer is told to read it."""
     import subprocess
-    out = subprocess.run(["docker", "logs", "veilgate"], capture_output=True,
+    out = subprocess.run(["docker", "logs", "pseudex"], capture_output=True,
                          text=True).stdout + subprocess.run(
-        ["docker", "logs", "veilgate"], capture_output=True, text=True).stderr
+        ["docker", "logs", "pseudex"], capture_output=True, text=True).stderr
     if "ключ шлюза" in out:
         for line in out.split("ключ шлюза", 1)[1].splitlines()[1:]:
             candidate = line.strip()
@@ -170,8 +170,8 @@ def main() -> int:
 
     token = gateway_token()
     if not token:
-        print("could not read the gateway token from `docker logs veilgate` — "
-              "is the container named veilgate and running?")
+        print("could not read the gateway token from `docker logs pseudex` — "
+              "is the container named pseudex and running?")
         return 1
 
     for key, org in accounts:
@@ -203,7 +203,7 @@ def main() -> int:
                   "invoice from the Django shell with billing.services.build_invoice.")
             return 0
         time.sleep(15)
-    print("counters never arrived. Check `docker logs veilgate` for lease renewals.")
+    print("counters never arrived. Check `docker logs pseudex` for lease renewals.")
     return 1
 
 

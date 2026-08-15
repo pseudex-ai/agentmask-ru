@@ -75,11 +75,11 @@
 
 | секрет | где | ротация |
 |---|---|---|
-| `VEILGATE_SIGNING_KEY` | только в окружении лицензионного сервера | **не ротируется автоматически** — публичная часть вкомпилирована в каждый выпущенный бинарник, смена ключа делает недействительными все развёрнутые образы |
-| `VEILGATE_SECRET_KEY` | витрина | при подозрении; разлогинивает всех |
+| `PSEUDEX_SIGNING_KEY` | только в окружении лицензионного сервера | **не ротируется автоматически** — публичная часть вкомпилирована в каждый выпущенный бинарник, смена ключа делает недействительными все развёрнутые образы |
+| `PSEUDEX_SECRET_KEY` | витрина | при подозрении; разлогинивает всех |
 | `POSTGRES_PASSWORD` | compose | обычная |
 | ключи ЮKassa | витрина | по правилам провайдера |
-| `VEILGATE_ADMIN_TOKEN` | генерируется в `entrypoint.sh` у клиента | каждый рестарт контейнера |
+| `PSEUDEX_ADMIN_TOKEN` | генерируется в `entrypoint.sh` у клиента | каждый рестарт контейнера |
 
 Ключ подписи — единственный, у которого нет автоматической ротации, и это
 осознанно: смена требует перевыпуска образа и согласованного обновления у всех
@@ -126,7 +126,7 @@ git tag v1.0.1 && git push --tags
 Клиент проверяет:
 
 ```bash
-cosign verify cr.yandex/veilgate/veilgate:1.0.1 \
+cosign verify cr.yandex/pseudex/pseudex:1.0.1 \
   --certificate-identity-regexp '.*' --certificate-oidc-issuer-regexp '.*'
 ```
 
@@ -136,12 +136,12 @@ cosign verify cr.yandex/veilgate/veilgate:1.0.1 \
 
 ```bash
 # витрина
-docker compose exec -T postgres pg_restore -U veilgate -d veilgate --clean \
+docker compose exec -T postgres pg_restore -U pseudex -d pseudex --clean \
   < deploy/backups/storefront-<stamp>.dump
 
 # лицензии — тот отказ, ради которого всё это существует
 docker compose stop license
-docker cp deploy/backups/license-<stamp>.db veilgate-license-1:/data/license.db
+docker cp deploy/backups/license-<stamp>.db pseudex-license-1:/data/license.db
 docker compose start license
 ```
 

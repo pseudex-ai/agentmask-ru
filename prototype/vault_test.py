@@ -5,7 +5,7 @@ This is the fix for the cross-session "order not found / wrong number" failure.
 
 import pathlib
 
-from veilgate.vault import Vault
+from pseudex.vault import Vault
 
 DB = "vault_test.db"
 

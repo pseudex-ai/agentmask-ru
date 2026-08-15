@@ -1,13 +1,13 @@
-"""Issue an Veilgate API key for a customer.
+"""Issue an Pseudex API key for a customer.
 
 usage: python issue_key.py <customer_id> <upstream_base_url> <upstream_key>
 example: python issue_key.py acme https://openrouter.ai/api/v1 sk-or-...
-The customer then sets base_url=<veilgate>/v1 and api_key=<printed key>.
+The customer then sets base_url=<pseudex>/v1 and api_key=<printed key>.
 """
 
 import sys
 
-from veilgate.tenants import Tenants
+from pseudex.tenants import Tenants
 
 
 def main() -> None:
@@ -16,7 +16,7 @@ def main() -> None:
         return
     tenants = Tenants("tenants.db")
     key = tenants.issue(sys.argv[1], sys.argv[2], sys.argv[3])
-    print("Veilgate API key (give to customer):", key)
+    print("Pseudex API key (give to customer):", key)
 
 
 if __name__ == "__main__":

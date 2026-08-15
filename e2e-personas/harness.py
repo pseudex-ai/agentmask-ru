@@ -29,7 +29,7 @@ import time
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
-_STATE = Path("/tmp/veilgate-personas.json")
+_STATE = Path("/tmp/pseudex-personas.json")
 
 # Chosen high and contiguous so a stray container is obvious in `docker ps` and
 # cannot collide with the walkthrough stand on 8000/8081/8080.
@@ -37,7 +37,7 @@ BASE_ENGINE_PORT = 18100
 BASE_UI_PORT = 18200
 
 SITE = "http://localhost:8080"
-IMAGE = "veilgate:source"
+IMAGE = "pseudex:source"
 
 
 def sh(args: list[str], check: bool) -> subprocess.CompletedProcess:
@@ -62,11 +62,11 @@ def up(count: int) -> int:
         name = f"persona{index + 1}"
         personas.append({
             "name": name,
-            "container": f"veilgate-{name}",
+            "container": f"pseudex-{name}",
             "engine_port": BASE_ENGINE_PORT + index,
             "ui_port": BASE_UI_PORT + index,
             "email": f"{name}@example.com",
-            "workdir": f"/tmp/veilgate-persona-{name}",
+            "workdir": f"/tmp/pseudex-persona-{name}",
             # Filled in by the persona itself, by going through the site. The
             # harness deliberately does NOT register for them: signing up is the
             # first thing being tested, and doing it here would skip it.

@@ -9,9 +9,9 @@ Proves the two load-bearing properties:
 import json
 import re
 
-from veilgate.detect import detect_pii
-from veilgate.redact import mask_text, unmask_text
-from veilgate.vault import Vault
+from pseudex.detect import detect_pii
+from pseudex.redact import mask_text, unmask_text
+from pseudex.vault import Vault
 
 
 def main() -> None:

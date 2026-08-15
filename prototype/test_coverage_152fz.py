@@ -24,7 +24,7 @@ rather than a bare number.
 Run: python3 test_coverage_152fz.py
 """
 
-from veilgate.detect_all import Detector
+from pseudex.detect_all import Detector
 from testkit import load_dev_bundle
 
 # (text as a user would actually write it, expected entity type)

@@ -1,6 +1,6 @@
 """Licensing state: who has a key, what leases were issued, what was used.
 
-Deliberately the same SQLite setup the sidecar uses (`veilgate/sqlite_setup.py`,
+Deliberately the same SQLite setup the sidecar uses (`pseudex/sqlite_setup.py`,
 WAL + busy_timeout armed before journal_mode) — the licensing server is a small
 service and a second storage stack would be a second thing to operate.
 
@@ -18,9 +18,9 @@ import threading
 import time
 from dataclasses import dataclass
 
-from veilgate.sqlite_setup import connect as sqlite_connect
+from pseudex.sqlite_setup import connect as sqlite_connect
 
-KEY_PREFIX = "vg_live_"
+KEY_PREFIX = "ps_live_"
 
 STATUS_ACTIVE = "active"
 STATUS_REVOKED = "revoked"

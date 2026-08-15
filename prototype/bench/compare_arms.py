@@ -1,4 +1,4 @@
-"""Paired-run comparison: what did putting Veilgate in the path actually cost?
+"""Paired-run comparison: what did putting Pseudex in the path actually cost?
 
 The headline number is `task sensitivity` — the name the literature already uses
 (Tau-Eval, EMNLP 2025): Δ = accuracy_control − accuracy_masked. A single scalar

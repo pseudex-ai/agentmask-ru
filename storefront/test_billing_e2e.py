@@ -39,22 +39,22 @@ def check(name: str, condition: bool, detail: str = "") -> None:
 
 
 def main() -> int:
-    if not os.environ.get("VEILGATE_YOOKASSA_SECRET_KEY"):
-        print("VEILGATE_YOOKASSA_SECRET_KEY is not set — source storefront/.env.dev")
+    if not os.environ.get("PSEUDEX_YOOKASSA_SECRET_KEY"):
+        print("PSEUDEX_YOOKASSA_SECRET_KEY is not set — source storefront/.env.dev")
         return 1
 
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "veilgate_site.settings")
-    os.environ["VEILGATE_DEBUG"] = "1"
-    os.environ["VEILGATE_SECRET_KEY"] = "billing-e2e"
-    os.environ["VEILGATE_DB_PATH"] = os.path.join(
-        tempfile.mkdtemp(prefix="veilgate-billing-"), "b.sqlite3")
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "pseudex_site.settings")
+    os.environ["PSEUDEX_DEBUG"] = "1"
+    os.environ["PSEUDEX_SECRET_KEY"] = "billing-e2e"
+    os.environ["PSEUDEX_DB_PATH"] = os.path.join(
+        tempfile.mkdtemp(prefix="pseudex-billing-"), "b.sqlite3")
     # The licensing server of the local walkthrough stand (deploy/local.sh),
     # not the e2e gate stand — resuming a customer has to hit a real one.
     # Forced, not setdefault: .env.dev points at the e2e GATE stand's port,
     # which is only up while the gates run. Resuming a customer has to reach a
     # live licensing server, and the walkthrough stand's is the one that is.
-    os.environ["VEILGATE_LICENSING_ADMIN_URL"] = os.environ.get(
-        "VEILGATE_BILLING_LICENSING_URL", "http://127.0.0.1:9443")
+    os.environ["PSEUDEX_LICENSING_ADMIN_URL"] = os.environ.get(
+        "PSEUDEX_BILLING_LICENSING_URL", "http://127.0.0.1:9443")
 
     import django
     django.setup()

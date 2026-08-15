@@ -19,10 +19,10 @@ cheats is worse than no gate:
 
 usage:
     python3 e2e/gates.py                    # source image
-    python3 e2e/gates.py --image veilgate:compiled          # gate P7
+    python3 e2e/gates.py --image pseudex:compiled          # gate P7
     python3 e2e/gates.py --only L4,L5       # a subset, for iterating
 
-    VEILGATE_SIGNING_KEY=... python3 e2e/gates.py --image veilgate:compiled --skip-build
+    PSEUDEX_SIGNING_KEY=... python3 e2e/gates.py --image pseudex:compiled --skip-build
 
 The verification key is compiled into the release binary, so a fresh key means a
 fresh Nuitka compile. Pass the key the image was built with, plus --skip-build,
@@ -57,7 +57,7 @@ _ENV_FILE = _HERE / ".env"
 SIDECAR = "http://127.0.0.1:18000"
 UI = "http://127.0.0.1:18081"
 ADMIN = "http://127.0.0.1:19443"
-NETWORK = "veilgate-e2e_default"
+NETWORK = "pseudex-e2e_default"
 ORG = "acme"
 
 TTL_SECONDS = 60
@@ -154,7 +154,7 @@ def run_disposable_sidecar(image: str, env: dict[str, str], timeout: int) -> tup
     Used by the startup gates. Returns (exit_code, logs). A container still alive
     at the timeout is reported as exit code 0, which those gates treat as a
     failure — 'it kept running' is exactly what must not happen."""
-    name = f"veilgate-oneshot-{int(time.monotonic() * 1000)}"
+    name = f"pseudex-oneshot-{int(time.monotonic() * 1000)}"
     args = ["docker", "run", "--name", name, "--network", NETWORK,
             "-v", f"{_HERE / 'certs'}:/certs:ro"]
     for key, value in env.items():
@@ -202,7 +202,7 @@ def build_stand(image: str, workers: int, skip_build: bool) -> str:
     # A fixed key can be supplied so an already-built image stays valid: the
     # verification key is compiled in, so generating a fresh one would force a
     # full Nuitka recompile of the release image on every run.
-    existing = os.environ.get("VEILGATE_SIGNING_KEY", "")
+    existing = os.environ.get("PSEUDEX_SIGNING_KEY", "")
     signing_key = (Ed25519PrivateKey.from_private_bytes(base64.b64decode(existing))
                    if existing else Ed25519PrivateKey.generate())
     private_b64 = encode_private(signing_key)
@@ -213,34 +213,34 @@ def build_stand(image: str, workers: int, skip_build: bool) -> str:
     print("  self-signed CA + server cert written")
 
     sh(["docker", "build", "-f", str(_ROOT / "licensing" / "Dockerfile"),
-        "-t", "veilgate-licensing:e2e", str(_ROOT)], True, 1200)
+        "-t", "pseudex-licensing:e2e", str(_ROOT)], True, 1200)
     if skip_build:
         print(f"  reusing the existing {image}")
-    elif image == "veilgate:source":
+    elif image == "pseudex:source":
         # The verification key is baked in at BUILD time, as it is for a release:
         # a key the customer could override in the environment would let them
         # sign their own bundles.
         sh(["docker", "build", "-f", str(_ROOT / "Dockerfile"),
-            "--build-arg", f"VEILGATE_LICENSE_PUBKEY={public_b64}",
+            "--build-arg", f"PSEUDEX_LICENSE_PUBKEY={public_b64}",
             "-t", image, str(_ROOT)], True, 1800)
         print(f"  images built ({image})")
     else:
         sh(["docker", "build", "-f", str(_ROOT / "Dockerfile.nuitka"),
-            "--build-arg", f"VEILGATE_LICENSE_PUBKEY={public_b64}",
+            "--build-arg", f"PSEUDEX_LICENSE_PUBKEY={public_b64}",
             "-t", image, str(_ROOT)], True, 3600)
         print(f"  images built ({image})")
 
     _ENV_FILE.write_text(
-        f"VEILGATE_SIGNING_KEY={private_b64}\n"
-        f"VEILGATE_IMAGE={image}\n"
-        f"VEILGATE_KEY=\n"
-        f"VEILGATE_WORKERS={workers}\n"
-        f"VEILGATE_LEASE_TTL_SECONDS={TTL_SECONDS}\n"
-        f"VEILGATE_GRACE_SECONDS={GRACE_SECONDS}\n"
-        f"VEILGATE_FAULT_INJECT=\n"
-        f"VEILGATE_LOG_RAW_BODY=\n"
-        f"VEILGATE_LD_PRELOAD=\n"
-        f"VEILGATE_FAKETIME_FILE=\n"
+        f"PSEUDEX_SIGNING_KEY={private_b64}\n"
+        f"PSEUDEX_IMAGE={image}\n"
+        f"PSEUDEX_KEY=\n"
+        f"PSEUDEX_WORKERS={workers}\n"
+        f"PSEUDEX_LEASE_TTL_SECONDS={TTL_SECONDS}\n"
+        f"PSEUDEX_GRACE_SECONDS={GRACE_SECONDS}\n"
+        f"PSEUDEX_FAULT_INJECT=\n"
+        f"PSEUDEX_LOG_RAW_BODY=\n"
+        f"PSEUDEX_LD_PRELOAD=\n"
+        f"PSEUDEX_FAKETIME_FILE=\n"
     )
     compose(["up", "-d", "license"], True, 600)
     if not wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
@@ -249,7 +249,7 @@ def build_stand(image: str, workers: int, skip_build: bool) -> str:
 
     key = httpx.post(f"{ADMIN}/admin/issue", json={"org_id": ORG}, timeout=15).json()["key"]
     print(f"  key issued for {ORG}: {key[:18]}...")
-    set_env("VEILGATE_KEY", key)
+    set_env("PSEUDEX_KEY", key)
     return key
 
 
@@ -272,8 +272,8 @@ def start_sidecar() -> bool:
 
 def gate_l1(image: str) -> bool:
     code, output = run_disposable_sidecar(image, {
-        "VEILGATE_LICENSE_URL": "https://license:8443",
-        "VEILGATE_LICENSE_CA": "/certs/ca.pem",
+        "PSEUDEX_LICENSE_URL": "https://license:8443",
+        "PSEUDEX_LICENSE_CA": "/certs/ca.pem",
     }, 90)
     served = _port_answered()
     return gate("L1 no key -> refuses to start",
@@ -283,9 +283,9 @@ def gate_l1(image: str) -> bool:
 
 def gate_l2(image: str) -> bool:
     code, output = run_disposable_sidecar(image, {
-        "VEILGATE_LICENSE_URL": "https://license:8443",
-        "VEILGATE_LICENSE_CA": "/certs/ca.pem",
-        "VEILGATE_LICENSE_KEY": "vg_live_totally_made_up_key",
+        "PSEUDEX_LICENSE_URL": "https://license:8443",
+        "PSEUDEX_LICENSE_CA": "/certs/ca.pem",
+        "PSEUDEX_LICENSE_KEY": "ps_live_totally_made_up_key",
     }, 90)
     return gate("L2 unknown key -> refuses to start",
                 code != 0 and "license_invalid" in output,
@@ -301,13 +301,13 @@ def gate_l2b(image: str, key: str) -> bool:
     bakes the key at build time and must ignore the environment entirely — which
     shows up as a container that starts NORMALLY even when the variable is set to
     garbage."""
-    name = f"veilgate-keytest-{int(time.monotonic() * 1000)}"
+    name = f"pseudex-keytest-{int(time.monotonic() * 1000)}"
     args = ["docker", "run", "-d", "--name", name, "--network", NETWORK,
             "-v", f"{_HERE / 'certs'}:/certs:ro",
-            "-e", "VEILGATE_LICENSE_URL=https://license:8443",
-            "-e", "VEILGATE_LICENSE_CA=/certs/ca.pem",
-            "-e", f"VEILGATE_LICENSE_KEY={key}",
-            "-e", "VEILGATE_LICENSE_PUBKEY=bm90LW91ci1rZXktYXQtYWxs",
+            "-e", "PSEUDEX_LICENSE_URL=https://license:8443",
+            "-e", "PSEUDEX_LICENSE_CA=/certs/ca.pem",
+            "-e", f"PSEUDEX_LICENSE_KEY={key}",
+            "-e", "PSEUDEX_LICENSE_PUBKEY=bm90LW91ci1rZXktYXQtYWxs",
             image]
     sh(args, False, 120)
 
@@ -332,9 +332,9 @@ def gate_l3(image: str, key: str) -> bool:
     compose(["stop", "license"], True, 120)
     try:
         code, output = run_disposable_sidecar(image, {
-            "VEILGATE_LICENSE_URL": "https://license:8443",
-            "VEILGATE_LICENSE_CA": "/certs/ca.pem",
-            "VEILGATE_LICENSE_KEY": key,
+            "PSEUDEX_LICENSE_URL": "https://license:8443",
+            "PSEUDEX_LICENSE_CA": "/certs/ca.pem",
+            "PSEUDEX_LICENSE_KEY": key,
         }, 150)
     finally:
         compose(["start", "license"], True, 120)
@@ -411,7 +411,7 @@ def gate_l5() -> bool:
     found = sidecar_exec(["sh", "-c",
                           f"grep -rlF '{marker}' /app /data /tmp /var /etc /root /home /usr "
                           f"2>/dev/null | head -5 || true"]).stdout.strip()
-    data_dir = sidecar_exec(["sh", "-c", "ls /app/veilgate/data 2>&1 || true"]).stdout
+    data_dir = sidecar_exec(["sh", "-c", "ls /app/pseudex/data 2>&1 || true"]).stdout
 
     ok = not found and not outside_data and "No such file" in data_dir
     return gate("L5 bundle never touches disk", ok,
@@ -490,7 +490,7 @@ def _memscan() -> tuple[int, int]:
     proc = sh(["docker", "run", "--rm", f"--pid=container:{container_id}",
                "--cap-add=SYS_PTRACE", "-v", f"{_HERE}:/e2e:ro",
                # "serve" matches both shapes of the worker: `python serve_main.py`
-               # in the source image and `./veilgate-serve` in the compiled one.
+               # in the source image and `./pseudex-serve` in the compiled one.
                "python:3.12-slim", "python", "/e2e/memscan.py", marker, "serve"], False, 300)
     hits = re.search(r"HITS (\d+)", proc.stdout)
     rss = re.search(r"RSS_KB (\d+)", proc.stdout)
@@ -628,8 +628,8 @@ def gate_l11() -> bool:
                     "libfaketime unavailable — the scenario could not be run")
 
     _FAKETIME_TS.write_text("+0\n")
-    set_env("VEILGATE_LD_PRELOAD", _FAKETIME_SO)
-    set_env("VEILGATE_FAKETIME_FILE", "/faketime/ts")
+    set_env("PSEUDEX_LD_PRELOAD", _FAKETIME_SO)
+    set_env("PSEUDEX_FAKETIME_FILE", "/faketime/ts")
     compose(["up", "-d", "--force-recreate", "sidecar"], True, 600)
     if not wait_until(lambda: license_state()["state"] == "active", 240, 3,
                       "sidecar active under libfaketime"):
@@ -665,8 +665,8 @@ def gate_l11() -> bool:
 
 
 def _clear_faketime() -> None:
-    set_env("VEILGATE_LD_PRELOAD", "")
-    set_env("VEILGATE_FAKETIME_FILE", "")
+    set_env("PSEUDEX_LD_PRELOAD", "")
+    set_env("PSEUDEX_FAKETIME_FILE", "")
     compose(["up", "-d", "--force-recreate", "sidecar"], False, 600)
     wait_until(lambda: license_state()["state"] in ("active", "stale", "expired"),
                240, 3, "sidecar back without libfaketime")
@@ -830,17 +830,17 @@ def gate_l17() -> bool:
 def gate_l13(image: str) -> bool:
     """A broken bundle must stop the process, not half-configure the detector."""
     compose_down()
-    set_env("VEILGATE_FAULT_INJECT", "corrupt_bundle")
+    set_env("PSEUDEX_FAULT_INJECT", "corrupt_bundle")
     compose(["up", "-d", "license"], True, 600)
     wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
                120, 2, "licensing admin")
     key = httpx.post(f"{ADMIN}/admin/issue", json={"org_id": ORG}, timeout=15).json()["key"]
     code, output = run_disposable_sidecar(image, {
-        "VEILGATE_LICENSE_URL": "https://license:8443",
-        "VEILGATE_LICENSE_CA": "/certs/ca.pem",
-        "VEILGATE_LICENSE_KEY": key,
+        "PSEUDEX_LICENSE_URL": "https://license:8443",
+        "PSEUDEX_LICENSE_CA": "/certs/ca.pem",
+        "PSEUDEX_LICENSE_KEY": key,
     }, 150)
-    set_env("VEILGATE_FAULT_INJECT", "")
+    set_env("PSEUDEX_FAULT_INJECT", "")
     ok = code != 0 and "bundle_corrupt" in output
     return gate("L13 corrupt bundle -> refuses, never degrades", ok,
                 f"exit={code} bundle_corrupt={'bundle_corrupt' in output}")
@@ -849,12 +849,12 @@ def gate_l13(image: str) -> bool:
 def gate_l12() -> bool:
     """Counters must reach us, match the sidecar, and carry no personal data."""
     compose_down()
-    set_env("VEILGATE_LOG_RAW_BODY", "1")
+    set_env("PSEUDEX_LOG_RAW_BODY", "1")
     compose(["up", "-d", "license"], True, 600)
     wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
                120, 2, "licensing admin")
     key = httpx.post(f"{ADMIN}/admin/issue", json={"org_id": ORG}, timeout=15).json()["key"]
-    set_env("VEILGATE_KEY", key)
+    set_env("PSEUDEX_KEY", key)
     if not start_sidecar():
         return gate("L12 counters match and carry no PII", False, "sidecar did not start")
 
@@ -884,7 +884,7 @@ def gate_l12() -> bool:
     entity_types = set(remote["usage"]["entities"]) if remote["usage"]["entities"] else set()
     local_types = set(local.get("protected_counts", {}))
     ok = reported and not on_wire and entity_types and entity_types <= local_types
-    set_env("VEILGATE_LOG_RAW_BODY", "")
+    set_env("PSEUDEX_LOG_RAW_BODY", "")
     return gate("L12 counters match and carry no PII", ok,
                 f"reports={remote['usage']['reports']} entities={len(entity_types)} "
                 f"subset_of_local={entity_types <= local_types} pii_on_wire={on_wire}")
@@ -901,13 +901,13 @@ def gate_l15() -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--image", default="veilgate:source")
+    parser.add_argument("--image", default="pseudex:source")
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--only", default="")
     parser.add_argument("--keep", action="store_true",
                         help="leave the stand running for inspection")
     parser.add_argument("--skip-build", action="store_true",
-                        help="reuse the existing image (needs a matching VEILGATE_SIGNING_KEY)")
+                        help="reuse the existing image (needs a matching PSEUDEX_SIGNING_KEY)")
     args = parser.parse_args()
     selected = {name.strip() for name in args.only.split(",") if name.strip()}
 

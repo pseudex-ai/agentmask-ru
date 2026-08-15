@@ -21,7 +21,7 @@ import time
 import httpx
 
 from licensing.pack import build_plaintext
-from veilgate.assets import ASSETS
+from pseudex.assets import ASSETS
 
 
 def load_dev_bundle() -> None:
@@ -45,15 +45,15 @@ def start_local_license() -> str:
     would be a hole in the very thing the licence is for), the test gets a real
     server on a loopback port.
 
-    MUST be called BEFORE importing `veilgate.service` or `licensing.server`:
+    MUST be called BEFORE importing `pseudex.service` or `licensing.server`:
     both read their configuration from the environment at import time.
 
     Returns the issued key."""
     port, admin_port = _free_port(), _free_port()
-    database = os.path.join(tempfile.mkdtemp(prefix="veilgate-license-"), "license.db")
-    os.environ["VEILGATE_LICENSE_DB"] = database
-    os.environ.setdefault("VEILGATE_LEASE_TTL_SECONDS", "3600")
-    os.environ.setdefault("VEILGATE_GRACE_SECONDS", "3600")
+    database = os.path.join(tempfile.mkdtemp(prefix="pseudex-license-"), "license.db")
+    os.environ["PSEUDEX_LICENSE_DB"] = database
+    os.environ.setdefault("PSEUDEX_LEASE_TTL_SECONDS", "3600")
+    os.environ.setdefault("PSEUDEX_GRACE_SECONDS", "3600")
 
     # Imported here, not at module top, and that is load-bearing: both modules
     # read their configuration from the environment at IMPORT time, and the
@@ -79,7 +79,7 @@ def start_local_license() -> str:
         raise RuntimeError("local licensing server did not start")
 
     key = httpx.post(f"{admin}/admin/issue", json={"org_id": "testkit"}, timeout=10).json()["key"]
-    os.environ["VEILGATE_LICENSE_URL"] = f"http://127.0.0.1:{port}"
-    os.environ["VEILGATE_LICENSE_KEY"] = key
-    os.environ["VEILGATE_LICENSE_PUBKEY"] = server.PUBLIC_KEY
+    os.environ["PSEUDEX_LICENSE_URL"] = f"http://127.0.0.1:{port}"
+    os.environ["PSEUDEX_LICENSE_KEY"] = key
+    os.environ["PSEUDEX_LICENSE_PUBKEY"] = server.PUBLIC_KEY
     return key

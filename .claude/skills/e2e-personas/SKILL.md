@@ -1,6 +1,6 @@
 ---
 name: e2e-personas
-description: End-to-end product test where AI agents play cold customers — they find the landing page knowing nothing, work out what veilgate is, sign up, pay, integrate it into their own project and run real traffic. Use when validating the whole funnel, not the code. Reports where each one got stuck.
+description: End-to-end product test where AI agents play cold customers — they find the landing page knowing nothing, work out what pseudex is, sign up, pay, integrate it into their own project and run real traffic. Use when validating the whole funnel, not the code. Reports where each one got stuck.
 ---
 
 # Сквозной тест продукта на персонах-клиентах

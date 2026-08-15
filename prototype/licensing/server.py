@@ -1,4 +1,4 @@
-"""The licensing server — the only Veilgate component that runs on our hardware.
+"""The licensing server — the only Pseudex component that runs on our hardware.
 
 It answers exactly one question for a running sidecar: "may this process have a
 detection bundle, and here it is, sealed to that process". No personal data ever
@@ -32,28 +32,28 @@ from licensing.store import (
     STATUS_UNPAID,
     LicenseStore,
 )
-from veilgate.bundle import plaintext_hash, seal, sign_lease
+from pseudex.bundle import plaintext_hash, seal, sign_lease
 
 _log = logging.getLogger("licensing.server")
 
-_DB = os.environ.get("VEILGATE_LICENSE_DB", "license.db")
-_TTL_SECONDS = int(os.environ.get("VEILGATE_LEASE_TTL_SECONDS", "86400"))
-_GRACE_SECONDS = int(os.environ.get("VEILGATE_GRACE_SECONDS", "172800"))
-_MIN_ENGINE = os.environ.get("VEILGATE_MIN_ENGINE_VERSION", "")
+_DB = os.environ.get("PSEUDEX_LICENSE_DB", "license.db")
+_TTL_SECONDS = int(os.environ.get("PSEUDEX_LEASE_TTL_SECONDS", "86400"))
+_GRACE_SECONDS = int(os.environ.get("PSEUDEX_GRACE_SECONDS", "172800"))
+_MIN_ENGINE = os.environ.get("PSEUDEX_MIN_ENGINE_VERSION", "")
 
 # Fault injection for the e2e stand (gate L13). It exists in the REAL server,
 # not in a test double, because the gates forbid a separate server
 # implementation — a stand that runs different code proves nothing about the code
 # that ships. Off unless explicitly set, and it announces itself at startup so an
 # instance can never be in this mode unnoticed.
-_FAULT = os.environ.get("VEILGATE_FAULT_INJECT", "")
+_FAULT = os.environ.get("PSEUDEX_FAULT_INJECT", "")
 
 # Gate L12 has to check the ACTUAL WIRE, not our intentions: it greps what the
 # sidecar really sent for every value of the test payload. That needs the raw
 # body in the log. Off by default and announced at startup — a production
 # instance logging customer request bodies would be its own problem, even though
 # these bodies are only counters.
-_LOG_RAW_BODY = os.environ.get("VEILGATE_LOG_RAW_BODY", "") == "1"
+_LOG_RAW_BODY = os.environ.get("PSEUDEX_LOG_RAW_BODY", "") == "1"
 
 STORE = LicenseStore(_DB)
 SIGNING_KEY = load_signing_key()
@@ -69,7 +69,7 @@ _PLAINTEXT_HASH = plaintext_hash(_PLAINTEXT)
 async def _lifespan(_app: FastAPI):
     """Announce what this instance is. A lifespan rather than the deprecated
     `@app.on_event("startup")` — the same replacement this change already made in
-    `veilgate/proxy.py`, and the modes announced below are exactly the ones nobody
+    `pseudex/proxy.py`, and the modes announced below are exactly the ones nobody
     should ever discover by surprise."""
     _log.info("licensing server up: bundle=%s ttl=%ss grace=%ss pubkey=%s",
               _PLAINTEXT_HASH[:12], _TTL_SECONDS, _GRACE_SECONDS, PUBLIC_KEY)
@@ -88,8 +88,8 @@ _STATUS_RESPONSE = {
 }
 
 
-app = FastAPI(title="Veilgate licensing", lifespan=_lifespan)
-admin_app = FastAPI(title="Veilgate licensing admin")
+app = FastAPI(title="Pseudex licensing", lifespan=_lifespan)
+admin_app = FastAPI(title="Pseudex licensing admin")
 
 
 @app.get("/health")

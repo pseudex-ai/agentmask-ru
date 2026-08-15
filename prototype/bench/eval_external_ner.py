@@ -34,7 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from veilgate.detect_all import Detector  # noqa: E402
+from pseudex.detect_all import Detector  # noqa: E402
 from testkit import load_dev_bundle  # noqa: E402
 
 # Gold type -> the type our detector would use. Only types we claim to cover.

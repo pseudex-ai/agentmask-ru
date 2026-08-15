@@ -4,17 +4,17 @@ import pathlib
 import re
 import tempfile
 
-from veilgate.assets import ASSETS
-from veilgate.audit import AuditLog, _preview
-from veilgate.detect_all import Detector
-from veilgate.envelope import MaskContext, mask_one
-from veilgate.maskcache import MaskCache
-from veilgate.names import is_known_name, trim_person_span
-from veilgate.normalize import normalize
-from veilgate.redact import StreamDetokenizer, mask_text, unmask_text
-from veilgate.ru_pii import validate_inn, validate_luhn, validate_ogrn, validate_snils
-from veilgate.tenants import Tenants
-from veilgate.vault import _FAKE_FIRST, _FAKE_LAST, TOKEN_RE, _render_token, Vault
+from pseudex.assets import ASSETS
+from pseudex.audit import AuditLog, _preview
+from pseudex.detect_all import Detector
+from pseudex.envelope import MaskContext, mask_one
+from pseudex.maskcache import MaskCache
+from pseudex.names import is_known_name, trim_person_span
+from pseudex.normalize import normalize
+from pseudex.redact import StreamDetokenizer, mask_text, unmask_text
+from pseudex.ru_pii import validate_inn, validate_luhn, validate_ogrn, validate_snils
+from pseudex.tenants import Tenants
+from pseudex.vault import _FAKE_FIRST, _FAKE_LAST, TOKEN_RE, _render_token, Vault
 from testkit import load_dev_bundle
 
 # Every type any detector can emit. quasi.py's DOB/AGE/MEDICAL and any future
@@ -50,7 +50,7 @@ def test_tenants() -> None:
     resolved = tenants.resolve(key)
     assert resolved is not None and resolved.customer_id == "acme"
     assert resolved.upstream_key == "sk-up-123"
-    assert tenants.resolve("sk-vg-wrong") is None
+    assert tenants.resolve("sk-ps-wrong") is None
     print(f"tenants OK — issued {key[:14]}…, resolves to {resolved.customer_id}; bad key -> None")
     pathlib.Path("t.db").unlink(missing_ok=True)
 
@@ -102,7 +102,7 @@ def test_unmask_scales_with_text_not_vault() -> None:
 def test_tool_receives_original_surface_form() -> None:
     """The tool must get the value EXACTLY as the user typed it.
 
-    Without Veilgate in the path a tool would receive the user's own string, so
+    Without Pseudex in the path a tool would receive the user's own string, so
     handing it a re-formatted one is a behaviour change we impose — a CRM that
     matches phone numbers as strings would silently fail to find the record.
     Canonicalization stays, but only as the dedup key: both spellings still
@@ -212,7 +212,7 @@ def test_echoed_token_is_not_billed() -> None:
     are what the licensing server bills on. In a multi-turn agent the model
     quotes its own tokens constantly, so the overcount grew with conversation
     length."""
-    directory = tempfile.mkdtemp(prefix="veilgate_echo_")
+    directory = tempfile.mkdtemp(prefix="pseudex_echo_")
     audit = AuditLog(pathlib.Path(directory, "audit.db").as_posix())
     vault = Vault(pathlib.Path(directory, "vault.db").as_posix(), "echo")
     context = MaskContext(detector=Detector(), vault=vault, audit=audit,

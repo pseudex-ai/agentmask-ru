@@ -1,4 +1,4 @@
-# RU market segment + billing model for veilgate
+# RU market segment + billing model for pseudex
 
 Research date: **2026-08-15**. All pages fetched today unless marked otherwise.
 Method constraint: **WebSearch was exhausted for this session (200/200)**. Every finding below
@@ -23,7 +23,7 @@ Convention used throughout:
    *real value back into a tool-call argument so the tool executes on real data*. Two vendors
    (Strazh, Луми 42) claim tool-call *control*; one (AppSec.AIGate) lists tool-call *inspection*
    as "В разработке" for **Q3–Q4 2026**. Inspection and control are not substitution. That is
-   veilgate's actual differentiator — and it has a publicly announced closing date.
+   pseudex's actual differentiator — and it has a publicly announced closing date.
 3. **Nobody in the segment publishes a price.** Eleven vendors, zero public price lists. The
    anti-malware.ru review says pricing is "Completely absent … no cost comparisons or pricing
    models provided for any solution."
@@ -109,7 +109,7 @@ This is the commercially closest competitor and the most dangerous one.
 > "Цена провайдера +10% за маршрутизацию, PII-маскирование и поддержку"
 > "Абонентской платы нет ни на одном тарифе"
 
-That first quote is veilgate's vault, described in veilgate's own terms — deterministic
+That first quote is pseudex's vault, described in pseudex's own terms — deterministic
 detokenisation over a persistent pseudonym map, plus audit. Sold at **zero marginal cost**: the
 masking is inside a 10% routing markup the customer pays anyway for model access. Base tier: 300+
 models, 600 RPM, 30-day security logs. Enterprise tier: DPA, isolated namespace, HSM keys, **custom
@@ -137,7 +137,7 @@ their own words, "проверять аргументы" is inspection/policy, n
 > Доступны on-premise и облачная схемы инсталляции, поддерживается multitenancy, GPU-ускорители
 > не требуются."
 > "Полный контроль запросов, ответов и вызовов инструментов для локальных инсталляций."
-On-prem, multitenant, no GPU needed — architecturally the closest shape to veilgate. Whether
+On-prem, multitenant, no GPU needed — architecturally the closest shape to pseudex. Whether
 "контроль вызовов инструментов" means substitution is **[X] unverified**; the site body did not
 render.
 
@@ -187,7 +187,7 @@ defence, Active/Active clustering. **No PII masking mentioned at all.** Not a co
 
 **Reading:** the DLP incumbents have the enterprise distribution, the FSTEC certificates and the
 registry entries, and they are pointed at the wrong insertion point. That is simultaneously
-veilgate's opening and its biggest channel risk (§4.4).
+pseudex's opening and its biggest channel risk (§4.4).
 
 ### 1.4 The self-build path — and what it actually costs
 
@@ -215,7 +215,7 @@ key … Full Enterprise features, self-hosted", and "Talk to sales" — no figur
 
 **So the honest cost of the crutch:** free software, plus the work of writing Russian recognisers
 Presidio does not ship (ФИО morphology, СНИЛС/ИНН checksums, паспорт, RU address), plus the work of
-handling tool-call arguments, which neither LiteLLM nor Presidio does. veilgate's engine is exactly
+handling tool-call arguments, which neither LiteLLM nor Presidio does. pseudex's engine is exactly
 those two pieces of work. **The crutch is real, it is free, and it is 70% of the job for a
 text-only chat use case.** It is 0% of the job for an agent that executes tools on real values.
 
@@ -235,7 +235,7 @@ text-only chat use case.** It is 0% of the job for an agent that executes tools 
 
 ### 1.6 Verdict on Part 1
 
-The segment veilgate sells into is **not empty and not virgin — it is crowded and pre-commercial.**
+The segment pseudex sells into is **not empty and not virgin — it is crowded and pre-commercial.**
 Eleven named vendors, a market review written about them three weeks ago, and zero published
 prices. Everyone does masking. Six do it reversibly. Nobody documents the tool-call substitution
 loop, and the first roadmap entry pointing at that territory says Q3–Q4 2026 — i.e. **now**.
@@ -293,7 +293,7 @@ entities, storage. Trial expiry does **not** cut you off:
 > контрагентов / документов)"
 Prepay discount ladder: "Оплатите сразу 3, 6 или 12 месяцев и получите скидку" — 5% to 20%.
 
-**RetailCRM** [F] — the closest to veilgate's shape (base fee + included volume + priced extras).
+**RetailCRM** [F] — the closest to pseudex's shape (base fee + included volume + priced extras).
 Free tier: "1 пользователь", "до 300 заказов в месяц", "до 5 000 клиентов в базе". Professional:
 9 360 ₽/mo annual (10 400 ₽ monthly) including "от 3 пользователей", 10 000 customers, 10 000
 emails, 5 000 loyalty members. Extra user: "3 200 рублей в месяц". −10% annual.
@@ -350,7 +350,7 @@ Claude Opus 4.1 = 2 415 ₽ in / 12 075 ₽ out. Guardrails: no separate line it
 
 1. **Per-seat is the minority.** Bitrix24 and МойСклад bundle a seat ceiling into a flat company
    price; RetailCRM sells a bundle and charges for seats only above it. Only amoCRM is purely
-   per-seat — and it compensates with a 6-month minimum. For veilgate this is moot anyway: there
+   per-seat — and it compensates with a 6-month minimum. For pseudex this is moot anyway: there
    are no seats, the users are agents.
 2. **Monthly-only is rare; prepay is the default posture.** Kontur (annual), Dadata (annual only),
    Diadoc (annual packages), Saby (quarterly), GigaChat packages (12-month expiry), amoCRM
@@ -411,14 +411,14 @@ Independent of the pricing bug, the request is the wrong meter here, for four re
 1. **A request is not the value delivered.** What the customer buys is "this real personal datum
    did not cross the border, and I can prove it". That is measured in **protected values**, not
    HTTP calls.
-2. **veilgate's own architecture already says so.** Per `CLAUDE.md`: the mask cache keys on raw
+2. **pseudex's own architecture already says so.** Per `CLAUDE.md`: the mask cache keys on raw
    content and **"Audit is recorded on the cache miss only — the same value re-sent in a growing
    transcript is one protected value, not N."** The system already decided that the meaningful
    accounting unit is the distinct value. Billing on requests contradicts the product's own
    internal model of what happened.
 3. **Request count is a function of the customer's agent loop, not their business.** A framework
    doing six tool-call round-trips per user turn bills 6× for the same protected data. That is a
-   tax on precisely the agentic architecture veilgate exists to serve — the real version of
+   tax on precisely the agentic architecture pseudex exists to serve — the real version of
    "punishing the customers we want".
 4. **It is gameable.** Batching N messages into one request cuts the bill N-fold and changes
    nothing about the protection delivered. A meter the customer can trivially move is a meter that
@@ -433,7 +433,7 @@ Independent of the pricing bug, the request is the wrong meter here, for four re
 | **Instance / environment** (per container, per prod/stage) | procurement-friendly, predictable, matches RU on-prem licensing habit | Innostage/InfoWatch quote-per-deployment | **platform fee** |
 | Requests | gameable, mis-aligned, punishes agent loops | Selectel S3 GET at 0.00036 ₽ — priced as negligible on purpose | **demote to a guardrail, not a meter** |
 | Seats | there are no humans in the loop | amoCRM | **reject** |
-| Tokens | you don't see the model's bill; you're not the router | GigaChat, Cloud.ru, KodikRouter | **reject** (would only work if veilgate became a router — see §4.2) |
+| Tokens | you don't see the model's bill; you're not the router | GigaChat, Cloud.ru, KodikRouter | **reject** (would only work if pseudex became a router — see §4.2) |
 
 ### 3.3 Recommended structure
 
@@ -458,7 +458,7 @@ Design rules taken directly from what I found:
   you upgrade because the *next tier's* unit price is better and the RPM ceiling is binding.
 - **The RPM ceiling is what actually forces the upgrade**, per Dadata and KodikRouter. A rate cap
   is enforceable inside the customer's perimeter without trusting a billing counter, which matters
-  because veilgate cannot see payloads and its counters are self-reported.
+  because pseudex cannot see payloads and its counters are self-reported.
 - **Free tier: yes, and structurally generous.** Every RU comparable has one. Suggest free forever
   at 1 environment / 5 000 protected values per month / 60 RPM — enough to run a real pilot and a
   small production workload, gated on rate and volume so it grows into a paid tier. Cap-breach
@@ -527,7 +527,7 @@ all of which are things they keep paying for because they keep wanting them.
 
 ### 4.1 Is "no normal solution exists" TRUE?
 
-**No, as stated it is false, and it was already false before veilgate started.** Reversible PII
+**No, as stated it is false, and it was already false before pseudex started.** Reversible PII
 masking in front of an LLM is available today in Russia from at least six reachable products,
 including one that is free (LiteLLM + Presidio, `output_parse_pii: True`) and one that charges zero
 marginal cost for it (KodikRouter, folded into a +10% routing markup). A Russian market review
@@ -547,23 +547,23 @@ catalogued by the trade press.
 
 ### 4.2 Closest competitor and how they beat us
 
-**Commercially: KodikRouter.** They describe veilgate's core mechanism in veilgate's own vocabulary
+**Commercially: KodikRouter.** They describe pseudex's core mechanism in pseudex's own vocabulary
 — "детерминированная детокенизация, персистентная карта псевдонимов" — attach it to "Соответствие
 152-ФЗ" and "Данные не покидают Россию", and charge **nothing extra for it**. Masking rides free
 inside a 10% markup on tokens the customer buys anyway. They also solve the customer's *first*
 problem (access to 300+ foreign models from Russia), which is more urgent than the customer's
-second problem (152-ФЗ liability). They beat veilgate by making the purchase decision disappear:
+second problem (152-ФЗ liability). They beat pseudex by making the purchase decision disappear:
 you don't evaluate a PII gateway, you just point your base URL at them and masking is on.
 Their weakness is the mirror image: they are the router, so the data does traverse their
-infrastructure — which is exactly the objection veilgate's in-perimeter Docker answers.
+infrastructure — which is exactly the objection pseudex's in-perimeter Docker answers.
 
 **Technically: Луми 42 and Strazh.** Both claim control over "вызовы инструментов", both offer
 on-premise, Луми 42 is multitenant and needs no GPU. If either already does value substitution and
-just hasn't written it down, veilgate's differentiator is gone today rather than in two quarters.
+just hasn't written it down, pseudex's differentiator is gone today rather than in two quarters.
 I could not fetch either site's body — this is the highest-value open question in the report.
 
 **Channel: Innostage AIDR, StarGuard AI, Jay Guard.** Registry-listed, FSTEC-adjacent, enterprise
-sales motion, existing relationships with the CISOs who sign. They beat veilgate not on product but
+sales motion, existing relationships with the CISOs who sign. They beat pseudex not on product but
 on being already on the approved-vendor list when the budget line opens.
 
 ### 4.3 Recommended pricing model (summary)
@@ -576,16 +576,16 @@ currently makes the tier ladder inoperative and caps revenue near the entry pric
 
 ### 4.4 The single biggest risk
 
-**The differentiator is a feature gap with a published closing date, and veilgate has no
+**The differentiator is a feature gap with a published closing date, and pseudex has no
 distribution to convert it before it closes.**
 
 Concretely: masking has already been commoditised to zero marginal cost (KodikRouter +10%, LiteLLM
-free, Cloud.ru with no guardrails line item). The only thing veilgate sells above that line is
+free, Cloud.ru with no guardrails line item). The only thing pseudex sells above that line is
 tool-call value substitution. AppSec.AIGate has tool-call inspection shipping **Q3–Q4 2026**; two
 vendors already claim tool-call control; Cloud.ru is building Evolution AI Agents and Guardrails in
 the same product family and can fold substitution into a platform they already own. Meanwhile the
 buyers who sign are reached through the registry/FSTEC/integrator channel that Innostage,
-InfoWatch, SberTech and Orion already own, and veilgate is not in it.
+InfoWatch, SberTech and Orion already own, and pseudex is not in it.
 
 If tool-call substitution ships inside something that is already free, or inside the cloud the
 customer's agents already run on, the paid tier has no reason to exist. The window is two to four
@@ -604,7 +604,7 @@ not laziness. Every item below is a fetch that failed today.
    year.** Unknown whether they now ship a PII filter or guardrails. High priority — a Yandex-native
    masking feature would reshape the segment.
 2. **Луми 42** (lumi42.ru) — page returns title only ("LLMFW — LLM Firewall для безопасности ИИ").
-   Their tool-call claim is the closest thing to veilgate's differentiator. **Highest-value gap.**
+   Their tool-call claim is the closest thing to pseudex's differentiator. **Highest-value gap.**
 3. **Strazh** (strazhai.ru) — partial fetch; `/pricing` 404. Need to know whether "проверять
    аргументы" means substitution.
 4. **ShieldMind.pro** — both `/` and `/landing` return title only.

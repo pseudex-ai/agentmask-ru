@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Veilgate is a **reversible PII-tokenization gateway for LLM agents** on the RU market (152-ФЗ).
+Pseudex is a **reversible PII-tokenization gateway for LLM agents** on the RU market (152-ФЗ).
 Real personal data is replaced with format-preserving fake tokens before the model sees it, and
 detokenized server-side so the agent's **tool calls still execute on real values**. The tool-call
 loop is the product — plain text masking is table stakes.
@@ -12,7 +12,7 @@ loop is the product — plain text masking is table stakes.
 Everything shippable lives in `prototype/`. `docs/` is the product spec (RU), `research/` is the
 evidence archive behind every design decision (why a layer exists, what SOTA does).
 
-**The engine ships EMPTY.** `prototype/veilgate/` contains the rules; the tuned data those rules
+**The engine ships EMPTY.** `prototype/pseudex/` contains the rules; the tuned data those rules
 consume (gazetteers, street vocabulary, cue words, priority table) lives in `prototype/licensing/`,
 never ships, and is leased to the running container as an encrypted bundle that exists only in
 memory. `docs/tz-license-packaging.md` is the spec for that; `docs/spec.md` §2 is the product
@@ -57,7 +57,7 @@ Performance:
 
 ```bash
 python3 bench_masking.py       # O(n^2) growing-transcript cost, cache on vs off
-python3 profile_latency.py     # part1 offline per-message cost; part2 real A/B (needs VEILGATE_UPSTREAM_KEY)
+python3 profile_latency.py     # part1 offline per-message cost; part2 real A/B (needs PSEUDEX_UPSTREAM_KEY)
 ```
 
 Licensing and packaging (`docs/tz-license-packaging.md`). The gates are the definition of done —
@@ -73,8 +73,8 @@ python3 e2e/pack_gates.py                         # P1-P8, packaging (builds bot
 
 # The verification key is COMPILED INTO the release binary, so a fresh key forces
 # a full Nuitka rebuild. Pass the key an image was built with to reuse it:
-VEILGATE_SIGNING_KEY=<base64> python3 e2e/gates.py --image veilgate:compiled --skip-build
-VEILGATE_SIGNING_KEY=<base64> python3 e2e/pack_gates.py --skip-build
+PSEUDEX_SIGNING_KEY=<base64> python3 e2e/gates.py --image pseudex:compiled --skip-build
+PSEUDEX_SIGNING_KEY=<base64> python3 e2e/pack_gates.py --skip-build
 ```
 
 Two images, and the difference is only HOW the engine is built — `Dockerfile`
@@ -98,28 +98,28 @@ Run the two deployment shapes:
 
 ```bash
 # A) OpenAI-compatible reverse proxy (we call the provider)
-export VEILGATE_UPSTREAM_BASE_URL=https://openrouter.ai/api/v1 VEILGATE_UPSTREAM_KEY=sk-...
-uvicorn veilgate.proxy:app --port 4000
+export PSEUDEX_UPSTREAM_BASE_URL=https://openrouter.ai/api/v1 PSEUDEX_UPSTREAM_KEY=sk-...
+uvicorn pseudex.proxy:app --port 4000
 python3 issue_key.py acme https://openrouter.ai/api/v1 sk-...   # mint a real tenant key
 
 # B) Sidecar behind a host gateway (the host calls the provider)
-VEILGATE_DB_DIR=/tmp/veilgate uvicorn veilgate.service:app --port 8000
-docker build -t veilgate:latest . && docker run -p 8000:8000 -v veilgate-data:/data veilgate:latest
+PSEUDEX_DB_DIR=/tmp/pseudex uvicorn pseudex.service:app --port 8000
+docker build -t pseudex:latest . && docker run -p 8000:8000 -v pseudex-data:/data pseudex:latest
 ```
 
 Scripts needing a live LLM (`agent_demo.py`, `response_test.py`, `live_eval.py`) expect the proxy
-running on `localhost:4000` with a seeded `veilgate-dev` tenant.
+running on `localhost:4000` with a seeded `pseudex-dev` tenant.
 
 ## Architecture
 
 ### Two entry points, one core
 
-`veilgate/proxy.py` and `veilgate/service.py` are **parallel deployment shapes**, not layers:
+`pseudex/proxy.py` and `pseudex/service.py` are **parallel deployment shapes**, not layers:
 
 | | `proxy.py` | `service.py` (sidecar) |
 |---|---|---|
-| Who calls the provider | Veilgate | the host gateway (e.g. Diva's LiteLLM callback) |
-| Auth / tenancy | `sk-vg-…` key → `Tenants` → upstream URL+key | `org_id` in the request body |
+| Who calls the provider | Pseudex | the host gateway (e.g. Diva's LiteLLM callback) |
+| Auth / tenancy | `sk-ps-…` key → `Tenants` → upstream URL+key | `org_id` in the request body |
 | Surface | `POST /v1/chat/completions`, `GET /usage` | `/mask`, `/unmask`, `/spans`, `/reveal`, `/usage` |
 | Streaming | yes (`StreamDetokenizer`; tool-call requests buffered) | not yet (phase 2) |
 
@@ -132,46 +132,46 @@ When you change masking semantics, decide explicitly whether both need it.
 
 `service.py` serves two audiences and they are gated differently on purpose:
 
-| | gateway surface | operator surface (`veilgate/operator.py`) |
+| | gateway surface | operator surface (`pseudex/operator.py`) |
 |---|---|---|
 | Paths | `/mask`, `/unmask`, `/unmask_chunk`, `/spans`, `/health` | `/status`, `/events`, `/stats`, `/stats.csv`, `/reveals`, `/subscription`, `/diagnostics`, `/selfcheck`, `/reveal` |
-| Auth | none — the customer's own gateway calls it every request | `Authorization: Bearer $VEILGATE_ADMIN_TOKEN` |
+| Auth | none — the customer's own gateway calls it every request | `Authorization: Bearer $PSEUDEX_ADMIN_TOKEN` |
 | Why | a credential there buys nothing against someone already on the contour network | these disclose real values and the list of what exists to disclose |
 
-`VEILGATE_ADMIN_TOKEN` **must be set by `entrypoint.sh`, once, for all workers.** Each worker
+`PSEUDEX_ADMIN_TOKEN` **must be set by `entrypoint.sh`, once, for all workers.** Each worker
 generating its own would mean N valid tokens for one SO_REUSEPORT port, and the interface would
 401 at random as the kernel moved it between workers.
 
-### The local interface (`veilgate/localui/`)
+### The local interface (`pseudex/localui/`)
 
 A separate ASGI app on **:8081**, started by `entrypoint.sh` as the same binary under
-`VEILGATE_ROLE=ui`. It is a separate process so it can report "движок не отвечает" — a UI inside
-the thing that is down cannot. It never imports `veilgate.service` and never leases.
+`PSEUDEX_ROLE=ui`. It is a separate process so it can report "движок не отвечает" — a UI inside
+the thing that is down cannot. It never imports `pseudex.service` and never leases.
 
 - Sign-in: a startup token printed with a URL, Jupyter-style, reusable for the process lifetime.
-  `VEILGATE_UI_PASSWORD` for a shared team. Generated in `entrypoint.sh` so a UI restart does not
+  `PSEUDEX_UI_PASSWORD` for a shared team. Generated in `entrypoint.sh` so a UI restart does not
   invalidate the link the operator already followed.
 - The session token rides in the **Authorization header, never a cookie** — a cookie would make
   `/reveal` reachable by CSRF, and then a CSRF token would be needed to defend a mechanism chosen
   for convenience.
 - The engine proxy is an **allowlist of exact paths**, not a prefix match: it holds a credential
   the page does not, so a pass-through would be an open relay into the container's network.
-- Page files ship at `/app/ui` in the release image, **never under a directory called `veilgate`** —
-  gate P1 asserts `/app/veilgate` does not exist as evidence the Python package did not ship.
+- Page files ship at `/app/ui` in the release image, **never under a directory called `pseudex`** —
+  gate P1 asserts `/app/pseudex` does not exist as evidence the Python package did not ship.
 - Rendering uses vendored Preact+htm (no build step). Not a style preference: every screen renders
   values from the customer's own traffic, and string-concatenated `innerHTML` would execute markup
   arriving inside a name or a preview, in a page holding a session that can reveal personal data.
 
-### The lease (`licensing/` → `veilgate/assets.py`)
+### The lease (`licensing/` → `pseudex/assets.py`)
 
 ```
 licensing/assets_source.py   the authored data: gazetteers, street vocabulary, cue words,
                              priority table, key->type map, look-alike table. NEVER SHIPS.
 licensing/pack.py            builds it into zlib(JSON); version = content hash
 licensing/server.py          POST /v1/lease -> seals the bundle to ONE process, signs it
-veilgate/bundle.py            the wire format, shared by both sides
-veilgate/license.py           process keypair, renewal loop, degradation ladder
-veilgate/assets.py            in-memory registry; compiles every regex ONCE at load
+pseudex/bundle.py            the wire format, shared by both sides
+pseudex/license.py           process keypair, renewal loop, degradation ladder
+pseudex/assets.py            in-memory registry; compiles every regex ONCE at load
 ```
 
 - The worker generates an X25519 keypair **in memory** and the server seals the bundle to it. A
@@ -215,7 +215,7 @@ sitting inside a street name; it is remapped back to `LOC` after resolution.
 - **Format-preserving, checksum-INVALID tokens**: a fake СНИЛС/ИНН/card is deliberately generated
   to fail its own checksum, so a token can never collide with a real person's ID.
 - Persistent SQLite keyed by `(customer, canonical)` — survives restarts and is shared across
-  uvicorn workers via the mounted `VEILGATE_DB_DIR`.
+  uvicorn workers via the mounted `PSEUDEX_DB_DIR`.
 - `unmask_text` also does a **digit-signature reindex** so a numeric token the model *reformatted*
   (`+7…` → `8…`, separators stripped) still detokenizes.
 
@@ -256,9 +256,9 @@ sitting inside a street name; it is remapped back to `LOC` after resolution.
   `re.IGNORECASE` uniformly at compile time turned the marker-less address pattern's
   `[А-ЯЁ][а-яё]+` from "a Capitalised word" into "any word" — "течение 12" became an address, and
   those inflated LOC spans outranked NAME and swallowed real people (-12 PERSON on NEREL).
-- **`veilgate/` must never import from `licensing/`.** The licensing package holds the assets; an
+- **`pseudex/` must never import from `licensing/`.** The licensing package holds the assets; an
   import would drag them into the image and defeat the lease. Shared code goes the other way
-  (`veilgate/bundle.py` is imported BY the server).
+  (`pseudex/bundle.py` is imported BY the server).
 - The engine writes nothing to its own filesystem (`PYTHONDONTWRITEBYTECODE=1`), so "did the
   container write a file" has a clean answer — gate L5 depends on it.
 
@@ -273,9 +273,9 @@ a `CapacityLimiter` so `/health` stays responsive and bursts queue instead of th
 is what keeps tokens consistent across workers. Audit is recorded on the cache **miss** only — the
 same value re-sent in a growing transcript is one protected value, not N.
 
-Env knobs: `VEILGATE_DB_DIR`, `VEILGATE_WORKERS`, `VEILGATE_MASK_CONCURRENCY`, `VEILGATE_MASK_CACHE_SIZE`,
-`VEILGATE_ADMIN_TOKEN`, `VEILGATE_UI_PORT`, `VEILGATE_UI_TOKEN`, `VEILGATE_UI_PASSWORD`, `VEILGATE_UI`,
-`VEILGATE_UI_ORG`, `VEILGATE_UI_STATIC`, `VEILGATE_ROLE`.
+Env knobs: `PSEUDEX_DB_DIR`, `PSEUDEX_WORKERS`, `PSEUDEX_MASK_CONCURRENCY`, `PSEUDEX_MASK_CACHE_SIZE`,
+`PSEUDEX_ADMIN_TOKEN`, `PSEUDEX_UI_PORT`, `PSEUDEX_UI_TOKEN`, `PSEUDEX_UI_PASSWORD`, `PSEUDEX_UI`,
+`PSEUDEX_UI_ORG`, `PSEUDEX_UI_STATIC`, `PSEUDEX_ROLE`.
 
 ## Eval discipline
 

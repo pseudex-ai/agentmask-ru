@@ -2,7 +2,7 @@
 
 The site is three things and nothing else: a landing, a way to sign up, and a
 cabinet with keys, usage and invoices. There is deliberately no screen here that
-shows a dialogue, a token or a value — see `veilgate/localui/` for those. That
+shows a dialogue, a token or a value — see `pseudex/localui/` for those. That
 absence is the product's legal position, not a missing feature, so a view added
 later must be checked against it rather than against convenience.
 """
@@ -153,7 +153,7 @@ def signup(request):
         "/activate?t=" + signing.dumps({"org": organization.id, "email": email})
     )
     send_mail(
-        subject="veilgate — ваш ключ готов к выпуску",
+        subject="pseudex — ваш ключ готов к выпуску",
         message=(
             f"Здравствуйте!\n\n"
             f"Аккаунт создан. Ключ будет выпущен и показан один раз, когда вы "
@@ -208,7 +208,7 @@ def activate(request):
 #
 # A signed cookie never touches our storage. It is short-lived, HttpOnly, and
 # deleted the moment the page that shows it renders.
-_HANDOFF_COOKIE = "vg_handoff"
+_HANDOFF_COOKIE = "ps_handoff"
 _HANDOFF_MAX_AGE = 600
 
 

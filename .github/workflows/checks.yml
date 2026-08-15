@@ -26,9 +26,9 @@ jobs:
       # The engine must never import the licensing package: that is what keeps
       # the assets out of the image, and it is cheaper to catch here than in a
       # build that has already shipped.
-      - name: veilgate/ must not import licensing/
+      - name: pseudex/ must not import licensing/
         run: |
-          if grep -rn "^[[:space:]]*\(from\|import\)[[:space:]]\+licensing" veilgate/; then
-            echo "veilgate/ imports licensing/ — the leased assets would ship in the image"
+          if grep -rn "^[[:space:]]*\(from\|import\)[[:space:]]\+licensing" pseudex/; then
+            echo "pseudex/ imports licensing/ — the leased assets would ship in the image"
             exit 1
           fi

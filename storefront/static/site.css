@@ -30,7 +30,7 @@
 /* Self-hosted, no CDN: a font request to a third party from a page a customer
    is logged into is a beacon, and this product's whole claim is about where
    data goes. Inter rather than the mock's Archivo, which has no Cyrillic
-   subset at all — see veilgate/localui/static/app.css. */
+   subset at all — see pseudex/localui/static/app.css. */
 @font-face {
   font-family: 'Inter';
   src: url('/static/fonts/Inter-latin.woff2') format('woff2');

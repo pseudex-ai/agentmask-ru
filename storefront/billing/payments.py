@@ -52,8 +52,8 @@ def _client():
     """
     if not _configured():
         raise PaymentError(
-            "ЮKassa is not configured: set VEILGATE_YOOKASSA_SHOP_ID and "
-            "VEILGATE_YOOKASSA_SECRET_KEY"
+            "ЮKassa is not configured: set PSEUDEX_YOOKASSA_SHOP_ID and "
+            "PSEUDEX_YOOKASSA_SECRET_KEY"
         )
     from yookassa import Configuration, Payment  # noqa: PLC0415 (lazy on purpose)
 
@@ -78,7 +78,7 @@ def _receipt(invoice, email: str) -> dict[str, object]:
     return {
         "customer": {"email": email},
         "items": [{
-            "description": f"Подписка veilgate, {invoice.period_start:%d.%m.%Y}"
+            "description": f"Подписка pseudex, {invoice.period_start:%d.%m.%Y}"
                            f"—{invoice.period_end:%d.%m.%Y}"[:128],
             "quantity": "1.00",
             "amount": {"value": f"{invoice.total:.2f}", "currency": "RUB"},
@@ -102,7 +102,7 @@ def create_payment(invoice, return_url: str, email: str) -> tuple[str, str]:
         "amount": {"value": f"{invoice.total:.2f}", "currency": "RUB"},
         "capture": True,
         "confirmation": {"type": "redirect", "return_url": return_url},
-        "description": f"veilgate {invoice.number}, "
+        "description": f"pseudex {invoice.number}, "
                        f"{invoice.period_start:%d.%m.%Y}—{invoice.period_end:%d.%m.%Y}",
         # Read back on notification to find the invoice again. Only our own
         # identifiers: this object goes to a third party, so it carries an
@@ -112,7 +112,7 @@ def create_payment(invoice, return_url: str, email: str) -> tuple[str, str]:
     if invoice.organization.needs_receipt:
         body["receipt"] = _receipt(invoice, email)
     try:
-        payment = Payment.create(body, f"veilgate-{invoice.number}")
+        payment = Payment.create(body, f"pseudex-{invoice.number}")
     except Exception as error:  # the SDK raises provider-specific types
         raise PaymentError(f"ЮKassa refused the payment for {invoice.number}: {error}") from error
     return payment.id, payment.confirmation.confirmation_url

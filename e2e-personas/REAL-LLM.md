@@ -40,10 +40,10 @@
 
 ```python
 # в проекте персоны
-masked = post(f"{VEILGATE}/mask", headers={"Authorization": f"Bearer {GW}"},
+masked = post(f"{PSEUDEX}/mask", headers={"Authorization": f"Bearer {GW}"},
               json={"org_id": ORG, "messages": messages, "tools": tools})
 answer = call_openrouter(masked["messages"], masked["tools"])   # живая модель
-restored = post(f"{VEILGATE}/unmask", headers={"Authorization": f"Bearer {GW}"},
+restored = post(f"{PSEUDEX}/unmask", headers={"Authorization": f"Bearer {GW}"},
                 json={"org_id": ORG, "response": answer})
 # и вот ЗДЕСЬ проверить: в restored аргументы инструмента должны быть настоящими
 ```

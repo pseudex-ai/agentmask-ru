@@ -1,5 +1,5 @@
 #!/bin/sh
-# Veilgate sidecar entrypoint — N independent worker processes, one shared port.
+# Pseudex sidecar entrypoint — N independent worker processes, one shared port.
 #
 # Real CPU parallelism comes from PROCESSES, not threads: pymorphy3 holds the GIL
 # during morphology, so N threads in one process still serialize on one core.
@@ -11,7 +11,7 @@
 # see serve_main.py.
 #
 # MEMORY/THROUGHPUT TRADEOFF (measured ~300 MB resident per worker for the model
-# stack): pick VEILGATE_WORKERS so N*300 MB fits the container memory limit with
+# stack): pick PSEUDEX_WORKERS so N*300 MB fits the container memory limit with
 # headroom, and N <= vCPU count.
 #
 # Each worker LEASES ITS OWN BUNDLE: its X25519 keypair never leaves its memory,
@@ -26,17 +26,17 @@
 
 set -e
 
-if [ -n "$VEILGATE_WORKERS" ]; then
-    WORKERS="$VEILGATE_WORKERS"
+if [ -n "$PSEUDEX_WORKERS" ]; then
+    WORKERS="$PSEUDEX_WORKERS"
 else
     WORKERS="$(nproc 2>/dev/null || echo 1)"
 fi
 
 # One id per CONTAINER, so the licensing server can tell "eight workers of one
 # deployment" from "eight deployments".
-if [ -z "$VEILGATE_INSTANCE_ID" ]; then
-    VEILGATE_INSTANCE_ID="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-    export VEILGATE_INSTANCE_ID
+if [ -z "$PSEUDEX_INSTANCE_ID" ]; then
+    PSEUDEX_INSTANCE_ID="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    export PSEUDEX_INSTANCE_ID
 fi
 
 # The operator token gates /reveal and the whole log/statistics surface. It MUST
@@ -44,34 +44,34 @@ fi
 # mean N different valid tokens for one port, and SO_REUSEPORT would hand the
 # interface a different worker on the next connection — the log would work and
 # then 401 at random.
-if [ -z "$VEILGATE_ADMIN_TOKEN" ]; then
-    VEILGATE_ADMIN_TOKEN="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-    export VEILGATE_ADMIN_TOKEN
+if [ -z "$PSEUDEX_ADMIN_TOKEN" ]; then
+    PSEUDEX_ADMIN_TOKEN="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    export PSEUDEX_ADMIN_TOKEN
 fi
 # Credential the customer's gateway presents on /mask, /unmask and /spans.
 # Generated here for the same reason as the admin token: per-process values
 # behind one SO_REUSEPORT port would reject the gateway at random.
-if [ -z "$VEILGATE_GATEWAY_TOKEN" ]; then
-    VEILGATE_GATEWAY_TOKEN="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-    export VEILGATE_GATEWAY_TOKEN
+if [ -z "$PSEUDEX_GATEWAY_TOKEN" ]; then
+    PSEUDEX_GATEWAY_TOKEN="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    export PSEUDEX_GATEWAY_TOKEN
 fi
 # Sign-in token for the interface. Generated here rather than in the UI process
 # so it survives a UI restart: an operator who followed the link from the log
 # should not be locked out because that process was restarted at 03:00.
-if [ -z "$VEILGATE_UI_TOKEN" ]; then
-    VEILGATE_UI_TOKEN="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-    export VEILGATE_UI_TOKEN
+if [ -z "$PSEUDEX_UI_TOKEN" ]; then
+    PSEUDEX_UI_TOKEN="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    export PSEUDEX_UI_TOKEN
 fi
 
-echo "veilgate: starting ${WORKERS} worker(s), instance ${VEILGATE_INSTANCE_ID}"
+echo "pseudex: starting ${WORKERS} worker(s), instance ${PSEUDEX_INSTANCE_ID}"
 echo ""
 echo "    ключ шлюза (Authorization: Bearer …) для /mask, /unmask, /spans:"
-echo "    ${VEILGATE_GATEWAY_TOKEN}"
+echo "    ${PSEUDEX_GATEWAY_TOKEN}"
 echo ""
 
 pids=""
 for i in $(seq 1 "${WORKERS}"); do
-    ${VEILGATE_SERVE_CMD:-./veilgate-serve} &
+    ${PSEUDEX_SERVE_CMD:-./pseudex-serve} &
     pids="$pids $!"
 done
 
@@ -82,11 +82,11 @@ done
 # restarted instead — and its restart is exactly the moment the operator needs
 # it, since "движок не отвечает" is a state only the interface can report.
 ui_pid=""
-if [ "${VEILGATE_UI:-1}" = "1" ]; then
+if [ "${PSEUDEX_UI:-1}" = "1" ]; then
     (
         while :; do
-            VEILGATE_ROLE=ui ${VEILGATE_SERVE_CMD:-./veilgate-serve} || true
-            echo "veilgate: local interface exited — restarting in 3s"
+            PSEUDEX_ROLE=ui ${PSEUDEX_SERVE_CMD:-./pseudex-serve} || true
+            echo "pseudex: local interface exited — restarting in 3s"
             sleep 3
         done
     ) &
@@ -114,7 +114,7 @@ while :; do
         if ! kill -0 "$pid" 2>/dev/null; then
             status=0
             wait "$pid" || status=$?
-            echo "veilgate: worker ${pid} exited with status ${status} — stopping the container"
+            echo "pseudex: worker ${pid} exited with status ${status} — stopping the container"
             terminate
             exit "${status}"
         fi

@@ -320,9 +320,9 @@ regex/Natasha detectors as the per-value analyzer.
 
 ---
 
-## 7. Concrete plug-in recommendation for Veilgate's regex-first detector
+## 7. Concrete plug-in recommendation for Pseudex's regex-first detector
 
-Current state (`prototype/veilgate/`): `detect.py` (regex phone/email), `detect_all.py` (regex +
+Current state (`prototype/pseudex/`): `detect.py` (regex phone/email), `detect_all.py` (regex +
 checksum IDs + Natasha NER + priority overlap resolver), `ru_pii.py::detect_structured` (RU IDs),
 `context.py` (deny-context suppression). There is NO JSON/kv structural pass yet. **[A]**
 

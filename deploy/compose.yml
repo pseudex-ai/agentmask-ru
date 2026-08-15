@@ -8,7 +8,7 @@
 # does not stop customers (they have a 24h lease and 48h of grace), and the
 # storefront going down does not stop anything at all.
 
-name: veilgate
+name: pseudex
 
 x-logging: &logging
   # Bounded, or a year of uptime fills the disk and takes the licensing server
@@ -22,14 +22,14 @@ services:
     restart: unless-stopped
     logging: *logging
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-veilgate}
-      POSTGRES_USER: ${POSTGRES_USER:-veilgate}
+      POSTGRES_DB: ${POSTGRES_DB:-pseudex}
+      POSTGRES_USER: ${POSTGRES_USER:-pseudex}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./backups:/backups
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-veilgate}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pseudex}"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -40,19 +40,19 @@ services:
     build:
       context: ../prototype
       dockerfile: licensing/Dockerfile
-    image: veilgate-licensing:${VERSION:-latest}
+    image: pseudex-licensing:${VERSION:-latest}
     restart: unless-stopped
     logging: *logging
     environment:
       # The signing key is the root of trust for every bundle we ever issue.
       # Injected, never baked, and rotating it invalidates every deployed
       # binary — so it is the one secret with no automated rotation.
-      VEILGATE_SIGNING_KEY: ${VEILGATE_SIGNING_KEY:?set VEILGATE_SIGNING_KEY}
-      VEILGATE_LICENSE_DB: /data/license.db
-      VEILGATE_LEASE_TTL_SECONDS: ${LEASE_TTL:-86400}
-      VEILGATE_GRACE_SECONDS: ${GRACE:-172800}
-      VEILGATE_LICENSE_CERT: /certs/server.crt
-      VEILGATE_LICENSE_KEYFILE: /certs/server.key
+      PSEUDEX_SIGNING_KEY: ${PSEUDEX_SIGNING_KEY:?set PSEUDEX_SIGNING_KEY}
+      PSEUDEX_LICENSE_DB: /data/license.db
+      PSEUDEX_LEASE_TTL_SECONDS: ${LEASE_TTL:-86400}
+      PSEUDEX_GRACE_SECONDS: ${GRACE:-172800}
+      PSEUDEX_LICENSE_CERT: /certs/server.crt
+      PSEUDEX_LICENSE_KEYFILE: /certs/server.key
     volumes:
       - license-data:/data
       - ./certs:/certs:ro
@@ -72,25 +72,25 @@ services:
   storefront:
     build:
       context: ../storefront
-    image: veilgate-storefront:${VERSION:-latest}
+    image: pseudex-storefront:${VERSION:-latest}
     restart: unless-stopped
     logging: *logging
     environment:
-      VEILGATE_SECRET_KEY: ${VEILGATE_SECRET_KEY:?set VEILGATE_SECRET_KEY}
-      VEILGATE_DEBUG: "0"
-      VEILGATE_ALLOWED_HOSTS: ${SITE_HOST:?set SITE_HOST}
-      VEILGATE_CSRF_ORIGINS: https://${SITE_HOST}
-      VEILGATE_ADMIN_PATH: ${ADMIN_PATH:-admin}
-      VEILGATE_DB_HOST: postgres
-      VEILGATE_DB_NAME: ${POSTGRES_DB:-veilgate}
-      VEILGATE_DB_USER: ${POSTGRES_USER:-veilgate}
-      VEILGATE_DB_PASSWORD: ${POSTGRES_PASSWORD}
-      VEILGATE_LICENSING_ADMIN_URL: http://license:9443
-      VEILGATE_DOCKER_IMAGE: ${CUSTOMER_IMAGE:-cr.yandex/veilgate/veilgate:1.0.0}
-      VEILGATE_SMTP_HOST: ${SMTP_HOST:-}
-      VEILGATE_SMTP_USER: ${SMTP_USER:-}
-      VEILGATE_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      VEILGATE_FROM_EMAIL: ${FROM_EMAIL:-veilgate <noreply@veilgate.ru>}
+      PSEUDEX_SECRET_KEY: ${PSEUDEX_SECRET_KEY:?set PSEUDEX_SECRET_KEY}
+      PSEUDEX_DEBUG: "0"
+      PSEUDEX_ALLOWED_HOSTS: ${SITE_HOST:?set SITE_HOST}
+      PSEUDEX_CSRF_ORIGINS: https://${SITE_HOST}
+      PSEUDEX_ADMIN_PATH: ${ADMIN_PATH:-admin}
+      PSEUDEX_DB_HOST: postgres
+      PSEUDEX_DB_NAME: ${POSTGRES_DB:-pseudex}
+      PSEUDEX_DB_USER: ${POSTGRES_USER:-pseudex}
+      PSEUDEX_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      PSEUDEX_LICENSING_ADMIN_URL: http://license:9443
+      PSEUDEX_DOCKER_IMAGE: ${CUSTOMER_IMAGE:-cr.yandex/pseudex/pseudex:1.0.0}
+      PSEUDEX_SMTP_HOST: ${SMTP_HOST:-}
+      PSEUDEX_SMTP_USER: ${SMTP_USER:-}
+      PSEUDEX_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      PSEUDEX_FROM_EMAIL: ${FROM_EMAIL:-pseudex <noreply@pseudex.ru>}
     depends_on:
       postgres: { condition: service_healthy }
       license: { condition: service_started }

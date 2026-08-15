@@ -21,23 +21,23 @@ print(encode_private(Ed25519PrivateKey.generate()))
     echo "generated a local signing key -> $KEYFILE"
 fi
 
-VEILGATE_SIGNING_KEY="$(head -1 "$KEYFILE")"
-export VEILGATE_SIGNING_KEY
+PSEUDEX_SIGNING_KEY="$(head -1 "$KEYFILE")"
+export PSEUDEX_SIGNING_KEY
 PUBKEY="$(cd "$ROOT/prototype" && ./.venv/bin/python -c "
 import base64
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from licensing.keys import encode_public
-print(encode_public(Ed25519PrivateKey.from_private_bytes(base64.b64decode('$VEILGATE_SIGNING_KEY')).public_key()))
+print(encode_public(Ed25519PrivateKey.from_private_bytes(base64.b64decode('$PSEUDEX_SIGNING_KEY')).public_key()))
 ")"
 
 # The customer image, built against the SAME verification key the local
 # licensing server signs with. Baked at build time exactly as in a release —
 # a key the customer could override in the environment would let them sign
 # their own bundles.
-echo "building veilgate:source (verification key ${PUBKEY:0:12}…)"
+echo "building pseudex:source (verification key ${PUBKEY:0:12}…)"
 docker build -q -f "$ROOT/prototype/Dockerfile" \
-    --build-arg "VEILGATE_LICENSE_PUBKEY=$PUBKEY" \
-    -t veilgate:source "$ROOT/prototype" >/dev/null
+    --build-arg "PSEUDEX_LICENSE_PUBKEY=$PUBKEY" \
+    -t pseudex:source "$ROOT/prototype" >/dev/null
 
 docker compose -f "$HERE/compose.local.yml" up -d --build
 
@@ -53,14 +53,14 @@ cat <<TEXT
   3. Запустите контейнер (ключ уже подставлен на странице), но
      добавьте адрес локального лицензионного сервера:
 
-     docker run -d --name veilgate -p 8000:8000 -p 127.0.0.1:8081:8081 \\
-       -v veilgate-data:/data \\
-       -e VEILGATE_LICENSE_KEY=<ваш ключ> \\
-       -e VEILGATE_LICENSE_URL=http://host.docker.internal:8443 \\
-       veilgate:source
+     docker run -d --name pseudex -p 8000:8000 -p 127.0.0.1:8081:8081 \\
+       -v pseudex-data:/data \\
+       -e PSEUDEX_LICENSE_KEY=<ваш ключ> \\
+       -e PSEUDEX_LICENSE_URL=http://host.docker.internal:8443 \\
+       pseudex:source
 
   4. Ссылка на локальный интерфейс — в логе контейнера:
-     docker logs veilgate 2>&1 | grep "локальный интерфейс" -A2
+     docker logs pseudex 2>&1 | grep "локальный интерфейс" -A2
 
   5. Письма для входа в кабинет печатаются в лог витрины:
      docker compose -f deploy/compose.local.yml logs storefront | grep -A4 "http"
@@ -69,6 +69,6 @@ cat <<TEXT
   можно пройти целиком, не дожидаясь суток.
 
   Погасить:  docker compose -f deploy/compose.local.yml down -v
-             docker rm -f veilgate
+             docker rm -f pseudex
 ────────────────────────────────────────────────────────────────────
 TEXT

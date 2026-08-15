@@ -57,12 +57,12 @@ def start_licensing() -> tuple[subprocess.Popen, str]:
     public, admin = _free_port(), _free_port()
     env = {
         **os.environ,
-        "VEILGATE_LICENSE_PORT": str(public),
-        "VEILGATE_LICENSE_ADMIN_PORT": str(admin),
-        "VEILGATE_LICENSE_DB": os.path.join(
-            tempfile.mkdtemp(prefix="veilgate-store-test-"), "license.db"),
-        "VEILGATE_LICENSE_CERT": "",
-        "VEILGATE_LICENSE_KEYFILE": "",
+        "PSEUDEX_LICENSE_PORT": str(public),
+        "PSEUDEX_LICENSE_ADMIN_PORT": str(admin),
+        "PSEUDEX_LICENSE_DB": os.path.join(
+            tempfile.mkdtemp(prefix="pseudex-store-test-"), "license.db"),
+        "PSEUDEX_LICENSE_CERT": "",
+        "PSEUDEX_LICENSE_KEYFILE": "",
     }
     process = subprocess.Popen(
         [str(_PROTOTYPE / ".venv/bin/python"), "-m", "licensing.devserver"],
@@ -82,12 +82,12 @@ def start_licensing() -> tuple[subprocess.Popen, str]:
 
 def main() -> int:
     process, admin_url = start_licensing()
-    os.environ["VEILGATE_LICENSING_ADMIN_URL"] = admin_url
-    os.environ["VEILGATE_DEBUG"] = "1"
-    os.environ["VEILGATE_SECRET_KEY"] = "test-only"
-    os.environ["VEILGATE_DB_PATH"] = os.path.join(
-        tempfile.mkdtemp(prefix="veilgate-store-db-"), "store.sqlite3")
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "veilgate_site.settings")
+    os.environ["PSEUDEX_LICENSING_ADMIN_URL"] = admin_url
+    os.environ["PSEUDEX_DEBUG"] = "1"
+    os.environ["PSEUDEX_SECRET_KEY"] = "test-only"
+    os.environ["PSEUDEX_DB_PATH"] = os.path.join(
+        tempfile.mkdtemp(prefix="pseudex-store-db-"), "store.sqlite3")
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "pseudex_site.settings")
 
     import django
     django.setup()
@@ -147,7 +147,7 @@ def run_checks(client) -> None:
           f"outbox={len(mail.outbox)}")
     body = mail.outbox[0].body
     check("the email carries no key, only a link",
-          "vg_live_" not in body, "nothing secret is put in an email")
+          "ps_live_" not in body, "nothing secret is put in an email")
     link = [word for word in body.split() if "/activate?t=" in word][0]
     activated = client.get(link[link.index("/activate"):], follow=False)
     check("following the link issues the key",
@@ -163,7 +163,7 @@ def run_checks(client) -> None:
     check("the full key is shown once",
           stored.prefix in welcome_body, f"prefix={stored.prefix}")
     check("the run command comes with the key already in it",
-          "VEILGATE_LICENSE_KEY=" in welcome_body and stored.prefix in welcome_body)
+          "PSEUDEX_LICENSE_KEY=" in welcome_body and stored.prefix in welcome_body)
 
     # A second activation must not mint a second key.
     replay = client.get(link[link.index("/activate"):], follow=False)
@@ -181,7 +181,7 @@ def run_checks(client) -> None:
           not any(field.name == "key" for field in LicenseKey._meta.get_fields()),
           "there is no column that could hold the key")
 
-    licensed = httpx.get(f"{os.environ['VEILGATE_LICENSING_ADMIN_URL']}/admin/list",
+    licensed = httpx.get(f"{os.environ['PSEUDEX_LICENSING_ADMIN_URL']}/admin/list",
                          timeout=10).json()
     check("the licensing server knows the organisation",
           any(row.get("org_id") == organization.id for row in licensed.get("orgs", [])),

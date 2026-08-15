@@ -32,7 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from veilgate.vault import canonicalize  # noqa: E402
+from pseudex.vault import canonicalize  # noqa: E402
 
 # Values the injector writes; see inject_ru_pii.py.
 _PHONE_RE = re.compile(r"\+7 9\d{2} \d{3}-\d{2}-\d{2}")

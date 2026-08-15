@@ -7,7 +7,7 @@ realistic Russian sentences, valid СНИЛС/ИНН/card checksums, with labele
 import json
 import random
 
-from veilgate.ru_pii import validate_luhn
+from pseudex.ru_pii import validate_luhn
 
 random.seed(42)
 

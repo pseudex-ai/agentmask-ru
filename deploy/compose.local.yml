@@ -17,7 +17,7 @@
 #   docker compose -f deploy/compose.local.yml up --build
 #   open http://localhost:8080
 #
-name: veilgate-local
+name: pseudex-local
 
 services:
   license:
@@ -29,14 +29,14 @@ services:
       # five minutes ago. Development only — in production this is a secret with
       # no automated rotation, because its public half is compiled into every
       # released binary.
-      VEILGATE_SIGNING_KEY: ${VEILGATE_SIGNING_KEY:?run deploy/local.sh, which generates one}
-      VEILGATE_LICENSE_DB: /data/license.db
+      PSEUDEX_SIGNING_KEY: ${PSEUDEX_SIGNING_KEY:?run deploy/local.sh, which generates one}
+      PSEUDEX_LICENSE_DB: /data/license.db
       # Short, so the degradation ladder is walkable in a coffee break rather
       # than over two days: lease 5 min, grace 10 min.
-      VEILGATE_LEASE_TTL_SECONDS: "300"
-      VEILGATE_GRACE_SECONDS: "600"
-      VEILGATE_LICENSE_CERT: ""
-      VEILGATE_LICENSE_KEYFILE: ""
+      PSEUDEX_LEASE_TTL_SECONDS: "300"
+      PSEUDEX_GRACE_SECONDS: "600"
+      PSEUDEX_LICENSE_CERT: ""
+      PSEUDEX_LICENSE_KEYFILE: ""
     volumes:
       - license-data:/data
     ports:
@@ -49,18 +49,18 @@ services:
     build:
       context: ../storefront
     environment:
-      VEILGATE_DEBUG: "1"
-      VEILGATE_SECRET_KEY: local-walkthrough-only
-      VEILGATE_ALLOWED_HOSTS: localhost,127.0.0.1
-      VEILGATE_CSRF_ORIGINS: http://localhost:8080
-      VEILGATE_LICENSING_ADMIN_URL: http://license:9443
-      VEILGATE_DB_PATH: /data/storefront.sqlite3
+      PSEUDEX_DEBUG: "1"
+      PSEUDEX_SECRET_KEY: local-walkthrough-only
+      PSEUDEX_ALLOWED_HOSTS: localhost,127.0.0.1
+      PSEUDEX_CSRF_ORIGINS: http://localhost:8080
+      PSEUDEX_LICENSING_ADMIN_URL: http://license:9443
+      PSEUDEX_DB_PATH: /data/storefront.sqlite3
       # What the site tells the customer to run. Points at the image built from
       # this checkout, not at the registry.
-      VEILGATE_DOCKER_IMAGE: veilgate:source
+      PSEUDEX_DOCKER_IMAGE: pseudex:source
       # Console backend: sign-in links appear in `docker compose logs storefront`
       # instead of needing a mail server.
-      VEILGATE_SMTP_HOST: ""
+      PSEUDEX_SMTP_HOST: ""
     volumes:
       - storefront-data:/data
     ports:
@@ -72,7 +72,7 @@ services:
     command: >
       sh -c "python manage.py migrate --noinput &&
              python manage.py seed_plans &&
-             gunicorn veilgate_site.wsgi:application --bind 0.0.0.0:8000
+             gunicorn pseudex_site.wsgi:application --bind 0.0.0.0:8000
                       --workers 2 --threads 4 --access-logfile - --error-logfile -"
 
 volumes:

@@ -1,7 +1,7 @@
-# Veilgate sidecar — RELEASE image. The engine as a native binary.
+# Pseudex sidecar — RELEASE image. The engine as a native binary.
 #
-#   docker build -f Dockerfile.nuitka --build-arg VEILGATE_LICENSE_PUBKEY=... \
-#                -t veilgate:compiled .
+#   docker build -f Dockerfile.nuitka --build-arg PSEUDEX_LICENSE_PUBKEY=... \
+#                -t pseudex:compiled .
 #
 # Nuitka translates Python to C and compiles it, so there is no bytecode to
 # decompile. That raises the cost of reading the engine from minutes to weeks —
@@ -18,7 +18,7 @@
 # BOTH STAGES ARE PINNED TO THE SAME DEBIAN RELEASE, and that is not cosmetic.
 # A Nuitka binary links against the build stage's glibc, so a runtime with an
 # older one refuses to start:
-#   /app/veilgate-serve: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.38' not found
+#   /app/pseudex-serve: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.38' not found
 # That is exactly what happened with `python:3.12-slim` (which had moved on to
 # trixie, glibc 2.41) over `debian:12-slim` (bookworm, glibc 2.36) — the floating
 # tag silently changed underneath a pinned one. Change these two together or not
@@ -37,21 +37,21 @@ RUN pip install --no-cache-dir --upgrade pip setuptools \
     && pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir nuitka
 
-COPY veilgate/ ./veilgate/
+COPY pseudex/ ./pseudex/
 COPY serve_main.py build_strip_docstrings.py ./
 
 # Same guard as the source image, before anything is compiled: the engine must
 # not be able to reach the package that holds the assets.
-RUN if [ -d ./veilgate/data ]; then echo "veilgate/data must not ship"; exit 1; fi
-RUN if grep -rn "^[[:space:]]*\(from\|import\)[[:space:]]\+licensing" ./veilgate/; then \
-        echo "veilgate/ must never import licensing/"; exit 1; \
+RUN if [ -d ./pseudex/data ]; then echo "pseudex/data must not ship"; exit 1; fi
+RUN if grep -rn "^[[:space:]]*\(from\|import\)[[:space:]]\+licensing" ./pseudex/; then \
+        echo "pseudex/ must never import licensing/"; exit 1; \
     fi
 
 # Baked before compilation, so the verification key ends up INSIDE the binary
 # rather than in a file next to it.
-ARG VEILGATE_LICENSE_PUBKEY
-RUN test -n "$VEILGATE_LICENSE_PUBKEY" || (echo "VEILGATE_LICENSE_PUBKEY build-arg is required" && exit 1) \
-    && printf 'LICENSE_PUBKEY = "%s"\n' "$VEILGATE_LICENSE_PUBKEY" > ./veilgate/_release.py
+ARG PSEUDEX_LICENSE_PUBKEY
+RUN test -n "$PSEUDEX_LICENSE_PUBKEY" || (echo "PSEUDEX_LICENSE_PUBKEY build-arg is required" && exit 1) \
+    && printf 'LICENSE_PUBKEY = "%s"\n' "$PSEUDEX_LICENSE_PUBKEY" > ./pseudex/_release.py
 
 # pymorphy3's dictionaries and natasha's NER models are DATA inside third-party
 # packages; Nuitka does not follow them unless told. They ship in the image on
@@ -71,19 +71,19 @@ RUN test -n "$VEILGATE_LICENSE_PUBKEY" || (echo "VEILGATE_LICENSE_PUBKEY build-a
 # They matter more than the code. This repo's docstrings ARE the design record:
 # which alternative was rejected, what was measured, where the sharp edges are.
 # Shipping them means handing over the reasoning and withholding only syntax.
-RUN python build_strip_docstrings.py ./veilgate ./serve_main.py
+RUN python build_strip_docstrings.py ./pseudex ./serve_main.py
 
 ARG NUITKA_JOBS=6
 # --include-data-dir puts the interface's page files at /app/ui, OUTSIDE any
-# directory called `veilgate`. Gate P1 asserts /app/veilgate does not exist in
+# directory called `pseudex`. Gate P1 asserts /app/pseudex does not exist in
 # the release image and uses that as evidence the Python package did not ship;
-# --include-package-data=veilgate would recreate that tree for a few CSS files.
+# --include-package-data=pseudex would recreate that tree for a few CSS files.
 RUN python -m nuitka \
         --standalone \
         --assume-yes-for-downloads \
         --jobs=${NUITKA_JOBS} \
-        --output-filename=veilgate-serve \
-        --include-package=veilgate \
+        --output-filename=pseudex-serve \
+        --include-package=pseudex \
         --include-package=uvicorn \
         --include-package=fastapi \
         --include-package=pymorphy3_dicts_ru \
@@ -93,7 +93,7 @@ RUN python -m nuitka \
         --include-package-data=slovnet \
         --include-package-data=razdel \
         --include-package-data=yargy \
-        --include-data-dir=./veilgate/localui/static=ui \
+        --include-data-dir=./pseudex/localui/static=ui \
         --nofollow-import-to=tkinter \
         --nofollow-import-to=unittest \
         --nofollow-import-to=pydoc \
@@ -115,20 +115,20 @@ FROM debian:trixie-slim
 WORKDIR /app
 COPY --from=build /src/serve_main.dist/ /app/
 COPY entrypoint.sh /app/
-RUN chmod +x /app/entrypoint.sh /app/veilgate-serve
+RUN chmod +x /app/entrypoint.sh /app/pseudex-serve
 
 # Same guarantee, re-checked on the RUNTIME layer because this is the image that
 # actually ships: no detection assets on disk, ever.
-RUN if [ -d /app/veilgate/data ]; then echo "veilgate/data must not ship"; exit 1; fi
+RUN if [ -d /app/pseudex/data ]; then echo "pseudex/data must not ship"; exit 1; fi
 
-ENV VEILGATE_DB_DIR=/data
+ENV PSEUDEX_DB_DIR=/data
 RUN mkdir -p /data
 
-ENV VEILGATE_WORKERS="" \
-    VEILGATE_MASK_CONCURRENCY=8 \
-    VEILGATE_MASK_CACHE_SIZE=20000 \
-    VEILGATE_UI_STATIC=/app/ui \
-    VEILGATE_SERVE_CMD="/app/veilgate-serve"
+ENV PSEUDEX_WORKERS="" \
+    PSEUDEX_MASK_CONCURRENCY=8 \
+    PSEUDEX_MASK_CACHE_SIZE=20000 \
+    PSEUDEX_UI_STATIC=/app/ui \
+    PSEUDEX_SERVE_CMD="/app/pseudex-serve"
 
 # 8000 is the gateway the customer's own code calls; 8081 is the operator's
 # interface and should be reachable from far fewer places. Two ports so that

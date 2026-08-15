@@ -14,10 +14,10 @@ Run: python3 bench_masking.py
 import hashlib
 import time
 
-from veilgate.detect_all import Detector
-from veilgate.maskcache import MaskCache, content_key
-from veilgate.redact import mask_text
-from veilgate.vault import Vault
+from pseudex.detect_all import Detector
+from pseudex.maskcache import MaskCache, content_key
+from pseudex.redact import mask_text
+from pseudex.vault import Vault
 from testkit import load_dev_bundle
 
 _PII_MSG = "Здравствуйте, меня зовут Иван Петров, телефон +7 999 123-45-67, доставьте на улицу Ленина 5, кв 12."

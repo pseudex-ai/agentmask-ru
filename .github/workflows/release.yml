@@ -18,8 +18,8 @@ on:
         default: false
 
 env:
-  REGISTRY: ${{ vars.REGISTRY || 'cr.yandex/veilgate' }}
-  IMAGE: veilgate
+  REGISTRY: ${{ vars.REGISTRY || 'cr.yandex/pseudex' }}
+  IMAGE: pseudex
 
 jobs:
   engine:
@@ -87,19 +87,19 @@ jobs:
       # Nuitka build and — worse — the licensing gates would then run against an
       # image that rejects the very server they start.
       - name: fix a signing key for this run
-        run: echo "VEILGATE_SIGNING_KEY=$(python -c 'from licensing.keys import encode_private; from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey; print(encode_private(Ed25519PrivateKey.generate()))')" >> $GITHUB_ENV
+        run: echo "PSEUDEX_SIGNING_KEY=$(python -c 'from licensing.keys import encode_private; from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey; print(encode_private(Ed25519PrivateKey.generate()))')" >> $GITHUB_ENV
 
       - name: packaging gates (builds both images)
         run: python -u e2e/pack_gates.py
       - name: licensing gates on the release image
-        run: python -u e2e/gates.py --image veilgate:compiled --skip-build
+        run: python -u e2e/gates.py --image pseudex:compiled --skip-build
 
       - name: keep the proved image
-        run: docker save veilgate:compiled | gzip > /tmp/veilgate-compiled.tar.gz
+        run: docker save pseudex:compiled | gzip > /tmp/pseudex-compiled.tar.gz
       - uses: actions/upload-artifact@v4
         with:
-          name: veilgate-compiled
-          path: /tmp/veilgate-compiled.tar.gz
+          name: pseudex-compiled
+          path: /tmp/pseudex-compiled.tar.gz
           retention-days: 7
 
   publish:
@@ -113,8 +113,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        with: { name: veilgate-compiled, path: /tmp }
-      - run: docker load < /tmp/veilgate-compiled.tar.gz
+        with: { name: pseudex-compiled, path: /tmp }
+      - run: docker load < /tmp/pseudex-compiled.tar.gz
 
       - uses: sigstore/cosign-installer@v3
 
@@ -126,7 +126,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           [ "${VERSION}" = "${GITHUB_REF_NAME}" ] && VERSION="$(git rev-parse --short HEAD)"
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
-          docker tag veilgate:compiled "${REGISTRY}/${IMAGE}:${VERSION}"
+          docker tag pseudex:compiled "${REGISTRY}/${IMAGE}:${VERSION}"
           docker push "${REGISTRY}/${IMAGE}:${VERSION}"
 
       - name: sign the digest

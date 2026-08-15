@@ -5,7 +5,7 @@ per-entity-type recall and precision against ground truth.
 import json
 import re
 
-from veilgate.detect_all import Detector
+from pseudex.detect_all import Detector
 from testkit import load_dev_bundle
 
 _NUMERIC = {"PHONE", "SNILS", "INN", "CARD", "PASSPORT", "DATE"}

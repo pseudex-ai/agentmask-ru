@@ -1,8 +1,8 @@
 """Profile the middleware's latency cost.
 
 Part 1 (deterministic, no network): per-message cost of detect + mask + unmask
-over the hold-out set — the reproducible "what Veilgate adds".
-Part 2 (real A/B, needs VEILGATE_UPSTREAM_KEY): the same LLM call WITHOUT the
+over the hold-out set — the reproducible "what Pseudex adds".
+Part 2 (real A/B, needs PSEUDEX_UPSTREAM_KEY): the same LLM call WITHOUT the
 middleware vs WITH it (mask before + unmask after), so you see real wall-clock
 "с ним и без него". The HTTP hop to a local proxy is sub-ms and omitted.
 """
@@ -12,9 +12,9 @@ import os
 import statistics
 import time
 
-from veilgate.detect_all import Detector
-from veilgate.redact import mask_text, unmask_text
-from veilgate.vault import Vault
+from pseudex.detect_all import Detector
+from pseudex.redact import mask_text, unmask_text
+from pseudex.vault import Vault
 from testkit import load_dev_bundle
 
 
@@ -49,9 +49,9 @@ def part1() -> None:
 
 
 def part2() -> None:
-    key = os.environ.get("VEILGATE_UPSTREAM_KEY")
+    key = os.environ.get("PSEUDEX_UPSTREAM_KEY")
     if key is None:
-        print("\n[part 2 skipped: set VEILGATE_UPSTREAM_KEY for the real A/B]")
+        print("\n[part 2 skipped: set PSEUDEX_UPSTREAM_KEY for the real A/B]")
         return
     from openai import OpenAI
 
@@ -66,7 +66,7 @@ def part2() -> None:
         client.chat.completions.create(model=model, messages=[{"role": "user", "content": msg}])
         return (time.perf_counter() - s) * 1000
 
-    def call_with_veilgate() -> float:
+    def call_with_pseudex() -> float:
         s = time.perf_counter()
         masked = mask_text(msg, vault, detector.detect(msg))
         r = client.chat.completions.create(model=model, messages=[{"role": "user", "content": masked}])
@@ -75,10 +75,10 @@ def part2() -> None:
 
     n = 6
     without = [call_direct() for _ in range(n)]
-    with_mw = [call_with_veilgate() for _ in range(n)]
+    with_mw = [call_with_pseudex() for _ in range(n)]
     print(f"\nreal A/B over {n} live calls (gpt-4.1-mini via OpenRouter):")
-    print(f"  WITHOUT Veilgate: mean {statistics.mean(without):>7.0f} ms")
-    print(f"  WITH Veilgate   : mean {statistics.mean(with_mw):>7.0f} ms")
+    print(f"  WITHOUT Pseudex: mean {statistics.mean(without):>7.0f} ms")
+    print(f"  WITH Pseudex   : mean {statistics.mean(with_mw):>7.0f} ms")
     print(f"  overhead       : {statistics.mean(with_mw) - statistics.mean(without):>7.0f} ms")
 
 

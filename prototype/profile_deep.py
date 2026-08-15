@@ -28,16 +28,16 @@ import tempfile
 import threading
 import time
 
-os.environ.setdefault("VEILGATE_PROFILE", "1")
-os.environ.setdefault("VEILGATE_DB_DIR", tempfile.mkdtemp(prefix="veilgate_profile_"))
+os.environ.setdefault("PSEUDEX_PROFILE", "1")
+os.environ.setdefault("PSEUDEX_DB_DIR", tempfile.mkdtemp(prefix="pseudex_profile_"))
 
-from veilgate.audit import AuditLog  # noqa: E402
-from veilgate.detect_all import Detector  # noqa: E402
-from veilgate.envelope import MaskContext, mask_messages  # noqa: E402
-from veilgate.maskcache import MaskCache  # noqa: E402
+from pseudex.audit import AuditLog  # noqa: E402
+from pseudex.detect_all import Detector  # noqa: E402
+from pseudex.envelope import MaskContext, mask_messages  # noqa: E402
+from pseudex.maskcache import MaskCache  # noqa: E402
 from testkit import load_dev_bundle  # noqa: E402
-from veilgate.profiling import ENABLED, STAGES  # noqa: E402
-from veilgate.vault import Vault  # noqa: E402
+from pseudex.profiling import ENABLED, STAGES  # noqa: E402
+from pseudex.vault import Vault  # noqa: E402
 
 # A deliberately mixed workload: dense PII, free-form address, structured KV,
 # hard negatives, and plain text. Profiling only the easy case lies to you.
@@ -102,7 +102,7 @@ def _run(texts: list[str], context: MaskContext, rounds: int, threads: int) -> f
 def _print_stages(total_ms: float, calls: int) -> None:
     snapshot = STAGES.snapshot()
     if not snapshot:
-        raise RuntimeError("no stages recorded — is VEILGATE_PROFILE=1 set?")
+        raise RuntimeError("no stages recorded — is PSEUDEX_PROFILE=1 set?")
     total_stage = snapshot.get("mask.one", {}).get("total_ms", 0.0) or total_ms
     print(f"\n{'STAGE':<26}{'CALLS':>8}{'TOTAL ms':>11}{'%':>7}{'MEAN':>9}{'p95':>9}{'MAX':>9}")
     print("-" * 79)
@@ -122,7 +122,7 @@ def _mode_stage(args: argparse.Namespace) -> None:
     detector = Detector()
     detector.detect("прогрев словарей")  # exclude dictionary load from the numbers
     STAGES.reset()
-    context = _context(detector, os.environ["VEILGATE_DB_DIR"])
+    context = _context(detector, os.environ["PSEUDEX_DB_DIR"])
     total = _run(texts, context, args.rounds, args.threads)
     _print_stages(total, len(texts) * args.rounds * args.threads)
 
@@ -139,7 +139,7 @@ def _mode_function(args: argparse.Namespace) -> None:
     texts = _load_workload(args.dataset)
     detector = Detector()
     detector.detect("прогрев словарей")
-    context = _context(detector, os.environ["VEILGATE_DB_DIR"])
+    context = _context(detector, os.environ["PSEUDEX_DB_DIR"])
     yappi.set_clock_type("wall")
     yappi.start()
     _run(texts, context, args.rounds, args.threads)
@@ -157,13 +157,13 @@ def _mode_line(args: argparse.Namespace) -> None:
         raise SystemExit(
             "line_profiler is required for --mode line: pip install line_profiler"
         ) from error
-    from veilgate import address, detect, names, normalize, quasi, ru_pii, structured
-    from veilgate import detect_all as detect_all_module
+    from pseudex import address, detect, names, normalize, quasi, ru_pii, structured
+    from pseudex import detect_all as detect_all_module
 
     texts = _load_workload(args.dataset)
     detector = Detector()
     detector.detect("прогрев словарей")
-    context = _context(detector, os.environ["VEILGATE_DB_DIR"])
+    context = _context(detector, os.environ["PSEUDEX_DB_DIR"])
 
     profiler = LineProfiler()
     for function in (
@@ -192,10 +192,10 @@ def main() -> None:
     args = parser.parse_args()
 
     if not ENABLED and args.mode == "stage":
-        raise SystemExit("set VEILGATE_PROFILE=1 (this script sets it by default — "
+        raise SystemExit("set PSEUDEX_PROFILE=1 (this script sets it by default — "
                          "did something override it?)")
     print(f"mode={args.mode} rounds={args.rounds} threads={args.threads} "
-          f"db={os.environ['VEILGATE_DB_DIR']}", file=sys.stderr)
+          f"db={os.environ['PSEUDEX_DB_DIR']}", file=sys.stderr)
     {"stage": _mode_stage, "function": _mode_function, "line": _mode_line}[args.mode](args)
 
 

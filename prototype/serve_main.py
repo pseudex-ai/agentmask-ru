@@ -1,4 +1,4 @@
-"""Entry point for one Veilgate worker process.
+"""Entry point for one Pseudex worker process.
 
 WHY THIS EXISTS INSTEAD OF `uvicorn --workers N`
 
@@ -52,9 +52,9 @@ def _serve_ui(log_level: str) -> None:
     never leases — importing the UI app does not import the engine, so a UI
     process holds no bundle and cannot be a way to obtain one.
     """
-    from veilgate.localui.server import app as ui_app  # noqa: PLC0415 (role-local)
+    from pseudex.localui.server import app as ui_app  # noqa: PLC0415 (role-local)
 
-    port = int(os.environ.get("VEILGATE_UI_PORT", "8081"))
+    port = int(os.environ.get("PSEUDEX_UI_PORT", "8081"))
     # 0.0.0.0 INSIDE the container, and that is not the exposure control —
     # binding loopback here would make the port unreachable through Docker at
     # all, since publishing forwards to the container's own address.
@@ -64,7 +64,7 @@ def _serve_ui(log_level: str) -> None:
     # interface of the customer's Docker host — the internet, on a cloud VM —
     # and this port serves real personal values over plain HTTP. The printed
     # sign-in URL says "localhost" and quietly reinforces the wrong belief.
-    host = os.environ.get("VEILGATE_UI_HOST", "0.0.0.0")
+    host = os.environ.get("PSEUDEX_UI_HOST", "0.0.0.0")
     uvicorn.Server(uvicorn.Config(
         ui_app, host=host, port=port, log_level=log_level
     )).run()
@@ -74,18 +74,18 @@ def main() -> None:
     # Lowercased: the same variable is read by `logging.basicConfig` in
     # service.py, which wants "INFO", while uvicorn rejects anything but
     # lowercase. One variable, two consumers, so normalize at each of them.
-    log_level = os.environ.get("VEILGATE_LOG_LEVEL", "info").lower()
-    if os.environ.get("VEILGATE_ROLE", "engine") == "ui":
+    log_level = os.environ.get("PSEUDEX_LOG_LEVEL", "info").lower()
+    if os.environ.get("PSEUDEX_ROLE", "engine") == "ui":
         _serve_ui(log_level)
         return
     # Imported inside the role, not at module scope: the engine module builds the
     # detector, the audit connection and a licence client at import time, and a
     # UI process has no use for any of them. It also keeps the claim above
     # true — a UI process really does not load the engine.
-    from veilgate.service import app  # noqa: PLC0415 (role-local)
+    from pseudex.service import app  # noqa: PLC0415 (role-local)
 
-    port = int(os.environ.get("VEILGATE_PORT", "8000"))
-    backlog = int(os.environ.get("VEILGATE_BACKLOG", "2048"))
+    port = int(os.environ.get("PSEUDEX_PORT", "8000"))
+    backlog = int(os.environ.get("PSEUDEX_BACKLOG", "2048"))
     sock = _listening_socket(port, backlog)
     uvicorn.Server(uvicorn.Config(app, fd=sock.fileno(), log_level=log_level)).run()
 
