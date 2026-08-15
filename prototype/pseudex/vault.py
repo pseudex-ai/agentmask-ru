@@ -12,12 +12,14 @@ Tokens are format-preserving and checksum-invalid (see _render_token), so the
 model copies them verbatim and they never coincide with a real person's ID.
 """
 
+import functools
 import re
 import secrets
 import string
 import threading
 import time
 
+from pseudex import morph_names
 from pseudex.profiling import stage
 from pseudex.ru_pii import validate_inn, validate_luhn, validate_ogrn, validate_snils
 from pseudex.sqlite_setup import connect as sqlite_connect
@@ -138,6 +140,15 @@ def canonicalize(entity_type: str, value: str) -> str:
         return re.sub(r"\D", "", value)
     if entity_type == "EMAIL":
         return value.strip().lower()
+    if entity_type == "NAME":
+        # THE KEY IS THE PERSON, NOT THE WORDING. Without this, `Иванов Пётр`,
+        # `Иванову Петру` and `Иванова Петра` are three rows, so one client
+        # becomes three people: the agent's memory fills with strangers, the
+        # cross-dialogue stability the landing promises does not hold, and the
+        # protected-value counter multiplies by however many cases the customer
+        # happened to write. Exactly parallel to what the PHONE branch above
+        # already does by collapsing +7/8/no-separators to one signature.
+        return morph_names.to_nominative(value.strip())
     return value.strip()
 
 
@@ -181,6 +192,15 @@ _NUMERIC_TYPES = (
     "PHONE", "CARD", "SNILS", "INN", "PASSPORT",
     "OMS", "ACCOUNT", "DRIVER_LICENSE", "VEHICLE_DOC", "INTL_PASSPORT", "OGRN",
 )
+
+
+def name_key(token: str) -> str:
+    """Case-invariant signature of a personal name: its nominative, lowercased.
+
+    `Руслану Хвостову`, `Руслана Хвостова` and `Руслан Хвостов` all reduce to
+    one key, so a token the model inflected still resolves to the real value.
+    """
+    return morph_names.to_nominative(token).lower()
 
 
 def _digit_signatures(token: str, entity_type: str) -> tuple[str | None, str | None]:
@@ -227,7 +247,52 @@ def _fake_ogrn(length: int) -> str:
     raise RuntimeError("could not generate a checksum-INVALID ОГРН")
 
 
-def _render_token(entity_type: str) -> str:
+@functools.lru_cache(maxsize=1)
+def _first_names_by_gender() -> dict[str, tuple[str, ...]]:
+    """Split the leased first-name pool by gender, ONCE, using morphology.
+
+    Derived rather than shipped as two lists: the pool is leased data and the
+    split is an algorithm, so this keeps the bundle unchanged. Names morphology
+    cannot classify fall back to the -а/-я ending, which is reliable for Russian
+    GIVEN names (the masculine exceptions — Никита, Илья, Фома, Кузьма — are all
+    in the dictionary and never reach the fallback).
+    """
+    buckets: dict[str, list[str]] = {"masc": [], "femn": []}
+    for name in _FAKE_FIRST:
+        gender = morph_names.given_name_gender(name)
+        buckets[gender or ("femn" if name.endswith(("а", "я")) else "masc")].append(name)
+    return {"masc": tuple(buckets["masc"]), "femn": tuple(buckets["femn"])}
+
+
+def _fake_name(gender: str | None) -> str:
+    """A fake full name that AGREES WITH ITSELF and with the real person.
+
+    `Екатерина Цветков` and `Руслан Хвостова` are not cosmetic defects: a model
+    reading a disagreeing name repairs it, and a repaired token no longer
+    matches the vault, so the customer's tool receives a person who does not
+    exist — silently. Agreement is what removes the model's motive to touch it.
+
+    An unknown gender picks one at random rather than defaulting to masculine,
+    so the choice cannot systematically mis-gender the half of the population a
+    default would.
+    """
+    resolved = gender if gender in ("masc", "femn") else secrets.choice(("masc", "femn"))
+    for _ in range(12):
+        first = secrets.choice(_first_names_by_gender()[resolved])
+        last = secrets.choice(_FAKE_LAST)
+        if resolved == "femn":
+            last = morph_names.feminine_surname(last)
+        candidate = f"{first} {last}"
+        if morph_names.survives_round_trip(candidate, resolved):
+            return candidate
+    # Every attempt was unstable, which means the pool has drifted. A name that
+    # cannot be recognised in its own inflected forms would be a token the model
+    # can rewrite into something we never resolve — so refuse rather than mint
+    # one, and let the fail-closed 5xx say so.
+    raise RuntimeError("no fake name survived its own inflection round trip")
+
+
+def _render_token(entity_type: str, gender: str | None = None) -> str:
     # Format-preserving substitutes for the document types. Without these they
     # fall through to REDACTED… — which is NOT the shape the customer's own
     # validator expects, so a masked account number would fail their form check
@@ -273,7 +338,7 @@ def _render_token(entity_type: str) -> str:
     if entity_type == "DATE":
         return f"{secrets.randbelow(28) + 1:02d}.{secrets.randbelow(12) + 1:02d}.{secrets.randbelow(40) + 1960}"
     if entity_type == "NAME":
-        return f"{secrets.choice(_FAKE_FIRST)} {secrets.choice(_FAKE_LAST)}"
+        return _fake_name(gender)
     if entity_type == "LOC":
         # Mostly streets, because that is where the combinations are; a bare city
         # occasionally, because a bare city is what some LOC spans actually are.
@@ -343,6 +408,7 @@ class Vault:
             "PRIMARY KEY (customer, canonical))"
         )
         self._migrate_digit_signatures()
+        self._migrate_name_keys()
         self._migrate_original_form()
         self._migrate_first_seen()
         # Every lookup on the response leg is an indexed point query, so
@@ -352,8 +418,36 @@ class Vault:
             "CREATE INDEX IF NOT EXISTS idx_tokens_token ON tokens (customer, token)",
             "CREATE INDEX IF NOT EXISTS idx_tokens_digits ON tokens (customer, digits)",
             "CREATE INDEX IF NOT EXISTS idx_tokens_digits10 ON tokens (customer, digits10)",
+            "CREATE INDEX IF NOT EXISTS idx_tokens_namekey ON tokens (customer, name_key)",
         ):
             self._conn.execute(statement)
+        self._conn.commit()
+
+    def _migrate_name_keys(self) -> None:
+        """Add the case-invariant signature of a NAME token.
+
+        The exact counterpart of `digits` for phone numbers, and it exists for
+        the same reason. A phone the model reformatted (+7 -> 8, separators
+        dropped) no longer matches its minted shape, so it is resolved by digit
+        signature instead; a NAME the model INFLECTED (`Руслану Хвостову`) no
+        longer matches either, and until now nothing caught it — the fake went
+        straight into the customer's tool.
+
+        Backfilled for existing rows so a vault created before this migration
+        gains the protection without being rebuilt.
+        """
+        columns = {row[1] for row in self._conn.execute("PRAGMA table_info(tokens)")}
+        if "name_key" in columns:
+            return
+        self._conn.execute("ALTER TABLE tokens ADD COLUMN name_key TEXT")
+        rows = self._conn.execute(
+            "SELECT customer, canonical, token FROM tokens WHERE entity_type='NAME'"
+        ).fetchall()
+        for customer, canonical, token in rows:
+            self._conn.execute(
+                "UPDATE tokens SET name_key=? WHERE customer=? AND canonical=?",
+                (name_key(token), customer, canonical),
+            )
         self._conn.commit()
 
     def _migrate_original_form(self) -> None:
@@ -396,7 +490,7 @@ class Vault:
                 (digits, digits10, customer, canonical),
             )
 
-    def _unique_token(self, entity_type: str) -> str:
+    def _unique_token(self, entity_type: str, gender: str | None = None) -> str:
         """Mint a token not already used for this customer.
 
         BOUNDED on purpose. This used to loop until it found a free token, which
@@ -406,7 +500,7 @@ class Vault:
         loud failure is recoverable, a hung request is not, and in a fail-closed
         gateway the 5xx is the correct outcome."""
         for _ in range(_TOKEN_MINT_ATTEMPTS):
-            token = _render_token(entity_type)
+            token = _render_token(entity_type, gender)
             if self._conn.execute(
                 "SELECT 1 FROM tokens WHERE customer=? AND token=?",
                 (self._customer, token),
@@ -431,7 +525,11 @@ class Vault:
             ).fetchone()
             if row is not None:
                 return row[0]
-            token = self._unique_token(entity_type)
+            # The REAL person's gender decides the fake's, so the substitute
+            # agrees with the sentence around it and the model leaves it alone.
+            gender = (morph_names.detect_gender(value)
+                      if entity_type == "NAME" else None)
+            token = self._unique_token(entity_type, gender)
             digits, digits10 = _digit_signatures(token, entity_type)
             # `value` (not `canonical`) — the surface form the user actually
             # typed, which is what the tool must receive. First writer wins: the
@@ -440,9 +538,10 @@ class Vault:
             self._conn.execute(
                 "INSERT INTO tokens "
                 "(customer, canonical, entity_type, token, digits, digits10, original, "
-                "first_seen) VALUES (?,?,?,?,?,?,?,?)",
+                "first_seen, name_key) VALUES (?,?,?,?,?,?,?,?,?)",
                 (self._customer, canonical, entity_type, token, digits, digits10, value,
-                 time.time()),
+                 time.time(),
+                 name_key(token) if entity_type == "NAME" else None),
             )
             self._conn.commit()
             return token
@@ -465,11 +564,22 @@ class Vault:
         return row[0] if row is not None else None
 
     def detokenize(self, token: str) -> str | None:
-        """The value as the user originally wrote it — see _migrate_original_form
-        for why this is the surface form and not the canonical one."""
+        """The real value, in the form a tool should receive.
+
+        For NAME that is the CANONICAL (nominative) form, not the surface one.
+        A customer writing «позвоните Иванову Петру Сергеевичу» named the person
+        in the dative because the sentence required it — the person's name is
+        still «Иванов Пётр Сергеевич», and that is what belongs in a CRM field.
+        Returning the first-seen surface form put a declined name into the
+        customer's database.
+
+        Every other type keeps the surface form the user typed. Phones already
+        behaved this way (the canonical +7… is returned), so names now follow
+        the same rule rather than being the exception.
+        """
         with self._lock:
             row = self._conn.execute(
-                "SELECT original FROM tokens WHERE customer=? AND token=?",
+                "SELECT CASE WHEN entity_type='NAME' THEN canonical ELSE original END FROM tokens WHERE customer=? AND token=?",
                 (self._customer, token),
             ).fetchone()
         return row[0] if row is not None else None
@@ -512,7 +622,7 @@ class Vault:
         one path that must not be discouraged from being audited."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT original, entity_type FROM tokens WHERE customer=? AND token=?",
+                "SELECT CASE WHEN entity_type='NAME' THEN canonical ELSE original END, entity_type FROM tokens WHERE customer=? AND token=?",
                 (self._customer, token),
             ).fetchone()
         return (row[0], row[1]) if row is not None else (None, "")
@@ -545,6 +655,17 @@ class Vault:
         resolved.update(self._lookup("digits", signatures))  # exact wins over tail
         return resolved
 
+    def resolve_name_keys(self, keys: set[str]) -> dict[str, str]:
+        """Resolve NAME tokens the model INFLECTED, by case-invariant key.
+
+        The second line of defence, and the reason a fake no longer reaches a
+        customer's tool when the model writes `Руслану Хвостову` instead of the
+        nominative it was handed. Phones have had this since the digit-signature
+        reindex; names went without it, which is precisely where the silent
+        failure lived.
+        """
+        return self._lookup("name_key", keys)
+
     def _lookup(self, column: str, keys: set[str]) -> dict[str, str]:
         """Point-query `keys` against an indexed column. `column` is chosen from
         this module's own literals, never from caller input, so interpolating it
@@ -562,7 +683,7 @@ class Vault:
             placeholders = ",".join("?" * len(chunk))
             with stage(stage_name), self._lock:
                 rows = self._conn.execute(
-                    f"SELECT {column}, original FROM tokens "
+                    f"SELECT {column}, CASE WHEN entity_type='NAME' THEN canonical ELSE original END FROM tokens "
                     f"WHERE customer=? AND {column} IN ({placeholders})",
                     (self._customer, *chunk),
                 ).fetchall()

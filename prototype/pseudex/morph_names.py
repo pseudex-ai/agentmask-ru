@@ -1,0 +1,474 @@
+"""Russian personal-name morphology: gender, case, nominative form, inflection.
+
+WHY THIS EXISTS. A fake that disagrees with itself — `Екатерина Цветков`,
+`Руслан Хвостова` for a woman — makes the language model REPAIR it, and a
+repaired token no longer matches the vault, so the customer's tool receives a
+person who does not exist. Persona runs hit this in roughly one dialogue in ten
+and it fails silently. The cure is upstream of detokenization: give the model
+nothing to fix.
+
+It also gives the vault a case-invariant key. Without one, `Иванов Пётр`,
+`Иванову Петру` and `Иванова Петра` are three different people, the agent's
+memory fills with strangers, and the protected-value counter multiplies.
+
+THE ONE RULE THAT MATTERS: never trust `parse(word)[0]`. pymorphy3's first
+reading for a name is routinely the wrong part of speech —
+
+    Иванова          -> lemma "иванов",  masc, GENITIVE   (it is a woman, nominative)
+    Черных           -> lemma "чёрный"   (the adjective "black")
+    Седых            -> lemma "седой"    (the adjective "grey-haired")
+    Салтыков-Щедрин  -> lemma "салтык-щедрина"
+
+Filtering to parses tagged `Surn`/`Name`/`Patr` fixes all but the last class.
+This module never looks at an unfiltered first parse.
+
+This is ALGORITHM, so it ships in the engine. The name pools it inflects are
+tuned data and stay in the leased bundle — see `docs/tz-license-packaging.md`.
+"""
+
+import pseudex._morph_compat  # noqa: F401  (must precede any pymorphy/natasha import)
+
+import functools
+import re
+
+import pymorphy3
+
+_MORPH = pymorphy3.MorphAnalyzer()
+
+# The grammemes that mark a parse as part of a personal name. A parse without
+# one of these is some other word that happens to be spelled the same, which is
+# the entire failure mode described above.
+_NAME_TAGS = frozenset({"Surn", "Name", "Patr"})
+
+# Patronymic suffixes, longest first so -овна is not matched as -вна.
+_PATR_FEMN = ("овна", "евна", "ична", "инична",
+              # Turkic patronymics: pymorphy3 does not tag these `Patr` at all
+              # (`кызы` is not recognised as a word), so the suffix list is the
+              # only signal we have for them.
+              "кызы", "гызы", "кизи", "кзы")
+_PATR_MASC = ("ович", "евич", "ич", "оглы", "улы", "уулу", "углы", "угли")
+
+# Feminine surnames end in these; the masculine counterpart drops the vowel.
+# Used only when morphology gives no gender at all, and only as a hint.
+_SURN_FEMN = ("ова", "ева", "ина", "ына", "ская", "цкая", "ая", "яя")
+
+_CASES = ("nomn", "gent", "datv", "accs", "ablt", "loct")
+
+# Masculine given names ending in -а/-я. The ending is otherwise a reliable
+# feminine signal for Russian given names, and these are the exceptions that
+# would flip a man to a woman. pymorphy3 knows them, so this list only guards
+# the fallback path — but the fallback is exactly where a wrong answer becomes
+# a wrong gender for a real customer.
+_MASC_NAMES_IN_A = frozenset({
+    "никита", "лука", "фома", "кузьма", "савва", "данила", "гаврила", "илья",
+    "миша", "юра", "костя", "дима", "серёжа", "сережа", "ваня", "петя", "коля",
+})
+
+# The regular possessive-surname paradigm, applied when pymorphy3 has no `Surn`
+# reading for a word. It is not a guess: -ов/-ев/-ин/-ын surnames decline as a
+# closed and exceptionless system, and the dictionary simply does not contain
+# every surname in Russia. Without this, `Хвостов` reads as the genitive plural
+# of `хвост` and never inflects, so the text says `Позвоните Руслана Хвостов` —
+# the exact disagreement that makes a model rewrite the name.
+_SUFFIX_ENDINGS = {
+    "masc": {"nomn": "", "gent": "а", "datv": "у", "accs": "а", "ablt": "ым", "loct": "е"},
+    "femn": {"nomn": "а", "gent": "ой", "datv": "ой", "accs": "у", "ablt": "ой", "loct": "ой"},
+}
+_POSSESSIVE_SUFFIXES = ("ов", "ев", "ёв", "ин", "ын")
+
+# Adjectival surnames (Достоевский / Достоевская) follow the adjective
+# paradigm, which is equally regular and equally likely to be missing.
+# Adjectival surnames come in TWO paradigms and conflating them is wrong in the
+# instrumental: Достоевский -> Достоевск+им, but Яровой -> Яров+ым. Only the
+# ending is ever stripped — never the `ск`/`цк`, which belongs to the stem, or
+# `Достоевский` turns into `Достоевая`.
+_ADJ_SOFT = {   # -ский / -цкий / -ний
+    "masc": {"nomn": "ий", "gent": "ого", "datv": "ому", "accs": "ого", "ablt": "им", "loct": "ом"},
+    "femn": {"nomn": "ая", "gent": "ой", "datv": "ой", "accs": "ую", "ablt": "ой", "loct": "ой"},
+}
+_ADJ_HARD = {   # -ой (stressed: Яровой, Толстой) / -ый (Белый)
+    "masc": {"nomn": "ый", "gent": "ого", "datv": "ому", "accs": "ого", "ablt": "ым", "loct": "ом"},
+    "femn": {"nomn": "ая", "gent": "ой", "datv": "ой", "accs": "ую", "ablt": "ой", "loct": "ой"},
+}
+# (tail to strip, paradigm). Longest first so `ский` is not clipped as `ий`.
+_ADJECTIVAL_TAILS = (
+    ("ский", _ADJ_SOFT), ("ская", _ADJ_SOFT),
+    ("цкий", _ADJ_SOFT), ("цкая", _ADJ_SOFT),
+    ("ой", _ADJ_HARD), ("ый", _ADJ_HARD), ("ая", _ADJ_HARD), ("ий", _ADJ_SOFT),
+)
+
+
+def _paradigm_inflect(word: str, case: str, gender: str) -> str | None:
+    """Inflect by suffix rule. Returns None when no rule applies."""
+    lowered = word.lower()
+    stem: str | None = None
+
+    for suffix in _POSSESSIVE_SUFFIXES:
+        if lowered.endswith(suffix):
+            stem = word
+            break
+        if gender == "femn" and lowered.endswith(suffix + "а"):
+            stem = word[:-1]
+            break
+    if stem is not None:
+        return stem + _SUFFIX_ENDINGS[gender][case]
+
+    for tail, paradigm in _ADJECTIVAL_TAILS:
+        if not lowered.endswith(tail):
+            continue
+        # `ский`/`ская` share the `ск` stem, so strip only the two-letter
+        # adjective ending and leave `ск` where it belongs.
+        strip = 2 if len(tail) == 4 else len(tail)
+        if len(word) - strip < 3:
+            # Too short to be a surname stem; a common word that merely ends
+            # in `-ой` should not be inflected as one.
+            continue
+        # Stress is not recoverable from spelling — `Яровой` and `Белый` are the
+        # same paradigm with different stress — so asking for the masculine
+        # nominative of a word that already IS one would turn Яровой into
+        # Яровый. Return it untouched instead of guessing.
+        if case == "nomn" and gender == "masc" and tail in ("ой", "ый", "ий"):
+            return word
+        return word[:-strip] + paradigm[gender][case]
+    return None
+
+
+def _name_parses(word: str) -> list:
+    """Parses that pymorphy3 itself considers part of a personal name."""
+    return [p for p in _MORPH.parse(word) if _NAME_TAGS & set(p.tag.grammemes)]
+
+
+@functools.lru_cache(maxsize=8192)
+def _is_invariant(word: str, gender: str | None = None,
+                  case: str | None = None) -> bool:
+    """Whether the word refuses to decline — Дюма, Черных, Шевченко, Седых.
+
+    Read off the morphology rather than a list: an indeclinable surname parses
+    into every case with the SAME form, so inflecting it and getting the input
+    back is the definition, not a heuristic. A list would be permanently
+    incomplete — foreign surnames arrive faster than anyone maintains a file.
+    """
+    parses = _name_parses(word)
+    if case is not None:
+        # A word that HAS a reading in the span's case is being used in that
+        # case, so it declines. Without this, `Марку` inside `Марку Яровому`
+        # keeps the indeclinable-surname reading pymorphy3 offers first and is
+        # never normalised back to `Марк`.
+        in_case = [p for p in parses if p.tag.case == case]
+        if in_case and case != "nomn":
+            return False
+    if gender is not None:
+        matching = [p for p in parses if p.tag.gender in (gender, None)]
+        # A FEMININE surname ending in a consonant — Цой, Кисель, Мороз, Ким —
+        # simply has no feminine reading, and Russian does not decline it. The
+        # dangerous default is to fall through to the masculine paradigm, which
+        # turns Ольга Кисель into Ольге Киселю. Absence of a feminine reading is
+        # itself the answer.
+        if gender == "femn" and parses and not matching:
+            return True
+        if matching:
+            parses = matching
+    # `Fixd` is OpenCorpora's own marker for a word that does not decline, and
+    # it is exact where a heuristic is not: Дюма, Гюго, Живаго, Шевченко,
+    # Пикадилли and the FEMININE readings of Ким/Мороз/Ковальчук/Черных all
+    # carry it, and Иванов does not. Checking the tag beats inflecting and
+    # comparing, which cannot tell "does not decline" from "declines to itself".
+    if any("Fixd" in parse.tag.grammemes for parse in parses):
+        return True
+    if not parses:
+        # No name reading. If the word still ends like a regular Russian
+        # surname, the suffix paradigm applies and it is NOT invariant — that
+        # is the `Хвостов` case, absent from the dictionary but perfectly
+        # regular. Otherwise treating it as invariant is the safe default:
+        # leaving a surname alone is a cosmetic loss, while inflecting it by a
+        # guessed paradigm produces a word that does not exist (Седых -> седой).
+        for gender in ("masc", "femn"):
+            if _paradigm_inflect(word, "datv", gender) is not None:
+                return False
+        return True
+    best = parses[0]
+    for case in _CASES:
+        inflected = best.inflect({case})
+        if inflected is not None and inflected.word.lower() != word.lower():
+            return False
+    return True
+
+
+def _gender_from_patronymic(word: str) -> str | None:
+    lowered = word.lower()
+    if lowered.endswith(_PATR_FEMN):
+        return "femn"
+    if lowered.endswith(_PATR_MASC):
+        return "masc"
+    return None
+
+
+def detect_gender(surface: str) -> str | None:
+    """Gender of a person named by this span, or None if genuinely unknown.
+
+    Evidence in order of strength, and the order is not arbitrary:
+
+    1. THE PATRONYMIC. `-овна`/`-ович` is a closed, regular system with no
+       ambiguity — pymorphy3 scores these 1.00 while it scores `Иванова`
+       0.48/0.22 between two readings. If a patronymic is present, nothing else
+       gets a vote.
+    2. Morphology of the remaining parts, but only from name-tagged parses.
+    3. The surname's ending, as a last resort.
+
+    Returning None is a real answer: `Дюма Саша` has no reliable gender, and
+    guessing produces the disagreement this module exists to prevent.
+    """
+    parts = surface.split()
+    for part in parts:
+        gender = _gender_from_patronymic(part)
+        if gender is not None:
+            return gender
+
+    # A GIVEN NAME outvotes a surname, and by a wide margin. Given names encode
+    # gender directly and almost without exception; surnames are structurally
+    # ambiguous, because `-ова` is both a feminine nominative and a masculine
+    # genitive, and pymorphy3's prior favours the genitive — in ordinary text
+    # "Соколова" is usually "belonging to Sokolov". Inside a span we have
+    # already decided names a person, that prior is exactly backwards.
+    #
+    # Without this weighting `Любовь Соколова` comes out masculine, on the
+    # strength of a genitive reading of the surname over a correct reading of
+    # one of the most unambiguously feminine names in Russian.
+    votes: dict[str, float] = {"masc": 0.0, "femn": 0.0}
+    for part in parts:
+        parses = _name_parses(part)
+        if not parses:
+            # A word the dictionary does not carry still votes if it is shaped
+            # like a given name. Russian female given names end in -а/-я, and
+            # the masculine exceptions are a closed list. Without this, a fake
+            # first name absent from OpenCorpora — София is one, and it is in
+            # our own pool — leaves the surname to decide, and a surname in
+            # `-ева` reads as a masculine genitive.
+            lowered = part.lower()
+            if lowered in _MASC_NAMES_IN_A:
+                votes["masc"] += 3.0
+            elif lowered.endswith(("а", "я")) and len(lowered) > 3:
+                votes["femn"] += 2.0
+            continue
+        for parse in parses:
+            if parse.tag.gender not in ("masc", "femn"):
+                continue
+            weight = 3.0 if "Name" in parse.tag.grammemes else 1.0
+            votes[parse.tag.gender] += parse.score * weight
+    if votes["masc"] > votes["femn"] * 1.5:
+        return "masc"
+    if votes["femn"] > votes["masc"] * 1.5:
+        return "femn"
+
+    for part in parts:
+        if part.lower().endswith(_SURN_FEMN):
+            return "femn"
+    # Last resort, and only for a GIVEN name: Russian female given names end in
+    # -а/-я, with a closed set of masculine exceptions listed above. This is
+    # what rescues names the dictionary does not carry — София among them, which
+    # is in our own fake pool.
+    for part in parts:
+        lowered = part.lower()
+        if lowered in _MASC_NAMES_IN_A:
+            return "masc"
+        if lowered.endswith(("а", "я")) and len(lowered) > 3:
+            return "femn"
+    return None
+
+
+def detect_case(surface: str) -> str | None:
+    """The grammatical case this span is written in, or None if undetermined.
+
+    Decided by agreement across parts: `Иванову Петру Сергеевичу` is dative in
+    all three, which is far stronger evidence than any single word, since
+    individual name forms are famously ambiguous (`Иванова` is both masculine
+    genitive and feminine nominative).
+    """
+    tally: dict[str, float] = {}
+    for part in surface.split():
+        for parse in _name_parses(part):
+            if parse.tag.case:
+                tally[parse.tag.case] = tally.get(parse.tag.case, 0.0) + parse.score
+    if not tally:
+        return None
+    return max(tally, key=lambda case: tally[case])
+
+
+def to_nominative(surface: str) -> str:
+    """The nominative form — the vault's case-invariant key for a person.
+
+    Exactly parallel to what `canonicalize` already does for phone numbers:
+    +7…/8…/no-separators collapse to one key by digit signature, and now
+    Иванов/Иванову/Ивановым collapse to one key by lemma. The vault gets one
+    row per PERSON instead of one per grammatical form.
+
+    Capitalisation of the input is preserved part by part, because the caller
+    may show this to a human.
+    """
+    gender = detect_gender(surface)
+    # The case of the WHOLE span, decided by agreement across its parts, then
+    # imposed on each part. Analysing a word alone loses the one fact that
+    # disambiguates it: pymorphy3 reads `Марку` as an indeclinable surname and
+    # `Яровым` as the surname `Яров`, both perfectly legal in isolation and both
+    # wrong inside `Марку Яровому`. Parts of a name agree, so the agreement is
+    # evidence — and without using it, canonicalisation is unstable and one
+    # person splits into several vault rows again.
+    case = detect_case(surface)
+    out: list[str] = []
+    for part in surface.split():
+        out.append(_part_to_nominative(part, gender, case))
+    return " ".join(out)
+
+
+def _part_to_nominative(part: str, gender: str | None,
+                        case: str | None = None) -> str:
+    if _is_invariant(part, gender, case):
+        return part
+    parses = _name_parses(part)
+    if not parses:
+        return part
+    # Prefer the parse that agrees with BOTH facts established for the whole
+    # span. Gender disambiguates `Иванова` between "of Ivanov" and "Ivanova";
+    # case disambiguates `Марку` between a dative given name and a nominative
+    # foreign surname. Case is the stronger of the two here, so it is tried
+    # first and gender narrows what remains.
+    chosen = _best_parse(parses, gender, case)
+    nominative = chosen.inflect({"nomn"})
+    if nominative is None:
+        return part
+    return _match_capitalisation(part, nominative.word)
+
+
+def inflect_person(nominative: str, case: str, gender: str | None) -> str:
+    """Put a nominative full name into `case`, keeping every part agreeing.
+
+    This is the half that removes the model's motive to rewrite: text reads
+    `Позвоните Руслану Хвостову`, not `Позвоните Руслан Хвостов`. A part that
+    will not inflect is left alone rather than mangled — an untouched surname
+    still reads as Russian, an invented paradigm does not.
+    """
+    if case == "nomn":
+        return nominative
+    out: list[str] = []
+    for part in nominative.split():
+        out.append(_part_inflected(part, case, gender))
+    return " ".join(out)
+
+
+def _best_parse(parses: list, gender: str | None, case: str | None):
+    """The reading that agrees with the span, falling back as evidence runs out."""
+    if case is not None:
+        both = [p for p in parses if p.tag.case == case
+                and (gender is None or p.tag.gender in (gender, None))]
+        if both:
+            return both[0]
+        by_case = [p for p in parses if p.tag.case == case]
+        if by_case:
+            return by_case[0]
+    if gender is not None:
+        by_gender = [p for p in parses if p.tag.gender == gender]
+        if by_gender:
+            return by_gender[0]
+    return parses[0]
+
+
+def _part_inflected(part: str, case: str, gender: str | None) -> str:
+    if _is_invariant(part, gender):
+        return part
+    parses = _name_parses(part)
+    if not parses:
+        ruled = _paradigm_inflect(part, case, gender or "masc")
+        return ruled if ruled is not None else part
+    chosen = parses[0]
+    if gender is not None:
+        for parse in parses:
+            if parse.tag.gender == gender:
+                chosen = parse
+                break
+    inflected = chosen.inflect({case})
+    if inflected is None:
+        ruled = _paradigm_inflect(part, case, gender or "masc")
+        return ruled if ruled is not None else part
+    return _match_capitalisation(part, inflected.word)
+
+
+def _match_capitalisation(source: str, produced: str) -> str:
+    """pymorphy3 returns lowercase; names are written capitalised.
+
+    Hyphenated surnames need each element capitalised (Салтыков-Щедрин), which
+    `str.capitalize()` gets wrong on its own.
+    """
+    if not source or not produced:
+        return produced
+    if source.isupper():
+        return produced.upper()
+    if source[0].isupper():
+        return "-".join(piece.capitalize() for piece in produced.split("-"))
+    return produced
+
+
+_WORD = re.compile(r"[А-ЯЁа-яё][А-ЯЁа-яё-]+")
+
+
+def looks_like_person(surface: str) -> bool:
+    """Whether this span could be a personal name at all.
+
+    Used by the detokenizer to decide what is worth normalising, so it is
+    deliberately cheap and permissive: a false positive costs one lookup that
+    finds nothing, a false negative costs a fake value delivered to a tool.
+    """
+    parts = surface.split()
+    if not (1 <= len(parts) <= 4):
+        return False
+    return all(_WORD.fullmatch(part) for part in parts)
+
+
+def given_name_gender(name: str) -> str | None:
+    """Gender of a GIVEN name alone, from a `Name`-tagged parse only.
+
+    Separate from `detect_gender` because that one reasons about a whole span
+    and would happily read a lone surname; here the caller knows it is holding
+    a first name and wants no other evidence considered.
+    """
+    for parse in _MORPH.parse(name):
+        if "Name" in parse.tag.grammemes and parse.tag.gender in ("masc", "femn"):
+            return parse.tag.gender
+    return None
+
+
+def feminine_surname(masculine: str) -> str:
+    """The feminine nominative of a masculine surname — Лебедев -> Лебедева.
+
+    Derived instead of stored so the leased name pool stays a single list of
+    masculine forms: a second list would double what has to be tuned and could
+    drift out of correspondence with the first.
+    """
+    if _is_invariant(masculine, "masc"):
+        return masculine
+    ruled = _paradigm_inflect(masculine, "nomn", "femn")
+    if ruled is not None:
+        return ruled
+    for parse in _name_parses(masculine):
+        feminine = parse.inflect({"femn", "nomn"})
+        if feminine is not None:
+            return _match_capitalisation(masculine, feminine.word)
+    return masculine
+
+
+def survives_round_trip(name: str, gender: str) -> bool:
+    """Whether every case of this name normalises back to the name itself.
+
+    A token is only useful if we can still recognise it after the model has
+    inflected it. Some surnames break that: pymorphy3 has no paradigm linking
+    `Яровым` back to `Яровой`, so a name built on it would be minted, inflected
+    into a sentence, and then fail to resolve — delivering a fake to a tool,
+    the exact failure this whole module exists to prevent.
+
+    Checking is cheap and self-healing: it holds whatever the leased pool
+    contains today to the standard the code needs, instead of assuming the two
+    stay in step.
+    """
+    for case in _CASES:
+        if to_nominative(inflect_person(name, case, gender)) != name:
+            return False
+    return True
