@@ -313,6 +313,26 @@ def run_checks(client) -> None:
     check("an individual needs no ИНН to be billable",
           person.is_billable and not company.__class__(kind="company").is_billable)
 
+    # The instance limit is the ONE plan boundary we enforce, and it lives in
+    # two places: the storefront's plans and the licensing server's own table.
+    # They must agree, or a customer buys four instances and is refused the
+    # second — or buys one and runs twelve.
+    import subprocess, json as _json
+    proto = str(_HERE.parent / "prototype")
+    limits = _json.loads(subprocess.run(
+        [proto + "/.venv/bin/python", "-c",
+         "import json; from licensing.store import LicenseStore as S; "
+         "print(json.dumps(S.PLAN_INSTANCES))"],
+        cwd=proto, capture_output=True, text=True).stdout or "{}")
+    from billing.models import Plan as PlanModel
+    mismatched = [
+        p.code for p in PlanModel.objects.all()
+        if limits.get(p.code) is not None and limits[p.code] != p.max_instances
+    ]
+    check("the licensing server and the storefront agree on instance limits",
+          bool(limits) and not mismatched,
+          f"licensing={limits} mismatched={mismatched or 'none'}")
+
     # A second organisation must not be able to read the first one's invoices.
     other_user = User.objects.create_user(email="stranger@example.com")
     other_org = Organization.objects.create(display_name="Другая")

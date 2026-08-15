@@ -172,6 +172,23 @@ async def lease(request: Request) -> JSONResponse:
 
     instance_id = str(body.get("instance_id", ""))
     process_id = str(body.get("process_id", ""))
+
+    # THE PLAN BOUNDARY, and the only one that can exist. It is decided here, on
+    # our side, from our own record of who leased recently — not from anything
+    # the container tells us about itself. Values and request rates are produced
+    # on the customer's hardware and can say whatever they are made to say; the
+    # number of containers asking us for leases cannot.
+    #
+    # 409, not 402/403: the subscription is fine and the key is valid. This is
+    # "you are running more containers than you bought", which is a different
+    # sentence and must not be read by the client as a payment failure — those
+    # bypass grace and stop everything.
+    allowed, why_not = STORE.may_lease(record.org_id, record.plan, instance_id)
+    if not allowed:
+        _log.warning("lease refused for org=%s instance=%s: %s",
+                     record.org_id, instance_id, why_not)
+        return JSONResponse({"error": "instance_limit", "detail": why_not},
+                            status_code=409)
     # Counters ride in on the renewal request. Recorded BEFORE the new lease is
     # minted so a client that dies mid-renewal has still been accounted for.
     _store_usage(instance_id, record.org_id, body.get("usage"))

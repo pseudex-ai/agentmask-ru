@@ -197,6 +197,52 @@ class LicenseStore:
             )
             self._conn.commit()
 
+    # How many containers each plan may run at once. THE ONE THING WE ENFORCE,
+    # and the only thing that can be enforced: it is decided here, on our side,
+    # when a lease is requested. Everything the container reports about itself —
+    # values, requests, rate — is produced on the customer's hardware and can
+    # say anything, so none of it can be a plan boundary.
+    #
+    # Instances are also the honest proxy for scale: one container handles a
+    # given load, and more traffic needs more of them.
+    PLAN_INSTANCES = {"start": 1, "work": 4, "industrial": 12, "enterprise": 100}
+    # Mirrors billing/management/commands/seed_plans.py. Two places, because
+    # the licensing server must not depend on the storefront — but they are
+    # checked against each other by test_storefront.py.
+    _INSTANCE_GRACE_SECONDS = 36 * 3600
+
+    def instances_allowed(self, plan: str) -> int:
+        return self.PLAN_INSTANCES.get(plan, 1)
+
+    def may_lease(self, org_id: str, plan: str, instance_id: str) -> tuple[bool, str]:
+        """Whether this instance may take a lease under the org's plan.
+
+        Counts instances that leased RECENTLY, not ever. A container that was
+        replaced — redeploy, node move, scale-down — would otherwise occupy a
+        slot forever, and the customer would hit their limit without running
+        anything extra. The window is longer than the 24 h lease so a slow
+        renewal never looks like a new machine.
+
+        The instance asking is always allowed if it already holds a slot, so a
+        renewal can never be refused by this check — only a genuinely NEW
+        container beyond the plan can.
+        """
+        cutoff = time.time() - self._INSTANCE_GRACE_SECONDS
+        rows = self._conn.execute(
+            "SELECT DISTINCT instance_id FROM leases WHERE org_id=? AND issued_at>=?",
+            (org_id, cutoff),
+        ).fetchall()
+        active = {row[0] for row in rows}
+        if instance_id in active:
+            return True, ""
+        allowed = self.instances_allowed(plan)
+        if len(active) < allowed:
+            return True, ""
+        return False, (
+            f"тариф допускает {allowed} инстанс(ов), сейчас активно {len(active)}. "
+            f"Остановите лишний контейнер или перейдите на больший тариф."
+        )
+
     def usage_totals(self, org_id: str) -> dict[str, object]:
         """Billing view: the org's consumption, summed across its INSTANCES.
 

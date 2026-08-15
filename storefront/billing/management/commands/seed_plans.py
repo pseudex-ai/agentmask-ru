@@ -35,29 +35,24 @@ from billing.models import Plan
 # (Диадок: 11.80 -> 7.02 ₽/документ across its ladder): the customer who grows
 # gets a better unit price, and the ladder still pays to climb.
 PLANS = [
-    # code, title, ₽/мес, ориентир по значениям, RPM, инстансов, ключей, порядок
+    # code, title, ₽/мес, ориентир по значениям, RPM, ИНСТАНСОВ, ключей, порядок
     #
-    # BILLED ON TIME, NOT ON VOLUME — and that is the whole design, not a
-    # simplification. The lease is the one meter we own: the container must call
-    # us every 24 hours or stop, and we count those calls on our side. Every
-    # other number — values, requests, entities — is produced inside the
-    # customer's container, on their hardware, under their root, and can be
-    # made to say anything.
+    # THE TIER IS THE INSTANCE COUNT, and it is the only boundary decided on OUR
+    # side: the licensing server counts which instance ids leased recently and
+    # refuses a new one beyond the plan. Nothing the container reports about
+    # itself can be a boundary, because it runs on the customer's hardware.
     #
-    # So the money comes from the subscription, which cannot be forged, and the
-    # value count becomes what it is genuinely good at: telling the customer and
-    # us whether the plan they chose still fits. Under-declaring is pointless
-    # when nothing is charged per unit, and a plan that no longer matches shows
-    # up in the reported numbers as a conversation rather than a fight.
-    #
-    # `included_values` is therefore a SIZING GUIDE, not a hard limit. Crossing
-    # it does not generate a charge; it puts an upgrade suggestion in the cabinet.
+    # Known and accepted: a customer can put one container behind their own
+    # proxy and route everything through it. That is not fixable in software
+    # running inside someone else's perimeter — no on-prem product solves it,
+    # and the ones that pretend to are enforcing by contract. We take the simple
+    # mechanism that works for the honest majority instead of building a
+    # complicated one that is bypassed the same way.
     ("start", "Старт", Decimal("990"), 10_000, 300, 1, 2, 0),
-    ("work", "Рабочий", Decimal("4900"), 100_000, 1_500, 4, 4, 1),
-    ("industrial", "Промышленный", Decimal("19900"), 1_000_000, 6_000, 12, 10, 2),
+    ("work", "Рабочий", Decimal("3900"), 100_000, 1_500, 4, 4, 1),
+    ("industrial", "Промышленный", Decimal("11900"), 1_000_000, 6_000, 12, 10, 2),
     ("enterprise", "Enterprise", Decimal("0"), 100_000_000, 20_000, 100, 50, 3),
 ]
-
 class Command(BaseCommand):
     help = "Create or update the public plans"
 
