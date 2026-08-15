@@ -20,11 +20,25 @@ from billing.models import Plan
 #
 # The overage rate is unchanged: it is the number that scales with real cost,
 # and it was not the thing making the entry unaffordable.
+# code, title, ₽/мес, включено, ₽/1000 сверх, инстансов, ключей, порядок
+#
+# THE OVERAGE RATE IS PER-TIER, and that is the fix for a real arithmetic bug.
+# It was a single 0.40 ₽ inherited from the mock while the tier prices moved
+# under it, which made buying volume through overage 50–242× cheaper than
+# buying the same volume inside a tier: a Старт customer at 3M requests paid
+# 4 088 ₽ instead of 29 900 ₽ on Масштаб. Nobody would ever upgrade and revenue
+# capped near the entry price.
+#
+# Each rate is ~80% of that tier's own included rate, so overage is a mild
+# discount for going over — never a cheaper route than the tier above. And it
+# DECLINES with volume, which is what every metered Russian product does
+# (Диадок: 11.80 -> 7.02 ₽/документ across its ladder): the customer who grows
+# gets a better unit price, and the ladder still pays to climb.
 PLANS = [
-    ("start", "Старт", Decimal("2900"), 30_000, 1, 2, 0),
-    ("prod", "Прод", Decimal("9900"), 300_000, 4, 4, 1),
-    ("scale", "Масштаб", Decimal("29900"), 1_500_000, 12, 10, 2),
-    ("enterprise", "Enterprise", Decimal("0"), 10_000_000, 100, 50, 3),
+    ("start", "Старт", Decimal("2900"), 30_000, Decimal("77"), 1, 2, 0),
+    ("prod", "Прод", Decimal("9900"), 300_000, Decimal("26"), 4, 4, 1),
+    ("scale", "Масштаб", Decimal("29900"), 1_500_000, Decimal("16"), 12, 10, 2),
+    ("enterprise", "Enterprise", Decimal("0"), 10_000_000, Decimal("10"), 100, 50, 3),
 ]
 
 
@@ -32,12 +46,12 @@ class Command(BaseCommand):
     help = "Create or update the public plans"
 
     def handle(self, *args, **options) -> None:
-        for code, title, price, included, instances, keys, order in PLANS:
+        for code, title, price, included, overage, instances, keys, order in PLANS:
             Plan.objects.update_or_create(code=code, defaults={
                 "title": title,
                 "monthly_price": price,
                 "included_requests": included,
-                "overage_per_1k": Decimal("0.40"),
+                "overage_per_1k": overage,
                 "max_instances": instances,
                 "max_keys": keys,
                 # Enterprise is quoted, not bought on the site: a price of zero
