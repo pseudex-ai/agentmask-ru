@@ -12,7 +12,6 @@ import json
 import logging
 import os
 import threading
-import uuid
 from contextlib import asynccontextmanager
 
 import anyio
@@ -62,7 +61,15 @@ _UPSTREAM_ORG = os.environ.get("PSEUDEX_ORG_ID", "default")
 LICENSE = LicenseClient(
     base_url=os.environ.get("PSEUDEX_LICENSE_URL", "https://license.pseudex.ru"),
     key=os.environ.get("PSEUDEX_LICENSE_KEY", ""),
-    instance_id=os.environ.get("PSEUDEX_INSTANCE_ID", "") or uuid.uuid4().hex[:12],
+    # STABLE PER DATA DIRECTORY, never random. A fresh id on every start makes
+    # each restart look like a brand-new machine to the licensing server, which
+    # holds the slot for 36 h — so on a one-instance plan a single `docker
+    # restart` locks the customer out of their own product until tomorrow, with
+    # no self-service way back. Two persona runs hit exactly this and both
+    # called it disqualifying for production, where a restart happens on every
+    # release. The sidecar has used `installation_id()` since the billing fix;
+    # this line was the same bug, left behind in the shape we now recommend.
+    instance_id=os.environ.get("PSEUDEX_INSTANCE_ID", "") or AUDIT.installation_id(),
     ca_path=os.environ.get("PSEUDEX_LICENSE_CA", ""),
     usage_provider=lambda: AUDIT.billing_totals(),
 )
