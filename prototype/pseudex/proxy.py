@@ -8,23 +8,26 @@ masked before the model and restored on the way back, so tools get real values.
 Dev: if PSEUDEX_UPSTREAM_BASE_URL/KEY are set, a tenant "pseudex-dev" is seeded.
 """
 
+import hmac
 import json
 import logging
 import os
+import secrets
 import threading
 from contextlib import asynccontextmanager
 
 import anyio
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from pseudex.assets import BundleNotLeased
+from pseudex.assets import ASSETS, BundleNotLeased
 from pseudex.audit import AuditLog
 from pseudex.detect_all import Detector
 from pseudex.envelope import MaskContext, mask_messages, mask_tools, unmask_response
-from pseudex.license import LicenseClient, LicenseError
+from pseudex.license import ENGINE_VERSION, LicenseClient, LicenseError
 from pseudex.maskcache import MaskCache
+from pseudex.operator import build_router
 from pseudex.profiling import snapshot as profiling_snapshot, stage
 from pseudex.redact import StreamDetokenizer
 from pseudex.tenants import Tenant, Tenants
@@ -52,6 +55,31 @@ _VAULTS: dict[str, Vault] = {}
 # is one customer, so a table mapping many keys to many upstreams buys nothing
 # and costs an onboarding step. The tenant table still works when it is set up,
 # for a host serving several organisations with different providers.
+# The operator surface is gated exactly as it is on the sidecar, and for the
+# same reason: these screens disclose real values and the list of what exists to
+# disclose. Kept in step with `service.py` deliberately — the two deployment
+# shapes are parallel, so a customer must not get a weaker interface by choosing
+# the proxy.
+ADMIN_TOKEN = os.environ.get("PSEUDEX_ADMIN_TOKEN", "")
+if not ADMIN_TOKEN:
+    ADMIN_TOKEN = secrets.token_urlsafe(24)
+    _log.warning("PSEUDEX_ADMIN_TOKEN was not set — generated a per-process one. "
+                 "With more than one worker the operator interface will fail "
+                 "intermittently. entrypoint.sh sets one for the container.")
+
+
+def _require_operator(request: Request) -> None:
+    """`hmac.compare_digest`, not `==`: the comparison is against a secret, and
+    a short-circuiting compare leaks its prefix through timing."""
+    header = request.headers.get("authorization", "")
+    presented = header[7:] if header.lower().startswith("bearer ") else ""
+    if not presented or not hmac.compare_digest(presented, ADMIN_TOKEN):
+        raise HTTPException(
+            status_code=401,
+            detail="operator token required (Authorization: Bearer …)",
+        )
+
+
 _UPSTREAM_BASE = os.environ.get("PSEUDEX_UPSTREAM", "").rstrip("/")
 _UPSTREAM_ORG = os.environ.get("PSEUDEX_ORG_ID", "default")
 
@@ -424,3 +452,45 @@ async def chat_completions(request: Request):
         restored = unmask_response(upstream, vault)
     with stage("proxy.serialize"):
         return JSONResponse(restored)
+
+
+async def _selfcheck(org_id: str, text: str) -> dict[str, object]:
+    """The round trip on the REAL path — detect, mask, then detokenize what the
+    mask produced. Anything less would let this pass while the product is
+    broken, which is the one thing a self-check must never do."""
+    return await anyio.to_thread.run_sync(_selfcheck_sync, org_id, text)
+
+
+def _selfcheck_sync(org_id: str, text: str) -> dict[str, object]:
+    from pseudex.envelope import mask_one
+    from pseudex.redact import unmask_text
+
+    context = _context(org_id)
+    detected = DETECTOR.detect(text)
+    masked = mask_one(text, context)
+    vault = _get_vault(org_id)
+    spans = [
+        {"start": span.start, "end": span.end, "type": span.entity_type,
+         "value": span.value,
+         "token": vault.peek_token(span.value, span.entity_type)}
+        for span in detected
+    ]
+    restored = unmask_text(masked, vault)
+    return {
+        "ok": masked != text and restored == text and bool(spans),
+        "original": text,
+        "masked": masked,
+        "restored": restored,
+        "spans": spans,
+    }
+
+
+# The operator screens — status, journal, statistics, subscription, diagnostics,
+# reveals. They existed only on the sidecar, so a customer following our own
+# onboarding (which recommends `PSEUDEX_ROLE=proxy`) opened the local interface
+# and every screen answered 404. Two persona clients hit that and both counted
+# it against a feature they are billed for in every tariff.
+app.include_router(
+    build_router(AUDIT, LICENSE, ASSETS, ENGINE_VERSION, _selfcheck),
+    dependencies=[Depends(_require_operator)],
+)
