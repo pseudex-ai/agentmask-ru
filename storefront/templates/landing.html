@@ -202,7 +202,7 @@
     <input type="email" name="email" required placeholder="рабочий email" autocomplete="email">
     <input type="text" name="company" placeholder="компания (необязательно)" autocomplete="organization">
     <select name="plan">
-      {% for plan in plans %}<option value="{{ plan.code }}">{{ plan.title }} — {{ plan.monthly_price|floatformat:0 }} ₽/мес</option>{% endfor %}
+      {% for plan in plans %}<option value="{{ plan.code }}">{{ plan.title }} — {{ plan.monthly_price|floatformat:0 }} ₽/мес · {{ plan.max_instances }} {{ plan.max_instances|plural:"контейнер,контейнера,контейнеров" }}</option>{% endfor %}
     </select>
     <button class="btn accent" type="submit">ПОЛУЧИТЬ КЛЮЧ</button>
     <div class="wide" style="font-size:13px;color:var(--dim-2);line-height:1.6">Карта не спрашивается. Ключ работает сразу и {{ trial_days }} дней бесплатно; счёт выставляется потом, по безналу.</div>
@@ -248,11 +248,13 @@
         <div class="per">в месяц · {{ plan.max_instances }} {{ plan.max_instances|plural:"контейнер,контейнера,контейнеров" }}</div>
       </div>
       <ul>
-        <li>{{ plan.max_keys }} {{ plan.max_keys|plural:"ключ,ключа,ключей" }}, запросы не тарифицируются</li>
-        <li>23 типа ПД, обратимые токены</li>
+        <li><b style="color:var(--text)">Без лимита запросов и данных</b></li>
+        <li>23 типа ПД, включая СНИЛС, ИНН и паспорт</li>
+        <li>Инструменты агента получают настоящие значения</li>
         <li>Локальный интерфейс и журнал раскрытий</li>
-        <li>Ориентир: до {{ plan.included_values }} значений, {{ plan.rpm_limit }} запр/мин</li>
+        <li>{{ plan.max_keys }} {{ plan.max_keys|plural:"ключ,ключа,ключей" }} доступа</li>
       </ul>
+      {% if plan.audience %}<div class="fits">Подходит: {{ plan.audience }}</div>{% endif %}
       <form method="post" action="{% url 'signup' %}">
         {% csrf_token %}
         <input type="hidden" name="plan" value="{{ plan.code }}">

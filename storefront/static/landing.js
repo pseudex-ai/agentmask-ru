@@ -53,7 +53,11 @@ if (document.getElementById("demo-orig")) showDemo(0);
 
 document.querySelectorAll("[data-copy-btn]").forEach((button) => {
   button.addEventListener("click", () => {
-    const source = button.parentElement.querySelector("[data-copy]");
+    // The copy source is usually the button's sibling, but a block can declare
+    // a wider scope — the Claude Code prompt has its button in a header row,
+    // not beside the <pre>.
+    const scope = button.closest("[data-copy-scope]") || button.parentElement;
+    const source = scope.querySelector("[data-copy]");
     if (!source) return;
     navigator.clipboard?.writeText(source.dataset.copy);
     const was = button.textContent;

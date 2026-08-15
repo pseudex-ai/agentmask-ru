@@ -41,6 +41,12 @@ class Plan(models.Model):
     included_values = models.BigIntegerField(default=0)
     rpm_limit = models.PositiveIntegerField(default=60)
 
+    # Selling copy, as data: who this tier is for. Here rather than in the
+    # template because the tiers differ only in these strings, and a template
+    # with three `{% if plan.code == ... %}` branches is a template nobody
+    # updates when a fourth tier appears.
+    audience = models.CharField(max_length=120, blank=True)
+
     # THE TIER. The only boundary decided on OUR side: the licensing server
     # knows which instance ids leased recently and refuses one beyond the plan.
     max_instances = models.PositiveIntegerField(default=1)

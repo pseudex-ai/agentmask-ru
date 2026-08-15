@@ -233,3 +233,10 @@ table.list td.mono { font-family: var(--mono); font-size: 12.5px; }
 .setup-note { margin-top: 18px; font-size: 15px; line-height: 1.6; color: var(--dim); max-width: 780px; text-wrap: pretty; }
 #setup .steps pre { white-space: pre-wrap; word-break: break-word; }
 #provider-tabs { flex-wrap: wrap; }
+.plan .fits { font-size: 13px; color: var(--dim-2); border-top: 1px solid var(--line); padding-top: 14px; }
+
+/* The Claude Code onboarding block. Accent border because this is the path we
+   want taken — the manual commands below it are the fallback, not the default. */
+.claude-block { border: 1px solid var(--accent); background: var(--accent-bg); padding: 26px; margin-top: 32px; }
+.claude-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+.claude-prompt { margin: 20px 0 0; padding: 20px; max-height: 340px; overflow: auto; background: var(--panel); border: 1px solid var(--line-2); font-family: var(--mono); font-size: 12.5px; line-height: 1.7; color: var(--text-3); white-space: pre-wrap; }

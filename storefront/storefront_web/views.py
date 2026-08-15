@@ -25,7 +25,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from accounts.models import Membership, Organization
-from billing import licensing, payments, services
+from billing import onboarding, licensing, payments, services
 from billing.models import Invoice, LicenseKey, Plan
 
 _log = logging.getLogger("storefront")
@@ -235,6 +235,11 @@ def welcome(request):
         "org_id": payload["org"],
         "image": settings.DOCKER_IMAGE,
         "trial_days": services.TRIAL_DAYS,
+        # The key is injected into the prompt here, on the one page that is
+        # allowed to show it in full. The cabinet cannot offer this: it only
+        # keeps a prefix and a hash, by design.
+        "claude_prompt": onboarding.claude_prompt(
+            payload["key"], settings.DOCKER_IMAGE, "8081"),
     })
     # Read once, and not cached. Deleting the cookie alone does NOT keep the key
     # out of the back-forward cache — only `no-store` disables it, so Back

@@ -12,28 +12,43 @@
     <div class="warn">Сохраните его сейчас. Мы храним только префикс и хеш, поэтому показать его повторно не сможем — ни в кабинете, ни в поддержке. Потеряете — выпустите новый, это одна кнопка.</div>
   </div>
 
+  <div class="claude-block" data-copy-scope>
+    <div class="claude-head">
+      <div>
+        <div class="label" style="margin-bottom:8px">САМЫЙ БЫСТРЫЙ ПУТЬ</div>
+        <h3 style="margin:0;font-size:24px;letter-spacing:-.02em">Пусть Claude Code подключит всё сам</h3>
+      </div>
+      <button type="button" data-copy-btn class="btn accent">СКОПИРОВАТЬ ПРОМПТ</button>
+    </div>
+    <p style="margin:14px 0 0;font-size:15px;line-height:1.6;color:var(--dim);max-width:760px">Откройте Claude Code в своём проекте и вставьте это. Он сам найдёт, куда вы ходите за моделью, поднимет контейнер, переключит приложение и <b style="color:var(--text-3)">проверит, что маскирование действительно сработало</b> — а если нет, остановится и скажет, вместо того чтобы отрапортовать об успехе.</p>
+    <pre class="claude-prompt" data-copy="{{ claude_prompt }}">{{ claude_prompt }}</pre>
+  </div>
+
+  <div class="label" style="margin:40px 0 -8px">ИЛИ РУКАМИ, ТРИ КОМАНДЫ</div>
   <div class="steps" style="margin-top:32px">
     <div>
-      <div class="what"><div class="step">01</div><h3>Запустить</h3><div class="note">ключ подставлен</div></div>
-      <pre data-copy="docker run -d --name pseudex -p 8000:8000 -p 127.0.0.1:8081:8081 -v pseudex-data:/data -e PSEUDEX_LICENSE_KEY={{ key }} {{ image }}">docker run -d --name pseudex \
+      <div class="what"><div class="step">01</div><h3>Запустить</h3><div class="note">ключ подставлен · адрес провайдера — ваш</div></div>
+      <pre data-copy="docker run -d --name pseudex -p 8000:8000 -p 127.0.0.1:8081:8081 -v pseudex-data:/data -e PSEUDEX_ROLE=proxy -e PSEUDEX_UPSTREAM=https://api.openai.com/v1 -e PSEUDEX_LICENSE_KEY={{ key }} {{ image }}">docker run -d --name pseudex \
   -p 8000:8000 -p 127.0.0.1:8081:8081 -v pseudex-data:/data \
+  -e PSEUDEX_ROLE=proxy \
+  -e PSEUDEX_UPSTREAM=https://api.openai.com/v1 \
   -e PSEUDEX_LICENSE_KEY={{ key }} \
   {{ image }}</pre>
       <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
     </div>
     <div>
-      <div class="what"><div class="step">02</div><h3>Открыть интерфейс</h3><div class="note">ссылка печатается в лог контейнера</div></div>
-      <pre data-copy="docker logs pseudex 2>&1 | grep 'локальный интерфейс' -A2">docker logs pseudex 2>&1 | grep 'локальный интерфейс' -A2
-# → http://localhost:8081/?token=…</pre>
+      <div class="what"><div class="step">02</div><h3>Переключить приложение</h3><div class="note">ключ провайдера остаётся ваш</div></div>
+      <pre data-copy="OPENAI_BASE_URL=http://localhost:8000/v1">OPENAI_BASE_URL=http://localhost:8000/v1
+# ключ провайдера не меняется —
+# контейнер пересылает его как есть</pre>
       <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
     </div>
     <div>
-      <div class="what"><div class="step">03</div><h3>Первый запрос</h3><div class="note">org_id — ваш идентификатор</div></div>
-      <pre data-copy='curl -s localhost:8000/mask -H "Content-Type: application/json" -d "{\"org_id\":\"{{ org_id }}\",\"messages\":[{\"role\":\"user\",\"content\":\"Позвоните Иванову Петру на +7 916 214-88-03\"}]}"'>curl -s localhost:8000/mask \
-  -H "Content-Type: application/json" \
-  -d '{"org_id":"{{ org_id }}",
-       "messages":[{"role":"user",
-         "content":"Позвоните Иванову Петру на +7 916 214-88-03"}]}'</pre>
+      <div class="what"><div class="step">03</div><h3>Убедиться</h3><div class="note">счётчики должны быть непустыми</div></div>
+      <pre data-copy='curl -s localhost:8000/usage -H "Authorization: Bearer $OPENAI_API_KEY"'>curl -s localhost:8000/usage \
+  -H "Authorization: Bearer $OPENAI_API_KEY"
+# → {"protected_counts":{"NAME":1,"PHONE":1,…}}
+# пусто = трафик идёт мимо</pre>
       <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
     </div>
   </div>

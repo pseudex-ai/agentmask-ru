@@ -48,10 +48,14 @@ PLANS = [
     # and the ones that pretend to are enforcing by contract. We take the simple
     # mechanism that works for the honest majority instead of building a
     # complicated one that is bypassed the same way.
-    ("start", "Старт", Decimal("990"), 10_000, 300, 1, 2, 0),
-    ("work", "Рабочий", Decimal("3900"), 100_000, 1_500, 4, 4, 1),
-    ("industrial", "Промышленный", Decimal("11900"), 1_000_000, 6_000, 12, 10, 2),
-    ("enterprise", "Enterprise", Decimal("0"), 100_000_000, 20_000, 100, 50, 3),
+    ("start", "Старт", Decimal("990"), 10_000, 300, 1, 2, 0,
+     "один бот или сервис в проде"),
+    ("work", "Рабочий", Decimal("3900"), 100_000, 1_500, 4, 4, 1,
+     "прод, стенд и запас — или несколько команд"),
+    ("industrial", "Промышленный", Decimal("11900"), 1_000_000, 6_000, 12, 10, 2,
+     "несколько продуктов и отказоустойчивость"),
+    ("enterprise", "Enterprise", Decimal("0"), 100_000_000, 20_000, 100, 50, 3,
+     "по договору"),
 ]
 class Command(BaseCommand):
     help = "Create or update the public plans"
@@ -67,7 +71,7 @@ class Command(BaseCommand):
         # customer who bought last year's tariff keeps the terms they bought.
         retired.update(is_public=False)
 
-        for code, title, price, included, rpm, instances, keys, order in PLANS:
+        for code, title, price, included, rpm, instances, keys, order, audience in PLANS:
             Plan.objects.update_or_create(code=code, defaults={
                 "title": title,
                 "monthly_price": price,
@@ -80,5 +84,6 @@ class Command(BaseCommand):
                 # nothing.
                 "is_public": code != "enterprise",
                 "sort_order": order,
+                "audience": audience,
             })
         self.stdout.write(f"{len(PLANS)} plans seeded")
