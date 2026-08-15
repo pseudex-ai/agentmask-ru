@@ -187,6 +187,33 @@ def run_checks(client) -> None:
           any(row.get("org_id") == organization.id for row in licensed.get("orgs", [])),
           f"orgs={[row.get('org_id') for row in licensed.get('orgs', [])]}")
 
+    # The three documents the footer links to. They pointed at an anchor on the
+    # landing for a long time, so a customer who came for something to forward
+    # to their client's security officer found a marketing section. A broken
+    # link here is silent — nothing errors, the page just is not what was
+    # promised — so it is asserted rather than eyeballed.
+    landing_body = client.get("/").content.decode()
+    for name, path in (("оферта", "/offer"), ("политика", "/policy"),
+                       ("архитектура", "/architecture")):
+        page = client.get(path)
+        check(f"{name} opens as its own document",
+              page.status_code == 200 and len(page.content) > 2000,
+              f"status={page.status_code} bytes={len(page.content)}")
+        check(f"the footer links to {name}, not to an anchor",
+              f'href="{path}"' in landing_body, f"missing href={path}")
+
+    # Sign-up exists in exactly ONE place. allauth's own form created a user
+    # with no organisation and no key, and it sat behind the most prominent
+    # button on the site; two persona clients took it and were shown a raw
+    # Django 404.
+    orphan_signup = client.get("/accounts/signup/")
+    check("allauth's parallel sign-up form is gone",
+          orphan_signup.status_code in (301, 302),
+          f"status={orphan_signup.status_code}")
+
+    check("the landing shows the Claude Code prompt before registration",
+          "claude-prompt" in landing_body and "PSEUDEX_ROLE=proxy" in landing_body)
+
     anonymous = client.get("/app/")
     check("the cabinet refuses an anonymous visitor",
           anonymous.status_code == 302 and "/accounts/login" in anonymous.url,

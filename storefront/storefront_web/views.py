@@ -41,8 +41,17 @@ def _organization(request) -> Organization:
                   .order_by("created_at")
                   .first())
     if membership is None:
-        raise Http404("у пользователя нет организации")
+        # A signed-in user with no organisation is not an error, it is someone
+        # who came in through allauth's own sign-up form instead of ours. Both
+        # larger persona clients did exactly that — it is the most prominent
+        # button on the page — and were shown a raw Django 404 with the whole
+        # URLconf on it. Send them where the account is actually created.
+        raise NoOrganization
     return membership.organization
+
+
+class NoOrganization(Exception):
+    """Signed in, but never completed sign-up. Handled, not an error page."""
 
 
 # Sign-ups per client address per window. Kept in the cache rather than the
@@ -103,7 +112,45 @@ def landing(request):
         "plans": Plan.objects.filter(is_public=True),
         "trial_days": services.TRIAL_DAYS,
         "image": settings.DOCKER_IMAGE,
+        # The same prompt the welcome page hands out, with the key as a
+        # placeholder. It belongs HERE too: "paste this and it connects itself"
+        # is the strongest thing we can say about setup, and saying it only
+        # after registration means the people deciding whether to register
+        # never hear it.
+        "claude_prompt": onboarding.claude_prompt(
+            "ps_live_…  (подставится после регистрации)",
+            settings.DOCKER_IMAGE, "8081"),
     })
+
+
+def _legal_context() -> dict[str, object]:
+    """Shared by all three legal pages.
+
+    The date is the file's own last change, not `today`: a policy that claims to
+    have been revised this morning every morning tells the reader nothing, and a
+    regulator reads the revision date as a fact.
+    """
+    import datetime
+    import pathlib as _pathlib
+    here = _pathlib.Path(__file__).resolve().parent.parent / "templates" / "legal"
+    stamps = [f.stat().st_mtime for f in here.glob("*.html")] or [0]
+    return {
+        "seller": settings.SELLER,
+        "trial_days": services.TRIAL_DAYS,
+        "updated": datetime.date.fromtimestamp(max(stamps)).strftime("%d.%m.%Y"),
+    }
+
+
+def offer(request):
+    return render(request, "legal/offer.html", _legal_context())
+
+
+def policy(request):
+    return render(request, "legal/policy.html", _legal_context())
+
+
+def architecture(request):
+    return render(request, "legal/architecture.html", _legal_context())
 
 
 def signup(request):
@@ -252,7 +299,12 @@ def welcome(request):
 
 @login_required
 def cabinet(request):
-    organization = _organization(request)
+    try:
+        organization = _organization(request)
+    except NoOrganization:
+        messages.info(request, "Аккаунт создан, но организации ещё нет — "
+                               "завершите регистрацию, и ключ выдастся сразу.")
+        return redirect("/#start")
     subscription = getattr(organization, "subscription", None)
     try:
         reported = licensing.usage(organization.id).get("usage", {})

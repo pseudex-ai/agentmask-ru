@@ -244,6 +244,9 @@ SELLER = {
     # line, and printing "НДС не облагается" when it does not apply is just as
     # wrong. Stated explicitly so nobody guesses.
     "vat": _env("PSEUDEX_SELLER_VAT", "Без НДС (УСН)"),
+    # Where a subject of personal data sends a request under 152-ФЗ.
+    # The policy is not publishable without it.
+    "email": _env("PSEUDEX_SELLER_EMAIL", ""),
 }
 
 DOCKER_IMAGE = _env("PSEUDEX_DOCKER_IMAGE", "cr.yandex/pseudex/pseudex:1.0.0")

@@ -240,3 +240,14 @@ table.list td.mono { font-family: var(--mono); font-size: 12.5px; }
 .claude-block { border: 1px solid var(--accent); background: var(--accent-bg); padding: 26px; margin-top: 32px; }
 .claude-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
 .claude-prompt { margin: 20px 0 0; padding: 20px; max-height: 340px; overflow: auto; background: var(--panel); border: 1px solid var(--line-2); font-family: var(--mono); font-size: 12.5px; line-height: 1.7; color: var(--text-3); white-space: pre-wrap; }
+
+/* Legal documents. Narrow measure and generous leading: these are read
+   end to end by a lawyer or a security officer, not scanned like a landing. */
+.legal-doc { max-width: 780px; }
+.legal-doc h2 { font-size: 21px; letter-spacing: -.01em; margin: 38px 0 12px; }
+.legal-doc p { font-size: 16px; line-height: 1.7; color: var(--text-3); margin: 0 0 14px; }
+.legal-doc a { color: var(--accent); }
+.legal-list { margin: 0 0 14px; padding-left: 22px; font-size: 16px; line-height: 1.7; color: var(--text-3); }
+.legal-list li { margin-bottom: 8px; }
+.legal-note { border-left: 2px solid var(--accent); background: var(--accent-bg); padding: 18px 22px; margin: 28px 0; font-size: 15.5px; line-height: 1.65; color: var(--text-3); }
+.legal-doc .missing { color: var(--pink); }

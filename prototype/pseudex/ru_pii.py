@@ -90,10 +90,27 @@ def validate_ogrn(text: str) -> bool:
 
 # Russian plate: only the 12 Cyrillic letters that look like Latin are legal, so
 # the shape IS distinctive enough to stand without a cue word.
-_PLATE_LETTERS = "АВЕКМНОРСТУХавекмнорстух"
-_PLATE_RE = re.compile(
-    rf"\b[{_PLATE_LETTERS}]\s?\d{{3}}\s?[{_PLATE_LETTERS}]{{2}}\s?\d{{2,3}}\b"
-)
+# BOTH ALPHABETS, and that is the whole point. The twelve letters permitted on a
+# Russian plate — АВЕКМНОРСТУХ — were chosen precisely because they have Latin
+# look-alikes, so an operator typing without switching layout produces
+# `E777KX102`, which is the same plate and used to be invisible to us. A persona
+# client whose product is a CRM for car services put the share at "about ten
+# percent of traffic", and those ten percent went to the model unmasked and
+# silently — in exactly the data type they came to us for.
+_PLATE_LETTERS = "АВЕКМНОРСТУХавекмнорстухABEKMHOPCTYXabekmhopctyx"
+
+# Types from ГОСТ Р 50577. The first line is an ordinary car; the rest were
+# absent, and a car service sees them daily.
+_PLATE_RE = re.compile("|".join([
+    # Тип 1 — легковые: А123ВС77 / А123ВС777
+    rf"\b[{_PLATE_LETTERS}]\s?\d{{3}}\s?[{_PLATE_LETTERS}]{{2}}\s?\d{{2,3}}\b",
+    # Тип 1Б — такси и маршрутные: АА123 77
+    rf"\b[{_PLATE_LETTERS}]{{2}}\s?\d{{3}}\s?\d{{2,3}}\b",
+    # Тип 1А — прицепы: АВ1234 77
+    rf"\b[{_PLATE_LETTERS}]{{2}}\s?\d{{4}}\s?\d{{2,3}}\b",
+    # Тип 2 — мотоциклы: 1234 АВ 77
+    rf"\b\d{{4}}\s?[{_PLATE_LETTERS}]{{2}}\s?\d{{2,3}}\b",
+]))
 _IPV4_RE = re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}"
                       r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b")
 # Свидетельство о рождении: roman series + two Cyrillic letters + number.
