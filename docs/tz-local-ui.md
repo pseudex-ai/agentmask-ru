@@ -59,7 +59,7 @@ UI/UX делается отдельно. Здесь — какие экраны 
 файрволом отдельно, не трогая рабочий трафик.
 
 ```bash
-docker run -d -p 8000:8000 -p 8081:8081 -v veilgate-data:/data \
+docker run -d -p 8000:8000 -p 127.0.0.1:8081:8081 -v veilgate-data:/data \
   -e VEILGATE_LICENSE_KEY=vg_live_… veilgate:1.0.0
 ```
 

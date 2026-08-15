@@ -442,7 +442,7 @@ function Sandbox({ org }) {
             <button class="btn md primary" onClick=${runFull} disabled=${busy !== ''}>
               ${busy === 'full' ? 'ПРОГОНЯЮ…' : 'ПРОГНАТЬ ПОЛНОСТЬЮ'}
             </button>
-            <p>Первая кнопка только смотрит (<span class="mono">/spans</span>) и токенов не создаёт. Вторая создаёт токены в волте.</p>
+            <p>Первая кнопка только смотрит (<span class="mono">/spans</span>) и токенов не создаёт. Вторая создаёт токены в волте <b>и считается обычным запросом по тарифу</b> — в отличие от проверки на экране «Статус».</p>
           </div>
         </div>
         <div class="cell">

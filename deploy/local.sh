@@ -56,7 +56,7 @@ cat <<TEXT
   3. Запустите контейнер (ключ уже подставлен на странице), но
      добавьте адрес локального лицензионного сервера:
 
-     docker run -d --name veilgate -p 8000:8000 -p 8081:8081 \\
+     docker run -d --name veilgate -p 8000:8000 -p 127.0.0.1:8081:8081 \\
        -v veilgate-data:/data \\
        -e VEILGATE_LICENSE_KEY=<ваш ключ> \\
        -e VEILGATE_LICENSE_URL=http://host.docker.internal:8443 \\

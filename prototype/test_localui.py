@@ -21,6 +21,7 @@ import tempfile
 import time
 
 os.environ.setdefault("VEILGATE_ADMIN_TOKEN", "test-admin-token")
+os.environ.setdefault("VEILGATE_GATEWAY_TOKEN", "test-gateway-token")
 _TMP = tempfile.mkdtemp(prefix="veilgate-ui-test-")
 os.environ["VEILGATE_DB_DIR"] = _TMP
 os.environ["VEILGATE_UI_ORG"] = "acme"
@@ -64,6 +65,7 @@ def _client() -> TestClient:
 
 
 AUTH = {"Authorization": f"Bearer {os.environ['VEILGATE_ADMIN_TOKEN']}"}
+GATEWAY = {"Authorization": f"Bearer {os.environ['VEILGATE_GATEWAY_TOKEN']}"}
 
 
 def test_operator_surface_is_closed(client: TestClient) -> None:
@@ -71,6 +73,11 @@ def test_operator_surface_is_closed(client: TestClient) -> None:
     for method, path in [("get", "/status"), ("get", "/events"), ("get", "/stats"),
                          ("get", "/reveals"), ("get", "/subscription"),
                          ("get", "/diagnostics"), ("post", "/reveal"),
+                         # /usage returns the same tokens and previews as
+                         # /events. It was the one endpoint the closing of the
+                         # operator surface missed, and next to an open /unmask
+                         # it made the whole reveal audit bypassable.
+                         ("get", "/usage"),
                          ("post", "/selfcheck")]:
         response = (client.post(path, json={}) if method == "post" else client.get(path))
         if response.status_code != 401:
@@ -81,16 +88,32 @@ def test_operator_surface_is_closed(client: TestClient) -> None:
     wrong = client.get("/status", headers={"Authorization": "Bearer nope"})
     check("a wrong operator token is refused", wrong.status_code == 401)
 
-    # The masking path must NOT have been closed by the same change: the
-    # customer's gateway calls it on every request with no credential.
-    open_leg = client.post("/mask", json={"org_id": "acme",
-                                          "messages": [{"role": "user", "content": "привет"}]})
-    check("the masking path stays open to the gateway", open_leg.status_code == 200,
+    # The masking surface has its own credential, held by the customer's gateway.
+    anonymous_mask = client.post("/mask", json={"org_id": "acme",
+                                 "messages": [{"role": "user", "content": "привет"}]})
+    check("masking refuses a caller with no gateway token",
+          anonymous_mask.status_code == 401, f"status={anonymous_mask.status_code}")
+
+    # /unmask is a DETOKENIZATION ORACLE — token in, real personal value out.
+    # Anonymous access to it made /reveal's access log decorative.
+    oracle = client.post("/unmask", json={"org_id": "acme", "response": {}})
+    check("detokenization refuses a caller with no gateway token",
+          oracle.status_code == 401, f"status={oracle.status_code}")
+
+    open_leg = client.post("/mask", headers=GATEWAY, json={"org_id": "acme",
+                           "messages": [{"role": "user", "content": "привет"}]})
+    check("the gateway token opens the masking path", open_leg.status_code == 200,
           f"status={open_leg.status_code}")
+
+    # The two credentials must not be interchangeable.
+    crossed = client.post("/mask", headers=AUTH, json={"org_id": "acme",
+                          "messages": [{"role": "user", "content": "привет"}]})
+    check("the operator token does not open the masking path",
+          crossed.status_code == 401, f"status={crossed.status_code}")
 
 
 def test_reveal_requires_an_actor(client: TestClient) -> None:
-    masked = client.post("/mask", json={
+    masked = client.post("/mask", headers=GATEWAY, json={
         "org_id": "acme", "agent_id": "support-bot",
         "messages": [{"role": "user", "content": "Позвоните на +7 916 214-88-03"}],
     })

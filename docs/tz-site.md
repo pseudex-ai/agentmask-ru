@@ -106,7 +106,7 @@ UI/UX делается отдельно. Этот документ отвеча�
 подставьте в переменную Y», а готовая строка с кнопкой «копировать»:
 
 ```bash
-docker run -d -p 8000:8000 -p 8081:8081 -v veilgate-data:/data \
+docker run -d -p 8000:8000 -p 127.0.0.1:8081:8081 -v veilgate-data:/data \
   -e VEILGATE_LICENSE_KEY=vg_live_… \
   cr.yandex/…/veilgate:1.0.0
 ```

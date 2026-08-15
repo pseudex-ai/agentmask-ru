@@ -27,14 +27,17 @@ A header cannot be set by a cross-origin form at all, so the class of bug does
 not exist here.
 """
 
+import base64
 import hashlib
 import hmac
 import json
 import logging
 import os
+import re
 import secrets
 import time
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -61,6 +64,10 @@ _STATIC = os.environ.get("VEILGATE_UI_STATIC", "") or os.path.join(
 
 ENGINE_URL = os.environ.get("VEILGATE_ENGINE_URL", "http://127.0.0.1:8000").rstrip("/")
 ADMIN_TOKEN = os.environ.get("VEILGATE_ADMIN_TOKEN", "")
+# The sandbox screen calls /mask and /spans, which live on the GATEWAY surface
+# and carry their own credential. The interface holds both because it is the one
+# caller that legitimately spans them; the browser holds neither.
+GATEWAY_TOKEN = os.environ.get("VEILGATE_GATEWAY_TOKEN", "")
 UI_PASSWORD = os.environ.get("VEILGATE_UI_PASSWORD", "")
 UI_ORG = os.environ.get("VEILGATE_UI_ORG", "") or os.environ.get("VEILGATE_ORG_ID", "default")
 
@@ -73,14 +80,22 @@ SIGNIN_TOKEN = os.environ.get("VEILGATE_UI_TOKEN", "") or secrets.token_urlsafe(
 # Sessions live in memory. A restart invalidates them, which is correct: the
 # process that vouched for the session is gone, and there is nothing here worth
 # persisting a credential to disk for.
-_SESSIONS: dict[str, float] = {}
+@dataclass(frozen=True)
+class _Session:
+    expires: float
+    who: str
+
+
+_SESSIONS: dict[str, _Session] = {}
 _SESSION_TTL_SECONDS = 12 * 3600
 
-# Sign-in is the one unauthenticated endpoint, so it is the one that can be
-# ground against. The window is deliberately coarse — this protects a
-# single-tenant local tool from a script, not a public login from a botnet.
-_ATTEMPTS: list[float] = []
-_MAX_ATTEMPTS_PER_MINUTE = 10
+# FAILED sign-ins, per source address. Both halves matter and both were wrong:
+# one global counter meant an attacker at 0.17 req/s locked the operator out
+# permanently, and counting successes meant a busy operator locked themselves
+# out. The moment it bites is the worst one — licence expired, masking stopped,
+# and the screen that explains why is unreachable.
+_FAILURES: dict[str, list[float]] = {}
+_MAX_FAILURES_PER_MINUTE = 10
 
 # Exactly what the page may ask the engine for. An allowlist, not a prefix match:
 # a proxy that forwards whatever path it is handed is an open relay into the
@@ -90,6 +105,38 @@ _GET_ALLOWED = frozenset({
     "/subscription", "/diagnostics", "/license", "/health", "/orgs",
 })
 _POST_ALLOWED = frozenset({"/reveal", "/selfcheck", "/spans", "/mask"})
+
+_INLINE_SCRIPT = re.compile(r"<script[^>]*>(.*?)</script>", re.DOTALL)
+
+
+def _inline_script_hashes() -> list[str]:
+    """CSP hashes for the page's own inline scripts, computed FROM THE PAGE.
+
+    The page carries one inline script: an import map, which resolves the bare
+    specifiers `preact` and `htm` so the vendored files can stay byte-identical
+    to what upstream published. An import map is an inline script as far as CSP
+    is concerned, and `script-src 'self'` blocks it in every browser — the
+    module graph then fails to resolve and the page renders EMPTY.
+
+    That shipped. The test asserted the CSP header string and gate L16 asserted
+    HTTP 200 on the page and its assets; neither can see that nothing executed.
+    A header is not evidence that a page works.
+
+    The hash is derived here rather than pasted in, so it cannot go stale: edit
+    index.html and the policy follows. A hardcoded hash would be one edit away
+    from a blank screen again, and the failure is silent.
+    """
+    try:
+        with open(os.path.join(_STATIC, "index.html"), "r", encoding="utf-8") as handle:
+            page = handle.read()
+    except OSError:
+        return []
+    return [
+        "'sha256-" + base64.b64encode(
+            hashlib.sha256(body.encode("utf-8")).digest()
+        ).decode() + "'"
+        for body in _INLINE_SCRIPT.findall(page) if body.strip()
+    ]
 
 
 def signin_url(port: str) -> str:
@@ -126,12 +173,21 @@ async def _lifespan(_app: FastAPI):
     await _app.state.client.aclose()
 
 
-app = FastAPI(title="Veilgate local UI", lifespan=_lifespan)
+_SCRIPT_HASHES = _inline_script_hashes()
+
+app = FastAPI(
+    title="Veilgate local UI",
+    lifespan=_lifespan,
+    # No interactive API docs. They publish the operator surface to anyone
+    # who can reach the port, and this app is a fixed page plus a fixed
+    # proxy — there is no third party writing against it.
+    docs_url=None, redoc_url=None, openapi_url=None,
+)
 
 
 def _sweep_sessions(now: float) -> None:
-    for token, expires in list(_SESSIONS.items()):
-        if expires <= now:
+    for token, session in list(_SESSIONS.items()):
+        if session.expires <= now:
             del _SESSIONS[token]
 
 
@@ -145,42 +201,76 @@ def _require_session(request: Request) -> str:
     presented = header[7:] if header.lower().startswith("bearer ") else ""
     now = time.time()
     _sweep_sessions(now)
-    expires = _SESSIONS.get(presented) if presented else None
-    if expires is None:
+    session = _SESSIONS.get(presented) if presented else None
+    if session is None:
         raise HTTPException(status_code=401, detail="not signed in")
-    # A short, stable label per session. Not the token itself: the access log is
+    # Name plus a session fingerprint. Not the token itself: the access log is
     # readable in the interface, and printing a live credential into a screen
     # people paste into support tickets would be its own incident.
-    return f"ui:{hashlib.sha256(presented.encode()).hexdigest()[:12]}"
+    short = hashlib.sha256(presented.encode()).hexdigest()[:8]
+    return f"ui:{session.who}:{short}" if session.who else f"ui:{short}"
 
 
 @app.post("/api/signin")
 async def signin(request: Request) -> JSONResponse:
     """Exchange the startup token (or the shared password) for a session."""
     now = time.time()
-    _ATTEMPTS[:] = [when for when in _ATTEMPTS if now - when < 60]
-    if len(_ATTEMPTS) >= _MAX_ATTEMPTS_PER_MINUTE:
+    # Direct peer address: this port is meant to be reached over loopback or a
+    # short hop, and trusting a forwarded header would let a caller choose their
+    # own bucket.
+    source = request.client.host if request.client else "unknown"
+    recent = [when for when in _FAILURES.get(source, []) if now - when < 60]
+    _FAILURES[source] = recent
+    if len(recent) >= _MAX_FAILURES_PER_MINUTE:
         return JSONResponse({"error": "too many attempts, wait a minute"},
                             status_code=429)
-    _ATTEMPTS.append(now)
     body = await request.json()
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "expected an object"}, status_code=400)
     presented = str(body.get("secret", ""))
     # compare_digest against BOTH, and without short-circuiting between them:
     # `a or b` would leak which of the two matched through timing.
     matches_token = hmac.compare_digest(presented, SIGNIN_TOKEN)
     matches_password = bool(UI_PASSWORD) and hmac.compare_digest(presented, UI_PASSWORD)
     if not (matches_token or matches_password):
+        recent.append(now)
         return JSONResponse({"error": "wrong token"}, status_code=401)
+    _FAILURES.pop(source, None)
     session = secrets.token_urlsafe(32)
-    _SESSIONS[session] = now + _SESSION_TTL_SECONDS
+    # An optional name, kept in memory only, never stored and never sent
+    # anywhere. It exists so the reveal log answers the question it was built
+    # for: "кто обращался к персональным данным". Without it the record reads
+    # `ui:a1b2c3d4e5f6`, which nothing on earth resolves to a person — the
+    # session dies with the process and one token or one shared password serves
+    # a whole team.
+    who = str(body.get("who", "")).strip()[:40]
+    _SESSIONS[session] = _Session(expires=now + _SESSION_TTL_SECONDS, who=who)
     return JSONResponse({"session": session, "org_id": UI_ORG,
                          "expires_in": _SESSION_TTL_SECONDS})
+
+
+@app.post("/api/signout")
+async def signout(request: Request) -> JSONResponse:
+    """Drop this session. Without it a 12-hour session could not be revoked
+    short of restarting the interface."""
+    header = request.headers.get("authorization", "")
+    _SESSIONS.pop(header[7:] if header.lower().startswith("bearer ") else "", None)
+    return JSONResponse({"status": "signed out"})
 
 
 @app.get("/api/whoami")
 async def whoami(request: Request) -> JSONResponse:
     _require_session(request)
-    return JSONResponse({"org_id": UI_ORG, "engine": ENGINE_URL})
+    return JSONResponse({
+        "org_id": UI_ORG,
+        "engine": ENGINE_URL,
+        # Named honestly. UI_ORG is the org this interface OPENS ON, not a
+        # boundary: there is one credential per container and the switcher
+        # reaches every org the container has served. Returning it as though it
+        # were a scope invited exactly the wrong deployment — handing one
+        # tenant's admin a container that also masks for another tenant.
+        "scope": "container",
+    })
 
 
 async def _forward(method: str, path: str, request: Request) -> Response:
@@ -191,7 +281,8 @@ async def _forward(method: str, path: str, request: Request) -> Response:
     отвечает", so it has to be a normal answer, not an exception.
     """
     actor = _require_session(request)
-    headers = {"Authorization": f"Bearer {ADMIN_TOKEN}"}
+    gateway = path in ("/mask", "/spans")
+    headers = {"Authorization": f"Bearer {GATEWAY_TOKEN if gateway else ADMIN_TOKEN}"}
     client: httpx.AsyncClient = request.app.state.client
     try:
         if method == "GET":
@@ -211,6 +302,11 @@ async def _forward(method: str, path: str, request: Request) -> Response:
                     body = json.loads(payload or b"{}")
                 except ValueError:
                     return JSONResponse({"error": "invalid json"}, status_code=400)
+                # A list, a string or a number parses fine and then fails on
+                # item assignment — a 500 with a stack trace in the log for a
+                # body anyone signed in can send.
+                if not isinstance(body, dict):
+                    return JSONResponse({"error": "expected an object"}, status_code=400)
                 body["actor"] = actor
                 payload = json.dumps(body).encode()
             upstream = await client.post(
@@ -291,7 +387,8 @@ async def _security_headers(request: Request, call_next):
     """
     response = await call_next(request)
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; script-src 'self'; style-src 'self'; "
+        f"default-src 'self'; script-src 'self' {' '.join(_SCRIPT_HASHES)}; "
+        "style-src 'self'; "
         # Style ATTRIBUTES are governed by style-src-attr, and fall back to
         # style-src when it is absent — so `style-src 'self'` alone silently
         # blocks every style="width:42%" the charts are drawn with. Allowed

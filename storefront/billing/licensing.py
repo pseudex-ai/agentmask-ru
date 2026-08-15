@@ -84,6 +84,16 @@ def set_status(org_id: str, status: str) -> int:
     return int(body.get("keys_changed", 0))
 
 
+def revoke_key(key_hash: str) -> None:
+    """Revoke ONE key on the licensing server.
+
+    Without this the cabinet's revoke button was a local flag and a success
+    message: the key kept leasing, so an engineer who left with a copy kept a
+    working credential for the customer's whole gateway.
+    """
+    _post("/admin/revoke_key", {"key_hash": key_hash})
+
+
 def usage(org_id: str) -> dict[str, object]:
     """Counters as the licensing server has them.
 

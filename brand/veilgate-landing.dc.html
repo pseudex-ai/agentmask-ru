@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  html { background: #17171a; }
+  body { margin: 0; background: #17171a; color: #e8e7ec; font-family: Archivo, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: #b3a0ea; text-decoration: none; }
+  a:hover { color: #cec0f2; }
+  * { box-sizing: border-box; }
+  ::selection { background: #b3a0ea; color: #17171a; }
+</style>
+</helmet>
+<div style="background:#17171a;min-height:100vh;font-family:Archivo,system-ui,sans-serif;color:#e8e7ec">
+  <div style="max-width:1440px;margin:0 auto;border-left:1px solid #2b2b31;border-right:1px solid #2b2b31">
+
+    <header style="display:flex;align-items:center;justify-content:space-between;gap:32px;padding:0 28px;height:76px;border-bottom:1px solid #2b2b31;position:sticky;top:0;background:rgba(23,23,26,.9);backdrop-filter:blur(12px);z-index:20">
+      <div style="display:flex;align-items:center;gap:11px">
+        <svg width="26" height="26" viewBox="0 0 32 32" fill="none" style="display:block">
+          <rect x="3" y="11" width="18" height="18" rx="5" fill="#b3a0ea"></rect>
+          <rect x="11" y="3" width="18" height="18" rx="5" fill="#17171a" stroke="#b3a0ea" stroke-width="2.6"></rect>
+        </svg>
+        <div style="font-size:20px;font-weight:700;letter-spacing:-.025em">veilgate</div>
+      </div>
+      <nav style="display:flex;align-items:center;gap:30px;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;color:#8f8e99">
+        <a href="#how" style="color:#8f8e99">КАК РАБОТАЕТ</a>
+        <a href="#legal" style="color:#8f8e99">152-ФЗ</a>
+        <a href="#start" style="color:#8f8e99">БЫСТРЫЙ СТАРТ</a>
+        <a href="#pricing" style="color:#8f8e99">ЦЕНЫ</a>
+        <a href="#faq" style="color:#8f8e99">FAQ</a>
+      </nav>
+      <div style="display:flex;align-items:center;gap:10px">
+        <a href="#start" style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;color:#8f8e99;padding:10px 14px;border:1px solid #34343b">ВОЙТИ</a>
+        <a href="#start" style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;color:#17171a;background:#e8e7ec;padding:11px 16px;font-weight:700">НАЧАТЬ</a>
+      </div>
+    </header>
+
+    <section style="padding:96px 28px 72px;position:relative;overflow:hidden">
+      <svg width="660" height="660" viewBox="0 0 32 32" fill="none" style="position:absolute;right:-120px;top:-70px;opacity:.045;pointer-events:none">
+        <rect x="3" y="11" width="18" height="18" rx="5" fill="#b3a0ea"></rect>
+        <rect x="11" y="3" width="18" height="18" rx="5" fill="#17171a" stroke="#b3a0ea" stroke-width="2.2"></rect>
+      </svg>
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:40px;position:relative">
+        <div style="width:56px;height:1px;background:#b3a0ea"></div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.22em;color:#b3a0ea">МАСКИРОВАНИЕ ПД В КОНТУРЕ КЛИЕНТА</div>
+      </div>
+      <h1 style="margin:0;font-size:104px;line-height:.92;font-weight:900;letter-spacing:-.04em;max-width:1180px;text-wrap:balance">Модель не видит персональных данных. <span style="color:#b3a0ea">Инструменты&nbsp;— видят.</span></h1>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,460px);gap:56px;margin-top:56px;align-items:end">
+        <div>
+          <p style="margin:0;max-width:620px;font-size:19px;line-height:1.62;color:#a9a8b3;text-wrap:pretty">Veilgate находит персональные данные в запросе и подменяет их правдоподобными фейками того же формата. Модель работает как обычно, а когда агент вызывает ваш инструмент, настоящий телефон и настоящий адрес возвращаются на место. Контейнер стоит внутри вашего периметра: к нам уходят только счётчики.</p>
+          <div style="display:flex;gap:12px;margin-top:36px;flex-wrap:wrap">
+            <a href="#start" style="font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;color:#17171a;background:#b3a0ea;padding:16px 24px;font-weight:700">НАЧАТЬ ЗА 15 МИНУТ</a>
+            <a href="#how" style="font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;color:#e8e7ec;border:1px solid #3d3d45;padding:16px 24px">КАК ЭТО РАБОТАЕТ →</a>
+          </div>
+          <div style="display:flex;margin-top:36px;border:1px solid #34343b;background:#1e1e23;max-width:640px">
+            <div style="flex:1;padding:16px 18px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#cfced6;overflow:hidden;white-space:nowrap;text-overflow:ellipsis"><span style="color:#b3a0ea">$</span> docker run -d -p 8000:8000 -p 8081:8081 veilgate:1.0.0</div>
+            <button onClick="{{ copyRun }}" style="border:0;border-left:1px solid #34343b;background:transparent;color:#8f8e99;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;padding:0 20px;cursor:pointer">{{ copyRunLabel }}</button>
+          </div>
+          <div style="margin-top:22px;font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#74737e;letter-spacing:.02em;line-height:2">{{ trialLine }}</div>
+        </div>
+        <div style="border:1px solid #34343b;background:#1e1e23;padding:20px 20px 22px">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:#74737e;margin-bottom:16px">ВСЁ, ЧТО МЫ ВИДИМ СО СВОЕЙ СТОРОНЫ</div>
+          <pre style="margin:0;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.75;color:#93cfaa;white-space:pre-wrap">{{ reportJson }}</pre>
+          <div style="margin-top:16px;padding-top:16px;border-top:1px solid #2b2b31;font-size:13.5px;line-height:1.6;color:#8f8e99">Ни текстов, ни токенов, ни значений. Только счётчики в составе продления аренды.</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="demo" style="border-top:1px solid #2b2b31;padding:80px 28px">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:32px;flex-wrap:wrap;margin-bottom:36px">
+        <h2 style="margin:0;font-size:46px;font-weight:900;letter-spacing:-.03em">Что уйдёт в модель</h2>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.16em;color:#74737e">ЗАГОТОВЛЕННЫЕ ПРИМЕРЫ · СЧИТАЕТСЯ У НАС</div>
+      </div>
+      <div style="display:flex;border:1px solid #34343b;margin-bottom:0;flex-wrap:wrap">
+        <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4">
+          <button onClick="{{ t.onClick }}" style="flex:1;min-width:160px;border:0;border-right:1px solid #34343b;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;cursor:pointer;text-align:left;background:{{ t.bg }};color:{{ t.fg }}">{{ t.label }}</button>
+        </sc-for>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;border:1px solid #34343b;border-top:0">
+        <div style="padding:26px 24px 28px;border-right:1px solid #34343b;background:#1c1c20">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:#74737e;margin-bottom:18px">ЧТО НАПИСАЛ ПОЛЬЗОВАТЕЛЬ</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:14px;line-height:2;color:#cfced6"><sc-for list="{{ orig }}" as="c" hint-placeholder-count="6"><span style="background:{{ c.bg }};color:{{ c.fg }};padding:{{ c.pad }};border-radius:2px;white-space:pre-wrap">{{ c.text }}</span></sc-for></div>
+        </div>
+        <div style="padding:26px 24px 28px;background:#1e1e23">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:#b3a0ea;margin-bottom:18px">ЧТО УВИДИТ МОДЕЛЬ</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:14px;line-height:2;color:#cfced6"><sc-for list="{{ masked }}" as="c" hint-placeholder-count="6"><span style="background:{{ c.bg }};color:{{ c.fg }};padding:{{ c.pad }};border-radius:2px;white-space:pre-wrap">{{ c.text }}</span></sc-for></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-top:26px">
+        <div style="font-size:14.5px;line-height:1.65;color:#8f8e99;text-wrap:pretty"><span style="color:#e8e7ec;font-weight:600">Поле нельзя редактировать, и это принципиально.</span> Разрешив ввод своего текста, мы начали бы принимать чужие персональные данные на свой сервер — то есть потеряли бы ровно то, что продаём. Свой текст проверяется в локальной песочнице, внутри вашего контура.</div>
+        <div style="font-size:14.5px;line-height:1.65;color:#8f8e99;text-wrap:pretty"><span style="color:#e8e7ec;font-weight:600">Подмена формат-сохраняющая.</span> Модель видит валидный по виду телефон и валидный адрес, поэтому продолжает работать как обычно. Всё ломается тогда, когда на месте телефона стоит <span style="font-family:'JetBrains Mono',monospace;color:#dcbd85">[PHONE_1]</span>.</div>
+      </div>
+    </section>
+
+    <section id="problem" style="border-top:1px solid #2b2b31;padding:80px 28px">
+      <div style="display:grid;grid-template-columns:260px minmax(0,1fr);gap:56px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.18em;color:#74737e">ПРОБЛЕМА</div>
+        <div>
+          <sc-for list="{{ problems }}" as="p" hint-placeholder-count="3">
+            <div style="display:grid;grid-template-columns:64px minmax(0,1fr);gap:24px;padding:26px 0;border-bottom:1px solid #2b2b31;align-items:start">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#43434c;font-weight:700">{{ p.n }}</div>
+              <div>
+                <div style="font-size:26px;font-weight:700;letter-spacing:-.02em;margin-bottom:10px">{{ p.title }}</div>
+                <div style="font-size:16px;line-height:1.6;color:#8f8e99;max-width:760px;text-wrap:pretty">{{ p.body }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </section>
+
+    <section id="how" style="border-top:1px solid #2b2b31;padding:80px 28px">
+      <h2 style="margin:0 0 12px;font-size:46px;font-weight:900;letter-spacing:-.03em">Как это работает</h2>
+      <p style="margin:0 0 44px;font-size:17px;color:#8f8e99;max-width:700px">Два прохода через сайдкар: на пути к модели и на пути к инструменту. Больше в вашем коде ничего не меняется.</p>
+      <div style="border:1px solid #34343b;background:#1e1e23;padding:28px 26px;font-family:'JetBrains Mono',monospace;font-size:13.5px;line-height:2.4;color:#8f8e99;overflow-x:auto">
+        <div>пользователь <span style="color:#43434c">→</span> <span style="color:#b3a0ea">[veilgate: находит ПД, подменяет на правдоподобные фейки]</span> <span style="color:#43434c">→</span> модель</div>
+        <div>модель <span style="color:#43434c">→</span> вызов инструмента с фейками <span style="color:#43434c">→</span> <span style="color:#b3a0ea">[veilgate: возвращает настоящие]</span> <span style="color:#43434c">→</span> инструмент</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#34343b;border:1px solid #34343b;margin-top:32px">
+        <sc-for list="{{ steps }}" as="s" hint-placeholder-count="3">
+          <div style="background:#1c1c20;padding:26px 24px 30px">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.16em;color:#b3a0ea;margin-bottom:20px">{{ s.n }}</div>
+            <div style="font-size:22px;font-weight:700;letter-spacing:-.02em;margin-bottom:12px">{{ s.title }}</div>
+            <div style="font-size:15px;line-height:1.62;color:#8f8e99;text-wrap:pretty">{{ s.body }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+
+    <section id="legal" style="border-top:1px solid #2b2b31;padding:80px 28px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(460px,1fr));gap:56px;align-items:start">
+        <div style="min-width:0">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.18em;color:#74737e;margin-bottom:24px">152-ФЗ</div>
+          <h2 style="margin:0 0 24px;font-size:46px;font-weight:900;letter-spacing:-.03em;text-wrap:balance">Мы не становимся обработчиком ваших данных</h2>
+          <p style="margin:0 0 20px;font-size:17px;line-height:1.65;color:#a9a8b3;max-width:640px;text-wrap:pretty">Контейнер работает внутри вашего периметра. Персональные данные не покидают его: маскирование, волт и раскрытие значений живут на вашем железе. К нам уходит одно тело запроса — агрегатные счётчики в составе продления аренды.</p>
+          <p style="margin:0 0 32px;font-size:17px;line-height:1.65;color:#8f8e99;max-width:640px;text-wrap:pretty">Поэтому у нас нет и не может быть экрана, на котором видно ваше сообщение, токен или значение. Оператор персональных данных — вы, и остаётесь им один.</p>
+          <div style="border:1px solid #34343b">
+            <sc-for list="{{ boundary }}" as="b" hint-placeholder-count="6">
+              <div style="display:grid;grid-template-columns:minmax(120px,1fr) minmax(70px,.5fr) minmax(80px,.6fr);border-bottom:1px solid #2b2b31;align-items:center">
+                <div style="padding:14px 18px;font-size:14.5px;color:#cfced6">{{ b.label }}</div>
+                <div style="padding:14px 18px;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:{{ b.siteColor }};border-left:1px solid #2b2b31">{{ b.site }}</div>
+                <div style="padding:14px 18px;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:#93cfaa;border-left:1px solid #2b2b31">{{ b.local }}</div>
+              </div>
+            </sc-for>
+            <div style="display:grid;grid-template-columns:minmax(120px,1fr) minmax(70px,.5fr) minmax(80px,.6fr);background:#1c1c20">
+              <div style="padding:12px 18px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.16em;color:#74737e">ГДЕ ЖИВЁТ</div>
+              <div style="padding:12px 18px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.16em;color:#74737e;border-left:1px solid #2b2b31">САЙТ</div>
+              <div style="padding:12px 18px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.16em;color:#74737e;border-left:1px solid #2b2b31">ВАШ КОНТУР</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div style="border:1px solid #34343b;background:#1e1e23;padding:22px">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:#74737e;margin-bottom:16px">ТЕЛО ОТЧЁТА, ДОСЛОВНО</div>
+            <pre style="margin:0;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.8;color:#93cfaa;white-space:pre-wrap">{{ reportJson }}</pre>
+          </div>
+          <sc-if value="{{ showFailClosed }}" hint-placeholder-val="{{ true }}">
+            <div style="border:1px solid #3b3427;background:#221d12;padding:22px;margin-top:20px">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:#dcbd85;margin-bottom:14px">FAIL-CLOSED</div>
+              <div style="font-size:15px;line-height:1.65;color:#cfced6;text-wrap:pretty">Аренда суточная. При неоплате сервис работает ещё 48 часов с предупреждениями, потом маскирование останавливается и шлюз перестаёт пропускать запросы. Данные не утекут даже в аварии: если маскировать нечем, запрос не уходит.</div>
+            </div>
+          </sc-if>
+          <div style="border:1px solid #34343b;padding:22px;margin-top:20px">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:#74737e;margin-bottom:14px">ДЛЯ ВАШЕГО БЕЗОПАСНИКА</div>
+            <div style="display:grid;gap:10px;font-size:14.5px;color:#a9a8b3">
+              <div>Описание архитектуры «мы не обработчик» — документом</div>
+              <div>Проверка подписи образа: <span style="font-family:'JetBrains Mono',monospace;color:#b3a0ea">cosign verify</span></div>
+              <div>Политика обработки и оферта — постоянно доступны</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="start" style="border-top:1px solid #2b2b31;padding:80px 28px">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:32px;flex-wrap:wrap;margin-bottom:12px">
+        <h2 style="margin:0;font-size:46px;font-weight:900;letter-spacing:-.03em">Быстрый старт</h2>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.16em;color:#74737e">{{ startMeta }}</div>
+      </div>
+      <p style="margin:0 0 40px;font-size:17px;color:#8f8e99;max-width:720px">Ключ выдаётся сразу после регистрации по email, до оплаты. Команда запуска приходит уже с подставленным ключом — подставлять переменные вручную не нужно.</p>
+      <div style="display:grid;gap:1px;background:#34343b;border:1px solid #34343b">
+        <sc-for list="{{ commands }}" as="c" hint-placeholder-count="3">
+          <div style="background:#1c1c20;display:grid;grid-template-columns:minmax(0,320px) minmax(0,1fr) 120px;align-items:center;gap:24px">
+            <div style="padding:22px 24px">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.16em;color:#b3a0ea;margin-bottom:8px">{{ c.n }}</div>
+              <div style="font-size:17px;font-weight:600">{{ c.title }}</div>
+              <div style="font-size:13.5px;color:#74737e;margin-top:6px">{{ c.note }}</div>
+            </div>
+            <pre style="margin:0;padding:22px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.9;color:#cfced6;white-space:pre-wrap;overflow-x:auto">{{ c.code }}</pre>
+            <button onClick="{{ c.onCopy }}" style="height:100%;border:0;border-left:1px solid #34343b;background:transparent;color:#8f8e99;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.16em;cursor:pointer">{{ c.copyLabel }}</button>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+
+    <section id="pricing" style="border-top:1px solid #2b2b31;padding:80px 28px">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:32px;flex-wrap:wrap;margin-bottom:40px">
+        <h2 style="margin:0;font-size:46px;font-weight:900;letter-spacing:-.03em">Цены</h2>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;color:#74737e">ЦЕНА НА САЙТЕ. БЕЗ «СВЯЖИТЕСЬ С НАМИ»</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#34343b;border:1px solid #34343b">
+        <sc-for list="{{ plans }}" as="p" hint-placeholder-count="3">
+          <div style="background:{{ p.bg }};padding:30px 26px 32px;display:flex;flex-direction:column;gap:20px">
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.16em;color:{{ p.tagColor }}">{{ p.tag }}</div>
+              <div style="font-size:40px;font-weight:900;letter-spacing:-.03em;margin-top:18px">{{ p.price }}</div>
+              <div style="font-size:13.5px;color:#74737e;margin-top:6px">{{ p.per }}</div>
+            </div>
+            <div style="display:grid;gap:10px;font-size:14.5px;line-height:1.5;color:#a9a8b3">
+              <sc-for list="{{ p.items }}" as="i" hint-placeholder-count="4">
+                <div style="display:grid;grid-template-columns:18px minmax(0,1fr);gap:8px"><span style="color:#b3a0ea;font-family:'JetBrains Mono',monospace;font-size:12px">→</span><span>{{ i }}</span></div>
+              </sc-for>
+            </div>
+            <a href="#start" style="margin-top:auto;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;padding:14px;background:{{ p.btnBg }};color:{{ p.btnFg }};border:1px solid {{ p.btnBorder }}">{{ p.cta }}</a>
+          </div>
+        </sc-for>
+      </div>
+      <div style="border:1px solid #34343b;border-top:0;padding:20px 26px;display:flex;gap:32px;flex-wrap:wrap;font-size:14px;color:#8f8e99">
+        <div>Превышение лимита: <span style="color:#e8e7ec;font-family:'JetBrains Mono',monospace">0,40 ₽ / 1000 запросов</span></div>
+        <div>Оплата безналом по счёту, акты и закрывающие — в кабинете</div>
+        <div>{{ trialShort }}</div>
+      </div>
+    </section>
+
+    <section id="faq" style="border-top:1px solid #2b2b31;padding:80px 28px 96px">
+      <div style="display:grid;grid-template-columns:320px minmax(0,1fr);gap:56px;align-items:start">
+        <div>
+          <h2 style="margin:0;font-size:46px;font-weight:900;letter-spacing:-.03em">FAQ</h2>
+          <p style="margin:16px 0 0;font-size:15px;line-height:1.6;color:#8f8e99">Остальное — на почту. Чата поддержки нет намеренно: клиентов пока единицы, и отвечаем мы сами.</p>
+        </div>
+        <div style="border-top:1px solid #2b2b31">
+          <sc-for list="{{ faq }}" as="f" hint-placeholder-count="7">
+            <div style="border-bottom:1px solid #2b2b31">
+              <button onClick="{{ f.onClick }}" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:24px;background:transparent;border:0;padding:22px 0;cursor:pointer;text-align:left;color:#e8e7ec;font-family:Archivo,sans-serif;font-size:19px;font-weight:600;letter-spacing:-.01em">
+                <span>{{ f.q }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:14px;color:{{ f.signColor }}">{{ f.sign }}</span>
+              </button>
+              <sc-if value="{{ f.open }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:0 0 26px;max-width:820px;font-size:16px;line-height:1.65;color:#8f8e99;text-wrap:pretty">{{ f.a }}</div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </section>
+
+    <section style="border-top:1px solid #2b2b31;padding:80px 28px;display:flex;align-items:center;justify-content:space-between;gap:40px;flex-wrap:wrap">
+      <div>
+        <h2 style="margin:0;font-size:56px;font-weight:900;letter-spacing:-.035em;max-width:780px;text-wrap:balance">Пятнадцать минут до первого замаскированного запроса</h2>
+        <div style="margin-top:18px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#74737e;letter-spacing:.02em">{{ trialShort }} · карта не спрашивается · хостинг в РФ</div>
+      </div>
+      <a href="#start" style="font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;color:#17171a;background:#b3a0ea;padding:18px 28px;font-weight:700">СОЗДАТЬ АККАУНТ</a>
+    </section>
+
+    <footer style="border-top:1px solid #2b2b31;padding:32px 28px;display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:12px;color:#5c5c66;letter-spacing:.06em">
+      <div>VEILGATE · МАСКИРОВАНИЕ ПД ДЛЯ LLM-АГЕНТОВ</div>
+      <div style="display:flex;gap:24px;flex-wrap:wrap">
+        <a href="#legal" style="color:#5c5c66">ОФЕРТА</a>
+        <a href="#legal" style="color:#5c5c66">ПОЛИТИКА ОБРАБОТКИ</a>
+        <a href="#legal" style="color:#5c5c66">АРХИТЕКТУРА ДЛЯ БЕЗОПАСНИКА</a>
+        <span>ХОСТИНГ В РФ</span>
+      </div>
+    </footer>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;trialDays&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:14,&quot;tsType&quot;:&quot;number&quot;,&quot;min&quot;:7,&quot;max&quot;:30,&quot;unit&quot;:&quot; дн&quot;},&quot;showFailClosed&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+const A = "#b3a0ea";
+const PII_BG = "rgba(226,147,180,.16)", PII_FG = "#e5aec6";
+const FAKE_BG = "rgba(179,160,234,.18)", FAKE_FG = "#cec0f2";
+
+function plain(t) { return { text: t, bg: "transparent", fg: "#cfced6", pad: "0" }; }
+function pii(t) { return { text: t, bg: PII_BG, fg: PII_FG, pad: "2px 4px" }; }
+function fake(t) { return { text: t, bg: FAKE_BG, fg: FAKE_FG, pad: "2px 4px" }; }
+
+const PRESETS = [
+  {
+    label: "ФИО И ТЕЛЕФОН",
+    orig: [plain("Здравствуйте! Меня зовут "), pii("Иванов Пётр Сергеевич"), plain(", заказ №A-4471.\nПерезвоните на "), pii("+7 916 214-88-03"), plain(", доставку жду по адресу\n"), pii("Москва, Ленинский пр-т 42, кв. 118"), plain(".")],
+    masked: [plain("Здравствуйте! Меня зовут "), fake("Соколов Игорь Валентинович"), plain(", заказ №A-4471.\nПерезвоните на "), fake("+7 903 557-19-42"), plain(", доставку жду по адресу\n"), fake("Москва, Ломоносовский пр-т 17, кв. 64"), plain(".")]
+  },
+  {
+    label: "JSON ЗАКАЗА",
+    orig: [plain("{\n  \"order\": \"A-4471\",\n  \"customer\": \""), pii("Иванова Мария Львовна"), plain("\",\n  \"phone\": \""), pii("+79162148803"), plain("\",\n  \"email\": \""), pii("m.ivanova@acme.ru"), plain("\",\n  \"total\": 12400\n}")],
+    masked: [plain("{\n  \"order\": \"A-4471\",\n  \"customer\": \""), fake("Ерёмина Ольга Тимуровна"), plain("\",\n  \"phone\": \""), fake("+79035571942"), plain("\",\n  \"email\": \""), fake("o.eremina@acme.ru"), plain("\",\n  \"total\": 12400\n}")]
+  },
+  {
+    label: "АДРЕС",
+    orig: [plain("Курьер не нашёл вход. Адрес: "), pii("г. Казань, ул. Профсоюзная, д. 17, под. 3, кв. 84"), plain(",\nдомофон 84К. Подъезд со стороны "), pii("Петербургской"), plain(".")],
+    masked: [plain("Курьер не нашёл вход. Адрес: "), fake("г. Казань, ул. Достоевского, д. 41, под. 2, кв. 57"), plain(",\nдомофон 57К. Подъезд со стороны "), fake("Чистопольской"), plain(".")]
+  },
+  {
+    label: "ДОКУМЕНТЫ",
+    orig: [plain("Для оформления: паспорт "), pii("4517 № 812345"), plain(", СНИЛС "), pii("112-233-445 95"), plain(",\nИНН "), pii("770512345678"), plain(". Номер договора 2024/117 — не персональные, остаётся как есть.")],
+    masked: [plain("Для оформления: паспорт "), fake("4509 № 337201"), plain(", СНИЛС "), fake("284-119-703 41"), plain(",\nИНН "), fake("771903845206"), plain(". Номер договора 2024/117 — не персональные, остаётся как есть.")]
+  }
+];
+
+const FAQ = [
+  ["Что вы видите со своей стороны?", "Только то тело отчёта, которое показано выше: идентификатор организации, идентификатор инстанса, число запросов и счётчики по типам сущностей. Ни текстов, ни токенов, ни значений — их физически нет на нашей стороне."],
+  ["Где хранятся данные?", "В вашем volume, внутри вашего периметра. Волт токенов, журнал и статистика лежат рядом с контейнером и наружу не уходят."],
+  ["Что если у вас упадёт сервер?", "Аренда суточная, поэтому падение лицензионного сервера не останавливает маскирование сразу: сервис работает ещё 48 часов и продолжает продлевать аренду, когда связь вернётся."],
+  ["Можно ли on-prem без интернета?", "Да, отдельной лицензией с офлайн-активацией. В этом режиме счётчики никуда не отправляются, а срок проверяется по подписанному файлу лицензии."],
+  ["Какие модели поддерживаются?", "Любые, к которым вы ходите по HTTP: OpenAI-совместимые API, Anthropic, LiteLLM как прокси, собственный шлюз. Veilgate стоит до модели и ничего о ней не знает."],
+  ["Что с производительностью?", "Маскирование добавляет единицы миллисекунд на сообщение обычной длины, обработка идёт в нескольких процессах. Кэш значений устраняет повторную работу в растущем транскрипте."],
+  ["Как отказаться?", "Отключить продление в кабинете. Ключ продолжает работать до конца оплаченного периода, потом сервис останавливается fail-closed. Данные остаются у вас — они и так никогда не были у нас."]
+];
+
+const PROBLEMS = [
+  ["01", "152-ФЗ запрещает отдавать ПД в зарубежную модель", "Передача персональных данных в модель за пределами РФ — это трансграничная передача с согласием, уведомлением и ответственностью. Для большинства продуктов этот путь просто закрыт."],
+  ["02", "Обычное маскирование ломает вызов инструмента", "Агент должен позвонить на настоящий телефон и доставить на настоящий адрес. Заменив их на [PHONE_1], вы получаете модель, которая не может выполнить задачу."],
+  ["03", "Собственный инференс стоит как отдел", "Держать свою модель ради соответствия закону — миллионы в год на железо и людей. Передовые модели при этом остаются недоступными."]
+];
+
+const STEPS = [
+  ["ШАГ 1", "Находим", "23 типа персональных данных: ФИО, телефоны, адреса, документы, email, номера карт. Русская морфология и разбор адресов — не набор регулярок."],
+  ["ШАГ 2", "Подменяем", "Каждое значение получает правдоподобный фейк того же формата и того же вида. Модель не догадывается, что данные подменены, и работает как обычно."],
+  ["ШАГ 3", "Возвращаем", "Когда модель вызывает ваш инструмент, Veilgate подставляет настоящие значения обратно. Инструмент отрабатывает на реальных данных, модель их не видела."]
+];
+
+const BOUNDARY = [
+  ["Ключи, тарифы, счета", "да", "нет", "#93cfaa", "#74737e"],
+  ["Агрегатные счётчики", "да", "да", "#93cfaa", "#93cfaa"],
+  ["Тексты сообщений", "нет", "да", "#e293b4", "#93cfaa"],
+  ["Токены", "нет", "да", "#e293b4", "#93cfaa"],
+  ["Превью оригиналов", "нет", "да", "#e293b4", "#93cfaa"],
+  ["Раскрытие значения по токену", "нет", "да", "#e293b4", "#93cfaa"]
+];
+
+const REPORT = '{"org_id": "acme", "instance_id": "8f3c…",\n "requests": 184203,\n "entities": {"PHONE": 12043,\n              "NAME": 8871,\n              "LOC": 3310}}';
+
+const RUN_CMD = 'docker run -d -p 8000:8000 -p 8081:8081 -v veilgate-data:/data \\\n  -e VEILGATE_LICENSE_KEY=vg_live_A7f3k91d… \\\n  cr.yandex/veilgate/veilgate:1.0.0';
+
+class Component extends DCLogic {
+  state = { tab: 0, faq: 0, copied: "" };
+
+  copy(id, text) {
+    try { navigator.clipboard && navigator.clipboard.writeText(text); } catch (e) {}
+    this.setState({ copied: id });
+    clearTimeout(this._t);
+    this._t = setTimeout(() => this.setState({ copied: "" }), 1500);
+  }
+
+  renderVals() {
+    const trial = this.props.trialDays ?? 14;
+    const p = PRESETS[this.state.tab] || PRESETS[0];
+    const copied = this.state.copied;
+
+    const commands = [
+      ["01", "Поднять контейнер", "ключ уже подставлен", RUN_CMD],
+      ["02", "Проверить, что живой", "и открыть локальный интерфейс", "curl localhost:8000/health\n# veilgate: интерфейс на http://localhost:8081/?token=9f3c1a…"],
+      ["03", "Включить в шлюз", "callback для LiteLLM или сырой HTTP", 'mask = post("http://veilgate:8000/mask", {"text": msg})\n# → модель → обратно через /unmask']
+    ].map(([n, title, note, code], i) => ({
+      n, title, note, code,
+      copyLabel: copied === "c" + i ? "СКОПИРОВАНО" : "КОПИРОВАТЬ",
+      onCopy: () => this.copy("c" + i, code)
+    }));
+
+    return {
+      trialLine: "Пробный период " + trial + " дней · карта не нужна · ключ выдаётся сразу · хостинг в РФ",
+      trialShort: "Пробный период " + trial + " дней",
+      startMeta: "КЛЮЧ ДО ОПЛАТЫ · " + trial + " ДНЕЙ ПРОБЫ",
+      reportJson: REPORT,
+      showFailClosed: this.props.showFailClosed ?? true,
+      copyRunLabel: copied === "run" ? "ГОТОВО" : "КОПИРОВАТЬ",
+      copyRun: () => this.copy("run", RUN_CMD),
+      tabs: PRESETS.map((pr, i) => ({
+        label: pr.label,
+        bg: i === this.state.tab ? "#282437" : "transparent",
+        fg: i === this.state.tab ? A : "#74737e",
+        onClick: () => this.setState({ tab: i })
+      })),
+      orig: p.orig,
+      masked: p.masked,
+      problems: PROBLEMS.map(([n, title, body]) => ({ n, title, body })),
+      steps: STEPS.map(([n, title, body]) => ({ n, title, body })),
+      boundary: BOUNDARY.map(([label, site, local, siteColor]) => ({ label, site, local, siteColor })),
+      commands,
+      plans: [
+        { tag: "СТАРТ", price: "19 000 ₽", per: "в месяц · до 100 000 запросов", bg: "#1c1c20", tagColor: "#74737e", btnBg: "transparent", btnFg: "#e8e7ec", btnBorder: "#3d3d45", cta: "НАЧАТЬ ПРОБУ", items: ["1 инстанс, 2 ключа", "23 типа ПД, обратимые токены", "Локальный интерфейс и журнал", "Поддержка по почте"] },
+        { tag: "ПРОД", price: "49 000 ₽", per: "в месяц · до 1 000 000 запросов", bg: "#242134", tagColor: A, btnBg: A, btnFg: "#17171a", btnBorder: A, cta: "НАЧАТЬ ПРОБУ", items: ["До 8 инстансов, ключи прод и стенд", "Отчёты за период для аудитора", "Уведомления о лимите и аренде", "Ответ в течение рабочего дня"] },
+        { tag: "ENTERPRISE", price: "Индивидуально", per: "он-прем, офлайн-лицензия, SLA", bg: "#1c1c20", tagColor: "#74737e", btnBg: "transparent", btnFg: "#e8e7ec", btnBorder: "#3d3d45", cta: "НАПИСАТЬ НАМ", items: ["Работа в контуре без интернета", "Подписанный образ и cosign verify", "Кастомные типы сущностей", "Договор и аттестационная поддержка"] }
+      ],
+      faq: FAQ.map(([q, a], i) => ({
+        q, a,
+        open: this.state.faq === i,
+        sign: this.state.faq === i ? "−" : "+",
+        signColor: this.state.faq === i ? A : "#5c5c66",
+        onClick: () => this.setState({ faq: this.state.faq === i ? -1 : i })
+      }))
+    };
+  }
+}
+
+</script>
+</body>
+</html>

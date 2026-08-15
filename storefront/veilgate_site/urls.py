@@ -19,6 +19,7 @@ admin.site.index_title = "Операции"
 urlpatterns = [
     path("", views.landing, name="landing"),
     path("signup", views.signup, name="signup"),
+    path("activate", views.activate, name="activate"),
     path("welcome", views.welcome, name="welcome"),
     path("healthz", views.healthz, name="healthz"),
 

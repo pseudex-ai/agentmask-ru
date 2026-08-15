@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* Шрифты поставляются в образе и подключаются локальными @font-face — внешних CDN нет (tz-local-ui §1, §7, §8):
+     @font-face { font-family:'Archivo'; src:url('/static/fonts/Archivo.woff2') format('woff2'); font-weight:400 900; font-display:block }
+     @font-face { font-family:'JetBrains Mono'; src:url('/static/fonts/JetBrainsMono.woff2') format('woff2'); font-weight:400 700; font-display:block } */
+  html, body { margin:0; background:#17171a; }
+  body { color:#e8e7ec; font-family:Archivo,system-ui,-apple-system,'Segoe UI',sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#b3a0ea; text-decoration:none; }
+  a:hover { color:#cec0f2; }
+  * { box-sizing:border-box; }
+  ::selection { background:#b3a0ea; color:#17171a; }
+  textarea { font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace; }
+  pre, input { font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace; }
+  @keyframes vgpulse { 0%,100% { opacity:1 } 50% { opacity:.35 } }
+</style>
+</helmet>
+<div style="background:#17171a;min-height:100vh;color:#e8e7ec">
+
+  <header style="display:flex;align-items:center;justify-content:space-between;gap:16px;row-gap:10px;flex-wrap:wrap;min-height:58px;padding:10px 20px;border-bottom:1px solid #2b2b31;background:#1c1c20">
+    <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:10px">
+        <svg width="20" height="20" viewBox="0 0 32 32" fill="none" style="display:block"><rect x="3" y="11" width="18" height="18" rx="5" fill="#b3a0ea"></rect><rect x="11" y="3" width="18" height="18" rx="5" fill="#1c1c20" stroke="#b3a0ea" stroke-width="2.6"></rect></svg>
+        <div style="font-size:16px;font-weight:700;letter-spacing:-.02em">veilgate</div>
+        <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;letter-spacing:.16em;color:#74737e;border:1px solid #34343b;padding:3px 7px">ЛОКАЛЬНЫЙ ИНТЕРФЕЙС</div>
+      </div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:#74737e;display:flex;gap:18px">
+        <span>org <span style="color:#a9a8b3">acme</span></span>
+        <span>instance <span style="color:#a9a8b3">8f3c1a4e</span></span>
+        <span>движок <span style="color:#a9a8b3">1.0.0</span></span>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="display:flex;align-items:center;gap:8px;border:1px solid {{ pill.border }};background:{{ pill.bg }};padding:5px 11px">
+        <div style="width:7px;height:7px;border-radius:50%;background:{{ pill.dot }};animation:vgpulse 2.4s ease-in-out infinite"></div>
+        <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.14em;color:{{ pill.fg }}">{{ pill.text }}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;padding-left:12px;border-left:1px solid #2b2b31">
+        <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:.14em;color:#5c5c66">ДЕМО-СОСТОЯНИЕ</div>
+        <sc-for list="{{ sims }}" as="s" hint-placeholder-count="5">
+          <button onClick="{{ s.onClick }}" style="border:1px solid {{ s.border }};background:{{ s.bg }};color:{{ s.fg }};font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;letter-spacing:.1em;padding:5px 8px;cursor:pointer">{{ s.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+  </header>
+
+  <div style="display:grid;grid-template-columns:212px minmax(0,1fr);min-height:calc(100vh - 58px);align-items:stretch">
+
+    <aside style="border-right:1px solid #2b2b31;background:#1a1a1e;display:flex;flex-direction:column;justify-content:space-between">
+      <nav style="padding:14px 0">
+        <sc-for list="{{ nav }}" as="n" hint-placeholder-count="6">
+          <button onClick="{{ n.onClick }}" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;border:0;border-left:2px solid {{ n.mark }};background:{{ n.bg }};color:{{ n.fg }};font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;letter-spacing:.1em;padding:11px 16px;cursor:pointer;text-align:left">
+            <span>{{ n.label }}</span>
+            <span style="color:{{ n.badgeColor }};font-size:10.5px">{{ n.badge }}</span>
+          </button>
+        </sc-for>
+      </nav>
+      <div style="padding:16px;border-top:1px solid #2b2b31">
+        <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:.14em;color:#5c5c66;line-height:1.9">НИЧЕГО НЕ УХОДИТ<br>ЗА ПРЕДЕЛЫ КОНТУРА</div>
+        <div style="font-size:12px;color:#74737e;margin-top:10px;line-height:1.5">Порт 8081, вход по токену из лога контейнера.</div>
+      </div>
+    </aside>
+
+    <main style="min-width:0">
+
+      <sc-if value="{{ banner.show }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;gap:16px;padding:13px 22px;border-bottom:1px solid {{ banner.border }};background:{{ banner.bg }}">
+          <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.16em;color:{{ banner.fg }};white-space:nowrap">{{ banner.tag }}</div>
+          <div style="font-size:13.5px;color:#cfced6;line-height:1.5">{{ banner.text }}</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isStatus }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:22px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1px;background:#34343b;border:1px solid #34343b">
+            <div style="background:#1e1e23;padding:26px 26px 28px">
+              <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.18em;color:#74737e">СОСТОЯНИЕ</div>
+              <div style="display:flex;align-items:baseline;gap:14px;margin-top:14px">
+                <div style="font-size:44px;font-weight:900;letter-spacing:-.03em;color:{{ big.color }};line-height:1">{{ big.title }}</div>
+                <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#74737e">{{ big.sub }}</div>
+              </div>
+              <div style="font-size:14.5px;color:#8f8e99;margin-top:14px;max-width:620px;line-height:1.55">{{ big.note }}</div>
+              <div style="display:flex;gap:10px;margin-top:22px;flex-wrap:wrap">
+                <button onClick="{{ runCheck }}" style="border:0;background:#b3a0ea;color:#17171a;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700;letter-spacing:.12em;padding:14px 20px;cursor:pointer;white-space:nowrap">{{ checkLabel }}</button>
+                <button onClick="{{ goSandbox }}" style="border:1px solid #3d3d45;background:transparent;color:#e8e7ec;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;letter-spacing:.12em;padding:14px 20px;cursor:pointer;white-space:nowrap">ПЕСОЧНИЦА →</button>
+              </div>
+              <div style="font-size:12.5px;color:#5c5c66;margin-top:12px">Проверка отправляет заготовленное сообщение через реальный /mask, затем /unmask. Ваши данные в ней не участвуют.</div>
+            </div>
+            <div style="background:#1c1c20;padding:24px">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:16px">
+                <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.18em;color:#74737e">СЕГОДНЯ</div>
+              </div>
+              <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;color:#5c5c66;margin:-8px 0 16px">{{ refreshLine }}</div>
+              <div style="display:grid;gap:18px">
+                <div>
+                  <div style="font-size:30px;font-weight:900;letter-spacing:-.02em">{{ today.requests }}</div>
+                  <div style="font-size:12.5px;color:#74737e;margin-top:2px">запросов обработано</div>
+                </div>
+                <div>
+                  <div style="font-size:30px;font-weight:900;letter-spacing:-.02em;color:#93cfaa">{{ today.values }}</div>
+                  <div style="font-size:12.5px;color:#74737e;margin-top:2px">значений защищено</div>
+                </div>
+                <div style="border-top:1px solid #2b2b31;padding-top:14px;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:#74737e;line-height:1.9">{{ today.breakdown }}</div>
+              </div>
+            </div>
+          </div>
+
+          <sc-if value="{{ check.show }}" hint-placeholder-val="{{ false }}">
+            <div style="border:1px solid #34343b;border-top:0;background:#1c1c20">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 22px;border-bottom:1px solid #2b2b31">
+                <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.18em;color:#93cfaa">{{ check.head }}</div>
+                <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#74737e">{{ check.timing }}</div>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
+                <sc-for list="{{ check.panes }}" as="p" hint-placeholder-count="3">
+                  <div style="padding:18px 20px 22px;border-right:1px solid #2b2b31;min-width:0">
+                    <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;letter-spacing:.16em;color:{{ p.labelColor }};margin-bottom:12px">{{ p.label }}</div>
+                    <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.95;color:#cfced6"><sc-for list="{{ p.chunks }}" as="c" hint-placeholder-count="4"><span style="background:{{ c.bg }};color:{{ c.fg }};padding:{{ c.pad }};border-radius:2px;white-space:pre-wrap">{{ c.text }}</span></sc-for></div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1px;background:#34343b;border:1px solid #34343b;border-top:0">
+            <div style="background:#1c1c20;padding:22px">
+              <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.18em;color:#74737e;margin-bottom:14px">ЛИЦЕНЗИЯ</div>
+              <sc-for list="{{ licenseRows }}" as="r" hint-placeholder-count="4">
+                <div style="display:flex;justify-content:space-between;gap:16px;padding:7px 0;border-bottom:1px solid #232329;font-size:13px">
+                  <span style="color:#74737e;white-space:nowrap">{{ r.k }}</span>
+                  <span style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:{{ r.color }};text-align:right;min-width:0">{{ r.v }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="background:#1c1c20;padding:22px">
+              <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.18em;color:#74737e;margin-bottom:14px">ПРОЦЕССЫ</div>
+              <sc-for list="{{ procs }}" as="p" hint-placeholder-count="4">
+                <div style="display:grid;grid-template-columns:70px minmax(0,1fr) auto;gap:10px;padding:7px 0;border-bottom:1px solid #232329;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px">
+                  <span style="color:#a9a8b3">pid {{ p.pid }}</span>
+                  <span style="color:#74737e">{{ p.role }}</span>
+                  <span style="color:#93cfaa">{{ p.uptime }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="background:#1c1c20;padding:22px">
+              <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.18em;color:#74737e;margin-bottom:14px">ЕСЛИ ЧТО-ТО НЕ ТАК</div>
+              <div style="font-size:13px;color:#8f8e99;line-height:1.6">Первое, что попросит поддержка — нажать «Проверить сейчас» и прислать вывод логов контейнера.</div>
+              <div style="display:flex;margin-top:14px;border:1px solid #34343b;background:#17171a">
+                <div style="flex:1;padding:11px 12px;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#cfced6;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">docker logs veilgate --tail 200</div>
+                <button onClick="{{ copyLogs }}" style="border:0;border-left:1px solid #34343b;background:transparent;color:#74737e;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;letter-spacing:.14em;padding:0 12px;cursor:pointer">{{ copyLogsLabel }}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isSandbox }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:22px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:16px">
+            <div>
+              <div style="font-size:26px;font-weight:800;letter-spacing:-.025em">Песочница</div>
+              <div style="font-size:13.5px;color:#8f8e99;margin-top:5px">Здесь можно вставлять настоящий текст: данные не покидают контур.</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <sc-for list="{{ presets }}" as="p" hint-placeholder-count="5">
+                <button onClick="{{ p.onClick }}" style="border:1px solid {{ p.border }};background:{{ p.bg }};color:{{ p.fg }};font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.1em;padding:8px 11px;cursor:pointer">{{ p.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1px;background:#34343b;border:1px solid #34343b">
+            <div style="background:#1e1e23;padding:0">
+              <textarea onChange="{{ onInput }}" value="{{ sandboxText }}" spellcheck="false" style="width:100%;min-height:190px;resize:vertical;background:#1e1e23;border:0;border-bottom:1px solid #2b2b31;color:#e8e7ec;font-size:13.5px;line-height:1.9;padding:18px 20px;outline:none"></textarea>
+              <div style="display:flex;gap:10px;padding:16px 20px;flex-wrap:wrap;align-items:center">
+                <button onClick="{{ findSpans }}" style="border:1px solid #3d3d45;background:transparent;color:#e8e7ec;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;letter-spacing:.12em;padding:12px 16px;cursor:pointer;white-space:nowrap">ЧТО НАЙДЕНО</button>
+                <button onClick="{{ runFull }}" style="border:0;background:#b3a0ea;color:#17171a;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;font-weight:700;letter-spacing:.12em;padding:12px 16px;cursor:pointer;white-space:nowrap">ПРОГНАТЬ ПОЛНОСТЬЮ</button>
+                <div style="font-size:12px;color:#74737e;max-width:420px;line-height:1.5">Первая кнопка только смотрит (<span style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace">/spans</span>) и токенов не создаёт. Вторая создаёт токены в волте.</div>
+              </div>
+            </div>
+            <div style="background:#1c1c20;padding:20px">
+              <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.18em;color:#74737e;margin-bottom:14px">НАЙДЕНО · {{ spanCount }}</div>
+              <sc-for list="{{ spans }}" as="s" hint-placeholder-count="4">
+                <div style="padding:9px 0;border-bottom:1px solid #232329">
+                  <div style="display:flex;justify-content:space-between;gap:10px;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px">
+                    <span style="color:#b3a0ea;letter-spacing:.1em">{{ s.type }}</span>
+                    <span style="color:#5c5c66">{{ s.pos }}</span>
+                  </div>
+                  <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;color:#e5aec6;margin-top:5px;word-break:break-word">{{ s.value }}</div>
+                  <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;color:#cec0f2;margin-top:3px;word-break:break-word">→ {{ s.fake }}</div>
+                </div>
+              </sc-for>
+              <div style="font-size:12.5px;color:#5c5c66;margin-top:14px;line-height:1.55">{{ spansNote }}</div>
+            </div>
+          </div>
+          <sc-if value="{{ full.show }}" hint-placeholder-val="{{ false }}">
+            <div style="border:1px solid #34343b;border-top:0;background:#1c1c20">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 20px;border-bottom:1px solid #2b2b31">
+                <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.16em;color:#b3a0ea">ПОЛНЫЙ ПРОГОН · СОЗДАНО ТОКЕНОВ: {{ full.tokens }}</div>
+                <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#74737e">{{ full.timing }}</div>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
+                <sc-for list="{{ full.panes }}" as="p" hint-placeholder-count="3">
+                  <div style="padding:18px 20px 22px;border-right:1px solid #2b2b31;min-width:0">
+                    <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;letter-spacing:.16em;color:{{ p.labelColor }};margin-bottom:12px">{{ p.label }}</div>
+                    <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.95;color:#cfced6"><sc-for list="{{ p.chunks }}" as="c" hint-placeholder-count="4"><span style="background:{{ c.bg }};color:{{ c.fg }};padding:{{ c.pad }};border-radius:2px;white-space:pre-wrap">{{ c.text }}</span></sc-for></div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isLog }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:22px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:16px">
+            <div>
+              <div style="font-size:26px;font-weight:800;letter-spacing:-.025em">Журнал</div>
+              <div style="font-size:13.5px;color:#8f8e99;margin-top:5px">{{ logCountLine }}</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <sc-for list="{{ logPeriods }}" as="f" hint-placeholder-count="3">
+                <button onClick="{{ f.onClick }}" style="border:1px solid {{ f.border }};background:{{ f.bg }};color:{{ f.fg }};font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.1em;padding:8px 11px;cursor:pointer;white-space:nowrap">{{ f.label }}</button>
+              </sc-for>
+              <sc-for list="{{ logAgents }}" as="f" hint-placeholder-count="4">
+                <button onClick="{{ f.onClick }}" style="border:1px solid {{ f.border }};background:{{ f.bg }};color:{{ f.fg }};font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.1em;padding:8px 11px;cursor:pointer;white-space:nowrap">{{ f.label }}</button>
+              </sc-for>
+              <sc-for list="{{ logFilters }}" as="f" hint-placeholder-count="3">
+                <button onClick="{{ f.onClick }}" style="border:1px solid {{ f.border }};background:{{ f.bg }};color:{{ f.fg }};font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.1em;padding:8px 11px;cursor:pointer">{{ f.label }}</button>
+              </sc-for>
+              <input onChange="{{ onSearch }}" value="{{ search }}" placeholder="поиск по токену" style="background:#1c1c20;border:1px solid #34343b;color:#e8e7ec;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;padding:8px 11px;width:190px;outline:none"></input>
+            </div>
+          </div>
+          <div style="border:1px solid #34343b;background:#1c1c20;overflow-x:auto">
+            <div style="min-width:900px;display:grid;grid-template-columns:96px 118px 92px minmax(140px,1fr) minmax(130px,1fr) 108px;gap:12px;padding:11px 18px;border-bottom:1px solid #2b2b31;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;letter-spacing:.14em;color:#5c5c66;white-space:nowrap">
+              <div>ВРЕМЯ</div><div>АГЕНТ</div><div>ТИП</div><div>ТОКЕН</div><div>ОРИГИНАЛ</div><div></div>
+            </div>
+            <sc-for list="{{ events }}" as="e" hint-placeholder-count="8">
+              <div style="min-width:900px;display:grid;grid-template-columns:96px 118px 92px minmax(140px,1fr) minmax(130px,1fr) 108px;gap:12px;padding:11px 18px;border-bottom:1px solid #232329;align-items:center;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;white-space:nowrap">
+                <div style="color:#74737e">{{ e.ts }}</div>
+                <div style="color:#a9a8b3">{{ e.agent }}</div>
+                <div style="color:#b3a0ea;letter-spacing:.08em">{{ e.type }}</div>
+                <div style="color:#cfced6;overflow:hidden;text-overflow:ellipsis">{{ e.token }}</div>
+                <div style="color:{{ e.previewColor }}">{{ e.preview }}</div>
+                <button onClick="{{ e.onReveal }}" style="border:1px solid #34343b;background:transparent;color:#8f8e99;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;letter-spacing:.1em;padding:6px 8px;cursor:pointer">{{ e.action }}</button>
+              </div>
+            </sc-for>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 18px;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:#74737e">
+              <div>{{ pageLine }}</div>
+              <div style="display:flex;gap:8px">
+                <button onClick="{{ prevPage }}" style="border:1px solid #34343b;background:transparent;color:#8f8e99;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;padding:7px 12px;cursor:pointer">← НАЗАД</button>
+                <button onClick="{{ nextPage }}" style="border:1px solid #34343b;background:transparent;color:#8f8e99;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;padding:7px 12px;cursor:pointer">ДАЛЬШЕ →</button>
+              </div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin-top:18px">
+            <div style="font-size:13px;color:#74737e;line-height:1.6"><span style="color:#a9a8b3;font-weight:600">Почему событий меньше, чем сообщений.</span> Одно и то же значение, пришедшее повторно в растущем транскрипте, — это одна защищённая сущность, а не N. Повторные попадания в журнал не пишутся: для счётчиков это правильно, а здесь выглядит как пропуски.</div>
+            <div style="font-size:13px;color:#74737e;line-height:1.6"><span style="color:#a9a8b3;font-weight:600">Раскрытие пишется в журнал доступа.</span> Фиксируется сессия, токен и время. Само значение не сохраняется — иначе журнал стал бы второй копией персональных данных.</div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isStats }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:22px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:16px">
+            <div>
+              <div style="font-size:26px;font-weight:800;letter-spacing:-.025em">Статистика</div>
+              <div style="font-size:13.5px;color:#8f8e99;margin-top:5px">Период: последние 14 дней · считается локально</div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button onClick="{{ noop }}" style="border:1px solid #3d3d45;background:transparent;color:#e8e7ec;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.12em;padding:10px 14px;cursor:pointer;white-space:nowrap">ВЫГРУЗИТЬ CSV</button>
+              <button onClick="{{ noop }}" style="border:0;background:#b3a0ea;color:#17171a;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:.12em;padding:10px 14px;cursor:pointer;white-space:nowrap">ОТЧЁТ ЗА ПЕРИОД</button>
+            </div>
+          </div>
+          <div style="border:1px solid #34343b;background:#1c1c20;padding:22px 24px 26px">
+            <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.18em;color:#74737e;margin-bottom:20px">ЗАПРОСЫ ПО ДНЯМ</div>
+            <div style="display:flex;align-items:flex-end;gap:6px;height:150px">
+              <sc-for list="{{ days }}" as="d" hint-placeholder-count="14">
+                <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:8px;height:100%">
+                  <div style="width:100%;height:{{ d.h }};background:{{ d.color }}"></div>
+                  <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:#5c5c66">{{ d.label }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1px;background:#34343b;border:1px solid #34343b;border-top:0">
+            <div style="background:#1c1c20;padding:22px 24px">
+              <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.18em;color:#74737e;margin-bottom:18px">ПО ТИПАМ СУЩНОСТЕЙ</div>
+              <sc-for list="{{ types }}" as="t" hint-placeholder-count="6">
+                <div style="display:grid;grid-template-columns:120px minmax(0,1fr) 90px;gap:14px;align-items:center;padding:8px 0">
+                  <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#a9a8b3;letter-spacing:.08em;white-space:nowrap">{{ t.name }}</div>
+                  <div style="height:8px;background:#232329"><div style="height:8px;width:{{ t.w }};background:{{ t.color }}"></div></div>
+                  <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#cfced6;text-align:right">{{ t.count }}</div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="background:#1c1c20;padding:22px">
+              <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.18em;color:#74737e;margin-bottom:18px">ПО АГЕНТАМ</div>
+              <sc-for list="{{ agents }}" as="a" hint-placeholder-count="4">
+                <div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #232329;font-size:13px">
+                  <span style="color:#a9a8b3;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;white-space:nowrap">{{ a.name }}</span>
+                  <span style="color:#cfced6;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px">{{ a.count }}</span>
+                </div>
+              </sc-for>
+              <div style="font-size:12.5px;color:#5c5c66;margin-top:14px;line-height:1.55">Отчёт за период — печатная форма для внутренней проверки: организация, период, число обращений и сколько значений какого типа защищено.</div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isSub }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:22px">
+          <div style="font-size:26px;font-weight:800;letter-spacing:-.025em">Подписка</div>
+          <div style="font-size:13.5px;color:#8f8e99;margin:5px 0 16px">Локальное зеркало состояния лицензии — чтобы ответ на «почему встало» был здесь.</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1px;background:#34343b;border:1px solid #34343b">
+            <div style="background:#1c1c20;padding:24px">
+              <sc-for list="{{ subRows }}" as="r" hint-placeholder-count="5">
+                <div style="display:flex;justify-content:space-between;gap:16px;padding:11px 0;border-bottom:1px solid #232329;font-size:13.5px">
+                  <span style="color:#74737e;white-space:nowrap">{{ r.k }}</span>
+                  <span style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;color:{{ r.color }};text-align:right;min-width:0">{{ r.v }}</span>
+                </div>
+              </sc-for>
+              <div style="margin-top:18px;padding:16px;border:1px solid #34343b;background:#17171a">
+                <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;letter-spacing:.16em;color:#74737e;margin-bottom:10px">ПОСЛЕДНЯЯ ОШИБКА ПРОДЛЕНИЯ, ДОСЛОВНО</div>
+                <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:{{ subErrColor }};line-height:1.7;word-break:break-word">{{ subErr }}</div>
+              </div>
+            </div>
+            <div style="background:#1e1e23;padding:24px">
+              <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.18em;color:#93cfaa;margin-bottom:14px">ЧТО УХОДИТ НАРУЖУ · ПОСЛЕДНИЙ ОТЧЁТ</div>
+              <pre style="margin:0;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.8;color:#93cfaa;white-space:pre-wrap">{{ reportJson }}</pre>
+              <div style="font-size:12.5px;color:#8f8e99;margin-top:16px;line-height:1.6">Это реально отправленное тело, а не пример из документации. Ни текстов, ни токенов, ни значений в нём нет и быть не может.</div>
+              <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#5c5c66;margin-top:14px;line-height:1.8">отправлено: {{ reportSent }}<br>адрес: license.veilgate.ru/lease</div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isDiag }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:22px">
+          <div style="font-size:26px;font-weight:800;letter-spacing:-.025em">Диагностика</div>
+          <div style="font-size:13.5px;color:#8f8e99;margin:5px 0 16px">Только чтение. Настройки движка меняются переменными окружения контейнера.</div>
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1px;background:#34343b;border:1px solid #34343b">
+            <div style="background:#1c1c20;padding:22px">
+              <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.18em;color:#74737e;margin-bottom:14px">ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ</div>
+              <sc-for list="{{ envs }}" as="e" hint-placeholder-count="6">
+                <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:8px 0;border-bottom:1px solid #232329;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px">
+                  <span style="color:#8f8e99;word-break:break-all">{{ e.k }}</span>
+                  <span style="color:#cfced6">{{ e.v }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="background:#1c1c20;padding:22px">
+              <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.18em;color:#74737e;margin-bottom:14px">ПРОФИЛЬ ПО СТАДИЯМ</div>
+              <sc-for list="{{ stages }}" as="s" hint-placeholder-count="5">
+                <div style="display:grid;grid-template-columns:130px minmax(0,1fr) 60px;gap:12px;align-items:center;padding:8px 0">
+                  <span style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#a9a8b3;white-space:nowrap">{{ s.name }}</span>
+                  <div style="height:6px;background:#232329"><div style="height:6px;width:{{ s.w }};background:#b3a0ea"></div></div>
+                  <span style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#cfced6;text-align:right">{{ s.ms }}</span>
+                </div>
+              </sc-for>
+              <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#5c5c66;margin-top:12px">включено VEILGATE_PROFILE=1</div>
+              <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.18em;color:#74737e;margin:22px 0 12px">ПАМЯТЬ ПО ПРОЦЕССАМ</div>
+              <sc-for list="{{ mem }}" as="m" hint-placeholder-count="4">
+                <div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid #232329;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px">
+                  <span style="color:#8f8e99;white-space:nowrap">pid {{ m.pid }} · {{ m.role }}</span>
+                  <span style="color:#cfced6">{{ m.rss }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="border:1px solid #34343b;border-top:0;background:#1c1c20;padding:22px">
+            <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.18em;color:#dcbd85;margin-bottom:12px">ПОСЛЕДНИЕ ОШИБКИ АРЕНДЫ</div>
+            <sc-for list="{{ leaseErrs }}" as="l" hint-placeholder-count="3">
+              <div style="display:grid;grid-template-columns:150px minmax(0,1fr);gap:14px;padding:8px 0;border-bottom:1px solid #232329;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px">
+                <span style="color:#74737e">{{ l.ts }}</span>
+                <span style="color:#cfced6">{{ l.msg }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+    </main>
+  </div>
+
+  <sc-if value="{{ modal.show }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;background:rgba(12,12,14,.72);display:flex;align-items:center;justify-content:center;padding:24px;z-index:60">
+      <div style="width:520px;max-width:100%;border:1px solid #3d3d45;background:#1e1e23">
+        <div style="padding:22px 24px 18px;border-bottom:1px solid #2b2b31">
+          <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;letter-spacing:.18em;color:{{ modal.tagColor }}">{{ modal.tag }}</div>
+          <div style="font-size:21px;font-weight:700;letter-spacing:-.02em;margin-top:10px">{{ modal.title }}</div>
+          <div style="font-size:13.5px;color:#8f8e99;margin-top:10px;line-height:1.6">{{ modal.body }}</div>
+        </div>
+        <sc-if value="{{ modal.revealed }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:20px 24px;border-bottom:1px solid #2b2b31;background:#17171a">
+            <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;letter-spacing:.16em;color:#74737e;margin-bottom:10px">НАСТОЯЩЕЕ ЗНАЧЕНИЕ</div>
+            <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:19px;color:#e5aec6">{{ modal.value }}</div>
+            <div style="font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#5c5c66;margin-top:12px">{{ modal.foot }}</div>
+          </div>
+        </sc-if>
+        <div style="display:flex;justify-content:flex-end;gap:10px;padding:16px 24px">
+          <button onClick="{{ modal.onClose }}" style="border:1px solid #3d3d45;background:transparent;color:#e8e7ec;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;letter-spacing:.12em;padding:11px 16px;cursor:pointer">ЗАКРЫТЬ</button>
+          <sc-if value="{{ modal.showConfirm }}" hint-placeholder-val="{{ true }}">
+            <button onClick="{{ modal.onConfirm }}" style="border:0;background:#b3a0ea;color:#17171a;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;font-weight:700;letter-spacing:.12em;padding:11px 16px;cursor:pointer">РАСКРЫТЬ И ЗАПИСАТЬ</button>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+const A = "#b3a0ea", GREEN = "#93cfaa", AMBER = "#dcbd85", PINK = "#e293b4", DIM = "#74737e", TXT = "#cfced6";
+const PII_BG = "rgba(226,147,180,.16)", PII_FG = "#e5aec6", FAKE_BG = "rgba(179,160,234,.18)", FAKE_FG = "#cec0f2";
+const p = t => ({ text: t, bg: "transparent", fg: TXT, pad: "0" });
+const pii = t => ({ text: t, bg: PII_BG, fg: PII_FG, pad: "2px 4px" });
+const fake = t => ({ text: t, bg: FAKE_BG, fg: FAKE_FG, pad: "2px 4px" });
+
+const NAV = [["СТАТУС", "status"], ["ПЕСОЧНИЦА", "sandbox"], ["ЖУРНАЛ", "log"], ["СТАТИСТИКА", "stats"], ["ПОДПИСКА", "sub"], ["ДИАГНОСТИКА", "diag"]];
+const SIMS = [["РАБОТАЕТ", "ok"], ["ПУСТО", "empty"], ["STALE", "stale"], ["EXPIRED", "expired"], ["НЕТ СВЯЗИ", "down"]];
+
+const SANDBOX_PRESETS = [
+  ["ФИО И ТЕЛЕФОН", "Здравствуйте! Меня зовут Иванов Пётр Сергеевич, заказ №A-4471. Перезвоните на +7 916 214-88-03, доставку жду по адресу Москва, Ленинский пр-т 42, кв. 118."],
+  ["JSON ЗАКАЗА", '{"order": "A-4471", "customer": "Иванова Мария Львовна", "phone": "+79162148803", "email": "m.ivanova@acme.ru", "total": 12400}'],
+  ["АДРЕС", "Курьер не нашёл вход. Адрес: г. Казань, ул. Профсоюзная, д. 17, под. 3, кв. 84, домофон 84К."],
+  ["ДОКУМЕНТЫ", "Для оформления: паспорт 4517 № 812345, СНИЛС 112-233-445 95, ИНН 770512345678. Договор 2024/117."],
+  ["СМЕШАННЫЙ СЛУЧАЙ", "Заказ 2024/117 на 12 400 ₽, вес 4517 г, трек 812345. Получатель Соколова Анна Игоревна, +7 916 214-88-03."]
+];
+
+const SPANS = [
+  ["NAME", "18–41", "Иванов Пётр Сергеевич", "Соколов Игорь Валентинович"],
+  ["PHONE", "72–88", "+7 916 214-88-03", "+7 903 557-19-42"],
+  ["LOC", "115–152", "Москва, Ленинский пр-т 42, кв. 118", "Москва, Ломоносовский пр-т 17, кв. 64"],
+  ["ORDER_ID", "50–56", "A-4471", "не персональные — остаётся как есть"]
+];
+
+const EVENTS = [
+  ["14:32:07", "support-bot", "PHONE", "vg_ph_7f31c904", "+7 ••• ••• 88 03", "+7 916 214-88-03"],
+  ["14:32:07", "support-bot", "NAME", "vg_nm_1a44e07b", "Ив•••• П•••• С••••", "Иванов Пётр Сергеевич"],
+  ["14:31:52", "support-bot", "LOC", "vg_lc_9c02f18a", "Москва, Л•••••••• 42", "Москва, Ленинский пр-т 42, кв. 118"],
+  ["14:29:41", "order-agent", "EMAIL", "vg_em_3b7710de", "m.•••••••@acme.ru", "m.ivanova@acme.ru"],
+  ["14:27:18", "order-agent", "PHONE", "vg_ph_5510ab72", "+7 ••• ••• 41 09", "+7 925 330-41-09"],
+  ["14:22:03", "kb-assistant", "NAME", "vg_nm_88d1c3f5", "Со••••• А•• И••••••", "Соколова Анна Игоревна"],
+  ["14:18:44", "order-agent", "PASSPORT", "vg_ps_2f90ba14", "45•• № ••2345", "4517 № 812345"],
+  ["14:11:09", "support-bot", "INN", "vg_in_c7710f38", "7705••••5678", "770512345678"],
+  ["14:03:27", "kb-assistant", "LOC", "vg_lc_44b8e011", "Казань, П••••••••• 17", "г. Казань, ул. Профсоюзная, д. 17, кв. 84"],
+  ["13:58:15", "support-bot", "SNILS", "vg_sn_71ce0a29", "112-•••-••5 95", "112-233-445 95"]
+];
+
+const REPORT = '{"org_id": "acme",\n "instance_id": "8f3c1a4e",\n "requests": 184203,\n "entities": {"PHONE": 12043,\n              "NAME": 8871,\n              "LOC": 3310,\n              "EMAIL": 2204,\n              "INN": 618}}';
+
+const TYPES = [["PHONE", 12043, A], ["NAME", 8871, A], ["LOC", 3310, GREEN], ["EMAIL", 2204, GREEN], ["INN", 618, DIM], ["PASSPORT", 341, DIM]];
+const AGENTS = [["support-bot", "94 118"], ["order-agent", "61 402"], ["kb-assistant", "24 907"], ["batch-recheck", "3 776"]];
+const ENVS = [["VEILGATE_WORKERS", "4"], ["VEILGATE_CACHE_SIZE", "50 000"], ["VEILGATE_ADDR_MODE", "strict"], ["VEILGATE_PROFILE", "1"], ["VEILGATE_UI_PORT", "8081"], ["VEILGATE_VAULT_PATH", "/data/vault.db"], ["VEILGATE_LEASE_INTERVAL", "3600s"]];
+const STAGES = [["морфология", 62, "4.1 мс"], ["адреса", 41, "2.7 мс"], ["регулярки", 18, "1.2 мс"], ["дизамбигуация", 29, "1.9 мс"], ["волт + токены", 12, "0.8 мс"]];
+const MEM = [[41, "master", "212 МБ"], [58, "worker", "486 МБ"], [59, "worker", "479 МБ"], [60, "worker", "481 МБ"], [61, "worker", "477 МБ"]];
+const LEASE_ERRS = [
+  ["сегодня 03:12", "connect timeout license.veilgate.ru:443 — повтор через 60 с, успешно с 3-й попытки"],
+  ["вчера 21:44", "HTTP 502 от license.veilgate.ru — аренда продлена при следующей попытке"],
+  ["вчера 04:02", "connect timeout license.veilgate.ru:443 — повтор через 60 с, успешно со 2-й попытки"]
+];
+const DAYS = [42, 58, 71, 65, 88, 96, 34, 29, 74, 91, 100, 84, 62, 77];
+
+class Component extends DCLogic {
+  state = {
+    tab: "status", sim: "ok", check: null, checking: false,
+    text: SANDBOX_PRESETS[0][1], preset: 0, spansShown: false, full: null,
+    logFilter: "все типы", search: "", page: 1, modal: null
+  };
+
+  set(k, v) { this.setState({ [k]: v }); }
+
+  findSpans() {
+    if (this.state.sim === "down") { this.setState({ modal: { kind: "blocked" } }); return; }
+    this.setState({ spansShown: true });
+  }
+
+  runFull() {
+    if (this.state.sim === "down" || this.state.sim === "expired") { this.setState({ modal: { kind: "blocked" } }); return; }
+    this.setState({ spansShown: true, full: true });
+  }
+
+  componentDidMount() {
+    this._i = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) { if (!this.state.paused) this.setState({ paused: true }); return; }
+      const age = (this.state.age || 0) + 1;
+      this.setState({ paused: false, age: age >= 3 ? 0 : age });
+    }, 1000);
+  }
+
+  componentWillUnmount() { clearInterval(this._i); clearTimeout(this._c); clearTimeout(this._t); }
+
+  runCheck() {
+    if (this.state.sim === "down" || this.state.sim === "expired") {
+      this.setState({ modal: { kind: "blocked" } });
+      return;
+    }
+    this.setState({ checking: true, check: null });
+    clearTimeout(this._c);
+    this._c = setTimeout(() => this.setState({ checking: false, check: true }), 900);
+  }
+
+  reveal(i) { this.setState({ modal: { kind: "reveal", i, revealed: false } }); }
+
+  confirmReveal() {
+    const m = this.state.modal;
+    this.setState({ modal: { kind: "reveal", i: m.i, revealed: true } });
+  }
+
+  copyLogs() {
+    try { navigator.clipboard && navigator.clipboard.writeText("docker logs veilgate --tail 200"); } catch (e) {}
+    this.setState({ copied: true });
+    clearTimeout(this._t);
+    this._t = setTimeout(() => this.setState({ copied: false }), 1400);
+  }
+
+  panes(orig, masked, back, backLabel) {
+    return [
+      { label: "БЫЛО", labelColor: DIM, chunks: orig },
+      { label: "ЧТО УВИДЕЛА МОДЕЛЬ", labelColor: A, chunks: masked },
+      { label: backLabel || "ЧТО ВЕРНУЛОСЬ ИНСТРУМЕНТУ", labelColor: GREEN, chunks: back }
+    ];
+  }
+
+  renderVals() {
+    const s = this.state, sim = s.sim, empty = sim === "empty", down = sim === "down", expired = sim === "expired", stale = sim === "stale";
+
+    const pill = down ? { text: "НЕ ОТВЕЧАЕТ", fg: PINK, dot: PINK, bg: "rgba(226,147,180,.1)", border: "#4a2f3c" }
+      : expired ? { text: "МАСКИРОВАНИЕ ОСТАНОВЛЕНО", fg: PINK, dot: PINK, bg: "rgba(226,147,180,.1)", border: "#4a2f3c" }
+      : stale ? { text: "РАБОТАЕТ · GRACE 41 Ч", fg: AMBER, dot: AMBER, bg: "rgba(220,189,133,.1)", border: "#3f3728" }
+      : { text: "РАБОТАЕТ", fg: GREEN, dot: GREEN, bg: "rgba(147,207,170,.1)", border: "#2c3f34" };
+
+    const banner = down ? { show: true, tag: "КОНТЕЙНЕР НЕ ОТВЕЧАЕТ", fg: PINK, bg: "#241a1f", border: "#4a2f3c", text: "Интерфейс не получает ответ от сайдкара. Проверьте, что контейнер запущен, и пришлите нам вывод: docker logs veilgate --tail 200" }
+      : expired ? { show: true, tag: "ЛИЦЕНЗИЯ ИСТЕКЛА", fg: PINK, bg: "#241a1f", border: "#4a2f3c", text: "Причина: аренда не продлевается больше 48 часов (неоплата). Новый трафик не маскируется и шлюз его не пропускает. Журнал и статистика остаются доступными — это ваши уже собранные данные." }
+      : stale ? { show: true, tag: "АРЕНДА НЕ ПРОДЛЕВАЕТСЯ", fg: AMBER, bg: "#221d12", border: "#3f3728", text: "Последняя успешная аренда 7 часов назад. Осталось 41 час grace, после чего маскирование остановится и шлюз начнёт блокировать запросы. Оплатите подписку или проверьте доступ к license.veilgate.ru." }
+      : empty ? { show: true, tag: "ТРАФИКА ЕЩЁ НЕ БЫЛО", fg: A, bg: "#242134", border: "#3d3d45", text: "Контейнер поднялся и лицензия активна. Нажмите «Проверить сейчас» — за десять секунд увидите настоящее маскирование на заготовленном сообщении." }
+      : { show: false };
+
+    const big = down ? { title: "не работает", color: PINK, sub: "сайдкар не отвечает", note: "Интерфейс живёт в том же контейнере, но не получает ответа от движка. Пока это так, показанные ниже данные — последние известные." }
+      : expired ? { title: "не работает", color: PINK, sub: "лицензия истекла", note: "Fail-closed: если маскировать нечем, запрос дальше не уходит. Данные не утекут даже в аварии." }
+      : stale ? { title: "работает", color: AMBER, sub: "подписка истекает", note: "Маскирование идёт как обычно. Grace истекает через 41 час — предупреждения уже отправлены на почту, указанную в кабинете." }
+      : { title: "работает", color: GREEN, sub: empty ? "трафика не было" : "все процессы на связи", note: empty ? "Движок загрузил модели и слушает порт 8000. Первый настоящий запрос ещё не приходил." : "Движок обрабатывает трафик в четыре процесса, аренда продлена, версия бандла актуальна." };
+
+    const orig = [p("Здравствуйте! Меня зовут "), pii("Иванов Пётр Сергеевич"), p(", перезвоните на "), pii("+7 916 214-88-03"), p(".")];
+    const masked = [p("Здравствуйте! Меня зовут "), fake("Соколов Игорь Валентинович"), p(", перезвоните на "), fake("+7 903 557-19-42"), p(".")];
+    const back = [p("call("), pii("+7 916 214-88-03"), p(")\n→ инструмент получил настоящий номер")];
+
+    const events = EVENTS.filter(e => s.logFilter === "все типы" || e[2] === s.logFilter)
+      .filter(e => !s.agent || s.agent === "все агенты" || e[1] === s.agent)
+      .filter(e => !s.search || e[3].indexOf(s.search) >= 0)
+      .map((e, i) => ({
+        ts: e[0], agent: e[1], type: e[2], token: e[3], preview: e[4],
+        previewColor: PII_FG, action: "РАСКРЫТЬ",
+        onReveal: () => this.reveal(EVENTS.indexOf(e))
+      }));
+
+    const m = s.modal;
+    const modal = !m ? { show: false }
+      : m.kind === "blocked" ? {
+          show: true, tag: "ПРОВЕРКА НЕВОЗМОЖНА", tagColor: PINK, title: "Маскирование сейчас остановлено",
+          body: down ? "Сайдкар не отвечает. Запустите контейнер и повторите: docker start veilgate" : "Лицензия истекла, поэтому /mask возвращает 503. Оплатите подписку в кабинете, аренда продлится в течение минуты.",
+          revealed: false, showConfirm: false, onClose: () => this.set("modal", null), onConfirm: () => {}
+        }
+      : {
+          show: true, tag: m.revealed ? "РАСКРЫТО · ЗАПИСАНО В ЖУРНАЛ ДОСТУПА" : "ПОДТВЕРДИТЕ РАСКРЫТИЕ", tagColor: m.revealed ? GREEN : AMBER,
+          title: m.revealed ? EVENTS[m.i][2] + " · " + EVENTS[m.i][3] : "Показать настоящее значение?",
+          body: m.revealed ? "Значение не остаётся на экране после ухода со страницы и не сохраняется в журнале доступа — там только сессия, токен и время."
+            : "Токен " + EVENTS[m.i][3] + ", тип " + EVENTS[m.i][2] + ". Это ваши данные, вы оператор. Раскрытие будет записано в журнал доступа: сессия интерфейса, токен, время. Само значение в журнал не попадёт.",
+          value: EVENTS[m.i][5], foot: "сессия ui_4f10c8 · " + EVENTS[m.i][0] + " · автоскрытие при уходе со страницы",
+          revealed: !!m.revealed, showConfirm: !m.revealed,
+          onClose: () => this.set("modal", null), onConfirm: () => this.confirmReveal()
+        };
+
+    return {
+      nav: NAV.map(([label, id]) => ({
+        label, onClick: () => this.set("tab", id),
+        bg: s.tab === id ? "#242134" : "transparent",
+        fg: s.tab === id ? "#e8e7ec" : "#8f8e99",
+        mark: s.tab === id ? A : "transparent",
+        badge: id === "log" && !empty ? "184k" : id === "sandbox" ? "" : "",
+        badgeColor: "#5c5c66"
+      })),
+      sims: SIMS.map(([label, id]) => ({
+        label, onClick: () => this.setState({ sim: id, check: null, modal: null }),
+        bg: sim === id ? "#282437" : "transparent",
+        fg: sim === id ? A : "#5c5c66",
+        border: sim === id ? "#3d3d45" : "#2b2b31"
+      })),
+      pill, banner, big,
+      isStatus: s.tab === "status", isSandbox: s.tab === "sandbox", isLog: s.tab === "log",
+      isStats: s.tab === "stats", isSub: s.tab === "sub", isDiag: s.tab === "diag",
+      today: down ? { requests: "—", values: "—", breakdown: "сводка читается из /usage — сайдкар не отвечает" }
+        : empty ? { requests: "0", values: "0", breakdown: "разбивки пока нет" }
+        : { requests: "3 118", values: "17 940", breakdown: "PHONE 6 210 · NAME 5 118 · LOC 3 002\nEMAIL 2 204 · INN 618 · прочее 788" },
+      checkLabel: s.checking ? "ПРОВЕРЯЮ…" : "ПРОВЕРИТЬ СЕЙЧАС",
+      runCheck: () => this.runCheck(),
+      goSandbox: () => this.set("tab", "sandbox"),
+      check: s.check ? { show: true, head: "ПРОВЕРКА ПРОЙДЕНА · ПД ЗАМАСКИРОВАНЫ И ВЕРНУЛИСЬ", timing: "/mask 6.4 мс · /unmask 1.1 мс", panes: this.panes(orig, masked, back) } : { show: false },
+      copyLogs: () => this.copyLogs(),
+      copyLogsLabel: s.copied ? "СКОПИРОВАНО" : "КОПИРОВАТЬ",
+      licenseRows: [
+        { k: "состояние", v: expired ? "expired" : stale ? "stale" : "active", color: expired ? PINK : stale ? AMBER : GREEN },
+        { k: "остаток grace", v: expired ? "исчерпан" : stale ? "41 ч 12 мин" : "48 ч", color: expired ? PINK : TXT },
+        { k: "последняя аренда", v: stale ? "7 ч назад" : down ? "18 мин назад" : "12 мин назад", color: TXT },
+        { k: "версия бандла", v: "2026.07-b3", color: TXT },
+        { k: "движок", v: "1.0.0", color: TXT }
+      ],
+      procs: down ? [{ pid: "—", role: "нет ответа", uptime: "—" }] : [
+        { pid: "41", role: "master", uptime: "6д 4ч" }, { pid: "58", role: "worker", uptime: "6д 4ч" },
+        { pid: "59", role: "worker", uptime: "6д 4ч" }, { pid: "60", role: "worker", uptime: "6д 4ч" },
+        { pid: "61", role: "worker", uptime: "2ч 11м" }
+      ],
+      presets: SANDBOX_PRESETS.map(([label, text], i) => ({
+        label, onClick: () => this.setState({ preset: i, text, spansShown: false, full: null }),
+        bg: s.preset === i ? "#282437" : "transparent", fg: s.preset === i ? A : "#8f8e99",
+        border: s.preset === i ? "#3d3d45" : "#34343b"
+      })),
+      sandboxText: s.text,
+      onInput: e => this.setState({ text: e.target.value }),
+      findSpans: () => this.findSpans(),
+      runFull: () => this.runFull(),
+      refreshLine: down ? "опрос не отвечает" : s.paused ? "опрос приостановлен — вкладка неактивна" : "обновлено " + (s.age || 0) + " с назад · опрос раз в 3 с",
+      spanCount: s.spansShown ? SPANS.length + " фрагмента" : "нажмите «что найдено»",
+      spans: s.spansShown ? SPANS.map(([type, pos, value, fake]) => ({ type, pos, value, fake })) : [],
+      spansNote: expired ? "Лицензия истекла: полный прогон недоступен (/mask отдаёт 503), разбор «что найдено» остаётся — он read-only." : s.spansShown ? "Read-only: /spans ничего не меняет в волте и токенов не создаёт." : "Разбор идёт локально. Ни текст, ни результат наружу не уходят.",
+      full: s.full ? { show: true, tokens: "3", timing: "/mask 7.1 мс · /unmask 1.3 мс", panes: this.panes(orig, masked, back) } : { show: false },
+      logCountLine: down ? "Сайдкар не отвечает: журнал читается через его API, поэтому строки недоступны до перезапуска контейнера. Уже собранные данные никуда не пропали." : empty ? "Событий пока нет — журнал наполнится с первым трафиком" : "184 203 события за 14 дней · показаны последние",
+      logPeriods: ["сегодня", "7 дней", "14 дней"].map(label => ({
+        label, onClick: () => this.set("period", label),
+        bg: (s.period || "14 дней") === label ? "#282437" : "transparent",
+        fg: (s.period || "14 дней") === label ? A : "#8f8e99",
+        border: (s.period || "14 дней") === label ? "#3d3d45" : "#34343b"
+      })),
+      logAgents: ["все агенты", "support-bot", "order-agent", "kb-assistant"].map(label => ({
+        label, onClick: () => this.set("agent", label),
+        bg: (s.agent || "все агенты") === label ? "#282437" : "transparent",
+        fg: (s.agent || "все агенты") === label ? A : "#8f8e99",
+        border: (s.agent || "все агенты") === label ? "#3d3d45" : "#34343b"
+      })),
+      logFilters: ["все типы", "PHONE", "NAME", "LOC"].map(label => ({
+        label, onClick: () => this.set("logFilter", label),
+        bg: s.logFilter === label ? "#282437" : "transparent",
+        fg: s.logFilter === label ? A : "#8f8e99",
+        border: s.logFilter === label ? "#3d3d45" : "#34343b"
+      })),
+      search: s.search,
+      onSearch: e => this.setState({ search: e.target.value }),
+      events: (empty || down) ? [] : events,
+      pageLine: down ? "нет ответа от сайдкара" : empty ? "нет строк" : "стр. " + s.page + " из 18 421 · по 10 строк",
+      prevPage: () => this.set("page", Math.max(1, s.page - 1)),
+      nextPage: () => this.set("page", s.page + 1),
+      days: DAYS.map((v, i) => ({ h: ((empty || down) ? 2 : v) + "%", color: i === DAYS.length - 1 ? A : "#3a3547", label: (i + 12) % 30 + 1 })),
+      types: TYPES.map(([name, count, color]) => ({ name, count: (empty || down) ? "—" : count.toLocaleString("ru-RU"), w: (empty || down) ? "0%" : Math.round(count / 12043 * 100) + "%", color })),
+      agents: AGENTS.map(([name, count]) => ({ name, count: (empty || down) ? "—" : count })),
+      subRows: [
+        { k: "состояние лицензии", v: expired ? "expired" : stale ? "stale" : "active", color: expired ? PINK : stale ? AMBER : GREEN },
+        { k: "время последней аренды", v: stale ? "сегодня 07:41" : "сегодня 14:29", color: TXT },
+        { k: "остаток grace", v: expired ? "исчерпан" : stale ? "41 ч 12 мин" : "48 ч", color: expired ? PINK : TXT },
+        { k: "версия бандла", v: "2026.07-b3", color: TXT },
+        { k: "тариф", v: "прод · до 1 000 000 запросов", color: TXT },
+        { k: "израсходовано за период", v: "184 203 (18%)", color: TXT }
+      ],
+      subErr: stale || expired ? "HTTP 402 payment_required — license.veilgate.ru/lease: подписка не оплачена, аренда не выдана (попытка сегодня 14:29, повтор через 60 с)" : "connect timeout license.veilgate.ru:443 (сегодня 03:12) — повтор через 60 с, аренда продлена с 3-й попытки",
+      subErrColor: stale || expired ? PINK : DIM,
+      reportJson: REPORT,
+      reportSent: stale ? "сегодня 07:41" : "сегодня 14:29",
+      envs: ENVS.map(([k, v]) => ({ k, v })),
+      stages: STAGES.map(([name, w, ms]) => ({ name, w: w + "%", ms })),
+      mem: MEM.map(([pid, role, rss]) => ({ pid, role, rss })),
+      leaseErrs: LEASE_ERRS.map(([ts, msg]) => ({ ts, msg })),
+      modal,
+      noop: () => {}
+    };
+  }
+}
+
+</script>
+</body>
+</html>

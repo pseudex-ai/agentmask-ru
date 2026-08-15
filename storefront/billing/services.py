@@ -25,8 +25,7 @@ from billing.models import Invoice, LicenseKey, Plan, Subscription
 TRIAL_DAYS = 14
 
 
-@transaction.atomic
-def register(email: str, display_name: str, plan_code: str) -> tuple[Organization, str]:
+def create_account(email: str, display_name: str, plan_code: str) -> Organization:
     """Create the account and hand back a WORKING key, before any payment.
 
     This is the whole product promise on the storefront side: the single metric
@@ -37,27 +36,42 @@ def register(email: str, display_name: str, plan_code: str) -> tuple[Organizatio
     which we can switch off at any time.
     """
     plan = Plan.objects.get(code=plan_code)
-    user, _ = User.objects.get_or_create(email=email)
-    organization = Organization.objects.create(display_name=display_name or email)
-    Membership.objects.create(user=user, organization=organization,
-                              role=Membership.ROLE_OWNER)
 
-    now = timezone.now()
-    trial_ends = now + timedelta(days=TRIAL_DAYS)
-    Subscription.objects.create(
-        organization=organization,
-        plan=plan,
-        state=Subscription.TRIAL,
-        trial_ends_at=trial_ends,
-        current_period_start=now,
-        current_period_end=trial_ends,
-    )
-    # Outside the shop's own tables and therefore the step that can fail on its
-    # own. It is last, so a failure leaves no half-account behind — the atomic
-    # block rolls the rest back with it.
-    key = licensing.issue_key(organization.id, plan.code)
+    # The account commits FIRST, on its own. The licensing call that follows is
+    # a 15 s network round trip, and it used to run inside this transaction —
+    # holding a write transaction open across the network, and worse: if the
+    # call succeeded and the commit then failed, the key stayed ACTIVE on the
+    # licensing server bound to an org that no longer existed. It would lease
+    # forever, appear in no cabinet, no invoice and no reconciliation.
+    #
+    # Splitting them leaves only the harmless failure direction: an org with no
+    # key yet, visible in the cabinet, fixed by one button.
+    with transaction.atomic():
+        user, _ = User.objects.get_or_create(email=email)
+        organization = Organization.objects.create(display_name=display_name or email)
+        Membership.objects.create(user=user, organization=organization,
+                                  role=Membership.ROLE_OWNER)
+        now = timezone.now()
+        trial_ends = now + timedelta(days=TRIAL_DAYS)
+        Subscription.objects.create(
+            organization=organization,
+            plan=plan,
+            state=Subscription.TRIAL,
+            trial_ends_at=trial_ends,
+            current_period_start=now,
+            current_period_end=trial_ends,
+        )
+
+    return organization
+
+
+def issue_first_key(organization: Organization) -> str:
+    """The key, issued once the mailbox is proven. Separate from account
+    creation so that no credential exists until someone has demonstrated they
+    can read the address it was requested for."""
+    key = licensing.issue_key(organization.id, organization.subscription.plan.code)
     LicenseKey.record(organization, key, label="первый ключ", environment="live")
-    return organization, key
+    return key
 
 
 @transaction.atomic
@@ -80,9 +94,20 @@ def mark_paid(invoice: Invoice) -> None:
 
     A customer whose agents are stopped is waiting on exactly one thing, and it
     is not our database row.
+
+    IDEMPOTENT UNDER CONCURRENT DELIVERY. ЮKassa redelivers notifications, and
+    two arriving at once both passed the caller's "already paid?" check before
+    either wrote — then both ran this, and the unconditional
+    `current_period_end = now + 30 days` granted two free months. The row is
+    locked and re-read here, so the second delivery finds it already PAID and
+    returns without touching the period.
     """
-    licensing.set_status(invoice.organization_id, "active")
     with transaction.atomic():
+        locked = Invoice.objects.select_for_update().get(pk=invoice.pk)
+        if locked.state == Invoice.PAID:
+            return
+        licensing.set_status(locked.organization_id, "active")
+        invoice = locked
         invoice.state = Invoice.PAID
         invoice.paid_at = timezone.now()
         invoice.save(update_fields=["state", "paid_at"])
@@ -125,7 +150,20 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     reported = licensing.usage(organization.id).get("usage", {})
     requests = int(reported.get("requests", 0)) if isinstance(reported, dict) else 0
 
-    over = max(0, requests - plan.included_requests)
+    # The counter is CUMULATIVE since the installation's first report. What this
+    # period used is the difference from the previous invoice's watermark.
+    previous = (Invoice.objects
+                .filter(organization=organization)
+                .exclude(state=Invoice.VOID)
+                .order_by("-period_end", "-id")
+                .first())
+    watermark = previous.requests_at_period_end if previous else 0
+    # A counter that went BACKWARDS means the customer started from an empty
+    # data directory — a new volume, a restore, a fresh deployment. Billing the
+    # negative as zero and re-basing is the only reading that cannot overcharge.
+    used_this_period = max(0, requests - watermark)
+
+    over = max(0, used_this_period - plan.included_requests)
     # Charged per started thousand: billing a fraction of a thousand requests
     # produces kopeck-level lines nobody can reconcile.
     thousands = (over + 999) // 1000
@@ -142,4 +180,5 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
         overage_amount=overage_amount,
         total=_round(plan.monthly_price + overage_amount),
         due_at=(timezone.now() + timedelta(days=7)).date(),
+        requests_at_period_end=requests,
     )

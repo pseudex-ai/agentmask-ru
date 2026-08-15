@@ -12,7 +12,7 @@
         <a class="btn lg" href="#how">КАК ЭТО РАБОТАЕТ →</a>
       </div>
       <div class="copybar">
-        <code data-copy="docker run -d -p 8000:8000 -p 8081:8081 {{ image }}"><span style="color:#b3a0ea">$</span> docker run -d -p 8000:8000 -p 8081:8081 {{ image }}</code>
+        <code data-copy="docker run -d -p 8000:8000 -p 127.0.0.1:8081:8081 {{ image }}"><span style="color:#b3a0ea">$</span> docker run -d -p 8000:8000 -p 127.0.0.1:8081:8081 {{ image }}</code>
         <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
       </div>
       <div class="fineprint">Пробный период {{ trial_days }} дней · карта не нужна · ключ выдаётся сразу · хостинг в РФ</div>
@@ -154,9 +154,9 @@
   <div class="steps">
     <div>
       <div class="what"><div class="step">01</div><h3>Поднять контейнер</h3><div class="note">ключ уже подставлен</div></div>
-      <pre data-copy="docker run -d -p 8000:8000 -p 8081:8081 -v veilgate-data:/data \
+      <pre data-copy="docker run -d -p 8000:8000 -p 127.0.0.1:8081:8081 -v veilgate-data:/data \
   -e VEILGATE_LICENSE_KEY=vg_live_… \
-  {{ image }}">docker run -d -p 8000:8000 -p 8081:8081 -v veilgate-data:/data \
+  {{ image }}">docker run -d -p 8000:8000 -p 127.0.0.1:8081:8081 -v veilgate-data:/data \
   -e VEILGATE_LICENSE_KEY=vg_live_… \
   {{ image }}</pre>
       <button type="button" data-copy-btn>КОПИРОВАТЬ</button>

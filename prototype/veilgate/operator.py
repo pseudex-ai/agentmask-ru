@@ -18,8 +18,10 @@ access record BEFORE returning the value.
 """
 
 import os
+import re
 import time
 
+import anyio
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
@@ -154,8 +156,14 @@ def build_router(audit, license_client, assets, detector_version: str,
     async def status(request: Request) -> JSONResponse:
         org_id = request.query_params.get("org_id", "default")
         state = license_client.status()
-        series = audit.daily_series(org_id, 1)
+        series = await anyio.to_thread.run_sync(audit.daily_series, org_id, 1)
         today = series[0] if series else {"requests": 0, "values": 0}
+        # The breakdown beside "СЕГОДНЯ" must cover the same day the numbers
+        # above it do. It was all-time, so a quiet day rendered "0 запросов"
+        # next to "PHONE 5000".
+        by_type = await anyio.to_thread.run_sync(
+            audit.counts, org_id, _period_start("today")
+        )
         return JSONResponse({
             "engine": {
                 "version": detector_version,
@@ -175,13 +183,13 @@ def build_router(audit, license_client, assets, detector_version: str,
             "today": {
                 "requests": today["requests"],
                 "values": today["values"],
-                "by_type": audit.counts(org_id),
+                "by_type": by_type,
             },
         })
 
     @router.get("/orgs")
     async def orgs() -> JSONResponse:
-        return JSONResponse({"orgs": audit.known_orgs()})
+        return JSONResponse({"orgs": await anyio.to_thread.run_sync(audit.known_orgs)})
 
     @router.get("/events")
     async def events(request: Request) -> JSONResponse:
@@ -193,17 +201,14 @@ def build_router(audit, license_client, assets, detector_version: str,
         except ValueError:
             return JSONResponse({"error": "limit and offset must be integers"},
                                 status_code=400)
-        page = audit.search_events(
-            org_id,
+        page = await anyio.to_thread.run_sync(
+            audit.search_events, org_id,
             _period_start(params.get("period", "14d")),
-            params.get("agent_id", ""),
-            params.get("type", ""),
-            params.get("q", ""),
-            limit,
-            offset,
+            params.get("agent_id", ""), params.get("type", ""),
+            params.get("q", ""), limit, offset,
         )
-        page["agents"] = audit.known_agents(org_id)
-        page["types"] = audit.known_types(org_id)
+        page["agents"] = await anyio.to_thread.run_sync(audit.known_agents, org_id)
+        page["types"] = await anyio.to_thread.run_sync(audit.known_types, org_id)
         return JSONResponse(page)
 
     @router.get("/stats")
@@ -213,12 +218,18 @@ def build_router(audit, license_client, assets, detector_version: str,
             days = min(90, max(1, int(request.query_params.get("days", "14"))))
         except ValueError:
             return JSONResponse({"error": "days must be an integer"}, status_code=400)
+        # Every figure here is scoped to the window the caller asked for. They
+        # were not: the screen said "период последние N дней" over all-time
+        # numbers, and the printed report carried that claim to an auditor.
+        since = time.time() - days * 86400
+        since_day = time.strftime("%Y-%m-%d", time.localtime(since))
         return JSONResponse({
             "org_id": org_id,
-            "days": audit.daily_series(org_id, days),
-            "by_type": audit.counts(org_id),
-            "by_agent": audit.by_agent(org_id),
-            "requests_total": audit.request_totals(org_id),
+            "days": await anyio.to_thread.run_sync(audit.daily_series, org_id, days),
+            "by_type": await anyio.to_thread.run_sync(audit.counts, org_id, since),
+            "by_agent": await anyio.to_thread.run_sync(audit.by_agent, org_id, since_day),
+            "requests_total": await anyio.to_thread.run_sync(
+                audit.request_totals, org_id, since_day),
         })
 
     @router.get("/stats.csv")
@@ -232,12 +243,17 @@ def build_router(audit, license_client, assets, detector_version: str,
         except ValueError:
             return PlainTextResponse("days must be an integer", status_code=400)
         lines = ["day,requests,protected_values"]
-        for row in audit.daily_series(org_id, days):
+        for row in await anyio.to_thread.run_sync(audit.daily_series, org_id, days):
             lines.append(f'{row["day"]},{row["requests"]},{row["values"]}')
         return PlainTextResponse(
             "\n".join(lines) + "\n",
+            # The org id reaches this header from a query string, and a quote in
+            # it splits the filename parameter. Restricted to characters that
+            # cannot mean anything to the header parser.
             headers={"Content-Disposition":
-                     f'attachment; filename="veilgate-{org_id}-{days}d.csv"'},
+                     'attachment; filename="veilgate-'
+                     + re.sub(r"[^A-Za-z0-9_.-]", "_", org_id)
+                     + f'-{days}d.csv"'},
         )
 
     @router.get("/reveals")
@@ -251,8 +267,9 @@ def build_router(audit, license_client, assets, detector_version: str,
             return JSONResponse({"error": "limit and offset must be integers"},
                                 status_code=400)
         return JSONResponse({
-            "total": audit.reveals_count(org_id),
-            "reveals": audit.reveals(org_id, limit, offset),
+            "total": await anyio.to_thread.run_sync(audit.reveals_count, org_id),
+            "reveals": await anyio.to_thread.run_sync(
+                audit.reveals, org_id, limit, offset),
         })
 
     @router.get("/subscription")
@@ -273,7 +290,8 @@ def build_router(audit, license_client, assets, detector_version: str,
             "last_error": state.last_error,
             "errors": license_client.recent_errors(),
             "last_report": license_client.last_report(),
-            "requests_total": audit.request_totals(org_id),
+            "requests_total": await anyio.to_thread.run_sync(
+                audit.request_totals, org_id, ""),
         })
 
     @router.get("/diagnostics")

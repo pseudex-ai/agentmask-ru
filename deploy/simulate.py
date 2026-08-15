@@ -90,9 +90,25 @@ def register(client: httpx.Client, index: int) -> tuple[str, str]:
     return key.group(1), (org.group(1) if org else "")
 
 
-def send(org: str, count: int, rng: random.Random) -> tuple[int, int]:
+def gateway_token() -> str:
+    """The gateway credential, read from the container's log — the same place
+    the customer is told to read it."""
+    import subprocess
+    out = subprocess.run(["docker", "logs", "veilgate"], capture_output=True,
+                         text=True).stdout + subprocess.run(
+        ["docker", "logs", "veilgate"], capture_output=True, text=True).stderr
+    if "ключ шлюза" in out:
+        for line in out.split("ключ шлюза", 1)[1].splitlines()[1:]:
+            candidate = line.strip()
+            if len(candidate) >= 32 and all(c in "0123456789abcdef" for c in candidate):
+                return candidate
+    return ""
+
+
+def send(org: str, count: int, rng: random.Random, token: str) -> tuple[int, int]:
     ok = failed = 0
-    with httpx.Client(timeout=60.0) as client:
+    headers = {"Authorization": f"Bearer {token}"}
+    with httpx.Client(timeout=60.0, headers=headers) as client:
         for index in range(count):
             body = {
                 "org_id": org,
@@ -111,6 +127,14 @@ def send(org: str, count: int, rng: random.Random) -> tuple[int, int]:
 
 
 def reported(org: str) -> int:
+    """Counters as the licensing server has them, for the org that owns the
+    CONTAINER'S key.
+
+    Not the per-request org_id. The engine reports under the organisation of the
+    licence key its container holds, so polling the freshly registered orgs — as
+    this did — waited seven minutes for a number that could never arrive, in a
+    tool whose whole purpose was to watch billing work end to end.
+    """
     try:
         body = httpx.get(f"{LICENSE_ADMIN}/admin/usage", params={"org_id": org},
                          timeout=10).json()
@@ -144,9 +168,15 @@ def main() -> int:
             accounts.append((key, org))
             print(f"  customer {index + 1}: {org}  key {key[:16]}…")
 
+    token = gateway_token()
+    if not token:
+        print("could not read the gateway token from `docker logs veilgate` — "
+              "is the container named veilgate and running?")
+        return 1
+
     for key, org in accounts:
         print(f"  sending {args.requests} requests as {org}")
-        ok, failed = send(org, args.requests, rng)
+        ok, failed = send(org, args.requests, rng, token)
         print(f"    masked ok={ok} failed={failed}")
 
     if not args.wait:
@@ -154,11 +184,19 @@ def main() -> int:
               "(5 min in the local stack). Re-run with --wait to block for it.")
         return 0
 
-    print("\nwaiting for the engine to report its counters upstream…")
+    # Whichever org owns the running container's key. Discovered rather than
+    # assumed: the traffic above was sent with per-request org ids, but the
+    # engine reports under its own licence.
+    try:
+        listed = httpx.get(f"{LICENSE_ADMIN}/admin/list", timeout=10).json()
+        billed = [row.get("org_id") for row in listed.get("orgs", [])]
+    except httpx.HTTPError:
+        billed = []
+    print(f"\nwaiting for counters against {billed or 'the container\'s own org'}…")
     deadline = time.monotonic() + 420
     while time.monotonic() < deadline:
-        totals = {org: reported(org) for _key, org in accounts}
-        if all(count > 0 for count in totals.values()):
+        totals = {org: reported(org) for org in billed}
+        if totals and any(count > 0 for count in totals.values()):
             for org, count in totals.items():
                 print(f"  {org}: licensing server has {count} requests")
             print("\nBilling can now be exercised: open the cabinet, or draft an "

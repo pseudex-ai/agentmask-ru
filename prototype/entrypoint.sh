@@ -48,6 +48,13 @@ if [ -z "$VEILGATE_ADMIN_TOKEN" ]; then
     VEILGATE_ADMIN_TOKEN="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
     export VEILGATE_ADMIN_TOKEN
 fi
+# Credential the customer's gateway presents on /mask, /unmask and /spans.
+# Generated here for the same reason as the admin token: per-process values
+# behind one SO_REUSEPORT port would reject the gateway at random.
+if [ -z "$VEILGATE_GATEWAY_TOKEN" ]; then
+    VEILGATE_GATEWAY_TOKEN="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    export VEILGATE_GATEWAY_TOKEN
+fi
 # Sign-in token for the interface. Generated here rather than in the UI process
 # so it survives a UI restart: an operator who followed the link from the log
 # should not be locked out because that process was restarted at 03:00.
@@ -57,6 +64,10 @@ if [ -z "$VEILGATE_UI_TOKEN" ]; then
 fi
 
 echo "veilgate: starting ${WORKERS} worker(s), instance ${VEILGATE_INSTANCE_ID}"
+echo ""
+echo "    ключ шлюза (Authorization: Bearer …) для /mask, /unmask, /spans:"
+echo "    ${VEILGATE_GATEWAY_TOKEN}"
+echo ""
 
 pids=""
 for i in $(seq 1 "${WORKERS}"); do

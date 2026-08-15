@@ -13,6 +13,7 @@ second PII exposure surface.
 
 import threading
 import time
+import uuid
 
 from veilgate.profiling import stage
 from veilgate.sqlite_setup import connect as sqlite_connect
@@ -82,12 +83,55 @@ class AuditLog:
             "CREATE TABLE IF NOT EXISTS reveals ("
             "ts REAL, customer TEXT, actor TEXT, token TEXT, entity_type TEXT, found INTEGER)"
         )
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)"
+        )
         self._conn.execute("CREATE INDEX IF NOT EXISTS events_customer_ts "
                            "ON events (customer, ts DESC)")
         self._conn.execute("CREATE INDEX IF NOT EXISTS reveals_customer_ts "
                            "ON reveals (customer, ts DESC)")
         self._migrate_agent_id()
         self._conn.commit()
+
+    def installation_id(self) -> str:
+        """A stable id for THIS DATA DIRECTORY, minted once and kept beside the
+        counters it identifies.
+
+        The licensing server de-duplicates usage reports by instance id, keeping
+        the latest cumulative total per instance and SUMMING across instances.
+        That is only correct if the id lives exactly as long as the counter it
+        reports. It did not: `entrypoint.sh` minted a fresh one from
+        /dev/urandom on every container start, while the counters live on the
+        mounted volume and survive.
+
+        So every restart opened a NEW row holding the volume's full lifetime
+        total, and the server added them up. A customer at 500k requests who
+        redeployed once was billed for a million. Restarted daily for a month,
+        roughly fifteen times their real usage, growing without bound.
+
+        Gate L12 could not see it because the e2e stand pins the instance id as
+        configuration, and nothing in the shipped run command pins it for a
+        customer.
+
+        Stored here rather than in a file of its own because this is already the
+        thing that shares the counters' lifetime — same volume, same backup,
+        same deletion.
+        """
+        row = self._fetchone("SELECT value FROM meta WHERE key='installation_id'", ())
+        if row is not None:
+            return str(row[0])
+        fresh = uuid.uuid4().hex
+        with self._lock:
+            # INSERT OR IGNORE, then read back: several worker processes open
+            # this database at the same moment on a cold start, and the loser of
+            # that race must adopt the winner's id rather than overwrite it.
+            self._conn.execute(
+                "INSERT OR IGNORE INTO meta (key, value) VALUES ('installation_id', ?)",
+                (fresh,),
+            )
+            self._conn.commit()
+        row = self._fetchone("SELECT value FROM meta WHERE key='installation_id'", ())
+        return str(row[0]) if row is not None else fresh
 
     def record_request(self, customer: str, agent_id: str) -> None:
         """One masking call. Deliberately its own commit rather than folded into
@@ -114,58 +158,98 @@ class AuditLog:
             )
             self._conn.commit()
 
+    def _fetchall(self, sql: str, params: tuple) -> list[tuple]:
+        """Every READ goes through here, under the same lock the writes take.
+
+        `check_same_thread=False` lets several threads share one connection; it
+        does not make the connection concurrent. Interleaving a read with
+        another thread's INSERT+commit raises `InterfaceError`, or — worse and
+        reproducibly — returns a row with COLUMNS MISSING, which surfaces
+        upstream as an IndexError on a tuple index rather than as an error
+        anyone would recognise as a locking bug.
+
+        Measured before this existed: 4 writer threads and 2 readers over 1.2M
+        events failed 7.7% of reads, and the operator's screens rendered
+        "движок не отвечает" against a perfectly healthy engine — the single
+        diagnosis this interface exists to make trustworthy.
+
+        `Vault` has always done this (see `peek_token`), and `sqlite_setup.py`
+        states the rule. The audit read paths were simply never brought along,
+        and the polling UI is the first caller that hits them hard enough for
+        it to matter.
+        """
+        with self._lock:
+            return self._conn.execute(sql, params).fetchall()
+
+    def _fetchone(self, sql: str, params: tuple) -> tuple | None:
+        with self._lock:
+            return self._conn.execute(sql, params).fetchone()
+
     def reveals(self, customer: str, limit: int, offset: int) -> list[dict[str, object]]:
-        rows = self._conn.execute(
+        rows = self._fetchall(
             "SELECT ts, actor, token, entity_type, found FROM reveals WHERE customer=? "
             "ORDER BY ts DESC LIMIT ? OFFSET ?",
             (customer, limit, offset),
-        ).fetchall()
+        )
         return [{"ts": r[0], "actor": r[1], "token": r[2], "type": r[3],
                  "found": bool(r[4])} for r in rows]
 
     def reveals_count(self, customer: str) -> int:
-        row = self._conn.execute(
-            "SELECT COUNT(*) FROM reveals WHERE customer=?", (customer,)
-        ).fetchone()
+        row = self._fetchone("SELECT COUNT(*) FROM reveals WHERE customer=?", (customer,))
         return int(row[0]) if row else 0
 
-    def request_totals(self, customer: str) -> int:
-        row = self._conn.execute(
-            "SELECT COALESCE(SUM(n), 0) FROM requests WHERE customer=?", (customer,)
-        ).fetchone()
+    def request_totals(self, customer: str, since_day: str) -> int:
+        """Requests over a window. `since_day` is a 'YYYY-MM-DD' string compared
+        against the stored day buckets; pass "" for all time, explicitly — the
+        screens that call this label their numbers with a period, and a method
+        that silently means "ever" put lifetime figures under that label."""
+        row = self._fetchone(
+            "SELECT COALESCE(SUM(n), 0) FROM requests WHERE customer=? AND day>=?",
+            (customer, since_day),
+        )
         return int(row[0]) if row else 0
 
     def daily_series(self, customer: str, days: int) -> list[dict[str, object]]:
         """Requests and protected values per day, oldest first, with empty days
         filled in. A chart that silently omits a zero day compresses the gap and
-        reads as steady traffic across an outage."""
+        reads as steady traffic across an outage.
+
+        BOTH queries are bounded by the window. They were not, and /status calls
+        this on a three-second poll: measured at 1.2M events the unbounded scan
+        took 0.39 s, so one open browser tab held a worker's event loop ~13% of
+        the time — and because the interface keeps one connection alive, always
+        the same worker. At ten million events the query outruns the poll and
+        that worker's /health starts timing out, which reads to an orchestrator
+        as a container to restart.
+        """
         now = time.time()
         wanted = [_day(now - (days - 1 - index) * 86400) for index in range(days)]
-        request_rows = dict(self._conn.execute(
-            "SELECT day, SUM(n) FROM requests WHERE customer=? GROUP BY day",
-            (customer,),
-        ).fetchall())
-        event_rows = dict(self._conn.execute(
+        since = now - days * 86400
+        request_rows = dict(self._fetchall(
+            "SELECT day, SUM(n) FROM requests WHERE customer=? AND day>=? GROUP BY day",
+            (customer, wanted[0]),
+        ))
+        event_rows = dict(self._fetchall(
             "SELECT DATE(ts, 'unixepoch', 'localtime'), COUNT(*) FROM events "
-            "WHERE customer=? GROUP BY 1",
-            (customer,),
-        ).fetchall())
+            "WHERE customer=? AND ts>=? GROUP BY 1",
+            (customer, since),
+        ))
         return [{"day": day,
                  "requests": int(request_rows.get(day, 0)),
                  "values": int(event_rows.get(day, 0))}
                 for day in wanted]
 
-    def by_agent(self, customer: str) -> list[dict[str, object]]:
-        rows = self._conn.execute(
-            "SELECT agent_id, SUM(n) FROM requests WHERE customer=? "
+    def by_agent(self, customer: str, since_day: str) -> list[dict[str, object]]:
+        rows = self._fetchall(
+            "SELECT agent_id, SUM(n) FROM requests WHERE customer=? AND day>=? "
             "GROUP BY agent_id ORDER BY 2 DESC",
-            (customer,),
-        ).fetchall()
+            (customer, since_day),
+        )
         return [{"agent_id": row[0] or "—", "requests": int(row[1])} for row in rows]
 
     def _migrate_agent_id(self) -> None:
         """Add agent_id to a pre-existing table created before this column."""
-        columns = [row[1] for row in self._conn.execute("PRAGMA table_info(events)").fetchall()]
+        columns = [row[1] for row in self._fetchall("PRAGMA table_info(events)", ())]
         if "agent_id" not in columns:
             self._conn.execute("ALTER TABLE events ADD COLUMN agent_id TEXT DEFAULT ''")
 
@@ -210,12 +294,21 @@ class AuditLog:
             )
             self._conn.commit()
 
-    def counts(self, customer: str) -> dict[str, int]:
-        """Counts per entity type across all of an org's agents."""
-        rows = self._conn.execute(
-            "SELECT entity_type, COUNT(*) FROM events WHERE customer=? GROUP BY entity_type",
-            (customer,),
-        ).fetchall()
+    def counts(self, customer: str, since: float) -> dict[str, int]:
+        """Counts per entity type over a window.
+
+        `since` is REQUIRED, and that is the fix rather than the inconvenience:
+        this returned all-time numbers while the status screen printed them
+        under "СЕГОДНЯ" and the printed report put them under a stated period.
+        A container up for a month with no traffic today rendered "0 запросов"
+        beside "PHONE 5000" in the same cell, and the document handed to the
+        customer's auditor claimed lifetime figures were the period's. Pass 0.0
+        to mean all time, explicitly."""
+        rows = self._fetchall(
+            "SELECT entity_type, COUNT(*) FROM events WHERE customer=? AND ts>=? "
+            "GROUP BY entity_type",
+            (customer, since),
+        )
         return {row[0]: row[1] for row in rows}
 
     def billing_totals(self) -> dict[str, object]:
@@ -229,22 +322,26 @@ class AuditLog:
         deliberately shaped so that it cannot carry personal data: counts and a
         total, no tokens, no previews, no free-text fields. Gate L12 greps the
         request body for every injected value to keep it that way."""
-        # Under the lock, unlike the other read paths: this one is called from the
-        # LICENCE THREAD on every renewal while mask workers are writing on the
-        # same connection. sqlite3 with check_same_thread=False does not make a
-        # connection concurrent — interleaving an aggregate with a locked
-        # INSERT+commit raises ProgrammingError or returns a torn count, and the
-        # exception would surface inside the renewal path.
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT entity_type, COUNT(*) FROM events WHERE customer<>? "
-                "GROUP BY entity_type",
-                (SELFCHECK_ORG,),
-            ).fetchall()
-            total = self._conn.execute(
-                "SELECT COALESCE(SUM(n), 0) FROM requests WHERE customer<>?",
-                (SELFCHECK_ORG,),
-            ).fetchone()
+        # Called from the LICENCE THREAD on every renewal while mask workers are
+        # writing on the same connection, so both reads must be serialised
+        # against those writes — which `_fetchall`/`_fetchone` now do. They must
+        # NOT be wrapped in another `with self._lock` here: threading.Lock is not
+        # reentrant, and doing so deadlocks the renewal thread permanently, which
+        # expires the lease and stops the container.
+        #
+        # The two reads are deliberately not one atomic snapshot. They are
+        # counters that only grow, reported cumulatively, so a renewal that
+        # catches them a few microseconds apart understates by at most one
+        # request and is corrected by the next report.
+        rows = self._fetchall(
+            "SELECT entity_type, COUNT(*) FROM events WHERE customer<>? "
+            "GROUP BY entity_type",
+            (SELFCHECK_ORG,),
+        )
+        total = self._fetchone(
+            "SELECT COALESCE(SUM(n), 0) FROM requests WHERE customer<>?",
+            (SELFCHECK_ORG,),
+        )
         entities = {row[0]: row[1] for row in rows}
         # `requests` is the REQUEST counter, not sum(entities). It used to be the
         # latter, which meant the plan limit the customer bought ("до 100 000
@@ -255,10 +352,10 @@ class AuditLog:
 
     def counts_for_agent(self, customer: str, agent_id: str) -> dict[str, int]:
         """Counts per entity type for a single agent."""
-        rows = self._conn.execute(
+        rows = self._fetchall(
             "SELECT entity_type, COUNT(*) FROM events WHERE customer=? AND agent_id=? GROUP BY entity_type",
             (customer, agent_id),
-        ).fetchall()
+        )
         return {row[0]: row[1] for row in rows}
 
     def _event_filter(self, customer: str, since: float, agent_id: str,
@@ -287,14 +384,14 @@ class AuditLog:
         where, params = self._event_filter(
             customer, since, agent_id, entity_type, token_query
         )
-        total = self._conn.execute(
+        total = self._fetchone(
             f"SELECT COUNT(*) FROM events WHERE {where}", params
-        ).fetchone()
-        rows = self._conn.execute(
+        )
+        rows = self._fetchall(
             f"SELECT ts, agent_id, entity_type, token, preview FROM events "
             f"WHERE {where} ORDER BY ts DESC LIMIT ? OFFSET ?",
             [*params, limit, offset],
-        ).fetchall()
+        )
         return {
             "total": int(total[0]) if total else 0,
             "events": [{"ts": r[0], "agent_id": r[1], "type": r[2],
@@ -305,41 +402,41 @@ class AuditLog:
         """Orgs this container has actually seen traffic for. One container may
         serve several of the customer's own tenants, and the interface has to
         offer what exists rather than make the operator guess an id."""
-        rows = self._conn.execute(
+        rows = self._fetchall(
             "SELECT DISTINCT customer FROM requests WHERE customer<>? ORDER BY customer",
             (SELFCHECK_ORG,),
-        ).fetchall()
+        )
         return [row[0] for row in rows]
 
     def known_agents(self, customer: str) -> list[str]:
-        rows = self._conn.execute(
+        rows = self._fetchall(
             "SELECT DISTINCT agent_id FROM events WHERE customer=? AND agent_id<>'' "
             "ORDER BY agent_id",
             (customer,),
-        ).fetchall()
+        )
         return [row[0] for row in rows]
 
     def known_types(self, customer: str) -> list[str]:
-        rows = self._conn.execute(
+        rows = self._fetchall(
             "SELECT DISTINCT entity_type FROM events WHERE customer=? ORDER BY entity_type",
             (customer,),
-        ).fetchall()
+        )
         return [row[0] for row in rows]
 
     def recent(self, customer: str, limit: int) -> list[dict[str, object]]:
         """Most recent caught items across all of an org's agents."""
-        rows = self._conn.execute(
+        rows = self._fetchall(
             "SELECT ts, agent_id, entity_type, token, preview FROM events WHERE customer=? "
             "ORDER BY ts DESC LIMIT ?",
             (customer, limit),
-        ).fetchall()
+        )
         return [{"ts": r[0], "agent_id": r[1], "type": r[2], "token": r[3], "preview": r[4]} for r in rows]
 
     def recent_for_agent(self, customer: str, agent_id: str, limit: int) -> list[dict[str, object]]:
         """Most recent caught items for a single agent (type / token / masked original)."""
-        rows = self._conn.execute(
+        rows = self._fetchall(
             "SELECT ts, entity_type, token, preview FROM events WHERE customer=? AND agent_id=? "
             "ORDER BY ts DESC LIMIT ?",
             (customer, agent_id, limit),
-        ).fetchall()
+        )
         return [{"ts": r[0], "type": r[1], "token": r[2], "preview": r[3]} for r in rows]

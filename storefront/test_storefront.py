@@ -93,6 +93,12 @@ def main() -> int:
     django.setup()
     from django.core.management import call_command
     from django.test import Client
+    from django.test.utils import setup_test_environment
+
+    # Redirects mail to `django.core.mail.outbox` so the activation link can be
+    # read out of the message we actually sent, rather than reconstructed — the
+    # point of the check is that the email carries a link and no key.
+    setup_test_environment()
 
     call_command("migrate", verbosity=0, interactive=False)
     call_command("seed_plans", verbosity=0)
@@ -128,9 +134,25 @@ def run_checks(client) -> None:
 
     signed = client.post("/signup", {"email": "buyer@acme.ru",
                                      "company": "ООО Ромашка", "plan": "start"})
-    check("sign-up redirects to the key page",
-          signed.status_code == 302 and signed.url == "/welcome",
+    check("sign-up does not hand a key to whoever typed the address",
+          signed.status_code == 200 and "Проверьте почту" in signed.content.decode()
+          or "Письмо ушло" in signed.content.decode(),
           f"status={signed.status_code}")
+    check("no key exists before the mailbox is proven",
+          LicenseKey.objects.count() == 0, f"keys={LicenseKey.objects.count()}")
+
+    # The activation link, read from the email we actually sent.
+    from django.core import mail
+    check("an activation email was sent", len(mail.outbox) == 1,
+          f"outbox={len(mail.outbox)}")
+    body = mail.outbox[0].body
+    check("the email carries no key, only a link",
+          "vg_live_" not in body, "nothing secret is put in an email")
+    link = [word for word in body.split() if "/activate?t=" in word][0]
+    activated = client.get(link[link.index("/activate"):], follow=False)
+    check("following the link issues the key",
+          activated.status_code == 302 and activated.url == "/welcome",
+          f"status={activated.status_code}")
 
     welcome = client.get("/welcome")
     welcome_body = welcome.content.decode()
@@ -142,6 +164,11 @@ def run_checks(client) -> None:
           stored.prefix in welcome_body, f"prefix={stored.prefix}")
     check("the run command comes with the key already in it",
           "VEILGATE_LICENSE_KEY=" in welcome_body and stored.prefix in welcome_body)
+
+    # A second activation must not mint a second key.
+    replay = client.get(link[link.index("/activate"):], follow=False)
+    check("the activation link cannot be replayed for another key",
+          LicenseKey.objects.count() == 1, f"keys={LicenseKey.objects.count()}")
 
     # The key must be gone from the session now: a page that re-renders a bearer
     # credential on refresh is a credential in browser history.
@@ -235,13 +262,39 @@ def run_checks(client) -> None:
     client.force_login(User.objects.get(email="buyer@acme.ru"))
 
     # The webhook must not be a way to mark invoices paid by asserting so.
-    forged = client.post("/hooks/yookassa",
-                         data='{"object": {"id": "made-up", "status": "succeeded"}}',
-                         content_type="application/json")
+    # Malformed id: refused on shape, BEFORE any outbound call, because an
+    # unauthenticated endpoint that always makes one is an amplifier.
+    junk = client.post("/hooks/yookassa",
+                       data='{"object": {"id": "made-up", "status": "succeeded"}}',
+                       content_type="application/json")
+    invoice.refresh_from_db()
+    check("a malformed payment id is refused without a network call",
+          junk.status_code == 400 and invoice.state != "paid",
+          f"status={junk.status_code} invoice={invoice.state}")
+
+    # Well-formed but not ours: this one reaches the verification path, which
+    # asks ЮKassa and is told there is no such payment. The status the body
+    # claims is never consulted.
+    forged = client.post(
+        "/hooks/yookassa",
+        data='{"object": {"id": "2f8e1c3a-0000-4000-8000-abcdefabcdef",'
+             ' "status": "succeeded", "amount": {"value": "99999.00"}}}',
+        content_type="application/json")
     invoice.refresh_from_db()
     check("a forged payment notification cannot mark an invoice paid",
           invoice.state != "paid" and forged.status_code in (200, 502),
           f"status={forged.status_code} invoice={invoice.state}")
+
+    # A second period must bill the DELTA, not the lifetime counter again.
+    from billing.models import Invoice as InvoiceModel
+    invoice.requests_at_period_end = 500
+    invoice.state = InvoiceModel.ISSUED
+    invoice.save(update_fields=["requests_at_period_end", "state"])
+    second = build_invoice(org, date.today(), date.today() + timedelta(days=30))
+    check("the next invoice bills the period, not the lifetime total",
+          second.overage_requests == 0,
+          f"watermark=500 reported={second.requests_at_period_end} "
+          f"overage={second.overage_requests}")
 
     # A second organisation must not be able to read the first one's invoices.
     other_user = User.objects.create_user(email="stranger@example.com")

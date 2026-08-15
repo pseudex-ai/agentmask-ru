@@ -174,10 +174,21 @@ def _mask_request(
     on the worker thread and not on the event loop — same reasoning as the
     sidecar leg."""
     context = _context(customer_id)
-    return (
+    result = (
         mask_messages(messages, context, False),
         mask_tools(tools, context, False),
     )
+    # Counted here too, and it was not. `record_request` was added on the
+    # sidecar leg only, so every customer on THIS deployment shape reported
+    # {"requests": 0} forever: their plan limit was unenforceable and the
+    # cabinet's usage bar sat at zero. It is a regression rather than an
+    # omission — before the counter existed, `billing_totals` returned
+    # sum(entities), which this path did populate.
+    #
+    # After masking succeeds, never before: masking is fail-closed, so a request
+    # that raised was blocked and never reached a model.
+    AUDIT.record_request(customer_id, "")
+    return result
 
 
 async def _forward(body: dict[str, object], tenant: Tenant) -> dict[str, object]:
@@ -321,7 +332,7 @@ async def usage(request: Request) -> dict[str, object]:
     recent events with masked previews). No full PII is stored or returned."""
     tenant = _tenant(request)
     return {
-        "protected_counts": AUDIT.counts(tenant.customer_id),
+        "protected_counts": AUDIT.counts(tenant.customer_id, 0.0),
         "recent": AUDIT.recent(tenant.customer_id, 50),
     }
 

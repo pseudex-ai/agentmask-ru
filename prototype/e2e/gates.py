@@ -111,8 +111,24 @@ def sidecar_exec(args: list[str]) -> subprocess.CompletedProcess:
     return compose(["exec", "-T", "sidecar", *args], False, 120)
 
 
+# The two credentials the stand pins in compose.yml. The product generates them
+# when unset; the stand fixes them so a gate can present what a customer would
+# read out of their own container log.
+GATEWAY_TOKEN = "e2e-gateway-token"
+ADMIN_TOKEN = "e2e-admin-token"
+
+
+def gateway_headers() -> dict[str, str]:
+    return {"Authorization": f"Bearer {GATEWAY_TOKEN}"}
+
+
+def operator_headers() -> dict[str, str]:
+    return {"Authorization": f"Bearer {ADMIN_TOKEN}"}
+
+
 def post_mask(timeout: float) -> httpx.Response:
-    return httpx.post(f"{SIDECAR}/mask", json=fixtures.mask_body(ORG), timeout=timeout)
+    return httpx.post(f"{SIDECAR}/mask", json=fixtures.mask_body(ORG),
+                      timeout=timeout, headers=gateway_headers())
 
 
 def license_state() -> dict[str, object]:
@@ -347,7 +363,7 @@ def gate_l4() -> bool:
 
     # Round trip: what the tool would receive must be the ORIGINAL surface form.
     content = response.json()["messages"][0]["content"]
-    restored = httpx.post(f"{SIDECAR}/unmask", timeout=60, json={
+    restored = httpx.post(f"{SIDECAR}/unmask", timeout=60, headers=gateway_headers(), json={
         "org_id": ORG, "response": {"choices": [{"message": {"content": content}}]},
     }).json()["response"]["choices"][0]["message"]["content"]
     round_tripped = [value for value in fixtures.PII_PAYLOAD.values() if value in restored]
@@ -539,12 +555,12 @@ def gate_l14b() -> bool:
     hits, rss = _memscan()
     state = license_state()
     masked = post_mask(90)
-    spans = httpx.post(f"{SIDECAR}/spans", timeout=60,
+    spans = httpx.post(f"{SIDECAR}/spans", timeout=60, headers=gateway_headers(),
                        json={"org_id": ORG, "texts": ["Иван Петров"]})
     # Still alive and still useful for the customer's own data — this is what
     # separates "gave up the assets" from "the process fell over".
     still_alive = worker_pids(24)
-    unmasked = httpx.post(f"{SIDECAR}/unmask", timeout=60, json={
+    unmasked = httpx.post(f"{SIDECAR}/unmask", timeout=60, headers=gateway_headers(), json={
         "org_id": ORG, "response": {"choices": [{"message": {"content": "нет токенов"}}]},
     })
     # Every worker that was serving must still be serving: none of them died to
@@ -845,7 +861,11 @@ def gate_l12() -> bool:
     calls = 12
     for _ in range(calls):
         post_mask(90)
-    local = httpx.get(f"{SIDECAR}/usage", params={"org_id": ORG}, timeout=30).json()
+    # /usage is on the OPERATOR surface now: it lists tokens and previews, which
+    # is the same disclosure /events makes, and it was the one endpoint the
+    # closing of that surface missed.
+    local = httpx.get(f"{SIDECAR}/usage", params={"org_id": ORG}, timeout=30,
+                      headers=operator_headers()).json()
 
     # Counters ride on the renewal, so wait for one to happen — specifically for
     # one carrying DATA. Waiting merely for "a report arrived" fires on the first

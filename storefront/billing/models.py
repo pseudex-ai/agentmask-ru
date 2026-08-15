@@ -172,7 +172,25 @@ class Invoice(models.Model):
 
     # Whatever the payment provider calls this. Nullable because a customer
     # paying by bank transfer against a счёт never gets one.
-    payment_ref = models.CharField(max_length=128, blank=True)
+    #
+    # UNIQUE when present: ЮKassa redelivers notifications, and two arriving at
+    # once both passed the "already paid?" check and both ran mark_paid, which
+    # unconditionally extends the period by 30 days. Two deliveries, two free
+    # months. The database refuses the second now, whatever the application
+    # threads do.
+    payment_ref = models.CharField(max_length=128, blank=True, null=True,
+                                   unique=True, default=None)
+
+    # The licensing server reports CUMULATIVE requests since the installation's
+    # first report — never a period. Billing subtracted nothing, so month two
+    # charged overage on the lifetime total: steady 150k/month on a 100k plan
+    # billed 50k, then 200k, then 350k. Month twelve was 34x the truth.
+    #
+    # Storing the reading this invoice was cut at makes the next one a
+    # subtraction. It is on the invoice rather than on the subscription because
+    # it must survive re-issuing and voiding — the previous ISSUED invoice is
+    # the watermark, not the current state of anything.
+    requests_at_period_end = models.BigIntegerField(default=0)
 
     class Meta:
         ordering = ["-period_start", "-number"]
@@ -189,4 +207,8 @@ class Invoice(models.Model):
         not owe them. Uniqueness is enforced by the column, not by the format.
         """
         when = when or timezone.now()
-        return f"VG-{when:%Y-%m}-{secrets.token_hex(2)}"
+        # Four hex digits is 65 536 values a month against a unique column: by
+        # 250 invoices in one month a collision is more likely than not, and it
+        # surfaces as an uncaught IntegrityError. Eight makes it negligible; the
+        # caller still retries, because "negligible" is not "impossible".
+        return f"VG-{when:%Y-%m}-{secrets.token_hex(4)}"

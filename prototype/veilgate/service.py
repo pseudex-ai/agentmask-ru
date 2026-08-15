@@ -62,9 +62,11 @@ _VAULTS: dict[str, Vault] = {}
 LICENSE = LicenseClient(
     base_url=os.environ.get("VEILGATE_LICENSE_URL", "https://license.veilgate.ru"),
     key=os.environ.get("VEILGATE_LICENSE_KEY", ""),
-    # Set by entrypoint.sh so every worker of one container reports the same
-    # instance; a bare process would otherwise look like a separate deployment.
-    instance_id=os.environ.get("VEILGATE_INSTANCE_ID", "") or uuid.uuid4().hex[:12],
+    # Keyed to the DATA DIRECTORY, not to the container. The licensing server
+    # sums usage across instance ids, so an id that changes on restart while the
+    # counters persist multiplies the bill by the number of restarts. The env
+    # override stays for the e2e stand, which pins it as configuration.
+    instance_id=os.environ.get("VEILGATE_INSTANCE_ID", "") or AUDIT.installation_id(),
     ca_path=os.environ.get("VEILGATE_LICENSE_CA", ""),
     usage_provider=lambda: AUDIT.billing_totals(),
 )
@@ -79,21 +81,32 @@ _MASK_CACHE = MaskCache(int(os.environ.get("VEILGATE_MASK_CACHE_SIZE", "20000"))
 # threadpool size; tune per deployment. Acquired around the to_thread offload.
 _MASK_CONCURRENCY = int(os.environ.get("VEILGATE_MASK_CONCURRENCY", "8"))
 
-# Shared secret for the OPERATOR surface (/reveal, the log, statistics,
-# diagnostics). The masking endpoints stay unauthenticated: the customer's own
-# gateway calls them on every request over the contour network, and putting a
-# credential on that path buys nothing an attacker who is already on that network
-# does not have.
+# TWO SURFACES, TWO CREDENTIALS, held by two different parties: the gateway
+# token lives in the customer's gateway configuration, the operator token in
+# their interface. Reachability from inside the contour is not authority to read
+# — that principle was already written here, and then applied to only half the
+# port.
 #
-# The operator surface is different in kind — /reveal discloses a real personal
-# value on demand, and the log is a list of what exists to disclose. Reachability
-# from inside the contour must not be the same thing as authority to read it.
+# Credential for the GATEWAY surface. Separate from the operator token because
+# they are held by different parties: this one lives in the customer's gateway
+# config, the operator one in their interface.
 #
-# Generated when unset so the endpoints are never accidentally open; the
-# entrypoint hands the same value to the UI process. A container started by hand
-# without one still gets a working UI, because the token is printed with the
-# sign-in URL.
+# It exists because the masking endpoints were open, and that was wrong in a way
+# the original comment argued itself out of. /unmask is a DETOKENIZATION ORACLE:
+# hand it a token, get the real personal value. /usage listed the tokens to try.
+# Together, anyone who could open a socket to this port could enumerate and
+# decode the whole vault — with no record, while /reveal next door demanded an
+# actor and wrote an access log. The audit guarantee was decorative.
+#
+# Required, not optional. An "only enforced when set" flag is a hole that ships
+# enabled by default, and there are no deployments in the field to migrate.
+GATEWAY_TOKEN = os.environ.get("VEILGATE_GATEWAY_TOKEN", "")
 ADMIN_TOKEN = os.environ.get("VEILGATE_ADMIN_TOKEN", "")
+if not GATEWAY_TOKEN:
+    GATEWAY_TOKEN = secrets.token_urlsafe(24)
+    _log.warning("VEILGATE_GATEWAY_TOKEN was not set — generated a per-process one. "
+                 "With more than one worker the gateway will be rejected at random. "
+                 "entrypoint.sh sets it once for the container.")
 if not ADMIN_TOKEN:
     ADMIN_TOKEN = secrets.token_urlsafe(24)
     # Loud, because the failure it causes is baffling otherwise: with several
@@ -118,6 +131,17 @@ def _require_operator(request: Request) -> None:
         raise HTTPException(
             status_code=401,
             detail="operator token required (Authorization: Bearer …)",
+        )
+
+
+def _require_gateway(request: Request) -> None:
+    """Gate the masking surface on the gateway token."""
+    header = request.headers.get("authorization", "")
+    presented = header[7:] if header.lower().startswith("bearer ") else ""
+    if not presented or not hmac.compare_digest(presented, GATEWAY_TOKEN):
+        raise HTTPException(
+            status_code=401,
+            detail="gateway token required (Authorization: Bearer …)",
         )
 
 
@@ -154,7 +178,15 @@ async def _lifespan(_app: "FastAPI"):
     LICENSE.stop()
 
 
-app = FastAPI(title="Veilgate sidecar", lifespan=_lifespan)
+app = FastAPI(
+    title="Veilgate sidecar",
+    lifespan=_lifespan,
+    # No /docs, /redoc or /openapi.json. They served an unauthenticated map of
+    # the operator surface — every path, every parameter — to anyone who could
+    # reach the port. The integration contract lives in docs/integration.md,
+    # which is where a customer reads it.
+    docs_url=None, redoc_url=None, openapi_url=None,
+)
 
 
 @app.exception_handler(BundleNotLeased)
@@ -325,7 +357,7 @@ async def license_status() -> JSONResponse:
     })
 
 
-@app.post("/mask")
+@app.post("/mask", dependencies=[Depends(_require_gateway)])
 async def mask(request: Request) -> JSONResponse:
     blocked = _license_block()
     if blocked is not None:
@@ -357,7 +389,7 @@ async def mask(request: Request) -> JSONResponse:
     return JSONResponse(payload)
 
 
-@app.post("/unmask")
+@app.post("/unmask", dependencies=[Depends(_require_gateway)])
 async def unmask(request: Request) -> JSONResponse:
     body = await request.json()
     org_id = str(body.get("org_id", "")) or "default"
@@ -372,7 +404,7 @@ async def unmask(request: Request) -> JSONResponse:
     return JSONResponse({"response": result})
 
 
-@app.post("/unmask_chunk")
+@app.post("/unmask_chunk", dependencies=[Depends(_require_gateway)])
 async def unmask_chunk(request: Request) -> JSONResponse:
     """Detokenize one SSE delta on the streaming leg.
 
@@ -412,7 +444,7 @@ def _unmask_chunk_for(delta: str, carry: str, org_id: str,
     return unmask_stream_chunk(delta, carry, _vault(org_id), flush)
 
 
-@app.post("/spans")
+@app.post("/spans", dependencies=[Depends(_require_gateway)])
 async def spans(request: Request) -> JSONResponse:
     """PII spans per text for dialog highlighting (read-only).
     Body: {org_id, texts: [str]} -> {results: [[{start,end,type,token,preview}], ...]}."""
@@ -431,7 +463,7 @@ async def spans(request: Request) -> JSONResponse:
     return JSONResponse({"results": results})
 
 
-@app.get("/usage")
+@app.get("/usage", dependencies=[Depends(_require_operator)])
 async def usage(request: Request) -> JSONResponse:
     """Org-wide stats. Pass ?agent_id=... to scope to a single agent."""
     org_id = request.query_params.get("org_id", "default")
@@ -445,7 +477,9 @@ async def usage(request: Request) -> JSONResponse:
         })
     return JSONResponse({
         "org_id": org_id,
-        "protected_counts": AUDIT.counts(org_id),
+        # 0.0 = all time, said explicitly. This endpoint is the org-wide
+        # summary and has no period in its contract.
+        "protected_counts": AUDIT.counts(org_id, 0.0),
         "recent": AUDIT.recent(org_id, 50),
     })
 

@@ -242,6 +242,24 @@ async def admin_revoke(request: Request) -> JSONResponse:
     return await _set_status(request, STATUS_REVOKED)
 
 
+@admin_app.post("/admin/revoke_key")
+async def admin_revoke_key(request: Request) -> JSONResponse:
+    """Revoke a single key by its hash, without touching the organisation.
+
+    The organisation-wide levers stop everything the customer runs; this one
+    exists so "this key leaked" is not the same action as "stop this customer".
+    """
+    body = await request.json()
+    key_hash = str(body.get("key_hash", ""))
+    if not key_hash:
+        return JSONResponse({"error": "key_hash required"}, status_code=400)
+    changed = STORE.revoke_key_hash(key_hash)
+    if changed == 0:
+        return JSONResponse({"error": "unknown or already revoked key"},
+                            status_code=404)
+    return JSONResponse({"revoked": changed})
+
+
 @admin_app.post("/admin/suspend")
 async def admin_suspend(request: Request) -> JSONResponse:
     return await _set_status(request, STATUS_SUSPENDED)

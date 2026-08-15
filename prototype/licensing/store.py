@@ -92,6 +92,22 @@ class LicenseStore:
         ).fetchone()
         return KeyRecord(row[0], row[1], row[2]) if row is not None else None
 
+    def revoke_key_hash(self, key_hash: str) -> int:
+        """Revoke ONE key. Statuses were per-organisation only, so the cabinet's
+        "отозвать ключ" button set a local flag, reported success, and left the
+        key leasing forever — the departing engineer's copy kept working.
+
+        Matched on the hash because that is all the storefront holds: the key
+        itself is shown once and never stored in readable form on either side.
+        """
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE keys SET status=? WHERE key_hash=? AND status=?",
+                (STATUS_REVOKED, key_hash, STATUS_ACTIVE),
+            )
+            self._conn.commit()
+            return cursor.rowcount
+
     def set_status(self, org_id: str, status: str) -> int:
         with self._lock:
             cursor = self._conn.execute(

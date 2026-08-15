@@ -50,6 +50,12 @@ services:
       # go backwards on a live kernel, so faking it too would test a threat that
       # does not exist and would prove nothing about the design.
       FAKETIME_DONT_FAKE_MONOTONIC: "1"
+      # Pinned for the stand as CONFIGURATION, the same way the TTL and the
+      # instance id are. The product still generates these when unset; fixing
+      # them here just lets the gates present the credential a customer would
+      # read out of their own container log.
+      VEILGATE_GATEWAY_TOKEN: "e2e-gateway-token"
+      VEILGATE_ADMIN_TOKEN: "e2e-admin-token"
     volumes:
       - ./certs:/certs:ro
       - ./faketime:/faketime

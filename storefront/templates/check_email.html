@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Проверьте почту — veilgate{% endblock %}
+{% block content %}
+<section>
+  <div class="eyebrow"><i></i><span>ОСТАЛСЯ ОДИН ШАГ</span></div>
+  <h2>Письмо ушло на {{ email }}</h2>
+  <p class="sub" style="margin-top:16px">В нём ссылка, по которой ключ будет выпущен и показан один раз. Ссылка действует сутки.</p>
+  <div style="max-width:640px;padding:22px;border:1px solid var(--line-2);font-size:14px;color:var(--dim);line-height:1.7">
+    <b style="color:var(--text-3)">Почему не сразу.</b><br>
+    Ключ открывает доступ к вашему шлюзу целиком. Выдавать его тому, кто просто ввёл адрес, означало бы, что чужой человек может получить ключ на ваш email. Одно письмо — и этого класса проблем нет.<br><br>
+    Самого ключа в письме нет: там только ссылка.
+  </div>
+</section>
+{% endblock %}

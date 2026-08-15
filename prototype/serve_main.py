@@ -55,8 +55,18 @@ def _serve_ui(log_level: str) -> None:
     from veilgate.localui.server import app as ui_app  # noqa: PLC0415 (role-local)
 
     port = int(os.environ.get("VEILGATE_UI_PORT", "8081"))
+    # 0.0.0.0 INSIDE the container, and that is not the exposure control —
+    # binding loopback here would make the port unreachable through Docker at
+    # all, since publishing forwards to the container's own address.
+    #
+    # The control is on the HOST side of `-p`. Every run command we hand out now
+    # says `-p 127.0.0.1:8081:8081`, because `-p 8081:8081` publishes on every
+    # interface of the customer's Docker host — the internet, on a cloud VM —
+    # and this port serves real personal values over plain HTTP. The printed
+    # sign-in URL says "localhost" and quietly reinforces the wrong belief.
+    host = os.environ.get("VEILGATE_UI_HOST", "0.0.0.0")
     uvicorn.Server(uvicorn.Config(
-        ui_app, host="0.0.0.0", port=port, log_level=log_level
+        ui_app, host=host, port=port, log_level=log_level
     )).run()
 
 

@@ -9,12 +9,14 @@ later must be checked against it rather than against convenience.
 
 import json
 import logging
+import re
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core import signing
 from django.core.cache import cache
+from django.core.mail import send_mail
 from django.db import transaction
 from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
@@ -74,6 +76,25 @@ def _too_many_signups(request) -> bool:
     return False
 
 
+# ЮKassa payment ids are UUIDs. Anything else cannot be one of ours, so it is
+# refused before it can cost us a network call.
+_PAYMENT_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+_WEBHOOK_LIMIT = 60
+_WEBHOOK_WINDOW_SECONDS = 60
+
+
+def _too_many_webhooks(request) -> bool:
+    bucket = f"webhook:{_client_ip(request)}"
+    if cache.get(bucket, 0) >= _WEBHOOK_LIMIT:
+        return True
+    cache.add(bucket, 0, _WEBHOOK_WINDOW_SECONDS)
+    try:
+        cache.incr(bucket)
+    except ValueError:
+        cache.set(bucket, 1, _WEBHOOK_WINDOW_SECONDS)
+    return False
+
+
 def landing(request):
     """The public page. The demo on it runs on PREPARED examples and has no
     free-text input: an input field here would mean accepting other people's
@@ -115,17 +136,67 @@ def signup(request):
                                "на почту, ключи в кабинете.")
         return redirect("account_login")
 
-    try:
-        organization, key = services.register(email, name, plan_code)
-    except Plan.DoesNotExist:
+    if not Plan.objects.filter(code=plan_code, is_public=True).exists():
         messages.error(request, "Такого тарифа нет.")
         return redirect("landing")
+
+    # The account is created now; the KEY is not. A live licence key opens the
+    # customer's whole gateway, and handing one to whoever typed an address let
+    # anyone claim a stranger's email, take the key, and leave the stranger to
+    # sign in later into the attacker's organisation with the attacker's key
+    # still active inside it.
+    #
+    # The link below is the proof of the mailbox, and it carries NO key — only a
+    # signed reference to the account. Nothing secret is ever put in an email.
+    organization = services.create_account(email, name, plan_code)
+    link = request.build_absolute_uri(
+        "/activate?t=" + signing.dumps({"org": organization.id, "email": email})
+    )
+    send_mail(
+        subject="veilgate — ваш ключ готов к выпуску",
+        message=(
+            f"Здравствуйте!\n\n"
+            f"Аккаунт создан. Ключ будет выпущен и показан один раз, когда вы "
+            f"откроете ссылку:\n\n{link}\n\n"
+            f"Ссылка действует {_ACTIVATION_HOURS} часа. Если это были не вы — "
+            f"просто не открывайте её, ничего не произошло."
+        ),
+        from_email=None,
+        recipient_list=[email],
+        fail_silently=False,
+    )
+    return render(request, "check_email.html", {"email": email})
+
+
+_ACTIVATION_HOURS = 24
+
+
+def activate(request):
+    """Issue the key, once, to whoever proved they hold the mailbox."""
+    try:
+        payload = signing.loads(request.GET.get("t", ""),
+                                max_age=_ACTIVATION_HOURS * 3600)
+    except (signing.BadSignature, signing.SignatureExpired):
+        messages.error(request, "Ссылка недействительна или устарела. "
+                                "Зарегистрируйтесь заново — это займёт минуту.")
+        return redirect("landing")
+
+    organization = Organization.objects.filter(id=payload["org"]).first()
+    if organization is None:
+        return redirect("landing")
+    # Following the link twice must not mint a second key: the first one was
+    # shown once and the customer may already be running it.
+    if organization.keys.filter(revoked_at__isnull=True).exists():
+        messages.info(request, "Ключ уже выпущен. Войдите по ссылке на почту — "
+                               "в кабинете видно его префикс и расход.")
+        return redirect("account_login")
+    try:
+        key = services.issue_first_key(organization)
     except licensing.LicensingError as error:
-        # Deliberately not a generic apology: the customer's next action depends
-        # on whether this is ours to fix, and it always is.
+        _log.error("issuing a key for %s failed: %s", organization.id, error)
         messages.error(request, "Не удалось выпустить ключ — это на нашей стороне. "
                                 "Напишите нам, и мы выпустим его вручную.")
-        raise
+        return redirect("landing")
     return _handoff(redirect("welcome"), key, organization.id)
 
 
@@ -165,10 +236,12 @@ def welcome(request):
         "image": settings.DOCKER_IMAGE,
         "trial_days": services.TRIAL_DAYS,
     })
-    # Read once. A refresh must not re-render a bearer credential: the page
-    # would otherwise sit in the browser's back-forward cache holding a key
-    # that opens the customer's whole gateway.
+    # Read once, and not cached. Deleting the cookie alone does NOT keep the key
+    # out of the back-forward cache — only `no-store` disables it, so Back
+    # re-displayed a live gateway credential. The middleware covers /app/ and
+    # /admin/; this page is neither.
     response.delete_cookie(_HANDOFF_COOKIE)
+    response["Cache-Control"] = "no-store"
     return response
 
 
@@ -222,17 +295,26 @@ def revoke_key(request, key_id: int):
     key = organization.keys.filter(id=key_id, revoked_at__isnull=True).first()
     if key is None:
         raise Http404("ключ не найден")
-    # There is no per-key revoke on the licensing server yet: statuses are
-    # per-organisation. Revoking the last key would therefore stop the whole
-    # organisation, which is not what this button says it does.
     if organization.keys.filter(revoked_at__isnull=True).count() <= 1:
         messages.error(request, "Это последний действующий ключ. Выпустите новый, "
                                 "прежде чем отзывать этот — иначе сервис остановится.")
         return redirect("cabinet")
+    # The licensing server FIRST. This used to set a local flag and report
+    # success while the key kept leasing indefinitely — so an engineer who left
+    # with a copy still held a working credential for the whole gateway, and the
+    # screen said it was revoked. If the call fails the customer is told the
+    # truth instead of a comforting message.
+    try:
+        licensing.revoke_key(key.key_hash)
+    except licensing.LicensingError as error:
+        _log.error("revoking %s failed: %s", key.prefix, error)
+        messages.error(request, "Не удалось отозвать ключ на лицензионном сервере — "
+                                "он всё ещё действует. Это на нашей стороне, напишите нам.")
+        return redirect("cabinet")
     with transaction.atomic():
         key.revoked_at = timezone.now()
         key.save(update_fields=["revoked_at"])
-    messages.success(request, f"Ключ {key.prefix}… отозван.")
+    messages.success(request, f"Ключ {key.prefix}… отозван и больше не продлит аренду.")
     return redirect("cabinet")
 
 
@@ -292,8 +374,15 @@ def yookassa_webhook(request):
         payment_id = str(body.get("object", {}).get("id", ""))
     except (ValueError, AttributeError):
         return HttpResponse("bad body", status=400)
-    if not payment_id:
-        return HttpResponse("no payment id", status=400)
+    # Shape-checked BEFORE the outbound call. Every POST here costs one
+    # authenticated round trip to ЮKassa, so an unauthenticated endpoint that
+    # always makes one is an amplifier: ~8 concurrent requests fill every
+    # gunicorn slot and the storefront stops answering, and sustained traffic
+    # burns the API quota until real customers cannot pay.
+    if not _PAYMENT_ID.fullmatch(payment_id):
+        return HttpResponse("not a payment id", status=400)
+    if _too_many_webhooks(request):
+        return HttpResponse("slow down", status=429)
 
     try:
         status, amount, number = payments.fetch_status(payment_id)
