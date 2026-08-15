@@ -13,6 +13,13 @@ dirty.json
 holdout*.json
 dataset.json
 
+# Local stand secrets. `deploy/local.sh` generates both and caches them because
+# the signing key is compiled into the locally built image — a fresh one would
+# force a rebuild on every run. Neither belongs in the repository: a private key
+# in git is wrong even when it only signs bundles for a developer's own image.
+deploy/.local-signing-key
+deploy/.local-admin
+
 # Tooling
 .playwright-mcp/
 .thumbnail

@@ -63,9 +63,15 @@
   <div class="party">
     <div class="role">Исполнитель</div>
     <div class="body">
-      {{ seller.name }}{% if seller.inn %}, ИНН {{ seller.inn }}{% endif %}{% if seller.kpp %}, КПП {{ seller.kpp }}{% endif %}{% if seller.ogrn %}, ОГРН {{ seller.ogrn }}{% endif %}<br>
-      {{ seller.address }}
-      {% if seller.account %}<br>р/с {{ seller.account }}, {{ seller.bank }}, БИК {{ seller.bik }}{% if seller.corr_account %}, к/с {{ seller.corr_account }}{% endif %}{% endif %}
+      {% if seller.name %}
+        {{ seller.name }}{% if seller.inn %}, ИНН {{ seller.inn }}{% endif %}{% if seller.kpp %}, КПП {{ seller.kpp }}{% endif %}{% if seller.ogrn %}, ОГРН {{ seller.ogrn }}{% endif %}<br>
+        {{ seller.address }}
+        {% if seller.account %}<br>р/с {{ seller.account }}, {{ seller.bank }}, БИК {{ seller.bik }}{% if seller.corr_account %}, к/с {{ seller.corr_account }}{% endif %}
+        {% else %}<br><span class="missing">Банковские реквизиты не заданы — оплатить этот счёт по безналу нельзя.</span>{% endif %}
+      {% else %}
+        <span class="missing">Реквизиты исполнителя не заполнены — счёт нельзя выставлять.
+        Задайте PSEUDEX_SELLER_NAME, ИНН, ОГРНИП, адрес и банковские реквизиты.</span>
+      {% endif %}
     </div>
   </div>
 

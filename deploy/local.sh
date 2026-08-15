@@ -41,6 +41,44 @@ docker build -q -f "$ROOT/prototype/Dockerfile" \
 
 docker compose -f "$HERE/compose.local.yml" up -d --build
 
+# Django admin account. Cached like the signing key, so the link and password
+# printed below stay valid across restarts — an admin whose password changed on
+# every `up` is one nobody can keep a tab open on.
+#
+# Generated, never a literal: a password written into a script is a password
+# that ships. This file is gitignored, and the account exists only on this
+# machine's stand — it is not a credential for anything deployed.
+ADMINFILE="$HERE/.local-admin"
+if [ ! -f "$ADMINFILE" ]; then
+    printf 'admin@pseudex.local\n%s\n' "$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)" > "$ADMINFILE"
+    chmod 600 "$ADMINFILE"
+fi
+ADMIN_EMAIL="$(sed -n 1p "$ADMINFILE")"
+ADMIN_PASSWORD="$(sed -n 2p "$ADMINFILE")"
+
+# Wait for the schema: the container runs `migrate` at start, and creating a
+# user against a half-migrated database fails in a way that looks like a bug.
+for _ in $(seq 1 30); do
+    curl -fsS -o /dev/null "http://localhost:8080/healthz" 2>/dev/null && break
+    sleep 1
+done
+
+docker compose -f "$HERE/compose.local.yml" exec -T \
+    -e ADMIN_EMAIL="$ADMIN_EMAIL" -e ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+    storefront python manage.py shell -c '
+import os
+from django.contrib.auth import get_user_model
+User = get_user_model()
+email, password = os.environ["ADMIN_EMAIL"], os.environ["ADMIN_PASSWORD"]
+user, created = User.objects.get_or_create(email=email)
+# Reset every run: the cached file is the source of truth, so a password
+# changed by hand in the admin stops matching what this script prints.
+user.is_staff = user.is_superuser = user.is_active = True
+user.set_password(password)
+user.save()
+print("админ создан" if created else "админ обновлён")
+' >/dev/null 2>&1 && echo "  админ: $ADMIN_EMAIL" || echo "  админа создать не удалось — см. логи витрины"
+
 cat <<TEXT
 
 ────────────────────────────────────────────────────────────────────
@@ -64,6 +102,9 @@ cat <<TEXT
 
   5. Письма для входа в кабинет печатаются в лог витрины:
      docker compose -f deploy/compose.local.yml logs storefront | grep -A4 "http"
+
+  6. Django-админка          http://localhost:8080/admin/
+     логин / пароль — в deploy/.local-admin (gitignored, только этот стенд)
 
   Аренда здесь живёт 5 минут, grace 10 — лестницу деградации
   можно пройти целиком, не дожидаясь суток.

@@ -151,8 +151,21 @@ AUTHENTICATION_BACKENDS = [
 # thing because every additional field is a place to lose someone on the way to
 # the single metric this site is measured by — fifteen minutes to the first
 # masked request. A password would also be a credential we then have to hold.
-ACCOUNT_LOGIN_METHODS = {"email"}
-ACCOUNT_SIGNUP_FIELDS = ["email*"]
+# These four are the settings django-allauth 65.3.1 ACTUALLY READS. The block
+# here used to say `ACCOUNT_LOGIN_METHODS` / `ACCOUNT_SIGNUP_FIELDS`, which are
+# a LATER version's API: 65.3.1 has no such names, so the whole configuration
+# was silently inert and allauth ran on its defaults — authenticate by
+# username, username required — against a User model whose `username` is None.
+# The sign-in page therefore raised FieldDoesNotExist and returned 500, which
+# is the only way back into the cabinet for every customer.
+#
+# It survived the suite because every test signs in with `force_login()` and
+# never renders that page. If allauth is ever upgraded past 65.3, these become
+# deprecated aliases and the new names take over — check both then.
+ACCOUNT_AUTHENTICATION_METHOD = "email"
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 ACCOUNT_EMAIL_VERIFICATION = "optional"
 ACCOUNT_LOGIN_BY_CODE_ENABLED = True
 ACCOUNT_UNIQUE_EMAIL = True
@@ -212,7 +225,13 @@ YOOKASSA_SECRET_KEY = _env("PSEUDEX_YOOKASSA_SECRET_KEY")
 # template literal: they change (a bank, an address, an ОГРН correction) and a
 # change to a legal requisite must not require a deploy of the whole site.
 SELLER = {
-    "name": _env("PSEUDEX_SELLER_NAME", "ООО «Вейлгейт»"),
+    # NO PLAUSIBLE DEFAULT. This used to fall back to "ООО «Вейлгейт»" — an
+    # entity that does not exist, under a brand we no longer use, printed as the
+    # ИСПОЛНИТЕЛЬ on a document that goes to a customer's accountant. A missing
+    # requisite must look missing: the printable form says so in red and the
+    # invoice cannot be presented for payment, which is the correct outcome
+    # until the real ИП details are configured.
+    "name": _env("PSEUDEX_SELLER_NAME", ""),
     "inn": _env("PSEUDEX_SELLER_INN", ""),
     "kpp": _env("PSEUDEX_SELLER_KPP", ""),
     "ogrn": _env("PSEUDEX_SELLER_OGRN", ""),

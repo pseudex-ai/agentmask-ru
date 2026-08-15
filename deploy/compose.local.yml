@@ -69,11 +69,17 @@ services:
       - license
     # Migrations and the three tariffs on every start. Idempotent, and it means
     # `up` is the only command needed.
+    # Every continuation line must sit at the SAME indentation. A folded scalar
+    # (`>`) joins equally-indented lines with a space but PRESERVES the newline
+    # before a more-indented one — so the `--workers …` line used to arrive as a
+    # second shell command. gunicorn ran with defaults (one worker, no access
+    # log) and the flags surfaced only as `sh: --workers: not found` once
+    # gunicorn exited for an unrelated reason.
     command: >
       sh -c "python manage.py migrate --noinput &&
-             python manage.py seed_plans &&
-             gunicorn pseudex_site.wsgi:application --bind 0.0.0.0:8000
-                      --workers 2 --threads 4 --access-logfile - --error-logfile -"
+      python manage.py seed_plans &&
+      gunicorn pseudex_site.wsgi:application --bind 0.0.0.0:8000
+      --workers 2 --threads 4 --access-logfile - --error-logfile -"
 
 volumes:
   license-data:

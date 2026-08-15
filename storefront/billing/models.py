@@ -217,7 +217,7 @@ class Invoice(models.Model):
 
     @staticmethod
     def next_number(when=None) -> str:
-        """`VG-2026-08-4f3a`. Sequential-looking but not sequential.
+        """`PS-2026-08-4f3a`. Sequential-looking but not sequential.
 
         A strictly sequential invoice number tells every customer how many
         invoices we have issued, which for a young company is information we do
@@ -228,4 +228,6 @@ class Invoice(models.Model):
         # 250 invoices in one month a collision is more likely than not, and it
         # surfaces as an uncaught IntegrityError. Eight makes it negligible; the
         # caller still retries, because "negligible" is not "impossible".
-        return f"VG-{when:%Y-%m}-{secrets.token_hex(4)}"
+        # PS, not VG: the prefix outlived the rename to pseudex, and it is the
+        # one identifier a customer quotes back in a payment reference.
+        return f"PS-{when:%Y-%m}-{secrets.token_hex(4)}"

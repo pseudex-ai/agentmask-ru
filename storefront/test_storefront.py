@@ -192,6 +192,15 @@ def run_checks(client) -> None:
           anonymous.status_code == 302 and "/accounts/login" in anonymous.url,
           f"status={anonymous.status_code}")
 
+    # The page that redirect lands on must RENDER. Everything below signs in
+    # with force_login(), which never builds allauth's form — so a login page
+    # that raised FieldDoesNotExist on our username-less User model passed the
+    # whole suite while being the only way back into the cabinet.
+    login_page = client.get(anonymous.url)
+    check("the sign-in page renders",
+          login_page.status_code == 200 and b"<form" in login_page.content,
+          f"status={login_page.status_code}")
+
     from accounts.models import Membership, User
     client.force_login(User.objects.get(email="buyer@acme.ru"))
     cabinet = client.get("/app/")
@@ -251,6 +260,16 @@ def run_checks(client) -> None:
     check("the printable form warns when requisites are missing",
           "Реквизиты не заполнены" in printed_body,
           "ИНН is asked for at purchase, not at sign-up")
+    # OUR OWN requisites, on the ИСПОЛНИТЕЛЬ line. The default used to be a
+    # plausible but non-existent company, so an unconfigured deployment printed
+    # a legal document naming an entity that does not exist. Unset must read as
+    # unset, in red, and never as a name.
+    from django.conf import settings as django_settings
+    seller_name = django_settings.SELLER["name"]
+    check("an unconfigured seller prints a warning, not a plausible name",
+          ("Реквизиты исполнителя не заполнены" in printed_body
+           if not seller_name else seller_name in printed_body),
+          f"seller={seller_name!r}")
     check("an unpaid invoice is not also an act",
           "акт выполненных работ" not in printed_body.lower())
 

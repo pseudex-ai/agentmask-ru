@@ -259,7 +259,7 @@ docker logs pseudex | grep 'локальный интерфейс' -A2
       <form method="post" action="{% url 'signup' %}">
         {% csrf_token %}
         <input type="hidden" name="plan" value="{{ plan.code }}">
-        <input type="email" name="email" required placeholder="email" style="margin-bottom:8px">
+        <input type="email" name="email" required placeholder="email" style="margin-bottom:8px;width:100%">
         <button class="btn {% if plan.code == 'work' %}accent{% endif %} block" type="submit">НАЧАТЬ ПРОБУ</button>
       </form>
     </div>

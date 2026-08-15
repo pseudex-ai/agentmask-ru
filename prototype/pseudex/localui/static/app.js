@@ -933,7 +933,17 @@ function App() {
   useEffect(() => {
     if (!session) return;
     api('/api/whoami').then((body) => setOrg(body.org_id)).catch(() => {});
-    engineGet('/orgs').then((body) => setOrgs(body.orgs || [])).catch(() => {});
+    engineGet('/orgs').then((body) => {
+      const seen = body.orgs || [];
+      setOrgs(seen);
+      // Follow the traffic. PSEUDEX_UI_ORG defaults to "default", but a real
+      // gateway sends its own org_id, so the configured name is usually NOT one
+      // that has any data. The operator then opens the interface, reads
+      // "трафика ещё не было" beside a container that has been masking all day,
+      // and concludes the product is broken. Selecting an org that exists is
+      // the only reading that can be right; the picker still overrides it.
+      setOrg((current) => (seen.length && !seen.includes(current) ? seen[0] : current));
+    }).catch(() => {});
   }, [session]);
 
   // Poll the status. Paused while the tab is hidden — a background tab hammering
@@ -978,7 +988,7 @@ function App() {
             <div class="chip">ЛОКАЛЬНЫЙ ИНТЕРФЕЙС</div>
           </div>
           <div class="meta">
-            <span>org ${orgs.length > 1
+            <span>org ${orgs.length > 1 || (orgs.length === 1 && orgs[0] !== org)
               ? html`<select class="field" style="width:auto;padding:2px 6px" value=${org}
                              onChange=${(event) => setOrg(event.target.value)}>
                        ${orgs.map((name) => html`<option value=${name}>${name}</option>`)}
