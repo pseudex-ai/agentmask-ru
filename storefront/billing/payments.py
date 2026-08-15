@@ -32,6 +32,16 @@ def _configured() -> bool:
     return bool(settings.YOOKASSA_SHOP_ID and settings.YOOKASSA_SECRET_KEY)
 
 
+def is_available() -> bool:
+    """Whether card payment can be offered at all.
+
+    The button is hidden rather than shown-and-broken when no credentials are
+    set: an invoice can always be paid by transfer, so a dead card button would
+    be the only broken thing on a page that otherwise works.
+    """
+    return _configured()
+
+
 def _client():
     """Imported and configured lazily.
 
@@ -52,7 +62,34 @@ def _client():
     return Payment
 
 
-def create_payment(invoice, return_url: str) -> tuple[str, str]:
+def _receipt(invoice, email: str) -> dict[str, object]:
+    """The фискальный чек, for payers who need one.
+
+    54-ФЗ ст. 2 п. 9 exempts cashless settlements between organisations and/or
+    ИП from ККТ. It gives no such exemption for individuals, so the same amount
+    needs a receipt from one payer and none from another — and sending one where
+    it is not required is not harmless either: it fiscalises a transaction that
+    should not be, and (with ЮKassa's "Чеки" service) costs 1% of it.
+
+    `vat_code: 1` is "без НДС", which is what an ИП on УСН charges. A company on
+    ОСНО would need a different code, and guessing it wrong misstates tax on a
+    document the buyer files.
+    """
+    return {
+        "customer": {"email": email},
+        "items": [{
+            "description": f"Подписка veilgate, {invoice.period_start:%d.%m.%Y}"
+                           f"—{invoice.period_end:%d.%m.%Y}"[:128],
+            "quantity": "1.00",
+            "amount": {"value": f"{invoice.total:.2f}", "currency": "RUB"},
+            "vat_code": 1,
+            "payment_mode": "full_payment",
+            "payment_subject": "service",
+        }],
+    }
+
+
+def create_payment(invoice, return_url: str, email: str) -> tuple[str, str]:
     """Start a payment for an invoice. Returns (payment_id, confirmation_url).
 
     The idempotence key is the INVOICE NUMBER, not a fresh uuid. A customer who
@@ -61,18 +98,21 @@ def create_payment(invoice, return_url: str) -> tuple[str, str]:
     that if we give it the same key both times.
     """
     Payment = _client()
+    body: dict[str, object] = {
+        "amount": {"value": f"{invoice.total:.2f}", "currency": "RUB"},
+        "capture": True,
+        "confirmation": {"type": "redirect", "return_url": return_url},
+        "description": f"veilgate {invoice.number}, "
+                       f"{invoice.period_start:%d.%m.%Y}—{invoice.period_end:%d.%m.%Y}",
+        # Read back on notification to find the invoice again. Only our own
+        # identifiers: this object goes to a third party, so it carries an
+        # invoice number and an org id and nothing that describes a person.
+        "metadata": {"invoice": invoice.number, "org": invoice.organization_id},
+    }
+    if invoice.organization.needs_receipt:
+        body["receipt"] = _receipt(invoice, email)
     try:
-        payment = Payment.create({
-            "amount": {"value": f"{invoice.total:.2f}", "currency": "RUB"},
-            "capture": True,
-            "confirmation": {"type": "redirect", "return_url": return_url},
-            "description": f"veilgate {invoice.number}, "
-                           f"{invoice.period_start:%d.%m.%Y}—{invoice.period_end:%d.%m.%Y}",
-            # Read back on notification to find the invoice again. Only our own
-            # identifiers: this object goes to a third party, so it carries an
-            # invoice number and an org id and nothing that describes a person.
-            "metadata": {"invoice": invoice.number, "org": invoice.organization_id},
-        }, f"veilgate-{invoice.number}")
+        payment = Payment.create(body, f"veilgate-{invoice.number}")
     except Exception as error:  # the SDK raises provider-specific types
         raise PaymentError(f"ЮKassa refused the payment for {invoice.number}: {error}") from error
     return payment.id, payment.confirmation.confirmation_url

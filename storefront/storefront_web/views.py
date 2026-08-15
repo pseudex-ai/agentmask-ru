@@ -327,6 +327,10 @@ def invoice_detail(request, number: str):
     return render(request, "app/invoice.html", {
         "invoice": invoice,
         "organization": organization,
+        # Card payment is offered only when it is actually wired up. For a
+        # company or an ИП it is also the expensive route — the same money
+        # arrives by transfer with no commission and no ККТ.
+        "card_available": payments.is_available(),
     })
 
 
@@ -343,7 +347,9 @@ def pay_invoice(request, number: str):
         return redirect("invoice_detail", number=number)
     try:
         payment_id, confirmation = payments.create_payment(
-            invoice, request.build_absolute_uri(f"/app/invoices/{number}")
+            invoice,
+            request.build_absolute_uri(f"/app/invoices/{number}"),
+            request.user.email,
         )
     except payments.PaymentError as error:
         _log.error("payment for %s failed: %s", number, error)

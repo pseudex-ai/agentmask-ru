@@ -8,7 +8,7 @@
       <div class="sec-meta" style="margin-top:8px">{{ invoice.period_start|date:"d.m.Y" }} — {{ invoice.period_end|date:"d.m.Y" }}</div></div>
     <div class="row">
       <a class="btn" href="{% url 'invoice_print' invoice.number %}">ПЕЧАТНАЯ ФОРМА</a>
-      {% if invoice.state != 'paid' %}
+      {% if invoice.state != "paid" and card_available %}
         <form method="post" action="{% url 'pay_invoice' invoice.number %}" style="display:inline">{% csrf_token %}
           <button class="btn accent" type="submit">ОПЛАТИТЬ КАРТОЙ</button>
         </form>

@@ -89,6 +89,20 @@ class Organization(models.Model):
     display_name = models.CharField(max_length=200)
     created_at = models.DateTimeField(default=timezone.now)
 
+    # WHO the payer is, because 54-ФЗ ст. 2 п. 9 exempts cashless settlements
+    # between organisations and/or ИП from ККТ, and gives no such exemption for
+    # individuals. The same 30 000 ₽ therefore needs a fiscal receipt from one
+    # payer and none from another, and only this field distinguishes them.
+    KIND_COMPANY = "company"
+    KIND_ENTREPRENEUR = "entrepreneur"
+    KIND_PERSON = "person"
+    KINDS = [
+        (KIND_COMPANY, "юридическое лицо"),
+        (KIND_ENTREPRENEUR, "ИП"),
+        (KIND_PERSON, "физическое лицо"),
+    ]
+    kind = models.CharField(max_length=16, choices=KINDS, default=KIND_COMPANY)
+
     legal_name = models.CharField(max_length=300, blank=True)
     inn = models.CharField("ИНН", max_length=12, blank=True)
     kpp = models.CharField("КПП", max_length=9, blank=True)
@@ -102,9 +116,42 @@ class Organization(models.Model):
 
     @property
     def is_billable(self) -> bool:
-        """Whether an invoice can be issued at all. Checked when the customer
-        asks for one, not at sign-up."""
+        """Whether a счёт can be issued at all. Checked when the customer asks
+        for one, not at sign-up.
+
+        An individual needs no requisites — there is nothing to put on a счёт
+        for them, because they do not pay by one.
+        """
+        if self.kind == self.KIND_PERSON:
+            return True
         return bool(self.legal_name and self.inn)
+
+    @property
+    def pays_by_invoice(self) -> bool:
+        """Companies and ИП pay by transfer against a счёт: no commission, no
+        acquiring contract, and no ККТ under 54-ФЗ ст. 2 п. 9.
+
+        Individuals cannot — a person has no расчётный счёт to send a payment
+        order from — so for them the card is not a convenience but the only
+        route, and it brings the fiscal receipt with it.
+        """
+        return self.kind in (self.KIND_COMPANY, self.KIND_ENTREPRENEUR)
+
+    @property
+    def needs_receipt(self) -> bool:
+        """Whether paying us obliges a фискальный чек.
+
+        54-ФЗ ст. 2 п. 9: «Контрольно-кассовая техника не применяется при
+        осуществлении расчетов в безналичном порядке между организациями и (или)
+        индивидуальными предпринимателями, за исключением осуществляемых ими
+        расчетов с использованием электронного средства платежа с его
+        предъявлением.»
+
+        So a payment order from an organisation or an ИП needs none, and a
+        payment from an individual always does — by any method. Card payments
+        are routed through the provider's cloud till for exactly this case.
+        """
+        return self.kind == self.KIND_PERSON
 
 
 class Membership(models.Model):

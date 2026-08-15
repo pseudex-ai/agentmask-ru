@@ -296,6 +296,22 @@ def run_checks(client) -> None:
           f"watermark=500 reported={second.requests_at_period_end} "
           f"overage={second.overage_requests}")
 
+    # 54-ФЗ splits our customers in two, and only the payer kind tells them
+    # apart. A receipt sent where none is required fiscalises a transaction that
+    # should not be — and with ЮKassa's "Чеки" it costs 1% of it.
+    from accounts.models import Organization as Org
+    company = Org(kind=Org.KIND_COMPANY, legal_name="ООО Тест", inn="7701234567")
+    entrepreneur = Org(kind=Org.KIND_ENTREPRENEUR, legal_name="ИП Тест", inn="770123456789")
+    person = Org(kind=Org.KIND_PERSON)
+    check("a company pays by invoice and needs no fiscal receipt",
+          company.pays_by_invoice and not company.needs_receipt)
+    check("an ИП pays by invoice and needs no fiscal receipt",
+          entrepreneur.pays_by_invoice and not entrepreneur.needs_receipt)
+    check("an individual cannot pay by invoice and always needs a receipt",
+          not person.pays_by_invoice and person.needs_receipt)
+    check("an individual needs no ИНН to be billable",
+          person.is_billable and not company.__class__(kind="company").is_billable)
+
     # A second organisation must not be able to read the first one's invoices.
     other_user = User.objects.create_user(email="stranger@example.com")
     other_org = Organization.objects.create(display_name="Другая")
