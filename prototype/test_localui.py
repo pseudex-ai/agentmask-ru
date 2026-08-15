@@ -239,6 +239,22 @@ def test_ui_refuses_without_a_session() -> None:
         check("the sign-in url is not echoed into the page",
           ui_server.SIGNIN_TOKEN not in page.text)
 
+    # The page's inline import map must be permitted by the policy the page is
+    # served with. It was not, and the result was a BLANK PAGE in every browser
+    # while every header assertion passed. Recomputed here from the served HTML,
+    # so editing index.html without the policy following it fails loudly.
+    import base64 as _b64, hashlib as _hash, re as _re
+    inline = [body for body in _re.findall(r"<script[^>]*>(.*?)</script>",
+                                           page.text, _re.DOTALL) if body.strip()]
+    missing = [
+        body[:40] for body in inline
+        if "'sha256-" + _b64.b64encode(_hash.sha256(body.encode()).digest()).decode() + "'"
+        not in policy
+    ]
+    check("every inline script the page carries is allowed by its own CSP",
+          not missing and bool(inline),
+          f"inline={len(inline)} unallowed={len(missing)}")
+
 
 def test_actor_cannot_be_forged_through_the_ui() -> None:
     """The whole chain: browser -> UI process -> engine -> access log.
