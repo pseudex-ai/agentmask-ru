@@ -236,9 +236,10 @@ def run_checks(client) -> None:
     client.force_login(User.objects.get(email="buyer@acme.ru"))
     org = Organization.objects.filter(memberships__user__email="buyer@acme.ru").first()
     invoice = build_invoice(org, date.today() - timedelta(days=30), date.today())
+    from billing.pricing import PLATFORM_FEE
     check("an invoice is drafted from the licensing server's counters",
-          invoice.total == invoice.organization.subscription.plan.monthly_price,
-          f"total={invoice.total} overage={invoice.overage_requests}")
+          invoice.total == PLATFORM_FEE and invoice.overage_values == 0,
+          f"total={invoice.total} values={invoice.overage_values}")
 
     printed = client.get(f"/app/invoices/{invoice.number}/print")
     printed_body = printed.content.decode()
@@ -287,14 +288,14 @@ def run_checks(client) -> None:
 
     # A second period must bill the DELTA, not the lifetime counter again.
     from billing.models import Invoice as InvoiceModel
-    invoice.requests_at_period_end = 500
+    invoice.values_at_period_end = 500
     invoice.state = InvoiceModel.ISSUED
-    invoice.save(update_fields=["requests_at_period_end", "state"])
+    invoice.save(update_fields=["values_at_period_end", "state"])
     second = build_invoice(org, date.today(), date.today() + timedelta(days=30))
     check("the next invoice bills the period, not the lifetime total",
-          second.overage_requests == 0,
-          f"watermark=500 reported={second.requests_at_period_end} "
-          f"overage={second.overage_requests}")
+          second.overage_values == 0,
+          f"watermark=500 reported={second.values_at_period_end} "
+          f"billed={second.overage_values}")
 
     # 54-ФЗ splits our customers in two, and only the payer kind tells them
     # apart. A receipt sent where none is required fiscalises a transaction that

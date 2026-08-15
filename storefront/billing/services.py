@@ -20,6 +20,7 @@ from django.utils import timezone
 
 from accounts.models import Membership, Organization, User
 from billing import licensing
+from billing.pricing import EXTRA_INSTANCE_FEE, PLATFORM_FEE, price_values
 from billing.models import Invoice, LicenseKey, Plan, Subscription
 
 TRIAL_DAYS = 14
@@ -148,7 +149,14 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     subscription = organization.subscription
     plan = subscription.plan
     reported = licensing.usage(organization.id).get("usage", {})
-    requests = int(reported.get("requests", 0)) if isinstance(reported, dict) else 0
+    if not isinstance(reported, dict):
+        reported = {}
+    # The billed quantity is PROTECTED VALUES — the sum of the per-type entity
+    # counters the customer's own containers report. `requests` is kept for the
+    # cabinet and for the rate guardrail, but nothing is charged on it.
+    entities = reported.get("entities") or {}
+    values = sum(int(count) for count in entities.values()) if isinstance(entities, dict) else 0
+    requests = int(reported.get("requests", 0))
 
     # The counter is CUMULATIVE since the installation's first report. What this
     # period used is the difference from the previous invoice's watermark.
@@ -157,17 +165,17 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
                 .exclude(state=Invoice.VOID)
                 .order_by("-period_end", "-id")
                 .first())
-    watermark = previous.requests_at_period_end if previous else 0
+    watermark = previous.values_at_period_end if previous else 0
     # A counter that went BACKWARDS means the customer started from an empty
     # data directory — a new volume, a restore, a fresh deployment. Billing the
     # negative as zero and re-basing is the only reading that cannot overcharge.
-    used_this_period = max(0, requests - watermark)
+    used_this_period = max(0, values - watermark)
 
-    over = max(0, used_this_period - plan.included_requests)
-    # Charged per started thousand: billing a fraction of a thousand requests
-    # produces kopeck-level lines nobody can reconcile.
-    thousands = (over + 999) // 1000
-    overage_amount = _round(Decimal(thousands) * plan.overage_per_1k)
+    # The ladder prices the whole month's values progressively; there is no
+    # "included volume" to subtract, because the free allowance IS the first
+    # band and costs zero inside it.
+    values_amount, _bands = price_values(used_this_period)
+    platform = PLATFORM_FEE + EXTRA_INSTANCE_FEE * max(0, plan.max_instances - 1)
 
     return Invoice.objects.create(
         organization=organization,
@@ -175,10 +183,11 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
         state=Invoice.DRAFT,
         period_start=period_start,
         period_end=period_end,
-        plan_amount=plan.monthly_price,
-        overage_requests=over,
-        overage_amount=overage_amount,
-        total=_round(plan.monthly_price + overage_amount),
+        plan_amount=_round(platform),
+        overage_values=used_this_period,
+        overage_amount=values_amount,
+        total=_round(platform + values_amount),
         due_at=(timezone.now() + timedelta(days=7)).date(),
+        values_at_period_end=values,
         requests_at_period_end=requests,
     )

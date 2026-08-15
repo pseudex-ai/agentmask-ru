@@ -86,17 +86,17 @@
     <tr><th style="width:34px">№</th><th>Наименование работ, услуг</th><th class="num" style="width:70px">Кол-во</th><th class="num" style="width:110px">Цена, ₽</th><th class="num" style="width:120px">Сумма, ₽</th></tr>
     <tr>
       <td>1</td>
-      <td>Право использования ПО «pseudex», тариф «{{ invoice.organization.subscription.plan.title }}», период {{ invoice.period_start|date:"d.m.Y" }} — {{ invoice.period_end|date:"d.m.Y" }}</td>
+      <td>Право использования ПО «pseudex», период {{ invoice.period_start|date:"d.m.Y" }} — {{ invoice.period_end|date:"d.m.Y" }}</td>
       <td class="num">1</td>
       <td class="num">{{ invoice.plan_amount }}</td>
       <td class="num">{{ invoice.plan_amount }}</td>
     </tr>
-    {% if invoice.overage_requests %}
+    {% if invoice.overage_values %}
     <tr>
       <td>2</td>
-      <td>Обработка запросов сверх включённого объёма — {{ invoice.overage_requests }} запросов</td>
-      <td class="num">{{ invoice.overage_requests }}</td>
-      <td class="num">{{ invoice.organization.subscription.plan.overage_per_1k }} / 1000</td>
+      <td>Защита персональных данных — {{ invoice.overage_values }} значений</td>
+      <td class="num">{{ invoice.overage_values }}</td>
+      <td class="num">по шкале</td>
       <td class="num">{{ invoice.overage_amount }}</td>
     </tr>
     {% endif %}

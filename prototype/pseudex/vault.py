@@ -16,6 +16,7 @@ import re
 import secrets
 import string
 import threading
+import time
 
 from pseudex.profiling import stage
 from pseudex.ru_pii import validate_inn, validate_luhn, validate_ogrn, validate_snils
@@ -83,6 +84,45 @@ _FAKE_HOUSE_MAX = 199
 
 def _rand_digits(count: int) -> str:
     return "".join(secrets.choice(string.digits) for _ in range(count))
+
+
+def count_values_since(db_path: str, since: float) -> int:
+    """Distinct real values first protected since `since`, across every org in
+    this installation.
+
+    THE BILLING METER. One row is one real person's datum, once, forever — so a
+    returning customer costs nothing and a value re-sent a thousand times costs
+    what it cost the first time.
+
+    Deliberately NOT the audit event count, which is what this used to be.
+    Audit rows are written on a mask-cache MISS, so the same phone in four
+    different messages counted three times; the count moved with
+    PSEUDEX_MASK_CACHE_SIZE, which the customer sets, and with the worker count,
+    because each worker holds its own cache. A meter the customer can lower with
+    an env var, and which charges more for running a bigger container, is not a
+    meter.
+
+    Opened read-only and closed immediately: this runs on the licence renewal
+    thread a few times a day, and holding a fourth connection to the vault for
+    that would be a connection to keep correct forever.
+    """
+    import sqlite3  # noqa: PLC0415 — only this function needs it
+
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0)
+    except sqlite3.Error:
+        return 0
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM tokens WHERE first_seen >= ?", (since,)
+        ).fetchone()
+        return int(row[0]) if row else 0
+    except sqlite3.Error:
+        # No vault yet, or the column predates the migration. Zero is the honest
+        # answer and it under-bills, which is the safe direction.
+        return 0
+    finally:
+        conn.close()
 
 
 def canonicalize(entity_type: str, value: str) -> str:
@@ -304,6 +344,7 @@ class Vault:
         )
         self._migrate_digit_signatures()
         self._migrate_original_form()
+        self._migrate_first_seen()
         # Every lookup on the response leg is an indexed point query, so
         # detokenization cost tracks the length of the answer, not the size of
         # the vault. Without these indexes each one degrades to a table scan.
@@ -398,9 +439,10 @@ class Vault:
             # tool gets is stable across turns instead of flipping with phrasing.
             self._conn.execute(
                 "INSERT INTO tokens "
-                "(customer, canonical, entity_type, token, digits, digits10, original) "
-                "VALUES (?,?,?,?,?,?,?)",
-                (self._customer, canonical, entity_type, token, digits, digits10, value),
+                "(customer, canonical, entity_type, token, digits, digits10, original, "
+                "first_seen) VALUES (?,?,?,?,?,?,?,?)",
+                (self._customer, canonical, entity_type, token, digits, digits10, value,
+                 time.time()),
             )
             self._conn.commit()
             return token
@@ -431,6 +473,35 @@ class Vault:
                 (self._customer, token),
             ).fetchone()
         return row[0] if row is not None else None
+
+    def _migrate_first_seen(self) -> None:
+        """When each value was FIRST protected — the billing meter.
+
+        Added because the meter we had counted the wrong thing. Audit events
+        record a cache MISS, so one phone number appearing in four different
+        messages counted as three "protected values" — and the count moved with
+        `PSEUDEX_MASK_CACHE_SIZE` (a customer could lower their own bill with an
+        env var) and with the worker count (each worker holds its own cache, so
+        the same traffic cost more on a bigger container).
+
+        A row here is one distinct real value for one customer, forever. Counting
+        rows created inside a period answers "how many new people's data did we
+        protect this month", which is what the invoice line actually claims and
+        the only number the customer can check against their own vault.
+
+        Existing rows get the migration time. Pre-launch there are none, and
+        NULL would silently drop them out of every period.
+        """
+        columns = [row[1] for row in
+                   self._conn.execute("PRAGMA table_info(tokens)").fetchall()]
+        if "first_seen" in columns:
+            return
+        self._conn.execute("ALTER TABLE tokens ADD COLUMN first_seen REAL")
+        self._conn.execute("UPDATE tokens SET first_seen=? WHERE first_seen IS NULL",
+                           (time.time(),))
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tokens_first_seen ON tokens (first_seen)")
+        self._conn.commit()
 
     def reveal(self, token: str) -> tuple[str | None, str]:
         """Value and its entity type in one lookup, for the audited reveal path.

@@ -29,10 +29,29 @@ class Plan(models.Model):
     code = models.SlugField(primary_key=True, max_length=32)
     title = models.CharField(max_length=100)
     monthly_price = models.DecimalField(max_digits=10, decimal_places=2)
-    included_requests = models.BigIntegerField()
-    # Per 1000 requests above the included volume.
+
+    # THE METER IS PROTECTED VALUES, NOT REQUESTS, and the reason is in our own
+    # architecture: audit is written on the cache MISS only, so "the same value
+    # re-sent in a growing transcript is one protected value, not N". Billing on
+    # requests contradicted the engine's own model of what happened.
+    #
+    # It is also what the customer buys — "this real personal datum did not
+    # cross the border" — while a request count is a function of their agent
+    # loop. A framework doing six tool-call round trips per user turn billed 6×
+    # for the same data: a tax on exactly the architecture this product serves.
+    # And it was gameable: batching N messages into one request cut the bill
+    # N-fold and changed nothing about the protection delivered.
+    included_values = models.BigIntegerField(default=0)
     overage_per_1k = models.DecimalField(max_digits=10, decimal_places=2,
-                                         default=Decimal("0.40"))
+                                         default=Decimal("0"))
+
+    # Requests survive as a GUARDRAIL, not a meter: a rate ceiling is what
+    # actually forces an upgrade, and it is enforceable inside the customer's
+    # perimeter without trusting a self-reported counter — which matters,
+    # because pseudex cannot see payloads and every number it reports about
+    # itself comes from the customer's own container.
+    rpm_limit = models.PositiveIntegerField(default=60)
+
     max_instances = models.PositiveIntegerField(default=1)
     max_keys = models.PositiveIntegerField(default=2)
     is_public = models.BooleanField(default=True)
@@ -162,7 +181,7 @@ class Invoice(models.Model):
     period_end = models.DateField()
 
     plan_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
-    overage_requests = models.BigIntegerField(default=0)
+    overage_values = models.BigIntegerField(default=0)
     overage_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
     total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
 
@@ -190,6 +209,9 @@ class Invoice(models.Model):
     # subtraction. It is on the invoice rather than on the subscription because
     # it must survive re-issuing and voiding — the previous ISSUED invoice is
     # the watermark, not the current state of anything.
+    values_at_period_end = models.BigIntegerField(default=0)
+    # Kept alongside, not billed on: the cabinet shows both, and the rate
+    # guardrail is expressed in requests even though the meter is not.
     requests_at_period_end = models.BigIntegerField(default=0)
 
     class Meta:

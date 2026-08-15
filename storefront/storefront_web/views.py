@@ -257,14 +257,21 @@ def cabinet(request):
         # from another service, and a page that 500s because a sidebar number is
         # unavailable is worse than a page that says the number is unavailable.
         reported, unreachable = {}, True
-    used = int(reported.get("requests", 0)) if isinstance(reported, dict) else 0
-    included = subscription.plan.included_requests if subscription else 0
+    if not isinstance(reported, dict):
+        reported = {}
+    entities = reported.get("entities") or {}
+    # What is billed: protected values. Requests are shown beside it because the
+    # operator recognises them, but the bar tracks the meter.
+    used = sum(int(n) for n in entities.values()) if isinstance(entities, dict) else 0
+    requests = int(reported.get("requests", 0))
+    included = subscription.plan.included_values if subscription else 0
     return render(request, "app/cabinet.html", {
         "organization": organization,
         "subscription": subscription,
         "keys": organization.keys.filter(revoked_at__isnull=True),
         "invoices": organization.invoices.all()[:12],
         "used": used,
+        "requests": requests,
         "included": included,
         "percent": min(100, round(used / included * 100)) if included else 0,
         "unreachable": unreachable,

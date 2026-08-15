@@ -38,7 +38,7 @@ from pseudex.maskcache import MaskCache
 from pseudex.operator import build_router
 from pseudex.profiling import snapshot as profiling_snapshot
 from pseudex.redact import unmask_stream_chunk
-from pseudex.vault import Vault
+from pseudex.vault import Vault, count_values_since
 
 # Without this the sidecar has NO logging configuration at all, so everything
 # below WARNING is silently discarded — including every "lease renewed" line. The
@@ -68,7 +68,14 @@ LICENSE = LicenseClient(
     # override stays for the e2e stand, which pins it as configuration.
     instance_id=os.environ.get("PSEUDEX_INSTANCE_ID", "") or AUDIT.installation_id(),
     ca_path=os.environ.get("PSEUDEX_LICENSE_CA", ""),
-    usage_provider=lambda: AUDIT.billing_totals(),
+    # PROTECTED VALUES is what the invoice charges on, and it comes from the
+    # VAULT, not from the audit: one row per distinct real value, ever. The
+    # audit's own counts stay in the report because the operator's screens show
+    # them, but nothing is billed on a number that moves with cache size.
+    usage_provider=lambda: {
+        **AUDIT.billing_totals(),
+        "values": count_values_since(os.path.join(_DB_DIR, "vault.db"), 0.0),
+    },
 )
 
 # Content-keyed masking cache: re-masking an identical (org, content) is an O(1)
