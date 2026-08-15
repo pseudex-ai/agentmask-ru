@@ -208,30 +208,27 @@
     <div class="wide" style="font-size:13px;color:var(--dim-2);line-height:1.6">Карта не спрашивается. Ключ работает сразу и {{ trial_days }} дней бесплатно; счёт выставляется потом, по безналу.</div>
   </form>
 
-  <div class="steps">
-    <div>
-      <div class="what"><div class="step">01</div><h3>Поднять контейнер</h3><div class="note">ключ уже подставлен</div></div>
-      <pre data-copy="docker run -d -p 8000:8000 -p 127.0.0.1:8081:8081 -v pseudex-data:/data \
-  -e PSEUDEX_LICENSE_KEY=ps_live_… \
-  {{ image }}">docker run -d -p 8000:8000 -p 127.0.0.1:8081:8081 -v pseudex-data:/data \
-  -e PSEUDEX_LICENSE_KEY=ps_live_… \
-  {{ image }}</pre>
-      <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
-    </div>
-    <div>
-      <div class="what"><div class="step">02</div><h3>Проверить, что живой</h3><div class="note">и открыть локальный интерфейс</div></div>
-      <pre data-copy="curl localhost:8000/health
-docker logs pseudex | grep 'локальный интерфейс' -A2">curl localhost:8000/health
-docker logs pseudex | grep 'локальный интерфейс' -A2
-# → http://localhost:8081/?token=9f3c1a…</pre>
-      <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
-    </div>
-    <div>
-      <div class="what"><div class="step">03</div><h3>Включить в шлюз</h3><div class="note">callback для LiteLLM или сырой HTTP</div></div>
-      <pre data-copy='masked = post("http://pseudex:8000/mask", {"org_id": org, "messages": messages})'>masked = post("http://pseudex:8000/mask",
-              {"org_id": org, "messages": messages})
-# → модель → обратно через /unmask</pre>
-      <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
+  <div id="setup" data-image="{{ image }}">
+    <div class="label" style="margin-bottom:14px">1 · КУДА ВЫ ХОДИТЕ ЗА МОДЕЛЬЮ</div>
+    <div class="tabs" role="tablist" id="provider-tabs"></div>
+    <div class="setup-note" id="provider-note"></div>
+
+    <div class="steps" style="margin-top:28px">
+      <div>
+        <div class="what"><div class="step">02</div><h3 id="step2-title">Поднять контейнер</h3><div class="note" id="step2-note">ключ подставится после регистрации</div></div>
+        <pre id="step2-code"></pre>
+        <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
+      </div>
+      <div>
+        <div class="what"><div class="step">03</div><h3 id="step3-title">Направить приложение к нам</h3><div class="note" id="step3-note">код не меняется</div></div>
+        <pre id="step3-code"></pre>
+        <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
+      </div>
+      <div>
+        <div class="what"><div class="step">04</div><h3>Убедиться, что работает</h3><div class="note">и открыть локальный интерфейс</div></div>
+        <pre id="step4-code"></pre>
+        <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
+      </div>
     </div>
   </div>
 </section>

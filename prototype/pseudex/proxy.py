@@ -35,9 +35,26 @@ logging.basicConfig(level=logging.INFO)
 _log = logging.getLogger("pseudex")
 
 DETECTOR = Detector()
-TENANTS = Tenants("tenants.db")
-AUDIT = AuditLog("audit.db")
+# Same volume convention as the sidecar. These used to be bare relative paths,
+# which in a container put the tenant table and the audit log in the process's
+# working directory instead of the mounted volume — every tenant key and every
+# counter gone on restart, silently.
+_DB_DIR = os.environ.get("PSEUDEX_DB_DIR", ".")
+TENANTS = Tenants(os.path.join(_DB_DIR, "tenants.db"))
+AUDIT = AuditLog(os.path.join(_DB_DIR, "audit.db"))
 _VAULTS: dict[str, Vault] = {}
+
+# PASS-THROUGH: the customer keeps their own provider key and we forward it
+# untouched. Set PSEUDEX_UPSTREAM and the proxy needs no tenant table, no key
+# minting, and never stores anyone else's credential — the customer changes one
+# environment variable in their app and nothing else.
+#
+# This is the DEFAULT shape because the tariff is per container: one container
+# is one customer, so a table mapping many keys to many upstreams buys nothing
+# and costs an onboarding step. The tenant table still works when it is set up,
+# for a host serving several organisations with different providers.
+_UPSTREAM_BASE = os.environ.get("PSEUDEX_UPSTREAM", "").rstrip("/")
+_UPSTREAM_ORG = os.environ.get("PSEUDEX_ORG_ID", "default")
 
 # The proxy is a deployment SHAPE, not a different product: it leases the same
 # bundle, on the same terms, with the same ladder. Without this leg the licence
@@ -133,18 +150,29 @@ def _get_vault(customer_id: str) -> Vault:
     with _VAULTS_LOCK:
         vault = _VAULTS.get(customer_id)
         if vault is None:
-            vault = Vault("vault.db", customer_id)
+            vault = Vault(os.path.join(_DB_DIR, "vault.db"), customer_id)
             _VAULTS[customer_id] = vault
         return vault
 
 
 def _tenant(request: Request) -> Tenant:
     header = request.headers.get("authorization", "")
-    pseudex_key = header[7:] if header.lower().startswith("bearer ") else header
-    tenant = TENANTS.resolve(pseudex_key.strip())
-    if tenant is None:
-        raise HTTPException(status_code=401, detail="invalid Pseudex API key")
-    return tenant
+    presented = (header[7:] if header.lower().startswith("bearer ") else header).strip()
+    tenant = TENANTS.resolve(presented)
+    if tenant is not None:
+        return tenant
+    if _UPSTREAM_BASE:
+        # The presented key is the CUSTOMER'S OWN provider key. It is forwarded
+        # upstream verbatim and never written down: the provider decides whether
+        # it is valid, which is the only party that can. An empty one is still
+        # refused here rather than sent on, so the failure names itself instead
+        # of arriving as someone else's 401.
+        if not presented:
+            raise HTTPException(status_code=401, detail="missing Authorization header")
+        return Tenant(customer_id=_UPSTREAM_ORG,
+                      upstream_base_url=_UPSTREAM_BASE,
+                      upstream_key=presented)
+    raise HTTPException(status_code=401, detail="invalid Pseudex API key")
 
 
 def _context(customer_id: str) -> MaskContext:

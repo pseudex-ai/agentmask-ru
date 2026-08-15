@@ -227,3 +227,9 @@ table.list td.mono { font-family: var(--mono); font-size: 12.5px; }
   .steps button { border-left: 0; border-top: 1px solid var(--line-2); padding: 14px; }
   header.top nav { display: none; }
 }
+
+/* The setup tutorial. `.tabs` is reused from the demo, so only the note and the
+   generated code blocks need anything new. */
+.setup-note { margin-top: 18px; font-size: 15px; line-height: 1.6; color: var(--dim); max-width: 780px; text-wrap: pretty; }
+#setup .steps pre { white-space: pre-wrap; word-break: break-word; }
+#provider-tabs { flex-wrap: wrap; }

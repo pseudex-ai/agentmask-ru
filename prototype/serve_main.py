@@ -75,14 +75,22 @@ def main() -> None:
     # service.py, which wants "INFO", while uvicorn rejects anything but
     # lowercase. One variable, two consumers, so normalize at each of them.
     log_level = os.environ.get("PSEUDEX_LOG_LEVEL", "info").lower()
-    if os.environ.get("PSEUDEX_ROLE", "engine") == "ui":
+    role = os.environ.get("PSEUDEX_ROLE", "engine")
+    if role == "ui":
         _serve_ui(log_level)
         return
     # Imported inside the role, not at module scope: the engine module builds the
     # detector, the audit connection and a licence client at import time, and a
     # UI process has no use for any of them. It also keeps the claim above
     # true — a UI process really does not load the engine.
-    from pseudex.service import app  # noqa: PLC0415 (role-local)
+    if role == "proxy":
+        # The OpenAI-compatible shape: the customer points their app's base URL
+        # here instead of at the provider. Same port and the same SO_REUSEPORT
+        # fan-out as the sidecar — masking is morphology-bound either way, so
+        # the reason for processes over threads does not change with the shape.
+        from pseudex.proxy import app  # noqa: PLC0415 (role-local)
+    else:
+        from pseudex.service import app  # noqa: PLC0415 (role-local)
 
     port = int(os.environ.get("PSEUDEX_PORT", "8000"))
     backlog = int(os.environ.get("PSEUDEX_BACKLOG", "2048"))
