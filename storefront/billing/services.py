@@ -20,7 +20,6 @@ from django.utils import timezone
 
 from accounts.models import Membership, Organization, User
 from billing import licensing
-from billing.pricing import EXTRA_INSTANCE_FEE, PLATFORM_FEE, price_values
 from billing.models import Invoice, LicenseKey, Plan, Subscription
 
 TRIAL_DAYS = 14
@@ -172,11 +171,16 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     # negative as zero and re-basing is the only reading that cannot overcharge.
     used_this_period = max(0, values - watermark)
 
-    # The ladder prices the whole month's values progressively; there is no
-    # "included volume" to subtract, because the free allowance IS the first
-    # band and costs zero inside it.
-    values_amount, _bands = price_values(used_this_period)
-    platform = PLATFORM_FEE + EXTRA_INSTANCE_FEE * max(0, plan.max_instances - 1)
+    # THE INVOICE IS THE SUBSCRIPTION. Nothing is charged per value: the value
+    # count is produced inside the customer's container and cannot be verified
+    # by us, while the subscription period is counted on our side and cannot be
+    # forged by them. Billing on the number we do not control would mean
+    # policing a counter instead of running a business.
+    #
+    # The period's values are still recorded on the invoice, as INFORMATION —
+    # the customer sees what they got for the money, and a figure far above the
+    # plan's guide is what prompts an upgrade.
+    subscription_amount = plan.monthly_price
 
     return Invoice.objects.create(
         organization=organization,
@@ -184,10 +188,10 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
         state=Invoice.DRAFT,
         period_start=period_start,
         period_end=period_end,
-        plan_amount=_round(platform),
+        plan_amount=_round(subscription_amount),
         overage_values=used_this_period,
-        overage_amount=values_amount,
-        total=_round(platform + values_amount),
+        overage_amount=Decimal("0"),
+        total=_round(subscription_amount),
         due_at=(timezone.now() + timedelta(days=7)).date(),
         values_at_period_end=values,
         requests_at_period_end=requests,

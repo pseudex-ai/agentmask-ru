@@ -194,13 +194,13 @@ docker logs pseudex | grep 'локальный интерфейс' -A2
       <div>
         <div class="tag">{{ plan.title|upper }}</div>
         <div class="price">{{ plan.monthly_price|floatformat:0 }} ₽</div>
-        <div class="per">в месяц · {{ plan.included_values }} значений включено</div>
+        <div class="per">в месяц · до {{ plan.included_values }} защищённых значений</div>
       </div>
       <ul>
         <li>до {{ plan.max_instances }} инстанс(ов), {{ plan.max_keys }} ключ(а)</li>
         <li>23 типа ПД, обратимые токены</li>
         <li>Локальный интерфейс и журнал</li>
-        <li>Превышение — {{ plan.overage_per_1k }} ₽ за 1000 запросов</li>
+        <li>{{ plan.rpm_limit }} запросов в минуту</li>
       </ul>
       <form method="post" action="{% url 'signup' %}">
         {% csrf_token %}
@@ -212,8 +212,9 @@ docker logs pseudex | grep 'локальный интерфейс' -A2
     {% endfor %}
   </div>
   <div class="pricing-foot">
+    <div><b style="color:var(--text)">Фиксированная подписка, без счётчика запросов.</b> Мы не берём деньги за обращения — за них берут те, кто считает ваш трафик.</div>
     <div>Оплата безналом по счёту, акты и закрывающие — в кабинете</div>
-    <div>Пробный период {{ trial_days }} дней</div>
+    <div>{{ trial_days }} дней бесплатно, карта не нужна</div>
   </div>
 </section>
 

@@ -35,37 +35,48 @@ from billing.models import Plan
 # (Диадок: 11.80 -> 7.02 ₽/документ across its ladder): the customer who grows
 # gets a better unit price, and the ladder still pays to climb.
 PLANS = [
-    # code, title, ₽/мес, включено значений, ₽/1000 сверх, RPM, инстансов, ключей, порядок
+    # code, title, ₽/мес, ориентир по значениям, RPM, инстансов, ключей, порядок
     #
-    # The cheap entry is FREE, not cheap. Every comparable Russian product has a
-    # free tier, and a solo developer whose bot serves 200 clients a month uses
-    # ~400 protected values — so the floor of the market runs at zero forever
-    # and grows into a paid tier by rate and volume, not by a paywall.
-    ("free", "Бесплатный", Decimal("0"), 5_000, Decimal("0"), 60, 1, 1, 0),
-
-    # Effective ₽ per 1000 protected values: 396 / 116 / 53. Benchmarked against
-    # Dadata's 20 коп./адрес (200 ₽/1000 records enriched) — the closest Russian
-    # per-record meter found. Overage sits at ~80% of each tier's own rate and
-    # declines with volume, following Diadoc's curve (11.80 -> 7.02 ₽/документ),
-    # so the upgrade is a real decision: you move up because the next tier's
-    # unit price is better and the rate ceiling is binding.
-    ("start", "Старт", Decimal("9900"), 25_000, Decimal("320"), 300, 1, 2, 1),
-    ("work", "Рабочий", Decimal("29000"), 250_000, Decimal("100"), 1_500, 4, 4, 2),
-    ("industrial", "Промышленный", Decimal("79000"), 1_500_000, Decimal("45"), 6_000, 12, 10, 3),
-    ("enterprise", "Enterprise", Decimal("0"), 10_000_000, Decimal("30"), 20_000, 100, 50, 4),
+    # BILLED ON TIME, NOT ON VOLUME — and that is the whole design, not a
+    # simplification. The lease is the one meter we own: the container must call
+    # us every 24 hours or stop, and we count those calls on our side. Every
+    # other number — values, requests, entities — is produced inside the
+    # customer's container, on their hardware, under their root, and can be
+    # made to say anything.
+    #
+    # So the money comes from the subscription, which cannot be forged, and the
+    # value count becomes what it is genuinely good at: telling the customer and
+    # us whether the plan they chose still fits. Under-declaring is pointless
+    # when nothing is charged per unit, and a plan that no longer matches shows
+    # up in the reported numbers as a conversation rather than a fight.
+    #
+    # `included_values` is therefore a SIZING GUIDE, not a hard limit. Crossing
+    # it does not generate a charge; it puts an upgrade suggestion in the cabinet.
+    ("start", "Старт", Decimal("990"), 10_000, 300, 1, 2, 0),
+    ("work", "Рабочий", Decimal("4900"), 100_000, 1_500, 4, 4, 1),
+    ("industrial", "Промышленный", Decimal("19900"), 1_000_000, 6_000, 12, 10, 2),
+    ("enterprise", "Enterprise", Decimal("0"), 100_000_000, 20_000, 100, 50, 3),
 ]
-
 
 class Command(BaseCommand):
     help = "Create or update the public plans"
 
     def handle(self, *args, **options) -> None:
-        for code, title, price, included, overage, rpm, instances, keys, order in PLANS:
+        # Plans removed from PLANS are retired, not left behind. A permanent
+        # "Бесплатный" row survived a previous seed and would have been offered
+        # on the landing beside a 14-day trial — two contradictory free entries,
+        # one of them unintended.
+        keep = {code for code, *_ in PLANS}
+        retired = Plan.objects.exclude(code__in=keep)
+        # Only hidden, never deleted: a subscription points at its plan, and a
+        # customer who bought last year's tariff keeps the terms they bought.
+        retired.update(is_public=False)
+
+        for code, title, price, included, rpm, instances, keys, order in PLANS:
             Plan.objects.update_or_create(code=code, defaults={
                 "title": title,
                 "monthly_price": price,
                 "included_values": included,
-                "overage_per_1k": overage,
                 "rpm_limit": rpm,
                 "max_instances": instances,
                 "max_keys": keys,
