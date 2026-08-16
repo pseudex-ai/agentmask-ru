@@ -128,6 +128,56 @@ _PLATE_DENY_LOWER = frozenset((
     "ум", "ус", "ор", "ер", "та", "те", "ту", "ма", "ме", "му", "ка", "ку", "ва",
     "ре", "ро", "ру", "са", "се", "су", "ем", "ес", "мы", "ты",
 ))
+# MAC: six hex pairs. Distinctive enough to stand alone — no other value in a
+# support conversation is written this way.
+_MAC_RE = re.compile(r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b")
+
+# VIN, ISO 3779: 17 characters, and I/O/Q are excluded precisely so they cannot
+# be confused with 1/0. That exclusion is what makes the shape checkable.
+_VIN_RE = re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b")
+_VIN_CUE = re.compile(r"(?i)\b(?:vin|вин|кузов\w*|шасси|автомобил\w*|машин\w*)\b")
+_VIN_VALUES = {**{str(d): d for d in range(10)},
+               **{c: v for c, v in zip("ABCDEFGH", range(1, 9))},
+               **{c: v for c, v in zip("JKLMNP", (1, 2, 3, 4, 5, 7))},
+               "R": 9, **{c: v for c, v in zip("STUVWXYZ", range(2, 10))}}
+_VIN_WEIGHTS = (8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2)
+
+
+def vin_check_digit_valid(vin: str) -> bool:
+    """The ISO 3779 check digit at position 9.
+
+    Mandatory in North America, frequently wrong or absent elsewhere — so a
+    failed check is NOT proof the string is not a VIN. It is used the way the
+    INN-10 checksum is used: a pass lets the value stand alone, a failure sends
+    it to the context gate instead of rejecting it outright.
+    """
+    if len(vin) != 17:
+        return False
+    total = sum(_VIN_VALUES.get(c, 0) * w for c, w in zip(vin, _VIN_WEIGHTS))
+    remainder = total % 11
+    expected = "X" if remainder == 10 else str(remainder)
+    return vin[8] == expected
+
+
+def detect_vehicle_ids(text: str) -> list[Span]:
+    """MAC addresses and VINs.
+
+    A VIN with a valid check digit stands alone. One without needs a cue word
+    nearby, because a 17-character alphanumeric run is also what an order code,
+    a build hash prefix or a warehouse label looks like — masking those would
+    take the customer's own identifiers out of their agent's reach.
+    """
+    spans = [Span(m.start(), m.end(), "MAC", m.group()) for m in _MAC_RE.finditer(text)]
+    for match in _VIN_RE.finditer(text):
+        value = match.group()
+        if not vin_check_digit_valid(value):
+            window = text[max(0, match.start() - 40):match.start()]
+            if not _VIN_CUE.search(window):
+                continue
+        spans.append(Span(match.start(), match.end(), "VIN", value))
+    return spans
+
+
 _IPV4_RE = re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}"
                       r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b")
 # Свидетельство о рождении: roman series + two Cyrillic letters + number.

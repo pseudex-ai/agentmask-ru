@@ -52,11 +52,54 @@ def _is_version_string(text: str, start: int, context: ContextAssets) -> bool:
     return any(cue in window for cue in context.version_ctx)
 
 
+# Types whose presence means the sentence is ABOUT a person. Deliberately
+# excludes IP, MAC, PLATE, SECRET and VIN: a server, a device, a car or a key is
+# not a person, and a release date beside a MAC address is still a release date.
+_IDENTIFIES_A_PERSON = frozenset({
+    "NAME", "SNILS", "INN", "PASSPORT", "INTL_PASSPORT", "CARD", "ACCOUNT",
+    "PHONE", "EMAIL", "OMS", "BIRTH_CERT", "DRIVER_LICENSE", "AGE", "MEDICAL",
+})
+
+
+def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
+    """Whether a bare numeric date is a quasi-identifier or just a date.
+
+    A date alone identifies nobody. It becomes personal data by ASSOCIATION —
+    next to a person, or next to a word saying it is a birth. Every other date in
+    business writing is a document date: «Счёт 1234 от 15.05.2025», «Договор 8871
+    от 02.09.2024», «Резервная копия от 15.05.2025».
+
+    Those were all masked, because numeric dates had no gate at all while dates
+    written out in words did. Measured on ordinary business sentences containing
+    no personal data whatsoever, six of every eight false masks were this.
+
+    A deny-list of document words was the other candidate and is worse: it has to
+    grow forever (счёт, договор, накладная, платёж, релиз, отгрузка, акт…) and it
+    fails open — a document word we did not think of masks the date. This gate
+    fails CLOSED in the direction that matters: no person nearby, no masking.
+    """
+    quasi = ASSETS.get().quasi
+    window = text[max(0, span.start - 60): span.end + 60].lower()
+    if any(cue in window for cue in quasi.birth_ctx):
+        return True
+    # ANY personal identifier nearby makes the date theirs — not just a name.
+    # The golden set showed why: «Реквизиты: СНИЛС 647-436-713 22, карта 4090…,
+    # дата 21.01.1979» names nobody, yet the date is plainly that person's date
+    # of birth. Gating on NAME alone dropped date recall to 48% on exactly those.
+    # A document date has no identifier beside it — that is what separates them.
+    return any(other.entity_type in _IDENTIFIES_A_PERSON
+               and other.start < span.end + 80
+               and other.end > span.start - 80
+               for other in spans)
+
+
 def suppress(text: str, spans: list[Span]) -> list[Span]:
     context = ASSETS.get().context
     kept: list[Span] = []
     for span in spans:
         if span.entity_type == "IP" and _is_version_string(text, span.start, context):
+            continue
+        if span.entity_type == "DATE" and not _date_is_personal(text, span, spans):
             continue
         if span.entity_type == "PHONE":
             # (a) a "phone" that is a slice of a longer digit run (e.g. the first

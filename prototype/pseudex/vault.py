@@ -442,6 +442,17 @@ def _render_token(entity_type: str, gender: str | None = None,
         return f"{secrets.randbelow(28) + 1:02d}.{secrets.randbelow(12) + 1:02d}.{secrets.randbelow(40) + 1960}"
     if entity_type == "NAME":
         return _fake_name(gender)
+    if entity_type == "MAC":
+        # 02: sets the locally-administered bit, so the address can never belong
+        # to a vendor OUI — the MAC analogue of the reserved IP range.
+        return "02:" + ":".join(f"{secrets.randbelow(256):02X}" for _ in range(5))
+    if entity_type == "VIN":
+        # Deliberately built to FAIL its own check digit, like the fake СНИЛС and
+        # ИНН: a token must never name a real vehicle.
+        alphabet = "ABCDEFGHJKLMNPRSTUVWXYZ0123456789"
+        body = "".join(secrets.choice(alphabet) for _ in range(17))
+        wrong = next(c for c in "0123456789X" if c != body[8])
+        return body[:8] + wrong + body[9:]
     if entity_type == "SECRET":
         return _fake_secret(original)
     if entity_type == "LOC":

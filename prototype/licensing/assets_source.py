@@ -235,6 +235,11 @@ ADDR_INTENT: tuple[str, ...] = (
 PLACE_REF: tuple[str, ...] = (
     "час", "режим", "филиал", "магазин", "офис", "находит", "погод",
     "курс", "работаете", "есть ли", "ближайш",
+    # A delivery ZONE is a tariff, not somebody's address: «доставка по Москве
+    # бесплатная от 3000» names a region of the price list. Masking it makes the
+    # model answer about a city the customer does not ship to.
+    "доставка по", "доставку по", "доставки по", "отправляем в", "возим в",
+    "работаем по", "по всей", "зона доставки", "самовывоз",
 )
 VERSION_CTX: tuple[str, ...] = (
     "верси", "version", "сборк", "build", "релиз", "release", "v.",
@@ -253,6 +258,19 @@ KEY_TYPE: dict[str, str] = {
     "карта": "CARD", "карты": "CARD", "card": "CARD",
     "почта": "EMAIL", "email": "EMAIL", "мейл": "EMAIL", "емейл": "EMAIL",
     "адрес": "LOC", "address": "LOC",
+    # Credentials named by their key. `detect_credentials` only finds what a
+    # vendor stamped with a prefix; a bare `{"password": "qwerty123"}` has no
+    # shape at all, and the KEY is the only evidence it is a secret.
+    #
+    # `auth`/`authorization` are deliberately ABSENT: matching is prefix-based,
+    # so they would type `{"author": "Иванов"}` as a credential and replace a
+    # person's name with a random token.
+    "пароль": "SECRET", "пароля": "SECRET", "password": "SECRET",
+    "passwd": "SECRET", "pwd": "SECRET",
+    "токен": "SECRET", "token": "SECRET", "apikey": "SECRET",
+    "secret": "SECRET", "секрет": "SECRET", "clientsecret": "SECRET",
+    "accesskey": "SECRET", "accesstoken": "SECRET", "refreshtoken": "SECRET",
+    "privatekey": "SECRET", "secretkey": "SECRET",
 }
 
 # --- context-anchored document types -------------------------------------
@@ -294,7 +312,8 @@ PRIORITY: dict[str, int] = {
     "SECRET": 8,
     "OMS": 7, "ACCOUNT": 7, "DRIVER_LICENSE": 7, "VEHICLE_DOC": 7,
     "INTL_PASSPORT": 7, "OGRN": 7, "BIRTH_CERT": 7,
-    "SNILS": 6, "INN": 6, "CARD": 6,
+    "SNILS": 6, "INN": 6, "CARD": 6, "VIN": 6,
+    "MAC": 5,
     "PHONE": 5, "EMAIL": 5, "IP": 5, "PLATE": 5, "ADDR": 4,
     "NAME": 3, "DATE": 2, "PASSPORT": 2, "LOC": 2,
 }

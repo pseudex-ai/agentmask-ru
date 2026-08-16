@@ -15,7 +15,7 @@ from pseudex.names import gazetteer_names, keep_location, keep_person, trim_pers
 from pseudex.normalize import normalize
 from pseudex.profiling import stage
 from pseudex.quasi import detect_quasi
-from pseudex.ru_pii import detect_plates, detect_structured
+from pseudex.ru_pii import detect_plates, detect_structured, detect_vehicle_ids
 from pseudex.credentials import detect_credentials
 from pseudex.structured import detect_structured_kv
 
@@ -127,6 +127,7 @@ class Detector:
                 # RAW text: a credential is ASCII and self-anchored, so the
                 # look-alike fold can only hurt it. Offsets are 1:1 either way.
                 spans += detect_credentials(text)
+                spans += detect_vehicle_ids(text)
                 # RAW text on purpose — see detect_plates.
                 spans += detect_plates(text)
             with stage("detect.ner"):
