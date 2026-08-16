@@ -268,7 +268,12 @@ CTX_TYPES: tuple[tuple[str, str, str], ...] = (
     ("DRIVER_LICENSE", r"водительск\w*|в/у|удостоверени\w* водител\w*|прав[аои]",
      r"\d{2}\s?\d{2}\s?\d{6}"),
     ("VEHICLE_DOC", r"стс|птс|свидетельств\w* о регистрации", r"\d{2}\s?\d{2}\s?\d{6}"),
-    ("INTL_PASSPORT", r"загранпаспорт\w*|заграничн\w* паспорт\w*", r"\d{9}"),
+    # Two digits of series, seven of number. The separator is OPTIONAL and was
+    # missing: `\d{9}` matched only `711234567`, while the form actually printed
+    # in the document and typed by people — `71 1234567` — went undetected. The
+    # sibling document patterns above always allowed `\s?` between groups; this
+    # one did not, and nothing tested the spaced form.
+    ("INTL_PASSPORT", r"загранпаспорт\w*|заграничн\w* паспорт\w*", r"\d{2}\s?\d{7}"),
 )
 # Context words that upgrade a weak INN-10 into a real one. INN-10 has a single
 # check digit (~10% of random 10-digit numbers pass), so the checksum alone is
