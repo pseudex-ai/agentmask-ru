@@ -19,7 +19,7 @@ import string
 import threading
 import time
 
-from pseudex import morph_names
+from pseudex import morph_names, morph_places
 from pseudex.profiling import stage
 from pseudex.ru_pii import validate_inn, validate_luhn, validate_ogrn, validate_snils
 from pseudex.sqlite_setup import connect as sqlite_connect
@@ -203,6 +203,22 @@ def name_key(token: str) -> str:
     return morph_names.to_nominative(token).lower()
 
 
+def place_key(token: str) -> str:
+    """Case-invariant signature of a LOC, stored in the same column as a name's.
+
+    The column is called `name_key` for historical reasons — people came first —
+    and holds whichever signature suits the row's type. One index, one purpose:
+    find the row this token belongs to, whatever case it was written in.
+    """
+    # A SIGNATURE, not a normalised phrase. Morphological normalisation was
+    # tried first and is too fragile for places: the phrase has variable
+    # structure (generic word, name, house number, or a bare settlement), and
+    # each shape needed its own rule. The signature keeps only what inflection
+    # cannot change — the name's stem and the house number — the same trick that
+    # has always made a reformatted phone resolvable.
+    return morph_places.match_signature(token) if token else ""
+
+
 def _digit_signatures(token: str, entity_type: str) -> tuple[str | None, str | None]:
     """Digit signature of a NUMERIC token, so a token the model reformatted
     (separators stripped, +7 rewritten as 8) still resolves. Phones also key on
@@ -264,6 +280,26 @@ def _first_names_by_gender() -> dict[str, tuple[str, ...]]:
     return {"masc": tuple(buckets["masc"]), "femn": tuple(buckets["femn"])}
 
 
+def _fake_place(original: str) -> str:
+    """A place of the SAME KIND as the one it replaces, in the nominative.
+
+    Two things were wrong before, and both reached the model. The phrase was
+    hardcoded dative — `улице Тополиной, 21` wherever it landed — and the kind
+    was chosen at random, so a street became a settlement 15% of the time and
+    «доставка на ул. Профсоюзная» came back as «Кинешме». A courier system
+    validating that address rejects it, which is what the landing promises will
+    not happen.
+
+    Settlements are combinatorial, not a flat list of 25: a delivery customer
+    crosses that on day one, and `_unique_token` would then exhaust and raise —
+    a fail-closed 5xx on every message with a new city, permanently.
+    """
+    if original and not morph_places.looks_like_street(original):
+        return morph_places.to_nominative(secrets.choice(_FAKE_CITIES))
+    street = morph_places.to_nominative(secrets.choice(_FAKE_STREETS))
+    return f"улица {street}, {secrets.randbelow(_FAKE_HOUSE_MAX) + 1}"
+
+
 def _fake_name(gender: str | None) -> str:
     """A fake full name that AGREES WITH ITSELF and with the real person.
 
@@ -310,7 +346,8 @@ def _shares_a_word(token: str, original: str) -> str:
     return bool(words(token) & words(original))
 
 
-def _render_token(entity_type: str, gender: str | None = None) -> str:
+def _render_token(entity_type: str, gender: str | None = None,
+                  original: str = "") -> str:
     # Format-preserving substitutes for the document types. Without these they
     # fall through to REDACTED… — which is NOT the shape the customer's own
     # validator expects, so a masked account number would fail their form check
@@ -358,12 +395,7 @@ def _render_token(entity_type: str, gender: str | None = None) -> str:
     if entity_type == "NAME":
         return _fake_name(gender)
     if entity_type == "LOC":
-        # Mostly streets, because that is where the combinations are; a bare city
-        # occasionally, because a bare city is what some LOC spans actually are.
-        if secrets.randbelow(100) < 15:
-            return secrets.choice(_FAKE_CITIES)
-        return (f"улице {secrets.choice(_FAKE_STREETS)}, "
-                f"{secrets.randbelow(_FAKE_HOUSE_MAX) + 1}")
+        return _fake_place(original)
     return f"REDACTED{secrets.token_hex(3)}"
 
 
@@ -391,7 +423,7 @@ TOKEN_RE = re.compile("|".join([
     # LOC, both families. The street form carries its house number so the
     # numbered token is matched whole; without the number the vault lookup would
     # be handed a prefix that is not a key.
-    r"улице (?:" + "|".join(_FAKE_STREETS) + r"), \d{1,3}",        # LOC (street)
+    r"улица [А-ЯЁ][а-яё]+, \d{1,3}",                               # LOC (street)
     *(re.escape(value) for value in _FAKE_CITIES),                 # LOC (city)
     r"\d{2} \d{2} \d{6}",                        # DRIVER_LICENSE / VEHICLE_DOC / PASSPORT
     r"198\.1[89]\.\d{1,3}\.\d{1,3}",              # IP (RFC 2544 benchmarking)
@@ -518,15 +550,28 @@ class Vault:
         forever. The pool is combinatorial now, but a bound still belongs here: a
         loud failure is recoverable, a hung request is not, and in a fail-closed
         gateway the 5xx is the correct outcome."""
-        for _ in range(_TOKEN_MINT_ATTEMPTS):
-            token = _render_token(entity_type, gender)
+        for attempt in range(_TOKEN_MINT_ATTEMPTS):
+            token = _render_token(entity_type, gender, original)
+            # The settlement pool is a flat 25 names with no combinatorial
+            # dimension, so a customer past 25 distinct cities would exhaust it
+            # and get a fail-closed 5xx on every message with a new one. Falling
+            # back to the street shape is a mismatch in a rare case; a permanent
+            # 5xx is an outage. Attempts are bounded either way.
+            if entity_type == "LOC" and attempt >= _TOKEN_MINT_ATTEMPTS // 2:
+                street = morph_places.to_nominative(secrets.choice(_FAKE_STREETS))
+                token = f"улица {street}, {secrets.randbelow(_FAKE_HOUSE_MAX) + 1}"
             # A substitute that shares a WORD with the value it replaces hides
             # nothing about that word. Comparing whole strings is not enough:
             # for `Мария` the token is `Мария Лебедева`, the surname differs,
             # and the real first name goes straight to the model — measured at
             # 18 collisions in 300 mints against our pool. Every check stayed
             # green, because a token WAS minted; it just did not substitute.
-            if original and _shares_a_word(token, original):
+            # NAME only. For a LOC the generic word is shared by construction —
+            # every street token contains «улица», so this check rejected every
+            # candidate and the pool "exhausted" after 200 tries on the first
+            # address. The rule is about a substitute repeating the PERSON it
+            # replaces, which is where the collision actually leaks something.
+            if entity_type == "NAME" and original and _shares_a_word(token, original):
                 continue
             if self._conn.execute(
                 "SELECT 1 FROM tokens WHERE customer=? AND token=?",
@@ -568,7 +613,8 @@ class Vault:
                 "first_seen, name_key) VALUES (?,?,?,?,?,?,?,?,?)",
                 (self._customer, canonical, entity_type, token, digits, digits10, value,
                  time.time(),
-                 name_key(token) if entity_type == "NAME" else None),
+                 name_key(token) if entity_type == "NAME"
+                 else place_key(token) if entity_type == "LOC" else None),
             )
             self._conn.commit()
             return token

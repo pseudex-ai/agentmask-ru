@@ -181,3 +181,42 @@ def detect_case(phrase: str) -> str | None:
     if not tally:
         return None
     return max(tally, key=lambda case: tally[case])
+
+
+def match_signature(phrase: str) -> str:
+    """A key that survives inflection, built like the phone digit signature.
+
+    Morphological NORMALISATION was tried first and is too fragile for places:
+    the phrase has variable structure (generic word, name, house number, or a
+    bare settlement), and every shape needed its own rule. A hand-rolled list of
+    endings was tried second and is worse — stripping is asymmetric, so `Валдай`
+    and `Валдае` reduce to different stems.
+
+    The LEMMA is the right answer, and it is what the dictionary is for:
+    `Светлогорском` and `Светлогорск` both lemmatise to `светлогорск`, `Гатчине`
+    and `Гатчина` to `гатчина`, `Еловой` and `Еловая` to `еловый`. The house
+    number is appended because two streets can share a stem, and it is a number,
+    so no inflection touches it.
+    """
+    digits = "".join(ch for ch in phrase if ch.isdigit())
+    stems: list[str] = []
+    for token in re.findall(r"[А-Яа-яЁё]+", phrase):
+        lowered = token.lower()
+        if lowered in _GENERIC or _GENERIC_STEMS.match(lowered):
+            continue
+        parses = MORPH.parse(token)
+        if not parses:
+            stems.append(lowered)
+            continue
+        geo = [p for p in parses if "Geox" in p.tag.grammemes]
+        best = max(geo or parses, key=lambda p: p.score)
+        stems.append(best.normal_form.lower())
+    return "|".join(sorted(stems)) + "|" + digits
+
+
+# The generic word in any of its forms — dropped from the signature because it
+# inflects the most and carries no identity of its own.
+_GENERIC_STEMS = re.compile(
+    r"(?i)^(?:улиц|проспект|переул|переулк|бульвар|шоссе|проезд|площад|"
+    r"набережн|алле|лини|просек|тупик|квартал|микрорайон)"
+)

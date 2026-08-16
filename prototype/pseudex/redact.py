@@ -8,9 +8,9 @@ lighter one. Reverse uses longest-token-first to avoid prefix collisions.
 import re
 
 from pseudex.detect import Span
-from pseudex import morph_names
+from pseudex import morph_names, morph_places
 from pseudex.profiling import stage
-from pseudex.vault import TOKEN_RE, Vault, name_key
+from pseudex.vault import TOKEN_RE, Vault, name_key, place_key
 
 # A number-like run (digits + phone separators), >=7 digits — a candidate for
 # digit-core detokenization when the model reformatted a numeric token.
@@ -66,6 +66,14 @@ def _token_for_text(span: Span, vault: Vault) -> str:
     generated as a whole phrase whose internal agreement is the generator's job.
     """
     token = vault.tokenize(span.value, span.entity_type)
+    if span.entity_type == "LOC":
+        # Same reason as NAME: a nominative phrase dropped into an oblique slot
+        # reads as broken Russian, and broken Russian is what makes a model
+        # rewrite the token instead of using it.
+        case = morph_places.detect_case(span.value)
+        if case is None or case == "nomn":
+            return token
+        return morph_places.inflect_place(token, case)
     if span.entity_type != "NAME":
         return token
     case = morph_names.detect_case(span.value)
@@ -134,6 +142,15 @@ def _restore_reformatted(text: str, vault: Vault) -> str:
 # tool as if it were real.
 _NAME_WORD = re.compile(r"[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?")
 
+# A place phrase in any case: the generic word inflects (улица/улице/улицу), the
+# adjectival name agrees with it, the house number never moves. A bare settlement
+# is covered by the name windows above, which already match single capitalised
+# words.
+_PLACE_RUN = re.compile(
+    r"(?i)\b(?:улиц\w*|проспект\w*|переулк?\w*|бульвар\w*|шоссе|проезд\w*|"
+    r"площад\w*|набережн\w*)\s+[А-ЯЁ][а-яё]+(?:,\s*\d{1,3})?"
+)
+
 
 def _name_windows(text: str) -> list[tuple[int, int, str]]:
     """Every contiguous 1-3 word window of capitalised Cyrillic words.
@@ -168,22 +185,40 @@ def _restore_inflected(text: str, vault: Vault) -> str:
     Хвостову` instead of the nominative it was handed. Longest window first, so
     a full name wins over its own surname and half a name is never replaced.
     """
+    # Names and places are gathered into ONE list before anything is resolved.
+    # Doing places in a second pass let a name window claim the overlapping text
+    # first, and the address was then never restored — a fake address delivered
+    # to a tool, which is the failure this whole path exists to prevent.
     windows = _name_windows(text)
+    # Each window carries BOTH signatures, because a single capitalised word can
+    # be either kind and the two normalisers disagree: `Еловцке` is a settlement,
+    # and asking the PERSON normaliser about it returns it unchanged, so the row
+    # is never found. A wrong-kind key costs one indexed lookup that misses.
+    keys: dict[tuple[int, int], list[str]] = {}
+    for start, end, surface in windows:
+        candidates: list[str] = []
+        for signature in (name_key, place_key):
+            try:
+                candidates.append(signature(surface))
+            except Exception:  # noqa: BLE001 - morphology must never break a response
+                continue
+        keys[(start, end)] = candidates
+    for match in _PLACE_RUN.finditer(text):
+        try:
+            keys[(match.start(), match.end())] = [place_key(match.group())]
+        except Exception:  # noqa: BLE001
+            continue
+        windows.append((match.start(), match.end(), match.group()))
     if not windows:
         return text
-    keys: dict[tuple[int, int], str] = {}
-    for start, end, surface in windows:
-        try:
-            keys[(start, end)] = name_key(surface)
-        except Exception:  # noqa: BLE001 - morphology must never break a response
-            continue
-    resolved = vault.resolve_name_keys(set(keys.values()))
+    resolved = vault.resolve_name_keys({k for group in keys.values() for k in group})
     if not resolved:
         return text
     spans: list[tuple[int, int, str]] = []
     taken: list[tuple[int, int]] = []
     for start, end, surface in sorted(windows, key=lambda w: w[1] - w[0], reverse=True):
-        value = resolved.get(keys.get((start, end), ""))
+        value = next((resolved[k] for k in keys.get((start, end), [])
+                      if k in resolved), None)
         if value is None:
             continue
         if any(a < end and start < b for a, b in taken):

@@ -25,6 +25,7 @@ import sys
 import tempfile
 
 import testkit
+from pseudex import morph_places
 from pseudex.detect_all import Detector
 from pseudex.redact import mask_text, unmask_text
 from pseudex.vault import Vault
@@ -251,6 +252,94 @@ def test_masked_output_is_not_remasked(vault: Vault, detector: Detector) -> None
           f"once={once[:60]} twice={twice[:60]}")
 
 
+ADDRESS_ROUND_TRIP = [
+    "Адрес: Москва, Ленинский проспект 42, кв. 118",
+    "Доставка на ул. Тверская, д. 7, корп. 2",
+    "г. Казань, ул. Профсоюзная, д. 17",
+    "Курьер приехал на улицу Арбат",
+    "Живёт в Санкт-Петербурге на Невском проспекте 100",
+    "Встретимся на Тверской 7",
+    "переезд с улицы Ленина на улицу Победы",
+    "Клиент Иванов Пётр, Москва, ул. Тверская 7",
+    "Доставка в Казань, ул. Баумана 5, кв. 3",
+    "Офис на Ленинском проспекте, дом 10, корпус 3",
+    "Заберите с Профсоюзной 12 и отвезите на Тверскую 7",
+    "Живу на Валдае, улица Мира 4",
+]
+
+
+def test_addresses(vault: Vault, detector: Detector) -> None:
+    """Addresses agree with their sentence AND come back intact.
+
+    Both halves are needed and neither implies the other. A substitute that
+    reads `улице Тополиной, 21` in a nominative slot invites the model to fix
+    it; a fix it cannot be matched back from delivers a fake address to a
+    courier. The suffix-stripping key that was tried first passed the first half
+    and failed the second — `Валдай` and `Валдае` reduced to different stems —
+    so the signature is built from lemmas now.
+    """
+    broken, nominative_in_oblique = [], []
+    for original in ADDRESS_ROUND_TRIP:
+        spans = [s for s in detector.detect(original) if s.entity_type == "LOC"]
+        masked = mask_text(original, vault, detector.detect(original))
+        if unmask_text(masked, vault) != original:
+            broken.append((original, masked, unmask_text(masked, vault)))
+        for span in spans:
+            want = morph_places.detect_case(span.value)
+            if want in (None, "nomn"):
+                continue
+            for masked_span in detector.detect(masked):
+                if masked_span.entity_type != "LOC":
+                    continue
+                if morph_places.detect_case(masked_span.value) == "nomn":
+                    nominative_in_oblique.append((original, masked))
+                break
+    check("every address round-trips back intact", not broken,
+          f"broken={broken}" if broken else f"{len(ADDRESS_ROUND_TRIP)} addresses")
+    check("no address substitute sits in the nominative inside an oblique slot",
+          not nominative_in_oblique, f"{nominative_in_oblique}")
+
+
+def test_address_signature_is_inflection_proof() -> None:
+    """Every pool entry must key the same in every case, or restoration misses.
+
+    Checked over the whole leased pool rather than a sample: this is the
+    property the round trip rests on, and a single entry that fails it is one
+    address type that silently delivers a fake.
+    """
+    from pseudex.vault import _FAKE_CITIES, _FAKE_STREETS
+    drift = []
+    for city in _FAKE_CITIES:
+        nominative = morph_places.to_nominative(city)
+        for case in ("gent", "datv", "loct", "ablt", "accs"):
+            inflected = morph_places.inflect_place(nominative, case)
+            if morph_places.match_signature(nominative) != morph_places.match_signature(inflected):
+                drift.append((nominative, case, inflected))
+    for street in _FAKE_STREETS:
+        phrase = f"улица {morph_places.to_nominative(street)}, 42"
+        for case in ("gent", "datv", "loct", "ablt", "accs"):
+            inflected = morph_places.inflect_place(phrase, case)
+            if morph_places.match_signature(phrase) != morph_places.match_signature(inflected):
+                drift.append((phrase, case, inflected))
+    check("the address signature survives every case of every pool entry",
+          not drift, f"drift={drift[:5]}" if drift else
+          f"{(len(_FAKE_CITIES) + len(_FAKE_STREETS)) * 5} combinations")
+
+
+def test_street_stays_a_street(vault: Vault, detector: Detector) -> None:
+    """A street must not be substituted by a settlement, or the sentence changes
+    meaning: «доставка на ул. Профсоюзная» coming back as «Кинешме» is a
+    different delivery, and the model has no way to know."""
+    wrong = []
+    for original in ["Доставка на ул. Профсоюзная, д. 17",
+                     "ул. Тверская, д. 7", "Ленинский проспект 42"]:
+        masked = mask_text(original, vault, detector.detect(original))
+        if "улиц" not in masked.lower():
+            wrong.append((original, masked))
+    check("a street is replaced by a street, never by a town",
+          not wrong, f"wrong={wrong}" if wrong else "")
+
+
 def main() -> int:
     testkit.load_dev_bundle()
     detector = Detector()
@@ -264,6 +353,9 @@ def main() -> int:
     test_json_payload(vault, detector)
     test_repeated_masking_is_stable(vault, detector)
     test_masked_output_is_not_remasked(vault, detector)
+    test_addresses(vault, detector)
+    test_address_signature_is_inflection_proof()
+    test_street_stays_a_street(vault, detector)
 
     print()
     if _FAILURES:

@@ -5,6 +5,8 @@ priority-based overlap resolution (checksum-validated IDs beat weak regex).
 from pseudex import _morph_compat  # noqa: F401  (pymorphy2->pymorphy3 BEFORE natasha import)
 from natasha import Doc, NewsEmbedding, NewsNERTagger, Segmenter
 
+import re
+
 from pseudex.address import detect_address
 from pseudex.assets import ASSETS
 from pseudex.context import location_is_pii, suppress
@@ -22,7 +24,8 @@ from pseudex.structured import detect_structured_kv
 # rather than in the shipped engine.
 
 
-def _resolve(spans: list[Span], priority: dict[str, int]) -> list[Span]:
+def _resolve(spans: list[Span], priority: dict[str, int],
+             text: str = "") -> list[Span]:
     ordered = sorted(
         spans,
         key=lambda s: (priority.get(s.entity_type, 1), s.end - s.start),
@@ -32,7 +35,43 @@ def _resolve(spans: list[Span], priority: dict[str, int]) -> list[Span]:
     for span in ordered:
         if all(span.end <= k.start or span.start >= k.end for k in kept):
             kept.append(span)
-    return sorted(kept, key=lambda s: s.start)
+    return _merge_places(sorted(kept, key=lambda s: s.start), text)
+
+
+# What may sit between two halves of one address: a comma, a space, and the
+# abbreviations that introduce the next part.
+_ADDRESS_JOIN = re.compile(r"(?i)^[\s,]*(?:г\.?|город|ул\.?|улица|д\.?|дом|"
+                           r"пр-?т|проспект|пер\.?|переулок|наб\.?|б-?р|мкр\.?)?[\s,]*$")
+
+
+def _merge_places(spans: list[Span], text: str = "") -> list[Span]:
+    """Join `Москва` + `Ленинский проспект 42` into ONE address span.
+
+    They arrive separately because a city and a street are separate entities,
+    and separately they get two unrelated substitutes — the customer's single
+    address becomes a city in one region and a street in another, which is worse
+    than either half being wrong. One span, one substitute, one place.
+
+    Only adjacent LOC spans are merged, and only across a gap that is punctuation
+    or an address abbreviation, so two places mentioned in one sentence
+    («доставка из Москвы в Казань») stay two.
+    """
+    if not text:
+        return spans
+    merged: list[Span] = []
+    for span in spans:
+        # ADDR, not just LOC: the remap to LOC happens AFTER resolution, so a
+        # street still carries its internal type here.
+        places = {"LOC", "ADDR"}
+        if (merged and merged[-1].entity_type in places and span.entity_type in places
+                and span.start - merged[-1].end <= 12
+                and _ADDRESS_JOIN.match(text[merged[-1].end:span.start])):
+            previous = merged.pop()
+            merged.append(Span(previous.start, span.end, previous.entity_type,
+                               text[previous.start:span.end]))
+            continue
+        merged.append(span)
+    return merged
 
 
 class Detector:
@@ -107,6 +146,6 @@ class Detector:
             # order number was masked as a phone. Offsets are 1:1 by invariant,
             # so the same spans index into either text.
             with stage("detect.resolve"):
-                resolved = _resolve(suppress(text, spans), ASSETS.get().priority)
+                resolved = _resolve(suppress(text, spans), ASSETS.get().priority, text)
             return [Span(s.start, s.end, "LOC", s.value) if s.entity_type == "ADDR" else s
                     for s in resolved]
