@@ -153,6 +153,17 @@ def architecture(request):
     return render(request, "legal/architecture.html", _legal_context())
 
 
+def detection(request):
+    """What the engine finds, and what it does not.
+
+    Split out of the landing because three of five persona-clients independently
+    asked for the list behind the number, and because the architecture page
+    promised published defects with nothing to click. A count with no list reads
+    as a marketing counter; a promise of transparency with no page is worse than
+    saying nothing."""
+    return render(request, "legal/detection.html", _legal_context())
+
+
 def signup(request):
     """Email, company name, plan. Three fields, and the key exists at the end of
     the post — before payment, before any confirmation click."""

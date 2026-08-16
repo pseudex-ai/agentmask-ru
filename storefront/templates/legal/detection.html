@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Что мы находим и чего не находим — pseudex{% endblock %}
+{% block content %}
+<section>
+  <div class="eyebrow"><i></i><span>ДЕТЕКЦИЯ</span></div>
+  <h1 class="hero" style="font-size:clamp(30px,4.5vw,52px)">Что мы находим — и чего не находим</h1>
+  <p class="lede" style="margin-top:24px">Полный список, а не цифра. Ниже — каждый тип данных, который движок распознаёт сегодня, чем он подтверждается, и отдельным разделом — то, что он <b>не</b> находит. Второй раздел важнее первого: система распознавания без списка пропусков ничем не отличается от обещания.</p>
+</section>
+
+<section>
+  <div class="sec-head">
+    <h2>18 типов персональных данных</h2>
+    <div class="sec-meta">ПРОВЕРЕНО ПРОГОНОМ ДВИЖКА</div>
+  </div>
+  <p class="sub">«Чем держится» — это то, что отделяет настоящее значение от похожего на него номера заказа. Контрольная сумма отвергает выдуманный номер; контекстный фильтр требует, чтобы рядом стояло слово, объясняющее, что это за число.</p>
+
+  <div class="boundary" style="margin-top:28px">
+    <div class="row head"><div>ТИП</div><div>ПРИМЕР</div><div>ЧЕМ ДЕРЖИТСЯ</div></div>
+    <div class="row"><div>ФИО</div><div class="mono">Иванову Петру Сергеевичу</div><div>нейросетевой разбор, словарь имён, морфология</div></div>
+    <div class="row"><div>Телефон</div><div class="mono">+7 916 214-88-03</div><div>libphonenumber и разбор формата</div></div>
+    <div class="row"><div>Email</div><div class="mono">ivanov@mail.ru</div><div>формат</div></div>
+    <div class="row"><div>Адрес</div><div class="mono">Ленинский пр-т 42, кв. 118</div><div>разбор адреса, морфология улиц</div></div>
+    <div class="row"><div>Дата рождения</div><div class="mono">14.03.1985</div><div>формат и контекст рождения</div></div>
+    <div class="row"><div>СНИЛС</div><div class="mono">112-233-445 95</div><div>контрольная сумма</div></div>
+    <div class="row"><div>ИНН</div><div class="mono">500100732259</div><div>контрольная сумма</div></div>
+    <div class="row"><div>ОГРН / ОГРНИП</div><div class="mono">1027700132195</div><div>контекстный фильтр</div></div>
+    <div class="row"><div>Паспорт РФ</div><div class="mono">4509 123456</div><div>контекстный фильтр</div></div>
+    <div class="row"><div>Загранпаспорт</div><div class="mono">71 1234567</div><div>контекстный фильтр</div></div>
+    <div class="row"><div>Банковская карта</div><div class="mono">4111 1111 1111 1111</div><div>контрольная сумма Луна</div></div>
+    <div class="row"><div>Банковский счёт</div><div class="mono">40817810099910004312</div><div>формат счёта РФ</div></div>
+    <div class="row"><div>Полис ОМС</div><div class="mono">1234567890123456</div><div>контекстный фильтр</div></div>
+    <div class="row"><div>Свидетельство о рождении</div><div class="mono">V-МЮ 123456</div><div>римская серия и номер</div></div>
+    <div class="row"><div>Водительское удостоверение</div><div class="mono">7712 345678</div><div>контекстный фильтр</div></div>
+    <div class="row"><div>СТС и ПТС</div><div class="mono">99 12 345678</div><div>контекстный фильтр</div></div>
+    <div class="row"><div>Государственный номер</div><div class="mono">А123ВС777</div><div>формат, в том числе латинская раскладка</div></div>
+    <div class="row"><div>IP-адрес</div><div class="mono">85.140.7.33</div><div>формат</div></div>
+  </div>
+
+  <div style="margin-top:22px;font-size:15px;line-height:1.7;color:var(--dim);max-width:760px">Плюс два <b>квазиидентификатора</b> — сами по себе они человека не называют, но вместе с остальным сужают круг до одного: <b>возраст от 90 лет</b> и <b>медицинские термины</b> в тексте. Они выделены отдельно намеренно: маскировать их всегда — значит ломать смысл там, где речь о медицине по существу, а не о пациенте.</div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <h2>Чего мы не находим</h2>
+    <div class="sec-meta">ЭТОТ РАЗДЕЛ ВАЖНЕЕ ПРЕДЫДУЩЕГО</div>
+  </div>
+  <p class="sub">Список честный и открытый. Если нужного вам типа здесь нет — напишите, это меняет очередь работ: мы делаем то, за что платят, а не то, что красивее выглядит в таблице.</p>
+
+  <div class="rows" style="margin-top:36px">
+    <div class="sec-meta">ОБЩИЕ</div>
+    <div>
+      <div class="numbered"><div class="n">01</div><div>
+        <h3>Ссылки, логины, пароли и ключи доступа</h3>
+        <p>URL, имя пользователя, пароль, токены и ключи API мировые решения относят к персональным данным и находят. Мы — пока нет. Для агентских сценариев это заметный пропуск: ключ, случайно попавший в переписку, уйдёт в модель как есть.</p>
+      </div></div>
+      <div class="numbered"><div class="n">02</div><div>
+        <h3>Название организации, MAC-адрес, VIN</h3>
+        <p>Входят в набор, который поддерживают практически все. У VIN есть контрольная сумма, и он ложится в тот же механизм, что и карта.</p>
+      </div></div>
+      <div class="numbered"><div class="n">03</div><div>
+        <h3>CVV, срок действия карты, IBAN, SWIFT</h3>
+        <p>Номер карты мы находим и проверяем по контрольной сумме, а сопутствующие поля — нет. Для международных платежей это существенно.</p>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="rows" style="margin-top:40px">
+    <div class="sec-meta">ОТРАСЛЕВЫЕ</div>
+    <div>
+      <div class="numbered"><div class="n">04</div><div>
+        <h3>Финансы: БИК, корсчёт, номер кредитного договора, сумма долга, кодовое слово</h3>
+        <p>Двадцатизначный счёт и карту находим, эти — нет. Для банка и МФО это не мелочь: номер договора и сумма задолженности идентифицируют клиента не хуже фамилии.</p>
+      </div></div>
+      <div class="numbered"><div class="n">05</div><div>
+        <h3>Телеком: IMEI, IMSI, лицевой счёт абонента</h3>
+        <p>Закон «О связи» прямо защищает «идентификатор пользовательского оборудования» и сведения о соединениях. Мы этих типов не находим. У IMEI есть контрольная сумма — работа известного объёма.</p>
+      </div></div>
+      <div class="numbered"><div class="n">06</div><div>
+        <h3>Медицина: диагнозы, назначения, коды МКБ, номер медкарты</h3>
+        <p>Мы находим медицинские <b>термины</b> по словарю — это не то же самое, что разбор клинического текста. Диагноз, схема лечения, код МКБ и номер медицинской карты не распознаются как отдельные типы. Мы не продаём себя как решение для медицинских данных: специальная категория по статье 10 закона требует не словаря, а уровня защищённости, и честно сказать «пока не наш профиль» правильнее, чем взять деньги и подвести.</p>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="split">
+    <div style="min-width:0">
+      <div class="sec-meta" style="margin-bottom:22px">ЧЕМ МЫ ОТЛИЧАЕМСЯ</div>
+      <h2 style="margin:0 0 20px">Проверяемое утверждение вместо лозунга</h2>
+      <p style="margin:0 0 18px;font-size:16px;line-height:1.65;color:var(--dim);max-width:640px">Мы сверились с документацией и исходным кодом девяти мировых решений: Microsoft Presidio, Google Cloud DLP, AWS Comprehend, AWS Macie, Nightfall, Skyflow, Private AI, Protecto, Tonic Textual.</p>
+      <p style="margin:0 0 18px;font-size:16px;line-height:1.65;color:var(--dim);max-width:640px"><b style="color:var(--text-3)">Ни одно из девяти не проверяет контрольную сумму ИНН или СНИЛС.</b> У Google Cloud DLP на всю Россию один тип — номер паспорта, и тот без контекстной логики. Для сравнения: у Испании семь типов, у Кореи шесть, у Германии тринадцать.</p>
+      <p style="margin:0;font-size:16px;line-height:1.65;color:var(--dim);max-width:640px">При этом <b style="color:var(--text-3)">русский язык понимают двое из девяти</b>, и мы не утверждаем обратного. Разница не в языке — она в разборе российских документов и в том, что происходит на обратном пути, когда инструменту нужно настоящее значение.</p>
+    </div>
+    <div>
+      <div class="boundary">
+        <div class="row"><div>Microsoft Presidio</div><div class="no">нет</div><div class="no">нет</div></div>
+        <div class="row"><div>Google Cloud DLP</div><div class="no">нет</div><div class="no">нет</div></div>
+        <div class="row"><div>AWS Comprehend</div><div class="no">нет</div><div class="no">нет</div></div>
+        <div class="row"><div>Nightfall, Skyflow, Protecto</div><div class="no">нет</div><div class="no">нет</div></div>
+        <div class="row"><div>Private AI, Tonic Textual</div><div class="yes">да</div><div class="no">нет</div></div>
+        <div class="row"><div>pseudex</div><div class="yes">да</div><div class="yes">да</div></div>
+        <div class="row head"><div>РЕШЕНИЕ</div><div>РУССКИЙ</div><div>ИНН/СНИЛС</div></div>
+      </div>
+      <div style="margin-top:16px;font-size:13.5px;line-height:1.6;color:var(--dim-2)">Проверено по официальной документации и исходному коду в августе 2026 года. Отсутствие типа означает «не найдено в официальных источниках вендора» — если мы ошиблись, напишите, поправим.</div>
+    </div>
+  </div>
+</section>
+
+<section style="display:flex;align-items:center;justify-content:space-between;gap:40px;flex-wrap:wrap">
+  <div>
+    <h2 style="font-size:clamp(26px,3.6vw,40px);max-width:720px">Нужного типа нет в списке?</h2>
+    <div style="margin-top:16px" class="sec-meta">НАПИШИТЕ — ЭТО МЕНЯЕТ ОЧЕРЕДЬ РАБОТ</div>
+  </div>
+  <a class="btn accent lg" href="/#start">ПРОВЕРИТЬ НА СВОЁМ ТЕКСТЕ</a>
+</section>
+{% endblock %}

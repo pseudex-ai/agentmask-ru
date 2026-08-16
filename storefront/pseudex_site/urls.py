@@ -31,6 +31,7 @@ urlpatterns = [
     path("offer", views.offer, name="offer"),
     path("policy", views.policy, name="policy"),
     path("architecture", views.architecture, name="architecture"),
+    path("detection", views.detection, name="detection"),
 
     path("app/", views.cabinet, name="cabinet"),
     path("app/keys/new", views.new_key, name="new_key"),
