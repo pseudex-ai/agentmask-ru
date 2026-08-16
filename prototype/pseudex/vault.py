@@ -16,6 +16,8 @@ import functools
 import re
 import secrets
 import string
+
+from pseudex import credentials
 import threading
 import time
 
@@ -346,6 +348,52 @@ def _shares_a_word(token: str, original: str) -> str:
     return bool(words(token) & words(original))
 
 
+def _fake_secret(original: str) -> str:
+    """A credential of the same shape whose body is random.
+
+    The VENDOR PREFIX survives and the body does not. The model reasons about
+    which key to use for which call ("use the Anthropic one here"), so changing
+    `sk-ant-` into `ghp_` changes the meaning of the sentence; changing the body
+    changes nothing the model needs.
+
+    Character CLASS is preserved per position — digit stays digit, upper stays
+    upper — so a substitute passes the same shape checks the real key would. The
+    same reasoning as the format-preserving document tokens: a fake that fails
+    the customer's own validator breaks the tool call this product exists to keep
+    working.
+
+    A collision with a real credential is not possible in practice: the body is
+    CSPRNG output over the key's own alphabet, and these keys carry well over a
+    hundred bits. This is the credential analogue of the checksum-INVALID ID
+    tokens and the reserved IP range — the token cannot name a real thing.
+    """
+    if original.startswith("-----BEGIN"):
+        # A PEM block: keep the header and footer lines, replace the material.
+        lines = original.splitlines()
+        if len(lines) < 3:
+            return original
+        body = [
+            "".join(secrets.choice(string.ascii_letters + string.digits + "+/")
+                    for _ in range(len(line)))
+            for line in lines[1:-1]
+        ]
+        return "\n".join([lines[0], *body, lines[-1]])
+
+    prefix = credentials.secret_prefix(original)
+    tail = original[len(prefix):]
+    out: list[str] = []
+    for char in tail:
+        if char.isdigit():
+            out.append(secrets.choice(string.digits))
+        elif char.isupper():
+            out.append(secrets.choice(string.ascii_uppercase))
+        elif char.islower():
+            out.append(secrets.choice(string.ascii_lowercase))
+        else:
+            out.append(char)  # separators keep the shape readable
+    return prefix + "".join(out)
+
+
 def _render_token(entity_type: str, gender: str | None = None,
                   original: str = "") -> str:
     # Format-preserving substitutes for the document types. Without these they
@@ -394,6 +442,8 @@ def _render_token(entity_type: str, gender: str | None = None,
         return f"{secrets.randbelow(28) + 1:02d}.{secrets.randbelow(12) + 1:02d}.{secrets.randbelow(40) + 1960}"
     if entity_type == "NAME":
         return _fake_name(gender)
+    if entity_type == "SECRET":
+        return _fake_secret(original)
     if entity_type == "LOC":
         return _fake_place(original)
     return f"REDACTED{secrets.token_hex(3)}"

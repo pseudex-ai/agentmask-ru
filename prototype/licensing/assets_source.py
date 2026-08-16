@@ -287,6 +287,11 @@ INN_CONTEXT: tuple[str, ...] = ("инн", "контрагент", "налого�
 # anchored ADDR span must beat a NAME sitting inside it (the street name), so the
 # whole address — incl. the house number — is masked, not just the surname.
 PRIORITY: dict[str, int] = {
+    # Top slot, above the checksum IDs. A Slack token holds a long digit run
+    # that libphonenumber reads as a phone, and a JWT body is base64 that can
+    # contain anything. A lower-priority recogniser winning a SUB-span of a
+    # credential cuts it in half, and both halves then leak.
+    "SECRET": 8,
     "OMS": 7, "ACCOUNT": 7, "DRIVER_LICENSE": 7, "VEHICLE_DOC": 7,
     "INTL_PASSPORT": 7, "OGRN": 7, "BIRTH_CERT": 7,
     "SNILS": 6, "INN": 6, "CARD": 6,

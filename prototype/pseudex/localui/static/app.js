@@ -369,6 +369,9 @@ const PRESETS = [
   ['АДРЕС', 'Курьер не нашёл вход. Адрес: г. Казань, ул. Профсоюзная, д. 17, под. 3, кв. 84, домофон 84К.'],
   ['ДОКУМЕНТЫ', 'Для оформления: паспорт 4517 № 812345, СНИЛС 112-233-445 95, ИНН 770512345678. Договор 2024/117.'],
   ['СМЕШАННЫЙ СЛУЧАЙ', 'Заказ 2024/117 на 12 400 ₽, вес 4517 г, трек 812345. Получатель Соколова Анна Игоревна, +7 916 214-88-03.'],
+  // Deliberately mixes a real credential with a git SHA and a UUID: the point of
+  // the preset is to show that the key is masked and the hashes are NOT.
+  ['КЛЮЧИ И ТОКЕНЫ', 'Деплой упал. Ключ OPENAI_API_KEY=sk-proj-Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7, коммит a94a8fe5ccb19ba61c4c0873d391e987982fbbd3, задача 550e8400-e29b-41d4-a716-446655440000.'],
 ];
 
 function Sandbox({ org }) {

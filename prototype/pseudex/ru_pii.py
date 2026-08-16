@@ -111,6 +111,23 @@ _PLATE_RE = re.compile("|".join([
     # Тип 2 — мотоциклы: 1234 АВ 77
     rf"\b\d{{4}}\s?[{_PLATE_LETTERS}]{{2}}\s?\d{{2,3}}\b",
 ]))
+# Two-letter Russian words built ONLY from the ГОСТ plate alphabet. «счёт 1234 от
+# 15.05.2025» — one of the commonest phrases in Russian business writing — parsed
+# as a type-2 motorcycle plate: four digits, two "plate letters", a region code.
+# Every invoice-and-date line in the language was being partly masked.
+#
+# The gate is on CASE, not on the word alone. A plate is written in capitals
+# («1234 ТУ 77»); the prose word is lower case («1234 от 15»). Denying the word
+# regardless of case would cost real plates, because «ту», «те», «на» are all
+# legitimate letter pairs on a real registration. Denying only the lower-case
+# form costs a sloppily typed plate and saves every invoice date — and a missed
+# lower-case plate is one value, while an eaten invoice number is every document
+# the customer has.
+_PLATE_DENY_LOWER = frozenset((
+    "от", "на", "но", "то", "во", "ко", "со", "не", "ну", "он", "ох", "ах", "ух",
+    "ум", "ус", "ор", "ер", "та", "те", "ту", "ма", "ме", "му", "ка", "ку", "ва",
+    "ре", "ро", "ру", "са", "се", "су", "ем", "ес", "мы", "ты",
+))
 _IPV4_RE = re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}"
                       r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b")
 # Свидетельство о рождении: roman series + two Cyrillic letters + number.
@@ -184,4 +201,10 @@ def detect_plates(raw_text: str) -> list[Span]:
 
     Safe because normalize() is length-preserving 1:1, so offsets taken from the
     raw text index identically into the normalized text every other layer used."""
-    return [Span(m.start(), m.end(), "PLATE", m.group()) for m in _PLATE_RE.finditer(raw_text)]
+    spans: list[Span] = []
+    for match in _PLATE_RE.finditer(raw_text):
+        letters = "".join(c for c in match.group() if c.isalpha())
+        if letters.islower() and letters in _PLATE_DENY_LOWER:
+            continue
+        spans.append(Span(match.start(), match.end(), "PLATE", match.group()))
+    return spans
