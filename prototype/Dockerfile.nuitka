@@ -33,6 +33,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /src
 COPY requirements.txt .
+# Attribution for the CC BY-SA 3.0 dictionary data. Shipping it is the
+# obligation the licence actually imposes — see the file for why it does
+# not make the product itself share-alike.
+COPY THIRD-PARTY-NOTICES.md .
 RUN pip install --no-cache-dir --upgrade pip setuptools \
     && pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir nuitka

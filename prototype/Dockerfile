@@ -29,6 +29,10 @@ WORKDIR /app
 RUN pip install --no-cache-dir --upgrade pip setuptools
 
 COPY requirements.txt .
+# Attribution for the CC BY-SA 3.0 dictionary data. Shipping it is the
+# obligation the licence actually imposes — see the file for why it does
+# not make the product itself share-alike.
+COPY THIRD-PARTY-NOTICES.md .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY pseudex/ ./pseudex/
