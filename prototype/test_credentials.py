@@ -20,10 +20,10 @@ POSITIVE: tuple[tuple[str, str], ...] = (
     ("OPENAI_API_KEY=sk-proj-" + "Xy7" * 20, "OpenAI project"),
     ("возьми sk-or-v1-" + "a1b2c3d4" * 8 + " для роутера", "OpenRouter"),
     ("токен ghp_" + "A1b2C3d4" * 4 + "abcd", "GitHub"),
-    ("export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE", "AWS"),
+    ("export AWS_ACCESS_KEY_ID=AKIA4MZJK2QW7TVBH3RS", "AWS"),
     ("google AIzaSyD-1234567890abcdefghijklmnopqrstu", "Google API"),
     ("slack xoxb-123456789012-abcdefghijklmnopqrst", "Slack"),
-    ("stripe sk_live_" + "4eC39H" * 5, "Stripe"),
+    ("stripe sk_live_" + "4eC39H" * 5, "Stripe (секретный)"),
     ("hf_" + "aBcDeFgHiJ" * 3 + "abcd", "HuggingFace"),
     ("glpat-" + "aZ3xK9mQ2wLp7nR4tY6u"[:20], "GitLab"),
     ("npm_" + "abcdefgh" * 4 + "abcd", "npm"),
@@ -46,6 +46,13 @@ NEGATIVE: tuple[tuple[str, str], ...] = (
     ("пакет AIzaSy — так назывался проект", "короткий обрывок"),
     ("Иванов Пётр, +7 916 214-88-03", "обычные ПД, не секрет"),
     ("SELECT * FROM users WHERE token IS NULL", "SQL"),
+    # Vendor-published examples and templates. Both are shaped like credentials
+    # and neither is one: AWS prints AKIAIOSFODNN7EXAMPLE in its own docs, and
+    # Stripe documents pk_ as safe for client-side code.
+    ("export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE", "пример из доки AWS"),
+    ("публичный ключ pk_live_51H8xKfL2eZvKYlo2C0abcdef", "публикуемый Stripe"),
+    ("в конфиге sk-ant-api03-${ANTHROPIC_API_KEY}", "шаблон переменной"),
+    ("пример ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "заглушка из xxxx"),
 )
 
 

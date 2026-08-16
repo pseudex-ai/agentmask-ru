@@ -48,14 +48,17 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("openai-project", re.compile(r"\bsk-proj-[A-Za-z0-9_\-]{40,200}")),
     ("openai-service", re.compile(r"\bsk-svcacct-[A-Za-z0-9_\-]{40,200}")),
     ("openrouter", re.compile(r"\bsk-or-v1-[a-f0-9]{64}\b")),
-    ("openai-legacy", re.compile(r"\bsk-[A-Za-z0-9]{48}\b")),
+    ("openai-legacy", re.compile(r"\bsk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}\b")),
     ("huggingface", re.compile(r"\bhf_[A-Za-z0-9]{34}\b")),
     # --- clouds -----------------------------------------------------------
     ("aws-access-key", re.compile(r"\b(?:AKIA|ASIA|AROA|AIDA|ANPA|ANVA)[A-Z0-9]{16}\b")),
     ("google-api-key", re.compile(r"\bAIza[A-Za-z0-9_\-]{35}\b")),
     ("google-oauth", re.compile(r"\bya29\.[A-Za-z0-9_\-]{20,}")),
     ("yandex-oauth", re.compile(r"\by0_[A-Za-z0-9_\-]{20,}")),
-    ("yandex-iam", re.compile(r"\bt1\.[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]{50,}")),
+    ("yandex-iam", re.compile(r"\bt1\.[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]{86}={0,2}")),
+    ("yandex-key-id", re.compile(r"\bYC[A-Za-z0-9_\-]{23}\b")),
+    ("yandex-secret", re.compile(r"\bYC[A-Za-z0-9_\-]{38}\b")),
+    ("huggingface-org", re.compile(r"\bapi_org_[A-Za-z0-9]{34}\b")),
     # --- code hosting and messaging --------------------------------------
     ("github-token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36}\b")),
     ("github-pat", re.compile(r"\bgithub_pat_[A-Za-z0-9_]{60,90}\b")),
@@ -63,7 +66,10 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("slack-token", re.compile(r"\bxox[baprs]-[A-Za-z0-9\-]{10,90}")),
     ("telegram-bot", re.compile(r"\b\d{8,10}:AA[A-Za-z0-9_\-]{32,33}\b")),
     # --- payments and infrastructure --------------------------------------
-    ("stripe", re.compile(r"\b[sprk]k_(?:live|test)_[A-Za-z0-9]{24,99}\b")),
+    # `sk_` secret and `rk_` restricted only. `pk_` is PUBLISHABLE — Stripe
+    # documents it as safe for client-side code, and every mature scanner
+    # deliberately does not flag it. Masking it would break the checkout page.
+    ("stripe", re.compile(r"\b[sr]k_(?:live|test)_[A-Za-z0-9]{24,99}\b")),
     ("sendgrid", re.compile(r"\bSG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}\b")),
     ("npm-token", re.compile(r"\bnpm_[A-Za-z0-9]{36}\b")),
     ("pypi-token", re.compile(r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_\-]{50,}")),
@@ -80,12 +86,24 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 
+# A placeholder is not a credential. `sk-ant-api03-${ANTHROPIC_KEY}`,
+# `ghp_xxxxxxxxxxxx` and `sk-live-YOUR_KEY_HERE` appear in documentation, error
+# messages and the agent's own config templates. Masking them replaces an
+# instruction with a random string, and there was never anything to protect.
+_PLACEHOLDER = re.compile(
+    r"(?i)(\$\{|\{\{|<|%\()|xxxx|placeholder|your[_\-]?(key|token|secret)"
+    r"|example|changeme|replace[_\-]?me|\.\.\.|_here\b")
+
+
 def detect_credentials(text: str) -> list[Span]:
     """Find credentials by their published prefix. Never by entropy."""
     spans: list[Span] = []
     for _name, pattern in _PATTERNS:
         for match in pattern.finditer(text):
-            spans.append(Span(match.start(), match.end(), "SECRET", match.group(0)))
+            value = match.group(0)
+            if _PLACEHOLDER.search(value):
+                continue
+            spans.append(Span(match.start(), match.end(), "SECRET", value))
     return spans
 
 

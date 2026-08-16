@@ -78,6 +78,11 @@ def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
     fails open — a document word we did not think of masks the date. This gate
     fails CLOSED in the direction that matters: no person nearby, no masking.
     """
+    # A date inside a URL is a path segment: rbc.ru/politics/07/07/2016/… . Found
+    # on real text, where every dated news link produced one.
+    prefix = text[max(0, span.start - 60): span.start]
+    if ("http" in prefix or "www." in prefix) and " " not in prefix[-30:]:
+        return False
     quasi = ASSETS.get().quasi
     window = text[max(0, span.start - 60): span.end + 60].lower()
     if any(cue in window for cue in quasi.birth_ctx):

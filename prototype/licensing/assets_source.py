@@ -190,10 +190,16 @@ MONTHS: tuple[str, ...] = (
     "августа", "сентября", "октября", "ноября", "декабря",
 )
 # МКБ-10-style common diagnosis stems (inflection-tolerant via \w*).
+# Two stems here cannot take a free `\w*` tail, and both were found on real
+# text (NEREL, 933 documents): «рак» matched «ракета», «ракетного», «ракетой»,
+# and «спид» matched «спидометр». Nineteen of the corpus's thirty-eight false
+# positives were this one bug. They get an explicit inflection set instead.
 MEDICAL_PATTERN = (
-    r"\b(?:диабет|гиперт|астм|онколог|рак|вич|спид|туберкул|гепатит|депресс|"
+    r"\b(?:диабет|гиперт|астм|онколог|вич|туберкул|гепатит|депресс|"
     r"шизофрен|ковид|covid|инсульт|инфаркт|эпилепс|бронхит|пневмони|артрит|"
     r"гастрит|псориаз|деменци|аутизм|бесплоди)\w*"
+    r"|\bрак(?:а|у|ом|е|ов\w*|овы\w*)?\b"
+    r"|\bспид(?:а|у|ом|е)?\b"
 )
 
 # --- context suppression -------------------------------------------------
