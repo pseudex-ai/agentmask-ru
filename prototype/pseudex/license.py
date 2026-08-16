@@ -417,7 +417,25 @@ class LicenseClient:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=5.0)
+        self._release()
         self._http.close()
+
+    def _release(self) -> None:
+        """Tell the server this instance is going away, so its slot frees now.
+
+        Best effort, and short: a shutdown must not hang because our own server
+        is slow, and the time-based expiry covers every case where this call
+        does not arrive — a kill -9, a lost network, a crashed host. Without it
+        the slot lingers for the whole lease TTL, and on a one-instance plan a
+        redeploy means the customer cannot start their own container.
+        """
+        if not self._key or self._lease_id is None:
+            return
+        try:
+            self._http.post(f"{self._base_url}/v1/release", timeout=3.0,
+                            json={"key": self._key, "instance_id": self._instance_id})
+        except Exception as error:  # noqa: BLE001 - shutdown must not raise
+            _log.info("could not release the instance slot: %s", error)
 
 
 class _TransientLeaseError(RuntimeError):

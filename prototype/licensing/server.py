@@ -130,6 +130,23 @@ def _store_usage(instance_id: str, org_id: str, usage: object) -> None:
     )
 
 
+@app.post("/v1/release")
+async def release(request: Request) -> JSONResponse:
+    """Give a slot back when a container shuts down cleanly.
+
+    Unauthenticated beyond the key, and deliberately harmless if abused: the
+    worst a caller can do with someone else's key is free a slot the key's own
+    owner may immediately retake. Weigh that against what the alternative costs
+    — a customer locked out of their own product after a redeploy.
+    """
+    body = await request.json()
+    record = STORE.lookup(str(body.get("key", "")))
+    if record is None:
+        return JSONResponse({"error": "unknown key"}, status_code=403)
+    STORE.release_instance(record.org_id, str(body.get("instance_id", "")))
+    return JSONResponse({"released": True})
+
+
 @app.post("/v1/lease")
 async def lease(request: Request) -> JSONResponse:
     raw = await request.body()
@@ -183,7 +200,7 @@ async def lease(request: Request) -> JSONResponse:
     # "you are running more containers than you bought", which is a different
     # sentence and must not be read by the client as a payment failure — those
     # bypass grace and stop everything.
-    allowed, why_not = STORE.may_lease(record.org_id, record.plan, instance_id)
+    allowed, why_not = STORE.may_lease(record.org_id, record.plan, instance_id, _TTL_SECONDS)
     if not allowed:
         _log.warning("lease refused for org=%s instance=%s: %s",
                      record.org_id, instance_id, why_not)

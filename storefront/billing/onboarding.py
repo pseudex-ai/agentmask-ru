@@ -1,4 +1,4 @@
-"""The Claude Code onboarding prompt.
+"""The coding-agent onboarding prompt.
 
 A module rather than a template block because this text is the product's
 onboarding: it is executed, not read. It has to be verifiable, and a string
@@ -8,6 +8,11 @@ WHY A PROMPT AT ALL. The connection is two commands, which is easy for someone
 who knows where their project calls a model — and that is the assumption that
 excludes everyone else. The prompt hands the search, the container and the
 verification to an agent that is already sitting in the customer's repository.
+
+Agent-agnostic on purpose: it is plain instructions plus shell, so Claude Code,
+Codex, Cursor and the rest all execute it. Naming only one would be both a
+narrower claim than the truth and a reason for someone using another agent to
+assume the product is not for them.
 
 THE VERIFICATION STEP IS THE POINT. Anyone can start a container and change an
 environment variable and believe they are done; the failure mode that matters is
@@ -27,7 +32,7 @@ _CHECK_BODY = (
 
 
 def claude_prompt(license_key: str, image: str, ui_port: str) -> str:
-    """The text the customer pastes into Claude Code inside their project."""
+    """The text the customer pastes into their coding agent, whichever it is."""
     return f"""Подключи pseudex к этому проекту.
 
 Что это: контейнер, который прячет персональные данные от языковой модели и

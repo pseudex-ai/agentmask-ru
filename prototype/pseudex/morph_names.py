@@ -26,14 +26,15 @@ This is ALGORITHM, so it ships in the engine. The name pools it inflects are
 tuned data and stay in the leased bundle — see `docs/tz-license-packaging.md`.
 """
 
-import pseudex._morph_compat  # noqa: F401  (must precede any pymorphy/natasha import)
-
 import functools
 import re
 
-import pymorphy3
-
-_MORPH = pymorphy3.MorphAnalyzer()
+# The SHARED analyzer, never a second one. `pseudex/morph.py` exists precisely
+# to keep one instance per process — a second MorphAnalyzer loads the whole
+# dictionary again, and this module is imported by the vault, which every worker
+# loads. Measured cost of the duplicate that was here first: +20 MB per worker,
+# multiplied by the worker count.
+from pseudex.morph import MORPH as _MORPH
 
 # The grammemes that mark a parse as part of a personal name. A parse without
 # one of these is some other word that happens to be spelled the same, which is

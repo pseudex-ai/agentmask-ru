@@ -209,12 +209,31 @@ class LicenseStore:
     # Mirrors billing/management/commands/seed_plans.py. Two places, because
     # the licensing server must not depend on the storefront — but they are
     # checked against each other by test_storefront.py.
-    _INSTANCE_GRACE_SECONDS = 36 * 3600
 
     def instances_allowed(self, plan: str) -> int:
         return self.PLAN_INSTANCES.get(plan, 1)
 
-    def may_lease(self, org_id: str, plan: str, instance_id: str) -> tuple[bool, str]:
+    def release_instance(self, org_id: str, instance_id: str) -> None:
+        """Free a slot the moment a container shuts down cleanly.
+
+        Without this the slot lingers for the whole window, and a customer who
+        redeploys onto a fresh volume is locked out of their own product with a
+        message that blames them and suggests paying more. A persona client
+        called that disqualifying for production, and they were right: a release
+        happens on every `docker stop`, which is every deploy.
+
+        Best effort by construction — a container that is killed cannot tell us
+        anything, which is exactly what the time-based expiry below is for.
+        """
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM leases WHERE org_id=? AND instance_id=?",
+                (org_id, instance_id),
+            )
+            self._conn.commit()
+
+    def may_lease(self, org_id: str, plan: str, instance_id: str,
+                  window_seconds: int) -> tuple[bool, str]:
         """Whether this instance may take a lease under the org's plan.
 
         Counts instances that leased RECENTLY, not ever. A container that was
@@ -227,7 +246,17 @@ class LicenseStore:
         renewal can never be refused by this check — only a genuinely NEW
         container beyond the plan can.
         """
-        cutoff = time.time() - self._INSTANCE_GRACE_SECONDS
+        # The window is the LEASE TTL, not a flat constant. A lease that has
+        # expired cannot be serving traffic — the engine is fail-closed and
+        # stops without one — so an instance past it is definitively not
+        # running, and holding its slot punishes the customer for our
+        # bookkeeping. The client renews at a third of the TTL, so a live
+        # instance has three chances to be seen inside the window and a slow
+        # renewal never reads as a new machine.
+        #
+        # It used to be a flat 36 hours, which meant one `docker rm` cost the
+        # customer a day and a half on a single-instance plan.
+        cutoff = time.time() - window_seconds
         rows = self._conn.execute(
             "SELECT DISTINCT instance_id FROM leases WHERE org_id=? AND issued_at>=?",
             (org_id, cutoff),

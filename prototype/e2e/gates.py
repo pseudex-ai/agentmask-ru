@@ -196,6 +196,17 @@ def run_gate(name: str, fn, *args) -> None:
 
 # --- setup ---------------------------------------------------------------
 
+# The gates start SEVERAL containers in sequence — the startup-refusal gates
+# use disposable ones, and `docker rm -f` kills them without the graceful
+# shutdown that would release their instance slot. On the default one-instance
+# plan the healthy sidecar is then refused with `instance_limit`, and the whole
+# suite stops at SETUP with a failure that says nothing about the product.
+#
+# The limit itself is exercised by its own check in `licensing/store.py`; here
+# it is only in the way, so the stand's key gets headroom.
+_GATE_PLAN = "industrial"
+
+
 def build_stand(image: str, workers: int, skip_build: bool) -> str:
     """Sign, certify, build, start. Returns the issued customer key."""
     print("== stand ==")
@@ -247,7 +258,8 @@ def build_stand(image: str, workers: int, skip_build: bool) -> str:
                       120, 2, "licensing admin"):
         raise SystemExit("licensing server did not come up")
 
-    key = httpx.post(f"{ADMIN}/admin/issue", json={"org_id": ORG}, timeout=15).json()["key"]
+    key = httpx.post(f"{ADMIN}/admin/issue",
+                     json={"org_id": ORG, "plan": _GATE_PLAN}, timeout=15).json()["key"]
     print(f"  key issued for {ORG}: {key[:18]}...")
     set_env("PSEUDEX_KEY", key)
     return key
@@ -834,7 +846,8 @@ def gate_l13(image: str) -> bool:
     compose(["up", "-d", "license"], True, 600)
     wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
                120, 2, "licensing admin")
-    key = httpx.post(f"{ADMIN}/admin/issue", json={"org_id": ORG}, timeout=15).json()["key"]
+    key = httpx.post(f"{ADMIN}/admin/issue",
+                     json={"org_id": ORG, "plan": _GATE_PLAN}, timeout=15).json()["key"]
     code, output = run_disposable_sidecar(image, {
         "PSEUDEX_LICENSE_URL": "https://license:8443",
         "PSEUDEX_LICENSE_CA": "/certs/ca.pem",
@@ -853,7 +866,8 @@ def gate_l12() -> bool:
     compose(["up", "-d", "license"], True, 600)
     wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
                120, 2, "licensing admin")
-    key = httpx.post(f"{ADMIN}/admin/issue", json={"org_id": ORG}, timeout=15).json()["key"]
+    key = httpx.post(f"{ADMIN}/admin/issue",
+                     json={"org_id": ORG, "plan": _GATE_PLAN}, timeout=15).json()["key"]
     set_env("PSEUDEX_KEY", key)
     if not start_sidecar():
         return gate("L12 counters match and carry no PII", False, "sidecar did not start")
