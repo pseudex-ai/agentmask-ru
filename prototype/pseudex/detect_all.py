@@ -98,7 +98,15 @@ class Detector:
             # Suppress denied phones BEFORE resolving, else a phone that wins the
             # overlap (priority) and is then suppressed leaves the real entity
             # (e.g. a passport it overlapped) undetected.
+            #
+            # Suppression reads the ORIGINAL text, not the normalised one, and
+            # that is load-bearing. Layer 0 folds digit look-alikes inside
+            # digit-dense runs, and a cue word touching a number loses its last
+            # letter to that fold: `заказ 9056174833` normalises to `зака3
+            # 9056174833`, so the deny word no longer matches itself and the
+            # order number was masked as a phone. Offsets are 1:1 by invariant,
+            # so the same spans index into either text.
             with stage("detect.resolve"):
-                resolved = _resolve(suppress(norm, spans), ASSETS.get().priority)
+                resolved = _resolve(suppress(text, spans), ASSETS.get().priority)
             return [Span(s.start, s.end, "LOC", s.value) if s.entity_type == "ADDR" else s
                     for s in resolved]

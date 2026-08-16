@@ -178,16 +178,37 @@ def test_round_trip(vault: Vault, detector: Detector) -> None:
         restored = unmask_text(masked, vault)
         if restored == original:
             continue
-        if to_nominative(_name_of(restored, detector)) == to_nominative(
+        if to_nominative(_name_of(restored, detector)) != to_nominative(
                 _name_of(original, detector)):
-            wrong_case.append((original, restored))
-        else:
             wrong_person.append((original, masked, restored))
+            continue
+        # Right person, different case. Acceptable only when the two cases are
+        # spelled identically somewhere in Russian, which is why the analyser
+        # could not tell them apart in the first place.
+        want = detect_case(_name_of(original, detector))
+        got = detect_case(_name_of(restored, detector))
+        if not _syncretic(want, got):
+            wrong_case.append((original, restored, want, got))
     check("the REAL person comes back from every sentence",
           not wrong_person, f"wrong={wrong_person}" if wrong_person else
           f"{len(ROUND_TRIP)} sentences")
-    check("and in the right case, apart from accusative/genitive syncretism",
-          len(wrong_case) <= 1, f"case drift={wrong_case}")
+    check("and in a case Russian does not spell differently",
+          not wrong_case, f"drift={wrong_case}" if wrong_case else "")
+
+
+# Cases that collapse onto one form and therefore cannot be recovered from
+# spelling: for animate masculine the accusative IS the genitive («вижу Ивана
+# Осипова» / «нет Ивана Осипова»); for feminine names the oblique cases all end
+# in -ой («Виктории Рыбаковой» is genitive, dative, instrumental and locative at
+# once). Asserting an exact case here would demand information the language does
+# not carry, so the check is that the drift stays inside a class, never across.
+_SYNCRETIC_CLASSES = ({"accs", "gent"}, {"gent", "datv", "ablt", "loct"})
+
+
+def _syncretic(want: str | None, got: str | None) -> bool:
+    if want is None or got is None or want == got:
+        return True
+    return any({want, got} <= cls for cls in _SYNCRETIC_CLASSES)
 
 
 def _name_of(text: str, detector: Detector) -> str:

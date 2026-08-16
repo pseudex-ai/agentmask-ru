@@ -80,6 +80,7 @@ class QuasiAssets:
 class ContextAssets:
     deny: tuple[str, ...]
     phone_trigger: tuple[str, ...]
+    passport_trigger: tuple[str, ...]
     regions: frozenset[str]
     addr_intent: tuple[str, ...]
     place_ref: tuple[str, ...]
@@ -199,6 +200,7 @@ def _build(payload: dict[str, object]) -> DetectionAssets:
         context=ContextAssets(
             deny=tuple(payload["context"]["deny"]),
             phone_trigger=tuple(payload["context"]["phone_trigger"]),
+            passport_trigger=tuple(payload["context"].get("passport_trigger", ())),
             regions=frozenset(payload["context"]["regions"]),
             addr_intent=tuple(payload["context"]["addr_intent"]),
             place_ref=tuple(payload["context"]["place_ref"]),

@@ -25,7 +25,14 @@ _PHONE_RE = re.compile(
 # Bare mobile without country code (10 digits starting with 9). Privacy-biased:
 # masking a rare 9-prefixed order number is safer than leaking a real phone.
 _BARE_PHONE_RE = re.compile(r"\b9\d{9}\b")
-_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+# Cyrillic on BOTH sides of the @, because RFC 6531 addresses are legal and the
+# .рф zone exists — `иван.петров@почта.рф` is an ordinary Russian address, and
+# an ASCII-only pattern walked straight past it. The local part also accepts
+# Cyrillic after a `+`, which is how plus-addressing is actually written here
+# (`i.petrov+заказ@…`).
+_EMAIL_RE = re.compile(
+    r"[A-Za-zА-Яа-яЁё0-9._%+\-]+@[A-Za-zА-Яа-яЁё0-9.\-]+\.[A-Za-zА-Яа-яЁё]{2,}"
+)
 
 
 def detect_pii(text: str) -> list[Span]:

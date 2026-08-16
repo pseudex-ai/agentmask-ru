@@ -202,9 +202,21 @@ MEDICAL_PATTERN = (
 # non-PII code (order/track/amount) or a DIFFERENT PII type handled by its own
 # detector. Dropping the PHONE label is safe: it is either not PII, or the right
 # detector already tagged it.
+#
+# The same list now also gates PASSPORT, which is the one identifier with NO
+# checksum: `1234 567890` is a perfectly ordinary build number, part number or
+# batch, and without a gate every one of them was masked. The second row exists
+# for exactly that — a version string is the shape most likely to collide.
 DENY: tuple[str, ...] = (
     "трек", "заказ", "артикул", "сумма", "руб", "чек", "талон", "sku", "№", "арт",
     "паспорт", "инн", "снилс", "счёт", "счет", "imei", "имей", "полис", "омс",
+    "версия", "сборка", "ревизия", "билд", "партия", "накладная", "рейс",
+    "гост", "ту", "серийный", "модель", "прошивка",
+)
+# Words that, near a passport-shaped number, mean it really is a passport. The
+# type has no checksum, so context is the only evidence there is.
+PASSPORT_TRIGGER: tuple[str, ...] = (
+    "паспорт", "документ", "удостовер", "серия", "выдан", "предъявител",
 )
 PHONE_TRIGGER: tuple[str, ...] = (
     "тел", "моб", "звон", "ватсап", "whatsapp", "вайбер", "перезвон", "контакт",

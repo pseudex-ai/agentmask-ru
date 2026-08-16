@@ -69,6 +69,7 @@ def build_payload() -> dict[str, object]:
         "context": {
             "deny": list(assets_source.DENY),
             "phone_trigger": list(assets_source.PHONE_TRIGGER),
+            "passport_trigger": list(assets_source.PASSPORT_TRIGGER),
             "regions": list(assets_source.REGIONS),
             "addr_intent": list(assets_source.ADDR_INTENT),
             "place_ref": list(assets_source.PLACE_REF),
