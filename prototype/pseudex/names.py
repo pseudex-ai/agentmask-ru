@@ -154,6 +154,66 @@ def keep_person(value: str) -> bool:
     return _is_known_name(parts[0], names) or _is_surname_shaped(parts[0], names)
 
 
+_PERSON_TAGS = frozenset({"Surn", "Name", "Patr"})
+
+
+# Readings that mean the word is doing a job other than naming somebody.
+_NOT_A_NAME_POS = frozenset({"PREP", "CONJ", "PRCL", "NPRO", "VERB", "INFN",
+                             "ADVB", "PRED", "INTJ", "COMP"})
+
+
+def _names_a_person(word: str) -> bool:
+    """Whether this word, in context, is plausibly somebody's surname.
+
+    ANY parse may carry the person tag — for an unusual surname the person
+    reading is a low-scoring one, and «Мкртчян» scores 0.14 — but the BEST parse
+    decides whether the word is doing something else entirely. Without that
+    second half the rule swallowed «В», «из», «по» and «У» standing next to a
+    name in news prose: every one of them has some obscure proper-noun reading,
+    and 124 false masks on NEREL came from exactly that.
+
+    Three guards, each earning its place:
+      * length, because a one- or two-letter neighbour is a preposition;
+      * part of speech, because a verb next to a name is what the person DID;
+      * animacy, because «романа» and «слава» are things, and their person
+        readings (Роман, Слава) are real but not what the sentence means.
+    """
+    if len(word) < 3:
+        return False
+    parses = MORPH.parse(word)
+    if not parses:
+        return False
+    best = max(parses, key=lambda parse: parse.score)
+    if best.tag.POS in _NOT_A_NAME_POS:
+        return False
+    if best.tag.POS == "NOUN" and "inan" in best.tag.grammemes:
+        return False
+    return any(_PERSON_TAGS & parse.tag.grammemes for parse in parses)
+
+
+def _adjacent_surnames(text: str, found: list[Span]) -> list[Span]:
+    """Extend a known given name to the person-word beside it."""
+    extra: list[Span] = []
+    taken = {(span.start, span.end) for span in found}
+    for span in found:
+        for match in _WORD_RE.finditer(text[span.end:span.end + 24]):
+            if match.start() > 1:      # not the immediately adjacent word
+                break
+            start, end = span.end + match.start(), span.end + match.end()
+            if (start, end) not in taken and _names_a_person(match.group()):
+                extra.append(Span(start, end, "NAME", match.group()))
+            break
+        for match in reversed(list(_WORD_RE.finditer(text[max(0, span.start - 24):span.start]))):
+            offset = max(0, span.start - 24)
+            if span.start - (offset + match.end()) > 1:
+                break
+            start, end = offset + match.start(), offset + match.end()
+            if (start, end) not in taken and _names_a_person(match.group()):
+                extra.append(Span(start, end, "NAME", match.group()))
+            break
+    return extra
+
+
 def gazetteer_names(text: str) -> list[Span]:
     """Catch names NER misses: known names (any case), Latin pairs, initials,
     and — for CAPITALISED words only — the bulk dictionary.
@@ -177,6 +237,19 @@ def gazetteer_names(text: str) -> list[Span]:
             or lemma in names.dict_first or lemma in names.dict_surnames
         ):
             spans.append(Span(match.start(), match.end(), "NAME", word))
+    # A given name found in the gazetteer usually has its surname next to it, and
+    # in chat that surname is lower case and therefore invisible to every rule
+    # above — the bulk dictionary is capital-only by design. So «на дмитрий
+    # кузнецов» produced a masked given name and a LEAKED surname, which is the
+    # worst of both: the customer sees masking happening and the identifying half
+    # still reaches the model.
+    #
+    # The neighbour is admitted only when morphology says it names a PERSON —
+    # `Surn`, `Name` or `Patr` among ANY of its parses, not just the best one,
+    # because for an unusual surname the person reading is a low-scoring parse.
+    # Checking every parse is what lets «мкртчян» (score 0.14) through while
+    # «позвонит» (VERB), «срочно» (ADVB) and «адрес» (inanimate NOUN) stay out.
+    spans.extend(_adjacent_surnames(text, spans))
     for match in _LATIN_PAIR_RE.finditer(text):
         if match.group(1).lower() in names.name_set:
             spans.append(Span(match.start(), match.end(), "NAME", match.group()))

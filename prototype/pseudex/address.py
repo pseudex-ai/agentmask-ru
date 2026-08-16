@@ -137,7 +137,8 @@ def _log_shadow_diff(text: str, natasha: list[tuple[int, int, bool]],
 
 def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int, bool]]:
     out: list[tuple[int, int, bool]] = []
-    for rx in (address.street_first, address.street_last, address.house, address.mkr):
+    for rx in (address.street_first, address.street_last, address.street_lower_first,
+               address.street_lower_last, address.house, address.mkr):
         for m in rx.finditer(text):
             out.append((m.start(), m.end(), True))   # core
     for rx in (address.apt, address.settlement, address.index):

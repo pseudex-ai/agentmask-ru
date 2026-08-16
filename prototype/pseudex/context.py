@@ -61,6 +61,66 @@ _IDENTIFIES_A_PERSON = frozenset({
 })
 
 
+def _near_match(word: str, target: str) -> bool:
+    """`word` is `target` with at most one letter inserted, deleted or changed.
+
+    Deny words are typed by customers, and a customer who mistypes «договор» as
+    «догвор» disables the guard that word exists to provide — the number beside
+    it then becomes somebody's passport or phone. Measured on AgentPII-RU's
+    sloppy register, that single typo class was most of the remaining false
+    masks.
+
+    Bounded deliberately at ONE edit and at a prefix match: two edits starts
+    matching unrelated words, and a deny list that matches too much is a recall
+    hole rather than a precision fix.
+    """
+    if abs(len(word) - len(target)) > 1:
+        return False
+    if word[:2] != target[:2]:
+        return False
+    i = j = 0
+    edits = 0
+    while i < len(word) and j < len(target):
+        if word[i] == target[j]:
+            i += 1
+            j += 1
+            continue
+        edits += 1
+        if edits > 1:
+            return False
+        if len(word) > len(target):
+            i += 1
+        elif len(word) < len(target):
+            j += 1
+        else:
+            i += 1
+            j += 1
+    return edits + (len(word) - i) + (len(target) - j) <= 1
+
+
+def _denied_nearby(word: str, deny: tuple[str, ...]) -> bool:
+    """Deny-word match tolerant of one typo, on a stem-prefix basis."""
+    return any(word.startswith(term) or _near_match(word, term) for term in deny)
+
+
+def _passport_is_evidenced(text: str, span: Span, context) -> bool:
+    """A passport number needs POSITIVE evidence, not merely the absence of a
+    denying word.
+
+    `NNNN NNNNNN` has no checksum and is the shape of an order pair, a part
+    number and a price line. The gate used to be "mask unless a deny word sits
+    directly before", which fails open twice over: a deny word we did not think
+    of, and — measured on AgentPII-RU's sloppy register — a deny word the
+    customer MISSPELT. «догвор 9455 480555р» has no recognisable «договор» in it,
+    so the number pair became somebody's passport.
+
+    Requiring a passport cue instead fails closed. The same reasoning already
+    governs INN-10, the other identifier whose checksum is too weak to stand
+    alone."""
+    window = text[max(0, span.start - 40): span.end + 20].lower()
+    return any(trigger in window for trigger in context.passport_trigger)
+
+
 def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
     """Whether a bare numeric date is a quasi-identifier or just a date.
 
@@ -87,6 +147,18 @@ def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
     window = text[max(0, span.start - 60): span.end + 60].lower()
     if any(cue in window for cue in quasi.birth_ctx):
         return True
+    # A document word DIRECTLY before the date wins over a person elsewhere in
+    # the sentence. «Запишите на сервис автомобиль А123ВС77, владелец Иванов
+    # Пётр, телефон +7…, заказ-наряд от 10.06.2025» carries both: the naryad's
+    # date is not the owner's birthday, and the owner is only nearby because the
+    # sentence is about him. Association alone masked every one of these —
+    # 172 of 1296 negatives on AgentPII-RU, all of this exact shape.
+    #
+    # The window is SHORT and looks only backwards, for the same reason the phone
+    # cue window is tight: adjacency is evidence, proximity is not.
+    lead = text[max(0, span.start - 26): span.start].lower()
+    if any(word in lead for word in ASSETS.get().context.deny):
+        return False
     # ANY personal identifier nearby makes the date theirs — not just a name.
     # The golden set showed why: «Реквизиты: СНИЛС 647-436-713 22, карта 4090…,
     # дата 21.01.1979» names nobody, yet the date is plainly that person's date
@@ -105,6 +177,8 @@ def suppress(text: str, spans: list[Span]) -> list[Span]:
         if span.entity_type == "IP" and _is_version_string(text, span.start, context):
             continue
         if span.entity_type == "DATE" and not _date_is_personal(text, span, spans):
+            continue
+        if span.entity_type == "PASSPORT" and not _passport_is_evidenced(text, span, context):
             continue
         if span.entity_type == "PHONE":
             # (a) a "phone" that is a slice of a longer digit run (e.g. the first
@@ -128,7 +202,7 @@ def suppress(text: str, spans: list[Span]) -> list[Span]:
             # Adjacency beats proximity: a denying word DIRECTLY before the
             # number is stronger evidence than a cue somewhere nearby.
             window = text[max(0, span.start - 12): span.end + 12].lower()
-            deny = any(last_word.startswith(word) for word in context.deny)
+            deny = _denied_nearby(last_word, context.deny)
             cue = any(word in window for word in context.phone_trigger)
             if deny and not cue:
                 continue
@@ -146,7 +220,7 @@ def suppress(text: str, spans: list[Span]) -> list[Span]:
             match = _LAST_WORD.search(text[:span.start].lower())
             last_word = match.group(1) if match else ""
             window = text[max(0, span.start - 30): span.end + 30].lower()
-            deny = any(last_word.startswith(word) for word in context.deny)
+            deny = _denied_nearby(last_word, context.deny)
             cue = any(word in window for word in context.passport_trigger)
             if deny and not cue:
                 continue

@@ -23,7 +23,8 @@ no matching change in the engine is impossible by construction.
 # --- names ---------------------------------------------------------------
 
 SEED_FIRST_NAMES: tuple[str, ...] = (
-    "александр", "алексей", "анатолий", "андрей", "антон", "артур", "борис",
+    "александр", "алексей", "анатолий", "андрей", "антон", "артур", "артём",
+    "артем", "борис",
     "вадим", "валентин", "валерий", "василий", "виктор", "виталий", "владимир",
     "владислав", "вячеслав", "геннадий", "георгий", "глеб", "григорий", "даниил",
     "денис", "дмитрий", "евгений", "егор", "иван", "игорь", "илья", "кирилл",
@@ -35,6 +36,21 @@ SEED_FIRST_NAMES: tuple[str, ...] = (
     "елена", "елизавета", "ирина", "карина", "кристина", "ксения", "лариса",
     "любовь", "людмила", "маргарита", "марина", "мария", "надежда", "наталья",
     "нина", "оксана", "ольга", "полина", "светлана", "софия", "татьяна", "юлия",
+    # Given names of Russian citizens that are not Slavic. Measured on
+    # AgentPII-RU: with only the Slavic list, a lower-case «тимур абдуллаев» or
+    # «ашот мкртчян» produced NOTHING — the given name is the anchor the
+    # adjacent-surname rule needs, and without it both halves leak. On NEREL the
+    # same gap shows as foreign-name recall.
+    #
+    # Short ambiguous forms («ли», «ким», «ань») are deliberately absent: as a
+    # bare word each is a conjunction, a surname or a particle far more often
+    # than a given name, and the cost of masking them is a broken sentence.
+    "тимур", "рустам", "ашот", "эльдар", "карен", "ильдар", "марат", "ринат",
+    "айдар", "амир", "самир", "арсен", "армен", "ваган", "сурен", "тигран",
+    "мурад", "заур", "аслан", "магомед", "ахмед", "юсуф", "фарид", "камиль",
+    "лейла", "алия", "мадина", "зарина", "диана", "амина", "эльвира", "гульнара",
+    "олесь", "остап", "тарас", "богдан", "майкл", "джон", "дэвид", "роберт",
+    "томас", "анджей", "марек", "нино", "гоча", "заза",
 )
 DIMINUTIVES: tuple[str, ...] = (
     "саша", "лёша", "леша", "толя", "андрюша", "тоша", "вадик", "валя", "вася",
@@ -124,7 +140,26 @@ _NUM_NAME = r"\d{1,4}[-\s]?[яейои]?\s+(?:" + "|".join(NUMBERED_TAIL) + r")"
 #
 # Keeping the flag next to the pattern makes that unrepresentable — there is no
 # separate list of exceptions for the engine to apply incorrectly.
+# Full street-type words only — no abbreviations — followed by a LOWER-CASE name
+# and a house number. Support chat has no capitals: «адрес улица строителей 10
+# кв 245» is the ordinary way a customer gives an address in a messenger, and
+# every capitalisation-dependent pattern above is blind to it. Measured on
+# AgentPII-RU, address recall was 36% overall and 100% only on the clean
+# register — the gap was entirely this.
+#
+# The house NUMBER is what makes it safe. Dropping it and matching «улица» plus
+# any lower-case word turns «улица была пустой» into an address; requiring the
+# digit costs nothing real, because an address without a house number is not one.
+# The abbreviations are deliberately excluded here for the same reason the
+# marker-less pattern is capital-sensitive: a bare «пр» or «ул» inside ordinary
+# prose has nothing else holding it down.
+_ST_FULL = (r"(?:улиц\w+|проспект\w*|переул\w+|бульвар\w*|набережн\w+|шоссе"
+            r"|площад\w+|проезд\w*|микрорайон\w*|тупик\w*|алле\w+)")
+_LOWER_NAME = r"[а-яё]{3,}(?:[\s-][а-яё]{3,}){0,2}"
+
 ADDRESS_PATTERNS: dict[str, str] = {
+    "street_lower_first": rf"(?i)\b{_ST_FULL}\s+{_LOWER_NAME}\s+\d{{1,4}}",
+    "street_lower_last": rf"(?i)\b{_LOWER_NAME}\s+{_ST_FULL}\s+\d{{1,4}}",
     "street_first": rf"(?i)\b{_ST}\s*\.?\s*{_CAP}",
     "street_last": rf"(?i){_CAP}\s+{_ST}\b",
     "house": (
@@ -218,11 +253,17 @@ DENY: tuple[str, ...] = (
     "паспорт", "инн", "снилс", "счёт", "счет", "imei", "имей", "полис", "омс",
     "версия", "сборка", "ревизия", "билд", "партия", "накладная", "рейс",
     "гост", "ту", "серийный", "модель", "прошивка",
+    # Document words that also govern a DATE: «наряд от 10.06.2025». Added when
+    # AgentPII-RU showed the association gate masking every document date that
+    # happened to share a sentence with the customer it belongs to.
+    "наряд", "договор", "акт", "копия", "справк", "заявк", "обращени", "отчёт",
+    "отчет", "квитанц", "смет", "приказ", "протокол",
 )
 # Words that, near a passport-shaped number, mean it really is a passport. The
 # type has no checksum, so context is the only evidence there is.
 PASSPORT_TRIGGER: tuple[str, ...] = (
-    "паспорт", "документ", "удостовер", "серия", "выдан", "предъявител",
+    "паспорт", "пасспорт", "документ", "удостовер", "серия", "выдан",
+    "предъявител",
 )
 PHONE_TRIGGER: tuple[str, ...] = (
     "тел", "моб", "звон", "ватсап", "whatsapp", "вайбер", "перезвон", "контакт",

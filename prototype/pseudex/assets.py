@@ -54,6 +54,9 @@ class AddressAssets:
     core_part: tuple[str, ...]
     street_first: re.Pattern[str]
     street_last: re.Pattern[str]
+    # Lower-case, marker-and-house anchored: the shape a messenger produces.
+    street_lower_first: re.Pattern[str]
+    street_lower_last: re.Pattern[str]
     house: re.Pattern[str]
     apt: re.Pattern[str]
     mkr: re.Pattern[str]

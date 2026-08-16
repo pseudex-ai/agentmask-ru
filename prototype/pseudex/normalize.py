@@ -19,6 +19,50 @@ _ZW_RE = re.compile("[​‌‍﻿]")
 # obfuscator actually substitutes is a tuned list, not a published fact.
 
 
+# Latin letters that are visually identical to a Cyrillic one. Unlike the digit
+# look-alike table this is NOT leased: that one is a tuned guess at what an
+# obfuscator substitutes, while this is the published Unicode confusables set for
+# the Cyrillic/Latin pair — an algorithm input, not our research.
+#
+# The fold exists because of a typing accident, not an attack. A keyboard that
+# switches layout mid-word produces «пpоспект», «yлица», «Прoфсоюзная»; the words
+# are indistinguishable on screen and invisible to every Cyrillic pattern. Chat
+# traffic is full of them: on AgentPII-RU's sloppy register they accounted for
+# every remaining address miss.
+_LATIN_TO_CYRILLIC = {
+    "a": "а", "c": "с", "e": "е", "o": "о", "p": "р", "x": "х", "y": "у",
+    "A": "А", "B": "В", "C": "С", "E": "Е", "H": "Н", "K": "К", "M": "М",
+    "O": "О", "P": "Р", "T": "Т", "X": "Х", "Y": "У",
+}
+
+
+def _fold_latin_in_cyrillic(chars: list[str]) -> None:
+    """Fold Latin look-alikes INSIDE a Cyrillic word. Mutates in place, 1:1.
+
+    The guard is that the run must already hold at least two real Cyrillic
+    letters. Without it every English word made of these letters — `code`,
+    `type`, `access` — would be rewritten into Cyrillic, and an email address, a
+    URL or an API key would be destroyed. Two Cyrillic letters is enough to say
+    the word is Russian and the Latin one is the accident.
+    """
+    n = len(chars)
+    index = 0
+    while index < n:
+        if not (chars[index].isalpha()):
+            index += 1
+            continue
+        end = index
+        while end < n and chars[end].isalpha():
+            end += 1
+        run = chars[index:end]
+        cyrillic = sum(1 for c in run if "\u0400" <= c <= "\u04FF")
+        if cyrillic >= 2:
+            for k in range(index, end):
+                if chars[k] in _LATIN_TO_CYRILLIC:
+                    chars[k] = _LATIN_TO_CYRILLIC[chars[k]]
+        index = end
+
+
 def normalize(text: str) -> str:
     """Return text with dashes/spaces/zero-width canonicalized and digit
     look-alikes folded to ASCII digits next to numbers. Same length as input."""
@@ -47,6 +91,7 @@ def normalize(text: str) -> str:
                 if chars[k] in lookalike:
                     chars[k] = lookalike[chars[k]]
         index = end
+    _fold_latin_in_cyrillic(chars)
     return "".join(chars)
 
 

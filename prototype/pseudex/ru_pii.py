@@ -191,7 +191,12 @@ _CARD_RE = re.compile(r"\b(?:\d[ -]?){15,18}\d\b")
 # Passport requires a separator (серия номер) — bare 10 digits collides with
 # everything (phone/INN/order), so we trade a little recall for precision.
 _PASSPORT_RE = re.compile(r"\b\d{2}\s\d{2}\s\d{6}\b|\b\d{4}\s\d{6}\b")
-_PASSPORT_CTX_RE = re.compile(r"(?i:паспорт\w*)\D{0,8}(\d{2}\s?\d{2}\s?\d{6})\b")
+# `с{1,2}` and `п{1,2}` absorb the doubled-consonant typo, which is the single
+# commonest way Russians misspell this word: «пасспорт» outnumbers every other
+# variant. Found on AgentPII-RU, where it cost 25% of passport recall in the
+# sloppy register — the number was there and the cue beside it was misspelt.
+_PASSPORT_CTX_RE = re.compile(
+    r"(?i:пас{1,2}п{1,2}орт\w*)\D{0,8}(\d{2}\s?\d{2}\s?\d{6})\b")
 _DATE_RE = re.compile(r"\b\d{2}[.\-/]\d{2}[.\-/]\d{4}\b")
 
 

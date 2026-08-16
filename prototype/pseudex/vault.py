@@ -18,6 +18,7 @@ import secrets
 import string
 
 from pseudex import credentials
+from pseudex.normalize import normalize
 import threading
 import time
 
@@ -130,7 +131,9 @@ def count_values_since(db_path: str, since: float) -> int:
 
 
 def canonicalize(entity_type: str, value: str) -> str:
-    """Normalize a value so equivalent forms collapse to one key."""
+    """Normalize a value so equivalent forms collapse to one key.
+
+"""
     if entity_type == "PHONE":
         digits = re.sub(r"\D", "", value)
         if len(digits) == 11 and digits[0] in "78":

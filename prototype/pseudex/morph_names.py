@@ -315,6 +315,20 @@ def to_nominative(surface: str) -> str:
     # evidence — and without using it, canonicalisation is unstable and one
     # person splits into several vault rows again.
     case = detect_case(surface)
+    # NO EVIDENCE OF AN OBLIQUE CASE MEANS NO CONVERSION. Agreement across the
+    # parts is the evidence, and it is already computed; when it says nominative
+    # — or says nothing — the safest form is the one the customer wrote.
+    #
+    # Converting anyway is not free. pymorphy3 reaches the nominative through the
+    # LEMMA, and for a surname outside its dictionary it invents a paradigm:
+    # «Тагиев» came back «Тагии», «Ань» came back «Ани». Both were already
+    # nominative and needed nothing. The vault then keyed the person under a name
+    # that does not exist, and that name is what the customer's tool received.
+    #
+    # Caught by the round-trip axis of AgentPII-RU. Detection scored 100% on
+    # every one of these cases — no detection metric could have seen it.
+    if case in (None, "nomn"):
+        return surface
     out: list[str] = []
     for part in surface.split():
         out.append(_part_to_nominative(part, gender, case))
@@ -334,6 +348,23 @@ def _part_to_nominative(part: str, gender: str | None,
     # foreign surname. Case is the stronger of the two here, so it is tried
     # first and gender narrows what remains.
     chosen = _best_parse(parses, gender, case)
+    # ALREADY NOMINATIVE — return untouched. Inflecting a form to the case it is
+    # already in is not a no-op in pymorphy3: it goes through the lemma, and for
+    # a surname the lemma is the MASCULINE one. «Иванова Мария Львовна» came back
+    # as «Иванов Мария», i.e. the vault's canonical key named a different person
+    # than the one the customer wrote, and the tool was called with it.
+    #
+    # Found by the round-trip axis of AgentPII-RU, which is the only place it
+    # could be found: detection was perfect on every one of these.
+    if chosen.tag.case == "nomn":
+        return part
+    # Gender is NOT put into the target here, and a stem-similarity guard was
+    # tried and removed. Both looked prudent and both did harm: forcing gender
+    # turned «Руслану» into «Руслана» whenever gender detection guessed wrong,
+    # and a prefix guard blocks «Петру» -> «Пётр», where the stem legitimately
+    # changes е/ё. The two gates that DO work are structural — no conversion
+    # without evidence of an oblique case, and no conversion of a part already
+    # nominative — and they leave nothing for a heuristic to repair.
     nominative = chosen.inflect({"nomn"})
     if nominative is None:
         return part
