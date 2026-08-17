@@ -15,6 +15,7 @@ model copies them verbatim and they never coincide with a real person's ID.
 import functools
 import re
 import secrets
+import sqlite3
 import string
 
 from pseudex import credentials
@@ -907,22 +908,63 @@ class Vault:
             # typed, which is what the tool must receive. First writer wins: the
             # same person written two ways keeps the form seen first, so what the
             # tool gets is stable across turns instead of flipping with phrasing.
-            self._conn.execute(
-                "INSERT INTO tokens "
-                "(customer, canonical, entity_type, token, digits, digits10, original, "
-                "first_seen, name_key) VALUES (?,?,?,?,?,?,?,?,?)",
-                (self._customer, canonical, entity_type, token, digits, digits10, value,
-                 time.time(),
-                 name_key(token) if entity_type == "NAME"
-                 else place_key(token) if entity_type == "LOC" else None),
-            )
-            if entity_type == "NAME":
-                for part in {p.casefold() for p in canonical.split() if len(p) > 2}:
-                    self._conn.execute(
-                        "INSERT OR IGNORE INTO name_parts (customer, part, canonical) "
-                        "VALUES (?,?,?)", (self._customer, part, canonical))
+            try:
+                self._conn.execute(
+                    "INSERT INTO tokens "
+                    "(customer, canonical, entity_type, token, digits, digits10, "
+                    "original, first_seen, name_key) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (self._customer, canonical, entity_type, token, digits, digits10,
+                     value, time.time(),
+                     name_key(token) if entity_type == "NAME"
+                     else place_key(token) if entity_type == "LOC" else None),
+                )
+            except sqlite3.IntegrityError:
+                # ANOTHER PROCESS GOT THERE FIRST, and that is not an error.
+                #
+                # SELECT-then-INSERT is a race across PROCESSES; the lock above
+                # only serialises threads inside one. Four workers behind a single
+                # SO_REUSEPORT port masking the same person at the same instant is
+                # not a rare interleaving — it is the ordinary shape of a burst,
+                # because a burst is usually about one customer. Both workers miss
+                # the SELECT, both INSERT, and the loser used to receive
+                # `UNIQUE constraint failed` and hand the caller a 500.
+                #
+                # The winner wrote exactly what this call would have written, so
+                # its row IS the answer. Found by packaging gate P5, which sends
+                # 64 requests carrying the SAME personal data through four
+                # processes — the conditions this race needs.
+                self._conn.rollback()
+                return self._existing_token(canonical)
+            # Parts are indexed ONLY for multi-word names, and in one statement.
+            # A single-word canonical has nothing a later mention could be a part
+            # OF, so a row for it is pure write volume — and write volume is not
+            # free here: four worker processes share this file, and the extra
+            # INSERTs per name were enough to bring back `database is locked` on
+            # 2 of 64 requests under the burst gate. The busy timeout already
+            # absorbs a lot (see sqlite_setup); the fix is to not generate the
+            # contention rather than to wait longer for it.
+            parts = [word.casefold() for word in canonical.split() if len(word) > 2]
+            if entity_type == "NAME" and len(parts) > 1:
+                self._conn.executemany(
+                    "INSERT OR IGNORE INTO name_parts (customer, part, canonical) "
+                    "VALUES (?,?,?)",
+                    [(self._customer, part, canonical) for part in set(parts)])
             self._conn.commit()
             return token
+
+    def _existing_token(self, canonical: str) -> str:
+        """The token whichever process won the insert race wrote."""
+        row = self._conn.execute(
+            "SELECT token FROM tokens WHERE customer=? AND canonical=?",
+            (self._customer, canonical),
+        ).fetchone()
+        if row is None:
+            # The constraint fired and yet no row followed. That is not a race,
+            # it is an inconsistent store, and a masking gateway must fail closed
+            # rather than invent a substitute nobody can resolve.
+            raise RuntimeError(
+                f"lost the insert race for {canonical!r} but no row followed")
+        return row[0]
 
     def _linked_token(self, canonical: str) -> str | None:
         """The substitute for a person we have already met, named more briefly.
