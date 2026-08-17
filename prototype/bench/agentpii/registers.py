@@ -145,20 +145,87 @@ def render_card(digits: str, register: str) -> str:
     return digits
 
 
-def _latin_slip(text: str, rng: random.Random) -> str:
-    """Swap one Cyrillic letter for its identical-looking Latin twin.
+# MEASURED, not invented. The first version of the sloppy register applied one
+# error type — a Latin letter typed inside a Cyrillic word — chosen because it is
+# vivid and because it defeats a Cyrillic-only matcher. Then RuSpellGold
+# (RussianNLP, Apache 2.0, 1711 human-corrected pairs) was counted, and that
+# error barely appears. What Russians actually produce, over 2112 corrections:
+#
+#     замена одной буквы   950   ё->е 499 of them, then а->о, и->е, о->а, е->и
+#     пропущенная буква    626   с, н, е, т, ь most often
+#     лишний символ        463   mostly a stray space or comma
+#
+# The single commonest is not a typo at all: «ё» written as «е» is ordinary
+# Russian practice, and it lands directly on names — Пётр, Фёдоров, Алёна,
+# Семён. A register built on the invented error tested something that hardly
+# happens and left the commonest one untested.
+#
+# Latin slip is kept, but as the minority it is. RuSpellGold's splits are edited
+# text, where a layout slip gets corrected before publication; in live chat it is
+# plausibly commoner. No public corpus of Russian keyboard-layout errors exists
+# to settle that — the research checked — so it stays in at a weight we can
+# defend rather than at the 100% it had.
+_PHONETIC_SUBS: tuple[tuple[str, str], ...] = (
+    ("ё", "е"), ("ё", "е"), ("ё", "е"),      # weighted: 53% of real substitutions
+    ("а", "о"), ("и", "е"), ("о", "а"), ("е", "и"), ("ъ", "ь"),
+    ("о", "у"), ("и", "ы"), ("я", "и"), ("т", "д"), ("з", "с"),
+)
+_LATIN_TWINS = {"о": "o", "а": "a", "е": "e", "с": "c", "р": "p", "у": "y",
+                "х": "x", "О": "O", "А": "A", "Е": "E", "С": "C", "Р": "P"}
 
-    Not an attack — a real typing accident on a keyboard that switched layout
-    mid-word. The result is indistinguishable on screen and breaks any matcher
-    that assumes a Cyrillic word is Cyrillic all the way through.
-    """
-    twins = {"о": "o", "а": "a", "е": "e", "с": "c", "р": "p", "у": "y",
-             "х": "x", "О": "O", "А": "A", "Е": "E", "С": "C", "Р": "P"}
-    positions = [i for i, ch in enumerate(text) if ch in twins]
+
+def _latin_slip(text: str, rng: random.Random) -> str:
+    """One realistic writing error, drawn from the measured distribution."""
+    roll = rng.random()
+    if roll < 0.45:
+        return _substitute_letter(text, rng)
+    if roll < 0.75:
+        return _drop_letter(text, rng)
+    if roll < 0.90:
+        return _stray_space(text, rng)
+    return _layout_slip(text, rng)
+
+
+def _substitute_letter(text: str, rng: random.Random) -> str:
+    for source, target in rng.sample(_PHONETIC_SUBS, len(_PHONETIC_SUBS)):
+        positions = [i for i, ch in enumerate(text) if ch.lower() == source]
+        if not positions:
+            continue
+        index = rng.choice(positions)
+        replacement = target.upper() if text[index].isupper() else target
+        return text[:index] + replacement + text[index + 1:]
+    return text
+
+
+def _drop_letter(text: str, rng: random.Random) -> str:
+    # Never the first character: a dropped initial changes the word so much that
+    # the case stops being about a typo and becomes a different word.
+    positions = [i for i, ch in enumerate(text) if ch.isalpha() and i > 0]
     if not positions:
         return text
     index = rng.choice(positions)
-    return text[:index] + twins[text[index]] + text[index + 1:]
+    return text[:index] + text[index + 1:]
+
+
+def _stray_space(text: str, rng: random.Random) -> str:
+    positions = [i for i, ch in enumerate(text) if ch == " "]
+    if positions and rng.random() < 0.5:
+        index = rng.choice(positions)          # a space that got lost
+        return text[:index] + text[index + 1:]
+    inner = [i for i in range(2, len(text) - 2) if text[i].isalpha()]
+    if not inner:
+        return text
+    index = rng.choice(inner)                  # one that should not be there
+    return text[:index] + " " + text[index:]
+
+
+def _layout_slip(text: str, rng: random.Random) -> str:
+    """A Latin letter typed inside a Cyrillic word — the layout switched."""
+    positions = [i for i, ch in enumerate(text) if ch in _LATIN_TWINS]
+    if not positions:
+        return text
+    index = rng.choice(positions)
+    return text[:index] + _LATIN_TWINS[text[index]] + text[index + 1:]
 
 
 # --- assembly -------------------------------------------------------------
