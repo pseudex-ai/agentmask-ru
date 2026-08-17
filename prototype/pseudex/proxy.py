@@ -69,6 +69,29 @@ if not ADMIN_TOKEN:
                  "intermittently. entrypoint.sh sets one for the container.")
 
 
+# The masking surface uses the SAME credential in both entry points, because the
+# local interface presents one token for it and cannot know which shape it is
+# talking to. `/spans` was put behind the operator token here while the sidecar
+# gates it on the gateway one, and the interface — which sends the gateway token
+# for `/spans` — got a 401 that reads like a broken session rather than a wrong
+# door. The sandbox was dead in proxy mode for exactly that reason.
+GATEWAY_TOKEN = os.environ.get("PSEUDEX_GATEWAY_TOKEN", "")
+if not GATEWAY_TOKEN:
+    GATEWAY_TOKEN = secrets.token_urlsafe(24)
+    _log.warning("PSEUDEX_GATEWAY_TOKEN was not set — generated a per-process one. "
+                 "With more than one worker the gateway will be rejected at random. "
+                 "entrypoint.sh sets it once for the container.")
+
+
+def _require_gateway(request: Request) -> None:
+    header = request.headers.get("authorization", "")
+    presented = header[7:] if header.lower().startswith("bearer ") else ""
+    if not presented or not hmac.compare_digest(presented, GATEWAY_TOKEN):
+        raise HTTPException(
+            status_code=401,
+            detail="gateway token required (Authorization: Bearer …)")
+
+
 def _require_operator(request: Request) -> None:
     """`hmac.compare_digest`, not `==`: the comparison is against a secret, and
     a short-circuiting compare leaks its prefix through timing."""
@@ -516,7 +539,7 @@ def _selfcheck_sync(org_id: str, text: str) -> dict[str, object]:
 # points keep their own vault and audit wiring; what IS shared is the behaviour
 # these must have — /spans stays read-only (no token minted, nothing audited)
 # and /reveal still refuses without an actor and records the miss.
-@app.post("/spans", dependencies=[Depends(_require_operator)])
+@app.post("/spans", dependencies=[Depends(_require_gateway)])
 async def spans(request: Request) -> JSONResponse:
     """PII spans for dialog highlighting. Read-only: mints nothing, writes nothing."""
     body = await request.json()
@@ -543,6 +566,36 @@ def _spans_for_texts(texts: list[object], org_id: str) -> list[list[dict[str, ob
             "preview": _preview(span.value),
         } for span in DETECTOR.detect(text)])
     return out
+
+
+@app.post("/mask", dependencies=[Depends(_require_gateway)])
+async def mask(request: Request) -> JSONResponse:
+    """Mask a list of texts. Present in proxy mode FOR THE SANDBOX.
+
+    Masking on the request path happens inside `/v1/chat/completions` and needs
+    no separate endpoint — which is why this one was absent, and why the local
+    interface's sandbox was half dead here: «прогнать полностью» called it and
+    got a 404.
+    #
+    That matters more than it sounds. The sandbox is the only way a customer's
+    security officer can satisfy themselves that masking works WITHOUT sending
+    real traffic through it, and it is the first thing they ask to see. An
+    endpoint that exists only in the other deployment shape makes the answer
+    depend on which command the customer happened to copy.
+    """
+    body = await request.json()
+    org_id = str(body.get("org_id", "")) or "default"
+    texts = body.get("texts")
+    if not isinstance(texts, list):
+        return JSONResponse({"error": "texts must be a list"}, status_code=400)
+    masked = await anyio.to_thread.run_sync(_mask_texts, texts, org_id)
+    return JSONResponse({"results": masked})
+
+
+def _mask_texts(texts: list[object], org_id: str) -> list[str]:
+    from pseudex.envelope import mask_one
+    context = _context(org_id)
+    return [mask_one(text, context) if isinstance(text, str) else "" for text in texts]
 
 
 @app.post("/reveal", dependencies=[Depends(_require_operator)])
