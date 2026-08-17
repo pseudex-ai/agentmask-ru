@@ -259,6 +259,39 @@ def generic_forms() -> tuple[tuple[str, ...], tuple[str, ...]]:
     return tuple(_GENERIC), tuple(_GENERIC_SHORT)
 
 
+def _has_city(phrase: str) -> bool:
+    """Whether the address names a settlement as well as a street.
+
+    A NAMED LIST WAS THE FIRST ATTEMPT AND IS THE WRONG SHAPE. It held the
+    obvious cities and missed «Валдай», so «Живу на Валдае, улица Мира 4» was
+    read as street-only, the substitute came back without a city, and the
+    restoration window no longer lined up with the token — an address that
+    failed to restore because of which towns happened to be on a list.
+    //
+    The structural signal is what the writing itself shows: a capitalised word
+    that is not a street-type word, standing before a comma, at the head of the
+    phrase. That is where a settlement goes in a Russian address, whatever it is
+    called. The explicit marker («г.», «город») still counts on its own.
+    """
+    if re.search(r"(?i)\b(?:г|гор|город|пос|посёлок|поселок|село|дер|станиц)\.?\s", phrase):
+        return True
+    head = phrase.split(",", 1)[0].strip()
+    if "," not in phrase or not head:
+        return False
+    words = re.findall(r"[А-ЯЁа-яё]+", head)
+    if not words or len(words) > 2:
+        return False
+    # EVERY word of the head is checked, not just the first. «Ленинском
+    # проспекте, дом 10» puts a capitalised word before a comma and is a STREET,
+    # not a settlement — the generic that follows says so. Checking only the
+    # first word read it as a city, the substitute grew a city the original never
+    # had, and the restoration window stopped lining up.
+    if any(word.lower() in _GENERIC or _GENERIC_STEMS.match(word.lower())
+           for word in words):
+        return False
+    return words[0][:1].isupper()
+
+
 def generic_full(written: str) -> str:
     """The full street-type word behind whatever the customer wrote.
 
@@ -293,7 +326,7 @@ def place_shape(phrase: str) -> dict[str, object]:
             return {
                 "generic": short,
                 "gender": sex,
-                "has_city": bool(_CITY_RE.search(phrase)),
+                "has_city": _has_city(phrase),
                 "has_house": bool(re.search(r"\d", phrase)),
                 "has_flat": bool(re.search(r"(?i)\b(?:кв|квартир|офис|оф)\.?\s*\d", phrase)),
             }
@@ -311,9 +344,7 @@ def place_shape(phrase: str) -> dict[str, object]:
     return {
         "generic": generic,
         "gender": gender,
-        "has_city": bool(re.search(r"(?i)\b(?:г\.|город|Москв|Санкт|Новосиб|Екатеринб"
-                                   r"|Казан|Краснодар|Самар|Нижн|Ростов|Уф[аы]|Пермь"
-                                   r"|Челябинск|Омск|Волгоград|Воронеж)", phrase)),
+        "has_city": _has_city(phrase),
         "has_house": bool(re.search(r"\d", phrase)),
         "has_flat": bool(re.search(r"(?i)\b(?:кв|квартир|офис|оф)\.?\s*\d", phrase)),
     }

@@ -354,7 +354,15 @@ def _fake_place(original: str) -> str:
     a fail-closed 5xx on every message with a new city, permanently.
     """
     if original and not morph_places.looks_like_street(original):
-        return secrets.choice(_FAKE_CITIES)
+        # Through `_fake_city`, so a bare city gets the gender treatment too. It
+        # used to draw at random here while the city-inside-an-address branch
+        # below matched gender — and a masculine «Санкт-Петербурге» replaced by a
+        # feminine «Чернь» leaves the restorer guessing at the case, because the
+        # feminine oblique forms collapse. That produced «Санкт-Петербурга»
+        # instead of «Санкт-Петербурге» intermittently, which is exactly how an
+        # unmatched pair of branches fails: only on the draws that pick the
+        # wrong gender.
+        return _fake_city(original)
 
     # MIRROR THE ORIGINAL'S PARTS. «Новосибирск, Красный проспект, 25» used to
     # come back «улица Лавандовая, 46»: the city vanished and a проспект became

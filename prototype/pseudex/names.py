@@ -191,6 +191,64 @@ def _names_a_person(word: str) -> bool:
     return any(_PERSON_TAGS & parse.tag.grammemes for parse in parses)
 
 
+_PATRONYMIC_TAIL = ("ович", "евич", "овна", "евна", "ична", "инична",
+                    "оглы", "кызы", "улы", "уулу")
+_PATRONYMIC_RE = re.compile(
+    r"\b[А-ЯЁа-яё]{3,}(?:" + "|".join(_PATRONYMIC_TAIL) + r")(?:[аеиоуыюя]|ем|ым|ой)?\b")
+
+
+def _patronymic_anchors(text: str) -> list[Span]:
+    """Every word shaped like a patronymic, as a NAME span.
+
+    Short stems are excluded («ович» needs three letters before it) so an
+    ordinary word ending the same way cannot anchor a person. The merge step
+    then joins the anchor to the surname and given name beside it, exactly as it
+    does for a gazetteer hit — one mechanism, two ways in.
+    """
+    spans: list[Span] = []
+    for match in _PATRONYMIC_RE.finditer(text):
+        start = _extend_left_of_patronymic(text, match.start())
+        spans.append(Span(start, match.end(), "NAME", text[start:match.end()]))
+    return spans
+
+
+def _extend_left_of_patronymic(text: str, start: int) -> int:
+    """Swallow the up-to-two words before a patronymic.
+
+    A Russian name carrying a patronymic is «Фамилия Имя Отчество» or «Имя
+    Отчество» — the patronymic is the strongest person signal the language has,
+    and it licenses its neighbours without their needing to be in a dictionary.
+    That is the whole point: this path exists for names no gazetteer knows.
+
+    The guard is on PART OF SPEECH only, not on the person tags the general
+    neighbour rule uses. «Тест» parses as an inanimate noun and is admitted,
+    which is right — it is a surname here. «Позвоните» parses as a verb and is
+    not, which is also right: it is what somebody is being asked to do.
+    """
+    boundary = start
+    for _ in range(2):
+        head = text[:boundary].rstrip()
+        if len(head) == boundary - 1 or head == text[:boundary]:
+            pass
+        gap = boundary - len(head)
+        if gap != 1 or not head:
+            break
+        word = _WORD_RE.search(head[::-1])
+        if word is None or word.start() != 0:
+            break
+        candidate = head[len(head) - word.end():]
+        if len(candidate) < 3:
+            break
+        parses = MORPH.parse(candidate)
+        if not parses:
+            break
+        best = max(parses, key=lambda parse: parse.score)
+        if best.tag.POS in _NOT_A_NAME_POS:
+            break
+        boundary = len(head) - word.end()
+    return boundary
+
+
 def _merge_adjacent(spans: list[Span], text: str) -> list[Span]:
     """Join NAME spans separated only by whitespace into one.
 
@@ -272,6 +330,21 @@ def gazetteer_names(text: str) -> list[Span]:
     # because for an unusual surname the person reading is a low-scoring parse.
     # Checking every parse is what lets «мкртчян» (score 0.14) through while
     # «позвонит» (VERB), «срочно» (ADVB) and «адрес» (inanimate NOUN) stay out.
+    # A PATRONYMIC IS AN ANCHOR IN ITS OWN RIGHT, and it needs no dictionary.
+    # «-ович», «-евич», «-овна», «-евна» mark a person in Russian whatever the
+    # stem is, so a name built from words we have never seen is still a name —
+    # which is exactly the case a gazetteer cannot reach.
+    #
+    # Found by a persona typing «Тестов Тест Тестович» to check the product
+    # works. It found nothing, and the cost of that is not privacy — a
+    # placeholder protects nobody — it is trust: a customer who sees «ничего не
+    # найдено» on their own test concludes the product is broken and leaves
+    # without writing to support. The same rule reaches real rare and foreign
+    # names carrying a patronymic, which the gazetteer also misses.
+    # Anchors are added BEFORE the neighbour pass, not alongside it: the pass
+    # extends FROM an anchor, so an anchor introduced in the same expression is
+    # invisible to it and «Тестов Тест» stays outside the span.
+    spans = spans + _patronymic_anchors(text)
     spans = _merge_adjacent(spans + _adjacent_surnames(text, spans), text)
     for match in _LATIN_PAIR_RE.finditer(text):
         if match.group(1).lower() in names.name_set:

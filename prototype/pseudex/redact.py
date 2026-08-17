@@ -155,6 +155,26 @@ _NAME_WORD = re.compile(r"[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?")
 _PLACE_RUN = re.compile(LOC_TOKEN_PATTERN)
 
 
+def _place_windows(text: str, start: int, end: int) -> list[tuple[int, int]]:
+    """Framings of one address run: as matched, plus a following «, кв. N», plus
+    the preceding «Город, ». Deduplicated, longest first so the fullest framing
+    wins the overlap resolution below."""
+    candidates = {(start, end)}
+    tail = _FLAT_TAIL.match(text, end)
+    if tail is not None:
+        candidates.add((start, tail.end()))
+    head = _CITY_HEAD.search(text[:start])
+    if head is not None and head.end() == start:
+        candidates.add((head.start(), end))
+        if tail is not None:
+            candidates.add((head.start(), tail.end()))
+    return sorted(candidates, key=lambda pair: pair[1] - pair[0], reverse=True)
+
+
+_FLAT_TAIL = re.compile(r",?\s*(?:кв|квартир\w*|офис\w*|оф)\.?\s*\d{1,4}")
+_CITY_HEAD = re.compile(r"(?-i:[А-ЯЁ])[а-яё-]+,\s*$")
+
+
 def _name_windows(text: str) -> list[tuple[int, int, str]]:
     """Every contiguous 1-3 word window of capitalised Cyrillic words.
 
@@ -206,12 +226,25 @@ def _restore_inflected(text: str, vault: Vault) -> str:
             except Exception:  # noqa: BLE001 - morphology must never break a response
                 continue
         keys[(start, end)] = candidates
+    # SEVERAL CANDIDATE WINDOWS PER MATCH, not one. A single regex has to guess
+    # where the address ends — before the flat, after it, with the city or
+    # without — and a boundary one component off produces a different lemma
+    # signature and no match at all. That guess was the last source of
+    # intermittent restoration failures: each individual case looked like its own
+    # bug and the pattern kept needing another special case.
+    #
+    # Names never had this problem because `_name_windows` enumerates instead of
+    # guessing. A miss costs one indexed point query that returns nothing, so
+    # offering the vault three or four framings of the same text is cheap and
+    # removes the guess entirely.
     for match in _PLACE_RUN.finditer(text):
-        try:
-            keys[(match.start(), match.end())] = [place_key(match.group())]
-        except Exception:  # noqa: BLE001
-            continue
-        windows.append((match.start(), match.end(), match.group()))
+        for start, end in _place_windows(text, match.start(), match.end()):
+            surface = text[start:end]
+            try:
+                keys[(start, end)] = [place_key(surface)]
+            except Exception:  # noqa: BLE001
+                continue
+            windows.append((start, end, surface))
     if not windows:
         return text
     resolved = vault.resolve_name_keys_typed({k for group in keys.values() for k in group})
