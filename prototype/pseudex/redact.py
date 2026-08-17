@@ -102,14 +102,33 @@ def unmask_text(text: str, vault: Vault) -> str:
         return _restore_inflected(restored, vault)
 
 
+# The ГОСТ plate alphabet was chosen precisely because every letter in it has a
+# Latin twin — that is why a Russian plate is readable abroad. It is also why a
+# model happily rewrites «Р984ОМ003» as «R984OM003»: to it the two are the same
+# string in two scripts. The rewritten form is no longer the token, so the vault
+# misses it and the customer's tool receives the fake.
+#
+# Seen in a persona run, once in four round trips, on a real tool call. Phones
+# have had a second line of defence since the digit-signature reindex — a plate
+# is the same failure with a different alphabet, and this is its equivalent.
+_PLATE_FOLD = str.maketrans("ABEKMHOPCTYXabekmhopctyx", "АВЕКМНОРСТУХавекмнорстух")
+
+
 def _restore_tokens(text: str, vault: Vault) -> str:
     matches = list(TOKEN_RE.finditer(text))
     if not matches:
         return text
-    values = vault.detokenize_many({match.group() for match in matches})
+    candidates = {match.group() for match in matches}
+    # Offer the Cyrillic reading of every candidate as well. A miss costs one
+    # indexed point query, and folding is only meaningful for the plate alphabet
+    # — any other token is unchanged by it, so nothing else can be affected.
+    folded = {value: value.translate(_PLATE_FOLD) for value in candidates}
+    values = vault.detokenize_many(candidates | set(folded.values()))
     return _splice(text, [
-        (match.start(), match.end(), values[match.group()])
-        for match in matches if match.group() in values
+        (match.start(), match.end(),
+         values.get(match.group()) or values[folded[match.group()]])
+        for match in matches
+        if match.group() in values or folded[match.group()] in values
     ])
 
 

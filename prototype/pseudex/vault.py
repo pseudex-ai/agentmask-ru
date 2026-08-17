@@ -725,7 +725,12 @@ TOKEN_RE = re.compile("|".join([
     r"\d{2} \d{2} \d{6}",                        # DRIVER_LICENSE / VEHICLE_DOC / PASSPORT
     r"198\.1[89]\.\d{1,3}\.\d{1,3}",              # IP (RFC 2544 benchmarking)
     r"[IVX]{1,4}-[А-ЯЁ]{2} №\d{6}",               # BIRTH_CERT
-    r"[АВЕКМНОРСТУХ]\d{3}[АВЕКМНОРСТУХ]{2}\d{3}", # PLATE
+    # BOTH ALPHABETS. A plate token has to be recognised in the model's reply
+    # even when the model rewrote it in Latin — the ГОСТ alphabet exists so the
+    # two readings are the same plate, and a model treats them as one string.
+    # Matching only Cyrillic meant the rewritten form was never even a candidate,
+    # so the fold that resolves it never got the chance to run.
+    r"[АВЕКМНОРСТУХABEKMHOPCTYX]\d{3}[АВЕКМНОРСТУХABEKMHOPCTYX]{2}\d{2,3}",  # PLATE
     r"\d{4} \d{4} \d{4} \d{4}",                   # CARD
     # Bare digit runs, LONGEST FIRST: leftmost-first alternation would otherwise
     # let \d{10} consume the head of a 20-digit account.

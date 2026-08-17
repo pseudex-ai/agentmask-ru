@@ -153,6 +153,16 @@ async def _lifespan(_app: "FastAPI"):
     try:
         await anyio.to_thread.run_sync(_acquire_license)
     except LicenseError as error:
+        # Printed, not merely logged — this is the last thing the operator sees
+        # before the container exits, and a structured log line scrolls past
+        # inside a traceback. PROXY mode is what `docker run` hands out by
+        # default, so this path is the one a customer actually meets; it was
+        # added to the sidecar only, and a persona following the documented
+        # command got the bare `[Errno -2] Name or service not known` with no
+        # host named, no variable named, and nothing to try.
+        print(f"\n{'=' * 72}\n  PSEUDEX НЕ ЗАПУСТИЛСЯ — {error.code}\n{'=' * 72}\n"
+              f"  {error.detail}\n\n  {explain(error.code)}\n{'=' * 72}\n",
+              file=sys.stderr, flush=True)
         _log.error("refusing to start — %s: %s", error.code, error.detail)
         await _UPSTREAM.aclose()
         _UPSTREAM = None
