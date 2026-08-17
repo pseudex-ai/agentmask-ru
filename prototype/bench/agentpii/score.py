@@ -63,6 +63,27 @@ def _same_value(produced: str, expected: str) -> bool:
     return produced.strip().casefold() == expected.strip().casefold()
 
 
+def _names_one_person(tokens: set[str]) -> bool:
+    """Whether every substitute for this identity names the SAME fake person.
+
+    Not byte equality — that would be the wrong test. A message that says
+    «Иванов Пётр Сергеевич» once and «Петру» later is one person mentioned two
+    ways, and the substitute has to follow BOTH rules: same identity, and a
+    one-word mention still gets one word. So «Юдин Никита Петрович» and «Никита»
+    are consistent, and it is the shorter form being a PART of the longer that
+    says so.
+
+    Two substitutes sharing no word at all are a genuine split, and that is what
+    this counts.
+    """
+    if len(tokens) <= 1:
+        return True
+    ordered = sorted(tokens, key=lambda token: -len(token.split()))
+    longest = {word.casefold() for word in ordered[0].split()}
+    return all({word.casefold() for word in token.split()} <= longest
+               for token in ordered[1:])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("corpus")
@@ -113,10 +134,10 @@ def main() -> int:
             by_identity[item["identity"]].add(token)
         for identity, tokens in by_identity.items():
             consistency_total += 1
-            if len(tokens) == 1:
+            if _names_one_person(tokens):
                 consistency_ok += 1
-            elif len(split := sorted(tokens)) and len(split) > 1:
-                inconsistent.append((case["id"], identity, split))
+            else:
+                inconsistent.append((case["id"], identity, sorted(tokens)))
         # Different identities of the SAME TYPE must not collide.
         minted = [(identity, next(iter(tokens))) for identity, tokens in by_identity.items()]
         for i in range(len(minted)):

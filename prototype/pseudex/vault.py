@@ -529,6 +529,31 @@ def _fake_secret(original: str) -> str:
     return prefix + "".join(out)
 
 
+def _corresponding_part(mention: str, full_canonical: str, full_token: str) -> str | None:
+    """The word of `full_token` standing in the same slot as `mention`.
+
+    Position alone is not enough — «Иванов Пётр» and «Пётр Иванов» are the same
+    person written in two orders — so the slot is found by KIND (surname, given
+    name, patronymic) and looked up by kind on the substitute side.
+    """
+    real_shape = morph_names.name_shape(full_canonical)
+    fake_shape = morph_names.name_shape(full_token)
+    real_parts = full_canonical.split()
+    fake_parts = full_token.split()
+    if len(real_shape) != len(real_parts) or len(fake_shape) != len(fake_parts):
+        return None
+    lowered = mention.casefold()
+    for index, part in enumerate(real_parts):
+        if part.casefold() != lowered:
+            continue
+        kind = real_shape[index]
+        for fake_index, fake_kind in enumerate(fake_shape):
+            if fake_kind == kind:
+                return fake_parts[fake_index]
+        return None
+    return None
+
+
 def _render_token(entity_type: str, gender: str | None = None,
                   original: str = "") -> str:
     # Format-preserving substitutes for the document types. Without these they
@@ -618,6 +643,12 @@ def _stem(word: str) -> str:
     return re.escape(stem)
 
 
+def _city_stem(word: str) -> str:
+    """The invariant head of a city name. One trailing vowel goes, no more."""
+    stem = word[:-1] if len(word) > 4 and word[-1] in "аеёиоуыэюяьй" else word
+    return re.escape(stem)
+
+
 def _loc_token_pattern() -> str:
     """Every address shape the generator can produce, in one alternative."""
     full, short = morph_places.generic_forms()
@@ -636,7 +667,13 @@ def _loc_token_pattern() -> str:
     head = (rf"(?:(?i:{generics})\s{name}"         # улица Тополиная
             rf"|{name}\s(?i:{generics})"           # Тополиный проспект
             rf"|(?i:{abbrs})\.?\s{name})")         # ул. Тополиная
-    city = "|".join(re.escape(value) for value in _FAKE_CITIES)
+    # Cities inflect too — «Сортавала» is written «Сортавалу» after «в». The
+    # nominative literal matched neither, so the city-prefixed alternative never
+    # fired, the head-only one did, and its key (no city) missed the stored key
+    # (with city). Same stem treatment as the generics; the mandatory «, » that
+    # follows a city in a minted token is what keeps a short stem from running
+    # into an unrelated word.
+    city = "|".join(_city_stem(value) + r"\w{0,2}" for value in _FAKE_CITIES)
     # The house number is written without a comma now, but tokens minted
     # BEFORE that change are in customers' vaults and still have to be
     # recognised in a reply — so both separators are accepted.
@@ -707,6 +744,16 @@ class Vault:
             "CREATE TABLE IF NOT EXISTS tokens ("
             "customer TEXT, canonical TEXT, entity_type TEXT, token TEXT, "
             "PRIMARY KEY (customer, canonical))"
+        )
+        # Which words each NAME row is made of, so a later partial mention can
+        # find its person by an indexed point query instead of a table scan.
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS name_parts ("
+            "customer TEXT, part TEXT, canonical TEXT, "
+            "PRIMARY KEY (customer, part, canonical))"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_name_parts ON name_parts (customer, part)"
         )
         self._migrate_digit_signatures()
         self._migrate_name_keys()
@@ -852,7 +899,9 @@ class Vault:
             # agrees with the sentence around it and the model leaves it alone.
             gender = (morph_names.detect_gender(value)
                       if entity_type == "NAME" else None)
-            token = self._unique_token(entity_type, gender, value)
+            token = (self._linked_token(canonical) if entity_type == "NAME" else None)
+            if token is None:
+                token = self._unique_token(entity_type, gender, value)
             digits, digits10 = _digit_signatures(token, entity_type)
             # `value` (not `canonical`) — the surface form the user actually
             # typed, which is what the tool must receive. First writer wins: the
@@ -867,8 +916,54 @@ class Vault:
                  name_key(token) if entity_type == "NAME"
                  else place_key(token) if entity_type == "LOC" else None),
             )
+            if entity_type == "NAME":
+                for part in {p.casefold() for p in canonical.split() if len(p) > 2}:
+                    self._conn.execute(
+                        "INSERT OR IGNORE INTO name_parts (customer, part, canonical) "
+                        "VALUES (?,?,?)", (self._customer, part, canonical))
             self._conn.commit()
             return token
+
+    def _linked_token(self, canonical: str) -> str | None:
+        """The substitute for a person we have already met, named more briefly.
+
+        «Иванов Пётр Сергеевич» in one turn and «Петру» in the next are the same
+        person, and the product's own claim is that the model sees one person.
+        They used to key differently — a full name canonicalises to itself, a
+        bare given name to itself — so the model met two.
+
+        The answer is not a second random name and not the full one: it is the
+        CORRESPONDING PART of the substitute that person already has. If Иванов
+        Пётр Сергеевич became Сазонов Олег Андреевич, then Пётр becomes Олег.
+        That satisfies both rules at once — same identity, and a one-word mention
+        still gets one word.
+
+        LINKED ONLY WHEN UNAMBIGUOUS. Two people named Пётр on file means neither
+        is linked: merging two customers into one sends the wrong person's data
+        to a tool, which is worse than the model seeing two. The asymmetry is
+        deliberate — consistency is quality, identity is correctness.
+        """
+        parts = canonical.split()
+        if len(parts) != 1 or len(parts[0]) <= 2:
+            return None
+        rows = self._conn.execute(
+            "SELECT t.canonical, t.token FROM name_parts p "
+            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
+            "WHERE p.customer=? AND p.part=? AND t.entity_type='NAME' LIMIT 2",
+            (self._customer, parts[0].casefold()),
+        ).fetchall()
+        if len(rows) != 1:
+            return None
+        full_canonical, full_token = rows[0]
+        derived = _corresponding_part(parts[0], full_canonical, full_token)
+        if derived is None or derived == full_token:
+            return None
+        # The derived word must not already stand for somebody else.
+        clash = self._conn.execute(
+            "SELECT 1 FROM tokens WHERE customer=? AND token=? LIMIT 1",
+            (self._customer, derived),
+        ).fetchone()
+        return None if clash else derived
 
     def peek_token(self, value: str, entity_type: str) -> str | None:
         """Return the existing token for a value WITHOUT creating one (read-only).
