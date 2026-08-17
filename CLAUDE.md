@@ -286,6 +286,53 @@ seed as a CLI arg so you validate on fresh seeds. Ground truth labels only real 
 `negatives` (track/order/article numbers, a city used as a place reference) must stay unmasked, so
 the evals measure over-masking as honestly as recall.
 
+**Our own sets cannot tell you the truth about precision.** They reported 100% while «Счёт 1234 от
+15.05.2025» — one of the commonest sentences in Russian business writing — was being masked. They
+were not wrong; they contained no ordinary business text, so the failure was invisible to every
+metric we had. Three external measurements exist for that reason and none replaces the others:
+
+```bash
+python3 test_overmasking.py                                    # clean business text, must be 100%
+python3 bench/eval_external_ner.py <NEREL dir> --splits dev,test   # recall on a corpus we did not write
+python3 bench/eval_external_precision.py <NEREL dir>               # what we mask that no annotator labelled
+python3 bench/agentpii/build.py && python3 bench/agentpii/score.py bench/agentpii/corpus.json
+```
+
+`bench/agentpii/` is **AgentPII-RU**, built here because the intersection it covers — Russian
+conversational PII flowing through tool schemas that consume it — has no benchmark anywhere. Read
+its README before changing it. Three things about it are load-bearing:
+
+- **Registers are the point.** `clean` / `chat` / `sloppy` / `voice`. The first run scored 89% and
+  every defect it found lived outside the clean register: lower-case addresses (36% recall), a Latin
+  letter inside a Cyrillic word, a typo in the cue word, and canonicalisation corrupting surnames.
+- **The round-trip axis finds what detection cannot.** «Иванова Мария Львовна» keyed as «Иванов
+  Мария» while detection scored 100% on it. Never judge a masking change by recall alone.
+- **Ground truth is the canonical form of WHAT WAS WRITTEN.** A chat message with no patronymic must
+  not demand one back; that scores the gateway on information the message never carried.
+
+## Rules that changes must not break, part two — detection precision
+
+These were all learned by measuring, and each one cost recall or precision in the opposite
+direction when done the obvious way:
+
+- **A bare date is not personal data.** It becomes personal by ASSOCIATION — next to a personal
+  identifier, or next to a birth cue — and a document word directly before it («наряд от», «счёт
+  от») wins over a person elsewhere in the sentence. A deny-list of document words was the
+  alternative and fails open; this fails closed.
+- **Canonicalisation needs EVIDENCE of an oblique case.** pymorphy3 reaches the nominative through
+  the lemma, which is masculine for surnames and invented for unknown ones. No conversion without
+  evidence, and no conversion of a part already nominative. A gender target and a stem guard were
+  both tried and removed — they broke «Руслану» and «Петру».
+- **Credentials are anchored to published prefixes, never to entropy.** A git SHA, a UUID, a content
+  hash and a base64 image are all high-entropy and none is a secret. `pk_live_` is publishable by
+  Stripe's own design and must not be masked; placeholders (`${VAR}`, `xxxx`, AWS's own EXAMPLE key)
+  must not either.
+- **A cue word may be misspelt.** «пасспорт» and «догвор» disabled the guards that word provides.
+  Deny matching tolerates one edit, bounded at one and at a two-letter prefix.
+- **Extending a name to its neighbour needs two signals**, not one: morphology must say the
+  neighbour can name a person AND its best reading must not be a function word. Any-parse alone ate
+  «В», «из» and «по» in news prose.
+
 ## Conventions
 
 - Comments are in English; product docs (`docs/`) are in Russian. Both are unusually dense —
