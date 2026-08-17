@@ -23,7 +23,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from pseudex.assets import ASSETS, BundleNotLeased
-from pseudex.audit import AuditLog
+from pseudex.audit import AuditLog, _preview
 from pseudex.detect_all import Detector
 from pseudex.envelope import MaskContext, mask_messages, mask_tools, unmask_response
 from pseudex.license import ENGINE_VERSION, LicenseClient, LicenseError, explain
@@ -173,7 +173,8 @@ def _acquire_license() -> None:
     LICENSE.start()
 
 
-app = FastAPI(title="Pseudex proxy", lifespan=_lifespan)
+app = FastAPI(
+    docs_url=None, redoc_url=None, openapi_url=None,title="Pseudex proxy", lifespan=_lifespan)
 
 # Bounded semaphore created on the running loop (anyio limiter is loop-bound).
 _MASK_LIMITER = anyio.CapacityLimiter(_MASK_CONCURRENCY)
@@ -491,6 +492,76 @@ def _selfcheck_sync(org_id: str, text: str) -> dict[str, object]:
 # onboarding (which recommends `PSEUDEX_ROLE=proxy`) opened the local interface
 # and every screen answered 404. Two persona clients hit that and both counted
 # it against a feature they are billed for in every tariff.
+# THE OPERATOR SURFACE NEEDS THESE, AND PROXY MODE DID NOT HAVE THEM.
+#
+# `docker run` hands out proxy mode by default, the landing points the customer's
+# security officer at the local interface, and its two most-asked-for screens —
+# the sandbox and revealing a value behind a token — called engine endpoints that
+# only the sidecar had. A persona following the documented path clicked РАСКРЫТЬ
+# and got «Не вышло: 404», then found /spans and /reveal missing by curl. Their
+# words: "это ровно то, что попросит показать мой безопасник в первую очередь,
+# и сейчас показать нечего".
+#
+# Implemented here rather than shared with `service.py` because the two entry
+# points keep their own vault and audit wiring; what IS shared is the behaviour
+# these must have — /spans stays read-only (no token minted, nothing audited)
+# and /reveal still refuses without an actor and records the miss.
+@app.post("/spans", dependencies=[Depends(_require_operator)])
+async def spans(request: Request) -> JSONResponse:
+    """PII spans for dialog highlighting. Read-only: mints nothing, writes nothing."""
+    body = await request.json()
+    org_id = str(body.get("org_id", "")) or "default"
+    texts = body.get("texts")
+    if not isinstance(texts, list):
+        return JSONResponse({"error": "texts must be a list"}, status_code=400)
+    results = await anyio.to_thread.run_sync(_spans_for_texts, texts, org_id)
+    return JSONResponse({"results": results})
+
+
+def _spans_for_texts(texts: list[object], org_id: str) -> list[list[dict[str, object]]]:
+    vault = _get_vault(org_id)
+    out: list[list[dict[str, object]]] = []
+    for text in texts:
+        if not isinstance(text, str):
+            out.append([])
+            continue
+        out.append([{
+            "start": span.start,
+            "end": span.end,
+            "type": span.entity_type,
+            "token": vault.peek_token(span.value, span.entity_type),
+            "preview": _preview(span.value),
+        } for span in DETECTOR.detect(text)])
+    return out
+
+
+@app.post("/reveal", dependencies=[Depends(_require_operator)])
+async def reveal(request: Request) -> JSONResponse:
+    """The real value behind a token. `actor` is REQUIRED and the access record
+    is written BEFORE the value is returned — misses too, because a sweep of
+    guessed tokens leaves no other trace. The record never holds the value."""
+    body = await request.json()
+    org_id = str(body.get("org_id", "")) or "default"
+    token = body.get("token")
+    actor = body.get("actor")
+    if not isinstance(token, str) or not token:
+        return JSONResponse({"error": "token must be a non-empty string"}, status_code=400)
+    if not isinstance(actor, str) or not actor.strip():
+        return JSONResponse(
+            {"error": "actor is required",
+             "detail": "every reveal is recorded against whoever asked for it"},
+            status_code=400,
+        )
+    value = await anyio.to_thread.run_sync(_reveal_for, org_id, token, actor.strip())
+    return JSONResponse({"value": value})
+
+
+def _reveal_for(org_id: str, token: str, actor: str) -> str | None:
+    value, entity_type = _get_vault(org_id).reveal(token)
+    AUDIT.record_reveal(org_id, actor, token, entity_type, value is not None)
+    return value
+
+
 app.include_router(
     build_router(AUDIT, LICENSE, ASSETS, ENGINE_VERSION, _selfcheck),
     dependencies=[Depends(_require_operator)],

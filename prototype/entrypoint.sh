@@ -65,7 +65,13 @@ fi
 
 echo "pseudex: starting ${WORKERS} worker(s), instance ${PSEUDEX_INSTANCE_ID}"
 echo ""
-echo "    ключ шлюза (Authorization: Bearer …) для /mask, /unmask, /spans:"
+if [ "${PSEUDEX_ROLE:-sidecar}" = "proxy" ]; then
+    echo "    ключ шлюза (Authorization: Bearer …) для /spans и /reveal:"
+    echo "    (в режиме proxy маскирование идёт внутри /v1/chat/completions —"
+    echo "     отдельных /mask и /unmask здесь нет)"
+else
+    echo "    ключ шлюза (Authorization: Bearer …) для /mask, /unmask, /spans:"
+fi
 echo "    ${PSEUDEX_GATEWAY_TOKEN}"
 echo ""
 

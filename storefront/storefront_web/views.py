@@ -13,6 +13,7 @@ import re
 
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth import login as auth_login
 from django.contrib.auth.decorators import login_required
 from django.core import signing
 from django.core.cache import cache
@@ -26,6 +27,7 @@ from django.views.decorators.http import require_POST
 
 from accounts.models import Membership, Organization
 from billing import onboarding, licensing, payments, services
+from accounts.models import User
 from billing.models import Invoice, LicenseKey, Plan
 
 _log = logging.getLogger("storefront")
@@ -280,9 +282,13 @@ def activate(request):
     # Following the link twice must not mint a second key: the first one was
     # shown once and the customer may already be running it.
     if organization.keys.filter(revoked_at__isnull=True).exists():
-        messages.info(request, "Ключ уже выпущен. Войдите по ссылке на почту — "
-                               "в кабинете видно его префикс и расход.")
-        return redirect("account_login")
+        # Sending them back for ANOTHER letter was absurd: they arrived by
+        # clicking a link in the mailbox we were asking them to check again.
+        _sign_in(request, payload["email"])
+        messages.info(request, "Ключ уже был выпущен и показан один раз. "
+                               "Здесь виден его префикс и расход; если ключ "
+                               "потерян — выпустите новый.")
+        return redirect("cabinet")
     try:
         key = services.issue_first_key(organization)
     except licensing.LicensingError as error:
@@ -290,7 +296,25 @@ def activate(request):
         messages.error(request, "Не удалось выпустить ключ — это на нашей стороне. "
                                 "Напишите нам, и мы выпустим его вручную.")
         return redirect("landing")
+    # The link already proved the mailbox — the same proof a passwordless
+    # sign-in link carries. Not spending it on a session meant a new customer
+    # needed TWO letters to reach the cabinet: one to get the key, another to
+    # log in and see it listed. Both personas stopped before the second.
+    _sign_in(request, payload["email"])
     return _handoff(redirect("welcome"), key, organization.id)
+
+
+def _sign_in(request, email: str) -> None:
+    """Authenticate the session for a mailbox we have just verified.
+
+    The backend is named explicitly because allauth's is not the only one
+    configured, and `login()` refuses to guess when there is more than one.
+    """
+    user = User.objects.filter(email=email).first()
+    if user is None:
+        return
+    auth_login(request, user,
+               backend="allauth.account.auth_backends.AuthenticationBackend")
 
 
 # Why a signed COOKIE and not the session. Django's default session backend

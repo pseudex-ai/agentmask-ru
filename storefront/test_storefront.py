@@ -154,6 +154,14 @@ def run_checks(client) -> None:
           activated.status_code == 302 and activated.url == "/welcome",
           f"status={activated.status_code}")
 
+    # The activation link proves the mailbox — the same proof a sign-in link
+    # carries — so spending it on a session too is what keeps a new customer
+    # from needing a SECOND letter just to reach the cabinet where the keys
+    # live. Two persona clients stopped before that second letter.
+    check("following the link also signs the customer in",
+          client.get("/app/").status_code == 200,
+          "one letter must be enough to reach the cabinet")
+
     welcome = client.get("/welcome")
     welcome_body = welcome.content.decode()
     organization = Organization.objects.first()
@@ -214,7 +222,11 @@ def run_checks(client) -> None:
     check("the landing shows the Claude Code prompt before registration",
           "claude-prompt" in landing_body and "PSEUDEX_ROLE=proxy" in landing_body)
 
-    anonymous = client.get("/app/")
+    # A FRESH client. The shared one followed the activation link above and is
+    # legitimately signed in from that point on — checking anonymity with it
+    # tested nothing and would have started passing for the wrong reason.
+    from django.test import Client as _FreshClient
+    anonymous = _FreshClient().get("/app/")
     check("the cabinet refuses an anonymous visitor",
           anonymous.status_code == 302 and "/accounts/login" in anonymous.url,
           f"status={anonymous.status_code}")
@@ -223,7 +235,10 @@ def run_checks(client) -> None:
     # with force_login(), which never builds allauth's form — so a login page
     # that raised FieldDoesNotExist on our username-less User model passed the
     # whole suite while being the only way back into the cabinet.
-    login_page = client.get(anonymous.url)
+    # Fresh client again: allauth redirects an ALREADY signed-in visitor away
+    # from the login page, so the shared client would test the redirect rather
+    # than the form that a returning customer actually sees.
+    login_page = _FreshClient().get(anonymous.url)
     check("the sign-in page renders",
           login_page.status_code == 200 and b"<form" in login_page.content,
           f"status={login_page.status_code}")
