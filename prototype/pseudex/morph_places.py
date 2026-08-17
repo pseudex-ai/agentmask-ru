@@ -34,6 +34,16 @@ _GENERIC: dict[str, str] = {
     "шоссе": "neut",  # indeclinable
 }
 _INDECLINABLE_GENERIC = frozenset({"шоссе"})
+# Structural words of an address notation. They stay nominative whatever case
+# the phrase around them takes — «на улице Ленина, дом 10, корпус 3» — the same
+# way a genitive street name stays genitive. Inflecting them produced «доме 10»
+# where the customer had written «дом 10», so the restored text no longer
+# matched what was masked.
+_ADDRESS_FIXED = frozenset({
+    "дом", "дома", "д", "корпус", "корп", "кор", "к", "строение", "стр",
+    "владение", "вл", "квартира", "кв", "офис", "оф", "помещение", "пом",
+    "комната", "комн", "литер", "лит", "подъезд", "под", "этаж",
+})
 
 _STREET_MARKER = re.compile(
     r"(?i)\b(?:ул|улиц\w*|пр-?т|проспект\w*|пер|переул\w*|наб|набережн\w*|"
@@ -73,11 +83,25 @@ def to_nominative(word: str) -> str:
 
 
 def _match_capitalisation(source: str, produced: str) -> str:
+    """Carry the source's capitals onto the inflected form.
+
+    Per HYPHEN-SEPARATED part, not just the first letter: «Санкт-Петербург»
+    inflected and re-capitalised on the first character alone came back
+    «Санкт-петербурге», which is a different-looking city.
+    """
     if not source or not produced:
         return produced
+    out = produced
     if source[0].isupper():
-        return produced[0].upper() + produced[1:]
-    return produced
+        out = out[0].upper() + out[1:]
+    if "-" in source and "-" in out:
+        source_parts = source.split("-")
+        out_parts = out.split("-")
+        for index in range(1, min(len(source_parts), len(out_parts))):
+            if source_parts[index][:1].isupper() and out_parts[index]:
+                out_parts[index] = out_parts[index][0].upper() + out_parts[index][1:]
+        out = "-".join(out_parts)
+    return out
 
 
 def _is_genitive(word: str) -> bool:
@@ -137,7 +161,7 @@ def inflect_place(phrase: str, case: str) -> str:
             out.append(token if lowered in _INDECLINABLE_GENERIC
                        else _inflect_word(stripped, case, None))
             continue
-        if _is_genitive(stripped):
+        if lowered in _ADDRESS_FIXED or _is_genitive(stripped):
             out.append(token)
             continue
         out.append(_inflect_word(stripped, case, gender))
@@ -147,6 +171,14 @@ def inflect_place(phrase: str, case: str) -> str:
 def _inflect_word(word: str, case: str, gender: str | None) -> str:
     parses = MORPH.parse(word)
     if not parses:
+        return word
+    # ALREADY IN THE TARGET CASE — leave it, and check that against EVERY
+    # reading, before the geographic and gender filters below. Those filters
+    # exist to pick which paradigm to inflect along, and either of them can
+    # discard the very parse that proves no inflection is needed: «Ленинском»
+    # has a masculine locative reading that a feminine filter drops, and the
+    # word was then inflected a second time into «Ленинске».
+    if any(parse.tag.case == case for parse in parses):
         return word
     # A geographic reading first, for the same reason `to_nominative` does it:
     # `Луга` is a town and also the genitive of `луг`, and the meadow does not
@@ -158,6 +190,12 @@ def _inflect_word(word: str, case: str, gender: str | None) -> str:
         agreeing = [p for p in parses if p.tag.gender == gender]
         parses = agreeing or parses
     best = max(parses, key=lambda p: p.score)
+    # ALREADY IN THE TARGET CASE — leave it. Inflecting a form to the case it
+    # already holds is not a no-op in pymorphy3: it goes through the lemma, and
+    # «Санкт-Петербурге» came back «Санкт-Петербургее». Exactly the defect the
+    # name canonicaliser had, on the address side; the same rule fixes it.
+    if best.tag.case == case:
+        return word
     grammemes = {case} if gender is None else {case, gender}
     inflected = best.inflect(grammemes) or best.inflect({case})
     if inflected is None:
@@ -181,6 +219,125 @@ def detect_case(phrase: str) -> str | None:
     if not tally:
         return None
     return max(tally, key=lambda case: tally[case])
+
+
+# Written forms of the generic word that carry no letters to match on. Mapped to
+# the gender they impose, so an adjectival name can still be made to agree.
+_GENERIC_SHORT: dict[str, tuple[str, str]] = {
+    "пр-т": ("проспект", "masc"), "пр-кт": ("проспект", "masc"),
+    "просп": ("проспект", "masc"), "б-р": ("бульвар", "masc"),
+    "ул": ("улица", "femn"), "пер": ("переулок", "masc"),
+    "наб": ("набережная", "femn"), "пл": ("площадь", "femn"),
+    "ш": ("шоссе", "neut"), "мкр": ("микрорайон", "masc"),
+}
+_CITY_RE = re.compile(r"(?i)\b(?:г\.|город|Москв|Санкт|Петербург|Новосиб|Екатеринб"
+                      r"|Казан|Краснодар|Самар|Нижн|Ростов|Уф[аы]|Пермь|Челябинск"
+                      r"|Омск|Волгоград|Воронеж|Тюмен|Сочи|Кинешм)")
+
+
+def place_gender(phrase: str) -> str | None:
+    """The gender of the head place word, preferring a geographic reading."""
+    for token in re.findall(r"[А-ЯЁа-яё]+", phrase):
+        if token.lower() in _GENERIC or _GENERIC_STEMS.match(token.lower()):
+            continue
+        parses = MORPH.parse(token)
+        geo = [p for p in parses if "Geox" in p.tag.grammemes]
+        best = max(geo or parses, key=lambda parse: parse.score)
+        if best.tag.gender:
+            return best.tag.gender
+    return None
+
+
+def generic_forms() -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """(full words, abbreviations) of the street-type vocabulary.
+
+    Exported so `vault.TOKEN_RE` can be assembled from the SAME source the
+    substitute generator draws on. Keeping two hand-written lists of the same
+    vocabulary is how they drift apart, and a TOKEN_RE that has drifted fails to
+    recognise a token the model echoed back — the fake then reaches the tool.
+    """
+    return tuple(_GENERIC), tuple(_GENERIC_SHORT)
+
+
+def generic_full(written: str) -> str:
+    """The full street-type word behind whatever the customer wrote.
+
+    Word ORDER depends on the type, not on how it was abbreviated: «Тополиный
+    проспект» and «пр-т Тополиный» both read naturally, «проспект Тополиный»
+    less so. Resolving the abbreviation is how the generator can decide order
+    without a second table of its own.
+    """
+    return _GENERIC_SHORT.get(written.lower().rstrip("."), (written.lower(), ""))[0]
+
+
+def place_shape(phrase: str) -> dict[str, object]:
+    """What the written address is MADE OF, so a substitute can be made of the
+    same things.
+
+    «Новосибирск, Красный проспект, 25» replaced by «улица Лавандовая, 46» loses
+    the city and turns a проспект into an улица. Neither broke the round trip —
+    but the model is reading a different KIND of address than the sentence was
+    built around, and a model that notices is a model that edits. Same argument
+    as gender and case for names; this is the address half of it.
+
+    Returns the generic word to reuse verbatim (with the gender it imposes), and
+    whether a city, a house number and a flat were present.
+    """
+    generic = ""
+    gender = "femn"
+    # Abbreviations first, and kept VERBATIM: a customer who wrote «пр-т» reads
+    # a substitute that says «проспект» as a different address, and expanding it
+    # is a change we make for no reason.
+    for short, (full, sex) in _GENERIC_SHORT.items():
+        if re.search(rf"(?i)\b{re.escape(short)}\.?(?=\s|$)", phrase):
+            return {
+                "generic": short,
+                "gender": sex,
+                "has_city": bool(_CITY_RE.search(phrase)),
+                "has_house": bool(re.search(r"\d", phrase)),
+                "has_flat": bool(re.search(r"(?i)\b(?:кв|квартир|офис|оф)\.?\s*\d", phrase)),
+            }
+    for token in re.findall(r"[А-Яа-яЁё]+", phrase):
+        lowered = token.lower()
+        if lowered in _GENERIC:
+            generic, gender = token, _GENERIC[lowered]
+            break
+        for full, sex in _GENERIC.items():
+            if lowered.startswith(full[:5]) and len(full) > 5:
+                generic, gender = token, sex
+                break
+        if generic:
+            break
+    return {
+        "generic": generic,
+        "gender": gender,
+        "has_city": bool(re.search(r"(?i)\b(?:г\.|город|Москв|Санкт|Новосиб|Екатеринб"
+                                   r"|Казан|Краснодар|Самар|Нижн|Ростов|Уф[аы]|Пермь"
+                                   r"|Челябинск|Омск|Волгоград|Воронеж)", phrase)),
+        "has_house": bool(re.search(r"\d", phrase)),
+        "has_flat": bool(re.search(r"(?i)\b(?:кв|квартир|офис|оф)\.?\s*\d", phrase)),
+    }
+
+
+def agree_with_generic(name: str, gender: str) -> str:
+    """Put an adjectival street name into the gender its generic word imposes.
+
+    `проспект Тополиная` is what happens without this — the substitute pool is
+    written feminine because most generics are, and reusing the original's
+    generic word means the name must follow it.
+    """
+    parses = _MORPH_PARSE(name)
+    if not parses:
+        return name
+    best = max(parses, key=lambda parse: parse.score)
+    inflected = best.inflect({"nomn", gender})
+    if inflected is None:
+        return name
+    return _match_capitalisation(name, inflected.word)
+
+
+def _MORPH_PARSE(word: str):
+    return MORPH.parse(word)
 
 
 def match_signature(phrase: str) -> str:

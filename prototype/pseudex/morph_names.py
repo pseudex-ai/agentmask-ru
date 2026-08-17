@@ -204,6 +204,51 @@ def _gender_from_patronymic(word: str) -> str | None:
     return None
 
 
+def name_shape(surface: str) -> tuple[str, ...]:
+    """Which parts the written name has, IN THE ORDER they appear.
+
+    Returns a tuple over «surn», «name», «patr» and «init» — an initial like
+    «П.» — so a substitute can be built with the same number of words in the
+    same arrangement. «Иванов Пётр Сергеевич» is (surn, name, patr); «пётр
+    иванов» is (name, surn); «Иванов П.С.» is (surn, init, init).
+
+    WHY SHAPE AND NOT JUST TYPE. A three-part name replaced by a two-part one
+    changes the sentence the model is reading: the word count differs from what
+    the surrounding text was built around, and a model that notices a mismatch
+    is a model that rewrites it — which is precisely how a token stops resolving.
+    Same argument as gender and case; this is the third axis of the same rule.
+
+    A part that cannot be classified is reported as «name», the least
+    destructive guess: an unknown word replaced by a given name still reads as a
+    person, while replacing it with a patronymic would not.
+    """
+    shape: list[str] = []
+    for part in surface.split():
+        stripped = part.strip(".,")
+        if not stripped:
+            continue
+        # Initials arrive both as separate tokens («П. С.») and glued («П.С.»),
+        # so the test is on composition, not on length.
+        if all(ch.isupper() or ch == "." for ch in part) and any(ch.isalpha() for ch in part):
+            shape.extend(["init"] * sum(1 for ch in part if ch.isalpha()))
+            continue
+        lowered = stripped.casefold()
+        # Checked on the LEMMA as well as the surface: a patronymic in an oblique
+        # case («Сергеевичу») does not end in the suffix, so the surface test
+        # alone read it as a given name and the substitute got two of those.
+        lemma = max(_MORPH.parse(stripped), key=lambda parse: parse.score).normal_form
+        if (lowered.endswith(_PATR_FEMN) or lowered.endswith(_PATR_MASC)
+                or lemma.endswith(_PATR_FEMN) or lemma.endswith(_PATR_MASC)):
+            shape.append("patr")
+            continue
+        parses = _MORPH.parse(stripped)
+        if any("Surn" in parse.tag.grammemes for parse in parses):
+            shape.append("surn")
+            continue
+        shape.append("name")
+    return tuple(shape)
+
+
 def detect_gender(surface: str) -> str | None:
     """Gender of a person named by this span, or None if genuinely unknown.
 

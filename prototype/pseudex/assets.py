@@ -46,6 +46,8 @@ class NameAssets:
     stopwords: frozenset[str]
     surname_suffixes: tuple[str, ...]
     patronymic_suffixes: tuple[str, ...]
+    patronymics_masc: tuple[str, ...]
+    patronymics_femn: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -150,6 +152,8 @@ def _build_names(raw: dict[str, object]) -> NameAssets:
         stopwords=frozenset(raw["stopwords"]),
         surname_suffixes=tuple(raw["surname_suffixes"]),
         patronymic_suffixes=tuple(raw["patronymic_suffixes"]),
+        patronymics_masc=tuple(raw["patronymics_masc"]),
+        patronymics_femn=tuple(raw["patronymics_femn"]),
     )
 
 

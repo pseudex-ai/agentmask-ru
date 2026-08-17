@@ -334,7 +334,11 @@ def test_street_stays_a_street(vault: Vault, detector: Detector) -> None:
     for original in ["Доставка на ул. Профсоюзная, д. 17",
                      "ул. Тверская, д. 7", "Ленинский проспект 42"]:
         masked = mask_text(original, vault, detector.detect(original))
-        if "улиц" not in masked.lower():
+        # Checked by KIND, not by the literal word. The substitute now mirrors
+        # the original's generic — a проспект stays a проспект and «ул.» stays
+        # «ул.» — so requiring the letters «улиц» tested the old behaviour of
+        # turning every street into an улица, which was itself the defect.
+        if not morph_places.looks_like_street(masked):
             wrong.append((original, masked))
     check("a street is replaced by a street, never by a town",
           not wrong, f"wrong={wrong}" if wrong else "")

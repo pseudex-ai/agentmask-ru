@@ -10,7 +10,7 @@ import re
 from pseudex.detect import Span
 from pseudex import morph_names, morph_places
 from pseudex.profiling import stage
-from pseudex.vault import TOKEN_RE, Vault, name_key, place_key
+from pseudex.vault import LOC_TOKEN_PATTERN, TOKEN_RE, Vault, name_key, place_key
 
 # A number-like run (digits + phone separators), >=7 digits — a candidate for
 # digit-core detokenization when the model reformatted a numeric token.
@@ -146,10 +146,13 @@ _NAME_WORD = re.compile(r"[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?")
 # adjectival name agrees with it, the house number never moves. A bare settlement
 # is covered by the name windows above, which already match single capitalised
 # words.
-_PLACE_RUN = re.compile(
-    r"(?i)\b(?:улиц\w*|проспект\w*|переулк?\w*|бульвар\w*|шоссе|проезд\w*|"
-    r"площад\w*|набережн\w*)\s+[А-ЯЁ][а-яё]+(?:,\s*\d{1,3})?"
-)
+# The SAME pattern the minting side uses, not a second hand-written copy of the
+# same vocabulary. They were two copies and they drifted: the generator learned
+# to mint «ул. Осиновая» and «Тополиный проспект» to mirror the customer's own
+# wording, while this one still knew only the full words in one order — so the
+# restoration window never covered the token, the lookup never ran, and a fake
+# address went to the tool. Deriving it removes the possibility.
+_PLACE_RUN = re.compile(LOC_TOKEN_PATTERN)
 
 
 def _name_windows(text: str) -> list[tuple[int, int, str]]:
@@ -211,24 +214,25 @@ def _restore_inflected(text: str, vault: Vault) -> str:
         windows.append((match.start(), match.end(), match.group()))
     if not windows:
         return text
-    resolved = vault.resolve_name_keys({k for group in keys.values() for k in group})
+    resolved = vault.resolve_name_keys_typed({k for group in keys.values() for k in group})
     if not resolved:
         return text
     spans: list[tuple[int, int, str]] = []
     taken: list[tuple[int, int]] = []
     for start, end, surface in sorted(windows, key=lambda w: w[1] - w[0], reverse=True):
-        value = next((resolved[k] for k in keys.get((start, end), [])
+        found = next((resolved[k] for k in keys.get((start, end), [])
                       if k in resolved), None)
-        if value is None:
+        if found is None:
             continue
+        entity_type, value = found
         if any(a < end and start < b for a, b in taken):
             continue
         taken.append((start, end))
-        spans.append((start, end, _in_case_of(value, surface)))
+        spans.append((start, end, _in_case_of(value, surface, entity_type)))
     return _splice(text, spans)
 
 
-def _in_case_of(value: str, surface: str) -> str:
+def _in_case_of(value: str, surface: str, entity_type: str = "NAME") -> str:
     """Put the real name into the case the token was standing in.
 
     Both readings of "restore" are legitimate and they disagree, so neither can
@@ -245,6 +249,14 @@ def _in_case_of(value: str, surface: str) -> str:
     comes back; inside prose it writes the case the sentence needs, and the same
     case comes back.
     """
+    # DISPATCH ON THE RECORDED TYPE. A place put through the person inflector is
+    # read as a run of name parts, and «Санкт-Петербурге» — already in the case
+    # asked for — came back «Санкт-Петербургее».
+    if entity_type in ("LOC", "ADDR"):
+        case = morph_places.detect_case(surface)
+        if case is None or case == "nomn":
+            return value
+        return morph_places.inflect_place(value, case)
     case = morph_names.detect_case(surface)
     if case is None or case == "nomn":
         return value

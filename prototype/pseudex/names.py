@@ -191,6 +191,29 @@ def _names_a_person(word: str) -> bool:
     return any(_PERSON_TAGS & parse.tag.grammemes for parse in parses)
 
 
+def _merge_adjacent(spans: list[Span], text: str) -> list[Span]:
+    """Join NAME spans separated only by whitespace into one.
+
+    The parts of a person's name have to arrive as ONE span or the re-masking
+    guard cannot recognise a token it minted: it compares a detected span with
+    the token, and «Чижов», «Савва», «Романович» as three spans match none of
+    them. The token is then masked a second time and the person changes identity
+    mid-conversation — the exact failure `mask(mask(x)) != mask(x)` describes.
+    """
+    ordered = sorted(spans, key=lambda span: (span.start, span.end))
+    out: list[Span] = []
+    for span in ordered:
+        if (out and span.entity_type == "NAME" and out[-1].entity_type == "NAME"
+                and 0 <= span.start - out[-1].end <= 1
+                and not text[out[-1].end:span.start].strip()):
+            merged = Span(out[-1].start, span.end, "NAME",
+                          text[out[-1].start:span.end])
+            out[-1] = merged
+            continue
+        out.append(span)
+    return out
+
+
 def _adjacent_surnames(text: str, found: list[Span]) -> list[Span]:
     """Extend a known given name to the person-word beside it."""
     extra: list[Span] = []
@@ -249,7 +272,7 @@ def gazetteer_names(text: str) -> list[Span]:
     # because for an unusual surname the person reading is a low-scoring parse.
     # Checking every parse is what lets «мкртчян» (score 0.14) through while
     # «позвонит» (VERB), «срочно» (ADVB) and «адрес» (inanimate NOUN) stay out.
-    spans.extend(_adjacent_surnames(text, spans))
+    spans = _merge_adjacent(spans + _adjacent_surnames(text, spans), text)
     for match in _LATIN_PAIR_RE.finditer(text):
         if match.group(1).lower() in names.name_set:
             spans.append(Span(match.start(), match.end(), "NAME", match.group()))

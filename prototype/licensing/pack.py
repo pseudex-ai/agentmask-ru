@@ -52,6 +52,8 @@ def build_payload() -> dict[str, object]:
             "diminutives": list(assets_source.DIMINUTIVES),
             "surname_suffixes": list(assets_source.SURNAME_SUFFIXES),
             "patronymic_suffixes": list(assets_source.PATRONYMIC_SUFFIXES),
+            "patronymics_masc": list(assets_source.PATRONYMICS_MASC),
+            "patronymics_femn": list(assets_source.PATRONYMICS_FEMN),
             "translit": assets_source.TRANSLIT,
             "cues": list(assets_source.NAME_CUES),
             "stopwords": list(assets_source.STOPWORDS),
