@@ -309,6 +309,17 @@ BUILDERS = {
 def build(per_combination: int, seed: int) -> list[Case]:
     rng = random.Random(seed)
     cases: list[Case] = []
+    # Dialogues first, so a shortened run still contains them: they carry the
+    # consistency axis, and that is the one nothing else in the corpus tests.
+    for scenario, builder in DIALOGUES.items():
+        for register in REGISTERS:
+            for index in range(per_combination):
+                messages, pii, negatives = builder(rng, register, "hard")
+                cases.append(Case(
+                    id=f"{scenario}-{register}-{index:03d}",
+                    scenario=scenario, register=register, difficulty="hard",
+                    messages=messages, tools=tools_for("create_order"),
+                    pii=pii, negatives=negatives, expected_call=None))
     for scenario, builder in BUILDERS.items():
         for register in REGISTERS:
             for difficulty in ("easy", "hard", "adversarial"):
@@ -364,6 +375,103 @@ def main() -> int:
     print(f"по регистрам:    {by_register}")
     return 0
 
+
+
+# --- multi-turn: the consistency axis ------------------------------------
+#
+# Support is a CONVERSATION. The same customer is named in the first message and
+# referred to again three turns later, often in a different form — «Иванов Пётр
+# Сергеевич» then «Петру». The product's own claim is that both get the same
+# substitute, and that a second, different person in the same message gets a
+# different one. Nothing in the single-turn corpus could test either.
+
+def _dialogue_same_person(rng, register, difficulty):
+    """One person, named twice across turns, the second time in a short form."""
+    surname, first, patronymic = _person(rng, difficulty)
+    full = R.render_name(surname, first, patronymic, register, rng)
+    phone_digits = _phone_digits(rng)
+    phone = R.render_phone(phone_digits, register, rng)
+    order = _order_id(rng)
+
+    if register == "clean":
+        first_parts = ["Оформите заказ ", order, " на ", ("name", full),
+                       ", телефон ", ("phone", phone), "."]
+        second_parts = ["И перезвоните ", ("again", first), " после шести, пожалуйста."]
+    elif register == "chat":
+        first_parts = ["оформите заказ ", order, " на ", ("name", full), " тел ",
+                       ("phone", phone)]
+        second_parts = ["и наберите ", ("again", first.lower()), " после шести"]
+    elif register == "sloppy":
+        first_parts = ["заказ ", order, " на ", ("name", full), ", т ", ("phone", phone)]
+        second_parts = ["наберите ", ("again", first), " вечером"]
+    else:
+        first_parts = ["значит заказ ", order, " на ", ("name", full), " телефон ",
+                       ("phone", phone)]
+        second_parts = ["и позвоните ", ("again", first.lower()), " после шести"]
+
+    turn_one, spans_one = R.assemble(first_parts)
+    turn_two, spans_two = R.assemble(second_parts)
+    messages = [
+        {"role": "user", "content": turn_one},
+        {"role": "assistant", "content": "Заказ принят. Что-то ещё?"},
+        {"role": "user", "content": turn_two},
+    ]
+    canonical = _canonical_name(full, surname, first, patronymic)
+    pii = [
+        PiiItem("NAME", turn_one[slice(*spans_one["name"])], *spans_one["name"],
+                canonical=canonical, tool_param="customer_name", turn=0, identity="p1"),
+        PiiItem("PHONE", turn_one[slice(*spans_one["phone"])], *spans_one["phone"],
+                canonical=f"+7{phone_digits}", tool_param="phone", turn=0, identity="p1phone"),
+        PiiItem("NAME", turn_two[slice(*spans_two["again"])], *spans_two["again"],
+                canonical=first, tool_param=None, turn=1, identity="p1"),
+    ]
+    return messages, pii, [Negative(order, "номер заказа")]
+
+
+def _two_people(rng, register, difficulty):
+    """Two DIFFERENT people in one message. They must not collapse into one."""
+    a_surname, a_first, a_patr = _person(rng, difficulty)
+    b_surname, b_first, b_patr = _person(rng, difficulty)
+    while b_surname == a_surname:
+        b_surname, b_first, b_patr = _person(rng, difficulty)
+    payer = R.render_name(a_surname, a_first, a_patr, register, rng)
+    recipient = R.render_name(b_surname, b_first, b_patr, register, rng)
+    phone_digits = _phone_digits(rng)
+    phone = R.render_phone(phone_digits, register, rng)
+
+    if register == "clean":
+        parts = ["Плательщик — ", ("payer", payer), ", а получатель ",
+                 ("recipient", recipient), ", телефон получателя ", ("phone", phone), "."]
+    elif register == "chat":
+        parts = ["плачу я ", ("payer", payer), " а получит ", ("recipient", recipient),
+                 " тел ", ("phone", phone)]
+    elif register == "sloppy":
+        parts = ["плательщик ", ("payer", payer), ", получатель ", ("recipient", recipient),
+                 ", т ", ("phone", phone)]
+    else:
+        parts = ["плательщик ", ("payer", payer), " получатель ", ("recipient", recipient),
+                 " телефон ", ("phone", phone)]
+
+    text, spans = R.assemble(parts)
+    messages = [{"role": "user", "content": text}]
+    pii = [
+        PiiItem("NAME", text[slice(*spans["payer"])], *spans["payer"],
+                canonical=_canonical_name(payer, a_surname, a_first, a_patr),
+                tool_param=None, turn=0, identity="payer"),
+        PiiItem("NAME", text[slice(*spans["recipient"])], *spans["recipient"],
+                canonical=_canonical_name(recipient, b_surname, b_first, b_patr),
+                tool_param="customer_name", turn=0, identity="recipient"),
+        PiiItem("PHONE", text[slice(*spans["phone"])], *spans["phone"],
+                canonical=f"+7{phone_digits}", tool_param="phone", turn=0,
+                identity="recipientphone"),
+    ]
+    return messages, pii, []
+
+
+DIALOGUES = {
+    "same_person_twice": _dialogue_same_person,
+    "two_people": _two_people,
+}
 
 if __name__ == "__main__":
     sys.exit(main())

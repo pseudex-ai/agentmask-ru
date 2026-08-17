@@ -82,6 +82,16 @@ class PiiItem:
     end: int
     canonical: str      # the form a CRM would store: nominative name, +7 phone
     tool_param: str | None = None   # None = present but no tool consumes it
+    # WHICH MESSAGE it sits in. Offsets index that message, not a concatenation:
+    # a dialogue is a list of turns and a span that indexes the wrong one still
+    # scores, wrongly.
+    turn: int = 0
+    # WHO this datum belongs to. Two items sharing an identity are the same
+    # person or the same address and MUST receive the same substitute; two
+    # different identities must receive different ones. Nothing else in the
+    # benchmark tests that, and it is the product's own claim — «один человек,
+    # один токен и завтра, и в соседнем диалоге».
+    identity: str = ""
 
 
 @dataclass(frozen=True)
@@ -112,17 +122,22 @@ class Case:
         return asdict(self)
 
 
-def user_text(case: Case) -> str:
-    """The text the PII offsets index into — the first user message.
+def user_turns(case: Case) -> list[str]:
+    """The user messages, in order. PII offsets index into `turn`-th of these.
 
-    Deliberately a function rather than a field: duplicating the text next to the
-    messages is how a corpus develops two versions of itself, and offsets then
-    silently point at the wrong one.
+    Deliberately derived rather than duplicated next to the messages: a corpus
+    that carries the text twice grows two versions of itself, and the offsets
+    then point silently at the wrong one.
     """
-    for message in case.messages:
-        if message["role"] == "user":
-            return message["content"]
-    raise ValueError(f"case {case.id} has no user message")
+    return [m["content"] for m in case.messages if m["role"] == "user"]
+
+
+def user_text(case: Case) -> str:
+    """The first user message. Kept for single-turn cases."""
+    turns = user_turns(case)
+    if not turns:
+        raise ValueError(f"case {case.id} has no user message")
+    return turns[0]
 
 
 def validate(case: Case) -> list[str]:
@@ -134,18 +149,24 @@ def validate(case: Case) -> list[str]:
     rewrites the string.
     """
     problems: list[str] = []
-    text = user_text(case)
+    turns = user_turns(case)
+    text = turns[0] if turns else ""
     if case.register not in REGISTERS:
         problems.append(f"{case.id}: unknown register {case.register!r}")
     if case.difficulty not in DIFFICULTIES:
         problems.append(f"{case.id}: unknown difficulty {case.difficulty!r}")
     for item in case.pii:
-        if text[item.start:item.end] != item.value:
+        if item.turn >= len(turns):
+            problems.append(f"{case.id}: item points at turn {item.turn}, "
+                            f"the dialogue has {len(turns)} user turns")
+            continue
+        turn_text = turns[item.turn]
+        if turn_text[item.start:item.end] != item.value:
             problems.append(
-                f"{case.id}: span {item.start}:{item.end} holds "
-                f"{text[item.start:item.end]!r}, ground truth says {item.value!r}")
+                f"{case.id}: turn {item.turn} span {item.start}:{item.end} holds "
+                f"{turn_text[item.start:item.end]!r}, ground truth says {item.value!r}")
     for negative in case.negatives:
-        if negative.value not in text:
+        if not any(negative.value in turn for turn in turns):
             problems.append(f"{case.id}: negative {negative.value!r} not in text")
     if case.expected_call is not None:
         names = {tool["function"]["name"] for tool in case.tools}

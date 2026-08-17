@@ -84,18 +84,50 @@ def main() -> int:
     total_negatives = 0
     roundtrip_ok = 0
     roundtrip_total = 0
+    consistency_ok = 0
+    consistency_total = 0
+    inconsistent: list[tuple[str, str, list[str]]] = []
+    collisions: list[tuple[str, str, str, str]] = []
     misses: list[tuple[str, str, str, str]] = []
     false_masks: list[tuple[str, str, str]] = []
     broken: list[tuple[str, str, str, str]] = []
 
     for case in cases:
-        text = case["messages"][0]["content"]
+        turns = [m["content"] for m in case["messages"] if m["role"] == "user"]
+        text = turns[0]
         spans = detector.detect(text)
         for span in spans:
             produced[span.entity_type] += 1
 
+        # --- axis 4: consistency --------------------------------------------
+        # One vault for the WHOLE dialogue, because that is what a conversation
+        # has. Items sharing an identity must receive the same substitute, items
+        # with different identities must not — «один человек, один токен» is the
+        # product's own claim and no other axis touches it.
+        by_identity: defaultdict[str, set[str]] = defaultdict(set)
+        dialogue_vault = Vault(":memory:", "bench")
+        for item in case["pii"]:
+            if not item.get("identity"):
+                continue
+            token = dialogue_vault.tokenize(item["value"], item["type"])
+            by_identity[item["identity"]].add(token)
+        for identity, tokens in by_identity.items():
+            consistency_total += 1
+            if len(tokens) == 1:
+                consistency_ok += 1
+            elif len(split := sorted(tokens)) and len(split) > 1:
+                inconsistent.append((case["id"], identity, split))
+        # Different identities of the SAME TYPE must not collide.
+        minted = [(identity, next(iter(tokens))) for identity, tokens in by_identity.items()]
+        for i in range(len(minted)):
+            for j in range(i + 1, len(minted)):
+                if minted[i][1] == minted[j][1]:
+                    collisions.append((case["id"], minted[i][0], minted[j][0], minted[i][1]))
+
         # --- axis 1: recall -------------------------------------------------
         for item in case["pii"]:
+            if item.get("turn", 0) != 0:
+                continue
             gold[item["type"]] += 1
             by_register[case["register"]][1] += 1
             hit = any(span.entity_type == item["type"]
@@ -128,7 +160,7 @@ def main() -> int:
                               cache=MaskCache(64), org_id="bench", agent_id="bench")
         masked = mask_one(text, context)
         for item in case["pii"]:
-            if not item["tool_param"]:
+            if not item["tool_param"] or item.get("turn", 0) != 0:
                 continue
             roundtrip_total += 1
             # What the model would copy out: the masked text at this position.
@@ -166,6 +198,11 @@ def main() -> int:
           f"= {kept / total_negatives * 100:.1f}% чистых")
     print(f"КРУГ (значение вернулось в инструмент): {roundtrip_ok}/{roundtrip_total} "
           f"= {roundtrip_ok / roundtrip_total * 100:.1f}%")
+    if consistency_total:
+        print(f"СОГЛАСОВАННОСТЬ (один человек — один псевдоним): "
+              f"{consistency_ok}/{consistency_total} "
+              f"= {consistency_ok / consistency_total * 100:.1f}%   "
+              f"столкновений разных людей: {len(collisions)}")
 
     if misses:
         print(f"\n--- ПРОПУЩЕНО ({len(misses)}) ---")
@@ -175,6 +212,14 @@ def main() -> int:
         print(f"\n--- ЗАМАСКИРОВАНО ЗРЯ ({len(false_masks)}) ---")
         for case_id, value, why in false_masks[:args.dump]:
             print(f"  {value!r:20} — {why}")
+    if inconsistent:
+        print(f"\n--- ОДИН ЧЕЛОВЕК, РАЗНЫЕ ПСЕВДОНИМЫ ({len(inconsistent)}) ---")
+        for case_id, identity, tokens in inconsistent[:args.dump]:
+            print(f"  {identity:14} -> {tokens}")
+    if collisions:
+        print(f"\n--- РАЗНЫЕ ЛЮДИ, ОДИН ПСЕВДОНИМ ({len(collisions)}) ---")
+        for case_id, a, b, token in collisions[:args.dump]:
+            print(f"  {a} и {b} оба -> {token!r}")
     if broken:
         print(f"\n--- КРУГ РАЗОРВАН ({len(broken)}) ---")
         for case_id, kind, expected, restored in broken[:args.dump]:
