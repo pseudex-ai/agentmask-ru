@@ -27,6 +27,8 @@ from pathlib import Path
 
 import httpx
 
+from e2e.gates import gateway_headers
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from e2e import fixtures  # noqa: E402
@@ -54,6 +56,7 @@ def detect_many(base_url: str, texts: list[str]) -> list[list[tuple[str, str]]]:
     for start in range(0, len(texts), _BATCH):
         chunk = texts[start:start + _BATCH]
         response = httpx.post(f"{base_url}/spans", timeout=300,
+                              headers=gateway_headers(),
                               json={"org_id": _ORG, "texts": chunk})
         response.raise_for_status()
         for text, spans in zip(chunk, response.json()["results"]):
@@ -135,10 +138,12 @@ def dirty(base_url: str, path: Path) -> dict[str, object]:
 def roundtrip(base_url: str) -> dict[str, object]:
     """The tool-call loop: what the tool receives must be the original value."""
     masked = httpx.post(f"{base_url}/mask", timeout=300,
+                        headers=gateway_headers(),
                         json=fixtures.mask_body(_ORG)).json()
     content = masked["messages"][0]["content"]
     leaked = [v for v in fixtures.PII_PAYLOAD.values() if v in content]
-    restored = httpx.post(f"{base_url}/unmask", timeout=120, json={
+    restored = httpx.post(f"{base_url}/unmask", timeout=120,
+                          headers=gateway_headers(), json={
         "org_id": _ORG, "response": {"choices": [{"message": {"content": content}}]},
     }).json()["response"]["choices"][0]["message"]["content"]
     return {

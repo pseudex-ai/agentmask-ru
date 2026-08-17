@@ -37,7 +37,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
 
 from e2e import certs, fixtures  # noqa: E402
-from e2e.gates import RESULTS, ADMIN, ORG, SIDECAR, compose, gate, sh, set_env, wait_until  # noqa: E402
+from e2e.gates import (RESULTS, ADMIN, ORG, SIDECAR, compose, gate,  # noqa: E402
+                       gateway_headers, sh, set_env, wait_until)
 from licensing import assets_source  # noqa: E402
 from licensing.keys import encode_private, encode_public  # noqa: E402
 
@@ -236,6 +237,7 @@ def _latency_sample(count: int) -> list[float]:
         _LATENCY_COUNTER += 1
         started = time.monotonic()
         response = httpx.post(f"{SIDECAR}/mask", timeout=300,
+                              headers=gateway_headers(),
                               json=fixtures.mask_body_variant("perf", _LATENCY_COUNTER))
         response.raise_for_status()
         samples.append((time.monotonic() - started) * 1000)
@@ -304,6 +306,7 @@ def gate_p5(workers: int) -> bool:
         invites 'probably contention', which is a guess."""
         try:
             response = httpx.post(f"{SIDECAR}/mask", timeout=120,
+                                  headers=gateway_headers(),
                                   json=fixtures.mask_body_variant("load", index))
             if response.status_code == 200:
                 return True, ""
