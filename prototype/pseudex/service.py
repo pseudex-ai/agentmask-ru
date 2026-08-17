@@ -20,6 +20,7 @@ endpoints go to 503 for that; see `_license_block`.
 import hmac
 import logging
 import os
+import sys
 import secrets
 import threading
 import uuid
@@ -33,7 +34,7 @@ from pseudex.assets import ASSETS, BundleNotLeased
 from pseudex.audit import AuditLog, _preview
 from pseudex.detect_all import Detector
 from pseudex.envelope import MaskContext, mask_messages, mask_tools, unmask_response
-from pseudex.license import ENGINE_VERSION, LicenseClient, LicenseError
+from pseudex.license import ENGINE_VERSION, LicenseClient, LicenseError, explain
 from pseudex.maskcache import MaskCache
 from pseudex.operator import build_router
 from pseudex.profiling import snapshot as profiling_snapshot
@@ -176,6 +177,13 @@ async def _lifespan(_app: "FastAPI"):
     try:
         await anyio.to_thread.run_sync(_acquire_license)
     except LicenseError as error:
+        # Printed, not just logged at ERROR: this is the last thing the operator
+        # sees before the container exits, and a structured log line scrolls past
+        # inside a traceback. The remedy is the point — the refusal is correct
+        # behaviour, and without it the operator cannot tell correct from broken.
+        print(f"\n{'=' * 72}\n  PSEUDEX НЕ ЗАПУСТИЛСЯ — {error.code}\n{'=' * 72}\n"
+              f"  {error.detail}\n\n  {explain(error.code)}\n{'=' * 72}\n",
+              file=sys.stderr, flush=True)
         _log.error("refusing to start — %s: %s", error.code, error.detail)
         raise
     # Warm the models AFTER the bundle is loaded: warmup runs a real detection

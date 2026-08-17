@@ -78,6 +78,44 @@ _STARTUP_BACKOFF_SECONDS = 2.0
 _TERMINAL_RETRY_SECONDS = 60.0
 
 
+# What to DO about each terminal code. A persona following the documented
+# `docker run` hit an unreachable licensing host and got a bare Python traceback
+# — the gateway refused to serve, exactly as designed, and told them nothing
+# about why or what to try. Fail-closed without a diagnosis reads as "broken",
+# and the customer's next move is to close the tab rather than open the firewall.
+REMEDIES: dict[str, str] = {
+    "license_missing":
+        "Переменная PSEUDEX_LICENSE_KEY не задана. Ключ показывается один раз "
+        "при активации; если он потерян — выпустите новый в личном кабинете.",
+    "bundle_unavailable":
+        "Не удалось связаться с сервером лицензий. Проверьте, что из контейнера "
+        "есть исходящий доступ к нему по HTTPS:\n"
+        "    docker exec <контейнер> getent hosts <хост лицензий>\n"
+        "Чаще всего мешает закрытый исходящий трафик или корпоративный прокси. "
+        "Адрес сервера задаётся переменной PSEUDEX_LICENSE_URL.",
+    "license_invalid":
+        "Сервер лицензий не признал ключ. Проверьте, что скопирован он целиком "
+        "и что не отозван в личном кабинете.",
+    "license_expired":
+        "Аренда истекла и льготный период закончился. Проверьте оплату — после "
+        "неё обслуживание восстанавливается без перезапуска контейнера.",
+    "license_revoked":
+        "Ключ отозван в личном кабинете. Выпустите новый и перезапустите "
+        "контейнер с ним.",
+    "bundle_corrupt":
+        "Полученный пакет не прошёл проверку подписи. Это не чинится настройками "
+        "— напишите нам, приложив вывод контейнера.",
+    "instance_limit":
+        "Тариф не позволяет столько одновременно работающих контейнеров. "
+        "Остановите лишние или смените тариф в личном кабинете.",
+}
+
+
+def explain(code: str) -> str:
+    """The operator-facing remedy for a terminal licence code."""
+    return REMEDIES.get(code, "Напишите нам, приложив вывод контейнера.")
+
+
 class LicenseError(RuntimeError):
     """The process may not run: no valid lease could be obtained at startup."""
 

@@ -25,6 +25,26 @@ from billing.models import Invoice, LicenseKey, Plan, Subscription
 TRIAL_DAYS = 14
 
 
+def pending_organization(email: str):
+    """The organisation of an account whose activation link has not been used.
+
+    Returns None for an unknown address AND for one that is already activated,
+    so the resend view can answer identically in both cases — a view that
+    answered honestly would tell an attacker which addresses are customers.
+    """
+    membership = (Membership.objects
+                  .filter(user__email=email, role=Membership.ROLE_OWNER)
+                  .select_related("organization")
+                  .order_by("-id")
+                  .first())
+    if membership is None:
+        return None
+    organization = membership.organization
+    if organization.keys.filter(revoked_at__isnull=True).exists():
+        return None
+    return organization
+
+
 def create_account(email: str, display_name: str, plan_code: str) -> Organization:
     """Create the account and hand back a WORKING key, before any payment.
 

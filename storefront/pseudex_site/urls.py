@@ -32,6 +32,7 @@ urlpatterns = [
     path("policy", views.policy, name="policy"),
     path("architecture", views.architecture, name="architecture"),
     path("detection", views.detection, name="detection"),
+    path("resend", views.resend_activation, name="resend"),
 
     path("app/", views.cabinet, name="cabinet"),
     path("app/keys/new", views.new_key, name="new_key"),

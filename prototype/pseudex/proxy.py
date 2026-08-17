@@ -12,6 +12,7 @@ import hmac
 import json
 import logging
 import os
+import sys
 import secrets
 import threading
 from contextlib import asynccontextmanager
@@ -25,7 +26,7 @@ from pseudex.assets import ASSETS, BundleNotLeased
 from pseudex.audit import AuditLog
 from pseudex.detect_all import Detector
 from pseudex.envelope import MaskContext, mask_messages, mask_tools, unmask_response
-from pseudex.license import ENGINE_VERSION, LicenseClient, LicenseError
+from pseudex.license import ENGINE_VERSION, LicenseClient, LicenseError, explain
 from pseudex.maskcache import MaskCache
 from pseudex.operator import build_router
 from pseudex.profiling import snapshot as profiling_snapshot, stage

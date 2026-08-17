@@ -164,6 +164,41 @@ def detection(request):
     return render(request, "legal/detection.html", _legal_context())
 
 
+def resend_activation(request):
+    """Send the activation link again.
+
+    The persona run stopped dead here: the letter is the ONLY way forward, there
+    was no way to ask for another one, and the support channel is email — the
+    same channel that had just failed. A single point of failure with no retry is
+    not a small gap in a funnel whose first step it is.
+
+    Deliberately says the same thing whether or not the address has an account.
+    Answering honestly would turn this into a way to ask the site which of a list
+    of addresses is a customer.
+    """
+    if request.method != "POST":
+        return redirect("landing")
+    email = (request.POST.get("email") or "").strip().lower()
+    organization = services.pending_organization(email)
+    if organization is not None:
+        link = request.build_absolute_uri(
+            "/activate?t=" + signing.dumps({"org": organization.id, "email": email})
+        )
+        send_mail(
+            subject="pseudex — ваш ключ готов к выпуску",
+            message=(
+                f"Здравствуйте!\n\n"
+                f"Вы попросили прислать ссылку ещё раз. Ключ будет выпущен и "
+                f"показан один раз, когда вы её откроете:\n\n{link}\n\n"
+                f"Ссылка действует {_ACTIVATION_HOURS} часа."
+            ),
+            from_email=None,
+            recipient_list=[email],
+            fail_silently=False,
+        )
+    return render(request, "check_email.html", {"email": email, "resent": True})
+
+
 def signup(request):
     """Email, company name, plan. Three fields, and the key exists at the end of
     the post — before payment, before any confirmation click."""

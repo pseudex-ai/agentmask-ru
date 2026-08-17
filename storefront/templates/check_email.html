@@ -10,5 +10,17 @@
     Ключ открывает доступ к вашему шлюзу целиком. Выдавать его тому, кто просто ввёл адрес, означало бы, что чужой человек может получить ключ на ваш email. Одно письмо — и этого класса проблем нет.<br><br>
     Самого ключа в письме нет: там только ссылка.
   </div>
+  <div style="max-width:640px;margin-top:24px">
+    {% if resent %}
+    <p style="font-size:14px;color:var(--accent)">Отправили ещё раз. Если и оно не дошло — проверьте папку «Спам», письмо приходит с адреса noreply@pseudex.ru.</p>
+    {% else %}
+    <p style="font-size:14px;color:var(--dim);line-height:1.7">Не пришло за пару минут? Загляните в «Спам» — письмо приходит с адреса <span class="mono">noreply@pseudex.ru</span>. Или отправьте ещё раз:</p>
+    <form method="post" action="{% url 'resend' %}" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+      {% csrf_token %}
+      <input type="email" name="email" value="{{ email }}" required style="flex:1;min-width:240px">
+      <button class="btn" type="submit">ОТПРАВИТЬ ЕЩЁ РАЗ</button>
+    </form>
+    {% endif %}
+  </div>
 </section>
 {% endblock %}
