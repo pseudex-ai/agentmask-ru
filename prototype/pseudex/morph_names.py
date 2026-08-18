@@ -228,9 +228,21 @@ def name_shape(surface: str) -> tuple[str, ...]:
         if not stripped:
             continue
         # Initials arrive both as separate tokens («П. С.») and glued («П.С.»),
-        # so the test is on composition, not on length.
-        if all(ch.isupper() or ch == "." for ch in part) and any(ch.isalpha() for ch in part):
-            shape.extend(["init"] * sum(1 for ch in part if ch.isalpha()))
+        # so the test is on composition, not on length — but composition alone
+        # said an all-caps WORD was a run of glued initials. «АФИНОГЕНОВА
+        # СВЕТЛАНА», the way every 1C export writes a name, came back as
+        # nineteen invented initials: the model was handed «Я. Т. Е. А. …» where
+        # a customer's name belongs, and no tool call could carry that person.
+        #
+        # An initial is one letter that stands for a name we were not told, so
+        # what marks it is the DOT, not the case. Two letters need a dot between
+        # them or they are an abbreviation («ПС»), and beyond three letters
+        # nothing is an initial at all.
+        letters = sum(1 for ch in part if ch.isalpha())
+        dots = part.count(".")
+        if (letters and letters <= 3 and dots >= letters - 1
+                and all(ch.isupper() or ch == "." for ch in part)):
+            shape.extend(["init"] * letters)
             continue
         lowered = stripped.casefold()
         # Checked on the LEMMA as well as the surface: a patronymic in an oblique

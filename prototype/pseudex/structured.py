@@ -25,7 +25,20 @@ def _is_filename(value: str) -> bool:
 # Types whose value is meaningless without digits.
 _NUMERIC_KEY_TYPES = frozenset({"PHONE", "SNILS", "INN", "CARD", "PASSPORT"})
 _JSON_KV = re.compile(r'"([^"\s][^"]*?)"\s*:\s*"([^"]*?)"')
-_FORM_KV = re.compile(r'([А-Яа-яЁёA-Za-z][А-Яа-яЁёA-Za-z .\-]{1,24}?)\s*:\s*([^\n,;]{2,60})')
+# A form value ends at a newline, a comma, a semicolon — OR AT THE NEXT KEY.
+# The last clause was missing, and a 1C export puts every pair on ONE line:
+# «Номер телефона для связи: +7 (931) 256 - 07 - 70 Дата доставки: Завтра» typed
+# the phone AND the words after it as one PHONE, so the fake swallowed «Дата
+# доставки», the model never saw that field, and detokenisation handed the tool
+# a phone number with a sentence glued to it.
+#
+# The next key must start with a LETTER, which is what keeps «с 18:00 до 21:00»
+# out: a time is introduced by digits and cannot look like a key.
+_KEY_SHAPE = r"[А-Яа-яЁёA-Za-z][А-Яа-яЁёA-Za-z .\-]{1,24}?\s*:"
+_FORM_KV = re.compile(
+    r"([А-Яа-яЁёA-Za-z][А-Яа-яЁёA-Za-z .\-]{1,24}?)\s*:\s*"
+    r"((?:(?!\s+" + _KEY_SHAPE + r")[^\n,;]){2,60})"
+)
 _KEY_CLEAN_RE = re.compile(r"[\s\-_.]")
 
 
