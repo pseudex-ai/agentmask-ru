@@ -41,6 +41,7 @@ python3 test_product.py        # tenancy, audit, streaming detok
 python3 vault_test.py          # canonicalization + persistence across restart
 python3 test_perf_masking.py   # cache/audit-dedup/leak-regression/loop-responsiveness vs the real FastAPI app
 python3 test_localui.py        # operator surface is closed, reveals audited, requests billed apart from entities
+python3 test_persona_defects.py  # the five defects a persona run found and no corpus of ours did
 ```
 
 Detection quality (needs generated datasets — all gitignored, regenerate before use):
@@ -135,8 +136,14 @@ When you change masking semantics, decide explicitly whether both need it.
 | | gateway surface | operator surface (`pseudex/operator.py`) |
 |---|---|---|
 | Paths | `/mask`, `/unmask`, `/unmask_chunk`, `/spans`, `/health` | `/status`, `/events`, `/stats`, `/stats.csv`, `/reveals`, `/subscription`, `/diagnostics`, `/selfcheck`, `/reveal` |
-| Auth | none — the customer's own gateway calls it every request | `Authorization: Bearer $PSEUDEX_ADMIN_TOKEN` |
-| Why | a credential there buys nothing against someone already on the contour network | these disclose real values and the list of what exists to disclose |
+| Auth | `Authorization: Bearer $PSEUDEX_GATEWAY_TOKEN` | `Authorization: Bearer $PSEUDEX_ADMIN_TOKEN` |
+| Why | a cheap credential the customer's gateway holds; it is NOT the admin one, so a compromised gateway config cannot reveal values | these disclose real values and the list of what exists to disclose |
+
+Both tokens are **generated per process when the environment does not set them**, which is safe for a
+single worker and wrong for N — see the `PSEUDEX_ADMIN_TOKEN` note below, which applies to both.
+Test harnesses must read the token off `pseudex.service` rather than restating it: a copied constant
+is a second value that has to stay equal to the first, and `test_perf_masking.py` failing with 401
+is what that drift looks like from the outside.
 
 `PSEUDEX_ADMIN_TOKEN` **must be set by `entrypoint.sh`, once, for all workers.** Each worker
 generating its own would mean N valid tokens for one SO_REUSEPORT port, and the interface would
@@ -274,7 +281,7 @@ is what keeps tokens consistent across workers. Audit is recorded on the cache *
 same value re-sent in a growing transcript is one protected value, not N.
 
 Env knobs: `PSEUDEX_DB_DIR`, `PSEUDEX_WORKERS`, `PSEUDEX_MASK_CONCURRENCY`, `PSEUDEX_MASK_CACHE_SIZE`,
-`PSEUDEX_ADMIN_TOKEN`, `PSEUDEX_UI_PORT`, `PSEUDEX_UI_TOKEN`, `PSEUDEX_UI_PASSWORD`, `PSEUDEX_UI`,
+`PSEUDEX_ADMIN_TOKEN`, `PSEUDEX_GATEWAY_TOKEN`, `PSEUDEX_UI_PORT`, `PSEUDEX_UI_TOKEN`, `PSEUDEX_UI_PASSWORD`, `PSEUDEX_UI`,
 `PSEUDEX_UI_ORG`, `PSEUDEX_UI_STATIC`, `PSEUDEX_ROLE`.
 
 ## Eval discipline
@@ -308,7 +315,21 @@ its README before changing it. Three things about it are load-bearing:
 - **The round-trip axis finds what detection cannot.** «Иванова Мария Львовна» keyed as «Иванов
   Мария» while detection scored 100% on it. Never judge a masking change by recall alone.
 - **Ground truth is the canonical form of WHAT WAS WRITTEN.** A chat message with no patronymic must
-  not demand one back; that scores the gateway on information the message never carried.
+  not demand one back; that scores the gateway on information the message never carried. Derive it
+  from what the generator BUILT, never by searching the finished string — `_canonical_name` matched
+  clean parts against the surface by substring, so every part a register had TOUCHED vanished from
+  the ground truth («Иванов Петр», е for ё, demanded «Иванов»). 162 of 183 sloppy failures. The same
+  bug, twice: the address kept demanding the city three registers deliberately drop.
+- **A scorer fallback hides the defect it forgives.** That one was invisible because the round trip
+  also accepted "came back as written" — so fixing the ground truth moved nothing, and the leniency
+  was ALSO passing «позвоните Игорю» → «Игорю», a declined name in the customer's CRM.
+- **An eval must take the production path.** The round trip minted tokens straight from the raw
+  corpus value, skipping normalization, and reported ~180 phone breaks that do not exist — through
+  `mask_one` a Cyrillic О in a number is folded and the phone comes back dialable. Read the vault
+  read-only for the token masking actually minted; do not mint a fresh one.
+- **Overlap is not coverage, and the difference is a leak.** «Кзнецов Дмитрий» detected as «Дмитрий»
+  scores as recall while the surname reaches the model in the clear. Both numbers are printed, never
+  merged: 97.6% recall against 95.0% coverage is 69 partial leaks the single number hid.
 
 ## Rules that changes must not break, part two — detection precision
 
@@ -332,6 +353,77 @@ direction when done the obvious way:
 - **Extending a name to its neighbour needs two signals**, not one: morphology must say the
   neighbour can name a person AND its best reading must not be a function word. Any-parse alone ate
   «В», «из» and «по» in news prose.
+- **`to_nominative` is called from two sides and only one may be changed.** `canonicalize` calls it
+  on the REAL value (the key for "have we met this person"); `name_key` calls it on the FAKE one
+  (the index that resolves a token the model inflected). A guard placed inside `to_nominative`
+  stopped «Иванова» collapsing to «Иванов» AND stopped «Тарасова» finding «Тарасов» — the fake
+  reaching the tool. Measured: `survives_round_trip` then rejected all 28 pool surnames and every
+  one-word substitute silently became two. The same guard in `canonicalize` alone is correct
+  (`morph_names.lone_nominative_gender`), and `detect_gender` must use it too — a key that says
+  woman with a substitute minted for a man is the disagreement, manufactured internally.
+- **A KV-typed span carries its own evidence and must skip `suppress`.** The KEY typed the value,
+  which is stronger than any word standing near it. Re-gating it lost `{"passport": "4509123456"}`
+  entirely — the cue list holds «паспорт» and not the Latin «passport» — while the same number after
+  the Russian word was masked. Extending the cue list fixes one key and leaves the next to be found
+  the same way.
+- **A `KEY_TYPE` entry types the WHOLE value with no shape check**, so an ambiguous Russian business
+  word may never be one. «счёт» is an invoice more often than a bank account, and «Реквизиты:»
+  introduces a LIST — adding them cost 12 of 298 on the golden set at once, because «Реквизиты:
+  СНИЛС 647-436-713 22, карта …» became one account number that swallowed the СНИЛС. Those words
+  belong in `CTX_TYPES`, where the 20-digit shape keeps an invoice number out.
+- **`normalize` folds a look-alike only when it is not glued to a letter.** «ч» is a look-alike for
+  4, and at a word edge its only neighbours inside the run were a space and the phone that followed:
+  «Валентинович» became «Валентинови4», the name span ended a character early, and the orphaned «ч»
+  glued itself to the substitute — a string in no vault, so `/unmask` and `/reveal` both returned
+  nothing and a person who does not exist was written into the customer's system. "Real letters
+  break the run" only ever held for letters INSIDE it.
+- **Never take `parse(word)[0]` for a gazetteer lookup.** «марину» has «марин» (a man) and «марина»
+  (a woman) at the SAME score of 0.500 and the winner is arbitrary; it picked the man, the gazetteer
+  had no such entry, and «запишите марину петрову» went to the model with both words in the clear.
+  Consider every name-tagged reading TIED FOR FIRST — unbounded costs 0.7pp of NEREL precision by
+  admitting «жене»→«Женя», «юре»→«Юра», «розами»→«Роза».
+- **A single-token NER person is kept unless the dictionary claims the word.** The gate used to
+  demand a known name or a Russian surname suffix, so it threw away every foreign name Natasha had
+  already found — Обама, Месси, Бейонсе, Акихито. NEREL PERSON recall 80.6% → 91.5% (Cyrillic 81.1%
+  → 92.3%) at **no** precision cost. The `is_known` half is what makes it free: dropping it admits
+  the capitalised nouns Natasha over-tags at a caption boundary («Цветы», «Девочки», «Дезинфектор» —
+  72 on NEREL) and costs 0.3pp. «Обама» survives the narrow rule because it carries a `Surn` reading
+  even though the dictionary knows the word.
+- **A mistyped name is reachable, but only with THREE signals.** Adjacent to a detected name, within
+  one edit of the gazetteer, AND unknown to morphology. The third is not optional: in a 197k-name
+  dictionary the distance-1 neighbourhood is dense enough that ordinary words land in it —
+  «заказ»→«Закар», «адрес»→«Адрей», «клиент»→«Клинт», «спасибо»→«Спасибов» are all real rare
+  surnames. Without it `test_product` returned «Яков Роман Карпов Василий перезвонить» to a tool.
+  Index by first-three AND last-three letters: an edit at position p is caught by the first key when
+  p ≥ 3 and by the last when p < len − 3, so any single edit in a six-letter word lands in one.
+- **The apartment marker is usually glued to the house number.** «д.5кв12», «Строителей 53к193»,
+  «Гагарина88кв152» — `_TOK` demanded whitespace before the marker, so the flat fell outside the
+  span and went to the model inside an address whose street was already masked. A bare «к» is
+  admitted only when glued to a digit («за 100к 5 штук» must not read as an apartment), and both
+  branches stay SUPPORT so a stray match can never mask anything on its own.
+- **A surname alone may not decide gender, and the case must then be read in that gender.** A typo
+  in the given name («Кузнецова Ольго») leaves only the surname voting, and `-ова` scores higher as
+  a man's genitive — so the span canonicalised to «Кузнецов Ольго» and the tool was called with a
+  man. Both halves are gated on `has_given_name`: applying the case filter unconditionally cost -14
+  round trips, because where the gender is itself a guess (foreign names) it left a tally with
+  nothing sensible in it and «Ким Викдор» became «Ким Викдоры».
+- **An address span drops its leading CUE words.** «адрес ленинский проспект 55» matched with
+  «адрес» inside the street name and sent it to the tool as part of the address; «мой адрес …» sent
+  two. Marker-less streets are «adjective + type», so the pattern cannot see where the name starts.
+  Trimmed with signals that already exist — `addr_ctx` for the cue vocabulary, the `Apro` grammeme
+  for «мой»/«наш» — because part of speech alone does not separate them from «Ленинский». A street
+  TYPE word passes both tests, which is what keeps «улица Тверская» whole.
+- **A pool that a customer can exhaust is a permanent 5xx for that customer.** It has happened
+  twice: addresses at 33, and gender-invariant surnames at 6 (the seventh woman named by surname
+  alone). Any generator drawing from a fixed list needs a floor check at the pool, not a stack
+  trace in someone's traffic.
+- **A cue word licenses its neighbour, it does not name it.** «фамилия волков» must mask «волков»
+  (the bulk surname dictionary is capital-only, so lower case leaked), and «фамилия клиента не
+  указана» must not. Same two-signal rule: the cue AND morphology saying the word can name a person.
+- **NER spans get trimmed down to one token when the leading word is a verb.** The dictionary trim
+  stops at two, presuming «Имя Фамилия»; that presumption made «Наберите Игорю» one name, deleted
+  the sentence's verb, and gave the pair an identity unrelated to the person the same message had
+  already named.
 
 ## Conventions
 
