@@ -1,0 +1,119 @@
+{
+  "uid": "pseudex-run",
+  "title": "Прогон pseudex — железо и sglang",
+  "tags": ["pseudex"],
+  "timezone": "browser",
+  "editable": true,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {"from": "now-30m", "to": "now"},
+  "templating": {"list": []},
+  "annotations": {"list": []},
+  "panels": [
+    {
+      "type": "row", "title": "Железо", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "collapsed": false, "panels": []
+    },
+    {
+      "type": "timeseries", "title": "Загрузка вычислителя, %",
+      "description": "Если она НЕ у потолка, карта не узкое место — узкое место сеть, шлюз или наш прогонщик. Именно этот график решает, был ли смысл брать карту дороже.",
+      "gridPos": {"h": 7, "w": 8, "x": 0, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100,
+        "custom": {"fillOpacity": 12, "lineWidth": 2}}, "overrides": []},
+      "targets": [
+        {"refId": "A", "expr": "gpu_utilization_percent", "legendFormat": "вычислитель GPU {{gpu}}"},
+        {"refId": "B", "expr": "gpu_memory_bandwidth_percent", "legendFormat": "шина памяти GPU {{gpu}}"}
+      ]
+    },
+    {
+      "type": "timeseries", "title": "Видеопамять, МиБ",
+      "description": "Веса плюс KV-кэш. Потолок — это ответ на вопрос, влезет ли контекст длиннее или батч больше.",
+      "gridPos": {"h": 7, "w": 8, "x": 8, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "mbytes", "min": 0,
+        "custom": {"fillOpacity": 12, "lineWidth": 2}}, "overrides": []},
+      "targets": [
+        {"refId": "A", "expr": "gpu_memory_used_mib", "legendFormat": "занято GPU {{gpu}}"},
+        {"refId": "B", "expr": "gpu_memory_total_mib", "legendFormat": "всего GPU {{gpu}}"}
+      ]
+    },
+    {
+      "type": "timeseries", "title": "Питание и температура",
+      "description": "Потребление у предела вместе с высокой температурой — это троттлинг, и тогда падение скорости объясняется картой, а не нами.",
+      "gridPos": {"h": 7, "w": 8, "x": 16, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"custom": {"fillOpacity": 6, "lineWidth": 2}}, "overrides": [
+        {"matcher": {"id": "byRegexp", "options": ".*температура.*"},
+         "properties": [{"id": "unit", "value": "celsius"}, {"id": "custom.axisPlacement", "value": "right"}]}
+      ]},
+      "targets": [
+        {"refId": "A", "expr": "gpu_power_watts", "legendFormat": "потребление, Вт GPU {{gpu}}"},
+        {"refId": "B", "expr": "gpu_power_limit_watts", "legendFormat": "предел, Вт GPU {{gpu}}"},
+        {"refId": "C", "expr": "gpu_temperature_celsius", "legendFormat": "температура GPU {{gpu}}"}
+      ]
+    },
+    {
+      "type": "row", "title": "sglang", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 8},
+      "collapsed": false, "panels": []
+    },
+    {
+      "type": "timeseries", "title": "Запросы: в работе и в очереди",
+      "description": "Очередь, которая растёт, значит прогон подаёт быстрее, чем карта успевает. Пусто и там и там — узкое место у нас, не у неё.",
+      "gridPos": {"h": 7, "w": 8, "x": 0, "y": 9},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"min": 0, "custom": {"fillOpacity": 12, "lineWidth": 2}}, "overrides": []},
+      "targets": [
+        {"refId": "A", "expr": "sglang:num_running_reqs", "legendFormat": "в работе"},
+        {"refId": "B", "expr": "sglang:num_queue_reqs", "legendFormat": "в очереди"}
+      ]
+    },
+    {
+      "type": "timeseries", "title": "Попадания в префиксный кэш",
+      "description": "ГЛАВНОЕ ЧИСЛО ЭТОГО ПРОГОНА. Все диалоги делят ~1200 токенов системного промпта и схем инструментов; нагрузка prefill-bound, поэтому именно RadixAttention решает время, а не размер батча на декоде.",
+      "gridPos": {"h": 7, "w": 8, "x": 8, "y": 9},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1,
+        "custom": {"fillOpacity": 12, "lineWidth": 2}}, "overrides": []},
+      "targets": [
+        {"refId": "A", "expr": "sglang:cache_hit_rate", "legendFormat": "попаданий в кэш"}
+      ]
+    },
+    {
+      "type": "timeseries", "title": "Пропускная способность, токенов/с",
+      "description": "Вход отдельно от выхода: у нас ~1300 токенов входа и ~15 выхода, так что медленный prefill виден только на верхней линии.",
+      "gridPos": {"h": 7, "w": 8, "x": 16, "y": 9},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"min": 0, "custom": {"fillOpacity": 6, "lineWidth": 2}}, "overrides": []},
+      "targets": [
+        {"refId": "A", "expr": "rate(sglang:prompt_tokens_total[1m])", "legendFormat": "вход (prefill)"},
+        {"refId": "B", "expr": "rate(sglang:generation_tokens_total[1m])", "legendFormat": "выход (decode)"}
+      ]
+    },
+    {
+      "type": "timeseries", "title": "Время до первого токена и полное время запроса",
+      "description": "p50 и p95. Расхождение между ними — это очередь, а не модель.",
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 16},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s", "min": 0,
+        "custom": {"fillOpacity": 6, "lineWidth": 2}}, "overrides": []},
+      "targets": [
+        {"refId": "A", "expr": "histogram_quantile(0.5, sum by (le) (rate(sglang:time_to_first_token_seconds_bucket[1m])))", "legendFormat": "до первого токена p50"},
+        {"refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(sglang:time_to_first_token_seconds_bucket[1m])))", "legendFormat": "до первого токена p95"},
+        {"refId": "C", "expr": "histogram_quantile(0.5, sum by (le) (rate(sglang:e2e_request_latency_seconds_bucket[1m])))", "legendFormat": "полное время p50"},
+        {"refId": "D", "expr": "histogram_quantile(0.95, sum by (le) (rate(sglang:e2e_request_latency_seconds_bucket[1m])))", "legendFormat": "полное время p95"}
+      ]
+    },
+    {
+      "type": "table", "title": "Все метрики sglang, как они называются в ЭТОЙ версии",
+      "description": "Не украшение. Имена метрик sglang меняются между версиями, и панель, построенная на угаданном имени, рисует пустой график — что читается как «нагрузки нет», а не как «запрос неверный». Здесь видно, что сервер отдаёт на самом деле; если график выше пуст, а строка здесь есть — поправьте запрос, а не выводы.",
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 16},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "options": {"showHeader": true},
+      "targets": [
+        {"refId": "A", "expr": "{__name__=~\"sglang:.*\"}", "format": "table", "instant": true}
+      ]
+    }
+  ]
+}

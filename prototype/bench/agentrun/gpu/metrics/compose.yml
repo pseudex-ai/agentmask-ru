@@ -1,0 +1,57 @@
+# Панель прогона. Работает НА ВАШЕЙ машине, скребёт под через прокси RunPod.
+#
+# WHY NOT ON THE POD. The pod is the thing being measured, and a panel that dies
+# with it answers nothing about why it died. It also costs GPU-hour money to run
+# Grafana next to a card rented for its tensor cores.
+#
+#   POD_ID=abc123 SGLANG_API_KEY=… docker compose -f compose.yml up -d
+#   open http://localhost:3000        (admin / admin, смена пароля отключена)
+name: pseudex-run-metrics
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    environment:
+      # Substituted into prometheus.yml at start. Prometheus does not expand the
+      # environment itself, so the file is rendered by the entrypoint below —
+      # a templating container would be a third image to explain.
+      POD_ID: ${POD_ID:?укажите POD_ID пода RunPod}
+      SGLANG_API_KEY: ${SGLANG_API_KEY:?укажите тот же ключ, что и у sglang}
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.tmpl:ro
+      - prom-data:/prometheus
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        sed -e "s/__POD_ID__/$${POD_ID}/g" -e "s/__API_KEY__/$${SGLANG_API_KEY}/g" \
+            /etc/prometheus/prometheus.tmpl > /tmp/prometheus.yml
+        exec /bin/prometheus --config.file=/tmp/prometheus.yml \
+            --storage.tsdb.path=/prometheus --storage.tsdb.retention.time=30d
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.5.1
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      # A run panel on 127.0.0.1 that asks for a new password on first open is a
+      # step between the operator and the number they came for.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      # LOOPBACK ONLY. Same rule as the operator interface: this panel shows
+      # what a machine processing personal data is doing, and it has no auth.
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  prom-data:
+  grafana-data:

@@ -23,7 +23,9 @@ different number from the run is worse than no screen.
 import argparse
 import json
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -76,6 +78,24 @@ def ask(base_url: str, model: str, messages: list[dict], api_key: str,
     return response.json()
 
 
+class _Journal:
+    """Thread-safe writer with the one method `run_dialogue` uses.
+
+    A `threading.Lock` around `write` rather than a queue and a writer thread:
+    the journal line is produced once per model call, so contention is nothing
+    next to the network wait, and a queue would add a way for the last lines of
+    a run to be lost on exit.
+    """
+
+    def __init__(self, handle, lock: threading.Lock) -> None:
+        self._handle = handle
+        self._lock = lock
+
+    def write(self, line: str) -> None:
+        with self._lock:
+            self._handle.write(line)
+
+
 def run_dialogue(record: dict, base_url: str, model: str, api_key: str,
                  timeout: float, journal) -> dict:
     """Replay one dialogue: every client turn goes to the model, tools answer.
@@ -124,6 +144,9 @@ def main() -> int:
                         help="адрес pseudex; пусто = плечо БЕЗ маскирования")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--timeout", type=float, default=180.0)
+    parser.add_argument("--concurrency", type=int, default=32,
+                        help="сколько диалогов идут одновременно; внутри диалога "
+                             "ходы строго последовательны")
     parser.add_argument("--out", default="")
     args = parser.parse_args()
 
@@ -141,21 +164,43 @@ def main() -> int:
 
     stem = args.out or ("masked" if args.gateway else "direct")
     started = time.time()
+    done = 0
+    lock = threading.Lock()
+
     with open(f"{stem}.journal.jsonl", "w", encoding="utf-8") as journal, \
             open(f"{stem}.result.jsonl", "w", encoding="utf-8") as out:
-        for index, record in enumerate(records, 1):
+
+        # ONE LOCK FOR BOTH FILES. A dialogue is replayed sequentially — turn N
+        # depends on turn N-1 — so the only parallelism available is BETWEEN
+        # dialogues, and that is where it is taken. Without it a rented card
+        # spends the run idle: our output is ~15 tokens, so a single in-flight
+        # request leaves the GPU waiting on the network for most of every
+        # second, and 993 dialogues that could take twenty minutes take hours.
+        #
+        # Writes are serialised rather than buffered per worker because the
+        # journal is the record the operator interface is checked against; a
+        # line torn in half by two threads is a record that cannot be compared.
+        def replay(record: dict) -> None:
+            nonlocal done
             try:
                 result = run_dialogue(record, base_url, args.model, args.api_key,
-                                      args.timeout, journal)
+                                      args.timeout, _Journal(journal, lock))
             except Exception as error:  # noqa: BLE001
                 # A dialogue that dies is RECORDED, never skipped silently: a
                 # run that quietly drops the hard cases reports the easy ones.
                 result = {"deal": record.get("deal_id"), "error": repr(error)}
-            out.write(json.dumps(result, ensure_ascii=False) + "\n")
-            if index % 25 == 0:
-                rate = index / (time.time() - started)
-                print(f"  {index}/{len(records)}  {rate:.1f} диал/с")
+            with lock:
+                out.write(json.dumps(result, ensure_ascii=False) + "\n")
+                done += 1
+                if done % 25 == 0:
+                    rate = done / (time.time() - started)
+                    print(f"  {done}/{len(records)}  {rate:.1f} диал/с", flush=True)
+
+        with ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as pool:
+            list(pool.map(replay, records))
+
     print(f"готово: {len(records)} диалогов за {time.time() - started:.0f} с "
+          f"при {args.concurrency} одновременных "
           f"-> {stem}.result.jsonl, {stem}.journal.jsonl")
     return 0
 
