@@ -31,8 +31,15 @@ _CHECK_BODY = (
 )
 
 
-def claude_prompt(license_key: str, image: str, ui_port: str) -> str:
+def claude_prompt(license_key: str, image: str, ui_port: str,
+                  license_url: str = "") -> str:
     """The text the customer pastes into their coding agent, whichever it is."""
+    # Only printed when this deployment knows a licensing address of its own.
+    # The image carries the production default, so adding the line always would
+    # be noise in the command every real customer copies — and omitting it always
+    # is what sent three personas into a wall on the local stand.
+    license_url_line = (f"     -e PSEUDEX_LICENSE_URL={license_url} \\\n"
+                        if license_url else "")
     return f"""Подключи pseudex к этому проекту.
 
 Что это: контейнер, который прячет персональные данные от языковой модели и
@@ -69,7 +76,7 @@ OpenAI-совместимый — приложение ходит в него в
      -e PSEUDEX_ROLE=proxy \\
      -e PSEUDEX_UPSTREAM=<адрес провайдера из шага 1> \\
      -e PSEUDEX_LICENSE_KEY=$PSEUDEX_LICENSE_KEY \\
-     {image}
+{license_url_line}     {image}
 
    Если порт 8000 занят — возьми другой (например 8010) и дальше подставляй
    его везде вместо 8000. Не убивай чужие контейнеры.

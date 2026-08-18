@@ -114,6 +114,8 @@ def landing(request):
         "plans": Plan.objects.filter(is_public=True),
         "trial_days": services.TRIAL_DAYS,
         "image": settings.DOCKER_IMAGE,
+        "license_url_env": (f"-e PSEUDEX_LICENSE_URL={settings.LICENSE_URL} "
+                            if settings.LICENSE_URL else ""),
         # The same prompt the welcome page hands out, with the key as a
         # placeholder. It belongs HERE too: "paste this and it connects itself"
         # is the strongest thing we can say about setup, and saying it only
@@ -121,7 +123,7 @@ def landing(request):
         # never hear it.
         "claude_prompt": onboarding.claude_prompt(
             "ps_live_…  (подставится после регистрации)",
-            settings.DOCKER_IMAGE, "8081"),
+            settings.DOCKER_IMAGE, "8081", settings.LICENSE_URL),
     })
 
 
@@ -351,12 +353,14 @@ def welcome(request):
         "key": payload["key"],
         "org_id": payload["org"],
         "image": settings.DOCKER_IMAGE,
+        "license_url_env": (f"-e PSEUDEX_LICENSE_URL={settings.LICENSE_URL} "
+                            if settings.LICENSE_URL else ""),
         "trial_days": services.TRIAL_DAYS,
         # The key is injected into the prompt here, on the one page that is
         # allowed to show it in full. The cabinet cannot offer this: it only
         # keeps a prefix and a hash, by design.
         "claude_prompt": onboarding.claude_prompt(
-            payload["key"], settings.DOCKER_IMAGE, "8081"),
+            payload["key"], settings.DOCKER_IMAGE, "8081", settings.LICENSE_URL),
     })
     # Read once, and not cached. Deleting the cookie alone does NOT keep the key
     # out of the back-forward cache — only `no-store` disables it, so Back
@@ -403,6 +407,8 @@ def cabinet(request):
         "percent": min(100, round(used / included * 100)) if included else 0,
         "unreachable": unreachable,
         "image": settings.DOCKER_IMAGE,
+        "license_url_env": (f"-e PSEUDEX_LICENSE_URL={settings.LICENSE_URL} "
+                            if settings.LICENSE_URL else ""),
     })
 
 

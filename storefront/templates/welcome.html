@@ -28,11 +28,11 @@
   <div class="steps" style="margin-top:32px">
     <div>
       <div class="what"><div class="step">01</div><h3>Запустить</h3><div class="note">ключ подставлен · адрес провайдера — ваш</div></div>
-      <pre data-copy="docker run -d --name pseudex -p 8000:8000 -p 127.0.0.1:8081:8081 -v pseudex-data:/data -e PSEUDEX_ROLE=proxy -e PSEUDEX_UPSTREAM=https://api.openai.com/v1 -e PSEUDEX_LICENSE_KEY={{ key }} {{ image }}">docker run -d --name pseudex \
+      <pre data-copy="docker run -d --name pseudex -p 8000:8000 -p 127.0.0.1:8081:8081 -v pseudex-data:/data -e PSEUDEX_ROLE=proxy -e PSEUDEX_UPSTREAM=https://api.openai.com/v1 {{ license_url_env }}-e PSEUDEX_LICENSE_KEY={{ key }} {{ image }}">docker run -d --name pseudex \
   -p 8000:8000 -p 127.0.0.1:8081:8081 -v pseudex-data:/data \
   -e PSEUDEX_ROLE=proxy \
   -e PSEUDEX_UPSTREAM=https://api.openai.com/v1 \
-  -e PSEUDEX_LICENSE_KEY={{ key }} \
+  {{ license_url_env }}-e PSEUDEX_LICENSE_KEY={{ key }} \
   {{ image }}</pre>
       <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
     </div>

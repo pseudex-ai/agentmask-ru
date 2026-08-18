@@ -251,6 +251,16 @@ SELLER = {
 
 DOCKER_IMAGE = _env("PSEUDEX_DOCKER_IMAGE", "cr.yandex/pseudex/pseudex:1.0.0")
 
+# Адрес сервера лицензий, который витрина ПОКАЗЫВАЕТ в команде запуска. Пусто —
+# значит образ возьмёт своё боевое умолчание и лишняя переменная в команде не
+# нужна. Заполнено — команда получает `-e PSEUDEX_LICENSE_URL=…`.
+#
+# Появилось после прогона персон: локальный стенд раздавал БОЕВУЮ команду, образ
+# честно шёл на license.pseudex.ru, домена ещё нет, и все трое упёрлись в стену,
+# которой у настоящего клиента не будет. Витрина должна говорить то, что знает
+# про себя, а не то, что верно где-то ещё.
+LICENSE_URL = _env("PSEUDEX_LICENSE_URL", "")
+
 # Our back office. Configurable because a fixed /admin/ is the first path every
 # scanner tries; moving it is not security, but it removes the background noise
 # that hides a real attempt in the logs.

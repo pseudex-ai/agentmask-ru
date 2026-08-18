@@ -58,6 +58,10 @@ services:
       # What the site tells the customer to run. Points at the image built from
       # this checkout, not at the registry.
       PSEUDEX_DOCKER_IMAGE: pseudex:source
+      # And WHICH licensing server, because this stand is not production. Without
+      # it the site hands out the production command, the image dials
+      # license.pseudex.ru, and the customer meets a wall that exists only here.
+      PSEUDEX_LICENSE_URL: http://host.docker.internal:8443
       # Console backend: sign-in links appear in `docker compose logs storefront`
       # instead of needing a mail server.
       PSEUDEX_SMTP_HOST: ""

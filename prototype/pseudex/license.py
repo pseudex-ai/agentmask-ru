@@ -351,10 +351,16 @@ class LicenseClient:
                     time.sleep(_STARTUP_BACKOFF_SECONDS * attempt)
             except BundleError as error:
                 raise LicenseError("bundle_corrupt", str(error)) from error
+        # NAME THE HOST. «[Errno -2] Name or service not known» without it tells
+        # the customer nothing: they cannot put it in a firewall rule, cannot
+        # search for it, and cannot see that the container is dialling the
+        # production address because this deployment never overrode it. Three
+        # personas hit exactly that and all three ended up grepping inside the
+        # image for the variable name.
         raise LicenseError(
             "bundle_unavailable",
-            f"licensing server unreachable after {_STARTUP_ATTEMPTS} attempts: "
-            f"{last_transient}",
+            f"licensing server {self._base_url} unreachable after "
+            f"{_STARTUP_ATTEMPTS} attempts: {last_transient}",
         )
 
     def _renew(self) -> None:
