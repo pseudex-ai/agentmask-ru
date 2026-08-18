@@ -12,9 +12,11 @@ import hmac
 import json
 import logging
 import os
+import re
 import sys
 import secrets
 import threading
+import urllib.parse
 from contextlib import asynccontextmanager
 
 import anyio
@@ -268,16 +270,52 @@ def _tenant(request: Request) -> Tenant:
     raise HTTPException(status_code=401, detail="invalid Pseudex API key")
 
 
-def _context(customer_id: str) -> MaskContext:
-    """This leg has no per-agent attribution — the Pseudex key identifies the
-    customer, and everything under it is one audit scope."""
+# The customer's own gateway names the agent; we cannot infer it. A header
+# rather than a body field because the body is an OpenAI request and this leg
+# forwards it: adding a key of ours to it would reach the provider, and some
+# reject unknown fields outright.
+AGENT_HEADER = "x-pseudex-agent"
+_AGENT_SAFE = re.compile(r"[^\w .:@/-]", re.UNICODE)
+
+
+def _agent_of(request: Request) -> str:
+    """The agent label, or empty when the caller did not send one.
+
+    PERCENT-DECODED FIRST. HTTP header values are latin-1, so «менеджер-заказов»
+    cannot be put in one — an http client raises before the request is even sent,
+    and the caller sees a UnicodeEncodeError from inside their own gateway rather
+    than anything about us. On a Russian-market product the natural label is
+    Russian, so the header carries it percent-encoded, which is what every client
+    can produce and what this undoes.
+
+    Bounded and stripped of anything that is not a plain label. It lands in the
+    audit log, in a filter, and on a screen that renders values from customer
+    traffic — an unbounded string from a header would be all three at once.
+    """
+    raw = (request.headers.get(AGENT_HEADER) or "").strip()
+    if not raw:
+        return ""
+    # errors="replace": a malformed sequence must not 500 a masking request.
+    # The label is decoration; the masking is not.
+    decoded = urllib.parse.unquote(raw, encoding="utf-8", errors="replace")
+    return _AGENT_SAFE.sub("", decoded)[:64]
+
+
+def _context(customer_id: str, agent_id: str) -> MaskContext:
+    """The Pseudex key identifies the CUSTOMER; the agent, if there is one, is
+    named by the caller in `X-Pseudex-Agent`.
+
+    It used to be hard-wired to the empty string here, and the interface offered
+    a working-looking agent filter that could never return a row — which reads
+    as «такого агента не было», not as «атрибуции нет».
+    """
     return MaskContext(
         detector=DETECTOR,
         vault=_get_vault(customer_id),
         audit=AUDIT,
         cache=_MASK_CACHE,
         org_id=customer_id,
-        agent_id="",
+        agent_id=agent_id,
     )
 
 
@@ -285,6 +323,7 @@ def _mask_request(
     messages: list[dict[str, object]],
     tools: object,
     customer_id: str,
+    agent_id: str,
 ) -> tuple[list[dict[str, object]], object]:
     """The PUBLIC leg never skips the template: here the customer writes the
     system prompt and the tool schemas, so PII in either MUST be masked or it
@@ -294,7 +333,7 @@ def _mask_request(
     SQLite open (which can wait out another worker's journal-mode switch) happens
     on the worker thread and not on the event loop — same reasoning as the
     sidecar leg."""
-    context = _context(customer_id)
+    context = _context(customer_id, agent_id)
     result = (
         mask_messages(messages, context, False),
         mask_tools(tools, context, False),
@@ -308,7 +347,7 @@ def _mask_request(
     #
     # After masking succeeds, never before: masking is fail-closed, so a request
     # that raised was blocked and never reached a model.
-    AUDIT.record_request(customer_id, "")
+    AUDIT.record_request(customer_id, agent_id)
     return result
 
 
@@ -505,6 +544,7 @@ async def chat_completions(request: Request):
     # exception propagates to a 5xx and nothing is forwarded upstream.
     masked_messages, masked_tools = await anyio.to_thread.run_sync(
         _mask_request, body["messages"], body.get("tools"), tenant.customer_id,
+        _agent_of(request),
         limiter=_MASK_LIMITER,
     )
     masked_body = dict(body)
@@ -571,7 +611,7 @@ def _selfcheck_sync(org_id: str, text: str) -> dict[str, object]:
     from pseudex.envelope import mask_one
     from pseudex.redact import unmask_text
 
-    context = _context(org_id)
+    context = _context(org_id, "самопроверка")
     detected = DETECTOR.detect(text)
     masked = mask_one(text, context)
     vault = _get_vault(org_id)
@@ -665,7 +705,7 @@ async def mask(request: Request) -> JSONResponse:
 
 def _mask_texts(texts: list[object], org_id: str) -> list[str]:
     from pseudex.envelope import mask_one
-    context = _context(org_id)
+    context = _context(org_id, "песочница")
     return [mask_one(text, context) if isinstance(text, str) else "" for text in texts]
 
 

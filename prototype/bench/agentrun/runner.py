@@ -24,6 +24,7 @@ import argparse
 import json
 import sys
 import threading
+import urllib.parse
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -55,7 +56,7 @@ def client_turns(record: dict) -> list[tuple[str, str]]:
 
 
 def ask(base_url: str, model: str, messages: list[dict], api_key: str,
-        timeout: float) -> dict:
+        timeout: float, agent: str) -> dict:
     """One completion. Temperature 0 and no thinking — the run must repeat.
 
     `enable_thinking` is off because Qwen3's reasoning multiplies the output by
@@ -72,6 +73,13 @@ def ask(base_url: str, model: str, messages: list[dict], api_key: str,
         "chat_template_kwargs": {"enable_thinking": False},
     }
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    # Labels the run in the operator interface. Without it every row lands under
+    # no agent at all, and a screen showing 993 dialogues cannot say which run
+    # produced them.
+    if agent:
+        # Percent-encoded: an HTTP header is latin-1, and «прогон-водовоз»
+        # raised UnicodeEncodeError inside httpx before anything was sent.
+        headers["X-Pseudex-Agent"] = urllib.parse.quote(agent, safe="")
     response = httpx.post(f"{base_url.rstrip('/')}/chat/completions",
                           json=body, headers=headers, timeout=timeout)
     response.raise_for_status()
@@ -97,7 +105,7 @@ class _Journal:
 
 
 def run_dialogue(record: dict, base_url: str, model: str, api_key: str,
-                 timeout: float, journal) -> dict:
+                 timeout: float, journal, agent: str) -> dict:
     """Replay one dialogue: every client turn goes to the model, tools answer.
 
     The operator's real replies are NOT fed back and NOT compared. They are a
@@ -112,7 +120,7 @@ def run_dialogue(record: dict, base_url: str, model: str, api_key: str,
             continue
         messages.append({"role": "user", "content": text})
         for _ in range(4):        # a bounded tool loop; 4 is beyond anything seen
-            data = ask(base_url, model, messages, api_key, timeout)
+            data = ask(base_url, model, messages, api_key, timeout, agent)
             choice = data["choices"][0]["message"]
             messages.append(choice)
             journal.write(json.dumps({"deal": record.get("deal_id"),
@@ -144,6 +152,9 @@ def main() -> int:
                         help="адрес pseudex; пусто = плечо БЕЗ маскирования")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--timeout", type=float, default=180.0)
+    parser.add_argument("--agent", default="",
+                        help="метка прогона для операторского интерфейса "
+                             "(заголовок X-Pseudex-Agent)")
     parser.add_argument("--concurrency", type=int, default=32,
                         help="сколько диалогов идут одновременно; внутри диалога "
                              "ходы строго последовательны")
@@ -184,7 +195,8 @@ def main() -> int:
             nonlocal done
             try:
                 result = run_dialogue(record, base_url, args.model, args.api_key,
-                                      args.timeout, _Journal(journal, lock))
+                                      args.timeout, _Journal(journal, lock),
+                                      args.agent)
             except Exception as error:  # noqa: BLE001
                 # A dialogue that dies is RECORDED, never skipped silently: a
                 # run that quietly drops the hard cases reports the easy ones.

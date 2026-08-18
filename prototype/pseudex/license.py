@@ -131,6 +131,15 @@ class LicenseStatus:
     code: str | None
     lease_id: str | None
     bundle_version: str | None
+    # The lease has always carried the plan and the timings; nothing passed them
+    # on, so the subscription screen could only show lease mechanics — and
+    # «остаток grace» while the licence is active is a number that frightens
+    # without meaning anything. What the operator came to that screen for is
+    # which plan is running and when it renews.
+    plan: str | None
+    ttl_seconds: int
+    renew_after_seconds: int
+    next_renewal_in_seconds: float | None
     seconds_since_lease: float | None
     grace_left_seconds: float | None
     last_error: str | None
@@ -192,6 +201,7 @@ class LicenseClient:
         self._renew_after_seconds = 0
         self._lease_id: str | None = None
         self._bundle_version: str | None = None
+        self._plan: str | None = None
         self._terminal_code: str | None = None
         self._last_error: str | None = None
         # A short history of renewal failures, not just the latest one. "Почему
@@ -241,6 +251,12 @@ class LicenseClient:
             seconds_since_lease=elapsed,
             grace_left_seconds=grace_left,
             last_error=self._last_error,
+            plan=self._plan,
+            ttl_seconds=self._ttl_seconds,
+            renew_after_seconds=self._renew_after_seconds,
+            next_renewal_in_seconds=(
+                None if elapsed is None or not self._renew_after_seconds
+                else max(0.0, self._renew_after_seconds - elapsed)),
         )
 
     def is_serving(self) -> bool:
@@ -322,6 +338,7 @@ class LicenseClient:
             self._renew_after_seconds = int(lease["renew_after_seconds"])
             self._lease_id = str(lease["lease_id"])
             self._bundle_version = str(lease["bundle_version"])
+            self._plan = str(lease.get("plan") or "") or None
             self._last_error = None
 
     def acquire(self) -> None:

@@ -281,6 +281,11 @@ def build_router(audit, license_client, assets, detector_version: str,
         return JSONResponse({
             "state": state.state,
             "code": state.code,
+            "plan": state.plan,
+            "lease_ttl_s": state.ttl_seconds,
+            "renew_after_s": state.renew_after_seconds,
+            "next_renewal_in_s": (None if state.next_renewal_in_seconds is None
+                                  else round(state.next_renewal_in_seconds)),
             "lease_id": state.lease_id,
             "bundle_version": state.bundle_version,
             "seconds_since_lease": (None if state.seconds_since_lease is None

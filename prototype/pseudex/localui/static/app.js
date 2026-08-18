@@ -533,10 +533,19 @@ function Log({ org, onReveal }) {
         <div class="row">
           ${PERIODS.map(([label, value]) => html`
             <button class=${`btn sm ${period === value ? 'on' : ''}`} onClick=${() => setPeriod(value)}>${label}</button>`)}
-          <select class="field" value=${agent} onChange=${(event) => setAgent(event.target.value)}>
-            <option value="">все агенты</option>
-            ${(data?.agents || []).map((name) => html`<option value=${name}>${name}</option>`)}
-          </select>
+          ${(data?.agents || []).length
+            ? html`<select class="field" value=${agent} onChange=${(event) => setAgent(event.target.value)}>
+                <option value="">все агенты</option>
+                ${data.agents.map((name) => html`<option value=${name}>${name}</option>`)}
+              </select>`
+            /* A filter over an empty list is worse than no filter: it looks like
+             * it works, returns nothing, and reads as «такого агента не было»
+             * rather than «агенты не размечены». The caller labels them with
+             * X-Pseudex-Agent; until it does, say so instead of offering it. */
+            : html`<span class="hint" style="align-self:center">
+                агенты не размечены — назовите их заголовком
+                <code>X-Pseudex-Agent</code> в запросе к шлюзу
+              </span>`}
           <select class="field" value=${type} onChange=${(event) => setType(event.target.value)}>
             <option value="">все типы</option>
             ${(data?.types || []).map((name) => html`<option value=${name}>${name}</option>`)}
@@ -827,10 +836,19 @@ function Subscription({ org }) {
       <div class="grid cols-fit-md">
         <div class="cell" style="padding:24px">
           ${[
+            ['тариф', data?.plan || '—', ''],
             ['состояние лицензии', data?.state || '—', tone],
             ['код', data?.code || '—', data?.code ? 'pink' : ''],
             ['последняя аренда', data?.seconds_since_lease === null || data?.seconds_since_lease === undefined ? '—' : `${duration(data.seconds_since_lease)} назад`, ''],
-            ['остаток grace', data?.state === 'expired' ? 'исчерпан' : duration(data?.grace_left_s), data?.state === 'expired' ? 'pink' : ''],
+            ['следующее продление', data?.next_renewal_in_s === null || data?.next_renewal_in_s === undefined ? '—' : `через ${duration(data.next_renewal_in_s)}`, ''],
+            /* GRACE ONLY WHEN GRACE IS IN PLAY. Shown unconditionally it put
+             * «остаток grace 13 мин» next to an active licence — a countdown to
+             * nothing, which reads as time left on the subscription. Grace is
+             * the window after OUR server stops answering; while renewals
+             * succeed there is nothing to count down. */
+            ...(data?.state === 'active' ? [] : [
+              ['остаток grace', data?.state === 'expired' ? 'исчерпан' : duration(data?.grace_left_s), data?.state === 'expired' ? 'pink' : ''],
+            ]),
             ['версия бандла', data?.bundle_version || '—', ''],
             ['запросов за всё время', num(data?.requests_total), ''],
           ].map(([key, value, klass]) => html`

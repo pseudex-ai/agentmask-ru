@@ -229,9 +229,16 @@ class AuditLog:
             "SELECT day, SUM(n) FROM requests WHERE customer=? AND day>=? GROUP BY day",
             (customer, wanted[0]),
         ))
+        # COUNT(DISTINCT token), NOT COUNT(*). The same words — «значений
+        # защищено» — were computed two ways in one product: this screen counted
+        # OCCURRENCES while the figure reported for billing counts values in the
+        # vault. A customer comparing their own two screens saw 19 here and 10 in
+        # the cabinet, with no way to reconcile them. A protected value is a
+        # person's phone number; the number of times it was sent is what the
+        # journal below is for.
         event_rows = dict(self._fetchall(
-            "SELECT DATE(ts, 'unixepoch', 'localtime'), COUNT(*) FROM events "
-            "WHERE customer=? AND ts>=? GROUP BY 1",
+            "SELECT DATE(ts, 'unixepoch', 'localtime'), COUNT(DISTINCT token) "
+            "FROM events WHERE customer=? AND ts>=? GROUP BY 1",
             (customer, since),
         ))
         return [{"day": day,
