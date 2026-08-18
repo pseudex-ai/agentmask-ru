@@ -23,31 +23,81 @@ PORT="${PORT:-30000}"
 EXPORTER_PORT="${EXPORTER_PORT:-9400}"
 CTX="${CTX:-8192}"
 
+export HF_HOME="${HF_HOME:-/workspace/hf}"
+export PSEUDEX_MIN_MBPS="$MIN_MBPS"
+mkdir -p "$HF_HOME"
+
 # hf_transfer opens many parallel ranges. On a link that is merely far away
 # rather than narrow this is the single biggest lever — a sequential download
 # leaves most of the pipe idle no matter which data centre won the lottery.
-export HF_HUB_ENABLE_HF_TRANSFER=1
-export HF_HOME="${HF_HOME:-/workspace/hf}"
-mkdir -p "$HF_HOME"
+#
+# ENABLED ONLY IF IT IMPORTS. huggingface_hub does not fall back when the flag is
+# set and the package is missing: it raises, and the download fails outright. A
+# speed optimisation that can stop the run is not an optimisation.
+if ! python3 -c "import hf_transfer" 2>/dev/null; then
+    pip install --quiet hf_transfer 2>/dev/null || true
+fi
+if python3 -c "import hf_transfer" 2>/dev/null; then
+    export HF_HUB_ENABLE_HF_TRANSFER=1
+    echo "hf_transfer включён — загрузка идёт параллельными диапазонами"
+else
+    echo "hf_transfer недоступен — загрузка последовательная, будет медленнее"
+fi
 
 echo "════════ проба сети ════════"
-# A real weight shard from the model we are about to pull, so the number is the
-# path that matters — not a speedtest server chosen for its peering.
-PROBE_URL="https://huggingface.co/${MODEL}/resolve/main/config.json"
-RESOLVED="$(curl -sIL -o /dev/null -w '%{http_code}' "$PROBE_URL" || echo 000)"
-echo "  доступность HuggingFace: HTTP ${RESOLVED}"
+# Written in python3 rather than curl+awk: the sglang image is not guaranteed to
+# carry either, and a probe that fails because the tool is missing looks exactly
+# like a probe that failed because the link is slow.
+python3 - <<'PROBE'
+import json, os, sys, time, urllib.request
 
-# 200 MB is enough to leave TCP slow-start behind and short enough to be free.
-BIG_URL="https://huggingface.co/${MODEL}/resolve/main/model-00001-of-00009.safetensors"
-SPEED="$(curl -sL --max-time 60 -r 0-209715199 -o /dev/null -w '%{speed_download}' "$BIG_URL" 2>/dev/null || echo 0)"
-MBPS="$(awk -v s="$SPEED" 'BEGIN { printf "%.1f", s/1048576 }')"
-echo "  скорость: ${MBPS} МБ/с   порог: ${MIN_MBPS} МБ/с"
-ETA="$(awk -v m="$MBPS" 'BEGIN { if (m > 0) printf "%.0f", 31744/m/60; else print 999 }')"
-echo "  ожидаемое время загрузки весов: ~${ETA} мин"
+model = os.environ.get("MODEL", "")
+threshold = float(os.environ.get("PSEUDEX_MIN_MBPS", "25"))
+# THE SHARD NAME IS ASKED FOR, NEVER GUESSED. It was hard-coded as
+# «model-00001-of-00009», and this model has four shards — the probe would have
+# 404'd and parked the pod reporting a slow network, which is the one failure it
+# exists to tell apart from everything else.
+try:
+    with urllib.request.urlopen(
+            f"https://huggingface.co/api/models/{model}", timeout=20) as meta:
+        shards = sorted(f["rfilename"] for f in json.load(meta).get("siblings", [])
+                        if f["rfilename"].endswith(".safetensors"))
+except Exception as error:
+    print(f"  карточка модели недоступна: {error!r}")
+    sys.exit(2)
+if not shards:
+    print(f"  у {model} нет файлов .safetensors — проверьте имя модели")
+    sys.exit(2)
+print(f"  шардов у модели: {len(shards)}, меряю на {shards[0]}")
+url = f"https://huggingface.co/{model}/resolve/main/{shards[0]}"
 
-if awk -v m="$MBPS" -v t="$MIN_MBPS" 'BEGIN { exit !(m < t) }'; then
+# 200 MB is past TCP slow start and still free.
+request = urllib.request.Request(url, headers={"Range": "bytes=0-209715199"})
+read = 0
+started = time.monotonic()
+try:
+    with urllib.request.urlopen(request, timeout=30) as response:
+        while time.monotonic() - started < 60:
+            chunk = response.read(1 << 20)
+            if not chunk:
+                break
+            read += len(chunk)
+except Exception as error:
+    print(f"  HuggingFace недоступен: {error!r}")
+    sys.exit(2)
+
+elapsed = max(0.001, time.monotonic() - started)
+mbps = read / 1048576 / elapsed
+print(f"  скачано {read/1048576:.0f} МБ за {elapsed:.0f} с")
+print(f"  скорость: {mbps:.1f} МБ/с   порог: {threshold:.0f} МБ/с")
+print(f"  ожидаемое время загрузки весов (~31 ГБ): ~{31744/mbps/60:.0f} мин")
+sys.exit(0 if mbps >= threshold else 1)
+PROBE
+PROBE_RESULT=$?
+
+if [ "$PROBE_RESULT" -ne 0 ]; then
     echo
-    echo "  СЕТЬ МЕДЛЕННАЯ — веса НЕ качаются."
+    echo "  ПРОБА НЕ ПРОЙДЕНА (код ${PROBE_RESULT}) — веса НЕ качаются."
     echo "  Уничтожьте под и создайте в другом датацентре."
     echo "  Под оставлен живым нарочно: контейнер, который завершился,"
     echo "  платформа перезапустит, и он начнёт ту самую загрузку."

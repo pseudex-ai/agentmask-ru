@@ -681,32 +681,41 @@ def _spans_for_texts(texts: list[object], org_id: str) -> list[list[dict[str, ob
 
 @app.post("/mask", dependencies=[Depends(_require_gateway)])
 async def mask(request: Request) -> JSONResponse:
-    """Mask a list of texts. Present in proxy mode FOR THE SANDBOX.
+    """Mask a conversation. Present in proxy mode FOR THE SANDBOX.
 
     Masking on the request path happens inside `/v1/chat/completions` and needs
     no separate endpoint — which is why this one was absent, and why the local
     interface's sandbox was half dead here: «прогнать полностью» called it and
     got a 404.
-    #
+
     That matters more than it sounds. The sandbox is the only way a customer's
     security officer can satisfy themselves that masking works WITHOUT sending
     real traffic through it, and it is the first thing they ask to see. An
     endpoint that exists only in the other deployment shape makes the answer
     depend on which command the customer happened to copy.
+
+    THE CONTRACT IS THE SIDECAR'S, VERBATIM — {messages: [...]} in, the same
+    shape out. It was `{texts: [...]}` here, and the page, which is one page and
+    cannot know which shape it is talking to, sent `messages` and got
+    «400 texts must be a list». Adding a second accepted shape would have fixed
+    the symptom and kept the cause: two endpoints with one name and two
+    contracts. Same lesson as the token gate three comments up.
     """
     body = await request.json()
     org_id = str(body.get("org_id", "")) or "default"
-    texts = body.get("texts")
-    if not isinstance(texts, list):
-        return JSONResponse({"error": "texts must be a list"}, status_code=400)
-    masked = await anyio.to_thread.run_sync(_mask_texts, texts, org_id)
-    return JSONResponse({"results": masked})
-
-
-def _mask_texts(texts: list[object], org_id: str) -> list[str]:
-    from pseudex.envelope import mask_one
-    context = _context(org_id, "песочница")
-    return [mask_one(text, context) if isinstance(text, str) else "" for text in texts]
+    agent_id = str(body.get("agent_id", "")) or "песочница"
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        return JSONResponse({"error": "messages must be a list"}, status_code=400)
+    tools = body.get("tools")
+    masked_messages, masked_tools = await anyio.to_thread.run_sync(
+        _mask_request, messages, tools, org_id, agent_id,
+        limiter=_MASK_LIMITER,
+    )
+    payload: dict[str, object] = {"messages": masked_messages}
+    if tools is not None:
+        payload["tools"] = masked_tools
+    return JSONResponse(payload)
 
 
 @app.post("/reveal", dependencies=[Depends(_require_operator)])
