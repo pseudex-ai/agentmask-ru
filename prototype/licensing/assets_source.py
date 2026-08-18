@@ -290,6 +290,25 @@ ADDRESS_PATTERNS: dict[str, str] = {
         r"(?i)" + _TOK + r"(?:город|гор|г|посёлок|поселок|пос|п|село|деревн\w*|дер|станиц\w*|ст"
         r"|хутор\w*|пгт|снт|днп)\.?\s*" + _NAME
     ),
+    # RURAL ADDRESSING IS A CORE PART, because in a village there is no street:
+    # the address IS «деревня Горбунки, 24». A settlement was support only, so a
+    # span with no street was dropped and the whole address went to the model in
+    # the clear. Found in 993 production dialogues of a water delivery company
+    # in Leningrad oblast — half their traffic is villages, and no corpus of
+    # ours contained one.
+    "rural": (
+        r"(?i)" + _TOK + r"(?:посёл\w*|посел\w*|пос|село|сел[ае]|деревн\w*|дер|хутор\w*"
+        r"|пгт|снт|днп|тсн)\.?\s*" + _NAME + r"[\s,]+(?:д\.?|дом)?\s*\d{1,4}"
+    ),
+    # District and municipal-settlement names. SUPPORT: on their own they are a
+    # region, not somebody's address — but beside a street or a house they are
+    # part of it, and leaving them out masked the street while «Всеволожский
+    # район, Морозовское городское поселение» stayed in the clear beside it.
+    "district": (
+        r"(?i)(?-i:[А-ЯЁ])[а-яё]+(?:ый|ий|ое|ая)?\s*"
+        r"(?:район\w*|р-н|городско\w+\s+поселени\w+|сельско\w+\s+поселени\w+"
+        r"|гор\.?\s*посел\w*|\bгп\b|\bсп\b)"
+    ),
     # No (?i): digits only, and adding one would be a lie about intent.
     "index": r"\b\d{6}\b",
     # Marker-less street + house number. Captures an optional leading number
@@ -346,7 +365,11 @@ MONTHS: tuple[str, ...] = (
 # and «спид» matched «спидометр». Nineteen of the corpus's thirty-eight false
 # positives were this one bug. They get an explicit inflection set instead.
 MEDICAL_PATTERN = (
-    r"\b(?:диабет|гиперт|астм|онколог|вич|туберкул|гепатит|депресс|"
+    # «гиперт» was the third instance of the free-tail trap the comment above
+    # describes: it matched «гипертекста» in a sentence about HTTP. The stems
+    # that are actually meant are «гипертония» and «гипертензия», and they need
+    # one more letter each to stop being a prefix of an ordinary word.
+    r"\b(?:диабет|гиперто\w*|гипертен\w*|астм|онколог|вич|туберкул|гепатит|депресс|"
     r"шизофрен|ковид|covid|инсульт|инфаркт|эпилепс|бронхит|пневмони|артрит|"
     r"гастрит|псориаз|деменци|аутизм|бесплоди)\w*"
     r"|\bрак(?:а|у|ом|е|ов\w*|овы\w*)?\b"

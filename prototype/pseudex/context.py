@@ -170,6 +170,33 @@ def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
                for other in spans)
 
 
+_SENTENCE_SPLIT = re.compile(r"[.!?\n]")
+
+
+def _phone_shaped(value: str) -> bool:
+    """Written the way a phone number is written, not merely eleven digits long.
+
+    A leading «+», or eleven digits opening with 7 or 8. An order number, a
+    track number and a passport all fail it, which is what keeps the rescue
+    below from reopening the holes the deny gate was built to close.
+    """
+    digits = "".join(ch for ch in value if ch.isdigit())
+    return value.lstrip().startswith("+") or (
+        len(digits) == 11 and digits[0] in "78")
+
+
+def _sentence_around(text: str, span: Span) -> str:
+    """The sentence the span sits in — the unit a cue word actually belongs to."""
+    start = 0
+    for match in _SENTENCE_SPLIT.finditer(text[:span.start]):
+        start = match.end()
+    end = len(text)
+    match = _SENTENCE_SPLIT.search(text, span.end)
+    if match is not None:
+        end = match.start()
+    return text[start:end]
+
+
 def suppress(text: str, spans: list[Span]) -> list[Span]:
     context = ASSETS.get().context
     kept: list[Span] = []
@@ -204,6 +231,29 @@ def suppress(text: str, spans: list[Span]) -> list[Span]:
             window = text[max(0, span.start - 12): span.end + 12].lower()
             deny = _denied_nearby(last_word, context.deny)
             cue = any(word in window for word in context.phone_trigger)
+            # A PHONE-SHAPED NUMBER IS RESCUED BY A CUE ANYWHERE IN THE SENTENCE,
+            # not only inside the tight window. Real traffic writes «номер
+            # телефона для заказа +7…» and «номер телефона указывали в заказах
+            # 8916…»: the denying word «заказ» stands directly before the number
+            # and won, so three real phones went to the model in the clear —
+            # found in 993 production dialogues by comparing against an
+            # independent detector.
+            #
+            # The tight window stays for everything else, because it was itself
+            # a fix: in «Паспорт 34 78 570405, выдан отделом, контакт +7…» the
+            # word «контакт» belongs to the OTHER number thirty characters away.
+            # A passport is not phone-shaped — eleven digits opening with 7 or 8,
+            # or a leading «+» — so it cannot reach this branch.
+            # AN EXPLICIT «+» ENDS THE ARGUMENT. No order number, track number or
+            # invoice is written «+79161112233»; the international prefix is a
+            # statement that this is a telephone. Without this «аккаунт которого
+            # обычно совершали заказ - +7…» stayed suppressed, because the
+            # sentence held no phone cue at all — only the number's own shape.
+            if deny and span.value.lstrip().startswith("+"):
+                deny = False
+            if deny and not cue and _phone_shaped(span.value):
+                cue = any(word in _sentence_around(text, span).lower()
+                          for word in context.phone_trigger)
             if deny and not cue:
                 continue
         if span.entity_type in ("PASSPORT", "OGRN"):

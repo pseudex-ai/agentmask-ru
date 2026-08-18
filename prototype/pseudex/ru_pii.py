@@ -184,13 +184,19 @@ _IPV4_RE = re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}"
 _BIRTH_CERT_RE = re.compile(r"\b[IVX]{1,4}-[А-ЯЁ]{2}\s?№?\s?\d{6}\b")
 _OGRN_RE = re.compile(r"\b\d{15}\b|\b\d{13}\b")
 
-_SNILS_RE = re.compile(r"\b\d{3}-\d{3}-\d{3}[ -]\d{2}\b")
+# SPACES ARE A SEPARATOR TOO, and on the green card itself the number is printed
+# «112 233 445 95». Requiring dashes meant the form a customer copies off their
+# own document was the one form we did not find. The separator repeats because
+# copy-paste doubles it: «112-233-445  95» is the same СНИЛС.
+_SNILS_RE = re.compile(r"\b\d{3}[ -]\s*\d{3}[ -]\s*\d{3}[ -]\s*\d{2}\b")
 _SNILS_NODASH_RE = re.compile(r"\b\d{11}\b")
 _INN_RE = re.compile(r"\b\d{12}\b|\b\d{10}\b")
-_CARD_RE = re.compile(r"\b(?:\d[ -]?){15,18}\d\b")
+# A REPEATED SEPARATOR is what copy-paste out of a table produces, and the
+# single optional one refused it: «4276  3800 1234 5679» is the same card.
+_CARD_RE = re.compile(r"\b(?:\d[ -]{0,2}){15,18}\d\b")
 # Passport requires a separator (серия номер) — bare 10 digits collides with
 # everything (phone/INN/order), so we trade a little recall for precision.
-_PASSPORT_RE = re.compile(r"\b\d{2}\s\d{2}\s\d{6}\b|\b\d{4}\s\d{6}\b")
+_PASSPORT_RE = re.compile(r"\b\d{2}\s+\d{2}\s+\d{6}\b|\b\d{4}\s+\d{6}\b")
 # `с{1,2}` and `п{1,2}` absorb the doubled-consonant typo, which is the single
 # commonest way Russians misspell this word: «пасспорт» outnumbers every other
 # variant. Found on AgentPII-RU, where it cost 25% of passport recall in the

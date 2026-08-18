@@ -202,6 +202,9 @@ def count_values_since(db_path: str, since: float) -> int:
         conn.close()
 
 
+_INTERNAL_CAPITAL_RE = re.compile(r"([а-яё])([А-ЯЁ])")
+
+
 def canonicalize(entity_type: str, value: str) -> str:
     """Normalize a value so equivalent forms collapse to one key.
 
@@ -239,7 +242,10 @@ def canonicalize(entity_type: str, value: str) -> str:
         # resolving a token the model inflected is untouched — that distinction
         # is the whole reason the guard belongs here and not in `to_nominative`,
         # where it broke every substitute's round trip instead.
-        surface = value.strip()
+        # A MISSED SPACE IS STILL ONE PERSON. Detection finds «ГончароваАнна»,
+        # but the key kept it glued and it became a second row — so the model met
+        # two people out of one typing slip.
+        surface = _INTERNAL_CAPITAL_RE.sub(r"\1 \2", value.strip())
         if morph_names.lone_nominative_gender(surface) is not None:
             return surface
         # WRITTEN ORDER IS PRESERVED HERE, deliberately. Sorting the parts into
@@ -251,6 +257,13 @@ def canonicalize(entity_type: str, value: str) -> str:
         # Order-invariance belongs in the LOOKUP instead, where it costs nothing:
         # see `_same_person_reordered`.
         return morph_names.to_nominative(surface)
+    if entity_type == "PLATE":
+        # A PLATE IS THE SAME CAR IN EITHER CASE, and the ГОСТ alphabet was
+        # chosen so every letter has a Latin twin — «а123вс777», «А123ВС777» and
+        # «A123BC777» are one number to everyone except a string comparison.
+        # Keyed as written, one car became three.
+        return (value.strip().upper()
+                .translate(str.maketrans("ABEKMHOPCTYX", "АВЕКМНОРСТУХ")))
     if entity_type == "LOC":
         # THE ADDRESS HAD NO KEY AT ALL — the raw surface was used, so one place
         # written nine ways was nine rows and the model met nine addresses.

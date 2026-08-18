@@ -291,8 +291,15 @@ def _names_a_person(word: str) -> bool:
 
 _PATRONYMIC_TAIL = ("ович", "евич", "овна", "евна", "ична", "инична",
                     "оглы", "кызы", "улы", "уулу")
+# The inflection tail carries NO «я» and no «и». A patronymic never takes them
+# in any case — «Ивановича», «Ивановичу», «Ивановичем», «Ивановиче» — but
+# allowing «я» turned the anchor into «any word ending in -овная»: «основная»,
+# «условная», «духовная», «церковная» all became somebody's patronymic and the
+# sentence around them was destroyed. Found by running the detector over 993
+# sentences of ordinary Russian nobody here wrote; our own 27-phrase set had
+# never contained one.
 _PATRONYMIC_RE = re.compile(
-    r"\b[А-ЯЁа-яё]{3,}(?:" + "|".join(_PATRONYMIC_TAIL) + r")(?:[аеиоуыюя]|ем|ым|ой)?\b")
+    r"\b[А-ЯЁа-яё]{3,}(?:" + "|".join(_PATRONYMIC_TAIL) + r")(?:[аеоуы]|ем|ым|ой)?\b")
 
 
 def _patronymic_anchors(text: str) -> list[Span]:

@@ -138,10 +138,10 @@ def _log_shadow_diff(text: str, natasha: list[tuple[int, int, bool]],
 def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int, bool]]:
     out: list[tuple[int, int, bool]] = []
     for rx in (address.street_first, address.street_last, address.street_lower_first,
-               address.street_lower_last, address.house, address.mkr):
+               address.street_lower_last, address.house, address.mkr, address.rural):
         for m in rx.finditer(text):
             out.append((m.start(), m.end(), True))   # core
-    for rx in (address.apt, address.settlement, address.index):
+    for rx in (address.apt, address.settlement, address.index, address.district):
         for m in rx.finditer(text):
             out.append((m.start(), m.end(), False))  # support
     for m in address.markerless.finditer(text):
@@ -150,6 +150,15 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
         # context (Presidio-style enhancement for signal-less "Миклухо-Маклая 6").
         before = text[:m.start()]
         has_ctx = bool(address.addr_ctx.search(before)) or bool(address.prep_before.search(before))
+        # A NUMBER FOLLOWED BY A MONTH IS A DATE, not a house. «подписана
+        # Президентом Российской Федерации 5 августа 2000 года» matched as a
+        # marker-less street with house 5: «Российской» is an adjective, which
+        # is all the morphology gate asks for, and the date was destroyed along
+        # with it. Found on 993 sentences of ordinary Russian — the shape is
+        # ordinary legal prose, and no set of ours contained it.
+        after = text[m.end():m.end() + 12].lstrip()
+        if any(after.lower().startswith(month) for month in address.month_after):
+            continue
         if _is_street_name(m.group("words"), address) or m.group("num") or has_ctx:
             out.append((m.start(), m.end(), True))   # core (street + house number)
     for m in address.numbered_st.finditer(text):  # lowercase names ("1905 года 12")

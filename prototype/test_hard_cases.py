@@ -161,6 +161,22 @@ def test_round_trip(vault: Vault, detector: Detector) -> None:
                 if digits not in restored_digits:
                     broken.append((why, "PHONE", span.value))
                 continue
+            if span.entity_type == "PLATE":
+                # Case is not identity for a plate either, and for the same
+                # reason the phone above compares on digits: «е777кх102» and
+                # «Е777КХ102» are one car, so they now share one vault row and
+                # the row returns whichever spelling was written FIRST.
+                #
+                # THIS ASSERTION WAS RELAXED, deliberately and after the fact —
+                # the strict form was passing only because one car was being
+                # kept as several. The ГОСТ alphabet was chosen so every letter
+                # has a Latin twin, so the fold belongs here too.
+                fold = str.maketrans("ABEKMHOPCTYXabekmhopctyx",
+                                     "АВЕКМНОРСТУХавекмнорстух")
+                wanted = span.value.translate(fold).upper()
+                if wanted not in restored.translate(fold).upper():
+                    broken.append((why, "PLATE", span.value))
+                continue
             if span.value not in restored:
                 broken.append((why, span.entity_type, span.value))
     check("every detected value round-trips back intact", not broken,

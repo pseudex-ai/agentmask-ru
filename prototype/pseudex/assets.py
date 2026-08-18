@@ -72,6 +72,12 @@ class AddressAssets:
     neg: re.Pattern[str]
     gap: re.Pattern[str]
     trail_house: re.Pattern[str]
+    rural: re.Pattern[str]
+    district: re.Pattern[str]
+    # Month names, so a marker-less street can refuse a number that turns out
+    # to be a date. Taken from the SAME list the quasi date pattern uses —
+    # two copies of the Russian calendar would be two things to keep in step.
+    month_after: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -157,7 +163,7 @@ def _build_names(raw: dict[str, object]) -> NameAssets:
     )
 
 
-def _build_address(raw: dict[str, object]) -> AddressAssets:
+def _build_address(raw: dict[str, object], months: list[str]) -> AddressAssets:
     # NO FLAGS HERE ON PURPOSE. Each pattern declares its own case sensitivity
     # with a leading `(?i)`, because it differs per pattern and getting it wrong
     # is silent: compiling the marker-less street pattern case-insensitively
@@ -168,6 +174,7 @@ def _build_address(raw: dict[str, object]) -> AddressAssets:
     return AddressAssets(
         street_gaz=frozenset(raw["street_gaz"]),
         core_part=tuple(raw["core_part"]),
+        month_after=tuple(months),
         **compiled,
     )
 
@@ -202,7 +209,8 @@ def _build(payload: dict[str, object]) -> DetectionAssets:
     return DetectionAssets(
         version=str(payload["version"]),
         names=_build_names(payload["names"]),
-        address=_build_address(payload["address"]),
+        # Months come from the QUASI section: one Russian calendar, two users.
+        address=_build_address(payload["address"], payload["quasi"]["months"]),
         quasi=_build_quasi(payload["quasi"]),
         context=ContextAssets(
             deny=tuple(payload["context"]["deny"]),
