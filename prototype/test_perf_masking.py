@@ -93,7 +93,13 @@ def test_cache_lru_bound() -> None:
 # --------------------------------------------------------------------------- #
 def _client() -> httpx.AsyncClient:
     transport = httpx.ASGITransport(app=service.app)
-    return httpx.AsyncClient(transport=transport, base_url="http://pseudex")
+    # The gateway surface is credentialed, and the credential is READ FROM THE
+    # APP rather than restated here. `service` generates a per-process token when
+    # the environment does not set one, so a copy in this file would be a second
+    # value that has to stay equal to the first — and this test failing with 401
+    # is exactly what a drifting copy looks like.
+    return httpx.AsyncClient(transport=transport, base_url="http://pseudex",
+                             headers={"Authorization": f"Bearer {service.GATEWAY_TOKEN}"})
 
 
 async def _post(client: httpx.AsyncClient, path: str, payload: dict) -> dict:
@@ -157,7 +163,12 @@ async def _async_tests() -> None:
         org2 = "audit_org"
         for _ in range(5):
             await _mask(client, org2, [{"role": "user", "content": _PII_MSG}])
-        usage = (await client.get("/usage", params={"org_id": org2})).json()
+        # `/usage` is on the OPERATOR surface, not the gateway one — it discloses
+        # what exists to disclose, so it takes the admin credential and not the
+        # one every masking call carries. Sending the wrong one returns an error
+        # body, and reading a missing key out of it is how that looked from here.
+        usage = (await client.get("/usage", params={"org_id": org2},
+                                  headers={"Authorization": f"Bearer {service.ADMIN_TOKEN}"})).json()
         counts = usage["protected_counts"]
         # The message has exactly one NAME, one PHONE, one LOC(addr).
         assert counts.get("NAME", 0) == 1, f"NAME audited {counts.get('NAME')} times, expected 1 (dedup)"
@@ -184,7 +195,8 @@ async def _async_tests() -> None:
         plain = "hello world this is fine"
         out = await _mask(client, org4, [{"role": "user", "content": plain}])
         assert out[0]["content"] == plain, "no-PII passthrough altered a clean message"
-        usage4 = (await client.get("/usage", params={"org_id": org4})).json()
+        usage4 = (await client.get("/usage", params={"org_id": org4},
+                                   headers={"Authorization": f"Bearer {service.ADMIN_TOKEN}"})).json()
         assert usage4["protected_counts"] == {}, "no-PII message produced audit entries"
         print("no-PII passthrough OK")
 
