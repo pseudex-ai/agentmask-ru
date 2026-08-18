@@ -250,8 +250,15 @@ ADDRESS_PATTERNS: dict[str, str] = {
     # phone keyboard renders an address when the space is missed, and requiring
     # the space dropped the house number out of the span — the street was masked
     # and the building number was not.
-    "street_lower_first": rf"(?i)\b{_ST_FULL}\s+{_LOWER_NAME}\s*\d{{1,4}}",
-    "street_lower_last": rf"(?i)\b{_LOWER_NAME}\s+{_ST_FULL}\s*\d{{1,4}}",
+    # `\s*` between the name and the TYPE as well, not only before the house
+    # number: «ленинскийпроспект 42», «профсоюзнаяулица 63», «улицаЛенина 5» are
+    # what a phone keyboard produces when the space is missed, and the whole
+    # address then matched nothing at all — street, house and flat went to the
+    # model together. A type word cannot begin or end an ordinary Russian word,
+    # so gluing it on is not ambiguous the way a missing space between two
+    # ordinary words would be.
+    "street_lower_first": rf"(?i)\b{_ST_FULL}\s*{_LOWER_NAME}\s*\d{{1,4}}",
+    "street_lower_last": rf"(?i)\b{_LOWER_NAME}\s*{_ST_FULL}\s*\d{{1,4}}",
     "street_first": rf"(?i)\b{_ST}\s*\.?\s*{_CAP}",
     "street_last": rf"(?i){_CAP}\s+{_ST}\b",
     "house": (

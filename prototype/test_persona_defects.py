@@ -233,6 +233,80 @@ def check_colloquial_names(detector: Detector) -> list[str]:
     return problems
 
 
+
+def check_glued_spellings(detector: Detector) -> list[str]:
+    """A missed space bar must not hide a whole person or a whole address.
+
+    «ГончароваАнна» and «ленинскийпроспект 42кв118» found NOTHING: no rule looks
+    inside a word, so the name and the street went to the model whole. It is the
+    shape the sloppy register produces most often after the Latin slip.
+
+    The negatives are the point of the design: both halves of a glued NAME must
+    be name-ish, which is what keeps «СберБанк» and «МосЭнерго» out. A street
+    TYPE word cannot begin or end an ordinary Russian word, so gluing it on is
+    not ambiguous the way two ordinary words would be.
+    """
+    problems: list[str] = []
+    for text, kind in (("заказ на ГончароваАнна", "NAME"),
+                       ("заказ на СоколоваАнна", "NAME"),
+                       ("клиент КузнецоваОльга", "NAME"),
+                       ("москва ленинскийпроспект 42кв118", "LOC"),
+                       ("адрес профсоюзнаяулица 63", "LOC"),
+                       ("улицаЛенина 5", "LOC")):
+        if not any(s.entity_type == kind for s in detector.detect(text)):
+            problems.append(f"слипшееся {kind} утекло: {text!r}")
+    for brand in ("оплата через СберБанк", "компания МосЭнерго",
+                  "сервис ЯндексТакси"):
+        if detector.detect(brand):
+            problems.append(f"бренд замаскирован: {brand!r}")
+    for role in ("клиент Иванов Пётр Сергеевич", "заказ Иванов Пётр Сергеевич",
+                 "получатель Иванов Пётр Сергеевич"):
+        found = [role[s.start:s.end] for s in detector.detect(role)
+                 if s.entity_type == "NAME"]
+        if found != ["Иванов Пётр Сергеевич"]:
+            problems.append(f"служебное слово внутри имени: {role!r} -> {found}")
+    return problems
+
+
+def check_one_person_one_token(_detector: Detector) -> list[str]:
+    """Capitalisation and ё are not identity.
+
+    Keyed by the written form, «Гончарова Анна» and «гончарова анна» were two
+    rows and the model met two people; «Пётр» and «Петр» were two more, and ё->е
+    is 53% of all real Russian misspelling — a norm, not a typo. A persona
+    measured seven spellings of one client and counted seven substitutes.
+
+    The DISPLAY must survive it: the first form written is what `detokenize`
+    hands the tool, so folding the key must not fold the value.
+    """
+    import os
+    import tempfile
+
+    from pseudex.vault import Vault
+
+    problems: list[str] = []
+    path = os.path.join(tempfile.mkdtemp(prefix="one-person-"), "vault.db")
+    vault = Vault(path, "personas")
+    groups = (
+        ("Гончарова Анна", "гончарова анна", "ГОНЧАРОВА АННА"),
+        ("Иванова", "иванова", "ИВАНОВА"),
+        ("Пётр Иванов", "пётр иванов", "петр иванов"),
+        ("Соколов Игорь Валентинович", "СОКОЛОВ ИГОРЬ ВАЛЕНТИНОВИЧ"),
+    )
+    for group in groups:
+        tokens = {vault.tokenize(spelling, "NAME") for spelling in group}
+        if len(tokens) != 1:
+            problems.append(f"{group[0]!r}: {len(tokens)} токенов на {len(group)} "
+                            f"написаний — {sorted(tokens)}")
+    first = vault.tokenize("Гончарова Анна", "NAME")
+    if vault.detokenize(first) != "Гончарова Анна":
+        problems.append(f"свёртка съела написание: {vault.detokenize(first)!r}")
+    # A reopened vault must agree — the fold is a stored column, not a cache.
+    if Vault(path, "personas").tokenize("ГОНЧАРОВА АННА", "NAME") != first:
+        problems.append("после перезапуска волта тот же человек получил другой токен")
+    return problems
+
+
 CHECKS = (
     ("нормализация: look-alike на краю слова", check_lookalike_inside_a_word),
     ("строчное ФИО в косвенном падеже", check_lowercase_oblique_full_name),
@@ -241,6 +315,8 @@ CHECKS = (
     ("двусмысленные слова не ключи", check_ambiguous_keys_stay_out),
     ("/usage требует известный ключ", lambda _detector: check_usage_needs_a_real_key()),
     ("просторечные имена не утекают", check_colloquial_names),
+    ("слипшиеся написания не прячут ПД", check_glued_spellings),
+    ("регистр и ё не расщепляют человека", check_one_person_one_token),
 )
 
 

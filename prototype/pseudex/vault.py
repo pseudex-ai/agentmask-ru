@@ -305,6 +305,22 @@ def name_key(token: str) -> str:
     return morph_names.to_nominative(token).lower()
 
 
+def fold_key(canonical: str) -> str:
+    """Case- and ё-insensitive signature of a name, for the LOOKUP only.
+
+    A person is not a capitalisation and not a diaeresis. Keyed by the written
+    form, «Гончарова Анна» and «гончарова анна» were two rows, so the model met
+    two people; «Пётр» and «Петр» were two more, and ё->е is 53% of all real
+    Russian misspelling — a norm, not a typo.
+
+    A SEPARATE signature rather than a normalised key, because `canonical` is
+    also what `detokenize` hands the customer's tool: folding it there would put
+    «гончарова анна» into a CRM that was told «Гончарова Анна». First writer
+    wins the display, everybody shares the row.
+    """
+    return canonical.casefold().replace("ё", "е")
+
+
 def place_key(token: str) -> str:
     """Case-invariant signature of a LOC, stored in the same column as a name's.
 
@@ -904,6 +920,7 @@ class Vault:
         )
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_name_parts ON name_parts (customer, part)"
+
         )
         self._conn.execute(
             # PARTS OF THE SUBSTITUTE, mirroring `name_parts` for the real value.
@@ -923,6 +940,7 @@ class Vault:
         self._migrate_name_keys()
         self._migrate_original_form()
         self._migrate_first_seen()
+        self._migrate_fold_key()
         # Every lookup on the response leg is an indexed point query, so
         # detokenization cost tracks the length of the answer, not the size of
         # the vault. Without these indexes each one degrades to a table scan.
@@ -1064,6 +1082,15 @@ class Vault:
             gender = (morph_names.detect_gender(value)
                       if entity_type == "NAME" else None)
             if entity_type == "NAME":
+                # The FOLD first: it is one indexed point query and it catches
+                # the two commonest ways one person is written twice — a
+                # different capitalisation and е for ё.
+                folded = self._conn.execute(
+                    "SELECT token FROM tokens WHERE customer=? AND canonical_fold=?",
+                    (self._customer, fold_key(canonical)),
+                ).fetchone()
+                if folded is not None:
+                    return folded[0]
                 reordered = self._same_person_reordered(canonical)
                 if reordered is not None:
                     return reordered
@@ -1080,11 +1107,13 @@ class Vault:
                 self._conn.execute(
                     "INSERT INTO tokens "
                     "(customer, canonical, entity_type, token, digits, digits10, "
-                    "original, first_seen, name_key) VALUES (?,?,?,?,?,?,?,?,?)",
+                    "original, first_seen, name_key, canonical_fold) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
                     (self._customer, canonical, entity_type, token, digits, digits10,
                      value, time.time(),
                      name_key(token) if entity_type == "NAME"
-                     else place_key(token) if entity_type == "LOC" else None),
+                     else place_key(token) if entity_type == "LOC" else None,
+                     fold_key(canonical) if entity_type == "NAME" else None),
                 )
             except sqlite3.IntegrityError:
                 # ANOTHER PROCESS GOT THERE FIRST, and that is not an error.
@@ -1336,6 +1365,29 @@ class Vault:
                            (time.time(),))
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_tokens_first_seen ON tokens (first_seen)")
+        self._conn.commit()
+
+    def _migrate_fold_key(self) -> None:
+        """Add the case/ё-insensitive lookup signature to existing vaults.
+
+        Backfilled in place: a customer's rows are their people, and rekeying
+        them would be a rewrite of the thing the product exists to keep stable.
+        The column is additive and the exact-canonical lookup still runs first,
+        so a vault that has not been migrated yet behaves exactly as before.
+        """
+        columns = [row[1] for row in
+                   self._conn.execute("PRAGMA table_info(tokens)").fetchall()]
+        if "canonical_fold" in columns:
+            return
+        self._conn.execute("ALTER TABLE tokens ADD COLUMN canonical_fold TEXT")
+        rows = self._conn.execute(
+            "SELECT customer, canonical FROM tokens").fetchall()
+        self._conn.executemany(
+            "UPDATE tokens SET canonical_fold=? WHERE customer=? AND canonical=?",
+            [(fold_key(canonical), customer, canonical) for customer, canonical in rows])
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tokens_fold "
+            "ON tokens (customer, canonical_fold)")
         self._conn.commit()
 
     def reveal(self, token: str) -> tuple[str | None, str]:

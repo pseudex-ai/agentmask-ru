@@ -343,6 +343,14 @@ def _extend_left_of_patronymic(text: str, start: int) -> int:
         best = max(parses, key=lambda parse: parse.score)
         if best.tag.POS in _NOT_A_NAME_POS:
             break
+        # AND the role words NER already over-tags. «клиент», «заказ»,
+        # «получатель» are ordinary nouns, so a part-of-speech guard admits
+        # them, and «клиент ИвановПётр Сергеевич» became one name — the tool
+        # was then called with the word «клиент» inside the customer's name.
+        # The list is the same one `keep_location` uses; there is no second
+        # vocabulary to keep in step.
+        if candidate.lower() in ASSETS.get().names.stopwords:
+            break
         boundary = len(head) - word.end()
     return boundary
 
@@ -554,6 +562,32 @@ def _adjacent_surnames(text: str, found: list[Span]) -> list[Span]:
     return extra
 
 
+_GLUED_NAME_RE = re.compile(r"\b([А-ЯЁ][а-яё]{2,})([А-ЯЁ][а-яё]{2,})\b")
+
+
+def _glued_names(text: str, names: NameAssets) -> list[Span]:
+    """Two name parts typed without the space between them.
+
+    «ГончароваАнна», «СоколоваАнна», «КузнецоваОльга» — a missed space bar, and
+    the whole person went to the model in the clear because no rule looks INSIDE
+    a word. It is the shape the sloppy register produces most often after the
+    Latin slip, and AgentPII's own misses carried it («СоколоваАнна» among them).
+
+    BOTH halves must be name-ish, and that is what keeps brands out: «СберБанк»
+    splits into «Сбер» and «Банк», «МосЭнерго» into «Мос» and «Энерго», and
+    neither half is a name or a surname shape. Requiring only one half would
+    mask every capitalised compound in the language.
+    """
+    spans: list[Span] = []
+    for match in _GLUED_NAME_RE.finditer(text):
+        left, right = match.group(1), match.group(2)
+        if all(_is_known_name(part, names) or _is_surname_shaped(part, names)
+               or part.lower().endswith(names.patronymic_suffixes)
+               for part in (left, right)):
+            spans.append(Span(match.start(), match.end(), "NAME", match.group()))
+    return spans
+
+
 def gazetteer_names(text: str) -> list[Span]:
     """Catch names NER misses: known names (any case), Latin pairs, initials,
     and — for CAPITALISED words only — the bulk dictionary.
@@ -604,7 +638,8 @@ def gazetteer_names(text: str) -> list[Span]:
     # Anchors are added BEFORE the neighbour pass, not alongside it: the pass
     # extends FROM an anchor, so an anchor introduced in the same expression is
     # invisible to it and «Тестов Тест» stays outside the span.
-    spans = spans + _patronymic_anchors(text) + _cued_name_parts(text)
+    spans = (spans + _patronymic_anchors(text) + _cued_name_parts(text)
+             + _glued_names(text, names))
     spans = _merge_adjacent(spans + _adjacent_surnames(text, spans), text)
     for match in _LATIN_PAIR_RE.finditer(text):
         # ANY part may be the one we know. Requiring it of the FIRST word meant
