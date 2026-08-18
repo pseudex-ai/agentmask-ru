@@ -25,6 +25,17 @@
         <div class="kv"><span class="k">план</span><span class="v">{{ subscription.plan.title }}</span></div>
         <div class="kv"><span class="k">в месяц</span><span class="v">{{ subscription.plan.monthly_price|floatformat:0 }} ₽</span></div>
         <div class="kv"><span class="k">контейнеров по тарифу</span><span class="v">{{ subscription.plan.max_instances }}</span></div>
+        <div class="kv"><span class="k">занято сейчас</span><span class="v">{{ instances|length }}</span></div>
+        {% if instances %}
+        <ul class="slots">
+          {% for slot in instances %}
+          <li><code>{{ slot.instance_id }}</code></li>
+          {% endfor %}
+        </ul>
+        <p class="hint">Слот освобождается сам, когда аренда контейнера истекает.
+        Пока он занят, новый контейнер с тем же ключом получит 409 — это лимит
+        тарифа, а не отказ в оплате.</p>
+        {% endif %}
         <div class="kv"><span class="k">период до</span><span class="v">{{ subscription.current_period_end|date:"d.m.Y" }}</span></div>
       {% endif %}
     </div>

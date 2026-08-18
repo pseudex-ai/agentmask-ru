@@ -232,6 +232,42 @@ class LicenseStore:
             )
             self._conn.commit()
 
+    def active_instances(self, org_id: str, window_seconds: int) -> list[dict]:
+        """The instances currently holding a slot, newest lease first.
+
+        The plan is sold in containers and the limit is enforced on them, but
+        there was nowhere to SEE them: a persona whose single slot was held by a
+        container they had already deleted was told to «остановите лишний
+        контейнер или перейдите на больший тариф» — asked to stop something that
+        did not exist and offered a more expensive plan as the remedy.
+
+        The same window `may_lease` counts with, so what the customer reads is
+        exactly what the limit is applied to.
+        """
+        cutoff = time.time() - window_seconds
+        rows = self._conn.execute(
+            "SELECT instance_id, MAX(issued_at) FROM leases "
+            "WHERE org_id=? AND issued_at>=? GROUP BY instance_id "
+            "ORDER BY MAX(issued_at) DESC",
+            (org_id, cutoff),
+        ).fetchall()
+        return [{"instance_id": row[0], "last_lease": float(row[1])} for row in rows]
+
+    def release_instance(self, org_id: str, instance_id: str) -> bool:
+        """Give a slot back before its window expires.
+
+        A customer who recreated a volume is a NEW instance by construction, and
+        in production the window is a day — so without this they wait a day to
+        run the product they are paying for. Deleting the leases is safe: the
+        engine is fail-closed and a container without a live lease is not
+        serving, so a slot released by mistake costs one renewal round trip.
+        """
+        with self._conn:
+            cursor = self._conn.execute(
+                "DELETE FROM leases WHERE org_id=? AND instance_id=?",
+                (org_id, instance_id))
+        return cursor.rowcount > 0
+
     def may_lease(self, org_id: str, plan: str, instance_id: str,
                   window_seconds: int) -> tuple[bool, str]:
         """Whether this instance may take a lease under the org's plan.

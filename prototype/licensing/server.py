@@ -253,6 +253,30 @@ async def usage(request: Request) -> JSONResponse:
     return JSONResponse({"status": "recorded"})
 
 
+@admin_app.get("/admin/instances")
+async def admin_instances(request: Request) -> JSONResponse:
+    """Which containers hold a slot for this org, and since when."""
+    org_id = request.query_params.get("org_id", "")
+    if not org_id:
+        return JSONResponse({"error": "org_id required"}, status_code=400)
+    return JSONResponse({"org_id": org_id,
+                         "window_seconds": _TTL_SECONDS,
+                         "instances": STORE.active_instances(org_id, _TTL_SECONDS)})
+
+
+@admin_app.post("/admin/release")
+async def admin_release(request: Request) -> JSONResponse:
+    """Free a slot held by a container that is no longer running."""
+    body = await request.json()
+    org_id = str(body.get("org_id", ""))
+    instance_id = str(body.get("instance_id", ""))
+    if not org_id or not instance_id:
+        return JSONResponse({"error": "org_id and instance_id required"},
+                            status_code=400)
+    released = STORE.release_instance(org_id, instance_id)
+    return JSONResponse({"released": released})
+
+
 @admin_app.post("/admin/issue")
 async def admin_issue(request: Request) -> JSONResponse:
     body = await request.json()

@@ -390,6 +390,16 @@ def cabinet(request):
         reported, unreachable = {}, True
     if not isinstance(reported, dict):
         reported = {}
+    # WHICH CONTAINERS HOLD A SLOT. The plan is sold in containers and the limit
+    # is enforced on them, and until now the cabinet showed only the allowance.
+    # A customer refused a lease was told to stop a container they had already
+    # deleted; now they can see what the licensing server thinks is running.
+    try:
+        slots = licensing.instances(organization.id).get("instances", [])
+    except licensing.LicensingError:
+        slots = []
+    if not isinstance(slots, list):
+        slots = []
     # What is billed: protected values, from the monotonic accumulator. Requests
     # are shown beside it because the operator recognises them, but the bar
     # tracks the meter.
@@ -397,6 +407,7 @@ def cabinet(request):
     requests = int(reported.get("requests", 0))
     included = subscription.plan.included_values if subscription else 0
     return render(request, "app/cabinet.html", {
+        "instances": slots,
         "organization": organization,
         "subscription": subscription,
         "keys": organization.keys.filter(revoked_at__isnull=True),

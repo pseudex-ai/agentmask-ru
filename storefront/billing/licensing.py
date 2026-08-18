@@ -102,3 +102,26 @@ def usage(org_id: str) -> dict[str, object]:
     itself — it has no way to and must not acquire one.
     """
     return _get("/admin/usage", {"org_id": org_id})
+
+
+def instances(org_id: str) -> dict[str, object]:
+    """Which containers hold a slot right now, and since when.
+
+    The plan is sold in containers and the limit is enforced on them, but the
+    cabinet had nowhere to show them: a persona whose only slot was held by a
+    container they had already deleted read «остановите лишний контейнер или
+    перейдите на больший тариф» — asked to stop something that did not exist,
+    and offered a bigger plan as the remedy.
+    """
+    return _get("/admin/instances", {"org_id": org_id})
+
+
+def release_instance(org_id: str, instance_id: str) -> bool:
+    """Give a slot back before its window expires.
+
+    A customer who recreated a volume is a NEW instance by construction, and in
+    production the window is a day — so without this they wait a day to run the
+    product they pay for.
+    """
+    result = _post("/admin/release", {"org_id": org_id, "instance_id": instance_id})
+    return bool(result.get("released"))
