@@ -259,6 +259,104 @@ def generic_forms() -> tuple[tuple[str, ...], tuple[str, ...]]:
     return tuple(_GENERIC), tuple(_GENERIC_SHORT)
 
 
+# Notation words that mean the same slot however they are written. The key must
+# not care whether the customer typed «дом 42», «д. 42» or «д.42» — it is one
+# building either way, and keying them apart made one address into three.
+_SLOT_ALIASES: dict[str, str] = {
+    # «дом» DROPS OUT of the key entirely. A bare number after a street IS the
+    # house, so «улица Тверская 5» and «ул. Тверская, д. 5» are one address and
+    # keeping the marker made them two. «кв», «к» and «стр» stay, because there
+    # the marker is what says WHICH number it is.
+    "дом": "", "дома": "", "д": "", "владение": "", "вл": "",
+    "квартира": "кв", "кв": "кв", "офис": "кв", "оф": "кв",
+    "помещение": "кв", "пом": "кв", "комната": "кв", "комн": "кв",
+    # NO BARE «к» AND NO BARE «с». Both are prepositions before they are
+    # «корпус» and «строение», and aliasing them turned «с Ленинского
+    # проспекта» into a key that began with a building section.
+    "корпус": "к", "корп": "к", "кор": "к",
+    "строение": "стр", "стр": "стр",
+    "город": "", "г": "", "гор": "",
+}
+# Prepositions carry no part of an address and change with the sentence around
+# it. Left in, «на Ленинском проспекте» and «Ленинский проспект» were two rows.
+_PREPOSITIONS = frozenset({"на", "в", "во", "по", "с", "со", "у", "до", "от",
+                           "из", "за", "к", "ко", "о", "об", "при", "около"})
+# NOT split on «-»: «пр-т» and «б-р» are single words in the abbreviation table,
+# and splitting them meant they never matched it — so «пр-т» and «проспект»
+# stayed two different addresses.
+_KEY_SPLIT_RE = re.compile(r"[\s,;./№#]+")
+
+
+def address_key(phrase: str) -> str:
+    """A structural signature of an address, for the VAULT KEY only.
+
+    One address written nine ways was nine rows, so the model met nine
+    addresses: «Москва, Ленинский проспект, д. 42» / «дом 42» / «д.42» /
+    «пр-т» / lower case / «на Ленинском проспекте» each keyed on itself. Names
+    got a canonical key long ago; addresses never did — `canonicalize` had no
+    LOC branch at all and used the raw surface.
+
+    Safe to normalise as hard as this because `detokenize` returns the ORIGINAL
+    for every type except NAME: what the customer's tool receives is still the
+    string they wrote. Only the row it finds changes.
+
+    Built by SLOT, not by sorting words: the city goes first if there is one,
+    then the street type, then the name, then the numbers in the order they were
+    written. House 42 flat 118 and house 118 flat 42 are different addresses.
+    """
+    # Prepositions come off BEFORE normalisation: they are what makes
+    # `phrase_to_nominative` read «на Ленинском» as a stem rather than an
+    # adjective, so stripping them afterwards would be too late.
+    stripped = " ".join(word for word in phrase.strip().split()
+                        if word.strip(",.").casefold() not in _PREPOSITIONS)
+    parts: list[str] = []
+    for raw in _KEY_SPLIT_RE.split((stripped or phrase.strip())
+                                   .casefold().replace("ё", "е")):
+        if not raw or raw in _PREPOSITIONS:
+            continue
+        alias = _SLOT_ALIASES.get(raw)
+        if alias is not None:
+            if alias:
+                parts.append(alias)
+            continue
+        full = _GENERIC_SHORT.get(raw)
+        if full:
+            parts.append(full[0])
+            continue
+        # THE LEMMA, not `phrase_to_nominative`. A key does not need a correct
+        # nominative, it needs a STABLE one — and the lemma is stable where the
+        # nominative is not: «Ленинском» normalises to «ленинск» through the
+        # phrase path and to «ленинский» through the lemma, «проспекта» to
+        # «проспекта» and to «проспект». Three writings of one address were
+        # three rows because of exactly that.
+        # A glued type word is split HERE, in the key, where being wrong costs
+        # nothing: «ленинскийпроспект» and «ленинский проспект» are one street
+        # and were two rows. Detection already finds the glued form; only the
+        # key could not see through it.
+        for generic in _GENERIC:
+            if raw.endswith(generic) and len(raw) > len(generic) + 2:
+                stem = raw[:-len(generic)]
+                parses = MORPH.parse(stem)
+                parts.append(parses[0].normal_form if parses else stem)
+                parts.append(generic)
+                break
+        else:
+            parses = MORPH.parse(raw) if not raw.isdigit() else []
+            parts.append(parses[0].normal_form if parses else raw)
+    # A city named anywhere goes to the front, so «Москва, X» and «X, Москва»
+    # are one address. Everything else keeps the order it was written in.
+    # The city first, then the street TYPE, then everything else in the order it
+    # was written. Russian puts the type on either side — «улица Тверская» and
+    # «Тверская улица» are one street — so its position cannot be part of the
+    # key. The numbers keep their order: house 42 flat 118 is not house 118
+    # flat 42.
+    city = [part for part in parts if _CITY_RE.match(part)]
+    rest = [part for part in parts if not _CITY_RE.match(part)]
+    generic = [part for part in rest if part in _GENERIC]
+    tail = [part for part in rest if part not in _GENERIC]
+    return " ".join(city + generic[:1] + tail)
+
+
 def _has_city(phrase: str) -> bool:
     """Whether the address names a settlement as well as a street.
 

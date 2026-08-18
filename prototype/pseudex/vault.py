@@ -251,6 +251,13 @@ def canonicalize(entity_type: str, value: str) -> str:
         # Order-invariance belongs in the LOOKUP instead, where it costs nothing:
         # see `_same_person_reordered`.
         return morph_names.to_nominative(surface)
+    if entity_type == "LOC":
+        # THE ADDRESS HAD NO KEY AT ALL — the raw surface was used, so one place
+        # written nine ways was nine rows and the model met nine addresses.
+        # Normalised hard on purpose: `detokenize` returns the ORIGINAL for
+        # every type except NAME, so the customer's tool still receives the
+        # string they wrote and only the row it finds changes.
+        return morph_places.address_key(value)
     return value.strip()
 
 

@@ -244,6 +244,8 @@ _NUM_NAME = r"\d{1,4}[-\s]?[яейои]?\s+(?:" + "|".join(NUMBERED_TAIL) + r")"
 _ST_FULL = (r"(?:улиц\w+|проспект\w*|переул\w+|бульвар\w*|набережн\w+|шоссе"
             r"|площад\w+|проезд\w*|микрорайон\w*|тупик\w*|алле\w+)")
 _LOWER_NAME = r"[а-яё]{3,}(?:[\s-][а-яё]{3,}){0,2}"
+# Between a street and its number: nothing, or a comma and a house marker.
+_HOUSE_LEAD = r"(?:\s*,?\s*(?:дом|д)\.?)?\s*"
 
 ADDRESS_PATTERNS: dict[str, str] = {
     # `\s*` before the house number, not `\s+`: «улица Гагарина88кв152» is how a
@@ -257,8 +259,12 @@ ADDRESS_PATTERNS: dict[str, str] = {
     # model together. A type word cannot begin or end an ordinary Russian word,
     # so gluing it on is not ambiguous the way a missing space between two
     # ordinary words would be.
-    "street_lower_first": rf"(?i)\b{_ST_FULL}\s*{_LOWER_NAME}\s*\d{{1,4}}",
-    "street_lower_last": rf"(?i)\b{_LOWER_NAME}\s*{_ST_FULL}\s*\d{{1,4}}",
+    # The HOUSE MARKER may stand between the street and its number, and in
+    # lower case it usually does: «ленинский проспект, д. 42, кв. 118» matched
+    # nothing at all — the span began at «д. 42» and the street went to the
+    # model in the clear, while the same address without commas was caught.
+    "street_lower_first": rf"(?i)\b{_ST_FULL}\s*{_LOWER_NAME}{_HOUSE_LEAD}\d{{1,4}}",
+    "street_lower_last": rf"(?i)\b{_LOWER_NAME}\s*{_ST_FULL}{_HOUSE_LEAD}\d{{1,4}}",
     "street_first": rf"(?i)\b{_ST}\s*\.?\s*{_CAP}",
     "street_last": rf"(?i){_CAP}\s+{_ST}\b",
     "house": (
