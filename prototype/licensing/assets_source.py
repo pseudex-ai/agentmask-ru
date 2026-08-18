@@ -79,6 +79,27 @@ DIMINUTIVES: tuple[str, ...] = (
     "настя", "аня", "валя", "вика", "галя", "даша", "катя", "лена", "лиза",
     "ира", "кристи", "ксюша", "люба", "люда", "рита", "маша", "надя", "наташа",
     "оля", "поля", "света", "соня", "таня", "юля",
+    # THE SECOND TIER, and it is the register the product is actually sold into.
+    # The list above is the polite diminutive («Саша», «Катя»); a support chat
+    # writes the familiar one. Measured by a persona running a barbershop bot:
+    # of fourteen colloquial names, TEN went to the model in the clear —
+    # «виталик», «димон», «серёга», «колян», «танюха», «вовчик», «ленка»,
+    # «стас», «алёнка» — while «макс», «юля», «паша» were caught. The type
+    # «ФИО» was reported as supported and the example beside it was «Иванову
+    # Петру Сергеевичу»; that is not what a telegram bot receives.
+    #
+    # These are productive suffixes (-ик, -он, -ян, -уха, -чик, -ка, -ёк) on
+    # names the first tier already knows, so the layer is closed enough to list.
+    # Entries that are ORDINARY RUSSIAN WORDS are dropped when the bundle is
+    # built — «мишка» is a teddy bear before it is anybody — so the filter that
+    # protects the first tier protects this one unchanged.
+    "виталик", "толик", "славик", "костик", "эдик", "гарик", "русик",
+    "димон", "вован", "колян", "толян", "антоха", "серёга", "серега",
+    "андрюха", "ванюха", "лёха", "леха", "санёк", "саня", "вовчик", "димчик",
+    "стас", "гриня", "рома", "тёма", "тема", "артём", "жека",
+    "танюха", "катюха", "надюха", "любаша", "катюша", "ленка", "светка",
+    "танька", "юлька", "олька", "иринка", "настюха", "алёнка", "аленка",
+    "ленуся", "машуля", "дашка", "наташка",
 )
 SURNAME_SUFFIXES: tuple[str, ...] = (
     "ов", "ова", "ев", "ева", "ёв", "ёва", "ин", "ина", "ын", "ына",
@@ -126,6 +147,18 @@ TRANSLIT: dict[str, str] = {
 NAME_CUES: tuple[str, ...] = (
     "имя", "имени", "зовут", "фио", "клиент", "получател", "заказчик",
     "контакт", "на кого", "оформить на",
+    # VERBS THAT TAKE A PERSON. An ambiguous lower-case name — «ира», «вика»,
+    # «света» are all ordinary words too — needs a capital or a cue, and in a
+    # booking bot it gets neither: «запиши иру на 12» leaked the name whole
+    # while «запиши лену» was caught, purely because «лена» is not ambiguous.
+    #
+    # These verbs are the cue that register actually supplies. They are also
+    # what keeps the plant out: «посадил вику» is vetch and stays unmasked,
+    # «запиши вику» is a customer. The distinguishing evidence is the verb, not
+    # the noun, which is why a deny-list of plants could never have worked.
+    "запиши", "запишите", "перезвони", "перезвоните", "позвони", "позвоните",
+    "набери", "наберите", "свяжись", "свяжитесь", "напомни", "напомните",
+    "отправь", "отправьте", "передай", "передайте", "пригласи", "пригласите",
 )
 # Sentence-initial imperatives / fillers NER mislabels as a person or place.
 STOPWORDS: tuple[str, ...] = (
@@ -170,6 +203,16 @@ _ST = (
 _NAME = r"(?-i:[А-ЯЁ])[а-яё]+(?:[\s-](?-i:[А-ЯЁ])[а-яё]+){0,2}"
 _CAP = r"(?:\d+[-\s]?[а-яё]{0,2}\s+)?" + _NAME
 _TOK = r"(?:(?<=^)|(?<=[\s,;(№#]))"  # token must start fresh -> excludes "т.д"
+# The apartment marker may be GLUED TO THE HOUSE NUMBER, and in real Russian
+# addresses it usually is: «д.5кв12», «Строителей 53к193», «Гагарина88кв152».
+# `_TOK` alone requires whitespace before the marker, so the flat number simply
+# fell outside the span — the street and house were masked and the apartment
+# went to the model in the clear, inside an address that now mixed a fake street
+# with a real flat.
+#
+# «кв» after a digit stays safe because the pattern demands DIGITS AFTER the
+# marker: «100кв.м» (square metres) has «м» there and still does not match.
+_TOK_OR_DIGIT = r"(?:(?<=^)|(?<=[\s,;(№#])|(?<=\d))"
 _NUM_NAME = r"\d{1,4}[-\s]?[яейои]?\s+(?:" + "|".join(NUMBERED_TAIL) + r")"
 
 # EACH PATTERN CARRIES ITS OWN CASE FLAG as a leading `(?i)`, and the engine
@@ -203,8 +246,12 @@ _ST_FULL = (r"(?:улиц\w+|проспект\w*|переул\w+|бульвар\
 _LOWER_NAME = r"[а-яё]{3,}(?:[\s-][а-яё]{3,}){0,2}"
 
 ADDRESS_PATTERNS: dict[str, str] = {
-    "street_lower_first": rf"(?i)\b{_ST_FULL}\s+{_LOWER_NAME}\s+\d{{1,4}}",
-    "street_lower_last": rf"(?i)\b{_LOWER_NAME}\s+{_ST_FULL}\s+\d{{1,4}}",
+    # `\s*` before the house number, not `\s+`: «улица Гагарина88кв152» is how a
+    # phone keyboard renders an address when the space is missed, and requiring
+    # the space dropped the house number out of the span — the street was masked
+    # and the building number was not.
+    "street_lower_first": rf"(?i)\b{_ST_FULL}\s+{_LOWER_NAME}\s*\d{{1,4}}",
+    "street_lower_last": rf"(?i)\b{_LOWER_NAME}\s+{_ST_FULL}\s*\d{{1,4}}",
     "street_first": rf"(?i)\b{_ST}\s*\.?\s*{_CAP}",
     "street_last": rf"(?i){_CAP}\s+{_ST}\b",
     "house": (
@@ -213,7 +260,18 @@ ADDRESS_PATTERNS: dict[str, str] = {
         r"(?:\s*(?:строени\w*|стр|с)\.?\s*\d+[а-яёА-ЯЁ]?)?"
         r"(?:\s*(?:литер\w*|лит)\.?\s*[а-яёa-z]\b)?"
     ),
-    "apt": r"(?i)" + _TOK + r"(?:квартир\w*|кв|офис\w*|оф|помещени\w*|пом|комнат\w*|комн)\.?\s*\d+",
+    # Two branches, because the markers differ in how much they can be trusted
+    # alone. Spelled-out ones may open a token; a bare «к» may not — «за 100к 5
+    # штук» would read as an apartment — so it is admitted only when glued to a
+    # digit, which is where «Строителей 53к193» puts it.
+    #
+    # Both are SUPPORT, never core: a match that is not adjacent to a street or a
+    # house number is dropped by `detect_address`, so a stray one cannot mask
+    # anything by itself.
+    "apt": (r"(?i)(?:" + _TOK_OR_DIGIT
+            + r"(?:квартир\w*|кв|офис\w*|оф|помещени\w*|пом|комнат\w*|комн"
+              r"|корпус\w*|корп|кор)\.?\s*\d+"
+            + r"|(?<=\d)к\s*\d+)"),
     "mkr": r"(?i)\b(?:микрорайон\w*|мкрн|мкр)\.?\s*(?:[А-ЯЁ][а-яё]+|\d+[а-яё]?)",
     "settlement": (
         r"(?i)" + _TOK + r"(?:город|гор|г|посёлок|поселок|пос|п|село|деревн\w*|дер|станиц\w*|ст"
@@ -350,6 +408,20 @@ KEY_TYPE: dict[str, str] = {
     "карта": "CARD", "карты": "CARD", "card": "CARD",
     "почта": "EMAIL", "email": "EMAIL", "мейл": "EMAIL", "емейл": "EMAIL",
     "адрес": "LOC", "address": "LOC",
+    # A bank account has a 20-digit shape and no checksum, so outside a KEY it
+    # is anchored to the cue words in CTX_TYPES. That left `{"account": …}`
+    # unmasked while the same number after «счёт» was masked.
+    #
+    # ONLY THE UNAMBIGUOUS KEYS. A key here types the WHOLE value with no shape
+    # check at all, so «счёт» and «реквизиты» must stay out however natural they
+    # look: «счёт» is an invoice far more often than a bank account in Russian
+    # business writing, and «Реквизиты:» introduces a LIST. Adding them cost 12
+    # of 298 on the golden set immediately — «Реквизиты: СНИЛС 647-436-713 22,
+    # карта …» typed the whole line as one account number and swallowed the
+    # СНИЛС inside it. Those two words belong in CTX_TYPES, where the 20-digit
+    # shape is what keeps an invoice number out.
+    "account": "ACCOUNT", "accountnumber": "ACCOUNT",
+    "рс": "ACCOUNT", "расчётныйсчёт": "ACCOUNT", "расчетныйсчет": "ACCOUNT",
     # Credentials named by their key. `detect_credentials` only finds what a
     # vendor stamped with a prefix; a bare `{"password": "qwerty123"}` has no
     # shape at all, and the KEY is the only evidence it is a secret.
@@ -374,7 +446,12 @@ KEY_TYPE: dict[str, str] = {
 # phone replaces it with a fake PHONE.
 CTX_TYPES: tuple[tuple[str, str, str], ...] = (
     ("OMS", r"омс|полис", r"\d{16}"),
-    ("ACCOUNT", r"счёт|счет|р/с|расчётн\w*|расчетн\w*", r"\d{20}"),
+    # «реквизиты» belongs here and not only among the KV keys: the KV layer needs
+    # a `key: value` shape, and a customer writing prose puts the word and the
+    # number a space apart. Persona 1 produced both in ONE sentence — «счёт
+    # 4081…, реквизиты 4081…» — and watched the same value be masked once and
+    # leak once.
+    ("ACCOUNT", r"счёт|счет|р/с|расчётн\w*|расчетн\w*|реквизит\w*", r"\d{20}"),
     ("DRIVER_LICENSE", r"водительск\w*|в/у|удостоверени\w* водител\w*|прав[аои]",
      r"\d{2}\s?\d{2}\s?\d{6}"),
     ("VEHICLE_DOC", r"стс|птс|свидетельств\w* о регистрации", r"\d{2}\s?\d{2}\s?\d{6}"),

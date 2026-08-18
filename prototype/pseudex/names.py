@@ -19,6 +19,8 @@ helpers: `gazetteer_names` inspects every word of the message, and re-fetching
 per word would put a registry lookup on the hottest loop in the product.
 """
 
+import functools
+import itertools
 import re
 
 from pseudex.assets import ASSETS, NameAssets
@@ -27,7 +29,11 @@ from pseudex.morph import MORPH
 
 _WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё]+")
 _INITIALS_RE = re.compile(r"[А-ЯЁ][а-яё]+\s+[А-ЯЁ]\.\s?[А-ЯЁ]\.?")
-_LATIN_PAIR_RE = re.compile(r"\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\b")
+# Two OR THREE capitalised Latin words: a transliterated Russian name is
+# «Ivanov Petr Sergeevich» as often as «Petr Ivanov», and the patronymic is
+# the part a two-word pattern silently left in the clear.
+_LATIN_PAIR_RE = re.compile(
+    r"\b([A-Z][a-z]+)\s+([A-Z][a-z]+)(?:\s+([A-Z][a-z]+))?\b")
 _INITIAL_RE = re.compile(r"[А-ЯЁA-Z]\.?")
 # Tokens WITH their offsets, so a trimmed span can be sliced out of the original
 # text instead of rebuilt from pieces — see trim_person_span.
@@ -40,12 +46,46 @@ def _lemma(word: str) -> str:
     return MORPH.parse(word)[0].normal_form
 
 
-def _name_set_hit(word: str, low: str, lemma: str, before: str, names: NameAssets) -> bool:
+def _lemmas(word: str) -> tuple[str, ...]:
+    """EVERY normal form a name reading of this word could have.
+
+    `_lemma` takes `parse(word)[0]`, which this module's own docstring forbids,
+    and «марину» is where that bites: pymorphy3 offers «марин» (the man Марин,
+    dative) and «марина» (the woman Марина, accusative) with the SAME score of
+    0.500, and which one lands first is arbitrary. It landed on «марин», the
+    gazetteer had no such entry, and «запишите марину петрову» went to the model
+    with both words in the clear — a full name, unmasked, in the register support
+    traffic is actually written in.
+
+    The neighbouring surname leaked with it: lower case, it is invisible to the
+    bulk dictionary (capital-only by design) and reachable only by extension
+    from a given name that was never found.
+
+    ONLY READINGS TIED FOR FIRST, and that bound is what makes this safe. The
+    defect being fixed is an arbitrary choice between EQUALLY ranked parses, so
+    equal rank is exactly the licence to consider both. Taking every name-tagged
+    reading instead admits the ones morphology ranks far below an ordinary word —
+    «жене» → «Женя», «юре» → «Юра», «марками» → «Марк», «розами» → «Роза» — and
+    those are ordinary words in oblique cases, not people. Measured on NEREL:
+    unbounded costs 0.7pp of precision (99.4% -> 98.7%) and buys no recall.
+    """
+    parses = MORPH.parse(word)
+    if not parses:
+        return ()
+    best = max(parse.score for parse in parses)
+    named = tuple(dict.fromkeys(parse.normal_form for parse in parses
+                                if parse.score >= best
+                                and _NAME_TAGS & set(parse.tag.grammemes)))
+    return named or (parses[0].normal_form,)
+
+
+def _name_set_hit(word: str, low: str, lemmas: tuple[str, ...], before: str,
+                  names: NameAssets) -> bool:
     """Seed-list match. An ordinary-word name (вера, роман, света) needs either a
     capital letter or a naming cue right before it — `имя света` is a person,
     `вера в успех` is not. Without the cue path a lowercase diminutive leaked:
     the dirty set's `Оформите заказ, имя света.` went to the model unmasked."""
-    for candidate in (low, lemma):
+    for candidate in (low, *lemmas):
         if candidate not in names.name_set:
             continue
         if candidate in names.ambiguous and not word[:1].isupper():
@@ -57,7 +97,8 @@ def _name_set_hit(word: str, low: str, lemma: str, before: str, names: NameAsset
 
 def _is_known_name(word: str, names: NameAssets) -> bool:
     low = word.lower()
-    return low in names.name_set or _lemma(low) in names.name_set
+    return low in names.name_set or any(lemma in names.name_set
+                                        for lemma in _lemmas(low))
 
 
 def _is_surname_shaped(word: str, names: NameAssets) -> bool:
@@ -133,25 +174,82 @@ def trim_person_span(value: str) -> tuple[int, str]:
     names = ASSETS.get().names
     tokens = [(match.start(), match.end(), match.group())
               for match in _NON_SPACE_RE.finditer(value)]
-    if len(tokens) <= 2:
+    if not tokens:
         return 0, value
     first, last = 0, len(tokens) - 1
+    # The DICTIONARY trims stop at two tokens: below that there is no evidence
+    # which of «Имя Фамилия» is the intruder, and dropping the wrong one exposes
+    # half of a real name. The verb trim below has that evidence and does not
+    # stop there.
     while last - first + 1 > 2 and not _is_name_part(tokens[last][2], names):
         last -= 1
     while last - first + 1 > 2 and not _is_name_part(tokens[first][2], names):
+        first += 1
+    # DOWN TO ONE TOKEN when the leading word is somebody being asked to do
+    # something. The loops above stop at two because a two-token span is
+    # presumed to be «Имя Фамилия», and that presumption is what let
+    # «Наберите Игорю» through as one name: the sentence lost its verb, and the
+    # substitute for the two words together was a person unrelated to the one
+    # the same message had already named — so the dialogue held two people where
+    # the customer wrote one.
+    #
+    # The test is the one the patronymic path already uses — the word's BEST
+    # reading, not any reading — so a surname that merely has a verb parse
+    # somewhere among its readings stays inside the span.
+    while last - first + 1 > 1:
+        parses = MORPH.parse(tokens[first][2])
+        if not parses:
+            break
+        if max(parses, key=lambda parse: parse.score).tag.POS not in _NOT_A_NAME_POS:
+            break
         first += 1
     start, end = tokens[first][0], tokens[last][1]
     return start, value[start:end]
 
 
 def keep_person(value: str) -> bool:
-    """Gate for an NER person span: keep multi-token names, known names, or
-    surname-shaped tokens; drop bare unknown words (verb over-tags)."""
+    """Gate for an NER person span: keep multi-token names, known names,
+    surname-shaped tokens, and words doing no other job; drop verb over-tags.
+
+    THE FOURTH CLAUSE IS WHERE FOREIGN NAMES LIVE. «Обама», «Месси», «Акихито»,
+    «Бейонсе» are in no gazetteer of ours and carry no Russian surname suffix, so
+    the first three clauses dropped every one of them — NER had found the person
+    and we threw the answer away. On NEREL that is most of the 19% we miss, and a
+    missed name is a leak, not a quality defect.
+
+    Two signals, as everywhere else here: the word must not be doing another job
+    (its BEST reading is not a verb or a particle — that is what still drops
+    «Оформите» and «Не»), AND the dictionary must not claim it as an ordinary
+    word unless it also reads as a surname.
+
+    THAT SECOND HALF IS NOT OPTIONAL. Without it the gate also admitted the
+    capitalised nouns Natasha over-tags at a caption boundary in news prose —
+    «Цветы», «Девочки», «Дезинфектор», «Назначение» — 72 of them on NEREL, each
+    one a word this product would have destroyed in a customer's sentence. With
+    it they go and the names stay, because «Обама» carries a `Surn` reading even
+    though the dictionary knows the word, and «Месси», «Бейонсе», «Акихито» are
+    not in the dictionary at all.
+
+    Measured on NEREL, dev+test: PERSON recall 80.6% -> 91.5% (Cyrillic-only
+    subset 81.1% -> 92.3%) at precision 99.4% -> 99.4%, i.e. unchanged. Dropping
+    the `is_known` half reaches 94.1% and costs 0.3pp of precision — that is the
+    variant those 72 come from, and it was rejected: a miss is a leak, but a
+    false mask is a sentence destroyed in front of the customer, and there was
+    no need to buy one with the other.
+    """
     parts = value.split()
     if len(parts) >= 2:
         return True
     names = ASSETS.get().names
-    return _is_known_name(parts[0], names) or _is_surname_shaped(parts[0], names)
+    if _is_known_name(parts[0], names) or _is_surname_shaped(parts[0], names):
+        return True
+    parses = MORPH.parse(parts[0])
+    if not parses:
+        return False
+    if max(parses, key=lambda parse: parse.score).tag.POS in _NOT_A_NAME_POS:
+        return False
+    return (not parses[0].is_known
+            or any("Surn" in parse.tag.grammemes for parse in parses))
 
 
 _PERSON_TAGS = frozenset({"Surn", "Name", "Patr"})
@@ -249,6 +347,153 @@ def _extend_left_of_patronymic(text: str, start: int) -> int:
     return boundary
 
 
+@functools.lru_cache(maxsize=4)
+def _misspelling_index(version: str) -> dict[str, tuple[str, ...]]:
+    """Names bucketed by their first three and last three letters.
+
+    FOR FINDING A NAME SOMEBODY MISTYPED. «Кзнецов Дмитрий» is detected as
+    «Дмитрий» alone — morphology reads «Кзнецов» as a plural noun, so the
+    neighbour rule refuses it — and the surname goes to the model in the clear.
+    Half a masked name is a leak, and the benchmark's coverage metric exists
+    because recall called that case found.
+
+    Why two buckets and why three letters: an edit at position p is caught by the
+    first-three key when p ≥ 3 and by the last-three key when p < len − 3, so any
+    single edit in a word of six letters or more lands in at least one of them.
+
+    THE LENGTH IS PART OF THE KEY, and without it this was a latency weapon. A
+    single edit cannot change a length by more than one, so a bucket holding
+    every «…ова» in the dictionary — 28 719 of them — spent almost all of its
+    work on candidates the length alone ruled out. Measured before: 13.65 ms for
+    one word, a fifth of the whole p50 masking budget, on a lookup that runs per
+    neighbouring word. After: three length-sliced buckets, and the comparison
+    itself stops at the second difference instead of scanning the whole word.
+
+    WHAT IS LEFT, stated rather than hidden: a word that is unknown to
+    morphology, five letters or more, sits beside a detected name AND lands in
+    one of the few enormous surname-ending buckets still costs ~4 ms. On real
+    traffic that shape is rare enough to be invisible — measured over 1402
+    messages from the dirty set and AgentPII-RU, detection went 1.06 -> 1.18 ms
+    per message, against a /mask p50 of ~73 ms that the NER model dominates. A
+    message built entirely of such words would cost real time; the lever if that
+    ever appears is to skip the largest buckets, which trades this recall back.
+
+    Keyed on the BUNDLE VERSION so a re-lease cannot serve an index built from
+    the previous dictionary. The version is a content hash, so equal version
+    means equal contents.
+    """
+    names = ASSETS.get().names
+    index: dict[tuple[str, int], list[str]] = {}
+    for word in itertools.chain(names.dict_first, names.dict_surnames):
+        if len(word) < 5 or word in names.ambiguous:
+            continue
+        index.setdefault((word[:3], len(word)), []).append(word)
+        index.setdefault(("\0" + word[-3:], len(word)), []).append(word)
+    return {key: tuple(value) for key, value in index.items()}
+
+
+def _within_one_edit(word: str, other: str) -> bool:
+    """Levenshtein distance ≤ 1, decided without building a matrix.
+
+    Stops at the SECOND difference. The whole-word scan it replaced was the
+    difference between 13.65 ms and a fraction of one on a large bucket: almost
+    every candidate differs immediately, and finishing the word to learn that is
+    work spent on a decision already made.
+    """
+    if abs(len(word) - len(other)) > 1:
+        return False
+    if len(word) == len(other):
+        seen = False
+        for left, right in zip(word, other):
+            if left == right:
+                continue
+            if seen:
+                return False
+            seen = True
+        return True
+    shorter, longer = (word, other) if len(word) < len(other) else (other, word)
+    index = 0
+    while index < len(shorter) and shorter[index] == longer[index]:
+        index += 1
+    return shorter[index:] == longer[index + 1:]
+
+
+def _looks_misspelt_name(word: str) -> bool:
+    """Whether this word is one edit away from a name we know.
+
+    The second signal, and it is needed: the first — sitting next to a name we
+    detected — is not enough on its own, because the word after a given name is
+    very often an ordinary one. Requiring near-membership in the dictionary is
+    the same tolerance the cue-word deny matching already uses, bounded the same
+    way at a single edit.
+    """
+    lowered = word.lower()
+    if len(lowered) < 5:
+        # Below five letters a single edit reaches too much of the language:
+        # «Иван» is one edit from «Иван», «Инан», «Иванк»… and also from ordinary
+        # short words. The gazetteer already covers names this short exactly.
+        return False
+    # UNKNOWN TO MORPHOLOGY, and this is the signal that makes the rest usable.
+    # In a 197k-name dictionary the distance-1 neighbourhood is dense enough that
+    # ordinary words land in it: «заказ»→«Закар», «адрес»→«Адрей», «клиент»→
+    # «Клинт», «спасибо»→«Спасибов» are all real, all rare surnames, and masking
+    # them destroys the sentence. Without this line `test_product` returned
+    # «Яков Роман Карпов Василий перезвонить» to a tool.
+    #
+    # The separation is exact on everything measured: every ordinary word above
+    # is in pymorphy3's dictionary, and every mistyped name («Кзнецов»,
+    # «Захарув», «Волква», «Иваноа») is only PREDICTED from its suffix. It is
+    # also the rule `_is_name_part` already states — an unrecognised word is more
+    # likely a rare surname than a stray ordinary one.
+    parses = MORPH.parse(word)
+    if not parses or parses[0].is_known:
+        return False
+    index = _misspelling_index(ASSETS.version or "")
+    for key in (lowered[:3], "\0" + lowered[-3:]):
+        # Three lengths, because one edit moves a length by at most one.
+        for length in (len(lowered) - 1, len(lowered), len(lowered) + 1):
+            for candidate in index.get((key, length), ()):
+                if candidate != lowered and _within_one_edit(lowered, candidate):
+                    return True
+    return False
+
+
+_SURNAME_CUE_RE = re.compile(r"(?i)\bфамил\w*\s*[:\-—–]?\s*([А-ЯЁа-яё][А-ЯЁа-яё\-]{2,})")
+
+
+def _cued_name_parts(text: str) -> list[Span]:
+    """The word a person NAMES as their surname, whatever its case.
+
+    «фамилия Волков» is caught already, and only because it is capitalised — the
+    bulk surname dictionary is capital-only by design, so «фамилия волков» in a
+    messenger found NOTHING and the identifying half of the name reached the
+    model in the clear. That is a leak, not a quality defect, and the register it
+    lives in is the one real support traffic is written in.
+
+    The customer has told us what the word is. That is a stronger signal than
+    capitalisation and stronger than any dictionary, and it is the same shape as
+    the patronymic anchor: a cue licenses its neighbour without the neighbour
+    needing to be known.
+
+    STILL TWO SIGNALS. The cue alone would mask «фамилия клиента не указана» and
+    «фамилия и имя обязательны», so morphology must also say the word can name a
+    person. Not «фамилия» + capital, which is what we already had and what missed
+    the case; not morphology alone, which admits every noun in the language.
+
+    Only the surname cue, deliberately. «имя» would have to survive «имя
+    пользователя», «имя файла», «доменное имя» — the same word doing a different
+    job in the traffic of the very customers who integrate us — and a given name
+    is the part the seed gazetteer already matches case-insensitively. A cue
+    earns its place by reaching what nothing else reaches.
+    """
+    spans: list[Span] = []
+    for match in _SURNAME_CUE_RE.finditer(text):
+        word = match.group(1)
+        if _names_a_person(word):
+            spans.append(Span(match.start(1), match.end(1), "NAME", word))
+    return spans
+
+
 def _merge_adjacent(spans: list[Span], text: str) -> list[Span]:
     """Join NAME spans separated only by whitespace into one.
 
@@ -272,6 +517,20 @@ def _merge_adjacent(spans: list[Span], text: str) -> list[Span]:
     return out
 
 
+def _joins_the_name(word: str) -> bool:
+    """Whether the word beside a detected name belongs to it.
+
+    Morphology first, as before. A MISSPELT name is admitted too — «Кзнецов
+    Дмитрий» read as a plural noun, so morphology refused it and half the person
+    went to the model in the clear.
+
+    Still two signals, and the second is deliberately near-membership in the
+    gazetteer rather than "capitalised and adjacent": the word after a given name
+    is very often an ordinary one, and adjacency alone would mask it.
+    """
+    return _names_a_person(word) or _looks_misspelt_name(word)
+
+
 def _adjacent_surnames(text: str, found: list[Span]) -> list[Span]:
     """Extend a known given name to the person-word beside it."""
     extra: list[Span] = []
@@ -281,7 +540,7 @@ def _adjacent_surnames(text: str, found: list[Span]) -> list[Span]:
             if match.start() > 1:      # not the immediately adjacent word
                 break
             start, end = span.end + match.start(), span.end + match.end()
-            if (start, end) not in taken and _names_a_person(match.group()):
+            if (start, end) not in taken and _joins_the_name(match.group()):
                 extra.append(Span(start, end, "NAME", match.group()))
             break
         for match in reversed(list(_WORD_RE.finditer(text[max(0, span.start - 24):span.start]))):
@@ -289,7 +548,7 @@ def _adjacent_surnames(text: str, found: list[Span]) -> list[Span]:
             if span.start - (offset + match.end()) > 1:
                 break
             start, end = offset + match.start(), offset + match.end()
-            if (start, end) not in taken and _names_a_person(match.group()):
+            if (start, end) not in taken and _joins_the_name(match.group()):
                 extra.append(Span(start, end, "NAME", match.group()))
             break
     return extra
@@ -309,13 +568,14 @@ def gazetteer_names(text: str) -> list[Span]:
     for match in _WORD_RE.finditer(text):
         word = match.group()
         low = word.lower()
-        lemma = _lemma(low)
+        lemmas = _lemmas(low)
         before = text[max(0, match.start() - 20):match.start()].lower()
-        if _name_set_hit(word, low, lemma, before, names):
+        if _name_set_hit(word, low, lemmas, before, names):
             spans.append(Span(match.start(), match.end(), "NAME", word))
         elif word[:1].isupper() and (
             low in names.dict_first or low in names.dict_surnames
-            or lemma in names.dict_first or lemma in names.dict_surnames
+            or any(lemma in names.dict_first or lemma in names.dict_surnames
+                   for lemma in lemmas)
         ):
             spans.append(Span(match.start(), match.end(), "NAME", word))
     # A given name found in the gazetteer usually has its surname next to it, and
@@ -344,10 +604,29 @@ def gazetteer_names(text: str) -> list[Span]:
     # Anchors are added BEFORE the neighbour pass, not alongside it: the pass
     # extends FROM an anchor, so an anchor introduced in the same expression is
     # invisible to it and «Тестов Тест» stays outside the span.
-    spans = spans + _patronymic_anchors(text)
+    spans = spans + _patronymic_anchors(text) + _cued_name_parts(text)
     spans = _merge_adjacent(spans + _adjacent_surnames(text, spans), text)
     for match in _LATIN_PAIR_RE.finditer(text):
-        if match.group(1).lower() in names.name_set:
+        # ANY part may be the one we know. Requiring it of the FIRST word meant
+        # «Ivanov Petr Sergeevich» matched nothing — the given name is in the
+        # middle — and only the bare «Petr» was caught by the gazetteer, so the
+        # surname and patronymic went to the model in the clear. Half a masked
+        # name is worse than none: it looks protected and is not.
+        parts = [group for group in match.groups() if group]
+        # WHERE the known name stands decides whether the whole run is a name.
+        # Opening it means «Petr Ivanov». Sitting second means «Ivanov Petr
+        # Sergeevich» — but ONLY when a transliterated patronymic closes the run,
+        # because «Dear Anna Kovalenko» has exactly the same shape and «Dear» is
+        # not a surname. Without that the run swallowed English politeness and
+        # handed «Dear Anna Kovalenko» to the tool as somebody's name.
+        #
+        # A rejected run is not a leak: the single-word gazetteer still masks the
+        # given name inside it.
+        first_known = parts[0].lower() in names.name_set
+        patronymic_last = len(parts) == 3 and parts[2].lower().endswith(
+            ("vich", "vna", "ich", "na"))
+        second_known = len(parts) > 1 and parts[1].lower() in names.name_set
+        if first_known or (second_known and patronymic_last):
             spans.append(Span(match.start(), match.end(), "NAME", match.group()))
     for match in _INITIALS_RE.finditer(text):
         spans.append(Span(match.start(), match.end(), "NAME", match.group()))

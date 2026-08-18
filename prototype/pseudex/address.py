@@ -184,6 +184,57 @@ def _strip(start: int, stop: int, text: str) -> tuple[int, int]:
 
 
 _CYRILLIC_TAIL_RE = re.compile(r"[А-Яа-яёЁ]$")
+_LEADING_WORD_RE = re.compile(r"^([А-Яа-яёЁ]+)(\s+)")
+# A number and the word after it, for the numbered-street case («8 Марта»).
+_LEADING_NUMBER_RE = re.compile(r"^(\d+)\s+([А-Яа-яёЁ]+)\s")
+
+
+def _trim_lead(start: int, stop: int, text: str, address: AddressAssets) -> int:
+    """Drop leading words that INTRODUCE the address instead of naming it.
+
+    A marker-less street is «прилагательное + тип» («ленинский проспект»), and
+    the pattern that finds it cannot see where the name begins — so «адрес
+    ленинский проспект 55» matched with «адрес» inside the street name, and
+    «адрес» went to the customer's tool as part of the delivery address. The
+    same swallow the NER person spans had, on the other entity.
+
+    Two signals, both already present and neither a new list:
+
+      * `addr_ctx` is the address CUE vocabulary — «адрес», «доставка»,
+        «курьер». A cue is by definition context and never content.
+      * `Apro` separates «мой»/«наш» from «Ленинский»/«Профсоюзная». All four
+        parse as ADJF, so part of speech alone does not decide it; the
+        pronominal flag does.
+
+    A street TYPE word survives both tests, which is what keeps «улица
+    Тверская» intact — trimming there would have eaten the half that makes the
+    span an address at all.
+    """
+    while True:
+        # A LEADING NUMBER IS A STREET ONLY IF A STREET NAME FOLLOWS. The
+        # marker-less pattern accepts one so «8 Марта 12» stays whole, and that
+        # is what swallowed «заказ 55512 на Новосибирск Красный проспект 88»
+        # from the digits onwards: the model was handed «заказ Сосновый
+        # проспект 4» and the order number was simply gone. A preposition after
+        # the number settles it — «на» can begin a sentence about an address but
+        # never a street's name.
+        numbered = _LEADING_NUMBER_RE.match(text[start:stop])
+        if numbered is not None:
+            follower = MORPH.parse(numbered.group(2))
+            if follower and follower[0].tag.POS == "PREP":
+                start += numbered.start(2)
+                continue
+        match = _LEADING_WORD_RE.match(text[start:stop])
+        if match is None:
+            return start
+        word = match.group(1)
+        parses = MORPH.parse(word)
+        best = parses[0].tag if parses else None
+        pronominal = best is not None and "Apro" in best.grammemes
+        preposition = best is not None and best.POS == "PREP"
+        if not (pronominal or preposition or address.addr_ctx.fullmatch(word)):
+            return start
+        start += match.end()
 
 
 def detect_address(text: str) -> list[Span]:
@@ -202,6 +253,8 @@ def detect_address(text: str) -> list[Span]:
         trail = address.trail_house.match(text[stop:])  # swallow "ул. Садовая, 3"
         if trail and _CYRILLIC_TAIL_RE.search(text[:stop]):
             stop += trail.end()
+        start, stop = _strip(start, stop, text)
+        start = _trim_lead(start, stop, text, address)
         start, stop = _strip(start, stop, text)
         value = text[start:stop]
         if not value or address.neg.search(value):

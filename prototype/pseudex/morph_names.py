@@ -249,6 +249,25 @@ def name_shape(surface: str) -> tuple[str, ...]:
     return tuple(shape)
 
 
+def has_given_name(surface: str) -> bool:
+    """Whether any part of this span reads as a given name or a patronymic.
+
+    The question behind it is "is there anything here that can be TRUSTED about
+    gender". Surnames cannot: «-ова» scores higher as a man's genitive than as a
+    woman's nominative, so a span whose given name carries a typo («Кузнецова
+    Ольго») has nothing but that misleading score to go on.
+
+    One definition, two users — `detect_gender` skips its vote when this is
+    false, and `to_nominative` only then reads the case in the decided gender.
+    Applying that filter unconditionally cost more than it won: where the gender
+    is itself a guess (foreign names), filtering the parses by it left a case
+    tally with nothing sensible in it and «Ким Викдор» canonicalised to «Ким
+    Викдоры». Measured on AgentPII-RU: -14 round trips.
+    """
+    return any("Name" in parse.tag.grammemes or "Patr" in parse.tag.grammemes
+               for part in surface.split() for parse in _name_parses(part))
+
+
 def detect_gender(surface: str) -> str | None:
     """Gender of a person named by this span, or None if genuinely unknown.
 
@@ -270,6 +289,15 @@ def detect_gender(surface: str) -> str | None:
         if gender is not None:
             return gender
 
+    # A LONE SURNAME THE VAULT KEYS AS FEMININE MUST NOT BE MINTED AS MASCULINE.
+    # «Иванова» loses the vote below by more than the 1.5x margin — the genitive
+    # prior is that strong — but `canonicalize` has already decided, on the same
+    # evidence, that this word names a woman in the nominative. Two answers to
+    # one question is how a row stored for her gets a substitute minted for him.
+    lone = lone_nominative_gender(surface)
+    if lone is not None:
+        return lone
+
     # A GIVEN NAME outvotes a surname, and by a wide margin. Given names encode
     # gender directly and almost without exception; surnames are structurally
     # ambiguous, because `-ова` is both a feminine nominative and a masculine
@@ -281,6 +309,7 @@ def detect_gender(surface: str) -> str | None:
     # strength of a genitive reading of the surname over a correct reading of
     # one of the most unambiguously feminine names in Russian.
     votes: dict[str, float] = {"masc": 0.0, "femn": 0.0}
+    named = has_given_name(surface)
     for part in parts:
         parses = _name_parses(part)
         if not parses:
@@ -301,13 +330,31 @@ def detect_gender(surface: str) -> str | None:
                 continue
             weight = 3.0 if "Name" in parse.tag.grammemes else 1.0
             votes[parse.tag.gender] += parse.score * weight
-    if votes["masc"] > votes["femn"] * 1.5:
-        return "masc"
-    if votes["femn"] > votes["masc"] * 1.5:
-        return "femn"
+    # A SURNAME ALONE MAY NOT WIN THIS VOTE, however decisively it scores. When
+    # no part yielded a given name or a patronymic — which is what a typo in the
+    # given name produces, and `Кузнецова Ольго` is one — the only voter left is
+    # a surname, and `-ова` scores masculine-genitive above feminine-nominative.
+    # The whole span was then canonicalised to «Кузнецов Ольго» and the customer's
+    # tool called with a man.
+    #
+    # Skipping to the ending check is not a weaker answer: for a surname the
+    # ending IS the reliable signal, and the vote is the unreliable one. Where a
+    # given name does exist it still decides, so «Иванова Петра» keeps reading as
+    # the man Пётр.
+    if named:
+        if votes["masc"] > votes["femn"] * 1.5:
+            return "masc"
+        if votes["femn"] > votes["masc"] * 1.5:
+            return "femn"
 
     for part in parts:
         if part.lower().endswith(_SURN_FEMN):
+            return "femn"
+
+    if not named:
+        if votes["masc"] > votes["femn"] * 1.5:
+            return "masc"
+        if votes["femn"] > votes["masc"] * 1.5:
             return "femn"
     # Last resort, and only for a GIVEN name: Russian female given names end in
     # -а/-я, with a closed set of masculine exceptions listed above. This is
@@ -322,7 +369,7 @@ def detect_gender(surface: str) -> str | None:
     return None
 
 
-def detect_case(surface: str) -> str | None:
+def detect_case(surface: str, gender: str | None = None) -> str | None:
     """The grammatical case this span is written in, or None if undetermined.
 
     Decided by agreement across parts: `Иванову Петру Сергеевичу` is dative in
@@ -333,6 +380,18 @@ def detect_case(surface: str) -> str | None:
     tally: dict[str, float] = {}
     for part in surface.split():
         for parse in _name_parses(part):
+            # READ IN THE GENDER ALREADY DECIDED. «Кузнецова Ольго» — a woman
+            # whose given name carries a typo, so nothing but the surname votes —
+            # tallies as genitive, because `-ова` scores higher as the man's
+            # genitive than as the woman's nominative. The span was then
+            # "restored" to «Кузнецов Ольго» and the tool called with a man.
+            #
+            # Her gender is not in doubt by the time this runs: `detect_gender`
+            # has already answered, on the surname's ending, which for a surname
+            # is the reliable signal. Letting the case be decided by readings
+            # that contradict that answer is the same defect one step later.
+            if gender and parse.tag.gender and parse.tag.gender != gender:
+                continue
             if parse.tag.case:
                 tally[parse.tag.case] = tally.get(parse.tag.case, 0.0) + parse.score
     if not tally:
@@ -359,7 +418,9 @@ def to_nominative(surface: str) -> str:
     # wrong inside `Марку Яровому`. Parts of a name agree, so the agreement is
     # evidence — and without using it, canonicalisation is unstable and one
     # person splits into several vault rows again.
-    case = detect_case(surface)
+    # The gender is handed to the case decision ONLY when no given name was
+    # there to decide it — see `has_given_name`.
+    case = detect_case(surface, None if has_given_name(surface) else gender)
     # NO EVIDENCE OF AN OBLIQUE CASE MEANS NO CONVERSION. Agreement across the
     # parts is the evidence, and it is already computed; when it says nominative
     # — or says nothing — the safest form is the one the customer wrote.
@@ -374,10 +435,65 @@ def to_nominative(surface: str) -> str:
     # every one of these cases — no detection metric could have seen it.
     if case in (None, "nomn"):
         return surface
+    # A LONE SYNCRETIC SURNAME CANNOT BE RESOLVED HERE, and must not be.
+    # «Иванова» is the feminine nominative of Иванова and the masculine genitive
+    # of Иванов; pymorphy3 ranks the masculine reading first, so a woman named
+    # here alone is canonicalised to a man's name. Refusing to convert when the
+    # nominative reading names another gender was tried, and it is wrong for a
+    # deeper reason than it looks: THIS FUNCTION IS ALSO THE KEY. `name_key`
+    # reduces a token to its nominative so a token the model inflected still
+    # resolves, and a surname that stops reducing stops resolving — the model
+    # writes «Тарасова», the lookup misses, and the fake reaches the tool. That
+    # is a leak of correctness to save one of quality, which is backwards.
+    #
+    # The evidence needed lives outside morphology (a cue word, an earlier full
+    # name in the vault), so the repair belongs where that evidence is — see
+    # `Vault._linked_token`, which matches a mention against the parts of a name
+    # already stored, by surface as well as by canonical.
     out: list[str] = []
     for part in surface.split():
         out.append(_part_to_nominative(part, gender, case))
     return " ".join(out)
+
+
+def lone_nominative_gender(surface: str) -> str | None:
+    """The gender this LONE word names, when it is already a nominative of a
+    gender its oblique reading does not share. None when there is no such tie.
+
+    «Иванова» reads as the feminine nominative of Иванова and as the masculine
+    genitive of Иванов. Both are legal, pymorphy3 scores the masculine one
+    higher, and a single word carries no agreement to break the tie — `detect_case`
+    decides by agreement ACROSS parts, and for one part that degenerates to the
+    score.
+
+    Only a gender FLIP counts, not every ambiguity: «Марии» is the genitive and
+    the dative of the same woman, so it still reduces to «Мария» and one person
+    keeps one row.
+
+    USED BY THE VAULT'S KEY AND BY `detect_gender`, AND THEY MUST AGREE. If the
+    key decides «Иванова» names a woman while the gender vote says man, the row
+    is stored for her and the substitute minted for him — the disagreement this
+    module exists to prevent, manufactured internally.
+
+    NOT USED BY `to_nominative`. Applying it inside that function also applied it
+    to fake names, and a fake surname that stops reducing stops RESOLVING — the
+    model writes «Тарасова», the token index misses, and the substitute reaches
+    the tool. Measured: every one of the 28 pool surnames failed
+    `survives_round_trip` that way.
+    """
+    parts = surface.split()
+    if len(parts) != 1:
+        return None
+    case = detect_case(surface)
+    if case in (None, "nomn"):
+        return None
+    parses = _name_parses(parts[0])
+    nominative = {parse.tag.gender for parse in parses if parse.tag.case == "nomn"}
+    oblique = {parse.tag.gender for parse in parses if parse.tag.case == case}
+    if len(nominative) != 1 or not oblique or not nominative.isdisjoint(oblique):
+        return None
+    gender = next(iter(nominative))
+    return gender if gender in ("masc", "femn") else None
 
 
 def _part_to_nominative(part: str, gender: str | None,
@@ -392,7 +508,7 @@ def _part_to_nominative(part: str, gender: str | None,
     # case disambiguates `Марку` between a dative given name and a nominative
     # foreign surname. Case is the stronger of the two here, so it is tried
     # first and gender narrows what remains.
-    chosen = _best_parse(parses, gender, case)
+    chosen = _best_parse(parses, gender, case, part)
     # ALREADY NOMINATIVE — return untouched. Inflecting a form to the case it is
     # already in is not a no-op in pymorphy3: it goes through the lemma, and for
     # a surname the lemma is the MASCULINE one. «Иванова Мария Львовна» came back
@@ -432,13 +548,34 @@ def inflect_person(nominative: str, case: str, gender: str | None) -> str:
     return " ".join(out)
 
 
-def _best_parse(parses: list, gender: str | None, case: str | None):
+def _informative(candidates: list, surface: str):
+    """Prefer a reading that says the word is INFLECTED over one that says nothing.
+
+    pymorphy3 carries indeclinable foreign given names, and «Анне» is one — the
+    French Anne, whose every case is «анне». It ties at 0.12 with the dative of
+    «Анна», so the pick was arbitrary and it landed on the indeclinable one:
+    «Гончаровой Анне Дмитриевне» canonicalised to «Гончарова Анне Дмитриевна», a
+    form nobody writes, and the surname and patronymic came back nominative
+    around a dative middle.
+
+    Inside a span the other parts have already established an oblique case. A
+    reading whose lemma equals the surface adds no information to that; one whose
+    lemma differs does. Where nothing declines — a genuinely indeclinable name —
+    the list is unchanged and the caller keeps what it had.
+    """
+    lowered = surface.casefold()
+    informative = [p for p in candidates if p.normal_form.casefold() != lowered]
+    return informative[0] if informative else candidates[0]
+
+
+def _best_parse(parses: list, gender: str | None, case: str | None,
+                surface: str = ""):
     """The reading that agrees with the span, falling back as evidence runs out."""
     if case is not None:
         both = [p for p in parses if p.tag.case == case
                 and (gender is None or p.tag.gender in (gender, None))]
         if both:
-            return both[0]
+            return _informative(both, surface) if surface else both[0]
         by_case = [p for p in parses if p.tag.case == case]
         if by_case:
             return by_case[0]

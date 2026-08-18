@@ -78,13 +78,19 @@ def normalize(text: str) -> str:
     lookalike = ASSETS.get().lookalike
     chars = list(text)
     n = len(chars)
+    def eligible(position: int) -> bool:
+        char = chars[position]
+        if char in lookalike and _letter_bound(chars, position, lookalike):
+            return False
+        return _in_region_alpha(char, lookalike)
+
     index = 0
     while index < n:
-        if not _in_region_alpha(chars[index], lookalike):
+        if not eligible(index):
             index += 1
             continue
         end = index
-        while end < n and _in_region_alpha(chars[end], lookalike):
+        while end < n and eligible(end):
             end += 1
         if sum(1 for c in chars[index:end] if c.isdigit()) >= 5:
             for k in range(index, end):
@@ -101,3 +107,33 @@ _SEPARATORS = frozenset(" -+()")
 def _in_region_alpha(char: str, lookalike: dict[str, str]) -> bool:
     """A char that can be part of a phone/ID number region."""
     return char.isdigit() or char in lookalike or char in _SEPARATORS
+
+
+def _letter_bound(chars: list[str], index: int, lookalike: dict[str, str]) -> bool:
+    """Whether this look-alike is glued to a real letter — i.e. it IS a letter.
+
+    «Валентинович» ends in «ч», which is a look-alike for 4. Standing at the edge
+    of the word, its only neighbours inside the run were a space and the phone
+    number that followed, so the run reached the ≥5 digits it needed and the
+    patronymic became «Валентинови4». The comment above claims real letters break
+    the run, and they do — but only when they sit INSIDE it. A look-alike at a
+    word boundary has no letter on the side that matters.
+
+    The damage was not cosmetic. The name span then ended one character early,
+    the vault stored «Соколов Игорь Валентинови», and the orphaned «ч» stayed in
+    the text and glued itself to the substitute — «Лебедев Никита Радиславч».
+    That string is in no vault, so `/unmask` could never resolve it: a person who
+    does not exist was written into the customer's booking, silently, and even
+    `/reveal` returned null. Found by a persona running the real product; every
+    corpus we own writes a patronymic without a phone right after it.
+
+    A digit or a separator on both sides still folds, so the obfuscated phones
+    this whole mechanism exists for — «8-924-45О-56-12», «8 935 О44 69 47» —
+    are untouched by the guard.
+    """
+    for neighbour in (index - 1, index + 1):
+        if 0 <= neighbour < len(chars):
+            char = chars[neighbour]
+            if char.isalpha() and char not in lookalike:
+                return True
+    return False

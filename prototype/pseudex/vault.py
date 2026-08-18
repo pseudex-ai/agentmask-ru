@@ -85,6 +85,39 @@ _FAKE_LAST = [
     "Панов", "Рыбаков", "Сазонов", "Тарасов", "Устинов", "Фомин", "Хвостов",
     "Цветков", "Чижов", "Шилов", "Щукин", "Юдин", "Яровой", "Бирюков",
 ]
+# A WOMAN MENTIONED BY SURNAME ALONE CANNOT BE GIVEN ANY NAME ABOVE. Every one
+# ends in -ов/-ин, whose feminine form is syncretic: «Лебедева» is the woman's
+# nominative and the man's genitive, so its cases do not reduce to one key and
+# `survives_round_trip` rejects it — correctly, because a token that stops
+# resolving hands the fake to the customer's tool.
+#
+# Not one of the 28 passed, which is a category and not a near miss: there was
+# NO one-word substitute for a lone feminine surname, so «фамилия Иванова» fell
+# back to the two-word shape and the model was handed «фамилия Диана Сорокина»
+# — a construction it repairs, and a repaired token is the failure the fallback
+# exists to avoid.
+#
+# These do not inflect for gender at all, so the feminine form IS the masculine
+# one and has one key in every case. All are ordinary surnames carried by
+# Russian citizens — Ukrainian, Armenian, Georgian, and the native -ых/-их.
+#
+# A SEPARATE LIST, not more entries above, because they answer a different
+# question. Folded into the general pool they would be half of every customer's
+# fake population, and a Russian company reading its own masked traffic would
+# see a product that does not know the country it is sold in.
+#
+# THE SIZE IS THE POINT. Six of them meant the SEVENTH woman a customer ever
+# named by surname alone could not be minted at all — a permanent fail-closed
+# 5xx for that customer, the same defect the address pool had at 33.
+_FAKE_LAST_INVARIANT = [
+    "Шевчук", "Ткачук", "Бондарчук", "Кравчук", "Гончарук", "Ковальчук",
+    "Павлюк", "Савчук", "Марчук", "Данилюк",
+    "Саркисян", "Аванесян", "Петросян", "Акопян", "Григорян", "Арутюнян",
+    "Бабаян", "Казарян", "Хачатрян", "Мкртчян",
+    "Петренко", "Коваленко", "Савченко", "Бондаренко", "Кравченко", "Ткаченко",
+    "Черных", "Белых", "Седых", "Долгих", "Рыжих",
+    "Гвелесиани", "Церетели", "Бойко", "Головко",
+]
 # LOC IS COMBINATORIAL, and it has to be. A flat list of 33 places meant the
 # 34th distinct address an organisation ever sent could not be minted:
 # `_unique_token` burned its attempts on collisions and raised, so a fail-closed
@@ -123,6 +156,7 @@ _FAKE_STREETS = [
 ]
 # 30 streets x 199 numbers + 25 cities = 5995 distinct LOC tokens per customer.
 _FAKE_HOUSE_MAX = 199
+_PLACE_CASES = ("nomn", "gent", "datv", "accs", "ablt", "loct")
 
 
 def _rand_digits(count: int) -> str:
@@ -191,7 +225,32 @@ def canonicalize(entity_type: str, value: str) -> str:
         # protected-value counter multiplies by however many cases the customer
         # happened to write. Exactly parallel to what the PHONE branch above
         # already does by collapsing +7/8/no-separators to one signature.
-        return morph_names.to_nominative(value.strip())
+        #
+        # A LONE SURNAME MAY NOT BE COLLAPSED ACROSS GENDERS. «Иванова» is the
+        # feminine nominative of Иванова and the masculine genitive of Иванов;
+        # pymorphy3 ranks the masculine reading higher, so a woman named by
+        # surname alone was keyed as «Иванов» — and that is the name
+        # `detokenize` handed the customer's tool. Worse, she then shared a row
+        # with any real Иванов on file: two people, one token, which is the one
+        # failure this product treats as unacceptable.
+        #
+        # This is a different function from the one that indexes TOKENS.
+        # `name_key` also calls `to_nominative`, but on the fake name, so
+        # resolving a token the model inflected is untouched — that distinction
+        # is the whole reason the guard belongs here and not in `to_nominative`,
+        # where it broke every substitute's round trip instead.
+        surface = value.strip()
+        if morph_names.lone_nominative_gender(surface) is not None:
+            return surface
+        # WRITTEN ORDER IS PRESERVED HERE, deliberately. Sorting the parts into
+        # slots makes one person one key whichever way round they were written —
+        # and it also decides what `detokenize` hands the tool, so «Клиент Елена
+        # Попова» came back «Клиент Попова Елена». The customer's own word order
+        # is part of the value; the key must not eat it.
+        #
+        # Order-invariance belongs in the LOOKUP instead, where it costs nothing:
+        # see `_same_person_reordered`.
+        return morph_names.to_nominative(surface)
     return value.strip()
 
 
@@ -339,6 +398,51 @@ def _fake_city(original: str) -> str:
     return secrets.choice(pool or _FAKE_CITIES)
 
 
+@functools.lru_cache(maxsize=1)
+def _usable_streets() -> tuple[str, ...]:
+    """Fake streets whose every case reduces to the SAME key.
+
+    «Ясеневый» does not: in the prepositional it is «Ясеневом», and pymorphy3
+    reads that as ЯСЕНЕВО — a real Moscow district — so the key became
+    «ясенево» while the minted token was keyed «ясеневый». The candidate was
+    found in the model's reply and then failed the lookup, and the fake reached
+    the tool. Measured at 4-7 addresses per 120 on an obliquely written street,
+    silently.
+
+    Names have had this check since «Яровым» could not be resolved back to
+    «Яровой»; places had nothing equivalent, which is the same lesson unlearned
+    on the other entity. DERIVED, not a hand-kept second list, so a street added
+    to the pool cannot reintroduce the class unnoticed.
+    """
+    # BOTH GENDERS OF GENERIC, because the substitute mirrors the original's
+    # shape and the adjective agrees with whichever word it lands beside. That
+    # is where «Ясеневый» breaks and «Ясеневая» does not: only the masculine
+    # prepositional «Ясеневом» collides with the district, so a check written
+    # against «улица» alone declares the whole pool healthy.
+    usable: list[str] = []
+    for raw in _FAKE_STREETS:
+        nominative = morph_places.to_nominative(raw)
+        masculine = morph_places.to_nominative(morph_places.masculine_street(raw)) \
+            if hasattr(morph_places, "masculine_street") else nominative
+        healthy = True
+        for generic, name in (("улица", nominative), ("проспект", masculine),
+                              ("проспект", nominative)):
+            phrase = f"{generic} {name}"
+            base = place_key(phrase)
+            if any(place_key(morph_places.inflect_place(phrase, case)) != base
+                   for case in _PLACE_CASES):
+                healthy = False
+                break
+        if healthy:
+            usable.append(raw)
+    if len(usable) < 12:
+        raise RuntimeError(
+            f"only {len(usable)} fake street(s) survive their own inflection; "
+            "a customer with more distinct addresses than that would get a "
+            "fail-closed 5xx — widen _FAKE_STREETS")
+    return tuple(usable)
+
+
 def _fake_place(original: str) -> str:
     """A place of the SAME KIND as the one it replaces, in the nominative.
 
@@ -373,7 +477,7 @@ def _fake_place(original: str) -> str:
     shape = morph_places.place_shape(original) if original else {}
     generic = str(shape.get("generic") or "улица")
     gender = str(shape.get("gender") or "femn")
-    street = morph_places.to_nominative(secrets.choice(_FAKE_STREETS))
+    street = morph_places.to_nominative(secrets.choice(_usable_streets()))
     # The pool is written feminine because most generics are; reusing the
     # original's generic word means the name has to follow it.
     street = morph_places.agree_with_generic(street, gender)
@@ -411,6 +515,30 @@ def _fake_place(original: str) -> str:
 _INITIAL_LETTERS = "АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЭЮЯ"
 
 
+@functools.lru_cache(maxsize=1)
+def _invariant_last_names() -> tuple[str, ...]:
+    """The surnames whose feminine form resolves in every case.
+
+    Asked of morphology rather than listed, so adding a name to `_FAKE_LAST`
+    cannot leave a stale second list behind. Empty would mean the pool has
+    drifted to nothing usable, and a caller silently falling back to two words
+    is how that stayed invisible before — so it is stated here instead.
+    """
+    usable = tuple(surname for surname in _FAKE_LAST + _FAKE_LAST_INVARIANT
+                   if morph_names.survives_round_trip(
+                       morph_names.feminine_surname(surname), "femn"))
+    # A FLOOR, not just non-empty. One usable name would pass a non-empty check
+    # and still fail the second woman a customer names, and the failure mode is
+    # a permanent 5xx rather than a worse substitute — so it is worth catching at
+    # import of the pool rather than in a customer's traffic.
+    if len(usable) < 12:
+        raise RuntimeError(
+            f"only {len(usable)} surname(s) in the fake pool have a resolvable "
+            "feminine form; a customer naming more women by surname alone than "
+            "that would get a fail-closed 5xx — widen _FAKE_LAST_INVARIANT")
+    return usable
+
+
 def _fake_name(gender: str | None, shape: tuple[str, ...] = ()) -> str:
     """A fake full name that AGREES WITH ITSELF and with the real person.
 
@@ -441,10 +569,18 @@ def _fake_name(gender: str | None, shape: tuple[str, ...] = ()) -> str:
         # request failed closed. Shapes with a repeated kind are not exotic: a
         # keyboard slip inside «Екатерина» makes morphology read it as a surname.
         pool = _first_names_by_gender()[resolved]
+        # A LONE FEMININE SURNAME HAS ONLY ONE WORKABLE POOL. Any -ова/-ина form
+        # is syncretic and fails its own round trip, so drawing from the whole
+        # list and hoping is not a strategy — it is 12 retries that usually work
+        # and sometimes silently produce a two-word name instead. The subset is
+        # DERIVED, not a second list, so it cannot drift out of step with the
+        # first (the same reason `feminine_surname` derives rather than stores).
+        surnames = (_invariant_last_names()
+                    if plan == ("surn",) and resolved == "femn" else _FAKE_LAST)
         parts: list[str] = []
         for slot in plan:
             if slot == "surn":
-                surname = secrets.choice(_FAKE_LAST)
+                surname = secrets.choice(surnames)
                 parts.append(morph_names.feminine_surname(surname)
                              if resolved == "femn" else surname)
             elif slot == "patr":
@@ -769,6 +905,20 @@ class Vault:
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_name_parts ON name_parts (customer, part)"
         )
+        self._conn.execute(
+            # PARTS OF THE SUBSTITUTE, mirroring `name_parts` for the real value.
+            # `name_parts` answers «have we met this person»; this answers «is
+            # this string still one of ours». A model that reorders or shortens a
+            # fake produces a string that resolves to nothing, and without this
+            # the gateway cannot tell that from an ordinary sentence — which is
+            # why the failure was silent and every persona asked for a signal.
+            "CREATE TABLE IF NOT EXISTS token_parts ("
+            "customer TEXT NOT NULL, part TEXT NOT NULL, token TEXT NOT NULL, "
+            "PRIMARY KEY (customer, part, token))"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_token_parts ON token_parts (customer, part)"
+        )
         self._migrate_digit_signatures()
         self._migrate_name_keys()
         self._migrate_original_form()
@@ -870,7 +1020,7 @@ class Vault:
             # back to the street shape is a mismatch in a rare case; a permanent
             # 5xx is an outage. Attempts are bounded either way.
             if entity_type == "LOC" and attempt >= _TOKEN_MINT_ATTEMPTS // 2:
-                street = morph_places.to_nominative(secrets.choice(_FAKE_STREETS))
+                street = morph_places.to_nominative(secrets.choice(_usable_streets()))
                 token = f"улица {street}, {secrets.randbelow(_FAKE_HOUSE_MAX) + 1}"
             # A substitute that shares a WORD with the value it replaces hides
             # nothing about that word. Comparing whole strings is not enough:
@@ -913,7 +1063,12 @@ class Vault:
             # agrees with the sentence around it and the model leaves it alone.
             gender = (morph_names.detect_gender(value)
                       if entity_type == "NAME" else None)
-            token = (self._linked_token(canonical) if entity_type == "NAME" else None)
+            if entity_type == "NAME":
+                reordered = self._same_person_reordered(canonical)
+                if reordered is not None:
+                    return reordered
+            token = (self._linked_token(canonical, value)
+                     if entity_type == "NAME" else None)
             if token is None:
                 token = self._unique_token(entity_type, gender, value)
             digits, digits10 = _digit_signatures(token, entity_type)
@@ -962,6 +1117,14 @@ class Vault:
                     "INSERT OR IGNORE INTO name_parts (customer, part, canonical) "
                     "VALUES (?,?,?)",
                     [(self._customer, part, canonical) for part in set(parts)])
+            if entity_type == "NAME":
+                fake_parts = {word.casefold() for word in token.split()
+                              if len(word) > 2}
+                if fake_parts:
+                    self._conn.executemany(
+                        "INSERT OR IGNORE INTO token_parts (customer, part, token) "
+                        "VALUES (?,?,?)",
+                        [(self._customer, part, token) for part in fake_parts])
             self._conn.commit()
             return token
 
@@ -979,7 +1142,71 @@ class Vault:
                 f"lost the insert race for {canonical!r} but no row followed")
         return row[0]
 
-    def _linked_token(self, canonical: str) -> str | None:
+    def residual_of(self, candidate: str) -> str | None:
+        """The minted token this leftover string is a piece of, if any.
+
+        A model that writes «Юлия Тарасова» for the token «Тарасова Юлия
+        Петровна», or just «Юлия», produces a string that resolves to nothing —
+        so the FAKE goes to the customer's tool with a 200 and an empty log. The
+        words are still ours, and that is what this asks: does every word of the
+        candidate belong to ONE substitute we minted for this customer.
+
+        EVERY word must match, and they must agree on one token. A single shared
+        word would fire on a real customer who happens to be called Юлия, and a
+        warning that cries on ordinary traffic is a warning nobody reads.
+        """
+        words = [word.casefold() for word in candidate.split() if len(word) > 2]
+        if not words:
+            return None
+        with self._lock:
+            owners: list[set[str]] = []
+            for word in words:
+                rows = self._conn.execute(
+                    "SELECT token FROM token_parts WHERE customer=? AND part=?",
+                    (self._customer, word),
+                ).fetchall()
+                if not rows:
+                    return None
+                owners.append({row[0] for row in rows})
+        shared = set.intersection(*owners)
+        return next(iter(shared)) if len(shared) == 1 else None
+
+    def _same_person_reordered(self, canonical: str) -> str | None:
+        """The token of a person already on file, written in another word order.
+
+        «Гончарова Анна Дмитриевна» and «Анна Дмитриевна Гончарова» are one
+        customer: a form asks for «Фамилия Имя Отчество», a person says «Имя
+        Фамилия». Keyed by the written order they were two rows, so the model met
+        two people and «один человек — один токен» did not hold. A persona
+        measured seven spellings of one client and counted seven substitutes.
+
+        Matched HERE and not in `canonicalize`, because that function also
+        decides what `detokenize` hands the tool: sorting the parts into slots
+        there made «Клиент Елена Попова» come back as «Клиент Попова Елена». The
+        customer's word order is part of the value. It is not part of the person.
+
+        Uses `name_parts`, which is already indexed and already populated for
+        every multi-word name, so this costs one query and no new storage. A row
+        qualifies only when its parts are the SAME MULTISET — a subset would
+        merge «Иванов Пётр» into «Иванов Пётр Сергеевич», and merging two people
+        is the one failure this product treats as unacceptable.
+        """
+        parts = [word.casefold() for word in canonical.split() if len(word) > 2]
+        if len(parts) < 2:
+            return None
+        rows = self._conn.execute(
+            "SELECT t.canonical, t.token FROM name_parts p "
+            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
+            "WHERE p.customer=? AND p.part=? AND t.entity_type='NAME'",
+            (self._customer, parts[0]),
+        ).fetchall()
+        wanted = sorted(parts)
+        matches = {token for other, token in rows
+                   if sorted(word.casefold() for word in other.split()
+                             if len(word) > 2) == wanted}
+        return next(iter(matches)) if len(matches) == 1 else None
+
+    def _linked_token(self, canonical: str, surface: str) -> str | None:
         """The substitute for a person we have already met, named more briefly.
 
         «Иванов Пётр Сергеевич» in one turn and «Петру» in the next are the same
@@ -997,28 +1224,52 @@ class Vault:
         is linked: merging two customers into one sends the wrong person's data
         to a tool, which is worse than the model seeing two. The asymmetry is
         deliberate — consistency is quality, identity is correctness.
+
+        MATCHED BY CANONICAL AND BY SURFACE, in that order. The canonical reaches
+        an inflected mention («Петру» → «Пётр»); the surface reaches one where
+        canonicalisation itself is what lost the person. «Иванова», written after
+        «фамилия» and standing alone, reduces to «Иванов» — a name that is not in
+        this woman's file at all — so the canonical lookup found nothing and she
+        got a second identity. Her surname IS in the file, spelled exactly as she
+        wrote it, as a part of the full name from the first turn.
+
+        The surface path still earns its place now that `canonicalize` keeps a
+        lone «Иванова» as itself. A vault written before that change holds her
+        under «Иванов»; the canonical lookup for a new mention now derives
+        «Иванова» and misses it, and the surface match against `name_parts` is
+        what still reaches her file. Where no full name was ever stored she does
+        get a second row — a one-time split at the upgrade boundary, which is
+        the quality side of the trade, not the correctness one.
         """
+        candidates: list[str] = []
         parts = canonical.split()
-        if len(parts) != 1 or len(parts[0]) <= 2:
-            return None
-        rows = self._conn.execute(
-            "SELECT t.canonical, t.token FROM name_parts p "
-            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
-            "WHERE p.customer=? AND p.part=? AND t.entity_type='NAME' LIMIT 2",
-            (self._customer, parts[0].casefold()),
-        ).fetchall()
-        if len(rows) != 1:
-            return None
-        full_canonical, full_token = rows[0]
-        derived = _corresponding_part(parts[0], full_canonical, full_token)
-        if derived is None or derived == full_token:
-            return None
-        # The derived word must not already stand for somebody else.
-        clash = self._conn.execute(
-            "SELECT 1 FROM tokens WHERE customer=? AND token=? LIMIT 1",
-            (self._customer, derived),
-        ).fetchone()
-        return None if clash else derived
+        if len(parts) == 1 and len(parts[0]) > 2:
+            candidates.append(parts[0])
+        stripped = surface.strip()
+        if len(stripped.split()) == 1 and len(stripped) > 2:
+            candidates.append(stripped)
+        for candidate in candidates:
+            rows = self._conn.execute(
+                "SELECT t.canonical, t.token FROM name_parts p "
+                "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
+                "WHERE p.customer=? AND p.part=? AND t.entity_type='NAME' LIMIT 2",
+                (self._customer, candidate.casefold()),
+            ).fetchall()
+            if len(rows) != 1:
+                continue
+            full_canonical, full_token = rows[0]
+            derived = _corresponding_part(candidate, full_canonical, full_token)
+            if derived is None or derived == full_token:
+                continue
+            # The derived word must not already stand for somebody else.
+            clash = self._conn.execute(
+                "SELECT 1 FROM tokens WHERE customer=? AND token=? LIMIT 1",
+                (self._customer, derived),
+            ).fetchone()
+            if clash:
+                continue
+            return derived
+        return None
 
     def peek_token(self, value: str, entity_type: str) -> str | None:
         """Return the existing token for a value WITHOUT creating one (read-only).

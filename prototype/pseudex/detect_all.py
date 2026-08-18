@@ -136,7 +136,18 @@ class Detector:
             with stage("detect.gazetteer"):
                 spans += gazetteer_names(norm)
             with stage("detect.structured_kv"):   # Layer 1: JSON/forms
-                spans += detect_structured_kv(norm)
+                # KEPT ASIDE: a KV span carries its own evidence. The KEY typed
+                # the value — that is stronger than any word standing near it —
+                # so re-checking it against the cue lists can only lose.
+                #
+                # It did: `{"passport": "4509123456"}` was typed correctly by the
+                # key and then thrown away, because the passport cue list holds
+                # «паспорт» and not the Latin «passport». A customer's JSON field
+                # went to the model in the clear while the same number after the
+                # Russian word was masked. Extending the cue list would have
+                # fixed one key and left the next one to be discovered the same
+                # way; the provenance is the real answer.
+                kv_spans = detect_structured_kv(norm)
             with stage("detect.quasi"):           # quasi: DOB/age/medical
                 spans += detect_quasi(norm)
             # Suppress denied phones BEFORE resolving, else a phone that wins the
@@ -151,6 +162,7 @@ class Detector:
             # order number was masked as a phone. Offsets are 1:1 by invariant,
             # so the same spans index into either text.
             with stage("detect.resolve"):
-                resolved = _resolve(suppress(text, spans), ASSETS.get().priority, text)
+                resolved = _resolve(suppress(text, spans) + kv_spans,
+                                    ASSETS.get().priority, text)
             return [Span(s.start, s.end, "LOC", s.value) if s.entity_type == "ADDR" else s
                     for s in resolved]
