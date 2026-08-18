@@ -76,21 +76,31 @@ def _phone_digits(rng: random.Random) -> str:
     return rng.choice(("916", "926", "903", "985", "917")) + _digits(rng, 7)
 
 
-def _canonical_name(surface: str, surname: str, first: str, patronymic: str) -> str:
-    """The canonical form of the name AS WRITTEN in this register.
+def _canonical_name(surface: str) -> str:
+    """The canonical form of the name AS WRITTEN in this register — the surface.
 
-    Registers drop parts: a messenger drops the patronymic, speech-to-text often
-    drops the surname too. Ground truth that names the full identity anyway would
-    score the round trip on information the message never carried — the gateway
-    would be marked wrong for not inventing it.
+    Registers drop parts (a messenger drops the patronymic, speech-to-text often
+    drops the surname) and they never inflect: `render_name` writes nominative
+    parts, reordered, lowercased or misspelt. So what was written IS the
+    canonical form of what was written, and there is nothing to reconstruct.
 
-    Word ORDER is also register-dependent («иванов пётр» / «пётр иванов»), so the
-    canonical is built from which parts survived, in the order they appear.
+    IT USED TO RECONSTRUCT, and that quietly broke the corpus's own rule. It
+    matched each clean part against the surface by substring, so any part the
+    register had TOUCHED disappeared from the ground truth: «Иванов Петр» — with
+    е for ё, which is 53% of real Russian misspelling and a norm rather than a
+    typo — demanded «Иванов» back and marked the full name wrong. 162 of the 183
+    sloppy round-trip failures were this, not the gateway.
+
+    The lesson is the one `assemble` already states one file over: derive from
+    what you built, never by searching the finished string. Searching finds what
+    survived the transform and calls the rest absent.
+
+    NOT A CONCESSION TO THE DETECTOR. The gateway is not a spell-checker: a
+    customer who wrote «Петр» is owed «Петр», and returning «Пётр» would be
+    inventing a spelling the message did not carry. Demanding the repaired form
+    was the corpus scoring us on information nobody supplied.
     """
-    lowered = surface.casefold()
-    parts = [p for p in (surname, first, patronymic) if p and p.casefold() in lowered]
-    parts.sort(key=lambda p: lowered.index(p.casefold()))
-    return " ".join(parts) if parts else surface
+    return surface
 
 
 def _person(rng: random.Random, difficulty: str) -> tuple[str, str, str]:
@@ -140,9 +150,14 @@ def _create_order(rng, register, difficulty):
         parts = ["так значит заказ ", order, " на ", ("name", name),
                  " телефон ", ("phone", phone), " адрес ", ("address", address)]
 
-    pii = [("name", "NAME", _canonical_name(name, surname, first, patronymic), "customer_name"),
+    # THE ADDRESS AS WRITTEN, for the same reason names are. Three of the four
+    # registers drop the city — a shop's own chat assumes it — and ground truth
+    # that names it anyway scores the gateway on a word the message never
+    # carried. `render_address` decides what survived, so it is the only honest
+    # source for what must come back.
+    pii = [("name", "NAME", _canonical_name(name), "customer_name"),
            ("phone", "PHONE", f"+7{phone_digits}", "phone"),
-           ("address", "LOC", f"{city}, {street}, д. {house}, кв. {flat}", "address")]
+           ("address", "LOC", address, "address")]
     negatives = [Negative(order, "номер заказа")]
     call = {"customer_name": f"{surname} {first} {patronymic}".strip(),
             "phone": f"+7{phone_digits}",
@@ -197,7 +212,7 @@ def _verify_identity(rng, register, difficulty):
         parts = ["клиент ", ("name", name), " паспорт ", ("passport", passport),
                  " снилс ", ("snils", snils), " версия анкеты ", build]
 
-    pii = [("name", "NAME", _canonical_name(name, surname, first, patronymic), "full_name"),
+    pii = [("name", "NAME", _canonical_name(name), "full_name"),
            ("passport", "PASSPORT", f"{series} {number}", "passport"),
            ("snils", "SNILS", snils_digits, "snils")]
     negatives = [Negative(build, "номер сборки анкеты")]
@@ -228,7 +243,7 @@ def _issue_refund(rng, register, difficulty):
                  " на карту ", ("card", card), " держатель ", ("name", name)]
 
     pii = [("card", "CARD", card_digits, "card_number"),
-           ("name", "NAME", _canonical_name(name, surname, first, patronymic), "customer_name")]
+           ("name", "NAME", _canonical_name(name), "customer_name")]
     negatives = [Negative(str(amount), "сумма"), Negative(invoice, "номер счёта")]
     call = {"card_number": card_digits, "amount": amount,
             "customer_name": f"{surname} {first} {patronymic}".strip()}
@@ -260,7 +275,7 @@ def _register_vehicle(rng, register, difficulty):
                  " телефон ", ("phone", phone), " заказ наряд от ", doc_date]
 
     pii = [("plate", "PLATE", plate, "plate"),
-           ("name", "NAME", _canonical_name(name, surname, first, patronymic), "owner_name"),
+           ("name", "NAME", _canonical_name(name), "owner_name"),
            ("phone", "PHONE", f"+7{phone_digits}", "owner_phone")]
     # A document date beside personal data: the shape that made every invoice
     # date look like a date of birth until the association gate existed.
@@ -416,7 +431,7 @@ def _dialogue_same_person(rng, register, difficulty):
         {"role": "assistant", "content": "Заказ принят. Что-то ещё?"},
         {"role": "user", "content": turn_two},
     ]
-    canonical = _canonical_name(full, surname, first, patronymic)
+    canonical = _canonical_name(full)
     pii = [
         PiiItem("NAME", turn_one[slice(*spans_one["name"])], *spans_one["name"],
                 canonical=canonical, tool_param="customer_name", turn=0, identity="p1"),
@@ -456,10 +471,10 @@ def _two_people(rng, register, difficulty):
     messages = [{"role": "user", "content": text}]
     pii = [
         PiiItem("NAME", text[slice(*spans["payer"])], *spans["payer"],
-                canonical=_canonical_name(payer, a_surname, a_first, a_patr),
+                canonical=_canonical_name(payer),
                 tool_param=None, turn=0, identity="payer"),
         PiiItem("NAME", text[slice(*spans["recipient"])], *spans["recipient"],
-                canonical=_canonical_name(recipient, b_surname, b_first, b_patr),
+                canonical=_canonical_name(recipient),
                 tool_param="customer_name", turn=0, identity="recipient"),
         PiiItem("PHONE", text[slice(*spans["phone"])], *spans["phone"],
                 canonical=f"+7{phone_digits}", tool_param="phone", turn=0,
@@ -468,9 +483,121 @@ def _two_people(rng, register, difficulty):
     return messages, pii, []
 
 
+def _split_name_anchored(rng, register, difficulty):
+    """One person named in PARTS THAT ARE NOT ADJACENT: «с Игорем, фамилия Волков».
+
+    Every other scenario in this corpus names a person in one contiguous run, so
+    the corpus could not produce this shape at all — it came from a persona
+    running the real product, who noticed the two halves becoming two spans and
+    asked whether «один человек — один токен» survives it.
+
+    The full name arrives FIRST, which is what makes the claim testable. With an
+    anchor in the vault the two later halves are unambiguously the same person,
+    so linking them is required, not guessed. The unanchored shape is a separate
+    scenario precisely because it is NOT required — see `_split_name_bare`.
+    """
+    surname, first, patronymic = _person(rng, difficulty)
+    full = R.render_name(surname, first, patronymic, register, rng)
+    dative = R.DATIVE.get(first, first)
+    phone_digits = _phone_digits(rng)
+    phone = R.render_phone(phone_digits, register, rng)
+    order = _order_id(rng)
+
+    if register == "clean":
+        first_parts = ["Оформите заказ ", order, " на ", ("full", full),
+                       ", телефон ", ("phone", phone), "."]
+        second_parts = ["И свяжитесь с ", ("given", dative), ", фамилия ",
+                        ("surname", surname), ", после шести."]
+    elif register == "chat":
+        first_parts = ["оформите заказ ", order, " на ", ("full", full), " тел ",
+                       ("phone", phone)]
+        second_parts = ["наберите ", ("given", dative.lower()), " фамилия ",
+                        ("surname", surname.lower()), " вечером"]
+    elif register == "sloppy":
+        first_parts = ["заказ ", order, " на ", ("full", full), ", т ", ("phone", phone)]
+        second_parts = ["наберите ", ("given", dative), ", фамилия ",
+                        ("surname", surname), " вечром"]
+    else:
+        first_parts = ["значит заказ ", order, " на ", ("full", full), " телефон ",
+                       ("phone", phone)]
+        second_parts = ["и позвоните ", ("given", dative.lower()), " фамилия ",
+                        ("surname", surname.lower()), " после шести"]
+
+    turn_one, spans_one = R.assemble(first_parts)
+    turn_two, spans_two = R.assemble(second_parts)
+    messages = [
+        {"role": "user", "content": turn_one},
+        {"role": "assistant", "content": "Записал. Что-то ещё?"},
+        {"role": "user", "content": turn_two},
+    ]
+    pii = [
+        PiiItem("NAME", turn_one[slice(*spans_one["full"])], *spans_one["full"],
+                canonical=_canonical_name(full),
+                tool_param="customer_name", turn=0, identity="p1"),
+        PiiItem("PHONE", turn_one[slice(*spans_one["phone"])], *spans_one["phone"],
+                canonical=f"+7{phone_digits}", tool_param="phone", turn=0,
+                identity="p1phone"),
+        # BOTH HALVES FEED THE SAME ARGUMENT, and both are checked by the round
+        # trip for it. The agent assembles one `customer_name` from them, so a
+        # half that comes back as somebody else is a wrong tool call even when
+        # the other half is perfect — and a lone surname is exactly where that
+        # happened: «Иванова» resolved to «Иванов», a man.
+        PiiItem("NAME", turn_two[slice(*spans_two["given"])], *spans_two["given"],
+                canonical=first, tool_param="customer_name", turn=1, identity="p1"),
+        PiiItem("NAME", turn_two[slice(*spans_two["surname"])], *spans_two["surname"],
+                canonical=surname, tool_param="customer_name", turn=1, identity="p1"),
+    ]
+    return messages, pii, [Negative(order, "номер заказа")]
+
+
+def _split_name_bare(rng, register, difficulty):
+    """The split mention with NO earlier full name to anchor it.
+
+    Deliberately carries NO identity: with nothing in the vault to tie the halves
+    together, linking them would be a guess, and our own rule is that merging two
+    people is worse than splitting one. Demanding a link here would score the
+    gateway on information the conversation never carried.
+
+    What it DOES demand is detection of both halves. A cued surname that arrives
+    lower case («фамилия волков») is the shape the chat register actually
+    carries, and a missed one is not a consistency defect — it is a leak.
+    """
+    surname, first, patronymic = _person(rng, difficulty)
+    dative = R.DATIVE.get(first, first)
+    phone_digits = _phone_digits(rng)
+    phone = R.render_phone(phone_digits, register, rng)
+
+    if register == "clean":
+        parts = ["Свяжитесь с ", ("given", dative), ", фамилия ", ("surname", surname),
+                 ", телефон ", ("phone", phone), "."]
+    elif register == "chat":
+        parts = ["наберите ", ("given", dative.lower()), " фамилия ",
+                 ("surname", surname.lower()), " тел ", ("phone", phone)]
+    elif register == "sloppy":
+        parts = ["позвоните ", ("given", dative), " фамилия ", ("surname", surname),
+                 ", т ", ("phone", phone)]
+    else:
+        parts = ["позвоните пожалуйста ", ("given", dative.lower()), " фамилия ",
+                 ("surname", surname.lower()), " телефон ", ("phone", phone)]
+
+    text, spans = R.assemble(parts)
+    messages = [{"role": "user", "content": text}]
+    pii = [
+        PiiItem("NAME", text[slice(*spans["given"])], *spans["given"],
+                canonical=first, tool_param="customer_name", turn=0, identity=""),
+        PiiItem("NAME", text[slice(*spans["surname"])], *spans["surname"],
+                canonical=surname, tool_param="customer_name", turn=0, identity=""),
+        PiiItem("PHONE", text[slice(*spans["phone"])], *spans["phone"],
+                canonical=f"+7{phone_digits}", tool_param="phone", turn=0, identity=""),
+    ]
+    return messages, pii, []
+
+
 DIALOGUES = {
     "same_person_twice": _dialogue_same_person,
     "two_people": _two_people,
+    "split_name_anchored": _split_name_anchored,
+    "split_name_bare": _split_name_bare,
 }
 
 if __name__ == "__main__":

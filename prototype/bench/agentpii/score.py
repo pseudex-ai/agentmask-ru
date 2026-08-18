@@ -5,6 +5,12 @@ counts as found when a produced span overlaps it AND carries the same type: the
 type is not bookkeeping, it decides which fake shape is minted, and a passport
 masked as a phone reaches the customer's validator in the wrong format.
 
+Reported beside it is COVERAGE — the share of gold items whose span was found
+WHOLE. An overlap is what a detector needs to be credited with finding something;
+coverage is what the customer needs, because the uncovered tail went to the model
+in the clear. «Кзнецов Дмитрий» detected as «Дмитрий» scores as recall and leaks
+a surname, so the two numbers are printed together and never merged.
+
 Negatives are scored as hard as recall. A masked order number breaks the
 conversation as surely as a leaked one breaks the law.
 
@@ -102,6 +108,8 @@ def main() -> int:
     produced: defaultdict[str, int] = defaultdict(int)
     by_register: defaultdict[str, list[int]] = defaultdict(lambda: [0, 0])
     masked_negatives = 0
+    fully_covered = 0
+    partial: list[tuple[str, str, str, int]] = []
     total_negatives = 0
     roundtrip_ok = 0
     roundtrip_total = 0
@@ -115,10 +123,15 @@ def main() -> int:
 
     for case in cases:
         turns = [m["content"] for m in case["messages"] if m["role"] == "user"]
-        text = turns[0]
-        spans = detector.detect(text)
-        for span in spans:
-            produced[span.entity_type] += 1
+        # EVERY user turn is detected, not just the first. Recall used to be
+        # measured on turn 0 alone, which meant a value leaked in the second
+        # message of a dialogue was invisible to the benchmark — and the second
+        # message is exactly where a customer refers back to somebody, in the
+        # shortened and lower-case forms that are hardest to catch.
+        per_turn = [detector.detect(turn) for turn in turns]
+        for spans in per_turn:
+            for span in spans:
+                produced[span.entity_type] += 1
 
         # --- axis 4: consistency --------------------------------------------
         # One vault for the WHOLE dialogue, because that is what a conversation
@@ -147,30 +160,53 @@ def main() -> int:
 
         # --- axis 1: recall -------------------------------------------------
         for item in case["pii"]:
-            if item.get("turn", 0) != 0:
-                continue
+            turn_index = item.get("turn", 0)
+            spans = per_turn[turn_index]
             gold[item["type"]] += 1
             by_register[case["register"]][1] += 1
             hit = any(span.entity_type == item["type"]
                       and _overlaps(span.start, span.end, item["start"], item["end"])
                       for span in spans)
+            # AN OVERLAP IS NOT COVERAGE, and the difference is a leak. «Кзнецов
+            # Дмитрий» with a typo in the surname is detected as «Дмитрий»: the
+            # overlap rule scores it found, and the surname goes to the model in
+            # the clear. Reported apart rather than replacing recall — the two
+            # answer different questions, and collapsing them would hide which
+            # of the two a change moved.
+            covered = set()
+            for span in spans:
+                if span.entity_type != item["type"]:
+                    continue
+                for position in range(max(span.start, item["start"]),
+                                      min(span.end, item["end"])):
+                    covered.add(position)
+            if len(covered) == item["end"] - item["start"]:
+                fully_covered += 1
+            elif hit and len(partial) < 400:
+                partial.append((case["id"], item["type"], item["value"],
+                                item["end"] - item["start"] - len(covered)))
             if hit:
                 found[item["type"]] += 1
                 by_register[case["register"]][0] += 1
             elif len(misses) < 400:
-                misses.append((case["id"], item["type"], item["value"], text))
+                misses.append((case["id"], item["type"], item["value"],
+                               turns[turn_index]))
 
         # --- axis 1: negatives ----------------------------------------------
         for negative in case["negatives"]:
             total_negatives += 1
-            start = text.find(negative["value"])
-            if start < 0:
-                continue
-            end = start + len(negative["value"])
-            if any(_overlaps(s.start, s.end, start, end) for s in spans):
-                masked_negatives += 1
-                if len(false_masks) < 400:
-                    false_masks.append((case["id"], negative["value"], negative["why"]))
+            for turn_index, turn in enumerate(turns):
+                start = turn.find(negative["value"])
+                if start < 0:
+                    continue
+                end = start + len(negative["value"])
+                if any(_overlaps(s.start, s.end, start, end)
+                       for s in per_turn[turn_index]):
+                    masked_negatives += 1
+                    if len(false_masks) < 400:
+                        false_masks.append((case["id"], negative["value"],
+                                            negative["why"]))
+                break
 
         # --- axis 2: round trip ---------------------------------------------
         # A fresh vault per case: tokens must not be shared across unrelated
@@ -179,17 +215,40 @@ def main() -> int:
         vault = Vault(":memory:", "bench")
         context = MaskContext(detector=detector, vault=vault, audit=AuditLog(":memory:"),
                               cache=MaskCache(64), org_id="bench", agent_id="bench")
-        masked = mask_one(text, context)
+        # Masked IN ORDER, sharing one vault, because that is what a conversation
+        # is: the substitute a later turn gets depends on what the earlier turns
+        # already put in the vault.
+        masked = [mask_one(turn, context) for turn in turns]
         for item in case["pii"]:
-            if not item["tool_param"] or item.get("turn", 0) != 0:
+            if not item["tool_param"]:
+                continue
+            # THE VALUE AS DETECTION SAW IT, not as the corpus wrote it. Masking
+            # runs on normalised text, so the span carries «8-903-…» where the
+            # message carried a Cyrillic О — and handing the raw surface straight
+            # to the vault measured a path production never takes. It reported
+            # ~180 phone breaks that do not exist: through `mask_one` the same
+            # numbers come back dialable.
+            turn_index = item.get("turn", 0)
+            span = next((s for s in per_turn[turn_index]
+                         if s.entity_type == item["type"]
+                         and _overlaps(s.start, s.end, item["start"], item["end"])), None)
+            if span is None:
+                # Undetected, which the recall axis already counts. Counting it
+                # again here would make one defect move two numbers and leave a
+                # reader unable to tell how many there were.
                 continue
             roundtrip_total += 1
-            # What the model would copy out: the masked text at this position.
-            # Offsets shift, so the substitute is located by asking the vault
-            # what this value became — which is what the model reads.
-            token = vault.tokenize(item["value"], item["type"])
-            restored = vault.detokenize(token)
-            if _same_value(restored, item["canonical"]) or _same_value(restored, item["value"]):
+            # READ-ONLY: the token was minted by the masking above, and this axis
+            # asks whether THAT token resolves — not whether a freshly minted one
+            # would.
+            token = vault.peek_token(span.value, span.entity_type)
+            restored = vault.detokenize(token) if token else None
+            # THE CANONICAL, AND ONLY IT. Accepting the surface form as well used
+            # to paper over the ground truth being wrong — and it also passed the
+            # one thing this axis exists to catch: «позвоните Игорю» resolving to
+            # «Игорю» puts a declined name in the customer's CRM, which is a
+            # wrong tool call however recognisable it looks to a human reader.
+            if _same_value(restored, item["canonical"]):
                 roundtrip_ok += 1
             elif len(broken) < 200:
                 broken.append((case["id"], item["type"], item["canonical"], restored))
@@ -206,6 +265,9 @@ def main() -> int:
     total_found = sum(found.values())
     print("-" * 38)
     print(f"{'ВСЕГО':<12}{total_gold:>8}{total_found:>9}{total_found / total_gold * 100:>8.1f}%")
+    print(f"{'ПОКРЫТО':<12}{total_gold:>8}{fully_covered:>9}"
+          f"{fully_covered / total_gold * 100:>8.1f}%   "
+          f"(спан найден ЦЕЛИКОМ; разница с полнотой — утёкшие хвосты)")
 
     print(f"\n{'РЕГИСТР':<12}{'ЭТАЛОН':>8}{'ПОЛНОТА':>9}")
     print("-" * 30)
@@ -229,6 +291,10 @@ def main() -> int:
         print(f"\n--- ПРОПУЩЕНО ({len(misses)}) ---")
         for case_id, kind, value, text in misses[:args.dump]:
             print(f"  {kind:<9} {value!r:34} в {text[:64]!r}")
+    if partial:
+        print(f"\n--- НАЙДЕНО ЧАСТИЧНО, ОСТАЛЬНОЕ УТЕКЛО ({len(partial)}) ---")
+        for case_id, kind, value, lost in partial[:args.dump]:
+            print(f"  {kind:<9} {value!r:34} не покрыто символов: {lost}")
     if false_masks:
         print(f"\n--- ЗАМАСКИРОВАНО ЗРЯ ({len(false_masks)}) ---")
         for case_id, value, why in false_masks[:args.dump]:
