@@ -30,7 +30,7 @@ from pseudex.license import ENGINE_VERSION, LicenseClient, LicenseError, explain
 from pseudex.maskcache import MaskCache
 from pseudex.operator import build_router
 from pseudex.profiling import snapshot as profiling_snapshot, stage
-from pseudex.redact import StreamDetokenizer
+from pseudex.redact import StreamDetokenizer, residual_tokens
 from pseudex.tenants import Tenant, Tenants
 from pseudex.vault import Vault
 
@@ -83,10 +83,23 @@ if not GATEWAY_TOKEN:
                  "entrypoint.sh sets it once for the container.")
 
 
+def _same_secret(presented: str, expected: str) -> bool:
+    """Constant-time compare that survives a non-ASCII header.
+
+    `hmac.compare_digest` raises TypeError on a `str` outside ASCII, so
+    «Authorization: Bearer левый» answered 500 with a traceback instead of 401 —
+    on the authorisation path, which is the last place that should answer with a
+    stack. Encoding first keeps the comparison constant-time and makes every
+    wrong credential fail the same way.
+    """
+    return hmac.compare_digest(presented.encode("utf-8", "surrogatepass"),
+                               expected.encode("utf-8"))
+
+
 def _require_gateway(request: Request) -> None:
     header = request.headers.get("authorization", "")
     presented = header[7:] if header.lower().startswith("bearer ") else ""
-    if not presented or not hmac.compare_digest(presented, GATEWAY_TOKEN):
+    if not presented or not _same_secret(presented, GATEWAY_TOKEN):
         raise HTTPException(
             status_code=401,
             detail="gateway token required (Authorization: Bearer …)")
@@ -97,7 +110,7 @@ def _require_operator(request: Request) -> None:
     a short-circuiting compare leaks its prefix through timing."""
     header = request.headers.get("authorization", "")
     presented = header[7:] if header.lower().startswith("bearer ") else ""
-    if not presented or not hmac.compare_digest(presented, ADMIN_TOKEN):
+    if not presented or not _same_secret(presented, ADMIN_TOKEN):
         raise HTTPException(
             status_code=401,
             detail="operator token required (Authorization: Bearer …)",
@@ -427,8 +440,26 @@ async def profile() -> dict[str, object]:
 @app.get("/usage")
 async def usage(request: Request) -> dict[str, object]:
     """For the future UI: what PII we protected for this customer (counts +
-    recent events with masked previews). No full PII is stored or returned."""
-    tenant = _tenant(request)
+    recent events with masked previews). No full PII is stored or returned.
+
+    A KNOWN PSEUDEX KEY, never the pass-through one. `_tenant` deliberately
+    accepts an unrecognised key when an upstream is configured — on
+    `/v1/chat/completions` that is right, because the key is the customer's own
+    provider credential and the PROVIDER is the only party that can judge it.
+
+    Here nothing is ever sent upstream, so nobody judges it, and any string at
+    all returned the shared org's counters, its token list and its masked
+    previews. The recommended command publishes this port on every interface
+    (`-p 8000:8000`), so on a cloud host that was a feed of «what we protected
+    today» readable by anyone who could reach it. This surface is the one
+    `service.py` gates behind the admin credential for exactly that reason.
+    """
+    header = request.headers.get("authorization", "")
+    presented = (header[7:] if header.lower().startswith("bearer ")
+                 else header).strip()
+    tenant = TENANTS.resolve(presented)
+    if tenant is None:
+        raise HTTPException(status_code=401, detail="invalid Pseudex API key")
     return {
         "protected_counts": AUDIT.counts(tenant.customer_id, 0.0),
         "recent": AUDIT.recent(tenant.customer_id, 50),
@@ -486,7 +517,37 @@ async def chat_completions(request: Request):
     with stage("proxy.unmask_response"):
         restored = unmask_response(upstream, vault)
     with stage("proxy.serialize"):
-        return JSONResponse(restored)
+        # THE ANSWER IS OPENAI-SHAPED AND MUST STAY SO, so the residual signal
+        # rides in a HEADER rather than in the body: the customer's SDK parses
+        # this JSON, and an extra key is a field their client library did not
+        # expect. A header is invisible to a parser and readable by anyone who
+        # looks — which is exactly the audience for it.
+        residual = _residual_in(restored, vault)
+        headers = {"X-Pseudex-Residual": str(len(residual))} if residual else None
+        return JSONResponse(restored, headers=headers)
+
+
+def _residual_in(response: dict[str, object], vault) -> list[str]:
+    """Substitutes still standing in an answer that has already been restored.
+
+    When the model reorders or shortens a fake, nothing resolves and the FAKE
+    reaches the customer's tool — with a 200 and an empty log. Every persona in
+    the 18.08 run asked for a way to see that from their own code.
+    """
+    found: list[str] = []
+    for choice in response.get("choices", []) or []:
+        message = choice.get("message") if isinstance(choice, dict) else None
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            found.extend(residual_tokens(content, vault))
+        for call in message.get("tool_calls", []) or []:
+            arguments = (call.get("function") or {}).get("arguments") \
+                if isinstance(call, dict) else None
+            if isinstance(arguments, str):
+                found.extend(residual_tokens(arguments, vault))
+    return sorted(set(found))
 
 
 async def _selfcheck(org_id: str, text: str) -> dict[str, object]:

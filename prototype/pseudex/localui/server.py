@@ -191,6 +191,19 @@ def _sweep_sessions(now: float) -> None:
             del _SESSIONS[token]
 
 
+def _same_secret(presented: str, expected: str) -> bool:
+    """Constant-time compare that survives a non-ASCII header.
+
+    `hmac.compare_digest` raises TypeError on a `str` outside ASCII, so
+    «Authorization: Bearer левый» answered 500 with a traceback instead of 401 —
+    on the authorisation path, which is the last place that should answer with a
+    stack. Encoding first keeps the comparison constant-time and makes every
+    wrong credential fail the same way.
+    """
+    return hmac.compare_digest(presented.encode("utf-8", "surrogatepass"),
+                               expected.encode("utf-8"))
+
+
 def _require_session(request: Request) -> str:
     """Validate the session and return the id that identifies it in the audit.
 
@@ -230,8 +243,8 @@ async def signin(request: Request) -> JSONResponse:
     presented = str(body.get("secret", ""))
     # compare_digest against BOTH, and without short-circuiting between them:
     # `a or b` would leak which of the two matched through timing.
-    matches_token = hmac.compare_digest(presented, SIGNIN_TOKEN)
-    matches_password = bool(UI_PASSWORD) and hmac.compare_digest(presented, UI_PASSWORD)
+    matches_token = _same_secret(presented, SIGNIN_TOKEN)
+    matches_password = bool(UI_PASSWORD) and _same_secret(presented, UI_PASSWORD)
     if not (matches_token or matches_password):
         recent.append(now)
         return JSONResponse({"error": "wrong token"}, status_code=401)

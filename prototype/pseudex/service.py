@@ -38,7 +38,7 @@ from pseudex.license import ENGINE_VERSION, LicenseClient, LicenseError, explain
 from pseudex.maskcache import MaskCache
 from pseudex.operator import build_router
 from pseudex.profiling import snapshot as profiling_snapshot
-from pseudex.redact import unmask_stream_chunk
+from pseudex.redact import residual_tokens, unmask_stream_chunk
 from pseudex.vault import Vault, count_values_since
 
 # Without this the sidecar has NO logging configuration at all, so everything
@@ -126,6 +126,19 @@ if not ADMIN_TOKEN:
                  "intermittently. Set it once for the container.")
 
 
+def _same_secret(presented: str, expected: str) -> bool:
+    """Constant-time compare that survives a non-ASCII header.
+
+    `hmac.compare_digest` raises TypeError on a `str` outside ASCII, so
+    «Authorization: Bearer левый» answered 500 with a traceback instead of 401 —
+    on the authorisation path, which is the last place that should answer with a
+    stack. Encoding first keeps the comparison constant-time and makes every
+    wrong credential fail the same way.
+    """
+    return hmac.compare_digest(presented.encode("utf-8", "surrogatepass"),
+                               expected.encode("utf-8"))
+
+
 def _require_operator(request: Request) -> None:
     """Gate the operator surface on a bearer token.
 
@@ -135,7 +148,7 @@ def _require_operator(request: Request) -> None:
     """
     header = request.headers.get("authorization", "")
     presented = header[7:] if header.lower().startswith("bearer ") else ""
-    if not presented or not hmac.compare_digest(presented, ADMIN_TOKEN):
+    if not presented or not _same_secret(presented, ADMIN_TOKEN):
         raise HTTPException(
             status_code=401,
             detail="operator token required (Authorization: Bearer …)",
@@ -146,7 +159,7 @@ def _require_gateway(request: Request) -> None:
     """Gate the masking surface on the gateway token."""
     header = request.headers.get("authorization", "")
     presented = header[7:] if header.lower().startswith("bearer ") else ""
-    if not presented or not hmac.compare_digest(presented, GATEWAY_TOKEN):
+    if not presented or not _same_secret(presented, GATEWAY_TOKEN):
         raise HTTPException(
             status_code=401,
             detail="gateway token required (Authorization: Bearer …)",
@@ -416,7 +429,21 @@ async def unmask(request: Request) -> JSONResponse:
     result = await anyio.to_thread.run_sync(
         _unmask_for, response, org_id, limiter=_MASK_LIMITER
     )
-    return JSONResponse({"response": result})
+    # WHAT DID NOT COME BACK. Detokenization is best-effort by construction: a
+    # model that reorders or shortens a substitute produces a string that
+    # resolves to nothing, and the FAKE then reaches the customer's tool. Until
+    # now that happened with a 200, empty counters and nothing in the log —
+    # every persona in the 18.08 run asked for this field by name.
+    #
+    # A LIST, not a boolean, and the values are OUR substitutes: naming them
+    # discloses nothing about the customer's data, and the caller needs them to
+    # decide what to do — refuse the tool call, retry, or ask the model again.
+    residual = _residual_for(result, org_id)
+    payload: dict[str, object] = {"response": result}
+    if residual:
+        payload["residual_tokens"] = residual
+    return JSONResponse(payload, headers=({"X-Pseudex-Residual": str(len(residual))}
+                                          if residual else None))
 
 
 @app.post("/unmask_chunk", dependencies=[Depends(_require_gateway)])
@@ -451,6 +478,41 @@ def _spans_for_texts(texts: list[object], org_id: str) -> list[list[dict[str, ob
 def _unmask_for(response: dict[str, object], org_id: str) -> dict[str, object]:
     """Vault resolved inside the worker thread — see _mask_request."""
     return unmask_response(response, _vault(org_id))
+
+
+def _residual_for(response: dict[str, object], org_id: str) -> list[str]:
+    """Substitutes still standing in an already-detokenized answer.
+
+    Walks the same text the caller will read, so what it reports is exactly what
+    would have reached their tool. Read-only: no token is minted and nothing is
+    audited — a diagnostic that changes the vault would change the thing it is
+    diagnosing.
+    """
+    vault = _vault(org_id)
+    found: list[str] = []
+    for text in _response_texts(response):
+        found.extend(residual_tokens(text, vault))
+    return sorted(set(found))
+
+
+def _response_texts(response: dict[str, object]) -> list[str]:
+    """Every string in a chat completion a customer's code might act on."""
+    out: list[str] = []
+    for choice in response.get("choices", []) or []:
+        if not isinstance(choice, dict):
+            continue
+        message = choice.get("message")
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            out.append(content)
+        for call in message.get("tool_calls", []) or []:
+            if isinstance(call, dict):
+                arguments = (call.get("function") or {}).get("arguments")
+                if isinstance(arguments, str):
+                    out.append(arguments)
+    return out
 
 
 def _unmask_chunk_for(delta: str, carry: str, org_id: str,

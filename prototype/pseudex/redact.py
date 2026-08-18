@@ -319,6 +319,40 @@ def _in_case_of(value: str, surface: str, entity_type: str = "NAME") -> str:
 _STREAM_KEEP = 64
 
 
+# A run of capitalised words, or of digits and the separators that hold a number
+# together. These are the shapes `_restore_inflected` slides its windows over, so
+# a stream must never cut inside one.
+_STREAM_RUN_RE = re.compile(
+    r"[А-ЯЁA-Z][а-яёa-z]+(?:[\s,]+[А-ЯЁA-Z][а-яёa-z]+)*"
+    r"|[\d+()][\d\s+()\-]*\d")
+
+
+def _safe_cut(raw: str, cut: int) -> int:
+    """Move a stream cut back so it cannot land inside a resolvable run.
+
+    The carry withholds the last `_STREAM_KEEP` characters, which protects a
+    token sitting at the END of the buffer. It does nothing for one STRADDLING
+    the cut, and that is the common case: «Клиент Рыбакова Варвара Олеговна,
+    адрес …» is 75 characters, so the cut fell at 11 — inside the surname — and
+    «Клиент Рыба» went out while the carry began mid-word. The name was then
+    resolved by neither half and the customer read the fake in the chat.
+
+    Cutting on a word boundary is not enough either: a three-part name is three
+    words, and `_restore_inflected` resolves it as ONE window. So the cut retreats
+    to the start of whatever run it is standing in — after that, every run is
+    wholly on one side or the other.
+
+    Reported by a persona as «streaming loses the name when the answer also has
+    an address», 3 of 3. The address made the buffer long enough for the cut to
+    reach the name; with a shorter answer nothing was ever emitted before flush,
+    which is why the same case passed without one.
+    """
+    for match in _STREAM_RUN_RE.finditer(raw):
+        if match.start() < cut < match.end():
+            return match.start()
+    return cut
+
+
 def unmask_stream_chunk(delta: str, carry: str, vault: Vault, flush: bool) -> tuple[str, str]:
     """Detokenize one streamed delta, returning (emit, new_carry).
 
@@ -338,7 +372,44 @@ def unmask_stream_chunk(delta: str, carry: str, vault: Vault, flush: bool) -> tu
         return unmask_text(raw, vault), ""
     if len(raw) <= _STREAM_KEEP:
         return "", raw
-    return unmask_text(raw[:-_STREAM_KEEP], vault), raw[-_STREAM_KEEP:]
+    cut = _safe_cut(raw, len(raw) - _STREAM_KEEP)
+    if cut <= 0:
+        return "", raw
+    return unmask_text(raw[:cut], vault), raw[cut:]
+
+
+def residual_tokens(text: str, vault: Vault) -> list[str]:
+    """Minted tokens still standing in text that has already been detokenized.
+
+    THE SIGNAL EVERY PERSONA ASKED FOR, in the same words three times: «мне
+    хватило бы заголовка X-Pseudex-Residual». When the model reorders a name,
+    shortens it, or reformats a plate, the restored form no longer matches and
+    the FAKE goes to the customer's tool — with a 200, empty counters and nothing
+    in the log. Their code cannot find out, so they cannot fail closed on their
+    own side.
+
+    Read-only and cheap: the candidates are the same shapes `unmask_text` already
+    scans for, and each is one indexed lookup that MISSES for a real value and
+    HITS for a substitute we minted. A hit here means one thing only — this
+    string is ours, and it should not have survived.
+    """
+    candidates = {match.group() for match in TOKEN_RE.finditer(text)}
+    # A NAME the model REWROTE no longer matches any token, so `TOKEN_RE` alone
+    # would miss exactly the case this exists for. Capitalised runs are offered
+    # too, and the vault decides which of them are made of its own words.
+    candidates |= {surface for _start, _end, surface in _name_windows(text)}
+    if not candidates:
+        return []
+    known = vault.detokenize_many(candidates)
+    residual = {value for value in candidates if value in known}
+    residual |= {value for value in candidates
+                 if value not in known and vault.residual_of(value) is not None}
+    # MAXIMAL WINDOWS ONLY. «Римма Цветкова» is one leftover, not three; a caller
+    # reading a count would otherwise see the same defect three times and could
+    # not tell one damaged name from several.
+    return sorted(value for value in residual
+                  if not any(value != other and value in other
+                             for other in residual))
 
 
 class StreamDetokenizer:
