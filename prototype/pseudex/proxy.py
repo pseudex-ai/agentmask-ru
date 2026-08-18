@@ -32,7 +32,7 @@ from pseudex.operator import build_router
 from pseudex.profiling import snapshot as profiling_snapshot, stage
 from pseudex.redact import StreamDetokenizer, residual_tokens
 from pseudex.tenants import Tenant, Tenants
-from pseudex.vault import Vault
+from pseudex.vault import Vault, count_values_since
 
 logging.basicConfig(level=logging.INFO)
 _log = logging.getLogger("pseudex")
@@ -136,7 +136,17 @@ LICENSE = LicenseClient(
     # this line was the same bug, left behind in the shape we now recommend.
     instance_id=os.environ.get("PSEUDEX_INSTANCE_ID", "") or AUDIT.installation_id(),
     ca_path=os.environ.get("PSEUDEX_LICENSE_CA", ""),
-    usage_provider=lambda: AUDIT.billing_totals(),
+    # PROTECTED VALUES, same as the sidecar. This leg reported only the audit
+    # totals, so the field the landing page shows «дословно» — and the number the
+    # pricing page tells customers to choose a plan by — was simply absent, and
+    # the cabinet read «0 значений защищено» forever while requests climbed. All
+    # three personas noticed; one had 900 protected values against a displayed
+    # zero. The count comes from the VAULT, one row per distinct real value ever,
+    # so it cannot move with cache size or worker count.
+    usage_provider=lambda: {
+        **AUDIT.billing_totals(),
+        "values": count_values_since(os.path.join(_DB_DIR, "vault.db"), 0.0),
+    },
 )
 
 # Same tuning knobs as the sidecar — this leg runs the identical morphology.
