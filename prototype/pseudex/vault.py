@@ -206,6 +206,26 @@ def count_values_since(db_path: str, since: float) -> int:
 _INTERNAL_CAPITAL_RE = re.compile(r"([а-яё])([А-ЯЁ])")
 
 
+
+# HOW LONG A CONVERSATION'S LINKS ARE WORTH KEEPING, and why they must expire.
+#
+# `tokens` grows with the customer's distinct values and that is the product;
+# `place_parts` grows with CONVERSATIONS, which is unbounded in a container that
+# runs for months. The rows are also the only place a conversation identity is
+# persisted, so keeping them for ever would quietly turn a scope meant to bound
+# a decision into a permanent record of who talked when.
+#
+# A day is generous for what they are for: resolving «Ленина 14» against an
+# address named earlier in the SAME dialogue. A dialogue that spans more than a
+# day has had the full address re-sent in its transcript anyway.
+_PLACE_PART_TTL = 24 * 60 * 60
+# Swept at most once an hour per process. A DELETE on every insert would put a
+# scan on the request path for a table that grows slowly; a timer would be a
+# thread to supervise. This is neither.
+_PLACE_SWEEP_INTERVAL = 60 * 60
+_last_place_sweep = 0.0
+
+
 def canonicalize(entity_type: str, value: str) -> str:
     """Normalize a value so equivalent forms collapse to one key.
 
@@ -1034,16 +1054,22 @@ class Vault:
             "CREATE TABLE IF NOT EXISTS place_parts ("
             "customer TEXT NOT NULL, conversation TEXT NOT NULL, "
             "part TEXT NOT NULL, canonical TEXT NOT NULL, "
+            "created REAL NOT NULL DEFAULT 0, "
             "PRIMARY KEY (customer, conversation, part, canonical))"
         )
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_place_parts "
             "ON place_parts (customer, conversation, part)"
         )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_place_parts_created "
+            "ON place_parts (created)"
+        )
         self._migrate_digit_signatures()
         self._migrate_name_keys()
         self._migrate_original_form()
         self._migrate_first_seen()
+        self._migrate_place_created()
         self._migrate_fold_key()
         # Every lookup on the response leg is an indexed point query, so
         # detokenization cost tracks the length of the answer, not the size of
@@ -1306,8 +1332,11 @@ class Vault:
                 if part:
                     self._conn.execute(
                         "INSERT OR IGNORE INTO place_parts "
-                        "(customer, conversation, part, canonical) VALUES (?,?,?,?)",
-                        (self._customer, self._conversation, part, canonical))
+                        "(customer, conversation, part, canonical, created) "
+                        "VALUES (?,?,?,?,?)",
+                        (self._customer, self._conversation, part, canonical,
+                         time.time()))
+                    self._expire_place_parts()
             if entity_type == "NAME":
                 fake_parts = {word.casefold() for word in token.split()
                               if len(word) > 2}
@@ -1397,6 +1426,17 @@ class Vault:
                              if len(word) > 2) == wanted}
         return next(iter(matches)) if len(matches) == 1 else None
 
+
+
+    def _expire_place_parts(self) -> None:
+        """Drop conversation links older than a day. Called under the lock."""
+        global _last_place_sweep
+        now = time.time()
+        if now - _last_place_sweep < _PLACE_SWEEP_INTERVAL:
+            return
+        _last_place_sweep = now
+        self._conn.execute("DELETE FROM place_parts WHERE created < ?",
+                           (now - _PLACE_PART_TTL,))
 
     def _linked_place(self, canonical: str, value: str) -> str | None:
         """The substitute for an address we already met, named more briefly.
@@ -1555,6 +1595,25 @@ class Vault:
                 (self._customer, token),
             ).fetchone()
         return row[0] if row is not None else None
+
+
+    def _migrate_place_created(self) -> None:
+        """Add the sweep timestamp to a `place_parts` table written before it.
+
+        The table itself is new, but a developer volume from earlier today has
+        rows without the column, and without it the sweep would raise on every
+        insert — turning a housekeeping detail into a fail-closed 5xx on every
+        message carrying an address.
+        """
+        columns = [row[1] for row in
+                   self._conn.execute("PRAGMA table_info(place_parts)").fetchall()]
+        if "created" in columns:
+            return
+        self._conn.execute(
+            "ALTER TABLE place_parts ADD COLUMN created REAL NOT NULL DEFAULT 0")
+        self._conn.execute("UPDATE place_parts SET created=? WHERE created=0",
+                           (time.time(),))
+        self._conn.commit()
 
     def _migrate_first_seen(self) -> None:
         """When each value was FIRST protected — the billing meter.
