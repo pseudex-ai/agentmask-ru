@@ -90,6 +90,40 @@ def _names_one_person(tokens: set[str]) -> bool:
                for token in ordered[1:])
 
 
+
+# WHY THE BREAKS ARE CLASSIFIED AND NOT FORGIVEN.
+#
+# «Иванoв Пётр» with a Latin o comes back «Иванов Пётр»; «ИвановПётр» comes back
+# «Иванов Пётр». Both differ from what was written, so the strict test calls
+# them broken — and both are the product doing exactly what it is built to do:
+# normalisation folds a look-alike, `_glued_names` restores a missed space, and
+# what reaches the customer's CRM is the form that will actually match a record
+# there. Twenty of sixty-four breaks are these.
+#
+# The temptation is to accept them, and that is the move this file must never
+# make: a scorer that forgives a shape stops seeing the real defect wearing it.
+# «позвоните Игорю» resolving to «Игорю» has the same shape as a repair and is a
+# declined name written into a CRM. So КРУГ stays strict, to the character, and
+# the classes are printed BESIDE it — the reader gets both the number and what
+# it is made of, and neither is quietly adjusted to look better.
+# The seven Latin letters with a Cyrillic twin. Lower case only, because the
+# comparison casefolds first, and no duplicates — a repeated key silently
+# changes the mapping.
+_LOOKALIKE = str.maketrans("acepoxy", "асероху")
+
+
+def _classify(expected: str, restored: str | None) -> str:
+    if restored is None:
+        return "токен не нашёлся"
+    if restored.replace(" ", "") == expected.replace(" ", ""):
+        return "починен пробел"
+    if restored.lower().translate(_LOOKALIKE) == expected.lower().translate(_LOOKALIKE):
+        return "починена латиница"
+    if expected.startswith(restored) or restored.startswith(expected):
+        return "вернулась часть"
+    return "форма изменена"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("corpus")
@@ -120,6 +154,7 @@ def main() -> int:
     misses: list[tuple[str, str, str, str]] = []
     false_masks: list[tuple[str, str, str]] = []
     broken: list[tuple[str, str, str, str]] = []
+    broken_kinds: dict[str, int] = {}
 
     for case in cases:
         turns = [m["content"] for m in case["messages"] if m["role"] == "user"]
@@ -252,6 +287,9 @@ def main() -> int:
                 roundtrip_ok += 1
             elif len(broken) < 200:
                 broken.append((case["id"], item["type"], item["canonical"], restored))
+            if not _same_value(restored, item["canonical"]):
+                kind = _classify(item["canonical"], restored)
+                broken_kinds[kind] = broken_kinds.get(kind, 0) + 1
         del masked
 
     # --- report -------------------------------------------------------------
@@ -307,6 +345,10 @@ def main() -> int:
         print(f"\n--- РАЗНЫЕ ЛЮДИ, ОДИН ПСЕВДОНИМ ({len(collisions)}) ---")
         for case_id, a, b, token in collisions[:args.dump]:
             print(f"  {a} и {b} оба -> {token!r}")
+    if broken_kinds:
+        print("   из них: " + ", ".join(
+            f"{name} {count}" for name, count
+            in sorted(broken_kinds.items(), key=lambda pair: -pair[1])))
     if broken:
         print(f"\n--- КРУГ РАЗОРВАН ({len(broken)}) ---")
         for case_id, kind, expected, restored in broken[:args.dump]:
