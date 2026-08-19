@@ -27,8 +27,27 @@ from pseudex.detect_all import Detector  # noqa: E402
 from testkit import load_dev_bundle  # noqa: E402
 
 
+# The tool names and the argument KEYS are our own schema, not customer data.
+# The detector read `find_orders` and `schedule_container_pickup` as NAMEs and
+# they turned up as differences between the arms — noise the comparison
+# manufactured about itself.
+_OURS = frozenset({"create_order", "find_orders", "reschedule_order",
+                   "update_address", "send_payment_link",
+                   "schedule_container_pickup", "customer_name", "order_id",
+                   "delivery_date", "pickup_date", "new_date", "bottles",
+                   "amount", "cancel", "address", "phone", "email"})
+
+# Only types that are personal data. OPAQUE and DATE drift with the model's
+# wording («не указан» / «не указано») and say nothing about the gateway.
+_COMPARED = frozenset({"PHONE", "EMAIL", "NAME", "LOC", "SNILS", "INN",
+                       "CARD", "PASSPORT", "PLATE"})
+
+
 def values(detector: Detector, text: str) -> set[tuple[str, str]]:
-    return {(s.entity_type, s.value.casefold()) for s in detector.detect(text or "")}
+    """The PII values in a text, minus everything we put there ourselves."""
+    return {(s.entity_type, s.value.casefold())
+            for s in detector.detect(text or "")
+            if s.entity_type in _COMPARED and s.value.casefold() not in _OURS}
 
 
 def load(path: str) -> dict[str, dict]:

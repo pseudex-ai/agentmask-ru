@@ -116,14 +116,27 @@ echo "════════ sglang ════════"
 # is the lever that matters here: every dialogue shares a ~1200-token prefix of
 # system prompt plus tool schemas, and the run is prefill-bound, so the cache hit
 # rate on that prefix decides the wall clock far more than the decode batch does.
+# CUDA GRAPHS ARE OFF BY DEFAULT HERE, and that is a considered choice, not a
+# workaround. Capturing them needs headroom AFTER the weights and the KV cache
+# are already resident — 29.3 GB + 9.5 GB on a 46 GB card leaves 4.8 GB, and
+# fifty-eight prefill graph sizes up to 8192 tokens do not fit in it. The
+# process died mid-capture and the platform restarted it, so the pod looped
+# every five minutes without ever serving a request.
+#
+# Graphs mainly buy decode latency, and our decode is ~15 tokens: the run is
+# prefill-bound. So the thing that did not fit is also the thing we least need.
+#
+# --tool-call-parser is `qwen`; `qwen25` is accepted but deprecated, and the
+# deprecation notice is the sort of line that gets read as an error at 3am.
 exec python3 -m sglang.launch_server \
     --model-path "$MODEL" \
     --host 0.0.0.0 --port "$PORT" \
     --api-key "$API_KEY" \
     --context-length "$CTX" \
     --enable-metrics \
-    --mem-fraction-static "${MEM_FRACTION:-0.88}" \
+    --mem-fraction-static "${MEM_FRACTION:-0.85}" \
     --chunked-prefill-size "${CHUNKED_PREFILL:-8192}" \
     --max-running-requests "${MAX_RUNNING:-64}" \
-    --tool-call-parser qwen25 \
-    --served-model-name "$MODEL"
+    --tool-call-parser qwen \
+    --served-model-name "$MODEL" \
+    ${SGLANG_EXTRA:---disable-cuda-graph}
