@@ -302,6 +302,52 @@ _PATRONYMIC_RE = re.compile(
     r"\b[А-ЯЁа-яё]{3,}(?:" + "|".join(_PATRONYMIC_TAIL) + r")(?:[аеоуы]|ем|ым|ой)?\b")
 
 
+_MISSPELT_PAIR_RE = re.compile(r"(?i)\b([а-яё]{4,})\s+([а-яё]{4,})\b")
+
+
+def _damaged_name_pairs(text: str) -> list[Span]:
+    """Two adjacent lower-case words where one is a name we cannot spell.
+
+    THE GAP THIS CLOSES. `_looks_misspelt_name` is only ever consulted about a
+    word standing NEXT TO A NAME WE ALREADY FOUND. In «алексй волков» there is
+    no such name: the given name is mistyped so the gazetteer misses it, and the
+    surname is lower case so the bulk dictionary — capital-only by design —
+    misses it too. Neither word can anchor, the repair rule never runs, and both
+    halves of a real person's name went to the model in the clear. Same for
+    «игрь павлов». This is the ordinary shape of a chat message, and every set
+    of ours writes names properly, so nothing we had could see it.
+
+    THREE SIGNALS, STILL. The rule does not relax the bar, it moves the third
+    signal from «next to a known name» to «next to a word that names a person»:
+
+      1. the damaged word is UNKNOWN to pymorphy — the signal that separates
+         «Кзнецов» from «заказ», «клиент», «спасибо», all of which sit one edit
+         from a real rare surname and all of which the dictionary knows;
+      2. it either parses as a person by suffix («игрь» → Name) or lands one
+         edit from the gazetteer («алексй» → «алексей»);
+      3. its neighbour independently names a person.
+
+    A pair is required precisely because signal 2 alone is weak in lower case.
+    One damaged word beside one person-naming word is a far stronger statement
+    than either word alone, and it is the statement a mistyped name actually
+    makes.
+    """
+    spans: list[Span] = []
+    for match in _MISSPELT_PAIR_RE.finditer(text):
+        left, right = match.group(1), match.group(2)
+        for damaged, other in ((left, right), (right, left)):
+            parses = MORPH.parse(damaged)
+            if not parses or parses[0].is_known:
+                continue
+            if not (_names_a_person(damaged) or _looks_misspelt_name(damaged)):
+                continue
+            if not _names_a_person(other):
+                continue
+            spans.append(Span(match.start(), match.end(), "NAME", match.group(0)))
+            break
+    return spans
+
+
 def _patronymic_anchors(text: str) -> list[Span]:
     """Every word shaped like a patronymic, as a NAME span.
 
@@ -646,7 +692,7 @@ def gazetteer_names(text: str) -> list[Span]:
     # extends FROM an anchor, so an anchor introduced in the same expression is
     # invisible to it and «Тестов Тест» stays outside the span.
     spans = (spans + _patronymic_anchors(text) + _cued_name_parts(text)
-             + _glued_names(text, names))
+             + _glued_names(text, names) + _damaged_name_pairs(text))
     spans = _merge_adjacent(spans + _adjacent_surnames(text, spans), text)
     for match in _LATIN_PAIR_RE.finditer(text):
         # ANY part may be the one we know. Requiring it of the FIRST word meant

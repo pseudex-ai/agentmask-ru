@@ -246,6 +246,20 @@ _ST_FULL = (r"(?:улиц\w+|проспект\w*|переул\w+|бульвар\
 _LOWER_NAME = r"[а-яё]{3,}(?:[\s-][а-яё]{3,}){0,2}"
 # Between a street and its number: nothing, or a comma and a house marker.
 _HOUSE_LEAD = r"(?:\s*,?\s*(?:дом|д)\.?)?\s*"
+# ABBREVIATED MARKER + LOWER-CASE NAME. `_ST_FULL` deliberately excludes the
+# abbreviations because a bare «пр» or «ул» in prose has nothing holding it
+# down — but in THIS shape the house number holds it down, exactly as it does
+# for the full words. Without this «ул ленина 14» and «ул. ленина 14» matched
+# nothing at all while «улица ленина 14» matched: the customer who abbreviates
+# — which is most of them — was unprotected, and the inconsistency was
+# invisible because our sets write the word out.
+#
+# Two rules keep it narrow. The abbreviation must be followed by a DOT OR
+# SPACE, so «улыбка 14» cannot read as «ул» + «ыбка»; and only abbreviations
+# that are not a Russian word in their own right are listed — «туп» (short
+# adjective) and the single letters «ш», «д» are left out, since for those the
+# house number is the only thing standing between them and ordinary prose.
+_ST_ABBR = r"(?:ул|просп|пр-?кт|пр-?т|пер|наб|б-р|пл)(?:\.\s*|\s+)"
 
 ADDRESS_PATTERNS: dict[str, str] = {
     # `\s*` before the house number, not `\s+`: «улица Гагарина88кв152» is how a
@@ -265,6 +279,7 @@ ADDRESS_PATTERNS: dict[str, str] = {
     # model in the clear, while the same address without commas was caught.
     "street_lower_first": rf"(?i)\b{_ST_FULL}\s*{_LOWER_NAME}{_HOUSE_LEAD}\d{{1,4}}",
     "street_lower_last": rf"(?i)\b{_LOWER_NAME}\s*{_ST_FULL}{_HOUSE_LEAD}\d{{1,4}}",
+    "street_abbr_lower": rf"(?i)\b{_ST_ABBR}{_LOWER_NAME}{_HOUSE_LEAD}\d{{1,4}}",
     "street_first": rf"(?i)\b{_ST}\s*\.?\s*{_CAP}",
     "street_last": rf"(?i){_CAP}\s+{_ST}\b",
     "house": (
@@ -320,6 +335,34 @@ ADDRESS_PATTERNS: dict[str, str] = {
         r"(?P<num>\d+[-\s]?[яейои]?\s+)?"
         r"(?P<words>[А-ЯЁ][а-яё]+(?:[\s-][А-ЯЁ][а-яё]+){0,2})"
         r"\s+(\d{1,3}[А-ЯЁа-яё]?(?:/\d+)?)(?![0-9A-Za-zА-Яа-яёЁ])"
+    ),
+    # MARKER-LESS STREET WRITTEN IN LOWER CASE — «вы находитесь на ленина 14?».
+    # The pattern above cannot see it: it spells the name `[А-ЯЁ][а-яё]+`, and
+    # that capital is one of its two signals. Compiling that same pattern
+    # case-insensitively is the change that cost -12 PERSON on NEREL, because
+    # then «течение 12» and «Вашингтоне за 8» are addresses too.
+    #
+    # So this is a SEPARATE pattern with a DIFFERENT gate, not a relaxed flag.
+    # Where the capitalised arm accepts a morphological signal (Surn / ADJF /
+    # Geox) as its second signal, this one accepts ONLY explicit membership in
+    # the leased street vocabulary — see `_lower_is_street` in address.py.
+    # Morphology is what admits «течение»; a vocabulary cannot, because the word
+    # is not in it. That asymmetry is the whole point: a capital is evidence, and
+    # when it is absent the evidence has to come from somewhere that cannot
+    # generalise.
+    # ONE WORD, not up to three. The multi-word form is what let ordinary prose
+    # in: «в конце марта 55» and «в виде лишения свободы 2» both start at a word
+    # that merely FOLLOWS a preposition, and the street vocabulary hit sat at the
+    # far end of the span. It also swallowed the cue word it needs — «адрес мира
+    # 5» matched from «адрес», leaving no «адрес» in front to be the context.
+    # A marker-less lower-case street is «ленина 14»; the multi-word case is
+    # «карла маркса 5», and that one still has its capitals in every register
+    # where anybody writes it.
+    "markerless_lower": (
+        r"(?:(?<=^)|(?<=[\s,;(]))"
+        r"(?P<lwords>[а-яё]{4,}(?:-[а-яё]{3,})?)"
+        r"\s*,?\s*(?:дом|д)?\.?\s*"
+        r"(\d{1,3}[А-ЯЁа-яё]?(?:/\d+)?)(?![0-9A-Za-zА-Яа-яёЁ])"
     ),
     # Address context (Presidio-style enhancement): when nearby, a marker-less
     # Capitalized/numbered "name + house" is accepted even with no morphology

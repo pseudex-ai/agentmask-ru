@@ -59,12 +59,19 @@ class AddressAssets:
     # Lower-case, marker-and-house anchored: the shape a messenger produces.
     street_lower_first: re.Pattern[str]
     street_lower_last: re.Pattern[str]
+    # Same shape with an ABBREVIATED marker («ул. ленина 14»), which the two
+    # above cannot carry — see the comment on `_ST_ABBR` in assets_source.
+    street_abbr_lower: re.Pattern[str]
     house: re.Pattern[str]
     apt: re.Pattern[str]
     mkr: re.Pattern[str]
     settlement: re.Pattern[str]
     index: re.Pattern[str]
     markerless: re.Pattern[str]
+    # Lower-case marker-less street. Gated on the street VOCABULARY only,
+    # never on morphology — the capital is the missing signal and a
+    # generalising gate would put it back the wrong way.
+    markerless_lower: re.Pattern[str]
     addr_ctx: re.Pattern[str]
     prep_before: re.Pattern[str]
     numbered_st: re.Pattern[str]

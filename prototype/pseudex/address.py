@@ -100,6 +100,31 @@ def _word_is_street(word: str, address: AddressAssets) -> bool:
     return "Surn" in tag or "ADJF" in tag or "Geox" in tag
 
 
+def _lower_is_street(phrase: str, address: AddressAssets) -> bool:
+    """Street-name decided by VOCABULARY ALONE, for text with no capitals.
+
+    Deliberately not `_is_street_name`: that one also accepts a morphological
+    reading, which is the right trade when a capital letter is carrying half the
+    evidence and the wrong one when it is not. Lower-case Russian prose is full
+    of words pymorphy calls an adjective or a surname.
+    """
+    for word in _WORD_SPLIT_RE.split(phrase):
+        low = word.lower()
+        if not low or low not in address.street_gaz:
+            continue
+        # A MONTH NAMES A STREET ONLY BEHIND A NUMBER. «марта», «мая» and
+        # «октября» are in the street vocabulary for «8 Марта» and «1 Мая», and
+        # in lower case with no number they are simply dates: «14 марта ему
+        # исполнилось 60» became an address on the strength of that entry alone.
+        # The numbered form has its own pattern (`numbered_st`), which requires
+        # the number, so excluding them here costs nothing and closes the only
+        # place the vocabulary lies.
+        if low in address.month_after or low in ("года", "год", "лет"):
+            continue
+        return True
+    return False
+
+
 def _is_street_name(phrase: str, address: AddressAssets) -> bool:
     """Street-name if ANY word (or hyphen part) looks like a toponym/surname/adj."""
     for word in _WORD_SPLIT_RE.split(phrase):
@@ -138,7 +163,8 @@ def _log_shadow_diff(text: str, natasha: list[tuple[int, int, bool]],
 def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int, bool]]:
     out: list[tuple[int, int, bool]] = []
     for rx in (address.street_first, address.street_last, address.street_lower_first,
-               address.street_lower_last, address.house, address.mkr, address.rural):
+               address.street_lower_last, address.street_abbr_lower,
+               address.house, address.mkr, address.rural):
         for m in rx.finditer(text):
             out.append((m.start(), m.end(), True))   # core
     for rx in (address.apt, address.settlement, address.index, address.district):
@@ -161,6 +187,36 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
             continue
         if _is_street_name(m.group("words"), address) or m.group("num") or has_ctx:
             out.append((m.start(), m.end(), True))   # core (street + house number)
+    for m in address.markerless_lower.finditer(text):
+        # LOWER CASE, SO THE GATE IS THE VOCABULARY AND NOTHING ELSE.
+        # `_is_street_name` would be wrong here: it accepts a morphological
+        # signal, and in lower case «течение», «решение», «Вашингтоне» all carry
+        # one. The capital was the second signal; with it gone, the only
+        # admissible evidence is a word the leased street vocabulary actually
+        # names. That cannot generalise to ordinary prose, which is exactly the
+        # property needed.
+        if not _lower_is_street(m.group("lwords"), address):
+            continue
+        # THE VOCABULARY ALONE IS NOT ENOUGH, and the corpus said so: «14 марта
+        # ему исполнилось 60», «в конце марта 55» and «в виде лишения свободы 2»
+        # all matched, because «марта» and «свободы» are in the street
+        # vocabulary — they name real streets — and in lower case there was
+        # nothing left to tell a street from the date and the sentence it
+        # actually was. The capitalised arm never had this problem: the capital
+        # WAS the second signal.
+        #
+        # So the lower-case arm demands an address context in its place — a cue
+        # word («адрес», «доставка») or a preposition directly before it. Both
+        # already exist and are already leased. «вы находитесь на ленина 14»
+        # keeps its «на»; «лишения свободы 2» has «лишения» before it and is
+        # refused.
+        before = text[:m.start()]
+        if not (address.addr_ctx.search(before) or address.prep_before.search(before)):
+            continue
+        after = text[m.end():m.end() + 12].lstrip()
+        if any(after.lower().startswith(month) for month in address.month_after):
+            continue
+        out.append((m.start(), m.end(), True))   # core (street + house number)
     for m in address.numbered_st.finditer(text):  # lowercase names ("1905 года 12")
         out.append((m.start(), m.end(), True))
     for m in address.numbered_marked.finditer(text):  # "1905 года тупик"
