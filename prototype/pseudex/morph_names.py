@@ -254,7 +254,24 @@ def name_shape(surface: str) -> tuple[str, ...]:
             shape.append("patr")
             continue
         parses = _MORPH.parse(stripped)
-        if any("Surn" in parse.tag.grammemes for parse in parses):
+        # A SURNAME READING ONLY WHEN IT BEATS THE GIVEN-NAME ONE. `any(Surn)`
+        # was enough for every real surname — they carry no `Name` reading at all
+        # — and wrong for the handful of given names that also exist as
+        # surnames. «Регина» scores 0.33 both ways, so the arbitrary winner was
+        # «surn», and «Иванова Регина Павловна» came out shaped (surn, surn,
+        # patr). Both real parts then mapped to the SAME slot of the substitute,
+        # the derived token was already taken by the surname, and the given name
+        # was minted a second identity: one person, two pseudonyms, in the same
+        # dialogue.
+        #
+        # A tie means morphology has no opinion, and where it has none the
+        # position it is being asked about — a part of a person's name — makes
+        # the given name the better default.
+        best_surn = max((parse.score for parse in parses
+                         if "Surn" in parse.tag.grammemes), default=0.0)
+        best_name = max((parse.score for parse in parses
+                         if "Name" in parse.tag.grammemes), default=0.0)
+        if best_surn and best_surn > best_name:
             shape.append("surn")
             continue
         shape.append("name")

@@ -27,11 +27,16 @@ from pathlib import Path
 
 import httpx
 
-from e2e.gates import gateway_headers
-
+# BEFORE any `e2e.*` or repo-root import, not after. `from e2e.gates import …`
+# had drifted ABOVE this line — the shape a formatter produces when it sorts
+# imports — and the script then died with ModuleNotFoundError the moment
+# pack_gates ran it as a file. P3, P4, P5 and P8 all depend on it, so four
+# packaging gates could not run at all and the suite reported a traceback
+# instead of a verdict.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from e2e import fixtures  # noqa: E402
+from e2e.gates import gateway_headers  # noqa: E402
 from eval_dirty import _f2, _match, _val_match  # noqa: E402
 from test_coverage_152fz import _MUST_CATCH, _MUST_NOT_MASK  # noqa: E402
 from testkit import load_dev_bundle  # noqa: E402
