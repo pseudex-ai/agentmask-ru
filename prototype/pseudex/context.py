@@ -65,6 +65,14 @@ def _is_organisation(text: str, span: Span) -> bool:
     return bool(match) and match.group(1) in _ORG_CUE
 
 
+# A street type word beside the toponym. Kept here rather than in the leased
+# vocabulary for the same reason `_DENY_AS_NAME` is: these are the published
+# generic words, not tuned data.
+_STREET_NEARBY = re.compile(
+    r"\b(ул|улиц\w*|пр-?кт|проспект\w*|пер|переул\w*|б-р|бульвар\w*|ш|шоссе|"
+    r"мкр|микрорайон\w*|д|дом|кв|квартир\w*|корп|стр|влад)\b", re.IGNORECASE)
+
+
 def location_is_pii(text: str, start: int, end: int, value: str) -> bool:
     """True if a (bare, NER-found) location is tied to a person -> personal data.
     Street+house addresses are handled separately and always masked.
@@ -77,7 +85,20 @@ def location_is_pii(text: str, start: int, end: int, value: str) -> bool:
     if low in context.regions or low.endswith(_REGION_SUFFIXES):
         return False  # region/country granularity -> not PII
     window = text[max(0, start - 30): end + 15].lower()
-    if any(trigger in window for trigger in context.addr_intent):
+    # THE CUE ALONE MAY NOT PROMOTE A BARE CITY, and that was the contradiction:
+    # the paragraph above says city granularity identifies nobody, and then
+    # «доставк» made it personal data anyway. «Я из Санкт-Петербурга, доставка
+    # возможна?» is a question about the service area — masked 38 times across a
+    # thousand real dialogues, one of the four over-masking classes the live
+    # vault surfaced.
+    #
+    # A delivery address a person can be found at has a street or a house
+    # number. Without either, the intent word is talking about a city, and a
+    # city holds millions of people. Street+house addresses never reach this
+    # function — they are the address layer's and are always masked — so nothing
+    # that identifies anyone is released here.
+    structured = any(char.isdigit() for char in window) or _STREET_NEARBY.search(window)
+    if structured and any(trigger in window for trigger in context.addr_intent):
         return True  # person-linked place -> PII
     if any(trigger in window for trigger in context.place_ref):
         return False  # place reference (hours/branch/weather) -> not PII
