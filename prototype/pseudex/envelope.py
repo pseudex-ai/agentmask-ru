@@ -17,7 +17,7 @@ from pseudex.audit import AuditLog
 from pseudex.detect_all import Detector
 from pseudex.maskcache import MaskCache, content_key
 from pseudex.profiling import stage
-from pseudex.redact import mask_text, unmask_text
+from pseudex.redact import mask_text, unmask_arguments, unmask_text
 from pseudex.vault import Vault
 
 
@@ -226,7 +226,7 @@ def unmask_response(response: dict[str, object], vault: Vault) -> dict[str, obje
                     if isinstance(function, dict):
                         new_function = dict(function)
                         if isinstance(new_function.get("arguments"), str):
-                            new_function["arguments"] = unmask_text(
+                            new_function["arguments"] = unmask_arguments(
                                 new_function["arguments"], vault
                             )
                         new_call["function"] = new_function

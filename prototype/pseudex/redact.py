@@ -5,6 +5,7 @@ proxy can use the full ensemble (regex + checksum + NER) and tests can use a
 lighter one. Reverse uses longest-token-first to avoid prefix collisions.
 """
 
+import json
 import re
 
 from pseudex.detect import Span
@@ -376,6 +377,51 @@ def unmask_stream_chunk(delta: str, carry: str, vault: Vault, flush: bool) -> tu
     if cut <= 0:
         return "", raw
     return unmask_text(raw[:cut], vault), raw[cut:]
+
+
+def unmask_arguments(raw: str, vault: Vault) -> str:
+    """Detokenise a tool call's `arguments` AS JSON, not as flat text.
+
+    THE ARGUMENTS ARE JSON AND THE REAL VALUE IS ARBITRARY TEXT. Substituting
+    «ООО "АЭРОМЭП"» into a JSON string by plain replacement injects two bare
+    quotes and the object stops parsing — the model gets a tool call it cannot
+    read back, and the provider answers 400 on the next turn. On Russian
+    business traffic that is not an edge case: every legal entity is written
+    with quotes, and the same applies to a backslash or a newline in an address.
+
+    So the string is parsed, every string LEAF is detokenised on its own, and
+    the result is re-serialised — which escapes whatever the real value happens
+    to contain, by construction rather than by a list of characters we
+    remembered to handle.
+
+    Masking stays flat text ON PURPOSE and the asymmetry is deliberate: the
+    KEY types the VALUE there (`{"passport": "4509123456"}`), so a recogniser
+    that only ever saw one value at a time would lose the evidence that types
+    it. Fakes are format-preserving and carry no quotes, so flat substitution
+    cannot break the JSON on the way out.
+
+    Arguments that are not valid JSON fall back to flat text: a model is free
+    to emit a broken object, and refusing to detokenise it would send a FAKE to
+    the tool — the one outcome worse than imperfect text.
+    """
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return unmask_text(raw, vault)
+
+    def walk(node: object) -> object:
+        if isinstance(node, str):
+            return unmask_text(node, vault)
+        if isinstance(node, list):
+            return [walk(item) for item in node]
+        if isinstance(node, dict):
+            # Keys are the tool's own schema, not customer text — but a token
+            # can only ever appear in a value, so rewriting keys would be a way
+            # to break the schema and never a way to restore a value.
+            return {key: walk(value) for key, value in node.items()}
+        return node
+
+    return json.dumps(walk(parsed), ensure_ascii=False)
 
 
 def residual_tokens(text: str, vault: Vault) -> list[str]:
