@@ -45,8 +45,10 @@
     </div>
     <div>
       <div class="what"><div class="step">03</div><h3>Убедиться</h3><div class="note">счётчики должны быть непустыми</div></div>
-      <pre data-copy='curl -s localhost:8000/usage -H "Authorization: Bearer $OPENAI_API_KEY"'>curl -s localhost:8000/usage \
-  -H "Authorization: Bearer $OPENAI_API_KEY"
+      <pre data-copy='curl -s localhost:8000/usage -H "Authorization: Bearer $(docker logs pseudex 2>&amp;1 | grep -A1 "ключ шлюза" | tail -1 | tr -d " ")"'>curl -s localhost:8000/usage \
+  -H "Authorization: Bearer &lt;ключ шлюза&gt;"
+# ключ шлюза печатается контейнером при старте:
+#   docker logs pseudex 2>&amp;1 | grep -A2 "ключ шлюза"
 # → {"protected_counts":{"NAME":1,"PHONE":1,…}}
 # пусто = трафик идёт мимо</pre>
       <button type="button" data-copy-btn>КОПИРОВАТЬ</button>

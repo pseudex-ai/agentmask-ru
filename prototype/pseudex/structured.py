@@ -20,6 +20,24 @@ def _is_filename(value: str) -> bool:
     return bool(_FILENAME_RE.search(value))
 
 
+# A SENTENCE BOUNDARY INSIDE THE VALUE MEANS THIS WAS NEVER A FORM.
+# «Никогда не выдумывай телефон, имя, адрес или email: бери их из сообщения
+# дословно. Не задавай уточняющих вопросов…» — an ordinary instruction — parsed
+# as a key of «адрес или email» over sixty characters of prose, and the stem
+# «адрес» typed all of it as a place. The customer's own system prompt lost the
+# sentence «не выдумывай телефон», the model duly invented one, and the invented
+# value went to a tool. Over-masking manufactured data.
+#
+# The period is judged by what precedes it, because a form value is full of
+# abbreviations that a naive rule would read as sentence ends: «Г. САНКТ-
+# ПЕТЕРБУРГ» and «Д.7» are one letter and a dot, while «дословно.» is a word.
+_SENTENCE_BREAK = re.compile(r"[А-Яа-яЁёA-Za-z]{2,}\.\s+[А-ЯЁA-Z]")
+
+
+def _is_running_text(value: str) -> bool:
+    return bool(_SENTENCE_BREAK.search(value))
+
+
 # The key->type map is LEASED (pseudex/assets.py); the shapes below are the
 # structure of JSON and of a form field, not tuned vocabulary.
 # Types whose value is meaningless without digits.
@@ -65,6 +83,8 @@ def detect_structured_kv(text: str) -> list[Span]:
             lead = len(raw) - len(raw.lstrip())
             value = raw.strip()
             if len(value) < 2:
+                continue
+            if _is_running_text(value):
                 continue
             # `name` is genuinely ambiguous: in English payloads it usually means
             # the name OF A THING, and agents pass `{"name": "ideas.txt"}`

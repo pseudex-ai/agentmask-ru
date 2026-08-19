@@ -556,7 +556,7 @@ async def usage(request: Request) -> JSONResponse:
         "org_id": org_id,
         # 0.0 = all time, said explicitly. This endpoint is the org-wide
         # summary and has no period in its contract.
-        "protected_counts": AUDIT.counts(org_id, 0.0),
+        "protected_counts": AUDIT.counts(org_id, 0.0, ""),
         "recent": AUDIT.recent(org_id, 50),
     })
 

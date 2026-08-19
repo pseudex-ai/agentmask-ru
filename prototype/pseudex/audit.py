@@ -198,18 +198,20 @@ class AuditLog:
         row = self._fetchone("SELECT COUNT(*) FROM reveals WHERE customer=?", (customer,))
         return int(row[0]) if row else 0
 
-    def request_totals(self, customer: str, since_day: str) -> int:
+    def request_totals(self, customer: str, since_day: str, agent_id: str) -> int:
         """Requests over a window. `since_day` is a 'YYYY-MM-DD' string compared
         against the stored day buckets; pass "" for all time, explicitly — the
         screens that call this label their numbers with a period, and a method
         that silently means "ever" put lifetime figures under that label."""
+        where, params = "customer=? AND day>=?", [customer, since_day]
+        if agent_id:
+            where += " AND agent_id=?"
+            params.append(agent_id)
         row = self._fetchone(
-            "SELECT COALESCE(SUM(n), 0) FROM requests WHERE customer=? AND day>=?",
-            (customer, since_day),
-        )
+            f"SELECT COALESCE(SUM(n), 0) FROM requests WHERE {where}", params)
         return int(row[0]) if row else 0
 
-    def daily_series(self, customer: str, days: int) -> list[dict[str, object]]:
+    def daily_series(self, customer: str, days: int, agent_id: str) -> list[dict[str, object]]:
         """Requests and protected values per day, oldest first, with empty days
         filled in. A chart that silently omits a zero day compresses the gap and
         reads as steady traffic across an outage.
@@ -225,9 +227,16 @@ class AuditLog:
         now = time.time()
         wanted = [_day(now - (days - 1 - index) * 86400) for index in range(days)]
         since = now - days * 86400
+        # THE FILTER REACHES EVERY QUERY OR IT REACHES NONE. An integrator
+        # showing a security officer «этот агент за эту неделю» got the whole
+        # container's totals instead, because the parameter existed on the
+        # endpoint and was dropped before the SQL.
+        agent_clause = " AND agent_id=?" if agent_id else ""
+        agent_param: list[str] = [agent_id] if agent_id else []
         request_rows = dict(self._fetchall(
-            "SELECT day, SUM(n) FROM requests WHERE customer=? AND day>=? GROUP BY day",
-            (customer, wanted[0]),
+            f"SELECT day, SUM(n) FROM requests WHERE customer=? AND day>=?{agent_clause} "
+            f"GROUP BY day",
+            [customer, wanted[0], *agent_param],
         ))
         # COUNT(DISTINCT token), NOT COUNT(*). The same words — «значений
         # защищено» — were computed two ways in one product: this screen counted
@@ -237,9 +246,9 @@ class AuditLog:
         # person's phone number; the number of times it was sent is what the
         # journal below is for.
         event_rows = dict(self._fetchall(
-            "SELECT DATE(ts, 'unixepoch', 'localtime'), COUNT(DISTINCT token) "
-            "FROM events WHERE customer=? AND ts>=? GROUP BY 1",
-            (customer, since),
+            f"SELECT DATE(ts, 'unixepoch', 'localtime'), COUNT(DISTINCT token) "
+            f"FROM events WHERE customer=? AND ts>=?{agent_clause} GROUP BY 1",
+            [customer, since, *agent_param],
         ))
         return [{"day": day,
                  "requests": int(request_rows.get(day, 0)),
@@ -301,7 +310,7 @@ class AuditLog:
             )
             self._conn.commit()
 
-    def counts(self, customer: str, since: float) -> dict[str, int]:
+    def counts(self, customer: str, since: float, agent_id: str) -> dict[str, int]:
         """Counts per entity type over a window.
 
         `since` is REQUIRED, and that is the fix rather than the inconvenience:
@@ -311,10 +320,14 @@ class AuditLog:
         beside "PHONE 5000" in the same cell, and the document handed to the
         customer's auditor claimed lifetime figures were the period's. Pass 0.0
         to mean all time, explicitly."""
+        where, params = "customer=? AND ts>=?", [customer, since]
+        if agent_id:
+            where += " AND agent_id=?"
+            params.append(agent_id)
         rows = self._fetchall(
-            "SELECT entity_type, COUNT(*) FROM events WHERE customer=? AND ts>=? "
-            "GROUP BY entity_type",
-            (customer, since),
+            f"SELECT entity_type, COUNT(*) FROM events WHERE {where} "
+            f"GROUP BY entity_type",
+            params,
         )
         return {row[0]: row[1] for row in rows}
 

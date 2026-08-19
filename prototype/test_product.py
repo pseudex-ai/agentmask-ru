@@ -32,13 +32,13 @@ def test_audit() -> None:
     audit.record("acme", "ag1", "PHONE", "+79185702864", "+79991234567")
     audit.record("acme", "ag1", "NAME", "Полина Жукова", "Иван Петров")
     audit.record("acme", "ag2", "EMAIL", "tok@x.ru", "real@x.ru")
-    assert audit.counts("acme", 0.0) == {"PHONE": 1, "NAME": 1, "EMAIL": 1}
+    assert audit.counts("acme", 0.0, "") == {"PHONE": 1, "NAME": 1, "EMAIL": 1}
     assert audit.counts_for_agent("acme", "ag1") == {"PHONE": 1, "NAME": 1}
     recent = audit.recent("acme", 10)
     assert len(recent) == 3 and "•" in recent[0]["preview"]
     agent_recent = audit.recent_for_agent("acme", "ag1", 10)
     assert len(agent_recent) == 2 and all(r["type"] in ("PHONE", "NAME") for r in agent_recent)
-    print(f"audit OK — org counts {audit.counts('acme', 0.0)}; ag1 counts {audit.counts_for_agent('acme', 'ag1')}; "
+    print(f"audit OK — org counts {audit.counts('acme', 0.0, '')}; ag1 counts {audit.counts_for_agent('acme', 'ag1')}; "
           f"preview '+79991234567' -> '{_preview('+79991234567')}'")
     pathlib.Path("a.db").unlink(missing_ok=True)
 
@@ -219,11 +219,11 @@ def test_echoed_token_is_not_billed() -> None:
                           cache=MaskCache(64), org_id="echo", agent_id="a")
 
     masked = mask_one("Клиент Иван Петров просит перезвонить", context)
-    before = dict(audit.counts("echo", 0.0))
+    before = dict(audit.counts("echo", 0.0, ""))
     # The model echoes the token back inside DIFFERENT text, so the content cache
     # cannot hide the second pass.
     mask_one(f"Уточните у {masked.split('Клиент ')[1].split(' просит')[0]} детали", context)
-    after = dict(audit.counts("echo", 0.0))
+    after = dict(audit.counts("echo", 0.0, ""))
 
     assert after.get("NAME", 0) == before.get("NAME", 0), (
         f"echoing our own token was billed again: NAME {before.get('NAME')} -> "

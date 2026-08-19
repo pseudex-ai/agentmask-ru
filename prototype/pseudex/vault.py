@@ -371,6 +371,52 @@ def _digit_signatures(token: str, entity_type: str) -> tuple[str | None, str | N
     return digits, tail
 
 
+# The WHOLE date, not just its year. Comparing years alone puts «30.09.2026»
+# in the past for all of 2026 — which is most of the traffic that matters, since
+# a booking is usually made for later this year.
+_DATE_PARTS = re.compile(r"(?:^|\D)(\d{1,4})[.\-/](\d{1,2})[.\-/](\d{1,4})(?:\D|$)")
+
+
+def _is_future(original: str) -> bool:
+    match = _DATE_PARTS.search(original or "")
+    if not match:
+        return False
+    first, middle, last = (int(part) for part in match.groups())
+    day, month, year = (last, middle, first) if first > 31 else (first, middle, last)
+    if year < 100:
+        year += 2000
+    today = time.localtime()
+    return (year, month, day) > (today.tm_year, today.tm_mon, today.tm_mday)
+
+
+def _fake_date(original: str) -> str:
+    """A date on the SAME side of today as the one it replaces.
+
+    The generator drew its year from 1960-1999 unconditionally, so «доставка
+    30.09.2026» became «02.12.1973» — and a model reading a delivery booked for
+    1973 does the reasonable thing: it treats the year as a typo and rewrites
+    it. The rewritten string is no longer the token, nothing resolves, and the
+    FAKE reaches the customer's tool. Two personas found this independently on
+    live traffic, one booking a patient into 1977 and one moving a delivery to
+    1973, both silently and both with a 200.
+
+    A date of birth is always in the past and an appointment always in the
+    future. Preserving that is what stops the model from correcting the token in
+    the first place — the fix belongs in the generator, not in the lookup, and
+    the lookup was widened separately for the reformatting it cannot prevent.
+    """
+    year_now = time.localtime().tm_year
+    if _is_future(original):
+        # Future: near enough to read as a real booking, never today itself, so
+        # the substitute cannot be mistaken for «сегодня» by a model reasoning
+        # about relative dates.
+        year = year_now + secrets.randbelow(3) + 1
+    else:
+        year = 1960 + secrets.randbelow(max(1, year_now - 1960))
+    return (f"{secrets.randbelow(28) + 1:02d}."
+            f"{secrets.randbelow(12) + 1:02d}.{year}")
+
+
 def _fake_phone() -> str:
     """A mobile number whose 11 digits are deliberately NOT a valid СНИЛС.
 
@@ -780,7 +826,7 @@ def _render_token(entity_type: str, gender: str | None = None,
     if entity_type == "PASSPORT":
         return f"{_rand_digits(2)} {_rand_digits(2)} {_rand_digits(6)}"
     if entity_type == "DATE":
-        return f"{secrets.randbelow(28) + 1:02d}.{secrets.randbelow(12) + 1:02d}.{secrets.randbelow(40) + 1960}"
+        return _fake_date(original)
     if entity_type == "NAME":
         return _fake_name(gender, morph_names.name_shape(original) if original else ())
     if entity_type == "MAC":
@@ -902,7 +948,11 @@ TOKEN_RE = re.compile("|".join([
     # two readings are the same plate, and a model treats them as one string.
     # Matching only Cyrillic meant the rewritten form was never even a candidate,
     # so the fold that resolves it never got the chance to run.
-    r"[АВЕКМНОРСТУХABEKMHOPCTYX]\d{3}[АВЕКМНОРСТУХABEKMHOPCTYX]{2}\d{2,3}",  # PLATE
+    # BOTH LATIN READINGS, not just the look-alike one. The class listed the
+    # letters a plate LOOKS like in Latin; a model that spells it out uses others
+    # — V for «В», N for «Н», S for «С», U for «У», R for «Р». Those forms never
+    # became candidates, so the fold that resolves them never ran.
+    r"[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]\d{3}[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]{2}\d{2,3}",  # PLATE
     r"\d{4} \d{4} \d{4} \d{4}",                   # CARD
     # Bare digit runs, LONGEST FIRST: leftmost-first alternation would otherwise
     # let \d{10} consume the head of a 20-digit account.
@@ -912,7 +962,15 @@ TOKEN_RE = re.compile("|".join([
     r"\b\d{9}\b",                                 # INTL_PASSPORT
     r"\d{3}-\d{3}-\d{3} \d{2}",                   # SNILS
     r"\d{2} \d{2} \d{6}",                         # PASSPORT
-    r"\d{2}\.\d{2}\.\d{4}",                       # DATE
+    r"\d{2}\.\d{2}\.\d{4}",                       # DATE, как минтится
+    # DATE, КАК ЕЁ ПЕРЕПИШЕТ МОДЕЛЬ. A tool argument named `date` invites ISO,
+    # and a model obliges: the token «02.12.1973» came back as «1973-12-02» and
+    # was never even a candidate here, so the lookup that would have resolved it
+    # never ran and the FAKE reached the customer's tool. Two personas hit this
+    # independently on live traffic — one moved a delivery to 1973, the other
+    # booked a patient into 1977.
+    r"\d{4}-\d{2}-\d{2}",                           # ISO
+    r"\d{2}[/-]\d{2}[/-]\d{4}",                     # 12/04/1961, 12-04-1961
     r"\+79\d{9}",                                 # PHONE
     r"REDACTED[0-9a-f]{6}",                       # fallback
     r"\b\d{10}\b",                                # INN — least specific, last

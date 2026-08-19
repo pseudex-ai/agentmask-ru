@@ -156,13 +156,13 @@ def build_router(audit, license_client, assets, detector_version: str,
     async def status(request: Request) -> JSONResponse:
         org_id = request.query_params.get("org_id", "default")
         state = license_client.status()
-        series = await anyio.to_thread.run_sync(audit.daily_series, org_id, 1)
+        series = await anyio.to_thread.run_sync(audit.daily_series, org_id, 1, "")
         today = series[0] if series else {"requests": 0, "values": 0}
         # The breakdown beside "СЕГОДНЯ" must cover the same day the numbers
         # above it do. It was all-time, so a quiet day rendered "0 запросов"
         # next to "PHONE 5000".
         by_type = await anyio.to_thread.run_sync(
-            audit.counts, org_id, _period_start("today")
+            audit.counts, org_id, _period_start("today"), ""
         )
         return JSONResponse({
             "engine": {
@@ -214,6 +214,9 @@ def build_router(audit, license_client, assets, detector_version: str,
     @router.get("/stats")
     async def stats(request: Request) -> JSONResponse:
         org_id = request.query_params.get("org_id", "default")
+        # The journal already filtered by agent and these did not, so «этот агент
+        # за эту неделю» answered with the whole container.
+        agent_id = request.query_params.get("agent_id", "")
         try:
             days = min(90, max(1, int(request.query_params.get("days", "14"))))
         except ValueError:
@@ -225,11 +228,11 @@ def build_router(audit, license_client, assets, detector_version: str,
         since_day = time.strftime("%Y-%m-%d", time.localtime(since))
         return JSONResponse({
             "org_id": org_id,
-            "days": await anyio.to_thread.run_sync(audit.daily_series, org_id, days),
-            "by_type": await anyio.to_thread.run_sync(audit.counts, org_id, since),
+            "days": await anyio.to_thread.run_sync(audit.daily_series, org_id, days, agent_id),
+            "by_type": await anyio.to_thread.run_sync(audit.counts, org_id, since, agent_id),
             "by_agent": await anyio.to_thread.run_sync(audit.by_agent, org_id, since_day),
             "requests_total": await anyio.to_thread.run_sync(
-                audit.request_totals, org_id, since_day),
+                audit.request_totals, org_id, since_day, agent_id),
         })
 
     @router.get("/stats.csv")
@@ -238,12 +241,13 @@ def build_router(audit, license_client, assets, detector_version: str,
         auditor. Counts only — no tokens, no previews, no values — so exporting
         it never turns a report into a second copy of the personal data."""
         org_id = request.query_params.get("org_id", "default")
+        agent_id = request.query_params.get("agent_id", "")
         try:
             days = min(365, max(1, int(request.query_params.get("days", "14"))))
         except ValueError:
             return PlainTextResponse("days must be an integer", status_code=400)
         lines = ["day,requests,protected_values"]
-        for row in await anyio.to_thread.run_sync(audit.daily_series, org_id, days):
+        for row in await anyio.to_thread.run_sync(audit.daily_series, org_id, days, agent_id):
             lines.append(f'{row["day"]},{row["requests"]},{row["values"]}')
         return PlainTextResponse(
             "\n".join(lines) + "\n",
@@ -296,7 +300,7 @@ def build_router(audit, license_client, assets, detector_version: str,
             "errors": license_client.recent_errors(),
             "last_report": license_client.last_report(),
             "requests_total": await anyio.to_thread.run_sync(
-                audit.request_totals, org_id, ""),
+                audit.request_totals, org_id, "", ""),
         })
 
     @router.get("/diagnostics")

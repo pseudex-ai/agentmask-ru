@@ -119,7 +119,10 @@ const Logo = ({ size = 20 }) => html`
 /* ---------- sign in ---------- */
 
 function SignIn({ onDone }) {
-  const fromUrl = new URLSearchParams(location.search).get('token') || '';
+  const fromUrl = new URLSearchParams(location.search).get('secret')
+    // `token` is still accepted: a link an operator bookmarked before
+    // this rename must keep working, and both name the same secret.
+    || URLSearchParams(location.search).get('token') || '';
   const [secret, setSecret] = useState(fromUrl);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);

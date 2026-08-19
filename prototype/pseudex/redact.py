@@ -114,23 +114,70 @@ def unmask_text(text: str, vault: Vault) -> str:
 # is the same failure with a different alphabet, and this is its equivalent.
 _PLATE_FOLD = str.maketrans("ABEKMHOPCTYXabekmhopctyx", "АВЕКМНОРСТУХавекмнорстух")
 
+# THE MODEL TRANSLITERATES BY SOUND, WE FOLDED BY SHAPE. The ГОСТ alphabet was
+# picked so every letter has a Latin look-alike, and the fold above uses exactly
+# that: «С» reads as «C», «Н» as «H». A model rewriting a plate does something
+# else — it spells it: «С» becomes «S», «Н» becomes «N», «В» becomes «V». The
+# two tables disagree on six letters out of twelve, so «С732ХК935» came back as
+# «S732HK935», resolved to nothing, and a car that does not exist was written
+# into a service centre's CRM with a 200 and an empty log.
+#
+# Both readings are offered on lookup and neither is authoritative: a miss costs
+# one indexed point query, and only a plate is changed by either table.
+_PLATE_SOUND = str.maketrans("AVEKMNORSTUHavekmnorstuh", "АВЕКМНОРСТУХавекмнорстух")
+
+# A date the model rewrote. Unlike a plate this is not a character map — the
+# COMPONENTS ARE REORDERED — so the candidate is rebuilt in the shape the token
+# was minted in and looked up as itself. ISO is unambiguous (four digits lead);
+# d/m/y and m/d/y are both offered when the year is last, and whichever resolves
+# wins, because only one of them can be a token this customer holds.
+_DATE_ANY = re.compile(r"^(\d{1,4})[.\-/](\d{1,2})[.\-/](\d{2,4})$")
+
+
+def _date_readings(value: str) -> list[str]:
+    match = _DATE_ANY.match(value.strip())
+    if not match:
+        return []
+    first, middle, last = match.groups()
+    if len(first) == 4:
+        return [f"{int(last):02d}.{int(middle):02d}.{first}"]
+    if len(last) == 4:
+        return [f"{int(first):02d}.{int(middle):02d}.{last}",
+                f"{int(middle):02d}.{int(first):02d}.{last}"]
+    return []
+
 
 def _restore_tokens(text: str, vault: Vault) -> str:
     matches = list(TOKEN_RE.finditer(text))
     if not matches:
         return text
     candidates = {match.group() for match in matches}
-    # Offer the Cyrillic reading of every candidate as well. A miss costs one
-    # indexed point query, and folding is only meaningful for the plate alphabet
-    # — any other token is unchanged by it, so nothing else can be affected.
-    folded = {value: value.translate(_PLATE_FOLD) for value in candidates}
-    values = vault.detokenize_many(candidates | set(folded.values()))
-    return _splice(text, [
-        (match.start(), match.end(),
-         values.get(match.group()) or values[folded[match.group()]])
-        for match in matches
-        if match.group() in values or folded[match.group()] in values
-    ])
+    # Every way the model might have rewritten a token, offered alongside the
+    # token itself. A miss costs one indexed point query; a hit is the difference
+    # between the customer's tool receiving a real value and receiving a fake.
+    readings: dict[str, list[str]] = {}
+    for value in candidates:
+        alternates = [value.translate(_PLATE_FOLD), value.translate(_PLATE_SOUND)]
+        alternates.extend(_date_readings(value))
+        readings[value] = [alt for alt in alternates if alt != value]
+
+    asked = candidates | {alt for group in readings.values() for alt in group}
+    values = vault.detokenize_many(asked)
+
+    def resolved(written: str) -> str | None:
+        if written in values:
+            return values[written]
+        for alternate in readings.get(written, ()):
+            if alternate in values:
+                return values[alternate]
+        return None
+
+    spans: list[tuple[int, int, str]] = []
+    for match in matches:
+        value = resolved(match.group())
+        if value is not None:
+            spans.append((match.start(), match.end(), value))
+    return _splice(text, spans)
 
 
 def _restore_reformatted(text: str, vault: Vault) -> str:
@@ -268,21 +315,73 @@ def _restore_inflected(text: str, vault: Vault) -> str:
     if not windows:
         return text
     resolved = vault.resolve_name_keys_typed({k for group in keys.values() for k in group})
-    if not resolved:
-        return text
+    # NO EARLY RETURN ON AN EMPTY KEY LOOKUP. The fragment fallback below is the
+    # only thing that resolves «Филипп Алексеевич», and a fragment never has a
+    # key hit by construction — returning here meant the fallback could only ever
+    # run for text that had already resolved by some other window.
     spans: list[tuple[int, int, str]] = []
     taken: list[tuple[int, int]] = []
     for start, end, surface in sorted(windows, key=lambda w: w[1] - w[0], reverse=True):
         found = next((resolved[k] for k in keys.get((start, end), [])
                       if k in resolved), None)
         if found is None:
-            continue
+            # PART OF A SUBSTITUTE IS STILL OURS. The key above is built from the
+            # whole window, so «Жуков Филипп Алексеевич» resolves and «Филипп
+            # Алексеевич» — the way a Russian speaker actually addresses someone
+            # — resolves to nothing, and the assistant greets the customer by an
+            # invented name to their face. A service-centre persona hit exactly
+            # this on live traffic.
+            #
+            # `residual_of` already answers «which substitute do these words
+            # belong to», demands that EVERY word agree on ONE token, and was
+            # built for the leak warning. Asked here it costs one indexed query
+            # per unresolved window and cannot invent an owner: a name shared
+            # with a real customer resolves to more than one token and is
+            # refused. `name_key` is untouched — it is also called on the REAL
+            # value, and widening it there would break the minting side.
+            owner = _residual_owner(surface, vault)
+            if owner is None:
+                continue
+            found = owner
         entity_type, value = found
         if any(a < end and start < b for a, b in taken):
             continue
         taken.append((start, end))
         spans.append((start, end, _in_case_of(value, surface, entity_type)))
     return _splice(text, spans)
+
+
+def _residual_owner(surface: str, vault: Vault) -> tuple[str, str] | None:
+    """The (type, real value) behind a fragment of a substitute, or None.
+
+    Only NAME substitutes have a parts index, and only a fragment of two words
+    or one is worth asking about — a longer window that failed its own key is a
+    different problem and guessing at it would replace text we do not own.
+    """
+    words = surface.split()
+    if not (1 <= len(words) <= 2):
+        return None
+    token = vault.residual_of(surface)
+    if token is None:
+        return None
+    value, entity_type = vault.reveal(token)
+    if not value:
+        return None
+    # RETURN THE MATCHING PART, NOT THE WHOLE PERSON. The model wrote «Геннадий
+    # Иванович» because that is how a Russian speaker addresses someone; handing
+    # back «Кузнецов Дмитрий Анатольевич» is correct but reads as a form field
+    # pasted into a greeting. The substitute mirrors the real name part for part
+    # — that is what `name_shape` guarantees at minting — so the same positions
+    # can be taken from the real value. Only when the counts agree: if they do
+    # not, the mirror does not hold and the whole value is the safe answer.
+    fake_parts, real_parts = token.split(), value.split()
+    if len(fake_parts) == len(real_parts):
+        wanted = [word.casefold() for word in surface.split()]
+        picked = [real for fake, real in zip(fake_parts, real_parts)
+                  if fake.casefold() in wanted]
+        if len(picked) == len(wanted):
+            return entity_type, " ".join(picked)
+    return entity_type, value
 
 
 def _in_case_of(value: str, surface: str, entity_type: str = "NAME") -> str:

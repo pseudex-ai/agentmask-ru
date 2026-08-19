@@ -140,7 +140,12 @@ def _inline_script_hashes() -> list[str]:
 
 
 def signin_url(port: str) -> str:
-    return f"http://localhost:{port}/?token={SIGNIN_TOKEN}"
+    # THE QUERY NAME MATCHES THE FIELD `/api/signin` READS. It was `token` here
+    # and `secret` there, so anyone signing in by hand — which is what a customer
+    # sitting in a terminal does — sent `{"token": …}` and got «wrong token» for
+    # a token that was right. Two personas lost time on it and both ended up
+    # reading the page's own JavaScript to find the answer.
+    return f"http://localhost:{port}/?secret={SIGNIN_TOKEN}"
 
 
 @asynccontextmanager

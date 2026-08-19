@@ -295,9 +295,22 @@ def _agent_of(request: Request) -> str:
     raw = (request.headers.get(AGENT_HEADER) or "").strip()
     if not raw:
         return ""
-    # errors="replace": a malformed sequence must not 500 a masking request.
-    # The label is decoration; the masking is not.
-    decoded = urllib.parse.unquote(raw, encoding="utf-8", errors="replace")
+    # RAW UTF-8 IS REPAIRED, NOT ONLY PERCENT-ENCODING. Percent-decoding alone
+    # assumed every caller would encode; an integrator sent
+    # «X-Pseudex-Agent: поддержка» literally, and the header arrived as
+    # «Ð¿Ð¾Ð´Ð´ÐµÑ€Ð¶ÐºÐ°» — 200 OK, no error, and mojibake in the journal the
+    # customer's security officer is meant to read. HTTP header values are
+    # latin-1 by the spec, so an ASGI server hands us the bytes decoded that
+    # way; encoding them back and decoding as UTF-8 recovers the original.
+    #
+    # Tried in order and the first clean reading wins: a percent-encoded label
+    # is unchanged by the latin-1 round trip, and an ASCII label is unchanged by
+    # either, so neither can be damaged by trying both.
+    try:
+        repaired = raw.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        repaired = raw
+    decoded = urllib.parse.unquote(repaired, encoding="utf-8", errors="replace")
     return _AGENT_SAFE.sub("", decoded)[:64]
 
 
@@ -507,11 +520,32 @@ async def usage(request: Request) -> dict[str, object]:
     presented = (header[7:] if header.lower().startswith("bearer ")
                  else header).strip()
     tenant = TENANTS.resolve(presented)
-    if tenant is None:
-        raise HTTPException(status_code=401, detail="invalid Pseudex API key")
+    if tenant is not None:
+        customer = tenant.customer_id
+    elif presented and hmac.compare_digest(presented.encode("utf-8"),
+                                           GATEWAY_TOKEN.encode("utf-8")):
+        # THE GATEWAY TOKEN OPENS IT TOO, and without this the endpoint was
+        # unreachable in the shape the site recommends. `PSEUDEX_UPSTREAM` is the
+        # default deployment — one container, one customer, no tenant table — so
+        # there is no issued key for `resolve` to recognise and every credential
+        # a customer holds answered 401. The quick start calls this check
+        # mandatory and prints, in capitals, that empty counters mean traffic is
+        # bypassing the container. Three of five personas ran it, got 401 on a
+        # working product, and two said they would have stopped there.
+        #
+        # The gateway token and not the admin one, because this discloses exactly
+        # what `/spans` does — counts and masked previews, never a value — and
+        # `/spans` is gated the same way on this leg. It is printed by
+        # `entrypoint.sh` at startup, so the customer has it without asking.
+        customer = _UPSTREAM_ORG
+    else:
+        raise HTTPException(
+            status_code=401,
+            detail="use the gateway token printed at container startup, "
+                   "or a Pseudex API key")
     return {
-        "protected_counts": AUDIT.counts(tenant.customer_id, 0.0),
-        "recent": AUDIT.recent(tenant.customer_id, 50),
+        "protected_counts": AUDIT.counts(customer, 0.0, ""),
+        "recent": AUDIT.recent(customer, 50),
     }
 
 
