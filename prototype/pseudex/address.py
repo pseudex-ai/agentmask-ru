@@ -97,6 +97,15 @@ def _word_is_street(word: str, address: AddressAssets) -> bool:
     tag = MORPH.parse(word)[0].tag
     if "Name" in tag and "Surn" not in tag:  # a bare first name is not a street
         return False
+    # A SETTLEMENT IS NOT A STREET, and a house number does not attach to one.
+    # «погода в Сочи 25 градусов» and «курс в Сочи 25 рублей» became addresses
+    # because `Geox` alone was accepted — but Geox is what names a CITY, and a
+    # city with a number after it is a temperature or a price, never a door.
+    # Street names that happen to be toponyms carry another reading too:
+    # «Тверская» is ADJF, «Ленина» and «Гагарина» are Surn. Only a word whose
+    # ONLY reading is a place is refused.
+    if "Geox" in tag and "Surn" not in tag and "ADJF" not in tag:
+        return False
     return "Surn" in tag or "ADJF" in tag or "Geox" in tag
 
 
@@ -124,6 +133,40 @@ def _lower_is_street(phrase: str, address: AddressAssets) -> bool:
         return True
     return False
 
+
+
+
+def _names_a_settlement(phrase: str, address: AddressAssets) -> bool:
+    """Whether every word here names a PLACE and nothing else.
+
+    A city takes no house number. «погода в Сочи 25 градусов», «курс в Сочи 25
+    рублей», «в Москве 12 филиалов» and «доставка по Казани 3 дня» all became
+    addresses, and all four were licensed by nothing more than the preposition
+    in front — `prep_before` is accepted as context on its own, so the
+    morphological test never ran.
+
+    So this is a veto rather than a vote: whatever the context says, a
+    settlement plus a number is a temperature, a price or a count, never a door.
+    Street names that happen to be toponyms are untouched, because they carry a
+    second reading — «Тверская» is ADJF, «Ленина» and «Гагарина» are Surn — and
+    only a word whose ONLY reading is a place is refused.
+    """
+    words = [word for word in _WORD_SPLIT_RE.split(phrase) if word]
+    if not words:
+        return False
+    for word in words:
+        if word.lower() in address.street_gaz:
+            return False
+        # EVERY READING, not the best one. «Тверская» has a Geox reading that
+        # outranks its adjectival one, so `parse[0]` refused a real street — the
+        # same trap that made «марину» resolve to a man. A word is a settlement
+        # only when NOTHING it can be is a surname or an adjective.
+        parses = MORPH.parse(word)
+        if not any("Geox" in parse.tag for parse in parses):
+            return False
+        if any("Surn" in parse.tag or "ADJF" in parse.tag for parse in parses):
+            return False
+    return True
 
 
 def _lower_names_a_street(phrase: str, address: AddressAssets) -> bool:
@@ -216,6 +259,8 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
         after = text[m.end():m.end() + 12].lstrip()
         if any(after.lower().startswith(month) for month in address.month_after):
             continue
+        if _names_a_settlement(m.group("words"), address):
+            continue
         if _is_street_name(m.group("words"), address) or m.group("num") or has_ctx:
             out.append((m.start(), m.end(), True))   # core (street + house number)
     for m in address.street_lower_nohouse.finditer(text):
@@ -261,6 +306,16 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
             continue
         out.append((m.start(), m.end(), True))   # core (street + house number)
     for m in address.numbered_st.finditer(text):  # lowercase names ("1905 года 12")
+        # AN INTENT WORD, not merely a preposition. «на 8 марта 5 подарков» is a
+        # date and a quantity — the commonest sentence in Russian retail in
+        # March — and it opens with «на» exactly as an address does. Nothing in
+        # the shape separates them, so the separation has to come from somebody
+        # saying they live or receive things there. The marked form («улица 8
+        # марта 5») has its own pattern and needs no cue.
+        tail = text[max(0, m.start() - _CUE_WINDOW):m.start()]
+        if not address.addr_ctx.search(
+                _SENTENCE_SPLIT.split(tail + text[m.start():m.start() + 1])[-1]):
+            continue
         out.append((m.start(), m.end(), True))
     for m in address.numbered_marked.finditer(text):  # "1905 года тупик"
         out.append((m.start(), m.end(), True))
