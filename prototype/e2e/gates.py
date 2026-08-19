@@ -720,6 +720,9 @@ def gate_l10() -> bool:
 
 # --- gates: integrity and counters ---------------------------------------
 
+_SIGNIN_URL_RE = re.compile(r"https?://[^\s]+/\?\w+=([^\s&]+)")
+
+
 def ui_signin_token() -> str:
     """The sign-in token, read the way the customer is told to read it.
 
@@ -730,9 +733,20 @@ def ui_signin_token() -> str:
     UI process had no logging configuration, and the line was never printed)
     surfaced as a stack trace instead of as the FAIL that names it.
     """
+    # THE PARAMETER NAME IS NOT HARDCODED, and that is the whole repair. The
+    # gate looked for «?token=»; the interface prints «?secret=» and has for a
+    # while, so L16 and L17 failed with "no sign-in url in the container log"
+    # while the product worked perfectly. A gate that names an implementation
+    # detail goes stale the first time that detail is renamed, and then reports
+    # a healthy product as broken — which is how a red suite teaches people to
+    # ignore it.
+    #
+    # Anchored on the URL instead: the customer is told to look for a link, so
+    # the gate looks for one and takes its query value, whatever it is called.
     for line in logs("sidecar").splitlines():
-        if "?token=" in line:
-            return line.split("?token=", 1)[1].strip()
+        match = _SIGNIN_URL_RE.search(line)
+        if match:
+            return match.group(1).strip()
     return ""
 
 
