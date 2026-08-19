@@ -72,6 +72,23 @@ def _covered(gold_start: int, gold_end: int, found: list[tuple[int, int, str]], 
                for start, end, entity_type in found)
 
 
+def _protected(gold_start: int, gold_end: int,
+               found: list[tuple[int, int, str]]) -> bool:
+    """Covered by a span of ANY type — the PRIVACY question, not the typing one.
+
+    The two are different and only one of them is a leak. A mention masked as
+    OPAQUE instead of NAME never reaches the model either way; what changes is
+    whether the model reads a plausible person or a redaction marker. Scored
+    with `_covered` alone, a deliberate downgrade — protect it, but stop
+    inventing a person for a word we cannot tell from a brand — reads as a
+    recall regression, and we would be steering by a number that punishes the
+    fix. So both are printed, always, and neither is allowed to stand in for
+    the other.
+    """
+    return any(start < gold_end and end > gold_start
+               for start, end, _ in found)
+
+
 def main() -> None:
     load_dev_bundle()
     parser = argparse.ArgumentParser(description=__doc__,
@@ -86,6 +103,7 @@ def main() -> None:
 
     total: dict[str, int] = defaultdict(int)
     caught: dict[str, int] = defaultdict(int)
+    shielded: dict[str, int] = defaultdict(int)
     ru_total = ru_caught = 0
     misses: list[str] = []
     docs = 0
@@ -109,6 +127,7 @@ def main() -> None:
                 hit = _covered(start, end, found, want)
                 total[gold_type] += 1
                 caught[gold_type] += hit
+                shielded[gold_type] += _protected(start, end, found)
                 if gold_type == "PERSON":
                     # Split out the population we actually serve: Cyrillic,
                     # Russian-shaped personal names, not transliterated foreign
@@ -120,13 +139,18 @@ def main() -> None:
                         misses.append(value)
 
     print(f"corpus: {args.corpus}  splits={args.splits}  docs={docs}\n")
-    print(f"{'GOLD TYPE':<12}{'MENTIONS':>10}{'CAUGHT':>9}{'RECALL':>9}   note")
-    print("-" * 62)
+    print(f"{'GOLD TYPE':<12}{'MENTIONS':>10}{'CAUGHT':>9}{'RECALL':>9}{'SHIELDED':>10}   note")
+    print("-" * 72)
     for gold_type in sorted(total, key=lambda k: -total[k]):
         note = "low BY DESIGN (bare toponym != PII)" if gold_type in _BY_DESIGN_PARTIAL else ""
         rate = caught[gold_type] / total[gold_type]
-        print(f"{gold_type:<12}{total[gold_type]:>10}{caught[gold_type]:>9}{rate:>8.1%}   {note}")
-    print("-" * 62)
+        shield = shielded[gold_type] / total[gold_type]
+        print(f"{gold_type:<12}{total[gold_type]:>10}{caught[gold_type]:>9}"
+              f"{rate:>8.1%}{shield:>9.1%}   {note}")
+    print("-" * 72)
+    print("RECALL — типизировано как нужный тип. SHIELDED — закрыто хоть чем-то,")
+    print("то есть до модели не дошло. Расходятся они там, где мы защитили, но не")
+    print("назвали человеком; утечка — это только падение SHIELDED.")
     if ru_total:
         print(f"\nPERSON, Cyrillic-only subset (our actual population): "
               f"{ru_caught}/{ru_total} = {ru_caught / ru_total:.1%}")
