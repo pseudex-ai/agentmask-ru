@@ -266,6 +266,9 @@ _HOUSE_LEAD = r"(?:\s*,?\s*(?:дом|д)\.?)?\s*"
 # adjective) and the single letters «ш», «д» are left out, since for those the
 # house number is the only thing standing between them and ordinary prose.
 _ST_ABBR = r"(?:ул|просп|пр-?кт|пр-?т|пер|наб|б-р|пл)(?:\.\s*|\s+)"
+# Street types that may stand with NO house number. See `street_lower_nohouse`.
+_ST_NOHOUSE = (r"(?:улиц\w+|проспект\w*|переул\w+|бульвар\w*|набережн\w+|шоссе"
+               r"|микрорайон\w*|алле\w+)")
 
 ADDRESS_PATTERNS: dict[str, str] = {
     # `\s*` before the house number, not `\s+`: «улица Гагарина88кв152» is how a
@@ -283,9 +286,35 @@ ADDRESS_PATTERNS: dict[str, str] = {
     # lower case it usually does: «ленинский проспект, д. 42, кв. 118» matched
     # nothing at all — the span began at «д. 42» and the street went to the
     # model in the clear, while the same address without commas was caught.
-    "street_lower_first": rf"(?i)\b{_ST_FULL}\s*{_LOWER_NAME}{_HOUSE_LEAD}\d{{1,4}}",
-    "street_lower_last": rf"(?i)\b{_LOWER_NAME}\s*{_ST_FULL}{_HOUSE_LEAD}\d{{1,4}}",
-    "street_abbr_lower": rf"(?i)\b{_ST_ABBR}{_LOWER_NAME}{_HOUSE_LEAD}\d{{1,4}}",
+    # THE HOUSE NUMBER MUST END WHERE THE MATCH DOES. Without `(?!\d)` the arm
+    # took the first four digits of a PHONE for a house: «на тверской улице
+    # телефон 8104332-18-19», written without the comma a chat drops, matched
+    # «улице телефон 8104». That span then overlapped the phone, lost the
+    # priority contest to it (PHONE 5 > ADDR 4) and took the real street down
+    # with it — so removing punctuation made an address that WAS detected
+    # disappear entirely.
+    "street_lower_first": rf"(?i)\b{_ST_FULL}\s*{_LOWER_NAME}{_HOUSE_LEAD}\d{{1,4}}(?!\d)",
+    "street_lower_last": rf"(?i)\b{_LOWER_NAME}\s*{_ST_FULL}{_HOUSE_LEAD}\d{{1,4}}(?!\d)",
+    "street_abbr_lower": rf"(?i)\b{_ST_ABBR}{_LOWER_NAME}{_HOUSE_LEAD}\d{{1,4}}(?!\d)",
+    # A MARKED STREET WITH NO HOUSE NUMBER, IN LOWER CASE. «на тверской улице»
+    # and «на проспекте мира» were invisible: the capitalised arm needs its
+    # capital and the two arms above need a house number. Every one of the 46
+    # values the noise ladder loses at the lower-case rung is a LOC, and these
+    # are the half of them that is not a bare city.
+    #
+    # The house number is what makes the OTHER lower-case arms safe, so with it
+    # gone the gate moves into the engine: the name must be a word that can name
+    # a street — see `_lower_names_a_street`. Matching «улица» plus any
+    # lower-case word is what turns «улица была пустой» into an address, and
+    # that is the counterexample the gate is built against.
+    # «площад» IS ABSENT HERE and present in every other arm. With a house number
+    # beside it, «площадь Ленина 3» is unambiguous; without one, `площад\w+`
+    # matches «площадка», «площади», «площадью» and «площадных», which is
+    # ordinary business and news vocabulary — «торговая площадка», «посевные
+    # площади», «сценические площадки». Measured on NEREL: it was most of the
+    # noise this arm produced.
+    "street_lower_nohouse": (rf"(?i)\b(?:{_ST_NOHOUSE}\s+(?P<after>{_LOWER_NAME})"
+                            rf"|(?P<before>{_LOWER_NAME})\s+{_ST_NOHOUSE})\b"),
     "street_first": rf"(?i)\b{_ST}\s*\.?\s*{_CAP}",
     "street_last": rf"(?i){_CAP}\s+{_ST}\b",
     "house": (

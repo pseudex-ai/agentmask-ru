@@ -376,6 +376,7 @@ def main() -> int:
     test_addresses(vault, detector)
     test_address_signature_is_inflection_proof()
     test_street_stays_a_street(vault, detector)
+    test_chat_register(detector)
 
     print()
     if _FAILURES:
@@ -384,6 +385,54 @@ def main() -> int:
     print("hard cases OK — detected, restored, and nothing over-masked")
     return 0
 
+
+
+def test_chat_register(detector: Detector) -> None:
+    """The two shapes a support chat produces that a written sentence never does.
+
+    Both were measured by the noise ladder, and both cost more than typos do:
+    lower case alone was −15.4 points of recall and dropping punctuation another
+    −11.1, against −6.4 for a typo. Every value lost at the lower-case rung was
+    an address; every value lost at the punctuation rung on top of it was a date.
+
+    A MARKED STREET WITH NO HOUSE NUMBER, in lower case. «проживает на тверской
+    улице» was invisible — the capitalised arm needs its capital, the lower-case
+    arms need a house number. What replaces the house number as a guard is an
+    address INTENT word, not a preposition: «на улицах города собрались десятки»
+    opens with «на» too, and only somebody saying they live or receive things
+    there separates an address from prose about streets. (The CAPITALISED arm is
+    looser and always was — «улицах Каира» is masked on its own, which is a
+    separate, older question about a marked street with no house number.)
+
+    A DATE WITH ITS SEPARATORS GONE. «24121967» is eight digits and no shape,
+    and it is judged by the SAME association rule as «24.12.1967» — personal
+    beside an identifier or a birth cue, ordinary otherwise. That is why «заказ
+    24121967 готов» stays untouched while «дата рождения 24121967» does not.
+    """
+    must_find = [
+        ("николай зайцев проживает в екатеринбурге на тверской улице", "тверской улице"),
+        ("адрес: москве, проспекте мира", "проспекте мира"),
+        ("дата рождения 24121967", "24121967"),
+        ("реквизиты снилс 647-436-713 22 карта 4090 9743 9533 9426 дата 21011979",
+         "21011979"),
+    ]
+    for text, value in must_find:
+        found = [text[span.start:span.end] for span in detector.detect(text)]
+        assert any(value in one or one in value for one in found), \
+            f"{value!r} not detected in {text!r} — found {found}"
+
+    must_not = [
+        "улица была пустой",
+        "на главной улице города много людей",
+        "на улицах города собрались десятки человек",
+        "торговая площадка закрылась",
+        "заказ 24121967 готов",
+        "артикул 12345678 в наличии",
+    ]
+    for text in must_not:
+        found = [text[span.start:span.end] for span in detector.detect(text)]
+        assert not found, f"over-masked {text!r} -> {found}"
+    print("chat register OK — lower-case streets and glued dates, without the prose")
 
 if __name__ == "__main__":
     sys.exit(main())

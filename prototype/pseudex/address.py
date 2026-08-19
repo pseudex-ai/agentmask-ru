@@ -125,6 +125,37 @@ def _lower_is_street(phrase: str, address: AddressAssets) -> bool:
     return False
 
 
+
+def _lower_names_a_street(phrase: str, address: AddressAssets) -> bool:
+    """Whether a lower-case word beside a street-type word can be its NAME.
+
+    Needed only where no house number stands to hold the match down. «улица была
+    пустой» is the shape this refuses, and it refuses it the same way the city
+    adjective is judged: a QUALITATIVE adjective describes a street, a relative
+    one names it. «пустой», «длинной», «главной», «новой», «красивой» and
+    «широкой» are all Qual; «тверской», «центральной» and «садовой» are not.
+    Pronominal readings («нашей», «этой») go out with `Apro`.
+
+    The vocabulary path stays first, because the commonest Russian street names
+    are genitive nouns with no adjective reading at all — «мира», «ленина»,
+    «строителей».
+    """
+    for word in _WORD_SPLIT_RE.split(phrase):
+        low = word.lower()
+        if not low:
+            continue
+        if low in address.street_gaz:
+            return True
+        parses = MORPH.parse(word)
+        if any("Surn" in parse.tag or "Geox" in parse.tag for parse in parses):
+            return True
+        adjectives = [parse for parse in parses if "ADJF" in parse.tag]
+        if adjectives and all("Qual" not in parse.tag and "Apro" not in parse.tag
+                              for parse in adjectives):
+            return True
+    return False
+
+
 def _is_street_name(phrase: str, address: AddressAssets) -> bool:
     """Street-name if ANY word (or hyphen part) looks like a toponym/surname/adj."""
     for word in _WORD_SPLIT_RE.split(phrase):
@@ -187,6 +218,19 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
             continue
         if _is_street_name(m.group("words"), address) or m.group("num") or has_ctx:
             out.append((m.start(), m.end(), True))   # core (street + house number)
+    for m in address.street_lower_nohouse.finditer(text):
+        # AN INTENT WORD, NOT A PREPOSITION. Every other lower-case arm accepts
+        # `prep_before` as its context, and here that is far too little: «на
+        # улицах Каира собрались десятки» and «на улицах американских городов»
+        # both open with «на». What separates a person's address from prose
+        # ABOUT streets is somebody saying they live or receive things there —
+        # «проживает», «адрес:», «доставка» — and that is `addr_ctx` alone.
+        name = m.group("after") or m.group("before") or ""
+        tail = text[max(0, m.start() - _CUE_WINDOW):m.start()]
+        if not address.addr_ctx.search(_SENTENCE_SPLIT.split(tail + text[m.start():m.start() + 1])[-1]):
+            continue
+        if _lower_names_a_street(name, address):
+            out.append((m.start(), m.end(), True))   # core
     for m in address.markerless_lower.finditer(text):
         # LOWER CASE, SO THE GATE IS THE VOCABULARY AND NOTHING ELSE.
         # `_is_street_name` would be wrong here: it accepts a morphological

@@ -204,6 +204,33 @@ _PASSPORT_RE = re.compile(r"\b\d{2}\s+\d{2}\s+\d{6}\b|\b\d{4}\s+\d{6}\b")
 _PASSPORT_CTX_RE = re.compile(
     r"(?i:пас{1,2}п{1,2}орт\w*)\D{0,8}(\d{2}\s?\d{2}\s?\d{6})\b")
 _DATE_RE = re.compile(r"\b\d{2}[.\-/]\d{2}[.\-/]\d{4}\b")
+# THE SAME DATE WITH ITS SEPARATORS GONE. «24.12.1967» typed without dots is
+# «24121967» — eight digits and no shape left — so a date a chat wrote without
+# punctuation went to the model in the clear while the dotted one beside it was
+# protected. Found by the noise ladder: every date it loses at the punctuation
+# rung is this one.
+#
+# Emitted as an ordinary DATE and judged by the SAME association rule, not by a
+# birth cue of its own. That matters: the golden set writes «снилс … карта …
+# дата 21011979», where what makes the date personal is the identifier standing
+# beside it, exactly as `context._date_is_personal` already decides for the
+# dotted form. A second, narrower gate here would have been a second answer to a
+# question this codebase has already answered once.
+#
+# Never adjacent to another digit, so it cannot bite a chunk out of an unspaced
+# card number.
+_GLUED_DATE_RE = re.compile(r"(?<!\d)(\d{2})(\d{2})(\d{4})(?!\d)")
+
+
+def _reads_as_date(day: str, month: str, year: str) -> bool:
+    """Whether these eight digits can be a date at all.
+
+    This is what keeps ordinary eight-digit numbers out before the association
+    rule is even asked: an order or article number has to land on a day of
+    01-31, a month of 01-12 AND a year a living person could carry.
+    """
+    return (1 <= int(day) <= 31 and 1 <= int(month) <= 12
+            and 1900 <= int(year) <= 2026)
 
 
 def detect_structured(text: str) -> list[Span]:
@@ -238,6 +265,9 @@ def detect_structured(text: str) -> list[Span]:
         spans.append(Span(match.start(1), match.end(1), "PASSPORT", match.group(1)))
     for match in _DATE_RE.finditer(text):
         spans.append(Span(match.start(), match.end(), "DATE", match.group()))
+    for match in _GLUED_DATE_RE.finditer(text):
+        if _reads_as_date(*match.groups()):
+            spans.append(Span(match.start(), match.end(), "DATE", match.group()))
     for entity_type, pattern in ru_pii.ctx_patterns:
         for match in pattern.finditer(text):
             spans.append(Span(match.start(1), match.end(1), entity_type, match.group(1)))

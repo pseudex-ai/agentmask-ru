@@ -62,6 +62,9 @@ class AddressAssets:
     # Same shape with an ABBREVIATED marker («ул. ленина 14»), which the two
     # above cannot carry — see the comment on `_ST_ABBR` in assets_source.
     street_abbr_lower: re.Pattern[str]
+    # Marked street, lower case, NO house number — gated on morphology
+    # in the engine, because the house number is the guard the others use.
+    street_lower_nohouse: re.Pattern[str]
     house: re.Pattern[str]
     apt: re.Pattern[str]
     mkr: re.Pattern[str]
