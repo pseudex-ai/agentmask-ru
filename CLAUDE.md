@@ -216,6 +216,34 @@ _resolve()             priority-ordered, longest-first, non-overlapping
 NAME (3) > DATE/PASSPORT/LOC (2). `ADDR` is an internal type that exists solely to outrank a NAME
 sitting inside a street name; it is remapped back to `LOC` after resolution.
 
+
+### The conversation scope (`Vault.for_conversation`, `envelope.conversation_key`)
+
+A partial mention («Ленина 14») may resolve against a fuller one said earlier —
+but only inside ONE conversation, and the reason is arithmetic rather than
+caution. That street and house exist in every Russian city, so across a tenant's
+whole traffic the single-candidate rule finds a dozen owners and refuses every
+time: at tenant scope the rule is not careful, it is dead. **The scope is what
+makes the rule mean anything and what makes it safe, and one change buys both.**
+
+- `Vault.for_conversation()` hands out a shallow-copied VIEW, never a field on
+  the shared object: the vault is built once per org and used from several
+  threads, so writing the scope onto it would make one request's scope visible
+  to another — the exact cross-conversation link the scope prevents.
+- **`content_key` carries the conversation.** Without it the mask cache serves
+  the first conversation's link to every later one, and the isolation above is
+  decoration.
+- `conversation_key(messages)` derives an identity from the first TWO messages
+  when the caller names none — one is a system prompt shared by every dialogue
+  an agent has. Weaker than a given id and knowingly so; the single-candidate
+  rule is what keeps that safe.
+- A LINKED row is stored under a conversation-scoped canonical. Written plainly
+  it would leak the link past the scope on the very next request. Full addresses
+  keep the plain key: one place, one substitute, for ever.
+- `place_parts` expires after a day. It grows with CONVERSATIONS, and kept for
+  ever it would turn a scope meant to bound a decision into a record of who
+  talked when.
+
 ### Vault (`vault.py`)
 
 - **Canonicalization**: `+7 999…` / `8 999…` / `89991234567` collapse to one key → one token, so
@@ -446,6 +474,58 @@ direction when done the obvious way:
   stops at two, presuming «Имя Фамилия»; that presumption made «Наберите Игорю» one name, deleted
   the sentence's verb, and gave the pair an identity unrelated to the person the same message had
   already named.
+
+- **A settlement plus a number is not an address, and that is a VETO.** «погода в
+  Сочи 25 градусов», «в Москве 12 филиалов» — a city takes no house number, so
+  whatever the context says it is refused. `prep_before` counts as address
+  context on its own, and «в», «на», «по» open an address exactly as they open
+  everything else, so a vote would have lost. Street names that ARE toponyms
+  carry a second reading («Тверская» ADJF, «Ленина» Surn) and are untouched —
+  checked across EVERY parse, because «Тверская»'s Geox reading outranks its
+  adjectival one and `parse[0]` threw away a real street.
+- **A lower-case marker-less street is gated on the VOCABULARY, never on
+  morphology.** The capital is one of two signals; with it gone, morphology is
+  what admits «течение 12». A leased vocabulary cannot generalise to prose,
+  which is the property needed. A month in that vocabulary («марта», for «8
+  Марта») names a street only behind a number, so it is excluded there.
+- **A marked street with no house number needs an INTENT word, not a
+  preposition.** «на улицах Каира собрались десятки» opens with «на» too. Only
+  somebody saying they live or receive things there separates an address from
+  prose about streets — measured, `prep_before` alone cost 0.1pp of NEREL
+  precision. `площад\w+` is excluded from that arm entirely: without a house
+  number it matches «площадка», «площади», «площадью».
+- **A cue word reaches 60 characters and never across a sentence end.** One
+  «адрес» near the top of a system prompt licensed every capitalised-word-plus-
+  number for the rest of it. The candidate's own first letter joins the tail
+  before splitting, because a sentence end is a period FOLLOWED BY A CAPITAL and
+  that capital is the span being judged.
+- **An address span stops at a sentence boundary.** The gap vocabulary must hold
+  the period because «ул.» and «д.» are built from it, so «Наш адрес: …, д. 14.
+  Часы 9-21» masked as one address ending in «Часы 9».
+- **The trailing house number joins BEFORE the second merge.** «ул. Гагарина, 45,
+  кв. 12» lost its flat while «ул. Гагарина 45 кв 12» kept it — one comma made
+  the flat too far away at merge time.
+- **A plural reading, an unknown word and the VOCATIVE are not evidence of a
+  case.** «Тагиев» is read as genitive plural of an invented «Тагии»; «Ань» has
+  nothing left but a vocative and became «Аня». A person is never plural, and
+  the vocative survives only as address («мам!») — never in a form or a CRM
+  field. The guard lives in `detect_case`, which is safe there and only there:
+  the substitute pool is known singular Russian names, so no fake's reading is
+  plural or out-of-vocabulary.
+- **A stray space inside a surname needs FOUR signals.** «Фёдо ров Кирилл» was
+  detected as «Кирилл» and half the surname leaked. Joined must be a name or a
+  surname shape; the pair must touch a detected name; the left fragment may not
+  be a function word («на»+«Лебедева» → «наЛебедева» ends in «ева» and passes the
+  shape test); and at least one fragment must not be a word AND the left one may
+  not be a whole word of five letters or more (a typo makes «Влкова» unknown by
+  itself, so «получатель Влкова» joined). «Вол ков» is deliberately NOT joined —
+  both halves are ordinary words and nothing distinguishes the split.
+- **A given name that is also a surname wins the tie.** `any(Surn)` is right for
+  every real surname (they carry no `Name` reading) and wrong for «Регина», tied
+  at 0.33 — the shape became (surn, surn, patr), both parts mapped to one slot of
+  the substitute, and one person got two pseudonyms in one dialogue.
+- **A passport needs a cue, and the window after it is sixteen characters.**
+  «Паспортные данные: 4518123456» needed nine and the pattern allowed eight.
 
 ## Conventions
 
