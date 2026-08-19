@@ -27,7 +27,13 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pseudex.assets import ASSETS, BundleNotLeased
 from pseudex.audit import AuditLog, _preview
 from pseudex.detect_all import Detector
-from pseudex.envelope import MaskContext, mask_messages, mask_tools, unmask_response
+from pseudex.envelope import (
+    MaskContext,
+    conversation_key,
+    mask_messages,
+    mask_tools,
+    unmask_response,
+)
 from pseudex.license import ENGINE_VERSION, LicenseClient, LicenseError, explain
 from pseudex.maskcache import MaskCache
 from pseudex.operator import build_router
@@ -314,7 +320,7 @@ def _agent_of(request: Request) -> str:
     return _AGENT_SAFE.sub("", decoded)[:64]
 
 
-def _context(customer_id: str, agent_id: str) -> MaskContext:
+def _context(customer_id: str, agent_id: str, conversation_id: str) -> MaskContext:
     """The Pseudex key identifies the CUSTOMER; the agent, if there is one, is
     named by the caller in `X-Pseudex-Agent`.
 
@@ -324,11 +330,12 @@ def _context(customer_id: str, agent_id: str) -> MaskContext:
     """
     return MaskContext(
         detector=DETECTOR,
-        vault=_get_vault(customer_id),
+        vault=_get_vault(customer_id).for_conversation(conversation_id),
         audit=AUDIT,
         cache=_MASK_CACHE,
         org_id=customer_id,
         agent_id=agent_id,
+        conversation_id=conversation_id,
     )
 
 
@@ -346,7 +353,9 @@ def _mask_request(
     SQLite open (which can wait out another worker's journal-mode switch) happens
     on the worker thread and not on the event loop — same reasoning as the
     sidecar leg."""
-    context = _context(customer_id, agent_id)
+    # OpenAI's chat API carries no conversation id, so this leg always derives
+    # one from the transcript — there is no caller field to prefer over it.
+    context = _context(customer_id, agent_id, conversation_key(messages))
     result = (
         mask_messages(messages, context, False),
         mask_tools(tools, context, False),

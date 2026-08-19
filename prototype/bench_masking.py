@@ -34,7 +34,7 @@ def _mask_cached(text: str, det: Detector, vault: Vault, cache: MaskCache, org: 
         spans = det.detect(text)
         return mask_text(text, vault, spans)
 
-    out, _ = cache.get_or_compute(content_key(org, text), compute)
+    out, _ = cache.get_or_compute(content_key(org, "", text), compute)
     return out
 
 

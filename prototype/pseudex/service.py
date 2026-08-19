@@ -2,7 +2,8 @@
 LiteLLM callback). We do NOT call the provider; the host does. We only transform
 text + keep the per-org vault + audit. Runs in the customer's contour.
 
-  POST /mask          {org_id, messages, tools}    -> {messages, tools}  (audited)
+  POST /mask          {org_id, messages, tools, conversation_id?}
+                                                   -> {messages, tools}  (audited)
   POST /unmask        {org_id, response}           -> {response}
   POST /unmask_chunk  {org_id, delta, carry, flush}-> {text, carry}      (SSE leg)
   POST /spans         {org_id, texts}              -> offsets for highlighting
@@ -33,7 +34,13 @@ from fastapi.responses import JSONResponse
 from pseudex.assets import ASSETS, BundleNotLeased
 from pseudex.audit import AuditLog, _preview
 from pseudex.detect_all import Detector
-from pseudex.envelope import MaskContext, mask_messages, mask_tools, unmask_response
+from pseudex.envelope import (
+    MaskContext,
+    conversation_key,
+    mask_messages,
+    mask_tools,
+    unmask_response,
+)
 from pseudex.license import ENGINE_VERSION, LicenseClient, LicenseError, explain
 from pseudex.maskcache import MaskCache
 from pseudex.operator import build_router
@@ -250,14 +257,15 @@ def _vault(org_id: str) -> Vault:
         return vault
 
 
-def _context(org_id: str, agent_id: str) -> MaskContext:
+def _context(org_id: str, agent_id: str, conversation_id: str) -> MaskContext:
     return MaskContext(
         detector=DETECTOR,
-        vault=_vault(org_id),
+        vault=_vault(org_id).for_conversation(conversation_id),
         audit=AUDIT,
         cache=_MASK_CACHE,
         org_id=org_id,
         agent_id=agent_id,
+        conversation_id=conversation_id,
     )
 
 
@@ -266,6 +274,7 @@ def _mask_request(
     tools: object,
     org_id: str,
     agent_id: str,
+    conversation_id: str,
     skip_template: bool,
 ) -> tuple[list[dict[str, object]], object]:
     """One unit of CPU-heavy work, so messages and tools share a single hop onto
@@ -278,7 +287,7 @@ def _mask_request(
     `time.sleep` on the loop, stalling /health and every other in-flight request
     in this worker. That is the exact failure the threadpool offload exists to
     prevent."""
-    context = _context(org_id, agent_id)
+    context = _context(org_id, agent_id, conversation_id)
     result = (
         mask_messages(messages, context, skip_template),
         mask_tools(tools, context, skip_template),
@@ -396,6 +405,12 @@ async def mask(request: Request) -> JSONResponse:
     messages = body.get("messages")
     if not isinstance(messages, list):
         return JSONResponse({"error": "messages must be a list"}, status_code=400)
+    # The host gateway MAY name the conversation and should where it can; when it
+    # does not, the transcript names itself (see `conversation_key`). Falling back
+    # rather than requiring the field keeps every existing caller working — a
+    # gateway that suddenly had to send a new field would simply not send it, and
+    # a scope nobody sets is a scope that does nothing.
+    conversation_id = str(body.get("conversation_id", "")) or conversation_key(messages)
     # `skip_system` names the wire field the host gateway already sends; it means
     # "this payload carries the agent's own TEMPLATE", which covers both the
     # system prompt and the tool schemas.
@@ -408,7 +423,8 @@ async def mask(request: Request) -> JSONResponse:
     # core at once. FAIL-CLOSED is preserved: any exception in masking propagates
     # to a 5xx, which the caller treats as a block (it never sees raw PII).
     masked_messages, masked_tools = await anyio.to_thread.run_sync(
-        _mask_request, messages, tools, org_id, agent_id, skip_template,
+        _mask_request, messages, tools, org_id, agent_id, conversation_id,
+        skip_template,
         limiter=_MASK_LIMITER,
     )
     payload: dict[str, object] = {"messages": masked_messages}
@@ -614,7 +630,10 @@ def _selfcheck_sync(org_id: str, text: str) -> dict[str, object]:
     from pseudex.envelope import mask_one
     from pseudex.redact import unmask_text
 
-    context = _context(org_id, "selfcheck")
+    # The self-check is its own conversation and names itself: it must never
+    # share a scope with the customer's traffic, or a link made there could be
+    # served into a real dialogue.
+    context = _context(org_id, "selfcheck", "selfcheck")
     detected = DETECTOR.detect(text)
     masked = mask_one(text, context)
     vault = _vault(org_id)

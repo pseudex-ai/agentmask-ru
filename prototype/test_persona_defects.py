@@ -29,7 +29,7 @@ from pseudex.vault import Vault
 def _mask(detector: Detector, text: str) -> tuple[str, Vault]:
     vault = Vault(":memory:", "personas")
     context = MaskContext(detector=detector, vault=vault, audit=AuditLog(":memory:"),
-                          cache=MaskCache(64), org_id="personas", agent_id="personas")
+                          cache=MaskCache(64), org_id="personas", agent_id="personas", conversation_id="")
     return mask_one(text, context), vault
 
 

@@ -214,7 +214,7 @@ def main() -> int:
         # earlier case's mapping.
         vault = Vault(":memory:", "bench")
         context = MaskContext(detector=detector, vault=vault, audit=AuditLog(":memory:"),
-                              cache=MaskCache(64), org_id="bench", agent_id="bench")
+                              cache=MaskCache(64), org_id="bench", agent_id="bench", conversation_id="")
         # Masked IN ORDER, sharing one vault, because that is what a conversation
         # is: the substitute a later turn gets depends on what the earlier turns
         # already put in the vault.

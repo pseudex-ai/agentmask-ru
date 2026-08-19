@@ -11,6 +11,7 @@ The envelope is walked, not the transport: nothing here knows whether the caller
 forwards the request itself or hands it back to a host gateway.
 """
 
+import hashlib
 from dataclasses import dataclass
 
 from pseudex.audit import AuditLog
@@ -32,7 +33,43 @@ class MaskContext:
     cache: MaskCache
     org_id: str
     agent_id: str
+    # The conversation this pass belongs to, empty when the caller names none.
+    # Part of the cache key and the vault view — see `content_key` and
+    # `Vault.for_conversation` for why a link decided here must not escape it.
+    conversation_id: str
 
+
+
+def conversation_key(messages: list[dict[str, object]]) -> str:
+    """A conversation identity derived from the transcript itself.
+
+    The caller may name the conversation and should; but neither wire format has
+    a field for it — OpenAI's chat API has no conversation id, and a host gateway
+    that never needed one will not start sending it because we added a scope. So
+    the id is derived when it is not given, and the transcript supplies it: the
+    OPENING messages of a conversation do not change as it grows, which is
+    exactly the stability an identity needs.
+
+    The first two messages, not one: a system prompt is often shared by every
+    conversation an agent has, so hashing it alone would put the whole tenant in
+    one scope and defeat the point. The first user turn is what differs.
+
+    Hashed, never stored raw — this runs on customer text and the value is
+    carried in cache keys and log-adjacent places where PII must not appear.
+
+    A derived id is WEAKER than a given one and knowingly so: two conversations
+    opening with byte-identical messages share a scope. The failure that causes
+    is a partial mention resolving against the other conversation's address, so
+    the linking rule must stay single-candidate — with two addresses in scope it
+    refuses, which is the safe answer.
+    """
+    digest = hashlib.sha256()
+    for message in messages[:2]:
+        content = message.get("content")
+        if isinstance(content, str):
+            digest.update(content.encode("utf-8"))
+        digest.update(b"\x00")
+    return digest.hexdigest()[:32]
 
 def mask_one(text: str, context: MaskContext) -> str:
     """Mask one text. A content-keyed cache makes re-masking the SAME raw text
@@ -72,7 +109,7 @@ def mask_one(text: str, context: MaskContext) -> str:
 
     with stage("mask.one"):
         masked, _hit = context.cache.get_or_compute(
-            content_key(context.org_id, text), _compute
+            content_key(context.org_id, context.conversation_id, text), _compute
         )
     return masked
 

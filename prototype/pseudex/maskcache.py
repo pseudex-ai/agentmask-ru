@@ -39,12 +39,27 @@ from collections import OrderedDict
 from typing import Callable
 
 
-def content_key(org_id: str, content: str) -> str:
-    """Stable cache key per (org, exact raw content). org_id is part of the key
-    because tokens are per-org: the same value masks to different tokens for
-    different orgs, so two orgs must never share a cache entry."""
+def content_key(org_id: str, conversation_id: str, content: str) -> str:
+    """Stable cache key per (org, conversation, exact raw content).
+
+    org_id is part of the key because tokens are per-org: the same value masks
+    to different tokens for different orgs, so two orgs must never share an
+    entry.
+
+    conversation_id is part of it for a sharper reason. Masking a partial
+    mention («Ленина 14») may resolve it against a fuller one said EARLIER IN
+    THE SAME CONVERSATION, and that decision is true only there. Keyed on
+    content alone, the first conversation's answer would be served to every
+    later one — a courier sent to the address of whoever spoke first. The scope
+    that makes the link safe has to reach the cache, or the cache undoes it.
+
+    Hit rate is unaffected where it matters: the O(n^2) growing-transcript case
+    resends the same text WITHIN one conversation, so the id is constant across
+    exactly the resends the cache exists for."""
     h = hashlib.sha256()
     h.update(org_id.encode("utf-8"))
+    h.update(b"\x00")
+    h.update(conversation_id.encode("utf-8"))
     h.update(b"\x00")
     h.update(content.encode("utf-8"))
     return h.hexdigest()

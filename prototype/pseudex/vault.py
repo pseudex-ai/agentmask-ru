@@ -12,6 +12,7 @@ Tokens are format-preserving and checksum-invalid (see _render_token), so the
 model copies them verbatim and they never coincide with a real person's ID.
 """
 
+import copy
 import functools
 import re
 import secrets
@@ -982,6 +983,11 @@ class Vault:
 
     def __init__(self, db_path: str, customer_id: str) -> None:
         self._customer = customer_id
+        # THE CONVERSATION THIS VIEW IS SCOPED TO, empty when there is none.
+        # Not a constructor argument: the Vault is built once per org and cached,
+        # while a conversation lives for one request. `for_conversation` hands
+        # out a view instead — see there for why the scope has to exist at all.
+        self._conversation = ""
         self._lock = threading.Lock()
         self._conn = sqlite_connect(db_path)
         self._conn.execute(
@@ -1141,6 +1147,30 @@ class Vault:
             f"{self._customer!r} after {_TOKEN_MINT_ATTEMPTS} attempts — widen "
             f"the pool in _render_token"
         )
+
+    def for_conversation(self, conversation: str) -> "Vault":
+        """A view of this vault scoped to ONE conversation.
+
+        WHY A SCOPE EXISTS AT ALL. Linking a partial mention to a full one is
+        only safe where the partial mention can be RESOLVED. «Ленина 14» exists
+        in every Russian city, so in the space of one tenant it has a dozen
+        candidates and the single-candidate rule refuses every time — the
+        mechanism is not merely cautious there, it is dead. In one conversation
+        there is normally one address in flight, so the rule fires and fires
+        correctly. The scope is therefore not a way to reduce risk; it is the
+        precondition that makes the rule mean anything, and both properties come
+        from the same change.
+
+        WHY A VIEW AND NOT A FIELD. The Vault is constructed per org and cached
+        for the process, and several requests share it across threads. Writing
+        the conversation onto the shared object would make one request's scope
+        visible to another — the exact cross-customer link this scope exists to
+        prevent. A shallow copy shares the connection and the lock (which is
+        what must be shared) and owns the scope (which must not be).
+        """
+        view = copy.copy(self)
+        view._conversation = conversation
+        return view
 
     def tokenize(self, value: str, entity_type: str) -> str:
         with stage("vault.tokenize"):

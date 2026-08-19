@@ -1,5 +1,6 @@
 """Offline tests for the product layer: API-key tenancy + streaming detok."""
 
+import os
 import pathlib
 import re
 import tempfile
@@ -7,8 +8,8 @@ import tempfile
 from pseudex.assets import ASSETS
 from pseudex.audit import AuditLog, _preview
 from pseudex.detect_all import Detector
-from pseudex.envelope import MaskContext, mask_one
-from pseudex.maskcache import MaskCache
+from pseudex.envelope import MaskContext, conversation_key, mask_one
+from pseudex.maskcache import MaskCache, content_key
 from pseudex.names import is_known_name, trim_person_span
 from pseudex.normalize import normalize
 from pseudex.redact import StreamDetokenizer, mask_text, unmask_text
@@ -216,7 +217,7 @@ def test_echoed_token_is_not_billed() -> None:
     audit = AuditLog(pathlib.Path(directory, "audit.db").as_posix())
     vault = Vault(pathlib.Path(directory, "vault.db").as_posix(), "echo")
     context = MaskContext(detector=Detector(), vault=vault, audit=audit,
-                          cache=MaskCache(64), org_id="echo", agent_id="a")
+                          cache=MaskCache(64), org_id="echo", agent_id="a", conversation_id="")
 
     masked = mask_one("Клиент Иван Петров просит перезвонить", context)
     before = dict(audit.counts("echo", 0.0, ""))
@@ -322,6 +323,60 @@ def test_unmask_reformatted_phone() -> None:
     print(f"reformatted-token detok OK — {rewritten} -> {restored!r}")
 
 
+
+def test_conversation_scope_is_isolated() -> None:
+    """The scope a partial mention may be resolved in, and its three boundaries.
+
+    Linking «Ленина 14» to a fuller address said earlier is only ever safe
+    inside one conversation — the same street and house exist in every Russian
+    city, so a link that escaped its conversation would send a courier to
+    whoever spoke first. Three things have to hold for that boundary to be real,
+    and each of them failed silently in an earlier shape of this change.
+
+    1. The identity must survive the transcript GROWING, or every turn is its
+       own conversation and the scope never links anything.
+    2. It must SEPARATE conversations that share a system prompt, which almost
+       all of an agent's conversations do.
+    3. The MASK CACHE must respect it. The cache keys on content, so without
+       the scope in the key the first conversation's answer is served to every
+       later one and the isolation above is decoration.
+
+    The vault view is checked for the opposite property: it must SHARE the
+    connection and the lock (a per-conversation database would give one person
+    a new identity every dialogue) while owning the scope.
+    """
+    opening = [{"role": "system", "content": "Ты помощник службы доставки."},
+               {"role": "user", "content": "здравствуйте, это Игорь"}]
+    grown = opening + [{"role": "assistant", "content": "слушаю"},
+                       {"role": "user", "content": "адрес ленина 14"}]
+    assert conversation_key(opening) == conversation_key(grown), \
+        "identity must not change as the transcript grows"
+
+    other = [{"role": "system", "content": "Ты помощник службы доставки."},
+             {"role": "user", "content": "здравствуйте, это Анна"}]
+    assert conversation_key(opening) != conversation_key(other), \
+        "a shared system prompt must not put two customers in one scope"
+
+    assert content_key("acme", "c1", "адрес ленина 14") \
+        != content_key("acme", "c2", "адрес ленина 14"), \
+        "the mask cache must not serve one conversation's link to another"
+    assert content_key("acme", "c1", "адрес ленина 14") \
+        == content_key("acme", "c1", "адрес ленина 14"), \
+        "and it must still hit within one conversation, or the O(n^2) case returns"
+
+    with tempfile.TemporaryDirectory() as directory:
+        vault = Vault(os.path.join(directory, "vault.db"), "acme")
+        first, second = vault.for_conversation("c1"), vault.for_conversation("c2")
+        assert first._conn is vault._conn and first._lock is vault._lock, \
+            "a view must share the connection and the lock, not open its own"
+        assert (first._conversation, second._conversation, vault._conversation) \
+            == ("c1", "c2", ""), "each view owns its scope; the shared vault has none"
+        assert (first.tokenize("+7 999 111 22 33", "PHONE")
+                == second.tokenize("+7 999 111 22 33", "PHONE")), \
+            "one person keeps one pseudonym ACROSS conversations — the scope " \
+            "narrows what may be LINKED, never what is already known"
+    print("conversation scope OK — isolated in the cache, shared in the vault")
+
 if __name__ == "__main__":
     load_dev_bundle()
     test_tenants()
@@ -339,3 +394,4 @@ if __name__ == "__main__":
     test_echoed_token_is_not_billed()
     test_tokens_are_not_valid_documents()
     test_lookalike_table_is_complete()
+    test_conversation_scope_is_isolated()

@@ -122,6 +122,7 @@ running on `localhost:4000` with a seeded `pseudex-dev` tenant.
 | Who calls the provider | Pseudex | the host gateway (e.g. Diva's LiteLLM callback) |
 | Auth / tenancy | `sk-ps-…` key → `Tenants` → upstream URL+key | `org_id` in the request body |
 | Surface | `POST /v1/chat/completions`, `GET /usage` | `/mask`, `/unmask`, `/spans`, `/reveal`, `/usage` |
+| Conversation scope | derived from the transcript | `conversation_id` in the body, else derived |
 | Streaming | yes (`StreamDetokenizer`; tool-call requests buffered) | not yet (phase 2) |
 
 Both wrap the same core: `detect_all` → `vault` → `redact` → `audit`. Their `_mask_messages`

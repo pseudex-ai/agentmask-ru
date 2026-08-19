@@ -51,7 +51,7 @@ def test_cache_hit_skips_compute() -> None:
         calls["n"] += 1
         return "MASKED"
 
-    key = content_key("orgA", "raw text")
+    key = content_key("orgA", "", "raw text")
     out1, hit1 = cache.get_or_compute(key, compute)
     out2, hit2 = cache.get_or_compute(key, compute)
     assert out1 == out2 == "MASKED"
@@ -62,8 +62,8 @@ def test_cache_hit_skips_compute() -> None:
 
 def test_cache_org_isolation() -> None:
     cache = MaskCache(capacity=10)
-    ka = content_key("orgA", "same content")
-    kb = content_key("orgB", "same content")
+    ka = content_key("orgA", "", "same content")
+    kb = content_key("orgB", "", "same content")
     assert ka != kb, "two orgs must not collide on identical content"
     out_a, _ = cache.get_or_compute(ka, lambda: "A_MASKED")
     out_b, hit_b = cache.get_or_compute(kb, lambda: "B_MASKED")
@@ -73,9 +73,9 @@ def test_cache_org_isolation() -> None:
 
 def test_cache_lru_bound() -> None:
     cache = MaskCache(capacity=2)
-    cache.get_or_compute(content_key("o", "1"), lambda: "1")
-    cache.get_or_compute(content_key("o", "2"), lambda: "2")
-    cache.get_or_compute(content_key("o", "3"), lambda: "3")  # evicts "1"
+    cache.get_or_compute(content_key("o", "", "1"), lambda: "1")
+    cache.get_or_compute(content_key("o", "", "2"), lambda: "2")
+    cache.get_or_compute(content_key("o", "", "3"), lambda: "3")  # evicts "1"
     assert len(cache) == 2, "cache exceeded its capacity"
     miss_called = {"n": 0}
 
@@ -83,7 +83,7 @@ def test_cache_lru_bound() -> None:
         miss_called["n"] += 1
         return "1"
 
-    _, hit = cache.get_or_compute(content_key("o", "1"), recompute)
+    _, hit = cache.get_or_compute(content_key("o", "", "1"), recompute)
     assert hit is False and miss_called["n"] == 1, "evicted entry should be a miss"
     print("cache LRU bound OK")
 
