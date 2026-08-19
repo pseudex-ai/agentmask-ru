@@ -304,7 +304,28 @@ python3 test_overmasking.py                                    # clean business 
 python3 bench/eval_external_ner.py <NEREL dir> --splits dev,test   # recall on a corpus we did not write
 python3 bench/eval_external_precision.py <NEREL dir>               # what we mask that no annotator labelled
 python3 bench/agentpii/build.py && python3 bench/agentpii/score.py bench/agentpii/corpus.json
+python3 bench/eval_piibench.py                                     # чужой русский корпус ПД в чатовом регистре
+python3 bench/eval_noise_ladder.py --dataset dataset.json          # ГДЕ ломается детекция на живом чате
 ```
+
+Корпуса живут в `~/.cache/pseudex-bench/` (не в репозитории и не в `/tmp`, который
+чистится при перезагрузке — NEREL терялся так дважды):
+
+```bash
+git clone --depth 1 https://github.com/nerel-ds/NEREL.git ~/.cache/pseudex-bench/nerel
+curl -L --create-dirs -o ~/.cache/pseudex-bench/pii-bench/data/domain-00000-of-00001.parquet \
+  https://huggingface.co/datasets/hivetrace/pii-bench/resolve/main/data/domain-00000-of-00001.parquet
+python3 bench/fetch_ru_prose.py --out ~/.cache/pseudex-bench/ru_prose.jsonl --count 220
+```
+
+`bench/eval_piibench.py` печатает ДВЕ итоговых строки, и это не уклонение: корпус
+размечает КПП и ОГРН как персональные данные, а они идентифицируют ЮРЛИЦО —
+Recital 14 выводит его из-под регламента, 152-ФЗ приходит туда же через
+определение субъекта как физлица. ОГРНИП остаётся: ИП — физлицо. Три типа несут
+`!` и строку с причиной, потому что сырое число послало бы читателя чинить
+работающий код: **88 из 92 карт корпуса не проходят Луна** (мы находим ровно
+четыре валидных), их `TOKEN` — любая энтропия против наших опубликованных
+префиксов, а своего типа CVC у нас нет.
 
 `bench/agentpii/` is **AgentPII-RU**, built here because the intersection it covers — Russian
 conversational PII flowing through tool schemas that consume it — has no benchmark anywhere. Read
