@@ -114,7 +114,30 @@ def main() -> None:
     print("\n--- FALSE POSITIVES (over-masked) ---")
     for line in false_pos[:12]:
         print(" ", line)
+    return rec, pre, len(true_leaks), neg_fp
+
+
+# SEEDED AT 13, so these 150 values and 12 hard negatives are the same set
+# everywhere. Three floors rather than one, because they fail differently: a
+# true leak is a value that reached the model, a false mask on a hard negative
+# is data we invented, and recall/precision are the summary that hides both.
+_FLOOR = 1.0
+
+
+def gate() -> int:
+    recall, precision, leaks, false_masks = main()
+    problems = []
+    if recall < _FLOOR or precision < _FLOOR:
+        problems.append(f"полнота {recall:.1%}, точность {precision:.1%}, нужно {_FLOOR:.0%}")
+    if leaks:
+        problems.append(f"{leaks} значений дошли до модели открытым текстом")
+    if false_masks:
+        problems.append(f"{false_masks} ложных масок на жёстких негативах")
+    if problems:
+        print("\nПОРОГ НЕ ВЗЯТ: " + "; ".join(problems))
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(gate())

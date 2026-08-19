@@ -1,5 +1,17 @@
 # Every push. Fast checks only — the container gates live in release.yml because
 # a 40-minute wait on every commit is a wait people learn to skip.
+#
+# WHAT "FAST" MUST STILL COVER. This file ran four suites out of ten and no
+# detection eval at all, so the two instruments built precisely because our own
+# numbers had lied — `test_overmasking` (clean business text, must be 100%) and
+# the golden/dirty sets — were absent from the only check that runs on every
+# commit. Work landed and stayed unguarded until somebody remembered to run a
+# script by hand. Everything that needs no container is here now.
+#
+# `test_perf_masking` is deliberately NOT here and lives in release.yml: part of
+# what it asserts is loop responsiveness under load, and a timing assertion on a
+# shared runner is a gate that fails for reasons unrelated to the commit. A gate
+# people learn to re-run is worse than no gate.
 
 name: checks
 
@@ -10,6 +22,7 @@ on:
 
 jobs:
   engine:
+    name: engine — product and detection invariants
     runs-on: ubuntu-latest
     defaults:
       run: { working-directory: prototype }
@@ -18,10 +31,31 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12", cache: pip, cache-dependency-path: prototype/requirements.txt }
       - run: pip install -r requirements.txt
-      - run: python test_loop.py
-      - run: python test_product.py
-      - run: python test_coverage_152fz.py
-      - run: python test_localui.py
+
+      - name: core round trip
+        run: python test_loop.py
+      - name: vault canonicalisation and persistence
+        run: python vault_test.py
+      - name: 152-ФЗ type coverage
+        run: python test_coverage_152fz.py
+      - name: product invariants
+        run: python test_product.py
+      - name: operator surface
+        run: python test_localui.py
+      - name: hard cases and the chat register
+        run: python test_hard_cases.py
+      - name: name morphology and the round trip through it
+        run: python test_names_morphology.py
+      - name: credentials are anchored to prefixes, not entropy
+        run: python test_credentials.py
+      - name: the defects a persona run found
+        run: python test_persona_defects.py
+
+      # The one that exists because every metric we had said 100% while «Счёт
+      # 1234 от 15.05.2025» was being masked. Ordinary business text, no PII in
+      # it, and any mask on it is a false one.
+      - name: no over-masking on clean business text
+        run: python test_overmasking.py
 
       # The engine must never import the licensing package: that is what keeps
       # the assets out of the image, and it is cheaper to catch here than in a
@@ -32,3 +66,23 @@ jobs:
             echo "pseudex/ imports licensing/ — the leased assets would ship in the image"
             exit 1
           fi
+
+  detection:
+    name: detection — golden and dirty sets
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: prototype }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: prototype/requirements.txt }
+      - run: pip install -r requirements.txt
+
+      # BOTH SETS ARE SEEDED — 42 and 13 — so the same 298 and 150 values are
+      # measured on every machine and every commit. That is what turns a report
+      # into a gate: the evals now exit non-zero below their floor instead of
+      # printing a number nobody reads.
+      - name: golden set — 298 values, 100% recall and precision
+        run: python make_dataset.py && python eval_detect.py
+      - name: dirty set — 150 values, no leak and no false mask
+        run: python make_dirty.py && python eval_dirty.py

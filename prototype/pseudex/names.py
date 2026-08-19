@@ -618,6 +618,118 @@ def _adjacent_surnames(text: str, found: list[Span]) -> list[Span]:
 _GLUED_NAME_RE = re.compile(r"\b([А-ЯЁ][а-яё]{2,})([А-ЯЁ][а-яё]{2,})\b")
 
 
+
+# OVERLAPPING PAIRS, hence the lookahead. Consuming the match made «Кузнецова
+# Ол ьга» try «Кузнецова Ол» — not a name — and never reach «Ол ьга», which is
+# one. Every adjacent pair has to be offered, not every second one.
+# Parts of speech that a fragment of a surname can never be.
+_FUNCTION_WORD = frozenset({"PREP", "CONJ", "PRCL", "NPRO", "INTJ"})
+
+_SPLIT_PAIR_RE = re.compile(
+    r"(?=\b([А-Яа-яЁёA-Za-z]{2,})\s([А-Яа-яЁёA-Za-z]{1,})\b)")
+
+
+def _split_name_parts(text: str, found: list[Span], names: NameAssets) -> list[Span]:
+    """One name with a stray space INSIDE it.
+
+    «Фёдо ров Кирилл», «Вол ков Сергей», «Куз нецова Ольга», «Ивано в Пётр»,
+    «Кузнецова Ол ьга». `_glued_names` handles the missing space; this is the
+    same slip in the other direction, and it is worse: the extra space breaks
+    the surname into two words that no rule can read, so «Фёдо ров Кирилл» was
+    detected as «Кирилл» alone and HALF THE PERSON'S SURNAME went to the model
+    in the clear inside a message that looked protected. Twelve of AgentPII's
+    broken round trips are this, and every one of them is also a leak.
+
+    TWO SIGNALS, and the second is what makes the first usable. The two
+    fragments joined must BE a name we know — «Фёдо»+«ров» is «Фёдоров», while
+    «до»+«говор» is «договор» and no name at all. And the pair must stand beside
+    a name already detected. The join alone is not enough: «по пова» joins to
+    «попова» and «за харов» to «захаров», both real surnames, and both ordinary
+    Russian phrases. Measured on the corpus, EVERY split name has a detected
+    name touching it — the given name survives because only the surname was cut
+    — so the anchor costs no recall and removes the whole false-positive class.
+    """
+    anchors = [(span.start, span.end) for span in found if span.entity_type == "NAME"]
+    if not anchors:
+        return []
+    extra: list[Span] = []
+    for match in _SPLIT_PAIR_RE.finditer(text):
+        left, right = match.group(1), match.group(2)
+        # THE LEFT FRAGMENT MAY NOT BE A FUNCTION WORD. `_is_surname_shaped`
+        # reads the suffix and nothing else, so «на»+«Лебедева» joins to
+        # «наЛебедева», ends in «ева» and passes — every «Заказ на Лебедева
+        # Ирина Петровна» in the corpus grew a preposition INSIDE the person's
+        # name and the tool was called with it. 123 round trips, from one word
+        # of slack. Requiring the join to be a name we KNOW was the other
+        # candidate and is too narrow: the shipped dictionary is a compact seed
+        # and «Фёдоров», «Волков», «Шевчук» are not in it.
+        #
+        # A stray space never turns a preposition into half a surname, so the
+        # rule is the one the neighbour pass already uses: the best reading must
+        # not be a function word. «на», «по», «за», «до», «при», «в», «это»,
+        # «что» all go out on it; «Фёдо», «Вол», «Куз», «Маме», «Заха» do not.
+        if MORPH.parse(left)[0].tag.POS in _FUNCTION_WORD:
+            continue
+        # A FUNCTION WORD ON THE RIGHT NEEDS AN UNKNOWN WORD ON THE LEFT.
+        # «Ивано в Пётр» and «Григорье в Никита» are surnames cut before their
+        # last letter, and that letter happens to be a preposition — so «в»
+        # cannot simply be refused. What separates them from «Иван слово в слово
+        # повторил» is the other half: «Ивано» and «Григорье» are not words,
+        # «слово» is.
+        if (MORPH.parse(right)[0].tag.POS in _FUNCTION_WORD
+                and MORPH.parse(left)[0].is_known):
+            continue
+        if not (_is_known_name(left + right, names)
+                or _is_surname_shaped(left + right, names)):
+            continue
+        # AT LEAST ONE FRAGMENT MUST NOT BE A WORD, and this is the signal that
+        # carries the actual information. The shape test above reads the suffix
+        # of the JOINED string, which is the suffix of the right fragment and
+        # says nothing about whether the two belong together — so «получатель
+        # Новикова» and «получит иванов пётр» joined too, and the tool was
+        # called with the word «получатель» inside somebody's name.
+        #
+        # A space typed by accident lands INSIDE a word, so at least one side of
+        # it is left as a non-word. Where both halves are ordinary words —
+        # «Вол ков», and it is a real case — nothing distinguishes the split
+        # from ordinary Russian, and this rule correctly declines to guess.
+        if MORPH.parse(left)[0].is_known and MORPH.parse(right)[0].is_known:
+            continue
+        # THE LEFT FRAGMENT IS A PIECE OF A WORD, not a whole one. A typo in the
+        # surname satisfies the test above all by itself — «Влкова» and «Зааров»
+        # are unknown because they are misspelt — so «получатель Влкова Татьяна»
+        # and «фамилия саркисян» joined their cue word into the person's name
+        # and sent it to the tool.
+        #
+        # A stray space lands INSIDE a word, so what stands to its left is
+        # either not a word at all («Фёдо», «Куз», «Ивано», «Григорье») or too
+        # short to be the one meant («Шев», «Маме», «Вал»). A complete word of
+        # five letters or more is a word, and «получатель», «фамилия» and
+        # «слово» are all refused by that.
+        if MORPH.parse(left)[0].is_known and len(left) >= 5:
+            continue
+        # A zero-width match: the pair's own bounds come from its groups.
+        pair_start, pair_end = match.start(1), match.end(2)
+        # Touching an anchor, on either side. A name split by a space keeps its
+        # other part whole, and that part is what was found.
+        # OVERLAPPING COUNTS AS TOUCHING. The neighbour pass may already have
+        # eaten the pair's second half — in «Маме дова Лейла» it extends «Лейла»
+        # left to «дова» — so the pair then sits INSIDE the anchor rather than
+        # beside it, and a strict adjacency test left «Маме» outside and leaking.
+        touching = [(start, end) for start, end in anchors
+                    if start <= pair_end + 1 and pair_start <= end + 1]
+        if not touching:
+            continue
+        # EMITTED WHOLE, anchor included, rather than as the pair alone. The two
+        # overlap — «Маме дова» against «дова Лейла» — and overlap resolution
+        # keeps the longer and orphans the rest, so «Маме» stayed outside and
+        # went to the model. One span covering both cannot be split that way.
+        start = min([pair_start] + [a for a, _ in touching])
+        end = max([pair_end] + [b for _, b in touching])
+        extra.append(Span(start, end, "NAME", text[start:end]))
+    return extra
+
+
 def _glued_names(text: str, names: NameAssets) -> list[Span]:
     """Two name parts typed without the space between them.
 
@@ -694,6 +806,12 @@ def gazetteer_names(text: str) -> list[Span]:
     spans = (spans + _patronymic_anchors(text) + _cued_name_parts(text)
              + _glued_names(text, names) + _damaged_name_pairs(text))
     spans = _merge_adjacent(spans + _adjacent_surnames(text, spans), text)
+    # AFTER the neighbour pass, because it needs the anchors that pass produces:
+    # in «Фёдо ров Кирилл» the anchor is «Кирилл», and the fragments are only
+    # reachable from it.
+    split = _split_name_parts(text, spans, names)
+    if split:
+        spans = _merge_adjacent(spans + split, text)
     for match in _LATIN_PAIR_RE.finditer(text):
         # ANY part may be the one we know. Requiring it of the FIRST word meant
         # «Ivanov Petr Sergeevich» matched nothing — the given name is in the

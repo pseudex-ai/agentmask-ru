@@ -4,6 +4,7 @@ per-entity-type recall and precision against ground truth.
 
 import json
 import re
+import sys
 
 from pseudex.detect_all import Detector
 from testkit import load_dev_bundle
@@ -63,9 +64,29 @@ def main() -> None:
         tot_gt += gt_total[t]; tot_found += found[t]
         tot_det += detected[t]; tot_corr += correct[t]
     print("-" * 33)
-    print(f"{'OVERALL':<10}{tot_gt:>5}{tot_found / tot_gt:>8.0%}{tot_corr / tot_det:>9.0%}")
+    recall = tot_found / tot_gt
+    precision = tot_corr / tot_det
+    print(f"{'OVERALL':<10}{tot_gt:>5}{recall:>8.0%}{precision:>9.0%}")
     print(f"\nRecall is the privacy metric: {tot_gt - tot_found} of {tot_gt} PII items were MISSED (would leak).")
+    return recall, precision
+
+
+# THE SET IS SEEDED, SO THE NUMBER IS A CONTRACT AND NOT A READING.
+# `make_dataset.py` seeds at 42, so this measures the same 298 values on every
+# machine and every commit. That is what makes it usable as a gate rather than
+# as a report — and a report is what it was: run by hand, read by eye, and
+# therefore silently absent from CI while the code moved underneath it.
+_FLOOR = 1.0
+
+
+def gate() -> int:
+    recall, precision = main()
+    if recall < _FLOOR or precision < _FLOOR:
+        print(f"\nПОРОГ НЕ ВЗЯТ: полнота {recall:.1%}, точность {precision:.1%}, "
+              f"требуется {_FLOOR:.0%} по обеим")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(gate())

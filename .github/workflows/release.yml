@@ -47,6 +47,29 @@ jobs:
         run: python test_product.py
       - name: operator surface
         run: python test_localui.py
+      - name: hard cases and the chat register
+        run: python test_hard_cases.py
+      - name: name morphology and the round trip through it
+        run: python test_names_morphology.py
+      - name: credentials are anchored to prefixes, not entropy
+        run: python test_credentials.py
+      - name: the defects a persona run found
+        run: python test_persona_defects.py
+      - name: no over-masking on clean business text
+        run: python test_overmasking.py
+
+      # Seeded sets, so these are contracts rather than readings.
+      - name: golden set — 298 values
+        run: python make_dataset.py && python eval_detect.py
+      - name: dirty set — 150 values
+        run: python make_dirty.py && python eval_dirty.py
+
+      # HERE AND NOT IN checks.yml. Part of what it asserts is loop
+      # responsiveness under load, and a timing assertion on a shared runner
+      # fails for reasons unrelated to the commit. On a release that is worth
+      # waiting for; on every push it is a gate people learn to re-run.
+      - name: cache, audit dedup and loop responsiveness
+        run: python test_perf_masking.py
 
   storefront:
     name: storefront
