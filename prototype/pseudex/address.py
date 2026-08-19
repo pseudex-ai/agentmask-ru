@@ -224,6 +224,95 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
     return out
 
 
+
+# A word and the punctuation that may stand between it and an address part.
+_NEIGHBOUR_LEFT = re.compile(r"([А-Яа-яЁё][А-Яа-яЁё-]*)[\s,.;]{0,3}$")
+_NEIGHBOUR_RIGHT = re.compile(r"^[\s,.;]{0,3}([А-Яа-яЁё][А-Яа-яЁё-]*)")
+
+
+def _is_toponym(word: str) -> bool:
+    """Whether morphology calls this word a place name.
+
+    pymorphy's dictionary already carries the toponym vocabulary and tags it
+    `Geox`, INDEPENDENTLY OF CASE — «екатеринбург», «москва» and «люберцы» all
+    carry it. That is the whole reason no city gazetteer is leased for this: a
+    tuned list of a thousand cities would be a new asset to maintain and to
+    ship, and it would buy a separation the dictionary already makes cleanly.
+    Measured on every word this rule can see, the split is exact: every city
+    carries Geox and «приезжайте», «спасибо», «заказ», «доставка», «офис» carry
+    none.
+    """
+    return any("Geox" in parse.tag for parse in MORPH.parse(word))
+
+
+
+def _city_first_word(text: str, city_start: int) -> int:
+    """Extend a city left over the adjective that is part of its NAME.
+
+    «Нижний Новгород» is two words and only the second carries `Geox`, so the
+    span began at «Новгород» — the address was masked, and detokenisation handed
+    the tool a city that does not exist. Six of AgentPII-RU's round trips broke
+    exactly there.
+
+    Two signals, because ADJF alone is far too wide: «красивый», «большой»,
+    «новый», «этот» and «наш» are all ADJF too, and swallowing them would put
+    ordinary words inside an address.
+
+      * the reading must not be QUALITATIVE (`Qual`) or pronominal (`Apro`) —
+        that alone separates «Нижний», «Великий» and «Набережные» from
+        «красивый», «большой» and «наш»;
+      * OR the word must be capitalised the same way the city is, which is what
+        keeps «Старый Оскол» and «Новый Уренгой» (both `Qual`) while refusing
+        «красивый Екатеринбург», where the adjective is lower case and the city
+        is not.
+
+    In all-lowercase chat the second signal is unavailable on both sides, so the
+    first decides — and it is the one that holds there.
+    """
+    head = _NEIGHBOUR_LEFT.search(text[:city_start])
+    if head is None:
+        return city_start
+    word = head.group(1)
+    parses = [parse for parse in MORPH.parse(word) if "ADJF" in parse.tag]
+    if not parses:
+        return city_start
+    naming = any("Qual" not in parse.tag and "Apro" not in parse.tag
+                 for parse in parses)
+    agrees = word[:1].isupper() == text[city_start:city_start + 1].isupper()
+    return head.start(1) if naming or agrees else city_start
+
+
+def _toponym_neighbours(text: str, cands: list[tuple[int, int, bool]]
+                        ) -> list[tuple[int, int, bool]]:
+    """A bare city touching an address part, as SUPPORT.
+
+    «ул. Садовая 23, Екатеринбург» and «москва, проспект вернадского 45» kept
+    their street and lost their city — so the address was masked and the CITY
+    the person lives in went to the model beside it, inside a span that already
+    looked protected.
+
+    SUPPORT, never core, and that is what keeps the «bare toponym is not PII»
+    rule intact: a city standing alone produces a candidate that merges with
+    nothing and is dropped, so «доставка по Москве» is untouched exactly as
+    before. Only a city that TOUCHES a street or a house becomes part of it.
+
+    Looked up only beside an existing candidate rather than over every word in
+    the text. That is not a shortcut for its own sake — morphology holds the GIL
+    and this runs on the request path, so the cost has to be O(candidates).
+    """
+    out: list[tuple[int, int, bool]] = []
+    for start, stop, core in cands:
+        if not core:
+            continue
+        left = _NEIGHBOUR_LEFT.search(text[:start])
+        if left and _is_toponym(left.group(1)):
+            out.append((_city_first_word(text, left.start(1)), left.end(1), False))
+        right = _NEIGHBOUR_RIGHT.match(text[stop:])
+        if right and _is_toponym(right.group(1)):
+            out.append((stop + right.start(1), stop + right.end(1), False))
+    return out
+
+
 def _merge(cands: list[tuple[int, int, bool]], text: str,
            address: AddressAssets) -> list[tuple[int, int, bool]]:
     cands = sorted(cands)
@@ -311,13 +400,30 @@ def detect_address(text: str) -> list[Span]:
     cands = natasha + regex
     if not cands:
         return []
-    spans: list[Span] = []
+    cands = cands + _toponym_neighbours(text, cands)
+    # THE TRAILING HOUSE NUMBER HAS TO JOIN BEFORE THE SECOND MERGE, not after.
+    #
+    # «ул. Гагарина, 45, кв. 12» lost its flat while «ул. Гагарина 45 кв 12»
+    # kept it, and the only difference is a comma. The street candidate is «ул.
+    # Гагарина»; the house «, 45» arrives through `trail_house`, which used to
+    # run AFTER merging. So at merge time the distance from the street to «кв»
+    # was «, 45, » — six characters with digits in them — and the flat was
+    # dropped for being too far. Extending first and merging again puts the flat
+    # two characters away, where it belongs.
+    #
+    # 21 of the addresses PII-Bench annotates lose their «кв» exactly this way,
+    # which makes it the single largest hole in address coverage.
+    extended: list[tuple[int, int, bool]] = []
     for start, stop, core in _merge(cands, text, address):
-        if not core:
-            continue
         trail = address.trail_house.match(text[stop:])  # swallow "ул. Садовая, 3"
         if trail and _CYRILLIC_TAIL_RE.search(text[:stop]):
             stop += trail.end()
+        extended.append((start, stop, core))
+
+    spans: list[Span] = []
+    for start, stop, core in _merge(extended + cands, text, address):
+        if not core:
+            continue
         start, stop = _strip(start, stop, text)
         start = _trim_lead(start, stop, text, address)
         start, stop = _strip(start, stop, text)
