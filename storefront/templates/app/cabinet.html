@@ -83,7 +83,9 @@
     <input class="field" style="width:220px" type="text" name="label" placeholder="название (например, прод)">
     <select class="field" style="width:auto" name="environment"><option value="live">прод</option><option value="test">стенд</option></select>
     <button class="btn accent" type="submit">ВЫПУСТИТЬ КЛЮЧ</button>
-    <span style="font-size:13px;color:var(--dim-2)">Новый ключ показывается один раз.</span>
+    <span style="font-size:13px;color:var(--dim-2)">Новый ключ показывается один раз, сразу после выпуска.
+      <b style="color:var(--text-3)">Потеряли — выпустите новый и отзовите старый:</b> у нас лежит только его хеш,
+      восстановить прежний не может никто, включая нас.</span>
   </form>
 
   <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Счета и закрывающие</h3>

@@ -75,6 +75,22 @@ def _merge_places(spans: list[Span], text: str = "") -> list[Span]:
     return merged
 
 
+_STREET_WORD = re.compile(
+    r"\b(ул|улиц\w*|пр-?кт|проспект\w*|пер|переул\w*|б-р|бульвар\w*|ш|шоссе|мкр|"
+    r"микрорайон\w*|д|дом|кв|квартир\w*|корп|стр|влад|пос|посёл\w*|посел\w*|"
+    r"дер|деревн\w*|село|г|город\w*)\b", re.IGNORECASE)
+
+
+def _guess_inside_person(span: Span, ner: list[Span], text: str) -> bool:
+    """A marker-less address guess sitting inside a name NER actually found."""
+    surface = text[span.start:span.end]
+    if _STREET_WORD.search(surface) or any(c.isdigit() for c in surface):
+        return False
+    return any(other.entity_type == "NAME"
+               and other.start <= span.start and span.end <= other.end
+               for other in ner)
+
+
 class Detector:
     """Holds the Natasha NER model (external model -> class is appropriate)."""
 
@@ -131,7 +147,21 @@ class Detector:
                 # RAW text on purpose — see detect_plates.
                 spans += detect_plates(text)
             with stage("detect.ner"):
-                spans += self._ner_spans(norm)
+                ner = self._ner_spans(norm)
+                spans += ner
+            # EVIDENCE BEATS A GUESS. ADDR outranks NAME so that a street named
+            # after a person is masked as a street — but a marker-less street is
+            # a GUESS: «adjective + type» with no «улица» in sight. Natasha
+            # typed «Мкртчян Ашот» a person, the guess claimed «Мкртчян», and
+            # ADDR's higher priority handed the customer a place where a person
+            # stood. Foreign surnames take the whole loss, because those are the
+            # ones the street vocabulary has no opinion about.
+            #
+            # Narrow on purpose: only a span with NO street-type word and NO
+            # digits, sitting inside a span NER called a person, is dropped.
+            # «улица Тверская» and «Ленинский проспект 42» keep every word.
+            address = [span for span in address
+                       if not _guess_inside_person(span, ner, norm)]
             spans += address
             with stage("detect.gazetteer"):
                 spans += gazetteer_names(norm)
