@@ -935,11 +935,71 @@ function Diagnostics({ org }) {
     </div>`;
 }
 
+/* ---------- reveals ---------- */
+
+/* WHO LOOKED AT A REAL VALUE, ON A SCREEN.
+ *
+ * The engine has recorded every reveal since the audit log existed, and the
+ * page for the customer's security officer promises exactly this record — but
+ * there was no screen for it. Reading it meant curl and the admin token, so at
+ * a hand-over an integrator could not open the one artefact the whole promise
+ * rests on. The value is never in the record and is not shown here either: who,
+ * which token, when, and whether it resolved.
+ *
+ * A MISS IS SHOWN AS LOUDLY AS A HIT. A sweep of guessed tokens leaves no other
+ * trace, and a row that failed is the only sign of one.
+ */
+function Reveals({ org }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let live = true;
+    engineGet('/reveals', { org_id: org, limit: 200 })
+      .then((body) => { if (live) { setData(body); setError(''); } })
+      .catch(() => { if (live) setError('движок не отвечает'); });
+    return () => { live = false; };
+  }, [org]);
+
+  const rows = data?.reveals || [];
+  return html`
+    <div class="page">
+      <h1 class="title">Раскрытия</h1>
+      <div class="subtitle" style="margin-bottom:16px">
+        Кто смотрел настоящие значения. Самого значения здесь нет и не будет —
+        иначе журнал доступа стал бы второй копией того, что волт и существует,
+        чтобы держать в одном месте.
+      </div>
+      ${error && html`<div class="foot-note" style="color:var(--pink);margin-bottom:12px">${error}</div>`}
+      <div class="sec-meta" style="margin-bottom:14px">
+        ${rows.length ? `всего за всё время: ${num(data.total)} · показаны последние ${rows.length}`
+                      : 'раскрытий ещё не было'}
+      </div>
+      ${rows.length > 0 && html`
+        <div class="table-wrap">
+          <div class="trow head">
+            <div>ВРЕМЯ</div><div>КТО</div><div>ТИП</div><div>ТОКЕН</div><div>РЕЗУЛЬТАТ</div>
+          </div>
+          ${rows.map((row) => html`
+            <div class="trow">
+              <div class="ts">${stamp(row.ts)}</div>
+              <div class="agent">${row.actor || '—'}</div>
+              <div class="type">${row.type || '—'}</div>
+              <div class="token" title=${row.token}>${row.token}</div>
+              <div class=${row.found ? 'prev' : 'prev pink'}>
+                ${row.found ? 'значение выдано' : 'токен не найден'}
+              </div>
+            </div>`)}
+        </div>`}
+    </div>`;
+}
+
 /* ---------- shell ---------- */
 
 const TABS = [
   ['СТАТУС', 'status'], ['ПЕСОЧНИЦА', 'sandbox'], ['ЖУРНАЛ', 'log'],
-  ['СТАТИСТИКА', 'stats'], ['ПОДПИСКА', 'sub'], ['ДИАГНОСТИКА', 'diag'],
+  ['СТАТИСТИКА', 'stats'], ['РАСКРЫТИЯ', 'reveals'],
+  ['ПОДПИСКА', 'sub'], ['ДИАГНОСТИКА', 'diag'],
 ];
 
 function App() {
@@ -1057,6 +1117,7 @@ function App() {
           ${tab === 'sandbox' && html`<${Sandbox} org=${org} />`}
           ${tab === 'log' && html`<${Log} org=${org} onReveal=${setReveal} />`}
           ${tab === 'stats' && html`<${Stats} org=${org} />`}
+          ${tab === 'reveals' && html`<${Reveals} org=${org} />`}
           ${tab === 'sub' && html`<${Subscription} org=${org} />`}
           ${tab === 'diag' && html`<${Diagnostics} org=${org} />`}
         </main>
