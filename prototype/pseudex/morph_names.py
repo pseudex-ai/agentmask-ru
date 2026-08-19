@@ -413,6 +413,14 @@ def detect_case(surface: str, gender: str | None = None) -> str | None:
             # the customer's tool received.
             if parse.tag.number == "plur":
                 continue
+            # THE VOCATIVE IS NOT HOW A NAME IS WRITTEN DOWN. It survives in
+            # Russian only as address — «мам!», «пап!», «Тань!» — and never in a
+            # form, an order or a CRM field. «Ань», a Vietnamese given name, has
+            # nothing left but a vocative reading once the plural ones are gone,
+            # and on that alone it was converted to «Аня»: a different person,
+            # sent to the customer's tool, twelve times in one corpus.
+            if parse.tag.case == "voct":
+                continue
             # AN UNKNOWN WORD'S CASE IS A GUESS, NOT A READING. pymorphy predicts
             # out-of-vocabulary words from their suffix, so it answers rather
             # than declines — and for a misspelt given name («Юлыя», «Марея») it
