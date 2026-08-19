@@ -23,6 +23,47 @@ _DENY_AS_NAME = frozenset({
 })
 _REGION_SUFFIXES = ("область", "край", "округ")
 
+# Words that introduce an ORGANISATION. A legal entity is not personal data —
+# 152-ФЗ protects people — and replacing the customer's own supplier with an
+# invented person removes the one word the model needed to know who is being
+# talked about. «Это компания Весёлый Водовоз!» put 48 fake people into a
+# thousand real dialogues.
+#
+# «ИП» is deliberately ABSENT: behind it stands a person's own ФИО, and the
+# whole point of the type is that it names one.
+_ORG_CUE = frozenset({
+    "ооо", "оао", "зао", "пао", "ао", "нко", "ано", "фгуп", "мбу", "гбу",
+    "компания", "компании", "фирма", "фирмы", "организация", "организации",
+    "поставщик", "поставщика", "магазин", "магазина", "бренд", "бренда",
+})
+
+# A one-word name written directly after a SMALL number is a UNIT, not a person.
+# «(СИНЯЯ) -3 Бут» and «2 ЭТАЖ - 1 БУТ» are quantities of bottles; pymorphy3
+# knows «Бут» as a genuine Russian surname, so morphology is right and only the
+# number beside it says otherwise.
+#
+# BOUNDED AT THREE DIGITS, AND THE RUN MUST STAND ALONE. Written as «\d+» it
+# matched the TAIL of any identifier, and the sloppy register puts a name
+# straight after one: «карта 4177053773613102 СоколовИгорь», «машина М634АХ47
+# ИвановПётр». Eight real names went unmasked on AgentPII-RU before the bound —
+# the rule meant to remove eleven pieces of junk was quietly removing people.
+#
+# A dot breaks the match on purpose, so a numbered list («1. Иванов») keeps its
+# person.
+_QUANTITY_BEFORE = re.compile(r"(?:^|[^\w-])[-–—]?\s*\d{1,3}\s*$")
+
+
+def _is_quantity(text: str, span: Span) -> bool:
+    if len(span.value.split()) != 1:
+        return False
+    return bool(_QUANTITY_BEFORE.search(text[:span.start]))
+
+
+def _is_organisation(text: str, span: Span) -> bool:
+    """The word DIRECTLY before names a kind of company, not a person."""
+    match = _LAST_WORD.search(text[:span.start].lower())
+    return bool(match) and match.group(1) in _ORG_CUE
+
 
 def location_is_pii(text: str, start: int, end: int, value: str) -> bool:
     """True if a (bare, NER-found) location is tied to a person -> personal data.
@@ -281,6 +322,10 @@ def suppress(text: str, spans: list[Span]) -> list[Span]:
             # has no reason to refuse it. Masking it replaces a label the model
             # needs in order to know what the number beside it is.
             if span.value.strip().casefold() in _DENY_AS_NAME:
+                continue
+            if _is_quantity(text, span):
+                continue
+            if _is_organisation(text, span):
                 continue
         kept.append(span)
     return kept
