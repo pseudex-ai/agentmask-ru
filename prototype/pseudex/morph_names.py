@@ -404,6 +404,27 @@ def detect_case(surface: str, gender: str | None = None) -> str | None:
             # that contradict that answer is the same defect one step later.
             if gender and parse.tag.gender and parse.tag.gender != gender:
                 continue
+            # A PERSON IS NEVER PLURAL, so a plural reading is not evidence
+            # about their case. «Тагиев», «Ань», «Екатерин» and «Улесь» are all
+            # read as GENITIVE PLURAL of an invented singular — «Тагии», «Ани»,
+            # «Екатерины», «Улеси» — and each of those votes was enough to carry
+            # the span into a conversion it did not need. The vault then keyed
+            # the person under a name that does not exist, and that name is what
+            # the customer's tool received.
+            if parse.tag.number == "plur":
+                continue
+            # AN UNKNOWN WORD'S CASE IS A GUESS, NOT A READING. pymorphy predicts
+            # out-of-vocabulary words from their suffix, so it answers rather
+            # than declines — and for a misspelt given name («Юлыя», «Марея») it
+            # answers genitive singular with a confident-looking score. The
+            # answer is about a word that does not exist.
+            #
+            # The cost of refusing is one of QUALITY, not correctness: a rare
+            # name written in two cases gets two vault rows, so the model may
+            # meet one person twice. The cost of accepting is a person who does
+            # not exist reaching a tool. This repo has ranked those before.
+            if not parse.is_known:
+                continue
             if parse.tag.case:
                 tally[parse.tag.case] = tally.get(parse.tag.case, 0.0) + parse.score
     if not tally:
