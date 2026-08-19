@@ -201,8 +201,17 @@ _PASSPORT_RE = re.compile(r"\b\d{2}\s+\d{2}\s+\d{6}\b|\b\d{4}\s+\d{6}\b")
 # commonest way Russians misspell this word: «пасспорт» outnumbers every other
 # variant. Found on AgentPII-RU, where it cost 25% of passport recall in the
 # sloppy register — the number was there and the cue beside it was misspelt.
+# The window after the cue word is SIXTEEN characters, not eight. «Паспортные
+# данные: 4518123456» is the commonest phrasing there is and it needs nine —
+# the number was missed by ONE character. A hyphen joins the space as a
+# separator («4607-238914»), which is how a form field renders it.
 _PASSPORT_CTX_RE = re.compile(
-    r"(?i:пас{1,2}п{1,2}орт\w*)\D{0,8}(\d{2}\s?\d{2}\s?\d{6})\b")
+    r"(?i:пас{1,2}п{1,2}орт\w*)\D{0,16}?(\d{2}[\s-]?\d{2}[\s-]?\d{6})\b")
+# «серия 4607 номер 238914» — the two halves named separately, with words
+# between them, so neither the plain shape nor the cue pattern above can see it.
+# Both numbers are masked; the words are not, being nobody's data.
+_PASSPORT_PARTS_RE = re.compile(
+    r"(?i)сери\w*\s*:?\s*(\d{4})\D{1,12}?(\d{6})\b")
 _DATE_RE = re.compile(r"\b\d{2}[.\-/]\d{2}[.\-/]\d{4}\b")
 # THE SAME DATE WITH ITS SEPARATORS GONE. «24.12.1967» typed without dots is
 # «24121967» — eight digits and no shape left — so a date a chat wrote without
@@ -263,6 +272,10 @@ def detect_structured(text: str) -> list[Span]:
     # No-separator passport is ambiguous alone; trust it when "паспорт" precedes.
     for match in _PASSPORT_CTX_RE.finditer(text):
         spans.append(Span(match.start(1), match.end(1), "PASSPORT", match.group(1)))
+    for match in _PASSPORT_PARTS_RE.finditer(text):
+        for group in (1, 2):
+            spans.append(Span(match.start(group), match.end(group),
+                              "PASSPORT", match.group(group)))
     for match in _DATE_RE.finditer(text):
         spans.append(Span(match.start(), match.end(), "DATE", match.group()))
     for match in _GLUED_DATE_RE.finditer(text):
