@@ -36,3 +36,6 @@ prototype/e2e/faketime/
 prototype/e2e/cosign/
 prototype/e2e/registry-auth/
 prototype/e2e/reports/
+
+# IDE
+.idea/
