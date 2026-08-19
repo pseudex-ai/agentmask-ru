@@ -61,9 +61,17 @@ def looks_like_street(value: str) -> bool:
     """
     if _STREET_MARKER.search(value) or _HOUSE.search(value):
         return True
-    # A bare house number after a capitalised word is a street too:
-    # «Ленинский проспект 42» has a marker, «Тверская 7» does not.
-    return bool(re.search(r"[А-ЯЁ][а-яё]+\s+\d", value))
+    # A bare house number after a WORD is a street too: «Ленинский проспект 42»
+    # has a marker, «Тверская 7» does not.
+    #
+    # Case-insensitive, and that is the fix rather than the risk. The capital
+    # used to be required, so the lower-case «мира 7» a customer types in chat
+    # was judged a SETTLEMENT and got a city for a substitute — «а на мира 7
+    # когда привезёте?» came back «а на Задонска когда привезёте?». Nothing here
+    # decides whether the value is an address; detection already did. This only
+    # chooses which KIND of address to mint, and there a missing capital is not
+    # evidence of anything.
+    return bool(re.search(r"(?i)[а-яё]{3,}\s+\d", value))
 
 
 @functools.lru_cache(maxsize=4096)
@@ -400,6 +408,91 @@ def generic_full(written: str) -> str:
     """
     return _GENERIC_SHORT.get(written.lower().rstrip("."), (written.lower(), ""))[0]
 
+
+
+def street_house_key(phrase: str) -> str:
+    """The part of an address that a SHORTER mention of it still carries.
+
+    «Москва, ул. Ленина, д. 14» and «ленина 14» are the same place written at
+    two levels of detail, and the vault keys them apart — one canonicalises to
+    `москва улица ленин 14`, the other to `ленин 14`. So the model met two
+    addresses and, asked «вы находитесь на Ленина 14?», compared a masked
+    address against a different masked address and answered no.
+
+    This is the key they SHARE: the address key with the city and the street
+    type removed, leaving the street's stem and the numbers. The city is
+    recognised by morphology (`Geox`) rather than by a leased list of cities —
+    the dictionary already carries the toponyms, and a second list would be a
+    second thing to keep true.
+
+    IT DELIBERATELY COLLIDES. «Ленина 14» in Moscow and «Ленина 14» in Kazan
+    produce the SAME key, and that is the point rather than a flaw: the caller
+    links only when the key has exactly one owner, so a street name that exists
+    in every Russian city refuses to link instead of guessing which city. A key
+    that separated them by city could not be computed from a mention that never
+    named one.
+    """
+    kept: list[str] = []
+    for token in address_key(phrase).split():
+        # THE KEY STOPS AT THE FLAT. A short mention is short precisely because
+        # it left the finer parts out: «мира 7» has to find «г. Казань, ул.
+        # Мира, д. 7, кв. 12», and with «кв 12» still in the key it never did.
+        # Street and house are what both writings of one place always carry.
+        if token in ("кв", "к", "стр"):
+            break
+        if token in _GENERIC:
+            continue
+        if any("Geox" in parse.tag for parse in MORPH.parse(token)):
+            continue
+        kept.append(token)
+    return " ".join(kept)
+
+
+_FLAT_TAIL = re.compile(
+    r"(?i)[\s,]*\b(?:кв|квартир\w*|оф|офис\w*|пом|помещени\w*|комн\w*"
+    r"|под[ъь]езд\w*|эт|этаж\w*)\.?\s*\d+[а-яё]?\s*$")
+
+
+def strip_flat(phrase: str) -> str:
+    """The same address without its flat, or unchanged if it has none.
+
+    Mirrors what the mention was made of, the same rule the substitute generator
+    already follows for the city, the street type and the gender. A person who
+    wrote «мира 7» must not be shown «ул. Пихтовой 93, кв. 15» — a flat number
+    they never mentioned is a more specific address than the sentence carried,
+    and a model reading a mismatch is a model that edits it.
+    """
+    return _FLAT_TAIL.sub("", phrase).rstrip(" ,")
+
+
+def strip_leading_city(phrase: str) -> str:
+    """The same address with its leading city dropped, or unchanged if none.
+
+    Used to render a SHORT mention of a place we already substituted: the person
+    wrote «ленина 14», so what the model should see is the street and house of
+    their substitute, not the full «г. Тверь, улица Тополиная, 46». A mention
+    that named no city must not come back naming one — that is a different
+    address, and the model reads it as one.
+    """
+    head, _, tail = phrase.partition(",")
+    if not tail:
+        return phrase
+    # DECIDED BY STRUCTURE, NOT BY DICTIONARY. Morphology was the obvious gate
+    # and it is the wrong one here: this runs on the SUBSTITUTE, and our fake
+    # cities are real but small («Венёв», «Бологое», «Кинешма»), so pymorphy
+    # does not tag them `Geox` and the city was never stripped — the short
+    # mention came back with a city it never had.
+    #
+    # The head of an address is its city exactly when it carries neither a
+    # street-type word nor a number: «г. Москва» and «Венёв» qualify, «улица
+    # Тополиная» and «Тверская 7» do not.
+    lowered = head.lower()
+    if any(char.isdigit() for char in head):
+        return phrase
+    if any(word.strip(" .") in _GENERIC or _GENERIC_SHORT.get(word.strip(" ."))
+           for word in lowered.split()):
+        return phrase
+    return tail.strip(" ,")
 
 def place_shape(phrase: str) -> dict[str, object]:
     """What the written address is MADE OF, so a substitute can be made of the

@@ -1020,6 +1020,26 @@ class Vault:
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_token_parts ON token_parts (customer, part)"
         )
+        self._conn.execute(
+            # WHICH FULL ADDRESSES A SHORT MENTION COULD BE, SCOPED TO ONE
+            # CONVERSATION. `name_parts` answers the same question for people
+            # and is scoped to the customer, which is right there: a person's
+            # name is distinctive enough that the single-candidate rule still
+            # fires. A street is not — «Ленина 14» exists in every Russian city,
+            # so at customer scope the rule would find a dozen owners and refuse
+            # every time. The conversation is where the question has an answer.
+            #
+            # No new class of data: `part` is a street stem and a house number,
+            # both already stored in full in `tokens.canonical`.
+            "CREATE TABLE IF NOT EXISTS place_parts ("
+            "customer TEXT NOT NULL, conversation TEXT NOT NULL, "
+            "part TEXT NOT NULL, canonical TEXT NOT NULL, "
+            "PRIMARY KEY (customer, conversation, part, canonical))"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_place_parts "
+            "ON place_parts (customer, conversation, part)"
+        )
         self._migrate_digit_signatures()
         self._migrate_name_keys()
         self._migrate_original_form()
@@ -1185,6 +1205,25 @@ class Vault:
             ).fetchone()
             if row is not None:
                 return row[0]
+            # A LINKED ADDRESS IS OWNED BY ITS CONVERSATION, so it is stored
+            # under a key that carries one. «Ленина 14» resolved against the
+            # full address of THIS dialogue must not be served to the next
+            # customer who writes the same street — that is a courier sent to
+            # whoever spoke first, and it is exactly what the conversation scope
+            # exists to prevent. Written plainly, the row in `tokens` would have
+            # leaked the link straight past that scope on the very next request.
+            #
+            # Full addresses keep the plain key: one place, one substitute, for
+            # ever and across conversations. Only the derived short form is
+            # scoped, because only it was a guess about which place was meant.
+            scoped = f"{self._conversation}\x00{canonical}"
+            if entity_type == "LOC" and self._conversation:
+                row = self._conn.execute(
+                    "SELECT token FROM tokens WHERE customer=? AND canonical=?",
+                    (self._customer, scoped),
+                ).fetchone()
+                if row is not None:
+                    return row[0]
             # The REAL person's gender decides the fake's, so the substitute
             # agrees with the sentence around it and the model leaves it alone.
             gender = (morph_names.detect_gender(value)
@@ -1202,8 +1241,11 @@ class Vault:
                 reordered = self._same_person_reordered(canonical)
                 if reordered is not None:
                     return reordered
-            token = (self._linked_token(canonical, value)
-                     if entity_type == "NAME" else None)
+            token = self._linked_token(canonical, value) if entity_type == "NAME" else None
+            linked_place = (self._linked_place(canonical, value)
+                            if entity_type == "LOC" else None)
+            if linked_place is not None:
+                token, canonical = linked_place, scoped
             if token is None:
                 token = self._unique_token(entity_type, gender, value)
             digits, digits10 = _digit_signatures(token, entity_type)
@@ -1254,6 +1296,18 @@ class Vault:
                     "INSERT OR IGNORE INTO name_parts (customer, part, canonical) "
                     "VALUES (?,?,?)",
                     [(self._customer, part, canonical) for part in set(parts)])
+            # A FULL ADDRESS IS INDEXED SO A LATER SHORT MENTION CAN FIND IT.
+            # Only one that names a city: without one there is nothing shorter
+            # for a mention to be, and indexing it would make the short form its
+            # own owner and block the real one.
+            if (entity_type == "LOC" and self._conversation
+                    and morph_places.place_shape(value).get("has_city")):
+                part = morph_places.street_house_key(value)
+                if part:
+                    self._conn.execute(
+                        "INSERT OR IGNORE INTO place_parts "
+                        "(customer, conversation, part, canonical) VALUES (?,?,?,?)",
+                        (self._customer, self._conversation, part, canonical))
             if entity_type == "NAME":
                 fake_parts = {word.casefold() for word in token.split()
                               if len(word) > 2}
@@ -1342,6 +1396,62 @@ class Vault:
                    if sorted(word.casefold() for word in other.split()
                              if len(word) > 2) == wanted}
         return next(iter(matches)) if len(matches) == 1 else None
+
+
+    def _linked_place(self, canonical: str, value: str) -> str | None:
+        """The substitute for an address we already met, named more briefly.
+
+        «вы находитесь на Ленина 14?» while the fuller «г. Москва, ул. Ленина,
+        д. 14» stands in the same conversation. They key differently, so the
+        model was handed two different fake addresses and asked to compare them
+        — it duly answered that no, those are not the same place. Nothing in the
+        pipeline was broken; the two mentions simply had no way to be one thing.
+
+        The answer is the same one names already use: not a second random
+        address and not the full one, but the CORRESPONDING PART of the
+        substitute this place already has. A mention that named no city gets
+        back a substitute with no city.
+
+        LINKED ONLY WHEN THERE IS EXACTLY ONE OWNER. This is Fellegi–Sunter's
+        middle outcome — «possible link, refer to a human» — and a gateway has
+        no human, so it collapses to refusal. Two addresses on the same street
+        in one conversation (home and delivery) means neither links, and the
+        behaviour is what it was before this existed. Guessing instead would
+        send a courier to the wrong one of two real places, which is worse than
+        the model seeing two addresses.
+
+        WHY NOT COMPONENT-WISE. Substituting city, street and house through
+        separate deterministic maps would make «Ленина 14» in Moscow and in
+        Kazan share a substitute by construction — prefix-preserving
+        anonymisation, and Xu et al. proved that every scheme with that property
+        leaks the shared prefix once any one element is compromised. The
+        single-owner rule gets the linking without the property.
+        """
+        if not self._conversation:
+            return None
+        part = morph_places.street_house_key(value)
+        if not part:
+            return None
+        # A mention that already names a city is not a short one — it is either
+        # the full address (found by the canonical lookup) or a different place.
+        if morph_places.place_shape(value).get("has_city"):
+            return None
+        rows = self._conn.execute(
+            "SELECT t.token FROM place_parts p "
+            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
+            "WHERE p.customer=? AND p.conversation=? AND p.part=? "
+            "AND t.entity_type='LOC' LIMIT 2",
+            (self._customer, self._conversation, part),
+        ).fetchall()
+        if len(rows) != 1:
+            return None
+        derived = morph_places.strip_leading_city(rows[0][0])
+        if not morph_places.place_shape(value).get("has_flat"):
+            derived = morph_places.strip_flat(derived)
+        # A projection identical to the full token is not a projection: the
+        # stored address had no city either, so there is nothing shorter to
+        # render and the two mentions are the same string anyway.
+        return derived or None
 
     def _linked_token(self, canonical: str, surface: str) -> str | None:
         """The substitute for a person we have already met, named more briefly.

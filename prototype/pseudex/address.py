@@ -175,7 +175,7 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
         # street signal, is a numbered street ("8 Марта"), or sits in an address
         # context (Presidio-style enhancement for signal-less "Миклухо-Маклая 6").
         before = text[:m.start()]
-        has_ctx = bool(address.addr_ctx.search(before)) or bool(address.prep_before.search(before))
+        has_ctx = _cue_before(text, m.start(), address)
         # A NUMBER FOLLOWED BY A MONTH IS A DATE, not a house. «подписана
         # Президентом Российской Федерации 5 августа 2000 года» matched as a
         # marker-less street with house 5: «Российской» is an adjective, which
@@ -210,8 +210,7 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
         # already exist and are already leased. «вы находитесь на ленина 14»
         # keeps its «на»; «лишения свободы 2» has «лишения» before it and is
         # refused.
-        before = text[:m.start()]
-        if not (address.addr_ctx.search(before) or address.prep_before.search(before)):
+        if not _cue_before(text, m.start(), address):
             continue
         after = text[m.end():m.end() + 12].lstrip()
         if any(after.lower().startswith(month) for month in address.month_after):
@@ -282,6 +281,31 @@ def _city_first_word(text: str, city_start: int) -> int:
     return head.start(1) if naming or agrees else city_start
 
 
+
+# HOW FAR A CUE WORD REACHES. `addr_ctx` used to be searched over the ENTIRE
+# preceding text, so one «адрес» near the top of a system prompt licensed every
+# capitalised-word-plus-number for the rest of it: «Наш адрес: …, д. 14. Часы
+# 9-21» masked «Часы 9» as a second address, and the model could no longer say
+# when the shop opens.
+#
+# Bounded to the tail, and never across a sentence end — a cue in one sentence
+# says nothing about the next. The window is generous enough for the phrasings
+# the cue vocabulary is written for («мой адрес для доставки — …»).
+_CUE_WINDOW = 60
+_SENTENCE_SPLIT = re.compile(r"[.!?]\s+(?=[А-ЯЁA-Z])")
+
+
+def _cue_before(text: str, start: int, address: AddressAssets) -> bool:
+    # The candidate's own first character joins the tail before splitting: a
+    # sentence end is «. » FOLLOWED BY A CAPITAL, and that capital is the first
+    # letter of the span being judged. Without it «Адрес склада: Тверская 7.
+    # Отгрузка 5 коробок» kept the cue alive across the period and masked
+    # «Отгрузка 5».
+    before = text[:start]
+    tail = _SENTENCE_SPLIT.split(before[-_CUE_WINDOW:] + text[start:start + 1])[-1]
+    return bool(address.addr_ctx.search(tail)) or bool(address.prep_before.search(before))
+
+
 def _toponym_neighbours(text: str, cands: list[tuple[int, int, bool]]
                         ) -> list[tuple[int, int, bool]]:
     """A bare city touching an address part, as SUPPORT.
@@ -313,6 +337,23 @@ def _toponym_neighbours(text: str, cands: list[tuple[int, int, bool]]
     return out
 
 
+# A SENTENCE ENDED BETWEEN THE TWO PARTS. The gap vocabulary has to contain the
+# period, because «ул.» and «д.» are built from it — and that let an address run
+# straight through the end of its sentence: «Наш адрес: г. Москва, ул. Ленина,
+# д. 14. Часы 9-21» masked as ONE address ending in «Часы 9», so a shop's
+# opening hours were replaced by a house number and the model could no longer
+# answer what time it opens.
+#
+# A period is an abbreviation when a lower-case word or a single letter follows
+# it, and a sentence end when a capital does. That is the only signal available
+# here and it is the one Russian actually uses.
+_SENTENCE_END = re.compile(r"\.\s*$")
+
+
+def _ends_sentence(gap: str, follows: str) -> bool:
+    return bool(_SENTENCE_END.search(gap)) and follows[:1].isupper()
+
+
 def _merge(cands: list[tuple[int, int, bool]], text: str,
            address: AddressAssets) -> list[tuple[int, int, bool]]:
     cands = sorted(cands)
@@ -321,7 +362,8 @@ def _merge(cands: list[tuple[int, int, bool]], text: str,
         if groups:
             gs, ge, gcore = groups[-1]
             joinable = start <= ge or (
-                start - ge <= 4 and address.gap.fullmatch(text[ge:start]) is not None)
+                start - ge <= 4 and address.gap.fullmatch(text[ge:start]) is not None
+                and not _ends_sentence(text[ge:start], text[start:]))
             if joinable:
                 groups[-1] = [gs, max(ge, stop), gcore or core]
                 continue

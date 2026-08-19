@@ -377,6 +377,66 @@ def test_conversation_scope_is_isolated() -> None:
             "narrows what may be LINKED, never what is already known"
     print("conversation scope OK — isolated in the cache, shared in the vault")
 
+
+def test_short_address_resolves_to_the_full_one() -> None:
+    """«вы находитесь на Ленина 14?» while «г. Москва, ул. Ленина, д. 14» stands
+    in the same conversation.
+
+    They keyed apart — one canonicalises to `москва улица ленин 14`, the other
+    to `ленин 14` — so the model was handed two unrelated fake addresses and
+    asked whether they were the same place. It answered no, correctly, about the
+    wrong question. Nothing was broken; the two mentions had no way to be one
+    thing.
+
+    Four properties, and each one failed on the way here.
+
+    1. The short mention gets the CORRESPONDING PART of the substitute the full
+       address already has — same street, same house — not a second random one.
+    2. It gets back exactly what it wrote: no city and no flat if it named
+       neither. A projection carrying a flat the sentence never had is a more
+       specific address than the person gave.
+    3. The round trip still returns the WRITTEN value, «Ленина 14», because the
+       tool must execute on what the customer said.
+    4. The link does NOT escape its conversation. Written into `tokens` under
+       the plain key, it would have been served to the next customer who wrote
+       the same street — a courier sent to whoever spoke first.
+
+    And the refusal: two addresses on the same street in one dialogue (home and
+    delivery) means neither links. That is Fellegi-Sunter's middle outcome with
+    no human to refer it to, so it collapses to «do not guess».
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "vault.db")
+        talk = Vault(path, "acme").for_conversation("dialog-1")
+        full = talk.tokenize("г. Москва, ул. Ленина, д. 14", "LOC")
+        short = talk.tokenize("Ленина 14", "LOC")
+        assert short and short != full, "a short mention is not the full address"
+        assert short in full, f"{short!r} must be the street and house of {full!r}"
+        assert not any(char.isdigit() for char in full[:full.index(short)]), \
+            "what the projection drops must be the CITY, not part of the street"
+        assert unmask_text(f"адрес {short}", talk) == "адрес Ленина 14", \
+            "the tool receives what the customer wrote, not the fuller form"
+
+        elsewhere = Vault(path, "acme").for_conversation("dialog-2")
+        assert elsewhere.tokenize("Ленина 14", "LOC") != short, \
+            "a link decided in one conversation must not be served to another"
+
+        crowded = Vault(path, "acme").for_conversation("dialog-3")
+        crowded.tokenize("Москва, ул. Мира, д. 7", "LOC")
+        crowded.tokenize("Казань, ул. Мира, д. 7", "LOC")
+        ambiguous = crowded.tokenize("Мира 7", "LOC")
+        assert not any(ambiguous in crowded.tokenize(value, "LOC")
+                       for value in ("Москва, ул. Мира, д. 7", "Казань, ул. Мира, д. 7")), \
+            "two owners in one conversation means neither is linked"
+
+        # The flat is mirrored, not inherited: it belongs to the full address.
+        flats = Vault(path, "acme").for_conversation("dialog-4")
+        flats.tokenize("г. Казань, ул. Садовая, д. 3, кв. 12", "LOC")
+        brief = flats.tokenize("садовая 3", "LOC")
+        assert brief and "кв" not in brief, \
+            f"{brief!r} carries a flat the mention never named"
+    print("short-address linking OK — same place, own shape, one conversation")
+
 if __name__ == "__main__":
     load_dev_bundle()
     test_tenants()
@@ -395,3 +455,4 @@ if __name__ == "__main__":
     test_tokens_are_not_valid_documents()
     test_lookalike_table_is_complete()
     test_conversation_scope_is_isolated()
+    test_short_address_resolves_to_the_full_one()
