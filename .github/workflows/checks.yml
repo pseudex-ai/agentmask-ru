@@ -67,6 +67,34 @@ jobs:
             exit 1
           fi
 
+  deploy:
+    name: deploy scripts and compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # THE OPS STACK CAN SHIP BROKEN AND NOBODY WOULD KNOW UNTIL IT RAN. The
+      # deploy agent runs unattended on production at 3am; a typo in it is
+      # discovered by the thing it was supposed to prevent. None of this needs a
+      # container, so it costs seconds.
+      - name: shell syntax
+        run: for f in deploy/*.sh; do sh -n "$f" || exit 1; done
+      - name: shellcheck
+        run: |
+          sudo apt-get install -y --no-install-recommends shellcheck >/dev/null
+          # SC2029/SC1090 are about sourcing and remote expansion, neither of
+          # which these scripts do; everything else is a real finding.
+          shellcheck -e SC1090,SC1091 -S warning deploy/*.sh
+      - name: compose is valid with the documented variables
+        run: |
+          set -a; . deploy/.env.example; set +a
+          POSTGRES_PASSWORD=x PSEUDEX_SECRET_KEY=x PSEUDEX_SIGNING_KEY=x \
+            docker compose -f deploy/compose.yml config >/dev/null
+      - name: systemd units parse
+        run: |
+          sudo apt-get install -y --no-install-recommends systemd >/dev/null
+          systemd-analyze verify deploy/systemd/*.service deploy/systemd/*.timer 2>&1 \
+            | grep -v "Unit .* not found" | grep . && exit 1 || true
+
   detection:
     name: detection — golden and dirty sets
     runs-on: ubuntu-latest
