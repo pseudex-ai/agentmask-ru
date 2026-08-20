@@ -387,6 +387,74 @@ def gate_l4() -> bool:
                 f"restored={len(round_tripped)}/{len(fixtures.PII_PAYLOAD)}")
 
 
+
+def gate_l18() -> bool:
+    """The STREAMING leg, in the container, both halves and the wrong one refused.
+
+    L4 proves the non-streamed path only, so a container could ship with the
+    streaming endpoints missing, or broken by packaging, and pass every gate we
+    had. That surface is what a host gateway actually uses on a live answer.
+
+    Two halves, and they behave oppositely on purpose:
+
+      * `delta.content` -> /unmask_chunk, fed in pieces that SPLIT a token, which
+        is the case the carry buffer exists for;
+      * a tool call's arguments -> /unmask_arguments, whose whole reason to exist
+        is that a real value carrying quotes breaks a JSON object when
+        substituted as flat text.
+
+    Both are asserted, and so is the failure of the wrong path: routing arguments
+    through /unmask_chunk must still produce something unparseable. That is the
+    tempting simplification, and a gate that only checked the good path would not
+    notice it being taken.
+    """
+    real = 'ООО "Заря"'
+    masked = httpx.post(f"{SIDECAR}/mask", timeout=60, headers=gateway_headers(), json={
+        "org_id": ORG, "messages": [{"role": "user", "content": f"получатель: {real}"}],
+    }).json()["messages"][0]["content"]
+    fake = masked.split(": ", 1)[1] if ": " in masked else masked
+
+    # A phone, split across two deltas, through the text leg.
+    phone_masked = httpx.post(f"{SIDECAR}/mask", timeout=60, headers=gateway_headers(), json={
+        "org_id": ORG, "messages": [{"role": "user", "content": "телефон +7 999 123-45-67"}],
+    }).json()["messages"][0]["content"]
+    token = re.search(r"\+7\d{10}", phone_masked.replace(" ", "").replace("-", ""))
+    fake_phone = phone_masked.split("телефон ", 1)[1].strip() if "телефон " in phone_masked else ""
+    carry, streamed = "", ""
+    for delta in ("Перезвоню на ", fake_phone[:5], fake_phone[5:], " завтра"):
+        body = httpx.post(f"{SIDECAR}/unmask_chunk", timeout=30, headers=gateway_headers(),
+                          json={"org_id": ORG, "delta": delta, "carry": carry}).json()
+        streamed += body["text"]
+        carry = body["carry"]
+    tail = httpx.post(f"{SIDECAR}/unmask_chunk", timeout=30, headers=gateway_headers(),
+                      json={"org_id": ORG, "delta": "", "carry": carry, "flush": True}).json()
+    streamed += tail["text"]
+
+    arguments = json.dumps({"company": fake}, ensure_ascii=False)
+    restored = httpx.post(f"{SIDECAR}/unmask_arguments", timeout=30, headers=gateway_headers(),
+                          json={"org_id": ORG, "arguments": [arguments]}).json()["arguments"][0]
+    try:
+        parsed_ok = json.loads(restored).get("company") == real
+    except json.JSONDecodeError:
+        parsed_ok = False
+
+    flat = httpx.post(f"{SIDECAR}/unmask_chunk", timeout=30, headers=gateway_headers(),
+                      json={"org_id": ORG, "delta": arguments, "carry": "",
+                            "flush": True}).json()["text"]
+    try:
+        json.loads(flat)
+        text_leg_refuses = False
+    except json.JSONDecodeError:
+        text_leg_refuses = True
+
+    split_ok = ("+7 999 123-45-67" in streamed and fake_phone not in streamed
+                and tail["carry"] == "")
+    ok = split_ok and parsed_ok and text_leg_refuses and token is not None
+    return gate("L18 streaming leg: split token and tool arguments", ok,
+                f"split_restored={split_ok} arguments_parse={parsed_ok} "
+                f"text_leg_refuses_json={text_leg_refuses}")
+
+
 def gate_l5() -> bool:
     marker = fixtures.marker_surname()
     for _ in range(20):
@@ -963,6 +1031,8 @@ def main() -> None:
             raise SystemExit(_report(started))
         if wanted("L4"):
             run_gate("L4", gate_l4)
+        if wanted("L18"):
+            run_gate("L18", gate_l18)
         if wanted("L5"):
             run_gate("L5", gate_l5)
         if wanted("L14"):
