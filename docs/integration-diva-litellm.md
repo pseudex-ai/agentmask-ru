@@ -53,30 +53,32 @@ async def async_post_call_success_hook(self, data, user_api_key_dict, response):
     return response
 ```
 
-**(c) streaming: unmask chunks** — ГОТОВО.
+**(c) streaming: unmask chunks** — DONE.
 
-**Цикл идёт ПО ПОЛЯМ, а не по чанкам.** Текст ответа и аргументы вызова
-инструмента лежат в одном чанке и требуют разного обращения:
+**The loop runs PER FIELD, not per chunk.** Assistant text and tool-call
+arguments arrive in the same chunk and need opposite handling:
 
-| поле | куда | когда |
+| field | endpoint | when |
 |---|---|---|
-| `delta.content` | `/unmask_chunk` | по мере поступления |
-| `delta.tool_calls[].function.arguments` | `/unmask_arguments` | **накопить и один раз** |
+| `delta.content` | `/unmask_chunk` | as it streams |
+| `delta.tool_calls[].function.arguments` | `/unmask_arguments` | **accumulate, then once** |
 
-Почему аргументы нельзя гнать через `/unmask_chunk`: он подставляет плоский
-текст, а настоящее значение — произвольный текст. Замерено:
+Why arguments must not go through `/unmask_chunk`: it substitutes flat text, and
+a real value is arbitrary text. Measured:
 
 ```
-через /unmask_chunk : {"company":"ООО "Заря""}      ← JSON сломан
-через /unmask_arguments : {"company": "ООО \"Заря\""}  ← ок
+via /unmask_chunk     : {"company":"ООО "Заря""}       JSON broken
+via /unmask_arguments : {"company": "ООО \"Заря\""}     ok
 ```
 
-На русском деловом трафике это не край: каждое юрлицо пишется в кавычках.
-Модель получает вызов, который не может прочитать обратно, а провайдер отвечает
-400 на следующем ходу. Внутри строки JSON ничего отдать нельзя до её закрытия —
-экранирование зависит от значения целиком, а уже отданный префикс не вернёшь.
-Поэтому вызов инструмента буферизуется: **корректность вместо плавности**, тот же
-выбор, что и на прокси-леге (`_stream_as_single`).
+On Russian business traffic this is the common case, not an edge one — every
+legal entity is written with quotes. The model then gets a tool call it cannot
+read back and the provider answers 400 on the next turn.
+
+Nothing inside a JSON string can be emitted before the string closes: the
+escaping depends on the whole value and a sent prefix cannot be retracted. So a
+tool call is BUFFERED — correctness over smoothness, the same choice the proxy
+leg makes in `_stream_as_single`.
 
 ```python
 async def async_post_call_streaming_iterator_hook(self, user_api_key_dict, response, request_data):
@@ -85,7 +87,7 @@ async def async_post_call_streaming_iterator_hook(self, user_api_key_dict, respo
         async for chunk in response:
             yield chunk
         return
-    carry: dict[int, str] = {}      # ОДИН ПЕРЕНОС НА CHOICE, см. ниже
+    carry: dict[int, str] = {}                  # ONE CARRY PER CHOICE — see below
     args: dict[tuple[int, int], str] = {}
     async for chunk in response:
         for choice in chunk.choices:
@@ -94,22 +96,23 @@ async def async_post_call_streaming_iterator_hook(self, user_api_key_dict, respo
                 delta.content, carry[choice.index] = await self._pseudex_unmask_chunk(
                     org_id, delta.content, carry.get(choice.index, ""))
             for call in getattr(delta, "tool_calls", None) or []:
-                # НЕ ОТДАЁМ фрагменты аргументов — копим и обнуляем в чанке.
+                # DO NOT forward argument fragments — accumulate, blank them out.
                 args[(choice.index, call.index)] = (
                     args.get((choice.index, call.index), "") + (call.function.arguments or ""))
                 call.function.arguments = ""
         yield chunk
-    # хвост переносов + собранные аргументы, одним вызовом каждый
+    # then: flush each carry, and one /unmask_arguments call for the collected args
     ...
 ```
 
-**Один перенос на choice.** При `n > 1` дельты разных ответов идут вперемешку по
-одному соединению, и общий перенос пришьёт хвост одного ответа к голове другого.
-Прокси-лег ключует детокенизаторы по `choice.index` именно поэтому.
+**One carry per choice.** With `n > 1` the deltas of different choices interleave
+on the same connection, and a shared carry splices one answer's tail onto
+another's head. The proxy leg keys its detokenizers on `choice.index` for exactly
+this reason.
 
-**Проверяй `residual_tokens` в ответе `/unmask_arguments`.** Подмена, которая не
-разрешилась внутри вызова инструмента, — это фейк, уходящий в инструмент, и
-увидеть это иначе нельзя: JSON корректен, статус 200.
+**Check `residual_tokens` in the `/unmask_arguments` reply.** A substitute that
+did not resolve inside a tool call is a fake reaching the tool, and there is no
+other way to see it: the JSON is well-formed and the status is 200.
 
 **(d) the HTTP helpers** reuse the existing `_get_http_client()` + `PSEUDEX_URL` env, calling the sidecar `/mask` and `/unmask`. ~30 lines, no new deps.
 
@@ -119,11 +122,11 @@ async def async_post_call_streaming_iterator_hook(self, user_api_key_dict, respo
 - `POST /mask` → `{org_id, messages, tools}` → `{messages}` (masked) + records audit. Detect→tokenize per `org_id` vault.
 - `POST /unmask` → `{org_id, response}` → `{response}` (detokenized: content + tool_calls[].arguments).
 - `POST /unmask_chunk` → `{org_id, delta, carry, flush}` → `{text, carry}`.
-  **Только `delta.content`.** Состояние у вызывающего (перенос возвращается ему),
-  один перенос на `choice.index`.
+  **`delta.content` only.** State lives with the caller (the carry is handed
+  back), one carry per `choice.index`.
 - `POST /unmask_arguments` → `{org_id, arguments: [str]}` → `{arguments: [str]}`
-  + `residual_tokens`. Аргументы вызова инструмента, собранные из потока
-  целиком; разбирает JSON и экранирует по построению.
+  plus `residual_tokens`. Tool-call arguments assembled from the stream in full;
+  parses the JSON and escapes by construction.
 - `GET /usage?org_id=` → audit counts + recent (for the UI).
 - **Vault keyed by `org_id`** (persistent SQLite/Redis) → cross-turn consistency, multi-tenant. Centralized in the sidecar → correct even with multiple LiteLLM workers/pods (shared vault, unlike per-worker in-process).
 
@@ -131,14 +134,14 @@ async def async_post_call_streaming_iterator_hook(self, user_api_key_dict, respo
 1. **Fail-closed (default) vs fail-open** — privacy vs availability. Default fail-closed (don't leak); make Pseudex HA (it's light, ~3 ms detect). Flag to switch.
 2. **unmask MUST be `async_post_call_success_hook`**, not the logging hook (logging can't change what the engine receives).
 3. **Tool/MCP**: we only protect what reaches the LLM (messages + response). The engine gets unmasked tool args from our post-call hook, then calls MCP tools with real values — correct.
-4. **Vault scope**: `org_id` baseline. `conversation_id` в теле `/mask`
-   поддержан — без него он выводится из первых двух сообщений стенограммы.
-   Область разговора это не просто «уже пространство имён»: она то, что делает
-   правило единственного кандидата непустым, когда короткое упоминание («Ленина
-   14») надо связать с полным адресом из того же диалога.
-5. **Стриминг вызовов инструмента буферизуется**, а не течёт — см. (c). Если
-   вам нужна плавность именно на аргументах, это разговор, а не настройка:
-   отдать половину JSON-строки нельзя в принципе.
+4. **Vault scope**: `org_id` baseline. `conversation_id` is supported in the
+   `/mask` body; without one it is derived from the first two messages of the
+   transcript. The conversation scope is not merely a tighter namespace — it is
+   what makes the single-candidate rule non-empty when a short mention («Ленина
+   14») has to be linked to the full address given earlier in the same dialogue.
+5. **Streamed tool calls are buffered**, not streamed — see (c). If you need
+   smoothness on the arguments specifically, that is a conversation and not a
+   setting: half a JSON string cannot be emitted at all.
 6. **Latency**: + one in-network HTTP hop + ~3 ms detect per call. Acceptable vs seconds of LLM.
 6. **Multi-worker LiteLLM**: in-process vault would desync across workers → that's why the vault lives in the **sidecar** (single source of truth).
 7. **Rollout**: `PSEUDEX_ENABLED` off by default → enable per-env → canary one org → watch `/usage` + leak logs. Billing path unchanged when off.
