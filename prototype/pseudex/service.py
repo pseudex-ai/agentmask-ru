@@ -377,9 +377,35 @@ async def health() -> JSONResponse:
 @app.get("/license")
 async def license_status() -> JSONResponse:
     """What the licence is doing right now — for the customer's own monitoring,
-    so an expiring subscription is visible before it stops the agents."""
+    so an expiring subscription is visible before it stops the agents.
+
+    ANSWERS 503 WHILE DEGRADED, and that is the whole point of it being a
+    separate endpoint from `/health`. All three personas raised the same gap:
+    during the grace window `/health` answers 200 «ok» and only a FIELD changes,
+    so an ordinary probe — a docker healthcheck, an uptime check, a blackbox
+    exporter — stays silent through the entire degradation and learns about it
+    when the gateway stops.
+
+    The fix is NOT to make `/health` fail. Grace exists precisely so a working
+    gateway keeps serving through OUR outage, and a healthcheck that fails would
+    have the orchestrator restart the container — which needs a fresh lease,
+    which is the thing that is unavailable. That turns a survivable outage into
+    an unrecoverable one.
+
+    So liveness and alerting are split, the way they always should be:
+
+        docker healthcheck / orchestration -> /health   (200 while serving)
+        monitoring and alerting            -> /license  (503 while degraded)
+
+    The body is unchanged and still parses on either code, so anything already
+    reading it keeps working.
+    """
     status = LICENSE.status()
-    return JSONResponse({
+    # `leased` is the only healthy state. `stale` is serving on grace and
+    # `expired` is not serving at all — both are things somebody must be told
+    # about, and the difference between them is in the body.
+    degraded = status.state != "leased"
+    return JSONResponse(status_code=503 if degraded else 200, content={
         "state": status.state,
         "code": status.code,
         "lease_id": status.lease_id,

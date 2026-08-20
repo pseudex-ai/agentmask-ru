@@ -373,11 +373,51 @@ def _mask_request(
     return result
 
 
+
+def _upstream_failure(error: Exception, base_url: str) -> dict[str, object]:
+    """The structured body for a provider we could not reach.
+
+    THE ASYMMETRY THIS REMOVES. A licence failure gets a named code, the host it
+    could not reach and a command to check it; a PROVIDER failure got an
+    unhandled `httpx` exception — a bare 500 and a stack trace in the log. All
+    three personas noticed the contrast, and it is the wrong way round: the
+    licensing server is ours to keep up, the provider is not, so provider
+    outages are the ones a customer will actually meet.
+
+    502 and not 500: the request was fine and WE are fine — an upstream we
+    depend on is not, and that is what the code means. A customer's own retry
+    logic keys on it.
+
+    The host is NAMED. «Не удалось связаться» without saying with whom leaves
+    nothing to put in a firewall rule or a search box; that was the single most
+    expensive finding of the persona run, on the licence side.
+    """
+    host = base_url.split("//", 1)[-1].split("/", 1)[0]
+    return {
+        "error": "upstream_unreachable",
+        "detail": f"{type(error).__name__}: {error}",
+        "upstream": {
+            "host": host,
+            "remedy": (
+                "Проверьте, что из контейнера есть исходящий доступ к провайдеру:\n"
+                f"    docker exec <контейнер> getent hosts {host}\n"
+                "Чаще всего мешает закрытый исходящий трафик или корпоративный "
+                "прокси. Адрес задан у ключа тенанта — см. issue_key.py."
+            ),
+        },
+    }
+
+
 async def _forward(body: dict[str, object], tenant: Tenant) -> dict[str, object]:
     url = f"{tenant.upstream_base_url}/chat/completions"
     headers = {"Authorization": f"Bearer {tenant.upstream_key}", "Content-Type": "application/json"}
     with stage("proxy.upstream_call"):
-        response = await _upstream_client().post(url, json=body, headers=headers)
+        try:
+            response = await _upstream_client().post(url, json=body, headers=headers)
+        except httpx.HTTPError as error:
+            _log.warning("upstream unreachable: %s: %s", type(error).__name__, error)
+            raise HTTPException(status_code=502,
+                                detail=_upstream_failure(error, tenant.upstream_base_url)) from error
     if response.status_code != 200:
         raise HTTPException(status_code=response.status_code, detail=f"upstream error: {response.text}")
     payload = response.json()
@@ -414,25 +454,47 @@ async def _stream_content(body: dict[str, object], tenant: Tenant, vault: Vault)
     url = f"{tenant.upstream_base_url}/chat/completions"
     headers = {"Authorization": f"Bearer {tenant.upstream_key}", "Content-Type": "application/json"}
     detok: dict[int, StreamDetokenizer] = {}
-    async with _upstream_client().stream("POST", url, json=body, headers=headers) as response:
-        async for line in response.aiter_lines():
-            if not line.startswith("data:"):
-                continue
-            payload = line[5:].strip()
-            if payload == "[DONE]":
-                for stream in detok.values():
-                    tail = stream.flush()
-                    if tail:
-                        yield _delta_chunk(tail)
-                yield "data: [DONE]\n\n"
-                return
-            obj = json.loads(payload)
-            for choice in obj.get("choices", []):
-                index = choice.get("index", 0)
-                delta = choice.get("delta", {})
-                if isinstance(delta.get("content"), str):
-                    delta["content"] = detok.setdefault(index, StreamDetokenizer(vault)).feed(delta["content"])
-            yield f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+    # A STREAM CANNOT CHANGE ITS STATUS CODE once it has begun, so a provider
+    # that dies mid-answer is reported as an SSE error EVENT and the stream is
+    # closed. Letting the exception escape the generator hands the client a
+    # TRUNCATED stream behind a 200 already sent — indistinguishable from a
+    # short answer, which is the worst shape an error can take: the caller
+    # cannot tell a finished reply from a dead connection.
+    try:
+        async with _upstream_client().stream("POST", url, json=body,
+                                             headers=headers) as response:
+            async for line in response.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                payload = line[5:].strip()
+                if payload == "[DONE]":
+                    for stream in detok.values():
+                        tail = stream.flush()
+                        if tail:
+                            yield _delta_chunk(tail)
+                    yield "data: [DONE]\n\n"
+                    return
+                obj = json.loads(payload)
+                for choice in obj.get("choices", []):
+                    index = choice.get("index", 0)
+                    delta = choice.get("delta", {})
+                    if isinstance(delta.get("content"), str):
+                        delta["content"] = detok.setdefault(
+                            index, StreamDetokenizer(vault)).feed(delta["content"])
+                yield f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+    except httpx.HTTPError as error:
+        _log.warning("upstream stream failed: %s: %s", type(error).__name__, error)
+        # WHAT WAS HELD BACK IS FLUSHED FIRST. The carry buffer is holding the
+        # tail of the answer the customer already paid for, and it may contain a
+        # detokenised value — dropping it on the floor loses real text that had
+        # nothing to do with the failure.
+        for stream in detok.values():
+            tail = stream.flush()
+            if tail:
+                yield _delta_chunk(tail)
+        failure = _upstream_failure(error, tenant.upstream_base_url)
+        yield f"data: {json.dumps({'error': failure}, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
 
 
 def _delta_chunk(content: str) -> str:
