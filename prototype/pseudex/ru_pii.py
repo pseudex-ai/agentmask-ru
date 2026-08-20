@@ -182,7 +182,20 @@ _IPV4_RE = re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}"
                       r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b")
 # Свидетельство о рождении: roman series + two Cyrillic letters + number.
 _BIRTH_CERT_RE = re.compile(r"\b[IVX]{1,4}-[А-ЯЁ]{2}\s?№?\s?\d{6}\b")
-_OGRN_RE = re.compile(r"\b\d{15}\b|\b\d{13}\b")
+# ОГРНИП ONLY — FIFTEEN DIGITS. The thirteen-digit ОГРН belongs to a LEGAL
+# person, and a legal person has no data subject: 152-ФЗ ст. 3 п. 1 defines
+# personal data through a физическое лицо, and GDPR Recital 14 excludes data of
+# legal persons in as many words, contact details included.
+#
+# Masking it was not caution, it was damage. A customer's agent looking a
+# counterparty up by ОГРН received a FAKE one and found nothing — we broke their
+# own document flow to protect something the law does not protect, and the
+# failure looked like the tool being broken rather than like us.
+#
+# ОГРНИП stays, and the length is the whole distinction: an individual
+# entrepreneur IS a natural person, and their registration number identifies
+# them. Two numbers, one shape family, opposite answers.
+_OGRNIP_RE = re.compile(r"\b\d{15}\b")
 
 # SPACES ARE A SEPARATOR TOO, and on the green card itself the number is printed
 # «112 233 445 95». Requiring dashes meant the form a customer copies off their
@@ -284,7 +297,7 @@ def detect_structured(text: str) -> list[Span]:
     for entity_type, pattern in ru_pii.ctx_patterns:
         for match in pattern.finditer(text):
             spans.append(Span(match.start(1), match.end(1), entity_type, match.group(1)))
-    for match in _OGRN_RE.finditer(text):
+    for match in _OGRNIP_RE.finditer(text):
         if validate_ogrn(match.group()):
             spans.append(Span(match.start(), match.end(), "OGRN", match.group()))
     for match in _IPV4_RE.finditer(text):

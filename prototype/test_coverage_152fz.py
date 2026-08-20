@@ -47,7 +47,7 @@ _MUST_CATCH: tuple[tuple[str, str], ...] = (
     ("гос номер А123ВЕ777", "PLATE"),
     ("машина х456ор69", "PLATE"),
     ("счёт 40817810099910004312", "ACCOUNT"),
-    ("ОГРН 1027700132195", "OGRN"),
+    # ОГРНИП only. The thirteen-digit ОГРН is on the other list — see there.
     ("ОГРНИП 304500116000157", "OGRN"),
     ("загранпаспорт 750123456", "INTL_PASSPORT"),
     ("подключался с IP 192.168.14.203", "IP"),
@@ -56,6 +56,19 @@ _MUST_CATCH: tuple[tuple[str, str], ...] = (
 
 # Non-personal data that shares a shape with something above.
 _MUST_NOT_MASK: tuple[str, ...] = (
+    # A LEGAL PERSON HAS NO DATA SUBJECT. This test used to demand the opposite,
+    # and the demand was wrong rather than merely outdated: 152-ФЗ ст. 3 п. 1
+    # defines personal data through a физическое лицо, and GDPR Recital 14
+    # excludes data of legal persons in as many words. Masking a company's
+    # registration number broke the customer's own document flow — an agent
+    # looking a counterparty up by ОГРН got a FAKE one and found nothing — to
+    # protect something the law does not protect.
+    #
+    # The valid checksum is what makes this a real assertion: a shape test would
+    # pass on any thirteen digits, while this is a number the recognizer would
+    # have accepted before. ОГРНИП above stays, because an individual
+    # entrepreneur IS a natural person.
+    "ОГРН 1027700132195",
     "заказ 1234567890123",
     "трек 40817810099910004399123",
     "версия 1.2.3.4 сборки",
