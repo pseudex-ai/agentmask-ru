@@ -53,13 +53,63 @@ async def async_post_call_success_hook(self, data, user_api_key_dict, response):
     return response
 ```
 
-**(c) streaming: unmask chunks** — PHASE 2:
+**(c) streaming: unmask chunks** — ГОТОВО.
+
+**Цикл идёт ПО ПОЛЯМ, а не по чанкам.** Текст ответа и аргументы вызова
+инструмента лежат в одном чанке и требуют разного обращения:
+
+| поле | куда | когда |
+|---|---|---|
+| `delta.content` | `/unmask_chunk` | по мере поступления |
+| `delta.tool_calls[].function.arguments` | `/unmask_arguments` | **накопить и один раз** |
+
+Почему аргументы нельзя гнать через `/unmask_chunk`: он подставляет плоский
+текст, а настоящее значение — произвольный текст. Замерено:
+
+```
+через /unmask_chunk : {"company":"ООО "Заря""}      ← JSON сломан
+через /unmask_arguments : {"company": "ООО \"Заря\""}  ← ок
+```
+
+На русском деловом трафике это не край: каждое юрлицо пишется в кавычках.
+Модель получает вызов, который не может прочитать обратно, а провайдер отвечает
+400 на следующем ходу. Внутри строки JSON ничего отдать нельзя до её закрытия —
+экранирование зависит от значения целиком, а уже отданный префикс не вернёшь.
+Поэтому вызов инструмента буферизуется: **корректность вместо плавности**, тот же
+выбор, что и на прокси-леге (`_stream_as_single`).
+
 ```python
 async def async_post_call_streaming_iterator_hook(self, user_api_key_dict, response, request_data):
     org_id = (request_data.get("user") or (request_data.get("metadata") or {}).get("diva_org_id"))
+    if not org_id:
+        async for chunk in response:
+            yield chunk
+        return
+    carry: dict[int, str] = {}      # ОДИН ПЕРЕНОС НА CHOICE, см. ниже
+    args: dict[tuple[int, int], str] = {}
     async for chunk in response:
-        yield await self._pseudex_unmask_chunk(org_id, chunk) if org_id else chunk
+        for choice in chunk.choices:
+            delta = choice.delta
+            if isinstance(getattr(delta, "content", None), str):
+                delta.content, carry[choice.index] = await self._pseudex_unmask_chunk(
+                    org_id, delta.content, carry.get(choice.index, ""))
+            for call in getattr(delta, "tool_calls", None) or []:
+                # НЕ ОТДАЁМ фрагменты аргументов — копим и обнуляем в чанке.
+                args[(choice.index, call.index)] = (
+                    args.get((choice.index, call.index), "") + (call.function.arguments or ""))
+                call.function.arguments = ""
+        yield chunk
+    # хвост переносов + собранные аргументы, одним вызовом каждый
+    ...
 ```
+
+**Один перенос на choice.** При `n > 1` дельты разных ответов идут вперемешку по
+одному соединению, и общий перенос пришьёт хвост одного ответа к голове другого.
+Прокси-лег ключует детокенизаторы по `choice.index` именно поэтому.
+
+**Проверяй `residual_tokens` в ответе `/unmask_arguments`.** Подмена, которая не
+разрешилась внутри вызова инструмента, — это фейк, уходящий в инструмент, и
+увидеть это иначе нельзя: JSON корректен, статус 200.
 
 **(d) the HTTP helpers** reuse the existing `_get_http_client()` + `PSEUDEX_URL` env, calling the sidecar `/mask` and `/unmask`. ~30 lines, no new deps.
 
@@ -68,7 +118,12 @@ async def async_post_call_streaming_iterator_hook(self, user_api_key_dict, respo
 ## 4. Pseudex sidecar API (our side — see `prototype/pseudex/service.py`)
 - `POST /mask` → `{org_id, messages, tools}` → `{messages}` (masked) + records audit. Detect→tokenize per `org_id` vault.
 - `POST /unmask` → `{org_id, response}` → `{response}` (detokenized: content + tool_calls[].arguments).
-- `POST /unmask_chunk` → streaming delta detok (StreamDetokenizer per stream).
+- `POST /unmask_chunk` → `{org_id, delta, carry, flush}` → `{text, carry}`.
+  **Только `delta.content`.** Состояние у вызывающего (перенос возвращается ему),
+  один перенос на `choice.index`.
+- `POST /unmask_arguments` → `{org_id, arguments: [str]}` → `{arguments: [str]}`
+  + `residual_tokens`. Аргументы вызова инструмента, собранные из потока
+  целиком; разбирает JSON и экранирует по построению.
 - `GET /usage?org_id=` → audit counts + recent (for the UI).
 - **Vault keyed by `org_id`** (persistent SQLite/Redis) → cross-turn consistency, multi-tenant. Centralized in the sidecar → correct even with multiple LiteLLM workers/pods (shared vault, unlike per-worker in-process).
 
@@ -76,8 +131,15 @@ async def async_post_call_streaming_iterator_hook(self, user_api_key_dict, respo
 1. **Fail-closed (default) vs fail-open** — privacy vs availability. Default fail-closed (don't leak); make Pseudex HA (it's light, ~3 ms detect). Flag to switch.
 2. **unmask MUST be `async_post_call_success_hook`**, not the logging hook (logging can't change what the engine receives).
 3. **Tool/MCP**: we only protect what reaches the LLM (messages + response). The engine gets unmasked tool args from our post-call hook, then calls MCP tools with real values — correct.
-4. **Vault scope**: `org_id` baseline; add conversation/session id from metadata if available for tighter token namespaces.
-5. **Latency**: + one in-network HTTP hop + ~3 ms detect per call. Acceptable vs seconds of LLM.
+4. **Vault scope**: `org_id` baseline. `conversation_id` в теле `/mask`
+   поддержан — без него он выводится из первых двух сообщений стенограммы.
+   Область разговора это не просто «уже пространство имён»: она то, что делает
+   правило единственного кандидата непустым, когда короткое упоминание («Ленина
+   14») надо связать с полным адресом из того же диалога.
+5. **Стриминг вызовов инструмента буферизуется**, а не течёт — см. (c). Если
+   вам нужна плавность именно на аргументах, это разговор, а не настройка:
+   отдать половину JSON-строки нельзя в принципе.
+6. **Latency**: + one in-network HTTP hop + ~3 ms detect per call. Acceptable vs seconds of LLM.
 6. **Multi-worker LiteLLM**: in-process vault would desync across workers → that's why the vault lives in the **sidecar** (single source of truth).
 7. **Rollout**: `PSEUDEX_ENABLED` off by default → enable per-env → canary one org → watch `/usage` + leak logs. Billing path unchanged when off.
 8. **LiteLLM spend logs** then contain only masked text — a bonus (even billing logs hold no PII).

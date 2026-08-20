@@ -5,6 +5,7 @@ text + keep the per-org vault + audit. Runs in the customer's contour.
   POST /mask          {org_id, messages, tools, conversation_id?}
                                                    -> {messages, tools}  (audited)
   POST /unmask        {org_id, response}           -> {response}
+  POST /unmask_arguments {org_id, arguments[]}     -> {arguments[]}   (streamed tool calls)
   POST /unmask_chunk  {org_id, delta, carry, flush}-> {text, carry}      (SSE leg)
   POST /spans         {org_id, texts}              -> offsets for highlighting
   GET  /usage?org_id=...                           -> counts + recent (for UI)
@@ -45,7 +46,7 @@ from pseudex.license import ENGINE_VERSION, LicenseClient, LicenseError, explain
 from pseudex.maskcache import MaskCache
 from pseudex.operator import build_router
 from pseudex.profiling import snapshot as profiling_snapshot
-from pseudex.redact import residual_tokens, unmask_stream_chunk
+from pseudex.redact import residual_tokens, unmask_arguments, unmask_stream_chunk
 from pseudex.vault import Vault, count_values_since
 
 # Without this the sidecar has NO logging configuration at all, so everything
@@ -462,15 +463,85 @@ async def unmask(request: Request) -> JSONResponse:
                                           if residual else None))
 
 
+@app.post("/unmask_arguments", dependencies=[Depends(_require_gateway)])
+async def unmask_arguments_endpoint(request: Request) -> JSONResponse:
+    """Detokenize the ARGUMENTS of a tool call the gateway assembled from a stream.
+
+    WHY THIS EXISTS AND `/unmask_chunk` CANNOT DO IT. The streaming endpoint
+    substitutes flat text, and a real value is arbitrary text: «ООО "АЭРОМЭП"»
+    put into a JSON string by plain replacement injects two bare quotes and the
+    object stops parsing. Measured, not theorised —
+
+        через /unmask_chunk : {"company":"ООО "АЭРОМЭП""}      JSON сломан
+        через сюда         : {"company": "ООО \\"АЭРОМЭП\\""}   ок
+
+    — and on Russian business traffic it is the common case, because every legal
+    entity is written with quotes. So the arguments are parsed and each string
+    LEAF is detokenised on its own, which escapes whatever the real value turns
+    out to contain by construction.
+
+    THE CALLER MUST BUFFER, and that is the deliberate trade this endpoint
+    encodes. A tool call arrives as `arguments` FRAGMENTS across SSE chunks, and
+    nothing inside a JSON string can be emitted before the string closes —
+    the escaping depends on the whole value, and an already-sent prefix cannot
+    be retracted. The proxy leg made the same choice (`_stream_as_single`);
+    having the two halves of the product disagree about it would be worse than
+    the smoothness either one buys.
+
+    So the gateway's SSE loop is PER FIELD, never per chunk:
+      * `delta.content`                        -> /unmask_chunk, as it streams
+      * `delta.tool_calls[].function.arguments` -> accumulate, then here once
+
+    Body: {org_id, arguments: [str, ...]} -> {arguments: [str, ...]}.
+    A list because one streamed response may carry several tool calls, and the
+    gateway should not pay a round trip for each.
+    """
+    body = await request.json()
+    org_id = str(body.get("org_id", "")) or "default"
+    arguments = body.get("arguments")
+    if not isinstance(arguments, list) or not all(isinstance(a, str) for a in arguments):
+        return JSONResponse({"error": "arguments must be a list of strings"},
+                            status_code=400)
+    restored, residual = await anyio.to_thread.run_sync(
+        _unmask_arguments_for, arguments, org_id, limiter=_MASK_LIMITER
+    )
+    # The same signal `/unmask` carries, and it matters MORE here: a substitute
+    # that fails to resolve inside a tool call is a fake reaching the tool, which
+    # is the one outcome this product exists to prevent. The caller cannot see it
+    # any other way — the JSON is well-formed and the status is 200.
+    payload: dict[str, object] = {"arguments": restored}
+    if residual:
+        payload["residual_tokens"] = residual
+    return JSONResponse(payload, headers=({"X-Pseudex-Residual": str(len(residual))}
+                                          if residual else None))
+
+
 @app.post("/unmask_chunk", dependencies=[Depends(_require_gateway)])
 async def unmask_chunk(request: Request) -> JSONResponse:
-    """Detokenize one SSE delta on the streaming leg.
+    """Detokenize one SSE delta of ASSISTANT TEXT on the streaming leg.
+
+    TEXT ONLY — `delta.content`, never `delta.tool_calls[].function.arguments`.
+    This path substitutes flat text, and a real value is arbitrary text: a
+    company name carrying quotes injects them bare into the JSON and the tool
+    call stops parsing. Tool arguments go to `/unmask_arguments`, which parses
+    the object and escapes by construction; the reasoning and the measurement
+    are there.
+
+    Nothing here can detect the misuse, and deliberately does not try. A brace in
+    prose is prose, so sniffing the content would refuse real answers to guess at
+    a mistake the CALLER's own loop cannot make once it reads the two fields
+    separately — which is what an SSE loop does anyway.
 
     STATELESS: the caller passes back the `carry` it received from the previous
     call and sets `flush` on the final chunk. The host gateway runs many worker
     processes and a stream can die mid-flight, so per-stream state kept here would
     need a shared store plus TTL reaping; the caller already owns the connection,
     so it owns the carry.
+
+    ONE CARRY PER CHOICE. With `n > 1` the deltas of different choices interleave
+    on the same connection, and a shared carry would splice one answer's tail
+    onto another's head. The proxy leg keys its detokenizers on `choice.index`
+    for exactly this; a caller here must do the same.
 
     Body: {org_id, delta, carry, flush} -> {text, carry}."""
     body = await request.json()
@@ -489,6 +560,17 @@ async def unmask_chunk(request: Request) -> JSONResponse:
 def _spans_for_texts(texts: list[object], org_id: str) -> list[list[dict[str, object]]]:
     vault = _vault(org_id)
     return [_spans_for(text, vault) if isinstance(text, str) else [] for text in texts]
+
+
+def _unmask_arguments_for(arguments: list[str],
+                          org_id: str) -> tuple[list[str], list[str]]:
+    """Vault resolved inside the worker thread — see _mask_request."""
+    vault = _vault(org_id)
+    restored = [unmask_arguments(raw, vault) for raw in arguments]
+    residual: list[str] = []
+    for text in restored:
+        residual.extend(residual_tokens(text, vault))
+    return restored, sorted(set(residual))
 
 
 def _unmask_for(response: dict[str, object], org_id: str) -> dict[str, object]:

@@ -123,7 +123,7 @@ running on `localhost:4000` with a seeded `pseudex-dev` tenant.
 | Auth / tenancy | `sk-ps-…` key → `Tenants` → upstream URL+key | `org_id` in the request body |
 | Surface | `POST /v1/chat/completions`, `GET /usage` | `/mask`, `/unmask`, `/spans`, `/reveal`, `/usage` |
 | Conversation scope | derived from the transcript | `conversation_id` in the body, else derived |
-| Streaming | yes (`StreamDetokenizer`; tool-call requests buffered) | not yet (phase 2) |
+| Streaming | yes (`StreamDetokenizer`; tool-call requests buffered) | yes — `/unmask_chunk` for `delta.content`, `/unmask_arguments` for tool calls |
 
 Both wrap the same core: `detect_all` → `vault` → `redact` → `audit`. Their `_mask_messages`
 implementations are **duplicated on purpose but have drifted** — `service.py` handles multi-part
@@ -216,6 +216,35 @@ _resolve()             priority-ordered, longest-first, non-overlapping
 NAME (3) > DATE/PASSPORT/LOC (2). `ADDR` is an internal type that exists solely to outrank a NAME
 sitting inside a street name; it is remapped back to `LOC` after resolution.
 
+
+
+### Streaming on the sidecar
+
+The sidecar does not hold the connection — the host gateway does — so streaming
+here is a CONTRACT, not a pipe, and it is **per field, never per chunk**:
+
+| field | endpoint | when |
+|---|---|---|
+| `delta.content` | `/unmask_chunk` | as it streams |
+| `delta.tool_calls[].function.arguments` | `/unmask_arguments` | accumulate, then once |
+
+- **Tool arguments may never go through `/unmask_chunk`.** It substitutes flat
+  text and a real value is arbitrary text: «ООО "Заря"» put into a JSON string
+  by plain replacement injects two bare quotes and the tool call stops parsing.
+  On Russian business traffic that is the common case, not an edge one. Pinned
+  from both sides in `test_perf_masking.py`, because the tempting simplification
+  is to route everything through one endpoint.
+- **The tool call is buffered, and that is the trade.** Nothing inside a JSON
+  string can be emitted before the string closes — the escaping depends on the
+  whole value and a sent prefix cannot be retracted. Correctness over
+  smoothness, the same choice the proxy leg made in `_stream_as_single`; the two
+  halves of the product disagreeing about it would be worse than either gain.
+- **One carry per `choice.index`.** With `n > 1` the deltas interleave on one
+  connection and a shared carry splices one answer's tail onto another's head.
+- `/unmask_arguments` returns `residual_tokens` like `/unmask` does, and it
+  matters more here: a substitute that fails to resolve inside a tool call is a
+  fake reaching the tool, and the caller cannot see it any other way — the JSON
+  is well-formed and the status is 200.
 
 ### The conversation scope (`Vault.for_conversation`, `envelope.conversation_key`)
 

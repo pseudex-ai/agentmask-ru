@@ -277,6 +277,50 @@ async def _async_tests() -> None:
         assert token not in out, "fake token leaked to the user in the stream"
         print(f"/unmask_chunk OK — {out!r}")
 
+        # 8. STREAMED TOOL CALL: the arguments go through /unmask_arguments and
+        #    the result must still be JSON. This is the whole reason the endpoint
+        #    exists, so the test pins BOTH halves — the streaming path breaking
+        #    the object is asserted too, because the tempting simplification is
+        #    to route arguments through /unmask_chunk like everything else.
+        #
+        #    The value carries quotes on purpose: on Russian business traffic
+        #    every legal entity is written that way, so this is the common case
+        #    and not an edge one.
+        #    The value reaches the vault through form-KV typing, where the KEY
+        #    types the whole VALUE — which is how a quoted string gets in there
+        #    at all: no free-text recogniser produces a span with a quote in it.
+        org8 = "stream_tool_org"
+        real8 = 'ООО "Заря"'
+        masked8 = await _mask(client, org8,
+                              [{"role": "user", "content": f"получатель: {real8}"}])
+        fake = masked8[0]["content"].split(": ", 1)[1]
+        assert fake != real8, "the quoted value was not masked, so nothing is being tested"
+        arguments = json.dumps({"company": fake}, ensure_ascii=False)
+
+        restored = await _post(client, "/unmask_arguments",
+                               {"org_id": org8, "arguments": [arguments]})
+        assert len(restored["arguments"]) == 1, "one argument in, one out"
+        try:
+            parsed = json.loads(restored["arguments"][0])
+        except json.JSONDecodeError as error:
+            raise AssertionError(
+                f"/unmask_arguments returned unparseable JSON: "
+                f"{restored['arguments'][0]!r} ({error})") from error
+        assert parsed["company"] == real8, f"tool argument not restored: {parsed!r}"
+
+        # The same string through the TEXT path, which must not be used for this.
+        flat = await _post(client, "/unmask_chunk",
+                           {"org_id": org8, "delta": arguments, "carry": "", "flush": True})
+        try:
+            json.loads(flat["text"])
+            raise AssertionError(
+                "/unmask_chunk produced valid JSON for a quoted value — if that "
+                "is now true, /unmask_arguments may be redundant and this test "
+                "is the place to decide that deliberately")
+        except json.JSONDecodeError:
+            pass
+        print(f"/unmask_arguments OK — {parsed!r}")
+
 
 def test_generic_name_key_does_not_over_mask() -> None:
     """REGRESSION (found by the BFCL paired run, not by our own eval sets).
