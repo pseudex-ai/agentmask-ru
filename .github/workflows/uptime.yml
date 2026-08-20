@@ -1,0 +1,62 @@
+# Проверка снаружи нашей инфраструктуры.
+#
+# ПОЧЕМУ НЕ НА ХОСТЕ. Сторож в `deploy/watch.sh` видит всё, что происходит
+# внутри стенда, и не видит ровно одного: собственной смерти. Если машина
+# выключилась, у гипервизора кончился диск или провайдер увёл сеть — сторож
+# молчит вместе с ней, а молчание неотличимо от «всё хорошо».
+#
+# GitHub Actions здесь не «ещё один сервис», а единственная точка, которая уже
+# есть, живёт не у нас и ничего не стоит. Тревога идёт в тот же Telegram-канал,
+# что и всё остальное: два канала — это два места, куда забудут посмотреть.
+
+name: uptime
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: probe the public surfaces
+        env:
+          SITE_HOST: ${{ vars.SITE_HOST }}
+          LICENSE_HOST: ${{ vars.LICENSE_HOST }}
+          TG_TOKEN: ${{ secrets.PSEUDEX_TG_TOKEN }}
+          TG_CHAT: ${{ secrets.PSEUDEX_TG_CHAT }}
+        run: |
+          set -u
+          : > /tmp/fail
+
+          # Три попытки с паузой, прежде чем кричать. Одиночный таймаут из
+          # облака GitHub — это чаще сеть между нами, чем наш отказ, и тревога
+          # на него обучает не верить тревогам.
+          probe() {
+            name="$1"; url="$2"; want="$3"
+            [ -n "${url#https://}" ] || return 0
+            for _ in 1 2 3; do
+              code="$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' "$url" || echo 000)"
+              [ "$code" = "$want" ] && return 0
+              sleep 10
+            done
+            printf '%s: %s -> %s (ожидали %s)\n' "$name" "$url" "$code" "$want" >> /tmp/fail
+          }
+
+          probe "витрина" "https://${SITE_HOST}/healthz" 200
+          # Лицензионный сервер отвечает 405 на GET по /v1/lease, и это признак
+          # жизни: 200 там не бывает никогда, а отказ соединения бывает.
+          probe "лицензии" "https://${LICENSE_HOST}/v1/lease" 405
+
+          [ -s /tmp/fail ] || exit 0
+
+          TEXT="$(printf '%s\n\n%s\n\n%s' \
+            '🔴 <b>Снаружи не отвечает</b>' \
+            "<pre>$(cat /tmp/fail)</pre>" \
+            'Сторож на хосте молчит — значит машина или сеть, а не сервис.')"
+          curl -sS -o /dev/null \
+            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d "chat_id=${TG_CHAT}" -d "parse_mode=HTML" \
+            --data-urlencode "text=${TEXT}"
+          exit 1

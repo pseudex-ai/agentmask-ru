@@ -1,0 +1,12 @@
+[Unit]
+Description=pseudex: еженедельные учения по восстановлению
+
+[Timer]
+# Воскресенье, 04:00 — после ночного бэкапа и до понедельника, когда результат
+# кто-то прочитает.
+OnCalendar=Sun *-*-* 04:00:00
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

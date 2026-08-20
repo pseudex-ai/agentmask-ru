@@ -159,3 +159,49 @@ jobs:
         run: |
           DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${REGISTRY}/${IMAGE}:${VERSION}")"
           cosign sign --yes "${DIGEST}"
+
+      # OUR OWN TWO IMAGES, BUILT HERE AND NOT ON THE HOST.
+      #
+      # They used to be `build:` entries in deploy/compose.yml, which means
+      # `docker compose build` on the production machine — and then nothing
+      # anywhere proves that what is running is what passed CI. A build on the
+      # host can differ from a build here for a dozen boring reasons (a stale
+      # layer cache, a base image that moved, a file that is gitignored on one
+      # side), and the difference surfaces as a bug nobody can reproduce.
+      #
+      # Signed for the same reason the customer image is, even though only we
+      # pull them: the deploy agent VERIFIES the signature before it restarts
+      # anything, so a registry compromise cannot become a production
+      # compromise. An unsigned image would make that check impossible and the
+      # agent would be trusting the registry — which is exactly the thing a
+      # signature exists to stop trusting.
+      - name: build, push and sign our own images
+        run: |
+          set -eu
+          for pair in "licensing:prototype:licensing/Dockerfile" "storefront:storefront:Dockerfile"; do
+            NAME="${pair%%:*}"; REST="${pair#*:}"
+            CTX="${REST%%:*}"; FILE="${REST#*:}"
+            REF="${REGISTRY}/pseudex-${NAME}:${VERSION}"
+            docker build -f "${CTX}/${FILE}" -t "${REF}" "${CTX}"
+            docker push "${REF}"
+            DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${REF}")"
+            cosign sign --yes "${DIGEST}"
+            echo "pushed and signed ${DIGEST}"
+          done
+
+      # THE MANIFEST THE HOST READS. The deploy agent must not guess which
+      # version is current, and it must not read a mutable `latest` — so the
+      # release publishes one small file naming the exact digests it proved,
+      # and the agent moves only when this file changes.
+      - name: publish the release manifest
+        run: |
+          set -eu
+          {
+            echo "version=${VERSION}"
+            for name in "${IMAGE}" "pseudex-licensing" "pseudex-storefront"; do
+              echo "${name}=$(docker inspect --format='{{index .RepoDigests 0}}' "${REGISTRY}/${name}:${VERSION}")"
+            done
+          } > release-manifest.txt
+          cat release-manifest.txt
+      - uses: actions/upload-artifact@v4
+        with: { name: release-manifest, path: release-manifest.txt }

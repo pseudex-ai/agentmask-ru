@@ -37,10 +37,11 @@ services:
     expose: ["5432"]
 
   license:
-    build:
-      context: ../prototype
-      dockerfile: licensing/Dockerfile
-    image: pseudex-licensing:${VERSION:-latest}
+    # ИЗ РЕЕСТРА, А НЕ `build:`. Сборка на боевой машине означала, что ничто
+    # нигде не доказывает: то, что крутится, — это то, что прошло гейты. Образ
+    # собирается, подписывается и публикуется в release.yml, а агент выкатки
+    # проверяет подпись прежде, чем что-либо остановить.
+    image: ${REGISTRY:-cr.yandex/pseudex}/pseudex-licensing:${VERSION:?set VERSION}
     restart: unless-stopped
     logging: *logging
     environment:
@@ -70,9 +71,7 @@ services:
     expose: ["9443"]
 
   storefront:
-    build:
-      context: ../storefront
-    image: pseudex-storefront:${VERSION:-latest}
+    image: ${REGISTRY:-cr.yandex/pseudex}/pseudex-storefront:${VERSION:?set VERSION}
     restart: unless-stopped
     logging: *logging
     environment:
@@ -91,6 +90,15 @@ services:
       PSEUDEX_SMTP_USER: ${SMTP_USER:-}
       PSEUDEX_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       PSEUDEX_FROM_EMAIL: ${FROM_EMAIL:-pseudex <noreply@pseudex.ru>}
+    healthcheck:
+      # Витрина была единственным сервисом на пути клиента без проверки: Django,
+      # уронивший себя миграцией, отвечал бы `running` бесконечно, а агент
+      # выкатки счёл бы это успехом.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5).status==200 else 1)\""]
+      interval: 15s
+      timeout: 10s
+      retries: 4
+      start_period: 40s
     depends_on:
       postgres: { condition: service_healthy }
       license: { condition: service_started }
@@ -109,6 +117,14 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    healthcheck:
+      # Не «процесс жив», а «отдаёт страницу». Caddy, потерявший конфиг или
+      # сертификат, продолжает работать и отвечать ошибкой — именно этот случай
+      # проверка и ловит.
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:80/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     ports:
       - "80:80"
       - "8443:443"
@@ -132,7 +148,40 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
 
+  watch:
+    # СТОРОЖ. Превращает список из docs/operations.md §5 в механизм: раньше это
+    # была инструкция человеку, а человек не смотрит.
+    #
+    # Отдельный контейнер, а не cron на хосте, по той же причине, что и backup:
+    # хост может быть пересобран, а `restart: unless-stopped` переживает и
+    # перезагрузку, и вмешательство.
+    #
+    # Docker-сокет проброшен, и это осознанный компромисс: доступ к нему равен
+    # root на хосте. Сузить право до «читать статусы» docker не даёт, а не
+    # знать, что сервис лёг, — хуже.
+    image: docker:27-cli
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      PSEUDEX_TG_TOKEN: ${PSEUDEX_TG_TOKEN:-}
+      PSEUDEX_TG_CHAT: ${PSEUDEX_TG_CHAT:-}
+      PSEUDEX_ENV_NAME: ${PSEUDEX_ENV_NAME:-prod}
+      PSEUDEX_ADMIN_TOKEN: ${PSEUDEX_LICENSE_ADMIN_TOKEN:-}
+      SITE_HOST: ${SITE_HOST}
+      PSEUDEX_BACKUP_DIR: /deploy/backups
+      PSEUDEX_WATCH_STATE: /state
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/deploy:ro
+      - watch-state:/state
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        apk add --no-cache curl python3 openssl >/dev/null
+        while :; do sh /deploy/watch.sh || true; sleep 60; done
+
 volumes:
+  watch-state:
   postgres-data:
   license-data:
   caddy-data:

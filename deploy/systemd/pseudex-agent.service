@@ -1,0 +1,24 @@
+# Агент выкатки. Запускается таймером, не как демон.
+#
+# ПОЧЕМУ SYSTEMD, А НЕ СЕРВИС COMPOSE. Агент делает `docker compose up -d` над
+# тем же стендом. Живи он внутри этого стенда — он остановил бы сам себя на
+# середине выкатки и не дожил бы до проверки здоровья и отката. Это тот
+# случай, когда «всё в одном compose» ломает саму задачу.
+#
+# systemd, а не cron, ещё и потому, что нужен `Type=oneshot` с внятным статусом:
+# `systemctl status pseudex-agent` показывает, чем кончилась последняя выкатка,
+# а cron показывает почту, которую никто не читает.
+
+[Unit]
+Description=pseudex: выкатка по тегу с проверкой подписи
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/pseudex/deploy
+EnvironmentFile=/opt/pseudex/deploy/.env
+ExecStart=/opt/pseudex/deploy/agent.sh
+# Ничего не рестартим сами: следующий тик таймера через минуту, а агент
+# идемпотентен. Автоперезапуск здесь означал бы цикл на сломанном теге.
+TimeoutStartSec=900

@@ -1,0 +1,127 @@
+#!/bin/sh
+# Выкатка, которую хост делает САМ.
+#
+# ПОЧЕМУ ХОСТ ЗАБИРАЕТ, А НЕ CI ПРИХОДИТ. Вариант «GitHub Actions заходит по
+# SSH» привычнее и виден в логах Actions — и требует двух вещей, которые для
+# продукта про приватность плохой размен: долгоживущего ключа в GitHub, дающего
+# root на боевой машине, и открытого наружу входящего SSH. Здесь наружу не
+# открыто ничего: машина сама раз в минуту смотрит в git и в реестр.
+#
+# ЧТО ДЕЛАЕТ ЭТОТ ФАЙЛ, ЧЕГО НЕ ДЕЛАЕТ `docker compose pull`:
+#
+#   1. ПРОВЕРЯЕТ ПОДПИСЬ до того, как что-либо остановит. Реестр — не
+#      доверенная сторона; подпись существует ровно затем, чтобы его не
+#      приходилось считать таковой, и проверка тут единственное место, где это
+#      имеет силу. Не сошлась — не выкатываем и кричим.
+#   2. ЖДЁТ ЗДОРОВЬЯ и ОТКАТЫВАЕТСЯ САМ. Обновление, после которого сервис не
+#      поднялся, чинится за 40 секунд без человека. Это и есть разница между
+#      «автономно» и «автоматически»: автоматическое умеет только ломать
+#      быстрее.
+#   3. Держит замок. Таймер раз в минуту и выкатка длиной в три — это два
+#      одновременных `compose up`, если не мешать.
+#
+# Источник правды — ТЕГ В GIT. Из него же берётся compose-файл, поэтому
+# описание стенда и версии образов не могут разъехаться: они переезжают одним
+# движением. Откат — `git tag -f` на прежний коммит или PSEUDEX_PIN.
+set -eu
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+REPO="$(cd "$HERE/.." && pwd)"
+STATE="${PSEUDEX_AGENT_STATE:-$HERE/.deployed}"
+LOCK="${PSEUDEX_AGENT_LOCK:-$HERE/.agent.lock}"
+REGISTRY="${REGISTRY:-cr.yandex/pseudex}"
+notify() { "$HERE/notify.sh" "$@" || true; }
+
+# Одновременных выкаток не бывает. `flock` без ожидания: если предыдущая ещё
+# идёт, эта просто уходит — через минуту таймер придёт снова.
+exec 9>"$LOCK"
+flock -n 9 || { echo "agent: предыдущая выкатка ещё идёт"; exit 0; }
+
+cd "$REPO"
+git fetch --tags --quiet --force
+
+# PSEUDEX_PIN закрепляет версию и выключает автовыкатку. Нужен ровно в тот
+# момент, когда что-то пошло не так и нужно время подумать, не воюя с агентом,
+# который упорно возвращает «правильную» версию.
+WANT="${PSEUDEX_PIN:-$(git tag -l 'v*' --sort=-v:refname | head -1)}"
+[ -n "$WANT" ] || { echo "agent: тегов вида v* нет"; exit 0; }
+
+HAVE="$(cat "$STATE" 2>/dev/null || echo "")"
+[ "$WANT" = "$HAVE" ] && exit 0
+
+VERSION="${WANT#v}"
+echo "agent: $HAVE -> $WANT"
+
+# ── подпись, ДО остановки чего бы то ни было ────────────────────────────────
+# Проверяется каждый образ, включая клиентский: он не крутится у нас, но его
+# дайджест — то, что мы показываем клиенту в инструкции, и расхождение здесь
+# означает, что мы собираемся раздать неподтверждённые байты.
+IDENTITY="${COSIGN_IDENTITY_REGEXP:-.*}"
+ISSUER="${COSIGN_ISSUER_REGEXP:-.*}"
+for name in pseudex pseudex-licensing pseudex-storefront; do
+    REF="${REGISTRY}/${name}:${VERSION}"
+    if ! cosign verify "$REF" \
+            --certificate-identity-regexp "$IDENTITY" \
+            --certificate-oidc-issuer-regexp "$ISSUER" >/dev/null 2>&1; then
+        notify crit "Выкатка ОТМЕНЕНА: подпись не сошлась" \
+            "$REF
+Ничего не остановлено, работает $HAVE.
+Реестру мы не доверяем — подпись для того и нужна. Разберитесь, откуда взялся
+этот образ, прежде чем снимать проверку."
+        exit 1
+    fi
+done
+
+notify info "Выкатка $HAVE → $WANT" "Подписи проверены, поднимаю."
+
+# ── выкатка ────────────────────────────────────────────────────────────────
+# Прежний тег запоминается ДО checkout: после него `git describe` покажет уже
+# новый, и откатываться будет некуда.
+PREV="${HAVE:-$(git describe --tags --abbrev=0 HEAD 2>/dev/null || echo "")}"
+git checkout --quiet "$WANT"
+
+deploy() {
+    VERSION="${1#v}" docker compose -f "$HERE/compose.yml" pull --quiet
+    VERSION="${1#v}" docker compose -f "$HERE/compose.yml" up -d --remove-orphans
+}
+
+healthy() {
+    # Здоровье СЕРВИСА, а не факт запуска контейнера. `docker compose ps`
+    # покажет `running` у процесса, который упал в цикл рестарта секунду назад,
+    # и выкатка, проверяющая это, всегда «успешна».
+    for _ in $(seq 1 30); do
+        sleep 2
+        bad="$(docker compose -f "$HERE/compose.yml" ps --format '{{.Service}} {{.Health}} {{.State}}' \
+               | awk '$2 == "unhealthy" || ($2 == "" && $3 != "running") { print $1 }')"
+        [ -z "$bad" ] && return 0
+    done
+    echo "$bad"
+    return 1
+}
+
+if ! deploy "$WANT" 2>&1 | tail -20; then
+    notify crit "Выкатка $WANT не собралась" "Откатываюсь на $PREV."
+    [ -n "$PREV" ] && { git checkout --quiet "$PREV"; deploy "$PREV" >/dev/null 2>&1 || true; }
+    exit 1
+fi
+
+if ! BAD="$(healthy)"; then
+    notify crit "После $WANT сервисы не поднялись" \
+        "Нездоровы: ${BAD:-неизвестно}
+Откатываюсь на $PREV. Логи посмотрите сами — я их не пересылаю, там могут быть
+данные клиента."
+    if [ -n "$PREV" ]; then
+        git checkout --quiet "$PREV"
+        deploy "$PREV" >/dev/null 2>&1 || true
+        printf '%s' "$PREV" > "$STATE"
+        notify warn "Откат на $PREV выполнен" "Продакшен работает на прежней версии."
+    fi
+    exit 1
+fi
+
+printf '%s' "$WANT" > "$STATE"
+notify info "Выкатка $WANT готова" "Все сервисы здоровы."
+
+# Старые образы копятся быстрее, чем кончается диск, но кончается именно диск —
+# и это единственный отказ из docs/operations.md §2, который останавливает всех.
+docker image prune -af --filter "until=168h" >/dev/null 2>&1 || true
