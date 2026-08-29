@@ -1,4 +1,4 @@
-"""The closing gate for packaging: P1-P8 against the compiled image.
+"""The closing gate for packaging: P1-P9 against the compiled image.
 
 Same rules as `gates.py`: every check runs against a real container, nothing is
 mocked, and each gate proves its precondition before checking its consequence.
@@ -23,6 +23,7 @@ import argparse
 import base64
 import json
 import os
+import sqlite3
 import statistics
 import subprocess
 import sys
@@ -96,6 +97,8 @@ def build_images(skip_build: bool) -> str:
         f"PSEUDEX_GRACE_SECONDS=600\n"
         f"PSEUDEX_FAULT_INJECT=\n"
         f"PSEUDEX_LOG_RAW_BODY=\n"
+        f"PSEUDEX_VAULT_ENCRYPTION=\n"
+        f"PSEUDEX_VAULT_KEY=\n"
     )
     return public_b64
 
@@ -342,6 +345,71 @@ def gate_p5(workers: int) -> bool:
                 + (f" reasons={distinct} first={reasons[0][:90]!r}" if reasons else ""))
 
 
+def gate_p9() -> bool:
+    """What the RELEASE image writes cannot be read by ordinary SQLite.
+
+    THE DANGER THIS GATE EXISTS FOR is one line nobody would notice in review:
+
+        try: from sqlcipher3 import dbapi2 as driver
+        except ImportError: import sqlite3 as driver
+
+    Stdlib `sqlite3` accepts `PRAGMA key` WITHOUT RAISING and writes plain text.
+    A build where SQLCipher failed to bundle would therefore log that it was
+    encrypting, pass every functional test, and store every real value in the
+    clear. Nothing inside the product can detect that about itself — the code
+    that would report it is the code that is wrong.
+
+    So the gate stands outside and asks the customer's own question: take the
+    files this image produced and try to open them with the SQLite that every
+    machine already has. The reader is this process's own stdlib, deliberately —
+    if SQLCipher had degraded to it, the files would open here.
+
+    Two halves, and both are required. The vault must PROVE it holds the real
+    values (through `/unmask`, which is the only supported way to get them back),
+    and the volume must then refuse to give them up to a plain reader. Either
+    half alone passes on an empty volume or on a broken service.
+    """
+    marker_values = list(fixtures.PII_PAYLOAD.values())
+    masked = httpx.post(f"{SIDECAR}/mask", json=fixtures.mask_body(ORG), timeout=120,
+                        headers=gateway_headers()).json()["messages"][0]["content"]
+    restored = httpx.post(
+        f"{SIDECAR}/unmask", timeout=120, headers=gateway_headers(),
+        json={"org_id": ORG, "response": {"choices": [
+            {"message": {"role": "assistant", "content": masked}}]}},
+    ).json()["response"]["choices"][0]["message"]["content"]
+    held = [value for value in marker_values if value in restored]
+
+    # Copied out rather than read in place: the point is what an ordinary tool on
+    # an ordinary machine can do with a stolen volume, and that tool is not
+    # inside the container.
+    container = compose(["ps", "-q", "sidecar"], False, 30).stdout.strip().splitlines()
+    if not container:
+        return gate("P9 the release image writes nothing ordinary SQLite can read",
+                    False, "no sidecar container")
+    copied = _HERE / "reports" / "volume"
+    sh(["rm", "-rf", str(copied)], False, 60)
+    sh(["docker", "cp", f"{container[0]}:/data", str(copied)], True, 300)
+
+    files = sorted(path for path in copied.rglob("*") if path.is_file())
+    opened: list[str] = []
+    readable: list[str] = []
+    for path in files:
+        blob = path.read_bytes()
+        if any(value.encode("utf-8") in blob for value in marker_values):
+            readable.append(path.name)
+        try:
+            with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as plain:
+                plain.execute("SELECT count(*) FROM sqlite_master").fetchone()
+            opened.append(path.name)
+        except sqlite3.DatabaseError:
+            pass
+
+    ok = bool(held) and bool(files) and not opened and not readable
+    return gate("P9 the release image writes nothing ordinary SQLite can read", ok,
+                f"vault_holds={len(held)}/{len(marker_values)} files={len(files)} "
+                f"opened_by_stdlib={opened or 'none'} readable={readable or 'none'}")
+
+
 def gate_p6() -> bool:
     """A private registry with credentials, and a signature the customer can check."""
     sh(["docker", "rm", "-f", REGISTRY_CONTAINER], False, 60)
@@ -449,7 +517,7 @@ def main() -> None:
         # Bringing up two stands and running the whole detection suite through
         # both takes ~20 minutes, so it is skipped entirely when no selected gate
         # needs it — `--only P1,P2` should not pay for parity.
-        needs_stand = any(wanted(name) for name in ("P3", "P4", "P5", "P8"))
+        needs_stand = any(wanted(name) for name in ("P3", "P4", "P5", "P8", "P9"))
         if needs_stand:
             # Baseline on the SOURCE image, so parity has something to compare to.
             print("== source image baseline ==")
@@ -480,6 +548,10 @@ def main() -> None:
                 gate_p5(args.workers)
             if wanted("P8"):
                 gate_p8(startup)
+            # Last of the stand gates: it copies the volume out, so it wants one
+            # that has already had real traffic through it.
+            if wanted("P9"):
+                gate_p9()
         if wanted("P6"):
             gate_p6()
     finally:
@@ -497,7 +569,7 @@ def _report(started: float) -> int:
     print("=" * 64)
     print(f"{len(RESULTS) - len(failed)}/{len(RESULTS)} packaging gates passed "
           f"in {(time.monotonic() - started) / 60:.1f} min")
-    print("P7 (the whole L1-L15 suite on the compiled image) runs separately:\n"
+    print("P7 (the whole L1-L21 suite on the compiled image) runs separately:\n"
           f"    python3 e2e/gates.py --image {COMPILED_IMAGE}")
     return 1 if failed else 0
 

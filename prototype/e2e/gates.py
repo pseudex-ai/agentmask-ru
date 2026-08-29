@@ -1,4 +1,4 @@
-"""The closing gate for the licensing layer: L1-L15 against a real local instance.
+"""The closing gate for the licensing layer: L1-L21 against a real local instance.
 
 RULES THIS FILE OBEYS (docs/tz-license-packaging.md §4.1), because a gate that
 cheats is worse than no gate:
@@ -34,6 +34,7 @@ import base64
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -252,6 +253,8 @@ def build_stand(image: str, workers: int, skip_build: bool) -> str:
         f"PSEUDEX_LOG_RAW_BODY=\n"
         f"PSEUDEX_LD_PRELOAD=\n"
         f"PSEUDEX_FAKETIME_FILE=\n"
+        f"PSEUDEX_VAULT_ENCRYPTION=\n"
+        f"PSEUDEX_VAULT_KEY=\n"
     )
     compose(["up", "-d", "license"], True, 600)
     if not wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
@@ -986,6 +989,156 @@ def gate_l12() -> bool:
                 f"subset_of_local={entity_types <= local_types} pii_on_wire={on_wire}")
 
 
+# --- gates: the volume at rest -------------------------------------------
+
+def data_dir_listing() -> str:
+    return sidecar_exec(["sh", "-c", "ls -la /data 2>&1 || true"]).stdout
+
+
+def readable_pii_in_data() -> list[str]:
+    """Which of the payload's real values can be read out of the WHOLE volume.
+
+    BY DIRECTORY, NEVER BY FILE, and that distinction is the gate. Personal data
+    lives in `vault.db-wal` until a checkpoint moves it: measured on a live
+    vault, zero matches inside `vault.db` and both the phone and the name present
+    in the `-wal` beside it. A check that greps the database file alone therefore
+    PASSES on a completely unencrypted vault, which is the one outcome a gate
+    like this must never produce.
+    """
+    patterns = " ".join(f"-e {shlex.quote(value)}" for value in fixtures.PII_PAYLOAD.values())
+    found = sidecar_exec(["sh", "-c",
+                          f"grep -rlF {patterns} /data 2>/dev/null || true"]).stdout
+    return [line for line in found.splitlines() if line.strip()]
+
+
+def restart_stand() -> bool:
+    """Down to an EMPTY volume, then back up. Returns whether it came up.
+
+    `down -v` removes the named volumes, which is exactly the point: these gates
+    are about what a volume CONTAINS, so each has to start from one whose whole
+    history it controls. The licence key goes with the volume, so a new one is
+    issued each time.
+    """
+    compose_down()
+    compose(["up", "-d", "license"], True, 600)
+    if not wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
+                      120, 2, "licensing admin"):
+        return False
+    key = httpx.post(f"{ADMIN}/admin/issue",
+                     json={"org_id": ORG, "plan": _GATE_PLAN}, timeout=15).json()["key"]
+    set_env("PSEUDEX_KEY", key)
+    return start_sidecar()
+
+
+def recreate_sidecar() -> bool:
+    """Restart the sidecar KEEPING its volume, so the environment changes and the
+    data does not. `down -v` would delete the very thing under test."""
+    compose(["stop", "sidecar"], False, 120)
+    compose(["up", "-d", "--force-recreate", "sidecar"], True, 600)
+    return wait_until(
+        lambda: httpx.get(f"{SIDECAR}/health", timeout=5).json()["license"] == "active",
+        180, 3, "sidecar to reach license=active",
+    )
+
+
+def post_unmask(content: str, timeout: float) -> str:
+    body = {"org_id": ORG,
+            "response": {"choices": [{"message": {"role": "assistant",
+                                                  "content": content}}]}}
+    answer = httpx.post(f"{SIDECAR}/unmask", json=body, timeout=timeout,
+                        headers=gateway_headers()).json()
+    return answer["response"]["choices"][0]["message"]["content"]
+
+
+def gate_l19() -> bool:
+    """Nothing of the customer's real data is readable in the volume.
+
+    The precondition is the half that makes it a gate rather than a tautology:
+    the same values must come back out through `/unmask`, so the vault provably
+    HOLDS them while the volume provably does not disclose them. Without that,
+    an empty volume passes.
+    """
+    set_env("PSEUDEX_VAULT_ENCRYPTION", "")
+    set_env("PSEUDEX_VAULT_KEY", "")
+    if not restart_stand():
+        return gate("L19 the volume discloses no real value", False, "stand did not start")
+    for _ in range(5):
+        post_mask(90)
+    masked = post_mask(90).json()["messages"][0]["content"]
+    restored = post_unmask(masked, 60)
+
+    held = [value for value in fixtures.PII_PAYLOAD.values() if value in restored]
+    listing = data_dir_listing()
+    # The -wal has to be THERE while we grep, or "by directory" and "by file"
+    # would be the same check and the gate would not be testing what it claims.
+    wal_present = "vault.db-wal" in listing
+    leaked = readable_pii_in_data()
+
+    return gate("L19 the volume discloses no real value",
+                bool(held) and wal_present and not leaked,
+                f"vault_holds={len(held)}/{len(fixtures.PII_PAYLOAD)} "
+                f"wal_present={wal_present} readable={leaked or 'none'}")
+
+
+def gate_l20() -> bool:
+    """A volume written in plain text keeps working, and its tokens, after a key.
+
+    This is the migration's whole promise. The substitutes are already sitting in
+    the customer's CRM by the time they decide to encrypt, so the one thing that
+    may not change is what a token resolves to — which is why the SAME masked
+    text is sent to `/unmask` on both sides of the restart and compared.
+    """
+    set_env("PSEUDEX_VAULT_ENCRYPTION", "off")
+    set_env("PSEUDEX_VAULT_KEY", "")
+    if not restart_stand():
+        set_env("PSEUDEX_VAULT_ENCRYPTION", "")
+        return gate("L20 a plaintext volume migrates without losing a token",
+                    False, "stand did not start unencrypted")
+    masked = post_mask(90).json()["messages"][0]["content"]
+    before = post_unmask(masked, 60)
+    # PRECONDITION: it really was plain text. If this is empty the rest of the
+    # gate is measuring encryption against encryption.
+    plain_hits = readable_pii_in_data()
+
+    set_env("PSEUDEX_VAULT_ENCRYPTION", "")
+    if not recreate_sidecar():
+        return gate("L20 a plaintext volume migrates without losing a token",
+                    False, "sidecar did not come back with a key")
+    after = post_unmask(masked, 60)
+    encrypted_hits = readable_pii_in_data()
+
+    return gate("L20 a plaintext volume migrates without losing a token",
+                bool(plain_hits) and after == before and not encrypted_hits,
+                f"was_plaintext={len(plain_hits)} same_values={after == before} "
+                f"readable_after={encrypted_hits or 'none'}")
+
+
+def gate_l21() -> bool:
+    """A key that does not open the volume stops the container, and says why.
+
+    SQLCipher answers `file is not a database` to a wrong key, to a corrupt file
+    and to an unencrypted database alike. An operator who is shown that sentence
+    goes looking for a broken disk. The gate is that OUR explanation reaches the
+    log and the port stays shut — a gateway that came up on a vault it cannot
+    read would mint a second substitute for every person who already has one.
+    """
+    # Runs on the volume L20 left behind: encrypted, with real rows in it.
+    set_env("PSEUDEX_VAULT_KEY", "b" * 64)
+    compose(["stop", "sidecar"], False, 120)
+    compose(["up", "-d", "--force-recreate", "sidecar"], False, 600)
+
+    ours = "не открывает"
+    spoke = wait_until(lambda: ours in logs("sidecar"), 180, 3, "our own refusal message")
+    output = logs("sidecar")
+    served = _port_answered()
+    set_env("PSEUDEX_VAULT_KEY", "")
+
+    return gate("L21 a wrong key refuses to start, in our words",
+                spoke and not served,
+                f"our_message={spoke} still_serving={served} "
+                f"driver_sentence_alone={'file is not a database' in output and not spoke}")
+
+
 def gate_l15() -> bool:
     combined = all_logs()
     leaked = [value for value in fixtures.leak_values() if value in combined]
@@ -1063,6 +1216,18 @@ def main() -> None:
             run_gate("L13", gate_l13, args.image)
         if wanted("L12"):
             run_gate("L12", gate_l12)
+
+        # BEFORE L15, deliberately: these three restart the stand several times
+        # and push real personal data through it, so their logs are exactly the
+        # ones the leak sweep should also be reading.
+        print("== the volume at rest ==")
+        if wanted("L19"):
+            run_gate("L19", gate_l19)
+        if wanted("L20"):
+            run_gate("L20", gate_l20)
+        if wanted("L21"):
+            run_gate("L21", gate_l21)
+
         if wanted("L15"):
             run_gate("L15", gate_l15)
     finally:
