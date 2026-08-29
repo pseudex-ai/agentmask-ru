@@ -62,6 +62,15 @@ class AddressAssets:
     # Same shape with an ABBREVIATED marker («ул. ленина 14»), which the two
     # above cannot carry — see the comment on `_ST_ABBR` in assets_source.
     street_abbr_lower: re.Pattern[str]
+    # The same shape with the type word AFTER the name. Russian writes it
+    # that way at least as often, and the name-first arm uses the FULL
+    # type words only — so an abbreviation there matched nothing at all.
+    street_abbr_lower_last: re.Pattern[str]
+    # The house number SPOKEN («улица лермонтова тридцать восемь»). Kept apart
+    # from the digit arms because a number word cannot hold a match down the
+    # way a digit can — the gate lives in the engine, on the vocabulary.
+    street_spoken_first: re.Pattern[str]
+    street_spoken_last: re.Pattern[str]
     # Marked street, lower case, NO house number — gated on morphology
     # in the engine, because the house number is the guard the others use.
     street_lower_nohouse: re.Pattern[str]

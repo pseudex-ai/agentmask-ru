@@ -238,6 +238,7 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
     out: list[tuple[int, int, bool]] = []
     for rx in (address.street_first, address.street_last, address.street_lower_first,
                address.street_lower_last, address.street_abbr_lower,
+               address.street_abbr_lower_last,
                address.house, address.mkr, address.rural):
         for m in rx.finditer(text):
             out.append((m.start(), m.end(), True))   # core
@@ -276,6 +277,30 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
             continue
         if _lower_names_a_street(name, address):
             out.append((m.start(), m.end(), True))   # core
+    for rx, group in ((address.street_spoken_first, "sfirst"),
+                      (address.street_spoken_last, "slast")):
+        for m in rx.finditer(text):
+            # THE NUMBER IS A WORD, SO THE STREET NAME MUST CARRY THE PROOF.
+            # Every other lower-case arm is held down by a digit after the type
+            # word, which ordinary prose almost never produces. A spoken number
+            # is an ordinary Russian word and holds nothing: measured, folding
+            # it into those arms found all seven real call transcripts and also
+            # made addresses out of «на улице минус десять» and «проспект был
+            # построен сорок лет назад». The vocabulary is the one signal that
+            # does not generalise to prose — same rule, same reason, as
+            # `markerless_lower` directly below.
+            # TWO SIGNALS, AND THE TYPE WORD IS THE FIRST ONE. `_lower_is_street`
+            # was tried here and is wrong for the opposite reason it is right in
+            # `markerless_lower`: there the vocabulary is the ONLY evidence, so it
+            # must not generalise; here the street TYPE already stands next to the
+            # name, and demanding the vocabulary as well rejected «лермонтова»,
+            # «рублёвском», «красная» and «петрозаводскую» — 4 of 6 real call
+            # transcripts — because the shipped street list has NINETEEN entries.
+            # Morphology alone would be too broad without the type word; with it,
+            # measured on the same probes, it takes every real street and refuses
+            # «минус», «плюс», «был», «построен», «темно» and «три».
+            if _lower_names_a_street(m.group(group), address):
+                out.append((m.start(), m.end(), True))   # core
     for m in address.markerless_lower.finditer(text):
         # LOWER CASE, SO THE GATE IS THE VOCABULARY AND NOTHING ELSE.
         # `_is_street_name` would be wrong here: it accepts a morphological

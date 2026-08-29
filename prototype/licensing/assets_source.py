@@ -251,7 +251,53 @@ _ST_FULL = (r"(?:улиц\w+|проспект\w*|переул\w+|бульвар\
             r"|площад\w+|проезд\w*|микрорайон\w*|тупик\w*|алле\w+)")
 _LOWER_NAME = r"[а-яё]{3,}(?:[\s-][а-яё]{3,}){0,2}"
 # Between a street and its number: nothing, or a comma and a house marker.
-_HOUSE_LEAD = r"(?:\s*,?\s*(?:дом|д)\.?)?\s*"
+# `№` IS A HOUSE MARKER AND WAS MISSING. Measured on the metamorphic instrument:
+# rewriting «д. 14» as «№ 14» kept polnota at 100% and dropped COVERAGE to 0% —
+# the street matched every time and the house number never joined the span, so
+# it went to the model in the clear while the number said the address was found.
+# A defect that only a coverage column can see, which is why that column exists.
+_HOUSE_LEAD = r"(?:\s*,?\s*(?:дом|д)\.?|\s*,?\s*№)?\s*"
+
+# THE HOUSE NUMBER, SPOKEN. A call transcript writes «тридцать восемь», not «38»,
+# and every address pattern demanded `\d` — so on seven verbatim utterances from
+# real Russian phone calls the detector found NOTHING, while the same addresses
+# with digits were found every time. The register our own corpus calls «voice»
+# asserted that «ASR normalises digits»; two speech corpora say otherwise (in 500
+# Golos transcripts: zero digits, 21% spelled-out numbers).
+#
+# Bounded at ninety-nine on purpose. House and flat numbers above that are
+# vanishingly rare as a spoken word, and every additional alternative is another
+# ordinary Russian word admitted into a slot that decides what gets masked.
+#
+# USED ONLY WHERE A STREET-TYPE WORD IS PRESENT. In the marker-less arms there
+# would be nothing holding it down, and «на улице минус десять» — the commonest
+# shape in real consumer traffic — would become an address.
+_SPELLED = (r"(?:одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать"
+            r"|шестнадцать|семнадцать|восемнадцать|девятнадцать"
+            r"|двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят"
+            r"|восемьдесят|девяносто|сто"
+            r"|один|одна|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять)")
+# «двадцать шесть» is two words; the second is optional and only a unit.
+_SPELLED_NUM = (rf"{_SPELLED}(?:\s+(?:один|одна|два|две|три|четыре|пять|шесть"
+                r"|семь|восемь|девять))?")
+_HOUSE_NUM = rf"(?:\d{{1,4}}(?!\d)|{_SPELLED_NUM})"
+
+# A TRAILING ABBREVIATED MARKER. `_ST_ABBR` requires a dot or space AFTER it, so
+# it can only stand BEFORE the name — «пр-кт Ленинский 55» matched and «Ленинский
+# пр-кт 55» did not, because the name-first arm uses `_ST_FULL`, which excludes
+# abbreviations by design. Russian writes the type after the name at least as
+# often. Measured: abbreviating the marker cost 19% of addresses outright.
+# WHITESPACE IS REQUIRED BEFORE IT, and that is the mirror of the rule that
+# guards `_ST_ABBR`. There the abbreviation must be FOLLOWED by a dot or a
+# space so «улыбка 14» cannot read as «ул» + «ыбка»; here it must be PRECEDED
+# by one, because «ул» also ENDS ordinary Russian words — артикул, аул,
+# караул. Allowing the glued form for one commit turned «Артикул 2024/117,
+# партия 445» and «караул 12» into addresses; `test_overmasking.py` caught the
+# first on the next run. A FULL type word may still be glued
+# (`street_lower_last` uses `\s*`): «проспект» cannot end a Russian word, a
+# two-letter abbreviation can.
+
+_ST_ABBR_LAST = r"\s+(?:ул|просп|пр-?кт|пр-?т|пер|наб|б-р|пл)\.?"
 # ABBREVIATED MARKER + LOWER-CASE NAME. `_ST_FULL` deliberately excludes the
 # abbreviations because a bare «пр» or «ул» in prose has nothing holding it
 # down — but in THIS shape the house number holds it down, exactly as it does
@@ -296,6 +342,20 @@ ADDRESS_PATTERNS: dict[str, str] = {
     "street_lower_first": rf"(?i)\b{_ST_FULL}\s*{_LOWER_NAME}{_HOUSE_LEAD}\d{{1,4}}(?!\d)",
     "street_lower_last": rf"(?i)\b{_LOWER_NAME}\s*{_ST_FULL}{_HOUSE_LEAD}\d{{1,4}}(?!\d)",
     "street_abbr_lower": rf"(?i)\b{_ST_ABBR}{_LOWER_NAME}{_HOUSE_LEAD}\d{{1,4}}(?!\d)",
+    # The same shape with the abbreviation AFTER the name — see `_ST_ABBR_LAST`.
+    "street_abbr_lower_last": rf"(?i)\b{_LOWER_NAME}{_ST_ABBR_LAST}{_HOUSE_LEAD}\d{{1,4}}(?!\d)",
+    # THE HOUSE NUMBER SPOKEN — a SEPARATE arm, and gated in the engine.
+    # Folding `_SPELLED_NUM` into the arms above was measured and rejected: it
+    # found all seven verbatim call transcripts AND turned «на улице минус
+    # десять», «на улице плюс тридцать», «площадь сто двадцать квадратных
+    # метров» and «проспект был построен сорок лет назад» into addresses —
+    # four of nine ordinary sentences. A digit after a street type is rare in
+    # prose and holds the match down by itself; a number WORD is an ordinary
+    # Russian word and holds nothing. So the street name carries the proof
+    # instead: `spoken` is admitted only when the leased vocabulary names it,
+    # the same rule and the same reason as `markerless_lower`.
+    "street_spoken_first": rf"(?i)\b{_ST_FULL}\s*(?P<sfirst>{_LOWER_NAME}){_HOUSE_LEAD}{_SPELLED_NUM}\b",
+    "street_spoken_last": rf"(?i)\b(?P<slast>{_LOWER_NAME})\s*{_ST_FULL}{_HOUSE_LEAD}{_SPELLED_NUM}\b",
     # A MARKED STREET WITH NO HOUSE NUMBER, IN LOWER CASE. «на тверской улице»
     # and «на проспекте мира» were invisible: the capitalised arm needs its
     # capital and the two arms above need a house number. Every one of the 46
