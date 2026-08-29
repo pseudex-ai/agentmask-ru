@@ -78,7 +78,12 @@ RUN mkdir -p /data
 # No __pycache__: the engine must not write anything to its own filesystem, so
 # that "did the container write a file" is a question with a clean answer (gate
 # L5). Bytecode caches would bury a real finding in 80 lines of noise.
-ENV PYTHONDONTWRITEBYTECODE=1 \
+# Stated here too, and not left to the base image, so the two images agree about
+# it: the release runtime has no locale at all and needed this to print a Russian
+# sentence. Parity gates compare behaviour, and behaviour includes the log.
+ENV LANG=C.UTF-8 \
+    PYTHONIOENCODING=utf-8 \
+    PYTHONDONTWRITEBYTECODE=1 \
     PSEUDEX_WORKERS="" \
     PSEUDEX_MASK_CONCURRENCY=8 \
     PSEUDEX_MASK_CACHE_SIZE=20000 \

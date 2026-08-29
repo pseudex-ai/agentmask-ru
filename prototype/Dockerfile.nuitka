@@ -143,7 +143,18 @@ RUN if [ -d /app/pseudex/data ]; then echo "pseudex/data must not ship"; exit 1;
 ENV PSEUDEX_DB_DIR=/data
 RUN mkdir -p /data
 
-ENV PSEUDEX_WORKERS="" \
+# THE RUNTIME HAS NO UTF-8 STDIO OF ITS OWN, and the product speaks Russian.
+# `debian:trixie-slim` sets no locale, and a Nuitka-frozen runtime does not
+# perform CPython's locale coercion, so `print()` of a Cyrillic string died with
+# `UnicodeEncodeError: 'ascii' codec` and `logging` fell back to escapes:
+#   INFO:pseudex.localui:  pseudex \u2014 \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u044b\u0439
+# That was the operator's own sign-in banner, unreadable in the RELEASE image and
+# fine in the source one — which is why nothing caught it: the two images differ
+# in their base, and only one of them ships. `LANG=C.UTF-8` alone is NOT enough
+# here; measured, the Cyrillic line still failed with it set.
+ENV LANG=C.UTF-8 \
+    PYTHONIOENCODING=utf-8 \
+    PSEUDEX_WORKERS="" \
     PSEUDEX_MASK_CONCURRENCY=8 \
     PSEUDEX_MASK_CACHE_SIZE=20000 \
     PSEUDEX_UI_STATIC=/app/ui \
