@@ -26,6 +26,25 @@
 
 set -e
 
+# ONE-SHOT ROLES RUN ONCE AND EXIT. They must be handled before anything below,
+# because everything below assumes a SERVER: it fans out N copies of the binary
+# and supervises them.
+#
+# Without this, `docker run -e PSEUDEX_ROLE=rekey` started ten rotations of the
+# same volume at once. The lock made the outcome correct — one rotated, the rest
+# found the file already on the new key — but each loser reported "ТОМ
+# РАЗЪЕХАЛСЯ: старый ключ НЕ выключайте", which is the most frightening sentence
+# this product can print, on a rotation that had in fact just succeeded. An
+# operator reading that would stop and call us.
+#
+# `exec`, so the role's exit code is the container's: the probe's non-zero is
+# what a healthcheck and a script read.
+case "${PSEUDEX_ROLE:-sidecar}" in
+    probe|rekey|decrypt)
+        exec ${PSEUDEX_SERVE_CMD:-./pseudex-serve}
+        ;;
+esac
+
 if [ -n "$PSEUDEX_WORKERS" ]; then
     WORKERS="$PSEUDEX_WORKERS"
 else
