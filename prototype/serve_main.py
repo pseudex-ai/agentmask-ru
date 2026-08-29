@@ -69,9 +69,16 @@ def _probe() -> int:
           f"   ключ: {state['key_source']}")
     if state.get("key_beside_data"):
         print("  ВНИМАНИЕ: ключ лежит рядом с данными — кража тома забирает и его")
+    # A KEY THAT DOES NOT RESOLVE IS A FAILURE ON ITS OWN, before any file is
+    # looked at. On a FRESH volume there is nothing to fail to open, so counting
+    # only unopenable files reported success for
+    # PSEUDEX_VAULT_ENCRYPTION=required with no key — and `entrypoint.sh` went on
+    # to start ten workers, print the gateway token, and only then take the
+    # container down as each worker died of the same thing, ten screens below
+    # the sentence that explained it.
+    failures = 1 if state.get("error") else 0
     if state.get("error"):
         print(f"  ключ не разрешён: {state['error']}")
-    failures = 0
     for filename, store in _STORES:
         record = sqlite_setup.describe(os.path.join(directory, filename), store)
         if record["state"] == vault_migrate.MISSING:

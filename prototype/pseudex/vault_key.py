@@ -307,10 +307,15 @@ def resolve(data_dir: str) -> VaultSecret | None:
             return _CACHE[data_dir]
         mode = _mode()
         if mode == "off":
+            # Says what is TRUE of any store, not "this holds personal data":
+            # the licensing server sets `off` deliberately and holds none, and a
+            # warning that overstates its case is one an operator learns to skip
+            # — including on the deployment where it is the whole point.
             _log.warning(
-                "vault: PSEUDEX_VAULT_ENCRYPTION=off — %s holds personal data in "
-                "plain text. Anyone with the volume, a backup of it, or a "
-                "snapshot of the host disk can read every real value.", data_dir,
+                "vault: PSEUDEX_VAULT_ENCRYPTION=off — the stores in %s are "
+                "written in plain text. Anyone with the volume, a backup of it "
+                "or a snapshot of the host disk reads whatever is in them.",
+                data_dir,
             )
             _CACHE[data_dir] = None
             return None
