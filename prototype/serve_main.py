@@ -157,6 +157,13 @@ def _decrypt() -> int:
     Deliberately its own role rather than a flag on the engine: it produces
     exactly what the rest of the product exists to prevent, so it has to be an
     act somebody performed, visible in the command that started the container.
+
+    STOP THE ENGINE FIRST — the same requirement `_rekey` states, and it was
+    missing here. The conversion ends in `os.replace`, so against a live volume
+    it swaps the file out from under the running workers: they keep writing to
+    the unlinked inode, and every token minted after that moment is lost. It is
+    lost from the plaintext copy too, which is the copy a departing customer is
+    taking with them — the one run where losing rows is least recoverable.
     """
     directory = _data_dir()
     secret = vault_key.resolve(directory)
@@ -166,6 +173,7 @@ def _decrypt() -> int:
         return 1
     print(f"pseudex decrypt: {os.path.abspath(directory)} — результат ляжет на "
           f"диск ОТКРЫТЫМ ТЕКСТОМ")
+    print("  движок на этом томе должен быть остановлен")
     failures = 0
     for filename, store in sqlite_setup.STORES:
         path = os.path.join(directory, filename)

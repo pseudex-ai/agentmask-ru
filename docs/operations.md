@@ -47,6 +47,11 @@
 # файл покажет «НЕ ОТКРЫВАЕТСЯ», хотя том исправен.
 docker run --rm -v pseudex-data:/data -e PSEUDEX_ROLE=probe \
   -e PSEUDEX_VAULT_KEY_CMD="$PSEUDEX_VAULT_KEY_CMD" pseudex:<версия>
+
+# decrypt и rekey ПИШУТ: движок на этом томе должен быть ОСТАНОВЛЕН. Обе
+# заканчиваются подменой файла, и живые воркеры продолжают писать в отвязанный
+# inode — всё, что выдано после этого момента, теряется, в том числе из той
+# открытой копии, которую уходящий клиент забирает с собой.
 docker run --rm -v pseudex-data:/data -e PSEUDEX_ROLE=decrypt \
   -e PSEUDEX_VAULT_KEY_CMD="$PSEUDEX_VAULT_KEY_CMD" pseudex:<версия>
 
