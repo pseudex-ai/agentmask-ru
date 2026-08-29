@@ -183,6 +183,7 @@ CORE_PART: tuple[str, ...] = (
     "улиц", "дом", "микрорайон", "проспект", "переул", "проезд",
     "бульвар", "набереж", "шоссе", "площад", "владени",
 )
+
 # Tails of numbered streets ("улица 1905 года", "8 марта"): generic RU pattern.
 NUMBERED_TAIL: tuple[str, ...] = (
     "года", "год", "лет", "марта", "мая", "января", "февраля", "апреля", "июня",
@@ -313,8 +314,24 @@ ADDRESS_PATTERNS: dict[str, str] = {
     # ordinary business and news vocabulary — «торговая площадка», «посевные
     # площади», «сценические площадки». Measured on NEREL: it was most of the
     # noise this arm produced.
-    "street_lower_nohouse": (rf"(?i)\b(?:{_ST_NOHOUSE}\s+(?P<after>{_LOWER_NAME})"
-                            rf"|(?P<before>{_LOWER_NAME})\s+{_ST_NOHOUSE})\b"),
+    # THE MARKER-LAST BRANCH MAY NOT EAT THE MARKER, and it may not eat three
+    # words. Both halves of that were one bug: alternation in Python picks the
+    # EARLIEST position, not the preferred branch, so in «адрес москве проспекте
+    # мира» the marker-last branch matched «адрес москве проспекте» first —
+    # three words, the cue word among them — and `finditer` then resumed past
+    # «проспекте», so «мира» was never looked at. The cue gate reads the text
+    # BEFORE the match, and «адрес» was now inside it, so the whole address was
+    # refused and the street went to the model in the clear. Ten of the noise
+    # ladder's fourteen street values at the no-punctuation rung died exactly
+    # there — the same «a cue licenses its neighbour, it does not name it»
+    # lesson `markerless_lower` already learned, on the other pattern.
+    #
+    # A lookahead instead of a match: the marker is left unconsumed, so the
+    # marker-FIRST branch fires on it in the same scan and the two adjacent
+    # candidates merge into «москве проспекте мира». One word instead of three,
+    # because the marker-last form people actually write is «тверской улице».
+    "street_lower_nohouse": (rf"(?i)\b(?:{_ST_NOHOUSE}\s+(?P<after>{_LOWER_NAME})\b"
+                            rf"|(?P<before>[а-яё]{{3,}})\s+(?={_ST_NOHOUSE}\b))"),
     "street_first": rf"(?i)\b{_ST}\s*\.?\s*{_CAP}",
     "street_last": rf"(?i){_CAP}\s+{_ST}\b",
     "house": (

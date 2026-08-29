@@ -271,8 +271,7 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
         # ABOUT streets is somebody saying they live or receive things there —
         # «проживает», «адрес:», «доставка» — and that is `addr_ctx` alone.
         name = m.group("after") or m.group("before") or ""
-        tail = text[max(0, m.start() - _CUE_WINDOW):m.start()]
-        if not address.addr_ctx.search(_SENTENCE_SPLIT.split(tail + text[m.start():m.start() + 1])[-1]):
+        if not _intent_before(text, m.start(), address):
             continue
         if _lower_names_a_street(name, address):
             out.append((m.start(), m.end(), True))   # core
@@ -312,9 +311,7 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
         # the shape separates them, so the separation has to come from somebody
         # saying they live or receive things there. The marked form («улица 8
         # марта 5») has its own pattern and needs no cue.
-        tail = text[max(0, m.start() - _CUE_WINDOW):m.start()]
-        if not address.addr_ctx.search(
-                _SENTENCE_SPLIT.split(tail + text[m.start():m.start() + 1])[-1]):
+        if not _intent_before(text, m.start(), address):
             continue
         out.append((m.start(), m.end(), True))
     for m in address.numbered_marked.finditer(text):  # "1905 года тупик"
@@ -394,15 +391,32 @@ _CUE_WINDOW = 60
 _SENTENCE_SPLIT = re.compile(r"[.!?]\s+(?=[А-ЯЁA-Z])")
 
 
+def _intent_before(text: str, start: int, address: AddressAssets) -> bool:
+    """An INTENT word in the sentence tail — never a bare preposition.
+
+    The stricter half of `_cue_before`, and the arms that have no house number
+    use only this one. «на улицах Каира собрались десятки» and «на улицах
+    американских городов» open with «на» exactly as an address does, so
+    `prep_before` cannot separate prose ABOUT streets from somebody's address;
+    only a person saying they live or receive things there can. Measured,
+    accepting the preposition here cost 0.1pp of NEREL precision.
+
+    One function rather than the same three lines in three arms: they have to
+    agree about the window and the sentence boundary, and a copy is where two
+    of them stopped agreeing."""
+    tail = text[max(0, start - _CUE_WINDOW):start]
+    return bool(address.addr_ctx.search(
+        _SENTENCE_SPLIT.split(tail + text[start:start + 1])[-1]))
+
+
 def _cue_before(text: str, start: int, address: AddressAssets) -> bool:
     # The candidate's own first character joins the tail before splitting: a
     # sentence end is «. » FOLLOWED BY A CAPITAL, and that capital is the first
     # letter of the span being judged. Without it «Адрес склада: Тверская 7.
     # Отгрузка 5 коробок» kept the cue alive across the period and masked
     # «Отгрузка 5».
-    before = text[:start]
-    tail = _SENTENCE_SPLIT.split(before[-_CUE_WINDOW:] + text[start:start + 1])[-1]
-    return bool(address.addr_ctx.search(tail)) or bool(address.prep_before.search(before))
+    return (_intent_before(text, start, address)
+            or bool(address.prep_before.search(text[:start])))
 
 
 def _toponym_neighbours(text: str, cands: list[tuple[int, int, bool]]
