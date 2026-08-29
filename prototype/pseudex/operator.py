@@ -25,7 +25,7 @@ import anyio
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from pseudex import vault_key
+from pseudex import sqlite_setup
 from pseudex.audit import SELFCHECK_ORG
 from pseudex.profiling import snapshot as profiling_snapshot
 
@@ -185,11 +185,16 @@ def build_router(audit, license_client, assets, detector_version: str,
                                         else round(state.seconds_since_lease)),
                 "last_error": state.last_error,
             },
-            # Where the key comes from, never the key. The operator's one
-            # question is whether the volume they back up carries its own key —
-            # `key_beside_data` answers it without them reading a log line from
-            # a start they were not present for.
-            "vault": vault_key.state(os.environ.get("PSEUDEX_DB_DIR", ".")),
+            # Where the key comes from, never the key — plus what is ON DISK,
+            # file by file. The operator's questions are whether the volume they
+            # back up carries its own key (`key_beside_data`, answered without
+            # them reading a log line from a start they were not present for)
+            # and whether it is actually encrypted. The second used to be
+            # answered from the CONFIGURATION, so a volume whose files had not
+            # been migrated yet rendered as encrypted on the one screen that
+            # exists to say otherwise.
+            "vault": sqlite_setup.volume_state(
+                os.environ.get("PSEUDEX_DB_DIR", ".")),
             "today": {
                 "requests": today["requests"],
                 "values": today["values"],

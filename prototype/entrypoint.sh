@@ -82,18 +82,23 @@ if [ -z "$PSEUDEX_UI_TOKEN" ]; then
     export PSEUDEX_UI_TOKEN
 fi
 
-# The volume is checked ONCE, here, before any worker opens it. Two reasons, and
-# neither is cosmetic. A key that does not open the vault would otherwise be
-# reported N times — once per worker, interleaved, in a log the operator reads
-# top-down — and the container would exit on whichever worker lost the race,
-# with the same message buried N deep. And in `auto` mode this is where the key
-# is generated, once, instead of eight processes racing to create it.
+# The volume is checked ONCE, here, before any worker opens it: a key that does
+# not open the vault would otherwise be reported N times — once per worker,
+# interleaved, in a log the operator reads top-down — and the container would
+# exit on whichever worker lost the race, with the same message buried N deep.
 #
-# It does NOT migrate: the probe opens read-only. The plaintext-to-encrypted
-# conversion stays inside the connection factory under its own flock, because
-# `uvicorn pseudex.service:app` is a supported launch shape that never runs this
-# script (CLAUDE.md, deployment shape B) and a migration that only happens here
-# would be a migration half the deployments never get.
+# It does NOT migrate and does NOT create the key. It used to do the second, and
+# that was a defect rather than a service: the same role is the command we hand
+# customers to check a live volume, and run without the key variables it wrote a
+# new key beside their data and then reported every store unopenable with it. On
+# a fresh volume the FIRST WORKER now creates the key under `O_EXCL` and the rest
+# read its file — which they already had to be able to do, since `uvicorn
+# pseudex.service:app` is a supported launch shape that never runs this script
+# (CLAUDE.md, deployment shape B).
+#
+# The plaintext-to-encrypted conversion stays inside the connection factory under
+# its own flock for the same reason: a migration that only happened here would be
+# a migration half the deployments never get.
 if ! PSEUDEX_ROLE=probe ${PSEUDEX_SERVE_CMD:-./pseudex-serve}; then
     echo ""
     echo "pseudex: том не открывается текущим ключом — контейнер остановлен."

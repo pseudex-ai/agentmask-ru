@@ -334,6 +334,37 @@ def _generated(data_dir: str) -> VaultSecret:
     return VaultSecret(binascii.unhexlify(text), f"generated ({path})", True)
 
 
+def _configured(data_dir: str) -> VaultSecret | None:
+    """The three EXPLICIT sources, in priority order. Nothing is created here."""
+    return (_from_environment(data_dir) or _from_file(data_dir)
+            or _from_command(data_dir))
+
+
+def _warn_plaintext(data_dir: str) -> None:
+    """Said once per data directory — the cache below guarantees that.
+
+    Says what is TRUE of any store, not "this holds personal data": the licensing
+    server sets `off` deliberately and holds none, and a warning that overstates
+    its case is one an operator learns to skip — including on the deployment
+    where it is the whole point.
+    """
+    _log.warning(
+        "vault: PSEUDEX_VAULT_ENCRYPTION=off — the stores in %s are written in "
+        "plain text. Anyone with the volume, a backup of it or a snapshot of "
+        "the host disk reads whatever is in them.",
+        data_dir,
+    )
+
+
+def _required_unmet() -> VaultKeyError:
+    return VaultKeyError(
+        "PSEUDEX_VAULT_ENCRYPTION=required, but none of PSEUDEX_VAULT_KEY, "
+        "PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY_CMD resolved to a key. "
+        "Refusing to start: generating one beside the data would leave the key "
+        "in the volume this setting exists to protect."
+    )
+
+
 def resolve(data_dir: str) -> VaultSecret | None:
     """The master secret for the stores in `data_dir`, or None when off.
 
@@ -341,6 +372,10 @@ def resolve(data_dir: str) -> VaultSecret | None:
     PSEUDEX_VAULT_ENCRYPTION=off explicitly. There is no path where a failure to
     resolve degrades to plaintext — that would be a product claiming encryption
     and silently not doing it.
+
+    THIS ONE CREATES. A worker about to write needs a key whether or not the
+    operator supplied one, so with none configured this generates one beside the
+    data and says so. Every caller that only LOOKS must use `existing` instead.
     """
     data_dir = os.path.abspath(data_dir)
     with _CACHE_LOCK:
@@ -348,32 +383,53 @@ def resolve(data_dir: str) -> VaultSecret | None:
             return _CACHE[data_dir]
         mode = _mode()
         if mode == "off":
-            # Says what is TRUE of any store, not "this holds personal data":
-            # the licensing server sets `off` deliberately and holds none, and a
-            # warning that overstates its case is one an operator learns to skip
-            # — including on the deployment where it is the whole point.
-            _log.warning(
-                "vault: PSEUDEX_VAULT_ENCRYPTION=off — the stores in %s are "
-                "written in plain text. Anyone with the volume, a backup of it "
-                "or a snapshot of the host disk reads whatever is in them.",
-                data_dir,
-            )
+            _warn_plaintext(data_dir)
             _CACHE[data_dir] = None
             return None
-        secret = (_from_environment(data_dir) or _from_file(data_dir)
-                  or _from_command(data_dir))
+        secret = _configured(data_dir)
         if secret is None:
             if mode == "required":
-                raise VaultKeyError(
-                    "PSEUDEX_VAULT_ENCRYPTION=required, but none of "
-                    "PSEUDEX_VAULT_KEY, PSEUDEX_VAULT_KEY_FILE or "
-                    "PSEUDEX_VAULT_KEY_CMD resolved to a key. Refusing to start: "
-                    "generating one beside the data would leave the key in the "
-                    "volume this setting exists to protect."
-                )
+                raise _required_unmet()
             secret = _generated(data_dir)
         else:
             _log.info("vault: encrypted, key from %s", secret.source)
+        _CACHE[data_dir] = secret
+        return secret
+
+
+def existing(data_dir: str) -> VaultSecret | None:
+    """The secret that ALREADY opens `data_dir`. Nothing is created, ever.
+
+    `resolve` generates a key beside the data when none is configured, and every
+    reader used to go through it. `PSEUDEX_ROLE=probe` is the command onboarding
+    hands the customer to reassure them their volume opens; run against a live
+    volume without the key variables that deployment runs with, it resolved
+    nothing, wrote a NEW key next to the data, and then reported all three stores
+    «НЕ ОТКРЫВАЕТСЯ» — a catastrophe manufactured by the diagnostic, on a healthy
+    volume. A diagnostic that mutates the thing it diagnoses is not one.
+
+    None means either `off` or "no key exists yet"; the caller separates them
+    with `_mode()`, because only one of the two is a state anybody must act on.
+    The "no key yet" answer is deliberately NOT cached — `resolve` must still be
+    able to generate the first key later in the same process.
+    """
+    data_dir = os.path.abspath(data_dir)
+    with _CACHE_LOCK:
+        if data_dir in _CACHE:
+            return _CACHE[data_dir]
+        mode = _mode()
+        if mode == "off":
+            _warn_plaintext(data_dir)
+            _CACHE[data_dir] = None
+            return None
+        secret = _configured(data_dir)
+        if secret is None:
+            if mode == "required":
+                raise _required_unmet()
+            if not os.path.exists(os.path.join(data_dir, _KEY_FILENAME)):
+                return None
+            # The file is there, so this only reads it.
+            secret = _generated(data_dir)
         _CACHE[data_dir] = secret
         return secret
 
@@ -421,16 +477,26 @@ def key_literal(key_hex: str) -> str:
     return f"\"x'{key_hex}'\""
 
 
-def state(data_dir: str) -> dict[str, object]:
-    """What `/status` reports. Never the key, never anything derived from it."""
+def key_state(data_dir: str) -> dict[str, object]:
+    """Where the key comes from. Never the key, never anything derived from it.
+
+    Deliberately NOT "is the volume encrypted", and it used to be: this module
+    can see the configuration and nothing else, so it answered `encrypted: true`
+    the moment a secret resolved — on a volume whose files had not been migrated
+    yet, and on one whose migration had stopped half way. What is on disk is a
+    question about FILES, and `sqlite_setup.volume_state` asks it there.
+
+    Reads through `existing`, so asking does not create a key.
+    """
     try:
-        secret = resolve(data_dir)
+        secret = existing(data_dir)
     except VaultKeyError as error:
-        return {"encrypted": False, "key_source": "unresolved", "error": str(error),
+        return {"key_source": "unresolved", "error": str(error),
                 "key_beside_data": False}
     if secret is None:
-        return {"encrypted": False, "key_source": "disabled", "key_beside_data": False}
-    return {"encrypted": True, "key_source": secret.source,
+        return {"key_source": "disabled" if _mode() == "off" else "none",
+                "error": "", "key_beside_data": False}
+    return {"key_source": secret.source, "error": "",
             "key_beside_data": secret.beside_data}
 
 

@@ -41,10 +41,15 @@
 испорченный файл и на незашифрованную базу:
 
 ```bash
-docker run --rm -v pseudex-data:/data -e PSEUDEX_ROLE=probe pseudex:<версия>
-docker run --rm -v pseudex-data:/data -e PSEUDEX_ROLE=decrypt pseudex:<версия>
+# КАЖДАЯ из этих команд должна получить ТЕ ЖЕ переменные ключа, с которыми
+# работает движок на этом томе (PSEUDEX_VAULT_KEY / _FILE / _CMD). Без них
+# probe ничего не создаёт и честно печатает «ключ: none» — и тогда каждый
+# файл покажет «НЕ ОТКРЫВАЕТСЯ», хотя том исправен.
+docker run --rm -v pseudex-data:/data -e PSEUDEX_ROLE=probe \
+  -e PSEUDEX_VAULT_KEY_CMD="$PSEUDEX_VAULT_KEY_CMD" pseudex:<версия>
+docker run --rm -v pseudex-data:/data -e PSEUDEX_ROLE=decrypt \
+  -e PSEUDEX_VAULT_KEY_CMD="$PSEUDEX_VAULT_KEY_CMD" pseudex:<версия>
 
-# ротация ключа: движок на этом томе должен быть ОСТАНОВЛЕН
 docker run --rm -v pseudex-data:/data -e PSEUDEX_ROLE=rekey \
   -e PSEUDEX_VAULT_KEY=<текущий> -e PSEUDEX_VAULT_KEY_NEW=<новый> pseudex:<версия>
 ```
@@ -271,8 +276,14 @@ docker compose start license
 восстановленный том без него не открывается ничем. Порядок проверки один:
 
 ```bash
-docker run --rm -v pseudex-data:/data -e PSEUDEX_ROLE=probe pseudex:<версия>
+docker run --rm -v pseudex-data:/data -e PSEUDEX_ROLE=probe \
+  -e PSEUDEX_VAULT_KEY_CMD="$PSEUDEX_VAULT_KEY_CMD" pseudex:<версия>
 ```
+
+Переменные ключа обязательны и здесь: `probe` ничего не создаёт, поэтому без них
+он печатает `ключ: none`, и все три файла честно показывают `НЕ ОТКРЫВАЕТСЯ` — на
+исправном томе. Раньше он в этом месте ЗАВОДИЛ новый ключ рядом с данными и
+докладывал ту же катастрофу, уже своими руками.
 
 `НЕ ОТКРЫВАЕТСЯ` здесь — это про ключ, а не про порчу файла: заголовок уже
 прочитан и говорит «зашифровано». Дальше либо находится верный ключ, либо

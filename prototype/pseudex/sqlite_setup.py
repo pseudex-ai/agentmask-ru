@@ -58,13 +58,32 @@ import time
 from sqlcipher3 import dbapi2 as sqlcipher
 
 from pseudex import vault_key
-from pseudex.vault_migrate import ENCRYPTED, MISSING, PLAINTEXT, ensure_encrypted, file_state
+from pseudex.vault_migrate import (
+    EMPTY, ENCRYPTED, MISSING, PLAINTEXT, ensure_encrypted, file_state,
+)
 
 # The store labels, re-exported so a caller names one thing and not two.
 VAULT_STORE = vault_key.VAULT_STORE
 AUDIT_STORE = vault_key.AUDIT_STORE
 TENANTS_STORE = vault_key.TENANTS_STORE
 LICENSING_STORE = vault_key.LICENSING_STORE
+
+# The three stores of one data directory. Named here rather than derived from
+# whichever role is running, because the probe and the decrypt role must cover
+# the file the operator is missing even when THAT process would never open it —
+# a sidecar deployment has no `tenants.db` and a proxy one has no reason to look
+# at it either, and "we did not look" is the least useful answer to "which file
+# will not open".
+STORES = (
+    ("vault.db", VAULT_STORE),
+    ("audit.db", AUDIT_STORE),
+    ("tenants.db", TENANTS_STORE),
+)
+
+# A volume is not atomic across files: each one migrates and rekeys separately,
+# so an interruption leaves some encrypted and some not. No boolean states that,
+# which is why `volume_state` reports per file and this exists as its verdict.
+MIXED = "mixed"
 
 # What every `except` in the codebase must name. See the module docstring.
 Connection = sqlcipher.Connection
@@ -142,6 +161,42 @@ def store_key(db_path: str, store: str) -> str:
     return "" if secret is None else secret.store_key(store)
 
 
+def _readonly_key(db_path: str, store: str) -> str:
+    """The key a READER may use, and nothing is created if there is none.
+
+    `store_key` goes through `vault_key.resolve`, which GENERATES a key beside
+    the data when none is configured. That is right for a worker about to write
+    and wrong for every reader below: the documented verification command runs
+    the probe against a customer's live volume, and generating there left a new
+    key file in the volume and then reported every store unopenable with it.
+    """
+    if db_path == ":memory:":
+        return ""
+    data_dir = os.path.dirname(os.path.abspath(db_path)) or "."
+    secret = vault_key.existing(data_dir)
+    return "" if secret is None else secret.store_key(store)
+
+
+def _explain_no_key(db_path: str) -> VaultLocked:
+    """The file is encrypted and NOTHING resolves a key for it.
+
+    Its own sentence rather than `_explain_locked`'s, because the two send the
+    operator to different places: one says the key you gave is the wrong one, and
+    this one says you gave none. Merging them was how the probe reported a wrong
+    key on a volume whose key had simply not been passed to the command.
+    """
+    data_dir = os.path.dirname(os.path.abspath(db_path)) or "."
+    return VaultLocked(
+        f"\n"
+        f"{db_path} зашифрован, а ключа для него нет: "
+        f"{vault_key.key_state(data_dir)['key_source']}.\n"
+        f"\n"
+        f"передайте те же PSEUDEX_VAULT_KEY / PSEUDEX_VAULT_KEY_FILE /\n"
+        f"PSEUDEX_VAULT_KEY_CMD, с которыми на этом томе работает движок.\n"
+        f"ничего не создано: читающая роль ключей не заводит.\n"
+    )
+
+
 def _explain_locked(db_path: str, driver_message: str) -> VaultLocked:
     """Our message, not the driver's — L21 exists because the driver's is useless.
 
@@ -156,7 +211,7 @@ def _explain_locked(db_path: str, driver_message: str) -> VaultLocked:
         f"волт зашифрован, а текущий ключ его не открывает.\n"
         f"\n"
         f"    файл:      {db_path}\n"
-        f"    ключ:      {vault_key.state(os.path.dirname(os.path.abspath(db_path)) or '.')['key_source']}\n"
+        f"    ключ:      {vault_key.key_state(os.path.dirname(os.path.abspath(db_path)) or '.')['key_source']}\n"
         f"    SQLCipher: {driver_message}\n"
         f"\n"
         f"это НЕ порча файла. SQLCipher отвечает одинаково на неверный ключ, на\n"
@@ -238,10 +293,42 @@ def connect_readonly(db_path: str, store: str) -> sqlcipher.Connection:
     state = file_state(db_path)
     if state == MISSING:
         raise FileNotFoundError(db_path)
-    key = "" if state == PLAINTEXT else store_key(db_path, store)
+    key = "" if state == PLAINTEXT else _readonly_key(db_path, store)
+    if state == ENCRYPTED and not key:
+        raise _explain_no_key(db_path)
     connection = sqlcipher.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0)
     _arm(connection, db_path, key)
     return connection
+
+
+def volume_state(data_dir: str) -> dict[str, object]:
+    """What `/status` reports about a volume: where the key comes from, and what
+    is ACTUALLY on disk, file by file.
+
+    The disk half is the whole point. `vault_key.key_state` can see the
+    configuration and nothing else, and for a while that was what the screen
+    showed — «зашифровано» the moment a secret resolved, on a volume whose files
+    had not been migrated yet. Nothing here opens a file or creates a key: the
+    verdict comes from sixteen bytes of header per store.
+    """
+    record = vault_key.key_state(data_dir)
+    files = [{"name": name, "state": file_state(os.path.join(data_dir, name))}
+             for name, _store in STORES]
+    # An absent file and an empty one hold nothing, so neither can make a volume
+    # mixed; counting them would report every fresh sidecar (no `tenants.db`) as
+    # half-open.
+    present = [entry["state"] for entry in files
+               if entry["state"] not in (MISSING, EMPTY)]
+    if not present:
+        record["on_disk"] = EMPTY
+    elif all(state == ENCRYPTED for state in present):
+        record["on_disk"] = ENCRYPTED
+    elif all(state == PLAINTEXT for state in present):
+        record["on_disk"] = PLAINTEXT
+    else:
+        record["on_disk"] = MIXED
+    record["files"] = files
+    return record
 
 
 def preflight(db_path: str, store: str) -> None:
@@ -291,8 +378,9 @@ def describe(db_path: str, store: str) -> dict[str, object]:
 
 
 __all__ = [
-    "AUDIT_STORE", "Connection", "DatabaseError", "ENCRYPTED", "Error",
-    "IntegrityError", "LICENSING_STORE", "OperationalError", "PLAINTEXT",
-    "TENANTS_STORE", "VAULT_STORE", "VaultLocked", "connect", "connect_readonly",
-    "describe", "preflight", "store_key",
+    "AUDIT_STORE", "Connection", "DatabaseError", "EMPTY", "ENCRYPTED", "Error",
+    "IntegrityError", "LICENSING_STORE", "MISSING", "MIXED", "OperationalError",
+    "PLAINTEXT", "STORES", "TENANTS_STORE", "VAULT_STORE", "VaultLocked",
+    "connect", "connect_readonly", "describe", "preflight", "store_key",
+    "volume_state",
 ]

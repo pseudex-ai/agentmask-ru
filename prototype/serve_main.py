@@ -31,17 +31,15 @@ import uvicorn
 
 from pseudex import sqlite_setup, vault_key, vault_migrate
 
-# The three stores of one data directory. Named here rather than derived from
-# whichever role is running, because the probe and the decrypt role must cover
-# the file the operator is missing even when THIS process would never open it —
-# a sidecar deployment has no `tenants.db` and a proxy one has no reason to look
-# at it either, and "we did not look" is the least useful answer to "which file
-# will not open".
-_STORES = (
-    ("vault.db", sqlite_setup.VAULT_STORE),
-    ("audit.db", sqlite_setup.AUDIT_STORE),
-    ("tenants.db", sqlite_setup.TENANTS_STORE),
-)
+# What the volume looks like, in one word, for the header line of the roles
+# below. The per-file verdicts follow it — this is the sentence an operator reads
+# first and it may not round a half-migrated volume up to «зашифровано».
+_ON_DISK = {
+    sqlite_setup.ENCRYPTED: "зашифрован",
+    sqlite_setup.PLAINTEXT: "ОТКРЫТЫЙ ТЕКСТ",
+    sqlite_setup.MIXED: "ЧАСТЬ ФАЙЛОВ ОТКРЫТА",
+    sqlite_setup.EMPTY: "пуст",
+}
 
 
 def _data_dir() -> str:
@@ -59,14 +57,19 @@ def _probe() -> int:
     printing both for every file turns three indistinguishable failures into
     three different ones.
 
-    It opens read-only and migrates nothing: a diagnostic that changes the thing
-    it is diagnosing is not one.
+    It opens read-only, migrates nothing and CREATES nothing — not even the key.
+    It used to create that: with no key variables in its own environment it
+    generated one beside the customer's data and then reported every store
+    unopenable with it, which is a catastrophe invented by the diagnostic on a
+    healthy volume. A diagnostic that changes the thing it is diagnosing is not
+    one, and the docstring said so while the code did the opposite.
     """
     directory = _data_dir()
     print(f"pseudex probe: {os.path.abspath(directory)}")
-    state = vault_key.state(directory)
-    print(f"  шифрование: {'включено' if state['encrypted'] else 'выключено'}"
-          f"   ключ: {state['key_source']}")
+    # From the FILES, not from the configuration: «ключ разрешился» and «том
+    # зашифрован» are different facts, and only the second one is the question.
+    state = sqlite_setup.volume_state(directory)
+    print(f"  том: {_ON_DISK[state['on_disk']]}   ключ: {state['key_source']}")
     if state.get("key_beside_data"):
         print("  ВНИМАНИЕ: ключ лежит рядом с данными — кража тома забирает и его")
     # A KEY THAT DOES NOT RESOLVE IS A FAILURE ON ITS OWN, before any file is
@@ -79,7 +82,7 @@ def _probe() -> int:
     failures = 1 if state.get("error") else 0
     if state.get("error"):
         print(f"  ключ не разрешён: {state['error']}")
-    for filename, store in _STORES:
+    for filename, store in sqlite_setup.STORES:
         record = sqlite_setup.describe(os.path.join(directory, filename), store)
         if record["state"] == vault_migrate.MISSING:
             print(f"  {filename:<12} нет файла")
@@ -114,8 +117,8 @@ def _rekey() -> int:
     print(f"  текущий ключ:  {current.source}")
     print(f"  новый ключ:    {replacement.source}")
     print("  движок на этом томе должен быть остановлен")
-    moved, failed = [], []
-    for filename, store in _STORES:
+    moved, failed, plain = [], [], []
+    for filename, store in sqlite_setup.STORES:
         path = os.path.join(directory, filename)
         try:
             result = vault_migrate.rekey_store(
@@ -127,10 +130,22 @@ def _rekey() -> int:
         print(f"  {filename:<12} {result}")
         if result == "rekeyed":
             moved.append(filename)
+        elif result == vault_migrate.PLAINTEXT:
+            plain.append(filename)
     if failed:
         print(f"\n  ТОМ РАЗЪЕХАЛСЯ: на новом ключе {moved or 'ничего'}, "
               f"не переведены {failed}. Старый ключ НЕ выключайте — он всё ещё "
               f"единственный, который открывает {failed}.", file=sys.stderr)
+        return 1
+    # A PLAINTEXT store counted as neither moved nor failed, and the line below
+    # then told the operator every store was on the new key. It is the opposite
+    # of a success: that file has no key at all, and the real values in it are
+    # readable by anyone holding the volume.
+    if plain:
+        print(f"\n  НЕ ЗАШИФРОВАНЫ, поэтому и не переведены: {plain}. Вращать в "
+              f"них нечего — они лежат ОТКРЫТЫМ ТЕКСТОМ. Их зашифрует движок при "
+              f"следующем старте, тем ключом, который ему задан; ротацию имеет "
+              f"смысл повторить после этого.", file=sys.stderr)
         return 1
     print("\n  все хранилища на новом ключе; старый можно отзывать")
     return 0
@@ -152,7 +167,7 @@ def _decrypt() -> int:
     print(f"pseudex decrypt: {os.path.abspath(directory)} — результат ляжет на "
           f"диск ОТКРЫТЫМ ТЕКСТОМ")
     failures = 0
-    for filename, store in _STORES:
+    for filename, store in sqlite_setup.STORES:
         path = os.path.join(directory, filename)
         # Every file is attempted and every verdict printed. Stopping at the
         # first refusal would hide that the other two converted — and an operator

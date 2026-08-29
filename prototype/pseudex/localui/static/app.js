@@ -175,6 +175,22 @@ function SignIn({ onDone }) {
 
 /* ---------- status ---------- */
 
+// The volume's own verdict, and it has FOUR values rather than two. Each store
+// migrates and rekeys on its own, so a volume can be half encrypted — a boolean
+// could not say that, and the engine now reports the state of every file.
+const DISK = {
+  encrypted: ['зашифровано (AES-256)', 'green'],
+  plaintext: ['ОТКРЫТЫЙ ТЕКСТ', 'pink'],
+  mixed: ['ЧАСТЬ ФАЙЛОВ ОТКРЫТА', 'pink'],
+  empty: ['пусто — файлов ещё нет', ''],
+};
+const FILE_STATE = {
+  encrypted: ['зашифрован', 'green'],
+  plaintext: ['ОТКРЫТЫЙ ТЕКСТ', 'pink'],
+  missing: ['нет файла', ''],
+  empty: ['пустой', ''],
+};
+
 function pillFor(status, engineDown) {
   if (engineDown) return { cls: 'bad', text: 'НЕ ОТВЕЧАЕТ' };
   const state = status?.license?.state;
@@ -351,16 +367,27 @@ function Status({ status, engineDown, org, goSandbox, onBlocked }) {
                 alarm the rekey role used to print, on the one screen an
                 operator opens when something is already wrong. */ ''}
           ${[
-            ['на диске', engineDown ? '—' : (vault.encrypted ? 'зашифровано (AES-256)' : 'ОТКРЫТЫЙ ТЕКСТ'),
-             engineDown ? '' : (vault.encrypted ? 'green' : 'pink')],
-            ['ключ', engineDown ? '—' : (vault.key_source || '—'), vault.key_beside_data ? 'amber' : ''],
+            ['на диске', engineDown ? '—' : (DISK[vault.on_disk] || ['—', ''])[0],
+             engineDown ? '' : (DISK[vault.on_disk] || ['', ''])[1]],
+            // The value was already gated on engineDown and the TONE was not, so
+            // a dead engine rendered a dash painted amber — an alarm about a key
+            // nobody had read.
+            ['ключ', engineDown ? '—' : (vault.key_source || '—'),
+             engineDown ? '' : (vault.key_beside_data ? 'amber' : '')],
           ].map(([key, value, tone]) => html`
             <div class="kv"><span class="k">${key}</span><span class=${`v ${tone}`}>${value}</span></div>`)}
+          ${/* Per file only when the volume disagrees with itself. On a volume
+                that is wholly one thing the three rows say nothing the line
+                above did not, and this screen is read in a hurry. */ ''}
+          ${!engineDown && vault.on_disk === 'mixed' && (vault.files || []).map((file) => html`
+            <div class="kv"><span class="k">${file.name}</span><span class=${`v ${(FILE_STATE[file.state] || ['', ''])[1]}`}>${(FILE_STATE[file.state] || [file.state, ''])[0]}</span></div>`)}
           ${engineDown && html`
             <div class="foot-note">Состояние шифрования читается из движка — он не отвечает.</div>`}
           ${!engineDown && vault.key_beside_data && html`
             <div class="foot-note">Ключ лежит в том же томе, что и данные: это защищает скопированный файл базы, но не украденный том или его резервную копию — они несут ключ с собой. PSEUDEX_VAULT_KEY_CMD переносит ключ в ваш менеджер секретов.</div>`}
-          ${!engineDown && !vault.encrypted && html`
+          ${!engineDown && vault.on_disk === 'mixed' && html`
+            <div class="foot-note">Часть хранилищ ещё лежит открытым текстом: файлы переводятся по одному, и обрыв оставляет том наполовину. Перезапуск движка с тем же ключом дошифрует остальные.</div>`}
+          ${!engineDown && vault.on_disk === 'plaintext' && html`
             <div class="foot-note">Настоящие значения лежат в томе как есть. Кто получил том, снимок диска или бэкап — прочитал всё.</div>`}
         </div>
         <div class="cell">
