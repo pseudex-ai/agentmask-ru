@@ -180,6 +180,11 @@ OpenAI-совместимый — приложение ходит в него в
 
    docker run --rm -v pseudex-data:/data -e PSEUDEX_ROLE=probe {image}
 
+   Сменить ключ (движок при этом должен быть остановлен):
+
+   docker run --rm -v pseudex-data:/data -e PSEUDEX_ROLE=rekey \\
+     -e PSEUDEX_VAULT_KEY=<текущий> -e PSEUDEX_VAULT_KEY_NEW=<новый> {image}
+
 ПРАВИЛА, КОТОРЫЕ НЕЛЬЗЯ НАРУШАТЬ:
 - Никогда не подставляй настоящие персональные данные в проверочные запросы.
 - Порт {ui_port} публикуй только на 127.0.0.1. Там видны настоящие значения,
