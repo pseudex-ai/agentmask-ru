@@ -48,6 +48,7 @@ import os
 import re
 import subprocess
 import threading
+import time
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -78,6 +79,13 @@ _SCRYPT_P = 1
 # swallowed — a key that cannot be fetched is a refusal to start, not a fallback.
 _CMD_ATTEMPTS = 3
 _CMD_TIMEOUT_SECONDS = 30
+
+# `_write_private` creates with O_EXCL and writes AFTERWARDS, so a second process
+# can see the file exist while it is still empty. Waited out rather than narrowed:
+# the window is one `os.write` of at most 64 bytes, so on the ordinary path the
+# first read already succeeds and this costs nothing.
+_READ_ATTEMPTS = 40
+_READ_RETRY_SECONDS = 0.05
 
 _HEX64 = re.compile(r"\A[0-9a-fA-F]{64}\Z")
 
@@ -175,43 +183,72 @@ def _salt(data_dir: str) -> bytes:
     living in the same volume as the data costs nothing — but it must be backed
     up with it: without this file the passphrase no longer opens the vault. The
     key-loss regulation covers both.
+
+    THE FILE IS THE ANSWER, NEVER THE BYTES WE JUST GENERATED. `_write_private`
+    returns quietly when another process created the file first, and this used to
+    return its own salt anyway — a key derived from a salt that is not on disk.
+    The next start reads the winner's file, derives a different key, and the
+    volume opens for nobody. `_generated` was already right about this; this
+    mirrors it.
     """
     path = os.path.join(data_dir, _SALT_FILENAME)
-    try:
-        with open(path, "rb") as handle:
-            salt = handle.read()
-        if len(salt) == 16:
-            return salt
+    if not os.path.exists(path):
+        os.makedirs(data_dir, exist_ok=True)
+        if _write_private(path, os.urandom(16)):
+            _log.warning("vault: wrote a new passphrase salt to %s — back it up "
+                         "WITH the database; the passphrase alone will not open "
+                         "the vault", path)
+    salt = _read_written(path, 16)
+    if len(salt) != 16:
         raise VaultKeyError(
             f"{path} is {len(salt)} bytes, expected 16. Restore it from the "
             f"backup taken with the database — a different salt derives a "
             f"different key and the vault will not open."
         )
-    except FileNotFoundError:
-        pass
-    salt = os.urandom(16)
-    _write_private(path, salt)
-    _log.warning("vault: wrote a new passphrase salt to %s — back it up WITH the "
-                 "database; the passphrase alone will not open the vault", path)
     return salt
 
 
-def _write_private(path: str, payload: bytes) -> None:
+def _write_private(path: str, payload: bytes) -> bool:
     """Create the file readable by its owner only, and never widen an existing one.
 
     O_EXCL rather than a plain open: two workers starting together would both
     generate, and the loser would overwrite the key the winner had already used
-    to encrypt the volume with. The loser reads the winner's file instead.
+    to encrypt the volume with. The loser reads the winner's file instead — which
+    is what the return value is for: only the process that actually created the
+    file may say so, and only it may use what it wrote.
     """
     try:
         handle = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
-        return
+        return False
     try:
         os.write(handle, payload)
         os.fsync(handle)
     finally:
         os.close(handle)
+    return True
+
+
+def _read_written(path: str, minimum: int) -> bytes:
+    """Read a file another process may be in the middle of writing.
+
+    The create and the write above are two syscalls, and between them the file
+    EXISTS and is empty. A reader that took that emptiness for the final content
+    raised «restore it from a backup — nothing else opens the data» on a volume
+    where nothing was wrong at all — and N workers starting together is the
+    design, not an edge case.
+
+    Bounded, and the caller still validates what comes back: a file that stays
+    short is a truncated file, and that must go on being refused.
+    """
+    payload = b""
+    for _ in range(_READ_ATTEMPTS):
+        with open(path, "rb") as handle:
+            payload = handle.read()
+        if len(payload) >= minimum:
+            return payload
+        time.sleep(_READ_RETRY_SECONDS)
+    return payload
 
 
 def _from_environment(data_dir: str) -> VaultSecret | None:
@@ -278,8 +315,7 @@ def _generated(data_dir: str) -> VaultSecret:
     if not os.path.exists(path):
         os.makedirs(data_dir, exist_ok=True)
         _write_private(path, binascii.hexlify(os.urandom(32)))
-    with open(path, "r", encoding="utf-8") as handle:
-        text = handle.read().strip()
+    text = _read_written(path, 64).decode("utf-8", "replace").strip()
     if not _HEX64.match(text):
         raise VaultKeyError(
             f"{path} does not hold 64 hex characters. It is the key to this "
