@@ -125,18 +125,30 @@ def glue(text: str) -> str:
     return re.sub(r"(\d)\s+(кв|к|корп|стр)\b", r"\1\2", text, flags=re.IGNORECASE)
 
 
-def typo(rng: random.Random):
-    """Одна замена буквы в самом длинном слове — там, где она вероятнее всего."""
+def _edit(kind: str, rng: random.Random):
+    """Одна правка в самом длинном слове — тремя разными способами.
+
+    ТРИ ВИДА, А НЕ ОДИН. Здесь стояла только замена буквы, и это скрывало целый
+    класс: расстояние Дамерау считает перестановку одной правкой, Левенштейн —
+    двумя, и вопрос «даёт ли Дамерау выигрыш на именах» на приборе, который
+    перестановок не порождает, имеет заведомый ответ «нет». Лестница шума
+    (`bench/eval_noise_ladder.py`) делает выпадение и перестановку поровну —
+    прибор обязан покрывать то же, иначе он меряет свою узость.
+    """
     def apply(text: str) -> str:
-        words = [(i, w) for i, w in enumerate(re.findall(r"\w+|\W+", text))
-                 if w.isalpha() and len(w) >= 5]
+        parts = re.findall(r"\w+|\W+", text)
+        words = [(i, w) for i, w in enumerate(parts) if w.isalpha() and len(w) >= 5]
         if not words:
             return text
-        parts = re.findall(r"\w+|\W+", text)
         idx = max(words, key=lambda p: len(p[1]))[0]
         w = parts[idx]
-        p = rng.randrange(1, len(w) - 1)
-        parts[idx] = w[:p] + ("о" if w[p] != "о" else "а") + w[p + 1:]
+        at = rng.randrange(1, len(w) - 1)
+        if kind == "замена":
+            parts[idx] = w[:at] + ("о" if w[at] != "о" else "а") + w[at + 1:]
+        elif kind == "выпадение":
+            parts[idx] = w[:at] + w[at + 1:]
+        else:                                   # перестановка соседней пары
+            parts[idx] = w[:at] + w[at + 1] + w[at] + w[at + 2:]
         return "".join(parts)
     return apply
 
@@ -153,7 +165,9 @@ def _relations(rng: random.Random) -> list[tuple[str, object]]:
         ("снятая пунктуация",     depunctuate),
         ("строчными",             lower),
         ("склейка маркеров",      glue),
-        ("одна опечатка",         typo(rng)),
+        ("опечатка: замена",      _edit("замена", rng)),
+        ("опечатка: выпадение",   _edit("выпадение", rng)),
+        ("опечатка: перестановка", _edit("перестановка", rng)),
     ]
 
 
