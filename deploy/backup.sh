@@ -18,8 +18,18 @@ while :; do
     if pg_dump -h postgres -U "${POSTGRES_USER:-pseudex}" \
                -d "${POSTGRES_DB:-pseudex}" -Fc \
                > "/backups/storefront-${stamp}.dump.tmp"; then
-        mv "/backups/storefront-${stamp}.dump.tmp" "/backups/storefront-${stamp}.dump"
-        echo "backup: storefront ${stamp} ok"
+        # `set -e` KILLS THIS LOOP through the LAST command of a branch, and
+        # only through that one. A bare `mv` here is exactly that: it fails, the
+        # script exits, the container restarts, and the next round re-runs
+        # pg_dump instead of logging and sleeping. Inside an `if` condition it
+        # cannot — POSIX exempts the condition, and the failure gets a line.
+        if mv "/backups/storefront-${stamp}.dump.tmp" \
+              "/backups/storefront-${stamp}.dump"; then
+            echo "backup: storefront ${stamp} ok"
+        else
+            echo "backup: STOREFRONT DUMP TAKEN BUT NOT PUBLISHED at ${stamp}" >&2
+            rm -f "/backups/storefront-${stamp}.dump.tmp"
+        fi
     else
         # Loud and non-fatal: the loop must survive one bad night, but a silent
         # failure would let a month of them pass unnoticed.
@@ -40,6 +50,11 @@ while :; do
         apk add --no-cache sqlite >/dev/null 2>&1 || true
     fi
 
+    # THE MOUNT IS READ-WRITE, and `.backup` is why (compose.yml says it at the
+    # mount). The licensing database is in WAL mode, SQLite needs to create the
+    # `-shm` wal-index beside it to read one, and `-shm` is absent exactly when
+    # the licensing container is stopped — so on `:ro` this branch failed on the
+    # night the backup mattered most, and the watchdog only checks file age.
     if [ -f /license/license.db ]; then
         if ! command -v sqlite3 >/dev/null 2>&1; then
             # Loud EVERY night, not once. A copy taken with `cp` may be torn, and
@@ -48,11 +63,20 @@ while :; do
             echo "backup: NO sqlite3 — license copy is a plain cp of a LIVE WAL" \
                  "database and may be torn. It will still pass the freshness" \
                  "check. Fix the image or the network that apk needs." >&2
-            cp /license/license.db "/backups/license-${stamp}.db.tmp" \
-                && mv "/backups/license-${stamp}.db.tmp" "/backups/license-${stamp}.db"
+            if cp /license/license.db "/backups/license-${stamp}.db.tmp" \
+                && mv "/backups/license-${stamp}.db.tmp" "/backups/license-${stamp}.db"; then
+                echo "backup: license ${stamp} copied WITHOUT sqlite3"
+            else
+                echo "backup: LICENSE CP FAILED at ${stamp}" >&2
+                rm -f "/backups/license-${stamp}.db.tmp"
+            fi
         elif sqlite3 /license/license.db ".backup '/backups/license-${stamp}.db.tmp'" 2>/tmp/lic.err; then
-            mv "/backups/license-${stamp}.db.tmp" "/backups/license-${stamp}.db"
-            echo "backup: license ${stamp} ok"
+            if mv "/backups/license-${stamp}.db.tmp" "/backups/license-${stamp}.db"; then
+                echo "backup: license ${stamp} ok"
+            else
+                echo "backup: LICENSE COPY TAKEN BUT NOT PUBLISHED at ${stamp}" >&2
+                rm -f "/backups/license-${stamp}.db.tmp"
+            fi
         else
             # NOT a silent fallback to `cp`. `sqlite3` answers `file is not a
             # database` to an ENCRYPTED store as well as to a broken one, and
@@ -66,8 +90,14 @@ while :; do
         fi
     fi
 
-    find /backups -name '*.dump' -mtime "+${RETAIN_DAYS}" -delete
-    find /backups -name '*.db' -mtime "+${RETAIN_DAYS}" -delete
+    # `|| echo` for the same reason as the two `mv`s above: these are the last
+    # commands before `sleep`, and under `set -e` a sweep that fails (an
+    # /backups that did not mount) would take the loop down and lose the backups
+    # over the cleanup of the backups.
+    find /backups -name '*.dump' -mtime "+${RETAIN_DAYS}" -delete \
+        || echo "backup: retention sweep failed at ${stamp}" >&2
+    find /backups -name '*.db' -mtime "+${RETAIN_DAYS}" -delete \
+        || echo "backup: retention sweep failed at ${stamp}" >&2
 
     sleep 86400
 done
