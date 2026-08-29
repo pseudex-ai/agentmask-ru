@@ -397,12 +397,18 @@ def gate_p9() -> bool:
         blob = path.read_bytes()
         if any(value.encode("utf-8") in blob for value in marker_values):
             readable.append(path.name)
+        # `with` on a sqlite3 connection is a TRANSACTION context manager, not a
+        # closer, so it is not used here: this loop opens every file in a volume
+        # and leaking a handle per file is how a gate starts failing on the size
+        # of the thing it is inspecting.
+        plain = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         try:
-            with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as plain:
-                plain.execute("SELECT count(*) FROM sqlite_master").fetchone()
+            plain.execute("SELECT count(*) FROM sqlite_master").fetchone()
             opened.append(path.name)
         except sqlite3.DatabaseError:
             pass
+        finally:
+            plain.close()
 
     ok = bool(held) and bool(files) and not opened and not readable
     return gate("P9 the release image writes nothing ordinary SQLite can read", ok,
