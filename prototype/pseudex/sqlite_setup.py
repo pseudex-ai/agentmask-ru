@@ -180,19 +180,25 @@ def _readonly_key(db_path: str, store: str) -> str:
 def _explain_no_key(db_path: str) -> VaultLocked:
     """The file is encrypted and NOTHING resolves a key for it.
 
-    Its own sentence rather than `_explain_locked`'s, because the two send the
-    operator to different places: one says the key you gave is the wrong one, and
-    this one says you gave none. Merging them was how the probe reported a wrong
-    key on a volume whose key had simply not been passed to the command.
+    Its own sentence rather than `_explain_locked`'s, because the three send the
+    operator to different places: that one says the key you gave is the wrong
+    one, and this one says you gave none — for one of two reasons that need
+    OPPOSITE actions. Both are named rather than branched on, because a message
+    that guesses which of them applies is a message that can guess wrong.
     """
     data_dir = os.path.dirname(os.path.abspath(db_path)) or "."
     return VaultLocked(
         f"\n"
-        f"{db_path} зашифрован, а ключа для него нет: "
-        f"{vault_key.key_state(data_dir)['key_source']}.\n"
+        f"{db_path} зашифрован, а ключа для него нет.\n"
         f"\n"
-        f"передайте те же PSEUDEX_VAULT_KEY / PSEUDEX_VAULT_KEY_FILE /\n"
-        f"PSEUDEX_VAULT_KEY_CMD, с которыми на этом томе работает движок.\n"
+        f"    источник ключа: {vault_key.key_state(data_dir)['key_source']}\n"
+        f"\n"
+        f"«disabled» — задан PSEUDEX_VAULT_ENCRYPTION=off, и пока он задан, ключ\n"
+        f"не разрешится ни из одной переменной. Уберите его.\n"
+        f"«none» — не задана ни PSEUDEX_VAULT_KEY, ни PSEUDEX_VAULT_KEY_FILE, ни\n"
+        f"PSEUDEX_VAULT_KEY_CMD, и файла с ключом рядом с данными тоже нет.\n"
+        f"Передайте те же переменные, с которыми на этом томе работает движок.\n"
+        f"\n"
         f"ничего не создано: читающая роль ключей не заводит.\n"
     )
 
