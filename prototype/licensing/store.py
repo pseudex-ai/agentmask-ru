@@ -19,7 +19,7 @@ import threading
 import time
 from dataclasses import dataclass
 
-from pseudex.sqlite_setup import connect as sqlite_connect
+from pseudex.sqlite_setup import LICENSING_STORE, connect as sqlite_connect
 
 KEY_PREFIX = "ps_live_"
 
@@ -47,7 +47,7 @@ class LicenseStore:
 
     def __init__(self, db_path: str) -> None:
         self._lock = threading.Lock()
-        self._conn = sqlite_connect(db_path)
+        self._conn = sqlite_connect(db_path, LICENSING_STORE)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS keys ("
             "key_hash TEXT PRIMARY KEY, org_id TEXT, plan TEXT, status TEXT, created_at REAL)"

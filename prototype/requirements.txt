@@ -9,3 +9,11 @@ natasha
 # Ed25519 signatures. See pseudex/bundle.py for why both are needed.
 pyrage
 cryptography
+# The vault, audit and tenant stores at rest. `sqlcipher3`, NOT
+# `sqlcipher3-binary`: the two are different distributions and only this one has
+# wheels for our platforms (77 in 0.6.2, including macosx_11_0_arm64 and
+# manylinux_2_28_{x86_64,aarch64}; the binary fork has 7, manylinux x86_64 only).
+# Getting those two names the wrong way round is what kept this feature in the
+# backlog for four days. The .so is self-contained — OpenSSL is linked
+# statically — so it adds no runtime dependency to either image.
+sqlcipher3

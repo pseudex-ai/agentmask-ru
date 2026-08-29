@@ -272,6 +272,7 @@ function Status({ status, engineDown, org, goSandbox, onBlocked }) {
   const license = status?.license || {};
   const engine = status?.engine || {};
   const today = status?.today || {};
+  const vault = status?.vault || {};
   const big = engineDown
     ? { title: 'не работает', color: 'var(--pink)', sub: 'движок не отвечает',
         note: 'Интерфейс живёт в том же контейнере, но не получает ответа от движка. Показанные ниже данные — последние известные.' }
@@ -340,6 +341,18 @@ function Status({ status, engineDown, org, goSandbox, onBlocked }) {
             ['движок', engine.version || '—', ''],
           ].map(([key, value, tone]) => html`
             <div class="kv"><span class="k">${key}</span><span class=${`v ${tone}`}>${value}</span></div>`)}
+        </div>
+        <div class="cell">
+          <div class="label mb">ХРАНИЛИЩЕ</div>
+          ${[
+            ['на диске', vault.encrypted ? 'зашифровано (AES-256)' : 'ОТКРЫТЫЙ ТЕКСТ', vault.encrypted ? 'green' : 'pink'],
+            ['ключ', vault.key_source || '—', vault.key_beside_data ? 'amber' : ''],
+          ].map(([key, value, tone]) => html`
+            <div class="kv"><span class="k">${key}</span><span class=${`v ${tone}`}>${value}</span></div>`)}
+          ${vault.key_beside_data && html`
+            <div class="foot-note">Ключ лежит в том же томе, что и данные: это защищает скопированный файл базы, но не украденный том или его резервную копию — они несут ключ с собой. PSEUDEX_VAULT_KEY_CMD переносит ключ в ваш менеджер секретов.</div>`}
+          ${!vault.encrypted && html`
+            <div class="foot-note">Настоящие значения лежат в томе как есть. Кто получил том, снимок диска или бэкап — прочитал всё.</div>`}
         </div>
         <div class="cell">
           <div class="label mb">ПРОЦЕССЫ</div>

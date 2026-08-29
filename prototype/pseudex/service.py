@@ -32,6 +32,7 @@ import anyio
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from pseudex import sqlite_setup
 from pseudex.assets import ASSETS, BundleNotLeased
 from pseudex.audit import AuditLog, _preview
 from pseudex.detect_all import Detector
@@ -61,6 +62,22 @@ _log = logging.getLogger("pseudex.service")
 # Persistent vault + audit live under PSEUDEX_DB_DIR (a mounted volume in
 # production) so tokens stay reversible across restarts and workers.
 _DB_DIR = os.environ.get("PSEUDEX_DB_DIR", ".")
+# THE VAULT IS OPENED FIRST, before any other store is constructed, and that is
+# not redundant with the `Vault` built per org further down. `AuditLog` and
+# `Tenants` are process singletons, so a key that does not open THEM stops the
+# worker while it is still starting; the vault is only touched by the first
+# request that names an org. Without this, a wrong key produced a container that
+# started, reported healthy, and then 500'd on the customer's first real message
+# — after their gateway had already been told we were up.
+#
+# Before the others because opening a store CREATES it when it is missing: with
+# a mistyped key, whichever store is opened first is written as a new file that
+# the corrected key will then refuse. The vault is the file that matters and the
+# one most likely to already exist, so it is the one that gets to object first.
+# (`entrypoint.sh` runs PSEUDEX_ROLE=probe ahead of every worker, which is
+# read-only and creates nothing — that is the real defence; this is the one that
+# also covers `uvicorn pseudex.service:app`.)
+sqlite_setup.preflight(os.path.join(_DB_DIR, "vault.db"), sqlite_setup.VAULT_STORE)
 DETECTOR = Detector()
 AUDIT = AuditLog(os.path.join(_DB_DIR, "audit.db"))
 _VAULTS: dict[str, Vault] = {}

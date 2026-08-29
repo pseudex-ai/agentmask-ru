@@ -55,6 +55,12 @@ RUN if grep -rn "^[[:space:]]*\(from\|import\)[[:space:]]\+licensing" ./pseudex/
         echo "pseudex/ must never import licensing/ — that would drag the assets in"; \
         exit 1; \
     fi
+RUN if grep -rn "^[[:space:]]*\(from\|import\)[[:space:]]\+sqlite3" ./pseudex/; then \
+        echo "pseudex/ must reach SQLite only through sqlite_setup: stdlib sqlite3"; \
+        echo "accepts PRAGMA key WITHOUT raising and writes plain text, so any"; \
+        echo "import of it here is a product that claims encryption and has none"; \
+        exit 1; \
+    fi
 
 # Persistent vault + audit mount point (compose mounts a named volume here).
 ENV PSEUDEX_DB_DIR=/data

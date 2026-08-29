@@ -7,6 +7,13 @@ __pycache__/
 *.db
 *.db-shm
 *.db-wal
+*.db.lock
+# The vault key a run generates beside its database when nothing supplies one.
+# It is the key to that developer's own store and it is not a repository
+# artefact — but the reason it is listed is the other direction: a key committed
+# once stays in the history, and this one opens personal data.
+pseudex-vault.key
+pseudex-vault.salt
 proxy.log
 used_pii.txt
 dirty.json

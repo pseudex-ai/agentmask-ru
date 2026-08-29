@@ -25,6 +25,7 @@ import anyio
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
+from pseudex import vault_key
 from pseudex.audit import SELFCHECK_ORG
 from pseudex.profiling import snapshot as profiling_snapshot
 
@@ -38,6 +39,10 @@ _SHOWN_ENV = (
     "PSEUDEX_MASK_CONCURRENCY",
     "PSEUDEX_MASK_CACHE_SIZE",
     "PSEUDEX_DB_DIR",
+    # The MODE only — auto/required/off. Not PSEUDEX_VAULT_KEY, obviously, and
+    # not _KEY_CMD either: a command line is where an operator puts a token by
+    # accident, and /status already names WHICH source answered.
+    "PSEUDEX_VAULT_ENCRYPTION",
     "PSEUDEX_PROFILE",
     "PSEUDEX_LOG_LEVEL",
     "PSEUDEX_ADDR_EXTRACTOR",
@@ -180,6 +185,11 @@ def build_router(audit, license_client, assets, detector_version: str,
                                         else round(state.seconds_since_lease)),
                 "last_error": state.last_error,
             },
+            # Where the key comes from, never the key. The operator's one
+            # question is whether the volume they back up carries its own key —
+            # `key_beside_data` answers it without them reading a log line from
+            # a start they were not present for.
+            "vault": vault_key.state(os.environ.get("PSEUDEX_DB_DIR", ".")),
             "today": {
                 "requests": today["requests"],
                 "values": today["values"],

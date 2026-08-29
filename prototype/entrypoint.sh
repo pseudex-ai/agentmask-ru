@@ -63,6 +63,26 @@ if [ -z "$PSEUDEX_UI_TOKEN" ]; then
     export PSEUDEX_UI_TOKEN
 fi
 
+# The volume is checked ONCE, here, before any worker opens it. Two reasons, and
+# neither is cosmetic. A key that does not open the vault would otherwise be
+# reported N times — once per worker, interleaved, in a log the operator reads
+# top-down — and the container would exit on whichever worker lost the race,
+# with the same message buried N deep. And in `auto` mode this is where the key
+# is generated, once, instead of eight processes racing to create it.
+#
+# It does NOT migrate: the probe opens read-only. The plaintext-to-encrypted
+# conversion stays inside the connection factory under its own flock, because
+# `uvicorn pseudex.service:app` is a supported launch shape that never runs this
+# script (CLAUDE.md, deployment shape B) and a migration that only happens here
+# would be a migration half the deployments never get.
+if ! PSEUDEX_ROLE=probe ${PSEUDEX_SERVE_CMD:-./pseudex-serve}; then
+    echo ""
+    echo "pseudex: том не открывается текущим ключом — контейнер остановлен."
+    echo "         PSEUDEX_ROLE=probe выше показывает, какой файл и почему."
+    exit 3
+fi
+echo ""
+
 echo "pseudex: starting ${WORKERS} worker(s), instance ${PSEUDEX_INSTANCE_ID}"
 echo ""
 if [ "${PSEUDEX_ROLE:-sidecar}" = "proxy" ]; then
