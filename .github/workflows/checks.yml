@@ -89,6 +89,47 @@ jobs:
           set -a; . deploy/.env.example; set +a
           POSTGRES_PASSWORD=x PSEUDEX_SECRET_KEY=x PSEUDEX_SIGNING_KEY=x \
             docker compose -f deploy/compose.yml config >/dev/null
+      # A FAILED ALARM MUST NOT BE A SILENT ONE. `if ! curl` stood here and never
+      # fired: without --fail curl calls HTTP 400 a successful transfer and exits
+      # 0, so Telegram rejecting a malformed or over-long body lost the alarm with
+      # nothing in the log. Found by sending a real message on 2026-08-29.
+      #
+      # No test hook is added for this: a bogus token gets a deterministic 404
+      # from the real API, and an unreachable API leaves the same non-200 path,
+      # so the assertion holds whether or not the network is there.
+      # A FILTER AT THE END OF A CONDITION STEALS THE EXIT CODE IN FRONT OF IT.
+      # `if ! deploy … | tail -20` stood in agent.sh and never fired: a pipeline
+      # returns its LAST command's status and tail always succeeds. `pipefail`
+      # is no answer — POSIX sh does not have it and dash does not support it.
+      # A failed pull therefore read as success, the old containers stayed up and
+      # healthy, and the agent wrote the NEW version into its state file while
+      # production ran the old one — reporting "deploy ready" as it did so.
+      #
+      # shellcheck does not flag this (check-extra-masked-returns is about
+      # command substitutions, verified on the exact line), so the check is here.
+      # `$(…)` is stripped first: a pipeline inside a substitution yields a
+      # STRING and its status is never read. `| grep -q` is untouched by design —
+      # there the filter IS the test (watch.sh checks the HTTP code that way).
+      - name: no condition takes its exit code from a trailing filter
+        run: |
+          bad=0
+          for f in deploy/*.sh; do
+            hit=$(sed 's/\$([^()]*)//g' "$f" \
+                  | grep -nE '^[[:space:]]*(if|while|until)[[:space:]].*\|[[:space:]]*(tail|head|cut|tr|wc|sed|awk)\b' \
+                  || true)
+            [ -n "$hit" ] && { echo "$f: $hit"; bad=1; }
+          done
+          exit $bad
+
+      - name: a rejected alarm is reported, not swallowed
+        run: |
+          out=$(PSEUDEX_TG_TOKEN=1:bogus PSEUDEX_TG_CHAT=1 \
+                sh deploy/notify.sh crit "ci" "body" 2>&1 >/dev/null || true)
+          case "$out" in
+            *"НЕ ДОСТАВЛЕНО"*) : ;;
+            *) echo "notify.sh swallowed a rejected send: '$out'"; exit 1 ;;
+          esac
+
       - name: systemd units parse
         run: |
           sudo apt-get install -y --no-install-recommends systemd >/dev/null
