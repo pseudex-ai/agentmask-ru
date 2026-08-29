@@ -25,6 +25,7 @@ import re
 
 from pseudex.assets import ASSETS, NameAssets
 from pseudex.detect import Span
+from pseudex.fuzzy import bucket_keys, candidate_lengths, within_one_edit
 from pseudex.morph import MORPH
 
 _WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё]+")
@@ -448,35 +449,9 @@ def _misspelling_index(version: str) -> dict[str, tuple[str, ...]]:
     for word in itertools.chain(names.dict_first, names.dict_surnames):
         if len(word) < 5 or word in names.ambiguous:
             continue
-        index.setdefault((word[:3], len(word)), []).append(word)
-        index.setdefault(("\0" + word[-3:], len(word)), []).append(word)
+        for key in bucket_keys(word):
+            index.setdefault((key, len(word)), []).append(word)
     return {key: tuple(value) for key, value in index.items()}
-
-
-def _within_one_edit(word: str, other: str) -> bool:
-    """Levenshtein distance ≤ 1, decided without building a matrix.
-
-    Stops at the SECOND difference. The whole-word scan it replaced was the
-    difference between 13.65 ms and a fraction of one on a large bucket: almost
-    every candidate differs immediately, and finishing the word to learn that is
-    work spent on a decision already made.
-    """
-    if abs(len(word) - len(other)) > 1:
-        return False
-    if len(word) == len(other):
-        seen = False
-        for left, right in zip(word, other):
-            if left == right:
-                continue
-            if seen:
-                return False
-            seen = True
-        return True
-    shorter, longer = (word, other) if len(word) < len(other) else (other, word)
-    index = 0
-    while index < len(shorter) and shorter[index] == longer[index]:
-        index += 1
-    return shorter[index:] == longer[index + 1:]
 
 
 def _looks_misspelt_name(word: str) -> bool:
@@ -510,11 +485,11 @@ def _looks_misspelt_name(word: str) -> bool:
     if not parses or parses[0].is_known:
         return False
     index = _misspelling_index(ASSETS.version or "")
-    for key in (lowered[:3], "\0" + lowered[-3:]):
+    for key in bucket_keys(lowered):
         # Three lengths, because one edit moves a length by at most one.
-        for length in (len(lowered) - 1, len(lowered), len(lowered) + 1):
+        for length in candidate_lengths(lowered):
             for candidate in index.get((key, length), ()):
-                if candidate != lowered and _within_one_edit(lowered, candidate):
+                if candidate != lowered and within_one_edit(lowered, candidate):
                     return True
     return False
 
