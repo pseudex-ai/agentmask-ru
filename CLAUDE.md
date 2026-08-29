@@ -173,8 +173,10 @@ the thing that is down cannot. It never imports `pseudex.service` and never leas
 ### The lease (`licensing/` → `pseudex/assets.py`)
 
 ```
-licensing/assets_source.py   the authored data: gazetteers, street vocabulary, cue words,
+licensing/assets_source.py   the authored data: gazetteers, street type stems, cue words,
                              priority table, key->type map, look-alike table. NEVER SHIPS.
+licensing/data/              the bulk dictionaries: 197k names, 165k ГАР street names
+licensing/fetch_gar.py       rebuilds the street vocabulary from ГАР (twice-weekly dump)
 licensing/pack.py            builds it into zlib(JSON); version = content hash
 licensing/server.py          POST /v1/lease -> seals the bundle to ONE process, signs it
 pseudex/bundle.py            the wire format, shared by both sides
@@ -363,7 +365,15 @@ python3 bench/eval_external_precision.py <NEREL dir>               # what we mas
 python3 bench/agentpii/build.py && python3 bench/agentpii/score.py bench/agentpii/corpus.json
 python3 bench/eval_piibench.py                                     # чужой русский корпус ПД в чатовом регистре
 python3 bench/eval_noise_ladder.py --dataset dataset.json          # ГДЕ ломается детекция на живом чате
+python3 bench/eval_noise_by_type.py dataset.json                   # та же лестница ПО ТИПАМ — кто именно ломается
+python3 bench/eval_gar_cut.py                                      # где резать словарь улиц ГАР и чем это платится
 ```
+
+`bench/eval_noise_by_type.py` существует потому, что одно число на ступень —
+среднее по девяти типам, и оно прячет виновника: телефон и СНИЛС держит
+контрольная сумма, а LOC падал со 100% до 4% на одной опечатке, потому что улица
+искалась точным вхождением. Голые города в нём исключены, как и во второй колонке
+общей лестницы.
 
 Корпуса живут в `~/.cache/pseudex-bench/` (не в репозитории и не в `/tmp`, который
 чистится при перезагрузке — NEREL терялся так дважды):
@@ -555,6 +565,36 @@ direction when done the obvious way:
   the substitute, and one person got two pseudonyms in one dialogue.
 - **A passport needs a cue, and the window after it is sixteen characters.**
   «Паспортные данные: 4518123456» needed nine and the pattern allowed eight.
+- **A fuzzy street match needs THREE signals and a fourth condition** — the same
+  discipline a mistyped name needs, for a worse version of the same reason: 165 672
+  ГАР names, and about half of them a single ordinary-looking word. A street-type
+  word adjacent (rejects every bare word-plus-number in prose), the other word in
+  the leased ГАР vocabulary as written / as its normal form / as its nominative
+  (rejects «улица была пустой» and «на улицах Каира» — morphology admits all three
+  and is deliberately not consulted), and address intent. The fourth: a fuzzy hit
+  is accepted only for a word pymorphy3 does NOT know, and never for both words at
+  once — «линии», «территории», «съезда» and «алло» are known, so they match only
+  exactly. Full curve and counter-examples in `docs/gar-street-vocabulary.md`.
+- **Cutting the street vocabulary by frequency concentrates the risk, it does not
+  reduce it.** The intuition (a smaller gate lets less of the language through) is
+  backwards here: the share of entries pymorphy3 calls an ordinary word RISES from
+  22.9% at no cut to 65.1% at twelve, because the commonest Russian street names
+  ARE ordinary words — центральная, лесная, новая, садовая, школьная. Measured, the
+  whole tail costs nothing on NEREL, `test_overmasking` or news prose, and buys 0%
+  → 90% on tail streets in the typo register. `STREET_MIN_OBJECTS = 1`.
+- **Regex alternation picks the earliest POSITION, not the preferred branch.**
+  `street_lower_nohouse`'s marker-last branch matched «адрес москве проспекте»
+  before the marker-first branch could reach «проспекте мира», swallowed the cue
+  word (which the gate then could not see in front of the span) and made
+  `finditer` resume past the street. Ten of fourteen street values at the
+  no-punctuation rung. A lookahead leaves the marker unconsumed so both branches
+  fire and merge.
+- **The ГАР attribution rides IN THE BUNDLE, not only in `docs/`.** ФНС's ОТКРЫТАЯ
+  ЛИЦЕНЗИЯ grants extraction and commercial reuse on one condition — «указывать
+  ссылку на источник открытых данных», with the dump date — and the customer loads
+  a bundle, never the repository. `licensing/fetch_gar.py` writes the line,
+  `pack.py` reads it back rather than restating it, so a stale bundle cannot claim
+  a fresh dump.
 
 ## Conventions
 

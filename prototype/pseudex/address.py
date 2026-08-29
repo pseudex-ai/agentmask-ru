@@ -20,6 +20,7 @@ apartment is dropped (so "магазин в Москве" stays unmasked). A neg
 dictionary kills square-meters ("5 кв.м") and abbreviations ("и т.д.").
 """
 
+import functools
 import logging
 import os
 import re
@@ -29,6 +30,7 @@ from pseudex import _morph_compat  # noqa: F401  (aliases pymorphy2->pymorphy3 b
 
 from pseudex.assets import ASSETS, AddressAssets
 from pseudex.detect import Span
+from pseudex.fuzzy import build_index, lookup, within_one_typo
 from pseudex.morph import MORPH
 
 _log = logging.getLogger("pseudex.address")
@@ -320,6 +322,194 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
 
 
 
+# --- typo-tolerant street matching ---------------------------------------
+#
+# WHY A TOKEN SCAN AND NOT ANOTHER REGEX. Every arm above is anchored on a
+# literal — «улиц», «проспект» — so one dropped letter turns the whole address
+# off. Measured on the noise ladder, street recall goes 100 → 100 → 64 → 4 at
+# one typo per value: not degraded, gone. Half of that damage is in the TYPE
+# word («уилце ленина») and half in the NAME («улице гагаина»), so tolerating a
+# typo in only one of them buys about half of it back.
+#
+# THE THREE SIGNALS, and each one rejects a different thing. This is the same
+# discipline `_looks_misspelt_name` needed and for a worse version of the same
+# reason: the street vocabulary is larger than the name dictionary and about
+# half of it is a single ordinary-looking word, so a bare fuzzy lookup against
+# it matches a large part of the language.
+#
+#   1. A STREET-TYPE WORD stands next to it. Rejects every bare
+#      word-plus-number in ordinary prose — which is what the marker-less arms
+#      spend all their guards on. The type word is the cheap gate and it runs
+#      first.
+#   2. THE OTHER WORD IS IN THE LEASED ГАР VOCABULARY, as written, as its
+#      normal form, or as its nominative. Rejects «улица была пустой» and «на
+#      улицах Каира собрались десятки»: «была», «пустой» and «каира» are
+#      ordinary words that name no street, and morphology — which admits all
+#      three — is deliberately not consulted for this.
+#   3. ADDRESS INTENT: a house number attached to the pair, or a cue word in
+#      the sentence tail. Rejects prose ABOUT streets, exactly as
+#      `street_lower_nohouse` already does, and the split between the two type
+#      tiers is the same one: a type word whose only meaning is a street may
+#      lean on the cue, everything else needs the number.
+#
+# AND A FOURTH THING, which is what makes signals 1 and 2 usable at this size:
+# a FUZZY hit is only ever accepted for a token pymorphy3 does not know, and
+# never for both words at once. A typo makes a word unknown; «линии»,
+# «территории», «съезда» and «алло» are known, so they can only ever match
+# exactly. That is the guard `_looks_misspelt_name` learned the hard way — in a
+# dictionary this dense the distance-1 neighbourhood of an ordinary word is
+# never empty — and it is imported here wholesale rather than re-derived.
+_CYR_TOKEN_RE = re.compile(r"[А-Яа-яЁё]+(?:-[А-Яа-яЁё]+)*")
+# TWO TOKENS ARE NEIGHBOURS ONLY IF NOTHING STANDS BETWEEN THEM. The scan skips
+# everything that is not a Cyrillic word, so «улице 89985435346 ленина» would
+# otherwise present «улице» and «ленина» as adjacent and mask the phone number
+# between them as part of the street. Separators and a marker's dot, nothing
+# else.
+_PAIR_GAP_RE = re.compile(r"[\s,.:;()«»\"'-]{0,3}\Z")
+# The house number that may hang off the pair, in the shapes the tuned arms
+# already accept: «ленина 14», «ленина, д. 5», «ленина д14». Three digits, not
+# four, exactly as `markerless` limits it — a fourth digit is a year far more
+# often than a door, and «улица Ленина 2024 года» must not swallow the year.
+_HOUSE_AFTER_RE = re.compile(
+    r"[\s,]{0,3}(?:дом|д)?\.?\s*\d{1,3}[А-ЯЁа-яё]?(?:/\d+)?(?![0-9A-Za-zА-Яа-яёЁ])")
+# Below five letters a single edit reaches too much of the language, and the
+# bucket index cannot see all of it anyway: its guarantee — that an edit at
+# position p is caught by one key or the other — only closes at six letters, so
+# a shorter word gets partial coverage that would look like a rule and is not
+# one. The vocabulary holds every short street name exactly, which is where
+# they are found.
+_MIN_FUZZY_NAME = 5
+
+
+@functools.lru_cache(maxsize=4)
+def _street_index(version: str) -> dict[tuple[str, int], tuple[str, ...]]:
+    """The ГАР vocabulary bucketed for one-edit lookup.
+
+    Keyed on the BUNDLE VERSION, so a re-lease cannot serve an index built from
+    the previous vocabulary. The version is a content hash, so equal version
+    means equal contents — the same contract `_misspelling_index` runs on."""
+    return build_index(ASSETS.get().address.street_names)
+
+
+def _is_unknown(token: str) -> bool:
+    """Whether pymorphy3 has never seen this word.
+
+    `any`, not `parse[0]`: a word is known if ANY reading comes from the
+    dictionary. Taking the best parse would call «марину» unknown whenever the
+    predicted reading happened to outscore the dictionary one, and unknown is
+    the state that OPENS the fuzzy path — so the wrong answer here is the
+    permissive one."""
+    parses = MORPH.parse(token)
+    return bool(parses) and not any(parse.is_known for parse in parses)
+
+
+def _exact_type(token: str, stems: tuple[str, ...]) -> str | None:
+    # The tuple form of `startswith` is one C-level call over all 31 stems and
+    # answers "any of them" without saying which. This runs on EVERY token of
+    # every message, so the Python loop that names the stem — which the tier
+    # check needs — may only run for the few tokens that already matched.
+    if not token.startswith(stems):
+        return None
+    for stem in stems:
+        if token.startswith(stem):
+            return stem
+    return None
+
+
+def _fuzzy_type(token: str, stems: tuple[str, ...]) -> str | None:
+    """A street type one typo away, compared on the PREFIX rather than the word.
+
+    The vocabulary is stems («улиц», «проспект») because the type word is
+    inflected in every real address — «на улице», «по проспекту» — and a stem
+    plus a suffix is how every other arm here reads it. So the comparison takes
+    the token's prefix at the stem's length and at one either side: an edit
+    inside the stem region moves that boundary by at most one, and «поспекте»
+    only reveals its missing «р» when seven characters are compared against
+    eight."""
+    for stem in stems:
+        for length in (len(stem) - 1, len(stem), len(stem) + 1):
+            if 3 <= length <= len(token) and within_one_typo(token[:length], stem):
+                return stem
+    return None
+
+
+def _names_a_street(token: str, address: AddressAssets) -> bool:
+    """Whether the ГАР vocabulary claims this word, in any form it can take.
+
+    THE INFLECTED FORM IS THE COMMON ONE, not the exception: ГАР registers
+    «Садовая» and «Центральная» and a customer writes «на садовой», «по
+    центральной». The ten commonest street names in Russia are all adjectives,
+    so a lookup that only matched the registered spelling would miss the half of
+    the register it exists for.
+
+    EVERY reading, never `parse[0]` — the trap that made «марину» resolve to a
+    man and «Тверская» stop being a street. `inflect` keeps the gender it found
+    and only moves the case, which is what turns «тверской» back into
+    «Тверская» without inventing one."""
+    if token in address.street_names:
+        return True
+    for parse in MORPH.parse(token):
+        if parse.normal_form in address.street_names:
+            return True
+        nominative = parse.inflect({"nomn"})
+        if nominative is not None and nominative.word in address.street_names:
+            return True
+    return False
+
+
+def _fuzzy_names_a_street(token: str, address: AddressAssets) -> bool:
+    if len(token) < _MIN_FUZZY_NAME or not _is_unknown(token):
+        return False
+    return lookup(token, _street_index(ASSETS.version or ""))
+
+
+def _fuzzy_street_candidates(text: str, address: AddressAssets
+                             ) -> list[tuple[int, int, bool]]:
+    tokens = [(match.start(), match.end(), match.group().lower())
+              for match in _CYR_TOKEN_RE.finditer(text)]
+    exact_type = [_exact_type(token, address.street_type_house)
+                  for _, _, token in tokens]
+    exact_name = [token in address.street_names for _, _, token in tokens]
+
+    out: list[tuple[int, int, bool]] = []
+    for index in range(len(tokens) - 1):
+        if not _PAIR_GAP_RE.fullmatch(text[tokens[index][1]:tokens[index + 1][0]]):
+            continue
+        for type_at, name_at in ((index, index + 1), (index + 1, index)):
+            # ONE OF THE TWO MUST BE INTACT, and the cheap side decides which
+            # expensive test is worth running. Both words misspelt is two
+            # guesses stacked, and the pair that survives it is no longer
+            # evidence of anything.
+            stem = exact_type[type_at]
+            if stem is not None:
+                named = (exact_name[name_at]
+                         or _names_a_street(tokens[name_at][2], address)
+                         or _fuzzy_names_a_street(tokens[name_at][2], address))
+            elif exact_name[name_at] and _is_unknown(tokens[type_at][2]):
+                stem = _fuzzy_type(tokens[type_at][2], address.street_type_house)
+                named = stem is not None
+            else:
+                continue
+            if stem is None or not named:
+                continue
+            start = min(tokens[type_at][0], tokens[name_at][0])
+            stop = max(tokens[type_at][1], tokens[name_at][1])
+            house = _HOUSE_AFTER_RE.match(text, stop)
+            if house is not None:
+                stop = house.end()
+            elif stem not in address.street_type_nohouse:
+                # The weak tier without its number: «съезд Ленина» is a party
+                # congress until a door number says otherwise.
+                continue
+            elif not _intent_before(text, start, address):
+                # The strict cue, not `_cue_before`: with no house number the
+                # preposition is worth nothing, because «на улицах Каира
+                # собрались десятки» opens with the same «на» an address does.
+                continue
+            out.append((start, stop, True))   # core (street + type word)
+    return out
+
+
 # A word and the punctuation that may stand between it and an address part.
 _NEIGHBOUR_LEFT = re.compile(r"([А-Яа-яЁё][А-Яа-яЁё-]*)[\s,.;]{0,3}$")
 _NEIGHBOUR_RIGHT = re.compile(r"^[\s,.;]{0,3}([А-Яа-яЁё][А-Яа-яЁё-]*)")
@@ -552,7 +742,7 @@ def detect_address(text: str) -> list[Span]:
     regex = _regex_candidates(text, address)
     if SHADOW:
         _log_shadow_diff(text, natasha, regex)
-    cands = natasha + regex
+    cands = natasha + regex + _fuzzy_street_candidates(text, address)
     if not cands:
         return []
     cands = cands + _toponym_neighbours(text, cands)
