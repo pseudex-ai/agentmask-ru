@@ -107,6 +107,57 @@ def load_street_vocabulary() -> list[str]:
     return sorted(names)
 
 
+def load_street_phrases() -> list[str]:
+    """The MULTI-WORD ГАР names, stored and matched as whole phrases.
+
+    Fifty-five per cent of the register is multi-word — 90 706 of 165 672 — and
+    that half is not the tail: «Карла Маркса» names 1 512 streets, «Степана
+    Разина» 498, «Максима Горького» 465, «8 Марта» 1 953. They were absent
+    entirely, so a customer on any of them was unprotected the moment the type
+    word carried a typo, because the fuzzy-type path is the one that demands the
+    vocabulary.
+
+    A SEPARATE SET, not extra entries in `street_names`, and the distinction is
+    the whole point. `load_street_vocabulary` deliberately keeps single words
+    because its lookup is token by token: putting «карла» and «маркса» in there
+    would let either word claim on its own to name a street, and «карла» does not.
+    A phrase entry can only ever match the whole phrase, so it adds the name
+    without adding the claim.
+
+    Digits stay, unlike in the single-word set. «8 марта» and «1 мая» are among
+    the commonest street names in the country, and as a PHRASE the digit is part
+    of the name rather than a house number — which is exactly why the single-word
+    set had to exclude the bare month.
+    """
+    path = _DATA / "gar_streets.tsv"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"street vocabulary missing: {path}. Regenerate with "
+            f"`python3 -m licensing.fetch_gar`."
+        )
+    phrases: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        count, _, name = line.partition("\t")
+        if int(count) < assets_source.STREET_MIN_OBJECTS:
+            continue
+        name = " ".join(name.strip().lower().split())
+        if " " not in name or len(name) < 6:
+            continue
+        # Three words or more is almost always an administrative full form
+        # («имени 40 лет октября»); the two-word case is what people write.
+        if len(name.split()) > 3:
+            continue
+        phrases.add(name)
+    if len(phrases) < 1000:
+        raise ValueError(
+            f"street phrase set has only {len(phrases)} entries — the file is "
+            f"truncated or the cut is impossibly high"
+        )
+    return sorted(phrases)
+
+
 def build_payload() -> dict[str, object]:
     """The bundle contents, before compression. Deterministic: same sources in,
     byte-identical payload out (every collection is sorted or explicitly
@@ -128,6 +179,7 @@ def build_payload() -> dict[str, object]:
         "address": {
             "street_gaz": list(assets_source.STREET_GAZ),
             "street_names": load_street_vocabulary(),
+            "street_phrases": load_street_phrases(),
             "street_type_nohouse": list(assets_source.STREET_TYPE_NOHOUSE),
             "street_type_house": list(assets_source.STREET_TYPE_HOUSE),
             "core_part": list(assets_source.CORE_PART),

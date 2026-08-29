@@ -496,7 +496,46 @@ def _fuzzy_street_candidates(text: str, address: AddressAssets
                   for _, _, token in tokens]
     exact_name = [token in address.street_names for _, _, token in tokens]
 
-    out: list[tuple[int, int, bool]] = []
+    # A MULTI-WORD NAME IS THREE TOKENS, AND THE PAIR LOOP CANNOT SEE IT.
+    # «переулок сивцев вражек» is (type, name, name), so every pair it forms —
+    # («переулок», «сивцев») and («сивцев», «вражек») — fails, and the street was
+    # unreachable whenever the type word carried a typo, since the fuzzy-type
+    # path is the one that demands the vocabulary. Fifty-five per cent of the
+    # register is multi-word and it is not the tail: «Карла Маркса» names 1 512
+    # streets, «8 Марта» 1 953.
+    #
+    # The phrase is looked up WHOLE, against a set that holds only phrases. That
+    # is what keeps the single-word rule honest — «карла» on its own still has
+    # no claim to name a street, because it is not in `street_names` and the
+    # phrase set cannot be reached by one token.
+    phrase_spans: set[tuple[int, int]] = set()
+    for index in range(len(tokens) - 2):
+        a, b, c = tokens[index], tokens[index + 1], tokens[index + 2]
+        if not (_PAIR_GAP_RE.fullmatch(text[a[1]:b[0]])
+                and _PAIR_GAP_RE.fullmatch(text[b[1]:c[0]])):
+            continue
+        for type_at, first, second in ((a, b, c), (c, a, b)):
+            stem = _exact_type(type_at[2], address.street_type_house)
+            if stem is None and _is_unknown(type_at[2]):
+                stem = _fuzzy_type(type_at[2], address.street_type_house)
+            if stem is None:
+                continue
+            if f"{first[2]} {second[2]}" not in address.street_phrases:
+                continue
+            start = min(type_at[0], first[0])
+            stop = max(type_at[1], second[1])
+            house = _HOUSE_AFTER_RE.match(text, stop)
+            if house is not None and address.measure_after.match(text, house.end()):
+                house = None
+            if house is not None:
+                stop = house.end()
+            elif stem not in address.street_type_nohouse:
+                continue
+            elif not _intent_before(text, start, address):
+                continue
+            phrase_spans.add((start, stop))
+
+    out: list[tuple[int, int, bool]] = [(s, e, True) for s, e in phrase_spans]
     for index in range(len(tokens) - 1):
         if not _PAIR_GAP_RE.fullmatch(text[tokens[index][1]:tokens[index + 1][0]]):
             continue

@@ -61,6 +61,10 @@ class AddressAssets:
     # «Новая», «Мира», «Свободы», «Труда» — so it is only ever read by the arm
     # that also demands a street-type word and address intent.
     street_names: frozenset[str]
+    # Multi-word ГАР names, matched as WHOLE phrases. Fifty-five per cent of
+    # the register, and kept apart from `street_names` because that set is
+    # looked up token by token — «карла» alone must not claim a street.
+    street_phrases: frozenset[str]
     # Street-type STEMS for the typo-tolerant arm, in the same two tiers the
     # regexes use: `nohouse` may stand on a cue alone, `house` needs a number.
     street_type_nohouse: frozenset[str]
@@ -215,6 +219,7 @@ def _build_address(raw: dict[str, object], months: list[str]) -> AddressAssets:
     return AddressAssets(
         street_gaz=frozenset(raw["street_gaz"]),
         street_names=frozenset(raw["street_names"]),
+        street_phrases=frozenset(raw["street_phrases"]),
         street_type_nohouse=frozenset(raw["street_type_nohouse"]),
         # ORDERED, and longest-first, because `_exact_type` returns the FIRST
         # stem the token starts with and the answer decides which tier the
