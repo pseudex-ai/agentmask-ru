@@ -494,7 +494,16 @@ def _fuzzy_street_candidates(text: str, address: AddressAssets
                 continue
             start = min(tokens[type_at][0], tokens[name_at][0])
             stop = max(tokens[type_at][1], tokens[name_at][1])
+            # A NUMBER WITH A UNIT AFTER IT IS NOT A HOUSE NUMBER. «территория
+            # завода 5 гектаров» satisfied every signal — type word, name in the
+            # vocabulary, a bare «5» — because nothing looked past the number.
+            # The veto is on the NUMBER rather than on the span, so the match
+            # simply falls back to needing an intent word, and the two tiers
+            # then decide it themselves: the weak tier has nothing left, the
+            # strong tier asks for the cue.
             house = _HOUSE_AFTER_RE.match(text, stop)
+            if house is not None and address.measure_after.match(text, house.end()):
+                house = None
             if house is not None:
                 stop = house.end()
             elif stem not in address.street_type_nohouse:

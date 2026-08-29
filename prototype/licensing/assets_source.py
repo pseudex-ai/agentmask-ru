@@ -528,6 +528,32 @@ ADDRESS_PATTERNS: dict[str, str] = {
     ),
     # "т.д"/"т.п" must be the standalone abbreviation, not "т" inside "ст." etc.
     "neg": r"(?i)кв\.?\s*м|(?<![а-яёА-ЯЁ])т\.\s*[дпке]\b",
+    # A UNIT OF MEASURE AFTER A NUMBER MEANS THE NUMBER IS NOT A HOUSE.
+    # «территория завода 5 гектаров» became an address the moment ГАР taught the
+    # engine that «территория» is a street type: the type word was there, the
+    # name was in the vocabulary, and a bare «5» satisfied the house-number
+    # signal because nothing looked at what came AFTER it. This is the same
+    # class `neg` already guards with «кв.м» — a quantity wearing an address's
+    # shape — and consumer and business Russian is full of it: гектары, сотки,
+    # метры, километры, штуки.
+    #
+    # A VETO ON THE NUMBER, not on the span. «улица Садовая 5 метров» still has
+    # a real street in it; what it does not have is a house number, so the match
+    # falls back to needing an intent word, exactly as a marked street with no
+    # number already does. The two tiers then sort it out on their own: the weak
+    # tier has nothing left and drops, the strong tier asks for the cue.
+    #
+    # «кв» IS NOT LISTED ON ITS OWN, and that is the whole care needed here:
+    # after a house number it is КВАРТИРА far more often than it is квадратный
+    # метр — «улица Ленина 14 кв 3» is the commonest address line in Russian —
+    # so only the glued «кв.м» / «кв м» form counts, which is what `neg`
+    # already does one line above.
+    "measure_after": (
+        r"(?i)\s*(?:м²|м2|%"
+        r"|(?:кв\.?\s*м|гектар\w*|га|метр\w*|километр\w*|км|сантиметр\w*|см"
+        r"|миллиметр\w*|мм|сотк\w+|квадратн\w+|штук\w*|шт|тонн\w*|кг"
+        r"|литр\w*|процент\w*|м)\b)"
+    ),
     # No (?i): separators only.
     "gap": r"[\s,.;\-/№#()]*",
     # No (?i) — deliberately. `[а-яё]` here is the lowercase letter that can

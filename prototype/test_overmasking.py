@@ -54,6 +54,19 @@ CLEAN: tuple[str, ...] = (
     "Отчёт за 2024 год готов, страниц 117.",
     "Позиция 7 в накладной не сходится по количеству.",
     "Тариф 990 рублей в месяц за один контейнер.",
+    # A QUANTITY WEARING AN ADDRESS'S SHAPE. Every one of these is a street type
+    # word from ГАР followed by a number, which is the exact shape an address
+    # has — and «территория завода 5 гектаров» was masked as one. What separates
+    # them is the word after the number: a door has no unit. The list is
+    # ordinary consumer and business Russian, not edge cases.
+    "Территория завода 5 гектаров, из них застроено 2.",
+    "Линия 3 метра длиной, режем по месту.",
+    "Площадка 40 квадратных метров под аренду.",
+    "Магистраль 15 километров, ремонт до осени.",
+    "Аллея 200 метров длиной ведёт к пруду.",
+    "Бульвар 5 га зелени в центре города.",
+    "Квартал 3 штуки в наличии, остальное под заказ.",
+    "Проезд 5 км по трассе, потом направо.",
     # A city as a place reference, not somebody's address.
     "Офис в Екатеринбурге работает до 18:00.",
 )

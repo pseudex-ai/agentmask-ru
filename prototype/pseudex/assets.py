@@ -92,6 +92,10 @@ class AddressAssets:
     numbered_st: re.Pattern[str]
     numbered_marked: re.Pattern[str]
     neg: re.Pattern[str]
+    # A unit of measure standing right after a number, which is what says the
+    # number is a quantity and not a door. Anchored by the caller with `.match`
+    # at the position just past the number, never searched.
+    measure_after: re.Pattern[str]
     gap: re.Pattern[str]
     trail_house: re.Pattern[str]
     rural: re.Pattern[str]
