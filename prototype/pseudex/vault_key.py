@@ -137,7 +137,12 @@ def _mode() -> str:
     a key sitting in the stolen volume, which is exactly the state `required`
     exists to forbid.
     """
-    mode = os.environ.get("PSEUDEX_VAULT_ENCRYPTION", "auto").strip().lower()
+    # EMPTY IS UNSET. `PSEUDEX_VAULT_ENCRYPTION: "${PSEUDEX_VAULT_ENCRYPTION:-}"`
+    # is the ordinary way a compose file passes an optional variable through, and
+    # so is a k8s env entry with no value — both arrive as "". Treating that as a
+    # bad value refused to start the whole e2e stand on the very first run, with
+    # a message about a key on a deployment that had asked for nothing.
+    mode = os.environ.get("PSEUDEX_VAULT_ENCRYPTION", "").strip().lower() or "auto"
     if mode not in ("auto", "required", "off"):
         raise VaultKeyError(
             f"PSEUDEX_VAULT_ENCRYPTION={mode!r} is not one of auto, required, off"
