@@ -344,14 +344,23 @@ function Status({ status, engineDown, org, goSandbox, onBlocked }) {
         </div>
         <div class="cell">
           <div class="label mb">ХРАНИЛИЩЕ</div>
+          ${/* «Движок не отвечает» is NOT «том открыт». This block reads the
+                engine's own answer, so with no answer the honest value is a
+                dash — the first version painted "ОТКРЫТЫЙ ТЕКСТ" in pink
+                whenever the engine was merely down, which is the same false
+                alarm the rekey role used to print, on the one screen an
+                operator opens when something is already wrong. */ ''}
           ${[
-            ['на диске', vault.encrypted ? 'зашифровано (AES-256)' : 'ОТКРЫТЫЙ ТЕКСТ', vault.encrypted ? 'green' : 'pink'],
-            ['ключ', vault.key_source || '—', vault.key_beside_data ? 'amber' : ''],
+            ['на диске', engineDown ? '—' : (vault.encrypted ? 'зашифровано (AES-256)' : 'ОТКРЫТЫЙ ТЕКСТ'),
+             engineDown ? '' : (vault.encrypted ? 'green' : 'pink')],
+            ['ключ', engineDown ? '—' : (vault.key_source || '—'), vault.key_beside_data ? 'amber' : ''],
           ].map(([key, value, tone]) => html`
             <div class="kv"><span class="k">${key}</span><span class=${`v ${tone}`}>${value}</span></div>`)}
-          ${vault.key_beside_data && html`
+          ${engineDown && html`
+            <div class="foot-note">Состояние шифрования читается из движка — он не отвечает.</div>`}
+          ${!engineDown && vault.key_beside_data && html`
             <div class="foot-note">Ключ лежит в том же томе, что и данные: это защищает скопированный файл базы, но не украденный том или его резервную копию — они несут ключ с собой. PSEUDEX_VAULT_KEY_CMD переносит ключ в ваш менеджер секретов.</div>`}
-          ${!vault.encrypted && html`
+          ${!engineDown && !vault.encrypted && html`
             <div class="foot-note">Настоящие значения лежат в томе как есть. Кто получил том, снимок диска или бэкап — прочитал всё.</div>`}
         </div>
         <div class="cell">
