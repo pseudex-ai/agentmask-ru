@@ -58,11 +58,19 @@ def main(argv: list[str]) -> int:
 
     for name in sorted(counts):
         print(f"{name}={counts[name]}")
-    empty = [name for name in REQUIRED_TABLES if counts.get(name, 0) <= 0]
+    # ABSENT AND EMPTY ARE DIFFERENT COPIES, and the drill exists to catch the
+    # first one. `counts.get(name, 0) <= 0` said «tables present but EMPTY» about
+    # a dump that had been truncated before `keys` was written at all — the exact
+    # failure this check was built for, described as the harmless one. The exit
+    # code was right and the sentence sent the operator to the wrong place.
+    missing = [name for name in REQUIRED_TABLES if name not in counts]
+    empty = [name for name in REQUIRED_TABLES if counts.get(name, -1) == 0]
+    if missing:
+        print(f"tables MISSING from the copy: {', '.join(missing)} "
+              f"(present: {', '.join(sorted(counts)) or 'none'})", file=sys.stderr)
     if empty:
         print(f"tables present but EMPTY: {', '.join(empty)}", file=sys.stderr)
-        return 1
-    return 0
+    return 1 if missing or empty else 0
 
 
 if __name__ == "__main__":
