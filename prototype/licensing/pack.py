@@ -40,6 +40,73 @@ def _load_dictionary(filename: str) -> list[str]:
     return sorted(set(path.read_text(encoding="utf-8").split()))
 
 
+def street_attribution() -> str:
+    """The source line ФНС's open licence obliges us to carry.
+
+    «указывать ссылку на источник открытых данных» is the one condition the
+    ОТКРЫТАЯ ЛИЦЕНЗИЯ attaches to extraction and commercial reuse, and it is
+    cheap to satisfy and expensive to forget. It rides IN THE BUNDLE rather than
+    only in `docs/`: the bundle is what a customer's process actually loads, and
+    an attribution that lives only in a repository the customer never sees is
+    not an attribution.
+
+    The DATE is part of it — «не искажать… время последнего обновления» — and it
+    is read from the file the fetcher wrote rather than restated here, so a
+    stale bundle cannot claim a fresh dump."""
+    path = _DATA / "gar_streets.tsv"
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("# Государственный адресный реестр"):
+            return line.lstrip("# ").strip()
+    raise ValueError(f"{path} has no attribution header — it was not written by "
+                     f"licensing/fetch_gar.py, and its provenance is unknown")
+
+
+def load_street_vocabulary() -> list[str]:
+    """The ГАР street names that earn their place in the bundle.
+
+    A FREQUENCY CUT, NOT THE WHOLE REGISTER, and the reason is precision rather
+    than size — all 165 600 names gzip to well under a megabyte, so size was
+    never the constraint. The constraint is that this vocabulary is a GATE: an
+    entry says "a word spelled like this can name a street", and the tail of the
+    register is full of names that are ordinary Russian words naming one street
+    each in one village. `assets_source.STREET_MIN_OBJECTS` records what the
+    measured trade was.
+
+    Names of one WORD only. A multi-word ГАР name («Карла Маркса», «8 Марта»)
+    is looked up here token by token, so storing the phrase would never match
+    and storing its parts would put «карла» and «маркса» in as separate claims.
+    The multi-word case belongs to the patterns, which can see the whole phrase.
+    """
+    path = _DATA / "gar_streets.tsv"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"street vocabulary missing: {path}. Regenerate with "
+            f"`python3 -m licensing.fetch_gar` — the bundle cannot be built "
+            f"without it, and a bundle built from a stale copy would mask "
+            f"streets that no longer exist while missing the ones that do."
+        )
+    names: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        count, _, name = line.partition("\t")
+        if int(count) < assets_source.STREET_MIN_OBJECTS:
+            continue
+        name = name.strip().lower()
+        # Digits and abbreviations belong to `numbered_st` and to the type
+        # markers; a bare «1-я» or «б-р» in this set would claim any token that
+        # looked like one.
+        if len(name) < 4 or " " in name or "-" in name or any(c.isdigit() for c in name):
+            continue
+        names.add(name)
+    if len(names) < 1000:
+        raise ValueError(
+            f"street vocabulary has only {len(names)} usable entries — the "
+            f"file is truncated or the cut is set impossibly high"
+        )
+    return sorted(names)
+
+
 def build_payload() -> dict[str, object]:
     """The bundle contents, before compression. Deterministic: same sources in,
     byte-identical payload out (every collection is sorted or explicitly
@@ -60,6 +127,9 @@ def build_payload() -> dict[str, object]:
         },
         "address": {
             "street_gaz": list(assets_source.STREET_GAZ),
+            "street_names": load_street_vocabulary(),
+            "street_type_nohouse": list(assets_source.STREET_TYPE_NOHOUSE),
+            "street_type_house": list(assets_source.STREET_TYPE_HOUSE),
             "core_part": list(assets_source.CORE_PART),
             "patterns": assets_source.ADDRESS_PATTERNS,
         },
@@ -90,6 +160,7 @@ def build_payload() -> dict[str, object]:
         },
         "priority": assets_source.PRIORITY,
         "lookalike": assets_source.LOOKALIKE,
+        "attribution": [street_attribution()],
     }
     _check_lookalike_table()
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")

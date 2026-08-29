@@ -183,6 +183,78 @@ CORE_PART: tuple[str, ...] = (
     "улиц", "дом", "микрорайон", "проспект", "переул", "проезд",
     "бульвар", "набереж", "шоссе", "площад", "владени",
 )
+
+# HOW MUCH OF ГАР IS WORTH LEASING: a name is kept when at least this many
+# streets in Russia carry it. ONE, i.e. all of it — and the measurement that
+# says so also says why the obvious answer was wrong.
+#
+# The expectation was that the tail is the dangerous half: 165 672 names, most
+# of them naming one street in one village, and a vocabulary is a GATE, so the
+# fewer entries the less of the language walks through it. The frequency curve
+# looked like it would pay for that — the top 4 559 names already cover 72.2%
+# of every street in Russia against 81.2% for all 65 799 single-word ones.
+#
+# It is exactly backwards. The share of entries pymorphy3 calls an ordinary word
+# RISES as you cut: 22.9% at no cut, 65.1% at twelve. The commonest street names
+# in Russia ARE ordinary words — центральная, лесная, новая, садовая, школьная,
+# полевая — so a frequency cut concentrates the risk instead of removing it.
+# Precision here cannot come from the vocabulary's size, and does not: it comes
+# from the conjunction in `_fuzzy_street_candidates`.
+#
+# The tail is then nearly free and worth having. Measured on 400 sampled tail
+# names in the register this exists for — a typo in the type word, and a marked
+# street with no house number — cut 12 scored 0% and 66%, cut 1 scored 90% and
+# 90%. Nothing moved on the precision side between the two: NEREL 99.4% with the
+# same 121 unsupported spans, `test_overmasking` 100%, 4 778 hits over 2 691
+# sentences of news prose, identical. The whole cost is 249 KB of compressed
+# bundle.
+#
+# Kept as a knob rather than deleted: if a future measurement finds a corpus
+# where the tail does cost precision, this is the one line that answers it.
+STREET_MIN_OBJECTS = 1
+
+# --- street types, as STEMS, for the typo-tolerant arm --------------------
+#
+# The regex arms below carry their own copies of these words, and that is
+# deliberate rather than an oversight: each of those patterns has a tuned shape
+# around the word (a mandatory dot, a case flag, a house number) and rewriting
+# them from one list would undo the tuning. These two tuples exist for
+# `_fuzzy_street_candidates`, which does not match with a regex at all — it
+# compares a TOKEN against a stem, so it can tolerate a typo and can read a type
+# word the regexes never learned.
+#
+# TWO TIERS, THE SAME SPLIT THE REGEXES ALREADY MAKE. A type word that may
+# stand with no house number is one whose only ordinary meaning is a street;
+# everything else needs the house number to hold it down, exactly as
+# `street_lower_nohouse` and `_ST_FULL` divide them. «съезд» is a party
+# congress, «квартал» is a reporting period, «линия» is a cable, «тупик» is
+# where negotiations end — each of them is also a ГАР street type, and the
+# house number is what tells the two apart.
+STREET_TYPE_NOHOUSE: tuple[str, ...] = (
+    "улиц", "проспект", "переул", "бульвар", "набережн", "шоссе", "микрорайон",
+    "алле",
+)
+# EVERY ГАР TYPE AT LEVEL 8 THAT NAMES A STREET, and this is where the register
+# pays for itself: the engine knew twelve of the forty-two and had never heard of
+# «тракт», «спуск», «съезд», «квартал», «линия», «сквер», «территория»,
+# «магистраль» or «взвоз». They are not exotic — they are how a третья часть of
+# provincial Russia writes its addresses.
+#
+# ГАР types that are a SETTLEMENT rather than a street (деревня, село, посёлок,
+# хутор, станция) are absent: `settlement` and `rural` already own those, and
+# adding them here would give one shape two owners. So are the ones whose word
+# is ordinary Russian with no street reading a customer would write — «парк»,
+# «сад», «зона», «берег», «мост», «остров», «коса», «ряд», «участок»,
+# «местность», «километр». Each of those would need the house number AND a
+# vocabulary hit to fire, but «дорога» shows why that is not enough on its own:
+# the stem also spells «дорогой», and a cheerful letter is not an address.
+STREET_TYPE_HOUSE: tuple[str, ...] = STREET_TYPE_NOHOUSE + (
+    "площад", "проезд", "тупик", "лини", "квартал", "тракт", "спуск", "съезд",
+    "заезд", "въезд", "разъезд", "переезд", "магистрал", "сквер", "кольцо",
+    "просек", "просёлок", "проселок", "проулок", "взвоз", "слобод",
+    "территори", "площадк",
+)
+
 # Tails of numbered streets ("улица 1905 года", "8 марта"): generic RU pattern.
 NUMBERED_TAIL: tuple[str, ...] = (
     "года", "год", "лет", "марта", "мая", "января", "февраля", "апреля", "июня",
@@ -373,8 +445,24 @@ ADDRESS_PATTERNS: dict[str, str] = {
     # ordinary business and news vocabulary — «торговая площадка», «посевные
     # площади», «сценические площадки». Measured on NEREL: it was most of the
     # noise this arm produced.
-    "street_lower_nohouse": (rf"(?i)\b(?:{_ST_NOHOUSE}\s+(?P<after>{_LOWER_NAME})"
-                            rf"|(?P<before>{_LOWER_NAME})\s+{_ST_NOHOUSE})\b"),
+    # THE MARKER-LAST BRANCH MAY NOT EAT THE MARKER, and it may not eat three
+    # words. Both halves of that were one bug: alternation in Python picks the
+    # EARLIEST position, not the preferred branch, so in «адрес москве проспекте
+    # мира» the marker-last branch matched «адрес москве проспекте» first —
+    # three words, the cue word among them — and `finditer` then resumed past
+    # «проспекте», so «мира» was never looked at. The cue gate reads the text
+    # BEFORE the match, and «адрес» was now inside it, so the whole address was
+    # refused and the street went to the model in the clear. Ten of the noise
+    # ladder's fourteen street values at the no-punctuation rung died exactly
+    # there — the same «a cue licenses its neighbour, it does not name it»
+    # lesson `markerless_lower` already learned, on the other pattern.
+    #
+    # A lookahead instead of a match: the marker is left unconsumed, so the
+    # marker-FIRST branch fires on it in the same scan and the two adjacent
+    # candidates merge into «москве проспекте мира». One word instead of three,
+    # because the marker-last form people actually write is «тверской улице».
+    "street_lower_nohouse": (rf"(?i)\b(?:{_ST_NOHOUSE}\s+(?P<after>{_LOWER_NAME})\b"
+                            rf"|(?P<before>[а-яё]{{3,}})\s+(?={_ST_NOHOUSE}\b))"),
     "street_first": rf"(?i)\b{_ST}\s*\.?\s*{_CAP}",
     "street_last": rf"(?i){_CAP}\s+{_ST}\b",
     "house": (
@@ -500,6 +588,32 @@ ADDRESS_PATTERNS: dict[str, str] = {
     ),
     # "т.д"/"т.п" must be the standalone abbreviation, not "т" inside "ст." etc.
     "neg": r"(?i)кв\.?\s*м|(?<![а-яёА-ЯЁ])т\.\s*[дпке]\b",
+    # A UNIT OF MEASURE AFTER A NUMBER MEANS THE NUMBER IS NOT A HOUSE.
+    # «территория завода 5 гектаров» became an address the moment ГАР taught the
+    # engine that «территория» is a street type: the type word was there, the
+    # name was in the vocabulary, and a bare «5» satisfied the house-number
+    # signal because nothing looked at what came AFTER it. This is the same
+    # class `neg` already guards with «кв.м» — a quantity wearing an address's
+    # shape — and consumer and business Russian is full of it: гектары, сотки,
+    # метры, километры, штуки.
+    #
+    # A VETO ON THE NUMBER, not on the span. «улица Садовая 5 метров» still has
+    # a real street in it; what it does not have is a house number, so the match
+    # falls back to needing an intent word, exactly as a marked street with no
+    # number already does. The two tiers then sort it out on their own: the weak
+    # tier has nothing left and drops, the strong tier asks for the cue.
+    #
+    # «кв» IS NOT LISTED ON ITS OWN, and that is the whole care needed here:
+    # after a house number it is КВАРТИРА far more often than it is квадратный
+    # метр — «улица Ленина 14 кв 3» is the commonest address line in Russian —
+    # so only the glued «кв.м» / «кв м» form counts, which is what `neg`
+    # already does one line above.
+    "measure_after": (
+        r"(?i)\s*(?:м²|м2|%"
+        r"|(?:кв\.?\s*м|гектар\w*|га|метр\w*|километр\w*|км|сантиметр\w*|см"
+        r"|миллиметр\w*|мм|сотк\w+|квадратн\w+|штук\w*|шт|тонн\w*|кг"
+        r"|литр\w*|процент\w*|м)\b)"
+    ),
     # No (?i): separators only.
     "gap": r"[\s,.;\-/№#()]*",
     # No (?i) — deliberately. `[а-яё]` here is the lowercase letter that can

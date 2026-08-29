@@ -19,15 +19,26 @@
 корпусе не значит ничего — на нём справляются все.
 
     python3 bench/eval_noise_by_type.py dataset.json
+    python3 bench/eval_noise_by_type.py dataset.json --seed 31
 
 Голые топонимы исключены тем же правилом, что в оригинале: продукт не маскирует
 город намеренно, и считать его пропуском значит обвинять за работающее решение.
+
+ЗЕРНО — АРГУМЕНТ, и по той же причине, по которой оно аргумент у
+`make_addr_real.py`: порча здесь случайная, поэтому одно зашитое зерно
+превращает прибор в набор из ста конкретных опечаток. Прирост, который виден
+только на нём, — свойство зерна, а не детекции, и проверяется это ровно одним
+повторным прогоном на другом.
 """
+import argparse
 import random
 import sys
 from collections import defaultdict
+from pathlib import Path
 
-sys.path.insert(0, ".")
+# Корень репозитория от ФАЙЛА, а не от текущего каталога: с `sys.path.insert(0, ".")`
+# прибор запускается только из `prototype/` и молча падает на импорте из корня.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from testkit import load_dev_bundle
 
 load_dev_bundle()
@@ -36,16 +47,16 @@ from bench.eval_noise_ladder import RUNGS, _is_bare_toponym, load
 from natasha import Doc, NewsEmbedding, NewsNERTagger, Segmenter
 from pseudex.detect_all import Detector
 
-SEED = 20260819
 MIN_SUPPORT = 5
 
 
 def main() -> int:
-    if len(sys.argv) < 2:
-        print("использование: eval_noise_by_type.py <dataset.json>")
-        return 1
+    parser = argparse.ArgumentParser()
+    parser.add_argument("dataset")
+    parser.add_argument("--seed", type=int, default=20260819)
+    args = parser.parse_args()
 
-    rows = load(sys.argv[1])
+    rows = load(args.dataset)
     if not rows:
         print("в наборе нет размеченных значений — нечего мерить")
         return 1
@@ -57,7 +68,7 @@ def main() -> int:
     ner_only: dict[str, tuple[int, int]] = {}
 
     for name, ladder in RUNGS:
-        rng = random.Random(SEED)
+        rng = random.Random(args.seed)
         per = defaultdict(lambda: [0, 0])
         model = [0, 0]
         for row in rows:

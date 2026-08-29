@@ -53,6 +53,18 @@ class NameAssets:
 @dataclass(frozen=True)
 class AddressAssets:
     street_gaz: frozenset[str]
+    # The ГАР street vocabulary, lower-cased. A SEPARATE field from
+    # `street_gaz` and never merged into it: `street_gaz` is nineteen
+    # hand-tuned words and is the ONLY evidence the lower-case marker-less arm
+    # has, which works precisely because a list that small cannot generalise to
+    # prose. A vocabulary two orders of magnitude larger can — it contains
+    # «Новая», «Мира», «Свободы», «Труда» — so it is only ever read by the arm
+    # that also demands a street-type word and address intent.
+    street_names: frozenset[str]
+    # Street-type STEMS for the typo-tolerant arm, in the same two tiers the
+    # regexes use: `nohouse` may stand on a cue alone, `house` needs a number.
+    street_type_nohouse: frozenset[str]
+    street_type_house: tuple[str, ...]
     core_part: tuple[str, ...]
     street_first: re.Pattern[str]
     street_last: re.Pattern[str]
@@ -89,6 +101,10 @@ class AddressAssets:
     numbered_st: re.Pattern[str]
     numbered_marked: re.Pattern[str]
     neg: re.Pattern[str]
+    # A unit of measure standing right after a number, which is what says the
+    # number is a quantity and not a door. Anchored by the caller with `.match`
+    # at the position just past the number, never searched.
+    measure_after: re.Pattern[str]
     gap: re.Pattern[str]
     trail_house: re.Pattern[str]
     rural: re.Pattern[str]
@@ -132,6 +148,12 @@ class RuPiiAssets:
 @dataclass(frozen=True)
 class DetectionAssets:
     version: str
+    # Source lines the upstream licences oblige a running process to carry.
+    # ФНС's ОТКРЫТАЯ ЛИЦЕНЗИЯ grants extraction and commercial reuse of ГАР on
+    # exactly one condition — «указывать ссылку на источник открытых данных» —
+    # and the loaded bundle is the only place where the obligation and the data
+    # it applies to are in the same room.
+    attribution: tuple[str, ...]
     names: NameAssets
     address: AddressAssets
     quasi: QuasiAssets
@@ -192,6 +214,14 @@ def _build_address(raw: dict[str, object], months: list[str]) -> AddressAssets:
     compiled = {name: re.compile(source) for name, source in raw["patterns"].items()}
     return AddressAssets(
         street_gaz=frozenset(raw["street_gaz"]),
+        street_names=frozenset(raw["street_names"]),
+        street_type_nohouse=frozenset(raw["street_type_nohouse"]),
+        # ORDERED, and longest-first, because `_exact_type` returns the FIRST
+        # stem the token starts with and the answer decides which tier the
+        # match is in. «площадк» and «площад» both prefix «площадка»; taking the
+        # shorter one would put a trading platform in the tier that needs no
+        # house number.
+        street_type_house=tuple(sorted(raw["street_type_house"], key=len, reverse=True)),
         core_part=tuple(raw["core_part"]),
         month_after=tuple(months),
         **compiled,
@@ -227,6 +257,7 @@ def _build(payload: dict[str, object]) -> DetectionAssets:
     key_type = dict(key_stems)
     return DetectionAssets(
         version=str(payload["version"]),
+        attribution=tuple(payload["attribution"]),
         names=_build_names(payload["names"]),
         # Months come from the QUASI section: one Russian calendar, two users.
         address=_build_address(payload["address"], payload["quasi"]["months"]),
