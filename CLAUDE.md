@@ -589,6 +589,16 @@ direction when done the obvious way:
   `finditer` resume past the street. Ten of fourteen street values at the
   no-punctuation rung. A lookahead leaves the marker unconsumed so both branches
   fire and merge.
+- **A number with a unit of measure after it is not a house number.** «территория
+  завода 5 гектаров» satisfied every address signal — type word, name in the
+  vocabulary, a bare «5» — because nothing looked PAST the number; it only became
+  reachable when ГАР taught the engine all 42 street types. Same class `neg`
+  already guards with «кв.м», and ordinary consumer Russian is full of it. The
+  veto is on the NUMBER, not the span, so the match falls back to needing an
+  intent word and the two type tiers decide it themselves. «кв» is deliberately
+  NOT in the unit list: after a house number it is КВАРТИРА far more often than
+  квадратный метр, and «улица Ленина 14 кв 3» is the commonest address line in
+  the language — only the glued «кв.м» / «кв м» form counts.
 - **The ГАР attribution rides IN THE BUNDLE, not only in `docs/`.** ФНС's ОТКРЫТАЯ
   ЛИЦЕНЗИЯ grants extraction and commercial reuse on one condition — «указывать
   ссылку на источник открытых данных», with the dump date — and the customer loads
