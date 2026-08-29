@@ -94,6 +94,48 @@ def _probe() -> int:
     return 1 if failures else 0
 
 
+def _rekey() -> int:
+    """Rotate the key of every store in the data directory.
+
+    STOP THE ENGINE FIRST. Nothing here can enforce that — the lock inside the
+    connection factory serialises migrations, not a live gateway's traffic — so
+    the honest thing is to say it in the output and to report per file, because
+    a volume is not atomic across files: an interruption leaves some stores on
+    the old key and some on the new, and only naming them makes that recoverable.
+    """
+    directory = _data_dir()
+    current = vault_key.resolve(directory)
+    if current is None:
+        print("pseudex rekey: PSEUDEX_VAULT_ENCRYPTION=off — вращать нечего",
+              file=sys.stderr)
+        return 1
+    replacement = vault_key.replacement(directory)
+    print(f"pseudex rekey: {os.path.abspath(directory)}")
+    print(f"  текущий ключ:  {current.source}")
+    print(f"  новый ключ:    {replacement.source}")
+    print("  движок на этом томе должен быть остановлен")
+    moved, failed = [], []
+    for filename, store in _STORES:
+        path = os.path.join(directory, filename)
+        try:
+            result = vault_migrate.rekey_store(
+                path, current.store_key(store), replacement.store_key(store))
+        except vault_migrate.VaultMigrationError as error:
+            print(f"  {filename:<12} ОТКАЗ  {error}", file=sys.stderr)
+            failed.append(filename)
+            continue
+        print(f"  {filename:<12} {result}")
+        if result == "rekeyed":
+            moved.append(filename)
+    if failed:
+        print(f"\n  ТОМ РАЗЪЕХАЛСЯ: на новом ключе {moved or 'ничего'}, "
+              f"не переведены {failed}. Старый ключ НЕ выключайте — он всё ещё "
+              f"единственный, который открывает {failed}.", file=sys.stderr)
+        return 1
+    print("\n  все хранилища на новом ключе; старый можно отзывать")
+    return 0
+
+
 def _decrypt() -> int:
     """Write the stores back out in plain text. The door is not one-way.
 
@@ -177,6 +219,8 @@ def main() -> None:
         return
     if role == "probe":
         raise SystemExit(_probe())
+    if role == "rekey":
+        raise SystemExit(_rekey())
     if role == "decrypt":
         raise SystemExit(_decrypt())
     # Imported inside the role, not at module scope: the engine module builds the

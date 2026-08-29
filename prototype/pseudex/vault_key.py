@@ -342,6 +342,26 @@ def resolve(data_dir: str) -> VaultSecret | None:
         return secret
 
 
+def replacement(data_dir: str) -> VaultSecret:
+    """The secret PSEUDEX_VAULT_KEY_NEW names, for the rekey role.
+
+    Deliberately ONE source and not the four-step ladder above. Rotation is an
+    act somebody performs at a keyboard with both keys in front of them, and a
+    priority order would mean the new key could quietly come from somewhere the
+    operator did not intend — on the one operation where naming the wrong key
+    leaves a volume nobody can open.
+    """
+    text = os.environ.get("PSEUDEX_VAULT_KEY_NEW", "").strip()
+    if not text:
+        raise VaultKeyError(
+            "PSEUDEX_VAULT_KEY_NEW is not set. Rotation needs both keys: the "
+            "current one through the usual PSEUDEX_VAULT_KEY* variables, the "
+            "replacement here."
+        )
+    return VaultSecret(_material_from_text(text, data_dir, "PSEUDEX_VAULT_KEY_NEW"),
+                       "PSEUDEX_VAULT_KEY_NEW", False)
+
+
 def key_literal(key_hex: str) -> str:
     """The SQL literal for `PRAGMA key` and `ATTACH ... KEY`, validated first.
 

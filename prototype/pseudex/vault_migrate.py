@@ -258,6 +258,66 @@ def ensure_encrypted(db_path: str, key_hex: str) -> str:
     return "migrated"
 
 
+def rekey_store(db_path: str, old_key: str, new_key: str) -> str:
+    """Move one store from one key to another, in place, without re-exporting.
+
+    `PRAGMA rekey` re-encrypts every page with the new key and leaves the rows
+    untouched, so the substitutes already sitting in the customer's CRM keep
+    meaning what they meant. That is the whole reason rotation is cheap enough
+    to be a routine act rather than an incident.
+
+    THE CHECKPOINT IS NOT OPTIONAL. Pages in the write-ahead log are encrypted
+    under the OLD key and `rekey` does not walk them; without truncating the WAL
+    first, the database ends up on the new key with frames beside it that only
+    the old one opens.
+
+    A store is either fully on the new key or untouched — but a VOLUME is not:
+    each file is rekeyed separately, so an interruption leaves some files on one
+    key and some on the other. The caller reports which is which, and
+    PSEUDEX_ROLE=probe answers the same question afterwards; there is no way to
+    make it atomic across files, so the honest thing is to make the state
+    legible instead of pretending.
+    """
+    state = file_state(db_path)
+    if state in (MISSING, EMPTY):
+        return state
+    if state == PLAINTEXT:
+        # Not "rekeyed silently": a plaintext file has no key to rotate, and the
+        # ordinary connection path is what encrypts it.
+        return PLAINTEXT
+    with _Lock(db_path):
+        connection = sqlcipher.connect(db_path)
+        try:
+            connection.execute(f"PRAGMA key = {key_literal(old_key)}")
+            try:
+                connection.execute("SELECT count(*) FROM sqlite_master").fetchone()
+            except sqlcipher.DatabaseError as error:
+                raise VaultMigrationError(
+                    f"{db_path}: текущий ключ не открывает файл ({error}). Ничего "
+                    f"не изменено."
+                ) from None
+            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            connection.execute(f"PRAGMA rekey = {key_literal(new_key)}")
+            connection.commit()
+        finally:
+            connection.close()
+    # Proved through a NEW connection with the new key. Asking the connection
+    # that just performed the rekey would only prove it still holds the page
+    # cache it wrote.
+    check = sqlcipher.connect(db_path)
+    try:
+        check.execute(f"PRAGMA key = {key_literal(new_key)}")
+        check.execute("SELECT count(*) FROM sqlite_master").fetchone()
+    except sqlcipher.DatabaseError as error:
+        raise VaultMigrationError(
+            f"{db_path}: после rekey файл не открывается НОВЫМ ключом ({error}). "
+            f"Не выключайте старый ключ."
+        ) from None
+    finally:
+        check.close()
+    return "rekeyed"
+
+
 def decrypt_store(db_path: str, key_hex: str) -> str:
     """The reverse. The door is not one-way, and this is why it is not.
 
