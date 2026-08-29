@@ -29,11 +29,25 @@ THE FIVE THINGS THAT ARE NOT OBVIOUS, each of which was a defect waiting:
     and leaving the write-ahead log beside it would produce an encrypted database
     with the plaintext still on disk next to it.
 
-  * THE PLAINTEXT COPY DOES NOT SURVIVE. `os.replace` overwrites it and the
-    `-wal`/`-shm` go with it. A backup is available through
-    PSEUDEX_VAULT_MIGRATION_BACKUP and is a deliberate act by the operator,
-    because keeping one by default would mean creating with our own hands the
-    second plaintext copy the whole product exists to prevent.
+  * THE PLAINTEXT COPY IS UNLINKED, NOT ERASED, and the difference is the whole
+    honesty of the sentence. `os.replace` and `os.remove` remove DIRECTORY
+    ENTRIES; the blocks that held the plaintext database and its `-wal` are
+    returned to the filesystem with their contents intact, and a forensic tool
+    reads them until they are overwritten by something else. A volume that ever
+    held plaintext must be treated as still holding it — the encryption protects
+    what is written from now on, not what the disk already learned.
+
+    Overwriting them deliberately is NOT done and will not be: secure erase is
+    unreliable on overlay2, on copy-on-write filesystems and on SSDs, whose
+    controllers move blocks out from under any write we could issue. Gate L14b
+    rejected byte-absence assertions about freed MEMORY for exactly this reason,
+    and inventing a guarantee here that the product cannot keep would be worse
+    than naming the gap.
+
+    No plaintext copy is kept by default: PSEUDEX_VAULT_MIGRATION_BACKUP is a
+    deliberate act by the operator, because keeping one automatically would mean
+    creating with our own hands the second plaintext copy the whole product
+    exists to prevent.
 
 The tokens already sitting in the customer's CRM are untouched:
 `sqlcipher_export` copies rows verbatim. That is the entire reason this is a
@@ -253,8 +267,14 @@ def ensure_encrypted(db_path: str, key_hex: str) -> str:
             return ENCRYPTED
         _log.warning("vault: %s is plaintext — encrypting it in place", db_path)
         _convert(db_path, "", key_hex)
+        # «unlinked», never «gone»: the directory entries are removed and the
+        # BLOCKS are not overwritten. An operator who reads «gone» stops
+        # worrying about the disk that volume has been living on.
         _log.warning("vault: %s encrypted; the plaintext file and its -wal are "
-                     "gone. Tokens already issued are unchanged.", db_path)
+                     "unlinked, NOT securely erased — their blocks stay readable "
+                     "on this disk until something else overwrites them. Treat a "
+                     "volume that once held plaintext as still holding it. "
+                     "Tokens already issued are unchanged.", db_path)
     return "migrated"
 
 
