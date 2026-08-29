@@ -16,8 +16,18 @@ THE VAULT IS READ, NEVER WRITTEN. Copy it out of the container and open it here:
 minting a fresh token to compare against would measure this script against
 itself, and would also bill the customer for our own evaluation.
 
-    docker cp pseudex:/data/vault.db /tmp/vault.db
-    python3 bench/agentrun/roundtrip.py masked.result.jsonl --vault /tmp/vault.db
+THE VAULT IS ENCRYPTED, SO THE COPY NEEDS ITS KEY. The key is derived from the
+DIRECTORY the file sits in, so copying both into one directory is enough when the
+container generated its own; a deployment holding the key elsewhere must export
+the same PSEUDEX_VAULT_KEY* variable here. Without it this script stops with our
+"the current key does not open it" message rather than silently measuring an
+empty vault and reporting a perfect round trip.
+
+    mkdir -p /tmp/vaultcopy
+    docker cp pseudex:/data/vault.db          /tmp/vaultcopy/
+    docker cp pseudex:/data/pseudex-vault.key /tmp/vaultcopy/   # if self-generated
+    PSEUDEX_DB_DIR=/tmp/vaultcopy python3 bench/agentrun/roundtrip.py \\
+        masked.result.jsonl --vault /tmp/vaultcopy/vault.db
 """
 
 import argparse

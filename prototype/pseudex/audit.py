@@ -16,7 +16,7 @@ import time
 import uuid
 
 from pseudex.profiling import stage
-from pseudex.sqlite_setup import connect as sqlite_connect
+from pseudex.sqlite_setup import AUDIT_STORE, connect as sqlite_connect
 
 # Day buckets follow the CONTAINER's local time, not UTC. The screens that read
 # them say "сегодня" to an operator sitting in one office, and a Moscow customer
@@ -47,7 +47,7 @@ class AuditLog:
 
     def __init__(self, db_path: str) -> None:
         self._lock = threading.Lock()
-        self._conn = sqlite_connect(db_path)
+        self._conn = sqlite_connect(db_path, AUDIT_STORE)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS events ("
             "ts REAL, customer TEXT, agent_id TEXT, entity_type TEXT, token TEXT, preview TEXT)"

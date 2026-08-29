@@ -68,9 +68,9 @@ they run against real containers, never against mocks:
 python3 -m licensing.pack --out /tmp/bundle.bin   # build the detection bundle
 python3 -m licensing.devserver                    # the real licensing server, :8443 + admin :9443
 
-python3 e2e/gates.py                              # L1-L15 (+L2b), licensing, ~14 min
+python3 e2e/gates.py                              # L1-L21 (+L2b), licensing + vault, ~15 min
 python3 e2e/gates.py --only L4,L5                 # a subset while iterating
-python3 e2e/pack_gates.py                         # P1-P8, packaging (builds both images)
+python3 e2e/pack_gates.py                         # P1-P9, packaging (builds both images)
 
 # The verification key is COMPILED INTO the release binary, so a fresh key forces
 # a full Nuitka rebuild. Pass the key an image was built with to reuse it:
@@ -281,6 +281,18 @@ makes the rule mean anything and what makes it safe, and one change buys both.**
   to fail its own checksum, so a token can never collide with a real person's ID.
 - Persistent SQLite keyed by `(customer, canonical)` — survives restarts and is shared across
   uvicorn workers via the mounted `PSEUDEX_DB_DIR`.
+- **Encrypted at rest (SQLCipher), and the driver has no fallback.** One key resolver
+  (`vault_key.py`): `PSEUDEX_VAULT_KEY` → `_KEY_FILE` → `_KEY_CMD` (stdout of any command — a
+  customer's KMS with no integration on our side) → generated beside the data and announced on
+  every start. HKDF-SHA256 gives each store its own key. `PSEUDEX_VAULT_ENCRYPTION=required`
+  refuses to start rather than generate one; `off` is plaintext and is what the LICENSING image
+  sets, because encrypting it would break `deploy/backup.sh` and the weekly restore drill for
+  zero personal data. A plaintext store found on disk is migrated in place by `vault_migrate.py`
+  — under `flock`, idempotent by file header, `wal_checkpoint(TRUNCATE)` first because the real
+  values live in the `-wal`. `PSEUDEX_ROLE=probe` says which file opens; `PSEUDEX_ROLE=decrypt`
+  is the same export backwards; `PSEUDEX_ROLE=rekey` rotates to
+  `PSEUDEX_VAULT_KEY_NEW` (a store is atomic, a VOLUME is not — the role names
+  which files moved, so a half-rotated volume is legible rather than lost).
 - `unmask_text` also does a **digit-signature reindex** so a numeric token the model *reformatted*
   (`+7…` → `8…`, separators stripped) still detokenizes.
 
@@ -326,6 +338,16 @@ makes the rule mean anything and what makes it safe, and one change buys both.**
   (`pseudex/bundle.py` is imported BY the server).
 - The engine writes nothing to its own filesystem (`PYTHONDONTWRITEBYTECODE=1`), so "did the
   container write a file" has a clean answer — gate L5 depends on it.
+- **`pseudex/` must never `import sqlite3`.** Stdlib sqlite3 accepts `PRAGMA key` WITHOUT raising
+  and writes plain text, so `except ImportError: import sqlite3` is a product that claims
+  encryption and silently has none. One driver (`sqlcipher3`), no branch; both Dockerfiles fail
+  the build on such an import, and P9 proves it from outside by opening the release image's own
+  volume with stdlib SQLite. The driver's exception classes are NOT subclasses of the stdlib
+  ones — not `IntegrityError`, not `OperationalError` — so handlers name the ones exported from
+  `sqlite_setup`.
+- **`bench_masking.py` and `profile_latency.py` cannot see the storage layer**: both use
+  `Vault(":memory:")`, so an encryption change leaves their numbers identical by construction.
+  "The bench did not move" is not evidence that a disk-layer change is free.
 
 ## Concurrency and perf model
 
@@ -340,7 +362,10 @@ same value re-sent in a growing transcript is one protected value, not N.
 
 Env knobs: `PSEUDEX_DB_DIR`, `PSEUDEX_WORKERS`, `PSEUDEX_MASK_CONCURRENCY`, `PSEUDEX_MASK_CACHE_SIZE`,
 `PSEUDEX_ADMIN_TOKEN`, `PSEUDEX_GATEWAY_TOKEN`, `PSEUDEX_UI_PORT`, `PSEUDEX_UI_TOKEN`, `PSEUDEX_UI_PASSWORD`, `PSEUDEX_UI`,
-`PSEUDEX_UI_ORG`, `PSEUDEX_UI_STATIC`, `PSEUDEX_ROLE`.
+`PSEUDEX_UI_ORG`, `PSEUDEX_UI_STATIC`, `PSEUDEX_ROLE` (`engine` | `proxy` | `ui` | `probe` | `rekey` | `decrypt`),
+`PSEUDEX_VAULT_KEY`, `PSEUDEX_VAULT_KEY_FILE`, `PSEUDEX_VAULT_KEY_CMD`, `PSEUDEX_VAULT_KEY_NEW`,
+`PSEUDEX_VAULT_ENCRYPTION` (`auto` | `required` | `off`; empty means `auto`),
+`PSEUDEX_VAULT_MIGRATION_BACKUP`.
 
 ## Eval discipline
 

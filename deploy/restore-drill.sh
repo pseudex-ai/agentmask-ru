@@ -25,7 +25,7 @@ cleanup() {
     docker compose -f "$HERE/compose.yml" exec -T postgres \
         psql -U "${POSTGRES_USER:-pseudex}" -d postgres \
         -c "DROP DATABASE IF EXISTS $DB" >/dev/null 2>&1 || true
-    rm -f /tmp/license-drill.db
+    rm -f /tmp/license-drill.db /tmp/drill-lic.err
 }
 trap cleanup EXIT
 
@@ -59,25 +59,37 @@ LIC="$(ls -t "$BACKUPS"/license-*.db 2>/dev/null | head -1)"
 [ -n "$LIC" ] || fail "В $BACKUPS нет ни одной копии базы лицензий."
 
 cp "$LIC" /tmp/license-drill.db
-KEYS="$(docker compose -f "$HERE/compose.yml" exec -T postgres \
-        sh -c 'command -v sqlite3 >/dev/null && echo yes' 2>/dev/null || echo no)"
-if [ "$KEYS" = "yes" ]; then
-    COUNT="$(sqlite3 /tmp/license-drill.db "SELECT count(*) FROM keys" 2>/dev/null || echo -1)"
-else
-    # sqlite3 может не стоять на хосте; тогда проверяем хотя бы целостность
-    # заголовка — это слабее, и об этом надо сказать, а не делать вид.
-    COUNT="$(head -c 16 /tmp/license-drill.db | grep -c 'SQLite format 3' || echo 0)"
-    [ "$COUNT" -gt 0 ] && COUNT=1
-    notify warn "Учения: sqlite3 недоступен" \
-        "Копия базы лицензий проверена только по заголовку, не по содержимому.
-Поставьте sqlite3 на хост, чтобы учения проверяли то, ради чего существуют."
-fi
-[ "${COUNT:-0}" -gt 0 ] \
-    || fail "Копия базы лицензий $(basename "$LIC") не читается или пуста.
+
+# ПРОВЕРЯЕТ ОБРАЗ ЛИЦЕНЗИЙ, А НЕ ХОСТ. Раньше здесь звался хостовый sqlite3, а
+# когда его не было — проверялся заголовок файла. Обе половины плохи, и вторая
+# стала хуже:
+#
+#   * заголовок — ровно та слабая проверка, которую отвергает docs/decisions.md:
+#     оборванный дамп читается прекрасно, разворачивается в пустоту и проходит
+#     проверку свежести. Учения существуют именно против этого;
+#   * хостовый sqlite3 не умеет SQLCipher, поэтому на зашифрованной копии он
+#     отвечает «file is not a database» — то есть кричал бы каждое воскресенье
+#     на исправном бэкапе. Замьюченный канал и есть цена такой тревоги.
+#
+# `licensing.verify` внутри образа открывает копию ТОЙ ЖЕ фабрикой соединений,
+# что и продукт, и считает СТРОКИ. Открыть не смог — учения провалены, без
+# «зато заголовок на месте».
+LIC_CONTAINER="$(docker compose -f "$HERE/compose.yml" ps -q license 2>/dev/null || true)"
+[ -n "$LIC_CONTAINER" ] || fail "Контейнер лицензий не запущен — учения нечем
+проводить: проверка открывает копию тем же кодом, что и продукт."
+LIC_IMAGE="$(docker inspect --format '{{.Config.Image}}' "$LIC_CONTAINER")"
+
+# Одноразовый контейнер из того же образа: боевой не трогается вовсе.
+if ! ROWS="$(docker run --rm -v /tmp/license-drill.db:/verify/license.db:ro \
+        "$LIC_IMAGE" python -m licensing.verify /verify/license.db 2>/tmp/drill-lic.err)"; then
+    fail "Копия базы лицензий $(basename "$LIC") не открывается или пуста:
+$(tail -3 /tmp/drill-lic.err)
 Это единственное, что нельзя пересобрать из кода: без неё встанут ВСЕ
 развёртывания в поле."
+fi
+COUNT="$(printf '%s\n' "$ROWS" | sed -n 's/^keys=//p')"
 
 notify info "Учения по восстановлению пройдены" \
     "Витрина: $(basename "$DUMP"), организаций $ORGS.
-Лицензии: $(basename "$LIC"), проверено.
+Лицензии: $(basename "$LIC"), ключей ${COUNT:-?}.
 Обе копии не просто свежие, а разворачиваются."

@@ -26,7 +26,7 @@
 FROM python:3.12-slim-trixie AS build
 
 # patchelf is required by Nuitka standalone to fix up the RPATHs of the bundled
-# shared objects (pyrage and cryptography are compiled extensions).
+# shared objects (pyrage, cryptography and sqlcipher3 are compiled extensions).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential patchelf ccache \
     && rm -rf /var/lib/apt/lists/*
@@ -50,6 +50,12 @@ RUN if [ -d ./pseudex/data ]; then echo "pseudex/data must not ship"; exit 1; fi
 RUN if grep -rn "^[[:space:]]*\(from\|import\)[[:space:]]\+licensing" ./pseudex/; then \
         echo "pseudex/ must never import licensing/"; exit 1; \
     fi
+RUN if grep -rn "^[[:space:]]*\(from\|import\)[[:space:]]\+sqlite3" ./pseudex/; then \
+        echo "pseudex/ must reach SQLite only through sqlite_setup: stdlib sqlite3"; \
+        echo "accepts PRAGMA key WITHOUT raising and writes plain text, so any"; \
+        echo "import of it here is a product that claims encryption and has none"; \
+        exit 1; \
+    fi
 
 # Baked before compilation, so the verification key ends up INSIDE the binary
 # rather than in a file next to it.
@@ -67,6 +73,14 @@ RUN test -n "$PSEUDEX_LICENSE_PUBKEY" || (echo "PSEUDEX_LICENSE_PUBKEY build-arg
 # through an entry point, so static analysis never sees the import: with only the
 # data flag the package arrives without its `__init__.py` and the binary dies at
 # startup with `module 'pymorphy3_dicts_ru' has no attribute 'get_path'`.
+#
+# `sqlcipher3` is named explicitly for a different reason: the product imports
+# `sqlcipher3.dbapi2`, and the package's `_sqlite3.so` is what actually holds
+# SQLCipher. There is no fallback to stdlib `sqlite3` anywhere in the engine, on
+# purpose — stdlib accepts `PRAGMA key` without raising and writes plain text —
+# so a binary that failed to bundle this one would not degrade, it would refuse
+# to start, which is the correct failure but a slow one to diagnose in a release.
+#
 # Docstrings out BEFORE compilation. `--python-flag=no_docstrings` (passed below)
 # only stops the compiled module from setting `__doc__` — the literals still land
 # in Nuitka's constants blob, where `grep -a` finds them verbatim. Measured on a
@@ -92,6 +106,7 @@ RUN python -m nuitka \
         --include-package=fastapi \
         --include-package=pymorphy3_dicts_ru \
         --include-package-data=pymorphy3_dicts_ru \
+        --include-package=sqlcipher3 \
         --include-package-data=natasha \
         --include-package-data=navec \
         --include-package-data=slovnet \
@@ -128,7 +143,18 @@ RUN if [ -d /app/pseudex/data ]; then echo "pseudex/data must not ship"; exit 1;
 ENV PSEUDEX_DB_DIR=/data
 RUN mkdir -p /data
 
-ENV PSEUDEX_WORKERS="" \
+# THE RUNTIME HAS NO UTF-8 STDIO OF ITS OWN, and the product speaks Russian.
+# `debian:trixie-slim` sets no locale, and a Nuitka-frozen runtime does not
+# perform CPython's locale coercion, so `print()` of a Cyrillic string died with
+# `UnicodeEncodeError: 'ascii' codec` and `logging` fell back to escapes:
+#   INFO:pseudex.localui:  pseudex \u2014 \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u044b\u0439
+# That was the operator's own sign-in banner, unreadable in the RELEASE image and
+# fine in the source one — which is why nothing caught it: the two images differ
+# in their base, and only one of them ships. `LANG=C.UTF-8` alone is NOT enough
+# here; measured, the Cyrillic line still failed with it set.
+ENV LANG=C.UTF-8 \
+    PYTHONIOENCODING=utf-8 \
+    PSEUDEX_WORKERS="" \
     PSEUDEX_MASK_CONCURRENCY=8 \
     PSEUDEX_MASK_CACHE_SIZE=20000 \
     PSEUDEX_UI_STATIC=/app/ui \

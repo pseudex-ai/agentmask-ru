@@ -56,6 +56,12 @@ services:
       # read out of their own container log.
       PSEUDEX_GATEWAY_TOKEN: "e2e-gateway-token"
       PSEUDEX_ADMIN_TOKEN: "e2e-admin-token"
+      # Empty is the PRODUCT's default (auto), not a stand-only setting: L19
+      # runs the shape a customer gets out of the box. L20 sets `off` to build a
+      # plaintext volume and then clears it again, and L21 puts a key here that
+      # does not open what L20 left behind.
+      PSEUDEX_VAULT_ENCRYPTION: "${PSEUDEX_VAULT_ENCRYPTION:-}"
+      PSEUDEX_VAULT_KEY: "${PSEUDEX_VAULT_KEY:-}"
     volumes:
       - ./certs:/certs:ro
       - ./faketime:/faketime

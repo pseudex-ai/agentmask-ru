@@ -11,7 +11,7 @@ import logging
 import threading
 from dataclasses import dataclass
 
-from pseudex.sqlite_setup import connect as sqlite_connect
+from pseudex.sqlite_setup import TENANTS_STORE, connect as sqlite_connect
 
 
 @dataclass(frozen=True)
@@ -29,7 +29,7 @@ class Tenants:
 
     def __init__(self, db_path: str) -> None:
         self._lock = threading.Lock()
-        self._conn = sqlite_connect(db_path)
+        self._conn = sqlite_connect(db_path, TENANTS_STORE)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS tenants ("
             "pseudex_key TEXT PRIMARY KEY, customer_id TEXT, "

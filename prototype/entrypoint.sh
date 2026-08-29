@@ -26,6 +26,25 @@
 
 set -e
 
+# ONE-SHOT ROLES RUN ONCE AND EXIT. They must be handled before anything below,
+# because everything below assumes a SERVER: it fans out N copies of the binary
+# and supervises them.
+#
+# Without this, `docker run -e PSEUDEX_ROLE=rekey` started ten rotations of the
+# same volume at once. The lock made the outcome correct — one rotated, the rest
+# found the file already on the new key — but each loser reported "ТОМ
+# РАЗЪЕХАЛСЯ: старый ключ НЕ выключайте", which is the most frightening sentence
+# this product can print, on a rotation that had in fact just succeeded. An
+# operator reading that would stop and call us.
+#
+# `exec`, so the role's exit code is the container's: the probe's non-zero is
+# what a healthcheck and a script read.
+case "${PSEUDEX_ROLE:-sidecar}" in
+    probe|rekey|decrypt)
+        exec ${PSEUDEX_SERVE_CMD:-./pseudex-serve}
+        ;;
+esac
+
 if [ -n "$PSEUDEX_WORKERS" ]; then
     WORKERS="$PSEUDEX_WORKERS"
 else
@@ -62,6 +81,31 @@ if [ -z "$PSEUDEX_UI_TOKEN" ]; then
     PSEUDEX_UI_TOKEN="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
     export PSEUDEX_UI_TOKEN
 fi
+
+# The volume is checked ONCE, here, before any worker opens it: a key that does
+# not open the vault would otherwise be reported N times — once per worker,
+# interleaved, in a log the operator reads top-down — and the container would
+# exit on whichever worker lost the race, with the same message buried N deep.
+#
+# It does NOT migrate and does NOT create the key. It used to do the second, and
+# that was a defect rather than a service: the same role is the command we hand
+# customers to check a live volume, and run without the key variables it wrote a
+# new key beside their data and then reported every store unopenable with it. On
+# a fresh volume the FIRST WORKER now creates the key under `O_EXCL` and the rest
+# read its file — which they already had to be able to do, since `uvicorn
+# pseudex.service:app` is a supported launch shape that never runs this script
+# (CLAUDE.md, deployment shape B).
+#
+# The plaintext-to-encrypted conversion stays inside the connection factory under
+# its own flock for the same reason: a migration that only happened here would be
+# a migration half the deployments never get.
+if ! PSEUDEX_ROLE=probe ${PSEUDEX_SERVE_CMD:-./pseudex-serve}; then
+    echo ""
+    echo "pseudex: том не открывается текущим ключом — контейнер остановлен."
+    echo "         PSEUDEX_ROLE=probe выше показывает, какой файл и почему."
+    exit 3
+fi
+echo ""
 
 echo "pseudex: starting ${WORKERS} worker(s), instance ${PSEUDEX_INSTANCE_ID}"
 echo ""

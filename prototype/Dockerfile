@@ -55,6 +55,12 @@ RUN if grep -rn "^[[:space:]]*\(from\|import\)[[:space:]]\+licensing" ./pseudex/
         echo "pseudex/ must never import licensing/ — that would drag the assets in"; \
         exit 1; \
     fi
+RUN if grep -rn "^[[:space:]]*\(from\|import\)[[:space:]]\+sqlite3" ./pseudex/; then \
+        echo "pseudex/ must reach SQLite only through sqlite_setup: stdlib sqlite3"; \
+        echo "accepts PRAGMA key WITHOUT raising and writes plain text, so any"; \
+        echo "import of it here is a product that claims encryption and has none"; \
+        exit 1; \
+    fi
 
 # Persistent vault + audit mount point (compose mounts a named volume here).
 ENV PSEUDEX_DB_DIR=/data
@@ -72,7 +78,12 @@ RUN mkdir -p /data
 # No __pycache__: the engine must not write anything to its own filesystem, so
 # that "did the container write a file" is a question with a clean answer (gate
 # L5). Bytecode caches would bury a real finding in 80 lines of noise.
-ENV PYTHONDONTWRITEBYTECODE=1 \
+# Stated here too, and not left to the base image, so the two images agree about
+# it: the release runtime has no locale at all and needed this to print a Russian
+# sentence. Parity gates compare behaviour, and behaviour includes the log.
+ENV LANG=C.UTF-8 \
+    PYTHONIOENCODING=utf-8 \
+    PYTHONDONTWRITEBYTECODE=1 \
     PSEUDEX_WORKERS="" \
     PSEUDEX_MASK_CONCURRENCY=8 \
     PSEUDEX_MASK_CACHE_SIZE=20000 \

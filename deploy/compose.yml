@@ -142,7 +142,25 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - ./backups:/backups
-      - license-data:/license:ro
+      # READ-WRITE, and it has to be. `sqlite3 .backup` is the only copy that is
+      # safe against a live writer, and the licensing database is in WAL mode:
+      # SQLite needs the `-shm` wal-index to read one, and creates it in the
+      # database's own directory. On `:ro` that fails — with `-shm` already
+      # there it worked, and `-shm` is absent exactly when the licensing
+      # container is stopped, so the nightly copy of the one database that
+      # cannot be rebuilt from code produced nothing on the night it mattered
+      # most, while the watchdog only ever checks file age.
+      #
+      # MEASURED, all four combinations, `postgres:17-alpine` + `apk add sqlite`:
+      #   :ro, no -shm   -> `unable to open database file`, exit 1, no copy
+      #   :ro, -shm      -> 50/50 rows
+      #   :ro, ?immutable=1, no -shm -> 50/50 rows...
+      #   :ro, ?immutable=1, -shm    -> ...and `no such table: keys` here, because
+      #                                 immutable ignores the -wal. A copy that
+      #                                 opens and is WRONG is worse than none.
+      #   read-write     -> 50/50 in every case, including against a container
+      #                     writing 200 rows/s throughout, which was undisturbed.
+      - license-data:/license
       - ./backup.sh:/backup.sh:ro
     entrypoint: ["/bin/sh", "/backup.sh"]
     depends_on:

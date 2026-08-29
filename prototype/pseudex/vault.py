@@ -16,7 +16,6 @@ import copy
 import functools
 import re
 import secrets
-import sqlite3
 import string
 
 from pseudex import credentials
@@ -28,7 +27,18 @@ import time
 from pseudex import morph_names, morph_places
 from pseudex.profiling import stage
 from pseudex.ru_pii import validate_inn, validate_luhn, validate_ogrn, validate_snils
-from pseudex.sqlite_setup import connect as sqlite_connect
+from pseudex.sqlite_setup import (
+    VAULT_STORE,
+    VaultLocked,
+    connect as sqlite_connect,
+    connect_readonly,
+    # NOT `sqlite3.IntegrityError`: the SQLCipher driver's exception classes are
+    # not subclasses of the stdlib ones, so a handler naming the stdlib class
+    # never fires. See `sqlite_setup`'s docstring — the INSERT-race handler below
+    # is the one that matters.
+    Error as SqliteError,
+    IntegrityError,
+)
 
 # Tokens must be UNIQUE per customer, so these pools bound how many distinct
 # people and places one org can ever have. They used to be flat lists of five,
@@ -184,18 +194,16 @@ def count_values_since(db_path: str, since: float) -> int:
     thread a few times a day, and holding a fourth connection to the vault for
     that would be a connection to keep correct forever.
     """
-    import sqlite3  # noqa: PLC0415 — only this function needs it
-
     try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0)
-    except sqlite3.Error:
+        conn = connect_readonly(db_path, VAULT_STORE)
+    except (OSError, SqliteError, VaultLocked):
         return 0
     try:
         row = conn.execute(
             "SELECT COUNT(*) FROM tokens WHERE first_seen >= ?", (since,)
         ).fetchone()
         return int(row[0]) if row else 0
-    except sqlite3.Error:
+    except SqliteError:
         # No vault yet, or the column predates the migration. Zero is the honest
         # answer and it under-bills, which is the safe direction.
         return 0
@@ -1009,7 +1017,7 @@ class Vault:
         # out a view instead — see there for why the scope has to exist at all.
         self._conversation = ""
         self._lock = threading.Lock()
-        self._conn = sqlite_connect(db_path)
+        self._conn = sqlite_connect(db_path, VAULT_STORE)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS tokens ("
             "customer TEXT, canonical TEXT, entity_type TEXT, token TEXT, "
@@ -1291,7 +1299,7 @@ class Vault:
                      else place_key(token) if entity_type == "LOC" else None,
                      fold_key(canonical) if entity_type == "NAME" else None),
                 )
-            except sqlite3.IntegrityError:
+            except IntegrityError:
                 # ANOTHER PROCESS GOT THERE FIRST, and that is not an error.
                 #
                 # SELECT-then-INSERT is a race across PROCESSES; the lock above

@@ -25,23 +25,36 @@
 это совсем другая величина. Вес берётся из журнала аудита, где записано каждое
 применение.
 
-    docker cp pseudex:/data/vault.db /tmp/v.db
-    docker cp pseudex:/data/audit.db /tmp/a.db
-    python3 bench/eval_vault_precision.py --vault /tmp/v.db --audit /tmp/a.db \\
-        --corpus dialogues.jsonl
+Оба файла зашифрованы, а ключ выводится из КАТАЛОГА, в котором лежит файл —
+значит копировать надо в один каталог и вместе с ключом (или задать здесь тот же
+PSEUDEX_VAULT_KEY*, что у контейнера). Иначе скрипт останавливается на нашем
+сообщении, а не считает пустой волт и не рапортует идеальную точность.
+
+    mkdir -p /tmp/vaultcopy
+    docker cp pseudex:/data/vault.db          /tmp/vaultcopy/
+    docker cp pseudex:/data/audit.db          /tmp/vaultcopy/
+    docker cp pseudex:/data/pseudex-vault.key /tmp/vaultcopy/   # если ключ свой
+    python3 bench/eval_vault_precision.py --vault /tmp/vaultcopy/vault.db \\
+        --audit /tmp/vaultcopy/audit.db --corpus dialogues.jsonl
 """
 
 import argparse
 import collections
 import json
 import re
-import sqlite3
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from pseudex import _morph_compat  # noqa: F401,E402  ставит pymorphy3 под именем pymorphy2
+# Read-only and through the product's own factory: the stores are encrypted, so
+# `sqlite3.connect` on a copied vault now reads a file it cannot open. Read-only
+# also matters on its own — this script must never mint a token or migrate a
+# file it was pointed at to measure.
+from pseudex.sqlite_setup import (  # noqa: E402
+    AUDIT_STORE, VAULT_STORE, connect_readonly,
+)
 import pymorphy3  # noqa: E402
 
 _MORPH = pymorphy3.MorphAnalyzer()
@@ -139,14 +152,14 @@ def main() -> int:
     parser.add_argument("--dump", type=int, default=30)
     args = parser.parse_args()
 
-    vault = sqlite3.connect(args.vault)
+    vault = connect_readonly(args.vault, VAULT_STORE)
     rows = list(vault.execute(
         "SELECT canonical, entity_type, token FROM tokens WHERE customer=?",
         (args.org,)))
 
     weight: collections.Counter[str] = collections.Counter()
     if args.audit:
-        audit = sqlite3.connect(args.audit)
+        audit = connect_readonly(args.audit, AUDIT_STORE)
         for token, count in audit.execute(
                 "SELECT token, COUNT(*) FROM events WHERE customer=? GROUP BY token",
                 (args.org,)):
