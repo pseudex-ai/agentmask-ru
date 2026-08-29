@@ -25,7 +25,8 @@ import re
 
 from pseudex.assets import ASSETS, NameAssets
 from pseudex.detect import Span
-from pseudex.fuzzy import bucket_keys, candidate_lengths, within_one_edit
+from pseudex.fuzzy import (bucket_keys, candidate_lengths, within_one_edit,
+                           within_one_typo)
 from pseudex.morph import MORPH
 
 _WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё]+")
@@ -489,7 +490,7 @@ def _looks_misspelt_name(word: str) -> bool:
         # Three lengths, because one edit moves a length by at most one.
         for length in candidate_lengths(lowered):
             for candidate in index.get((key, length), ()):
-                if candidate != lowered and within_one_edit(lowered, candidate):
+                if candidate != lowered and within_one_typo(lowered, candidate):
                     return True
     return False
 
@@ -728,6 +729,56 @@ def _glued_names(text: str, names: NameAssets) -> list[Span]:
     return spans
 
 
+_LOWER_WORD_RE = re.compile(r"\b[а-яё]{3,}\b")
+
+
+def _lowercase_name_pairs(text: str, names: NameAssets) -> list[Span]:
+    """Two adjacent LOWER-CASE words that are a surname and a given name.
+
+    The bulk dictionaries are capital-only by design, and that design is right:
+    197k surnames matched case-insensitively would mask every sentence holding an
+    ordinary word that is also somebody's surname. But it leaves a hole the whole
+    chat register falls into — «лебедева ирена», «соколова анна», «морозов
+    алексей» are invisible while «Лебедева Ирена» is found, and a customer typing
+    on a phone writes the first.
+
+    THE CAPITAL WAS ONE OF TWO SIGNALS. Removing it needs a replacement, not an
+    exception, and the replacement is the CONFIGURATION: one word a known
+    surname, the OTHER a known given name. Ordinary Russian prose puts those two
+    next to each other very rarely, because the pair is a naming pattern rather
+    than a grammatical one — which is the same reason the capitalised rule works.
+
+    Both words must additionally pass `_names_a_person`, so a verb, a preposition
+    or an inanimate noun cannot take a slot even when the dictionary lists it.
+    That is the guard that keeps «роза» and «слава» out: they are in the
+    dictionaries and they are things.
+
+    Deliberately NOT extended to (surname, surname) or (given, given): «мороз
+    зима», «вера надежда» are ordinary Russian, and the complementary
+    configuration is what makes the rule mean something.
+    """
+    # ВСЕ соседние пары, а не непересекающиеся совпадения regex. `finditer`
+    # берёт пары подряд и не возвращается: «позвоните лебедева ирена» отдавало
+    # ему «позвоните лебедева», после чего настоящая пара начиналась за границей
+    # уже потреблённого куска и не находилась вовсе.
+    words = list(_LOWER_WORD_RE.finditer(text))
+    spans: list[Span] = []
+    for first, second in zip(words, words[1:]):
+        if text[first.end():second.start()].strip():
+            continue                      # между словами не только пробелы
+        left, right = first.group(), second.group()
+        # A coherent naming order in EITHER direction — Russian writes both.
+        coherent = ((left in names.dict_surnames and right in names.dict_first)
+                    or (left in names.dict_first and right in names.dict_surnames))
+        if not coherent:
+            continue
+        if not (_names_a_person(left) and _names_a_person(right)):
+            continue
+        spans.append(Span(first.start(), second.end(), "NAME",
+                          text[first.start():second.end()]))
+    return spans
+
+
 def gazetteer_names(text: str) -> list[Span]:
     """Catch names NER misses: known names (any case), Latin pairs, initials,
     and — for CAPITALISED words only — the bulk dictionary.
@@ -738,7 +789,7 @@ def gazetteer_names(text: str) -> list[Span]:
     every sentence containing an ordinary word that happens to also be a surname.
     Entries that ARE ordinary Russian words are dropped when the bundle is built."""
     names = ASSETS.get().names
-    spans: list[Span] = []
+    spans: list[Span] = _lowercase_name_pairs(text, names)
     for match in _WORD_RE.finditer(text):
         word = match.group()
         low = word.lower()
