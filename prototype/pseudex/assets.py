@@ -87,6 +87,10 @@ class AddressAssets:
     # way a digit can — the gate lives in the engine, on the vocabulary.
     street_spoken_first: re.Pattern[str]
     street_spoken_last: re.Pattern[str]
+    # House, corpus, flat and floor with SPOKEN numbers, and only in a chain
+    # of two or more markers — one marker plus a number word is «программу дом
+    # два», which is a television show and sits in our own negative set.
+    spoken_chain: re.Pattern[str]
     # Marked street, lower case, NO house number — gated on morphology
     # in the engine, because the house number is the guard the others use.
     street_lower_nohouse: re.Pattern[str]

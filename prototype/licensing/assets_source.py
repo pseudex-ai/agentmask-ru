@@ -352,6 +352,13 @@ _SPELLED = (r"(?:одиннадцать|двенадцать|тринадцат�
 # «двадцать шесть» is two words; the second is optional and only a unit.
 _SPELLED_NUM = (rf"{_SPELLED}(?:\s+(?:один|одна|два|две|три|четыре|пять|шесть"
                 r"|семь|восемь|девять))?")
+# ПОРЯДКОВЫЕ ЧИСЛА, потому что этаж и подъезд называют ими, а не количественными:
+# «этаж четвёртый», «подъезд третий», «на втором». Без них цепочка обрывалась на
+# предыдущем маркере и этаж оставался снаружи спана.
+_ORDINAL = (r"(?:перв|втор|трет|четв[её]рт|пят|шест|седьм|восьм|девят|десят"
+            r"|одиннадцат|двенадцат|тринадцат|четырнадцат|пятнадцат|шестнадцат"
+            r"|семнадцат|восемнадцат|девятнадцат|двадцат|тридцат)\w{2,3}")
+
 _HOUSE_NUM = rf"(?:\d{{1,4}}(?!\d)|{_SPELLED_NUM})"
 
 # A TRAILING ABBREVIATED MARKER. `_ST_ABBR` requires a dot or space AFTER it, so
@@ -595,6 +602,31 @@ ADDRESS_PATTERNS: dict[str, str] = {
         r"|живу|квартир|заберите"
         r"|записыв|записал|продикту|диктую|подъезж|подъехать|приезжай|приедь"
         r"|отвез|отвезти|забер|находится\s+по"
+    ),
+    # THE HOUSE NUMBER SPOKEN, IN A CHAIN. `house` and `apt` both demand `\d+`,
+    # so «дом двадцать пять а корпус два квартира двадцать семь этаж четвёртый»
+    # — a complete address minus the street, dictated over the telephone —
+    # matched nothing at all.
+    #
+    # TWO MARKERS MINIMUM, and that is the whole safety argument. One marker with
+    # a spoken number is genuinely ambiguous: «программу дом два очень почётно»
+    # is a television show and it is in our own negative set, «дом пять» could be
+    # either. A CHAIN is not: nobody says «дом двадцать пять корпус два» about
+    # anything but a building. The markers carry the proof, so the numbers may be
+    # words — which is the opposite of the street arms, where the number is the
+    # anchor and a word cannot be one.
+    #
+    # Digits are admitted alongside words because speech mixes them the moment a
+    # transcriber normalises half of them: «дом 25 корпус два» is what a real
+    # transcript looks like.
+    "spoken_chain": (
+        r"(?i)(?:\b(?:дом|корпус|корп|кор|квартир\w*|кв|строени\w*|стр"
+        r"|под[ъь]езд\w*|этаж\w*|офис\w*|помещени\w*)\.?\s*"
+        r"(?:\d{1,4}|" + _SPELLED_NUM + r"|" + _ORDINAL + r")"
+        # Литера дома («двадцать пять А») — ОДНА буква, и только если за
+        # ней не тянется слово: иначе хвост цепочки откусывал первую букву
+        # следующего и спан обрывался на «э» от «этаж».
+        r"(?:\s+[а-яё](?![а-яё]))?\s*){2,}"
     ),
     "prep_before": r"(?i)\b(?:на|по|в|у)\s+$",
     # Numbered street whose name word is lowercase ("1905 года 12") — the

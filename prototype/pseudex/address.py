@@ -302,6 +302,14 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
             # «минус», «плюс», «был», «построен», «темно» and «три».
             if _lower_names_a_street(m.group(group), address):
                 out.append((m.start(), m.end(), True))   # core
+    for m in address.spoken_chain.finditer(text):
+        # A CHAIN OF MARKERS IS ITS OWN PROOF, so no vocabulary and no intent
+        # word is asked for. «дом двадцать пять а корпус два квартира двадцать
+        # семь этаж четвёртый» is a complete address minus the street, and the
+        # street is often not said at all when a courier already knows it. Two
+        # markers is the floor: one — «программу дом два» — is a television show
+        # and sits in our own negative set.
+        out.append((m.start(), m.end(), True))   # core
     for m in address.markerless_lower.finditer(text):
         # LOWER CASE, SO THE GATE IS THE VOCABULARY AND NOTHING ELSE.
         # `_is_street_name` would be wrong here: it accepts a morphological
