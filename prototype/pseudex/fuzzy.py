@@ -21,7 +21,6 @@ separate functions because they are used where different evidence is available:
     from «улиц»; it is one keystroke away from it.
 """
 
-import itertools
 
 
 def within_one_edit(word: str, other: str) -> bool:
@@ -75,45 +74,67 @@ def within_one_typo(word: str, other: str) -> bool:
             and word[differences[1]] == other[differences[0]])
 
 
-def bucket_keys(word: str) -> tuple[str, str]:
-    """The two keys a word is indexed under, and looked up by.
+def deletion_keys(word: str) -> tuple[str, ...]:
+    """The word itself and every string one deletion away from it.
 
-    An edit at position p is caught by the FIRST-three key when p ≥ 3 and by the
-    LAST-three key when p < len − 3, so any single edit in a word of six letters
-    or more lands in at least one of them. The last-three key is prefixed with a
-    NUL so the two key spaces cannot collide — «ова» as a beginning and «ова» as
-    an ending are different questions.
+    THE DELETION NEIGHBOURHOOD, and it replaces a first-three/last-three bucket
+    index that did not do what its own docstring promised. Two strings are within
+    one edit — insert, delete, substitute OR transpose — exactly when their
+    deletion neighbourhoods intersect, so indexing both sides by this set makes
+    the lookup COMPLETE rather than merely usually right.
 
-    The caller pairs these with a LENGTH, and that part is not optional: a
-    single edit moves a length by at most one, so a bucket holding every «…ова»
-    in a dictionary spends almost all of its work on candidates the length alone
-    ruled out. Measured on the name layer, that was 13.65 ms for one word.
+    Measured on our own dictionaries (223 544 entries, 39 600 single corruptions,
+    `bench/blocking_recall.py`), the scheme it replaces reached the source word
+    only:
+
+        length 3   12.6%      length 5   77.9%      length 7+  100%
+        length 4   46.2%      length 6   95.1%      overall     96.6%
+
+    which is not a rounding error but a class: given names are 49.2% six letters
+    or shorter against 18.8% for surnames, so their blocking recall was 90.2%
+    while surnames sat at 97.3%. «ольга» -> «олга» is the canonical miss — a
+    deletion at index 2, where the prefix and suffix windows overlap and the edit
+    destroys both keys at once.
+
+    The old arithmetic ("an edit at position p is caught by the first key when
+    p >= 3 and by the last when p < len - 3") is sound for insert, delete and
+    substitute, and it was written before the distance function gained
+    transpositions: a swap at position 2 of a six-letter word corrupts prefix and
+    suffix together, which is the missing 4.9% at that length.
+
+    Mor-Fraenkel (1982); the same construction SymSpell popularised. Boytsov's
+    comparative study measures it fastest of fourteen methods at k=1 on synthetic
+    RUSSIAN at our exact scale (0.2M entries, average length 10.5) —
+    http://boytsov.info/pubs/jea2011.pdf, Table VII. Measured here: 5.1 candidates
+    verified per lookup against 2812.6, and 3.3 us against 245.0.
+
+    The price is index size — 9x the vocabulary in postings rather than 2x — and
+    at our scale that is two million small strings, which is nothing. The 140x
+    blowup this construction is known for is a k<=2 figure; at k=1 the index is
+    (average length + 1) x N by construction.
     """
-    return word[:3], "\0" + word[-3:]
+    keys = [word]
+    keys.extend(word[:i] + word[i + 1:] for i in range(len(word)))
+    return tuple(dict.fromkeys(keys))
 
 
-def candidate_lengths(word: str) -> tuple[int, int, int]:
-    """The three bucket lengths a one-edit neighbour of `word` can have."""
-    return len(word) - 1, len(word), len(word) + 1
-
-
-def build_index(words) -> dict[tuple[str, int], tuple[str, ...]]:
-    """Bucket a vocabulary by (key, length) for one-edit lookup.
+def build_index(words) -> dict[str, tuple[str, ...]]:
+    """Index a vocabulary by its deletion neighbourhood for one-edit lookup.
 
     Returns tuples rather than lists so the index is read-only once built: it is
-    cached across requests and shared between threads, and a caller that
-    appended to a bucket would corrupt every later lookup."""
-    index: dict[tuple[str, int], list[str]] = {}
+    cached across requests and shared between threads, and a caller that appended
+    to a bucket would corrupt every later lookup."""
+    index: dict[str, list[str]] = {}
     for word in words:
-        for key in bucket_keys(word):
-            index.setdefault((key, len(word)), []).append(word)
+        for key in deletion_keys(word):
+            index.setdefault(key, []).append(word)
     return {key: tuple(value) for key, value in index.items()}
 
 
-def lookup(word: str, index: dict[tuple[str, int], tuple[str, ...]]) -> bool:
+def lookup(word: str, index: dict[str, tuple[str, ...]]) -> bool:
     """Whether one Damerau edit reaches something in the index."""
-    for key, length in itertools.product(bucket_keys(word), candidate_lengths(word)):
-        for candidate in index.get((key, length), ()):
+    for key in deletion_keys(word):
+        for candidate in index.get(key, ()):
             if candidate != word and within_one_typo(word, candidate):
                 return True
     return False

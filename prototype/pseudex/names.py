@@ -25,8 +25,7 @@ import re
 
 from pseudex.assets import ASSETS, NameAssets
 from pseudex.detect import Span
-from pseudex.fuzzy import (bucket_keys, candidate_lengths, within_one_edit,
-                           within_one_typo)
+from pseudex.fuzzy import deletion_keys, within_one_edit, within_one_typo
 from pseudex.morph import MORPH
 
 _WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё]+")
@@ -446,12 +445,12 @@ def _misspelling_index(version: str) -> dict[str, tuple[str, ...]]:
     means equal contents.
     """
     names = ASSETS.get().names
-    index: dict[tuple[str, int], list[str]] = {}
+    index: dict[str, list[str]] = {}
     for word in itertools.chain(names.dict_first, names.dict_surnames):
         if len(word) < 5 or word in names.ambiguous:
             continue
-        for key in bucket_keys(word):
-            index.setdefault((key, len(word)), []).append(word)
+        for key in deletion_keys(word):
+            index.setdefault(key, []).append(word)
     return {key: tuple(value) for key, value in index.items()}
 
 
@@ -486,12 +485,10 @@ def _looks_misspelt_name(word: str) -> bool:
     if not parses or parses[0].is_known:
         return False
     index = _misspelling_index(ASSETS.version or "")
-    for key in bucket_keys(lowered):
-        # Three lengths, because one edit moves a length by at most one.
-        for length in candidate_lengths(lowered):
-            for candidate in index.get((key, length), ()):
-                if candidate != lowered and within_one_typo(lowered, candidate):
-                    return True
+    for key in deletion_keys(lowered):
+        for candidate in index.get(key, ()):
+            if candidate != lowered and within_one_typo(lowered, candidate):
+                return True
     return False
 
 
