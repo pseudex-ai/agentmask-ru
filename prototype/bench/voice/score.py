@@ -57,15 +57,40 @@ def main() -> int:
         hit = sum(1 for h, _, _ in rows_ if h)
         return hit, len(rows_)
 
+    # ПОЛНОТА И ПОКРЫТИЕ РАЗДЕЛЬНО. Полнота отвечает «сработали ли», покрытие —
+    # «взяли ли целиком». Они расходились на семи адресах из семнадцати: строение,
+    # корпус и название улицы оставались снаружи спана, а полнота считала это
+    # успехом. Разница между двумя числами — это утёкший хвост.
+    covered = partial = 0
+    tails: list[tuple[str, str]] = []
+    for _, text, spans in found["адрес с номером"]:
+        row = next(r for r in rows if r["text"] == text and "span" in r)
+        lo = text.index(row["span"])
+        hi = lo + len(row["span"])
+        if any(s.start <= lo and hi <= s.end for s in spans):
+            covered += 1
+        elif spans:
+            partial += 1
+            got = max(spans, key=lambda s: s.end - s.start)
+            tails.append((row["span"], text[got.start:got.end]))
+
     num_hit, num_all = rate("адрес с номером")
     bare_hit, bare_all = rate("улица без номера")
     clean = sum(1 for h, _, _ in found["не адрес"] if not h)
     negatives = len(found["не адрес"])
 
     print("ГОЛОСОВОЙ НАБОР — расшифровки настоящих звонков\n")
-    print(f"  АДРЕС С НОМЕРОМ ДОМА   {num_hit}/{num_all}"
-          f"   {num_hit / num_all * 100:.0f}%")
-    print("     персональные данные: дом определяет узкий круг лиц\n")
+    print(f"  АДРЕС С НОМЕРОМ ДОМА — персональные данные")
+    print(f"     полнота    {num_hit}/{num_all}   {num_hit / num_all * 100:.0f}%"
+          f"   (сработали хотя бы частично)")
+    print(f"     ПОКРЫТИЕ   {covered}/{num_all}   {covered / num_all * 100:.0f}%"
+          f"   (взяли адрес ЦЕЛИКОМ)")
+    if tails:
+        print(f"     обрезано у {partial}:")
+        for want, got in tails[:6]:
+            print(f"        надо: {want}")
+            print(f"        взяли: {got}")
+    print()
     print(f"  улица без номера       {bare_hit}/{bare_all}"
           f"   {bare_hit / bare_all * 100:.0f}%")
     print("     сама по себе никого не определяет — как город. Становится ПД")
