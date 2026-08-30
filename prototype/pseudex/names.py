@@ -531,6 +531,58 @@ def _cued_name_parts(text: str) -> list[Span]:
     return spans
 
 
+_CUE_RE_CACHE: dict[str, re.Pattern[str]] = {}
+
+
+def _cue_regex(names: NameAssets) -> re.Pattern[str]:
+    """The leased cue vocabulary as one alternation, built once per bundle."""
+    key = ASSETS.version or ""
+    cached = _CUE_RE_CACHE.get(key)
+    if cached is None:
+        parts = sorted((re.escape(cue) for cue in names.cues), key=len, reverse=True)
+        cached = re.compile(r"(?i)\b(?:" + "|".join(parts) + r")\w*")
+        _CUE_RE_CACHE.clear()
+        _CUE_RE_CACHE[key] = cached
+    return cached
+
+
+def _cued_misspelt_names(text: str, names: NameAssets) -> list[Span]:
+    """A MISSPELT name right after a cue word.
+
+    `_looks_misspelt_name` is consulted in exactly one place — when extending an
+    already-detected name to its neighbour — so a misspelt name standing ALONE is
+    unreachable however clearly it is one. Measured: «клиент екатрина петрова» is
+    found because «петрова» anchors it, and «запишите свтлана на завтра» is not,
+    though «свтлана» is one edit from the dictionary, unknown to morphology, and
+    sitting directly after a naming cue. In chat the lone form is the common one.
+
+    THE CUE IS THE ANCHOR, and this is the same argument `_cued_name_parts`
+    already makes for «фамилия»: the customer has told us the next word names a
+    person, which is stronger than capitalisation and stronger than proximity to
+    another name. Generalised here from that one word to the cue vocabulary.
+
+    STILL THREE SIGNALS, and the third is inside `_looks_misspelt_name`: the cue,
+    one edit from the dictionary, AND unknown to morphology. The last is not
+    optional — in a 197k-name dictionary the distance-1 neighbourhood is dense
+    enough that ordinary words land in it, and a cue does nothing to exclude them:
+    «перезвоните заказу» would otherwise become a person.
+    """
+    spans: list[Span] = []
+    for match in _cue_regex(names).finditer(text):
+        tail = text[match.end():match.end() + 40]
+        word = _WORD_RE.search(tail)
+        if word is None or word.start() > 2:
+            continue
+        candidate = word.group()
+        if len(candidate) < 4 or candidate.lower() in names.stopwords:
+            continue
+        if not _looks_misspelt_name(candidate):
+            continue
+        start = match.end() + word.start()
+        spans.append(Span(start, match.end() + word.end(), "NAME", candidate))
+    return spans
+
+
 def _merge_adjacent(spans: list[Span], text: str) -> list[Span]:
     """Join NAME spans separated only by whitespace into one.
 
@@ -790,6 +842,7 @@ def gazetteer_names(text: str) -> list[Span]:
     Entries that ARE ordinary Russian words are dropped when the bundle is built."""
     names = ASSETS.get().names
     spans: list[Span] = _lowercase_name_pairs(text, names)
+    spans += _cued_misspelt_names(text, names)
     for match in _WORD_RE.finditer(text):
         word = match.group()
         low = word.lower()
