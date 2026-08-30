@@ -508,8 +508,11 @@ direction when done the obvious way:
   dictionary the distance-1 neighbourhood is dense enough that ordinary words land in it —
   «заказ»→«Закар», «адрес»→«Адрей», «клиент»→«Клинт», «спасибо»→«Спасибов» are all real rare
   surnames. Without it `test_product` returned «Яков Роман Карпов Василий перезвонить» to a tool.
-  Index by first-three AND last-three letters: an edit at position p is caught by the first key when
-  p ≥ 3 and by the last when p < len − 3, so any single edit in a six-letter word lands in one.
+  Index by the DELETION NEIGHBOURHOOD (Mor-Fraenkel 1982, the construction SymSpell popularised):
+  two strings are within one edit — transposition included — exactly when their deletion sets
+  intersect, so the lookup is complete by construction. The first-three/last-three scheme that
+  stood here was a broken pigeonhole filter: the argument needs a gap between the two windows and
+  they have one only at length seven, so it reached 77.9% at length five and 95.1% at six.
 - **The apartment marker is usually glued to the house number.** «д.5кв12», «Строителей 53к193»,
   «Гагарина88кв152» — `_TOK` demanded whitespace before the marker, so the flat fell outside the
   span and went to the model inside an address whose street was already masked. A bare «к» is

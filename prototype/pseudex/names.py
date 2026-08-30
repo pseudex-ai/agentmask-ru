@@ -25,7 +25,7 @@ import re
 
 from pseudex.assets import ASSETS, NameAssets
 from pseudex.detect import Span
-from pseudex.fuzzy import deletion_keys, within_one_edit, within_one_typo
+from pseudex.fuzzy import build_index, lookup, within_one_edit, within_one_typo
 from pseudex.morph import MORPH
 
 _WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё]+")
@@ -411,7 +411,7 @@ def _extend_left_of_patronymic(text: str, start: int) -> int:
 
 @functools.lru_cache(maxsize=4)
 def _misspelling_index(version: str) -> dict[str, tuple[str, ...]]:
-    """Names bucketed by their first three and last three letters.
+    """Names indexed by their deletion neighbourhood, for one-edit lookup.
 
     FOR FINDING A NAME SOMEBODY MISTYPED. «Кзнецов Дмитрий» is detected as
     «Дмитрий» alone — morphology reads «Кзнецов» as a plural noun, so the
@@ -419,39 +419,29 @@ def _misspelling_index(version: str) -> dict[str, tuple[str, ...]]:
     Half a masked name is a leak, and the benchmark's coverage metric exists
     because recall called that case found.
 
-    Why two buckets and why three letters: an edit at position p is caught by the
-    first-three key when p ≥ 3 and by the last-three key when p < len − 3, so any
-    single edit in a word of six letters or more lands in at least one of them.
+    This used to bucket by the first three and last three letters, on the
+    argument that an edit at position p is caught by the first key when p ≥ 3 and
+    by the last when p < len − 3. That argument is sound for insert, delete and
+    substitute and was written before the distance widened to Damerau: a
+    transposition touches two ADJACENT positions, so it needs one more position
+    of separation than the other three kinds, and the two windows have it only at
+    length seven. Measured, the scheme reached the source word 77.9% of the time
+    at length five and 95.1% at length six — and given names are 49.2% six
+    letters or shorter. See `bench/blocking_recall.py`, which still measures both.
 
-    THE LENGTH IS PART OF THE KEY, and without it this was a latency weapon. A
-    single edit cannot change a length by more than one, so a bucket holding
-    every «…ова» in the dictionary — 28 719 of them — spent almost all of its
-    work on candidates the length alone ruled out. Measured before: 13.65 ms for
-    one word, a fifth of the whole p50 masking budget, on a lookup that runs per
-    neighbouring word. After: three length-sliced buckets, and the comparison
-    itself stops at the second difference instead of scanning the whole word.
-
-    WHAT IS LEFT, stated rather than hidden: a word that is unknown to
-    morphology, five letters or more, sits beside a detected name AND lands in
-    one of the few enormous surname-ending buckets still costs ~4 ms. On real
-    traffic that shape is rare enough to be invisible — measured over 1402
-    messages from the dirty set and AgentPII-RU, detection went 1.06 -> 1.18 ms
-    per message, against a /mask p50 of ~73 ms that the NER model dominates. A
-    message built entirely of such words would cost real time; the lever if that
-    ever appears is to skip the largest buckets, which trades this recall back.
+    Entries shorter than five characters and the `ambiguous` list stay out. That
+    is a PRECISION decision now, not an index limitation: the deletion index is
+    complete at every length, so the floor is purely about how much of the
+    language a one-edit ball reaches when the word is short.
 
     Keyed on the BUNDLE VERSION so a re-lease cannot serve an index built from
     the previous dictionary. The version is a content hash, so equal version
     means equal contents.
     """
     names = ASSETS.get().names
-    index: dict[str, list[str]] = {}
-    for word in itertools.chain(names.dict_first, names.dict_surnames):
-        if len(word) < 5 or word in names.ambiguous:
-            continue
-        for key in deletion_keys(word):
-            index.setdefault(key, []).append(word)
-    return {key: tuple(value) for key, value in index.items()}
+    return build_index(word for word in itertools.chain(names.dict_first,
+                                                        names.dict_surnames)
+                       if len(word) >= 5 and word not in names.ambiguous)
 
 
 def _looks_misspelt_name(word: str) -> bool:
@@ -484,12 +474,7 @@ def _looks_misspelt_name(word: str) -> bool:
     parses = MORPH.parse(word)
     if not parses or parses[0].is_known:
         return False
-    index = _misspelling_index(ASSETS.version or "")
-    for key in deletion_keys(lowered):
-        for candidate in index.get(key, ()):
-            if candidate != lowered and within_one_typo(lowered, candidate):
-                return True
-    return False
+    return lookup(lowered, _misspelling_index(ASSETS.version or ""))
 
 
 _SURNAME_CUE_RE = re.compile(r"(?i)\bфамил\w*\s*[:\-—–]?\s*([А-ЯЁа-яё][А-ЯЁа-яё\-]{2,})")

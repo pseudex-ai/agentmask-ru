@@ -1,6 +1,17 @@
 import random, sys, itertools, time
 sys.path.insert(0, "/Users/igor/Projects/Obscura/prototype")
-from pseudex.fuzzy import bucket_keys, candidate_lengths, within_one_typo
+from pseudex.fuzzy import within_one_typo
+
+
+# THE RETIRED SCHEME, DEFINED HERE. It no longer exists in `pseudex/fuzzy.py`,
+# and this harness is the only record of what it did — a measurement that shows
+# only the winner is a claim, not evidence.
+def bucket_keys(word: str) -> tuple[str, str]:
+    return word[:3], "\0" + word[-3:]
+
+
+def candidate_lengths(word: str) -> tuple[int, int, int]:
+    return len(word) - 1, len(word), len(word) + 1
 D = "/Users/igor/Projects/Obscura/prototype/licensing/data/"
 vocab = sorted(set(w.strip() for w in open(D+"surnames.txt") if w.strip())
              | set(w.strip() for w in open(D+"first_names.txt") if w.strip()))
