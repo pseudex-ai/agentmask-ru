@@ -495,7 +495,16 @@ ADDRESS_PATTERNS: dict[str, str] = {
             + r"(?:квартир\w*|кв|офис\w*|оф|помещени\w*|пом|комнат\w*|комн"
               r"|корпус\w*|корп|кор|строени\w*|стр|под[ъь]езд\w*|под|этаж\w*|эт)\.?\s*\d+[а-яёА-ЯЁ]?"
             + r"|(?<=\d)к\s*\d+)"),
-    "mkr": r"(?i)\b(?:микрорайон\w*|мкрн|мкр)\.?\s*(?:[А-ЯЁ][а-яё]+|\d+[а-яё]?)",
+    # THE ABBREVIATION NEEDS A DOT OR A SPACE, and the name half must not be
+    # case-folded. «мкр» opens ordinary words — «мкртчян» is a surname — and with
+    # `(?i)` applied to the whole pattern `[А-ЯЁ][а-яё]+` stopped meaning «a
+    # Capitalised word» and started meaning «any word», which is the trap
+    # CLAUDE.md records costing 12 real people on NEREL. Together they turned the
+    # misspelt surname «мкртчн» into a микрорайон: «мкр» + «тчн». Same shape as
+    # «Артикул» reading as «Артик» + «ул», and the same fix — the marker may not
+    # be glued to the word it is cutting out of.
+    "mkr": (r"\b(?:[Мм]икрорайон\w*|[Мм]крн|[Мм]кр)(?:\.\s*|\s+)"
+            r"(?:[А-ЯЁ][а-яё]+|\d+[а-яё]?)"),
     "settlement": (
         r"(?i)" + _TOK + r"(?:город|гор|г|посёлок|поселок|пос|п|село|деревн\w*|дер|станиц\w*|ст"
         r"|хутор\w*|пгт|снт|днп)\.?\s*" + _NAME

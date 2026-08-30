@@ -577,12 +577,19 @@ def _merge_adjacent(spans: list[Span], text: str) -> list[Span]:
     ordered = sorted(spans, key=lambda span: (span.start, span.end))
     out: list[Span] = []
     for span in ordered:
+        # OVERLAPPING SPANS MERGE TOO, not just adjacent ones. The rules produce
+        # sliding windows over the same person — «лебедев», «лебедев максим»,
+        # «максим олегоич», «олегоич» for one three-part name — and joining only
+        # touching spans left the overlap resolver to CHOOSE between «лебедев
+        # максим» and «олегоич». It picks both, being non-overlapping, and one
+        # person arrives as two spans, two tokens and two pseudonyms. That is the
+        # split-identity failure this function exists to prevent; it was closed
+        # for the adjacent case and open for the overlapping one.
         if (out and span.entity_type == "NAME" and out[-1].entity_type == "NAME"
-                and 0 <= span.start - out[-1].end <= 1
-                and not text[out[-1].end:span.start].strip()):
-            merged = Span(out[-1].start, span.end, "NAME",
-                          text[out[-1].start:span.end])
-            out[-1] = merged
+                and span.start - out[-1].end <= 1
+                and not text[min(out[-1].end, span.start):span.start].strip()):
+            end = max(out[-1].end, span.end)
+            out[-1] = Span(out[-1].start, end, "NAME", text[out[-1].start:end])
             continue
         out.append(span)
     return out
