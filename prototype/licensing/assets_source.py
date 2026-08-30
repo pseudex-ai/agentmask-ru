@@ -359,6 +359,14 @@ _ORDINAL = (r"(?:перв|втор|трет|четв[её]рт|пят|шест|�
             r"|одиннадцат|двенадцат|тринадцат|четырнадцат|пятнадцат|шестнадцат"
             r"|семнадцат|восемнадцат|девятнадцат|двадцат|тридцат)\w{2,3}")
 
+# НАЗВАНИЕ УЛИЦЫ НЕ ИМЕЕТ ПРАВА СЪЕСТЬ ЧИСЛИТЕЛЬНОЕ. `_LOWER_NAME` берёт до трёх
+# слов подряд, и в «улицу культуры восемь» оно забирало «культуры восемь»
+# целиком — номеру дома не оставалось ничего, и адрес не находился. С цифрой
+# этого не бывает: цифра под шаблон названия не подходит, поэтому дефект жил
+# только в голосовом регистре, где номер и есть слово.
+_LOWER_NAME_NONUM = (r"(?!" + _SPELLED + r"\b)[а-яё]{3,}"
+                     r"(?:[\s-](?!" + _SPELLED + r"\b)[а-яё]{3,}){0,2}")
+
 _HOUSE_NUM = rf"(?:\d{{1,4}}(?!\d)|{_SPELLED_NUM})"
 
 # A TRAILING ABBREVIATED MARKER. `_ST_ABBR` requires a dot or space AFTER it, so
@@ -433,8 +441,8 @@ ADDRESS_PATTERNS: dict[str, str] = {
     # Russian word and holds nothing. So the street name carries the proof
     # instead: `spoken` is admitted only when the leased vocabulary names it,
     # the same rule and the same reason as `markerless_lower`.
-    "street_spoken_first": rf"(?i)\b{_ST_FULL}\s*(?P<sfirst>{_LOWER_NAME}){_HOUSE_LEAD}{_SPELLED_NUM}\b",
-    "street_spoken_last": rf"(?i)\b(?P<slast>{_LOWER_NAME})\s*{_ST_FULL}{_HOUSE_LEAD}{_SPELLED_NUM}\b",
+    "street_spoken_first": rf"(?i)\b{_ST_FULL}\s*(?P<sfirst>{_LOWER_NAME_NONUM}){_HOUSE_LEAD}{_SPELLED_NUM}\b",
+    "street_spoken_last": rf"(?i)\b(?P<slast>{_LOWER_NAME_NONUM})\s*{_ST_FULL}{_HOUSE_LEAD}{_SPELLED_NUM}\b",
     # A MARKED STREET WITH NO HOUSE NUMBER, IN LOWER CASE. «на тверской улице»
     # and «на проспекте мира» were invisible: the capitalised arm needs its
     # capital and the two arms above need a house number. Every one of the 46

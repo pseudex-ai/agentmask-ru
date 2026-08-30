@@ -46,27 +46,39 @@ def main() -> int:
     rows = json.loads(DATA.read_text(encoding="utf-8"))
     detector = Detector()
 
-    found = {"адрес": [], "не адрес": [], "неоднозначно": []}
+    found = {"адрес с номером": [], "улица без номера": [],
+             "не адрес": [], "неоднозначно": []}
     for row in rows:
         spans = [s for s in detector.detect(row["text"]) if s.entity_type == "LOC"]
         found[row["label"]].append((bool(spans), row["text"], spans))
 
-    hits = sum(1 for hit, _, _ in found["адрес"] if hit)
-    total = len(found["адрес"])
-    clean = sum(1 for hit, _, _ in found["не адрес"] if not hit)
+    def rate(key):
+        rows_ = found[key]
+        hit = sum(1 for h, _, _ in rows_ if h)
+        return hit, len(rows_)
+
+    num_hit, num_all = rate("адрес с номером")
+    bare_hit, bare_all = rate("улица без номера")
+    clean = sum(1 for h, _, _ in found["не адрес"] if not h)
     negatives = len(found["не адрес"])
 
-    print(f"ГОЛОСОВОЙ НАБОР — расшифровки настоящих звонков\n")
-    print(f"  полнота    {hits}/{total}   {hits/total*100:.0f}%")
-    print(f"  точность   {clean}/{negatives}   {clean/negatives*100:.0f}%"
-          f"   (не сработали там, где адреса нет)")
-    unclear_hit = sum(1 for hit, _, _ in found["неоднозначно"] if hit)
-    print(f"  неоднозначно: {unclear_hit}/{len(found['неоднозначно'])} сработали"
-          f" — в счёт не идут")
+    print("ГОЛОСОВОЙ НАБОР — расшифровки настоящих звонков\n")
+    print(f"  АДРЕС С НОМЕРОМ ДОМА   {num_hit}/{num_all}"
+          f"   {num_hit / num_all * 100:.0f}%")
+    print("     персональные данные: дом определяет узкий круг лиц\n")
+    print(f"  улица без номера       {bare_hit}/{bare_all}"
+          f"   {bare_hit / bare_all * 100:.0f}%")
+    print("     сама по себе никого не определяет — как город. Становится ПД")
+    print("     только связкой с полной формой в том же разговоре, а здесь")
+    print("     реплики вырезаны по одной и разговора нет по построению.\n")
+    print(f"  точность               {clean}/{negatives}"
+          f"   {clean / negatives * 100:.0f}%   (не сработали, где адреса нет)")
+    unclear_hit = sum(1 for h, _, _ in found["неоднозначно"] if h)
+    print(f"  неоднозначно: {unclear_hit}/{len(found['неоднозначно'])} — в счёт не идут")
 
-    misses = [(t, s) for hit, t, s in found["адрес"] if not hit]
+    misses = [(t, s) for hit, t, s in found["адрес с номером"] if not hit]
     if misses:
-        print(f"\nПРОПУЩЕННЫЕ АДРЕСА ({len(misses)}):")
+        print(f"\nПРОПУЩЕННЫЕ АДРЕСА С НОМЕРОМ — это ПД ({len(misses)}):")
         for text, _ in misses[:args.dump]:
             print(f"   {text[:100]}")
     false = [(t, s) for hit, t, s in found["не адрес"] if hit]

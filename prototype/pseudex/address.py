@@ -189,7 +189,20 @@ def _lower_names_a_street(phrase: str, address: AddressAssets) -> bool:
         low = word.lower()
         if not low:
             continue
-        if low in address.street_gaz:
+        # BOTH VOCABULARIES, and the second one arrived later than this line.
+        # `street_gaz` is the seed list — nineteen entries — and `street_names`
+        # is the ГАР register at 65 768. The docstring below has always said the
+        # vocabulary path comes first; it was reading the wrong vocabulary, so
+        # «улицу культуры восемь» failed on a street the register knows, while
+        # «улица лермонтова тридцать восемь» passed only because morphology
+        # happens to read «лермонтова» as a surname.
+        #
+        # Widening a gate that guards the arms with NO house number is exactly
+        # the move CLAUDE.md warns about — but both callers carry a second
+        # signal: `street_lower_nohouse` also demands an intent word, and the
+        # spoken arms demand a spelled number after the name. The vocabulary is
+        # never alone here.
+        if low in address.street_gaz or low in address.street_names:
             return True
         parses = MORPH.parse(word)
         if any("Surn" in parse.tag or "Geox" in parse.tag for parse in parses):
