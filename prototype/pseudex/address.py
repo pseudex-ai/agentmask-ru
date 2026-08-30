@@ -668,8 +668,20 @@ def _intent_before(text: str, start: int, address: AddressAssets) -> bool:
     agree about the window and the sentence boundary, and a copy is where two
     of them stopped agreeing."""
     tail = text[max(0, start - _CUE_WINDOW):start]
-    return bool(address.addr_ctx.search(
-        _SENTENCE_SPLIT.split(tail + text[start:start + 1])[-1]))
+    if address.addr_ctx.search(
+            _SENTENCE_SPLIT.split(tail + text[start:start + 1])[-1]):
+        return True
+    # AND AFTER IT, because speech puts the intent on the other side. Written
+    # traffic says «адрес доставки: улица Пушкина»; a telephone says «улица
+    # пушкина дом колотушкина ПОДЪЕЗЖАЙ» and «милашекова улицу знаешь ПРИЕЗЖАЙ
+    # туда». Measured on real call transcripts, looking only backwards left
+    # those unfound while the intent word sat four words to the right.
+    #
+    # Same window and the same sentence boundary as the backward half — an intent
+    # word in the NEXT sentence is about something else, and «Улица» capitalised
+    # after a period is exactly the boundary the split is built to see.
+    head = text[start:start + _CUE_WINDOW]
+    return bool(address.addr_ctx.search(_SENTENCE_SPLIT.split(head)[0]))
 
 
 def _cue_before(text: str, start: int, address: AddressAssets) -> bool:

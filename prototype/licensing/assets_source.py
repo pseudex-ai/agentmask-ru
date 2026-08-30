@@ -577,9 +577,24 @@ ADDRESS_PATTERNS: dict[str, str] = {
     # Address context (Presidio-style enhancement): when nearby, a marker-less
     # Capitalized/numbered "name + house" is accepted even with no morphology
     # signal. Universal RU address vocabulary, not tied to one phrasing.
+    # THE SPOKEN HALF WAS MISSING. This vocabulary was collected from written
+    # traffic — «адрес», «доставка», «проживает» — and on real call transcripts
+    # it left the largest single failure class: 13 of 17 missed addresses were a
+    # street with no house number, and almost all of them were somebody DICTATING
+    # one. «записывай давай улица пушкина», «я ж тебе сказал улица пушкина»,
+    # «милашекова улицу знаешь приезжай туда». The intent is unmistakable and
+    # none of the written words appear.
+    #
+    # Added only verbs that mean an address is being GIVEN or USED. «назови» and
+    # «скажете» were considered and rejected — «назови улицу» and «если вы
+    # скажете улицу я вам скажу номер телефона» are both in the same corpus and
+    # both are questions, not addresses. The line is between naming a street and
+    # handing one over.
     "addr_ctx": (
         r"(?i)адрес|доставк|курьер|приехать|привез|проживает|прописк|получател|посылк"
         r"|живу|квартир|заберите"
+        r"|записыв|записал|продикту|диктую|подъезж|подъехать|приезжай|приедь"
+        r"|отвез|отвезти|забер|находится\s+по"
     ),
     "prep_before": r"(?i)\b(?:на|по|в|у)\s+$",
     # Numbered street whose name word is lowercase ("1905 года 12") — the
