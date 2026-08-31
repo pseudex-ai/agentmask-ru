@@ -1078,6 +1078,75 @@ def _street_reference(text: str, start: int, end: int) -> bool:
     return _STREET_REF_NUMBER.match(text[end:]) is None
 
 
+_BIO_WINDOW = 60
+_CYRILLIC_WORD_RE = re.compile(r"[а-яё]+")
+
+
+def _not_ordinary(word: str) -> bool:
+    parses = MORPH.parse(word)
+    return bool(parses) and not any(
+        parse.is_known and not ({"Name", "Surn", "Patr"} & set(parse.tag.grammemes))
+        for parse in parses)
+
+
+def _biographic_pairs(text: str, names: NameAssets) -> list[Span]:
+    """Иностранное имя, которого нет ни в одном русском словаре.
+
+    «билл гейтс», «шоне коннери», «тейлор свифт», «моргана фримена» — публичные
+    фигуры, и по 152-ФЗ их имена такие же персональные данные, как имя клиента.
+    Ни один газетир их не содержит, заглавной в чате нет, а морфологически это
+    просто два неизвестных слова.
+
+    ДВА СИГНАЛА, И ФОРМЫ ОДНОЙ МАЛО. Пара слов, ни одно из которых не является
+    обычным русским словом, — это ещё «доу джонса» и «какеи нибудь»: на 1134
+    чистых фразах голая форма срабатывала дважды, а точности у продукта ровно
+    столько, сколько обещано, и запаса нет. Биографическая подсказка рядом
+    убирает оба и оставляет шесть публичных фигур из семи.
+
+    Подсказка ищется в ОКНЕ и не через границу предложения — то же правило и по
+    той же причине, что у адресных подсказок: одно «родился» в начале длинного
+    системного промпта иначе лицензирует каждую пару слов до самого конца.
+
+    Первое слово пары, уже лежащее в словаре, пропускается: его находят другие
+    ветки, и они знают о нём больше.
+    """
+    if not names.bio_cues:
+        return []
+    spans: list[Span] = []
+    low = text.lower()
+    tokens = list(_WORD_RE.finditer(text))
+    for index in range(len(tokens) - 1):
+        first, second = tokens[index], tokens[index + 1]
+        head, tail = first.group().lower(), second.group().lower()
+        if len(head) < 3 or len(tail) < 3:
+            continue
+        # ТОЛЬКО КИРИЛЛИЦА, И ТОЛЬКО ЧЕРЕЗ ОДИН ПРОБЕЛ. Прочитанные глазами
+        # спаны на 933 документах NEREL показали, что без этих двух условий
+        # ветка берёт «Associated Press», «Toyota Camry», «Minnesota Wild»,
+        # «Pussy Riot» и даже идентификатор ролика на YouTube — латинские
+        # названия организаций и произведений морфология тоже не знает, — а
+        # также склеивает через точку и перевод строки: «Гейтс.\n\nГейтс»,
+        # «WBC).\n\nКличко». Точность на NEREL этого НЕ ПОКАЗАЛА: она
+        # засчитывает пересечение с любой эталонной сущностью, а организации в
+        # NEREL размечены. Тот же слепой прибор, что утром пропустил
+        # «Лос-Анджелесе».
+        if not (_CYRILLIC_WORD_RE.fullmatch(head)
+                and _CYRILLIC_WORD_RE.fullmatch(tail)):
+            continue
+        if text[first.end():second.start()] != " ":
+            continue
+        if head in names.dict_first or head in names.dict_surnames:
+            continue
+        if not (_not_ordinary(head) and _not_ordinary(tail)):
+            continue
+        window = low[max(0, first.start() - _BIO_WINDOW):second.end() + _BIO_WINDOW]
+        if not any(cue in window for cue in names.bio_cues):
+            continue
+        spans.append(Span(first.start(), second.end(), "NAME",
+                          text[first.start():second.end()]))
+    return spans
+
+
 def gazetteer_names(text: str) -> list[Span]:
     """Catch names NER misses: known names (any case), Latin pairs, initials,
     and — for CAPITALISED words only — the bulk dictionary.
@@ -1091,6 +1160,7 @@ def gazetteer_names(text: str) -> list[Span]:
     spans: list[Span] = _lowercase_name_pairs(text, names)
     spans += _cued_misspelt_names(text, names)
     spans += _possessive_names(text, names)
+    spans += _biographic_pairs(text, names)
     for match in _WORD_RE.finditer(text):
         word = match.group()
         low = word.lower()

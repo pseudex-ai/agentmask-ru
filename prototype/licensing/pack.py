@@ -174,6 +174,7 @@ def build_payload() -> dict[str, object]:
             "patronymics_femn": list(assets_source.PATRONYMICS_FEMN),
             "translit": assets_source.TRANSLIT,
             "cues": list(assets_source.NAME_CUES),
+            "bio_cues": list(assets_source.BIO_CUES),
             "stopwords": list(assets_source.STOPWORDS),
         },
         "address": {
