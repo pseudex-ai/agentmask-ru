@@ -92,7 +92,7 @@ class LicenseStore:
             # разрывы — пропуск, перестановку или подмену старым отчётом.
             "seq INTEGER DEFAULT 0, prev TEXT DEFAULT '', signature TEXT DEFAULT '', "
             "trust TEXT DEFAULT 'unsigned', chain_breaks INTEGER DEFAULT 0, "
-            "report_pubkey TEXT DEFAULT '', "
+            "report_pubkey TEXT DEFAULT '', report_secret TEXT DEFAULT '', "
             "PRIMARY KEY (org_id, instance_id))"
         )
         # Существующие тома пережили релизы без этой колонки.
@@ -107,7 +107,8 @@ class LicenseStore:
                             ("signature", "signature TEXT DEFAULT ''"),
                             ("trust", "trust TEXT DEFAULT 'unsigned'"),
                             ("chain_breaks", "chain_breaks INTEGER DEFAULT 0"),
-                            ("report_pubkey", "report_pubkey TEXT DEFAULT ''")):
+                            ("report_pubkey", "report_pubkey TEXT DEFAULT ''"),
+                            ("report_secret", "report_secret TEXT DEFAULT ''")):
             if column not in usage_columns:
                 self._conn.execute(f"ALTER TABLE usage ADD COLUMN {ddl}")
         self._conn.commit()
@@ -197,6 +198,26 @@ class LicenseStore:
             (resets + 1, org_id, instance_id),
         )
         return total + reported
+
+    def record_report_secret(self, org_id: str, instance_id: str,
+                             secret_hex: str) -> None:
+        """Секрет живёт до следующей аренды: подделать отчёт можно только тем
+        секретом, который мы запечатали ЭТОМУ получателю."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO usage (org_id, instance_id, updated_at, reports, "
+                "report_secret) VALUES (?,?,?,0,?) "
+                "ON CONFLICT(org_id, instance_id) DO UPDATE SET "
+                "report_secret=excluded.report_secret",
+                (org_id, instance_id, time.time(), secret_hex),
+            )
+            self._conn.commit()
+
+    def report_secret(self, org_id: str, instance_id: str) -> str:
+        row = self._conn.execute(
+            "SELECT report_secret FROM usage WHERE org_id=? AND instance_id=?",
+            (org_id, instance_id)).fetchone()
+        return (row[0] or "") if row else ""
 
     def record_usage(self, org_id: str, instance_id: str, requests: int,
                      entities: dict[str, int], values: int, seq: int = 0,

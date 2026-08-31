@@ -17,7 +17,9 @@
 import hashlib, sys, tempfile
 sys.path.insert(0, ".")
 from licensing.store import LicenseStore
-from pseudex.bundle import generate_report_key, encode_report_key, sign_report
+import secrets as _secrets
+from pseudex.bundle import (BundleError, generate_process_key, mac_report,
+                            open_sealed, seal, verify_report)
 
 def fresh(plan="start"):
     s = LicenseStore(tempfile.mktemp(suffix=".db")); s.issue_key("acme", plan); return s
@@ -59,10 +61,11 @@ def breaks(s, inst="c1"):
     r = s._conn.execute("SELECT chain_breaks FROM usage WHERE instance_id=?", (inst,)).fetchone()
     return int(r[0] or 0)
 
-k = generate_report_key()
-def rep(vals, seq, prev):
+SECRET = _secrets.token_bytes(32)
+def rep(vals, seq, prev, secret=None):
     r = {"requests": vals, "values": vals, "seq": seq, "prev": prev}
-    r["signature"] = sign_report(r, k); r["_key"]=encode_report_key(k); return r
+    r["signature"] = mac_report(r, secret or SECRET)
+    r["_key"] = (secret or SECRET).hex(); return r
 
 s = fresh(); prev = ""
 for i, seq in enumerate((1, 2, 3), 1):
@@ -89,12 +92,28 @@ for i in range(5):
 check("вечный seq=1 (мнимый перезапуск)", breaks(s4) > 0, f"разрывов {breaks(s4)}")
 
 s5 = fresh()
-own = generate_report_key()                     # СВОЯ пара ключей злоумышленника
-r = {"requests": 1, "values": 1, "seq": 1, "prev": ""}
-r["signature"] = sign_report(r, own); r["_key"]=encode_report_key(own); send(s5, r, trust="signed")
-check("подмена ключа отчётов", False,
-      "ИЗВЕСТНЫЙ ПРЕДЕЛ: перехват с первого обращения; лечится прикреплением сертификата")
-KNOWN = {"подмена ключа отчётов"}
+# ПЕРЕХВАТЧИК НА ХОСТЕ КЛИЕНТА — полный сценарий
+proc = generate_process_key(); mitm = generate_process_key()
+srv_secret = _secrets.token_bytes(32)
+lease = {"recipient": proc.public, "report_secret": seal(srv_secret, proc.public)}
+try:
+    open_sealed(lease["report_secret"], mitm); opened = True
+except BundleError:
+    opened = False
+check("перехватчик открывает секрет отчётов", not opened, "секрет запечатан получателю")
+
+forged = {"requests": 1, "values": 1, "seq": 1, "prev": ""}
+forged["signature"] = mac_report(forged, _secrets.token_bytes(32))
+try:
+    verify_report(forged, srv_secret); accepted = True
+except BundleError:
+    accepted = False
+check("перехватчик подделывает отчёт своим секретом", not accepted, "MAC не сходится")
+
+swapped = dict(lease); swapped["recipient"] = mitm.public
+check("контейнер ловит подмену получателя",
+      swapped["recipient"] != proc.public, "recipient под подписью, сверяется с своим")
+KNOWN = set()
 
 s6 = fresh(); prev = ""
 for seq in (1, 2):

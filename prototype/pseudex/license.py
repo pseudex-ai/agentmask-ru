@@ -44,9 +44,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from pseudex.assets import ASSETS
 from pseudex.bundle import (
     BundleError,
-    encode_report_key,
-    generate_report_key,
-    sign_report,
+    mac_report,
     ProcessKey,
     decode_public_key,
     generate_process_key,
@@ -185,18 +183,13 @@ class LicenseClient:
         self._process_id = f"{instance_id}-{os.getpid()}"
         self._usage_provider = usage_provider
         self._process_key: ProcessKey = generate_process_key()
-        # ПОДПИСЬ ОТЧЁТА О РАСХОДЕ. Отдельная пара, живёт только в памяти этого
-        # процесса. До неё отчёт уходил открытым текстом, а TLS проверяется по
-        # СИСТЕМНОМУ хранилищу контейнера (см. `verify` ниже) — то есть владелец
-        # хоста переписывал счёт по дороге, не трогая бинарник вообще.
-        #
-        # ЧЕГО ЭТО НЕ ЗАКРЫВАЕТ, СКАЗАНО ЧЕСТНО: перехватчик, стоящий в канале
-        # с САМОГО ПЕРВОГО обращения, подменит и открытый ключ отчётов — тогда
-        # он подписывает свои. Закрывается это только прикреплением сертификата
-        # нашего сервера в бинарнике, у чего своя цена в ротации, и это
-        # отдельная работа. Здесь закрыты пассивная правка в пути и подмена
-        # задним числом.
-        self._report_key = generate_report_key()
+        # СЕКРЕТ ОТЧЁТА ПРИХОДИТ ЗАПЕЧАТАННЫМ НА ЭТОТ ЖЕ ПРОЦЕСС и никогда не
+        # передаётся наружу. Открытый ключ подписи отправлять было нельзя:
+        # перехватчик на хосте клиента (TLS проверяется по СИСТЕМНОМУ хранилищу
+        # контейнера, см. `verify` ниже) подменял его на свой и подписывал
+        # счета сам. Секрет подменить нечем — чтобы его прочитать, надо быть
+        # получателем, а получатель теперь назван в ПОДПИСАННОЙ лизе.
+        self._report_secret: bytes | None = None
         self._report_seq = 0
         self._report_prev = ""
         # Resolved on first use, not here: `service.py` constructs this client at
@@ -288,11 +281,13 @@ class LicenseClient:
         стороне как разрыв цепи; переписать содержимое в пути нельзя, не имея
         приватной половины, которая никогда не покидает память процесса.
         """
+        if self._report_secret is None:
+            return usage
         self._report_seq += 1
         signed = dict(usage)
         signed["seq"] = self._report_seq
         signed["prev"] = self._report_prev
-        signed["signature"] = sign_report(signed, self._report_key)
+        signed["signature"] = mac_report(signed, self._report_secret)
         self._report_prev = hashlib.sha256(
             signed["signature"].encode("ascii")).hexdigest()
         return signed
@@ -332,7 +327,6 @@ class LicenseClient:
                 "instance_id": self._instance_id,
                 "process_id": self._process_id,
                 "pubkey": self._process_key.public,
-                "report_pubkey": encode_report_key(self._report_key),
                 "engine_version": ENGINE_VERSION,
                 "lease_id": self._lease_id,
                 "usage": usage,
@@ -359,6 +353,15 @@ class LicenseClient:
         if self._verify_key is None:
             self._verify_key = decode_public_key(_public_key_material())
         verify_lease(lease, self._verify_key)
+        # ЛИЗА ВЫПИСАНА НЕ НАМ — ЗНАЧИТ В КАНАЛЕ КТО-ТО ЕСТЬ. `recipient` под
+        # подписью, подделать нельзя; если он не наш, кто-то подменил наш
+        # открытый ключ по дороге, чтобы прочитать бандл и наши отчёты.
+        recipient = str(lease.get("recipient", ""))
+        if recipient and recipient != self._process_key.public:
+            raise BundleError(
+                "lease was issued to another recipient — someone is between this "
+                "process and the licensing server"
+            )
         plaintext = open_sealed(str(lease["bundle"]), self._process_key)
         actual = plaintext_hash(plaintext)
         expected = str(lease["bundle_sha256"])
@@ -367,6 +370,13 @@ class LicenseClient:
                 f"bundle hash mismatch: signed {expected[:16]}, got {actual[:16]} — "
                 f"the contents are not what was signed"
             )
+        sealed_secret = lease.get("report_secret")
+        if isinstance(sealed_secret, str) and sealed_secret:
+            secret = open_sealed(sealed_secret, self._process_key)
+            expected = str(lease.get("report_secret_sha256", ""))
+            if expected and hashlib.sha256(secret).hexdigest() != expected:
+                raise BundleError("report secret does not match its signed hash")
+            self._report_secret = secret
         ASSETS.load(plaintext)
         with self._lock:
             self._last_ok_monotonic = time.monotonic()

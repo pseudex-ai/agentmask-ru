@@ -13,6 +13,7 @@ misconfigured reverse proxy cannot accidentally expose key issuance: the admin
 routes are not mounted in the public app at all.
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -118,8 +119,7 @@ def _version_tuple(version: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
-def _store_usage(instance_id: str, org_id: str, usage: object,
-                 report_pubkey: str = "") -> None:
+def _store_usage(instance_id: str, org_id: str, usage: object) -> None:
     """Record the instance's cumulative counters. No-op on the first lease of a
     process, which has nothing to report yet.
 
@@ -132,11 +132,12 @@ def _store_usage(instance_id: str, org_id: str, usage: object,
     if not isinstance(usage, dict) or not instance_id:
         return
     trust = "unsigned"
-    if report_pubkey and usage.get("signature"):
+    secret_hex = STORE.report_secret(org_id, instance_id)
+    if secret_hex and usage.get("signature"):
         try:
-            verify_report(usage, report_pubkey)
+            verify_report(usage, bytes.fromhex(secret_hex))
             trust = "signed"
-        except BundleError as error:
+        except (BundleError, ValueError) as error:
             _log.warning("usage report signature failed for org=%s instance=%s: %s",
                          org_id, instance_id, error)
             trust = "bad_signature"
@@ -147,7 +148,7 @@ def _store_usage(instance_id: str, org_id: str, usage: object,
         int(usage.get("values", 0)),
         seq=int(usage.get("seq", 0)), prev=str(usage.get("prev", "")),
         signature=str(usage.get("signature", "")), trust=trust,
-        report_pubkey=report_pubkey,
+        report_pubkey=secret_hex[:16],
     )
 
 
@@ -230,15 +231,28 @@ async def lease(request: Request) -> JSONResponse:
                             status_code=409)
     # Counters ride in on the renewal request. Recorded BEFORE the new lease is
     # minted so a client that dies mid-renewal has still been accounted for.
-    _store_usage(instance_id, record.org_id, body.get("usage"),
-                 str(body.get("report_pubkey", "")))
+    _store_usage(instance_id, record.org_id, body.get("usage"))
 
     lease_id = "ls_" + secrets.token_urlsafe(16)
     STORE.record_lease(lease_id, record.org_id, instance_id, process_id,
                        _TTL_SECONDS, pubkey=recipient)
 
+    # СЕКРЕТ ОТЧЁТОВ, ЗАПЕЧАТАННЫЙ ПОЛУЧАТЕЛЮ. Достать его может только тот, у
+    # кого приватная половина `recipient`, — а `recipient` теперь под подписью,
+    # так что подменить его на свой перехватчик не может: контейнер сверит с
+    # собственным ключом и откажется стартовать.
+    report_secret = secrets.token_bytes(32)
+    STORE.record_report_secret(record.org_id, instance_id, report_secret.hex())
+
     payload: dict[str, object] = {
         "lease_id": lease_id,
+        # КОМУ ЗАПЕЧАТАНО — В ПОДПИСИ. Без этого поля перехватчик на хосте
+        # клиента полностью прозрачен: он подменяет `pubkey` на свой, мы
+        # запечатываем ему, он открывает, перепечатывает на настоящий ключ
+        # контейнера — `bundle_sha256` считается по ОТКРЫТОМУ тексту и не
+        # меняется, подпись сходится, контейнер ничего не замечает.
+        "recipient": recipient,
+        "report_secret": seal(report_secret, recipient),
         "org_id": record.org_id,
         "plan": record.plan,
         "issued_at": int(time.time()),
@@ -250,6 +264,7 @@ async def lease(request: Request) -> JSONResponse:
         "bundle_version": _PLAINTEXT_HASH[:16],
         "bundle_sha256": _PLAINTEXT_HASH,
     }
+    payload["report_secret_sha256"] = hashlib.sha256(report_secret).hexdigest()
     payload["signature"] = sign_lease(payload, SIGNING_KEY)
 
     sealed = seal(_PLAINTEXT, recipient)
@@ -273,8 +288,7 @@ async def usage(request: Request) -> JSONResponse:
     record = STORE.lookup(key)
     if record is None or record.status != STATUS_ACTIVE:
         return JSONResponse({"error": "license_invalid"}, status_code=403)
-    _store_usage(str(body.get("instance_id", "")), record.org_id,
-                 body.get("usage"), str(body.get("report_pubkey", "")))
+    _store_usage(str(body.get("instance_id", "")), record.org_id, body.get("usage"))
     return JSONResponse({"status": "recorded"})
 
 

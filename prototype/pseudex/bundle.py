@@ -24,6 +24,8 @@ and would still say nothing about what is inside.
 
 import base64
 import hashlib
+import hmac
+import hashlib
 import json
 from dataclasses import dataclass
 
@@ -94,37 +96,23 @@ def sign_lease(lease: dict[str, object], private_key: Ed25519PrivateKey) -> str:
     return base64.b64encode(private_key.sign(signing_payload(lease))).decode("ascii")
 
 
-def generate_report_key() -> Ed25519PrivateKey:
-    """Ключ, которым процесс подписывает свои отчёты о расходе.
+def mac_report(report: dict[str, object], secret: bytes) -> str:
+    """HMAC отчёта секретом, который пришёл ЗАПЕЧАТАННЫМ на этот процесс.
 
-    ОТДЕЛЬНЫЙ ОТ КЛЮЧА ЗАПЕЧАТЫВАНИЯ, потому что это разные вопросы. X25519
-    отвечает «кому можно открыть бандл», Ed25519 — «кто это написал»; тот же
-    разрыв, что между шифрованием и подписью самого бандла, только в обратную
-    сторону. Живёт в памяти процесса и на диск не пишется — как и второй.
+    Не подпись ключом, который контейнер сам объявил: такой ключ перехватчик
+    подменяет на свой в первом же обращении, и подпись начинает удостоверять
+    его. Секрет он подменить не может — чтобы прочитать, надо быть получателем,
+    а получатель назван в подписанной нами лизе.
     """
-    return Ed25519PrivateKey.generate()
+    return hmac.new(secret, signing_payload(report), hashlib.sha256).hexdigest()
 
 
-def encode_report_key(private_key: Ed25519PrivateKey) -> str:
-    return base64.b64encode(private_key.public_key().public_bytes(
-        Encoding.Raw, PublicFormat.Raw)).decode("ascii")
-
-
-def sign_report(report: dict[str, object], private_key: Ed25519PrivateKey) -> str:
-    return base64.b64encode(
-        private_key.sign(signing_payload(report))).decode("ascii")
-
-
-def verify_report(report: dict[str, object], encoded_public: str) -> None:
-    """Проверка на нашей стороне. Бросает `BundleError`, если подпись не сходится."""
-    signature = report.get("signature")
-    if not isinstance(signature, str):
-        raise BundleError("report carries no signature")
-    try:
-        decode_public_key(encoded_public).verify(
-            base64.b64decode(signature), signing_payload(report))
-    except InvalidSignature as error:
-        raise BundleError("report signature does not verify") from error
+def verify_report(report: dict[str, object], secret: bytes) -> None:
+    given = report.get("signature")
+    if not isinstance(given, str) or not hmac.compare_digest(
+            given, mac_report({k: v for k, v in report.items()
+                               if k != "signature"}, secret)):
+        raise BundleError("report MAC does not verify")
 
 
 def decode_public_key(encoded: str) -> Ed25519PublicKey:
