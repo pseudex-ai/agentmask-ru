@@ -21,7 +21,7 @@ import secrets
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from licensing.keys import encode_public, load_signing_key
@@ -91,7 +91,44 @@ _STATUS_RESPONSE = {
 
 
 app = FastAPI(title="Pseudex licensing", lifespan=_lifespan)
-admin_app = FastAPI(title="Pseudex licensing admin")
+# ВТОРОЙ ЗАМОК НА АДМИНКЕ, ПОТОМУ ЧТО ПЕРВЫЙ — ЭТО СЕТЬ. Порт 9443 не
+# публикуется наружу (`deploy/compose.yml` даёт ему `expose`, не `ports`), и
+# это верно, но единственный контроль. В той же docker-сети стоит витрина на
+# Django, смотрящая в интернет 443-м портом, и ходит она сюда БЕЗ учётных
+# данных: любой SSRF или RCE в витрине давал выпуск ключей, отзыв у всех
+# клиентов и полный список абонентов с их расходом.
+#
+# Токен обязателен, и сервер без него не стартует. Сгенерировать свой, как это
+# делает движок для операторской поверхности, здесь нельзя: движок — процесс у
+# клиента, где выбора нет, а лицензионный сервер наш, и «сгенерировали и
+# написали в лог» на нём означает, что витрина не подключится, а тот, кто
+# читает логи, войдёт.
+_ADMIN_TOKEN = os.environ.get("PSEUDEX_LICENSE_ADMIN_TOKEN", "")
+
+
+if not _ADMIN_TOKEN:  # noqa: F821 - checked at import, before anything is served
+    _log.error("PSEUDEX_LICENSE_ADMIN_TOKEN is not set — /admin/* will refuse "
+               "every request")
+
+
+def _require_admin(request: Request) -> None:
+    # СРАВНИВАЮТСЯ БАЙТЫ. `secrets.compare_digest` на строках с не-ASCII бросает
+    # `TypeError`, и он превратился бы в 500 вместо 401 — тот же промах, что уже
+    # найден в проверке MAC отчёта. Заголовок и так обязан быть ASCII, но
+    # решать это должен явный отказ, а не исключение.
+    header = request.headers.get("authorization", "")
+    presented = header[7:] if header.lower().startswith("bearer ") else ""
+    try:
+        given = presented.encode("ascii")
+        expected = _ADMIN_TOKEN.encode("ascii")
+    except UnicodeEncodeError:
+        raise HTTPException(status_code=401, detail="admin token required") from None
+    if not given or not expected or not secrets.compare_digest(given, expected):
+        raise HTTPException(status_code=401, detail="admin token required")
+
+
+admin_app = FastAPI(title="Pseudex licensing admin",
+                    dependencies=[Depends(_require_admin)])
 
 
 @app.get("/health")

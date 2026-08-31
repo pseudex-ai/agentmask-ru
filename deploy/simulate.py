@@ -24,6 +24,7 @@ import re
 import sys
 import time
 
+import os
 import httpx
 
 SITE = "http://localhost:8080"
@@ -41,6 +42,12 @@ CITIES = ["Москва", "Казань", "Новосибирск", "Екате�
 STREETS = ["Ленинский пр-т", "ул. Профсоюзная", "ул. Гагарина", "ул. Мира"]
 AGENTS = ["support-bot", "order-agent", "kb-assistant", "batch-recheck"]
 
+
+
+# Учётные данные админки лицензионного сервера. Пусто — заголовка нет, и сервер
+# ответит 401: ходить молча без токена хуже, чем громко не дойти.
+ADMIN_TOKEN = os.environ.get("PSEUDEX_LICENSE_ADMIN_TOKEN", "")
+ADMIN_AUTH = {"Authorization": f"Bearer {ADMIN_TOKEN}"} if ADMIN_TOKEN else {}
 
 def message(rng: random.Random) -> str:
     name = f"{rng.choice(LAST)} {rng.choice(FIRST)} {rng.choice(MIDDLE)}"
@@ -137,7 +144,7 @@ def reported(org: str) -> int:
     """
     try:
         body = httpx.get(f"{LICENSE_ADMIN}/admin/usage", params={"org_id": org},
-                         timeout=10).json()
+                         timeout=10, headers=ADMIN_AUTH).json()
     except httpx.HTTPError:
         return -1
     usage = body.get("usage", {})
@@ -188,7 +195,7 @@ def main() -> int:
     # assumed: the traffic above was sent with per-request org ids, but the
     # engine reports under its own licence.
     try:
-        listed = httpx.get(f"{LICENSE_ADMIN}/admin/list", timeout=10).json()
+        listed = httpx.get(f"{LICENSE_ADMIN}/admin/list", timeout=10, headers=ADMIN_AUTH).json()
         billed = [row.get("org_id") for row in listed.get("orgs", [])]
     except httpx.HTTPError:
         billed = []

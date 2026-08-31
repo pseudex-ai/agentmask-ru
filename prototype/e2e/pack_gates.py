@@ -61,6 +61,12 @@ REGISTRY_PASSWORD = "e2e-registry-secret"
 
 # --- stand ---------------------------------------------------------------
 
+
+# Учётные данные админки лицензионного сервера. Пусто — заголовка нет, и сервер
+# ответит 401: ходить молча без токена хуже, чем громко не дойти.
+ADMIN_TOKEN = os.environ.get("PSEUDEX_LICENSE_ADMIN_TOKEN", "")
+ADMIN_AUTH = {"Authorization": f"Bearer {ADMIN_TOKEN}"} if ADMIN_TOKEN else {}
+
 def build_images(skip_build: bool) -> str:
     print("== building ==")
     # The verification key is compiled INTO the binary, so a fresh key on every
@@ -109,9 +115,9 @@ def start_stand(image: str, workers: int) -> float:
     set_env("PSEUDEX_IMAGE", image)
     set_env("PSEUDEX_WORKERS", str(workers))
     compose(["up", "-d", "license"], True, 600)
-    wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
+    wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5, headers=ADMIN_AUTH).status_code == 200,
                120, 2, "licensing admin")
-    key = httpx.post(f"{ADMIN}/admin/issue", json={"org_id": ORG}, timeout=15).json()["key"]
+    key = httpx.post(f"{ADMIN}/admin/issue", json={"org_id": ORG}, timeout=15, headers=ADMIN_AUTH).json()["key"]
     set_env("PSEUDEX_KEY", key)
     started = time.monotonic()
     compose(["up", "-d", "sidecar"], True, 600)

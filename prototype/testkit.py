@@ -24,6 +24,12 @@ from licensing.pack import build_plaintext
 from pseudex.assets import ASSETS
 
 
+
+# Учётные данные админки лицензионного сервера. Пусто — заголовка нет, и сервер
+# ответит 401: ходить молча без токена хуже, чем громко не дойти.
+ADMIN_TOKEN = os.environ.get("PSEUDEX_LICENSE_ADMIN_TOKEN", "")
+ADMIN_AUTH = {"Authorization": f"Bearer {ADMIN_TOKEN}"} if ADMIN_TOKEN else {}
+
 def load_dev_bundle() -> None:
     """Make the detector usable in-process. Idempotent."""
     if not ASSETS.is_loaded:
@@ -71,14 +77,14 @@ def start_local_license() -> str:
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         try:
-            httpx.get(f"{admin}/admin/list", timeout=2)
+            httpx.get(f"{admin}/admin/list", timeout=2, headers=ADMIN_AUTH)
             break
         except httpx.HTTPError:
             time.sleep(0.2)
     else:
         raise RuntimeError("local licensing server did not start")
 
-    key = httpx.post(f"{admin}/admin/issue", json={"org_id": "testkit"}, timeout=10).json()["key"]
+    key = httpx.post(f"{admin}/admin/issue", json={"org_id": "testkit"}, timeout=10, headers=ADMIN_AUTH).json()["key"]
     os.environ["PSEUDEX_LICENSE_URL"] = f"http://127.0.0.1:{port}"
     os.environ["PSEUDEX_LICENSE_KEY"] = key
     os.environ["PSEUDEX_LICENSE_PUBKEY"] = server.PUBLIC_KEY

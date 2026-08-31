@@ -31,10 +31,18 @@ class LicensingError(RuntimeError):
     """
 
 
+def _auth() -> dict[str, str]:
+    """Учётные данные админки. Пусто — заголовка нет, и сервер ответит 401:
+    молча ходить без токена хуже, чем громко не дойти."""
+    token = getattr(settings, "LICENSING_ADMIN_TOKEN", "")
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
 def _post(path: str, payload: dict[str, object]) -> dict[str, object]:
     url = f"{settings.LICENSING_ADMIN_URL.rstrip('/')}{path}"
     try:
         response = httpx.post(url, json=payload, timeout=15.0,
+                              headers=_auth(),
                               verify=settings.LICENSING_CA or True)
     except httpx.HTTPError as error:
         raise LicensingError(f"{url} unreachable: {error}") from error
@@ -49,7 +57,7 @@ def _get(path: str, params: dict[str, str]) -> dict[str, object]:
     url = f"{settings.LICENSING_ADMIN_URL.rstrip('/')}{path}"
     try:
         response = httpx.get(url, params=params, timeout=15.0,
-                             verify=settings.LICENSING_CA or True)
+                             headers=_auth(), verify=settings.LICENSING_CA or True)
     except httpx.HTTPError as error:
         raise LicensingError(f"{url} unreachable: {error}") from error
     if response.status_code != 200:

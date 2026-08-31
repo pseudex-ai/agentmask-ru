@@ -80,6 +80,12 @@ RESULTS: list[Result] = []
 
 # --- plumbing ------------------------------------------------------------
 
+
+# Учётные данные админки лицензионного сервера. Пусто — заголовка нет, и сервер
+# ответит 401: ходить молча без токена хуже, чем громко не дойти.
+ADMIN_TOKEN = os.environ.get("PSEUDEX_LICENSE_ADMIN_TOKEN", "")
+ADMIN_AUTH = {"Authorization": f"Bearer {ADMIN_TOKEN}"} if ADMIN_TOKEN else {}
+
 def sh(args: list[str], check: bool, timeout: int) -> subprocess.CompletedProcess:
     return subprocess.run(args, capture_output=True, text=True, check=check, timeout=timeout)
 
@@ -257,12 +263,12 @@ def build_stand(image: str, workers: int, skip_build: bool) -> str:
         f"PSEUDEX_VAULT_KEY=\n"
     )
     compose(["up", "-d", "license"], True, 600)
-    if not wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
+    if not wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5, headers=ADMIN_AUTH).status_code == 200,
                       120, 2, "licensing admin"):
         raise SystemExit("licensing server did not come up")
 
     key = httpx.post(f"{ADMIN}/admin/issue",
-                     json={"org_id": ORG, "plan": _GATE_PLAN}, timeout=15).json()["key"]
+                     json={"org_id": ORG, "plan": _GATE_PLAN}, timeout=15, headers=ADMIN_AUTH).json()["key"]
     print(f"  key issued for {ORG}: {key[:18]}...")
     set_env("PSEUDEX_KEY", key)
     return key
@@ -353,7 +359,7 @@ def gate_l3(image: str, key: str) -> bool:
         }, 150)
     finally:
         compose(["start", "license"], True, 120)
-        wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
+        wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5, headers=ADMIN_AUTH).status_code == 200,
                    120, 2, "licensing admin back up")
     return gate("L3 cold start with our server down -> refuses (no grace)",
                 code != 0 and "bundle_unavailable" in output,
@@ -759,7 +765,7 @@ def gate_l10() -> bool:
     """Revocation is an ANSWER, not an outage: it must bypass grace entirely."""
     if not wait_until(lambda: license_state()["state"] == "active", 120, 3, "active before revoke"):
         return gate("L10 revocation bypasses grace", False, "sidecar was not active")
-    httpx.post(f"{ADMIN}/admin/revoke", json={"org_id": ORG}, timeout=15)
+    httpx.post(f"{ADMIN}/admin/revoke", json={"org_id": ORG}, timeout=15, headers=ADMIN_AUTH)
     revoked_at = time.monotonic()
     stopped = wait_until(lambda: post_mask(90).status_code == 503,
                          TTL_SECONDS * 2 + 30, 3, "mask to start refusing")
@@ -777,7 +783,7 @@ def gate_l10() -> bool:
     # `_terminal_code` is set before the crash and the state is read from it — so
     # a dead renewal thread looked identical to a healthy one from outside.
     container_before = compose(["ps", "-q", "sidecar"], False, 30).stdout.strip()
-    httpx.post(f"{ADMIN}/admin/resume", json={"org_id": ORG}, timeout=15)
+    httpx.post(f"{ADMIN}/admin/resume", json={"org_id": ORG}, timeout=15, headers=ADMIN_AUTH)
     recovered = wait_until(lambda: post_mask(90).status_code == 200,
                            TTL_SECONDS * 4, 5, "service to resume after payment")
     same_container = compose(["ps", "-q", "sidecar"], False, 30).stdout.strip() == container_before
@@ -929,10 +935,10 @@ def gate_l13(image: str) -> bool:
     compose_down()
     set_env("PSEUDEX_FAULT_INJECT", "corrupt_bundle")
     compose(["up", "-d", "license"], True, 600)
-    wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
+    wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5, headers=ADMIN_AUTH).status_code == 200,
                120, 2, "licensing admin")
     key = httpx.post(f"{ADMIN}/admin/issue",
-                     json={"org_id": ORG, "plan": _GATE_PLAN}, timeout=15).json()["key"]
+                     json={"org_id": ORG, "plan": _GATE_PLAN}, timeout=15, headers=ADMIN_AUTH).json()["key"]
     code, output = run_disposable_sidecar(image, {
         "PSEUDEX_LICENSE_URL": "https://license:8443",
         "PSEUDEX_LICENSE_CA": "/certs/ca.pem",
@@ -949,10 +955,10 @@ def gate_l12() -> bool:
     compose_down()
     set_env("PSEUDEX_LOG_RAW_BODY", "1")
     compose(["up", "-d", "license"], True, 600)
-    wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
+    wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5, headers=ADMIN_AUTH).status_code == 200,
                120, 2, "licensing admin")
     key = httpx.post(f"{ADMIN}/admin/issue",
-                     json={"org_id": ORG, "plan": _GATE_PLAN}, timeout=15).json()["key"]
+                     json={"org_id": ORG, "plan": _GATE_PLAN}, timeout=15, headers=ADMIN_AUTH).json()["key"]
     set_env("PSEUDEX_KEY", key)
     if not start_sidecar():
         return gate("L12 counters match and carry no PII", False, "sidecar did not start")
@@ -972,10 +978,10 @@ def gate_l12() -> bool:
     # traffic; the gate then read those zeros and called it a failure.
     reported = wait_until(
         lambda: httpx.get(f"{ADMIN}/admin/usage", params={"org_id": ORG},
-                          timeout=15).json()["usage"]["requests"] > 0,
+                          timeout=15, headers=ADMIN_AUTH).json()["usage"]["requests"] > 0,
         TTL_SECONDS * 4, 5, "a usage report carrying counters",
     )
-    remote = httpx.get(f"{ADMIN}/admin/usage", params={"org_id": ORG}, timeout=15).json()
+    remote = httpx.get(f"{ADMIN}/admin/usage", params={"org_id": ORG}, timeout=15, headers=ADMIN_AUTH).json()
 
     raw_bodies = "\n".join(line for line in logs("license").splitlines()
                            if "RAW_LEASE_BODY" in line)
@@ -1021,11 +1027,11 @@ def restart_stand() -> bool:
     """
     compose_down()
     compose(["up", "-d", "license"], True, 600)
-    if not wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5).status_code == 200,
+    if not wait_until(lambda: httpx.get(f"{ADMIN}/admin/list", timeout=5, headers=ADMIN_AUTH).status_code == 200,
                       120, 2, "licensing admin"):
         return False
     key = httpx.post(f"{ADMIN}/admin/issue",
-                     json={"org_id": ORG, "plan": _GATE_PLAN}, timeout=15).json()["key"]
+                     json={"org_id": ORG, "plan": _GATE_PLAN}, timeout=15, headers=ADMIN_AUTH).json()["key"]
     set_env("PSEUDEX_KEY", key)
     return start_sidecar()
 

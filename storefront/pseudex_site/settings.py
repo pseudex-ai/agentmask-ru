@@ -216,6 +216,10 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 # outbound call the storefront makes, and it carries an org id and a status —
 # never anything about a customer's traffic.
 LICENSING_ADMIN_URL = _env("PSEUDEX_LICENSING_ADMIN_URL", "http://127.0.0.1:9443")
+# Общий секрет с админкой лицензионного сервера. Сетевая изоляция 9443 — первый
+# замок, этот второй: витрина смотрит в интернет, и её компрометация не должна
+# сразу означать выпуск ключей.
+LICENSING_ADMIN_TOKEN = _env("PSEUDEX_LICENSE_ADMIN_TOKEN", "")
 LICENSING_CA = _env("PSEUDEX_LICENSING_CA", "")
 
 YOOKASSA_SHOP_ID = _env("PSEUDEX_YOOKASSA_SHOP_ID")

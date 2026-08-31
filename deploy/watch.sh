@@ -90,7 +90,7 @@ fi
 # (.github/workflows/uptime.yml), и разделение намеренное — эта видит «процесс
 # жив», та видит «машина жива». Совпадать они не обязаны.
 if curl -sS --max-time 10 -o /dev/null -w '%{http_code}' \
-        -H "Authorization: Bearer ${PSEUDEX_ADMIN_TOKEN:-}" \
+        -H "Authorization: Bearer ${PSEUDEX_LICENSE_ADMIN_TOKEN:-}" \
         "$LICENSE_ADMIN/admin/list" 2>/dev/null | grep -q '^200$'; then
     report license-admin OK info "Лицензионный сервер отвечает" ""
 else
@@ -104,7 +104,7 @@ fi
 # Единственный пункт §5, который стоит превращать в письмо клиенту ДО того, как
 # он позвонит. Уровень warn, а не crit: у нас ничего не сломано, ломается у
 # него, и разбудить это должно рабочее утро, а не ночь.
-STALE="$(curl -sS --max-time 10 -H "Authorization: Bearer ${PSEUDEX_ADMIN_TOKEN:-}" \
+STALE="$(curl -sS --max-time 10 -H "Authorization: Bearer ${PSEUDEX_LICENSE_ADMIN_TOKEN:-}" \
          "$LICENSE_ADMIN/admin/list" 2>/dev/null \
          | python3 -c '
 import json, sys, time
