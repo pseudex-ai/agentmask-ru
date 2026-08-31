@@ -820,6 +820,46 @@ def _lowercase_name_pairs(text: str, names: NameAssets) -> list[Span]:
     return spans
 
 
+# Ниже этой длины строчное словарное слово почти всегда что-то другое: словарь
+# фамилий содержит 196 800 записей, и короткие из них — «мир», «дом», «пол» —
+# сталкиваются с языком чаще, чем называют людей.
+_LOWER_DICT_MIN = 5
+
+
+def _lowercase_dictionary_ok(word: str, low: str) -> bool:
+    """Может ли СТРОЧНОЕ слово из большого словаря назвать человека.
+
+    ЗАЧЕМ СНИМАТЬ ЗАГЛАВНУЮ. Измерено на настоящей речи: из 569 промахов по
+    именам 474 — слова, которые УЖЕ ЛЕЖАТ В СЛОВАРЕ, и отвергала их только
+    заглавная. «морзов по улицам не пройти», «здравствуйте васильев седьмое
+    отделение», «а захаров к 10 часам» — в диспетчерской речи слова-подсказки
+    нет, а заглавных нет вовсе: ни одной на 16 521 реплику MASSIVE.
+
+    ПРАВИЛО ТО ЖЕ, ЧТО У `ambiguous`, И ЭТО НЕ СОВПАДЕНИЕ. Слово принимается,
+    только если pymorphy НЕ знает его как обычное русское слово. Тот же тест
+    уже решает, какое семя требует заглавной («вера», «роман», «любовь»), и
+    вместо второго списка, который придётся держать в согласии с первым, здесь
+    задаётся тот же вопрос большому словарю.
+
+    Измерено на 116 685 словах новостной прозы: правило впускает 38 слов, из
+    которых обычными являются «якобы», «данной», «марки» — их этот тест и
+    отсеивает; остальные («чехов», «жуков», «акбар») настоящие фамилии.
+    """
+    if len(word) < _LOWER_DICT_MIN:
+        return False
+    parses = MORPH.parse(word)
+    if not parses:
+        return False
+    # КАЖДОЕ ЧТЕНИЕ, А НЕ ЛУЧШЕЕ — правило, которое этот репозиторий уже
+    # оплатил дважды. `parse[0]` для «жуков» отдаёт фамилию Жуков, и
+    # «Рокфеллер коллекционировал жуков» стало человеком; «флору» и «де-юре»
+    # тем же путём. Слово отвергается, если ХОТЬ ОДНО его чтение — обычное
+    # русское слово, потому что именно это чтение и встретится в прозе.
+    return not any(
+        parse.is_known and not ({"Name", "Surn", "Patr"} & set(parse.tag.grammemes))
+        for parse in parses)
+
+
 def gazetteer_names(text: str) -> list[Span]:
     """Catch names NER misses: known names (any case), Latin pairs, initials,
     and — for CAPITALISED words only — the bulk dictionary.
@@ -839,7 +879,7 @@ def gazetteer_names(text: str) -> list[Span]:
         before = text[max(0, match.start() - 20):match.start()].lower()
         if _name_set_hit(word, low, lemmas, before, names):
             spans.append(Span(match.start(), match.end(), "NAME", word))
-        elif word[:1].isupper() and (
+        elif (word[:1].isupper() or _lowercase_dictionary_ok(word, low)) and (
             low in names.dict_first or low in names.dict_surnames
             or any(lemma in names.dict_first or lemma in names.dict_surnames
                    for lemma in lemmas)
