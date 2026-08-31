@@ -269,7 +269,20 @@ def _street_shape(word: str) -> bool:
     parses = MORPH.parse(word)
     if any("ADJF" in parse.tag and parse.tag.case == "nomn" for parse in parses):
         return True
-    return any("Surn" in parse.tag or "Geox" in parse.tag for parse in parses)
+    if any("Geox" in parse.tag for parse in parses):
+        return True
+    # ФАМИЛИЯ НАЗЫВАЕТ УЛИЦУ ТОЛЬКО В РОДИТЕЛЬНОМ ЕДИНСТВЕННОГО, и это
+    # утверждение стояло абзацем выше, а код принимал ЛЮБОЙ падеж. «морозов 10»,
+    # «кузнецов 12», «Артём Громов 8» — человек и номер, — читались как адрес, и
+    # спан LOC съедал имя целиком: один человек и одно место сливались в одну
+    # подмену, а в аргумент «имя» уходил адрес.
+    #
+    # Родительное МНОЖЕСТВЕННОГО не считается: у «морозов» оно есть («улица
+    # Морозов» не существует, существует «улица Морозова»), и именно оно
+    # пропускало самый частый случай. «Станкевич» остаётся неоднозначным честно
+    # — у несклоняемой фамилии все падежи совпадают, и разделить их нечем.
+    return any("Surn" in parse.tag and parse.tag.case == "gent"
+               and parse.tag.number == "sing" for parse in parses)
 
 
 def _is_numeral(word: str) -> bool:
@@ -1132,6 +1145,38 @@ _LEADING_WORD_RE = re.compile(r"^([А-Яа-яёЁ]+)(\s+)")
 _LEADING_NUMBER_RE = re.compile(r"^(\d+)\s+([А-Яа-яёЁ]+)\s")
 
 
+def _still_an_address(fragment: str, address: AddressAssets) -> bool:
+    """Остаётся ли адресом то, что уцелеет после обрезки ведущего слова.
+
+    Это ЕДИНСТВЕННОЕ, что отличает «битюков улица сабурова 53» от «ленина 14»:
+    в первом случае без ведущего слова адрес остаётся адресом, во втором — нет,
+    потому что «Ленина» и есть улица. Спрашивать морфологию бесполезно: обе
+    формы — фамилия в родительном, и это одно и то же слово.
+
+    ОСТАТОК ОБЯЗАН СОДЕРЖАТЬ УЛИЦУ, А НЕ ГОЛЫЙ МАРКЕР ДОМА. «дом 43» сам по
+    себе проходит как адрес, поэтому без этой проверки «кузнецова дом 43»
+    потеряло бы улицу и в инструмент ушёл бы один номер дома.
+
+    МАРКЕР БЫВАЕТ СКАЗАН СЛОВАМИ, и без устной ветки сторож пропускал ровно то,
+    ради чего продукт учился слышать: «бибиревская дом семнадцать в квартира
+    двести двадцать девять» — `house` требует цифру, «дом семнадцать» её не
+    имеет, улица обрезалась и уходила к модели открытым текстом.
+    """
+    if any(rx.match(fragment) for rx in
+           (address.house, address.spoken_chain, address.apt,
+            address.spoken_apt)):
+        return False
+    return any(core for _, _, core in
+               _regex_candidates(fragment, address)
+               + _bare_street_candidates(fragment, address))
+
+
+def _names_a_person(word: str) -> bool:
+    parses = MORPH.parse(word)
+    return any({"Surn", "Name", "Patr"} & set(parse.tag.grammemes)
+               for parse in parses)
+
+
 def _trim_lead(start: int, stop: int, text: str, address: AddressAssets) -> int:
     """Drop leading words that INTRODUCE the address instead of naming it.
 
@@ -1176,6 +1221,21 @@ def _trim_lead(start: int, stop: int, text: str, address: AddressAssets) -> int:
         pronominal = best is not None and "Apro" in best.grammemes
         preposition = best is not None and best.POS == "PREP"
         if not (pronominal or preposition or address.addr_ctx.fullmatch(word)):
+            # ИМЯ ЧЕЛОВЕКА ПЕРЕД АДРЕСОМ — не начало адреса, а другая сущность.
+            # «битюков улица сабурова 53 б квартира 9» становилось ОДНИМ спаном
+            # LOC: человек и место сливались в одну подмену, в аргумент
+            # «passenger_name» уходил адрес, а связь «один человек — одна
+            # подмена» рвалась. 25 таких имён на 1886 в AgentPII v3.
+            #
+            # Обрезается только то, без чего остаток ОСТАЁТСЯ адресом. Иначе
+            # правило съело бы «Ленина 14»: «Ленина» — такая же фамилия в
+            # родительном, и отличить её от человека можно лишь тем, что после
+            # неё не остаётся ничего.
+            if (_names_a_person(word)
+                    and _still_an_address(text[start + match.end():stop],
+                                          address)):
+                start += match.end()
+                continue
             return start
         start += match.end()
 
