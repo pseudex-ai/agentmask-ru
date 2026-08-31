@@ -917,9 +917,32 @@ def _lowercase_dictionary_ok(word: str, low: str) -> bool:
     # «Рокфеллер коллекционировал жуков» стало человеком; «флору» и «де-юре»
     # тем же путём. Слово отвергается, если ХОТЬ ОДНО его чтение — обычное
     # русское слово, потому что именно это чтение и встретится в прозе.
-    return not any(
-        parse.is_known and not ({"Name", "Surn", "Patr"} & set(parse.tag.grammemes))
-        for parse in parses)
+    # ПРИТЯЖАТЕЛЬНОЕ ОТ ТОЙ ЖЕ ФАМИЛИИ — НЕ СВИДЕТЕЛЬСТВО ПРОТИВ НЕЁ. У каждой
+    # русской фамилии на -ов/-ев/-ин есть форма «Иванов дом», и pymorphy3 честно
+    # выдаёт её как ADJF,Poss — обычное слово без пометы имени. Тест видел это
+    # чтение и отвергал ВСЮ самую частую форму русской фамилии: «господином
+    # ивановым», «врачом петровым», «письмо поповой» не находились вовсе.
+    #
+    # Прощается ровно один случай, и ЛЕММА — то, что его отличает. У «ивановым»
+    # притяжательное чтение имеет ту же нормальную форму «иванов», что и
+    # фамильное: это одно слово, взятое с другой стороны. У «жуков» обычное
+    # чтение даёт «жук», у «попов» — «поп», у «машин» — «машина», у «варя» —
+    # «варить»: другое слово, и оно-то и встретится в прозе. Сужено до ADJF,Poss
+    # намеренно: без этого «жуков» проходил бы, потому что среди его чтений есть
+    # фамильное с леммой «жук», — и это ровно тот дефект, за который репозиторий
+    # заплатил трижды.
+    name_lemmas = {parse.normal_form for parse in parses
+                   if {"Name", "Surn", "Patr"} & set(parse.tag.grammemes)}
+    for parse in parses:
+        if not parse.is_known:
+            continue
+        if {"Name", "Surn", "Patr"} & set(parse.tag.grammemes):
+            continue
+        if ("ADJF" in parse.tag and "Poss" in parse.tag.grammemes
+                and parse.normal_form in name_lemmas):
+            continue
+        return False
+    return True
 
 
 def _lemma_lookup_ok(low: str) -> bool:
@@ -1010,6 +1033,51 @@ def _possessive_names(text: str, names: NameAssets) -> list[Span]:
     return spans
 
 
+_STREET_PREP = re.compile(r"(?i)\b(?:на|по)\s+$")
+_STREET_REF_NUMBER = re.compile(r"\s*(?:\d|"
+                                r"нол|один|дв|тр|четыр|пят|шест|сем|восем|девят|"
+                                r"десят|одиннадц|двенадц|тринадц|четырнадц|"
+                                r"пятнадц|шестнадц|семнадц|восемнадц|девятнадц|"
+                                r"двадц|тридц|сорок|пятьдес|шестьдес|семьдес|"
+                                r"восемьдес|девяност|ст[оа]|двест|трист|четырест)")
+
+
+def _street_reference(text: str, start: int, end: int) -> bool:
+    """«на ленина торговый центр» — это улица, а не человек.
+
+    Свежая беда, ровно от предыдущего послабления: строчная фамилия в
+    родительном теперь проходит гейт, а половина русских улиц названа именно
+    так. «на ленина торговый центр кит» уходило к модели как «на Ткаченко
+    торговый центр кит» — место превращалось в несуществующего человека, и это
+    хуже обычной лишней маски.
+
+    Разделяют четыре вещи: слово стоит в реестре улиц ГАР, перед ним «на» или
+    «по», читается оно как ФАМИЛИЯ и не как личное имя, и после него НЕТ номера.
+    С номером это полноценный адрес, и его находит ветка адресов — здесь надо
+    только не мешать. Без предлога «передайте петровой» остаётся человеком.
+
+    ПРЕДЛОГИ «В» И «У» ИСКЛЮЧЕНЫ, И ЛИЧНЫЕ ИМЕНА ТОЖЕ — обе оговорки измерены, а
+    не предположены. Общий список предлогов из адресной ветки съедал «какой
+    номер у евгения», «у светланы есть новый адрес», «какой адрес у антона»: 12
+    настоящих имён на MASSIVE. «У» вводит владельца, а не улицу; и «Ивана»,
+    «Евгения», «Светланы» стоят в реестре ГАР, потому что там есть улица Ивана
+    Франко, — но каждое из них читается ещё и как личное имя, а «Ленина» и
+    «Петрова» только как фамилия.
+    """
+    address = ASSETS.get().address
+    word = text[start:end].lower()
+    if word not in address.street_names:
+        return False
+    if not _STREET_PREP.search(text[:start]):
+        return False
+    parses = MORPH.parse(word)
+    if any("Name" in parse.tag for parse in parses):
+        return False
+    if not any("Surn" in parse.tag for parse in parses):
+        return False
+    return _STREET_REF_NUMBER.match(text[end:]) is None
+
+
 def gazetteer_names(text: str) -> list[Span]:
     """Catch names NER misses: known names (any case), Latin pairs, initials,
     and — for CAPITALISED words only — the bulk dictionary.
@@ -1029,6 +1097,8 @@ def gazetteer_names(text: str) -> list[Span]:
         lemmas = _lemmas(low)
         before = text[max(0, match.start() - 20):match.start()].lower()
         if not _whole_token_ok(text, match.start(), match.end()):
+            continue
+        if _street_reference(text, match.start(), match.end()):
             continue
         if _name_set_hit(word, low, lemmas, before, names):
             spans.append(Span(match.start(), match.end(), "NAME", word))
