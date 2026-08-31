@@ -181,6 +181,11 @@ class JudgeRequest:
     must_not_contain: tuple[str, ...]    # real values whose appearance discloses
     closed_answer: str                   # "да" | "нет" | ""
     substitutes_present: tuple[str, ...] # minted fakes still standing in `answer`
+    # ВСЕ подмены, отчеканенные для случая, а не только уцелевшие в тексте.
+    # `substitutes_present` — это лёгкая половина: то, что уже нашёл строковый
+    # поиск. Судье нужна вторая половина, иначе он отвечает на вопрос, который
+    # ему ещё не задали (см. `judge.only_what_the_vault_matched`).
+    substitutes_minted: tuple[str, ...]
     residual_present: tuple[str, ...]    # of those, the visibly-opaque ones
     # Of `must_contain`, the values the SCORER could not find in `answer`. It is
     # decided outside the judge for the same reason the vault facts are: matching
@@ -733,6 +738,7 @@ def _answer_request(case: schema.Case,
         must_not_contain=case.final.must_not_contain,
         closed_answer=case.final.answer,
         substitutes_present=surviving,
+        substitutes_minted=tuple(vault.minted_tokens()),
         residual_present=opaque,
         missing=_missing(demands, restored.split("\n")))
 

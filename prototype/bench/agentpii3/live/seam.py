@@ -43,7 +43,12 @@ def sdk_judge(config: live.JudgeConfig):
             case_id=request.case_id,
             answer=request.answer,
             real_values=tuple(request.must_not_contain),
-            substitutes=tuple(request.substitutes_present),
+            # ВСЕ отчеканенные, а не только уцелевшие: `judge` держит
+            # `only_what_the_vault_matched` именно как названный анти-пример —
+            # передать `substitutes_present` значит отдать судье то, что
+            # строковый поиск уже нашёл, и лишить его собственного вопроса.
+            substitutes=tuple(request.substitutes_minted
+                              or request.substitutes_present),
         )
         # ОРАКУЛ, ОТ КОТОРОГО СУДЬЯ ДОЛЖЕН БЫТЬ СЛЕП, НАЗЫВАЕТСЯ ЯВНО. Всё,
         # что скорер уже решил — что ответ обязан нести, чего он недосчитался,

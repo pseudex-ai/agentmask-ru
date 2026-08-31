@@ -19,6 +19,7 @@ No pytest, matching the engine repo: run it, read the lines, non-zero is broken.
 """
 
 import os
+import pathlib
 import subprocess
 import sys
 import tempfile
@@ -433,6 +434,19 @@ def run_checks(client) -> None:
     Membership.objects.create(user=other_user, organization=other_org)
     client.force_login(other_user)
     leaked = client.get(f"/app/invoices/DOES-NOT-EXIST")
+    # ОБРАЗ НЕ ВЕЗЁТ СЕКРЕТОВ РАЗРАБОТКИ. `.gitignore` для Docker не действует,
+    # и без `.dockerignore` `COPY . .` запекал в продакшен-образ `.env.dev` с
+    # ключом ЮKassa и дев-базу SQLite: всякий, у кого есть pull из реестра,
+    # читал их одной командой. Проверяется СПИСОК ИСКЛЮЧЕНИЙ, а не собранный
+    # образ — сборка здесь недоступна, а забыть строку в файле можно и завтра.
+    ignore = (pathlib.Path(__file__).parent / ".dockerignore")
+    ignored = ignore.read_text() if ignore.exists() else ""
+    missing = [pattern for pattern in (".env", "*.sqlite3", ".venv/", "test_*.py")
+               if pattern not in ignored]
+    check("the build context excludes dev secrets and the dev database",
+          ignore.exists() and not missing,
+          f"missing={missing or 'none'}")
+
     check("one organisation cannot open another's invoice",
           leaked.status_code == 404, f"status={leaked.status_code}")
 

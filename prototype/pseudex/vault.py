@@ -1730,6 +1730,21 @@ class Vault:
             ).fetchone()
         return row is not None
 
+    def minted_tokens(self) -> tuple[str, ...]:
+        """Все подмены, отчеканенные для этого клиента.
+
+        Нужна СУДЬЕ. `residual_tokens` отдаёт только те, что строковый поиск ещё
+        находит в ответе, — то есть уже пойманные детерминированной проверкой; а
+        вопрос к модели ровно про остальные: склонённую подмену, пересказанный
+        адрес, число словами. Читает и ничего не чеканит: `/spans` и `peek_token`
+        держат то же правило и по той же причине.
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT token FROM tokens WHERE customer=?", (self._customer,)
+            ).fetchall()
+        return tuple(row[0] for row in rows)
+
     def detokenize_many(self, tokens: set[str]) -> dict[str, str]:
         """Resolve a batch of candidate tokens in indexed point queries. Unknown
         candidates are simply absent from the result — the caller leaves that text
