@@ -108,10 +108,25 @@ def mac_report(report: dict[str, object], secret: bytes) -> str:
 
 
 def verify_report(report: dict[str, object], secret: bytes) -> None:
+    """ФОРМА ПРОВЕРЯЕТСЯ ДО СРАВНЕНИЯ, И СРАВНИВАЮТСЯ БАЙТЫ.
+
+    `hmac.compare_digest` на строках бросает `TypeError`, если в них есть
+    что-то вне ASCII, — а `signature` приходит из тела запроса. Незнакомый
+    `TypeError` летел мимо `except (BundleError, ValueError)` и превращался в
+    500, который клиент читает как НАШ сбой и уходит в grace. Проверка биллинга
+    не имеет права падать в ту сторону.
+    """
     given = report.get("signature")
-    if not isinstance(given, str) or not hmac.compare_digest(
-            given, mac_report({k: v for k, v in report.items()
-                               if k != "signature"}, secret)):
+    if not isinstance(given, str) or len(given) != 64:
+        raise BundleError("report MAC has the wrong shape")
+    try:
+        given_bytes = bytes.fromhex(given)
+    except ValueError as error:
+        raise BundleError("report MAC is not hex") from error
+    expected = hmac.new(secret, signing_payload(
+        {k: v for k, v in report.items() if k != "signature"}),
+        hashlib.sha256).digest()
+    if not hmac.compare_digest(given_bytes, expected):
         raise BundleError("report MAC does not verify")
 
 

@@ -122,6 +122,58 @@ r = rep(5, 3, prev); send(s6, r)                # значения ПОШЛИ В
 row = s6._conn.execute("SELECT values_total, resets FROM usage").fetchone()
 check("откат значений вниз", int(row[0]) >= 100, f"values_total={row[0]}, resets={row[1]}")
 
+
+# --- атаки, найденные security-review 31.08 -------------------------------
+print("\nАТАКИ, НАЙДЕННЫЕ РЕВЬЮ")
+s7 = fresh()
+sec7 = _secrets.token_bytes(32)
+s7.record_report_secret("acme", "KEYA", sec7.hex())
+honest = {"requests": 100, "values": 100, "seq": 1, "prev": ""}
+honest["signature"] = mac_report(honest, sec7)
+s7.record_usage("acme", "prod", 100, {}, 100, seq=1, prev="",
+                signature=honest["signature"], trust="signed", report_pubkey="KEYA")
+before = s7.usage_totals("acme")
+# снять подпись — раньше это было ТИШЕ, чем подделать
+s7.record_usage("acme", "prod", 10 ** 9, {}, 10 ** 9, seq=0, prev="",
+                signature="", trust="signed", report_pubkey="KEYA")
+after = s7.usage_totals("acme")
+check("отчёт без подписи не попадает в счёт",
+      after["requests"] == before["requests"] and after["values"] == before["values"],
+      f"requests {before['requests']} -> {after['requests']}")
+check("непроверенное видно в итогах",
+      after["unverified_reports"] > 0 and after["unverified_requests"] > 0,
+      f"unverified_reports={after['unverified_reports']}")
+
+# секрет привязан к КЛЮЧУ ПРОЦЕССА, а не к instance_id
+s8 = fresh()
+s8.record_report_secret("acme", "KEY1", "11" * 32)
+s8.record_report_secret("acme", "KEY2", "22" * 32)
+check("два воркера одного instance_id — два секрета",
+      s8.report_secret("acme", "KEY1") != s8.report_secret("acme", "KEY2"),
+      "ключ строки — pubkey")
+check("чужим instance_id секрет не перебить",
+      s8.report_secret("acme", "KEY1") == "11" * 32, "перезапись только по своему ключу")
+
+# форма MAC проверяется до сравнения
+for bad, name in ((("подпись"), "не-ASCII"), ("zz" * 32, "не-hex"), ("ab", "короткая")):
+    try:
+        verify_report({"requests": 1, "signature": bad}, sec7); held = False
+    except BundleError:
+        held = True
+    except TypeError:
+        held = False
+    check(f"MAC-подпись {name} отвергается без TypeError", held)
+
+# release освобождает только свой слот
+s9 = fresh()
+s9.record_lease("l1", "acme", "c1", "p", 86400, pubkey="MINE")
+s9.release_process("acme", "SOMEONE-ELSE")
+check("release чужим ключом ничего не удаляет",
+      s9._conn.execute("SELECT count(*) FROM leases").fetchone()[0] == 1)
+s9.release_process("acme", "MINE")
+check("release своим ключом освобождает",
+      s9._conn.execute("SELECT count(*) FROM leases").fetchone()[0] == 0)
+
 unexpected = [f for f in fails if f not in KNOWN]
 print(f"\nсломано {len(fails)}, из них известный предел {len(fails) - len(unexpected)}")
 for f in fails:

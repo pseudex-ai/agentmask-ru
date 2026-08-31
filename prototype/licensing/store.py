@@ -53,6 +53,13 @@ class LicenseStore:
             "key_hash TEXT PRIMARY KEY, org_id TEXT, plan TEXT, status TEXT, created_at REAL)"
         )
         self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS process_reports ("
+            "org_id TEXT, pubkey TEXT, secret TEXT DEFAULT '', "
+            "seq INTEGER DEFAULT 0, prev TEXT DEFAULT '', signature TEXT DEFAULT '', "
+            "chain_breaks INTEGER DEFAULT 0, updated_at REAL, "
+            "PRIMARY KEY (org_id, pubkey))"
+        )
+        self._conn.execute(
             "CREATE TABLE IF NOT EXISTS leases ("
             "lease_id TEXT PRIMARY KEY, org_id TEXT, instance_id TEXT, process_id TEXT, "
             # КЛЮЧ ПРОЦЕССА — ЕДИНСТВЕННЫЙ ИДЕНТИФИКАТОР, КОТОРЫЙ КЛИЕНТ НЕ
@@ -92,7 +99,8 @@ class LicenseStore:
             # разрывы — пропуск, перестановку или подмену старым отчётом.
             "seq INTEGER DEFAULT 0, prev TEXT DEFAULT '', signature TEXT DEFAULT '', "
             "trust TEXT DEFAULT 'unsigned', chain_breaks INTEGER DEFAULT 0, "
-            "report_pubkey TEXT DEFAULT '', report_secret TEXT DEFAULT '', "
+            "unverified_reports INTEGER DEFAULT 0, "
+            "unverified_requests INTEGER DEFAULT 0, "
             "PRIMARY KEY (org_id, instance_id))"
         )
         # Существующие тома пережили релизы без этой колонки.
@@ -107,8 +115,10 @@ class LicenseStore:
                             ("signature", "signature TEXT DEFAULT ''"),
                             ("trust", "trust TEXT DEFAULT 'unsigned'"),
                             ("chain_breaks", "chain_breaks INTEGER DEFAULT 0"),
-                            ("report_pubkey", "report_pubkey TEXT DEFAULT ''"),
-                            ("report_secret", "report_secret TEXT DEFAULT ''")):
+                            ("unverified_reports",
+                             "unverified_reports INTEGER DEFAULT 0"),
+                            ("unverified_requests",
+                             "unverified_requests INTEGER DEFAULT 0")):
             if column not in usage_columns:
                 self._conn.execute(f"ALTER TABLE usage ADD COLUMN {ddl}")
         self._conn.commit()
@@ -199,24 +209,39 @@ class LicenseStore:
         )
         return total + reported
 
-    def record_report_secret(self, org_id: str, instance_id: str,
+    def record_report_secret(self, org_id: str, pubkey: str,
                              secret_hex: str) -> None:
-        """Секрет живёт до следующей аренды: подделать отчёт можно только тем
-        секретом, который мы запечатали ЭТОМУ получателю."""
+        """КЛЮЧ — ОТКРЫТЫЙ КЛЮЧ ПРОЦЕССА, А НЕ `instance_id`.
+
+        `instance_id` приходит из переменной окружения, которую ставит клиент —
+        то самое, что мы убрали из подсчёта тарифа именно потому, что клиент его
+        выбирает. Пока секрет лежал под ним, ломались ОБЕ стороны:
+
+          * держатель ключа организации мог назваться чужим `instance_id`, и мы
+            чеканили свежий секрет, запечатанный ЕГО ключу, поверх честного —
+            после чего его отчёты проходили как `signed`, а настоящие падали в
+            `bad_signature`;
+          * и без всякой атаки: `entrypoint.sh` даёт всем воркерам ОДИН
+            `instance_id`, у каждого свой ключ процесса и свой секрет, и все
+            писали в одну строку — «подписанным» оставался только последний
+            арендовавший, остальные навсегда `bad_signature`.
+
+        Ключ процесса решает обе задачи разом: секрет, запечатанный ключу K,
+        проверяется только против отчёта, назвавшего K, и у N воркеров N строк.
+        """
         with self._lock:
             self._conn.execute(
-                "INSERT INTO usage (org_id, instance_id, updated_at, reports, "
-                "report_secret) VALUES (?,?,?,0,?) "
-                "ON CONFLICT(org_id, instance_id) DO UPDATE SET "
-                "report_secret=excluded.report_secret",
-                (org_id, instance_id, time.time(), secret_hex),
+                "INSERT INTO process_reports (org_id, pubkey, secret, updated_at) "
+                "VALUES (?,?,?,?) ON CONFLICT(org_id, pubkey) DO UPDATE SET "
+                "secret=excluded.secret, updated_at=excluded.updated_at",
+                (org_id, pubkey, secret_hex, time.time()),
             )
             self._conn.commit()
 
-    def report_secret(self, org_id: str, instance_id: str) -> str:
+    def report_secret(self, org_id: str, pubkey: str) -> str:
         row = self._conn.execute(
-            "SELECT report_secret FROM usage WHERE org_id=? AND instance_id=?",
-            (org_id, instance_id)).fetchone()
+            "SELECT secret FROM process_reports WHERE org_id=? AND pubkey=?",
+            (org_id, pubkey)).fetchone()
         return (row[0] or "") if row else ""
 
     def record_usage(self, org_id: str, instance_id: str, requests: int,
@@ -233,65 +258,106 @@ class LicenseStore:
         deletes their vault does not thereby delete what they owe. See
         docs/billing-integrity.md §2.1.
         """
+        if not signature:
+            trust = "unsigned"
+        breaks = self._chain_breaks(org_id, instance_id, seq, prev, trust,
+                                    report_pubkey)
+        if report_pubkey:
+            self._record_process_report(org_id, report_pubkey, seq, prev,
+                                        signature, breaks)
+        # НЕПРОВЕРЕННЫЙ ОТЧЁТ НЕ СТАНОВИТСЯ СЧЁТОМ. Раньше вердикт писался в
+        # колонку и на этом всё: цифры принимались одинаково при `signed`,
+        # `bad_signature` и `unsigned`, а `usage_totals` — то, из чего считается
+        # инвойс — этих колонок не отдавал вовсе. Снять подпись было ТИШЕ, чем
+        # подделать: без неё проверка даже не запускалась.
+        #
+        # Обслуживать продолжаем в любом случае — падать из-за спора о биллинге
+        # значит наказывать конечного пользователя. Но в billable-счётчики
+        # непроверенное не идёт: оно копится отдельно, чтобы разговор был
+        # предметным, а не «поверьте нам».
+        if trust != "signed":
+            with self._lock:
+                self._conn.execute(
+                    "INSERT INTO usage (org_id, instance_id, updated_at, reports, "
+                    "unverified_reports, unverified_requests, trust) "
+                    "VALUES (?,?,?,0,1,?,?) "
+                    "ON CONFLICT(org_id, instance_id) DO UPDATE SET "
+                    "updated_at=excluded.updated_at, "
+                    "unverified_reports=usage.unverified_reports+1, "
+                    "unverified_requests=excluded.unverified_requests, "
+                    "trust=excluded.trust",
+                    (org_id, instance_id, time.time(), requests, trust),
+                )
+                self._conn.commit()
+            _log.warning("usage report NOT billed for org=%s instance=%s: trust=%s",
+                         org_id, instance_id, trust)
+            return
         with self._lock:
             accumulated = self._accumulate_values(org_id, instance_id, values)
-            # ПОДПИСИ НЕТ — ДОВЕРИЯ НЕТ, что бы ни сказал вызывающий. Иначе
-            # достаточно снять подпись, чтобы отчёт снова стал «подписанным».
-            if not signature:
-                trust = "unsigned"
-            breaks = self._chain_breaks(org_id, instance_id, seq, prev, trust,
-                                        report_pubkey)
             self._conn.execute(
                 "INSERT INTO usage (org_id, instance_id, updated_at, reports, requests, "
                 "entities, values_reported, values_total, seq, prev, signature, "
-                "trust, chain_breaks, report_pubkey) "
-                "VALUES (?,?,?,1,?,?,?,?,?,?,?,?,?,?) "
+                "trust, chain_breaks) VALUES (?,?,?,1,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(org_id, instance_id) DO UPDATE SET "
                 "updated_at=excluded.updated_at, reports=usage.reports+1, "
                 "requests=excluded.requests, entities=excluded.entities, "
                 "values_reported=excluded.values_reported, "
                 "values_total=excluded.values_total, seq=excluded.seq, "
                 "prev=excluded.prev, signature=excluded.signature, "
-                "trust=excluded.trust, chain_breaks=excluded.chain_breaks, "
-                "report_pubkey=excluded.report_pubkey",
+                "trust=excluded.trust, chain_breaks=excluded.chain_breaks",
                 (org_id, instance_id, time.time(), requests, json.dumps(entities),
-                 values, accumulated, seq, prev, signature, trust, breaks,
-                 report_pubkey),
+                 values, accumulated, seq, prev, signature, trust, breaks),
             )
             self._conn.commit()
 
     def _chain_breaks(self, org_id: str, instance_id: str, seq: int, prev: str,
                       trust: str, report_pubkey: str = "") -> int:
-        """Счётчик разрывов цепи отчётов.
+        """Разрывы цепи отчётов ОДНОГО ПРОЦЕССА.
 
-        Разрыв — это `seq`, который не на единицу больше предыдущего, или
-        `prev`, не совпадающий с хешем нашей записанной подписи. Первое ловит
-        пропуск и перестановку, второе — подмену содержимого задним числом.
-
-        ПЕРЕЗАПУСК ПРОЦЕССА — НЕ РАЗРЫВ. Ключ отчётов живёт в памяти, поэтому
-        новый процесс начинает нумерацию с единицы; это ожидаемо и происходит
-        на каждом деплое. Разрывом считается только продолжение с дырой.
+        Строка заведена под ключ процесса, поэтому перезапуск — это новая
+        строка, а не особый случай: `seq` внутри одной строки обязан расти на
+        единицу, `prev` — совпадать с хешем нашей записанной подписи. Повтор
+        старого отчёта и вечная единица ловятся этим же условием, без отдельной
+        эвристики про «мнимый перезапуск», которая была нужна, только пока
+        строка делилась между воркерами.
         """
+        if not report_pubkey:
+            return 0
         row = self._conn.execute(
-            "SELECT seq, signature, chain_breaks, report_pubkey FROM usage "
-            "WHERE org_id=? AND instance_id=?", (org_id, instance_id),
+            "SELECT seq, signature, chain_breaks FROM process_reports "
+            "WHERE org_id=? AND pubkey=?", (org_id, report_pubkey),
         ).fetchone()
         if row is None:
             return 0
-        last_seq, last_signature, breaks = int(row[0] or 0), row[1] or "", int(row[2] or 0)
-        last_key = row[3] or ""
-        # ПЕРЕЗАПУСК ДОКАЗЫВАЕТСЯ НОВЫМ КЛЮЧОМ, А НЕ СЛОВОМ «ЕДИНИЦА». Ключ
-        # отчётов живёт в памяти процесса, поэтому настоящий перезапуск ВСЕГДА
-        # приходит с новым открытым ключом. Раньше `seq <= 1` прощалось само по
-        # себе, и вечная единица с тем же ключом проходила как бесконечная
-        # череда перезапусков — а повтор старого валидного отчёта не считался
-        # разрывом вовсе.
-        if seq <= 1:
-            if report_pubkey and last_key and report_pubkey == last_key:
-                _log.warning("usage chain restart claimed without a new report key "
-                             "for org=%s instance=%s (seq %d -> %d)",
-                             org_id, instance_id, last_seq, seq)
-                return breaks + 1
+        last_seq, last_signature, breaks = (int(row[0] or 0), row[1] or "",
+                                            int(row[2] or 0))
+        if last_seq == 0:
+            return breaks
+        expected_prev = hashlib.sha256(last_signature.encode("ascii")).hexdigest()
+        if seq == last_seq + 1 and (not prev or prev == expected_prev):
+            return breaks
+        _log.warning("usage chain break for org=%s pubkey=%s: seq %d -> %d, prev %s "
+                     "(trust=%s)", org_id, report_pubkey[:12], last_seq, seq,
+                     "ok" if prev == expected_prev else "mismatch", trust)
+        return breaks + 1
+
+    def _record_process_report(self, org_id: str, pubkey: str, seq: int,
+                               prev: str, signature: str, breaks: int) -> None:
+        # UPSERT, А НЕ UPDATE. Строка процесса создаётся при выдаче секрета, но
+        # отчёт может прийти и для ключа, которому мы секрета не выдавали, — и
+        # тогда `UPDATE` молча ничего не делал, `seq` навсегда оставался нулём,
+        # а `_chain_breaks` возвращал ноль на любой последовательности. Вечная
+        # единица проходила незамеченной.
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO process_reports (org_id, pubkey, seq, prev, signature, "
+                "chain_breaks, updated_at) VALUES (?,?,?,?,?,?,?) "
+                "ON CONFLICT(org_id, pubkey) DO UPDATE SET seq=excluded.seq, "
+                "prev=excluded.prev, signature=excluded.signature, "
+                "chain_breaks=excluded.chain_breaks, updated_at=excluded.updated_at",
+                (org_id, pubkey, seq, prev, signature, breaks, time.time()),
+            )
+            self._conn.commit()
             return breaks
         if last_seq == 0:
             return breaks
@@ -469,18 +535,28 @@ class LicenseStore:
         work); summing reports would not be, because each report restates the same
         cumulative total."""
         rows = self._conn.execute(
-            "SELECT instance_id, reports, requests, entities, values_total, resets "
+            "SELECT instance_id, reports, requests, entities, values_total, resets, "
+            # СЧЁТ ОБЯЗАН ВИДЕТЬ, ЧТО ЕМУ НЕ ПОКАЗАЛИ. Без этих двух колонок
+            # инвойс не мог отличить «расхода не было» от «расход был, но его
+            # никто не подтвердил».
+            "unverified_reports, unverified_requests, chain_breaks "
             "FROM usage WHERE org_id=?",
             (org_id,),
         ).fetchall()
         entities: dict[str, int] = {}
         requests = reports = values = resets = 0
-        for _instance, row_reports, row_requests, row_entities, row_values, row_resets in rows:
-            requests += row_requests
-            reports += row_reports
+        unverified_reports = unverified_requests = breaks = 0
+        for row in rows:
+            (_instance, row_reports, row_requests, row_entities, row_values,
+             row_resets, row_unver, row_unver_req, row_breaks) = row
+            requests += int(row_requests or 0)
+            reports += int(row_reports or 0)
             values += int(row_values or 0)
             resets += int(row_resets or 0)
-            for entity_type, count in json.loads(row_entities).items():
+            unverified_reports += int(row_unver or 0)
+            unverified_requests += int(row_unver_req or 0)
+            breaks += int(row_breaks or 0)
+            for entity_type, count in json.loads(row_entities or "{}").items():
                 entities[entity_type] = entities.get(entity_type, 0) + count
         return {"org_id": org_id, "instances": len(rows), "reports": reports,
                 "requests": requests, "entities": entities,
@@ -489,7 +565,20 @@ class LicenseStore:
                 "values": values,
                 # Times an instance's counter went backwards. Not evidence — a
                 # vault can be lost honestly — but a pattern worth seeing.
-                "resets": resets}
+                "resets": resets,
+                # ЧТО НЕ ВОШЛО В СЧЁТ И ПОЧЕМУ. Отчёт без подтверждённого MAC
+                # не попадает в `requests`/`values`; он копится здесь, чтобы
+                # инвойс не путал «расхода не было» с «расход не подтверждён».
+                "unverified_reports": unverified_reports,
+                "unverified_requests": unverified_requests,
+                "chain_breaks": breaks}
+
+    def release_process(self, org_id: str, pubkey: str) -> None:
+        """Освободить слот ОДНОГО процесса, названного его собственным ключом."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM leases WHERE org_id=? AND pubkey=?", (org_id, pubkey))
+            self._conn.commit()
 
     def instances(self, org_id: str) -> list[dict[str, object]]:
         rows = self._conn.execute(

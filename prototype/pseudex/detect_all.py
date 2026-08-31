@@ -48,20 +48,25 @@ def _resolve(spans: list[Span], priority: dict[str, int],
     без проверки формы, поэтому в карте ключей стоят только однозначные слова.
     Здесь это правило только доводится до конца.
     """
-    # ADDR И LOC — ОДИН ТИП. `ADDR` существует только для того, чтобы обойти
-    # NAME при разрешении, и переименовывается обратно строкой ниже по коду.
-    # Считать их разными означало бы, что ключ «адрес:» перебивает найденный
-    # адрес — ровно тот случай, ради которого написано правило выше.
-    def _same(a: str, b: str) -> bool:
-        return {a, b} <= {"ADDR", "LOC"} or a == b
+    def _crosses(other: Span, span: Span) -> bool:
+        """Спан ПЕРЕСЕКАЕТ ключевой, не будучи целиком внутри него."""
+        return (other is not span
+                and other.start < span.end and span.start < other.end
+                and not (span.start <= other.start and other.end <= span.end))
 
+    # БУСТ СНИМАЕТСЯ ПРИ ЛЮБОМ ПЕРЕСЕЧЕНИИ, А НЕ ТОЛЬКО ПРИ ВЛОЖЕНИИ ТОГО ЖЕ
+    # ТИПА. Проверка на вложение закрывала ровно одну форму и оставляла
+    # открытой утечку: `_FORM_KV` обрезает значение на 60 символах, поэтому
+    # длинная строка «Клиент: …» даёт ОБРЕЗАННЫЙ ключевой спан, который по
+    # бусту побеждает нормально найденный телефон — и телефон выбрасывается
+    # ЦЕЛИКОМ, вместе с хвостом за границей обрезки. «имя: <58 букв>
+    # +79991234567» отдавало модели весь номер открытым текстом.
+    #
+    # Случай, ради которого буст писался, сохраняется: в `{"passport": "34 50
+    # 213278"}` спан PHONE совпадает с ключевым по границам, то есть вложен, и
+    # ключ по-прежнему побеждает форму.
     boosted = [span for span in (keyed or ())
-               if not any(other is not span
-                          and _same(other.entity_type, span.entity_type)
-                          and other.start <= span.start
-                          and span.end <= other.end
-                          and other.end - other.start > span.end - span.start
-                          for other in spans)]
+               if not any(_crosses(other, span) for other in spans)]
     keyed_ids = {id(span) for span in boosted}
     ordered = sorted(
         spans,

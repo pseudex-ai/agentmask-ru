@@ -383,13 +383,13 @@ class LicenseClient:
         # часы контейнера и наши могут разъехаться, а лиза и так живёт TTL.
         issued_at = lease.get("issued_at")
         ttl = int(lease.get("ttl_seconds", 0) or 0)
-        if isinstance(issued_at, (int, float)) and ttl:
-            age = time.time() - float(issued_at)
-            if age > ttl + _CLOCK_SKEW_SECONDS:
-                raise BundleError(
-                    f"lease is {int(age)}s old, past its {ttl}s lifetime — refusing "
-                    f"a replayed lease"
-                )
+        if not isinstance(issued_at, (int, float)) or not ttl:
+            raise BundleError("lease carries no issue time or lifetime")
+        age = time.time() - float(issued_at)
+        if age > ttl + _CLOCK_SKEW_SECONDS:
+            raise BundleError(
+                f"lease is {int(age)}s old, past its {ttl}s lifetime — refusing "
+                f"a replayed lease")
         plaintext = open_sealed(str(lease["bundle"]), self._process_key)
         actual = plaintext_hash(plaintext)
         expected = str(lease["bundle_sha256"])
@@ -572,7 +572,9 @@ class LicenseClient:
             return
         try:
             self._http.post(f"{self._base_url}/v1/release", timeout=3.0,
-                            json={"key": self._key, "instance_id": self._instance_id})
+                            json={"key": self._key,
+                                  "instance_id": self._instance_id,
+                                  "pubkey": self._process_key.public})
         except Exception as error:  # noqa: BLE001 - shutdown must not raise
             _log.info("could not release the instance slot: %s", error)
 

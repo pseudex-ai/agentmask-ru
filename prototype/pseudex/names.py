@@ -1168,11 +1168,26 @@ def gazetteer_names(text: str) -> list[Span]:
         before = text[max(0, match.start() - 20):match.start()].lower()
         if not _whole_token_ok(text, match.start(), match.end()):
             continue
-        if _street_reference(text, match.start(), match.end()):
-            continue
         if _name_set_hit(word, low, lemmas, before, names):
             spans.append(Span(match.start(), match.end(), "NAME", word))
         elif (word[:1].isupper() or _lowercase_dictionary_ok(word, low)) and (
+            # СТОРОЖ ОТНОСИТСЯ ТОЛЬКО К СТРОЧНОЙ СЛОВАРНОЙ ВЕТКЕ, ради которой
+            # и заведён. Стоя выше, он отключал и семенной список, и ветку с
+            # заглавной — то есть отбирал покрытие, которого послабление
+            # никогда не давало: «счёт на Гагарина», «перезвоните на морозова»,
+            # «передайте по ивановой» переставали маскироваться, хотя до
+            # послабления маскировались. Достаточно поставить «на» перед любой
+            # фамилией из реестра ГАР, чтобы снять маску.
+            #
+            # И слово-подсказка на ЧЕЛОВЕКА отменяет сторожа: «перезвоните на
+            # морозова», «передайте по ивановой» — то же «на» перед той же
+            # фамилией из того же реестра, и различает их только то, что стоит
+            # ПЕРЕД предлогом. Список подсказок уже арендован и уже читается
+            # этой веткой в `before`.
+            not (word[:1].islower()
+                 and not any(cue in before for cue in names.cues)
+                 and _street_reference(text, match.start(), match.end()))
+        ) and (
             low in names.dict_first or low in names.dict_surnames
             or (_lemma_lookup_ok(low) and any(
                 lemma in names.dict_first or lemma in names.dict_surnames

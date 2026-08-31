@@ -119,7 +119,8 @@ def _version_tuple(version: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
-def _store_usage(instance_id: str, org_id: str, usage: object) -> None:
+def _store_usage(instance_id: str, org_id: str, usage: object,
+                 pubkey: str = "") -> None:
     """Record the instance's cumulative counters. No-op on the first lease of a
     process, which has nothing to report yet.
 
@@ -132,7 +133,7 @@ def _store_usage(instance_id: str, org_id: str, usage: object) -> None:
     if not isinstance(usage, dict) or not instance_id:
         return
     trust = "unsigned"
-    secret_hex = STORE.report_secret(org_id, instance_id)
+    secret_hex = STORE.report_secret(org_id, pubkey) if pubkey else ""
     if secret_hex and usage.get("signature"):
         try:
             verify_report(usage, bytes.fromhex(secret_hex))
@@ -148,7 +149,7 @@ def _store_usage(instance_id: str, org_id: str, usage: object) -> None:
         int(usage.get("values", 0)),
         seq=int(usage.get("seq", 0)), prev=str(usage.get("prev", "")),
         signature=str(usage.get("signature", "")), trust=trust,
-        report_pubkey=secret_hex[:16],
+        report_pubkey=pubkey,
     )
 
 
@@ -156,16 +157,25 @@ def _store_usage(instance_id: str, org_id: str, usage: object) -> None:
 async def release(request: Request) -> JSONResponse:
     """Give a slot back when a container shuts down cleanly.
 
-    Unauthenticated beyond the key, and deliberately harmless if abused: the
-    worst a caller can do with someone else's key is free a slot the key's own
-    owner may immediately retake. Weigh that against what the alternative costs
-    — a customer locked out of their own product after a redeploy.
+    ОСВОБОЖДАЕТСЯ ТОЛЬКО СВОЙ СЛОТ. Раньше слот удалялся по `instance_id`,
+    который выбирает клиент, и это обнуляло весь потолок: контейнер отдавал
+    слот, а бандл держал ещё сутки — своё состояние у него локальное, — и пять
+    контейнеров по очереди обслуживали трафик на тарифе в один инстанс. Теперь
+    требуется ключ процесса, и удаляется ровно его строка.
+
+    ЧТО ЭТИМ НЕ ЗАКРЫТО, СКАЗАНО ВСЛУХ: контейнер, отдавший слот, продолжает
+    работать до конца TTL, потому что дотянуться до него мы не можем. Сузить
+    окно освобождения — решение продуктовое: оно бьёт по переразвёртыванию,
+    ради которого release и существует.
     """
     body = await request.json()
     record = STORE.lookup(str(body.get("key", "")))
     if record is None:
         return JSONResponse({"error": "unknown key"}, status_code=403)
-    STORE.release_instance(record.org_id, str(body.get("instance_id", "")))
+    pubkey = str(body.get("pubkey", ""))
+    if not pubkey:
+        return JSONResponse({"error": "no process public key"}, status_code=400)
+    STORE.release_process(record.org_id, pubkey)
     return JSONResponse({"released": True})
 
 
@@ -231,7 +241,7 @@ async def lease(request: Request) -> JSONResponse:
                             status_code=409)
     # Counters ride in on the renewal request. Recorded BEFORE the new lease is
     # minted so a client that dies mid-renewal has still been accounted for.
-    _store_usage(instance_id, record.org_id, body.get("usage"))
+    _store_usage(instance_id, record.org_id, body.get("usage"), recipient)
 
     lease_id = "ls_" + secrets.token_urlsafe(16)
     STORE.record_lease(lease_id, record.org_id, instance_id, process_id,
@@ -242,7 +252,7 @@ async def lease(request: Request) -> JSONResponse:
     # так что подменить его на свой перехватчик не может: контейнер сверит с
     # собственным ключом и откажется стартовать.
     report_secret = secrets.token_bytes(32)
-    STORE.record_report_secret(record.org_id, instance_id, report_secret.hex())
+    STORE.record_report_secret(record.org_id, recipient, report_secret.hex())
 
     payload: dict[str, object] = {
         "lease_id": lease_id,
@@ -288,7 +298,8 @@ async def usage(request: Request) -> JSONResponse:
     record = STORE.lookup(key)
     if record is None or record.status != STATUS_ACTIVE:
         return JSONResponse({"error": "license_invalid"}, status_code=403)
-    _store_usage(str(body.get("instance_id", "")), record.org_id, body.get("usage"))
+    _store_usage(str(body.get("instance_id", "")), record.org_id,
+                 body.get("usage"), str(body.get("pubkey", "")))
     return JSONResponse({"status": "recorded"})
 
 
