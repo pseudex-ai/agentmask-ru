@@ -89,7 +89,7 @@ def _token_for_text(span: Span, vault: Vault) -> str:
         token, case, morph_names.detect_gender(span.value))
 
 
-def unmask_text(text: str, vault: Vault) -> str:
+def unmask_text(text: str, vault: Vault, inflect: bool = True) -> str:
     """Replace tokens with their real values, then catch numeric tokens the model
     REFORMATTED via a digit-signature match.
 
@@ -100,7 +100,7 @@ def unmask_text(text: str, vault: Vault) -> str:
     100k tokens pay 100k scans on every single response."""
     with stage("unmask.total"):
         restored = _restore_reformatted(_restore_tokens(text, vault), vault)
-        return _restore_inflected(restored, vault)
+        return _restore_inflected(restored, vault, inflect)
 
 
 # The ГОСТ plate alphabet was chosen precisely because every letter in it has a
@@ -266,7 +266,7 @@ def _name_windows(text: str) -> list[tuple[int, int, str]]:
     return windows
 
 
-def _restore_inflected(text: str, vault: Vault) -> str:
+def _restore_inflected(text: str, vault: Vault, inflect: bool = True) -> str:
     """NAME tokens the model put into another case no longer match their minted
     shape, so they are resolved by case-invariant key instead.
 
@@ -347,7 +347,8 @@ def _restore_inflected(text: str, vault: Vault) -> str:
         if any(a < end and start < b for a, b in taken):
             continue
         taken.append((start, end))
-        spans.append((start, end, _in_case_of(value, surface, entity_type)))
+        spans.append((start, end,
+                      _in_case_of(value, surface, entity_type, inflect)))
     return _splice(text, spans)
 
 
@@ -384,7 +385,8 @@ def _residual_owner(surface: str, vault: Vault) -> tuple[str, str] | None:
     return entity_type, value
 
 
-def _in_case_of(value: str, surface: str, entity_type: str = "NAME") -> str:
+def _in_case_of(value: str, surface: str, entity_type: str = "NAME",
+                inflect: bool = True) -> str:
     """Put the real name into the case the token was standing in.
 
     Both readings of "restore" are legitimate and they disagree, so neither can
@@ -404,6 +406,19 @@ def _in_case_of(value: str, surface: str, entity_type: str = "NAME") -> str:
     # DISPATCH ON THE RECORDED TYPE. A place put through the person inflector is
     # read as a run of name parts, and «Санкт-Петербурге» — already in the case
     # asked for — came back «Санкт-Петербургее».
+    # A TOOL ARGUMENT IS NOT A SENTENCE, so it is restored VERBATIM. The
+    # paragraph above assumed the model writes the nominative inside JSON, and
+    # measurement on real speech says otherwise: the substitute reaches the
+    # model ALREADY inflected — `_token_for_span` puts it into the original's
+    # case so the prose stays grammatical — the model copies it as written, and
+    # the restorer then agrees the real value with it. «ленина пятьдесят» came
+    # back from the tool as «ленина пятидесяти»: a house number in the genitive,
+    # which nobody says and no CRM will match. 506 of the diverged tool calls on
+    # the speech corpus are this.
+    #
+    # Prose still agrees; only the argument path asks for the value itself.
+    if not inflect:
+        return value
     if entity_type in ("LOC", "ADDR"):
         case = morph_places.detect_case(surface)
         if case is None or case == "nomn":
@@ -506,11 +521,13 @@ def unmask_arguments(raw: str, vault: Vault) -> str:
     try:
         parsed = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
-        return unmask_text(raw, vault)
+        return unmask_text(raw, vault, inflect=False)
 
     def walk(node: object) -> object:
         if isinstance(node, str):
-            return unmask_text(node, vault)
+            # VERBATIM, NOT AGREED. A tool executes on the value; grammar is a
+            # property of prose. See `_in_case_of`.
+            return unmask_text(node, vault, inflect=False)
         if isinstance(node, list):
             return [walk(item) for item in node]
         if isinstance(node, dict):
