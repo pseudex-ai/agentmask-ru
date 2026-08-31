@@ -633,6 +633,232 @@ direction when done the obvious way:
   a bundle, never the repository. `licensing/fetch_gar.py` writes the line,
   `pack.py` reads it back rather than restating it, so a stale bundle cannot claim
   a fresh dump.
+- **A spoken numeral must match WHOLE, and the alternation order is what does it.**
+  «два» is a prefix of «двести», «три» of «тридцать», «пять» of «пятьсот» — so
+  «квартира двести двадцать девять» matched «две» and the span ended three words
+  early, inside an address the polnota column was already counting as found. The
+  numeral is built longest-class-first (hundreds → teens → tens → units) and
+  closed with `\b`. The old ceiling of ninety-nine was argued as «numbers above
+  that are vanishingly rare»: true of houses, false of flats — a tower block
+  numbers its flats into the hundreds as a matter of course.
+- **A spoken house letter is decided by what FOLLOWS it, never by which letter it
+  is.** «двадцать пять А» and «дом семнадцать В» are both real literas from real
+  calls, and «этаж четвёртый я у вас» is a pronoun the same one-letter rule ate. A
+  litera ends the address or hands over to the next marker; a conjunction or a
+  pronoun always drags a clause behind it. A list of admissible letters was the
+  alternative and would have to be kept in step with ГАР.
+- **The spoken address TAIL is SUPPORT, exactly like `apt`.** `apt` demands `\d+`,
+  so «улица дербенёвская двадцать четыре строение пять» masked through «четыре»
+  and the rest went to the model inside a found span — four of the six voice
+  truncations. It cannot mask alone (one marker plus a number word is «программу
+  дом два», a television show in our own negative set); merged with a core address
+  it is safe. «дом» is deliberately not in it — the chain of two already takes it.
+- **A bare street name in front of «дом N» is gated on the ГАР vocabulary AS
+  WRITTEN.** «бибиревская дом семнадцать в квартира…» has no type word, no capital
+  and no digit, so every arm that could find the street wanted something the
+  utterance does not carry. Not morphology — in lower case «бибиревская»,
+  «широкая» and «пустая» are one part of speech. Not the normal form or the
+  nominative either: `_fuzzy_street_candidates` may afford those because it
+  conjoins three signals, and here there are two. The second is the word ORDER —
+  «дом культуры» and «дом отдыха» put the register word after the marker.
+
+- **A BENCHMARK'S SELECTION FILTER CAN BE PART OF THE DETECTOR, and then the
+  benchmark cannot fail.** `bench/voice` admitted an utterance only if it held a
+  street-type word or a house marker — the same signals the engine leans on — so
+  it could only ever show cases we already handle. It reported 100% coverage.
+  Widened to a filter that provably cannot hide the class (an address with a house
+  number contains a number, so: any numeral or digit), 122 candidates became 1373
+  and the true number was 38.6%. Ask of any corpus not «where does it fail» but
+  «what could never have entered it».
+- **A street name with NO type word is the MAJORITY form of a spoken Russian
+  address, not a tail.** 400 hand-labelled utterances of real taxi dispatch: 100
+  of 156 address values carry no «улица», no «проспект», no capital and no digit
+  — «барышникова шестьдесят три первый подъезд». The class scored zero because
+  every arm needs one of those. `_bare_street_candidates` is the riskiest shape in
+  the engine (a lower-case word plus a number) and is admitted only past four
+  gates: the ГАР register in three forms; the shape of the name (a surname in any
+  case, an adjective only nominative or licensed by a preposition, never plural,
+  never pronominal, never a bare settlement); no age, measure or numeral
+  agreement after the number; and a DIGIT must satisfy the shape test even when
+  the register names the form as written. Zero false addresses on 2691 NEREL
+  sentences.
+- **Prose writes house numbers as DIGITS, speech writes them as WORDS, and that
+  separates the register from the language.** The ГАР register vouches for
+  «Победы» and «Труда» — the genitive IS the street name — but those words also
+  stand in the genitive in prose for the ordinary reason: «статьи 19 Федерации 2»,
+  «порядка 71 сайта». Measured, letting the register alone decide cost 21 false
+  addresses on news prose behind a digit and none behind a spelled number.
+- **A numeral GOVERNS what it counts, and a house number governs nothing.**
+  «один день» takes the nominative, «два дня» the genitive singular, «восемь
+  обвиняемых» the genitive plural. Checking agreement — not a word list — is what
+  separates «свободы один день» from «клубная восемьдесят пять». A genitive-only
+  veto does not fire after «один», which is exactly how «ограничения свободы один
+  день» became an address.
+- **A CAPITALISED bare street costs six people on NEREL and is not worth it.**
+  Allowing `[А-ЯЁ]` as the first letter of the bare-street arm took voice coverage
+  79.5% → 84.1% and PERSON Cyrillic 93.4% → 93.1%: a LOC span outranks NAME
+  (ADDR 4 > NAME 3) and swallows whoever is inside it. The arm stays lower-case,
+  and «Лермонтова тридцать три» stays uncovered on purpose.
+- **The entrance is named with an ORDINAL, and it stands BEFORE the marker.**
+  «первый подъезд», «последний подъезд», «угловой подъезд» — every marker arm
+  expected «подъезд первый». On the dispatch corpus that was 73 truncations out of
+  156: the street and house were found and the entrance went to the model inside a
+  span already reported as found.
+- **The house litera forbids exactly one letter, «я», and no more.** A lookahead
+  demanding the letter end the phrase or meet a marker was measured against real
+  speech and cut the house number on every third address — «сто тридцать восемь а
+  поедем на энгельса», «семьдесят два а магазин». The one measured harm was «этаж
+  четвёртый я у вас», a pronoun read as a litera; ГАР numbers houses from «а» into
+  the alphabet and «я» is a pronoun almost everywhere else. Forbid the letter that
+  breaks, not the shape.
+
+- **EIGHT OF THE TEN RUSSIAN DIGIT-WORDS ARE REAL ENTRIES IN THE ГАР REGISTER,
+  and in speech every digit is a word.** «Семь Ветров», «Пятая Парковая»,
+  «Первая» are genuine streets, so `один, четыре, пять, шесть, семь, восемь,
+  девять, десять` and the ordinals all return true from a register lookup. A
+  dictated order number therefore presents as exactly the shape the bare-street
+  arm looks for: «номер заказа шесть семь восемь девять» became the street
+  «шесть» at house «семь восемь», and «телефон восемь девять один шесть…» came
+  back masked as an ADDRESS. Those values must reach the tool IN THE CLEAR — a
+  track number, an invoice, a contract — so masking them does not leak, it makes
+  the call fail. A numeral names a street only INSIDE a longer name, and every
+  such name has a second word a one-word arm never sees; `NUMR` and `Anum` are
+  the test. Same shape and same reason as the month exclusion above.
+- **A NOUN NAMES A STREET IN THE GENITIVE, so a noun with no genitive form is a
+  thing standing next to a number.** «школа двести десять» is a school, «вышка
+  триста тридцать три» a call sign, «время двадцать двадцать один» a clock — all
+  three are in the register as written, and the register is not wrong, they name
+  streets somewhere. That is exactly why the register alone cannot decide it. An
+  adjective is exempt (it agrees with «улица» and is nominative by construction),
+  and so is a word a PREPOSITION put into an oblique case — «на литейном четыре»
+  has no genitive of its own and «на» is the evidence.
+- **EVERY WRITTEN CORPUS WE OWN IS STRUCTURALLY BLIND TO SPOKEN NUMBERS.** NEREL,
+  the golden and dirty sets, `test_overmasking` and news prose all write digits
+  as digits, so a run of spelled-out numbers cannot occur in any of them. All of
+  them declared the bare-street change free; it was masking every dictated order
+  number in the language. The class now lives in `test_overmasking.py`, which
+  ships and needs no corpus — and it is held by TWO independent vetoes, so the
+  test only fails when both are removed.
+- **Cheap gates run before morphology.** The bare-street pattern fires on any word
+  followed by a number — often, on ordinary text — and almost every hit is
+  rejected by a set lookup or a regex. Ordering those first is worth about a third
+  of the whole detection cost.
+
+- **AN OVERLAP OF THE WRONG TYPE IS NOT RECALL.** «Overlap is not coverage» is the
+  v1 lesson; this is one rung further out. A scorer that counts a gold item as
+  found when ANY span touches it will score a СНИЛС masked as a STREET as СНИЛС
+  recall — and a СНИЛС replaced by a fake street name is not a protected value,
+  it is a broken tool call, and only part of the digits are covered anyway.
+  Found when the digit-word defect above made a LOC fragment land inside a
+  spelled-out card number and a neighbouring benchmark reported CARD/SNILS/
+  PASSPORT going 18% → 100% as a WIN. Ours are clean and stay that way:
+  `bench/agentpii/score.py` requires `span.entity_type == item["type"]`,
+  `eval_dirty.py` prints the type-aware miss and the type-blind TRUE-LEAK as two
+  separate lines, and `bench/voice/score.py` filters to LOC before comparing.
+  Type-blind is defensible as a pure leak measure and must then be LABELLED as
+  one, never merged with recall.
+- **A CENSUS OF ONE STRATUM IS NOT A CENSUS OF THE CORPUS.** The RuDevices
+  labelling covers all 400 marker-carrying utterances and a random 250 of the
+  4805 that carry only a number. The second stratum holds ~250 address values
+  against the first one's 156 — the complete half is the smaller half, and any
+  rate over the sample must be weighted 250/4805. Kept in
+  `~/.cache/pseudex-bench/rudevices_addresses.json` under a `filter` field so the
+  two can never be added up by accident.
+
+- **AN IDENTIFIER DICTATED ALOUD HAS NO DIGIT, AND EVERY RECOGNIZER WAITED FOR
+  ONE.** Measured on a corpus built from real transcripts: 281 phones, cards,
+  СНИЛС, ИНН and passports spoken as words, and the engine found none. `spoken.py`
+  only turns words into a digit string; whether that string is an identifier is
+  decided by the SAME validators the digit path uses — Luhn, mod 101, the ИНН
+  weight vectors, libphonenumber. Nothing there is a new rule about what counts
+  as personal data, and that is what makes a run of ordinary Russian words safe
+  to claim. The run scanner alone fires once in 9300 utterances of real speech
+  and never in 2691 sentences of prose.
+- **FUZZY MATCHING IS FORBIDDEN ON NUMERALS, and it is not a close call.** Across
+  58 983 distinct words, 99 ordinary ones sit within a single edit of a numeral —
+  «есть» (1947 occurrences) beside «шесть», «опять» beside «пять», «ночь» beside
+  «ноль». Distance-1 would not merely admit noise, it would CORRUPT the digits
+  inside a real number, and a wrong digit string is worse than a missing one: it
+  can pass a checksum and mask the wrong thing. The typo table is MINED instead —
+  every form attested in a real corpus and occurring only inside a numeral run.
+  Three forms our own benchmark generates («семесят», «четверьый», «подъкзд») are
+  deliberately absent: chasing them would tune the engine to the instrument's
+  imagination.
+- **AN EMPTY CANONICAL IS A COLLISION GENERATOR.** `canonicalize` for СНИЛС/ИНН/
+  карта was «strip everything that is not a digit», which returns the empty
+  string for a value spoken aloud — so every spoken СНИЛС in the tenant collapsed
+  onto ONE row and two different people shared one substitute. That is the single
+  failure this product treats as unacceptable, it became reachable the moment the
+  engine learned to hear, and it was caught by our own measurement rather than by
+  a customer.
+- **A TOOL ARGUMENT IS RESTORED VERBATIM; PROSE IS RESTORED IN AGREEMENT.** The
+  old design assumed a model writes the nominative inside JSON, so one rule could
+  serve both. It cannot: the substitute reaches the model ALREADY inflected —
+  `_token_for_span` puts it into the original's case so the sentence stays
+  grammatical — the model copies it as written, and the restorer then agreed the
+  real value with it. «ленина пятьдесят» came back from the tool as «ленина
+  пятидесяти», a house number in the genitive that no CRM will match. 506 of the
+  diverged tool calls on the speech corpus were this; splitting the two paths
+  took the tool-call axis from 72.1% to 77.8% and NAME arguments from 79% to 91%.
+- **DETECTION WITHOUT A MATCHING SUBSTITUTE IS A NET LOSS ON THE TOOL AXIS.**
+  Teaching the engine to hear spoken identifiers raised detection and LOWERED the
+  tool-call axis by five points, because values that used to pass through
+  untouched now went through a lossy restore. Any new recognizer must be measured
+  on BOTH axes before it is called an improvement.
+- **A SPOKEN HOUSE NUMBER IS STILL A HOUSE NUMBER, in three places that each
+  decided it with `\d`.** `looks_like_street` chose between a street and a
+  settlement, `place_shape` chose what the substitute is made of, and
+  `inflect_place` decided what may not be declined. Fixing any one alone fixes
+  nothing: the first minted «Сортавала» for «школьная пятьдесят девять», the
+  second dropped the house from the substitute, the third declined «пятьдесят»
+  into «пятидесяти».
+- **«КВАРТИРА» IS NOT «КВАРТАЛ», and five letters cannot tell them apart.** The
+  street-type scan matched a generic by its first five characters, so «кварт»
+  made every flat marker into a street type and «химзаводская пять квартира
+  пятнадцать» minted «квартира Сосновый 66» — a phrase that names nothing.
+- **THE DICTIONARY IS NOT THE BOTTLENECK FOR NAMES, THE GATE IS.** Of 569 missed
+  names on real speech, 474 (83%) are words already in the leased dictionary —
+  28 413 given names and 196 800 surnames — refused because a lower-case surname
+  needs a cue word AND morphology, and dispatch speech carries no cue: «морзов по
+  улицам не пройти», «а захаров к 10 часам». Widening the dictionary is not
+  available (a sixth of it is homonymous with ordinary words, which is why the
+  gate exists). A perfect gate would take NAME polnota from 69.6% to 94.8%, and
+  that decision is contextual — the one thing rules cannot make.
+
+- **TWO INDEPENDENT CORPORA AGREE ON NAMES, AND THAT IS THE NUMBER TO DEFEND.**
+  Полнота по именам: **69.6% on AgentPII-RU v3** (our generator, our labels) and
+  **68.0% on MASSIVE ru-RU** (`bench/eval_massive_ru.py` — 16 521 utterances,
+  slot-annotated by a third party, CC BY 4.0, zero capitals, 1.1% punctuation).
+  Different data, different annotators, different years, one number. It therefore
+  describes the ENGINE and not our generator, and any future improvement must
+  move BOTH — a gain visible only on ours is a gain in our imagination. The same
+  run reports EMAIL 75% and `place_name` **0.1%**, and that zero is CORRECT: the
+  slot holds bare cities («в москве», «в пензе»), a city identifies nobody
+  (152-ФЗ ст. 3 п. 1) and we refuse it deliberately. Reading it as a hole would
+  send somebody to break a veto that stands on the law.
+- **A CLEAN-TEXT SUITE MUST PRINT WHAT IT CERTIFIES, NOT WHAT IT OBSERVED.** Zero
+  errors on 42 phrases certifies precision **≥93.1%**, not 100%; the product
+  promises 99.4%, which needs 498 flawless phrases. `test_overmasking.py` now
+  prints the exact one-sided Clopper-Pearson floor beside the observed rate, and
+  says how many phrases the gap would cost. The same arithmetic applies to the
+  headline NEREL number: 1 922 spans means the whole error budget at 99.4% is
+  **12 spans** and the interval is [98.91, 99.64] — «precision did not move» is a
+  statement that instrument cannot make.
+- **GROW A CLEAN SET BY SOMEBODY ELSE'S ANNOTATION, NEVER BY OUR OWN SILENCE.**
+  The 496 phrases added to `test_overmasking.py` were selected because MASSIVE's
+  annotators marked no PII-bearing slot in them, then read by hand and four
+  dropped for naming a real person. Selecting phrases because our detector
+  stayed quiet would build a suite that cannot fail — the exact forgery the voice
+  benchmark already showed us once. Brands, media and museums stay IN: «окко»,
+  «р б к», «третьяковская галерея» are not personal data and masking them is the
+  defect the suite exists to catch.
+- **A STREET TYPE IS NOT A STREET NAME, and the ГАР register does not separate
+  them.** «улица», «проезд», «площадь», «шоссе», «дорога» all sit inside the NAME
+  vocabulary — real streets carry those names — so the bare-street arm read «на
+  дороге семьдесят» as the street «дороге» at house 70. The type stems are
+  already leased for the arms that look for a type word; asking them here needs
+  no second list. «дорог» was also simply MISSING from those stems, which is why
+  the collision was reachable at all.
 
 ## Conventions
 
