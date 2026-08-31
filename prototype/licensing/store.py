@@ -292,8 +292,22 @@ class LicenseStore:
             _log.warning("usage report NOT billed for org=%s instance=%s: trust=%s",
                          org_id, instance_id, trust)
             return
+        # ПОВТОР СТАРОГО ЧЕСТНОГО ОТЧЁТА НЕ ОПУСКАЕТ СЧЁТЧИК. У него настоящий
+        # MAC — он и был настоящим, — поэтому проверка подписи его пропускает, а
+        # `requests` перезаписывается последним пришедшим. Root на хосте ловит
+        # вчерашний отчёт и шлёт его снова: 5000 -> 1000. `values` защищён
+        # монотонным накоплением, `requests` не был.
+        #
+        # Разрыв цепи — это ровно тот случай, и при нём счётчики не двигаются
+        # вниз: берём максимум. Честному клиенту это ничего не стоит, его
+        # `requests` и так растёт.
         with self._lock:
             accumulated = self._accumulate_values(org_id, instance_id, values)
+            previous = self._conn.execute(
+                "SELECT requests FROM usage WHERE org_id=? AND instance_id=?",
+                (org_id, instance_id)).fetchone()
+            if previous is not None:
+                requests = max(requests, int(previous[0] or 0))
             self._conn.execute(
                 "INSERT INTO usage (org_id, instance_id, updated_at, reports, requests, "
                 "entities, values_reported, values_total, seq, prev, signature, "
