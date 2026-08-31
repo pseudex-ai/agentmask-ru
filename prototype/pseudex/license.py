@@ -173,6 +173,23 @@ def _public_key_material() -> str:
     return _release.LICENSE_PUBKEY
 
 
+def _public_key_materials() -> list[str]:
+    """Ключи проверки, которые эта сборка принимает — СПИСОК, а не один.
+
+    РОТАЦИЯ БЕЗ ОДНОВРЕМЕННОГО ВЫКЛЮЧЕНИЯ ВСЕГО. Ключ вкомпилирован в бинарник,
+    поэтому замена одного значения означала: собрать образ с новым ключом,
+    выкатить его КАЖДОМУ клиенту и только потом начать подписывать новым — а до
+    этого момента старый ключ уже скомпрометирован и всё ещё единственный
+    принимаемый. Список разрывает эту связку: новый образ принимает оба, мы
+    переводим подпись на новый, старый выводится следующим релизом.
+
+    Порядок значения не имеет — подпись либо сходится с одним из них, либо ни с
+    одним. Разделитель запятая, пробелы отбрасываются.
+    """
+    return [item.strip() for item in _public_key_material().split(",")
+            if item.strip()]
+
+
 # Расхождение часов контейнера и нашего сервера, которое мы прощаем при
 # проверке свежести лизы. Час — заведомо больше любого разумного дрейфа и
 # заведомо меньше окна, в котором повтор что-то даёт.
@@ -210,7 +227,7 @@ class LicenseClient:
         # import time, and a missing verification key must fail the STARTUP of a
         # process, not the IMPORT of the module — otherwise every test and tool
         # that merely imports the app dies with a licensing error.
-        self._verify_key: Ed25519PublicKey | None = None
+        self._verify_keys: list[Ed25519PublicKey] | None = None
 
         verify: object = ca_path if ca_path else True
         self._http = httpx.Client(verify=verify, timeout=15.0)
@@ -399,9 +416,18 @@ class LicenseClient:
         raise LicenseError(code, f"{detail} (HTTP {response.status_code}, {self._base_url})")
 
     def _apply(self, lease: dict[str, object]) -> None:
-        if self._verify_key is None:
-            self._verify_key = decode_public_key(_public_key_material())
-        verify_lease(lease, self._verify_key)
+        if self._verify_keys is None:
+            self._verify_keys = [decode_public_key(material)
+                                 for material in _public_key_materials()]
+        last: BundleError | None = None
+        for key in self._verify_keys:
+            try:
+                verify_lease(lease, key)
+                break
+            except BundleError as error:
+                last = error
+        else:
+            raise last or BundleError("lease carries no acceptable signature")
         # ЛИЗА ВЫПИСАНА НЕ НАМ — ЗНАЧИТ В КАНАЛЕ КТО-ТО ЕСТЬ. `recipient` под
         # подписью, подделать нельзя; если он не наш, кто-то подменил наш
         # открытый ключ по дороге, чтобы прочитать бандл и наши отчёты.

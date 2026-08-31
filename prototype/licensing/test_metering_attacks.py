@@ -14,7 +14,8 @@
 
     python3 licensing/test_metering_attacks.py
 """
-import hashlib, sys, tempfile
+import hashlib
+import os, os, sys, tempfile
 sys.path.insert(0, ".")
 from licensing.store import LicenseStore
 import secrets as _secrets
@@ -270,6 +271,27 @@ check("правка меры в пути ломает MAC", not tampered_ok)
 check("мера непустая и своей формы",
       build_measurement().startswith(("sha256:", "modules:")),
       build_measurement()[:22] + "...")
+
+
+# --- РОТАЦИЯ КЛЮЧА ПРОВЕРКИ ----------------------------------------------
+print("\nРОТАЦИЯ КЛЮЧА ПРОВЕРКИ")
+import base64 as _b64
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+import pseudex.license as _lic
+
+def _pub(k):
+    return _b64.b64encode(k.public_key().public_bytes(
+        Encoding.Raw, PublicFormat.Raw)).decode()
+
+old_key, new_key = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
+os.environ["PSEUDEX_LICENSE_PUBKEY"] = _pub(old_key) + ", " + _pub(new_key)
+accepted = _lic._public_key_materials()
+check("список ключей разбирается", len(accepted) == 2, f"{len(accepted)} ключа")
+check("пробелы вокруг запятой не ломают",
+      all(not m.startswith(" ") and not m.endswith(" ") for m in accepted))
+os.environ["PSEUDEX_LICENSE_PUBKEY"] = _pub(old_key)
+check("один ключ — тоже список", len(_lic._public_key_materials()) == 1)
 
 unexpected = [f for f in fails if f not in KNOWN]
 print(f"\nсломано {len(fails)}, из них известный предел {len(fails) - len(unexpected)}")
