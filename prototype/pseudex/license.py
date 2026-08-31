@@ -172,6 +172,12 @@ def _public_key_material() -> str:
     return _release.LICENSE_PUBKEY
 
 
+# Расхождение часов контейнера и нашего сервера, которое мы прощаем при
+# проверке свежести лизы. Час — заведомо больше любого разумного дрейфа и
+# заведомо меньше окна, в котором повтор что-то даёт.
+_CLOCK_SKEW_SECONDS = 3600
+
+
 class LicenseClient:
     """Connector to the licensing server (external state -> class)."""
 
@@ -356,12 +362,34 @@ class LicenseClient:
         # ЛИЗА ВЫПИСАНА НЕ НАМ — ЗНАЧИТ В КАНАЛЕ КТО-ТО ЕСТЬ. `recipient` под
         # подписью, подделать нельзя; если он не наш, кто-то подменил наш
         # открытый ключ по дороге, чтобы прочитать бандл и наши отчёты.
+        # ПОЛЕ ОБЯЗАТЕЛЬНО, А НЕ «ЕСЛИ ЕСТЬ». Мягкая проверка давала даунгрейд:
+        # лиза, выписанная ДО этой правки, имеет валидную подпись и не имеет
+        # `recipient`, поэтому её повтор отключал сверку целиком — и вместе с
+        # ней MAC отчётов, потому что секрета в такой лизе тоже нет. Отсутствие
+        # поля означает либо старый сервер, либо повтор; оба случая — отказ.
         recipient = str(lease.get("recipient", ""))
-        if recipient and recipient != self._process_key.public:
+        if not recipient:
+            raise BundleError(
+                "lease names no recipient — the licensing server is older than "
+                "this engine, or an old lease is being replayed"
+            )
+        if recipient != self._process_key.public:
             raise BundleError(
                 "lease was issued to another recipient — someone is between this "
                 "process and the licensing server"
             )
+        # СВЕЖЕСТЬ. Повтор ЛЮБОЙ старой лизы — не только доправочной — иначе
+        # остаётся способом вернуть отозванный бандл к жизни. Окно щедрое:
+        # часы контейнера и наши могут разъехаться, а лиза и так живёт TTL.
+        issued_at = lease.get("issued_at")
+        ttl = int(lease.get("ttl_seconds", 0) or 0)
+        if isinstance(issued_at, (int, float)) and ttl:
+            age = time.time() - float(issued_at)
+            if age > ttl + _CLOCK_SKEW_SECONDS:
+                raise BundleError(
+                    f"lease is {int(age)}s old, past its {ttl}s lifetime — refusing "
+                    f"a replayed lease"
+                )
         plaintext = open_sealed(str(lease["bundle"]), self._process_key)
         actual = plaintext_hash(plaintext)
         expected = str(lease["bundle_sha256"])
@@ -370,13 +398,16 @@ class LicenseClient:
                 f"bundle hash mismatch: signed {expected[:16]}, got {actual[:16]} — "
                 f"the contents are not what was signed"
             )
+        # ТОЖЕ ОБЯЗАТЕЛЬНО, И ХЕШ ТОЖЕ. Без секрета отчёты уходят без MAC, а
+        # это ровно то состояние, ради выхода из которого он и заведён.
         sealed_secret = lease.get("report_secret")
-        if isinstance(sealed_secret, str) and sealed_secret:
-            secret = open_sealed(sealed_secret, self._process_key)
-            expected = str(lease.get("report_secret_sha256", ""))
-            if expected and hashlib.sha256(secret).hexdigest() != expected:
-                raise BundleError("report secret does not match its signed hash")
-            self._report_secret = secret
+        if not isinstance(sealed_secret, str) or not sealed_secret:
+            raise BundleError("lease carries no report secret")
+        secret = open_sealed(sealed_secret, self._process_key)
+        expected = str(lease.get("report_secret_sha256", ""))
+        if not expected or hashlib.sha256(secret).hexdigest() != expected:
+            raise BundleError("report secret does not match its signed hash")
+        self._report_secret = secret
         ASSETS.load(plaintext)
         with self._lock:
             self._last_ok_monotonic = time.monotonic()
