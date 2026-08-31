@@ -439,8 +439,10 @@ class LicenseClient:
         recipient = str(lease.get("recipient", ""))
         if not recipient:
             raise BundleError(
-                "lease names no recipient — the licensing server is older than "
-                "this engine, or an old lease is being replayed"
+                "lease names no recipient: this engine needs lease contract 2 "
+                "(GET /v1/pubkey reports the server's). Either the licensing "
+                "server is older than this engine — deploy it FIRST — or an old "
+                "lease is being replayed"
             )
         if recipient != self._process_key.public:
             raise BundleError(

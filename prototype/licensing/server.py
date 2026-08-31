@@ -169,11 +169,20 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "bundle": _PLAINTEXT_HASH[:12]}
 
 
+# ВЕРСИЯ КОНТРАКТА АРЕНДЫ. Движок с версии 2 требует в лизе полей, которых
+# сервер версии 1 не шлёт: `recipient`, `report_secret`, `issued_at`. Он их
+# ОТСУТСТВИЕ трактует как «сервер старше меня или это повтор» и не стартует —
+# что верно по существу и выглядит как наш сбой, если выкатить образы в
+# неверном порядке. Марка публичная и не требует токена, чтобы выкатчик мог
+# спросить сервер ДО того, как раскатает движок.
+LEASE_CONTRACT = 2
+
+
 @app.get("/v1/pubkey")
 async def pubkey() -> dict[str, str]:
     """The verification key, so a customer can pin what their binary already has
     compiled in. Public by design — it verifies, it does not sign."""
-    return {"public_key": PUBLIC_KEY}
+    return {"public_key": PUBLIC_KEY, "lease_contract": str(LEASE_CONTRACT)}
 
 
 def _version_tuple(version: str) -> tuple[int, ...]:
