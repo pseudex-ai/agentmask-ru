@@ -419,6 +419,25 @@ Recital 14 выводит его из-под регламента, 152-ФЗ пр
 четыре валидных), их `TOKEN` — любая энтропия против наших опубликованных
 префиксов, а своего типа CVC у нас нет.
 
+`bench/gate/` is the ceiling of the dictionary gate, and it is the instrument that
+found four of the defects above. 600 occurrences of real speech labelled BY HAND
+in context, two strata that never add up: of what the gate masks 78.0% must be
+masked, of what it rejects 21.3% must be. Three things about it are load-bearing:
+
+- **A word without context cannot be labelled.** The first version was a frequency
+  list — «ленина» 36, «капец» 60 — and answers nothing: «ленина» is a street in
+  one utterance and a person in another. The gate decides an OCCURRENCE.
+- **The sample is pinned to a snapshot, not to the live engine.** It was pinned to
+  what the engine does now, so the first fix reshuffled it and 228 of 600 hand
+  labels survived — the instrument fell apart from the very improvement it was
+  built to measure. The live detector now re-runs on the pinned occurrences and
+  the printed line is MOVEMENT.
+- **A learned context gate reaches ~10% of the gap on third-party data.** Of 287
+  MASSIVE person misses, 72.1% are words not in the dictionary at all — the
+  candidate is never born — and 34.4% of the misses are public figures. Excluding
+  those, recall is ≥86.2%. Full argument in
+  `research/2026-08-31-ml-gate-or-rules.md`.
+
 `bench/agentpii/` is **AgentPII-RU**, built here because the intersection it covers — Russian
 conversational PII flowing through tool schemas that consume it — has no benchmark anywhere. Read
 its README before changing it. Three things about it are load-bearing:
@@ -852,6 +871,59 @@ direction when done the obvious way:
   benchmark already showed us once. Brands, media and museums stay IN: «окко»,
   «р б к», «третьяковская галерея» are not personal data and masking them is the
   defect the suite exists to catch.
+- **A HYPHEN GLUES ONE TOKEN, AND HALF OF ONE IS NOT A NAME.** «Лос-Анджелесе»
+  reached the model as «Любовь-Анджелесе», «Алма-Ате» as «Зоя-Демьяну», «де-юре»
+  as «де-Ивану» — a city arriving as a mangled person, the substitute resolving
+  back on the return leg and corrupting the place name in the tool call. 86 such
+  spans on 933 NEREL documents, every one a fragment of a compound proper noun.
+  NEITHER INSTRUMENT COULD SEE IT: NEREL precision credits a span overlapping ANY
+  gold entity and «Лос» sits inside an annotated city, while the clean suite held
+  no hyphenated toponym at all. The test is the one `_lowercase_dictionary_ok`
+  already applies, asked of the WHOLE token — so «Жан-Клод» passes as a known
+  name and «Петров-то» passes as an unknown surname with a particle, and the list
+  of particles never has to be written down.
+- **AN INVENTED LEMMA AGAINST 197k SURNAMES IS A LOTTERY THE DICTIONARY WINS.**
+  pymorphy3 does not know «каоке», guesses the lemma «каока» by analogy, and that
+  guess is a real dictionary entry. The lemma path must stay — it finds «джоли»,
+  «липницкой», «зеленского», 365 hits across NEREL and both speech corpora — so
+  the gate is morphology's own opinion of the unknown word: consult the lemma
+  only when the word is known, or when some reading calls it a name.
+- **A TOOL RESULT ARRIVES AS JSON, AND JSON PUTS A QUOTE WHERE PROSE PUTS A
+  SPACE.** `_TOK` held whitespace, comma, semicolon, paren, № and #, so
+  «"addr": "г. Пермь, ул. Добролюбова, д. 154б"» lost its «г. » and
+  «{"a": "д. 12, кв. 5"}» was not found at all. That leg is where personal data
+  arrives from the customer's OWN systems. 189 of 267 leaked LOC tails on
+  AgentPII v3 were this one character; coverage 70.0% → 80.4% with recall
+  unmoved, which is the whole reason polnota and coverage are never one number.
+- **A STREET IN THE GENITIVE PLURAL IS ADMITTED ONLY WITH THE DOOR AFTER IT.**
+  «улица Коммунаров», «Металлистов», «Строителей», «Космонавтов» is a large
+  ordinary class and the plural veto threw all of it away. Lifting the veto is
+  NOT available: a genitive plural before a number is the Russian
+  approximate-quantity inversion — «строителей пять пришло на объект»,
+  «шахтёров двести спасли» — and the ГАР register cannot separate them because
+  the register is RIGHT, every one of those words names a street somewhere. Ten
+  of twelve became false addresses. What separates them is what follows the
+  number: a house takes an entrance or a flat, a quantity takes a verb. The
+  continuation must begin IMMEDIATELY, or «строителей пять пришло на объект в
+  доме два» talks its way into one.
+- **A POSSESSIVE FROM A GIVEN NAME IS HOW RUSSIAN SAYS WHOSE**, and its span must
+  carry the BASE NAME. «женин день рождения», «олино письмо», «машиного дня
+  рождения» sit in no dictionary, carry no capital, and morphology calls them
+  adjectives, so no arm saw them. Three gates: the `Poss` reading (the genitive
+  plural of «машина» offers none, so «пять машин» never becomes a candidate), the
+  base-name dictionary («мамин», «папин», «бабушкин», «дядин» all have `Poss` and
+  no name behind them), and agreement with the following noun. `span.value` is
+  BOTH the vault key and the source of gender, so with the written form «Женя»
+  and «женин» became two rows — one person, two substitutes, the second one
+  masculine. No corpus of ours can see that: none carries the possessive register
+  except MASSIVE, and MASSIVE measures only recall.
+- **`_LOWER_DICT_MIN = 5` IS MEASURED, NOT ASSERTED.** Lowering it to 4 finds nine
+  names (азиз, алик, алсу, илик, ирка, лекс, лера, леся, шура) and masks thirty
+  ordinary words — «вейп», «мега», «слыш», «джек», «лайт», «ляма», «раша»,
+  «дите». Three false masks per person found. EVERY OTHER INSTRUMENT CALLED THE
+  CHANGE FREE: NEREL +3 spans of 9720, the 538-phrase suite unmoved, MASSIVE
+  person 76.4% → 77.1%. Two are written in capitals, the third measures only
+  recall, and the harm lives in lower-case conversational speech.
 - **A STREET TYPE IS NOT A STREET NAME, and the ГАР register does not separate
   them.** «улица», «проезд», «площадь», «шоссе», «дорога» all sit inside the NAME
   vocabulary — real streets carry those names — so the bare-street arm read «на
