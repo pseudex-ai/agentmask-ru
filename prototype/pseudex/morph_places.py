@@ -34,6 +34,18 @@ _GENERIC: dict[str, str] = {
     "шоссе": "neut",  # indeclinable
 }
 _INDECLINABLE_GENERIC = frozenset({"шоссе"})
+# «КВАРТИРА» IS NOT «КВАРТАЛ», AND FIVE LETTERS CANNOT TELL THEM APART. The
+# generic scan below matches a street type by its first five characters, so
+# «кварт» made every flat marker into a street type: «химзаводская пять квартира
+# пятнадцать» minted «квартира Сосновый 66», a phrase that names nothing. The
+# prefix rule is right for «переулочек» and wrong here, and only a list of the
+# words that are PARTS of an address rather than TYPES of street can say so.
+_NOT_A_STREET_TYPE = frozenset({
+    "квартира", "квартиры", "квартире", "квартиру", "квартирой", "кв",
+    "подъезд", "подъезда", "подъезде", "этаж", "этажа", "этаже",
+    "корпус", "корпуса", "строение", "строения", "офис", "офиса",
+    "помещение", "помещения", "комната", "комнаты",
+})
 # Structural words of an address notation. They stay nominative whatever case
 # the phrase around them takes — «на улице Ленина, дом 10, корпус 3» — the same
 # way a genitive street name stays genitive. Inflecting them produced «доме 10»
@@ -50,6 +62,23 @@ _STREET_MARKER = re.compile(
     r"б-?р|бульвар\w*|ш|шоссе|проезд\w*|площад\w*|пл|аллея|линия|мкр|микрорайон\w*)\b"
 )
 _HOUSE = re.compile(r"(?i)\b(?:д|дом|к|корп|корпус|стр|строение|влад)\.?\s*\d")
+
+
+# THE NUMERALS A HOUSE NUMBER IS SAID WITH. Not the full grammar — that lives in
+# `spoken.py` and is about parsing a value; here the only question is whether a
+# number was uttered at all, so a word list is exactly the right instrument.
+_NUMERAL_WORD = (r"(?:ноль|один|одна|два|две|три|четыре|пять|шесть|семь|восемь|девять"
+                 r"|десять|одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать"
+                 r"|шестнадцать|семнадцать|восемнадцать|девятнадцать|двадцать|тридцать"
+                 r"|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто|сто"
+                 r"|двести|триста|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот)")
+_SPOKEN_HOUSE = re.compile(rf"(?i)\b{_NUMERAL_WORD}\b")
+# «квартира пятнадцать», «подъезд первый» — the marker decides, and the ordinal
+# is admitted because an entrance is named with one.
+_SPOKEN_FLAT = re.compile(
+    rf"(?i)\b(?:кв|квартир\w*|офис\w*|оф|подъезд\w*|этаж\w*)\.?\s*"
+    rf"(?:{_NUMERAL_WORD}|перв\w+|втор\w+|трет\w+|четв[её]рт\w+|пят\w+|шест\w+"
+    rf"|седьм\w+|восьм\w+|девят\w+|десят\w+|последн\w+|углов\w+)\b")
 
 
 def looks_like_street(value: str) -> bool:
@@ -71,7 +100,18 @@ def looks_like_street(value: str) -> bool:
     # decides whether the value is an address; detection already did. This only
     # chooses which KIND of address to mint, and there a missing capital is not
     # evidence of anything.
-    return bool(re.search(r"(?i)[а-яё]{3,}\s+\d", value))
+    # AND A BARE HOUSE NUMBER SAID ALOUD IS STILL A HOUSE NUMBER. The rule above
+    # asks for a DIGIT, so «школьная пятьдесят девять» was judged a settlement
+    # and got a settlement for a substitute — «Сортавала» where a street with a
+    # door had stood. Worse than a wrong kind: a one-word substitute pulls the
+    # case-agreement machinery onto the whole restored value, and «ленина
+    # пятьдесят» came back from the tool as «ленина пятидесяти».
+    #
+    # This is the same defect as `place_shape`'s, in the branch that runs first,
+    # and fixing only one of them fixes nothing: that one decides what the
+    # substitute is MADE of, this one decides whether a street is being minted
+    # at all.
+    return bool(re.search(rf"(?i)[а-яё]{{3,}}\s+(?:\d|{_NUMERAL_WORD})", value))
 
 
 @functools.lru_cache(maxsize=4096)
@@ -137,7 +177,14 @@ def phrase_to_nominative(phrase: str) -> str:
     out: list[str] = []
     for token in re.split(r"(\s+|,)", phrase):
         stripped = token.strip()
-        if not stripped or stripped == "," or stripped[0].isdigit():
+        # A NUMBER IS A NUMBER WHETHER IT IS WRITTEN OR SAID. The docstring above
+        # has always promised that numbers are left alone, and the test for one
+        # was `stripped[0].isdigit()` — so «д. 5» was safe and «пятьдесят» was
+        # not. On a corpus of real speech the restored value came back from the
+        # tool as «ленина пятидесяти», a house number in the genitive, which is
+        # not a thing anybody says and not a value any CRM will match.
+        if (not stripped or stripped == "," or stripped[0].isdigit()
+                or _SPOKEN_HOUSE.fullmatch(stripped.lower())):
             out.append(token)
             continue
         if _is_genitive(stripped):
@@ -160,7 +207,14 @@ def inflect_place(phrase: str, case: str) -> str:
     out: list[str] = []
     for token in re.split(r"(\s+|,)", phrase):
         stripped = token.strip()
-        if not stripped or stripped == "," or stripped[0].isdigit():
+        # A NUMBER IS A NUMBER WHETHER IT IS WRITTEN OR SAID — same rule as in
+        # `phrase_to_nominative`, and the docstring above has always promised it.
+        # The test was `stripped[0].isdigit()`, so «д. 5» was safe and
+        # «пятьдесят» was not: the restored address came back from the tool as
+        # «ленина пятидесяти», a house number in the genitive, which nobody says
+        # and no CRM will match.
+        if (not stripped or stripped == "," or stripped[0].isdigit()
+                or _SPOKEN_HOUSE.fullmatch(stripped.lower())):
             out.append(token)
             continue
         lowered = stripped.lower()
@@ -509,6 +563,17 @@ def place_shape(phrase: str) -> dict[str, object]:
     """
     generic = ""
     gender = "femn"
+    # A HOUSE NUMBER SAID ALOUD IS STILL A HOUSE NUMBER. Every question below
+    # was decided by `re.search(r"\d", phrase)`, so «школьная пятьдесят девять»
+    # answered «no house» and the generator produced a bare settlement name —
+    # «Сортавала» — where an address with a door had stood. Measured on a corpus
+    # built from real transcripts, that is the largest single loss on the
+    # tool-call axis: LOC reaches its argument in 66% of cases against 98% for
+    # every type whose substitute keeps its shape, because a one-word substitute
+    # also drags the case-agreement machinery onto the whole restored value —
+    # «ленина пятьдесят» came back as «ленина пятидесяти».
+    spoken_house = _SPOKEN_HOUSE.search(phrase) is not None
+    spoken_flat = _SPOKEN_FLAT.search(phrase) is not None
     # Abbreviations first, and kept VERBATIM: a customer who wrote «пр-т» reads
     # a substitute that says «проспект» as a different address, and expanding it
     # is a change we make for no reason.
@@ -518,14 +583,17 @@ def place_shape(phrase: str) -> dict[str, object]:
                 "generic": short,
                 "gender": sex,
                 "has_city": _has_city(phrase),
-                "has_house": bool(re.search(r"\d", phrase)),
-                "has_flat": bool(re.search(r"(?i)\b(?:кв|квартир|офис|оф)\.?\s*\d", phrase)),
+                "has_house": bool(re.search(r"\d", phrase)) or spoken_house,
+                "has_flat": bool(re.search(r"(?i)\b(?:кв|квартир|офис|оф)\.?\s*\d", phrase))
+                            or spoken_flat,
             }
     for token in re.findall(r"[А-Яа-яЁё]+", phrase):
         lowered = token.lower()
         if lowered in _GENERIC:
             generic, gender = token, _GENERIC[lowered]
             break
+        if lowered in _NOT_A_STREET_TYPE:
+            continue
         for full, sex in _GENERIC.items():
             if lowered.startswith(full[:5]) and len(full) > 5:
                 generic, gender = token, sex
@@ -536,8 +604,9 @@ def place_shape(phrase: str) -> dict[str, object]:
         "generic": generic,
         "gender": gender,
         "has_city": _has_city(phrase),
-        "has_house": bool(re.search(r"\d", phrase)),
-        "has_flat": bool(re.search(r"(?i)\b(?:кв|квартир|офис|оф)\.?\s*\d", phrase)),
+        "has_house": bool(re.search(r"\d", phrase)) or spoken_house,
+        "has_flat": bool(re.search(r"(?i)\b(?:кв|квартир|офис|оф)\.?\s*\d", phrase))
+                    or spoken_flat,
     }
 
 

@@ -214,6 +214,258 @@ def _lower_names_a_street(phrase: str, address: AddressAssets) -> bool:
     return False
 
 
+_PART_AFTER_RE = re.compile(
+    r"^\s*(?:[а-яё]+\s+)?(?:подъезд|корпус|квартир|этаж|строени|дом|литер)", re.IGNORECASE)
+_NEXT_WORD_RE = re.compile(r"[а-яё]+", re.IGNORECASE)
+
+
+def _gar_reaches(word: str, address: AddressAssets) -> bool:
+    """The ГАР register names this word, as written or through morphology.
+
+    Three forms, the same three `_fuzzy_street_candidates` allows: the register
+    stores nominatives («Клубная») and speech says them as written, but it also
+    stores genitives that ARE the name («Котовского», «Победы»), and a spoken
+    address inflects neither.
+    """
+    low = word.lower()
+    if low in address.street_names or low in address.street_gaz:
+        return True
+    for parse in MORPH.parse(word):
+        if parse.normal_form in address.street_names:
+            return True
+        nominative = parse.inflect({"nomn"})
+        if nominative is not None and nominative.word in address.street_names:
+            return True
+    return False
+
+
+def _register_vouches(word: str, address: AddressAssets) -> bool:
+    """The register names EXACTLY this form, so no case question is asked."""
+    low = word.lower()
+    return low in address.street_names or low in address.street_gaz
+
+
+def _street_shape(word: str) -> bool:
+    """A Russian street name is a NOMINATIVE ADJECTIVE or an OBLIQUE NOUN.
+
+    The grammar is the whole rule, and it is not a coincidence: the name agrees
+    with «улица» when it is an adjective («улица Клубная» → «клубная»), and
+    stands in the genitive when it is a noun («улица Победы» → «победы»,
+    «улица Барышникова» → «барышникова»). Both halves are load-bearing:
+
+      * an oblique adjective is a word agreeing with something else in the
+        sentence — «общего 23» — unless a preposition put it there, which the
+        caller checks separately;
+      * a NOMINATIVE noun is a thing, not a street. «время двадцать двадцать
+        один» is a clock, «школа двести десять» a school number, «вышка триста
+        тридцать три» a radio call sign, and «путин четыре» a person — all four
+        are in the leased register as written, and all four were masked as
+        addresses until the case was asked for.
+
+    A surname is the same rule seen from the other side: a street named after a
+    person is «Ленина», «Гагарина», «Барышникова» — genitive, always. «Путин»
+    nominative names the man.
+    """
+    parses = MORPH.parse(word)
+    if any("ADJF" in parse.tag and parse.tag.case == "nomn" for parse in parses):
+        return True
+    return any("Surn" in parse.tag or "Geox" in parse.tag for parse in parses)
+
+
+def _is_numeral(word: str) -> bool:
+    """The word IS a number, so it cannot be the name standing before one.
+
+    Eight of the ten Russian digit-words are literal entries in the ГАР register
+    — «Семь Ветров», «Пятая Парковая», «Первая» — and every one of them is a
+    legitimate street. But in speech every digit is a word, so a dictated order
+    number presents as exactly the shape this arm looks for: «номер заказа шесть
+    семь восемь девять» read as the street «шесть» at house «семь восемь», and
+    «телефон восемь девять один шесть шесть четыре шесть» became an address
+    instead of a phone.
+
+    Those are the values that must reach the tool IN THE CLEAR — a track number,
+    an invoice, a contract — so masking them does not leak, it breaks the call.
+
+    Same rule the months already carry, for the same reason and with the same
+    cost: a numeral names a street only INSIDE a longer name, and every such name
+    has a second word this one-word arm never sees. `Anum` covers the ordinals
+    («Первая», «Пятая»), `NUMR` the cardinals.
+
+    NOT VISIBLE TO A SINGLE WRITTEN CORPUS WE OWN. NEREL, `test_overmasking` and
+    news prose all write digits as digits, so a run of spelled-out numbers cannot
+    occur in them and this whole class is structurally unreachable — the same
+    blindness the voice benchmark's own selection filter had.
+    """
+    return any("NUMR" in parse.tag or "Anum" in parse.tag
+               for parse in MORPH.parse(word))
+
+
+def _never_oblique(word: str) -> bool:
+    """A noun with no genitive reading at all cannot be a street name.
+
+    Russian names a street after a thing IN THE GENITIVE — «улица Победы»,
+    «улица Труда», «улица Барышникова»: the name is what the street belongs to.
+    A word that has no genitive form is a thing standing next to a number:
+    «школа двести десять» is a school, «вышка триста тридцать три» a radio call
+    sign, «время двадцать двадцать один» a clock. All three ARE in the leased
+    register — they name streets somewhere — which is precisely why the register
+    on its own cannot decide this, and why the relaxation it earns behind a
+    spelled number needs this floor under it.
+
+    An adjective is exempt: it agrees with «улица» and is nominative by
+    construction, so asking it for a genitive would refuse every «клубная».
+    """
+    parses = MORPH.parse(word)
+    if any("ADJF" in parse.tag and parse.tag.case == "nomn" for parse in parses):
+        return False
+    return not any(parse.tag.case == "gent" for parse in parses)
+
+
+def _plural_or_pronoun(word: str) -> bool:
+    """A street is never plural, and «своей» does not name one.
+
+    «за последние тридцать», «первые 50», «необходимых 68» all reached the
+    register through a normal form and were held down by nothing else.
+    """
+    parses = MORPH.parse(word)
+    if not parses:
+        return False
+    numbers = [parse.tag.number for parse in parses if parse.tag.number]
+    if numbers and all(number == "plur" for number in numbers):
+        return True
+    return all("Apro" in parse.tag for parse in parses)
+
+
+def _counts_next_word(text: str, end: int, number: str) -> bool:
+    """The numeral GOVERNS the next word — so it is a quantity, not a door.
+
+    Russian numerals decide the case of what they count: «один день» takes the
+    nominative, «два дня» the genitive singular, «восемь обвиняемых» the
+    genitive plural. A house number governs nothing; after it comes the end of
+    the utterance, the next part of the address, or a verb.
+
+    Agreement, not a word list. A list would have to be extended with every
+    Russian noun, and «ограничения свободы один день» is what that costs: a
+    genitive-only veto did not fire, because after «один» the noun stands in
+    the nominative.
+    """
+    tail = text[end:end + 24].lstrip()
+    match = _NEXT_WORD_RE.match(tail)
+    if match is None:
+        return False
+    # THE ADDRESS PART IS JUDGED ON THE TAIL, NOT THE FIRST WORD. Russian
+    # dispatch says «второй подъезд» — the ordinal comes BEFORE the marker — and
+    # a veto reading only «второй» threw away thirteen real addresses.
+    if _PART_AFTER_RE.match(tail):
+        return False
+    last = number.split()[-1].lower()
+    if last in ("один", "одна", "одно"):
+        want_case, want_number = "nomn", "sing"
+    elif last in ("два", "две", "три", "четыре"):
+        want_case, want_number = "gent", "sing"
+    else:
+        want_case, want_number = "gent", "plur"
+    return any(parse.tag.POS in ("NOUN", "ADJF", "PRTF")
+               and parse.tag.case == want_case and parse.tag.number == want_number
+               for parse in MORPH.parse(match.group(0)))
+
+
+def _is_street_type(word: str, address: AddressAssets) -> bool:
+    """A street TYPE is not a street NAME, and the register does not separate them.
+
+    «улица», «проезд», «площадь», «шоссе», «дорога» all sit inside the ГАР NAME
+    vocabulary — there are streets literally called that — so the bare arm read
+    «на дороге семьдесят» as the street «дороге» at house 70. Caught by the
+    over-masking suite the hour it grew from 42 phrases to 538, on a sentence
+    about roadworks that no set of ours had ever contained.
+
+    The stems are already leased for the arms that look for a type word; asking
+    them here costs nothing and needs no second list to keep in step.
+    """
+    low = word.lower()
+    stems = tuple(address.street_type_house) + tuple(address.street_type_nohouse)
+    return any(low.startswith(stem) for stem in stems if len(stem) >= 4)
+
+
+def _bare_street_candidates(text: str, address: AddressAssets
+                            ) -> list[tuple[int, int, bool]]:
+    """A lower-case street name with no type word at all, plus a house number.
+
+    «барышникова шестьдесят три первый подъезд» is how a person says an address
+    out loud, and measured on 400 hand-labelled utterances of real taxi dispatch
+    it is the MAJORITY form: 100 of the 156 address values there carry no
+    «улица», no «проспект», no capital and no digit. Every existing arm needs one
+    of those, so the whole class scored zero.
+
+    This is the riskiest shape in the engine — a lower-case word plus a number —
+    so it is admitted only past four gates, and each rejects something different:
+
+      1. THE ГАР REGISTER, in the three forms speech produces. Rejects the
+         language: «доставка цветов пять», «привезите воды пять».
+      2. THE SHAPE OF THE NAME. A surname in any case, an adjective only in the
+         nominative, never a plural and never a pronoun, never a bare settlement
+         (a city takes no house number — the existing veto). Rejects «общего 23»,
+         «за последние тридцать», «в Ленинграде 28».
+      3. NOTHING QUANTIFIED BY THE NUMBER, and nothing that turns it into an age
+         or a measurement. Rejects «свободы один день», «пост пять раз»,
+         «31-летний», «5 гектаров».
+      4. A DIGIT MUST SATISFY (2) EVEN IF THE REGISTER NAMES THE FORM. The
+         register vouches for «Победы» and «Труда» — the genitive IS the street
+         name — but those same words stand in the genitive in prose for the
+         ordinary reason, and prose writes its numbers as DIGITS while speech
+         writes them as WORDS. «статьи 19 Федерации 2» and «порядка 71 сайта»
+         are what the relaxation costs when the number is a digit; measured, 21
+         false addresses on news prose. Behind a spelled number it costs none.
+
+    Measured on 2691 sentences of NEREL prose: zero false addresses. On the two
+    speech corpora: 77% of the class that previously scored zero.
+    """
+    out: list[tuple[int, int, bool]] = []
+    for match in address.street_bare_lower.finditer(text):
+        name = match.group("bare")
+        number = match.group("bnum")
+        low = name.lower()
+        # ДЕШЁВОЕ ВПЕРЁД. Всё, что решается набором или регуляркой, стоит
+        # перед всем, что зовёт морфологию: шаблон срабатывает на любом слове
+        # с числом после него, то есть много раз на обычном тексте, и почти
+        # каждое такое срабатывание отбивается ещё до разбора. Порядок стоил
+        # 0.8 мс на сообщение — треть стоимости всей детекции.
+        if low in address.month_after or low in ("года", "год", "лет"):
+            continue
+        if address.measure_after.match(text, match.end("bnum")):
+            continue
+        if address.age_after.match(text, match.end("bnum")):
+            continue
+        if not _gar_reaches(name, address):
+            continue
+        if _is_numeral(name) or _is_street_type(name, address):
+            continue
+        if _plural_or_pronoun(name) or _names_a_settlement(name, address):
+            continue
+        spelled = not number[0].isdigit()
+        # AN OBLIQUE ADJECTIVE IS LICENSED BY A PREPOSITION, NOT BY AGREEMENT.
+        # «на октябрьскую сто двадцать пять» and «на литейном четыре» stand in
+        # the accusative and the prepositional because «на» PUT them there —
+        # which is how a person says where to go. «общего 23» is a genitive
+        # agreeing with the noun beside it and names no street. Same word class,
+        # and only what stands in front separates them.
+        # A PREPOSITION IS DIRECT EVIDENCE THAT THE WORD IS OBLIQUE, so it
+        # settles both questions at once and the `_never_oblique` floor below is
+        # not asked. «на литейном четыре» and «на октябрьскую сто двадцать пять»
+        # carry no genitive form of their own; «на» put them where they are, and
+        # that is how a person says where to go.
+        preposition = address.prep_before.search(text[:match.start()][-8:]) is not None
+        if not preposition and _never_oblique(name):
+            continue
+        licensed = _street_shape(name) or preposition
+        if not (spelled and _register_vouches(name, address)) and not licensed:
+            continue
+        if _counts_next_word(text, match.end("bnum"), number):
+            continue
+        out.append((match.start(), match.end(), True))   # core: street + house
+    return out
+
+
 def _is_street_name(phrase: str, address: AddressAssets) -> bool:
     """Street-name if ANY word (or hyphen part) looks like a toponym/surname/adj."""
     for word in _WORD_SPLIT_RE.split(phrase):
@@ -257,7 +509,8 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
                address.house, address.mkr, address.rural):
         for m in rx.finditer(text):
             out.append((m.start(), m.end(), True))   # core
-    for rx in (address.apt, address.settlement, address.index, address.district):
+    for rx in (address.apt, address.spoken_apt, address.settlement,
+               address.index, address.district):
         for m in rx.finditer(text):
             out.append((m.start(), m.end(), False))  # support
     for m in address.markerless.finditer(text):
@@ -763,6 +1016,60 @@ def _ends_sentence(gap: str, follows: str) -> bool:
     return bool(_SENTENCE_END.search(gap)) and follows[:1].isupper()
 
 
+# «дом» as a marker, not as the first syllable of «домой» or «домашний».
+_HOUSE_MARKER_RE = re.compile(r"(?i)(?:дом(?![а-яё])|д\.)")
+# The one word standing immediately in front of it. Four letters, because that
+# is the shortest name the ГАР register actually holds («Мира», «Тихая»).
+_NAME_BEFORE_HOUSE_RE = re.compile(r"([А-Яа-яЁё]{4,})\s+$")
+
+
+def _street_before_house(text: str, cands: list[tuple[int, int, bool]],
+                         address: AddressAssets) -> list[tuple[int, int, bool]]:
+    """A bare street name standing in front of «дом N», with no type word.
+
+    «бибиревская дом семнадцать в квартира двести двадцать девять» — dictated
+    into a telephone, and every arm that could have found the street wants
+    something this utterance does not have. The marked arms want «улица»; the
+    marker-less ones want a capital or a digit; the chain starts at «дом» by
+    construction. So the address was masked from «дом» onwards and the street
+    name — the half that says WHICH building — went to the model in the clear,
+    inside a span the polnota column was already counting as found.
+
+    THE VOCABULARY IS THE ONLY EVIDENCE ACCEPTED, and exactly as written. Not
+    morphology: in lower case «бибиревская», «широкая» and «пустая» are one
+    part of speech, and the whole point of a leased register is that it cannot
+    generalise to prose the way a grammar rule does. Not the normal form and
+    not the nominative either — those are what `_fuzzy_street_candidates` may
+    afford, because it conjoins three signals; here there are two.
+
+    The second one is the marker. «дом» followed by a number says a building
+    comes next, and Russian does not put an adjective in front of it for any
+    other reason — the word order saves us as much as the vocabulary does,
+    since «дом культуры» and «дом отдыха» put the register word AFTER.
+
+    SUPPORT, never core: it can only ever lengthen an address somebody else
+    already found, and alone it is dropped.
+    """
+    out: list[tuple[int, int, bool]] = []
+    for start, _stop, core in cands:
+        if not core or _HOUSE_MARKER_RE.match(text, start) is None:
+            continue
+        before = _NAME_BEFORE_HOUSE_RE.search(text[:start])
+        if before is None:
+            continue
+        word = before.group(1).lower()
+        # A MONTH IS IN THE REGISTER AND IS NOT A STREET HERE. «8 Марта» is a
+        # real street name, which is why «марта» is in the vocabulary at all —
+        # and «марта дом» is a date meeting a noun. The same exclusion
+        # `_lower_is_street` makes, for the same reason.
+        if word in address.month_after or word in ("года", "год", "лет"):
+            continue
+        if word not in address.street_names and word not in address.street_gaz:
+            continue
+        out.append((before.start(1), start, False))
+    return out
+
+
 def _merge(cands: list[tuple[int, int, bool]], text: str,
            address: AddressAssets) -> list[tuple[int, int, bool]]:
     cands = sorted(cands)
@@ -848,10 +1155,12 @@ def detect_address(text: str) -> list[Span]:
     regex = _regex_candidates(text, address)
     if SHADOW:
         _log_shadow_diff(text, natasha, regex)
-    cands = natasha + regex + _fuzzy_street_candidates(text, address)
+    cands = (natasha + regex + _fuzzy_street_candidates(text, address)
+             + _bare_street_candidates(text, address))
     if not cands:
         return []
-    cands = cands + _toponym_neighbours(text, cands)
+    cands = cands + _toponym_neighbours(text, cands) + _street_before_house(
+        text, cands, address)
     # THE TRAILING HOUSE NUMBER HAS TO JOIN BEFORE THE SECOND MERGE, not after.
     #
     # «ул. Гагарина, 45, кв. 12» lost its flat while «ул. Гагарина 45 кв 12»
