@@ -922,6 +922,15 @@ def _lowercase_dictionary_ok(word: str, low: str) -> bool:
         for parse in parses)
 
 
+def _lemma_lookup_ok(low: str) -> bool:
+    """Можно ли искать по ЛЕММЕ, а не только по написанному слову."""
+    parses = MORPH.parse(low)
+    if any(parse.is_known for parse in parses):
+        return True
+    return any({"Name", "Surn", "Patr"} & set(parse.tag.grammemes)
+               for parse in parses)
+
+
 def gazetteer_names(text: str) -> list[Span]:
     """Catch names NER misses: known names (any case), Latin pairs, initials,
     and — for CAPITALISED words only — the bulk dictionary.
@@ -945,8 +954,9 @@ def gazetteer_names(text: str) -> list[Span]:
             spans.append(Span(match.start(), match.end(), "NAME", word))
         elif (word[:1].isupper() or _lowercase_dictionary_ok(word, low)) and (
             low in names.dict_first or low in names.dict_surnames
-            or any(lemma in names.dict_first or lemma in names.dict_surnames
-                   for lemma in lemmas)
+            or (_lemma_lookup_ok(low) and any(
+                lemma in names.dict_first or lemma in names.dict_surnames
+                for lemma in lemmas))
         ):
             spans.append(Span(match.start(), match.end(), "NAME", word))
     # A given name found in the gazetteer usually has its surname next to it, and
