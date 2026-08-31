@@ -1,0 +1,14 @@
+{
+  "run_id": "243a7aa6-390b-4482-bf17-a268f2067e35",
+  "model": "claude-sonnet-4-6",
+  "judge_model": "claude-sonnet-5",
+  "tier": "ids",
+  "digest": "de7bd4cc02ce18da4a8b3cca5e2124d9b430978cd1877fe2257e79bf66ab85d6",
+  "ceiling_usd": 0.6,
+  "started": "2026-08-30T22:24:01.653392+00:00",
+  "ids": [
+    "direct-0189",
+    "neg-v24"
+  ],
+  "spent_usd": 0.0
+}

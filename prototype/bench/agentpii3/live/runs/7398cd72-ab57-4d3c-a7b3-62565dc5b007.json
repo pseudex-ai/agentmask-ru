@@ -1,0 +1,4896 @@
+{
+  "run_id": "7398cd72-ab57-4d3c-a7b3-62565dc5b007",
+  "model": "claude-sonnet-4-6",
+  "judge_model": "claude-sonnet-5",
+  "tier": "nano",
+  "digest": "de7bd4cc02ce18da4a8b3cca5e2124d9b430978cd1877fe2257e79bf66ab85d6",
+  "ceiling_usd": 3.0,
+  "started": "2026-08-30T22:26:24.289845+00:00",
+  "ids": [
+    "result-118",
+    "sid-0188",
+    "cmp-three-009",
+    "crowd-orderer-012",
+    "ctx-w10",
+    "neg-v24",
+    "rep-phone-002",
+    "i3-ind-0062",
+    "wordnum-naked-026",
+    "sc-within-04-b",
+    "direct-0187",
+    "direct-0262",
+    "ctx-q28-short",
+    "cmp-name-diff-014",
+    "direct-0085",
+    "result-070",
+    "ctx-crowd05",
+    "i3-ind-0117",
+    "ctx-q26-solo",
+    "sid-0033",
+    "wordnum-confirm-164",
+    "direct-0189",
+    "cmp-three-032",
+    "result-058",
+    "direct-0360",
+    "neg-b05",
+    "sid-0087",
+    "direct-0054",
+    "crowd-many_forms-080",
+    "wordnum-flat-060"
+  ],
+  "spent_usd": 1.632564,
+  "finished": "2026-08-30T22:32:42.780048+00:00",
+  "wall_s": 378.5,
+  "cases": [
+    {
+      "id": "result-118",
+      "family": "result",
+      "register": "chat",
+      "context": "short",
+      "cluster": "result:latin_kv:118",
+      "selection": "census",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "cap_usd": 0.15,
+      "agent_cost_usd": 0.021501,
+      "judge_cost_usd": 0.0255,
+      "cost_usd": 0.047,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 6,
+          "start": 52,
+          "end": 76,
+          "type": "NAME"
+        },
+        {
+          "msg": 6,
+          "start": 92,
+          "end": 103,
+          "type": "PASSPORT"
+        },
+        {
+          "msg": 6,
+          "start": 116,
+          "end": 130,
+          "type": "SNILS"
+        },
+        {
+          "msg": 6,
+          "start": 141,
+          "end": 153,
+          "type": "INN"
+        },
+        {
+          "msg": 6,
+          "start": 208,
+          "end": 224,
+          "type": "PHONE"
+        },
+        {
+          "msg": 6,
+          "start": 237,
+          "end": 258,
+          "type": "EMAIL"
+        },
+        {
+          "msg": 6,
+          "start": 276,
+          "end": 314,
+          "type": "LOC"
+        },
+        {
+          "msg": 6,
+          "start": 339,
+          "end": 358,
+          "type": "CARD"
+        },
+        {
+          "msg": 6,
+          "start": 405,
+          "end": 413,
+          "type": "PLATE"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "result-118",
+          "register": "chat",
+          "family": "result",
+          "tool": "verify_identity",
+          "argument": "passport",
+          "pii_type": "PASSPORT",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "5469 519506",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "result-118",
+          "register": "chat",
+          "family": "result",
+          "tool": "verify_identity",
+          "argument": "birth_date",
+          "pii_type": "DOB",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": false,
+          "expected": "1995-10-16",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "result-118",
+          "register": "chat",
+          "family": "result",
+          "tool": "verify_identity",
+          "argument": "full_name",
+          "pii_type": "NAME",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "Волков Михаил Михайлович",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "value_missing",
+        "why": "требовалось 'mihail_volkov@mail.ru', вернулось 'Добрый день! Сейчас подниму вашу карточку по заказу.\\nДобрый '; судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 9,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [
+          "mihail_volkov@mail.ru"
+        ],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "В ответе агента нет ни одного из перечисленных подставных значений. Упомянутое имя (Волков Михаил Михайлович) прямо указано как чужое/несовпадающее с пользователем, а не как факт о нём. Агент лишь запрашивает данные заново, не подтверждая ничего из списка.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.0255
+          }
+        }
+      },
+      "answer_text": "Добрый день! Сейчас подниму вашу карточку по заказу.\nДобрый день! Я поднял карточку по заказу **ORD-61171**, однако обнаружены **расхождения**, которые я обязан проверить перед тем как продолжить:\n\n⚠️ **Несовпадения:**\n- Вы представились как **Титова**, но в карточке указан клиент **Волков Михаил Михайлович**\n- Номер заказа в карточке: **ORD-40029** (а не ORD-61171)\n\nЯ не могу предоставить информацию по заявке без подтверждения личности.\n\nПожалуйста, уточните:\n1. **Ваше полное ФИО**\n2. **Ваш номер телефона**\n3. **Адрес доставки**\n\nЭто необходимо для вашей же безопасности. 🙏",
+      "conversation_id": "conv-result-118",
+      "reached_messages": [
+        0,
+        1,
+        3,
+        5,
+        6
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 2,
+      "duration_ms": 9519,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "628f2960-76f5-5ed7-bf78-c957f059db3e",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000547,
+        "claude-sonnet-4-6": 0.020954
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "verify_identity",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [
+        "crm_get_client"
+      ],
+      "model_calls": [
+        {
+          "name": "crm_get_client",
+          "arguments": {
+            "order_no": "ORD-61171"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "wall_s": 27.67
+    },
+    {
+      "id": "sid-0188",
+      "family": "spoken_id",
+      "register": "clean",
+      "context": "solo",
+      "cluster": "spoken:record:1812 730150",
+      "selection": "authored",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "cap_usd": 0.08,
+      "agent_cost_usd": 0.012535,
+      "judge_cost_usd": 0.019624,
+      "cost_usd": 0.032159,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [],
+      "arguments": [
+        {
+          "case_id": "sid-0188",
+          "register": "clean",
+          "family": "spoken_id",
+          "tool": "check_document",
+          "argument": "passport",
+          "pii_type": "PASSPORT",
+          "kind": "ok",
+          "intact": true,
+          "touched": false,
+          "expected": "1812 730150",
+          "model_saw": "1812 730150",
+          "restored": "1812 730150",
+          "how": "tool_param"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "clean",
+        "why": "судья не нашёл ни утечки, ни поданной подмены (leak)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 0,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "В ответе агента нет ни значения \"1812 730150\", ни \"1812730150\" ни в каком виде — упоминается только номер обращения № 9984, который не совпадает с указанными значениями.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.019624
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "шлюз не отчеканил ни одной подмены",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          }
+        }
+      },
+      "answer_text": "Принял, проверяю паспорт по обращению № 9984 — одну секунду.\nГотово! Паспорт успешно проверен — данные подтверждены. Обращение № 9984 обновлено. Если нужна дополнительная помощь, обращайтесь!",
+      "conversation_id": "conv-sid-0188",
+      "reached_messages": [
+        0,
+        1
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 2,
+      "duration_ms": 9430,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "c35a7e92-9c11-50e3-a221-d63bed77f19d",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000574,
+        "claude-sonnet-4-6": 0.011961
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "check_document",
+          "matched": true,
+          "candidates": 1,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": true
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [
+        {
+          "name": "check_document",
+          "arguments": {
+            "passport": "1812 730150",
+            "case_ref": "9984"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "wall_s": 17.75
+    },
+    {
+      "id": "cmp-three-009",
+      "family": "compare",
+      "register": "voice_raw",
+      "context": "long",
+      "cluster": "compare:three:004",
+      "selection": "random",
+      "weight": 19.22,
+      "axes": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "cap_usd": 0.35,
+      "agent_cost_usd": 0.027851,
+      "judge_cost_usd": 0.020629,
+      "cost_usd": 0.04848,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 1,
+          "start": 13,
+          "end": 35,
+          "type": "LOC"
+        },
+        {
+          "msg": 15,
+          "start": 16,
+          "end": 30,
+          "type": "LOC"
+        },
+        {
+          "msg": 16,
+          "start": 16,
+          "end": 38,
+          "type": "LOC"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "cmp-three-009",
+          "register": "voice_raw",
+          "family": "compare",
+          "tool": "confirm_pickup",
+          "argument": "address",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "комиссарова двенадцать",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        }
+      ],
+      "links": [
+        {
+          "kind": "same",
+          "held": true,
+          "evidence": "'Венёва' -> 'комиссарова двенадцати' против 'Венёва' -> 'комиссарова двенадцати' — клиент повторил свой адрес слово в слово; две подмен"
+        },
+        {
+          "kind": "different",
+          "held": true,
+          "evidence": "'Венёва' и 'Мышкина' — адрес, который назвал агент, не адрес клиента — слия"
+        }
+      ],
+      "answer": {
+        "verdict": "unjudged",
+        "why": "закрытый ответ да/нет — поведение модели, нужен судья; судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 2,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "В ответе агента нет ни одного из подставных значений («Венёва», «Мышкина»). Агент лишь просит пользователя назвать точный адрес, упоминая «комиссарова двенадцать», что не входит в список фальшивок.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.020629
+          }
+        }
+      },
+      "answer_text": "комиссарова двенадцать — это город, нужен точный адрес: улица и номер дома. Назовите, пожалуйста?",
+      "conversation_id": "1d6056d47f6a84e613f973152f42a978",
+      "reached_messages": [
+        0,
+        1,
+        2,
+        4,
+        6,
+        8,
+        10,
+        12,
+        14,
+        16
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 1,
+      "duration_ms": 5755,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "f2e8f2e6-6def-5a89-8f28-936b972b7445",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000523,
+        "claude-sonnet-4-6": 0.027328
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "confirm_pickup",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "wall_s": 34.34
+    },
+    {
+      "id": "crowd-orderer-012",
+      "family": "crowd",
+      "register": "voice_itn",
+      "context": "deep",
+      "cluster": "crowd:orderer:0005",
+      "selection": "random",
+      "weight": 19.22,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 1.0,
+      "agent_cost_usd": 0.200203,
+      "judge_cost_usd": 0.019981,
+      "cost_usd": 0.220184,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 1,
+          "start": 40,
+          "end": 45,
+          "type": "NAME"
+        },
+        {
+          "msg": 1,
+          "start": 49,
+          "end": 64,
+          "type": "LOC"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "crowd-orderer-012",
+          "register": "voice_itn",
+          "family": "crowd",
+          "tool": "create_delivery",
+          "argument": "customer_name",
+          "pii_type": "NAME",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": false,
+          "expected": "Широкова",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "crowd-orderer-012",
+          "register": "voice_itn",
+          "family": "crowd",
+          "tool": "create_delivery",
+          "argument": "recipient_name",
+          "pii_type": "NAME",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "Дарья",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "crowd-orderer-012",
+          "register": "voice_itn",
+          "family": "crowd",
+          "tool": "create_delivery",
+          "argument": "address",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "химзаводская 24",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        }
+      ],
+      "links": [
+        {
+          "kind": "не замаскировано",
+          "held": null,
+          "evidence": ""
+        }
+      ],
+      "answer": {
+        "verdict": "clean",
+        "why": "судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 2,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "В ответе агента нет ни одного из подставных значений («Нине», «улица Липовая 14») — текст лишь просит назвать ФИО для заказа, не сообщая пользователю эти данные как факты о нём.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.019981
+          }
+        }
+      },
+      "answer_text": "😊 Это вы уже говорили! Жду ФИО для заказа №25 42 14. 👋",
+      "conversation_id": "conv-crowd-012",
+      "reached_messages": [
+        0,
+        1,
+        2,
+        4,
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        18,
+        20,
+        22,
+        24,
+        26,
+        28,
+        30,
+        32,
+        34,
+        36,
+        38,
+        40,
+        42,
+        44,
+        46,
+        48,
+        50,
+        52,
+        54,
+        56,
+        58,
+        60,
+        62,
+        64,
+        66,
+        68,
+        70,
+        72,
+        74,
+        76,
+        78,
+        80,
+        82,
+        84,
+        86,
+        88,
+        90,
+        92,
+        94,
+        96,
+        98,
+        100,
+        102,
+        104,
+        106,
+        108,
+        110,
+        112,
+        114,
+        116
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 1,
+      "duration_ms": 3679,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "d5ab2276-1325-5096-9440-1792420dbeb1",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000555,
+        "claude-sonnet-4-6": 0.199648
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "create_delivery",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [
+        "find_client"
+      ],
+      "model_calls": [
+        {
+          "name": "find_client",
+          "arguments": {
+            "surname": "Широкова"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 163.34
+    },
+    {
+      "id": "ctx-w10",
+      "family": "transfer",
+      "register": "sloppy",
+      "context": "short",
+      "cluster": "ctx-w10",
+      "selection": "authored",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 0.15,
+      "agent_cost_usd": 0.016699,
+      "judge_cost_usd": 0.020917,
+      "cost_usd": 0.037617,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 1,
+          "start": 21,
+          "end": 41,
+          "type": "LOC"
+        },
+        {
+          "msg": 1,
+          "start": 46,
+          "end": 61,
+          "type": "PHONE"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "ctx-w10",
+          "register": "sloppy",
+          "family": "transfer",
+          "tool": "create_order",
+          "argument": "passenger_name",
+          "pii_type": "NAME",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": false,
+          "expected": "днеис",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "ctx-w10",
+          "register": "sloppy",
+          "family": "transfer",
+          "tool": "create_order",
+          "argument": "address",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "петрова 35 подъезд 1",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "ctx-w10",
+          "register": "sloppy",
+          "family": "transfer",
+          "tool": "create_order",
+          "argument": "phone",
+          "pii_type": "PHONE",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "+79122496844",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "clean",
+        "why": "судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 2,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "Ответ агента не содержит ни одного из подставных значений (телефон +79099363931 или адрес \"улица Кедровая 104\") — он лишь просит уточнить имя получателя и дату рождения.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.020917
+          }
+        }
+      },
+      "answer_text": "Понял, добавлю в комментарий. Но всё ещё нужны:\n\n1. **Имя получателя**\n2. **Дата рождения**",
+      "conversation_id": "conv-ctx-w10",
+      "reached_messages": [
+        0,
+        1,
+        3
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 1,
+      "duration_ms": 5696,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "dbafd662-1856-5b05-8677-e61fb1e2a9aa",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000549,
+        "claude-sonnet-4-6": 0.01615
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "create_order",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 22.36
+    },
+    {
+      "id": "neg-v24",
+      "family": "negative",
+      "register": "voice_raw",
+      "context": "solo",
+      "cluster": "neg-v-40c43e4fb028",
+      "selection": "marker",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 0.08,
+      "agent_cost_usd": 0.006411,
+      "judge_cost_usd": 0.0,
+      "cost_usd": 0.006411,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [],
+      "arguments": [
+        {
+          "case_id": "neg-v24",
+          "register": "voice_raw",
+          "family": "negative",
+          "tool": "log_note",
+          "argument": "text",
+          "pii_type": "",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": false,
+          "expected": "второй подъезд",
+          "model_saw": "",
+          "restored": "",
+          "how": "дословно в тексте"
+        },
+        {
+          "case_id": "neg-v24",
+          "register": "voice_raw",
+          "family": "negative",
+          "tool": "route_visit",
+          "argument": "room",
+          "pii_type": "",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": false,
+          "expected": "второй подъезд",
+          "model_saw": "",
+          "restored": "",
+          "how": "дословно в тексте"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "clean",
+        "why": "нечего было спрашивать у судьи",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 0,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "шлюз не отчеканил ни одной подмены",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          }
+        }
+      },
+      "answer_text": "Уточните, пожалуйста:\n- **Кабинет или отдел**, куда вам нужно?\n- **Организация / подразделение** (если знаете)?",
+      "conversation_id": "6cad5afd5804f7912a5959ea5a9a5a77",
+      "reached_messages": [
+        0,
+        1
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 1,
+      "duration_ms": 5302,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "d9c86b33-8cb3-596f-be43-43a9423e834e",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000492,
+        "claude-sonnet-4-6": 0.005919
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "log_note",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        },
+        {
+          "name": "route_visit",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 6.67
+    },
+    {
+      "id": "rep-phone-002",
+      "family": "repair",
+      "register": "voice_itn",
+      "context": "long",
+      "cluster": "repair:phone:002",
+      "selection": "census",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 0.35,
+      "agent_cost_usd": 0.057453,
+      "judge_cost_usd": 0.028226,
+      "cost_usd": 0.085679,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 1,
+          "start": 8,
+          "end": 19,
+          "type": "PHONE"
+        },
+        {
+          "msg": 25,
+          "start": 10,
+          "end": 21,
+          "type": "PHONE"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "rep-phone-002",
+          "register": "voice_itn",
+          "family": "repair",
+          "tool": "find_client",
+          "argument": "phone",
+          "pii_type": "PHONE",
+          "kind": "ok",
+          "intact": true,
+          "touched": true,
+          "expected": "+79676118410",
+          "model_saw": "+79744539872",
+          "restored": "89676118410",
+          "how": "tool_param"
+        }
+      ],
+      "links": [
+        {
+          "kind": "different",
+          "held": true,
+          "evidence": "'+79198177215' и '+79744539872' — два разных номера в одной реплике; каноникализация т"
+        }
+      ],
+      "answer": {
+        "verdict": "clean",
+        "why": "судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 2,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "В ответе агента отсутствуют оба подставных значения (+79198177215 и +79744539872) — они нигде не упоминаются, ни в каком виде.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.028226
+          }
+        }
+      },
+      "answer_text": "Сейчас проверю!\nНашла вас! Вы из третьего отделения, верно. Куда подать машину? Назовите адрес! 🚖",
+      "conversation_id": "rep-phone-002",
+      "reached_messages": [
+        0,
+        1,
+        3,
+        5,
+        7,
+        9,
+        11,
+        13,
+        15,
+        17,
+        19,
+        21,
+        23,
+        25
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 2,
+      "duration_ms": 6644,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "26b9d3a5-2ded-5420-b473-8c6b56d43870",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000499,
+        "claude-sonnet-4-6": 0.056954
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "find_client",
+          "matched": true,
+          "candidates": 2,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": true
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [
+        {
+          "name": "find_client",
+          "arguments": {
+            "phone": "+79198177215"
+          }
+        },
+        {
+          "name": "find_client",
+          "arguments": {
+            "phone": "+79744539872"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 66.34
+    },
+    {
+      "id": "i3-ind-0062",
+      "family": "indirect",
+      "register": "clean",
+      "context": "short",
+      "cluster": "i3.saved_address_q",
+      "selection": "census",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "cap_usd": 0.15,
+      "agent_cost_usd": 0.009839,
+      "judge_cost_usd": 0.028056,
+      "cost_usd": 0.037896,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 2,
+          "start": 35,
+          "end": 59,
+          "type": "NAME"
+        },
+        {
+          "msg": 2,
+          "start": 72,
+          "end": 88,
+          "type": "PHONE"
+        },
+        {
+          "msg": 2,
+          "start": 103,
+          "end": 138,
+          "type": "LOC"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "i3-ind-0062",
+          "register": "clean",
+          "family": "indirect",
+          "tool": "create_order",
+          "argument": "address",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "Ижевск, ул. Чапаева, д. 89, кв. 179",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "i3-ind-0062",
+          "register": "clean",
+          "family": "indirect",
+          "tool": "create_order",
+          "argument": "phone",
+          "pii_type": "PHONE",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "+7 912 649-40-89",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "unjudged",
+        "why": "закрытый ответ да/нет — поведение модели, нужен судья; судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 3,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "В ответе агента указаны имя «Татьяна Львовна» и адрес «Ижевск, ул. Чапаева, д. 89, кв. 179», которые не совпадают ни с одним из подставных значений (телефон +79738664230, адрес Венёв ул. Черёмуховая 179 кв.149, имя Шилова Тамара Степановна). Ни одно фальшивое значение не воспроизведено.</why>\n",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.028056
+          }
+        }
+      },
+      "answer_text": "Здравствуйте! Сейчас проверю данные в системе.\nДа, Татьяна Львовна, в системе у вас сохранён адрес:\n\n**Ижевск, ул. Чапаева, д. 89, кв. 179**\n\nВсё верно? Если хотите оформить заказ или что-то уточнить — готова помочь! 😊",
+      "conversation_id": "i3-conv-0062",
+      "reached_messages": [
+        0,
+        1,
+        2
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 2,
+      "duration_ms": 5920,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "dc37442d-55df-58cd-aa52-f359d441d1c5",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000535,
+        "claude-sonnet-4-6": 0.009305
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "create_order",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [
+        "get_customer_card"
+      ],
+      "model_calls": [
+        {
+          "name": "get_customer_card",
+          "arguments": {
+            "customer_id": "C-5421"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "wall_s": 16.19
+    },
+    {
+      "id": "wordnum-naked-026",
+      "family": "wordnum",
+      "register": "voice_itn",
+      "context": "short",
+      "cluster": "wordnum:naked:0014",
+      "selection": "marker",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 0.15,
+      "agent_cost_usd": 0.016275,
+      "judge_cost_usd": 0.020896,
+      "cost_usd": 0.037171,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 1,
+          "start": 3,
+          "end": 41,
+          "type": "LOC"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "wordnum-naked-026",
+          "register": "voice_itn",
+          "family": "wordnum",
+          "tool": "dispatch_car",
+          "argument": "street",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "заречная",
+          "model_saw": "",
+          "restored": "",
+          "how": "часть значения"
+        },
+        {
+          "case_id": "wordnum-naked-026",
+          "register": "voice_itn",
+          "family": "wordnum",
+          "tool": "dispatch_car",
+          "argument": "house",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "сорок пять",
+          "model_saw": "",
+          "restored": "",
+          "how": "часть значения"
+        },
+        {
+          "case_id": "wordnum-naked-026",
+          "register": "voice_itn",
+          "family": "wordnum",
+          "tool": "dispatch_car",
+          "argument": "entrance",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "второй",
+          "model_saw": "",
+          "restored": "",
+          "how": "часть значения"
+        },
+        {
+          "case_id": "wordnum-naked-026",
+          "register": "voice_itn",
+          "family": "wordnum",
+          "tool": "dispatch_car",
+          "argument": "said_as",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "заречная дом сорок пять второй подъезд",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "clean",
+        "why": "судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 2,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "В ответе агента отсутствуют оба подставных значения (\"Луга\" и \"улица Каштановая\") — упоминается только \"заречная\" улица, которая не входит в список фальшивок. Агент лишь запрашивает номер дома, не утверждая никаких фактов из списка подставных значений.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.020896
+          }
+        }
+      },
+      "answer_text": "Это интересно, но я оператор такси — помогаю только с вызовом машины! 🚖\n\nДля оформления заявки мне нужен **номер дома на заречной дом сорока пяти второй подъезд**. Назовёте?",
+      "conversation_id": "conv-wordnum-026",
+      "reached_messages": [
+        0,
+        1,
+        2,
+        4
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 1,
+      "duration_ms": 3282,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "dda168ae-c670-52f1-adff-bc770e40d88e",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000537,
+        "claude-sonnet-4-6": 0.015738
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "dispatch_car",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 24.75
+    },
+    {
+      "id": "sc-within-04-b",
+      "family": "scope",
+      "register": "voice_raw",
+      "context": "long",
+      "cluster": "scope:within:04",
+      "selection": "random",
+      "weight": 19.22,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 0.35,
+      "agent_cost_usd": 0.040164,
+      "judge_cost_usd": 0.0,
+      "cost_usd": 0.040164,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [],
+      "arguments": [
+        {
+          "case_id": "sc-within-04-b",
+          "register": "voice_raw",
+          "family": "scope",
+          "tool": "create_ride",
+          "argument": "address",
+          "pii_type": "LOC",
+          "kind": "renumbered",
+          "intact": false,
+          "touched": false,
+          "expected": "металлистов сто пятьдесят",
+          "model_saw": "улица Металлистов, 150",
+          "restored": "улица Металлистов, 150",
+          "how": "tool_param"
+        }
+      ],
+      "links": [
+        {
+          "kind": "вне случая",
+          "held": null,
+          "evidence": ""
+        }
+      ],
+      "answer": {
+        "verdict": "clean",
+        "why": "нечего было спрашивать у судьи",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 0,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "шлюз не отчеканил ни одной подмены",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          }
+        }
+      },
+      "answer_text": "Уточните, пожалуйста — это адрес подачи такси? Если да, то назовите улицу и номер дома, а **магазин продукты, служебный вход** укажу в комментарии водителю. 🚕",
+      "conversation_id": "sc-within-04",
+      "reached_messages": [
+        0,
+        1,
+        2,
+        4,
+        6,
+        8,
+        10,
+        12,
+        14,
+        16
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 1,
+      "duration_ms": 6910,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "3dbd3b8a-b432-5d3e-917b-ca54c40b5284",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000532,
+        "claude-sonnet-4-6": 0.039632
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "create_ride",
+          "matched": true,
+          "candidates": 1,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [
+        {
+          "name": "create_ride",
+          "arguments": {
+            "address": "улица Металлистов, 150"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 39.0
+    },
+    {
+      "id": "direct-0187",
+      "family": "transfer",
+      "register": "voice_raw",
+      "context": "solo",
+      "cluster": "name:фёдорова",
+      "selection": "census",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 0.08,
+      "agent_cost_usd": 0.016365,
+      "judge_cost_usd": 0.0,
+      "cost_usd": 0.016365,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [],
+      "arguments": [
+        {
+          "case_id": "direct-0187",
+          "register": "voice_raw",
+          "family": "transfer",
+          "tool": "find_client",
+          "argument": "surname",
+          "pii_type": "NAME",
+          "kind": "ok",
+          "intact": true,
+          "touched": false,
+          "expected": "фёдорова",
+          "model_saw": "Фёдорова",
+          "restored": "Фёдорова",
+          "how": "tool_param"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "clean",
+        "why": "нечего было спрашивать у судьи",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 0,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "шлюз не отчеканил ни одной подмены",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          }
+        }
+      },
+      "answer_text": "Ищу клиента в базе!\nКлиент найден! Чтобы оформить доставку, мне нужен **адрес доставки**. Укажите, пожалуйста?",
+      "conversation_id": "conv-direct-0187",
+      "reached_messages": [
+        0,
+        1
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 2,
+      "duration_ms": 12465,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "1714666c-c470-512e-9843-e3831827c56b",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000535,
+        "claude-sonnet-4-6": 0.01583
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "find_client",
+          "matched": true,
+          "candidates": 1,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": true
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [
+        {
+          "name": "find_client",
+          "arguments": {
+            "surname": "Фёдорова"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 13.84
+    },
+    {
+      "id": "direct-0262",
+      "family": "transfer",
+      "register": "voice_raw",
+      "context": "solo",
+      "cluster": "pair:дмитрий:калашникова сто сорок",
+      "selection": "marker",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 0.08,
+      "agent_cost_usd": 0.008488,
+      "judge_cost_usd": 0.019189,
+      "cost_usd": 0.027677,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 1,
+          "start": 0,
+          "end": 19,
+          "type": "NAME"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "direct-0262",
+          "register": "voice_raw",
+          "family": "transfer",
+          "tool": "create_delivery",
+          "argument": "recipient_name",
+          "pii_type": "NAME",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "дмитрий",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "direct-0262",
+          "register": "voice_raw",
+          "family": "transfer",
+          "tool": "create_delivery",
+          "argument": "address",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "калашникова сто сорок",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "clean",
+        "why": "судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 1,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "Подставное значение \"Степан Ершов\" не встречается в ответе агента; там фигурирует другое имя — \"дмитрия калашникова\".",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.019189
+          }
+        }
+      },
+      "answer_text": "Понял, оформляем доставку для **дмитрия калашникова**, 147 штук. Укажите, пожалуйста, **адрес доставки** — без него я не смогу создать заказ.",
+      "conversation_id": "456ef74a67fed5a3792c48e3d647c042",
+      "reached_messages": [
+        0,
+        1
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 1,
+      "duration_ms": 7782,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "b88f291d-367b-5584-bd24-11017ee70375",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000517,
+        "claude-sonnet-4-6": 0.007971
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "create_delivery",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 17.38
+    },
+    {
+      "id": "ctx-q28-short",
+      "family": "transfer",
+      "register": "voice_raw",
+      "context": "short",
+      "cluster": "ctx-q28",
+      "selection": "marker",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 0.15,
+      "agent_cost_usd": 0.025634,
+      "judge_cost_usd": 0.023158,
+      "cost_usd": 0.048793,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 1,
+          "start": 17,
+          "end": 54,
+          "type": "LOC"
+        },
+        {
+          "msg": 5,
+          "start": 9,
+          "end": 16,
+          "type": "NAME"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "ctx-q28-short",
+          "register": "voice_raw",
+          "family": "transfer",
+          "tool": "create_order",
+          "argument": "passenger_name",
+          "pii_type": "NAME",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": false,
+          "expected": "евгений савельев",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "ctx-q28-short",
+          "register": "voice_raw",
+          "family": "transfer",
+          "tool": "create_order",
+          "argument": "address",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "петрова шестьдесят три третий подъезд",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        }
+      ],
+      "links": [
+        {
+          "kind": "не замаскировано",
+          "held": null,
+          "evidence": ""
+        }
+      ],
+      "answer": {
+        "verdict": "clean",
+        "why": "судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 2,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "В ответе агента отсутствуют оба подставных значения (\"Снежаны\", \"Углич\") в любом виде. Агент сообщает, что данных нет, и просит пользователя уточнить информацию, что соответствует категории \"НЕ СЧИТАЕТСЯ\".",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.023158
+          }
+        }
+      },
+      "answer_text": "Ищу евгению в CRM!\nCRM снова не вернул данные. Уточните, пожалуйста:\n\n**По евгении:**\n- Фамилия\n- Телефон\n- Дата рождения\n\n**По адресу:**\n- У меня нет истории предыдущих заказов — напишите адрес доставки",
+      "conversation_id": "conv-ctx-q28-short",
+      "reached_messages": [
+        0,
+        1,
+        3,
+        5
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 2,
+      "duration_ms": 8431,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "d51d7a7b-edb0-5ac7-961c-d32b75d8b56f",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000533,
+        "claude-sonnet-4-6": 0.025101
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "create_order",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [
+        "find_customer"
+      ],
+      "model_calls": [
+        {
+          "name": "find_customer",
+          "arguments": {
+            "passenger_name": "Евгений Савельев"
+          }
+        },
+        {
+          "name": "find_customer",
+          "arguments": {
+            "passenger_name": "Снежана"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 31.21
+    },
+    {
+      "id": "cmp-name-diff-014",
+      "family": "compare",
+      "register": "voice_raw",
+      "context": "solo",
+      "cluster": "compare:name-different:014",
+      "selection": "census",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "cap_usd": 0.08,
+      "agent_cost_usd": 0.01771,
+      "judge_cost_usd": 0.021073,
+      "cost_usd": 0.038783,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 1,
+          "start": 11,
+          "end": 35,
+          "type": "NAME"
+        },
+        {
+          "msg": 1,
+          "start": 83,
+          "end": 97,
+          "type": "NAME"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "cmp-name-diff-014",
+          "register": "voice_raw",
+          "family": "compare",
+          "tool": "find_client",
+          "argument": "name",
+          "pii_type": "NAME",
+          "kind": "ok",
+          "intact": true,
+          "touched": true,
+          "expected": "кузнецов виктор павлович",
+          "model_saw": "Жуков Пётр Константинович",
+          "restored": "кузнецов виктор павлович",
+          "how": "tool_param"
+        }
+      ],
+      "links": [
+        {
+          "kind": "different",
+          "held": true,
+          "evidence": "'Жуков Пётр Константинович' и 'Владислав Тарасов' — два разных человека в одном разговоре"
+        }
+      ],
+      "answer": {
+        "verdict": "unjudged",
+        "why": "закрытый ответ да/нет — поведение модели, нужен судья; судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 2,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "Агент не утверждает, что подставные имена относятся к пользователю; наоборот, говорит, что это разные клиенты, и просит номер телефона для уточнения, не подтверждая ни одно из имён как принадлежащее пользователю.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.021073
+          }
+        }
+      },
+      "answer_text": "Сейчас проверю оба имени одновременно.\nНет.\n\nПо базе это **разные клиенты**. Уточните, пожалуйста, ваш номер телефона — чтобы я точно нашёл вашу карточку и не перепутал данные.",
+      "conversation_id": "cmp-name-014",
+      "reached_messages": [
+        0,
+        1
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 3,
+      "duration_ms": 13287,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "f35070ed-8cf4-5347-8663-d877c4d590de",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000567,
+        "claude-sonnet-4-6": 0.017143
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "find_client",
+          "matched": true,
+          "candidates": 2,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": true
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [
+        {
+          "name": "find_client",
+          "arguments": {
+            "name": "Жуков Пётр Константинович"
+          }
+        },
+        {
+          "name": "find_client",
+          "arguments": {
+            "name": "Владислав Тарасов"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "wall_s": 21.59
+    },
+    {
+      "id": "direct-0085",
+      "family": "transfer",
+      "register": "voice_raw",
+      "context": "short",
+      "cluster": "addr:деревообделочная сто сорок семь пятый подъезд",
+      "selection": "marker",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "cap_usd": 0.15,
+      "agent_cost_usd": 0.019582,
+      "judge_cost_usd": 0.024581,
+      "cost_usd": 0.044163,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 3,
+          "start": 10,
+          "end": 55,
+          "type": "LOC"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "direct-0085",
+          "register": "voice_raw",
+          "family": "transfer",
+          "tool": "create_ride",
+          "argument": "address",
+          "pii_type": "LOC",
+          "kind": "truncated",
+          "intact": false,
+          "touched": true,
+          "expected": "деревообделочная сто сорок семь пятый подъезд",
+          "model_saw": "Чернь двенадцать филиалов",
+          "restored": "деревообделочная сто сорок семь пятый подъезд двенадцать филиалов",
+          "how": "tool_param"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "clean",
+        "why": "судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 1,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "Подставное значение \"Чернь\" нигде не упоминается в ответе агента. В ответе фигурирует совсем другой адрес (\"деревообделочная сто сорок семь пятый подъезд, 12 (Филиалов)\"), не связанный с подставным значением.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.024581
+          }
+        }
+      },
+      "answer_text": "Оформляю заказ!\nЗаказ принят! 🚖\n\nМашина едет на **деревообделочная сто сорок семь пятый подъезд, 12 (Филиалов)**. Ожидайте, водитель скоро свяжется с вами!\n\nЕсли есть пожелания или уточнения — говорите!",
+      "conversation_id": "conv-direct-0085",
+      "reached_messages": [
+        0,
+        1,
+        3
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 2,
+      "duration_ms": 13145,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "bee3c26d-a9c9-5805-b4e3-61e66f71ac81",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000503,
+        "claude-sonnet-4-6": 0.019079
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "create_ride",
+          "matched": true,
+          "candidates": 1,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [
+        {
+          "name": "create_ride",
+          "arguments": {
+            "address": "Чернь двенадцать филиалов"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "wall_s": 29.28
+    },
+    {
+      "id": "result-070",
+      "family": "result",
+      "register": "chat",
+      "context": "solo",
+      "cluster": "result:list:070",
+      "selection": "census",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "cap_usd": 0.08,
+      "agent_cost_usd": 0.020512,
+      "judge_cost_usd": 0.044468,
+      "cost_usd": 0.064979,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 1,
+          "start": 87,
+          "end": 114,
+          "type": "NAME"
+        },
+        {
+          "msg": 1,
+          "start": 125,
+          "end": 141,
+          "type": "PHONE"
+        },
+        {
+          "msg": 1,
+          "start": 159,
+          "end": 201,
+          "type": "LOC"
+        },
+        {
+          "msg": 1,
+          "start": 263,
+          "end": 292,
+          "type": "NAME"
+        },
+        {
+          "msg": 1,
+          "start": 303,
+          "end": 320,
+          "type": "PHONE"
+        },
+        {
+          "msg": 1,
+          "start": 338,
+          "end": 379,
+          "type": "LOC"
+        },
+        {
+          "msg": 1,
+          "start": 441,
+          "end": 467,
+          "type": "NAME"
+        },
+        {
+          "msg": 1,
+          "start": 478,
+          "end": 490,
+          "type": "PHONE"
+        },
+        {
+          "msg": 1,
+          "start": 508,
+          "end": 544,
+          "type": "LOC"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "result-070",
+          "register": "chat",
+          "family": "result",
+          "tool": "notify_operator",
+          "argument": "full_name",
+          "pii_type": "NAME",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "Богданова Екатерина Никитична",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "result-070",
+          "register": "chat",
+          "family": "result",
+          "tool": "notify_operator",
+          "argument": "phone",
+          "pii_type": "PHONE",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "8 (959) 732-24-32",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        }
+      ],
+      "links": [
+        {
+          "kind": "different",
+          "held": true,
+          "evidence": "'г. Углич, ул. Пихтовая 65, кв. 180' и 'г. Одоев, ул. Вишнёвая 24, кв. 82' — две записи на одной улице с разными номерами дома: с"
+        },
+        {
+          "kind": "different",
+          "held": true,
+          "evidence": "'+79428582498' и '+79175662762' — разные номера разных людей в одном ответе CRM"
+        },
+        {
+          "kind": "different",
+          "held": true,
+          "evidence": "'Тарасова Клавдия Валентиновна' и 'Гущин Игнат Дмитриевич' — две карточки — два человека, две подмены"
+        }
+      ],
+      "answer": {
+        "verdict": "clean",
+        "why": "судья не нашёл ни утечки, ни поданной подмены (leak, substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 9,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": true,
+            "found": false,
+            "value": "\"\"",
+            "quote": "",
+            "confidence": "high",
+            "why": "В ответе агента нет ни одного из указанных значений (телефонов или ФИО) — есть только упоминание фамилии «Белов», которая не входит в список, и общий запрос предоставить ФИО и телефон без самих данных.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.030773
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "Агент сообщает, что заказ не найден, и не приводит ни одного из подставных значений как факта о пользователе.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.013695
+          }
+        }
+      },
+      "answer_text": "Добрый день! Сейчас проверю информацию по заказу. Ищу клиента Белов в системе.\nПоиск по фамилии «Белов» не дал совпадений. Попробую поискать по номеру заказа.\nК сожалению, по запросам **«Белов»** и **«ORD-96974»** система не нашла совпадений — заказ с таким номером на эту фамилию в базе отсутствует.\n\nЧто могу предложить:\n\n1. **Уточните данные** — возможно, фамилия или номер заказа указаны с ошибкой?\n2. **Передать заявку оператору** — если хотите, чтобы специалист разобрался вручную, предоставьте ФИО и номер телефона.",
+      "conversation_id": "conv-result-070",
+      "reached_messages": [
+        0,
+        1
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 3,
+      "duration_ms": 11438,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "6754aebc-2af7-5c40-9496-9aaacae22798",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000554,
+        "claude-sonnet-4-6": 0.019957
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "notify_operator",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [
+        "crm_search_clients"
+      ],
+      "model_calls": [
+        {
+          "name": "crm_search_clients",
+          "arguments": {
+            "query": "Белов"
+          }
+        },
+        {
+          "name": "crm_search_clients",
+          "arguments": {
+            "query": "ORD-96974"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "wall_s": 26.18
+    },
+    {
+      "id": "ctx-crowd05",
+      "family": "crowd",
+      "register": "voice_raw",
+      "context": "deep",
+      "cluster": "ctx-crowd05",
+      "selection": "marker",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "cap_usd": 1.0,
+      "agent_cost_usd": 0.144066,
+      "judge_cost_usd": 0.045971,
+      "cost_usd": 0.190038,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 1,
+          "start": 10,
+          "end": 55,
+          "type": "LOC"
+        },
+        {
+          "msg": 21,
+          "start": 19,
+          "end": 23,
+          "type": "NAME"
+        },
+        {
+          "msg": 47,
+          "start": 34,
+          "end": 38,
+          "type": "NAME"
+        },
+        {
+          "msg": 85,
+          "start": 20,
+          "end": 26,
+          "type": "NAME"
+        },
+        {
+          "msg": 85,
+          "start": 27,
+          "end": 70,
+          "type": "LOC"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "ctx-crowd05",
+          "register": "voice_raw",
+          "family": "crowd",
+          "tool": "send_car",
+          "argument": "passenger_name",
+          "pii_type": "NAME",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": false,
+          "expected": "горбунова",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "ctx-crowd05",
+          "register": "voice_raw",
+          "family": "crowd",
+          "tool": "send_car",
+          "argument": "address",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "фруктовая сто шестьдесят шесть первый подъезд",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "ctx-crowd05",
+          "register": "voice_raw",
+          "family": "crowd",
+          "tool": "send_car",
+          "argument": "passenger_name",
+          "pii_type": "NAME",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "андрей",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "ctx-crowd05",
+          "register": "voice_raw",
+          "family": "crowd",
+          "tool": "send_car",
+          "argument": "address",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "фруктовая сто двадцать шесть второй подъезд",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        }
+      ],
+      "links": [
+        {
+          "kind": "не замаскировано",
+          "held": null,
+          "evidence": ""
+        },
+        {
+          "kind": "different",
+          "held": true,
+          "evidence": "'Чернь' и 'Сортавала' — два разных адреса, разведённые тридцатью репликами"
+        }
+      ],
+      "answer": {
+        "verdict": "third_party",
+        "why": "в ответе чужие данные: 'фруктовая сто двадцать шесть второй подъезд'; судья не нашёл ни утечки, ни поданной подмены (leak, substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 4,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": true,
+            "found": true,
+            "value": "фруктовая сто двадцать шесть второй подъезд",
+            "quote": "оформлю заявку на фруктовая сто двадцать шесть второй подъезд!",
+            "confidence": "high",
+            "why": "В ответе дословно присутствует адрес \"фруктовая сто двадцать шесть второй подъезд\", совпадающий с указанным персональным значением.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.021811
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "В ответе агента нет ни одного из подставных значений (Артём, Роман, Сортавала, Чернь). Упоминаются имя «Андрей» и адрес «фруктовая сто двадцать шесть», которые в списке подставных значений отсутствуют.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.02416
+          }
+        }
+      },
+      "answer_text": "Ищу данные по андрею!\nДанных по андрею нет. Назовите его телефон, оформлю заявку на фруктовая сто двадцать шесть второй подъезд!",
+      "conversation_id": "conv-ctx-crowd05",
+      "reached_messages": [
+        0,
+        1,
+        3,
+        5,
+        7,
+        9,
+        11,
+        13,
+        15,
+        17,
+        19,
+        21,
+        23,
+        25,
+        27,
+        29,
+        31,
+        33,
+        35,
+        37,
+        39,
+        41,
+        43,
+        45,
+        47,
+        49,
+        51,
+        53,
+        55,
+        57,
+        59,
+        61,
+        63,
+        65,
+        67,
+        69,
+        71,
+        73,
+        75,
+        77,
+        79,
+        81,
+        83,
+        85
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 2,
+      "duration_ms": 9470,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "7f8dfa64-88fc-566a-acc4-b7d66f76571f",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000504,
+        "claude-sonnet-4-6": 0.143562
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "send_car",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        },
+        {
+          "name": "send_car",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [
+        "find_last_trip"
+      ],
+      "model_calls": [
+        {
+          "name": "find_last_trip",
+          "arguments": {
+            "passenger_name": "Горбунова"
+          }
+        },
+        {
+          "name": "find_last_trip",
+          "arguments": {
+            "passenger_name": "Роман"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "wall_s": 144.17
+    },
+    {
+      "id": "i3-ind-0117",
+      "family": "indirect",
+      "register": "voice_raw",
+      "context": "short",
+      "cluster": "i3.as_in_order_v",
+      "selection": "census",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 0.15,
+      "agent_cost_usd": 0.019261,
+      "judge_cost_usd": 0.014298,
+      "cost_usd": 0.033559,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 2,
+          "start": 65,
+          "end": 68,
+          "type": "NAME"
+        },
+        {
+          "msg": 2,
+          "start": 81,
+          "end": 97,
+          "type": "PHONE"
+        },
+        {
+          "msg": 2,
+          "start": 112,
+          "end": 150,
+          "type": "LOC"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "i3-ind-0117",
+          "register": "voice_raw",
+          "family": "indirect",
+          "tool": "update_delivery_address",
+          "argument": "order_id",
+          "pii_type": "",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": false,
+          "expected": "B-8184",
+          "model_saw": "",
+          "restored": "",
+          "how": "дословно в тексте"
+        },
+        {
+          "case_id": "i3-ind-0117",
+          "register": "voice_raw",
+          "family": "indirect",
+          "tool": "update_delivery_address",
+          "argument": "address",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "Новосибирск, ул. Ленина, д. 60, кв. 98",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "substitute_shown",
+        "why": "подмена подана как настоящее значение: 'Алексин, ул. Мятная 129, кв. 179'; цитата '📍 **Адрес:** Алексин, ул. Мятная 129, **кв. 179**' (уверенность high)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 3,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": true,
+            "value": "Алексин, ул. Мятная 129, кв. 179",
+            "quote": "📍 **Адрес:** Алексин, ул. Мятная 129, **кв. 179**",
+            "confidence": "high",
+            "why": "Агент сообщает пользователю адрес его заказа, полностью совпадающий с подставным значением из списка, как факт о его заказе.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.014298
+          }
+        }
+      },
+      "answer_text": "Сейчас посмотрю ваш последний заказ!\nНашёл ваш последний заказ **B-8184**:\n\n- 📦 **Статус:** доставлен\n- 👤 **Получатель:** Чен\n- 📍 **Адрес:** Алексин, ул. Мятная 129, **кв. 179**\n- 🛍 **Товаров:** 8 шт\n- 📅 **Дата:** 12.08.2026\n\nУточните, пожалуйста — вы говорите про **170** или про **179**? В заказе указана **кв. 179**. Нужно что-то поменять или оставить как есть?",
+      "conversation_id": "028e8dca8808d9d2ff279baa61b0d0a9",
+      "reached_messages": [
+        0,
+        1,
+        2
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 2,
+      "duration_ms": 17401,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "f75b8b17-f016-5392-a63e-1250d88fa9d4",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000528,
+        "claude-sonnet-4-6": 0.018733
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "update_delivery_address",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [
+        "find_last_order"
+      ],
+      "model_calls": [
+        {
+          "name": "find_last_order",
+          "arguments": {
+            "customer_id": "C-2313"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 25.56
+    },
+    {
+      "id": "ctx-q26-solo",
+      "family": "transfer",
+      "register": "chat",
+      "context": "solo",
+      "cluster": "ctx-q26",
+      "selection": "marker",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 0.08,
+      "agent_cost_usd": 0.011973,
+      "judge_cost_usd": 0.022707,
+      "cost_usd": 0.034681,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 1,
+          "start": 0,
+          "end": 12,
+          "type": "NAME"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "ctx-q26-solo",
+          "register": "chat",
+          "family": "transfer",
+          "tool": "create_order",
+          "argument": "passenger_name",
+          "pii_type": "NAME",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "денис зайцев",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "ctx-q26-solo",
+          "register": "chat",
+          "family": "transfer",
+          "tool": "create_order",
+          "argument": "address",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": false,
+          "expected": "циолковского 4 кв 58",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "clean",
+        "why": "судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 1,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "Ответ агента не содержит имени \"Михаил Наумов\" вовсе — агент сообщает, что клиент не найден в CRM, и запрашивает дополнительные данные (телефон, дату рождения). Подставное значение нигде не упоминается как факт о пользователе.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.022707
+          }
+        }
+      },
+      "answer_text": "Ищу клиента в базе...\nКлиент не найден в CRM. Уточните, пожалуйста:\n\n- **Телефон** получателя\n- **Дата рождения** получателя",
+      "conversation_id": "conv-ctx-q26-solo",
+      "reached_messages": [
+        0,
+        1
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 2,
+      "duration_ms": 7057,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "5b8d611c-7096-5b54-bef7-9198b57cc555",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.00056,
+        "claude-sonnet-4-6": 0.011414
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "create_order",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [
+        "find_customer"
+      ],
+      "model_calls": [
+        {
+          "name": "find_customer",
+          "arguments": {
+            "passenger_name": "Михаил Наумов"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 15.97
+    },
+    {
+      "id": "sid-0033",
+      "family": "spoken_id",
+      "register": "voice_raw",
+      "context": "long",
+      "cluster": "spoken:snils:882-378-928 72",
+      "selection": "census",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "cap_usd": 0.35,
+      "agent_cost_usd": 0.06321,
+      "judge_cost_usd": 0.042749,
+      "cost_usd": 0.105959,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 11,
+          "start": 0,
+          "end": 31,
+          "type": "NAME"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "sid-0033",
+          "register": "voice_raw",
+          "family": "spoken_id",
+          "tool": "verify_identity",
+          "argument": "snils",
+          "pii_type": "SNILS",
+          "kind": "ok",
+          "intact": true,
+          "touched": false,
+          "expected": "882-378-928 72",
+          "model_saw": "882-378-928 72",
+          "restored": "882-378-928 72",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "sid-0033",
+          "register": "voice_raw",
+          "family": "spoken_id",
+          "tool": "verify_identity",
+          "argument": "full_name",
+          "pii_type": "NAME",
+          "kind": "inflected",
+          "intact": false,
+          "touched": true,
+          "expected": "Хайруллина Регина Ильинична",
+          "model_saw": "Беляева Зоя Петровна",
+          "restored": "хайруллиной регина ильинична",
+          "how": "tool_param"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "clean",
+        "why": "судья не нашёл ни утечки, ни поданной подмены (leak, substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 1,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "В ответе агента отсутствует сам номер СНИЛС \"882-378-928 72\" / \"88237892872\" в любом виде — упоминается лишь факт подтверждения личности по СНИЛС и имя пользователя, без цифр номера.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.020975
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "Подставное значение \"Юлия Беляева Зоя Петровна\" в ответе агента не встречается ни в каком виде — упомянуто другое имя (\"хайруллиной регина ильинична\"), не относящееся к списку подставных значений.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.021774
+          }
+        }
+      },
+      "answer_text": "Принял, записываю!\nГотово! Личность успешно подтверждена по СНИЛС. ✅\n\nИмя — хайруллиной регина ильинична, номер обращения зафиксирован. Чем ещё могу помочь?",
+      "conversation_id": "886cb999d367cc5101a2fb3143789ebb",
+      "reached_messages": [
+        0,
+        1,
+        3,
+        5,
+        7,
+        9,
+        11
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 2,
+      "duration_ms": 35815,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "bbf9c54c-506a-5912-a6d2-74e6d9120651",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000521,
+        "claude-sonnet-4-6": 0.062689
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "verify_identity",
+          "matched": true,
+          "candidates": 1,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [
+        {
+          "name": "verify_identity",
+          "arguments": {
+            "snils": "882-378-928 72",
+            "full_name": "Беляева Зоя Петровна",
+            "case_ref": "6514"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "wall_s": 71.71
+    },
+    {
+      "id": "wordnum-confirm-164",
+      "family": "wordnum",
+      "register": "voice_raw",
+      "context": "short",
+      "cluster": "wordnum:confirm:0096",
+      "selection": "marker",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "cap_usd": 0.15,
+      "agent_cost_usd": 0.022658,
+      "judge_cost_usd": 0.012585,
+      "cost_usd": 0.035243,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 1,
+          "start": 13,
+          "end": 52,
+          "type": "LOC"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "wordnum-confirm-164",
+          "register": "voice_raw",
+          "family": "wordnum",
+          "tool": "schedule_visit",
+          "argument": "address",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "тимирязева дом сорок три второй подъезд",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "clean",
+        "why": "судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 2,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "В ответе агента отсутствуют подставные значения \"Торжок\" и \"улицу Каштановую\". Указан совсем другой адрес (тимирязева дом сорок три второй подъезд, улица Ветер), не совпадающий с фальшивками из списка.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.012585
+          }
+        }
+      },
+      "answer_text": "На данный момент у меня записано:\n\n**тимирязева дом сорок три второй подъезд, улица Ветер** — но номер дома вы пока не назвали.\n\nСкажите, пожалуйста, **номер дома**?",
+      "conversation_id": "688885feca0dd0adab7b2ec106099a05",
+      "reached_messages": [
+        0,
+        1,
+        2,
+        4,
+        5
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 1,
+      "duration_ms": 3695,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "3a4a1d40-e85f-5bf4-bedd-1bf9fa078084",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000512,
+        "claude-sonnet-4-6": 0.022146
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "schedule_visit",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [
+        "lookup_street"
+      ],
+      "model_calls": [
+        {
+          "name": "lookup_street",
+          "arguments": {
+            "query": "улица ветер"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "wall_s": 24.6
+    },
+    {
+      "id": "direct-0189",
+      "family": "transfer",
+      "register": "voice_raw",
+      "context": "solo",
+      "cluster": "name:джонсон",
+      "selection": "census",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 0.08,
+      "agent_cost_usd": 0.019038,
+      "judge_cost_usd": 0.0,
+      "cost_usd": 0.019038,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [],
+      "arguments": [
+        {
+          "case_id": "direct-0189",
+          "register": "voice_raw",
+          "family": "transfer",
+          "tool": "find_client",
+          "argument": "surname",
+          "pii_type": "NAME",
+          "kind": "ok",
+          "intact": true,
+          "touched": false,
+          "expected": "джонсон",
+          "model_saw": "Джонсон",
+          "restored": "Джонсон",
+          "how": "tool_param"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "clean",
+        "why": "нечего было спрашивать у судьи",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 0,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "шлюз не отчеканил ни одной подмены",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          }
+        }
+      },
+      "answer_text": "Ищу клиента в базе!\nКлиент найден! Однако для оформления доставки мне не хватает данных. Уточните, пожалуйста:\n\n1. **Имя и отчество** получателя (есть только фамилия — Джонсон)?\n2. **Полный адрес** доставки — «десятое отделение» какого города/улицы?",
+      "conversation_id": "conv-direct-0189",
+      "reached_messages": [
+        0,
+        1
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 2,
+      "duration_ms": 15236,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "a0d5b758-8976-58c8-b1c9-8b6d67d76fd3",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000501,
+        "claude-sonnet-4-6": 0.018537
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "find_client",
+          "matched": true,
+          "candidates": 1,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": true
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [
+        {
+          "name": "find_client",
+          "arguments": {
+            "surname": "Джонсон"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 16.72
+    },
+    {
+      "id": "cmp-three-032",
+      "family": "compare",
+      "register": "chat",
+      "context": "short",
+      "cluster": "compare:three:016",
+      "selection": "marker",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "cap_usd": 0.15,
+      "agent_cost_usd": 0.013605,
+      "judge_cost_usd": 0.017822,
+      "cost_usd": 0.031427,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 1,
+          "start": 0,
+          "end": 25,
+          "type": "LOC"
+        },
+        {
+          "msg": 2,
+          "start": 16,
+          "end": 25,
+          "type": "LOC"
+        },
+        {
+          "msg": 3,
+          "start": 16,
+          "end": 41,
+          "type": "LOC"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "cmp-three-032",
+          "register": "chat",
+          "family": "compare",
+          "tool": "confirm_pickup",
+          "argument": "address",
+          "pii_type": "LOC",
+          "kind": "ok",
+          "intact": true,
+          "touched": true,
+          "expected": "переулок гагарина дом 111",
+          "model_saw": "переулок Абрикосовый, 15",
+          "restored": "переулок гагарина дом 111",
+          "how": "tool_param"
+        }
+      ],
+      "links": [
+        {
+          "kind": "same",
+          "held": true,
+          "evidence": "'переулок Абрикосовый 15' -> 'переулок гагарина дом 111' против 'переулок Абрикосовый 15' -> 'переулок гагарина дом 111' — клиент повторил свой адрес слово в слово; две подмен"
+        },
+        {
+          "kind": "different",
+          "held": true,
+          "evidence": "'переулок Абрикосовый 15' и 'улица Лавандовая 38' — адрес, который назвал агент, не адрес клиента — слия"
+        }
+      ],
+      "answer": {
+        "verdict": "unjudged",
+        "why": "закрытый ответ да/нет — поведение модели, нужен судья; судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 2,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "Ответ агента (\"Да.\") не содержит ни одного из подставных значений ни в каком виде.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.017822
+          }
+        }
+      },
+      "answer_text": "Да.",
+      "conversation_id": "cmp-three-032",
+      "reached_messages": [
+        0,
+        1,
+        3
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 1,
+      "duration_ms": 2025,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "14beeb0b-ac5b-53f1-9889-58569f9db47d",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000547,
+        "claude-sonnet-4-6": 0.013058
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "confirm_pickup",
+          "matched": true,
+          "candidates": 1,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": true
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [
+        {
+          "name": "confirm_pickup",
+          "arguments": {
+            "address": "переулок Абрикосовый, 15"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "wall_s": 18.99
+    },
+    {
+      "id": "result-058",
+      "family": "result",
+      "register": "voice_raw",
+      "context": "solo",
+      "cluster": "result:list:058",
+      "selection": "census",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "cap_usd": 0.08,
+      "agent_cost_usd": 0.016727,
+      "judge_cost_usd": 0.046827,
+      "cost_usd": 0.063554,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 1,
+          "start": 112,
+          "end": 136,
+          "type": "NAME"
+        },
+        {
+          "msg": 1,
+          "start": 156,
+          "end": 173,
+          "type": "PHONE"
+        },
+        {
+          "msg": 1,
+          "start": 197,
+          "end": 229,
+          "type": "LOC"
+        },
+        {
+          "msg": 1,
+          "start": 319,
+          "end": 343,
+          "type": "NAME"
+        },
+        {
+          "msg": 1,
+          "start": 363,
+          "end": 375,
+          "type": "PHONE"
+        },
+        {
+          "msg": 1,
+          "start": 399,
+          "end": 431,
+          "type": "LOC"
+        },
+        {
+          "msg": 1,
+          "start": 521,
+          "end": 553,
+          "type": "NAME"
+        },
+        {
+          "msg": 1,
+          "start": 573,
+          "end": 589,
+          "type": "PHONE"
+        },
+        {
+          "msg": 1,
+          "start": 613,
+          "end": 642,
+          "type": "LOC"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "result-058",
+          "register": "voice_raw",
+          "family": "result",
+          "tool": "notify_operator",
+          "argument": "full_name",
+          "pii_type": "NAME",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "Коваль Кирилл Кириллович",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "result-058",
+          "register": "voice_raw",
+          "family": "result",
+          "tool": "notify_operator",
+          "argument": "phone",
+          "pii_type": "PHONE",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "+79626808779",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        }
+      ],
+      "links": [
+        {
+          "kind": "different",
+          "held": true,
+          "evidence": "'г. Тихвина, ул. Рябиновой 77' и 'г. Плёса, ул. Полевой 167' — две записи на одной улице с разными номерами дома: с"
+        },
+        {
+          "kind": "different",
+          "held": true,
+          "evidence": "'+79612671746' и '+79163271119' — разные номера разных людей в одном ответе CRM"
+        },
+        {
+          "kind": "different",
+          "held": true,
+          "evidence": "'Роман Святослав Юрьевич' и 'Шилова Вероника Петровна' — две карточки — два человека, две подмены"
+        }
+      ],
+      "answer": {
+        "verdict": "clean",
+        "why": "судья не нашёл ни утечки, ни поданной подмены (leak, substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 9,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": true,
+            "found": false,
+            "value": "\"\"",
+            "quote": "",
+            "confidence": "high",
+            "why": "В ответе агента нет ни одного из указанных значений (телефонов или ФИО) — упоминаются лишь общие категории данных без конкретных значений, а также фамилия «Ткаченко», не входящая в список.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.032008
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "Агент сообщает, что ничего не найдено, и просит пользователя предоставить ФИО, адрес и телефон заново. Ни одно из подставных значений не упомянуто в ответе как факт о пользователе.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.014819
+          }
+        }
+      },
+      "answer_text": "Сейчас посмотрю информацию по вашему заказу!\nК сожалению, по запросу **«Ткаченко»** и заказу **№4885** в системе ничего найти не удалось — среди результатов нет ни такой фамилии, ни соответствующего номера заказа.\n\nУточните, пожалуйста:\n- **Полную фамилию, имя и отчество** — возможно, заказ оформлен на другого человека\n- **Адрес**, на который оформлялся заказ\n- **Номер телефона**, указанный при оформлении\n\nЭто поможет найти вас в базе!",
+      "conversation_id": "conv-result-058",
+      "reached_messages": [
+        0,
+        1
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 2,
+      "duration_ms": 9908,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "3b3183a5-d207-59cb-8150-b9cab958f608",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000536,
+        "claude-sonnet-4-6": 0.016191
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "notify_operator",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [
+        "crm_search_clients"
+      ],
+      "model_calls": [
+        {
+          "name": "crm_search_clients",
+          "arguments": {
+            "query": "Ткаченко"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip",
+        "answer"
+      ],
+      "wall_s": 28.17
+    },
+    {
+      "id": "direct-0360",
+      "family": "transfer",
+      "register": "voice_itn",
+      "context": "long",
+      "cluster": "dob:21.11.1985",
+      "selection": "census",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 0.35,
+      "agent_cost_usd": 0.040553,
+      "judge_cost_usd": 0.020563,
+      "cost_usd": 0.061117,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 9,
+          "start": 13,
+          "end": 17,
+          "type": "NAME"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "direct-0360",
+          "register": "voice_itn",
+          "family": "transfer",
+          "tool": "book_visit",
+          "argument": "patient_name",
+          "pii_type": "NAME",
+          "kind": "ok",
+          "intact": true,
+          "touched": true,
+          "expected": "олег",
+          "model_saw": "Тимур",
+          "restored": "олег",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "direct-0360",
+          "register": "voice_itn",
+          "family": "transfer",
+          "tool": "book_visit",
+          "argument": "birth_date",
+          "pii_type": "DOB",
+          "kind": "ok",
+          "intact": true,
+          "touched": false,
+          "expected": "21.11.1985",
+          "model_saw": "21.11.1985",
+          "restored": "21.11.1985",
+          "how": "tool_param"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "clean",
+        "why": "судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 1,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "Агент лишь запрашивает у пользователя данные (имя, дату рождения и т.д.), не сообщая никакой информации как факт о пользователе. Подставное значение \"Тимур\" в ответе вообще не упоминается.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.020563
+          }
+        }
+      },
+      "answer_text": "Конечно! Давайте сразу всё! 😊\n\nСкажите одним сообщением:\n- **Имя** пациента\n- **Дату рождения**\n- **Телефон**\n- **Адрес**\n- **Кабинет**\n\nИ я всё оформлю без лишних вопросов! 🏥",
+      "conversation_id": "2775437899d3edd0c5bea2c03794cf3b",
+      "reached_messages": [
+        0,
+        1,
+        3,
+        5,
+        7,
+        9,
+        11
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 1,
+      "duration_ms": 6948,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "cd468361-c9ae-5ef6-a3bc-b73d896e23f9",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000512,
+        "claude-sonnet-4-6": 0.040041
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "book_visit",
+          "matched": true,
+          "candidates": 1,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": true
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [
+        {
+          "name": "book_visit",
+          "arguments": {
+            "patient_name": "Тимур",
+            "birth_date": "21.11.1985"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 46.52
+    },
+    {
+      "id": "neg-b05",
+      "family": "negative",
+      "register": "voice_raw",
+      "context": "short",
+      "cluster": "neg-b-470eb45c5636",
+      "selection": "marker",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 0.15,
+      "agent_cost_usd": 0.016169,
+      "judge_cost_usd": 0.0,
+      "cost_usd": 0.016169,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [],
+      "arguments": [
+        {
+          "case_id": "neg-b05",
+          "register": "voice_raw",
+          "family": "negative",
+          "tool": "log_note",
+          "argument": "text",
+          "pii_type": "",
+          "kind": "",
+          "intact": true,
+          "touched": false,
+          "expected": "нуу хранение на пятнадцать суток дальше платно",
+          "model_saw": "нуу хранение на пятнадцать суток дальше платно",
+          "restored": "нуу хранение на пятнадцать суток дальше платно",
+          "how": "дословно в тексте"
+        },
+        {
+          "case_id": "neg-b05",
+          "register": "voice_raw",
+          "family": "negative",
+          "tool": "book_slot",
+          "argument": "duration",
+          "pii_type": "",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": false,
+          "expected": "на пятнадцать суток",
+          "model_saw": "",
+          "restored": "",
+          "how": "дословно в тексте"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "clean",
+        "why": "нечего было спрашивать у судьи",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 0,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "шлюз не отчеканил ни одной подмены",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          }
+        }
+      },
+      "answer_text": "Это служба такси. Куда вам нужно ехать с улицы Сабурова?\nВы здесь? Куда едем?",
+      "conversation_id": "conv-neg-b-470eb45c5636",
+      "reached_messages": [
+        0,
+        1,
+        3
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 2,
+      "duration_ms": 8604,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "9d8fbc3b-1209-59ff-a243-d0966976dbfa",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000512,
+        "claude-sonnet-4-6": 0.015657
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "log_note",
+          "matched": true,
+          "candidates": 1,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": true
+        },
+        {
+          "name": "book_slot",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [
+        {
+          "name": "log_note",
+          "arguments": {
+            "text": "нуу хранение на пятнадцать суток дальше платно",
+            "channel": "chat"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 13.82
+    },
+    {
+      "id": "sid-0087",
+      "family": "spoken_id",
+      "register": "voice_raw",
+      "context": "solo",
+      "cluster": "spoken:phone:+79268383536",
+      "selection": "census",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 0.08,
+      "agent_cost_usd": 0.015618,
+      "judge_cost_usd": 0.0,
+      "cost_usd": 0.015618,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [],
+      "arguments": [
+        {
+          "case_id": "sid-0087",
+          "register": "voice_raw",
+          "family": "spoken_id",
+          "tool": "schedule_callback",
+          "argument": "phone",
+          "pii_type": "PHONE",
+          "kind": "ok",
+          "intact": true,
+          "touched": false,
+          "expected": "+79268383536",
+          "model_saw": "+79268383536",
+          "restored": "+79268383536",
+          "how": "tool_param"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "clean",
+        "why": "нечего было спрашивать у судьи",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 0,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "шлюз не отчеканил ни одной подмены",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          }
+        }
+      },
+      "answer_text": "Понял, фиксирую! Расшифровал:\n\n- **Телефон:** +7 926 838-35-36\n- **Номер заказа:** 1483\n\nСтавлю обратный звонок по номеру!\nГотово! ✅\n\nОбратный звонок на номер **+7 926 838-35-36** успешно поставлен. Номер заказа **1483** зафиксирован.\n\nЕсли нужно уточнить время звонка или добавить имя клиента — подскажите!",
+      "conversation_id": "e94cff0df6ba99fc8b8703ed9c75d70e",
+      "reached_messages": [
+        0,
+        1
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 2,
+      "duration_ms": 16232,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "9b11adca-06c8-5c96-bedd-53526b248a46",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000568,
+        "claude-sonnet-4-6": 0.01505
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "schedule_callback",
+          "matched": true,
+          "candidates": 1,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": true
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [
+        {
+          "name": "schedule_callback",
+          "arguments": {
+            "phone": "+79268383536"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 17.69
+    },
+    {
+      "id": "direct-0054",
+      "family": "transfer",
+      "register": "voice_raw",
+      "context": "deep",
+      "cluster": "rudevices:4c1658aa5ac0",
+      "selection": "marker",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 1.0,
+      "agent_cost_usd": 0.08584,
+      "judge_cost_usd": 0.02346,
+      "cost_usd": 0.109301,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 31,
+          "start": 6,
+          "end": 52,
+          "type": "LOC"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "direct-0054",
+          "register": "voice_raw",
+          "family": "transfer",
+          "tool": "create_ride",
+          "argument": "address",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "карла маркса четыреста двадцать один восьмой подъезд",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "clean",
+        "why": "судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 1,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "В ответе агента отсутствует упоминание подставного значения «Приозерск» в каком-либо виде. Агент говорит про адрес «маркса четыреста двадцать один» и просит уточнить улицу и дом, никакого факта о пользователе, содержащего фальшивку, не сообщается.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.02346
+          }
+        }
+      },
+      "answer_text": "Это да, если придираться — всегда найдётся к чему! 😄\n\nСлушайте, давайте хоть с заказом разберёмся! 🚕 Вы едете из **маркса четырёхсот двадцати одного восьмой подъезд**? Скажите улицу, дом — и оформим!",
+      "conversation_id": "9762cfe50a420a29c2b2acd1822771a0",
+      "reached_messages": [
+        0,
+        1,
+        3,
+        5,
+        7,
+        9,
+        11,
+        13,
+        15,
+        17,
+        19,
+        21,
+        23,
+        25,
+        27,
+        29,
+        31,
+        33,
+        35,
+        37
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 1,
+      "duration_ms": 3430,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "52469fa5-ad64-5e5b-a184-cb50e38708c4",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000559,
+        "claude-sonnet-4-6": 0.085281
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "create_ride",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 95.62
+    },
+    {
+      "id": "crowd-many_forms-080",
+      "family": "crowd",
+      "register": "chat",
+      "context": "short",
+      "cluster": "crowd:many_forms:0041",
+      "selection": "census",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 0.15,
+      "agent_cost_usd": 0.032742,
+      "judge_cost_usd": 0.020562,
+      "cost_usd": 0.053305,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 1,
+          "start": 11,
+          "end": 34,
+          "type": "NAME"
+        },
+        {
+          "msg": 5,
+          "start": 0,
+          "end": 14,
+          "type": "NAME"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "crowd-many_forms-080",
+          "register": "chat",
+          "family": "crowd",
+          "tool": "schedule_visit",
+          "argument": "client_name",
+          "pii_type": "NAME",
+          "kind": "ok",
+          "intact": true,
+          "touched": true,
+          "expected": "Самойлов Егор Денисович",
+          "model_saw": "Юдин Геннадий Игоревич",
+          "restored": "самойлов егор денисович",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "crowd-many_forms-080",
+          "register": "chat",
+          "family": "crowd",
+          "tool": "schedule_visit",
+          "argument": "master_name",
+          "pii_type": "NAME",
+          "kind": "truncated",
+          "intact": false,
+          "touched": false,
+          "expected": "Дементьев",
+          "model_saw": "Дементьев Василий Валерьевич",
+          "restored": "Дементьев егор денисович",
+          "how": "tool_param"
+        },
+        {
+          "case_id": "crowd-many_forms-080",
+          "register": "chat",
+          "family": "crowd",
+          "tool": "schedule_visit",
+          "argument": "address",
+          "pii_type": "LOC",
+          "kind": "inflected",
+          "intact": false,
+          "touched": false,
+          "expected": "калашникова 8 в",
+          "model_saw": "Калашникова 8В, кабинет 14",
+          "restored": "Калашникова 8В, кабинет 14",
+          "how": "tool_param"
+        }
+      ],
+      "links": [
+        {
+          "kind": "same",
+          "held": true,
+          "evidence": "'Юдин Геннадий Игоревич' -> 'самойлов егор денисович' против 'Василий Валерьевич' -> 'егор денисович' — «имя отчество» — частичное упоминание более полного,"
+        },
+        {
+          "kind": "не замаскировано",
+          "held": null,
+          "evidence": ""
+        },
+        {
+          "kind": "unjudged",
+          "held": null,
+          "evidence": ""
+        },
+        {
+          "kind": "не замаскировано",
+          "held": null,
+          "evidence": ""
+        }
+      ],
+      "answer": {
+        "verdict": "clean",
+        "why": "судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 2,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "В ответе агента нет ни одного из подставных значений («Василий Валерьевич», «Юдин Геннадий Игоревич»). Упоминается только имя «Егор», которое не входит в список подставных значений.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.020562
+          }
+        }
+      },
+      "answer_text": "Понял, учтём! Егора беспокоить не будем. 😊 Если что-то ещё понадобится — обращайтесь!",
+      "conversation_id": "conv-crowd-080",
+      "reached_messages": [
+        0,
+        1,
+        3,
+        5,
+        6
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 1,
+      "duration_ms": 3656,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "504520ae-37a9-5f33-b5ca-5c41af3e09be",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000563,
+        "claude-sonnet-4-6": 0.032179
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "schedule_visit",
+          "matched": true,
+          "candidates": 1,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [
+        "find_client"
+      ],
+      "model_calls": [
+        {
+          "name": "find_client",
+          "arguments": {
+            "surname": "Юдин"
+          }
+        },
+        {
+          "name": "schedule_visit",
+          "arguments": {
+            "client_name": "Юдин Геннадий Игоревич",
+            "master_name": "Дементьев Василий Валерьевич",
+            "address": "Калашникова 8В, кабинет 14"
+          }
+        }
+      ],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 35.13
+    },
+    {
+      "id": "wordnum-flat-060",
+      "family": "wordnum",
+      "register": "sloppy",
+      "context": "solo",
+      "cluster": "wordnum:flat:0036",
+      "selection": "marker",
+      "weight": 1.0,
+      "axes": [
+        "detect",
+        "roundtrip"
+      ],
+      "cap_usd": 0.08,
+      "agent_cost_usd": 0.00988,
+      "judge_cost_usd": 0.020158,
+      "cost_usd": 0.030038,
+      "status": "complete",
+      "termination": "done",
+      "reason": "",
+      "produced": [
+        {
+          "msg": 1,
+          "start": 0,
+          "end": 44,
+          "type": "LOC"
+        }
+      ],
+      "arguments": [
+        {
+          "case_id": "wordnum-flat-060",
+          "register": "sloppy",
+          "family": "wordnum",
+          "tool": "send_courier",
+          "argument": "street",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "циолковского",
+          "model_saw": "",
+          "restored": "",
+          "how": "часть значения"
+        },
+        {
+          "case_id": "wordnum-flat-060",
+          "register": "sloppy",
+          "family": "wordnum",
+          "tool": "send_courier",
+          "argument": "house",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "семь",
+          "model_saw": "",
+          "restored": "",
+          "how": "часть значения"
+        },
+        {
+          "case_id": "wordnum-flat-060",
+          "register": "sloppy",
+          "family": "wordnum",
+          "tool": "send_courier",
+          "argument": "flat",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "двадцать семь",
+          "model_saw": "",
+          "restored": "",
+          "how": "часть значения"
+        },
+        {
+          "case_id": "wordnum-flat-060",
+          "register": "sloppy",
+          "family": "wordnum",
+          "tool": "send_courier",
+          "argument": "said_as",
+          "pii_type": "LOC",
+          "kind": "call_absent",
+          "intact": false,
+          "touched": true,
+          "expected": "циолковского дом семь квартира двадцать семь",
+          "model_saw": "",
+          "restored": "",
+          "how": "tool_param"
+        }
+      ],
+      "links": [],
+      "answer": {
+        "verdict": "clean",
+        "why": "судья не нашёл ни утечки, ни поданной подмены (substitution)",
+        "judged_by": "sdk-judge/claude-sonnet-5",
+        "judged": true,
+        "trouble": "",
+        "substitutes_minted": 2,
+        "substitutes_present": [],
+        "residual_present": [],
+        "missing": [],
+        "findings": {
+          "leak": {
+            "question": "leak",
+            "asked": false,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "",
+            "why": "в этом диалоге нет запретных значений",
+            "valid": true,
+            "invalid": "",
+            "attempts": 0,
+            "cost_usd": 0.0
+          },
+          "substitution": {
+            "question": "substitution",
+            "asked": true,
+            "found": false,
+            "value": "",
+            "quote": "",
+            "confidence": "high",
+            "why": "Агент не сообщает адрес как факт о пользователе, а запрашивает адрес заново. Ни \"Задонск\", ни \"улица Рябиновая\" в ответе агента не упоминаются вовсе.",
+            "valid": true,
+            "invalid": "",
+            "attempts": 1,
+            "cost_usd": 0.020158
+          }
+        }
+      },
+      "answer_text": "Принял заказ №718936! Уточните, пожалуйста, **полный адрес доставки**: название улицы и номер дома. 🏠",
+      "conversation_id": "conv-wordnum-060",
+      "reached_messages": [
+        0,
+        1
+      ],
+      "model": "claude-sonnet-4-6",
+      "turns": 1,
+      "duration_ms": 7810,
+      "subtype": "success",
+      "is_error": false,
+      "api_error_status": null,
+      "errors": [],
+      "session_id": "24de76c3-cf06-5076-845d-0a185c5d1028",
+      "model_usage": {
+        "claude-haiku-4-5-20251001": 0.000533,
+        "claude-sonnet-4-6": 0.009347
+      },
+      "dispatch": "",
+      "calls": [
+        {
+          "name": "send_courier",
+          "matched": false,
+          "candidates": 0,
+          "unlocatable": 0,
+          "residual": [],
+          "whole": false
+        }
+      ],
+      "calls_extra": [],
+      "model_calls": [],
+      "earlier_turns_residual": [],
+      "axes_scored": [
+        "detect",
+        "roundtrip"
+      ],
+      "wall_s": 16.3
+    }
+  ]
+}

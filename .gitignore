@@ -46,3 +46,17 @@ prototype/e2e/reports/
 
 # IDE
 .idea/
+
+# Live-axis run artefacts. Each holds real tool arguments out of the corpus and a
+# spend ledger, and both are per-run facts about a machine rather than about the
+# benchmark — the reproducible part is the case id list, which the report prints.
+prototype/bench/agentpii2/live/runs/
+
+# Собранные корпуса бенчмарков: детерминированы семенем и пересобираются
+# `build.py`, как и остальные наборы проекта. 15 МБ JSON в истории — это
+# 15 МБ, которые никто не читает и которые расходятся с генератором при
+# первой же правке семейства. Лестница ярусов рядом остаётся: она мелкая и
+# она ПИН, то есть именно то, что должно быть неизменным.
+prototype/bench/agentpii2/corpus.json
+prototype/bench/agentpii3/corpus.json
+.claude/worktrees/

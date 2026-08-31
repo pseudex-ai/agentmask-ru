@@ -1,0 +1,1102 @@
+{
+  "meta": {
+    "purpose": "reference distribution for AgentPII-RU v3: what live Russian speech contains, so the generated corpus reproduces it instead of our imagination",
+    "generated": "2026-08-30",
+    "corpora": {
+      "calls": {
+        "path": "/Users/igor/.cache/pseudex-bench/speech_calls.jsonl",
+        "raw": 12950,
+        "unique": 11982,
+        "licence": "CC BY-NC 4.0",
+        "text_may_ship": false,
+        "source": "OpenSTT asr_calls_2_val"
+      },
+      "rudevices": {
+        "path": "/Users/igor/.cache/pseudex-bench/speech_rudevices.jsonl",
+        "raw": 42952,
+        "unique": 41342,
+        "licence": "CC BY 4.0",
+        "text_may_ship": true,
+        "source": "SOVA RuDevices"
+      }
+    },
+    "counting_unit": "DISTINCT replica. The raw files repeat 968 and 1610 lines respectively; a repeat is an occurrence, not an observation, and shares computed on occurrences lean our way.",
+    "method": "surface form only. The detector is never called: a corpus profiled with the engine can only report what the engine already knows.",
+    "name_gazetteer": "written by hand in probes.py for this measurement, NOT the leased 197k list -- otherwise the count measures the dictionary, not the corpus."
+  },
+  "register": {
+    "calls": {
+      "replicas": 11982,
+      "share_with_any_digit": 0.0,
+      "share_starting_capital": 0.0012518778167250877,
+      "share_ending_period": 0.0,
+      "share_any_sentence_punctuation": 0.0,
+      "share_with_hyphen": 0.0,
+      "share_with_latin": 0.0,
+      "share_single_word": 0.02787514605241195,
+      "words_mean": 6.35,
+      "words_median": 5.0,
+      "words_p90": 12,
+      "words_max": 70,
+      "chars_mean": 35.14,
+      "chars_median": 28.0,
+      "chars_p90": 68,
+      "chars_max": 361,
+      "share_numeral_run_ge1": 0.09205474878985144,
+      "share_numeral_run_ge3": 0.015606743448506093,
+      "share_numeral_run_ge5": 0.003755633450175263,
+      "share_numeral_run_ge7": 0.0005842096478050409,
+      "numeral_run_histogram": {
+        "0": 10879,
+        "1": 594,
+        "2": 322,
+        "3": 115,
+        "4": 27,
+        "5": 27,
+        "6": 11,
+        "7": 5,
+        "8": 1,
+        "14": 1
+      },
+      "raw_lines": 12950
+    },
+    "rudevices": {
+      "replicas": 41342,
+      "share_with_any_digit": 0.0,
+      "share_starting_capital": 0.0,
+      "share_ending_period": 0.0,
+      "share_any_sentence_punctuation": 0.0,
+      "share_with_hyphen": 0.10154322480770162,
+      "share_with_latin": 0.0,
+      "share_single_word": 0.02660732427071743,
+      "words_mean": 8.07,
+      "words_median": 7.0,
+      "words_p90": 16,
+      "words_max": 40,
+      "chars_mean": 44.98,
+      "chars_median": 38.0,
+      "chars_p90": 87,
+      "chars_max": 200,
+      "share_numeral_run_ge1": 0.10817086739877123,
+      "share_numeral_run_ge3": 0.010134971699482367,
+      "share_numeral_run_ge5": 0.0008707851579507523,
+      "share_numeral_run_ge7": 0.00014513085965845872,
+      "numeral_run_histogram": {
+        "0": 36870,
+        "1": 3241,
+        "2": 812,
+        "3": 307,
+        "4": 76,
+        "5": 20,
+        "6": 10,
+        "8": 2,
+        "9": 3,
+        "14": 1
+      },
+      "raw_lines": 42952
+    },
+    "combined": {
+      "replicas": 53324,
+      "share_with_any_digit": 0.0,
+      "share_starting_capital": 0.0002812992273647888,
+      "share_ending_period": 0.0,
+      "share_any_sentence_punctuation": 0.0,
+      "share_with_hyphen": 0.07872627709849224,
+      "share_with_latin": 0.0,
+      "share_single_word": 0.026892206136073814,
+      "words_mean": 7.69,
+      "words_median": 6.0,
+      "words_p90": 15,
+      "words_max": 70,
+      "chars_mean": 42.76,
+      "chars_median": 35.0,
+      "chars_p90": 84,
+      "chars_max": 361,
+      "share_numeral_run_ge1": 0.10454954617057985,
+      "share_numeral_run_ge3": 0.011364488785537469,
+      "share_numeral_run_ge5": 0.0015190158277698597,
+      "share_numeral_run_ge7": 0.00024379266371615032,
+      "numeral_run_histogram": {
+        "0": 47749,
+        "1": 3835,
+        "2": 1134,
+        "3": 422,
+        "4": 103,
+        "5": 47,
+        "6": 21,
+        "7": 5,
+        "8": 3,
+        "9": 3,
+        "14": 2
+      }
+    }
+  },
+  "share_of_replicas_carrying_any_pii": {
+    "calls": {
+      "replicas_with_any_pii": 239,
+      "share": 0.01995
+    },
+    "rudevices": {
+      "replicas_with_any_pii": 388,
+      "share": 0.00939
+    },
+    "note": "counted on the probes that actually fire -- name, address (marker-visible), phone, DOB. It is a FLOOR: the marker-free address class is invisible to it, so the real share is roughly a third higher. What it settles is the order of magnitude: nine replicas in ten carry no personal data at all, and a generated set where every line carries some is not this register."
+  },
+  "pii_presence": {
+    "name": {
+      "calls": {
+        "replicas": 159,
+        "share": 0.01327,
+        "examples": [
+          {
+            "source": "calls",
+            "key": "5d787edff5c7",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          },
+          {
+            "source": "calls",
+            "key": "086346be7a79",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          },
+          {
+            "source": "calls",
+            "key": "318aadae415d",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          }
+        ]
+      },
+      "rudevices": {
+        "replicas": 114,
+        "share": 0.00276,
+        "examples": [
+          {
+            "source": "rudevices",
+            "text": "александр гудков минут через пять наверное будет может есть"
+          },
+          {
+            "source": "rudevices",
+            "text": "алексей валентинович"
+          },
+          {
+            "source": "rudevices",
+            "text": "алло вадима сивкова сто девять поедем в на восточный посёлок"
+          }
+        ]
+      },
+      "combined_replicas": 273,
+      "combined_share": 0.00512,
+      "note": "strong shapes only: patronymic, given+surname pair, or a value right after «меня зовут». A hand check of 30 sampled hits found 30 real people."
+    },
+    "name_first_only": {
+      "calls": {
+        "replicas": 195,
+        "share": 0.01627,
+        "examples": [
+          {
+            "source": "calls",
+            "key": "0308ee80ba34",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          },
+          {
+            "source": "calls",
+            "key": "5627a2acbfe8",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          },
+          {
+            "source": "calls",
+            "key": "3111f0a10a98",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          }
+        ]
+      },
+      "rudevices": {
+        "replicas": 774,
+        "share": 0.01872,
+        "examples": [
+          {
+            "source": "rudevices",
+            "text": "а вот артёма"
+          },
+          {
+            "source": "rudevices",
+            "text": "а вот хуй саша сам посмотри"
+          },
+          {
+            "source": "rudevices",
+            "text": "а где сама ирина"
+          }
+        ]
+      },
+      "combined_replicas": 969,
+      "combined_share": 0.01817,
+      "note": "a bare given name with nothing beside it -- «марина у меня машина», «позвоните татьянке». Noisier by construction and reported apart: this is the shape a written corpus never produces. Hand-checked on 40 sampled hits: 37 real people, two were «жена» read as «Женя» (the stem was removed, so the shipped number no longer has them) and one was the city Владимир, which no surface form can separate from the given name."
+    },
+    "name_cue_without_value": {
+      "calls": {
+        "replicas": 101,
+        "share": 0.00843,
+        "examples": [
+          {
+            "source": "calls",
+            "key": "f4f052ae33e7",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          },
+          {
+            "source": "calls",
+            "key": "9b67103f5588",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          },
+          {
+            "source": "calls",
+            "key": "357b64d5440b",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          }
+        ]
+      },
+      "rudevices": {
+        "replicas": 36,
+        "share": 0.00087,
+        "examples": [
+          {
+            "source": "rudevices",
+            "text": "а вот сейчас уточнил у габы он сказал что его зовут а короче фомси есть зам председатель фомса"
+          },
+          {
+            "source": "rudevices",
+            "text": "а как думаешь как меня зовут"
+          },
+          {
+            "source": "rudevices",
+            "text": "а когда ты отправляешь изменённую имя или фамилию ты значит"
+          }
+        ]
+      },
+      "combined_replicas": 137,
+      "combined_share": 0.00257,
+      "note": "«как вас зовут», «фамилия» with no name following -- the cue word without the value it licenses."
+    },
+    "address": {
+      "calls": {
+        "replicas": 60,
+        "share": 0.00501,
+        "examples": [
+          {
+            "source": "calls",
+            "key": "ecfe4bc722f1",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          },
+          {
+            "source": "calls",
+            "key": "59d8bb5b4641",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          },
+          {
+            "source": "calls",
+            "key": "559f34c1f469",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          }
+        ]
+      },
+      "rudevices": {
+        "replicas": 261,
+        "share": 0.00631,
+        "examples": [
+          {
+            "source": "rudevices",
+            "text": "а в другом месте на улице молостовых в филиале и даже близко метро то нужно ехать на автомобиле вот ну как-то так"
+          },
+          {
+            "source": "rudevices",
+            "text": "а вечером мне не разрешают на улицу выходить так что вот"
+          },
+          {
+            "source": "rudevices",
+            "text": "а вот а шоссе сто шестьдесят шесть а"
+          }
+        ]
+      },
+      "combined_replicas": 321,
+      "combined_share": 0.00602,
+      "note": "MARKER-VISIBLE ONLY and therefore biased upward; see address_truth for the number that does not share signals with the probe."
+    },
+    "phone": {
+      "calls": {
+        "replicas": 19,
+        "share": 0.00159,
+        "examples": [
+          {
+            "source": "calls",
+            "key": "8a1094e0ca79",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          },
+          {
+            "source": "calls",
+            "key": "a0ac5881c292",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          },
+          {
+            "source": "calls",
+            "key": "3f8b936e40ee",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          }
+        ]
+      },
+      "rudevices": {
+        "replicas": 3,
+        "share": 7e-05,
+        "examples": [
+          {
+            "source": "rudevices",
+            "text": "восемь девятьсот десять четыреста семь девяносто три пятьдесят пять"
+          },
+          {
+            "source": "rudevices",
+            "text": "девятьсот восемь сто тридцать один тридцать восемь восемьдесят свяжитесь со мной"
+          },
+          {
+            "source": "rudevices",
+            "text": "плюс семь девятьсот шестнадцать пять три три пять восемь восемь"
+          }
+        ]
+      },
+      "combined_replicas": 22,
+      "combined_share": 0.00041,
+      "note": "numeral run >= 7 with the counting sequence vetoed, or run >= 4 next to a telephone cue."
+    },
+    "email": {
+      "calls": {
+        "replicas": 0,
+        "share": 0.0,
+        "examples": []
+      },
+      "rudevices": {
+        "replicas": 0,
+        "share": 0.0,
+        "examples": []
+      },
+      "combined_replicas": 0,
+      "combined_share": 0.0,
+      "note": "zero. Speech has no «@» and no spelled-out address."
+    },
+    "dob": {
+      "calls": {
+        "replicas": 2,
+        "share": 0.00017,
+        "examples": [
+          {
+            "source": "calls",
+            "key": "7b63227accc7",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          },
+          {
+            "source": "calls",
+            "key": "dc2b8c236425",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          }
+        ]
+      },
+      "rudevices": {
+        "replicas": 10,
+        "share": 0.00024,
+        "examples": [
+          {
+            "source": "rudevices",
+            "text": "а я именно пример своей матрицы вам привожу в данном курсе так вот я родилась двадцатого числа и у меня на первой позиции да стоит двадцатая энергия"
+          },
+          {
+            "source": "rudevices",
+            "text": "когда было четыре года здесь в городе вот в селе в котором я сейчас живу а мы живём родилась я за двести пятьдесят км отсюда"
+          },
+          {
+            "source": "rudevices",
+            "text": "на следующий день после моего дня рождения вот там уже было много людей но у нас был такой ай контакт длительный там секунд десять"
+          }
+        ]
+      },
+      "combined_replicas": 12,
+      "combined_share": 0.00023,
+      "note": "a birth cue with a number near it. None is a full д-м-г date; the commonest real form is «семьдесят пятого года рождения»."
+    },
+    "snils": {
+      "calls": {
+        "replicas": 0,
+        "share": 0.0,
+        "examples": [],
+        "replicas_carrying_a_number": 0
+      },
+      "rudevices": {
+        "replicas": 1,
+        "share": 2e-05,
+        "examples": [
+          {
+            "source": "rudevices",
+            "text": "и там ну чтобы пропуск сделали короче я отправлял документы то есть там паспорт короче блять что там снилс вот"
+          }
+        ],
+        "replicas_carrying_a_number": 0
+      },
+      "combined_replicas": 1,
+      "combined_share": 2e-05,
+      "note": "the WORD; no value follows any of them."
+    },
+    "inn": {
+      "calls": {
+        "replicas": 0,
+        "share": 0.0,
+        "examples": [],
+        "replicas_carrying_a_number": 0
+      },
+      "rudevices": {
+        "replicas": 0,
+        "share": 0.0,
+        "examples": [],
+        "replicas_carrying_a_number": 0
+      },
+      "combined_replicas": 0,
+      "combined_share": 0.0,
+      "note": "zero -- the word itself never occurs."
+    },
+    "card": {
+      "calls": {
+        "replicas": 0,
+        "share": 0.0,
+        "examples": [],
+        "replicas_carrying_a_number": 0
+      },
+      "rudevices": {
+        "replicas": 4,
+        "share": 0.0001,
+        "examples": [
+          {
+            "source": "rudevices",
+            "text": "кто может тридцатку на карту одолжить"
+          },
+          {
+            "source": "rudevices",
+            "text": "сгорают ли бонусы на карте"
+          },
+          {
+            "source": "rudevices",
+            "text": "я кстати как-то в описание аа в тик токе кидал номер карты"
+          }
+        ],
+        "replicas_carrying_a_number": 0
+      },
+      "combined_replicas": 4,
+      "combined_share": 8e-05,
+      "note": "the WORD; no 16-numeral run exists."
+    },
+    "passport": {
+      "calls": {
+        "replicas": 5,
+        "share": 0.00042,
+        "examples": [
+          {
+            "source": "calls",
+            "key": "0bbe97ce9278",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          },
+          {
+            "source": "calls",
+            "key": "993296a07fac",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          },
+          {
+            "source": "calls",
+            "key": "17875f676eaf",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          }
+        ],
+        "replicas_carrying_a_number": 0
+      },
+      "rudevices": {
+        "replicas": 25,
+        "share": 0.0006,
+        "examples": [
+          {
+            "source": "rudevices",
+            "text": "а собака нет у нее и папа и мама лабрадоры с паспортами но мама в браковых была"
+          },
+          {
+            "source": "rudevices",
+            "text": "а у вас есть паспорт чтоб посмотреть"
+          },
+          {
+            "source": "rudevices",
+            "text": "бля ор пишет моя подруга типа через десять минут на вахте с паспортом"
+          }
+        ],
+        "replicas_carrying_a_number": 0
+      },
+      "combined_replicas": 30,
+      "combined_share": 0.00056,
+      "note": "the WORD; no series/number follows."
+    },
+    "plate": {
+      "calls": {
+        "replicas": 1,
+        "share": 8e-05,
+        "examples": [
+          {
+            "source": "calls",
+            "key": "0ec431f0bc54",
+            "text_withheld": "CC BY-NC 4.0 -- hashes and labels only"
+          }
+        ]
+      },
+      "rudevices": {
+        "replicas": 0,
+        "share": 0.0,
+        "examples": []
+      },
+      "combined_replicas": 1,
+      "combined_share": 2e-05,
+      "note": "no dictated plate exists. Every hit is a cue word next to an unrelated number; single-letter plate names («а», «о», «у») had to be dropped from the alphabet because they are ordinary Russian words."
+    }
+  },
+  "address_truth": {
+    "method": "hand labels, never the detector; two strata counted apart because the marker stratum is a census and the number stratum is a 250/4805 random sample (weight 19.22)",
+    "rudevices": {
+      "marker_stratum": {
+        "annotated": 400,
+        "is_census": true,
+        "address_replicas": 141,
+        "address_values": 156
+      },
+      "number_stratum": {
+        "annotated": 250,
+        "stratum_size": 4805,
+        "sample_weight": 19.22,
+        "address_replicas_in_sample": 13,
+        "address_values_in_sample": 13,
+        "estimated_address_replicas": 249.9
+      },
+      "estimated_address_replicas_total": 390.9,
+      "unique_replicas": 41342,
+      "estimated_share": 0.00946
+    },
+    "calls": {
+      "marker_stratum": {
+        "annotated": 122,
+        "address_replicas": 17
+      },
+      "number_stratum": {
+        "annotated": 1251,
+        "address_replicas": 26,
+        "is_near_census": true
+      },
+      "address_replicas_total": 43,
+      "unique_replicas": 11982,
+      "share": 0.00359
+    },
+    "marker_free_share_of_addresses": 0.639,
+    "why_it_matters": "a majority of real spoken addresses carry NO street type word and NO house marker -- «ленина пятьдесят», «гусева семь». A generator that writes «улица X дом N» reproduces the minority shape.",
+    "distinct_values": {
+      "rudevices": {
+        "occurrences": 169,
+        "distinct_values": 163,
+        "repeat_factor": 1.04
+      },
+      "calls": {
+        "occurrences": 44,
+        "distinct_values": 39,
+        "repeat_factor": 1.13
+      }
+    }
+  },
+  "probe_blindness": {
+    "note": "the marker-shaped address probe measured against the hand labels. It recalls almost everything in the stratum selected by the same words it looks for and nothing outside it -- the same defect the first voice set had, reproduced here on purpose so the number above is read correctly.",
+    "by_stratum": {
+      "rudevices": {
+        "marker": {
+          "gold": 141,
+          "probe_found": 137,
+          "recall": 0.972,
+          "false_positives_on_non_address": 83
+        },
+        "number-sample": {
+          "gold": 13,
+          "probe_found": 0,
+          "recall": 0.0,
+          "false_positives_on_non_address": 1
+        }
+      },
+      "calls": {
+        "marker": {
+          "gold": 17,
+          "probe_found": 17,
+          "recall": 1.0,
+          "false_positives_on_non_address": 13
+        },
+        "number": {
+          "gold": 26,
+          "probe_found": 0,
+          "recall": 0.0,
+          "false_positives_on_non_address": 4
+        }
+      }
+    }
+  },
+  "lexicon": {
+    "openers": {
+      "calls": {
+        "слушаю": 104,
+        "здравствуйте": 57,
+        "алло": 48,
+        "мужчина": 32,
+        "извините": 31,
+        "привет": 23,
+        "женщина": 23,
+        "девушка": 18,
+        "скажите пожалуйста": 18,
+        "простите": 15,
+        "добрый день": 10,
+        "молодой человек": 10,
+        "здрасте": 6,
+        "да слушаю": 6,
+        "добрый вечер": 5,
+        "уважаемый": 5,
+        "будьте добры": 4,
+        "доброе утро": 2,
+        "подскажите": 2
+      },
+      "rudevices": {
+        "привет": 349,
+        "здравствуйте": 156,
+        "девушка": 53,
+        "алло": 52,
+        "извините": 48,
+        "женщина": 41,
+        "доброе утро": 37,
+        "мужчина": 37,
+        "добрый день": 24,
+        "слушаю": 18,
+        "простите": 17,
+        "подскажите": 15,
+        "добрый вечер": 14,
+        "скажите пожалуйста": 13,
+        "молодой человек": 10,
+        "уважаемый": 9,
+        "приветик": 8,
+        "здрасьте": 1
+      }
+    },
+    "fillers": {
+      "calls": {
+        "ну": 961,
+        "вот": 570,
+        "вообще": 196,
+        "просто": 191,
+        "эээ": 161,
+        "значит": 102,
+        "то есть": 97,
+        "понимаешь": 92,
+        "слушай": 84,
+        "понимаете": 59,
+        "короче": 54,
+        "как бы": 47,
+        "слушайте": 36,
+        "наверное": 28,
+        "блин": 25,
+        "ага": 23,
+        "это самое": 18,
+        "в общем": 16,
+        "получается": 13,
+        "так сказать": 12,
+        "типа": 11,
+        "угу": 11,
+        "да ладно": 9,
+        "кстати": 9,
+        "ммм": 8,
+        "ээ": 2
+      },
+      "rudevices": {
+        "ну": 4124,
+        "вот": 3471,
+        "просто": 1975,
+        "короче": 1223,
+        "вообще": 1222,
+        "типа": 1199,
+        "то есть": 790,
+        "как бы": 755,
+        "блин": 484,
+        "аа": 479,
+        "ээ": 380,
+        "наверное": 275,
+        "значит": 211,
+        "получается": 203,
+        "понимаешь": 198,
+        "кстати": 197,
+        "мм": 170,
+        "в общем": 141,
+        "по-моему": 100,
+        "слушай": 89,
+        "ага": 72,
+        "так сказать": 42,
+        "понимаете": 38,
+        "да ладно": 33,
+        "угу": 27,
+        "слушайте": 24,
+        "это самое": 20,
+        "эээ": 5,
+        "ммм": 1
+      }
+    },
+    "intents": {
+      "calls": {
+        "надо": 203,
+        "хочу": 103,
+        "скажите": 84,
+        "можно": 80,
+        "нужно": 55,
+        "позвоните": 17,
+        "позвони": 14,
+        "жду": 14,
+        "записать": 9,
+        "приезжайте": 9,
+        "перезвоните": 9,
+        "дайте": 8,
+        "посмотрите": 7,
+        "приедет": 5,
+        "запишите": 4,
+        "вызвать": 3,
+        "забрать": 3,
+        "уточните": 3,
+        "поеду": 3,
+        "отправить": 2,
+        "подать": 2,
+        "заказать": 2,
+        "подскажите": 2,
+        "поехали": 2,
+        "вызовите": 1,
+        "запиши": 1,
+        "отправьте": 1,
+        "подъедет": 1,
+        "заберите": 1,
+        "оформить": 1,
+        "поедем": 1,
+        "ждём": 1
+      },
+      "rudevices": {
+        "надо": 687,
+        "можно": 603,
+        "хочу": 416,
+        "нужно": 365,
+        "поедем": 64,
+        "поеду": 63,
+        "скажите": 54,
+        "жду": 48,
+        "записать": 21,
+        "отправить": 21,
+        "дайте": 19,
+        "посмотрите": 18,
+        "заказать": 15,
+        "подскажите": 15,
+        "забрать": 14,
+        "поехали": 14,
+        "приедет": 13,
+        "ждём": 12,
+        "запиши": 8,
+        "вызвать": 7,
+        "приезжайте": 7,
+        "оформить": 6,
+        "подать": 5,
+        "позвони": 5,
+        "запишите": 3,
+        "найдите": 3,
+        "отправьте": 2,
+        "вызовите": 1,
+        "вызови": 1,
+        "заберите": 1,
+        "позвоните": 1,
+        "оформите": 1,
+        "доставить": 1,
+        "проверьте": 1
+      }
+    },
+    "asr_errors": {
+      "calls": {
+        "glued_indefinite": {
+          "какойто": 75,
+          "чтото": 56,
+          "както": 38,
+          "какието": 27,
+          "ктото": 22,
+          "кудато": 19,
+          "чтонибудь": 13,
+          "гдето": 13,
+          "какаято": 11,
+          "чегото": 7,
+          "комуто": 5,
+          "когдато": 5,
+          "куданибудь": 5,
+          "какиенибудь": 4,
+          "ктонибудь": 4,
+          "комунибудь": 3,
+          "какнибудь": 3,
+          "чегонибудь": 1,
+          "гденибудь": 1,
+          "когданибудь": 1
+        },
+        "stretched_vowel": {
+          "ааа": 140,
+          "иии": 49,
+          "нуу": 49,
+          "чтоо": 30,
+          "даа": 26,
+          "яяя": 25,
+          "ноо": 18,
+          "выы": 16,
+          "тыы": 16,
+          "таак": 13,
+          "неет": 11,
+          "воот": 11,
+          "наа": 10,
+          "нее": 9,
+          "этоо": 8,
+          "онаа": 5,
+          "ооо": 5,
+          "ээто": 4,
+          "меняя": 4,
+          "оой": 4
+        },
+        "colloquial_reduction": {
+          "чё": 401,
+          "щас": 345,
+          "тя": 57,
+          "нету": 55,
+          "шо": 43,
+          "прям": 24,
+          "ничё": 20,
+          "тока": 14,
+          "токо": 12,
+          "ща": 9,
+          "че": 6
+        }
+      },
+      "rudevices": {
+        "glued_indefinite": {
+          "чтото": 1
+        },
+        "stretched_vowel": {
+          "аа": 496,
+          "нее": 76,
+          "ии": 57,
+          "оо": 22,
+          "уу": 20,
+          "лучшее": 10,
+          "нуу": 7,
+          "ааа": 6,
+          "бляя": 5,
+          "эээ": 5,
+          "большее": 4,
+          "наа": 3,
+          "чтоо": 3,
+          "похожее": 3
+        },
+        "colloquial_reduction": {
+          "прям": 222,
+          "нету": 128,
+          "че": 46,
+          "чё": 12,
+          "шо": 5,
+          "ща": 3,
+          "тока": 2,
+          "щас": 1,
+          "чо": 1
+        }
+      }
+    },
+    "hyphenation": {
+      "note": "the two corpora were transcribed by different pipelines: calls writes «что то», rudevices writes «что-то». A v3 register that fixes one spelling models one pipeline.",
+      "calls_share_with_hyphen": 0.0,
+      "rudevices_share_with_hyphen": 0.10154322480770162
+    }
+  },
+  "shapes": [
+    {
+      "pattern": "<фамилия> <имя> <отчество>",
+      "count": 26,
+      "carries": [
+        "NAME"
+      ],
+      "example": {
+        "source": "rudevices",
+        "text": "арсентьев игорь викторович"
+      }
+    },
+    {
+      "pattern": "<имя> <отчество>",
+      "count": 146,
+      "carries": [
+        "NAME"
+      ],
+      "example": {
+        "source": "rudevices",
+        "text": "анна павловна шерер"
+      }
+    },
+    {
+      "pattern": "<имя> в косвенном падеже без фамилии",
+      "count": 969,
+      "carries": [
+        "NAME"
+      ],
+      "example": {
+        "source": "rudevices",
+        "text": "ты у вики"
+      }
+    },
+    {
+      "pattern": "<тип улицы> <название> <число прописью>",
+      "count": 78,
+      "carries": [
+        "LOC",
+        "ADDR"
+      ],
+      "example": {
+        "source": "rudevices",
+        "text": "улица садовая два"
+      }
+    },
+    {
+      "pattern": "<название улицы> <число прописью> — без типа и без маркера дома",
+      "count": 244,
+      "carries": [
+        "LOC",
+        "ADDR"
+      ],
+      "example": {
+        "source": "rudevices",
+        "text": "бабушкина четыре а"
+      }
+    },
+    {
+      "pattern": "<маркер дома/квартиры/подъезда> <число прописью>",
+      "count": 143,
+      "carries": [
+        "ADDR"
+      ],
+      "example": {
+        "source": "rudevices",
+        "text": "квартира сорок три"
+      }
+    },
+    {
+      "pattern": "<пробег числительных ≥7> — продиктованный номер",
+      "count": 8,
+      "carries": [
+        "PHONE"
+      ],
+      "example": {
+        "source": "rudevices",
+        "text": "плюс семь девятьсот шестнадцать пять три три пять восемь восемь"
+      }
+    },
+    {
+      "pattern": "<счётная последовательность раз-два-три> — приманка, не номер",
+      "count": 15,
+      "carries": [],
+      "example": {
+        "source": "rudevices",
+        "text": "раз два три четыре пять"
+      }
+    },
+    {
+      "pattern": "<год прописью: две тысячи + порядковое>",
+      "count": 42,
+      "carries": [
+        "DATE"
+      ],
+      "example": {
+        "source": "rudevices",
+        "text": "две тысячи двадцатый год"
+      }
+    },
+    {
+      "pattern": "<слово-документ без значения>",
+      "count": 34,
+      "carries": [],
+      "example": {
+        "source": "rudevices",
+        "text": "с паспорта осталось"
+      }
+    },
+    {
+      "pattern": "<обращение> — реплика из 1-4 слов",
+      "count": 175,
+      "carries": [],
+      "example": {
+        "source": "rudevices",
+        "text": "алло как дела"
+      }
+    },
+    {
+      "pattern": "<намерение> + <адрес> — реплика, из которой строится вызов инструмента",
+      "count": 58,
+      "carries": [
+        "ADDR",
+        "LOC"
+      ],
+      "example": {
+        "source": "rudevices",
+        "text": "поеду союзная один"
+      }
+    },
+    {
+      "pattern": "<имя> в позиции обращения — первое или последнее слово реплики",
+      "count": 541,
+      "carries": [
+        "NAME"
+      ],
+      "example": {
+        "source": "rudevices",
+        "text": "ты у вики"
+      }
+    }
+  ],
+  "v3_targets": {
+    "note": "v3 has to reproduce this, not our imagination. Every share is over DISTINCT replicas of the two corpora combined.",
+    "digits_in_text": 0.0,
+    "starts_with_capital": 0.00028,
+    "ends_with_period": 0.0,
+    "any_sentence_punctuation": 0.0,
+    "numeral_run_ge1": 0.1045,
+    "numeral_run_ge3": 0.0114,
+    "words_median": 6.0,
+    "words_mean": 7.69,
+    "chars_median": 35.0,
+    "single_word_replicas": 0.0269,
+    "hyphenation": "split across the two pipelines -- v3 must carry both «что то» and «что-то», not one of them",
+    "address_shape_split": {
+      "marker_free": 0.639,
+      "meaning": "the majority shape is «ленина пятьдесят», not «улица Ленина дом 50». A generator that writes the marked form measures the easy half."
+    }
+  },
+  "absent_from_both_corpora": [
+    "email",
+    "inn"
+  ],
+  "present_but_too_thin_to_measure_on": [
+    "phone",
+    "dob",
+    "snils",
+    "card",
+    "passport",
+    "plate"
+  ],
+  "must_be_generated_from_templates": {
+    "reason": "these types either never occur in speech or occur as a bare word with no value behind it, so no amount of mining produces a test case for them",
+    "types": [
+      "card",
+      "dob",
+      "email",
+      "inn",
+      "passport",
+      "phone",
+      "plate",
+      "snils"
+    ],
+    "but_the_register_must_be_borrowed": "generate the VALUE from a template and the SENTENCE from the distribution above: no digits, no capital, no final period, numbers spelled out, median length short."
+  }
+}
