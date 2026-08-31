@@ -288,7 +288,16 @@ _ST = (
 # tail and "площадью 5 кв" can't pass as a street.
 _NAME = r"(?-i:[А-ЯЁ])[а-яё]+(?:[\s-](?-i:[А-ЯЁ])[а-яё]+){0,2}"
 _CAP = r"(?:\d+[-\s]?[а-яё]{0,2}\s+)?" + _NAME
-_TOK = r"(?:(?<=^)|(?<=[\s,;(№#]))"  # token must start fresh -> excludes "т.д"
+# A TOOL RESULT ARRIVES AS JSON, AND JSON PUTS A QUOTE WHERE PROSE PUTS A SPACE.
+# The left-context set held whitespace, comma, semicolon, paren, № and #, so
+# «"addr": "г. Пермь, ул. Добролюбова, д. 154б"» lost its «г. » and
+# «{"a": "д. 12, кв. 5"}» was not found at all — the same string is found the
+# moment the quote is removed. That leg is where personal data arrives from the
+# customer's OWN systems, so it is the last place a delimiter should decide
+# whether an address exists. Quotes, brackets and the `=`/`:` of a key-value
+# line join the set; letters and the period deliberately do not, which is what
+# still keeps «т.д» out.
+_TOK = r"(?:(?<=^)|(?<=[\s,;(№#\"'«»\[\]{}<>=:|/\\]))"
 # The apartment marker may be GLUED TO THE HOUSE NUMBER, and in real Russian
 # addresses it usually is: «д.5кв12», «Строителей 53к193», «Гагарина88кв152».
 # `_TOK` alone requires whitespace before the marker, so the flat number simply
@@ -298,7 +307,7 @@ _TOK = r"(?:(?<=^)|(?<=[\s,;(№#]))"  # token must start fresh -> excludes "т.
 #
 # «кв» after a digit stays safe because the pattern demands DIGITS AFTER the
 # marker: «100кв.м» (square metres) has «м» there and still does not match.
-_TOK_OR_DIGIT = r"(?:(?<=^)|(?<=[\s,;(№#])|(?<=\d))"
+_TOK_OR_DIGIT = r"(?:(?<=^)|(?<=[\s,;(№#\"'«»\[\]{}<>=:|/\\])|(?<=\d))"
 _NUM_NAME = r"\d{1,4}[-\s]?[яейои]?\s+(?:" + "|".join(NUMBERED_TAIL) + r")"
 
 # EACH PATTERN CARRIES ITS OWN CASE FLAG as a leading `(?i)`, and the engine
