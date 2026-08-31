@@ -931,6 +931,85 @@ def _lemma_lookup_ok(low: str) -> bool:
                for parse in parses)
 
 
+_POSS_SUFFIXES = ("ин", "ын", "ов", "ев")
+
+
+def _possessive_base(word: str) -> list[str]:
+    """Имя, от которого образовано притяжательное: «женин» -> «женя»."""
+    out: set[str] = set()
+    for parse in MORPH.parse(word):
+        if "Poss" not in parse.tag.grammemes or "ADJF" not in parse.tag:
+            continue
+        for suffix in _POSS_SUFFIXES:
+            if parse.normal_form.endswith(suffix):
+                root = parse.normal_form[:-len(suffix)]
+                out |= {root + "я", root + "а", root + "ь", root}
+    return [name for name in out if len(name) > 2]
+
+
+def _possessive_names(text: str, names: NameAssets) -> list[Span]:
+    """«женин день рождения», «олино письмо», «машиного дня рождения».
+
+    ТАК ПО-РУССКИ ГОВОРЯТ О ЧУЖОМ, и ни одна ветка этого не видела: слово не
+    стоит в словаре, не имеет заглавной и морфологически является
+    ПРИЛАГАТЕЛЬНЫМ. На MASSIVE ru-RU это самый крупный чинимый класс промахов
+    по именам, и каждый из них — частное лицо, а не публичная фигура.
+
+    ДВА ГЕЙТА, И КАЖДЫЙ ОТБИВАЕТ СВОЁ. Притяжательное чтение отбивает «пять
+    машин»: у родительного множественного от «машина» чтения `Poss` нет вовсе,
+    поэтому кандидат даже не рождается. Словарь базового имени отбивает
+    «мамин», «папин», «бабушкин», «дядин», «сестрин», «соседкин» — у всех
+    `Poss` есть, и только имя за ними не стоит.
+
+    СОГЛАСОВАНИЕ СО СЛЕДУЮЩИМ СУЩЕСТВИТЕЛЬНЫМ — третий гейт и он про другое:
+    притяжательное всегда определяет предмет, и без предмета рядом это другое
+    слово. Оно же удерживает разбор от того, чтобы принять за притяжательное
+    случайное совпадение формы.
+
+    ЦЕНА НАЗВАНА ВСЛУХ: подмена встаёт в именительном, потому что образовать
+    притяжательное от произвольного имени морфология не берётся. Модель читает
+    «Оксана чемодан уже собран», и обратный путь возвращает «Женя», а не
+    «женин» — формулировка меняется. Это хуже грамматически и лучше по сути:
+    иначе «женин» уходит к модели открытым текстом, а из него имя достаёт кто
+    угодно. Инструмент при этом получает «Женя» — то есть человека, а не форму
+    слова.
+    """
+    spans: list[Span] = []
+    tokens = list(_WORD_RE.finditer(text))
+    for index, match in enumerate(tokens):
+        low = match.group().lower()
+        bases = _possessive_base(low)
+        if not any(base in names.dict_first or base in names.name_set
+                   for base in bases):
+            continue
+        if index + 1 >= len(tokens):
+            continue
+        following = MORPH.parse(tokens[index + 1].group().lower())
+        possessive = [parse for parse in MORPH.parse(low)
+                      if "Poss" in parse.tag.grammemes and "ADJF" in parse.tag]
+        agrees = any(
+            "NOUN" in noun.tag and adjective.tag.case == noun.tag.case
+            and adjective.tag.number == noun.tag.number
+            and (adjective.tag.number == "plur"
+                 or adjective.tag.gender == noun.tag.gender)
+            for adjective in possessive for noun in following)
+        if not agrees:
+            continue
+        # СПАН НЕСЁТ БАЗОВОЕ ИМЯ, А НЕ НАПИСАННУЮ ФОРМУ, и это не мелочь.
+        # `span.value` — одновременно ключ волта и источник рода, поэтому с
+        # притяжательной формой «Женя» и «женин» становились ДВУМЯ строками:
+        # один человек с двумя подменами, «Лада приедет завтра, Тимофей чемодан
+        # уже собран» — и вторая подмена ещё и мужская, потому что род читался с
+        # прилагательного. Это тот самый отказ, который продукт считает
+        # недопустимым, и ни один наш корпус его не видит: притяжательного
+        # регистра нет ни в одном, кроме MASSIVE, а MASSIVE меряет только
+        # полноту.
+        base = sorted(name for name in bases
+                      if name in names.dict_first or name in names.name_set)[0]
+        spans.append(Span(match.start(), match.end(), "NAME", base.capitalize()))
+    return spans
+
+
 def gazetteer_names(text: str) -> list[Span]:
     """Catch names NER misses: known names (any case), Latin pairs, initials,
     and — for CAPITALISED words only — the bulk dictionary.
@@ -943,6 +1022,7 @@ def gazetteer_names(text: str) -> list[Span]:
     names = ASSETS.get().names
     spans: list[Span] = _lowercase_name_pairs(text, names)
     spans += _cued_misspelt_names(text, names)
+    spans += _possessive_names(text, names)
     for match in _WORD_RE.finditer(text):
         word = match.group()
         low = word.lower()
