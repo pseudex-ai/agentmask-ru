@@ -387,6 +387,18 @@ def _is_street_type(word: str, address: AddressAssets) -> bool:
     return any(low.startswith(stem) for stem in stems if len(stem) >= 4)
 
 
+def _address_continues(text: str, end: int, address: AddressAssets) -> bool:
+    """Идёт ли сразу за номером дома продолжение адреса, а не остаток фразы."""
+    tail = text[end:end + 32]
+    for rx in (address.spoken_apt, address.apt):
+        found = rx.search(tail)
+        # СРАЗУ за номером, а не где-то в остатке фразы: «строителей пять
+        # пришло на объект в доме два» договорилось бы до продолжения.
+        if found is not None and found.start() <= 1:
+            return True
+    return False
+
+
 def _bare_street_candidates(text: str, address: AddressAssets
                             ) -> list[tuple[int, int, bool]]:
     """A lower-case street name with no type word at all, plus a house number.
@@ -440,7 +452,26 @@ def _bare_street_candidates(text: str, address: AddressAssets
             continue
         if _is_numeral(name) or _is_street_type(name, address):
             continue
-        if _plural_or_pronoun(name) or _names_a_settlement(name, address):
+        if _names_a_settlement(name, address):
+            continue
+        # ПЛЮРАЛЬ ПРОПУСКАЕТСЯ ТОЛЬКО С АДРЕСНЫМ ПРОДОЛЖЕНИЕМ ПОСЛЕ НОМЕРА.
+        # «улица Коммунаров», «Металлистов», «Строителей», «Космонавтов»,
+        # «Декабристов» — огромный и совершенно обычный класс русских улиц, и
+        # вето на множественное число выбрасывало его целиком. Но снять вето
+        # нельзя: родительный падеж множественного числа перед числом — это
+        # русская конструкция приблизительного количества, «строителей пять
+        # пришло на объект», «шахтёров двести спасли», «моряков тридцать на
+        # борту», и реестр её не отличит, потому что реестр ПРАВ — все эти
+        # слова где-то называют улицу. Измерено: снятие вето делает ложными
+        # адресами десять из двенадцати таких фраз.
+        #
+        # Разделяет их то, что стоит ПОСЛЕ номера. За домом следует подъезд,
+        # квартира или корпус; за количеством — глагол или предлог. Продолжение
+        # покупает «металлистов пятьдесят шесть первый подъезд» и не покупает
+        # «коммунаров сто восемьдесят шесть» — узко и намеренно.
+        if _plural_or_pronoun(name) and not (
+                not number[0].isdigit() and _register_vouches(name, address)
+                and _address_continues(text, match.end("bnum"), address)):
             continue
         spelled = not number[0].isdigit()
         # AN OBLIQUE ADJECTIVE IS LICENSED BY A PREPOSITION, NOT BY AGREEMENT.
