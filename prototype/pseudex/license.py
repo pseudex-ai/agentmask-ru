@@ -195,6 +195,13 @@ class LicenseClient:
         # контейнера, см. `verify` ниже) подменял его на свой и подписывал
         # счета сам. Секрет подменить нечем — чтобы его прочитать, надо быть
         # получателем, а получатель теперь назван в ПОДПИСАННОЙ лизе.
+        # ЁМКОСТЬ ТЕКУЩЕЙ АРЕНДЫ. Счётчик в ПАМЯТИ, и это не слабость: сбросить
+        # его перезапуском можно, но перезапуск требует НОВОЙ аренды — ключ
+        # процесса генерируется заново, — а новая аренда это новый грант, то
+        # есть новая запись в нашем счёте. Обнулять счётчик рестартом означает
+        # платить за рестарт.
+        self._granted = 0
+        self._consumed = 0
         self._report_secret: bytes | None = None
         self._report_seq = 0
         self._report_prev = ""
@@ -277,7 +284,37 @@ class LicenseClient:
         )
 
     def is_serving(self) -> bool:
-        return self.state() in (STATE_LEASED, STATE_STALE)
+        return self.state() in (STATE_LEASED, STATE_STALE) and self.has_capacity()
+
+    def has_capacity(self) -> bool:
+        """Осталась ли ёмкость текущей аренды.
+
+        ГРАНТ НЕ ДЕЙСТВУЕТ ВО ВРЕМЯ НАШЕГО СБОЯ. Исчерпание требует сходить за
+        новым грантом; если мы недоступны, это наш отказ, а не превышение
+        клиента, и `STATE_STALE` продолжает обслуживать в долг — долг всё равно
+        станет грантом, когда связь вернётся. Иначе наш простой превращался бы
+        в остановку чужого бизнеса, ровно то, ради чего grace и заведён.
+        """
+        with self._lock:
+            if not self._granted:
+                return True
+            if self._consumed < self._granted:
+                return True
+        return self.state() == STATE_STALE
+
+    def consume(self, units: int = 1) -> None:
+        """Списать ёмкость. Зовётся с пути маскирования, по запросу."""
+        with self._lock:
+            self._consumed += units
+            exhausted = self._granted and self._consumed >= self._granted
+        if exhausted:
+            # Петля просыпается не реже чем раз в пять секунд и сама увидит
+            # исчерпание; отдельного будильника не нужно.
+            pass
+
+    def capacity(self) -> tuple[int, int]:
+        with self._lock:
+            return self._consumed, self._granted
 
     def _sign_usage(self, usage: dict[str, object]) -> dict[str, object]:
         """Отчёт, СЦЕПЛЕННЫЙ с предыдущим и подписанный.
@@ -408,6 +445,11 @@ class LicenseClient:
         if not expected or hashlib.sha256(secret).hexdigest() != expected:
             raise BundleError("report secret does not match its signed hash")
         self._report_secret = secret
+        granted = lease.get("requests_granted")
+        if isinstance(granted, int) and granted > 0:
+            with self._lock:
+                self._granted = granted
+                self._consumed = 0
         ASSETS.load(plaintext)
         with self._lock:
             self._last_ok_monotonic = time.monotonic()
@@ -521,7 +563,12 @@ class LicenseClient:
                 due = max(due, _TERMINAL_RETRY_SECONDS)
             last_attempt = self._last_attempt_monotonic
             try:
-                if last_attempt is None or time.monotonic() - last_attempt >= due:
+                # ИСЧЕРПАННЫЙ ГРАНТ — ПОВОД ПРОДЛИТЬСЯ НЕМЕДЛЕННО, а не ждать
+                # обычной трети TTL: без ёмкости `/mask` уже отдаёт 503, и
+                # каждая секунда ожидания — простой у клиента.
+                spent = not self.has_capacity() and self.state() == STATE_LEASED
+                if spent or last_attempt is None or (
+                        time.monotonic() - last_attempt >= due):
                     self._last_attempt_monotonic = time.monotonic()
                     self._renew()
                 self._tick()

@@ -174,6 +174,56 @@ s9.release_process("acme", "MINE")
 check("release своим ключом освобождает",
       s9._conn.execute("SELECT count(*) FROM leases").fetchone()[0] == 0)
 
+
+# --- ГРАНТЫ ЁМКОСТИ: счёт строится на выданном нами ---------------------
+print("\nГРАНТЫ ЁМКОСТИ")
+import threading
+import pseudex.license as _L
+
+s10 = fresh()
+for _ in range(3):
+    s10.record_grant("acme", "K1", s10.grant_size("start"))
+s10.record_grant("acme", "K2", s10.grant_size("start"))
+check("выданное копится у нас",
+      s10.usage_totals("acme")["granted"] == 4 * s10.grant_size("start"),
+      f"granted={s10.usage_totals('acme')['granted']}")
+
+# отчёты клиента НЕ влияют на выданное
+s10.record_usage("acme", "prod", 1, {}, 1, seq=1, prev="", signature="",
+                 trust="unsigned", report_pubkey="K1")
+check("замолчавший клиент не уменьшает счёт",
+      s10.usage_totals("acme")["granted"] == 4 * s10.grant_size("start"),
+      "granted не зависит от usage")
+
+def client(granted, state):
+    c = _L.LicenseClient.__new__(_L.LicenseClient)
+    c._lock = threading.Lock(); c._granted = granted; c._consumed = 0
+    c.state = lambda: state
+    return c
+
+c = client(5, _L.STATE_LEASED)
+for _ in range(5):
+    c.consume()
+check("исчерпанный грант перестаёт обслуживать", not c.has_capacity(),
+      "движок идёт за новым грантом")
+
+c2 = client(5, _L.STATE_STALE)
+for _ in range(9):
+    c2.consume()
+check("НАШ сбой обслуживается в долг", c2.has_capacity(),
+      "простой у нас не становится простоем у клиента")
+
+check("сервер без грантов не ломает старый клиент",
+      client(0, _L.STATE_LEASED).has_capacity(), "грант 0 = без ограничения")
+
+# перезапуск обнуляет счётчик — и стоит нового гранта
+s11 = fresh()
+before = s11.usage_totals("acme")["granted"]
+s11.record_grant("acme", "K-restarted", s11.grant_size("start"))
+check("перезапуск ради обнуления счётчика стоит гранта",
+      s11.usage_totals("acme")["granted"] == before + s11.grant_size("start"),
+      "новый процесс = новый ключ = новая аренда = новая запись у нас")
+
 unexpected = [f for f in fails if f not in KNOWN]
 print(f"\nсломано {len(fails)}, из них известный предел {len(fails) - len(unexpected)}")
 for f in fails:

@@ -53,6 +53,11 @@ class LicenseStore:
             "key_hash TEXT PRIMARY KEY, org_id TEXT, plan TEXT, status TEXT, created_at REAL)"
         )
         self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS grants ("
+            "org_id TEXT, pubkey TEXT, granted INTEGER DEFAULT 0, issued_at REAL, "
+            "PRIMARY KEY (org_id, pubkey))"
+        )
+        self._conn.execute(
             "CREATE TABLE IF NOT EXISTS process_reports ("
             "org_id TEXT, pubkey TEXT, secret TEXT DEFAULT '', "
             "seq INTEGER DEFAULT 0, prev TEXT DEFAULT '', signature TEXT DEFAULT '', "
@@ -408,6 +413,38 @@ class LicenseStore:
     # the licensing server must not depend on the storefront — but they are
     # checked against each other by test_storefront.py.
 
+    # СКОЛЬКО ЗАПРОСОВ ДАЁТ ОДНА АРЕНДА. Гранулярность — компромисс: мелкий
+    # грант точнее считает и чаще ходит к нам, крупный наоборот. Порядок «час
+    # ожидаемого трафика» выбран так, чтобы клиент, остановившийся посреди
+    # гранта, переплатил незначительно — гранты не возвращаются, и это цена
+    # того, что число неподделываемо.
+    PLAN_GRANT = {"start": 5_000, "work": 25_000, "industrial": 100_000,
+                  "enterprise": 500_000}
+
+    def grant_size(self, plan: str) -> int:
+        return self.PLAN_GRANT.get(plan, 5_000)
+
+    def record_grant(self, org_id: str, pubkey: str, size: int) -> None:
+        """ВЫДАННОЕ КОПИТСЯ У НАС И НЕ ЗАВИСИТ НИ ОТ ЧЕГО, ЧТО ПРИШЛО СНАРУЖИ.
+
+        Это и есть счёт: клиент не может занизить число, которое мы записали
+        сами, а перестать просить он может только перестав обслуживать.
+        """
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO grants (org_id, pubkey, granted, issued_at) "
+                "VALUES (?,?,?,?) ON CONFLICT(org_id, pubkey) DO UPDATE SET "
+                "granted=grants.granted+excluded.granted, issued_at=excluded.issued_at",
+                (org_id, pubkey, size, time.time()),
+            )
+            self._conn.commit()
+
+    def granted_total(self, org_id: str) -> int:
+        row = self._conn.execute(
+            "SELECT COALESCE(SUM(granted), 0) FROM grants WHERE org_id=?",
+            (org_id,)).fetchone()
+        return int(row[0] or 0)
+
     def instances_allowed(self, plan: str) -> int:
         return self.PLAN_INSTANCES.get(plan, 1)
 
@@ -585,7 +622,10 @@ class LicenseStore:
                 # инвойс не путал «расхода не было» с «расход не подтверждён».
                 "unverified_reports": unverified_reports,
                 "unverified_requests": unverified_requests,
-                "chain_breaks": breaks}
+                "chain_breaks": breaks,
+                # ЧИСЛО, НА КОТОРОМ СТРОИТСЯ СЧЁТ. Сумма выданной ёмкости —
+                # целиком наша запись; `requests` рядом остаётся справочным.
+                "granted": self.granted_total(org_id)}
 
     def release_process(self, org_id: str, pubkey: str) -> None:
         """Освободить слот ОДНОГО процесса, названного его собственным ключом."""

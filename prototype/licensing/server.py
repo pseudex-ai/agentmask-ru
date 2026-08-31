@@ -246,6 +246,7 @@ async def lease(request: Request) -> JSONResponse:
     lease_id = "ls_" + secrets.token_urlsafe(16)
     STORE.record_lease(lease_id, record.org_id, instance_id, process_id,
                        _TTL_SECONDS, pubkey=recipient)
+    STORE.record_grant(record.org_id, recipient, STORE.grant_size(record.plan))
 
     # СЕКРЕТ ОТЧЁТОВ, ЗАПЕЧАТАННЫЙ ПОЛУЧАТЕЛЮ. Достать его может только тот, у
     # кого приватная половина `recipient`, — а `recipient` теперь под подписью,
@@ -273,6 +274,10 @@ async def lease(request: Request) -> JSONResponse:
         "renew_after_seconds": max(1, _TTL_SECONDS // 3),
         "bundle_version": _PLAINTEXT_HASH[:16],
         "bundle_sha256": _PLAINTEXT_HASH,
+        # ГРАНТ ЁМКОСТИ. Счёт строится на ЭТОМ числе, а не на том, что контейнер
+        # о себе сообщит: скрыть расход можно, скрыть собственную просьбу о
+        # ёмкости — нет, потому что без неё движок перестаёт обслуживать.
+        "requests_granted": STORE.grant_size(record.plan),
     }
     payload["report_secret_sha256"] = hashlib.sha256(report_secret).hexdigest()
     payload["signature"] = sign_lease(payload, SIGNING_KEY)

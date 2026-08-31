@@ -441,6 +441,13 @@ async def license_status() -> JSONResponse:
 @app.post("/mask", dependencies=[Depends(_require_gateway)])
 async def mask(request: Request) -> JSONResponse:
     blocked = _license_block()
+    if blocked is None:
+        # ЁМКОСТЬ СПИСЫВАЕТСЯ ПО ЗАПРОСУ, и запрос — это то, что продано.
+        # Счёт строится на выданных грантах, а не на этом счётчике: он живёт в
+        # памяти воркера и нужен лишь для того, чтобы движок ВОВРЕМЯ пошёл за
+        # следующим грантом. Сбросить его перезапуском можно — перезапуск
+        # требует новой аренды, то есть нового гранта.
+        LICENSE.consume()
     if blocked is not None:
         return blocked
     body = await request.json()
@@ -667,6 +674,13 @@ async def spans(request: Request) -> JSONResponse:
     """PII spans per text for dialog highlighting (read-only).
     Body: {org_id, texts: [str]} -> {results: [[{start,end,type,token,preview}], ...]}."""
     blocked = _license_block()
+    if blocked is None:
+        # ЁМКОСТЬ СПИСЫВАЕТСЯ ПО ЗАПРОСУ, и запрос — это то, что продано.
+        # Счёт строится на выданных грантах, а не на этом счётчике: он живёт в
+        # памяти воркера и нужен лишь для того, чтобы движок ВОВРЕМЯ пошёл за
+        # следующим грантом. Сбросить его перезапуском можно — перезапуск
+        # требует новой аренды, то есть нового гранта.
+        LICENSE.consume()
     if blocked is not None:
         return blocked
     body = await request.json()
