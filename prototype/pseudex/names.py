@@ -823,7 +823,69 @@ def _lowercase_name_pairs(text: str, names: NameAssets) -> list[Span]:
 # Ниже этой длины строчное словарное слово почти всегда что-то другое: словарь
 # фамилий содержит 196 800 записей, и короткие из них — «мир», «дом», «пол» —
 # сталкиваются с языком чаще, чем называют людей.
+#
+# ЧЕТЫРЁХБУКВЕННЫЙ ПОРОГ ИЗМЕРЕН И ОТВЕРГНУТ. На 300 размеченных вручную
+# вхождениях настоящей речи он находит девять имён (азиз, алик, алсу, илик,
+# ирка, лекс, лера, леся, шура) и маскирует тридцать обычных слов — «вейп»,
+# «мега», «слыш», «джек», «лайт», «ляма», «раша», «дите». Три лишних маски на
+# одного найденного человека.
+#
+# КАЖДЫЙ ДРУГОЙ ПРИБОР НАЗЫВАЛ ЭТУ ПРАВКУ БЕСПЛАТНОЙ. NEREL дал +3 спана из
+# 9 720, набор из 538 фраз не шелохнулся, а полнота имён на MASSIVE выросла
+# 76.4% -> 77.1%. Все три написаны прописными буквами или размечены только по
+# полноте, а вред живёт в строчной разговорной речи и виден только тому
+# прибору, который её и читает — bench/gate.
 _LOWER_DICT_MIN = 5
+
+_HYPHENS = "-\u2011"
+
+
+def _hyphen_token(text: str, start: int, end: int) -> str | None:
+    """Весь дефисный токен, если найденное слово — лишь его часть."""
+    glued = ((start and text[start - 1] in _HYPHENS)
+             or (end < len(text) and text[end] in _HYPHENS))
+    if not glued:
+        return None
+    lo, hi = start, end
+    while lo > 1 and text[lo - 1] in _HYPHENS and text[lo - 2].isalpha():
+        lo -= 1
+        while lo and text[lo - 1].isalpha():
+            lo -= 1
+    while hi + 1 < len(text) and text[hi] in _HYPHENS and text[hi + 1].isalpha():
+        hi += 1
+        while hi < len(text) and text[hi].isalpha():
+            hi += 1
+    return text[lo:hi]
+
+
+def _whole_token_ok(text: str, start: int, end: int) -> bool:
+    """ДЕФИС СКЛЕИВАЕТ ОДИН ТОКЕН, И СУДИТЬ НАДО ТОКЕН, А НЕ ПОЛОВИНУ.
+
+    Словарное попадание на часть составного слова — свидетельство про часть, а
+    к модели уходит целое, и там получается чудовище: «Лос-Анджелесе» ->
+    «Любовь-Анджелесе», «Алма-Ате» -> «Зоя-Демьяну», «де-юре» -> «де-Ивану».
+    Город становится искалеченным человеком, подмена возвращается на обратном
+    пути и портит название в вызове инструмента.
+
+    НИ ОДИН НАШ ПРИБОР ЭТОГО НЕ ВИДЕЛ, и в обоих случаях по своей причине.
+    Точность на NEREL засчитывает спан, пересёкшийся с любой эталонной
+    сущностью, — а «Лос» лежит внутри размеченного города; чистый набор из 538
+    фраз не содержит ни одного составного топонима. 86 спанов на 933
+    документах, и все до одного — куски топонимов, ни одного человека.
+
+    Тест — тот же, что у `_lowercase_dictionary_ok`, и это не совпадение:
+    вопрос дословно тот же, только задан целому слову. «Жан-Клод» и
+    «Римский-Корсаков» морфология знает как имена и они проходят; «Петров-то» и
+    «Ким-то» она не знает вовсе, но читает как фамилию с частицей — тоже
+    проходят, и это важнее, чем кажется: список частиц пришлось бы держать
+    вручную, а он здесь получается сам.
+    """
+    whole = _hyphen_token(text, start, end)
+    if whole is None:
+        return True
+    return not any(
+        parse.is_known and not ({"Name", "Surn", "Patr"} & set(parse.tag.grammemes))
+        for parse in MORPH.parse(whole))
 
 
 def _lowercase_dictionary_ok(word: str, low: str) -> bool:
@@ -877,6 +939,8 @@ def gazetteer_names(text: str) -> list[Span]:
         low = word.lower()
         lemmas = _lemmas(low)
         before = text[max(0, match.start() - 20):match.start()].lower()
+        if not _whole_token_ok(text, match.start(), match.end()):
+            continue
         if _name_set_hit(word, low, lemmas, before, names):
             spans.append(Span(match.start(), match.end(), "NAME", word))
         elif (word[:1].isupper() or _lowercase_dictionary_ok(word, low)) and (
