@@ -10,6 +10,15 @@ from pseudex.assets import ASSETS
 from pseudex.detect import Span
 
 _YEAR_RE = re.compile(r"\b(19\d{2}|20\d{2})\b")
+# ЧИСЛОВАЯ ДАТА В РОДИЛЬНОМ КОНТЕКСТЕ — ЭТО ДАТА РОЖДЕНИЯ, А НЕ «ДАТА». Раньше
+# её типизировал слой structured как DATE, и это засчитывалось промахом
+# справедливо: пересечение чужого типа — не полнота, а дата рождения под меткой
+# «дата» теряет ровно то, что делает её персональными данными. Хуже того, из
+# всей даты маскировался только ГОД — «родился 21.09.1955» отдавало модели день
+# и месяц. 23 значения на AgentPII v3.
+_NUM_DATE_RE = re.compile(
+    r"\b\d{2}[.\-/]\d{2}[.\-/]\d{4}\b"
+    r"|(?<!\d)(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])(?!\d)")
 _AGE_RE = re.compile(r"\b(\d{2,3})\s*(?:лет|года|год)\b")
 
 # The birth cues, the month names and the medical stem list are LEASED. The
@@ -49,6 +58,9 @@ def detect_quasi(text: str) -> list[Span]:
     for match in _YEAR_RE.finditer(text):
         window = low[max(0, match.start() - 25): match.end() + 25]
         if any(ctx in window for ctx in quasi.birth_ctx):
+            spans.append(Span(match.start(), match.end(), "DOB", match.group()))
+    for match in _NUM_DATE_RE.finditer(text):
+        if _birth_context_near(low, match.start(), match.end(), quasi.birth_ctx):
             spans.append(Span(match.start(), match.end(), "DOB", match.group()))
     for match in quasi.text_date.finditer(text):
         if _birth_context_near(low, match.start(), match.end(), quasi.birth_ctx):

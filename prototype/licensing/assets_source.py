@@ -955,6 +955,12 @@ KEY_TYPE: dict[str, str] = {
     "карта": "CARD", "карты": "CARD", "card": "CARD",
     "почта": "EMAIL", "email": "EMAIL", "мейл": "EMAIL", "емейл": "EMAIL",
     "адрес": "LOC", "address": "LOC",
+    # ОДНОЗНАЧНЫЕ КЛЮЧИ ДАТЫ РОЖДЕНИЯ. Просто «дата»/«date» сюда не годятся —
+    # это дата доставки, счёта или встречи в подавляющем большинстве случаев, и
+    # маскировать их значило бы ломать те самые вызовы, ради которых продукт
+    # существует. А «birth_date» не может держать ничего другого.
+    "датарождения": "DOB", "birthdate": "DOB", "dateofbirth": "DOB",
+    "dob": "DOB", "birthday": "DOB", "деньрождения": "DOB",
     # A bank account has a 20-digit shape and no checksum, so outside a KEY it
     # is anchored to the cue words in CTX_TYPES. That left `{"account": …}`
     # unmasked while the same number after «счёт» was masked.
@@ -1031,7 +1037,13 @@ PRIORITY: dict[str, int] = {
     "SNILS": 6, "INN": 6, "CARD": 6, "VIN": 6,
     "MAC": 5,
     "PHONE": 5, "EMAIL": 5, "IP": 5, "PLATE": 5, "ADDR": 4,
-    "NAME": 3, "DATE": 2, "PASSPORT": 2, "LOC": 2,
+    # DOB ВЫШЕ DATE, потому что это та же дата с ДОБАВЛЕННЫМ свидетельством.
+    # Слой quasi типизирует числовую дату в родильном контексте как DOB, но
+    # DATE стоял старше, съедал спан целиком, и бенчмарк честно считал это
+    # промахом: пересечение чужого типа — не полнота, а дата рождения,
+    # замаскированная как «дата», теряет то единственное, что делает её
+    # персональными данными.
+    "NAME": 3, "DOB": 3, "DATE": 2, "PASSPORT": 2, "LOC": 2,
 }
 
 # --- normalization -------------------------------------------------------

@@ -11,7 +11,7 @@ from pseudex.detect_all import Detector
 from pseudex.normalize import normalize
 from testkit import load_dev_bundle
 
-_NUMERIC = {"PHONE", "SNILS", "INN", "CARD", "PASSPORT", "DATE"}
+_NUMERIC = {"PHONE", "SNILS", "INN", "CARD", "PASSPORT", "DATE", "DOB"}
 
 
 def _norm(entity_type: str, value: str) -> str:
@@ -49,7 +49,7 @@ def main() -> None:
         cases = json.load(handle)
 
     detector = Detector()
-    types = ["NAME", "PHONE", "EMAIL", "SNILS", "INN", "CARD", "PASSPORT", "DATE", "LOC"]
+    types = ["NAME", "PHONE", "EMAIL", "SNILS", "INN", "CARD", "PASSPORT", "DATE", "DOB", "LOC"]
     gt = {t: 0 for t in types}
     found = {t: 0 for t in types}
     det = {t: 0 for t in types}

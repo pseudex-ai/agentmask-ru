@@ -226,6 +226,16 @@ _PASSPORT_CTX_RE = re.compile(
 _PASSPORT_PARTS_RE = re.compile(
     r"(?i)сери\w*\s*:?\s*(\d{4})\D{1,12}?(\d{6})\b")
 _DATE_RE = re.compile(r"\b\d{2}[.\-/]\d{2}[.\-/]\d{4}\b")
+# THE FORMAT EVERY MACHINE WRITES, and the one we could not read. A tool result
+# comes back as JSON and JSON dates are ISO: «"birth_date": "1955-09-21"». The
+# pattern above wants the day first, so 59 dates of birth on AgentPII v3 went to
+# the model in the clear — the single largest hole in DOB, and it lives on the
+# leg where data arrives from the customer's own systems.
+#
+# Bounded hard on purpose: a four-digit year beginning 19 or 20, a month 01-12
+# and a day 01-31. A looser pattern would read «заказ 2024-15-90» as a date.
+_ISO_DATE_RE = re.compile(
+    r"(?<!\d)(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])(?!\d)")
 # THE SAME DATE WITH ITS SEPARATORS GONE. «24.12.1967» typed without dots is
 # «24121967» — eight digits and no shape left — so a date a chat wrote without
 # punctuation went to the model in the clear while the dotted one beside it was
@@ -290,6 +300,8 @@ def detect_structured(text: str) -> list[Span]:
             spans.append(Span(match.start(group), match.end(group),
                               "PASSPORT", match.group(group)))
     for match in _DATE_RE.finditer(text):
+        spans.append(Span(match.start(), match.end(), "DATE", match.group()))
+    for match in _ISO_DATE_RE.finditer(text):
         spans.append(Span(match.start(), match.end(), "DATE", match.group()))
     for match in _GLUED_DATE_RE.finditer(text):
         if _reads_as_date(*match.groups()):

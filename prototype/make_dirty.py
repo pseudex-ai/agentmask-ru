@@ -106,7 +106,9 @@ def build() -> dict[str, object]:
         a = random.choice(ADDR_MARKED + ADDR_FREEFORM); ents = [("LOC", a)]
         text = f"Доставьте на {a}."
     elif kind < 0.94:
-        d = date_num(); ents = [("DATE", d)]
+        # DOB, а не DATE: «Дата рождения» — родильный контекст, и движок
+        # теперь типизирует это точнее, чем эталон его просил.
+        d = date_num(); ents = [("DOB", d)]
         text = f"Дата рождения {d}, проверьте полис."
     else:
         neg = random.choice(HARD_NEG); negs = [neg.split()[-1]]

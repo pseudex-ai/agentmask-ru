@@ -33,7 +33,8 @@ def main() -> None:
         cases = json.load(handle)
 
     detector = Detector()
-    types = ["NAME", "PHONE", "EMAIL", "SNILS", "INN", "CARD", "PASSPORT", "DATE", "LOC"]
+    types = ["NAME", "PHONE", "EMAIL", "SNILS", "INN", "CARD", "PASSPORT", "DATE",
+             "DOB", "LOC"]
     gt_total = {t: 0 for t in types}
     found = {t: 0 for t in types}
     detected = {t: 0 for t in types}

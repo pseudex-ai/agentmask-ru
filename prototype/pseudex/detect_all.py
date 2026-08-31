@@ -28,10 +28,45 @@ from pseudex.structured import detect_structured_kv
 
 
 def _resolve(spans: list[Span], priority: dict[str, int],
-             text: str = "") -> list[Span]:
+             text: str = "", keyed: list[Span] | None = None) -> list[Span]:
+    """Разрешение пересечений: по приоритету, потом по длине, без наложений.
+
+    КЛЮЧ ПОБЕЖДАЕТ ФОРМУ, и это выше любого приоритета в таблице. `{"passport":
+    "34 50 213278"}` уходило к модели как ТЕЛЕФОН: десять цифр, разбитые 2-2-6,
+    libphonenumber читает уверенно, а PHONE в таблице старше PASSPORT. Ключ при
+    этом буквально называет тип — сильнее свидетельства не бывает, и таблица
+    приоритетов про догадки по форме, а не про то, что написано прямым текстом.
+    22 паспорта и один ИНН на AgentPII v3 ровно так и терялись.
+
+    НО ТОЛЬКО ПРОТИВ ДРУГОГО ТИПА. Ключ отвечает на вопрос «что это», а не «где
+    это кончается»: «адрес: Москве, проспекте Мира» разбирается ключом как LOC
+    «Москве» — и, победив, обрезал адрес до города, а улица уходила к модели
+    открытым текстом. Поэтому спан по ключу отбрасывается, если спан ТОГО ЖЕ
+    типа содержит его целиком: там нечего решать, а длина решается ниже.
+
+    Осторожность та же, что у самого `KEY_TYPE`: ключ типизирует ВЕСЬ значение
+    без проверки формы, поэтому в карте ключей стоят только однозначные слова.
+    Здесь это правило только доводится до конца.
+    """
+    # ADDR И LOC — ОДИН ТИП. `ADDR` существует только для того, чтобы обойти
+    # NAME при разрешении, и переименовывается обратно строкой ниже по коду.
+    # Считать их разными означало бы, что ключ «адрес:» перебивает найденный
+    # адрес — ровно тот случай, ради которого написано правило выше.
+    def _same(a: str, b: str) -> bool:
+        return {a, b} <= {"ADDR", "LOC"} or a == b
+
+    boosted = [span for span in (keyed or ())
+               if not any(other is not span
+                          and _same(other.entity_type, span.entity_type)
+                          and other.start <= span.start
+                          and span.end <= other.end
+                          and other.end - other.start > span.end - span.start
+                          for other in spans)]
+    keyed_ids = {id(span) for span in boosted}
     ordered = sorted(
         spans,
-        key=lambda s: (priority.get(s.entity_type, 1), s.end - s.start),
+        key=lambda s: (id(s) in keyed_ids,
+                       priority.get(s.entity_type, 1), s.end - s.start),
         reverse=True,
     )
     kept: list[Span] = []
@@ -206,6 +241,6 @@ class Detector:
             # so the same spans index into either text.
             with stage("detect.resolve"):
                 resolved = _resolve(suppress(text, spans) + kv_spans,
-                                    ASSETS.get().priority, text)
+                                    ASSETS.get().priority, text, keyed=kv_spans)
             return [Span(s.start, s.end, "LOC", s.value) if s.entity_type == "ADDR" else s
                     for s in resolved]
