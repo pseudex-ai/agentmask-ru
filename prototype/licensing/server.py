@@ -150,6 +150,7 @@ def _store_usage(instance_id: str, org_id: str, usage: object,
         seq=int(usage.get("seq", 0)), prev=str(usage.get("prev", "")),
         signature=str(usage.get("signature", "")), trust=trust,
         report_pubkey=pubkey,
+        build=str(usage.get("build", "")),
     )
 
 

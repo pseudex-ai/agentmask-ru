@@ -345,6 +345,35 @@ def gate_p5(workers: int) -> bool:
                 + (f" reasons={distinct} first={reasons[0][:90]!r}" if reasons else ""))
 
 
+def gate_p10() -> bool:
+    """Релизный бинарник меряет СЕБЯ, и мера совпадает с файлом на диске.
+
+    Патч бинарника — единственный оставшийся способ занизить расход, и защиты от
+    него на чужой машине не существует. Что существует — датированная запись:
+    мера едет внутри подписанного отчёта, поэтому подменить её в пути нельзя, а
+    подделать может только тот, кто уже нашёл и снял проверку. Гейт проверяет,
+    что мера НАСТОЯЩАЯ, а не заглушка: в скомпилированном образе она обязана
+    быть `sha256:` и совпадать с хешем самого файла.
+
+    Если бы мера считалась от чего-то другого — от версии, от даты сборки, — она
+    выглядела бы так же и не значила бы ничего.
+    """
+    script = (
+        "python3 -c \"import sys;sys.path.insert(0,'/app');"
+        "from pseudex.measure import build_measurement;print(build_measurement())\" "
+        "2>/dev/null || /app/pseudex-serve --print-build 2>/dev/null; "
+        "sha256sum /app/pseudex-serve 2>/dev/null | cut -d' ' -f1"
+    )
+    out = sh(["docker", "run", "--rm", "--entrypoint", "sh", COMPILED_IMAGE, "-c", script],
+             False, 300).stdout.strip().splitlines()
+    reported = next((l.strip() for l in out if l.strip().startswith("sha256:")), "")
+    actual = next((l.strip() for l in out if len(l.strip()) == 64
+                   and all(c in "0123456789abcdef" for c in l.strip())), "")
+    ok = bool(reported) and bool(actual) and reported == "sha256:" + actual
+    return gate("P10 the release binary measures itself, and the measure is the file",
+                ok, f"reported={reported[:24] or 'none'} actual=sha256:{actual[:16] or 'none'}")
+
+
 def gate_p9() -> bool:
     """What the RELEASE image writes cannot be read by ordinary SQLite.
 
@@ -558,6 +587,8 @@ def main() -> None:
             # that has already had real traffic through it.
             if wanted("P9"):
                 gate_p9()
+            if wanted("P10"):
+                gate_p10()
         if wanted("P6"):
             gate_p6()
     finally:

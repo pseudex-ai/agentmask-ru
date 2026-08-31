@@ -224,6 +224,53 @@ check("перезапуск ради обнуления счётчика сто�
       s11.usage_totals("acme")["granted"] == before + s11.grant_size("start"),
       "новый процесс = новый ключ = новая аренда = новая запись у нас")
 
+
+# --- МЕРА СБОРКИ ----------------------------------------------------------
+print("\nМЕРА СБОРКИ")
+from pseudex.measure import build_measurement
+
+s12 = fresh()
+sec12 = _secrets.token_bytes(32); PK12 = "PK-build"
+s12.record_report_secret("acme", PK12, sec12.hex())
+
+def signed_send(store, build, seq, prev, secret=sec12, pk=PK12):
+    r = {"requests": 100, "values": 100, "seq": seq, "prev": prev, "build": build}
+    r["signature"] = mac_report(r, secret)
+    hexs = store.report_secret("acme", pk); trust = "unsigned"
+    try:
+        verify_report(r, bytes.fromhex(hexs)); trust = "signed"
+    except BundleError:
+        trust = "bad_signature"
+    store.record_usage("acme", "prod", 100, {}, 100, seq=seq, prev=prev,
+                       signature=r["signature"], trust=trust, report_pubkey=pk,
+                       build=build)
+    return hashlib.sha256(r["signature"].encode()).hexdigest()
+
+GOOD = "sha256:" + "a" * 64
+prev12 = signed_send(s12, GOOD, 1, "")
+prev12 = signed_send(s12, GOOD, 2, prev12)
+check("одна сборка — ноль смен",
+      s12.builds_seen("acme") and s12.builds_seen("acme")[0]["changes"] == 0)
+
+signed_send(s12, "sha256:" + "b" * 64, 3, prev12)
+check("подмена сборки под одним ключом процесса ЗАМЕЧЕНА",
+      s12.builds_seen("acme")[0]["changes"] == 1,
+      "ключ процесса живёт столько же, сколько процесс — мера меняться не может")
+
+# мера входит в подписанное тело: снаружи её не переписать
+r13 = {"requests": 1, "values": 1, "seq": 1, "prev": "", "build": GOOD}
+r13["signature"] = mac_report(r13, sec12)
+r13["build"] = "sha256:" + "c" * 64          # перехватчик правит меру в пути
+try:
+    verify_report(r13, sec12); tampered_ok = True
+except BundleError:
+    tampered_ok = False
+check("правка меры в пути ломает MAC", not tampered_ok)
+
+check("мера непустая и своей формы",
+      build_measurement().startswith(("sha256:", "modules:")),
+      build_measurement()[:22] + "...")
+
 unexpected = [f for f in fails if f not in KNOWN]
 print(f"\nсломано {len(fails)}, из них известный предел {len(fails) - len(unexpected)}")
 for f in fails:

@@ -42,6 +42,7 @@ import httpx
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from pseudex.assets import ASSETS
+from pseudex.measure import build_measurement
 from pseudex.bundle import (
     BundleError,
     mac_report,
@@ -328,6 +329,11 @@ class LicenseClient:
             return usage
         self._report_seq += 1
         signed = dict(usage)
+        # МЕРА СБОРКИ ВНУТРИ ПОДПИСАННОГО ТЕЛА. Снаружи её переписал бы любой
+        # перехватчик; внутри — только тот, кто уже держит секрет, то есть сам
+        # процесс. Это не мешает пропатченному бинарнику соврать о себе, но
+        # делает ложь датированной записью у нас.
+        signed["build"] = build_measurement()
         signed["seq"] = self._report_seq
         signed["prev"] = self._report_prev
         signed["signature"] = mac_report(signed, self._report_secret)

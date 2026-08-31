@@ -62,6 +62,7 @@ class LicenseStore:
             "org_id TEXT, pubkey TEXT, secret TEXT DEFAULT '', "
             "seq INTEGER DEFAULT 0, prev TEXT DEFAULT '', signature TEXT DEFAULT '', "
             "chain_breaks INTEGER DEFAULT 0, updated_at REAL, "
+            "build TEXT DEFAULT '', build_changes INTEGER DEFAULT 0, "
             "PRIMARY KEY (org_id, pubkey))"
         )
         self._conn.execute(
@@ -252,7 +253,8 @@ class LicenseStore:
     def record_usage(self, org_id: str, instance_id: str, requests: int,
                      entities: dict[str, int], values: int, seq: int = 0,
                      prev: str = "", signature: str = "",
-                     trust: str = "unsigned", report_pubkey: str = "") -> None:
+                     trust: str = "unsigned", report_pubkey: str = "",
+                     build: str = "") -> None:
         """Record the newest report.
 
         `requests` and `entities` are OVERWRITTEN — each report restates the
@@ -270,6 +272,7 @@ class LicenseStore:
         if report_pubkey:
             self._record_process_report(org_id, report_pubkey, seq, prev,
                                         signature, breaks)
+            self._record_build(org_id, report_pubkey, build, trust)
         # НЕПРОВЕРЕННЫЙ ОТЧЁТ НЕ СТАНОВИТСЯ СЧЁТОМ. Раньше вердикт писался в
         # колонку и на этом всё: цифры принимались одинаково при `signed`,
         # `bad_signature` и `unsigned`, а `usage_totals` — то, из чего считается
@@ -438,6 +441,41 @@ class LicenseStore:
                 (org_id, pubkey, size, time.time()),
             )
             self._conn.commit()
+
+    def _record_build(self, org_id: str, pubkey: str, build: str,
+                      trust: str) -> None:
+        """Какая сборка отчиталась, и менялась ли она под одним ключом процесса.
+
+        Ключ процесса живёт ровно столько же, сколько процесс, поэтому мера под
+        ним меняться НЕ МОЖЕТ: тот же процесс исполняет тот же файл. Смена —
+        это либо подмена отчёта, либо сборка, которая врёт о себе; и то и другое
+        стоит записать с датой, а не обсуждать по памяти.
+        """
+        if not build or trust != "signed":
+            return
+        row = self._conn.execute(
+            "SELECT build FROM process_reports WHERE org_id=? AND pubkey=?",
+            (org_id, pubkey)).fetchone()
+        previous = (row[0] or "") if row else ""
+        with self._lock:
+            if previous and previous != build:
+                _log.warning("build measurement CHANGED under one process key for "
+                             "org=%s pubkey=%s: %s -> %s", org_id, pubkey[:12],
+                             previous[:20], build[:20])
+                self._conn.execute(
+                    "UPDATE process_reports SET build_changes=build_changes+1 "
+                    "WHERE org_id=? AND pubkey=?", (org_id, pubkey))
+            self._conn.execute(
+                "UPDATE process_reports SET build=? WHERE org_id=? AND pubkey=?",
+                (build, org_id, pubkey))
+            self._conn.commit()
+
+    def builds_seen(self, org_id: str) -> list[dict[str, object]]:
+        rows = self._conn.execute(
+            "SELECT build, count(*), sum(build_changes) FROM process_reports "
+            "WHERE org_id=? AND build!='' GROUP BY build", (org_id,)).fetchall()
+        return [{"build": r[0], "processes": r[1], "changes": int(r[2] or 0)}
+                for r in rows]
 
     def granted_total(self, org_id: str) -> int:
         row = self._conn.execute(
