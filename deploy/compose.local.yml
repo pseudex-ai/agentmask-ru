@@ -54,7 +54,8 @@ services:
       PSEUDEX_ALLOWED_HOSTS: localhost,127.0.0.1
       PSEUDEX_CSRF_ORIGINS: http://localhost:8080
       PSEUDEX_LICENSING_ADMIN_URL: http://license:9443
-      PSEUDEX_LICENSE_ADMIN_TOKEN: ${PSEUDEX_LICENSE_ADMIN_TOKEN:?set PSEUDEX_LICENSE_ADMIN_TOKEN}
+      # Витрине — только меньший токен. Полный ей не нужен и лежать у неё не должен.
+      PSEUDEX_LICENSE_STOREFRONT_TOKEN: ${PSEUDEX_LICENSE_STOREFRONT_TOKEN:?set PSEUDEX_LICENSE_STOREFRONT_TOKEN}
       PSEUDEX_DB_PATH: /data/storefront.sqlite3
       # What the site tells the customer to run. Points at the image built from
       # this checkout, not at the registry.

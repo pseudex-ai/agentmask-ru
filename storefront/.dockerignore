@@ -1,0 +1,17 @@
+# .gitignore для Docker не действует, а контекст сборки — весь каталог витрины.
+# Без этого файла `COPY . .` запекал в ПРОДАКШЕН-образ `.env.dev` с ключом
+# ЮKassa и дев-базу SQLite: всякий, у кого есть pull из реестра, читал их одной
+# командой. Найдено аудитом, не инцидентом.
+.env
+.env.*
+*.sqlite3
+*.sqlite3-journal
+.venv/
+venv/
+__pycache__/
+*.pyc
+.git
+.gitignore
+test_*.py
+.pytest_cache/
+staticfiles/

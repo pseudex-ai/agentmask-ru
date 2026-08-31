@@ -172,7 +172,13 @@ ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_RATE_LIMITS = {
     # The sign-in form is the one unauthenticated write on the site.
     "login_failed": "5/5m",
-    "login_by_code_request": "3/5m",
+    # ИМЯ КЛЮЧА ПРОВЕРЕНО ПО ИСХОДНИКАМ УСТАНОВЛЕННОГО allauth, а не по памяти:
+    # `app_settings.py:196` называет его `request_login_code`. Прежнее
+    # `login_by_code_request` не существует, а RATE_LIMITS сливается поверх
+    # умолчаний — то есть настройка молча не действовала, и работал дефолт
+    # 20/m/ip,3/m/key. Ровно тот же промах, что уже описан выше в этом файле
+    # про ACCOUNT_LOGIN_METHODS.
+    "request_login_code": "3/5m",
 }
 LOGIN_REDIRECT_URL = "/app/"
 LOGOUT_REDIRECT_URL = "/"
@@ -219,7 +225,10 @@ LICENSING_ADMIN_URL = _env("PSEUDEX_LICENSING_ADMIN_URL", "http://127.0.0.1:9443
 # Общий секрет с админкой лицензионного сервера. Сетевая изоляция 9443 — первый
 # замок, этот второй: витрина смотрит в интернет, и её компрометация не должна
 # сразу означать выпуск ключей.
-LICENSING_ADMIN_TOKEN = _env("PSEUDEX_LICENSE_ADMIN_TOKEN", "")
+# Витрина ходит МЕНЬШИМ токеном: ей нужны пять ручек из одиннадцати, и ни одна
+# из них не массовая. Полный токен здесь не должен лежать вовсе — витрина
+# единственная смотрит в интернет.
+LICENSING_ADMIN_TOKEN = _env("PSEUDEX_LICENSE_STOREFRONT_TOKEN", "")
 LICENSING_CA = _env("PSEUDEX_LICENSING_CA", "")
 
 YOOKASSA_SHOP_ID = _env("PSEUDEX_YOOKASSA_SHOP_ID")

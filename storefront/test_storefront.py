@@ -39,6 +39,10 @@ def check(name: str, condition: bool, detail: str = "") -> None:
         FAILURES.append(name)
 
 
+_ADMIN_TOKEN = "test-admin-token"
+_SHOP_TOKEN = "test-shop-token"
+
+
 def _free_port() -> int:
     import socket
     with socket.socket() as sock:
@@ -63,6 +67,11 @@ def start_licensing() -> tuple[subprocess.Popen, str]:
             tempfile.mkdtemp(prefix="pseudex-store-test-"), "license.db"),
         "PSEUDEX_LICENSE_CERT": "",
         "PSEUDEX_LICENSE_KEYFILE": "",
+        # Админка теперь под токеном, и оба конца должны знать один секрет:
+        # сервер запускается ЗДЕСЬ, до того как настройки витрины прочитают
+        # окружение, поэтому задавать их ниже было поздно.
+        "PSEUDEX_LICENSE_ADMIN_TOKEN": _ADMIN_TOKEN,
+        "PSEUDEX_LICENSE_STOREFRONT_TOKEN": _SHOP_TOKEN,
     }
     process = subprocess.Popen(
         [str(_PROTOTYPE / ".venv/bin/python"), "-m", "licensing.devserver"],
@@ -82,6 +91,10 @@ def start_licensing() -> tuple[subprocess.Popen, str]:
 
 def main() -> int:
     process, admin_url = start_licensing()
+    # Админка лицензионного сервера теперь под токеном; тест поднимает
+    # НАСТОЯЩИЙ сервер, поэтому оба конца должны знать один секрет.
+    os.environ["PSEUDEX_LICENSE_ADMIN_TOKEN"] = _ADMIN_TOKEN
+    os.environ["PSEUDEX_LICENSE_STOREFRONT_TOKEN"] = _SHOP_TOKEN
     os.environ["PSEUDEX_LICENSING_ADMIN_URL"] = admin_url
     os.environ["PSEUDEX_DEBUG"] = "1"
     os.environ["PSEUDEX_SECRET_KEY"] = "test-only"
@@ -149,10 +162,23 @@ def run_checks(client) -> None:
     check("the email carries no key, only a link",
           "ps_live_" not in body, "nothing secret is put in an email")
     link = [word for word in body.split() if "/activate?t=" in word][0]
-    activated = client.get(link[link.index("/activate"):], follow=False)
-    check("following the link issues the key",
+    path = link[link.index("/activate"):]
+    token = path.split("t=", 1)[1]
+
+    # ПЕРЕХОД ПО ССЫЛКЕ НЕ ВХОДИТ В СЕССИЮ, и это проверяется первым.
+    # `SESSION_COOKIE_SAMESITE = "Lax"` разрешает ставить cookie на
+    # кросс-сайтовой навигации верхнего уровня, поэтому вход прямо на GET
+    # означал бы, что чужой сайт может подсунуть клиенту СВОЮ ссылку и
+    # подменить ему сессию — после чего клиент оплатит чужой счёт своей картой.
+    shown = client.get(path, follow=False)
+    check("the link only SHOWS a confirmation, it does not sign anyone in",
+          shown.status_code == 200 and client.get("/app/").status_code != 200,
+          f"status={shown.status_code}")
+
+    activated = client.post(path, {"t": token}, follow=False)
+    check("confirming issues the key",
           activated.status_code == 302 and activated.url == "/welcome",
-          f"status={activated.status_code}")
+          f"status={activated.status_code} url={getattr(activated,'url','-')}")
 
     # The activation link proves the mailbox — the same proof a sign-in link
     # carries — so spending it on a session too is what keeps a new customer
@@ -190,6 +216,9 @@ def run_checks(client) -> None:
           "there is no column that could hold the key")
 
     licensed = httpx.get(f"{os.environ['PSEUDEX_LICENSING_ADMIN_URL']}/admin/list",
+                         # /admin/list — полный токен: витрине этот список
+                         # видеть не положено, и тест ходит как оператор.
+                         headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"},
                          timeout=10).json()
     check("the licensing server knows the organisation",
           any(row.get("org_id") == organization.id for row in licensed.get("orgs", [])),

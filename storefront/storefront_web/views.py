@@ -271,7 +271,8 @@ _ACTIVATION_HOURS = 24
 def activate(request):
     """Issue the key, once, to whoever proved they hold the mailbox."""
     try:
-        payload = signing.loads(request.GET.get("t", ""),
+        token = request.POST.get("t") or request.GET.get("t", "")
+        payload = signing.loads(token,
                                 max_age=_ACTIVATION_HOURS * 3600)
     except (signing.BadSignature, signing.SignatureExpired):
         messages.error(request, "Ссылка недействительна или устарела. "
@@ -281,6 +282,28 @@ def activate(request):
     organization = Organization.objects.filter(id=payload["org"]).first()
     if organization is None:
         return redirect("landing")
+
+    # ВХОД ПО ССЫЛКЕ — ЭТО GET, А GET ПОДДЕЛЫВАЕТСЯ ЧУЖИМ САЙТОМ. Ссылка
+    # активации — работающий логин на 24 часа, и раньше она входила в сессию
+    # прямо на переходе. `SESSION_COOKIE_SAMESITE = "Lax"` НАМЕРЕННО разрешает
+    # ставить cookie на кросс-сайтовой навигации верхнего уровня, поэтому
+    # злоумышленник, зарегистрировавшись сам, мог подсунуть свою ссылку клиенту:
+    # сессия жертвы затиралась, и дальше жертва платила его счёт своей картой.
+    #
+    # Поэтому GET только ПОКАЗЫВАЕТ форму, а вход делает POST с CSRF-токеном.
+    # Одна лишняя кнопка на регистрации против смены личности по ссылке.
+    if request.method != "POST":
+        return render(request, "activate.html",
+                      {"token": request.GET.get("t", ""),
+                       "email": payload["email"]})
+    # И личность не подменяется молча: если в браузере уже кто-то другой, мы
+    # об этом говорим, а не переключаем под ним стул.
+    current = getattr(request, "user", None)
+    if (current is not None and current.is_authenticated
+            and current.email.lower() != str(payload["email"]).lower()):
+        messages.error(request, "В этом браузере уже открыт другой аккаунт. "
+                                "Выйдите из него и откройте ссылку снова.")
+        return redirect("cabinet")
     # Following the link twice must not mint a second key: the first one was
     # shown once and the customer may already be running it.
     if organization.keys.filter(revoked_at__isnull=True).exists():

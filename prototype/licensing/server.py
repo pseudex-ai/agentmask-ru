@@ -111,6 +111,37 @@ if not _ADMIN_TOKEN:  # noqa: F821 - checked at import, before anything is serve
                "every request")
 
 
+# ВТОРОЙ ТОКЕН, С МЕНЬШИМИ ПРАВАМИ, ДЛЯ ВИТРИНЫ. Один общий секрет означал, что
+# компрометация витрины — а она единственная смотрит в интернет — отдаёт список
+# всех абонентов и массовые действия: приостановить, отозвать, пометить
+# неоплаченным. Витрине нужны пять ручек из одиннадцати, и ни одна из них не
+# массовая.
+#
+# Это НЕ делает витрину безопасной: токен лежит у неё в окружении, и тот, кто
+# исполнил там код, его прочитает. Это ограничивает РАДИУС — выпустить себе
+# ключ он сможет, погасить всех клиентов нет.
+_STOREFRONT_TOKEN = os.environ.get("PSEUDEX_LICENSE_STOREFRONT_TOKEN", "")
+
+# Список БЕЛЫЙ: новая ручка по умолчанию требует полного токена, а не наследует
+# права по невнимательности того, кто её добавил.
+_STOREFRONT_PATHS = frozenset({
+    "/admin/issue", "/admin/revoke_key", "/admin/release",
+    "/admin/instances", "/admin/usage",
+})
+
+
+def _matches(presented: str, secret: str) -> bool:
+    """Сравнение по БАЙТАМ: `compare_digest` на не-ASCII строке бросает
+    TypeError, и это был бы 500 вместо 401."""
+    if not presented or not secret:
+        return False
+    try:
+        return secrets.compare_digest(presented.encode("ascii"),
+                                      secret.encode("ascii"))
+    except UnicodeEncodeError:
+        return False
+
+
 def _require_admin(request: Request) -> None:
     # СРАВНИВАЮТСЯ БАЙТЫ. `secrets.compare_digest` на строках с не-ASCII бросает
     # `TypeError`, и он превратился бы в 500 вместо 401 — тот же промах, что уже
@@ -118,13 +149,15 @@ def _require_admin(request: Request) -> None:
     # решать это должен явный отказ, а не исключение.
     header = request.headers.get("authorization", "")
     presented = header[7:] if header.lower().startswith("bearer ") else ""
-    try:
-        given = presented.encode("ascii")
-        expected = _ADMIN_TOKEN.encode("ascii")
-    except UnicodeEncodeError:
-        raise HTTPException(status_code=401, detail="admin token required") from None
-    if not given or not expected or not secrets.compare_digest(given, expected):
-        raise HTTPException(status_code=401, detail="admin token required")
+    if _matches(presented, _ADMIN_TOKEN):
+        return
+    if _matches(presented, _STOREFRONT_TOKEN):
+        if request.url.path in _STOREFRONT_PATHS:
+            return
+        _log.warning("storefront token used on %s — refused", request.url.path)
+        raise HTTPException(status_code=403,
+                            detail="this token may not use that endpoint")
+    raise HTTPException(status_code=401, detail="admin token required")
 
 
 admin_app = FastAPI(title="Pseudex licensing admin",
