@@ -25,6 +25,7 @@ import threading
 import time
 
 from pseudex import morph_names, morph_places
+from pseudex.spoken import numeral_runs, run_to_digits
 from pseudex.profiling import stage
 from pseudex.ru_pii import validate_inn, validate_luhn, validate_ogrn, validate_snils
 from pseudex.sqlite_setup import (
@@ -234,19 +235,45 @@ _PLACE_SWEEP_INTERVAL = 60 * 60
 _last_place_sweep = 0.0
 
 
+def _digits_of(value: str) -> str:
+    """The digits of a value, whether it was written or SPOKEN.
+
+    A phone said out loud carries no digit at all, so the plain strip returns
+    nothing — and «+7 916…» and «восемь девятьсот шестнадцать…» are the same
+    number said two ways. Collapsing them is the same rule that already
+    collapses «+7 999…», «8 999…» and «89991234567»: one identity, one
+    substitute, so the model sees a stable person across turns and the tool
+    receives the number the customer actually gave.
+    """
+    digits = re.sub(r"\D", "", value)
+    if digits:
+        return digits
+    runs = numeral_runs(value)
+    if len(runs) == 1 and len(runs[0][2]) >= 4:
+        return run_to_digits(runs[0][2])
+    return ""
+
+
 def canonicalize(entity_type: str, value: str) -> str:
     """Normalize a value so equivalent forms collapse to one key.
 
 """
     if entity_type == "PHONE":
-        digits = re.sub(r"\D", "", value)
+        digits = _digits_of(value)
         if len(digits) == 11 and digits[0] in "78":
             digits = "7" + digits[1:]
         elif len(digits) == 10:
             digits = "7" + digits
         return "+" + digits if digits else value
     if entity_type in ("SNILS", "INN", "CARD", "PASSPORT"):
-        return re.sub(r"\D", "", value)
+        # AN EMPTY CANONICAL IS A COLLISION GENERATOR, and it became reachable
+        # the moment the engine learned to hear an identifier DICTATED ALOUD.
+        # «четыре два ноль девять…» has no digits, `re.sub` returned the empty
+        # string, and every spoken СНИЛС in the tenant collapsed onto ONE row —
+        # two different people sharing one substitute, which is the single
+        # failure this product treats as unacceptable. Measured, not imagined:
+        # two distinct spoken СНИЛС came back as the same token.
+        return _digits_of(value) or value
     if entity_type == "EMAIL":
         return value.strip().lower()
     if entity_type == "NAME":

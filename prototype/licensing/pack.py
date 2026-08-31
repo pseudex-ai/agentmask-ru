@@ -185,6 +185,13 @@ def build_payload() -> dict[str, object]:
             "core_part": list(assets_source.CORE_PART),
             "patterns": assets_source.ADDRESS_PATTERNS,
         },
+        "spoken": {
+            # Опечатки числительных, добытые из речевых корпусов. Данные, а не
+            # алгоритм: разбор числительных опубликован и живёт в движке, а
+            # то, КАК их коверкает расшифровщик, вынуто нами из чужих корпусов
+            # и потому лизится.
+            "numeral_typos": assets_source.NUMERAL_TYPOS,
+        },
         "quasi": {
             "birth_ctx": list(assets_source.BIRTH_CTX),
             "months": list(assets_source.MONTHS),

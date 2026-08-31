@@ -91,6 +91,12 @@ class AddressAssets:
     # of two or more markers — one marker plus a number word is «программу дом
     # два», which is a television show and sits in our own negative set.
     spoken_chain: re.Pattern[str]
+    # The address TAIL spoken — «строение пять», «корпус три», «квартира двести
+    # двадцать девять». SUPPORT only, exactly like `apt`, whose digit-only shape
+    # this fills in: the street arm found the address and stopped at the house
+    # number, so the rest of it travelled to the model inside a span that was
+    # already reported as found.
+    spoken_apt: re.Pattern[str]
     # Marked street, lower case, NO house number — gated on morphology
     # in the engine, because the house number is the guard the others use.
     street_lower_nohouse: re.Pattern[str]
@@ -113,6 +119,15 @@ class AddressAssets:
     # number is a quantity and not a door. Anchored by the caller with `.match`
     # at the position just past the number, never searched.
     measure_after: re.Pattern[str]
+    # A number glued to an age («31-летний»). Anchored by the caller with
+    # `.match` just past the number, exactly like `measure_after`, and kept
+    # apart from it: adding «лет» there would move arms already measured.
+    age_after: re.Pattern[str]
+    # A lower-case street name with NO type word, plus a house number — the
+    # ordinary shape of a spoken Russian address. Deliberately loose; the four
+    # gates that make it safe live in `address.py` because none of them is
+    # expressible as a regex.
+    street_bare_lower: re.Pattern[str]
     gap: re.Pattern[str]
     trail_house: re.Pattern[str]
     rural: re.Pattern[str]
@@ -121,6 +136,18 @@ class AddressAssets:
     # to be a date. Taken from the SAME list the quasi date pattern uses —
     # two copies of the Russian calendar would be two things to keep in step.
     month_after: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SpokenAssets:
+    """How a transcriber misspells a numeral.
+
+    The PARSE of Russian numerals is published grammar and lives in the engine;
+    which broken forms real transcripts produce is something we mined out of
+    somebody else's corpora, so it is leased. Same split as everywhere: in the
+    bundle what we tuned, in the binary every algorithm.
+    """
+    numeral_typos: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -165,6 +192,7 @@ class DetectionAssets:
     names: NameAssets
     address: AddressAssets
     quasi: QuasiAssets
+    spoken: SpokenAssets
     context: ContextAssets
     structured: StructuredAssets
     ru_pii: RuPiiAssets
@@ -251,6 +279,10 @@ def _build_quasi(raw: dict[str, object]) -> QuasiAssets:
     )
 
 
+def _build_spoken(raw: dict[str, object]) -> SpokenAssets:
+    return SpokenAssets(numeral_typos=dict(raw["numeral_typos"]))
+
+
 def _build_ru_pii(raw: dict[str, object]) -> RuPiiAssets:
     ctx_patterns = tuple(
         (entity_type, re.compile(rf"(?i:{cues})\D{{0,20}}?({shape})\b"))
@@ -271,6 +303,7 @@ def _build(payload: dict[str, object]) -> DetectionAssets:
         # Months come from the QUASI section: one Russian calendar, two users.
         address=_build_address(payload["address"], payload["quasi"]["months"]),
         quasi=_build_quasi(payload["quasi"]),
+        spoken=_build_spoken(payload["spoken"]),
         context=ContextAssets(
             deny=tuple(payload["context"]["deny"]),
             phone_trigger=tuple(payload["context"]["phone_trigger"]),

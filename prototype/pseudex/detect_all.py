@@ -16,6 +16,8 @@ from pseudex.normalize import normalize
 from pseudex.profiling import stage
 from pseudex.quasi import detect_quasi
 from pseudex.ru_pii import detect_plates, detect_structured, detect_vehicle_ids
+from pseudex.spoken import (detect_spoken_email, detect_spoken_ids,
+                            detect_spoken_plate)
 from pseudex.credentials import detect_credentials
 from pseudex.structured import detect_structured_kv
 
@@ -140,6 +142,17 @@ class Detector:
                 spans = detect_pii(norm)
             with stage("detect.structured_id"):
                 spans += detect_structured(norm)
+                # DICTATED ALOUD, so no digit exists for the arms above to find.
+                # Measured on a corpus built from real transcripts: 281
+                # identifiers spoken as words, and every recognizer here missed
+                # all of them. The spoken arm only turns words into a digit
+                # string; the SAME checksums decide whether it is an identifier.
+                spans += detect_spoken_ids(norm)
+                # Почта и госномер вслух — у них не отбор кандидатов подводит,
+                # а отсутствие шаблона: «воронина собака яндекс точка ру» не
+                # похожа ни на что, что ищут ветки выше.
+                spans += detect_spoken_email(norm)
+                spans += detect_spoken_plate(norm)
                 # RAW text: a credential is ASCII and self-anchored, so the
                 # look-alike fold can only hurt it. Offsets are 1:1 either way.
                 spans += detect_credentials(text)
