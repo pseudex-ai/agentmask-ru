@@ -83,8 +83,8 @@ RESULTS: list[Result] = []
 
 # Учётные данные админки лицензионного сервера. Пусто — заголовка нет, и сервер
 # ответит 401: ходить молча без токена хуже, чем громко не дойти.
-ADMIN_TOKEN = os.environ.get("PSEUDEX_LICENSE_ADMIN_TOKEN", "")
-ADMIN_AUTH = {"Authorization": f"Bearer {ADMIN_TOKEN}"} if ADMIN_TOKEN else {}
+ADMIN_TOKEN = os.environ.get("PSEUDEX_LICENSE_ADMIN_TOKEN", "e2e-admin-token")
+ADMIN_AUTH = {"Authorization": f"Bearer {ADMIN_TOKEN}"}
 
 def sh(args: list[str], check: bool, timeout: int) -> subprocess.CompletedProcess:
     return subprocess.run(args, capture_output=True, text=True, check=check, timeout=timeout)
