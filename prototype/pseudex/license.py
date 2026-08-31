@@ -29,6 +29,7 @@ COLD START HAS NO GRACE. A process that never leased has no assets to run on, so
 of a container racing its own network, then exits non-zero.
 """
 
+import hashlib
 import logging
 import os
 import threading
@@ -43,6 +44,9 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from pseudex.assets import ASSETS
 from pseudex.bundle import (
     BundleError,
+    encode_report_key,
+    generate_report_key,
+    sign_report,
     ProcessKey,
     decode_public_key,
     generate_process_key,
@@ -181,6 +185,20 @@ class LicenseClient:
         self._process_id = f"{instance_id}-{os.getpid()}"
         self._usage_provider = usage_provider
         self._process_key: ProcessKey = generate_process_key()
+        # ПОДПИСЬ ОТЧЁТА О РАСХОДЕ. Отдельная пара, живёт только в памяти этого
+        # процесса. До неё отчёт уходил открытым текстом, а TLS проверяется по
+        # СИСТЕМНОМУ хранилищу контейнера (см. `verify` ниже) — то есть владелец
+        # хоста переписывал счёт по дороге, не трогая бинарник вообще.
+        #
+        # ЧЕГО ЭТО НЕ ЗАКРЫВАЕТ, СКАЗАНО ЧЕСТНО: перехватчик, стоящий в канале
+        # с САМОГО ПЕРВОГО обращения, подменит и открытый ключ отчётов — тогда
+        # он подписывает свои. Закрывается это только прикреплением сертификата
+        # нашего сервера в бинарнике, у чего своя цена в ротации, и это
+        # отдельная работа. Здесь закрыты пассивная правка в пути и подмена
+        # задним числом.
+        self._report_key = generate_report_key()
+        self._report_seq = 0
+        self._report_prev = ""
         # Resolved on first use, not here: `service.py` constructs this client at
         # import time, and a missing verification key must fail the STARTUP of a
         # process, not the IMPORT of the module — otherwise every test and tool
@@ -262,6 +280,23 @@ class LicenseClient:
     def is_serving(self) -> bool:
         return self.state() in (STATE_LEASED, STATE_STALE)
 
+    def _sign_usage(self, usage: dict[str, object]) -> dict[str, object]:
+        """Отчёт, СЦЕПЛЕННЫЙ с предыдущим и подписанный.
+
+        `seq` растёт на единицу, `prev` — хеш подписи предыдущего отчёта.
+        Выброшенный, переставленный или подменённый старым отчёт виден на нашей
+        стороне как разрыв цепи; переписать содержимое в пути нельзя, не имея
+        приватной половины, которая никогда не покидает память процесса.
+        """
+        self._report_seq += 1
+        signed = dict(usage)
+        signed["seq"] = self._report_seq
+        signed["prev"] = self._report_prev
+        signed["signature"] = sign_report(signed, self._report_key)
+        self._report_prev = hashlib.sha256(
+            signed["signature"].encode("ascii")).hexdigest()
+        return signed
+
     def _record_error(self, message: str) -> None:
         with self._lock:
             self._last_error = message
@@ -286,6 +321,7 @@ class LicenseClient:
         # while a missed cumulative report is corrected by the next one.
         usage = self._usage_provider() if self._lease_id is not None else None
         if usage is not None:
+            usage = self._sign_usage(usage)
             with self._lock:
                 self._last_report = usage
                 self._last_report_at = time.time()
@@ -296,6 +332,7 @@ class LicenseClient:
                 "instance_id": self._instance_id,
                 "process_id": self._process_id,
                 "pubkey": self._process_key.public,
+                "report_pubkey": encode_report_key(self._report_key),
                 "engine_version": ENGINE_VERSION,
                 "lease_id": self._lease_id,
                 "usage": usage,

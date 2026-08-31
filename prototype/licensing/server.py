@@ -32,7 +32,8 @@ from licensing.store import (
     STATUS_UNPAID,
     LicenseStore,
 )
-from pseudex.bundle import plaintext_hash, seal, sign_lease
+from pseudex.bundle import (BundleError, plaintext_hash, seal, sign_lease,
+                            verify_report)
 
 _log = logging.getLogger("licensing.server")
 
@@ -117,16 +118,36 @@ def _version_tuple(version: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
-def _store_usage(instance_id: str, org_id: str, usage: object) -> None:
+def _store_usage(instance_id: str, org_id: str, usage: object,
+                 report_pubkey: str = "") -> None:
     """Record the instance's cumulative counters. No-op on the first lease of a
-    process, which has nothing to report yet."""
+    process, which has nothing to report yet.
+
+    ПОДПИСЬ И ЦЕПЬ ПРОВЕРЯЮТСЯ ЗДЕСЬ, И ОТКАЗ НЕ РОНЯЕТ АРЕНДУ. Отчёт, который
+    не сходится, — это счёт, а не право работать: клиент с испорченной цепью
+    продолжает обслуживать своих людей, а мы получаем помеченную запись и
+    разговор. Ронять `/mask` за расхождение в биллинге значило бы наказывать
+    конечного пользователя за спор двух юрлиц.
+    """
     if not isinstance(usage, dict) or not instance_id:
         return
+    trust = "unsigned"
+    if report_pubkey and usage.get("signature"):
+        try:
+            verify_report(usage, report_pubkey)
+            trust = "signed"
+        except BundleError as error:
+            _log.warning("usage report signature failed for org=%s instance=%s: %s",
+                         org_id, instance_id, error)
+            trust = "bad_signature"
     entities = usage.get("entities")
     STORE.record_usage(
         org_id, instance_id, int(usage.get("requests", 0)),
         entities if isinstance(entities, dict) else {},
         int(usage.get("values", 0)),
+        seq=int(usage.get("seq", 0)), prev=str(usage.get("prev", "")),
+        signature=str(usage.get("signature", "")), trust=trust,
+        report_pubkey=report_pubkey,
     )
 
 
@@ -200,7 +221,8 @@ async def lease(request: Request) -> JSONResponse:
     # "you are running more containers than you bought", which is a different
     # sentence and must not be read by the client as a payment failure — those
     # bypass grace and stop everything.
-    allowed, why_not = STORE.may_lease(record.org_id, record.plan, instance_id, _TTL_SECONDS)
+    allowed, why_not = STORE.may_lease(record.org_id, record.plan, instance_id,
+                                       _TTL_SECONDS, pubkey=recipient)
     if not allowed:
         _log.warning("lease refused for org=%s instance=%s: %s",
                      record.org_id, instance_id, why_not)
@@ -208,10 +230,12 @@ async def lease(request: Request) -> JSONResponse:
                             status_code=409)
     # Counters ride in on the renewal request. Recorded BEFORE the new lease is
     # minted so a client that dies mid-renewal has still been accounted for.
-    _store_usage(instance_id, record.org_id, body.get("usage"))
+    _store_usage(instance_id, record.org_id, body.get("usage"),
+                 str(body.get("report_pubkey", "")))
 
     lease_id = "ls_" + secrets.token_urlsafe(16)
-    STORE.record_lease(lease_id, record.org_id, instance_id, process_id, _TTL_SECONDS)
+    STORE.record_lease(lease_id, record.org_id, instance_id, process_id,
+                       _TTL_SECONDS, pubkey=recipient)
 
     payload: dict[str, object] = {
         "lease_id": lease_id,
@@ -249,7 +273,8 @@ async def usage(request: Request) -> JSONResponse:
     record = STORE.lookup(key)
     if record is None or record.status != STATUS_ACTIVE:
         return JSONResponse({"error": "license_invalid"}, status_code=403)
-    _store_usage(str(body.get("instance_id", "")), record.org_id, body.get("usage"))
+    _store_usage(str(body.get("instance_id", "")), record.org_id,
+                 body.get("usage"), str(body.get("report_pubkey", "")))
     return JSONResponse({"status": "recorded"})
 
 

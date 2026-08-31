@@ -1380,6 +1380,20 @@ def main() -> int:
     parser.add_argument("--type", default="", choices=[""] + list(schema.TYPES))
     parser.add_argument("--dump", type=int, default=12,
                         help="сколько расхождений печатать в каждом разделе")
+    # СУДЬЯ ПО УМОЛЧАНИЮ ДЕТЕРМИНИРОВАННЫЙ, И ЭТО НЕ ЭКОНОМИЯ. Оси 1 и 2
+    # считаются по всему корпусу без модели и без сети — их можно прогнать на
+    # любой машине и получить те же числа побитово. Живой судья пересматривает
+    # только третью ось и только там, где строковое сравнение сказало «чисто»:
+    # модель склоняет подмену, пишет число словами, пересказывает адрес — ничего
+    # из этого `casefold() in` не находит.
+    parser.add_argument("--judge", default="deterministic",
+                        choices=("deterministic", "sdk"),
+                        help="кто судит ось 3")
+    parser.add_argument("--judge-model", default="claude-sonnet-5")
+    parser.add_argument("--judge-budget", type=float, default=2.0,
+                        help="потолок трат судьи в долларах, жёсткий")
+    parser.add_argument("--judge-cap", type=float, default=0.05,
+                        help="потолок на один вердикт")
     args = parser.parse_args()
 
     everything, digest = _load(Path(args.corpus))
@@ -1396,8 +1410,19 @@ def main() -> int:
         return 1
 
     load_dev_bundle()
+    judge: Judge = deterministic_judge
+    if args.judge == "sdk":
+        # Импорт ЗДЕСЬ, а не наверху: Agent SDK не нужен для офлайновых осей, и
+        # машина без него должна считать их как ни в чём не бывало.
+        from bench.agentpii3.live import judge as live
+        from bench.agentpii3.live.seam import sdk_judge
+        judge = sdk_judge(live.JudgeConfig(
+            model=args.judge_model,
+            ledger=live.SpendLedger(live.default_ledger_path(),
+                                    args.judge_budget),
+            query_cap_usd=args.judge_cap, retries=2, trace_path=None))
     started = time.time()
-    tally = score(cases, deterministic_judge, args.type, args.dump)
+    tally = score(cases, judge, args.type, args.dump)
     _report(tally, cases, args.tier, digest, args.dump)
     bound = schema.TIER_ZERO_FAILURE_BOUND.get(args.tier)
     if bound is not None:
@@ -1409,7 +1434,11 @@ def main() -> int:
     # partial mention is a property of the draw. A few tenths of a point of
     # movement between identical runs is the pool, not the gateway; a change
     # worth reading is larger than that and moves a named column.
-    print(f"\nсчитано за {time.time() - started:.0f} с, без модели и без сети")
+    if args.judge == "sdk":
+        print(f"\nсчитано за {time.time() - started:.0f} с, судья "
+              f"{args.judge_model}, потолок ${args.judge_budget:.2f}")
+    else:
+        print(f"\nсчитано за {time.time() - started:.0f} с, без модели и без сети")
     print("ось 1 воспроизводится побитово: детекция детерминирована. оси 2 и 3 "
           "гуляют\nна доли процента — подмены чеканятся случайно (secrets), и "
           "склонится ли\nименно эта подмена, зависит от жребия. это разброс "

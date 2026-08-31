@@ -55,6 +55,12 @@ class LicenseStore:
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS leases ("
             "lease_id TEXT PRIMARY KEY, org_id TEXT, instance_id TEXT, process_id TEXT, "
+            # КЛЮЧ ПРОЦЕССА — ЕДИНСТВЕННЫЙ ИДЕНТИФИКАТОР, КОТОРЫЙ КЛИЕНТ НЕ
+            # ВЫБИРАЕТ. Он генерируется в памяти воркера, на него запечатывается
+            # бандл, и два процесса не могут иметь один и тот же, не будучи
+            # пропатченными. Всё остальное, чем контейнер представляется, —
+            # переменные окружения.
+            "pubkey TEXT, "
             "issued_at REAL, ttl_seconds INTEGER)"
         )
         # Keyed by (org, instance) and holding the LATEST CUMULATIVE totals — not
@@ -81,8 +87,29 @@ class LicenseStore:
             # `values_total` never decreases.
             "values_reported INTEGER DEFAULT 0, values_total INTEGER DEFAULT 0, "
             "resets INTEGER DEFAULT 0, "
+            # Доказательная часть: последний номер в цепи, хеш предыдущей
+            # подписи, сама подпись и вердикт о ней. `chain_breaks` считает
+            # разрывы — пропуск, перестановку или подмену старым отчётом.
+            "seq INTEGER DEFAULT 0, prev TEXT DEFAULT '', signature TEXT DEFAULT '', "
+            "trust TEXT DEFAULT 'unsigned', chain_breaks INTEGER DEFAULT 0, "
+            "report_pubkey TEXT DEFAULT '', "
             "PRIMARY KEY (org_id, instance_id))"
         )
+        # Существующие тома пережили релизы без этой колонки.
+        columns = {row[1] for row in
+                   self._conn.execute("PRAGMA table_info(leases)")}
+        if "pubkey" not in columns:
+            self._conn.execute("ALTER TABLE leases ADD COLUMN pubkey TEXT")
+        usage_columns = {row[1] for row in
+                         self._conn.execute("PRAGMA table_info(usage)")}
+        for column, ddl in (("seq", "seq INTEGER DEFAULT 0"),
+                            ("prev", "prev TEXT DEFAULT ''"),
+                            ("signature", "signature TEXT DEFAULT ''"),
+                            ("trust", "trust TEXT DEFAULT 'unsigned'"),
+                            ("chain_breaks", "chain_breaks INTEGER DEFAULT 0"),
+                            ("report_pubkey", "report_pubkey TEXT DEFAULT ''")):
+            if column not in usage_columns:
+                self._conn.execute(f"ALTER TABLE usage ADD COLUMN {ddl}")
         self._conn.commit()
 
     def issue_key(self, org_id: str, plan: str) -> str:
@@ -126,13 +153,14 @@ class LicenseStore:
         return cursor.rowcount
 
     def record_lease(self, lease_id: str, org_id: str, instance_id: str,
-                     process_id: str, ttl_seconds: int) -> None:
+                     process_id: str, ttl_seconds: int, pubkey: str = "") -> None:
         with self._lock:
             self._conn.execute(
                 "INSERT OR REPLACE INTO leases "
-                "(lease_id, org_id, instance_id, process_id, issued_at, ttl_seconds) "
-                "VALUES (?,?,?,?,?,?)",
-                (lease_id, org_id, instance_id, process_id, time.time(), ttl_seconds),
+                "(lease_id, org_id, instance_id, process_id, pubkey, issued_at, "
+                "ttl_seconds) VALUES (?,?,?,?,?,?,?)",
+                (lease_id, org_id, instance_id, process_id, pubkey, time.time(),
+                 ttl_seconds),
             )
             self._conn.commit()
 
@@ -171,7 +199,9 @@ class LicenseStore:
         return total + reported
 
     def record_usage(self, org_id: str, instance_id: str, requests: int,
-                     entities: dict[str, int], values: int) -> None:
+                     entities: dict[str, int], values: int, seq: int = 0,
+                     prev: str = "", signature: str = "",
+                     trust: str = "unsigned", report_pubkey: str = "") -> None:
         """Record the newest report.
 
         `requests` and `entities` are OVERWRITTEN — each report restates the
@@ -184,18 +214,73 @@ class LicenseStore:
         """
         with self._lock:
             accumulated = self._accumulate_values(org_id, instance_id, values)
+            # ПОДПИСИ НЕТ — ДОВЕРИЯ НЕТ, что бы ни сказал вызывающий. Иначе
+            # достаточно снять подпись, чтобы отчёт снова стал «подписанным».
+            if not signature:
+                trust = "unsigned"
+            breaks = self._chain_breaks(org_id, instance_id, seq, prev, trust,
+                                        report_pubkey)
             self._conn.execute(
                 "INSERT INTO usage (org_id, instance_id, updated_at, reports, requests, "
-                "entities, values_reported, values_total) VALUES (?,?,?,1,?,?,?,?) "
+                "entities, values_reported, values_total, seq, prev, signature, "
+                "trust, chain_breaks, report_pubkey) "
+                "VALUES (?,?,?,1,?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(org_id, instance_id) DO UPDATE SET "
                 "updated_at=excluded.updated_at, reports=usage.reports+1, "
                 "requests=excluded.requests, entities=excluded.entities, "
                 "values_reported=excluded.values_reported, "
-                "values_total=excluded.values_total",
+                "values_total=excluded.values_total, seq=excluded.seq, "
+                "prev=excluded.prev, signature=excluded.signature, "
+                "trust=excluded.trust, chain_breaks=excluded.chain_breaks, "
+                "report_pubkey=excluded.report_pubkey",
                 (org_id, instance_id, time.time(), requests, json.dumps(entities),
-                 values, accumulated),
+                 values, accumulated, seq, prev, signature, trust, breaks,
+                 report_pubkey),
             )
             self._conn.commit()
+
+    def _chain_breaks(self, org_id: str, instance_id: str, seq: int, prev: str,
+                      trust: str, report_pubkey: str = "") -> int:
+        """Счётчик разрывов цепи отчётов.
+
+        Разрыв — это `seq`, который не на единицу больше предыдущего, или
+        `prev`, не совпадающий с хешем нашей записанной подписи. Первое ловит
+        пропуск и перестановку, второе — подмену содержимого задним числом.
+
+        ПЕРЕЗАПУСК ПРОЦЕССА — НЕ РАЗРЫВ. Ключ отчётов живёт в памяти, поэтому
+        новый процесс начинает нумерацию с единицы; это ожидаемо и происходит
+        на каждом деплое. Разрывом считается только продолжение с дырой.
+        """
+        row = self._conn.execute(
+            "SELECT seq, signature, chain_breaks, report_pubkey FROM usage "
+            "WHERE org_id=? AND instance_id=?", (org_id, instance_id),
+        ).fetchone()
+        if row is None:
+            return 0
+        last_seq, last_signature, breaks = int(row[0] or 0), row[1] or "", int(row[2] or 0)
+        last_key = row[3] or ""
+        # ПЕРЕЗАПУСК ДОКАЗЫВАЕТСЯ НОВЫМ КЛЮЧОМ, А НЕ СЛОВОМ «ЕДИНИЦА». Ключ
+        # отчётов живёт в памяти процесса, поэтому настоящий перезапуск ВСЕГДА
+        # приходит с новым открытым ключом. Раньше `seq <= 1` прощалось само по
+        # себе, и вечная единица с тем же ключом проходила как бесконечная
+        # череда перезапусков — а повтор старого валидного отчёта не считался
+        # разрывом вовсе.
+        if seq <= 1:
+            if report_pubkey and last_key and report_pubkey == last_key:
+                _log.warning("usage chain restart claimed without a new report key "
+                             "for org=%s instance=%s (seq %d -> %d)",
+                             org_id, instance_id, last_seq, seq)
+                return breaks + 1
+            return breaks
+        if last_seq == 0:
+            return breaks
+        expected_prev = hashlib.sha256(last_signature.encode("ascii")).hexdigest()
+        if seq == last_seq + 1 and (not prev or prev == expected_prev):
+            return breaks
+        _log.warning("usage chain break for org=%s instance=%s: seq %d -> %d, "
+                     "prev %s (trust=%s)", org_id, instance_id, last_seq, seq,
+                     "ok" if prev == expected_prev else "mismatch", trust)
+        return breaks + 1
 
     # How many containers each plan may run at once. THE ONE THING WE ENFORCE,
     # and the only thing that can be enforced: it is decided here, on our side,
@@ -206,6 +291,18 @@ class LicenseStore:
     # Instances are also the honest proxy for scale: one container handles a
     # given load, and more traffic needs more of them.
     PLAN_INSTANCES = {"start": 1, "work": 4, "industrial": 12, "enterprise": 100}
+    # ПОТОЛОК ПРОЦЕССОВ НА КОНТЕЙНЕР. Тариф ПУБЛИКУЕТСЯ в контейнерах, а
+    # ПРИНУЖДАЕТСЯ в процессах, потому что `instance_id` приходит из переменной
+    # окружения (`service.py`), которую ставит клиент: пятьдесят контейнеров с
+    # одним значением читались как один инстанс, и тариф обходился одной строкой
+    # в compose-файле. Ключ процесса — единственное, что клиент не выбирает.
+    #
+    # Число щедрое намеренно. `entrypoint.sh` берёт воркеров по числу ядер, и
+    # отказать честному клиенту на большой машине хуже, чем пропустить лишнее:
+    # обход тарифа этим потолком становится дороже ровно настолько, насколько
+    # клиенту придётся поднимать контейнеры с малым числом воркеров, то есть
+    # тратить память впустую. 32 покрывает любой разумный узел.
+    PROCESSES_PER_INSTANCE = 32
     # Mirrors billing/management/commands/seed_plans.py. Two places, because
     # the licensing server must not depend on the storefront — but they are
     # checked against each other by test_storefront.py.
@@ -269,7 +366,7 @@ class LicenseStore:
         return cursor.rowcount > 0
 
     def may_lease(self, org_id: str, plan: str, instance_id: str,
-                  window_seconds: int) -> tuple[bool, str]:
+                  window_seconds: int, pubkey: str = "") -> tuple[bool, str]:
         """Whether this instance may take a lease under the org's plan.
 
         Counts instances that leased RECENTLY, not ever. A container that was
@@ -294,19 +391,55 @@ class LicenseStore:
         # customer a day and a half on a single-instance plan.
         cutoff = time.time() - window_seconds
         rows = self._conn.execute(
-            "SELECT DISTINCT instance_id FROM leases WHERE org_id=? AND issued_at>=?",
-            (org_id, cutoff),
+            "SELECT DISTINCT instance_id, pubkey FROM leases "
+            "WHERE org_id=? AND issued_at>=?", (org_id, cutoff),
         ).fetchall()
-        active = {row[0] for row in rows}
-        if instance_id in active:
+        instances = {row[0] for row in rows}
+        keys = {row[1] for row in rows if row[1]}
+        # ПРОДЛЕНИЕ НЕ МОЖЕТ БЫТЬ ОТКАЗАНО. Ключ процесса создаётся один раз в
+        # конструкторе клиента и живёт, пока живёт процесс, поэтому «этот ключ
+        # уже держит слот» — точный признак продления, а не нового контейнера.
+        if pubkey and pubkey in keys:
+            # КЛЮЧ ПРИВЯЗАН К ПЕРВОМУ НАЗВАВШЕМУ ЕГО ИНСТАНСУ. Без этого быстрый
+            # путь «этот ключ уже держит слот» пропускал пятьсот контейнеров,
+            # предъявивших ОДИН ключ, — то есть правка оказывалась хуже дыры,
+            # которую чинила. Повторное использование ключа само по себе
+            # означает пропатченный бинарник (ключ генерируется в памяти), но
+            # это не повод делать обход бесплатным.
+            owners = {row[0] for row in rows if row[1] == pubkey}
+            if owners and instance_id not in owners:
+                _log.warning("process key reused across instance ids for org=%s: "
+                             "%s now claimed by %r, first seen under %r",
+                             org_id, pubkey[:12], instance_id, sorted(owners)[:3])
+                return False, (
+                    "этот рабочий процесс уже учтён под другим идентификатором "
+                    "контейнера. Перезапустите контейнер."
+                )
             return True, ""
         allowed = self.instances_allowed(plan)
-        if len(active) < allowed:
-            return True, ""
-        return False, (
-            f"тариф допускает {allowed} инстанс(ов), сейчас активно {len(active)}. "
-            f"Остановите лишний контейнер или перейдите на больший тариф."
-        )
+        ceiling = allowed * self.PROCESSES_PER_INSTANCE
+        # СТАРАЯ ГРАНИЦА ОСТАЁТСЯ ВЕРХНЕЙ. Клиент, который честно называет свои
+        # контейнеры, упирается в неё раньше и видит понятное сообщение про
+        # контейнеры, а не про процессы.
+        if instance_id not in instances and len(instances) >= allowed:
+            return False, (
+                f"тариф допускает {allowed} инстанс(ов), сейчас активно "
+                f"{len(instances)}. Остановите лишний контейнер или перейдите "
+                f"на больший тариф."
+            )
+        if len(keys) >= ceiling:
+            # ОТНОШЕНИЕ КЛЮЧЕЙ К ИНСТАНСАМ — НАШЕ НАБЛЮДЕНИЕ, а не то, что
+            # контейнер о себе сообщил. Значение много выше правдоподобного
+            # числа воркеров означает, что несколько контейнеров называются
+            # одним `instance_id`.
+            _log.warning("process ceiling reached for org=%s: %d keys across %d "
+                         "instance ids (ratio %.1f)", org_id, len(keys),
+                         len(instances), len(keys) / max(len(instances), 1))
+            return False, (
+                f"тариф допускает {allowed} инстанс(ов) — это {ceiling} рабочих "
+                f"процессов, сейчас активно {len(keys)}."
+            )
+        return True, ""
 
     def usage_totals(self, org_id: str) -> dict[str, object]:
         """Billing view: the org's consumption, summed across its INSTANCES.
