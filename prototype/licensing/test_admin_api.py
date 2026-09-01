@@ -296,6 +296,7 @@ honest = engine("cap-honest", "start")
 honest._meter_step()
 for _ in range(honest._prefetch_at):
     honest.consume()
+time.sleep(1.1)
 honest._meter_step()
 served, _ = honest.capacity()
 totals = server.STORE.billable("cap-honest")
@@ -303,7 +304,10 @@ check("честная цепь: к счёту ровно расход, а не �
       totals["billable"] == served,
       f"расход {served}, к счёту {totals['billable']}, потолок {totals['granted']}")
 
-# ПОВТОР УЖЕ ПРИНЯТОГО КВАНТА.
+# ПОВТОР УЖЕ ПРИНЯТОГО КВАНТА. Секунда паузы — из-за потолка частоты на самой
+# ручке: он общий для всех и честного клиента не задевает, потому что тот
+# приходит раз в четыре минуты на процесс.
+time.sleep(1.1)
 raw = httpx.post(f"{_base}/v1/meter", timeout=10, json={
     "key": honest._key, "instance_id": "i",
     "pubkey": honest._process_key.public, "nonce": "n"}).json()
@@ -334,6 +338,7 @@ blackhole = engine("cap-blackhole", "start")
 blackhole._meter_step()
 for _ in range(blackhole._prefetch_at):
     blackhole.consume()
+time.sleep(1.1)
 blackhole._meter_step()
 reserve = blackhole._reserve
 blackhole._base_url = "http://127.0.0.1:1"
@@ -356,6 +361,7 @@ spent, _ = silent.capacity()
 # Так выглядит пропатченный клиент: ёмкость просит, расход не называет.
 silent._report_secret = None
 silent._meter_step()
+time.sleep(1.1)
 silent._meter_step()
 quiet = server.STORE.billable("cap-silent")
 check("снятый отчёт не занижает счёт и виден числом",

@@ -660,6 +660,14 @@ async def meter(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
         else:
             trust = "unsigned"
 
+    # ДЕШЁВЫЙ ПОТОЛОК ЧАСТОТЫ. Инфляция ёмкости атакующему бесполезна — она
+    # только поднимает его же счёт, — но ручка публичная, а сервер
+    # однопроцессный, и долбёжка по ней это уже наша проблема, а не его.
+    # 429 у клиента grace-worthy, поэтому честного это ничем не задевает: он
+    # приходит раз в четыре минуты на процесс.
+    if STORE.metered_too_recently(record.org_id, pubkey, time.time()):
+        return JSONResponse({"error": "too_fast", "detail": "one grant per second"},
+                            status_code=429)
     quantum = STORE.issue_quantum(record.org_id, pubkey, record.plan, acked,
                                   time.time())
     payload: dict[str, object] = {

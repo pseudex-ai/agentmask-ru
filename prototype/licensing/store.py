@@ -150,6 +150,9 @@ class LicenseStore:
             "org_id TEXT, pubkey TEXT, first_seen REAL, updated_at REAL, "
             "quantum_seq INTEGER DEFAULT 0, quantum_size INTEGER DEFAULT 0, "
             "reserve INTEGER DEFAULT 0, granted INTEGER DEFAULT 0, "
+            # Порог, на котором движок обязан прийти за следующим квантом. Сам
+            # факт прихода — это и есть оценка расхода, когда отчёта нет.
+            "prefetch_at INTEGER DEFAULT 0, "
             "acked INTEGER DEFAULT 0, acked_at REAL, "
             "ack_trust TEXT DEFAULT 'none', rate_per_second REAL DEFAULT 0, "
             # Кванты подряд без проверенного отчёта. Молчание перестаёт быть
@@ -595,17 +598,30 @@ class LicenseStore:
     def meter_row(self, org_id: str, pubkey: str) -> dict[str, object]:
         row = self._fetchone(
             "SELECT quantum_seq, quantum_size, reserve, granted, acked, acked_at, "
-            "unacked_quanta, ack_regressions FROM meter WHERE org_id=? AND pubkey=?",
+            "unacked_quanta, ack_regressions, prefetch_at "
+            "FROM meter WHERE org_id=? AND pubkey=?",
             (org_id, pubkey))
         if row is None:
             return {"quantum_seq": 0, "quantum_size": 0, "reserve": 0,
                     "granted": 0, "acked": 0, "acked_at": 0.0,
-                    "unacked_quanta": 0, "ack_regressions": 0}
+                    "unacked_quanta": 0, "ack_regressions": 0, "prefetch_at": 0}
         return {"quantum_seq": int(row[0] or 0), "quantum_size": int(row[1] or 0),
                 "reserve": int(row[2] or 0), "granted": int(row[3] or 0),
                 "acked": int(row[4] or 0), "acked_at": float(row[5] or 0.0),
                 "unacked_quanta": int(row[6] or 0),
-                "ack_regressions": int(row[7] or 0)}
+                "ack_regressions": int(row[7] or 0),
+                "prefetch_at": int(row[8] or 0)}
+
+    MIN_METER_INTERVAL_SECONDS = 1.0
+
+    def metered_too_recently(self, org_id: str, pubkey: str, now: float) -> bool:
+        """Просил ли этот процесс квант меньше секунды назад."""
+        row = self._fetchone(
+            "SELECT updated_at FROM meter WHERE org_id=? AND pubkey=?",
+            (org_id, pubkey))
+        if row is None or row[0] is None:
+            return False
+        return now - float(row[0]) < self.MIN_METER_INTERVAL_SECONDS
 
     def issue_quantum(self, org_id: str, pubkey: str, plan: str,
                       acked: int | None, now: float) -> dict[str, int]:
@@ -627,7 +643,16 @@ class LicenseStore:
             row = self.meter_row(org_id, pubkey)
             regressed = acked is not None and acked < row["acked"]
             if acked is None or regressed:
-                consumed = max(row["granted"] - row["quantum_size"], row["acked"])
+                # СЛЕПАЯ ОЦЕНКА — ЭТО ПОРОГ ПРЕДВЫБОРКИ, А НЕ «ПОТОЛОК МИНУС
+                # КВАНТ». Движок приходит за следующим квантом ТОЛЬКО перейдя
+                # порог, поэтому сам факт прихода и есть измерение: он обслужил
+                # не меньше, чем `prefetch_at`.
+                #
+                # Первая версия считала `granted - quantum_size`, и на первом же
+                # слепом шаге это давало НОЛЬ (потолок 200 при кванте 200), то
+                # есть занижала счёт ровно там, где снятие отчёта и должно было
+                # стать невыгодным. Найдено прогоном: расход 150, к счёту 0.
+                consumed = max(row["prefetch_at"], row["acked"])
                 trust_step = "blind"
             else:
                 consumed = acked
@@ -649,23 +674,26 @@ class LicenseStore:
                 reserve = min(max(int(rate * self.RESERVE_SECONDS), quantum),
                               self.RESERVE_MAX.get(plan, self.RESERVE_MAX["start"]))
             granted = max(row["granted"], consumed + quantum + reserve)
+            prefetch_at = max(1, granted - reserve
+                              - max(1, int(quantum * self.PREFETCH_FRACTION)))
             unacked = 0 if trust_step == "acked" else row["unacked_quanta"] + 1
 
             self._conn.execute(
                 "INSERT INTO meter (org_id, pubkey, first_seen, updated_at, "
                 "quantum_seq, quantum_size, reserve, granted, acked, acked_at, "
-                "ack_trust, rate_per_second, unacked_quanta, ack_regressions) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+                "ack_trust, rate_per_second, unacked_quanta, ack_regressions, "
+                "prefetch_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(org_id, pubkey) DO UPDATE SET updated_at=excluded.updated_at, "
                 "quantum_seq=excluded.quantum_seq, quantum_size=excluded.quantum_size, "
                 "reserve=excluded.reserve, granted=excluded.granted, "
                 "acked=excluded.acked, acked_at=excluded.acked_at, "
                 "ack_trust=excluded.ack_trust, rate_per_second=excluded.rate_per_second, "
                 "unacked_quanta=excluded.unacked_quanta, "
-                "ack_regressions=meter.ack_regressions+excluded.ack_regressions",
+                "ack_regressions=meter.ack_regressions+excluded.ack_regressions, "
+                "prefetch_at=excluded.prefetch_at",
                 (org_id, pubkey, now, now, row["quantum_seq"] + 1, quantum, reserve,
                  granted, max(consumed, row["acked"]), now, trust_step, rate,
-                 unacked, 1 if regressed else 0))
+                 unacked, 1 if regressed else 0, prefetch_at))
             self._conn.commit()
         if regressed:
             _log.warning("consumed went backwards under one process key for "
@@ -673,8 +701,7 @@ class LicenseStore:
                          row["acked"], acked)
         return {"quantum_seq": row["quantum_seq"] + 1, "quantum_size": quantum,
                 "reserve": reserve, "grant_total": granted,
-                "prefetch_at": max(1, granted - reserve
-                                   - max(1, int(quantum * self.PREFETCH_FRACTION)))}
+                "prefetch_at": prefetch_at}
 
     def billable(self, org_id: str) -> dict[str, int]:
         """Сколько выставить. ПОДТВЕРЖДЁННОЕ, ЗАЖАТОЕ ВЫДАННЫМ.
