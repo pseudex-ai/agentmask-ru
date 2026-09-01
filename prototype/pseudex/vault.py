@@ -25,8 +25,8 @@ import threading
 import time
 
 from pseudex import morph_names, morph_places
-from pseudex.spoken import (numeral_runs, plate_from_words,
-                            run_to_digits)
+from pseudex.spoken import (email_from_words, numeral_runs,
+                            plate_from_words, run_to_digits)
 from pseudex.profiling import stage
 from pseudex.ru_pii import validate_inn, validate_luhn, validate_ogrn, validate_snils
 from pseudex.sqlite_setup import (
@@ -276,6 +276,14 @@ def canonicalize(entity_type: str, value: str) -> str:
         # two distinct spoken СНИЛС came back as the same token.
         return _digits_of(value) or value
     if entity_type == "EMAIL":
+        # ПРОДИКТОВАННАЯ ПОЧТА — РУССКАЯ ФРАЗА, А НЕ АДРЕС. `lower()` над
+        # «ситникова собака мэйл точка ру» возвращает ту же фразу, и она уезжала
+        # в поле `email`, где вызов инструмента не срабатывал НИКОГДА. Разбор
+        # живёт рядом с распознаванием той же формы и честно называется
+        # реконструкцией: логин человека — то, что он сам когда-то выбрал.
+        spoken = email_from_words(value)
+        if spoken:
+            return spoken
         return value.strip().lower()
     if entity_type == "NAME":
         # THE KEY IS THE PERSON, NOT THE WORDING. Without this, `Иванов Пётр`,
@@ -404,14 +412,54 @@ _NUMERIC_TYPES = (
 # Разделение ровно то же, что уже сделано для падежа: АРГУМЕНТ ДОСЛОВЕН, ПРОЗА
 # СОГЛАСОВАНА. В прозе агент продолжает говорить клиенту его же словами.
 _VALUE_SQL = ("CASE WHEN entity_type='NAME' THEN canonical ELSE original END")
-_VALUE_SQL_TOOL = (
-    "CASE WHEN entity_type='NAME' THEN canonical "
-    "WHEN original NOT GLOB '*[0-9]*' AND canonical GLOB '*[0-9]*' THEN canonical "
-    "ELSE original END")
+# Обе формы разом, чтобы выбор делал Python. В SQL он был условием про цифры и
+# промахнулся мимо почты: канон «sitnikova@mail.ru» цифр не содержит, и правило
+# «в каноне есть цифры, а в написанном нет» её не узнавало. Условие вынесено
+# туда, где его видно и можно проверить тестом.
+_VALUE_SQL_BOTH = "entity_type, canonical, original"
+
+_SPOKEN_WORD = re.compile(r"[А-Яа-яЁё]{2,}")
+# Типы, у которых канонизация даёт САМО ЗНАЧЕНИЕ в нормальной форме, а не ключ
+# для поиска. Для них и только для них аргументу отдаётся канон.
+_CANONICAL_IS_THE_VALUE = frozenset(_NUMERIC_TYPES) | {"EMAIL", "PLATE"}
 
 
-def _value_sql(for_tool: bool) -> str:
-    return _VALUE_SQL_TOOL if for_tool else _VALUE_SQL
+def looks_dictated(original: str, canonical: str) -> bool:
+    """Написанное — это ФРАЗА, произнесённая вслух, а не значение.
+
+    Продиктованный идентификатор — всегда прогон русских слов: «восемь девятьсот
+    двадцать шесть…», «ситникова собака мэйл точка ру», «а двести шестьдесят три
+    о ка регион шестьдесят шесть». Записанное значение таким не бывает ни у
+    одного типа, кроме имени, — а имя решается отдельной веткой выше.
+
+    Двух слов достаточно и меньше нельзя: одно кириллическое слово встречается
+    в написанном адресе («Ленина 14»), а два подряд — только в диктовке.
+    """
+    if original == canonical:
+        return False
+    return len(_SPOKEN_WORD.findall(original)) >= 2
+
+
+def _pick_value(entity_type: str, canonical: str, original: str,
+                for_tool: bool) -> str:
+    """Что вернуть вместо подмены: имя — каноническим, остальное — как написано.
+
+    Исключение одно и оно про инструмент: продиктованную вслух фразу инструмент
+    исполнить не может, поэтому в аргумент уходит канон. В прозе агент
+    продолжает говорить клиенту его же словами.
+    """
+    if entity_type == "NAME":
+        return canonical
+    # ТОЛЬКО ТАМ, ГДЕ КАНОН — ЭТО ЗНАЧЕНИЕ. У адреса `canonical` не значение, а
+    # ПОИСКОВЫЙ КЛЮЧ (`address_key`), и отдать его инструменту — то же, что
+    # отдать хеш. Первая версия правила смотрела только на «фразу из русских
+    # слов», а продиктованный адрес — тоже фраза из русских слов: LOC в
+    # аргументе рухнул с 84.5% до 30.6% на всём корпусе, и поймал это прогон, а
+    # не рассуждение.
+    if (for_tool and entity_type in _CANONICAL_IS_THE_VALUE
+            and looks_dictated(original or "", canonical or "")):
+        return canonical
+    return original
 
 
 def name_key(token: str) -> str:
@@ -1905,11 +1953,13 @@ class Vault:
         one path that must not be discouraged from being audited."""
         with self._lock:
             row = self._conn.execute(
-                f"SELECT {_value_sql(for_tool)}, entity_type FROM tokens "
+                f"SELECT {_VALUE_SQL_BOTH} FROM tokens "
                 "WHERE customer=? AND token=?",
                 (self._customer, token),
             ).fetchone()
-        return (row[0], row[1]) if row is not None else (None, "")
+        if row is None:
+            return None, ""
+        return _pick_value(row[0], row[1], row[2], for_tool), row[0]
 
     def is_minted_token(self, value: str) -> bool:
         """True if this exact string is a token WE issued for this customer.
@@ -1998,11 +2048,13 @@ class Vault:
             placeholders = ",".join("?" * len(chunk))
             with stage(f"vault.lookup.{column}"), self._lock:
                 rows = self._conn.execute(
-                    f"SELECT {column}, entity_type, {_value_sql(for_tool)} "
+                    f"SELECT {column}, {_VALUE_SQL_BOTH} "
                     f"FROM tokens WHERE customer=? AND {column} IN ({placeholders})",
                     (self._customer, *chunk),
                 ).fetchall()
-            found.update({row[0]: (row[1], row[2]) for row in rows})
+            found.update({row[0]: (row[1], _pick_value(row[1], row[2], row[3],
+                                                       for_tool))
+                          for row in rows})
         return found
 
     def resolve_name_keys(self, keys: set[str]) -> dict[str, str]:
@@ -2034,9 +2086,10 @@ class Vault:
             placeholders = ",".join("?" * len(chunk))
             with stage(stage_name), self._lock:
                 rows = self._conn.execute(
-                    f"SELECT {column}, {_value_sql(for_tool)} FROM tokens "
+                    f"SELECT {column}, {_VALUE_SQL_BOTH} FROM tokens "
                     f"WHERE customer=? AND {column} IN ({placeholders})",
                     (self._customer, *chunk),
                 ).fetchall()
-            found.update({row[0]: row[1] for row in rows})
+            found.update({row[0]: _pick_value(row[1], row[2], row[3], for_tool)
+                          for row in rows})
         return found

@@ -273,6 +273,57 @@ _SPOKEN_PLATE = re.compile(
     rf"(?:\s+(?:{_UNIT_WORDS}))?\b")
 
 
+# Практическая романизация, которой русские логины и пишутся: «х» как h, «ц»
+# как c, «щ» как sch. Не ГОСТ и не ICAO — те дают «kh» и «shch», а почтовые
+# сервисы при регистрации предлагают именно эту.
+_EMAIL_TRANSLIT: dict[str, str] = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
+    "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "h", "ц": "c", "ч": "ch", "ш": "sh", "щ": "sch", "ъ": "",
+    "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya"}
+# Как называют почтовые домены и зоны вслух. Публичные бренды, не наша тюнинг-
+# лексика, и живут рядом с образцом, который «собаку» и «точку» уже называет.
+_EMAIL_DOMAIN_SOUND: dict[str, str] = {
+    "мэйл": "mail", "мейл": "mail", "майл": "mail",
+    "джимейл": "gmail", "джимэйл": "gmail", "гмейл": "gmail",
+    "яндекс": "yandex", "рамблер": "rambler", "инбокс": "inbox",
+    "лист": "list", "аутлук": "outlook", "хотмейл": "hotmail",
+}
+_EMAIL_TLD_SOUND: dict[str, str] = {
+    "ру": "ru", "ком": "com", "нет": "net", "орг": "org", "рф": "рф",
+}
+
+
+def email_from_words(phrase: str) -> str:
+    """Почта, продиктованная вслух, в той форме, в какой её примет почтовый ящик.
+
+    ЭТО РЕКОНСТРУКЦИЯ, А НЕ ПЕРЕВОД, и разница честная. Логин человека — то, что
+    он сам когда-то выбрал: «ситникова» могла зарегистрироваться как
+    `sitnikova`, `sitnikoff` или `s.sitnikova`, и по звучанию фамилии этого не
+    узнать. Мы восстанавливаем самое частое написание.
+
+    Почему всё равно лучше слов: в поле `email` уезжало «ситникова собака мэйл
+    точка ру», и вызов инструмента не срабатывал НИКОГДА. Реконструкция
+    срабатывает в большинстве случаев, а в прозе клиент по-прежнему слышит свою
+    же фразу — разделение то же, что для падежа и продиктованных цифр.
+
+    Пустая строка означает «фразу разобрать не удалось», и тогда прежний путь
+    остаётся в силе.
+    """
+    match = _SPOKEN_EMAIL.search(phrase)
+    if match is None:
+        return ""
+    local, domain, tld = (group.lower() for group in match.groups())
+    local_latin = "".join(_EMAIL_TRANSLIT.get(letter, letter) for letter in local)
+    domain_latin = _EMAIL_DOMAIN_SOUND.get(domain) or "".join(
+        _EMAIL_TRANSLIT.get(letter, letter) for letter in domain)
+    zone = _EMAIL_TLD_SOUND.get(tld, tld)
+    if not local_latin or not domain_latin or not zone:
+        return ""
+    return f"{local_latin}@{domain_latin}.{zone}"
+
+
 def detect_spoken_email(text: str) -> list[Span]:
     """«воронина собака яндекс точка ру» — почта, продиктованная вслух."""
     return [Span(m.start(), m.end(), "EMAIL", m.group(0))
