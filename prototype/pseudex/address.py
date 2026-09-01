@@ -1220,7 +1220,37 @@ def _trim_lead(start: int, stop: int, text: str, address: AddressAssets) -> int:
         best = parses[0].tag if parses else None
         pronominal = best is not None and "Apro" in best.grammemes
         preposition = best is not None and best.POS == "PREP"
-        if not (pronominal or preposition or address.addr_ctx.fullmatch(word)):
+        lemma = parses[0].normal_form if parses else word
+        # ФИЛЛЕР, ГЛАГОЛ И МЕЖДОМЕТИЕ — ЭТО НЕ НАЧАЛО АДРЕСА. Живая речь
+        # начинает адрес с чего угодно: «аааа ленина двадцать семь», «нуу
+        # симферопольское шоссе», «ааа приезжай симферопольское шоссе»,
+        # «находитсяя репина двадцать». Всё это уезжало в аргумент инструмента
+        # ВНУТРИ адреса, потому что спан начинался с них.
+        #
+        # Междометие морфология знает сама («ааа», «эээ» — INTJ). Растянутое
+        # «нуу», «иии», «аааа» она не знает, и списка тут не нужно: у филлера
+        # не больше двух различных букв, он длиннее двух символов и словарю
+        # неизвестен — обычное русское слово такой формы не бывает.
+        #
+        # Глагол снимается под тем же условием, что и фамилия: только если
+        # остаток БЕЗ него всё ещё адрес. Иначе правило зависело бы от того,
+        # как морфология угадала незнакомое слово.
+        interjection = best is not None and best.POS == "INTJ"
+        stretched = (len(word) > 2 and len(set(word.lower())) <= 2
+                     and not (parses and parses[0].is_known))
+        verbal = best is not None and best.POS in ("VERB", "INFN", "GRND", "PRTF")
+        if interjection or stretched:
+            start += match.end()
+            continue
+        if verbal and _still_an_address(text[start + match.end():stop], address):
+            start += match.end()
+            continue
+        # CUE-СЛОВО В ЛЮБОМ ПАДЕЖЕ. `fullmatch` по написанному снимал «адрес» и
+        # оставлял «адресу», а «адресу нижняя улица девяносто два» уходило в
+        # инструмент вместе с «адресу». Лемма — то же слово, увиденное с другой
+        # стороны.
+        if not (pronominal or preposition or address.addr_ctx.fullmatch(word)
+                or address.addr_ctx.fullmatch(lemma)):
             # ИМЯ ЧЕЛОВЕКА ПЕРЕД АДРЕСОМ — не начало адреса, а другая сущность.
             # «битюков улица сабурова 53 б квартира 9» становилось ОДНИМ спаном
             # LOC: человек и место сливались в одну подмену, в аргумент
@@ -1238,6 +1268,48 @@ def _trim_lead(start: int, stop: int, text: str, address: AddressAssets) -> int:
                 continue
             return start
         start += match.end()
+
+
+# Одинокая буква после номера дома — литера («дом 138 а»), а бывает союзом или
+# предлогом, начинающим следующее предложение. Регексп различить их не может, и
+# жёсткий просмотр вперёд уже пробовали: он резал номер дома у каждого третьего
+# адреса. Различает СЛЕДУЮЩЕЕ СЛОВО.
+_TRAILING_LETTER_RE = re.compile(r"\s+([А-Яа-яЁё])\s*$")
+_NEXT_WORD_RE = re.compile(r"\s*([А-Яа-яЁё]+)")
+
+
+def _trim_tail(start: int, stop: int, text: str, address: AddressAssets) -> int:
+    """Снять с конца спана то, что адресом не является.
+
+    ОДИНОКАЯ БУКВА. «советская 66 а широкову ларису», «шумайлова двадцать у нас
+    ребёнок», «переулок лермонтова дом сто тридцать шесть к двенадцати ноль
+    ноль» — во всех трёх буква оказывалась внутри адреса и уезжала в CRM
+    клиента. Но «сто тридцать восемь а поедем на энгельса» — настоящая литера
+    настоящего дома, и это измерено: запрет по классу символа резал номер дома
+    у каждого третьего адреса.
+
+    Различает то, что стоит СПРАВА от буквы. Местоимение («у нас»),
+    числительное («к двенадцати») и фамилия («а широкову») делают букву
+    служебным словом; глагол — не делает, потому что «а поедем» бывает и после
+    литеры. Отрицательное правило, а не список допустимых литер: ГАР нумерует
+    дома буквами до конца алфавита, и список пришлось бы держать в согласии с
+    ним.
+    """
+    letter = _TRAILING_LETTER_RE.search(text[start:stop])
+    if letter is None:
+        return stop
+    following = _NEXT_WORD_RE.match(text[stop:])
+    if following is None:
+        return stop
+    parses = MORPH.parse(following.group(1))
+    if not parses:
+        return stop
+    best = parses[0].tag
+    function_word = (best.POS in ("NPRO", "NUMR")
+                     or bool({"Name", "Surn", "Patr"} & set(best.grammemes)))
+    if not function_word:
+        return stop
+    return start + letter.start()
 
 
 def detect_address(text: str) -> list[Span]:
@@ -1277,6 +1349,7 @@ def detect_address(text: str) -> list[Span]:
             continue
         start, stop = _strip(start, stop, text)
         start = _trim_lead(start, stop, text, address)
+        stop = _trim_tail(start, stop, text, address)
         start, stop = _strip(start, stop, text)
         value = text[start:stop]
         if not value or address.neg.search(value):
