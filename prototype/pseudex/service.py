@@ -356,9 +356,17 @@ def _license_block() -> JSONResponse | None:
     if LICENSE.is_serving():
         return None
     status = LICENSE.status()
+    # ИСЧЕРПАНИЕ ЁМКОСТИ — НЕ ИСТЁКШАЯ ЛИЦЕНЗИЯ, и называть его так значило
+    # отправлять оператора проверять оплату вместо исходящего доступа. Подписка
+    # цела, ключ валиден, аренда свежая — кончилась предоплаченная ёмкость, а
+    # взять следующую не у кого.
+    code = status.code
+    if code is None:
+        code = ("capacity_exhausted"
+                if status.capacity_left == 0 else "license_expired")
     return JSONResponse(
         {
-            "error": status.code or "license_expired",
+            "error": code,
             "detail": (
                 f"no valid detection lease (state={status.state}); "
                 f"last successful lease {status.seconds_since_lease:.0f}s ago"
@@ -369,7 +377,10 @@ def _license_block() -> JSONResponse | None:
                 "state": status.state,
                 "last_error": status.last_error,
                 "bundle_version": status.bundle_version,
+                "consumed": status.consumed,
+                "granted": status.granted,
             },
+            "remedy": explain(code),
         },
         status_code=503,
     )

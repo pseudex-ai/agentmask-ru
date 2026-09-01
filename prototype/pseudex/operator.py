@@ -301,6 +301,11 @@ def build_router(audit, license_client, assets, detector_version: str,
             "state": state.state,
             "code": state.code,
             "plan": state.plan,
+            # Ёмкость на экране подписки: до этого оператор не мог узнать, что
+            # именно кончилось — время аренды или оплаченный объём.
+            "consumed": state.consumed,
+            "granted": state.granted,
+            "capacity_left": state.capacity_left,
             "lease_ttl_s": state.ttl_seconds,
             "renew_after_s": state.renew_after_seconds,
             "next_renewal_in_s": (None if state.next_renewal_in_seconds is None

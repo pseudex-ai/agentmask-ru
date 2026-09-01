@@ -120,6 +120,11 @@ REMEDIES: dict[str, str] = {
     "bundle_corrupt":
         "Полученный пакет не прошёл проверку подписи. Это не чинится настройками "
         "— напишите нам, приложив вывод контейнера.",
+    "capacity_exhausted":
+        "Предоплаченная ёмкость израсходована, а лицензионный сервер сейчас "
+        "недоступен, поэтому взять следующую невозможно. Проверьте исходящий "
+        "доступ к нему по HTTPS — как только связь вернётся, обслуживание "
+        "продолжится само, без перезапуска контейнера.",
     "instance_limit":
         "Тариф не позволяет столько одновременно работающих контейнеров. "
         "Остановите лишние или смените тариф в личном кабинете.",
@@ -152,6 +157,12 @@ class LicenseStatus:
     # without meaning anything. What the operator came to that screen for is
     # which plan is running and when it renews.
     plan: str | None
+    # ЁМКОСТЬ — ТО, ЧЕГО ОПЕРАТОР НЕ ВИДЕЛ ВООБЩЕ. `capacity()` не вызывался
+    # ниоткуда, а исчерпание выглядело на экране как `license_expired` — то
+    # есть неверный диагноз и неверная подсказка.
+    consumed: int
+    granted: int
+    capacity_left: int | None
     ttl_seconds: int
     renew_after_seconds: int
     next_renewal_in_seconds: float | None
@@ -272,6 +283,10 @@ class LicenseClient:
         self._last_report: dict[str, object] | None = None
         self._last_report_at: float | None = None
         self._last_warned_monotonic = 0.0
+        # БУДИЛЬНИК ПЕТЛИ. Раньше исчерпание гранта ждало обычного пробуждения
+        # («петля просыпается не реже чем раз в пять секунд»), то есть под
+        # нагрузкой каждый квант стоил до пяти секунд простоя у клиента.
+        self._wake = threading.Event()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -297,8 +312,12 @@ class LicenseClient:
         grace_left = None
         if elapsed is not None and self._terminal_code is None:
             grace_left = max(0.0, self._ttl_seconds + self._grace_seconds - elapsed)
+        consumed, granted = self.capacity()
         return LicenseStatus(
             state=state,
+            consumed=consumed,
+            granted=granted,
+            capacity_left=None if not granted else max(0, granted - consumed),
             code=self._terminal_code,
             lease_id=self._lease_id,
             bundle_version=self._bundle_version,
@@ -336,11 +355,9 @@ class LicenseClient:
         """Списать ёмкость. Зовётся с пути маскирования, по запросу."""
         with self._lock:
             self._consumed += units
-            exhausted = self._granted and self._consumed >= self._granted
+            exhausted = bool(self._granted) and self._consumed >= self._granted
         if exhausted:
-            # Петля просыпается не реже чем раз в пять секунд и сама увидит
-            # исчерпание; отдельного будильника не нужно.
-            pass
+            self._wake.set()
 
     def capacity(self) -> tuple[int, int]:
         with self._lock:
@@ -636,7 +653,8 @@ class LicenseClient:
                 _log.exception("unexpected error in the licence loop; continuing")
             # Wake often enough that EXPIRED is entered promptly even with no
             # traffic — the assets must go away on time, not on the next request.
-            self._stop.wait(min(5.0, max(1.0, due / 4.0)))
+            self._wake.wait(min(5.0, max(1.0, due / 4.0)))
+            self._wake.clear()
 
     def start(self) -> None:
         if self._thread is not None:
@@ -647,6 +665,8 @@ class LicenseClient:
 
     def stop(self) -> None:
         self._stop.set()
+        # Иначе `join` ждёт полный таймаут вместо мгновенной остановки.
+        self._wake.set()
         if self._thread is not None:
             self._thread.join(timeout=5.0)
         self._release()

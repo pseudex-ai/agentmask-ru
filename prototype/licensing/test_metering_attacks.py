@@ -249,8 +249,13 @@ check("замолчавший клиент не уменьшает счёт",
       "granted не зависит от usage")
 
 def client(granted, state):
+    # ЗАГЛУШКА, А НЕ КЛИЕНТ, И ЭТО ЕЁ ПРЕДЕЛ: `__new__` без `__init__` не
+    # исполняет ни `_request_lease`, ни `_apply`, ни `_release`, поэтому здесь
+    # проверяется ТОЛЬКО арифметика ёмкости. Всё, что про протокол, живёт в
+    # `test_admin_api.py`, который ходит по настоящим ручкам.
     c = _L.LicenseClient.__new__(_L.LicenseClient)
     c._lock = threading.Lock(); c._granted = granted; c._consumed = 0
+    c._wake = threading.Event()
     c.state = lambda: state
     return c
 
