@@ -312,20 +312,22 @@ async def lease(request: Request) -> JSONResponse:
     # "you are running more containers than you bought", which is a different
     # sentence and must not be read by the client as a payment failure — those
     # bypass grace and stop everything.
-    allowed, why_not = STORE.may_lease(record.org_id, record.plan, instance_id,
-                                       _TTL_SECONDS, pubkey=recipient)
+    # ПРОВЕРКА И ЗАПИСЬ — ОДНА КРИТИЧЕСКАЯ СЕКЦИЯ. Раньше это были два вызова
+    # с отпущенным между ними локом, и N одновременных аренд все видели место
+    # свободным. Идентификатор аренды готовится заранее, потому что решение и
+    # запись теперь неразделимы.
+    lease_id = "ls_" + secrets.token_urlsafe(16)
+    # Counters ride in on the renewal request. Recorded BEFORE the new lease is
+    # minted so a client that dies mid-renewal has still been accounted for.
+    _store_usage(instance_id, record.org_id, body.get("usage"), recipient)
+    allowed, why_not = STORE.lease_if_allowed(
+        lease_id, record.org_id, record.plan, instance_id, process_id,
+        _TTL_SECONDS, pubkey=recipient)
     if not allowed:
         _log.warning("lease refused for org=%s instance=%s: %s",
                      record.org_id, instance_id, why_not)
         return JSONResponse({"error": "instance_limit", "detail": why_not},
                             status_code=409)
-    # Counters ride in on the renewal request. Recorded BEFORE the new lease is
-    # minted so a client that dies mid-renewal has still been accounted for.
-    _store_usage(instance_id, record.org_id, body.get("usage"), recipient)
-
-    lease_id = "ls_" + secrets.token_urlsafe(16)
-    STORE.record_lease(lease_id, record.org_id, instance_id, process_id,
-                       _TTL_SECONDS, pubkey=recipient)
     STORE.record_grant(record.org_id, recipient, STORE.grant_size(record.plan))
 
     # СЕКРЕТ ОТЧЁТОВ, ЗАПЕЧАТАННЫЙ ПОЛУЧАТЕЛЮ. Достать его может только тот, у

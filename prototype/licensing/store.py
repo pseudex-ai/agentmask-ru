@@ -46,7 +46,10 @@ class LicenseStore:
     """Connector to the licensing database (external state -> class)."""
 
     def __init__(self, db_path: str) -> None:
-        self._lock = threading.Lock()
+        # RLock, НЕ Lock, И ЭТО НЕ ВКУСОВЩИНА. `_accumulate_values` читает и
+        # пишет, будучи вызванным ИЗ-ПОД уже взятого лока в `record_usage`;
+        # обычный `Lock` встанет там намертво и остановит учёт целиком.
+        self._lock = threading.RLock()
         self._conn = sqlite_connect(db_path, LICENSING_STORE)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS keys ("
@@ -109,6 +112,16 @@ class LicenseStore:
             "unverified_requests INTEGER DEFAULT 0, "
             "PRIMARY KEY (org_id, instance_id))"
         )
+        # НИ ОДНОГО ИНДЕКСА ЗДЕСЬ НЕ БЫЛО. `leases` растёт примерно на три
+        # строки в сутки на воркера и никогда не чистится (`lease_id` свежий на
+        # каждое продление, поэтому `INSERT OR REPLACE` ничего не заменяет), а
+        # `may_lease` сканирует её целиком на КАЖДОЙ аренде — то есть на
+        # запросе, который решает, обслуживать ли клиента.
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS leases_org_issued "
+            "ON leases(org_id, issued_at)")
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS leases_org_pubkey ON leases(org_id, pubkey)")
         # Существующие тома пережили релизы без этой колонки.
         columns = {row[1] for row in
                    self._conn.execute("PRAGMA table_info(leases)")}
@@ -129,6 +142,27 @@ class LicenseStore:
                 self._conn.execute(f"ALTER TABLE usage ADD COLUMN {ddl}")
         self._conn.commit()
 
+    def _fetchall(self, sql: str, params: tuple) -> list[tuple]:
+        """Every READ goes through here, under the same lock the writes take.
+
+        The rule and the measurement behind it are `pseudex/audit.py::_fetchall`:
+        `check_same_thread=False` lets threads share one connection, it does not
+        make the connection concurrent, and a read interleaved with another
+        thread's INSERT+commit returns a row with COLUMNS MISSING rather than an
+        error anyone would recognise as a locking bug.
+
+        Here it is worse than in the audit, because one of the readers is
+        `may_lease` — the query that decides whether a customer may serve
+        traffic at all — and `devserver.py` runs the admin app on a second
+        thread against this same connection.
+        """
+        with self._lock:
+            return self._conn.execute(sql, params).fetchall()
+
+    def _fetchone(self, sql: str, params: tuple) -> tuple | None:
+        with self._lock:
+            return self._conn.execute(sql, params).fetchone()
+
     def issue_key(self, org_id: str, plan: str) -> str:
         key = KEY_PREFIX + secrets.token_urlsafe(32)
         with self._lock:
@@ -140,9 +174,9 @@ class LicenseStore:
         return key
 
     def lookup(self, key: str) -> KeyRecord | None:
-        row = self._conn.execute(
+        row = self._fetchone(
             "SELECT org_id, status, plan FROM keys WHERE key_hash=?", (hash_key(key),)
-        ).fetchone()
+        )
         return KeyRecord(row[0], row[1], row[2]) if row is not None else None
 
     def revoke_key_hash(self, key_hash: str) -> int:
@@ -197,10 +231,10 @@ class LicenseStore:
         migration or a disk failure. It is recorded as a `reset` so a pattern is
         visible, and a pattern is a conversation, not an accusation.
         """
-        row = self._conn.execute(
+        row = self._fetchone(
             "SELECT values_reported, values_total, resets FROM usage "
             "WHERE org_id=? AND instance_id=?", (org_id, instance_id),
-        ).fetchone()
+        )
         if row is None:
             return reported
         previous, total, resets = int(row[0] or 0), int(row[1] or 0), int(row[2] or 0)
@@ -245,9 +279,9 @@ class LicenseStore:
             self._conn.commit()
 
     def report_secret(self, org_id: str, pubkey: str) -> str:
-        row = self._conn.execute(
+        row = self._fetchone(
             "SELECT secret FROM process_reports WHERE org_id=? AND pubkey=?",
-            (org_id, pubkey)).fetchone()
+            (org_id, pubkey))
         return (row[0] or "") if row else ""
 
     def record_usage(self, org_id: str, instance_id: str, requests: int,
@@ -311,9 +345,9 @@ class LicenseStore:
         # `requests` и так растёт.
         with self._lock:
             accumulated = self._accumulate_values(org_id, instance_id, values)
-            previous = self._conn.execute(
+            previous = self._fetchone(
                 "SELECT requests FROM usage WHERE org_id=? AND instance_id=?",
-                (org_id, instance_id)).fetchone()
+                (org_id, instance_id))
             if previous is not None:
                 requests = max(requests, int(previous[0] or 0))
             self._conn.execute(
@@ -345,10 +379,10 @@ class LicenseStore:
         """
         if not report_pubkey:
             return 0
-        row = self._conn.execute(
+        row = self._fetchone(
             "SELECT seq, signature, chain_breaks FROM process_reports "
             "WHERE org_id=? AND pubkey=?", (org_id, report_pubkey),
-        ).fetchone()
+        )
         if row is None:
             return 0
         last_seq, last_signature, breaks = (int(row[0] or 0), row[1] or "",
@@ -380,16 +414,6 @@ class LicenseStore:
                 (org_id, pubkey, seq, prev, signature, breaks, time.time()),
             )
             self._conn.commit()
-            return breaks
-        if last_seq == 0:
-            return breaks
-        expected_prev = hashlib.sha256(last_signature.encode("ascii")).hexdigest()
-        if seq == last_seq + 1 and (not prev or prev == expected_prev):
-            return breaks
-        _log.warning("usage chain break for org=%s instance=%s: seq %d -> %d, "
-                     "prev %s (trust=%s)", org_id, instance_id, last_seq, seq,
-                     "ok" if prev == expected_prev else "mismatch", trust)
-        return breaks + 1
 
     # How many containers each plan may run at once. THE ONE THING WE ENFORCE,
     # and the only thing that can be enforced: it is decided here, on our side,
@@ -453,9 +477,9 @@ class LicenseStore:
         """
         if not build or trust != "signed":
             return
-        row = self._conn.execute(
+        row = self._fetchone(
             "SELECT build FROM process_reports WHERE org_id=? AND pubkey=?",
-            (org_id, pubkey)).fetchone()
+            (org_id, pubkey))
         previous = (row[0] or "") if row else ""
         with self._lock:
             if previous and previous != build:
@@ -471,39 +495,20 @@ class LicenseStore:
             self._conn.commit()
 
     def builds_seen(self, org_id: str) -> list[dict[str, object]]:
-        rows = self._conn.execute(
+        rows = self._fetchall(
             "SELECT build, count(*), sum(build_changes) FROM process_reports "
-            "WHERE org_id=? AND build!='' GROUP BY build", (org_id,)).fetchall()
+            "WHERE org_id=? AND build!='' GROUP BY build", (org_id,))
         return [{"build": r[0], "processes": r[1], "changes": int(r[2] or 0)}
                 for r in rows]
 
     def granted_total(self, org_id: str) -> int:
-        row = self._conn.execute(
+        row = self._fetchone(
             "SELECT COALESCE(SUM(granted), 0) FROM grants WHERE org_id=?",
-            (org_id,)).fetchone()
+            (org_id,))
         return int(row[0] or 0)
 
     def instances_allowed(self, plan: str) -> int:
         return self.PLAN_INSTANCES.get(plan, 1)
-
-    def release_instance(self, org_id: str, instance_id: str) -> None:
-        """Free a slot the moment a container shuts down cleanly.
-
-        Without this the slot lingers for the whole window, and a customer who
-        redeploys onto a fresh volume is locked out of their own product with a
-        message that blames them and suggests paying more. A persona client
-        called that disqualifying for production, and they were right: a release
-        happens on every `docker stop`, which is every deploy.
-
-        Best effort by construction — a container that is killed cannot tell us
-        anything, which is exactly what the time-based expiry below is for.
-        """
-        with self._lock:
-            self._conn.execute(
-                "DELETE FROM leases WHERE org_id=? AND instance_id=?",
-                (org_id, instance_id),
-            )
-            self._conn.commit()
 
     def active_instances(self, org_id: str, window_seconds: int) -> list[dict]:
         """The instances currently holding a slot, newest lease first.
@@ -518,27 +523,36 @@ class LicenseStore:
         exactly what the limit is applied to.
         """
         cutoff = time.time() - window_seconds
-        rows = self._conn.execute(
+        rows = self._fetchall(
             "SELECT instance_id, MAX(issued_at) FROM leases "
             "WHERE org_id=? AND issued_at>=? GROUP BY instance_id "
             "ORDER BY MAX(issued_at) DESC",
             (org_id, cutoff),
-        ).fetchall()
+        )
         return [{"instance_id": row[0], "last_lease": float(row[1])} for row in rows]
 
     def release_instance(self, org_id: str, instance_id: str) -> bool:
-        """Give a slot back before its window expires.
+        """Give a slot back before its window expires. Operator lever.
 
-        A customer who recreated a volume is a NEW instance by construction, and
-        in production the window is a day — so without this they wait a day to
-        run the product they are paying for. Deleting the leases is safe: the
-        engine is fail-closed and a container without a live lease is not
-        serving, so a slot released by mistake costs one renewal round trip.
+        A release happens on every `docker stop`, which is every deploy, and a
+        customer who recreated a volume is a NEW instance by construction — so
+        without this they wait out the whole window to run the product they are
+        paying for. A persona client called that disqualifying for production
+        and they were right.
+
+        ONE DEFINITION, UNDER THE SAME LOCK AS EVERY OTHER WRITE. There were two
+        of these, and the second silently replaced the first: same name, same
+        class, different return type and different locking. The survivor was the
+        one that wrote under `with self._conn` instead of `self._lock`, which
+        made slot release the only unserialized writer on a connection opened
+        `check_same_thread=False` — while `devserver.py` runs the admin app on a
+        second thread.
         """
-        with self._conn:
+        with self._lock:
             cursor = self._conn.execute(
                 "DELETE FROM leases WHERE org_id=? AND instance_id=?",
                 (org_id, instance_id))
+            self._conn.commit()
         return cursor.rowcount > 0
 
     def may_lease(self, org_id: str, plan: str, instance_id: str,
@@ -566,10 +580,10 @@ class LicenseStore:
         # It used to be a flat 36 hours, which meant one `docker rm` cost the
         # customer a day and a half on a single-instance plan.
         cutoff = time.time() - window_seconds
-        rows = self._conn.execute(
+        rows = self._fetchall(
             "SELECT DISTINCT instance_id, pubkey FROM leases "
             "WHERE org_id=? AND issued_at>=?", (org_id, cutoff),
-        ).fetchall()
+        )
         instances = {row[0] for row in rows}
         keys = {row[1] for row in rows if row[1]}
         # ПРОДЛЕНИЕ НЕ МОЖЕТ БЫТЬ ОТКАЗАНО. Ключ процесса создаётся один раз в
@@ -617,13 +631,48 @@ class LicenseStore:
             )
         return True, ""
 
+    def lease_if_allowed(self, lease_id: str, org_id: str, plan: str,
+                         instance_id: str, process_id: str, window_seconds: int,
+                         pubkey: str) -> tuple[bool, str]:
+        """Проверить потолок и занять слот В ОДНОЙ критической секции.
+
+        ПОТОЛОК ДЕРЖАЛСЯ НА ТОМ, ЧТО КЛИЕНТЫ СТУЧАТСЯ ПО ОЧЕРЕДИ. `may_lease` и
+        `record_lease` — два отдельных публичных вызова, между которыми сервер
+        отпускал лок: N одновременных запросов на аренду все видели
+        `len(instances) < allowed` и все проходили. Это не гонка в драйвере, это
+        дыра в единственной границе, которую мы вообще принуждаем.
+
+        Лок реентрантный, поэтому оба вызова внутри берут его повторно и это
+        по-прежнему одна секция.
+        """
+        with self._lock:
+            allowed, why_not = self.may_lease(org_id, plan, instance_id,
+                                              window_seconds, pubkey=pubkey)
+            if not allowed:
+                return False, why_not
+            self.record_lease(lease_id, org_id, instance_id, process_id,
+                              window_seconds, pubkey=pubkey)
+            return True, ""
+
+    def prune_leases(self, window_seconds: int) -> int:
+        """Выбросить аренды, которые давно не считаются ни в одном окне.
+
+        `may_lease` их и так не видит; смысл в том, чтобы таблица не росла
+        вечно на машине, где мы сами и живём."""
+        cutoff = time.time() - 2 * window_seconds
+        with self._lock:
+            cursor = self._conn.execute("DELETE FROM leases WHERE issued_at<?",
+                                        (cutoff,))
+            self._conn.commit()
+        return cursor.rowcount
+
     def usage_totals(self, org_id: str) -> dict[str, object]:
         """Billing view: the org's consumption, summed across its INSTANCES.
 
         Summing instances is right (two containers are two deployments doing real
         work); summing reports would not be, because each report restates the same
         cumulative total."""
-        rows = self._conn.execute(
+        rows = self._fetchall(
             "SELECT instance_id, reports, requests, entities, values_total, resets, "
             # СЧЁТ ОБЯЗАН ВИДЕТЬ, ЧТО ЕМУ НЕ ПОКАЗАЛИ. Без этих двух колонок
             # инвойс не мог отличить «расхода не было» от «расход был, но его
@@ -631,7 +680,7 @@ class LicenseStore:
             "unverified_reports, unverified_requests, chain_breaks "
             "FROM usage WHERE org_id=?",
             (org_id,),
-        ).fetchall()
+        )
         entities: dict[str, int] = {}
         requests = reports = values = resets = 0
         unverified_reports = unverified_requests = breaks = 0
@@ -673,15 +722,15 @@ class LicenseStore:
             self._conn.commit()
 
     def instances(self, org_id: str) -> list[dict[str, object]]:
-        rows = self._conn.execute(
+        rows = self._fetchall(
             "SELECT instance_id, process_id, issued_at FROM leases WHERE org_id=? "
             "ORDER BY issued_at DESC LIMIT 100", (org_id,)
-        ).fetchall()
+        )
         return [{"instance_id": r[0], "process_id": r[1], "issued_at": r[2]} for r in rows]
 
     def list_orgs(self) -> list[dict[str, object]]:
-        rows = self._conn.execute(
+        rows = self._fetchall(
             "SELECT org_id, plan, status, created_at FROM keys ORDER BY created_at"
-        ).fetchall()
+        )
         return [{"org_id": r[0], "plan": r[1], "status": r[2], "created_at": r[3]}
                 for r in rows]

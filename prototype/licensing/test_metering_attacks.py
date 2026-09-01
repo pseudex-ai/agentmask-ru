@@ -15,7 +15,7 @@
     python3 licensing/test_metering_attacks.py
 """
 import hashlib
-import os, os, sys, tempfile
+import os, sys, tempfile, threading
 sys.path.insert(0, ".")
 from licensing.store import LicenseStore
 import secrets as _secrets
@@ -26,9 +26,9 @@ def fresh(plan="start"):
     s = LicenseStore(tempfile.mktemp(suffix=".db")); s.issue_key("acme", plan); return s
 
 def lease(s, inst, key, plan="start"):
-    ok, why = s.may_lease("acme", plan, inst, 86400, pubkey=key)
-    if ok: s.record_lease(f"ls-{inst}-{key}", "acme", inst, "p", 86400, pubkey=key)
-    return ok, why
+    # Через ту же ручку, которой ходит сервер: решение и запись — одна секция.
+    return s.lease_if_allowed(f"ls-{inst}-{key}", "acme", plan, inst, "p",
+                              86400, pubkey=key)
 
 fails = []
 def check(name, held, detail=""):
@@ -51,6 +51,20 @@ check("ПУСТОЙ ключ", n <= 32, f"прошло {n}")
 s = fresh()
 n = sum(1 for i in range(500) if lease(s, f"c{i}", f"k{i}")[0])
 check("честные разные контейнеры и ключи", n <= 32, f"прошло {n}")
+
+# ГОНКА ЗА ПОСЛЕДНИЙ СЛОТ. Раньше `may_lease` и `record_lease` были двумя
+# вызовами с отпущенным между ними локом, и потолок держался ровно на том, что
+# клиенты стучатся по очереди. Сто потоков разом — и все видели место свободным.
+s = fresh()
+passed, barrier = [], threading.Barrier(100)
+def race(i):
+    barrier.wait()
+    if lease(s, "one", f"rk{i}")[0]: passed.append(i)
+threads = [threading.Thread(target=race, args=(i,)) for i in range(100)]
+for t in threads: t.start()
+for t in threads: t.join()
+check("сто одновременных аренд не пробивают потолок процессов",
+      len(passed) <= 32, f"прошло {len(passed)}, потолок 32")
 
 print("\nАТАКИ НА ЦЕПЬ ОТЧЁТОВ")
 def send(s, rep, trust="signed", inst="c1"):
