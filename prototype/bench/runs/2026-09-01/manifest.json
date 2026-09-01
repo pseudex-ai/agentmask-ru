@@ -305,6 +305,28 @@
       "argv": [
         "test_collisions.py"
       ]
+    },
+    {
+      "step": "60-v3-live-medium",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 4500,
+      "why": "живой ярус medium: 400 случаев через настоящую модель, судья на оси 3",
+      "argv": [
+        "bench/agentpii3/live/run.py",
+        "bench/agentpii3/corpus.json",
+        "--tier",
+        "medium",
+        "--ceiling",
+        "60",
+        "--concurrency",
+        "4",
+        "--out",
+        "bench/runs/2026-09-01/live-medium"
+      ],
+      "spent_usd": 21.4947,
+      "agent_model": "claude-sonnet-4-6",
+      "judge_model": "claude-sonnet-5"
     }
   ],
   "note": "Прогон сделан ДО коммита правки коллизий; код тот же самый, поэтому здесь стоит sha коммита, в который он вошёл. Живой ярус (60-*) запущен отдельно и дописан после."

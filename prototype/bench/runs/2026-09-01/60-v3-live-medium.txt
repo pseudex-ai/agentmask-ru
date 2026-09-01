@@ -1,0 +1,712 @@
+прогон f95d1ae6-90a3-4226-8f3a-4f06f108b479 · агент claude-sonnet-4-6 · судья claude-sonnet-5 · 400 случаев · потолок $60.00
+инкрементальная запись: bench/runs/2026-09-01/live-medium/f95d1ae6-90a3-4226-8f3a-4f06f108b479.jsonl
+  [1/400] direct-0297 complete/done $0.1007 ось3=value_missing
+  [2/400] direct-0054 complete/done $0.1117 ось3=clean
+  [3/400] result-057 complete/done $0.0998 ось3=clean
+  [4/400] crowd-orderer-012 complete/done $0.2089 ось3=clean
+  [5/400] ctx-crowd05 complete/done $0.1700 ось3=third_party
+  [6/400] i3-ind-0095 complete/done $0.1407 ось3=value_missing
+  [7/400] i3-ind-0012 complete/done $0.1596 ось3=clean
+  [8/400] cmp-three-000 complete/done $0.1377 ось3=unjudged
+  [9/400] rep-name-008 complete/done $0.1442 ось3=clean
+  [10/400] ctx-echo05 complete/done $0.1586 ось3=substitute_shown
+  [11/400] direct-0218 complete/done $0.1084 ось3=clean
+  [12/400] cmp-diff-018 complete/done $0.1464 ось3=unjudged
+  [13/400] i3-ind-0020 complete/done $0.1664 ось3=clean
+  [14/400] cmp-same-009 complete/done $0.1544 ось3=unjudged
+  [15/400] result-199 complete/done $0.1294 ось3=clean
+  [16/400] direct-0096 complete/done $0.0796 ось3=substitute_shown
+  [17/400] cmp-same-023 complete/done $0.1884 ось3=substitute_shown
+  [18/400] rep-echo-000 complete/done $0.1744 ось3=clean
+  [19/400] rep-hear-004 complete/done $0.1875 ось3=clean
+  [20/400] direct-0052 complete/done $0.0971 ось3=value_missing
+  [21/400] i3-ind-0045 complete/done $0.1853 ось3=clean
+  [22/400] direct-0222 complete/done $0.0929 ось3=clean
+  [23/400] ctx-res00 complete/done $0.1597 ось3=clean
+  [24/400] direct-0048 complete/done $0.1244 ось3=clean
+  [25/400] sc-phone-03-b complete/done $0.3029 ось3=clean
+  [26/400] ctx-crowd07 complete/done $0.1435 ось3=third_party
+  [27/400] rep-back-008 complete/done $0.2208 ось3=clean
+  [28/400] result-130 complete/done $0.0803 ось3=clean
+  [29/400] direct-0321 complete/done $0.0938 ось3=clean
+  [30/400] result-079 complete/done $0.1324 ось3=clean
+  [31/400] rep-back-006 complete/done $0.2174 ось3=value_missing
+  [32/400] ctx-res02 complete/done $0.1430 ось3=value_missing
+  [33/400] result-159 complete/done $0.0933 ось3=clean
+  [34/400] wordnum-naked-040 complete/done $0.2273 ось3=clean
+  [35/400] direct-0097 complete/done $0.0771 ось3=clean
+  [36/400] direct-0101 complete/done $0.1161 ось3=substitute_shown
+  [37/400] ctx-crowd01 complete/done $0.1753 ось3=clean
+  [38/400] result-168 complete/done $0.1601 ось3=substitute_shown
+  [39/400] cmp-three-009 complete/done $0.0572 ось3=unjudged
+  [40/400] direct-0251 complete/done $0.1163 ось3=value_missing
+  [41/400] rep-phone-002 complete/done $0.0666 ось3=clean
+  [42/400] sc-within-04-b complete/done $0.0595 ось3=clean
+  [43/400] sid-0033 complete/done $0.1089 ось3=substitute_shown
+  [44/400] direct-0360 complete/done $0.0543 ось3=clean
+  [45/400] ctx-q13-long complete/done $0.0581 ось3=clean
+  [46/400] direct-0114 complete/done $0.0590 ось3=clean
+  [47/400] cmp-diff-002 complete/done $0.0586 ось3=unjudged
+  [48/400] crowd-orderer-031 complete/done $0.0658 ось3=clean
+  [49/400] ctx-q25-long complete/done $0.0604 ось3=substitute_shown
+  [50/400] direct-0287 complete/done $0.0515 ось3=substitute_shown
+  [51/400] sid-0019 complete/done $0.0757 ось3=clean
+  [52/400] direct-0035 complete/done $0.0532 ось3=clean
+  [53/400] crowd-orderer-028 complete/done $0.0659 ось3=clean
+  [54/400] ctx-q19-long complete/done $0.0537 ось3=substitute_shown
+  [55/400] direct-0333 complete/done $0.0543 ось3=clean
+  [56/400] direct-0047 complete/done $0.0506 ось3=clean
+  [57/400] cmp-three-001 complete/done $0.0398 ось3=unjudged
+  [58/400] sid-0145 complete/done $0.0547 ось3=clean
+  [59/400] cmp-name-same-013 complete/done $0.0540 ось3=unjudged
+  [60/400] crowd-bare_surname-123 complete/done $0.0493 ось3=unjudged
+  [61/400] rep-back-002 complete/done $0.0597 ось3=substitute_shown
+  [62/400] direct-0036 complete/done $0.0510 ось3=clean
+  [63/400] wordnum-type_word-133 complete/done $0.0567 ось3=clean
+  [64/400] direct-0043 complete/done $0.0471 ось3=value_missing
+  [65/400] direct-0231 complete/done $0.0712 ось3=value_missing
+  [66/400] ctx-ind05 complete/done $0.0537 ось3=clean
+  [67/400] sid-0142 complete/done $0.0532 ось3=clean
+  [68/400] cmp-same-014 complete/done $0.0757 ось3=unjudged
+  [69/400] result-140 complete/done $0.0900 ось3=clean
+  [70/400] ctx-q24-long complete/done $0.0542 ось3=clean
+  [71/400] result-062 complete/done $0.0960 ось3=clean
+  [72/400] direct-0215 complete/done $0.0500 ось3=clean
+  [73/400] cmp-same-025 complete/done $0.0540 ось3=unjudged
+  [74/400] i3-ind-0026 complete/done $0.0593 ось3=clean
+  [75/400] direct-0208 complete/done $0.0631 ось3=clean
+  [76/400] wordnum-letter-076 complete/done $0.0576 ось3=clean
+  [77/400] i3-ind-0073 complete/done $0.0527 ось3=substitute_shown
+  [78/400] rep-back-003 complete/done $0.1107 ось3=clean
+  [79/400] sid-0143 complete/done $0.0597 ось3=clean
+  [80/400] direct-0212 complete/done $0.0513 ось3=clean
+  [81/400] cmp-same-037 complete/done $0.0536 ось3=unjudged
+  [82/400] direct-0211 complete/done $0.0507 ось3=value_missing
+  [83/400] direct-0031 complete/done $0.0490 ось3=clean
+  [84/400] result-077 complete/done $0.0749 ось3=clean
+  [85/400] ctx-ind09 complete/done $0.0617 ось3=clean
+  [86/400] cmp-verb-005 complete/done $0.0533 ось3=substitute_shown
+  [87/400] i3-ind-0043 complete/done $0.0527 ось3=clean
+  [88/400] crowd-many_forms-075 complete/done $0.0652 ось3=clean
+  [89/400] wordnum-naked-028 complete/done $0.0770 ось3=clean
+  [90/400] direct-0232 complete/done $0.0548 ось3=clean
+  [91/400] direct-0248 complete/done $0.0639 ось3=clean
+  [92/400] i3-ind-0135 complete/done $0.0610 ось3=clean
+  [93/400] direct-0213 complete/done $0.0434 ось3=clean
+  [94/400] crowd-bare_surname-139 complete/done $0.0524 ось3=unjudged
+  [95/400] crowd-orderer-022 complete/done $0.0706 ось3=clean
+  [96/400] sid-0144 complete/done $0.0573 ось3=clean
+  [97/400] direct-0261 complete/done $0.0481 ось3=value_missing
+  [98/400] i3-ind-0101 complete/done $0.0548 ось3=clean
+  [99/400] cmp-phone-diff-004 complete/done $0.0479 ось3=unjudged
+  [100/400] direct-0089 complete/done $0.0455 ось3=clean
+  [101/400] cmp-same-000 complete/done $0.0514 ось3=unjudged
+  [102/400] i3-ind-0056 complete/done $0.0563 ось3=clean
+  [103/400] rep-echo-004 complete/done $0.0656 ось3=clean
+  [104/400] result-068 complete/done $0.0695 ось3=clean
+  [105/400] i3-ind-0006 complete/done $0.0538 ось3=clean
+  [106/400] direct-0210 complete/done $0.0593 ось3=clean
+  [107/400] cmp-verb-002 complete/done $0.0614 ось3=unjudged
+  [108/400] result-055 complete/done $0.0707 ось3=clean
+  [109/400] wordnum-two_points-108 complete/done $0.0627 ось3=clean
+  [110/400] cmp-name-same-001 complete/done $0.0591 ось3=unjudged
+  [111/400] rep-house-003 complete/done $0.0843 ось3=third_party
+  [112/400] i3-ind-0062 complete/done $0.0251 ось3=unjudged
+  [113/400] result-118 complete/done $0.0407 ось3=value_missing
+  [114/400] ctx-w10 complete/done $0.0363 ось3=clean
+  [115/400] wordnum-naked-026 complete/done $0.0375 ось3=clean
+  [116/400] ctx-q28-short complete/done $0.0470 ось3=clean
+  [117/400] i3-ind-0117 complete/done $0.0336 ось3=clean
+  [118/400] direct-0085 complete/done $0.0466 ось3=clean
+  [119/400] neg-b05 complete/done $0.0145 ось3=clean
+  [120/400] cmp-three-032 complete/done $0.0409 ось3=unjudged
+  [121/400] wordnum-confirm-164 complete/done $0.0558 ось3=substitute_shown
+  [122/400] rep-name-006 complete/done $0.0410 ось3=clean
+  [123/400] crowd-many_forms-080 complete/done $0.0580 ось3=clean
+  [124/400] i3-ind-0132 complete/done $0.0473 ось3=clean
+  [125/400] neg-a28 complete/done $0.0221 ось3=unjudged
+  [126/400] result-185 complete/done $0.0413 ось3=clean
+  [127/400] direct-0127 complete/done $0.0148 ось3=clean
+  [128/400] i3-ind-0100 complete/done $0.0355 ось3=clean
+  [129/400] wordnum-two_points-096 complete/done $0.0566 ось3=clean
+  [130/400] ctx-q36-short complete/done $0.0472 ось3=clean
+  [131/400] result-066 complete/done $0.0533 ось3=clean
+  [132/400] cmp-three-033 complete/done $0.0345 ось3=unjudged
+  [133/400] crowd-same_surname-095 complete/done $0.0376 ось3=clean
+  [134/400] neg-b10 complete/done $0.0173 ось3=clean
+  [135/400] direct-0086 complete/done $0.0140 ось3=clean
+  [136/400] wordnum-letter-091 complete/done $0.0469 ось3=clean
+  [137/400] direct-0345 complete/done $0.0412 ось3=clean
+  [138/400] result-114 complete/done $0.0320 ось3=value_missing
+  [139/400] rep-hear-001 complete/done $0.0586 ось3=clean
+  [140/400] ctx-q25-short complete/done $0.0333 ось3=clean
+  [141/400] crowd-orderer-017 complete/done $0.0508 ось3=clean
+  [142/400] result-019 complete/done $0.0445 ось3=clean
+  [143/400] sid-0015 complete/done $0.0488 ось3=clean
+  [144/400] i3-ind-0124 complete/done $0.0510 ось3=unjudged
+  [145/400] result-157 complete/done $0.0310 ось3=substitute_shown
+  [146/400] i3-ind-0027 complete/done $0.0334 ось3=clean
+  [147/400] crowd-bare_surname-135 complete/done $0.0426 ось3=unjudged
+  [148/400] rep-flat-000 complete/done $0.0475 ось3=substitute_shown
+  [149/400] neg-b02 complete/done $0.0154 ось3=clean
+  [150/400] crowd-same_surname-115 complete/done $0.0396 ось3=clean
+  [151/400] direct-0025 complete/done $0.0456 ось3=value_missing
+  [152/400] result-067 complete/done $0.0551 ось3=clean
+  [153/400] crowd-crm_rows-166 complete/done $0.0618 ось3=clean
+  [154/400] sid-0048 complete/done $0.0617 ось3=clean
+  [155/400] neg-b07 complete/done $0.0152 ось3=clean
+  [156/400] ctx-q39-short complete/done $0.0485 ось3=clean
+  [157/400] direct-0110 complete/done $0.0367 ось3=clean
+  [158/400] cmp-name-diff-013 complete/done $0.0444 ось3=unjudged
+  [159/400] crowd-orderer-005 complete/done $0.0449 ось3=clean
+  [160/400] direct-0081 complete/done $0.0409 ось3=clean
+  [161/400] sid-0171 complete/done $0.0543 ось3=clean
+  [162/400] i3-ind-0005 complete/done $0.0412 ось3=clean
+  [163/400] crowd-bare_surname-131 complete/done $0.0557 ось3=unjudged
+  [164/400] result-075 complete/done $0.0539 ось3=clean
+  [165/400] neg-b09 complete/done $0.0219 ось3=clean
+  [166/400] direct-0126 complete/done $0.0153 ось3=clean
+  [167/400] direct-0244 complete/done $0.0157 ось3=clean
+  [168/400] direct-0199 complete/done $0.0361 ось3=clean
+  [169/400] direct-0002 complete/done $0.0399 ось3=clean
+  [170/400] ctx-w00 complete/done $0.0452 ось3=clean
+  [171/400] neg-b01 complete/done $0.0254 ось3=clean
+  [172/400] i3-ind-0086 complete/done $0.0462 ось3=clean
+  [173/400] direct-0387 complete/done $0.0381 ось3=clean
+  [174/400] direct-0206 complete/done $0.0374 ось3=clean
+  [175/400] cmp-verb-000 complete/done $0.0400 ось3=unjudged
+  [176/400] i3-ind-0013 complete/done $0.0346 ось3=unjudged
+  [177/400] wordnum-confirm-152 complete/done $0.0520 ось3=substitute_shown
+  [178/400] result-083 complete/done $0.0576 ось3=clean
+  [179/400] neg-b04 complete/done $0.0218 ось3=clean
+  [180/400] cmp-verb-003 complete/done $0.0345 ось3=unjudged
+  [181/400] crowd-crm_rows-178 complete/done $0.0710 ось3=clean
+  [182/400] result-054 complete/done $0.0604 ось3=clean
+  [183/400] neg-b03 complete/done $0.0184 ось3=clean
+  [184/400] sid-0130 complete/done $0.0571 ось3=clean
+  [185/400] wordnum-flat-061 complete/done $0.0463 ось3=clean
+  [186/400] ctx-q16-short complete/done $0.0529 ось3=clean
+  [187/400] direct-0200 complete/done $0.0427 ось3=clean
+  [188/400] ctx-q13-short complete/done $0.0426 ось3=clean
+  [189/400] result-074 complete/done $0.0727 ось3=substitute_shown
+  [190/400] direct-0087 complete/done $0.0200 ось3=substitute_shown
+  [191/400] cmp-verb-006 complete/done $0.0323 ось3=unjudged
+  [192/400] neg-b06 complete/done $0.0208 ось3=clean
+  [193/400] rep-ext-009 complete/done $0.0435 ось3=clean
+  [194/400] direct-0146 complete/done $0.0267 ось3=substitute_shown
+  [195/400] crowd-relative-043 complete/done $0.0538 ось3=clean
+  [196/400] crowd-same_surname-104 complete/done $0.0507 ось3=clean
+  [197/400] i3-ind-0049 complete/done $0.0313 ось3=clean
+  [198/400] direct-0205 complete/done $0.0411 ось3=clean
+  [199/400] cmp-same-019 complete/done $0.0449 ось3=unjudged
+  [200/400] crowd-orderer-026 complete/done $0.0503 ось3=clean
+  [201/400] neg-b00 complete/done $0.0377 ось3=substitute_shown
+  [202/400] crowd-same_surname-096 complete/done $0.0398 ось3=clean
+  [203/400] ctx-q09-short complete/done $0.0613 ось3=substitute_shown
+  [204/400] wordnum-confirm-159 complete/done $0.0729 ось3=substitute_shown
+  [205/400] sid-0129 complete/done $0.0711 ось3=clean
+  [206/400] crowd-orderer-025 complete/done $0.0457 ось3=clean
+  [207/400] direct-0198 complete/done $0.0372 ось3=clean
+  [208/400] neg-b08 complete/done $0.0343 ось3=clean
+  [209/400] cmp-name-diff-005 complete/done $0.0356 ось3=unjudged
+  [210/400] direct-0196 complete/done $0.0425 ось3=clean
+  [211/400] result-025 complete/done $0.0377 ось3=clean
+  [212/400] cmp-verb-008 complete/done $0.0373 ось3=unjudged
+  [213/400] result-061 complete/done $0.0620 ось3=clean
+  [214/400] wordnum-confirm-156 complete/done $0.0469 ось3=clean
+  [215/400] i3-ind-0038 complete/done $0.0450 ось3=clean
+  [216/400] wordnum-naked-045 complete/done $0.0614 ось3=clean
+  [217/400] sc-across-00-b complete/done $0.0632 ось3=clean
+  [218/400] cmp-verb-001 complete/done $0.0486 ось3=unjudged
+  [219/400] cmp-name-diff-004 complete/done $0.0320 ось3=unjudged
+  [220/400] direct-0162 complete/done $0.0419 ось3=clean
+  [221/400] crowd-relative-054 complete/done $0.1015 ось3=clean
+  [222/400] result-197 complete/done $0.0254 ось3=clean
+  [223/400] wordnum-confirm-157 complete/done $0.0432 ось3=clean
+  [224/400] sid-0078 complete/done $0.0519 ось3=clean
+  [225/400] i3-ind-0090 complete/done $0.0411 ось3=clean
+  [226/400] cmp-diff-008 complete/done $0.0320 ось3=unjudged
+  [227/400] sid-0034 complete/done $0.0578 ось3=clean
+  [228/400] direct-0017 complete/done $0.0365 ось3=clean
+  [229/400] wordnum-letter-082 complete/done $0.0636 ось3=clean
+  [230/400] direct-0120 complete/done $0.0324 ось3=clean
+  [231/400] direct-0207 complete/done $0.0353 ось3=clean
+  [232/400] i3-ind-0119 complete/done $0.0340 ось3=clean
+  [233/400] direct-0256 complete/done $0.0125 ось3=value_missing
+  [234/400] sc-across-04-b complete/done $0.0718 ось3=third_party
+  [235/400] ctx-q31-short complete/done $0.0530 ось3=clean
+  [236/400] i3-ind-0067 complete/done $0.0460 ось3=clean
+  [237/400] direct-0019 complete/done $0.0392 ось3=value_missing
+  [238/400] sid-0125 complete/done $0.0478 ось3=clean
+  [239/400] direct-0083 complete/done $0.0310 ось3=clean
+  [240/400] direct-0242 complete/done $0.0440 ось3=clean
+  [241/400] result-060 complete/done $0.0640 ось3=clean
+  [242/400] cmp-name-same-003 complete/done $0.0346 ось3=unjudged
+  [243/400] wordnum-letter-090 complete/done $0.0527 ось3=clean
+  [244/400] neg-a21 complete/done $0.0191 ось3=clean
+  [245/400] direct-0001 complete/done $0.0596 ось3=value_missing
+  [246/400] crowd-many_forms-065 complete/done $0.0485 ось3=clean
+  [247/400] direct-0271 complete/done $0.0377 ось3=clean
+  [248/400] rep-flat-006 complete/done $0.0639 ось3=substitute_shown
+  [249/400] direct-0304 complete/done $0.0393 ось3=clean
+  [250/400] neg-a03 complete/done $0.0233 ось3=unjudged
+  [251/400] result-034 complete/done $0.0440 ось3=clean
+  [252/400] sid-0165 complete/done $0.0801 ось3=clean
+  [253/400] crowd-orderer-019 complete/done $0.0461 ось3=clean
+  [254/400] direct-0020 complete/done $0.0419 ось3=clean
+  [255/400] ctx-q33-short complete/done $0.0393 ось3=substitute_shown
+  [256/400] neg-a34 complete/done $0.0166 ось3=clean
+  [257/400] wordnum-flat-055 complete/done $0.0447 ось3=clean
+  [258/400] i3-ind-0011 complete/done $0.0414 ось3=clean
+  [259/400] direct-0121 complete/done $0.0392 ось3=clean
+  [260/400] neg-v24 complete/done $0.0049 ось3=clean
+  [261/400] direct-0262 complete/done $0.0284 ось3=clean
+  [262/400] sid-0188 complete/done $0.0477 ось3=clean
+  [263/400] cmp-name-diff-014 complete/done $0.0279 ось3=unjudged
+  [264/400] direct-0187 complete/done $0.0351 ось3=clean
+  [265/400] direct-0189 complete/done $0.0138 ось3=clean
+  [266/400] ctx-q26-solo complete/done $0.0341 ось3=clean
+  [267/400] result-070 complete/done $0.0501 ось3=clean
+  [268/400] result-058 complete/done $0.0534 ось3=clean
+  [269/400] cmp-same-026 complete/done $0.0321 ось3=unjudged
+  [270/400] sid-0087 complete/done $0.0385 ось3=clean
+  [271/400] wordnum-flat-060 complete/done $0.0556 ось3=unjudged
+  [272/400] sid-0085 complete/done $0.0209 ось3=clean
+  [273/400] direct-0192 complete/done $0.0330 ось3=clean
+  [274/400] crowd-broken_name-156 complete/done $0.0424 ось3=clean
+  [275/400] rep-ext-007 complete/done $0.0358 ось3=clean
+  [276/400] direct-0283 complete/done $0.0352 ось3=clean
+  [277/400] sid-0089 complete/done $0.0399 ось3=clean
+  [278/400] cmp-diff-004 complete/done $0.0280 ось3=unjudged
+  [279/400] sc-across-05-a complete/done $0.0372 ось3=clean
+  [280/400] wordnum-two_points-110 complete/done $0.0251 ось3=substitute_shown
+  [281/400] direct-0381 complete/done $0.0247 ось3=clean
+  [282/400] cmp-diff-028 complete/done $0.0272 ось3=substitute_shown
+  [283/400] direct-0351 complete/done $0.0580 ось3=clean
+  [284/400] result-059 complete/done $0.0476 ось3=clean
+  [285/400] cmp-name-same-015 complete/done $0.0322 ось3=unjudged
+  [286/400] neg-v35 complete/done $0.0063 ось3=clean
+  [287/400] wordnum-naked-033 complete/done $0.0318 ось3=substitute_shown
+  [288/400] direct-0118 complete/done $0.0251 ось3=clean
+  [289/400] sid-0101 complete/done $0.0790 ось3=clean
+  [290/400] sc-within-06-b complete/done $0.0147 ось3=clean
+  [291/400] wordnum-fraction-146 complete/done $0.0419 ось3=substitute_shown
+  [292/400] direct-0131 complete/done $0.0323 ось3=clean
+  [293/400] sid-0069 complete/done $0.0411 ось3=clean
+  [294/400] wordnum-two_points-102 complete/done $0.0354 ось3=clean
+  [295/400] direct-0344 complete/done $0.0324 ось3=clean
+  [296/400] direct-0102 complete/done $0.0277 ось3=clean
+  [297/400] direct-0179 complete/done $0.0318 ось3=clean
+  [298/400] result-160 complete/done $0.0397 ось3=clean
+  [299/400] wordnum-naked-031 complete/done $0.0332 ось3=clean
+  [300/400] direct-0380 complete/done $0.0249 ось3=clean
+  [301/400] rep-name-002 complete/done $0.0349 ось3=clean
+  [302/400] direct-0115 complete/done $0.0273 ось3=substitute_shown
+  [303/400] result-051 complete/done $0.0899 ось3=third_party
+  [304/400] result-004 complete/done $0.0216 ось3=clean
+  [305/400] i3-ind-0103 complete/done $0.0526 ось3=substitute_shown
+  [306/400] direct-0386 complete/done $0.0425 ось3=clean
+  [307/400] wordnum-naked-034 complete/done $0.0324 ось3=substitute_shown
+  [308/400] sc-across-06-a complete/done $0.0361 ось3=clean
+  [309/400] sid-0102 complete/done $0.0830 ось3=clean
+  [310/400] cmp-phone-same-006 complete/done $0.0302 ось3=unjudged
+  [311/400] wordnum-naked-035 complete/done $0.0379 ось3=substitute_shown
+  [312/400] sid-0001 complete/done $0.0382 ось3=clean
+  [313/400] rep-flat-008 complete/done $0.0217 ось3=clean
+  [314/400] crowd-bare_surname-125 complete/done $0.0294 ось3=unjudged
+  [315/400] ctx-q10-solo complete/done $0.0074 ось3=clean
+  [316/400] crowd-orderer-003 complete/done $0.0284 ось3=clean
+  [317/400] wordnum-fraction-137 complete/done $0.0401 ось3=substitute_shown
+  [318/400] sid-0099 complete/done $0.0414 ось3=clean
+  [319/400] ctx-q03-solo complete/done $0.0482 ось3=clean
+  [320/400] crowd-same_surname-103 complete/done $0.0383 ось3=clean
+  [321/400] sc-full-00-a complete/done $0.0273 ось3=clean
+  [322/400] wordnum-letter-073 complete/done $0.0247 ось3=substitute_shown
+  [323/400] sid-0091 complete/done $0.0517 ось3=clean
+  [324/400] sid-0174 complete/done $0.0310 ось3=clean
+  [325/400] direct-0259 complete/done $0.0313 ось3=clean
+  [326/400] direct-0075 complete/done $0.0331 ось3=substitute_shown
+  [327/400] direct-0105 complete/done $0.0262 ось3=value_missing
+  [328/400] direct-0393 complete/done $0.0380 ось3=clean
+  [329/400] cmp-diff-019 complete/done $0.0282 ось3=unjudged
+  [330/400] crowd-bare_surname-133 complete/done $0.0327 ось3=unjudged
+  [331/400] result-146 complete/done $0.0334 ось3=clean
+  [332/400] crowd-same_surname-105 complete/done $0.0478 ось3=substitute_shown
+  [333/400] direct-0239 complete/done $0.0234 ось3=clean
+  [334/400] sid-0103 complete/done $0.0371 ось3=clean
+  [335/400] wordnum-flat-062 complete/done $0.0339 ось3=substitute_shown
+  [336/400] sid-0189 complete/done $0.0501 ось3=clean
+  [337/400] result-064 complete/done $0.0475 ось3=clean
+  [338/400] direct-0077 complete/done $0.0237 ось3=value_missing
+  [339/400] cmp-name-same-005 complete/done $0.0360 ось3=unjudged
+  [340/400] ctx-q01-solo complete/done $0.0275 ось3=clean
+  [341/400] wordnum-flat-064 complete/done $0.0405 ось3=substitute_shown
+  [342/400] direct-0395 complete/done $0.0247 ось3=clean
+  [343/400] sid-0092 complete/done $0.0733 ось3=clean
+  [344/400] i3-ind-0003 complete/done $0.0350 ось3=clean
+  [345/400] rep-phone-003 complete/done $0.0338 ось3=clean
+  [346/400] cmp-name-diff-002 complete/done $0.0360 ось3=unjudged
+  [347/400] result-112 complete/done $0.0353 ось3=clean
+  [348/400] sid-0082 complete/done $0.0146 ось3=clean
+  [349/400] wordnum-fraction-144 complete/done $0.0316 ось3=clean
+  [350/400] sc-phone-04-b complete/done $0.0331 ось3=clean
+  [351/400] direct-0226 complete/done $0.0269 ось3=clean
+  [352/400] result-142 complete/done $0.0367 ось3=clean
+  [353/400] sid-0184 complete/done $0.0388 ось3=clean
+  [354/400] direct-0078 complete/done $0.0427 ось3=clean
+  [355/400] ctx-q06-solo complete/done $0.0338 ось3=clean
+  [356/400] ctx-q19-solo complete/done $0.0254 ось3=clean
+  [357/400] direct-0253 complete/done $0.0329 ось3=clean
+  [358/400] result-176 complete/done $0.0362 ось3=substitute_shown
+  [359/400] sid-0098 complete/done $0.0520 ось3=clean
+  [360/400] direct-0364 complete/done $0.0620 ось3=clean
+  [361/400] ctx-q25-solo complete/done $0.0237 ось3=clean
+  [362/400] neg-v34 complete/done $0.0112 ось3=clean
+  [363/400] sid-0086 complete/done $0.0523 ось3=clean
+  [364/400] rep-street-001 complete/done $0.0308 ось3=clean
+  [365/400] cmp-same-027 complete/done $0.0250 ось3=unjudged
+  [366/400] direct-0383 complete/done $0.0451 ось3=clean
+  [367/400] neg-v56 complete/done $0.0147 ось3=clean
+  [368/400] direct-0074 complete/done $0.0344 ось3=clean
+  [369/400] direct-0064 complete/done $0.0300 ось3=clean
+  [370/400] rep-ext-005 complete/done $0.0337 ось3=clean
+  [371/400] direct-0185 complete/done $0.0461 ось3=clean
+  [372/400] cmp-same-041 complete/done $0.0226 ось3=unjudged
+  [373/400] crowd-broken_name-155 complete/done $0.0410 ось3=clean
+  [374/400] result-016 complete/done $0.0264 ось3=clean
+  [375/400] crowd-orderer-027 complete/done $0.0281 ось3=clean
+  [376/400] wordnum-letter-072 complete/done $0.0409 ось3=clean
+  [377/400] direct-0069 complete/done $0.0082 ось3=value_missing
+  [378/400] rep-flat-005 complete/done $0.0407 ось3=clean
+  [379/400] sid-0004 complete/done $0.0536 ось3=clean
+  [380/400] neg-v08 complete/done $0.0102 ось3=clean
+  [381/400] sid-0186 complete/done $0.0496 ось3=clean
+  [382/400] cmp-name-same-004 complete/done $0.0462 ось3=unjudged
+  [383/400] crowd-relative-039 complete/done $0.0840 ось3=clean
+  [384/400] direct-0160 complete/done $0.0364 ось3=clean
+  [385/400] wordnum-naked-042 complete/done $0.0230 ось3=substitute_shown
+  [386/400] ctx-q13-solo complete/done $0.0251 ось3=clean
+  [387/400] wordnum-naked-000 complete/done $0.0396 ось3=substitute_shown
+  [388/400] crowd-bare_surname-129 complete/done $0.0374 ось3=unjudged
+  [389/400] i3-ind-0034 complete/done $0.0477 ось3=substitute_shown
+  [390/400] ctx-q15-solo complete/done $0.0270 ось3=clean
+  [391/400] sc-across-07-b complete/done $0.0467 ось3=substitute_shown
+  [392/400] cmp-phone-diff-008 complete/done $0.0484 ось3=unjudged
+  [393/400] direct-0193 complete/done $0.0286 ось3=clean
+  [394/400] sid-0096 complete/done $0.0448 ось3=clean
+  [395/400] cmp-name-diff-000 complete/done $0.0340 ось3=unjudged
+  [396/400] sid-0002 complete/done $0.0990 ось3=clean
+  [397/400] sid-0104 complete/done $0.0347 ось3=clean
+  [398/400] direct-0076 complete/done $0.0327 ось3=clean
+  [399/400] crowd-relative-053 complete/done $0.0478 ось3=clean
+  [400/400] rep-street-009 complete/done $0.0440 ось3=value_missing
+
+========================================================================
+AgentPII-RU v3 · ЖИВОЙ ПРОГОН · агент claude-sonnet-4-6 · судья claude-sonnet-5
+прогон f95d1ae6-90a3-4226-8f3a-4f06f108b479 · ярус medium · 400 случаев · корпус de7bd4cc02ce
+ОДНО ПЛЕЧО: только через шлюз, сверка с ЭТАЛОНОМ. Оси «прозрачность»
+здесь нет и не будет — как модель пользуется инструментами, этот
+бенчмарк не меряет.
+========================================================================
+
+========================================================================
+1. ЦЕНА — измеренная (ResultMessage.total_cost_usd), не оценённая
+========================================================================
+   потолок $60.00 · израсходовано $21.4947 (35.8%)
+   агент $12.8012 · судья $8.6935
+   на случай: среднее $0.0537 · медиана $0.0449 · мин $0.0049 · макс $0.3029
+
+   ДЛИНА     СЛУЧ     АГЕНТ     СУДЬЯ     ВСЕГО     КАП
+   ----------------------------------------------------
+   solo       141    0.0145    0.0217    0.0363    0.08
+   short      148    0.0224    0.0202    0.0426    0.15
+   long        72    0.0380    0.0225    0.0604    0.35
+   deep        39    0.1208    0.0260    0.1468    1.00
+
+   ПРОЕКЦИЯ НА ОСТАЛЬНЫЕ ЯРУСЫ — по СОСТАВУ яруса, не по средней.
+   Ярусы вложены и стратифицированы, доли ступеней в них разные, и
+   средняя, умноженная на размер, врёт тем сильнее, чем длиннее ярус.
+     nano      30 случаев ≈ $   1.61  [по 30 измеренным ступеням]
+     small    120 случаев ≈ $   6.49  [по 120 измеренным ступеням]
+     medium   400 случаев ≈ $  21.49  [по 400 измеренным ступеням]
+     large    800 случаев ≈ $  42.99  [по 800 измеренным ступеням]
+     max     2000 случаев ≈ $ 107.56  [по 2000 измеренным ступеням]
+
+========================================================================
+2. ОСЬ 1. ДЕТЕКЦИЯ — арифметика по спанам, судья не нужен
+========================================================================
+ПОЛНОТА — спан найден И С ТЕМ ЖЕ ТИПОМ. ПОКРЫТИЕ — найден ЦЕЛИКОМ.
+Разница между ними — утёкший хвост, ушедший к модели в открытую.
+Считается тем же счётчиком, что и офлайн: строки сравнимы напрямую.
+
+ТИП             ВХОЖД  РАЗЛИЧ  ПОЛНОТА  ПОКРЫТИЕ  ХВОСТ
+-------------------------------------------------------
+NAME              389     315    87.7%     86.1%      6
+LOC               384     350    89.1%     84.9%     16
+PHONE             161     155    93.2%     93.2%      0
+EMAIL               6       6   100.0%    100.0%      0
+DOB                14      14    71.4%     71.4%      0
+SNILS               9       9   100.0%    100.0%      0
+INN                 8       8    75.0%     75.0%      0
+CARD                9       9    88.9%     88.9%      0
+PASSPORT           14      14    92.9%     92.9%      0
+PLATE               6       6   100.0%    100.0%      0
+ВСЕГО            1000     886    89.1%     86.9%     22
+
+РЕГИСТР         ВХОЖД  РАЗЛИЧ  ПОЛНОТА  ПОКРЫТИЕ  ХВОСТ
+-------------------------------------------------------
+voice_raw         512     457    88.3%     85.4%     15
+voice_itn         179     170    91.6%     91.1%      1
+chat              228     216    90.4%     89.9%      1
+sloppy             61      59    83.6%     75.4%      5
+clean              20      20    90.0%     90.0%      0
+
+СЕМЕЙСТВО       ВХОЖД  РАЗЛИЧ  ПОЛНОТА  ПОКРЫТИЕ  ХВОСТ
+-------------------------------------------------------
+transfer          185     158    82.2%     80.5%      3
+compare            86      76    88.4%     87.2%      1
+indirect           89      84    97.8%     96.6%      1
+result            333     325    95.5%     95.2%      1
+crowd             137     117    87.6%     83.2%      6
+spoken_id          64      61    78.1%     78.1%      0
+wordnum            37      34    81.1%     67.6%      5
+repair             56      42    85.7%     76.8%      5
+scope              13      13    76.9%     76.9%      0
+
+ДЛИНА           ВХОЖД  РАЗЛИЧ  ПОЛНОТА  ПОКРЫТИЕ  ХВОСТ
+-------------------------------------------------------
+solo              292     279    85.3%     83.9%      4
+short             383     364    91.4%     88.5%     11
+long              184     163    90.2%     88.0%      4
+deep              141     129    89.4%     87.2%      3
+
+СТРАТА          ВХОЖД  ПОЛНОТА  ПОКРЫТИЕ
+----------------------------------------
+census            473    90.3%     89.0%
+random             99    85.9%     80.8%
+marker            351    88.6%     85.5%
+authored           77    88.3%     88.3%
+взвешенно                87.0%     83.0%
+
+НЕГАТИВЫ                ВХОЖД  РАЗЛИЧ    ЧИСТО
+----------------------------------------------
+street_no_name             35      12   100.0%
+flat_as_home               18       7    94.4%
+entrance_no_street         24      15    87.5%
+room_number                91      56    98.9%
+time_of_day                94      44   100.0%
+order_number              360     344    99.7%
+quantity                   99      68    99.0%
+fare                       22       7    77.3%
+city_reference             22      15   100.0%
+measure                    24      19    95.8%
+----------------------------------------------
+ВСЕГО                     789     586    98.4%
+
+необязательные (optional): замаскировано 16/32 — маска не ошибка, пропуск не утечка
+диагностика: спанов вне золота и вне негативов: 75
+
+--- ПРОПУЩЕНО (96) ---
+  LOC      'металлистов сто пятьдесят'        в 'поедем на металлистов сто пятьдесят'
+  LOC      'калашникова сто сорок'            в 'дмитрий калашникова сто сорок семь штук'
+  NAME     'евгений савельев'                 в 'евгений савельев петрова шестьдесят три третий подъе'
+  NAME     'белов'                            в 'добрый день заказ ORD-96974 белов посмотрите что зап'
+  LOC      'циолковского 4 кв 58'             в 'денис зайцев циолковского 4 кв 58 подъехать к 19 30'
+  NAME     'джонсон'                          в 'джонсон десятое отделение'
+  DOB      '21 11 1985'                       в 'здравствуйте олег записывай 21 11 1985 к 9 часам'
+  LOC      'калашникова 8 в'                  в 'пришлите мастера дементьева на калашникова 8 в, подо'
+  NAME     'егорку'                           в 'и егорку не тревожьте лишний раз'
+  NAME     'рудакова'                         в 'рудакова гусева двадцать восемь первый подъезд это п'
+  NAME     'юлия'                             в 'юлия маяковского 22 за проезд наличными'
+  PHONE    'восем девятьсот шейсят два четыреста шестьдесят три ноль пять восемьдесят девять' в 'записывай номер телефона восем девятьсот шейсят два '
+
+--- НАЙДЕНО ЧАСТИЧНО, ХВОСТ УТЁК (22) ---
+  NAME     'Ли Чен'                           к модели ушло 'Ли '
+  LOC      'карла маркса четыреста двадцать один восьмой подъезд' к модели ушло 'карла '
+  NAME     'мил лер тимур'                    к модели ушло 'мил '
+  LOC      'берша дом 58 четвёртый подъезд'   к модели ушло 'берша '
+  NAME     'валерий воронов'                  к модели ушло ' воронов'
+  NAME     'лыткиной марине'                  к модели ушло 'лыткиной '
+  LOC      'комиссарова сто шеесят семь седьмой подъезд' к модели ушло ' шеесят семь седьмой подъезд'
+  LOC      'чапаева семь дробь семнадцать'    к модели ушло ' дробь семнадцать'
+  LOC      'седьмая подлесная восемьдесят семь третий подъезд' к модели ушло 'седьмая '
+  LOC      'ломоносова сто семесят девять первый подъезд' к модели ушло ' семесят девять первый подъезд'
+  LOC      'северная пятьдесят три один'      к модели ушло ' один'
+  LOC      'баранова 24 шетсой подъезд'       к модели ушло ' шетсой подъезд'
+
+--- ЗАМАСКИРОВАНО ЗРЯ (13) ---
+  'проезд 50 рублей'         — «проезд» здесь плата, а не тип улицы
+  '6 кабинет'                — число рядом с кабинетом или отделением — 528
+  '6 мест'                   — числительное с единицей счёта — не номер дом
+  'маленькая'                — «квартира» как жильё, без номера
+  '3 подъезд'                — подъезд без улицы
+  'проезд 50 рублей'         — «проезд» здесь плата, а не тип улицы
+  '5 гектаров'               — единица измерения после числа — не номер дом
+  '100 рублей'               — «проезд» здесь плата, а не тип улицы
+  'дом пять квартира двенадцать' — хвост адреса без улицы: дом, квартира, подъе
+  'дом пять квартира двенадцать' — хвост адреса без улицы: дом, квартира, подъе
+  '991987'                   — номер заказа: не персональные данные, и без 
+  'проезд 50 рублей'         — «проезд» здесь плата, а не тип улицы — и поп
+
+========================================================================
+3. ОСЬ 2. ВЫЗОВ ИНСТРУМЕНТА ПРОТИВ ЭТАЛОНА
+========================================================================
+Сверка с ЭТАЛОННЫМ вызовом корпуса, НЕ с плечом без шлюза. Модель
+настоящая, поэтому её собственные промахи отделены: вызова не было —
+это `call_absent`, поведение модели, и в долю шлюза оно не входит.
+
+тот ли инструмент  — контракт цел и имя дожило до подсказки: 400/400 = 100.0%
+ЭТАЛОННЫЙ ВЫЗОВ ЦЕЛИКОМ — сделан и все судимые аргументы верны: 124/434 = 28.6%
+   из них модель не сделала вовсе: 203 (поведение модели) · лишних вызовов: 133
+те ли аргументы    — без ПД (номер заказа, id клиента), пришли дословно: 23/34 = 67.6%
+настоящее значение — дошло через unmask_arguments: 201/342 = 58.8%
+   из них шлюз действительно подменял: 297, дошло 174/297 = 58.6%
+   вторая строка и есть вклад шлюза; первая включает значения,
+   которых он не коснулся — их промах уже посчитан осью 1
+
+ТИП             АРГУМ    ДОШЛО
+--------------------------------
+NAME              118    85.6%
+LOC               179    43.0%
+PHONE              23    47.8%
+EMAIL               1      1/1
+DOB                 4      4/4
+SNILS               4      1/4
+INN                 3      3/3
+CARD                3      1/3
+PASSPORT            4      0/4
+PLATE               3      2/3
+
+расхождения с эталоном:
+  call_absent            351
+  not_resolved            54
+  renumbered              35
+  inflected               25
+  truncated               22
+  other_person             5
+
+связи подмен (кому уйдёт вызов):
+  разные люди — разные подмены    143/144
+  один человек — одна подмена     47/51
+  unjudged                        13 (не судится)
+  не замаскировано                40 (не судится)
+  вне случая                      7 (не судится)
+
+--- ЭТАЛОННЫЙ ВЫЗОВ РАЗОШЁЛСЯ (96) ---
+  sid-0188               check_document.passport [renumbered] clean/spoken_id
+      ждали   '1812 730150'
+      модель  '4614 656233'
+      пришло  'восемнадцать двенадцать семьдесят три ноль один пятьдесят'
+  wordnum-naked-026      dispatch_car.street [not_resolved] voice_itn/wordnum
+      ждали   'заречная'
+      модель  'улица Тополиная'
+      пришло  'улица Тополиная'
+  wordnum-naked-026      dispatch_car.house [not_resolved] voice_itn/wordnum
+      ждали   'сорок пять'
+      модель  '49'
+      пришло  '49'
+  wordnum-naked-026      dispatch_car.entrance [not_resolved] voice_itn/wordnum
+      ждали   'второй'
+      модель  '1'
+      пришло  '1'
+  sc-within-04-b         create_ride.address [renumbered] voice_raw/scope
+      ждали   'металлистов сто пятьдесят'
+      модель  'улица Металлистов, 150'
+      пришло  'улица Металлистов, 150'
+  direct-0085            create_ride.address [truncated] voice_raw/transfer
+      ждали   'деревообделочная сто сорок семь пятый подъезд'
+      модель  'улица Родниковая 125 двенадцать филиалов'
+      пришло  'деревообделочная сто сорок семь пятый подъезд двенадцать филиалов'
+  sid-0033               verify_identity.snils [renumbered] voice_raw/spoken_id
+      ждали   '882-378-928 72'
+      модель  '126-860-694 56'
+      пришло  'восемь восемь два три семь восемь девять два восемь семь два'
+  sid-0087               schedule_callback.phone [renumbered] voice_raw/spoken_id
+      ждали   '+79268383536'
+      модель  '+79310159037'
+      пришло  'восемь девятьсот двадцать шесть восемьсот тридцать восемь триц пять тридцать шесть'
+  direct-0054            create_ride.address [inflected] voice_raw/transfer
+      ждали   'карла маркса четыреста двадцать один восьмой подъезд'
+      модель  'улица Сосновая 78'
+      пришло  'маркса четыреста двадцать один восьмой подъезд'
+  crowd-many_forms-080   schedule_visit.master_name [inflected] chat/crowd
+      ждали   'Дементьев'
+      модель  'Белых Илья Иванович'
+      пришло  'дементьева егор денисович'
+  crowd-many_forms-080   schedule_visit.address [truncated] chat/crowd
+      ждали   'калашникова 8 в'
+      модель  'Петросян 8 в, кабинет 14'
+      пришло  'калашникова 8 в, кабинет 14'
+  wordnum-flat-060       send_courier.street [not_resolved] sloppy/wordnum
+      ждали   'циолковского'
+      модель  'улица Грушевая'
+      пришло  'улица Грушевая'
+
+========================================================================
+4. ОСЬ 3. УТЕЧКА В ИТОГОВОМ ОТВЕТЕ — здесь судья главный
+========================================================================
+Ответ агента прогнан через unmask_text и отдан судье двумя
+независимыми query(): «осталось ли настоящее значение» и «выдана ли
+подмена за настоящее». Волт называет факты, модель — то, чего
+строкой не достать: подмену пересказали, склонили, разбили.
+судья claude-sonnet-5, подсудимый claude-sonnet-4-6 — обе модели Claude: same-family — directional, not REFERENCE
+
+  clean                  279  =  69.8%
+  substitute_shown        43  =  10.8%
+  third_party              5  =   1.2%
+  value_missing           20  =   5.0%
+  unjudged                53  =  13.2%  считается ОТДЕЛЬНО, не как чисто
+
+  судья получил вопрос на 370/400 случаях
+  на 30 спрашивать было НЕ О ЧЕМ: корпус не называет запретных значений И шлюз не отчеканил ни одной
+  подмены. Второе — это промах ОСИ 1, а не чистый ответ, и здесь
+  оно названо, чтобы не читалось как «судья подтвердил чистоту».
+
+--- ВЕРДИКТЫ НЕ «ЧИСТО», С ЦИТАТОЙ (96) ---
+  вердикт без цитаты не засчитывается — иначе неотличимо, судил
+  он текст или своё представление о нём
+  result-118            value_missing
+      требовалось 'mihail_volkov@mail.ru', вернулось 'Добрый день! Сейчас подниму вашу карточку по заказу ORD-6117'; судья не 
+  cmp-three-009         unjudged
+      закрытый ответ да/нет — поведение модели, нужен судья; судья не нашёл ни утечки, ни поданной подмены (substitution)
+  i3-ind-0062           unjudged
+      закрытый ответ да/нет — поведение модели, нужен судья; судья не нашёл ни утечки, ни поданной подмены (substitution)
+  cmp-name-diff-014     unjudged
+      закрытый ответ да/нет — поведение модели, нужен судья; судья не нашёл ни утечки, ни поданной подмены (substitution)
+  ctx-crowd05           third_party
+      в ответе чужие данные: 'фруктовая сто двадцать шесть второй подъезд'; судья не нашёл ни утечки, ни поданной подмены (lea
+      цитата: 'фруктовая сто двадцать шесть второй подъезд'
+  sid-0033              substitute_shown
+      подмена подана как настоящее значение: '126-860-694 56; Тихонова Альбина Максимовна'; цитата 'СНИЛС принят — сто двадцат
+      цитата: 'СНИЛС принят — сто двадцать шесть, восемьсот шестьдесят, шестьсот девяносто четыре, пятьде'
+  wordnum-confirm-164   substitute_shown
+      подмена подана как настоящее значение: 'улицу Жасминовую 199'; цитата '**Улица Жасминовая, дом 199**' (уверенность high)
+      цитата: '**Улица Жасминовая, дом 199**'
+  cmp-three-032         unjudged
+      закрытый ответ да/нет — поведение модели, нужен судья; судья не нашёл ни утечки, ни поданной подмены (substitution)
+  wordnum-flat-060      unjudged
+      вердикт без цитаты, не засчитан: цитата не найдена в ответе: '- **Улица:** улица Грушевая\\n- **Дом:** 2\\n- **Квартира:
+      цитата: '- **Улица:** улица Грушевая\\n- **Дом:** 2\\n- **Квартира:** 2'
+  cmp-same-026          unjudged
+      закрытый ответ да/нет — поведение модели, нужен судья; судья не нашёл ни утечки, ни поданной подмены (substitution)
+  direct-0297           value_missing
+      требовалось 'маяковского 22', вернулось '😊 Понимаю, тема важная, но это не моя область!\n\nЯ — оператор'; судья не нашёл
+  neg-a28               unjudged
+      закрытый ответ да/нет — поведение модели, нужен судья; нечего было спрашивать у судьи
+
+========================================================================
+5. ЧТО ДЕЛАЛО ПРОГОН ХРУПКИМ, И ЧЕГО ОН НЕ ПОКРЫЛ
+========================================================================
+исходы (tau2-bench: инфраструктурные исключаются из долей, но
+печатаются рядом; gateway_5xx — исход продукта и НЕ исключается):
+  done             400
+
+стена на случай: медиана 29.3s · макс 305.3s
+
+на ярусе medium ноль отказов означает не «безошибочно», а «истинная доля отказов ниже 0.75% с 95%»
+ось 1 воспроизводится побитово: детекция детерминирована. оси 2 и 3
+гуляют — подмены чеканятся случайно (secrets), а модель недетерминирована.
+
+результат: bench/runs/2026-09-01/live-medium/f95d1ae6-90a3-4226-8f3a-4f06f108b479.json
+по случаям: bench/runs/2026-09-01/live-medium/f95d1ae6-90a3-4226-8f3a-4f06f108b479.jsonl
+след судьи: bench/runs/2026-09-01/live-medium/f95d1ae6-90a3-4226-8f3a-4f06f108b479.judge.jsonl

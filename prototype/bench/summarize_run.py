@@ -39,6 +39,7 @@ PATTERNS: dict[str, tuple[str, int]] = {
     "40-v3-offline": (r"^ВСЕГО|^взвешенно|ЭТАЛОННЫЙ ВЫЗОВ|настоящее значение|"
                       r"разные люди|один человек|^  clean|^  value_missing|^  unjudged", 0),
     "54-collisions": (r"OK|потолок", 0),
+    "60-v3-live-medium": (r"израсходовано|^   на случай|^ВСЕГО|^взвешенно|тот ли инструмент|ЭТАЛОННЫЙ ВЫЗОВ|настоящее значение|из них модель|разные люди|один человек|^  clean|^  substitute_shown|^  third_party|^  value_missing|^  unjudged|^  done", 0),
 }
 
 
