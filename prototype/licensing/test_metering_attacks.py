@@ -66,6 +66,35 @@ for t in threads: t.join()
 check("сто одновременных аренд не пробивают потолок процессов",
       len(passed) <= 32, f"прошло {len(passed)}, потолок 32")
 
+# КАЖДЫЙ ЧИТАТЕЛЬ ХОТЬ РАЗ ВЫЗВАН. Перевод чтений на общий помощник под локом
+# пропустил единственный вызов без параметров, и `list_orgs` начал отдавать 500
+# — то есть админка легла целиком. Ни один тест этого не увидел, потому что
+# читателей никто не звал; проверка тупая и стоит секунду.
+s = fresh()
+s.record_lease("l1", "acme", "i1", "p1", 86400, pubkey="k1")
+s.record_report_secret("acme", "k1", "de" * 16)
+s.record_usage("acme", "i1", 5, {"PHONE": 2}, 3, seq=1, prev="", signature="x",
+               trust="signed", report_pubkey="k1", build="modules:abc")
+s.record_grant("acme", "k1", 5000)
+readers = [("lookup", lambda: s.lookup("nope")),
+           ("report_secret", lambda: s.report_secret("acme", "k1")),
+           ("granted_total", lambda: s.granted_total("acme")),
+           ("builds_seen", lambda: s.builds_seen("acme")),
+           ("active_instances", lambda: s.active_instances("acme", 86400)),
+           ("may_lease", lambda: s.may_lease("acme", "start", "i1", 86400, pubkey="k1")),
+           ("usage_totals", lambda: s.usage_totals("acme")),
+           ("instances", lambda: s.instances("acme")),
+           ("list_orgs", lambda: s.list_orgs()),
+           ("prune_leases", lambda: s.prune_leases(86400))]
+broken = []
+for name, call in readers:
+    try:
+        call()
+    except Exception as error:
+        broken.append(f"{name}: {error}")
+check("каждый читатель store вызывается без ошибки", not broken,
+      f"проверено {len(readers)}" + (f", сломано {broken}" if broken else ""))
+
 print("\nАТАКИ НА ЦЕПЬ ОТЧЁТОВ")
 def send(s, rep, trust="signed", inst="c1"):
     s.record_usage("acme", inst, rep.get("requests", 0), {}, rep.get("values", 0),

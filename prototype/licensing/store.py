@@ -730,7 +730,7 @@ class LicenseStore:
 
     def list_orgs(self) -> list[dict[str, object]]:
         rows = self._fetchall(
-            "SELECT org_id, plan, status, created_at FROM keys ORDER BY created_at"
-        )
+            "SELECT org_id, plan, status, created_at FROM keys ORDER BY created_at",
+            ())
         return [{"org_id": r[0], "plan": r[1], "status": r[2], "created_at": r[3]}
                 for r in rows]
