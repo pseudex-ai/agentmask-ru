@@ -881,7 +881,14 @@ def _render_token(entity_type: str, gender: str | None = None,
         return _fake_card()
     if entity_type == "PASSPORT":
         return f"{_rand_digits(2)} {_rand_digits(2)} {_rand_digits(6)}"
-    if entity_type == "DATE":
+    if entity_type in ("DATE", "DOB"):
+        # DOB WAS FALLING THROUGH TO REDACTED…, and it only started to matter
+        # when DOB became a type of its own: recall went 22.2% -> 82.8% the same
+        # day, so every date of birth the engine now finds reached the model as
+        # «REDACTED8be7d1» in a field the customer's own schema types as a date.
+        # That is the failure the block at the top of this function describes —
+        # a masked value their validator rejects — and it arrives on the leg
+        # where a model is most tempted to «repair» what it was given.
         return _fake_date(original)
     if entity_type == "NAME":
         return _fake_name(gender, morph_names.name_shape(original) if original else ())
@@ -1106,6 +1113,7 @@ class Vault:
         self._migrate_first_seen()
         self._migrate_place_created()
         self._migrate_fold_key()
+        self._migrate_minted_in()
         # Every lookup on the response leg is an indexed point query, so
         # detokenization cost tracks the length of the answer, not the size of
         # the vault. Without these indexes each one degrades to a table scan.
@@ -1186,7 +1194,7 @@ class Vault:
             )
 
     def _unique_token(self, entity_type: str, gender: str | None = None,
-                      original: str = "") -> str:
+                      original: str = "", canonical: str = "") -> str:
         """Mint a token not already used for this customer.
 
         BOUNDED on purpose. This used to loop until it found a free token, which
@@ -1218,9 +1226,47 @@ class Vault:
             # replaces, which is where the collision actually leaks something.
             if entity_type == "NAME" and original and _shares_a_word(token, original):
                 continue
+            # THE ROW BEING MINTED IS NOT IN THE TABLE YET, so the lookup below
+            # cannot see it and a substitute is free to come out equal to the
+            # very value it replaces. Measured: «15.06.1963» minted as
+            # «15.06.1963» — a date of birth «masked» into itself, indexed as a
+            # token, and thereafter skipped by the re-masking guard for every
+            # other person who shares it. The pools are large enough that this is
+            # rare and small enough that it happens.
+            if token == canonical or (original and token == original):
+                continue
+            # A SUBSTITUTE MAY NOT BE SOMEBODY'S REAL VALUE. `canonical` is the
+            # key masking looks a value up by and `token` is the key
+            # detokenization looks a string up by, so a string that is both
+            # means two different people at once: the real bearer leaks (the
+            # re-masking guard sees one of our tokens and lets it through), and
+            # the model writing the substitute gets the OTHER person's data into
+            # the tool — sometimes as a chimera, «Кирилл Бородин» restored as
+            # «Ян Бородин», because the partial-name path resolves each word
+            # against a different row.
+            #
+            # Measured on 2979 real people from NEREL: 3-7 substitutes per run
+            # landed on a name the same customer already had, every one silent
+            # and every one 200 OK.
+            #
+            # This closes the direction that is VISIBLE HERE. The other one — a
+            # real person arriving later who bears a substitute minted earlier —
+            # is not knowable at mint time and is answered by the conversation
+            # scope on `is_minted_token` instead.
+            #
+            # THREE POINT QUERIES, NOT ONE `OR`. SQLite does not split an OR
+            # across three different indexes: written as one predicate it
+            # planned a range scan over every row the customer has — 1.27 ms on
+            # a 20 000-row vault, growing with the vault, on a path that may run
+            # 200 times. `UNION ALL` gives each branch its own covering index
+            # and the whole check costs 2 microseconds.
             if self._conn.execute(
-                "SELECT 1 FROM tokens WHERE customer=? AND token=?",
-                (self._customer, token),
+                "SELECT 1 FROM tokens WHERE customer=? AND token=? "
+                "UNION ALL SELECT 1 FROM tokens WHERE customer=? AND canonical=? "
+                "UNION ALL SELECT 1 FROM tokens WHERE customer=? AND canonical_fold=? "
+                "LIMIT 1",
+                (self._customer, token, self._customer, token,
+                 self._customer, fold_key(token)),
             ).fetchone() is None:
                 return token
         raise RuntimeError(
@@ -1308,7 +1354,7 @@ class Vault:
             if linked_place is not None:
                 token, canonical = linked_place, scoped
             if token is None:
-                token = self._unique_token(entity_type, gender, value)
+                token = self._unique_token(entity_type, gender, value, canonical)
             digits, digits10 = _digit_signatures(token, entity_type)
             # `value` (not `canonical`) — the surface form the user actually
             # typed, which is what the tool must receive. First writer wins: the
@@ -1318,13 +1364,14 @@ class Vault:
                 self._conn.execute(
                     "INSERT INTO tokens "
                     "(customer, canonical, entity_type, token, digits, digits10, "
-                    "original, first_seen, name_key, canonical_fold) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    "original, first_seen, name_key, canonical_fold, minted_in) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     (self._customer, canonical, entity_type, token, digits, digits10,
                      value, time.time(),
                      name_key(token) if entity_type == "NAME"
                      else place_key(token) if entity_type == "LOC" else None,
-                     fold_key(canonical) if entity_type == "NAME" else None),
+                     fold_key(canonical) if entity_type == "NAME" else None,
+                     self._conversation),
                 )
             except IntegrityError:
                 # ANOTHER PROCESS GOT THERE FIRST, and that is not an error.
@@ -1702,6 +1749,32 @@ class Vault:
             "ON tokens (customer, canonical_fold)")
         self._conn.commit()
 
+    def _migrate_minted_in(self) -> None:
+        """Which conversation each substitute was born in.
+
+        THE RE-MASKING GUARD NEEDS A SCOPE OR IT IS A LEAK. `is_minted_token`
+        asks «is this string one of ours», and answers yes for a REAL person who
+        happens to bear a name we minted for somebody else — measured at 2 to 3
+        people per 3000 on NEREL, every one of them sent to the model in the
+        clear, for ever, because the answer does not change on the next turn.
+
+        A conversation is what separates the two readings. Our own token comes
+        back to us inside the dialogue it was minted in; a customer's contact who
+        happens to be called that arrives in some other one. Scoping the guard
+        keeps the echo case (which is what it was built for) and masks the
+        stranger.
+
+        EXISTING ROWS KEEP THE OLD BEHAVIOUR. A NULL here means «minted before we
+        recorded this», and the guard treats it as matching any conversation —
+        a vault that has not been migrated behaves exactly as it did, which is
+        the same rule every other migration in this file follows.
+        """
+        columns = [row[1] for row in
+                   self._conn.execute("PRAGMA table_info(tokens)").fetchall()]
+        if "minted_in" not in columns:
+            self._conn.execute("ALTER TABLE tokens ADD COLUMN minted_in TEXT")
+            self._conn.commit()
+
     def reveal(self, token: str) -> tuple[str | None, str]:
         """Value and its entity type in one lookup, for the audited reveal path.
 
@@ -1725,10 +1798,27 @@ class Vault:
         numeric types are protected by their invalid checksums; these are not."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT 1 FROM tokens WHERE customer=? AND token=? LIMIT 1",
+                "SELECT minted_in FROM tokens WHERE customer=? AND token=? LIMIT 1",
                 (self._customer, value),
             ).fetchone()
-        return row is not None
+        if row is None:
+            return False
+        # SCOPED TO THE DIALOGUE THAT MINTED IT. A substitute comes back to us
+        # from the model inside the conversation it was handed to; a real person
+        # who happens to bear that name walks in from another one. Without the
+        # comparison the second case reads as the first and the real person goes
+        # to the model unmasked — «Александр Шилов», «Владимир Наумов», measured
+        # on third-party names.
+        #
+        # NULL is a row minted before this column existed, and an empty scope is
+        # a caller that named no conversation (both entry points always name
+        # one; a direct `Vault` user need not). Either way there is nothing to
+        # compare, so the guard behaves as it always did rather than inventing a
+        # mismatch and re-masking somebody's echo.
+        minted_in = row[0]
+        if not minted_in or not self._conversation:
+            return True
+        return minted_in == self._conversation
 
     def minted_tokens(self) -> tuple[str, ...]:
         """Все подмены, отчеканенные для этого клиента.

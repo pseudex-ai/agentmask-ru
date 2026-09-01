@@ -19,6 +19,10 @@ used_pii.txt
 dirty.json
 holdout*.json
 dataset.json
+# Адресный набор порождается на ЗАДАННОМ зерне — смысл в том, чтобы зерно
+# было свежим, а не в том, чтобы набор лежал в истории.
+addr_*.json
+stress.json
 
 # Local stand secrets. `deploy/local.sh` generates both and caches them because
 # the signing key is compiled into the locally built image — a fresh one would

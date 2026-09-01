@@ -42,6 +42,7 @@ python3 vault_test.py          # canonicalization + persistence across restart
 python3 test_perf_masking.py   # cache/audit-dedup/leak-regression/loop-responsiveness vs the real FastAPI app
 python3 test_localui.py        # operator surface is closed, reveals audited, requests billed apart from entities
 python3 test_persona_defects.py  # the five defects a persona run found and no corpus of ours did
+python3 test_collisions.py     # подмена, совпавшая с настоящим значением: обе половины
 ```
 
 Detection quality (needs generated datasets — all gitignored, regenerate before use):
@@ -347,6 +348,44 @@ makes the rule mean anything and what makes it safe, and one change buys both.**
   volume with stdlib SQLite. The driver's exception classes are NOT subclasses of the stdlib
   ones — not `IntegrityError`, not `OperationalError` — so handlers name the ones exported from
   `sqlite_setup`.
+- **A SUBSTITUTE IS DRAWN FROM THE SAME STRING SPACE AS REAL VALUES, so sooner
+  or later it IS one.** A fake name is a well-formed name, a fake address a
+  well-formed address, a fake date a real date — and then one string means two
+  people at once. Backwards, the model writes the substitute and detokenization
+  hands the tool the OTHER person's data, sometimes a chimera («Кирилл Бородин»
+  restored as «Ян Бородин», each word resolved against a different row).
+  Forwards, the real bearer arrives in the traffic, `is_minted_token` says «this
+  is ours» and sends them to the model IN THE CLEAR, for ever. Measured on 2979
+  real people from NEREL: 3-7 backwards and 2-3 forwards per run, plus 10 dates
+  of birth per 800 once DOB started minting a date instead of `REDACTED…`. The
+  two halves need different answers, and neither answers the other:
+  * BACKWARDS is knowable at mint time — the real value is already in the vault
+    — so `_unique_token` refuses a candidate equal to any `canonical`, any
+    `canonical_fold`, or the value being minted for right now. That last one is
+    not pedantry: the row does not exist yet, and «15.06.1963» was minted as
+    «15.06.1963» — a date masked into itself and thereafter skipped for everyone
+    who shares it. Written as one `OR` the check planned a scan of every row the
+    customer has (1.27 ms at 20 000 rows, on a path that runs up to 200 times);
+    `UNION ALL` gives each branch its own covering index and costs 2 µs.
+  * FORWARDS is not knowable at mint time, and the discriminator is the
+    CONVERSATION. Our own substitute comes back to us inside the dialogue it was
+    handed to; a customer's contact who happens to bear that name walks in from
+    another one. `tokens.minted_in` carries it and `is_minted_token` compares.
+    A NULL (a row minted before the column) and an empty scope both behave as
+    before — a caller that named no conversation has nothing to compare.
+- **The role of the message is NOT that discriminator, and using it would leak
+  everything.** The answer is detokenized before it is returned, so the assistant
+  messages the customer re-sends carry REAL values, not tokens. «assistant means
+  echo, do not mask» would hand the model every real value it ever mentioned, on
+  every later turn. Demonstrated, not argued.
+- **The conversation scope has a price and it is identity churn.** A derived
+  `conversation_key` reads the first two messages, so a trimmed transcript is a
+  new conversation and that dialogue's own substitutes are re-masked: the person
+  gets a second pseudonym mid-conversation and the entity is billed again. The
+  round trip still returns the real value (measured) — this costs coherence, not
+  correctness — and it is one more reason a caller should pass an explicit
+  `conversation_id` rather than let one be derived. A leak is worse than churn,
+  which is the whole trade.
 - **`bench_masking.py` and `profile_latency.py` cannot see the storage layer**: both use
   `Vault(":memory:")`, so an encryption change leaves their numbers identical by construction.
   "The bench did not move" is not evidence that a disk-layer change is free.
