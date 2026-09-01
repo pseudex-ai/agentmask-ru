@@ -78,6 +78,12 @@ def build_images(skip_build: bool) -> str:
                    if existing else Ed25519PrivateKey.generate())
     private_b64 = encode_private(signing_key)
     public_b64 = encode_public(signing_key.public_key())
+    # The tuning key seals the compiled blob and is delivered in the lease. Like
+    # the signing key it is baked into the image, so a fresh one forces a rebuild —
+    # persist it across runs for `--skip-build`, and pin the SAME value into both
+    # the build-arg (seals) and the server env (delivers).
+    tuning_b64 = os.environ.get("PSEUDEX_TUNING_KEY", "") \
+        or base64.b64encode(os.urandom(32)).decode("ascii")
     certs.generate(_HERE / "certs", "license")
 
     # The licensing image is always rebuilt, even with --skip-build: it takes
@@ -91,11 +97,13 @@ def build_images(skip_build: bool) -> str:
             started = time.monotonic()
             sh(["docker", "build", "-f", str(dockerfile),
                 "--build-arg", f"PSEUDEX_LICENSE_PUBKEY={public_b64}",
+                "--build-arg", f"PSEUDEX_TUNING_KEY={tuning_b64}",
                 "-t", tag, str(_ROOT)], True, 5400)
             print(f"  {tag} built in {(time.monotonic() - started) / 60:.1f} min")
 
     _ENV_FILE.write_text(
         f"PSEUDEX_SIGNING_KEY={private_b64}\n"
+        f"PSEUDEX_TUNING_KEY={tuning_b64}\n"
         f"PSEUDEX_IMAGE={COMPILED_IMAGE}\n"
         f"PSEUDEX_KEY=\n"
         f"PSEUDEX_WORKERS=4\n"

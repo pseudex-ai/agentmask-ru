@@ -30,6 +30,9 @@ services:
       # no automated rotation, because its public half is compiled into every
       # released binary.
       PSEUDEX_SIGNING_KEY: ${PSEUDEX_SIGNING_KEY:?run deploy/local.sh, which generates one}
+      # Seals the compiled tuning blob; delivered in every lease so the engine can
+      # open its own tuning. Same value the image was built with (build-arg).
+      PSEUDEX_TUNING_KEY: ${PSEUDEX_TUNING_KEY:?run deploy/local.sh, which generates one}
       PSEUDEX_LICENSE_DB: /data/license.db
       # Short, so the degradation ladder is walkable in a coffee break rather
       # than over two days: lease 5 min, grace 10 min.

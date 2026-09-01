@@ -226,6 +226,12 @@ def build_stand(image: str, workers: int, skip_build: bool) -> str:
     private_b64 = encode_private(signing_key)
     public_b64 = encode_public(signing_key.public_key())
     print(f"  signing key {'reused' if existing else 'generated'}, public {public_b64[:16]}...")
+    # The tuning key seals the compiled blob and rides in the lease. Baked into the
+    # image like the signing key, so a fresh one forces a rebuild — persist it for
+    # --skip-build, and pin the SAME value into the build-arg (seals) and the
+    # server env (delivers, so the engine can open its own tuning).
+    tuning_b64 = os.environ.get("PSEUDEX_TUNING_KEY", "") \
+        or base64.b64encode(os.urandom(32)).decode("ascii")
 
     certs.generate(_HERE / "certs", "license")
     print("  self-signed CA + server cert written")
@@ -240,16 +246,19 @@ def build_stand(image: str, workers: int, skip_build: bool) -> str:
         # sign their own bundles.
         sh(["docker", "build", "-f", str(_ROOT / "Dockerfile"),
             "--build-arg", f"PSEUDEX_LICENSE_PUBKEY={public_b64}",
+            "--build-arg", f"PSEUDEX_TUNING_KEY={tuning_b64}",
             "-t", image, str(_ROOT)], True, 1800)
         print(f"  images built ({image})")
     else:
         sh(["docker", "build", "-f", str(_ROOT / "Dockerfile.nuitka"),
             "--build-arg", f"PSEUDEX_LICENSE_PUBKEY={public_b64}",
+            "--build-arg", f"PSEUDEX_TUNING_KEY={tuning_b64}",
             "-t", image, str(_ROOT)], True, 3600)
         print(f"  images built ({image})")
 
     _ENV_FILE.write_text(
         f"PSEUDEX_SIGNING_KEY={private_b64}\n"
+        f"PSEUDEX_TUNING_KEY={tuning_b64}\n"
         f"PSEUDEX_IMAGE={image}\n"
         f"PSEUDEX_KEY=\n"
         f"PSEUDEX_WORKERS={workers}\n"

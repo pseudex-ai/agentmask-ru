@@ -47,8 +47,14 @@ RUN chmod +x entrypoint.sh
 # used, and are removed: `licensing/` itself must never ship. The generated
 # module holds only `BLOB`/`VERSION`, so the "no import licensing" check below
 # still passes.
+# PSEUDEX_TUNING_KEY seals the blob (docs/tz-license-packaging §2.2, anti-patch
+# tie). The SAME key must reach the licensing server, which delivers it in every
+# lease so the engine can open its own tuning.
+ARG PSEUDEX_TUNING_KEY
 COPY licensing/__init__.py licensing/assets_source.py licensing/pack.py /tmp/lic/licensing/
-RUN PYTHONPATH=/tmp/lic python -m licensing.pack --emit-tuning ./pseudex/_tuning_blob.py \
+RUN test -n "$PSEUDEX_TUNING_KEY" || (echo "PSEUDEX_TUNING_KEY build-arg is required" && exit 1) \
+    && PSEUDEX_TUNING_KEY="$PSEUDEX_TUNING_KEY" PYTHONPATH=/tmp/lic \
+       python -m licensing.pack --emit-tuning ./pseudex/_tuning_blob.py \
     && rm -rf /tmp/lic
 
 # The verification key is BAKED IN at build time, not read from the environment.

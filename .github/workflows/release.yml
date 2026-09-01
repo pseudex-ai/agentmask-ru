@@ -112,6 +112,14 @@ jobs:
       - name: fix a signing key for this run
         run: echo "PSEUDEX_SIGNING_KEY=$(python -c 'from licensing.keys import encode_private; from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey; print(encode_private(Ed25519PrivateKey.generate()))')" >> $GITHUB_ENV
 
+      # One tuning key for the whole job, for the same reason: it seals the blob
+      # compiled into the release binary AND is delivered by the server the gates
+      # start, so both halves must be the SAME value across every step. It must
+      # reach production alongside the signing key — the licensing server there
+      # needs it to deliver in leases (deploy/.env.example).
+      - name: fix a tuning key for this run
+        run: echo "PSEUDEX_TUNING_KEY=$(python -c 'import os, base64; print(base64.b64encode(os.urandom(32)).decode())')" >> $GITHUB_ENV
+
       - name: packaging gates (builds both images)
         run: python -u e2e/pack_gates.py
       - name: licensing gates on the release image
