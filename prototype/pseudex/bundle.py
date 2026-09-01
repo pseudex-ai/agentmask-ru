@@ -98,12 +98,39 @@ def plaintext_hash(plaintext: bytes) -> str:
 
 
 def signing_payload(lease: dict[str, object]) -> bytes:
-    """Canonical bytes covered by the signature: every field of the lease except
-    the ciphertext and the signature itself. `bundle_sha256` is in there, which
-    is what binds the signature to the contents."""
+    """Canonical bytes covered by the LEASE signature: every field except the
+    ciphertext and the signature itself. `bundle_sha256` is in there, which is
+    what binds the signature to the contents.
+
+    БЕЗ ДОМЕННОГО ТЕГА, И ЭТО НЕ НЕДОСМОТР. Добавить его к подписи лизы —
+    изменение НЕ аддитивное: новый сервер плюс старый движок дают несходящуюся
+    подпись у ВСЕХ развёрнутых контейнеров, то есть ровно то направление, которое
+    `docs/operations.md` §2bis объявляет запрещённым. Разделение типов сделано
+    иначе и внутри тела: квант несёт `kind: "capacity"` ПОД подписью, и клиент
+    его сверяет, поэтому предъявить лизу как квант или наоборот нельзя.
+    """
     covered = {key: value for key, value in lease.items()
                if key not in ("bundle", "signature")}
     return json.dumps(covered, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+# Доменный тег отчёта. Один канонический вид на два типа сообщений — это
+# приглашение спутать их; здесь тег можно добавить безопасно, потому что MAC
+# отчёта проверяем МЫ и можем принимать обе формы, пока в парке есть старые
+# движки.
+_REPORT_DOMAIN = b"pseudex-report-v1\x00"
+
+
+def report_payload(report: dict[str, object]) -> bytes:
+    """Канонические байты отчёта. Исключается ТОЛЬКО подпись.
+
+    `signing_payload` исключает ещё и `bundle` — у лизы это шифротекст, а у
+    отчёта поля с таким именем не бывает, и привилегированное имя в чужом
+    сообщении означало, что поле `bundle` в отчёте оказалось бы ВНЕ MAC.
+    """
+    covered = {key: value for key, value in report.items() if key != "signature"}
+    return _REPORT_DOMAIN + json.dumps(
+        covered, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
 def sign_lease(lease: dict[str, object], private_key: Ed25519PrivateKey) -> str:
@@ -138,7 +165,7 @@ def mac_report(report: dict[str, object], secret: bytes) -> str:
     фактического расхода. Так у клиента появляется собственный интерес
     отчитываться честно, и механизм принуждения не нужен вовсе.
     """
-    return hmac.new(secret, signing_payload(report), hashlib.sha256).hexdigest()
+    return hmac.new(secret, report_payload(report), hashlib.sha256).hexdigest()
 
 
 def verify_report(report: dict[str, object], secret: bytes) -> None:
@@ -157,11 +184,16 @@ def verify_report(report: dict[str, object], secret: bytes) -> None:
         given_bytes = bytes.fromhex(given)
     except ValueError as error:
         raise BundleError("report MAC is not hex") from error
-    expected = hmac.new(secret, signing_payload(
-        {k: v for k, v in report.items() if k != "signature"}),
-        hashlib.sha256).digest()
-    if not hmac.compare_digest(given_bytes, expected):
-        raise BundleError("report MAC does not verify")
+    # ОБЕ ФОРМЫ, ПОКА В ПАРКЕ ЕСТЬ СТАРЫЕ ДВИЖКИ. Новая — с доменным тегом;
+    # старая — общий с лизой канонический вид. Проверяем мы, поэтому переход
+    # обходится без единовременной поломки, а откат совместимости — отдельный
+    # коммит, когда старых образов не останется.
+    unsigned = {k: v for k, v in report.items() if k != "signature"}
+    for candidate in (report_payload(report), signing_payload(unsigned)):
+        if hmac.compare_digest(given_bytes,
+                               hmac.new(secret, candidate, hashlib.sha256).digest()):
+            return
+    raise BundleError("report MAC does not verify")
 
 
 def decode_public_key(encoded: str) -> Ed25519PublicKey:

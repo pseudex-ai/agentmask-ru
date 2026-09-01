@@ -404,5 +404,38 @@ started = engine("cap-start", "start")
 check("после acquire ёмкость есть сразу, а не с первого тика петли",
       started.capacity()[1] > 0, f"ёмкость {started.capacity()}")
 
+
+# ДВА СООБЩЕНИЯ — ДВА КАНОНИЧЕСКИХ ВИДА. Один общий был приглашением спутать
+# лизу с отчётом, а исключённое имя `bundle` означало, что поле с таким именем в
+# ОТЧЁТЕ окажется вне MAC.
+import hmac as _hmac  # noqa: E402
+import hashlib as _hashlib  # noqa: E402
+
+from pseudex.bundle import (mac_report, signing_payload,  # noqa: E402
+                            verify_report)
+
+_secret = b"k" * 32
+_report = {"requests": 5, "values": 2}
+_new = dict(_report); _new["signature"] = mac_report(_new, _secret)
+_old = dict(_report)
+_old["signature"] = _hmac.new(_secret, signing_payload(_old),
+                              _hashlib.sha256).hexdigest()
+_forms = []
+for name, candidate in (("новая", _new), ("старая", _old)):
+    try:
+        verify_report(candidate, _secret)
+        _forms.append(name)
+    except BundleError:
+        pass
+_tampered = dict(_new); _tampered["bundle"] = "подсунуто"
+try:
+    verify_report(_tampered, _secret)
+    _outside = True
+except BundleError:
+    _outside = False
+check("обе формы MAC отчёта принимаются, пока в парке есть старые движки",
+      _forms == ["новая", "старая"], f"приняты: {_forms}")
+check("поле `bundle` в отчёте больше не вне подписи", not _outside)
+
 print(f"\nсломано {len(fails)}")
 raise SystemExit(1 if fails else 0)
