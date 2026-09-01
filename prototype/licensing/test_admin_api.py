@@ -384,5 +384,25 @@ check("продление без отчёта считается, а не про
       stripped_totals["reports_missing"] == 3,
       f"пропущенных отчётов {stripped_totals['reports_missing']}")
 
+
+# НОЛЬ ЁМКОСТИ — БЕЗЛИМИТ ТОЛЬКО ДЛЯ СТАРОГО СЕРВЕРА. Иначе лазейка, убранная
+# из STALE, возвращается другой дверью: движок взял аренду, наш сервер умер до
+# первого кванта, `_granted` остался нулём — и обслуживание снова безлимитно на
+# весь TTL плюс grace.
+cold = LicenseClient(base_url=_base, key=server.STORE.issue_key("cap-cold", "start"),
+                     instance_id="cold", ca_path="",
+                     usage_provider=lambda: {"requests": 0, "entities": {}, "values": 0})
+cold._capacity_endpoint = "/v1/meter"
+legacy = LicenseClient(base_url=_base, key=server.STORE.issue_key("cap-old", "start"),
+                       instance_id="old", ca_path="",
+                       usage_provider=lambda: {"requests": 0, "entities": {}, "values": 0})
+check("нулевая ёмкость — безлимит только для сервера контракта 2",
+      not cold.has_capacity() and legacy.has_capacity(),
+      f"контракт 3: {cold.has_capacity()}, контракт 2: {legacy.has_capacity()}")
+
+started = engine("cap-start", "start")
+check("после acquire ёмкость есть сразу, а не с первого тика петли",
+      started.capacity()[1] > 0, f"ёмкость {started.capacity()}")
+
 print(f"\nсломано {len(fails)}")
 raise SystemExit(1 if fails else 0)

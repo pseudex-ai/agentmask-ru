@@ -373,7 +373,14 @@ class LicenseClient:
         """
         with self._lock:
             if not self._granted:
-                return True
+                # НОЛЬ — БЕЗЛИМИТ ТОЛЬКО ДЛЯ СТАРОГО СЕРВЕРА. Иначе это была бы
+                # та же лазейка, что убрана выше, через другую дверь: движок
+                # взял аренду, наш сервер умер до первого кванта, `_granted`
+                # остался нулём — и обслуживание снова стало безлимитным на весь
+                # TTL плюс grace. Первый квант покупается в `acquire()`, поэтому
+                # для контракта 3 ноль здесь означает «ёмкости ещё нет», а не
+                # «ёмкость бесконечна».
+                return not self._capacity_endpoint
             return self._consumed < self._granted
 
     def consume(self, units: int = 1) -> None:
@@ -664,9 +671,16 @@ class LicenseClient:
                 # extra full bundle sealed per worker on every container start.
                 self._last_attempt_monotonic = time.monotonic()
                 self._apply(self._request_lease())
-                _log.info("lease acquired: %s bundle=%s ttl=%ss grace=%ss",
+                # ПЕРВЫЙ КВАНТ ПОКУПАЕТСЯ НА СТАРТЕ, а не на первом тике петли.
+                # Иначе между арендой и первым квантом остаётся окно, в котором
+                # `_granted` равен нулю; а холодный старт и так не имеет grace —
+                # процесс без ёмкости не может деградировать, ему нечем.
+                if self._capacity_endpoint:
+                    self._meter_once()
+                _log.info("lease acquired: %s bundle=%s ttl=%ss grace=%ss "
+                          "capacity=%d",
                           self._lease_id, self._bundle_version,
-                          self._ttl_seconds, self._grace_seconds)
+                          self._ttl_seconds, self._grace_seconds, self._granted)
                 return
             except (_TransientLeaseError, httpx.HTTPError) as error:
                 last_transient = error
