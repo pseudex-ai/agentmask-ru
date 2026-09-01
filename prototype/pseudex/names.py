@@ -26,7 +26,7 @@ import re
 from pseudex.assets import ASSETS, NameAssets
 from pseudex.detect import Span
 from pseudex.fuzzy import build_index, lookup, within_one_edit, within_one_typo
-from pseudex.morph import MORPH
+from pseudex.morph import MORPH, is_stretched_filler
 
 _WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё]+")
 _INITIALS_RE = re.compile(r"[А-ЯЁ][а-яё]+\s+[А-ЯЁ]\.\s?[А-ЯЁ]\.?")
@@ -142,6 +142,13 @@ def _is_name_part(word: str, names: NameAssets) -> bool:
     return not parse.is_known
 
 
+def _is_ordinary_word(word: str) -> bool:
+    """Морфология знает слово, и ни одно чтение не называет человека."""
+    parses = MORPH.parse(word)
+    return bool(parses) and any(parse.is_known for parse in parses) and not any(
+        _NAME_TAGS & set(parse.tag.grammemes) for parse in parses)
+
+
 def trim_person_span(value: str) -> tuple[int, str]:
     """Drop trailing tokens an NER person span swallowed that cannot be part of a name.
 
@@ -201,8 +208,24 @@ def trim_person_span(value: str) -> tuple[int, str]:
         parses = MORPH.parse(tokens[first][2])
         if not parses:
             break
-        if max(parses, key=lambda parse: parse.score).tag.POS not in _NOT_A_NAME_POS:
+        best = max(parses, key=lambda parse: parse.score).tag.POS
+        if best not in _NOT_A_NAME_POS and not is_stretched_filler(tokens[first][2]):
             break
+        first += 1
+    # ЗВАНИЕ И ДОЛЖНОСТЬ ПЕРЕД ИМЕНЕМ. «полковник Поляков», «дежурная полякова»,
+    # «мастер Поляков», «сторож тагиев» — существительные и прилагательные, а
+    # словарный цикл выше останавливается на двух токенах, потому что там нет
+    # доказательства, кто из двоих лишний.
+    #
+    # ЗДЕСЬ ДОКАЗАТЕЛЬСТВО ЕСТЬ, И ОНО ДВОЙНОЕ: второе слово словарь ЗНАЕТ как
+    # часть имени, а первое морфология знает как обычное слово и ни одно его
+    # чтение имени не называет. Без второй половины правило съело бы «Иван
+    # Петров», где обе части — имена; без первой — редкую фамилию, которую
+    # словарь просто не содержит.
+    if (last - first + 1 == 2
+            and _is_name_part(tokens[last][2], names)
+            and not _is_name_part(tokens[first][2], names)
+            and _is_ordinary_word(tokens[first][2])):
         first += 1
     start, end = tokens[first][0], tokens[last][1]
     return start, value[start:end]
@@ -279,6 +302,13 @@ def _names_a_person(word: str) -> bool:
     """
     if len(word) < 3:
         return False
+    # ЧЕТВЁРТЫЙ СТОРОЖ: растянутый филлер. Морфология незнакомое «иии» ни к чему
+    # не относит, поэтому все три проверки ниже оно проходит молча, и «иии
+    # ерохин» уходило к модели одним именем, а в CRM клиента — вместе с
+    # филлером. Форма, а не список: у филлера не больше двух различных букв и
+    # словарь его не знает.
+    if is_stretched_filler(word):
+        return False
     parses = MORPH.parse(word)
     if not parses:
         return False
@@ -339,6 +369,13 @@ def _damaged_name_pairs(text: str) -> list[Span]:
         for damaged, other in ((left, right), (right, left)):
             parses = MORPH.parse(damaged)
             if not parses or parses[0].is_known:
+                continue
+            # РАСТЯНУТЫЙ ФИЛЛЕР — НЕ ОПЕЧАТКА В ИМЕНИ. «иии» словарю неизвестно
+            # и в 197-тысячном словаре лежит в одной правке от настоящего имени,
+            # поэтому пара «иии ерохин» проходила все три сигнала и уезжала в
+            # CRM клиента одним значением вместе с филлером. Речь тянет гласную,
+            # а имя — нет.
+            if is_stretched_filler(damaged):
                 continue
             if not (_names_a_person(damaged) or _looks_misspelt_name(damaged)):
                 continue
@@ -686,6 +723,13 @@ def _split_name_parts(text: str, found: list[Span], names: NameAssets) -> list[S
         # not be a function word. «на», «по», «за», «до», «при», «в», «это»,
         # «что» all go out on it; «Фёдо», «Вол», «Куз», «Маме», «Заха» do not.
         if MORPH.parse(left)[0].tag.POS in _FUNCTION_WORD:
+            continue
+        # ПЯТЫЙ СТОРОЖ: растянутый филлер не половина фамилии. «иии» словарю
+        # неизвестно, служебным словом не является, а «иииерохин» кончается на
+        # «-ин» — то есть все четыре сигнала правило проходило, и «иии ерохин»
+        # уезжало в CRM клиента одним значением. Речь тянет гласную, фамилия —
+        # никогда.
+        if is_stretched_filler(left) or is_stretched_filler(right):
             continue
         # A FUNCTION WORD ON THE RIGHT NEEDS AN UNKNOWN WORD ON THE LEFT.
         # «Ивано в Пётр» and «Григорье в Никита» are surnames cut before their

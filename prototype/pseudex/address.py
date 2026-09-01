@@ -31,6 +31,7 @@ from pseudex import _morph_compat  # noqa: F401  (aliases pymorphy2->pymorphy3 b
 from pseudex.assets import ASSETS, AddressAssets
 from pseudex.detect import Span
 from pseudex.fuzzy import build_index, lookup, within_one_typo
+from pseudex import morph_places
 from pseudex.morph import MORPH
 
 _log = logging.getLogger("pseudex.address")
@@ -1281,8 +1282,57 @@ def _trim_lead(start: int, stop: int, text: str, address: AddressAssets) -> int:
 # предлогом, начинающим следующее предложение. Регексп различить их не может, и
 # жёсткий просмотр вперёд уже пробовали: он резал номер дома у каждого третьего
 # адреса. Различает СЛЕДУЮЩЕЕ СЛОВО.
+# Хвост, который сам может оказаться адресом: тип улицы или адресный маркер.
+# Такой не режется — неудобный аргумент лучше утечки второго адреса.
+_STILL_ADDRESSY = re.compile(
+    r"(?i)\b(?:ул|улиц\w*|пр-?т|проспект\w*|пер|переул\w*|наб|набережн\w*|"
+    r"б-?р|бульвар\w*|ш|шоссе|проезд\w*|площад\w*|пл|аллея|линия|мкр|"
+    r"микрорайон\w*|дом|д|корп\w*|стр|строен\w*|влад\w*|кв|квартир\w*|"
+    r"подъезд\w*|этаж\w*|посёлок|поселок|деревн\w*|город|г)\b")
 _TRAILING_LETTER_RE = re.compile(r"\s+([А-Яа-яЁё])\s*$")
 _NEXT_WORD_RE = re.compile(r"\s*([А-Яа-яЁё]+)")
+
+
+def _trim_landmark(start: int, stop: int, text: str,
+                   address: AddressAssets) -> int:
+    """Отрезать ориентир, приклеившийся к адресу справа.
+
+    Живая речь договаривает, куда именно ехать, и спан забирал это вместе с
+    адресом: «тимирязева 126 четвёртый подъезд, кабинет 108», «деревообделочная
+    сто сорок семь пятый подъезд двенадцать филиалов», «проезд октябрьский 143
+    столовая 7», «ленина двадцать семь частный дом». В CRM клиента уезжал адрес
+    с припиской, и вызов инструмента не находил дом.
+
+    ГДЕ КОНЧАЕТСЯ АДРЕС, РЕШАЕТ РАЗБОР ПО РОЛЯМ, а не список ориентиров: улица,
+    дом, квартира, подъезд, этаж — всё, что после последней найденной роли,
+    адресом уже не является.
+
+    НО РЕЗАТЬ МОЖНО ТОЛЬКО ТО, ЧТО САМО НЕ АДРЕС. «посёлок русь переулок
+    набережный пять совхозная десять» — это ДВА адреса подряд, и обрезка
+    оставила бы второй у модели открытым текстом. Хвост, в котором есть тип
+    улицы или адресный маркер, не трогается: неудобный аргумент лучше утечки.
+    """
+    value = text[start:stop]
+    roles = morph_places.split_roles(value)
+    ends = [value.rfind(part) + len(part) for part in roles.values()
+            if part and value.rfind(part) >= 0]
+    if not ends:
+        return stop
+    cut = max(ends)
+    tail = value[cut:]
+    if not tail.strip(" ,.;:-"):
+        return stop
+    if _STILL_ADDRESSY.search(tail):
+        return stop
+    # И НИ ОДНОГО СЛОВА ИЗ РЕЕСТРА УЛИЦ. «посёлок русь переулок набережный пять
+    # совхозная десять» — два адреса подряд, второй без типа улицы, и обрезка
+    # оставила бы его у модели ОТКРЫТЫМ ТЕКСТОМ. Реестр ГАР уже арендован и уже
+    # решает, улица ли это, в соседней ветке.
+    if any(word.lower() in address.street_names
+           or morph_places.to_nominative(word).lower() in address.street_names
+           for word in re.findall(r"[А-Яа-яЁё]{4,}", tail)):
+        return stop
+    return start + cut
 
 
 def _trim_tail(start: int, stop: int, text: str, address: AddressAssets) -> int:
@@ -1302,6 +1352,7 @@ def _trim_tail(start: int, stop: int, text: str, address: AddressAssets) -> int:
     дома буквами до конца алфавита, и список пришлось бы держать в согласии с
     ним.
     """
+    stop = _trim_landmark(start, stop, text, address)
     letter = _TRAILING_LETTER_RE.search(text[start:stop])
     if letter is None:
         return stop
