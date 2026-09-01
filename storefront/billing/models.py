@@ -190,6 +190,21 @@ class Invoice(models.Model):
     paid_at = models.DateTimeField(null=True, blank=True)
     due_at = models.DateField(null=True, blank=True)
 
+    # КОГДА ОБСЛУЖИВАНИЕ БЫЛО ВОССТАНОВЛЕНО НА ЛИЦЕНЗИОННОМ СЕРВЕРЕ, а не когда
+    # деньги записаны у нас. Два разных факта, и раньше они были одним.
+    #
+    # `mark_paid` держал сетевой вызов внутри `transaction.atomic()`, поэтому
+    # его отказ откатывал и оплату: счёт возвращался в `draft`, а вебхук на
+    # повторной доставке видел «не оплачен» и повторял ту же неудачу вечно.
+    # Теперь деньги записываются первыми и не откатываются никогда, а вот это
+    # поле остаётся пустым, пока возобновление не доехало.
+    #
+    # Без него повтор нечем было бы дочинить: ранний выход по `state == PAID`
+    # съедал бы вторую попытку. С ним повторная доставка сама доводит дело до
+    # конца, а сторож видит оплаченные счета с пустым полем как список того,
+    # где мы должны клиенту работу.
+    service_resumed_at = models.DateTimeField(null=True, blank=True)
+
     # Whatever the payment provider calls this. Nullable because a customer
     # paying by bank transfer against a счёт never gets one.
     #

@@ -579,7 +579,7 @@ def yookassa_webhook(request):
     if invoice is None:
         _log.error("payment %s references unknown invoice %r", payment_id, number)
         return HttpResponse("unknown invoice", status=200)
-    if invoice.state == Invoice.PAID:
+    if invoice.state == Invoice.PAID and invoice.service_resumed_at is not None:
         return HttpResponse("already paid", status=200)
     # Underpayment must not resume service. Amounts come back as Decimal from
     # both sides, so this is an exact comparison and not a float near-miss.
@@ -588,9 +588,19 @@ def yookassa_webhook(request):
                    payment_id, number, amount, invoice.total)
         return HttpResponse("amount mismatch", status=200)
 
-    invoice.payment_ref = payment_id
-    invoice.save(update_fields=["payment_ref"])
-    services.mark_paid(invoice)
+    # `payment_ref` едет ВНУТРЬ `mark_paid` и пишется тем же коммитом, что и
+    # оплата. Раньше он записывался здесь, до вызова, и откат внутри `mark_paid`
+    # оставлял счёт с проставленным `payment_ref` в состоянии `draft` — при
+    # уникальном поле это ещё и упирало повторную доставку в конфликт.
+    try:
+        services.mark_paid(invoice, payment_ref=payment_id)
+    except services.ServiceNotResumed as error:
+        # 502, а не 500 из необработанного исключения: деньги записаны и не
+        # откатятся, не доехало только возобновление, и провайдер ДОЛЖЕН
+        # повторить — повтор его и дочинит. Та же дверь, что у
+        # `payments.PaymentError` выше, и по той же причине.
+        _log.error("invoice %s paid but service not resumed: %s", number, error)
+        return HttpResponse("paid, service not resumed", status=502)
     _log.info("invoice %s paid via %s", number, payment_id)
     return HttpResponse("ok", status=200)
 

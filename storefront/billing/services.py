@@ -12,6 +12,7 @@ looking at a screen that says "оплачено" while their agents return 503. 
 call fails, the exception propagates and the customer sees an honest error.
 """
 
+import logging
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -21,6 +22,8 @@ from django.utils import timezone
 from accounts.models import Membership, Organization, User
 from billing import licensing
 from billing.models import Invoice, LicenseKey, Plan, Subscription
+
+_log = logging.getLogger("billing.services")
 
 TRIAL_DAYS = 14
 
@@ -109,34 +112,85 @@ def issue_additional_key(organization: Organization, label: str,
     return key
 
 
-def mark_paid(invoice: Invoice) -> None:
-    """Money arrived. Restore service first, record it second.
+class ServiceNotResumed(RuntimeError):
+    """Деньги записаны, обслуживание восстановить не удалось.
 
-    A customer whose agents are stopped is waiting on exactly one thing, and it
-    is not our database row.
+    Отдельный тип, потому что вызывающему нужны РАЗНЫЕ действия: платёж
+    трогать нельзя (он уже наш факт), а возобновление надо повторить. Вебхук
+    отвечает на него 502 — «мы не смогли, ретрайте», — ровно как уже отвечает
+    на `payments.PaymentError`.
+    """
 
-    IDEMPOTENT UNDER CONCURRENT DELIVERY. ЮKassa redelivers notifications, and
-    two arriving at once both passed the caller's "already paid?" check before
-    either wrote — then both ran this, and the unconditional
-    `current_period_end = now + 30 days` granted two free months. The row is
-    locked and re-read here, so the second delivery finds it already PAID and
-    returns without touching the period.
+
+def mark_paid(invoice: Invoice, payment_ref: str = "") -> None:
+    """Money arrived. RECORD IT FIRST, restore service second.
+
+    ПОРЯДОК ПЕРЕВЁРНУТ, И ЭТО НЕ ВКУСОВЩИНА. Раньше здесь стояло «сначала
+    восстановить, потом записать», и сетевой вызов жил ВНУТРИ
+    `transaction.atomic()`. Его отказ откатывал `state=PAID`, `paid_at` и
+    продление периода целиком:
+
+        POST /admin/resume "HTTP/1.1 403 Forbidden"
+        состояние счёта ПОСЛЕ оплаты: draft   paid_at= None
+
+    Ломаются оба порядка, но по-разному, и невосстановимо только одно.
+    «Лицензии первыми» теряет САМ ФАКТ ПЛАТЕЖА: у ЮKassa конечное окно
+    ретраев, а у банковского перевода их нет вовсе, и восстановить событие
+    неоткуда. «Деньги первыми» оставляет шлюз клиента стоять несколько минут —
+    плохо, но это видно в `service_resumed_at`, алармится сторожем и чинится
+    нами сколько угодно раз.
+
+    Три шага, и сеть не держит ни одной транзакции:
+
+      1. короткая транзакция без сети: платёж, состояние, период;
+      2. вне транзакции: возобновление на лицензионном сервере;
+      3. короткая транзакция: отметка, что обслуживание действительно вернулось.
+
+    ИДЕМПОТЕНТНО ПОД ПАРАЛЛЕЛЬНОЙ ДОСТАВКОЙ. ЮKassa повторяет уведомления, и
+    два пришедших разом оба проходили проверку «уже оплачен?» до того, как
+    любое из них писало, — а дальше безусловное `+30 дней` дарило два месяца.
+    Строка блокируется и перечитывается здесь. Но ранний выход теперь смотрит
+    НЕ ТОЛЬКО на `PAID`: счёт, оплаченный и не возобновлённый, обязан пройти
+    шаги 2 и 3 ещё раз, иначе повтор доставки — единственное, что могло бы его
+    дочинить, — съедал бы сам себя.
     """
     with transaction.atomic():
         locked = Invoice.objects.select_for_update().get(pk=invoice.pk)
-        if locked.state == Invoice.PAID:
+        already_paid = locked.state == Invoice.PAID
+        if already_paid and locked.service_resumed_at is not None:
             return
-        licensing.set_status(locked.organization_id, "active")
-        invoice = locked
-        invoice.state = Invoice.PAID
-        invoice.paid_at = timezone.now()
-        invoice.save(update_fields=["state", "paid_at"])
-        subscription = invoice.organization.subscription
-        subscription.state = Subscription.ACTIVE
-        subscription.current_period_start = timezone.now()
-        subscription.current_period_end = timezone.now() + timedelta(days=30)
-        subscription.save(update_fields=["state", "current_period_start",
-                                         "current_period_end"])
+        if not already_paid:
+            locked.state = Invoice.PAID
+            locked.paid_at = timezone.now()
+            fields = ["state", "paid_at"]
+            # Записывается ТЕМ ЖЕ коммитом, что и оплата. Раньше вебхук писал
+            # его отдельно и ДО `mark_paid`, поэтому откат оставлял счёт с
+            # проставленным `payment_ref` и состоянием `draft` — самое
+            # неприятное состояние для сверки с выпиской провайдера.
+            if payment_ref and not locked.payment_ref:
+                locked.payment_ref = payment_ref
+                fields.append("payment_ref")
+            locked.save(update_fields=fields)
+            subscription = locked.organization.subscription
+            subscription.state = Subscription.ACTIVE
+            subscription.current_period_start = timezone.now()
+            subscription.current_period_end = timezone.now() + timedelta(days=30)
+            subscription.save(update_fields=["state", "current_period_start",
+                                             "current_period_end"])
+        organization_id = locked.organization_id
+        invoice_pk = locked.pk
+
+    try:
+        licensing.set_status(organization_id, "active")
+    except licensing.LicensingError as error:
+        _log.error("payment recorded for %s but service was not resumed: %s",
+                   organization_id, error)
+        raise ServiceNotResumed(str(error)) from error
+
+    with transaction.atomic():
+        Invoice.objects.filter(pk=invoice_pk).update(
+            service_resumed_at=timezone.now())
+    invoice.refresh_from_db()
 
 
 def mark_unpaid(organization: Organization) -> None:
@@ -145,11 +199,19 @@ def mark_unpaid(organization: Organization) -> None:
     `unpaid`, not `revoked`. Both stop the customer within a minute, but only
     one of them is undone by paying — and a customer who pays a late invoice must
     come back without us touching anything.
+
+    ПОРЯДОК ЗДЕСЬ ОБРАТНЫЙ К `mark_paid`, И ПО ТОЙ ЖЕ ПРИЧИНЕ. Рубильник и есть
+    смысл операции: локальная запись «остановлен» без реальной остановки — ложь
+    в опасную сторону, потому что по ней мы перестанем напоминать клиенту, а он
+    продолжит работать. Поэтому сначала лицензионный сервер, и его отказ
+    поднимается наружу, а не прячется за уже изменённым зеркалом.
     """
     licensing.set_status(organization.id, "unpaid")
-    subscription = organization.subscription
-    subscription.state = Subscription.PAST_DUE
-    subscription.save(update_fields=["state"])
+    with transaction.atomic():
+        subscription = (Subscription.objects.select_for_update()
+                        .get(organization=organization))
+        subscription.state = Subscription.PAST_DUE
+        subscription.save(update_fields=["state"])
 
 
 def _round(amount: Decimal) -> Decimal:
