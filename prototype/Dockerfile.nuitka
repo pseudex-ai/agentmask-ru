@@ -44,6 +44,19 @@ RUN pip install --no-cache-dir --upgrade pip setuptools \
 COPY pseudex/ ./pseudex/
 COPY serve_main.py build_strip_docstrings.py build_harden_strings.py ./
 
+# Compile the authored TUNING into the engine (docs/tz-license-packaging §2.2),
+# BEFORE the checks below and before strip/harden/Nuitka, so it is validated and
+# then baked into the constants blob as one opaque hex string. The cue words,
+# address regex, priority table and look-alike folds no longer travel in the
+# lease — a client used to read them by decrypting their own bundle. Needs ONLY
+# assets_source (no bulk dictionaries, no ГАР dump), so three files go to a temp
+# path, get used, and are removed: `licensing/` itself must never ship. The
+# generated module holds only `BLOB`/`VERSION`, so the "no import licensing" guard
+# still passes.
+COPY licensing/__init__.py licensing/assets_source.py licensing/pack.py /tmp/lic/licensing/
+RUN PYTHONPATH=/tmp/lic python -m licensing.pack --emit-tuning ./pseudex/_tuning_blob.py \
+    && rm -rf /tmp/lic
+
 # Same guard as the source image, before anything is compiled: the engine must
 # not be able to reach the package that holds the assets.
 RUN if [ -d ./pseudex/data ]; then echo "pseudex/data must not ship"; exit 1; fi

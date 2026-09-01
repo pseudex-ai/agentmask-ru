@@ -158,14 +158,39 @@ def load_street_phrases() -> list[str]:
     return sorted(phrases)
 
 
-def build_payload() -> dict[str, object]:
-    """The bundle contents, before compression. Deterministic: same sources in,
-    byte-identical payload out (every collection is sorted or explicitly
-    ordered), so the content hash is a stable identity."""
-    payload: dict[str, object] = {
+def _bulk_payload() -> dict[str, object]:
+    """The semi-public BULK — this half reads the big dictionaries from disk.
+
+    Names and ГАР streets are open data; leasing them protects little, and they
+    are what rotates on the ГАР cadence, which the drift lever needs. This is all
+    that stays in the lease. `attribution` rides here because it is read from the
+    same ГАР dump."""
+    return {
         "names": {
             "dict_first": _load_dictionary("first_names.txt"),
             "dict_surnames": _load_dictionary("surnames.txt"),
+        },
+        "address": {
+            "street_names": load_street_vocabulary(),
+            "street_phrases": load_street_phrases(),
+        },
+        "attribution": [street_attribution()],
+    }
+
+
+def _tuning_payload() -> dict[str, object]:
+    """The authored TUNING — NO file reads, so the engine build that compiles this
+    into the binary needs only `assets_source`, never the bulk dictionaries.
+
+    This is the product: the cue words «выстраданные на ложных срабатываниях», the
+    address regex apparatus, the priority table, the look-alike folds, the
+    key→type map. It no longer travels in the lease — `emit_tuning_module` bakes
+    it into the engine as an opaque blob, so a client cannot read it out of a
+    bundle they decrypt themselves. Order and structure are exactly what `_build`
+    expects for these keys."""
+    _check_lookalike_table()
+    return {
+        "names": {
             "seed_first_names": list(assets_source.SEED_FIRST_NAMES),
             "diminutives": list(assets_source.DIMINUTIVES),
             "surname_suffixes": list(assets_source.SURNAME_SUFFIXES),
@@ -179,8 +204,6 @@ def build_payload() -> dict[str, object]:
         },
         "address": {
             "street_gaz": list(assets_source.STREET_GAZ),
-            "street_names": load_street_vocabulary(),
-            "street_phrases": load_street_phrases(),
             "street_type_nohouse": list(assets_source.STREET_TYPE_NOHOUSE),
             "street_type_house": list(assets_source.STREET_TYPE_HOUSE),
             "core_part": list(assets_source.CORE_PART),
@@ -189,8 +212,7 @@ def build_payload() -> dict[str, object]:
         "spoken": {
             # Опечатки числительных, добытые из речевых корпусов. Данные, а не
             # алгоритм: разбор числительных опубликован и живёт в движке, а
-            # то, КАК их коверкает расшифровщик, вынуто нами из чужих корпусов
-            # и потому лизится.
+            # то, КАК их коверкает расшифровщик, вынуто нами из чужих корпусов.
             "numeral_typos": assets_source.NUMERAL_TYPOS,
         },
         "quasi": {
@@ -220,11 +242,41 @@ def build_payload() -> dict[str, object]:
         },
         "priority": assets_source.PRIORITY,
         "lookalike": assets_source.LOOKALIKE,
-        "attribution": [street_attribution()],
     }
-    _check_lookalike_table()
-    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    payload["version"] = hashlib.sha256(canonical).hexdigest()[:16]
+
+
+def _deep_merge(bulk: dict[str, object],
+                tuning: dict[str, object]) -> dict[str, object]:
+    """Recombine the two halves into the full payload. `names` and `address`
+    appear in both (a bulk dictionary beside authored tuning); everything else in
+    exactly one. The engine does the SAME merge at load — see
+    `pseudex/assets.py::_merge_payload`."""
+    merged: dict[str, object] = {}
+    for key in set(bulk) | set(tuning):
+        left, right = bulk.get(key), tuning.get(key)
+        if isinstance(left, dict) and isinstance(right, dict):
+            merged[key] = {**left, **right}
+        else:
+            merged[key] = left if left is not None else right
+    return merged
+
+
+def _canonical(payload: dict[str, object]) -> bytes:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+
+
+def tuning_version() -> str:
+    """Content hash of the tuning half alone — no bulk files. The engine build
+    stamps it into the blob; the server stamps the SAME value into the leased
+    bulk; the engine refuses a pair whose stamps disagree (a misdeploy)."""
+    return hashlib.sha256(_canonical(_tuning_payload())).hexdigest()[:16]
+
+
+def build_payload() -> dict[str, object]:
+    """The full payload (bulk + tuning), for tests and evals. Deterministic: same
+    sources in, byte-identical out, so the content hash is a stable identity."""
+    payload = _deep_merge(_bulk_payload(), _tuning_payload())
+    payload["version"] = hashlib.sha256(_canonical(payload)).hexdigest()[:16]
     return payload
 
 
@@ -252,18 +304,73 @@ def _check_lookalike_table() -> None:
         )
 
 
+def _compress(payload: dict[str, object]) -> bytes:
+    return zlib.compress(_canonical(payload), 6)
+
+
 def build_plaintext() -> bytes:
-    """The decrypted bundle exactly as the engine's `Assets.load` expects it."""
-    payload = build_payload()
-    return zlib.compress(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8"), 6
+    """The LEASED bundle: bulk only, plus the stamps that bind it to a build.
+
+    Named as before because the server and testkit call it to get "the thing the
+    lease carries", and that is now the bulk half. It carries `version` (the full
+    payload's identity, for audit and gate L6) and `tuning_version` (the stamp the
+    engine checks against its compiled-in tuning). The tuning half itself is
+    emitted separately by `emit_tuning_module` at engine-build time."""
+    bulk = _bulk_payload()
+    full = _deep_merge(bulk, _tuning_payload())
+    bulk["version"] = hashlib.sha256(_canonical(full)).hexdigest()[:16]
+    bulk["tuning_version"] = tuning_version()
+    return _compress(bulk)
+
+
+def build_tuning_plaintext() -> bytes:
+    """The tuning half, compressed. Embedded into the engine, never leased."""
+    return _compress(_tuning_payload())
+
+
+_TUNING_MODULE_HEADER = (
+    "# GENERATED by `python3 -m licensing.pack --emit-tuning`. DO NOT EDIT.\n"
+    "#\n"
+    "# The authored detection tuning, as one opaque blob compiled into the engine\n"
+    "# so a client cannot read it out of a leased bundle. It is zlib(JSON) as hex:\n"
+    "# reconstructing the tables means finding this constant in the native binary\n"
+    "# and running the decode — reverse, not `grep`. See docs/tz-license-packaging\n"
+    "# §2.2. This file is generated (gitignored); a fresh checkout regenerates it.\n"
+)
+
+
+def emit_tuning_module(path: Path) -> str:
+    """Write the tuning blob as a Python module the engine imports and decodes.
+
+    A `.py` module, not a data file: it compiles INTO the Nuitka binary, so there
+    is no separate file to lift out of the image. Needs NO bulk dictionaries —
+    only `assets_source` — so the engine build stays independent of the ГАР dump.
+    Returns the tuning stamp it wrote."""
+    version = tuning_version()
+    blob = build_tuning_plaintext().hex()
+    path.write_text(
+        _TUNING_MODULE_HEADER
+        + f'\nBLOB = "{blob}"\n'
+        + f'VERSION = "{version}"\n',
+        encoding="utf-8",
     )
+    return version
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument("--out", type=Path, default=None,
+                        help="write the leased bulk bundle here")
+    parser.add_argument("--emit-tuning", type=Path, default=None,
+                        help="write the compiled-in tuning blob module here")
     args = parser.parse_args()
+
+    if args.emit_tuning is not None:
+        version = emit_tuning_module(args.emit_tuning)
+        blob_kb = len(build_tuning_plaintext()) / 1024
+        print(f"tuning {version}  {blob_kb:.0f} KB -> {args.emit_tuning}", file=sys.stderr)
+        if args.out is None:
+            return
 
     plaintext = build_plaintext()
     version = build_payload()["version"]
@@ -271,7 +378,8 @@ def main() -> None:
         sys.stdout.buffer.write(plaintext)
     else:
         args.out.write_bytes(plaintext)
-    print(f"bundle {version}  {len(plaintext) / 1024:.0f} KB compressed", file=sys.stderr)
+    print(f"bundle {version}  {len(plaintext) / 1024:.0f} KB compressed (bulk only)",
+          file=sys.stderr)
 
 
 if __name__ == "__main__":

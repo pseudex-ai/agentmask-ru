@@ -182,10 +182,18 @@ def gate_p1() -> bool:
 def gate_p2() -> bool:
     """The tuned vocabulary must not be sitting in the shipped image as bytes.
 
-    Checked against words that are ASSETS — they belong to the leased bundle —
-    never against anything the engine legitimately contains. If this passes, the
-    asset split alone did the job and Nuitka Commercial's constant encryption is
-    not needed; if it fails, that plugin is what the €250/year buys."""
+    Two forms now, and NEITHER may leak. The bulk (names, ГАР streets) is still
+    leased, so it is simply not in the image — `marker_surname()` probes that. The
+    authored TUNING (cue words, address regex, priority table, key→type map) is
+    compiled INTO the engine as an opaque zlib+hex blob (docs/tz-license-packaging
+    §2.2), so its plaintext must not appear either — the regex, cue and compound-
+    key probes check that the blob stays compressed and was not accidentally
+    shipped in the clear. This is what makes Nuitka Commercial's constant
+    encryption unnecessary: if any plaintext probe is found, the blob leaked and
+    that plugin is what the €250/year would buy.
+
+    Checked against words that are ASSETS — authored tuning or leased bulk — never
+    against anything the engine legitimately contains in the clear."""
     # THE PROBES MUST BE UNAMBIGUOUSLY OURS. Common words are useless here and
     # the first version of this gate proved it: "саша" was found in
     # /app/natasha/data/dict/first.txt — natasha's OWN name dictionary, a
@@ -218,7 +226,8 @@ def gate_p2() -> bool:
     out = sh(["docker", "run", "--rm", "--entrypoint", "sh", COMPILED_IMAGE, "-c", checks],
              False, 900).stdout
     found = [line for line in out.splitlines() if line.strip() and not line.rstrip().endswith(":")]
-    return gate("P2 leased vocabulary not extractable from the binary", not found,
+    return gate("P2 tuned vocabulary not extractable: blob opaque, bulk leased",
+                not found,
                 f"found_in_image={found[:3] or 'none'} checked={len(samples)}")
 
 

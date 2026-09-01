@@ -21,8 +21,18 @@ import time
 
 import httpx
 
-from licensing.pack import build_plaintext
+from pathlib import Path
+
+from licensing.pack import build_plaintext, emit_tuning_module
 from pseudex.assets import ASSETS
+
+# The engine now carries the authored tuning compiled in, not leased. A real
+# build emits it in the Dockerfile; in-process it must exist before ANY engine
+# load — the dev-bundle path AND the real-licence path both import it — so it is
+# generated here at import, once, deterministically. A generated artifact
+# (gitignored), like the datasets.
+_TUNING_BLOB = Path(__file__).resolve().parent / "pseudex" / "_tuning_blob.py"
+emit_tuning_module(_TUNING_BLOB)
 
 
 
