@@ -475,6 +475,28 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
               licence_status() == status and engine_sees() == seen,
               f"licence={licence_status()} POST /v1/lease -> {engine_sees()}")
 
+    # БЮДЖЕТ КЛЮЧЕЙ И ОСИРОТЕВШИЙ КЛЮЧ. Отказ по `max_keys` обязан не оставить
+    # на лицензионном сервере активную запись, не привязанную ни к какому
+    # кабинету: она лизует вечно и не видна ни в одной сверке.
+    def keys_on_server() -> int:
+        rows = httpx.get(f"{admin_url}/admin/list", timeout=5,
+                         headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}).json()["orgs"]
+        return sum(1 for row in rows if row["org_id"] == org.id
+                   and row["status"] != "revoked")
+
+    allowed = org.subscription.plan.max_keys
+    while org.keys.filter(revoked_at__isnull=True).count() < allowed:
+        services.issue_additional_key(org, "добивка", "live")
+    before = keys_on_server()
+    try:
+        services.issue_additional_key(org, "лишний", "live")
+        refused = False
+    except ValueError:
+        refused = True
+    check("a key beyond the plan is refused and leaves nothing behind on the server",
+          refused and keys_on_server() == before,
+          f"refused={refused} keys on server {before} -> {keys_on_server()}")
+
     # A second period must bill the DELTA, not the lifetime counter again.
     from billing.models import Invoice as InvoiceModel
     invoice.values_at_period_end = 500

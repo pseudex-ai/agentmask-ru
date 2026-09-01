@@ -97,18 +97,49 @@ def issue_first_key(organization: Organization) -> str:
     return key
 
 
-@transaction.atomic
 def issue_additional_key(organization: Organization, label: str,
                          environment: str) -> str:
-    live = organization.keys.filter(revoked_at__isnull=True).count()
+    """Ещё один ключ для той же организации.
+
+    СЕТЬ БОЛЬШЕ НЕ ЖИВЁТ В ТРАНЗАКЦИИ, и решение по бюджету принимается ПОД
+    БЛОКИРОВКОЙ. Раньше здесь стоял `@transaction.atomic` вокруг вызова с
+    таймаутом в пятнадцать секунд, а проверка `max_keys` была незалоченным
+    read-then-write: два одновременных нажатия оба видели место и оба чеканили.
+    Ровно то, что комментарий в `create_account` объясняет как недопустимое, —
+    сиблинг просто не последовал собственному объяснению.
+
+    Дешёвая проверка идёт первой, чтобы обычный путь не чеканил ключ ради того,
+    чтобы тут же его отозвать. Настоящее решение — второе, под
+    `select_for_update`, и если оно отрицательное, ТОЛЬКО ЧТО ВЫПУЩЕННЫЙ КЛЮЧ
+    ОТЗЫВАЕТСЯ: иначе на лицензионном сервере остаётся активный ключ, не
+    привязанный ни к какому кабинету и не видимый ни в одной сверке — та самая
+    осиротевшая запись, ради недопущения которой разделён `create_account`.
+    """
     allowed = organization.subscription.plan.max_keys
-    if live >= allowed:
+    if organization.keys.filter(revoked_at__isnull=True).count() >= allowed:
         raise ValueError(
             f"на тарифе {organization.subscription.plan.title} доступно "
             f"{allowed} ключ(а/ей); отзовите ненужный или смените тариф"
         )
+
     key = licensing.issue_key(organization.id, organization.subscription.plan.code)
-    LicenseKey.record(organization, key, label=label, environment=environment)
+    try:
+        with transaction.atomic():
+            locked = (Organization.objects.select_for_update()
+                      .get(pk=organization.pk))
+            if locked.keys.filter(revoked_at__isnull=True).count() >= allowed:
+                raise ValueError(
+                    f"на тарифе {organization.subscription.plan.title} доступно "
+                    f"{allowed} ключ(а/ей); отзовите ненужный или смените тариф"
+                )
+            LicenseKey.record(locked, key, label=label, environment=environment)
+    except Exception:
+        try:
+            licensing.revoke_key(LicenseKey.fingerprint(key))
+        except licensing.LicensingError as error:
+            _log.error("issued key for %s could not be recorded NOR revoked: %s — "
+                       "an active key now exists in no cabinet", organization.id, error)
+        raise
     return key
 
 
