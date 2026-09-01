@@ -245,6 +245,14 @@ def mark_unpaid(organization: Organization) -> None:
         subscription.save(update_fields=["state"])
 
 
+def _int_or_zero(value: object) -> int:
+    """Число из чужого ответа. Не `int(...)`: лицензионный сервер наш, но счёт
+    не имеет права падать на его ответе, а `int("x")` — это 500 в кабинете."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return value
+
+
 def _round(amount: Decimal) -> Decimal:
     return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
@@ -268,8 +276,14 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     # Entities move with the mask cache; the raw report drops to zero when a
     # customer deletes their vault. `values` never decreases — see
     # docs/billing-integrity.md.
-    values = int(reported.get("values", 0))
-    requests = int(reported.get("requests", 0))
+    # КЛАМПЫ, И ВАТЕРМАРКА МОНОТОННА ПО ПОСТРОЕНИЮ. Раньше она была монотонна
+    # «потому что счётчик снизу растёт» — а он не растёт: один подписанный
+    # отчёт с отрицательными числами под свежим `instance_id` уводил итоги в
+    # минус, и минус записывался сюда как ПОСТОЯННАЯ ватермарка, после чего все
+    # следующие периоды давали ноль. Вход теперь проверяется, но инвариант,
+    # державшийся на чужом поведении, обязан держаться на своём.
+    values = max(0, _int_or_zero(reported.get("values")))
+    requests = max(0, _int_or_zero(reported.get("requests")))
 
     # The counter is CUMULATIVE since the installation's first report. What this
     # period used is the difference from the previous invoice's watermark.
@@ -278,7 +292,10 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
                 .exclude(state=Invoice.VOID)
                 .order_by("-period_end", "-id")
                 .first())
-    watermark = previous.values_at_period_end if previous else 0
+    # И сама ватермарка не может уехать вниз: отрицательная строка могла
+    # быть записана до клампов выше и тогда обнуляла бы каждый следующий
+    # период навсегда.
+    watermark = max(0, previous.values_at_period_end if previous else 0)
     # A counter that went BACKWARDS means the customer started from an empty
     # data directory — a new volume, a restore, a fresh deployment. Billing the
     # negative as zero and re-basing is the only reading that cannot overcharge.
@@ -305,6 +322,6 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
         values_in_period=used_this_period,
         total=_round(subscription_amount),
         due_at=(timezone.now() + timedelta(days=7)).date(),
-        values_at_period_end=values,
+        values_at_period_end=max(watermark, values),
         requests_at_period_end=requests,
     )

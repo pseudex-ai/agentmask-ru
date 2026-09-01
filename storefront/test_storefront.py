@@ -508,6 +508,29 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
           f"watermark=500 reported={second.values_at_period_end} "
           f"in_period={second.values_in_period}")
 
+    # ОТРАВЛЕННЫЙ ОТВЕТ НЕ ДЕЛАЕТ КЛИЕНТА ВЕЧНО БЕСПЛАТНЫМ. Отрицательное
+    # значение раньше записывалось как ПОСТОЯННАЯ ватермарка, после чего каждый
+    # следующий период давал ноль. Вход теперь проверяется, но инвариант,
+    # державшийся на чужом поведении, обязан держаться на своём.
+    from unittest.mock import patch
+    poison = {"usage": {"values": -10 ** 9, "requests": -10 ** 9}}
+    with patch("billing.licensing.usage", return_value=poison):
+        poisoned = build_invoice(org, date.today(), date.today() + timedelta(days=30))
+    poisoned.state = InvoiceModel.ISSUED
+    poisoned.save(update_fields=["state"])
+    with patch("billing.licensing.usage",
+               return_value={"usage": {"values": 5000, "requests": 7000}}):
+        after_poison = build_invoice(org, date.today(), date.today() + timedelta(days=30))
+    # Инвариант — НЕ «ватермарка обнулилась», а «ватермарка не поехала вниз»:
+    # она держится на прежнем значении, и следующий период считает дельту от
+    # него, а не от минуса.
+    before_poison = second.values_at_period_end
+    check("a poisoned counter cannot make a customer permanently free",
+          poisoned.values_at_period_end >= before_poison
+          and after_poison.values_in_period == 5000 - before_poison,
+          f"watermark {before_poison} -> {poisoned.values_at_period_end}, "
+          f"next period={after_poison.values_in_period}")
+
     # 54-ФЗ splits our customers in two, and only the payer kind tells them
     # apart. A receipt sent where none is required fiscalises a transaction that
     # should not be — and with ЮKassa's "Чеки" it costs 1% of it.
