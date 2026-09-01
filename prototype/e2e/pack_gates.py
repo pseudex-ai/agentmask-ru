@@ -222,6 +222,40 @@ def gate_p2() -> bool:
                 f"found_in_image={found[:3] or 'none'} checked={len(samples)}")
 
 
+def gate_p2b() -> bool:
+    """Строки-маяки лицензионного тракта не должны лежать в образе plaintext.
+
+    P2 проверяет, что не утёк арендованный СЛОВАРЬ; этот — что не утекла КАРТА к
+    лицензионной проверке. Замерено до `build_harden_strings.py`: `grep
+    license_expired` находил строку, а рядом — ветку лестницы деградации, и это
+    первый ход любителя с LLM. Пасс заменяет литералы на выражение с тем же
+    значением в рантайме, но без исходной строки. Гейт проверяет, что Nuitka не
+    свернул их обратно в константу — иначе весь ход бесполезен и об этом надо
+    узнать в CI, а не от того, кто вскрыл образ.
+
+    Проверяется вместе с ПОЗИТИВОМ: закодированный шестнадцатеричный вид ДОЛЖЕН
+    присутствовать. Иначе гейт зеленел бы и на образе, где пасс просто не
+    отработал."""
+    beacons = ["license_expired", "capacity_exhausted", "instance_limit",
+               "bundle_corrupt", "no valid detection lease",
+               "detection assets unloaded"]
+    plain = " ; ".join(
+        f"echo \"P:{word}:$(grep -alr -F -- '{word}' /app 2>/dev/null | head -1)\""
+        for word in beacons)
+    encoded_probe = "license_expired".encode("utf-8").hex()
+    check = (f"{plain} ; echo \"E:$(grep -alr -F -- '{encoded_probe}' /app "
+             f"2>/dev/null | head -1)\"")
+    out = sh(["docker", "run", "--rm", "--entrypoint", "sh", COMPILED_IMAGE,
+              "-c", check], False, 900).stdout
+    leaked = [l for l in out.splitlines()
+              if l.startswith("P:") and not l.rstrip().endswith(":")]
+    encoded_present = any(l.startswith("E:") and not l.rstrip().endswith(":")
+                          for l in out.splitlines())
+    ok = not leaked and encoded_present
+    return gate("P2b licence beacon strings are hardened, not folded back", ok,
+                f"leaked={leaked[:3] or 'none'} encoded_present={encoded_present}")
+
+
 def gate_p3(source_report: Path, compiled_report: Path) -> bool:
     left = json.loads(source_report.read_text())
     right = json.loads(compiled_report.read_text())
@@ -554,6 +588,8 @@ def main() -> None:
             gate_p1()
         if wanted("P2"):
             gate_p2()
+        if wanted("P2b"):
+            gate_p2b()
 
         # Bringing up two stands and running the whole detection suite through
         # both takes ~20 minutes, so it is skipped entirely when no selected gate

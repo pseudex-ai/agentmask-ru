@@ -42,7 +42,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools \
     && pip install --no-cache-dir nuitka
 
 COPY pseudex/ ./pseudex/
-COPY serve_main.py build_strip_docstrings.py ./
+COPY serve_main.py build_strip_docstrings.py build_harden_strings.py ./
 
 # Same guard as the source image, before anything is compiled: the engine must
 # not be able to reach the package that holds the assets.
@@ -90,6 +90,14 @@ RUN test -n "$PSEUDEX_LICENSE_PUBKEY" || (echo "PSEUDEX_LICENSE_PUBKEY build-arg
 # which alternative was rejected, what was measured, where the sharp edges are.
 # Shipping them means handing over the reasoning and withholding only syntax.
 RUN python build_strip_docstrings.py ./pseudex ./serve_main.py
+
+# Строки-маяки лицензионного тракта — из бинарника. Замерено: Nuitka кладёт
+# литералы в constants-блоб открытым текстом, и `grep license_expired` ведёт
+# любителя прямо к ветке деградации. Пасс заменяет их на выражение с тем же
+# значением в рантайме, но без исходной строки — контракт цел, `grep` слеп.
+# Только на компилируемом образе: в dev-образе из .py это лишь портило бы логи.
+# P2b (греп собранного образа) проверяет, что Nuitka не свернул их обратно.
+RUN python build_harden_strings.py ./pseudex
 
 ARG NUITKA_JOBS=6
 # --include-data-dir puts the interface's page files at /app/ui, OUTSIDE any

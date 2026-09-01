@@ -650,7 +650,7 @@ async def chat_completions(request: Request):
             status_code=503,
             detail={
                 "error": status.code or "license_expired",
-                "detail": f"no valid detection lease (state={status.state})",
+                "detail": "no valid detection lease" + f" (state={status.state})",
                 "license": {"state": status.state, "last_error": status.last_error},
             },
         )

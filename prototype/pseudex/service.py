@@ -367,9 +367,13 @@ def _license_block() -> JSONResponse | None:
     return JSONResponse(
         {
             "error": code,
+            # Ведущая фраза — ОТДЕЛЬНАЯ КОНСТАНТА, а не часть f-строки: так её
+            # берёт `build_harden_strings.py` (фрагмент f-строки закодировать
+            # нельзя), и говорящий маяк не лежит в бинарнике открытым текстом.
             "detail": (
-                f"no valid detection lease (state={status.state}); "
-                f"last successful lease {status.seconds_since_lease:.0f}s ago"
+                "no valid detection lease"
+                + f" (state={status.state}); "
+                + f"last successful lease {status.seconds_since_lease:.0f}s ago"
                 if status.seconds_since_lease is not None
                 else "no detection lease was ever obtained"
             ),
