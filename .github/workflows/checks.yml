@@ -51,11 +51,36 @@ jobs:
       - name: the defects a persona run found
         run: python test_persona_defects.py
 
+      # ДЕНЕЖНЫЙ ТРАКТ БЕГАЕТ НА КАЖДОМ ПУШЕ. Оба этих набора не запускались в
+      # CI вообще: первый лежал в дереве и вызывался руками, второго не
+      # существовало. Ровно поэтому 403 на `/admin/resume` — то есть оплаченный
+      # и невозобновлённый клиент — прожил в дереве до ручного прогона.
+      - name: metering attacks (store)
+        run: python licensing/test_metering_attacks.py
+      - name: metering attacks (HTTP surface and capacity protocol)
+        run: python licensing/test_admin_api.py
+
       # The one that exists because every metric we had said 100% while «Счёт
       # 1234 от 15.05.2025» was being masked. Ordinary business text, no PII in
       # it, and any mask on it is a false one.
       - name: no over-masking on clean business text
         run: python test_overmasking.py
+
+      # ПРОВЕРКА, КОТОРАЯ НЕ МОЖЕТ УПАСТЬ, — ЭТО УДАЛЁННАЯ ПРОВЕРКА. В наборе
+      # атак стояло `check(..., breaks > 0 or True, ...)`: тождественно зелёная
+      # строка в файле, чей докстринг обещает, что одна строка всегда красная.
+      - name: no tautological checks in our own tests
+        run: |
+          if grep -rnE "or True[,)]|assert True\b" --include="test_*.py" . ; then
+            echo "проверка, которая не может упасть, — это удалённая проверка"
+            exit 1
+          fi
+
+      # И ГЛУШИТЕЛЬ ТОЖЕ. `except Exception` в тесте допустим, только если он
+      # ФИКСИРУЕТ провал: в `test_billing_e2e.py` он глотал 403 и пропускал три
+      # проверки, оставляя прогон зелёным.
+      - name: no swallowed failures in our own tests
+        run: python3 e2e/lint_tests.py . licensing pseudex e2e ../storefront
 
       # The engine must never import the licensing package: that is what keeps
       # the assets out of the image, and it is cheaper to catch here than in a
@@ -66,6 +91,25 @@ jobs:
             echo "pseudex/ imports licensing/ — the leased assets would ship in the image"
             exit 1
           fi
+
+  storefront:
+    name: storefront — the money path, against a REAL licensing server
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: storefront }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      # Два venv: витрина сознательно не делит зависимости с движком, а тест
+      # поднимает НАСТОЯЩИЙ лицензионный сервер в его окружении.
+      - run: python -m venv ../prototype/.venv && ../prototype/.venv/bin/pip install -q -r ../prototype/requirements.txt
+      - run: python -m venv .venv && .venv/bin/pip install -q -r requirements.txt
+      # ЭТО ЕДИНСТВЕННЫЙ ТЕСТ, КОТОРЫЙ ТРОГАЕТ ДЕНЕЖНЫЙ ТРАКТ, и он бежал
+      # только на теге. Оплата, не возвращающая обслуживание, доживала до
+      # релиза.
+      - name: storefront end to end
+        run: .venv/bin/python test_storefront.py
 
   deploy:
     name: deploy scripts and compose

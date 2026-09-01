@@ -1048,8 +1048,15 @@ class LicenseStore:
         return [{"instance_id": r[0], "process_id": r[1], "issued_at": r[2]} for r in rows]
 
     def list_orgs(self) -> list[dict[str, object]]:
+        # `last_lease` ОТДАЁТСЯ ЗДЕСЬ, И ЭТО НЕ УКРАШЕНИЕ. `deploy/watch.sh`
+        # читает это поле, чтобы поймать клиента, который вот-вот встанет; поля
+        # не было, поэтому проверка «не продлевают аренду больше суток» была
+        # ВСЕГДА ПУСТОЙ — а это ровно тот сигнал, который поймал бы и блэкхол, и
+        # повтор лизы: и то и другое выглядит как «клиент перестал продлеваться».
         rows = self._fetchall(
-            "SELECT org_id, plan, status, created_at FROM keys ORDER BY created_at",
-            ())
-        return [{"org_id": r[0], "plan": r[1], "status": r[2], "created_at": r[3]}
+            "SELECT k.org_id, k.plan, k.status, k.created_at, "
+            "(SELECT MAX(issued_at) FROM leases l WHERE l.org_id=k.org_id) "
+            "FROM keys k ORDER BY k.created_at", ())
+        return [{"org_id": r[0], "plan": r[1], "status": r[2], "created_at": r[3],
+                 "last_lease": r[4]}
                 for r in rows]
