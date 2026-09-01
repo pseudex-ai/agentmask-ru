@@ -11,7 +11,8 @@ from pseudex.address import detect_address
 from pseudex.assets import ASSETS
 from pseudex.context import location_is_pii, suppress
 from pseudex.detect import Span, detect_pii
-from pseudex.names import gazetteer_names, keep_location, keep_person, trim_person_span
+from pseudex.names import (gazetteer_names, keep_location, keep_person,
+                           trim_document_words, trim_person_span)
 from pseudex.normalize import normalize
 from pseudex.profiling import stage
 from pseudex.quasi import detect_quasi
@@ -217,7 +218,28 @@ class Detector:
                        if not _guess_inside_person(span, ner, norm)]
             spans += address
             with stage("detect.gazetteer"):
-                spans += gazetteer_names(norm)
+                # НАЗВАНИЕ ДОКУМЕНТА СНИМАЕТСЯ И С ГАЗЕТИРНЫХ СПАНОВ: «ашот инн»,
+                # «кукушкин инн» уезжали в аргумент `customer_name` вместе со
+                # словом «ИНН». Полная обрезка здесь тоже пробовалась и даёт
+                # +0.5 имени ценой -0.4 адресу и -0.2 полноте на MASSIVE —
+                # размен нулевой, а риск живой. Узкое правило не может стоить
+                # ничего: «ИНН» именем не бывает.
+                for span in gazetteer_names(norm):
+                    # ПЕРЕСОБИРАТЬ СПАН МОЖНО, ТОЛЬКО ЕСЛИ ЕГО ЗНАЧЕНИЕ И ЕСТЬ
+                    # СРЕЗ ТЕКСТА. `_possessive_names` отдаёт «Женя» на месте
+                    # слова «женин» — базовое имя, а не написанное, — и подсчёт
+                    # конца по длине сдвигал границу на чужие символы. Измерено:
+                    # полнота имён на MASSIVE падала на 1.6 пункта, и это было
+                    # не свойство обрезки, а эта арифметика.
+                    if norm[span.start:span.end] != span.value:
+                        spans.append(span)
+                        continue
+                    lead, trimmed = trim_document_words(span.value)
+                    if not trimmed:
+                        continue
+                    start = span.start + lead
+                    spans.append(Span(start, start + len(trimmed),
+                                      span.entity_type, trimmed))
             with stage("detect.structured_kv"):   # Layer 1: JSON/forms
                 # KEPT ASIDE: a KV span carries its own evidence. The KEY typed
                 # the value — that is stronger than any word standing near it —

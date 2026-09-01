@@ -34,6 +34,8 @@ import re
 # dictionary again, and this module is imported by the vault, which every worker
 # loads. Measured cost of the duplicate that was here first: +20 MB per worker,
 # multiplied by the worker count.
+from pseudex.assets import ASSETS
+from pseudex.fuzzy import within_one_typo
 from pseudex.morph import MORPH as _MORPH
 
 # The grammemes that mark a parse as part of a personal name. A parse without
@@ -455,6 +457,74 @@ def detect_case(surface: str, gender: str | None = None) -> str | None:
     if not tally:
         return None
     return max(tally, key=lambda case: tally[case])
+
+
+# Отчества, которые строятся не по правилу. Это опубликованные исключения
+# русского словообразования, а не наша подгонка: «Михаил» даёт «Михайлович», а
+# не «Михаилович», и так же ведут себя ещё семь имён.
+_IRREGULAR_PATRONYMIC: dict[str, str] = {
+    "михаил": "михайлович", "гавриил": "гаврилович", "даниил": "данилович",
+    "илья": "ильич", "никита": "никитич", "фома": "фомич",
+    "кузьма": "кузьмич", "лука": "лукич", "савва": "саввич",
+    "пётр": "петрович", "петр": "петрович", "лев": "львович",
+    "павел": "павлович",
+}
+
+
+def full_patronymic(word: str) -> str:
+    """Разговорное отчество в полной форме: «Иваныч» -> «Иванович».
+
+    ЗАЧЕМ. Живая речь почти всегда сокращает отчество — «Викторыч», «Алексеич»,
+    «Михалыч», — и мы возвращали в поле `patronymic` ровно то, что услышали. В
+    CRM это поле полное, и запись не находится. 14 случаев из 61 расхождения по
+    именам — больше любой другой причины.
+
+    ПРОВЕРЯЕТСЯ ПО СЛОВАРЮ ИМЁН, А НЕ ПО ФОРМЕ СЛОВА. «-ыч» на конце есть у
+    «калач», «сволочь» и у фамилии «Пенкрыч»; отчеством слово делает то, что за
+    вычетом окончания остаётся ИМЕНЕМ из арендуемого словаря. Пустая строка —
+    «это не отчество», и тогда слово остаётся как было.
+    """
+    low = word.casefold()
+    if low.endswith("ович") or low.endswith("евич") or low.endswith("ич") is False:
+        if not low.endswith("ыч"):
+            return ""
+    stem = low[:-2] if low.endswith(("ыч", "ич")) else ""
+    if not stem:
+        return ""
+    # ИСКЛЮЧЕНИЯ ПЕРВЫМИ, И В ОДНОЙ ПРАВКЕ ОТ ОСНОВЫ. «Михалыч» даёт основу
+    # «михал», которая сама лежит в словаре имён — по общему правилу вышло бы
+    # «Михалович». Список исключений мал и закрыт, поэтому одна правка до него
+    # безопасна: «павлыч» -> «Павлович», «михалыч» -> «Михайлович».
+    close = [name for name in _IRREGULAR_PATRONYMIC
+             if name == stem or within_one_typo(stem, name)]
+    if len(close) == 1:
+        return _match_capitalisation(word, _IRREGULAR_PATRONYMIC[close[0]])
+    names = ASSETS.get().names
+    # ДЛИННЫЙ КАНДИДАТ ПЕРЕД КОРОТКИМ. «алексеич» даёт основу «алексе», и она
+    # тоже нашлась в словаре — по ней вышло бы «Алексеович». Настоящее имя здесь
+    # «Алексей», и оно длиннее.
+    # И КАНДИДАТ ОБЯЗАН БЫТЬ МУЖСКИМ ИМЕНЕМ. Отчество даётся по отцу, а словарь
+    # на 28 тысяч имён содержит и «Константина», и «Ивань» — по ним выходило
+    # «Константинич» и «Иваневич». Род спрашивается у морфологии, а не
+    # угадывается по окончанию: «Никита» и «Лука» мужские и кончаются на «а».
+    for candidate in (stem + "й", stem + "ь", stem + "а", stem):
+        if candidate not in names.dict_first:
+            continue
+        # И ИМЕННО В ИМЕНИТЕЛЬНОМ. «Константина» — это родительный от
+        # «Константин», мужского рода и с пометой имени: без падежа проверка его
+        # пропускала и строила «Константинич».
+        if not any(parse.tag.gender == "masc" and parse.tag.case == "nomn"
+                   and "Name" in parse.tag.grammemes
+                   for parse in _MORPH.parse(candidate)):
+            continue
+        if candidate.endswith(("й", "ь")):
+            built = candidate[:-1] + "евич"
+        elif candidate.endswith(("а", "я")):
+            built = candidate[:-1] + "ич"
+        else:
+            built = candidate + "ович"
+        return _match_capitalisation(word, built)
+    return ""
 
 
 def to_nominative(surface: str) -> str:

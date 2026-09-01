@@ -142,6 +142,20 @@ def _is_name_part(word: str, names: NameAssets) -> bool:
     return not parse.is_known
 
 
+def _names_a_document(word: str) -> bool:
+    """Слово называет ТИП ДОКУМЕНТА, а не человека.
+
+    «ИНН», «СНИЛС», «паспорт», «карта» — арендуемый словарь ключей, по которому
+    структурный слой уже типизирует значение. Слово из него не бывает частью
+    имени ни при каких условиях, и это единственный вид соседа, о котором можно
+    сказать так без оговорок.
+
+    Живьём: «ашот инн», «кукушкин инн», «алиса инн» — в аргумент `customer_name`
+    уезжало имя вместе со словом «ИНН», и CRM такую запись не находила.
+    """
+    return word.casefold() in ASSETS.get().structured.key_type
+
+
 def _is_ordinary_word(word: str) -> bool:
     """Морфология знает слово, и ни одно чтение не называет человека."""
     parses = MORPH.parse(word)
@@ -192,6 +206,13 @@ def trim_person_span(value: str) -> tuple[int, str]:
     while last - first + 1 > 2 and not _is_name_part(tokens[last][2], names):
         last -= 1
     while last - first + 1 > 2 and not _is_name_part(tokens[first][2], names):
+        first += 1
+    # НАЗВАНИЕ ДОКУМЕНТА СНИМАЕТСЯ ДО ОДНОГО ТОКЕНА. Словарные циклы выше
+    # останавливаются на двух, потому что там не видно, кто из двоих лишний;
+    # здесь видно: «ИНН» человеком не бывает.
+    while last > first and _names_a_document(tokens[last][2]):
+        last -= 1
+    while last > first and _names_a_document(tokens[first][2]):
         first += 1
     # DOWN TO ONE TOKEN when the leading word is somebody being asked to do
     # something. The loops above stop at two because a two-token span is
@@ -1298,3 +1319,23 @@ def gazetteer_names(text: str) -> list[Span]:
     for match in _INITIALS_RE.finditer(text):
         spans.append(Span(match.start(), match.end(), "NAME", match.group()))
     return spans
+
+
+def trim_document_words(value: str) -> tuple[int, str]:
+    """Снять с краёв только названия документов. Узкая часть `trim_person_span`.
+
+    Существует отдельно, потому что применяется к спанам, которые полную
+    обрезку не переживают: измерено, что полная стоит 1.8 пункта полноты имён на
+    MASSIVE, а эта не может стоить ничего — «ИНН» и «СНИЛС» именем не бывают.
+    """
+    tokens = [(match.start(), match.end(), match.group())
+              for match in _NON_SPACE_RE.finditer(value)]
+    if not tokens:
+        return 0, value
+    first, last = 0, len(tokens) - 1
+    while last > first and _names_a_document(tokens[last][2]):
+        last -= 1
+    while last > first and _names_a_document(tokens[first][2]):
+        first += 1
+    start, end = tokens[first][0], tokens[last][1]
+    return start, value[start:end]
