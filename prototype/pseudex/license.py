@@ -32,6 +32,7 @@ of a container racing its own network, then exits non-zero.
 import hashlib
 import logging
 import os
+import secrets
 import threading
 import time
 from collections import deque
@@ -230,6 +231,7 @@ class LicenseClient:
         self._process_id = f"{instance_id}-{os.getpid()}"
         self._usage_provider = usage_provider
         self._process_key: ProcessKey = generate_process_key()
+        self._pending_nonce = ""
         # СЕКРЕТ ОТЧЁТА ПРИХОДИТ ЗАПЕЧАТАННЫМ НА ЭТОТ ЖЕ ПРОЦЕСС и никогда не
         # передаётся наружу. Открытый ключ подписи отправлять было нельзя:
         # перехватчик на хосте клиента (TLS проверяется по СИСТЕМНОМУ хранилищу
@@ -241,8 +243,22 @@ class LicenseClient:
         # процесса генерируется заново, — а новая аренда это новый грант, то
         # есть новая запись в нашем счёте. Обнулять счётчик рестартом означает
         # платить за рестарт.
+        # ЁМКОСТЬ НАКАПЛИВАЕТСЯ, А НЕ ОБНОВЛЯЕТСЯ. `_consumed` монотонен за
+        # жизнь процесса и НИКОГДА не обнуляется: раньше `_apply` сбрасывал его
+        # на любой принятой лизе, поэтому повтор одной захваченной лизы
+        # бесплатно пополнял ёмкость — проверено, `granted` у нас при этом
+        # замирал навсегда, а движок показывал `state=active` и ноль ошибок.
         self._granted = 0
         self._consumed = 0
+        self._quantum_seq = 0
+        self._quantum_size = 0
+        self._reserve = 0
+        # Порог, на котором пора идти за следующим квантом. Лежит ВНУТРИ
+        # резерва, поэтому к моменту исчерпания ёмкость уже пополнена и на пути
+        # запроса не появляется ни одного сетевого раунд-трипа.
+        self._prefetch_at = 0
+        self._ack_trust = ""
+        self._capacity_endpoint = ""
         self._report_secret: bytes | None = None
         self._report_seq = 0
         self._report_prev = ""
@@ -336,27 +352,36 @@ class LicenseClient:
         return self.state() in (STATE_LEASED, STATE_STALE) and self.has_capacity()
 
     def has_capacity(self) -> bool:
-        """Осталась ли ёмкость текущей аренды.
+        """Осталась ли ёмкость. ОДНО УСЛОВИЕ, И БОЛЬШЕ НИКАКИХ.
 
-        ГРАНТ НЕ ДЕЙСТВУЕТ ВО ВРЕМЯ НАШЕГО СБОЯ. Исчерпание требует сходить за
-        новым грантом; если мы недоступны, это наш отказ, а не превышение
-        клиента, и `STATE_STALE` продолжает обслуживать в долг — долг всё равно
-        станет грантом, когда связь вернётся. Иначе наш простой превращался бы
-        в остановку чужого бизнеса, ровно то, ради чего grace и заведён.
+        Убраны обе лазейки, и каждая была полным обходом учёта.
+
+        `return self.state() == STATE_STALE` делало НАШ простой источником
+        БЕЗЛИМИТНОЙ ёмкости: уронив связь с лицензионным сервером, клиент
+        обслуживал сколько угодно весь TTL плюс grace — семьдесят два часа на
+        проде, — и грантов за это не записывалось ни одного. Одна строка в
+        фаерволе по крону превращала две трети месяца в бесплатный трафик.
+        Теперь наш простой покрыт ПРЕДОПЛАЧЕННЫМ резервом, который лежит внутри
+        `_granted`: grace сохраняет свой смысл — наш сбой не роняет чужой
+        бизнес, — а блэкхол даёт ровно то, что уже оплачено.
+
+        `if not self._granted: return True` делало безлимитом ОТСУТСТВУЮЩЕЕ
+        поле, то есть любой сервер старше нас. Это ровно наоборот правилу
+        «отсутствие поля — деградация», которое та же функция применяет к
+        `recipient` и `report_secret`. Ноль остаётся безлимитом только до
+        первого кванта и только для контракта 2.
         """
         with self._lock:
             if not self._granted:
                 return True
-            if self._consumed < self._granted:
-                return True
-        return self.state() == STATE_STALE
+            return self._consumed < self._granted
 
     def consume(self, units: int = 1) -> None:
         """Списать ёмкость. Зовётся с пути маскирования, по запросу."""
         with self._lock:
             self._consumed += units
-            exhausted = bool(self._granted) and self._consumed >= self._granted
-        if exhausted:
+            due = bool(self._prefetch_at) and self._consumed >= self._prefetch_at
+        if due:
             self._wake.set()
 
     def capacity(self) -> tuple[int, int]:
@@ -415,6 +440,8 @@ class LicenseClient:
             with self._lock:
                 self._last_report = usage
                 self._last_report_at = time.time()
+        nonce = secrets.token_urlsafe(24)
+        self._pending_nonce = nonce
         response = self._http.post(
             f"{self._base_url}/v1/lease",
             json={
@@ -424,6 +451,7 @@ class LicenseClient:
                 "pubkey": self._process_key.public,
                 "engine_version": ENGINE_VERSION,
                 "lease_id": self._lease_id,
+                "nonce": nonce,
                 "usage": usage,
             },
         )
@@ -443,6 +471,90 @@ class LicenseClient:
                 f"({code}: {detail}) for {self._base_url}"
             )
         raise LicenseError(code, f"{detail} (HTTP {response.status_code}, {self._base_url})")
+
+    def _meter_once(self) -> None:
+        """Купить следующий квант ёмкости, назвав свой расход.
+
+        ОТЧЁТ ЗДЕСЬ — ЗАЩИТА КЛИЕНТА, А НЕ НАША. Счёт строится на выданном,
+        зажатом снизу `granted - Q - R`: подтверждённый расход УМЕНЬШАЕТ его до
+        фактического. Поэтому занизить отчёт невыгодно — потолок тут же
+        опустится ниже собственного расхода, и движок перестанет обслуживать, —
+        а снять его значит отказаться от скидки за неиспользованное.
+        """
+        with self._lock:
+            consumed = self._consumed
+        # БЕЗ СЕКРЕТА ЁМКОСТЬ ВСЁ РАВНО ПОКУПАЕТСЯ, ПРОСТО БЕЗ ОТЧЁТА. Ранний
+        # выход означал бы, что процесс, потерявший секрет, перестаёт покупать
+        # ёмкость и тихо умирает по её исчерпании. Шаг без отчёта СЛЕПОЙ: сервер
+        # считает предыдущий квант выбранным целиком, то есть завышает — и это
+        # ровно то, что делает молчание невыгодным без единого механизма
+        # принуждения.
+        ack: dict[str, object] | None = None
+        if self._report_secret is not None:
+            ack = {"consumed": consumed, "quantum_seq": self._quantum_seq}
+            ack["signature"] = mac_report(ack, self._report_secret)
+        nonce = secrets.token_urlsafe(24)
+        endpoint = self._capacity_endpoint or "/v1/meter"
+        response = self._http.post(
+            f"{self._base_url}{endpoint}",
+            json={"key": self._key, "instance_id": self._instance_id,
+                  "pubkey": self._process_key.public, "nonce": nonce, "ack": ack})
+        if response.status_code != 200:
+            try:
+                body = response.json()
+                code = str(body.get("error", "license_invalid"))
+                detail = str(body.get("detail", ""))
+            except ValueError:
+                code, detail = "license_invalid", response.text[:200]
+            if (response.status_code in _GRACE_WORTHY_STATUS
+                    and code not in _ANSWER_CODES):
+                raise _TransientLeaseError(
+                    f"capacity endpoint returned {response.status_code} "
+                    f"({code}: {detail})")
+            raise LicenseError(code, f"{detail} (HTTP {response.status_code})")
+        self._apply_quantum(response.json(), nonce)
+
+    def _apply_quantum(self, quantum: dict[str, object], nonce: str) -> None:
+        if self._verify_keys is None:
+            self._verify_keys = [decode_public_key(material)
+                                 for material in _public_key_materials()]
+        last: BundleError | None = None
+        for key in self._verify_keys:
+            try:
+                verify_lease(quantum, key)
+                break
+            except BundleError as error:
+                last = error
+        else:
+            raise last or BundleError("capacity grant carries no acceptable signature")
+        # ТИП ВНУТРИ ПОДПИСИ. Иначе лизу можно предъявить как квант и наоборот:
+        # оба подписаны одним ключом и оба несут `recipient` и `nonce`.
+        if quantum.get("kind") != "capacity":
+            raise BundleError("this is not a capacity grant")
+        if str(quantum.get("recipient", "")) != self._process_key.public:
+            raise BundleError(
+                "capacity grant was issued to another recipient — someone is "
+                "between this process and the licensing server")
+        if str(quantum.get("nonce", "")) != nonce:
+            raise BundleError("capacity grant answers a different request")
+        seq = int(quantum.get("quantum_seq", 0) or 0)
+        total = int(quantum.get("grant_total", 0) or 0)
+        with self._lock:
+            if seq <= self._quantum_seq:
+                raise BundleError(
+                    f"capacity grant {seq} is older than the accepted "
+                    f"{self._quantum_seq} — refusing a replay")
+            # ПОТОЛОК ТОЛЬКО РАСТЁТ, и приходит АБСОЛЮТНЫМ числом. Повтор несёт
+            # меньшее значение и становится no-op сам по себе.
+            self._granted = max(self._granted, total)
+            self._quantum_seq = seq
+            self._quantum_size = int(quantum.get("quantum_size", 0) or 0)
+            self._reserve = int(quantum.get("reserve", 0) or 0)
+            self._prefetch_at = int(quantum.get("prefetch_at", 0) or 0)
+            self._ack_trust = str(quantum.get("ack_trust", ""))
+        _log.info("capacity grant %d: +%d (reserve %d), ceiling %d, consumed %d",
+                  seq, self._quantum_size, self._reserve, self._granted,
+                  self._consumed)
 
     def _apply(self, lease: dict[str, object]) -> None:
         if self._verify_keys is None:
@@ -465,6 +577,21 @@ class LicenseClient:
         # `recipient`, поэтому её повтор отключал сверку целиком — и вместе с
         # ней MAC отчётов, потому что секрета в такой лизе тоже нет. Отсутствие
         # поля означает либо старый сервер, либо повтор; оба случая — отказ.
+        # ЭХО НОНСА. Проверка свежести по `issued_at` осталась вторым рубежом,
+        # но перестала быть единственным: часы контейнера чужие, а окно
+        # `ttl + skew` на проде — двадцать пять часов, в которые захваченная
+        # лиза принималась как своя.
+        echoed = str(lease.get("nonce", ""))
+        if not echoed:
+            raise BundleError(
+                "lease echoes no nonce: this engine needs lease contract 3 "
+                "(GET /v1/pubkey reports the server's). Either the licensing "
+                "server is older than this engine — deploy it FIRST — or an old "
+                "lease is being replayed")
+        if echoed != self._pending_nonce:
+            raise BundleError(
+                "lease answers a different request — it is a replay, or someone "
+                "is between this process and the licensing server")
         recipient = str(lease.get("recipient", ""))
         if not recipient:
             raise BundleError(
@@ -508,11 +635,9 @@ class LicenseClient:
         if not expected or hashlib.sha256(secret).hexdigest() != expected:
             raise BundleError("report secret does not match its signed hash")
         self._report_secret = secret
-        granted = lease.get("requests_granted")
-        if isinstance(granted, int) and granted > 0:
-            with self._lock:
-                self._granted = granted
-                self._consumed = 0
+        capacity = lease.get("capacity")
+        if isinstance(capacity, dict):
+            self._capacity_endpoint = str(capacity.get("endpoint", "/v1/meter"))
         ASSETS.load(plaintext)
         with self._lock:
             self._last_ok_monotonic = time.monotonic()
@@ -593,6 +718,29 @@ class LicenseClient:
         short-grace deployment is not silent until the moment it stops."""
         return min(900.0, max(5.0, self._grace_seconds / 8.0))
 
+    def _quantum_due(self) -> bool:
+        with self._lock:
+            if not self._quantum_seq:
+                return True
+            return self._consumed >= self._prefetch_at
+
+    def _meter_step(self) -> None:
+        """Обёртка вокруг покупки кванта с той же классификацией отказов, что и
+        у продления: ответ — терминальный, сбой — в долг из резерва."""
+        try:
+            self._meter_once()
+            if self._terminal_code is not None:
+                _log.info("capacity restored (was %s)", self._terminal_code)
+                self._terminal_code = None
+        except LicenseError as error:
+            self._terminal_code = error.code
+            self._record_error(error.detail)
+            _log.error("capacity refused (%s): %s", error.code, error.detail)
+            self._expire()
+        except (_TransientLeaseError, httpx.HTTPError, BundleError) as error:
+            self._record_error(str(error))
+            _log.warning("capacity top-up failed, running on the reserve: %s", error)
+
     def _tick(self) -> None:
         state = self.state()
         if state == STATE_EXPIRED:
@@ -626,11 +774,13 @@ class LicenseClient:
                 due = max(due, _TERMINAL_RETRY_SECONDS)
             last_attempt = self._last_attempt_monotonic
             try:
-                # ИСЧЕРПАННЫЙ ГРАНТ — ПОВОД ПРОДЛИТЬСЯ НЕМЕДЛЕННО, а не ждать
-                # обычной трети TTL: без ёмкости `/mask` уже отдаёт 503, и
-                # каждая секунда ожидания — простой у клиента.
-                spent = not self.has_capacity() and self.state() == STATE_LEASED
-                if spent or last_attempt is None or (
+                # ЁМКОСТЬ И АРЕНДА ПОКУПАЮТСЯ ОТДЕЛЬНО. Аренда тяжёлая (бандл
+                # пересобирается и заново шифруется, около двух мегабайт) и
+                # редкая; квант лёгкий и частый. Пересобирать бандл на каждый
+                # квант нельзя — это была бы наша собственная DoS-атака.
+                if self._capacity_endpoint and self._quantum_due():
+                    self._meter_step()
+                if last_attempt is None or (
                         time.monotonic() - last_attempt >= due):
                     self._last_attempt_monotonic = time.monotonic()
                     self._renew()

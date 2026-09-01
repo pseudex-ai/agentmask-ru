@@ -218,13 +218,18 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "bundle": _PLAINTEXT_HASH[:12]}
 
 
-# ВЕРСИЯ КОНТРАКТА АРЕНДЫ. Движок с версии 2 требует в лизе полей, которых
-# сервер версии 1 не шлёт: `recipient`, `report_secret`, `issued_at`. Он их
-# ОТСУТСТВИЕ трактует как «сервер старше меня или это повтор» и не стартует —
-# что верно по существу и выглядит как наш сбой, если выкатить образы в
-# неверном порядке. Марка публичная и не требует токена, чтобы выкатчик мог
-# спросить сервер ДО того, как раскатает движок.
-LEASE_CONTRACT = 2
+# ВЕРСИЯ КОНТРАКТА АРЕНДЫ. Движок версии 2 требовал `recipient`,
+# `report_secret` и `issued_at`; версия 3 добавляет ЭХО НОНСА и блок `capacity`
+# с адресом ручки ёмкости. Отсутствие обязательного поля движок трактует как
+# «сервер старше меня или это повтор» и не стартует — верно по существу и
+# похоже на наш сбой, если выкатить образы в неверном порядке. Марка публичная
+# и без токена, чтобы выкатчик мог спросить сервер ДО раскатки движка.
+#
+# Сервер держит ОБЕ схемы и различает их по наличию `nonce` в теле аренды:
+# движок 2 против сервера 3 работает без изменений (подпись покрывает весь
+# словарь, лишние поля он не читает), движок 3 против сервера 2 отказывается
+# стартовать и называет причину.
+LEASE_CONTRACT = 3
 
 
 @app.get("/v1/pubkey")
@@ -521,8 +526,6 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
                      record.org_id, instance_id, why_not)
         return JSONResponse({"error": "instance_limit", "detail": why_not},
                             status_code=409)
-    STORE.record_grant(record.org_id, recipient, STORE.grant_size(record.plan))
-
     # СЕКРЕТ ОТЧЁТОВ, ЗАПЕЧАТАННЫЙ ПОЛУЧАТЕЛЮ. Достать его может только тот, у
     # кого приватная половина `recipient`, — а `recipient` теперь под подписью,
     # так что подменить его на свой перехватчик не может: контейнер сверит с
@@ -530,6 +533,13 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     report_secret = secrets.token_bytes(32)
     STORE.record_report_secret(record.org_id, recipient, report_secret.hex())
 
+    # ЭХО НОНСА — ЕДИНСТВЕННОЕ, ЧТО УБИВАЕТ ПОВТОР. Свежесть по часам не
+    # годится: часы в контейнере чужие, а окно `ttl + skew` на проде это
+    # двадцать пять часов, в течение которых захваченная лиза принималась как
+    # своя — проверено, `granted` при этом замирал навсегда, а движок показывал
+    # `state=active` и ноль ошибок.
+    nonce = str(body.get("nonce", ""))
+    contract_3 = bool(nonce)
     payload: dict[str, object] = {
         "lease_id": lease_id,
         # КОМУ ЗАПЕЧАТАНО — В ПОДПИСИ. Без этого поля перехватчик на хосте
@@ -552,8 +562,21 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
         # ГРАНТ ЁМКОСТИ. Счёт строится на ЭТОМ числе, а не на том, что контейнер
         # о себе сообщит: скрыть расход можно, скрыть собственную просьбу о
         # ёмкости — нет, потому что без неё движок перестаёт обслуживать.
+        # ПОЛЕ КОНТРАКТА 2, ОСТАЁТСЯ ПОКА В ПАРКЕ ЕСТЬ СТАРЫЕ ДВИЖКИ. Для
+        # контракта 3 ёмкость покупается на `/v1/meter`, и здесь не чеканится
+        # ничего.
         "requests_granted": STORE.grant_size(record.plan),
     }
+    if contract_3:
+        payload["nonce"] = nonce
+        payload["capacity"] = {"endpoint": "/v1/meter",
+                               "target_seconds": STORE.METER_TARGET_SECONDS}
+        payload["lease_contract"] = LEASE_CONTRACT
+    else:
+        # Мост: движок контракта 2 по-прежнему получает грант по времени и
+        # считается по старой, завышающей схеме. Никого не бьёт, пока тариф
+        # фиксированный, и исчезает вместе с последним старым образом.
+        STORE.record_grant(record.org_id, recipient, STORE.grant_size(record.plan))
     payload["report_secret_sha256"] = hashlib.sha256(report_secret).hexdigest()
     payload["signature"] = sign_lease(payload, SIGNING_KEY)
 
@@ -564,6 +587,83 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
         middle = len(sealed) // 2
         sealed = sealed[:middle] + ("A" if sealed[middle] != "A" else "B") + sealed[middle + 1:]
     payload["bundle"] = sealed
+    return JSONResponse(payload)
+
+
+@app.post("/v1/meter")
+async def meter(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
+    """Купить следующий квант ёмкости, назвав свой расход.
+
+    ЛЁГКАЯ РУЧКА, И ЭТО АРИФМЕТИКА, А НЕ ЭСТЕТИКА. Аренда пересобирает и
+    заново шифрует весь бандл — 1481 КБ после zlib, около двух мегабайт
+    age+base64 на КАЖДОЕ обращение, синхронно на цикле однопроцессного
+    uvicorn. Покупать этим ценой квант в несколько сотен запросов нельзя.
+    Здесь около килобайта: один HMAC, одна подпись, одна запись.
+
+    Частота обращений — `1 / (0.75 · τ_Q)`, то есть одно в четыре минуты на
+    процесс НЕЗАВИСИМО ОТ ТРАФИКА: квант растёт вместе с расходом. Клиент под
+    нагрузкой не создаёт нагрузки нам.
+    """
+    key = body.get("key")
+    if not isinstance(key, str) or not key:
+        return JSONResponse({"error": "license_missing", "detail": "no key presented"},
+                            status_code=401)
+    record = STORE.lookup(key)
+    if record is None:
+        return JSONResponse({"error": "license_invalid", "detail": "unknown key"},
+                            status_code=403)
+    if record.status != STATUS_ACTIVE:
+        status_code, error, detail = _STATUS_RESPONSE.get(
+            record.status,
+            (403, "license_invalid", f"key is in an unusable state ({record.status!r})"))
+        return JSONResponse({"error": error, "detail": detail}, status_code=status_code)
+
+    pubkey = str(body.get("pubkey", ""))
+    nonce = str(body.get("nonce", ""))
+    if not pubkey or not nonce:
+        return JSONResponse({"error": "license_invalid",
+                             "detail": "pubkey and nonce are required"},
+                            status_code=400)
+
+    # ОТЧЁТ О РАСХОДЕ ЕДЕТ ТЕМ ЖЕ MAC, ЧТО И ВСЕГДА. Новых секретов нет:
+    # `report_secret` уже запечатан на этот ключ процесса.
+    acked: int | None = None
+    trust = "none"
+    ack = body.get("ack")
+    if isinstance(ack, dict):
+        try:
+            consumed = _counter(ack, "consumed")
+        except ReportRejected as error:
+            return JSONResponse({"error": "report_rejected", "detail": str(error)},
+                                status_code=400)
+        secret_hex = STORE.report_secret(record.org_id, pubkey)
+        if secret_hex and ack.get("signature"):
+            try:
+                verify_report(ack, bytes.fromhex(secret_hex))
+                acked, trust = consumed, "signed"
+            except (BundleError, ValueError) as error:
+                _log.warning("capacity ack failed for org=%s pubkey=%s: %s",
+                             record.org_id, pubkey[:12], error)
+                trust = "bad_signature"
+        else:
+            trust = "unsigned"
+
+    quantum = STORE.issue_quantum(record.org_id, pubkey, record.plan, acked,
+                                  time.time())
+    payload: dict[str, object] = {
+        "kind": "capacity",
+        # Квант не может быть прочитан как лиза, а лиза как квант: тип внутри
+        # подписи, и клиент его сверяет.
+        "recipient": pubkey,
+        "nonce": nonce,
+        "org_id": record.org_id,
+        "plan": record.plan,
+        "issued_at": int(time.time()),
+        "ack_trust": trust,
+        "lease_contract": LEASE_CONTRACT,
+        **quantum,
+    }
+    payload["signature"] = sign_lease(payload, SIGNING_KEY)
     return JSONResponse(payload)
 
 

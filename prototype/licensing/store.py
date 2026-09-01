@@ -131,6 +131,32 @@ class LicenseStore:
             "ON leases(org_id, issued_at)")
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS leases_org_pubkey ON leases(org_id, pubkey)")
+        # ЛЕДЖЕР ЁМКОСТИ. Ключ строки — ключ ПРОЦЕССА: единственный
+        # идентификатор, который клиент не выбирает.
+        #
+        # `granted` — потолок, растёт только у нас и только вверх. `acked` —
+        # высшее подтверждённое значение расхода, названное клиентом под MAC.
+        # Счёт строится на `acked`, ЗАЖАТОМ между `granted - Q - R` и
+        # `granted`: отчёт может двигать сумму только внутри полосы, которую
+        # чеканим мы, поэтому занизить его выгодно ровно до нуля.
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS meter ("
+            "org_id TEXT, pubkey TEXT, first_seen REAL, updated_at REAL, "
+            "quantum_seq INTEGER DEFAULT 0, quantum_size INTEGER DEFAULT 0, "
+            "reserve INTEGER DEFAULT 0, granted INTEGER DEFAULT 0, "
+            "acked INTEGER DEFAULT 0, acked_at REAL, "
+            "ack_trust TEXT DEFAULT 'none', rate_per_second REAL DEFAULT 0, "
+            # Кванты подряд без проверенного отчёта. Молчание перестаёт быть
+            # тишиной: оно видно числом и стоит клиенту скидки.
+            "unacked_quanta INTEGER DEFAULT 0, "
+            # Расход поехал назад под одним ключом процесса. Процесс не может
+            # обслужить меньше, чем уже обслужил, — значит либо два процесса на
+            # одном ключе, либо повтор.
+            "ack_regressions INTEGER DEFAULT 0, "
+            "PRIMARY KEY (org_id, pubkey))"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS meter_org ON meter(org_id)")
         # Существующие тома пережили релизы без этой колонки.
         columns = {row[1] for row in
                    self._conn.execute("PRAGMA table_info(leases)")}
@@ -495,6 +521,31 @@ class LicenseStore:
     # ожидаемого трафика» выбран так, чтобы клиент, остановившийся посреди
     # гранта, переплатил незначительно — гранты не возвращаются, и это цена
     # того, что число неподделываемо.
+    # СКОЛЬКО СЕКУНД СОБСТВЕННОГО ТРАФИКА КЛИЕНТА СОСТАВЛЯЮТ КВАНТ И РЕЗЕРВ.
+    #
+    # Погрешность счёта при таком выборе равна `(τ_Q + τ_R) / период` и НЕ
+    # зависит ни от объёма, ни от числа воркеров, ни от тарифа. При 300 с и 6 ч
+    # это 0.84% в худшем случае — когда цепь отчётов порвана и счёт идёт по
+    # потолку, — и РОВНО НОЛЬ, когда отчёты доходят.
+    #
+    # Квант вносит в эту цифру 23 миллионных, резерв — почти всё. Поэтому квант
+    # выгодно делать КРУПНЫМ (в пять раз меньше обращений при той же точности),
+    # а торговаться стоит за часы резерва: каждый час страховки от НАШЕГО
+    # простоя стоит 0.14% худшей погрешности.
+    METER_TARGET_SECONDS = int(os.environ.get("PSEUDEX_METER_TARGET_SECONDS", "300"))
+    RESERVE_SECONDS = int(os.environ.get("PSEUDEX_RESERVE_SECONDS", str(6 * 3600)))
+    # Порог предвыборки внутри РЕЗЕРВА: движок идёт за следующим квантом, пока
+    # страховка ещё цела. Резерв — страховка, а не оборотный капитал.
+    PREFETCH_FRACTION = 0.25
+
+    # Нижние и верхние границы кванта и резерва по тарифам. Нижняя нужна, чтобы
+    # почти простаивающий процесс не ходил к нам за единицами; верхняя — чтобы
+    # всплеск не выдал вперёд месячный объём.
+    QUANTUM_BOUNDS = {"start": (200, 2_000), "work": (200, 10_000),
+                      "industrial": (500, 40_000), "enterprise": (500, 100_000)}
+    RESERVE_MAX = {"start": 20_000, "work": 100_000,
+                   "industrial": 400_000, "enterprise": 2_000_000}
+
     PLAN_GRANT = {"start": 5_000, "work": 25_000, "industrial": 100_000,
                   "enterprise": 500_000}
 
@@ -515,6 +566,112 @@ class LicenseStore:
                 (org_id, pubkey, size, time.time()),
             )
             self._conn.commit()
+
+    def meter_row(self, org_id: str, pubkey: str) -> dict[str, object]:
+        row = self._fetchone(
+            "SELECT quantum_seq, quantum_size, reserve, granted, acked, acked_at, "
+            "unacked_quanta, ack_regressions FROM meter WHERE org_id=? AND pubkey=?",
+            (org_id, pubkey))
+        if row is None:
+            return {"quantum_seq": 0, "quantum_size": 0, "reserve": 0,
+                    "granted": 0, "acked": 0, "acked_at": 0.0,
+                    "unacked_quanta": 0, "ack_regressions": 0}
+        return {"quantum_seq": int(row[0] or 0), "quantum_size": int(row[1] or 0),
+                "reserve": int(row[2] or 0), "granted": int(row[3] or 0),
+                "acked": int(row[4] or 0), "acked_at": float(row[5] or 0.0),
+                "unacked_quanta": int(row[6] or 0),
+                "ack_regressions": int(row[7] or 0)}
+
+    def issue_quantum(self, org_id: str, pubkey: str, plan: str,
+                      acked: int | None, now: float) -> dict[str, int]:
+        """Выдать следующий квант ёмкости. ОДНА транзакция, одна запись.
+
+        `acked` — подтверждённый расход процесса, или `None`, если отчёта не
+        было или он не сошёлся. Тогда шаг СЛЕПОЙ: считаем, что предыдущий квант
+        выбран целиком. Слепой шаг не может быть выгоднее честного — он
+        завышает, — и это то, что делает молчание невыгодным без единого
+        механизма принуждения.
+
+        ЦЕЛЬ, А НЕ ПРИБАВКА. `granted += Q` — это учёт по числу ОБРАЩЕНИЙ, то
+        есть по времени: ровно тот дефект, из-за которого простаивающий воркер
+        накапливал 45 000 выданных за полторы минуты и тринадцать запросов.
+        `granted = max(granted, consumed + Q + R)` делает прирост равным
+        расходу, а разрыв `granted - consumed` — КОНСТАНТОЙ на процесс.
+        """
+        with self._lock:
+            row = self.meter_row(org_id, pubkey)
+            regressed = acked is not None and acked < row["acked"]
+            if acked is None or regressed:
+                consumed = max(row["granted"] - row["quantum_size"], row["acked"])
+                trust_step = "blind"
+            else:
+                consumed = acked
+                trust_step = "acked"
+
+            elapsed = now - row["acked_at"] if row["acked_at"] else 0.0
+            gained = max(0, consumed - row["acked"])
+            rate = gained / elapsed if elapsed > 1.0 else 0.0
+
+            low, high = self.QUANTUM_BOUNDS.get(plan, self.QUANTUM_BOUNDS["start"])
+            quantum = min(max(int(rate * self.METER_TARGET_SECONDS), low), high)
+            # РЕЗЕРВ ВЫДАЁТСЯ СО ВТОРОГО КВАНТА. Процессу, который ещё ничего не
+            # обслужил, нечего страховать от нашего простоя, а выдавая резерв
+            # сразу, мы заставили бы платить за него каждый воркер каждого
+            # перезапуска — дефект «грант по времени» вернулся бы другой дверью.
+            if row["quantum_seq"] == 0:
+                reserve = 0
+            else:
+                reserve = min(max(int(rate * self.RESERVE_SECONDS), quantum),
+                              self.RESERVE_MAX.get(plan, self.RESERVE_MAX["start"]))
+            granted = max(row["granted"], consumed + quantum + reserve)
+            unacked = 0 if trust_step == "acked" else row["unacked_quanta"] + 1
+
+            self._conn.execute(
+                "INSERT INTO meter (org_id, pubkey, first_seen, updated_at, "
+                "quantum_seq, quantum_size, reserve, granted, acked, acked_at, "
+                "ack_trust, rate_per_second, unacked_quanta, ack_regressions) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(org_id, pubkey) DO UPDATE SET updated_at=excluded.updated_at, "
+                "quantum_seq=excluded.quantum_seq, quantum_size=excluded.quantum_size, "
+                "reserve=excluded.reserve, granted=excluded.granted, "
+                "acked=excluded.acked, acked_at=excluded.acked_at, "
+                "ack_trust=excluded.ack_trust, rate_per_second=excluded.rate_per_second, "
+                "unacked_quanta=excluded.unacked_quanta, "
+                "ack_regressions=meter.ack_regressions+excluded.ack_regressions",
+                (org_id, pubkey, now, now, row["quantum_seq"] + 1, quantum, reserve,
+                 granted, max(consumed, row["acked"]), now, trust_step, rate,
+                 unacked, 1 if regressed else 0))
+            self._conn.commit()
+        if regressed:
+            _log.warning("consumed went backwards under one process key for "
+                         "org=%s pubkey=%s: %d -> %s", org_id, pubkey[:12],
+                         row["acked"], acked)
+        return {"quantum_seq": row["quantum_seq"] + 1, "quantum_size": quantum,
+                "reserve": reserve, "grant_total": granted,
+                "prefetch_at": max(1, granted - reserve
+                                   - max(1, int(quantum * self.PREFETCH_FRACTION)))}
+
+    def billable(self, org_id: str) -> dict[str, int]:
+        """Сколько выставить. ПОДТВЕРЖДЁННОЕ, ЗАЖАТОЕ ВЫДАННЫМ.
+
+        `clamp(acked, granted - Q - R, granted)` на каждый процесс, и сумма.
+        Верхнюю границу клиент не перепрыгнет — без гранта движок не
+        обслуживает; нижнюю не продавит — она наша запись. Значит отчёт двигает
+        счёт только ВНУТРИ полосы шириной `Q + R`, и снять его — значит
+        отказаться от скидки за неиспользованное, а не спрятать расход.
+        """
+        rows = self._fetchall(
+            "SELECT granted, acked, quantum_size, reserve, unacked_quanta "
+            "FROM meter WHERE org_id=?", (org_id,))
+        billable = ceiling = acknowledged = unacked = 0
+        for granted, acked, quantum, reserve, row_unacked in rows:
+            floor = max(0, int(granted or 0) - int(quantum or 0) - int(reserve or 0))
+            billable += min(max(int(acked or 0), floor), int(granted or 0))
+            ceiling += int(granted or 0)
+            acknowledged += int(acked or 0)
+            unacked += int(row_unacked or 0)
+        return {"billable": billable, "granted": ceiling, "acked": acknowledged,
+                "processes": len(rows), "unacked_quanta": unacked}
 
     def _record_build(self, org_id: str, pubkey: str, build: str,
                       trust: str) -> None:

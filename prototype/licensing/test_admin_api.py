@@ -22,6 +22,7 @@
 import os
 import sys
 import tempfile
+import time
 
 os.environ.setdefault("PSEUDEX_LICENSE_DB", tempfile.mktemp(suffix=".db"))
 os.environ["PSEUDEX_LICENSE_ADMIN_TOKEN"] = "test-admin"
@@ -244,6 +245,123 @@ stray = {name for name, text in sources.items()
 check("оба лега списывают через одну функцию",
       billing_legs == {"service.py", "proxy.py"}, f"списывают: {sorted(billing_legs)}")
 check("мимо неё ёмкость больше никто не трогает", not stray, f"мимо: {sorted(stray)}")
+
+
+# --- ПРОТОКОЛ ЁМКОСТИ, НАСТОЯЩИМ КЛИЕНТОМ ПРОТИВ НАСТОЯЩЕГО СЕРВЕРА ------
+# `TestClient` не даёт клиенту сетевого адреса, поэтому здесь поднимается
+# настоящий uvicorn на петле: `LicenseClient` ходит по HTTP и никак иначе.
+print("\nПРОТОКОЛ ЁМКОСТИ")
+import threading  # noqa: E402
+
+import httpx  # noqa: E402
+import uvicorn  # noqa: E402
+
+from pseudex.bundle import BundleError  # noqa: E402
+from pseudex.license import LicenseClient  # noqa: E402
+
+
+def _free_port() -> int:
+    import socket
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+_port = _free_port()
+_serving = uvicorn.Server(uvicorn.Config(server.app, host="127.0.0.1", port=_port,
+                                         log_level="error"))
+threading.Thread(target=_serving.run, daemon=True).start()
+_base = f"http://127.0.0.1:{_port}"
+for _ in range(200):
+    try:
+        httpx.get(f"{_base}/health", timeout=1)
+        break
+    except httpx.HTTPError:
+        time.sleep(0.05)
+
+os.environ["PSEUDEX_LICENSE_PUBKEY"] = server.PUBLIC_KEY
+
+
+def engine(org: str, plan: str) -> LicenseClient:
+    client = LicenseClient(
+        base_url=_base, key=server.STORE.issue_key(org, plan), instance_id="i",
+        ca_path="", usage_provider=lambda: {"requests": 0, "entities": {}, "values": 0})
+    client.acquire()
+    return client
+
+
+# ЧЕСТНАЯ ЦЕПЬ — СЧЁТ РАВЕН РАСХОДУ. Это и есть обещание: не оценка сверху, а
+# измерение, которое клиент может сверить со своим логом шлюза.
+honest = engine("cap-honest", "start")
+honest._meter_step()
+for _ in range(honest._prefetch_at):
+    honest.consume()
+honest._meter_step()
+served, _ = honest.capacity()
+totals = server.STORE.billable("cap-honest")
+check("честная цепь: к счёту ровно расход, а не потолок",
+      totals["billable"] == served,
+      f"расход {served}, к счёту {totals['billable']}, потолок {totals['granted']}")
+
+# ПОВТОР УЖЕ ПРИНЯТОГО КВАНТА.
+raw = httpx.post(f"{_base}/v1/meter", timeout=10, json={
+    "key": honest._key, "instance_id": "i",
+    "pubkey": honest._process_key.public, "nonce": "n"}).json()
+honest._apply_quantum(raw, "n")
+try:
+    honest._apply_quantum(raw, "n")
+    replayed = True
+except BundleError:
+    replayed = False
+check("повтор принятого кванта не пополняет ёмкость", not replayed)
+
+# ПОВТОР ЗАХВАЧЕННОЙ ЛИЗЫ: не даёт ёмкости И не обнуляет расход.
+captured = httpx.post(f"{_base}/v1/lease", timeout=60, json={
+    "key": honest._key, "instance_id": "i", "pubkey": honest._process_key.public,
+    "engine_version": "1.0.0", "nonce": "CAPTURED"}).json()
+before = honest.capacity()
+try:
+    honest._apply(captured)
+    accepted = True
+except BundleError:
+    accepted = False
+check("повтор лизы отвергнут и расход не обнулён",
+      not accepted and honest.capacity() == before,
+      f"ёмкость {before} -> {honest.capacity()}")
+
+# БЛЭКХОЛ: ёмкость в STALE КОНЕЧНА и равна предоплаченному резерву.
+blackhole = engine("cap-blackhole", "start")
+blackhole._meter_step()
+for _ in range(blackhole._prefetch_at):
+    blackhole.consume()
+blackhole._meter_step()
+reserve = blackhole._reserve
+blackhole._base_url = "http://127.0.0.1:1"
+blackhole._last_ok_monotonic -= 10 ** 5
+extra = 0
+while blackhole.has_capacity() and extra < 10 ** 6:
+    blackhole.consume()
+    extra += 1
+check("наш простой отдаёт ровно предоплаченный резерв и ни запросом больше",
+      extra < 10 ** 6 and not blackhole.has_capacity(),
+      f"обслужено в STALE {extra} при резерве {reserve}; раньше здесь был "
+      f"безлимит на TTL+grace")
+
+# МОЛЧАНИЕ НЕ ЗАНИЖАЕТ СЧЁТ: слепой шаг считает квант выбранным целиком.
+silent = engine("cap-silent", "start")
+silent._meter_step()
+for _ in range(silent._prefetch_at):
+    silent.consume()
+spent, _ = silent.capacity()
+# Так выглядит пропатченный клиент: ёмкость просит, расход не называет.
+silent._report_secret = None
+silent._meter_step()
+silent._meter_step()
+quiet = server.STORE.billable("cap-silent")
+check("снятый отчёт не занижает счёт и виден числом",
+      quiet["billable"] >= spent and quiet["unacked_quanta"] > 0,
+      f"расход {spent}, к счёту {quiet['billable']}, "
+      f"квантов без отчёта {quiet['unacked_quanta']}")
 
 print(f"\nсломано {len(fails)}")
 raise SystemExit(1 if fails else 0)
