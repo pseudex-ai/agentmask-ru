@@ -707,3 +707,97 @@ _SIGNATURE_NOISE = frozenset({
     "вл", "квартира", "кв", "офис", "оф", "помещение", "пом", "комната",
     "комн", "литер", "лит", "подъезд", "под", "этаж",
 })
+
+
+# --- разбор НАСТОЯЩЕГО адреса на роли ---------------------------------------
+
+_ORDINAL_WORD = (r"(?:перв|втор|трет|четв[её]рт|пят|шест|седьм|восьм|девят|десят"
+                 r"|одиннадцат|двенадцат|последн|углов)\w*")
+# ДЛИННОЕ ПЕРЕД КОРОТКИМ, И ЭТО НЕ КОСМЕТИКА. «пять» — префикс «пятьдесят», а
+# «два» — «двести»: при обычном порядке альтернатив «сто пятьдесят семь»
+# разбирается как «сто пять», и дом уезжает в инструмент другим числом. То же
+# правило уже записано про распознавание произнесённого номера дома.
+_NUMERAL_LONGEST = "|".join(sorted(
+    ("ноль", "один", "одна", "два", "две", "три", "четыре", "пять", "шесть",
+     "семь", "восемь", "девять", "десять", "одиннадцать", "двенадцать",
+     "тринадцать", "четырнадцать", "пятнадцать", "шестнадцать", "семнадцать",
+     "восемнадцать", "девятнадцать", "двадцать", "тридцать", "сорок",
+     "пятьдесят", "шестьдесят", "семьдесят", "восемьдесят", "девяносто", "сто",
+     "двести", "триста", "четыреста", "пятьсот", "шестьсот", "семьсот",
+     "восемьсот", "девятьсот"), key=len, reverse=True))
+_WORD_NUMBER = re.compile(
+    rf"(?i)\b(?:{_NUMERAL_LONGEST})\b(?:\s+\b(?:{_NUMERAL_LONGEST})\b)*"
+    rf"(?:\s+[а-яё](?![а-яё]))?")
+_DIGIT_NUMBER = re.compile(r"\d+(?:/\d+)?[а-яё]?")
+_ORDINAL_ONLY = re.compile(rf"(?i)\b{_ORDINAL_WORD}\b")
+_HOUSE_MARKER = re.compile(r"(?i)\b(?:дом|д|влад\w*|вл)\.?")
+_PART_MARKERS: tuple[tuple[str, str], ...] = (
+    ("flat", r"кв|кварт\w*|офис\w*|оф"),
+    ("entrance", r"подъезд\w*|под"),
+    ("floor", r"этаж\w*"),
+    ("building", r"корп\w*|кор|стр|строен\w*|литер\w*|лит"),
+)
+
+
+def _number_at(text: str, position: int) -> re.Match[str] | None:
+    """Число (цифрами или словами), начинающееся сразу за `position`."""
+    gap = re.match(r"[\s,.]*", text[position:])
+    at = position + (gap.end() if gap else 0)
+    for pattern in (_DIGIT_NUMBER, _WORD_NUMBER):
+        found = pattern.match(text, at)
+        if found is not None:
+            return found
+    return None
+
+
+def split_roles(phrase: str) -> dict[str, str]:
+    """Настоящий адрес, разложенный на street / house / flat / entrance / …
+
+    ЗАЧЕМ. Схема инструмента просит части адреса отдельными полями, и вернуть
+    туда целую фразу нельзя: в `house` поедет улица, а в `street` — улица с
+    домом и подъездом. Раскладывать надо так же, как раскладывает человек,
+    заполняющий форму.
+
+    МАРКЕР ЗАБИРАЕТ ЧИСЛО СПРАВА, А ПОРЯДКОВОЕ — СЛЕВА. «кв. 58» пишут, «первый
+    подъезд» говорят, и сторона зависит от того, числительное это или
+    порядковое. Слева допускается ТОЛЬКО порядковое: разрешить там любое число
+    значило бы, что «заречная сорок пять второй подъезд» отдаёт подъезду «сорок
+    пять второй» вместе с домом.
+
+    Дом — первое число, которое не забрал ни один маркер. Улица — всё, что
+    стоит до него.
+    """
+    text = phrase.strip()
+    claimed: list[tuple[int, int]] = []
+    out: dict[str, str] = {}
+    for role, marker in _PART_MARKERS:
+        for hit in re.finditer(rf"(?i)\b(?:{marker})\.?(?![а-яё])", text):
+            after = _number_at(text, hit.end())
+            if after is not None:
+                claimed.append((hit.start(), after.end()))
+                out.setdefault(role, after.group().strip())
+                continue
+            before = list(_ORDINAL_ONLY.finditer(text[:hit.start()]))
+            if before and not text[before[-1].end():hit.start()].strip():
+                claimed.append((before[-1].start(), hit.end()))
+                out.setdefault(role, before[-1].group().strip())
+    house = None
+    for pattern in (_DIGIT_NUMBER, _WORD_NUMBER):
+        for number in pattern.finditer(text):
+            if any(start <= number.start() < end for start, end in claimed):
+                continue
+            if house is None or number.start() < house.start():
+                house = number
+            break
+    if house is not None:
+        out["house"] = house.group().strip()
+        head = text[:house.start()]
+        marker = _HOUSE_MARKER.search(head)
+        if marker is not None and not head[marker.end():].strip(" ,."):
+            head = head[:marker.start()]
+        street = head.strip().strip(" ,.")
+        if street:
+            out["street"] = street
+    elif not claimed:
+        out["street"] = text
+    return out

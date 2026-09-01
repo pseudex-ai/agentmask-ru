@@ -576,7 +576,79 @@ def unmask_arguments(raw: str, vault: Vault) -> str:
             return {key: walk(value) for key, value in node.items()}
         return node
 
-    return json.dumps(walk(parsed), ensure_ascii=False)
+    return json.dumps(_join_address_fields(walk(parsed), parsed, vault),
+                      ensure_ascii=False)
+
+
+# Имена полей, которыми схемы инструментов называют части адреса. Роль читается
+# из имени, а не из формы значения: имя — это единственное, что видит и модель,
+# когда решает, что куда положить.
+_FIELD_ROLES: tuple[tuple[str, str], ...] = (
+    ("street", "street"), ("house", "house"), ("building", "house"),
+    ("flat", "flat"), ("apartment", "flat"), ("apt", "flat"),
+    ("entrance", "entrance"), ("porch", "entrance"), ("floor", "floor"),
+)
+
+
+def _role_of_field(name: str) -> str:
+    parts = name.lower().split("_")
+    for word, role in _FIELD_ROLES:
+        if word in parts:
+            return role
+    return ""
+
+
+def _join_address_fields(restored: object, original: object, vault: Vault) -> object:
+    """Собрать адрес, который модель разложила по ПОЛЯМ схемы, и разложить обратно.
+
+    ПОЧЕМУ ЭТО НЕЛЬЗЯ СДЕЛАТЬ ПОЛИСТНО. Подмена адреса — одна фраза, а
+    `dispatch_car` просит `street`, `house` и `entrance` порознь. Каждый лист
+    JSON разбирается сам по себе, и ключ целой фразы не равен ни одному
+    фрагменту по построению — сложить их было физически некому. На живом
+    прогоне это 50 из 54 неразрешённых аргументов: в CRM клиента уезжала
+    «улица Тополиная» и дом «49», то есть выдуманный адрес с кодом 200.
+
+    Здесь листья, которые не разрешились сами, спрашиваются ВМЕСТЕ:
+    `place_owner` ищет подмену, частями которой они являются, и требует, чтобы
+    все они сошлись на ОДНОЙ — правило единственного владельца, то же самое,
+    что уже держит связывание короткого упоминания на прямом пути. Настоящий
+    адрес затем раскладывается по тем же ролям (`morph_places.split_roles`).
+
+    Роль, которой у настоящего адреса нет, ОСТАЁТСЯ КАК БЫЛА. Подставить туда
+    пустоту значило бы менять контракт инструмента, а подставить целую фразу —
+    положить улицу в поле дома.
+    """
+    if not isinstance(restored, dict) or not isinstance(original, dict):
+        return restored
+    fragments = {
+        key: value for key, value in original.items()
+        if isinstance(value, str) and value.strip()
+        and _role_of_field(key)
+        and isinstance(restored.get(key), str) and restored[key] == value
+    }
+    if not fragments:
+        return restored
+    # КАЖДОЕ ПОЛЕ ГОЛОСУЕТ ОТДЕЛЬНО, И НЕ КАЖДОЕ ГОЛОСУЕТ. У подмены нет
+    # подъезда — генератор его не чеканит, — поэтому в `entrance` модель кладёт
+    # выдуманное число, у которого владельца нет вовсе. Спросив все поля разом,
+    # мы получали бы отказ из-за одного такого поля и не разрешали ничего.
+    # Поле без владельца просто молчит и остаётся как было; поля с владельцем
+    # обязаны сойтись на ОДНОЙ подмене.
+    owners = {vault.place_owner(value) for value in fragments.values()}
+    owners.discard(None)
+    if len(owners) != 1:
+        return restored
+    owner = owners.pop()
+    value, entity_type = vault.reveal(owner)
+    if not value or entity_type != "LOC":
+        return restored
+    roles = morph_places.split_roles(value)
+    out = dict(restored)
+    for key in fragments:
+        part = roles.get(_role_of_field(key))
+        if part:
+            out[key] = part
+    return out
 
 
 def residual_tokens(text: str, vault: Vault) -> list[str]:

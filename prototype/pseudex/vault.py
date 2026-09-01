@@ -956,7 +956,13 @@ def _loc_token_pattern() -> str:
     # ordinary prose around the token.
     head = (rf"(?:(?i:{generics})\s{name}"         # улица Тополиная
             rf"|{name}\s(?i:{generics})"           # Тополиный проспект
-            rf"|(?i:{abbrs})\.?\s{name})")         # ул. Тополиная
+            rf"|(?i:{abbrs})\.?\s{name}"           # ул. Тополиная
+            # СОКРАЩЕНИЕ СТОИТ И ПОСЛЕ ИМЕНИ. «Луговой просп., 129» — модель
+            # сократила родовое слово в форме «имя + тип», а эта ветка была
+            # только у полных слов, поэтому окно не строилось вовсе и адрес
+            # уходил в инструмент подменой. Мы такую форму не чеканим; здесь
+            # речь о том, что модель могла НАПИСАТЬ.
+            rf"|{name}\s(?i:{abbrs})\.?)")         # Тополиная ул.
     # Cities inflect too — «Сортавала» is written «Сортавалу» after «в». The
     # nominative literal matched neither, so the city-prefixed alternative never
     # fired, the head-only one did, and its key (no city) missed the stored key
