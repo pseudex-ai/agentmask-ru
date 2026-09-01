@@ -175,5 +175,57 @@ check("отравленная строка не делает итоги недо
       after.status_code == 200 and after.json()["usage"]["entities"].get("NAME") == 2,
       f"код={after.status_code}")
 
+
+# --- ПОТОЛОК ИНСТАНСОВ: ОСВОБОЖДЁННЫЙ СЛОТ ОСТЫВАЕТ ----------------------
+# Проверено руками до правки: на тарифе «Старт» (один контейнер) поднимались
+# пять подряд — каждый освобождал свой слот сам и уступал место следующему.
+print("\nПОТОЛОК ИНСТАНСОВ")
+carousel_key = admin.post("/admin/issue", json={"org_id": "carousel", "plan": "start"},
+                          headers=ADMIN).json()["key"]
+
+
+def lease_as(key: str, instance: str, pubkey: str) -> int:
+    return public.post("/v1/lease", json={
+        "key": key, "instance_id": instance, "pubkey": pubkey,
+        "engine_version": "1.0.0"}).status_code
+
+
+def release_as(key: str, instance: str, pubkey: str) -> int:
+    return public.post("/v1/release", json={
+        "key": key, "instance_id": instance, "pubkey": pubkey}).status_code
+
+
+served = []
+for number in range(5):
+    process = generate_process_key().public
+    code = lease_as(carousel_key, f"c{number}", process)
+    if code == 200:
+        served.append(number)
+        release_as(carousel_key, f"c{number}", process)
+check("карусель контейнеров упирается в остывший слот", len(served) == 1,
+      f"обслужено {len(served)} из 5 на тарифе в один инстанс")
+
+# А ПЕРЕРАЗВЁРТЫВАНИЕ — ТОТ ЖЕ ТОМ, ТОТ ЖЕ `instance_id` — НЕ ЗАДЕТО ВОВСЕ.
+# Это и есть причина, по которой остывание можно себе позволить.
+redeploy = lease_as(carousel_key, "c0", generate_process_key().public)
+check("переразвёртывание на том же томе поднимается сразу", redeploy == 200,
+      f"POST /v1/lease -> {redeploy}")
+
+refusal = public.post("/v1/lease", json={
+    "key": carousel_key, "instance_id": "c9",
+    "pubkey": generate_process_key().public, "engine_version": "1.0.0"}).json()
+check("отказ называет работающий путь, а не только запрет",
+      "ТОМ ЖЕ ТОМЕ" in refusal.get("detail", ""), refusal.get("detail", "")[:90])
+
+budget_key = admin.post("/admin/issue", json={"org_id": "budget", "plan": "start"},
+                        headers=ADMIN).json()["key"]
+codes = []
+for number in range(8):
+    process = generate_process_key().public
+    lease_as(budget_key, "b0", process)
+    codes.append(release_as(budget_key, "b0", process))
+check("бюджет освобождений исчерпывается и отвечает 429", 429 in codes,
+      f"коды освобождений: {codes}")
+
 print(f"\nсломано {len(fails)}")
 raise SystemExit(1 if fails else 0)

@@ -13,6 +13,7 @@ works (docs/tz-license-packaging.md §4.1).
 """
 
 import os
+import secrets
 import socket
 import tempfile
 import threading
@@ -25,10 +26,23 @@ from pseudex.assets import ASSETS
 
 
 
-# Учётные данные админки лицензионного сервера. Пусто — заголовка нет, и сервер
-# ответит 401: ходить молча без токена хуже, чем громко не дойти.
-ADMIN_TOKEN = os.environ.get("PSEUDEX_LICENSE_ADMIN_TOKEN", "")
-ADMIN_AUTH = {"Authorization": f"Bearer {ADMIN_TOKEN}"} if ADMIN_TOKEN else {}
+# Учётные данные админки лицензионного сервера.
+#
+# СТЕНД ВЛАДЕЕТ ОБОИМИ КОНЦАМИ, ПОЭТОМУ САМ И ЧЕКАНИТ ТОКЕН. Раньше он читался
+# из окружения, и пусто означало «заголовка нет» — а сервер с тех пор требует
+# токен на каждой админской ручке. В CI переменная не задана, поэтому
+# `/admin/issue` отвечал 401, ключ не выпускался, и `test_localui.py` падал
+# `KeyError: 'key'` — то есть проверка операторской поверхности не выполнялась
+# вообще, а сообщение об этом не называло причину.
+#
+# Здесь генерировать его правильно ровно потому, почему на лицензионном
+# сервере — нельзя: там процесс наш и «сгенерировали и написали в лог» означает
+# «витрина не подключится, а кто читает логи — войдёт». Тут оба конца в одном
+# процессе и живут секунды.
+ADMIN_TOKEN = (os.environ.get("PSEUDEX_LICENSE_ADMIN_TOKEN")
+               or "testkit-" + secrets.token_urlsafe(16))
+os.environ["PSEUDEX_LICENSE_ADMIN_TOKEN"] = ADMIN_TOKEN
+ADMIN_AUTH = {"Authorization": f"Bearer {ADMIN_TOKEN}"}
 
 def load_dev_bundle() -> None:
     """Make the detector usable in-process. Idempotent."""
@@ -84,7 +98,14 @@ def start_local_license() -> str:
     else:
         raise RuntimeError("local licensing server did not start")
 
-    key = httpx.post(f"{admin}/admin/issue", json={"org_id": "testkit"}, timeout=10, headers=ADMIN_AUTH).json()["key"]
+    issued = httpx.post(f"{admin}/admin/issue", json={"org_id": "testkit"},
+                        timeout=10, headers=ADMIN_AUTH)
+    if issued.status_code != 200 or "key" not in issued.json():
+        # Своими словами, а не `KeyError: 'key'` двадцатью строками ниже.
+        raise RuntimeError(
+            f"local licensing server refused to issue a key: "
+            f"{issued.status_code} {issued.text[:200]}")
+    key = issued.json()["key"]
     os.environ["PSEUDEX_LICENSE_URL"] = f"http://127.0.0.1:{port}"
     os.environ["PSEUDEX_LICENSE_KEY"] = key
     os.environ["PSEUDEX_LICENSE_PUBKEY"] = server.PUBLIC_KEY

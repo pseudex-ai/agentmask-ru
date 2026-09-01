@@ -422,8 +422,18 @@ async def release(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     pubkey = str(body.get("pubkey", ""))
     if not pubkey:
         return JSONResponse({"error": "no process public key"}, status_code=400)
-    STORE.release_process(record.org_id, pubkey)
-    return JSONResponse({"released": True})
+    # БЮДЖЕТ ОСВОБОЖДЕНИЙ. Остывание ограничивает темп, но не количество:
+    # контейнер, отдавший слот, продолжает обслуживать до конца TTL, и это не
+    # чинится в софте, работающем в чужом периметре. Сверх бюджета ручка не
+    # делает ничего, и слот истекает по TTL — как до её появления.
+    budget = STORE.release_budget(record.plan)
+    if STORE.releases_last_hour(record.org_id) >= budget:
+        _log.warning("release budget exhausted for org=%s: %d in the last hour",
+                     record.org_id, budget)
+        return JSONResponse({"error": "release_budget",
+                             "detail": f"не более {budget} освобождений в час"},
+                            status_code=429)
+    return JSONResponse({"released": STORE.release_process(record.org_id, pubkey)})
 
 
 @app.post("/v1/lease")
@@ -586,6 +596,8 @@ async def admin_instances(request: Request) -> JSONResponse:
         return JSONResponse({"error": "org_id required"}, status_code=400)
     return JSONResponse({"org_id": org_id,
                          "window_seconds": _TTL_SECONDS,
+                         "cooldown_seconds": STORE.RELEASE_COOLDOWN_SECONDS,
+                         "releases_last_hour": STORE.releases_last_hour(org_id),
                          "instances": STORE.active_instances(org_id, _TTL_SECONDS)})
 
 

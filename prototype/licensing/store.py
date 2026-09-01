@@ -14,6 +14,7 @@ an unsalted digest is what lets a lookup be a single indexed point query.
 import hashlib
 import json
 import logging
+import os
 import secrets
 import threading
 import time
@@ -77,6 +78,11 @@ class LicenseStore:
             # пропатченными. Всё остальное, чем контейнер представляется, —
             # переменные окружения.
             "pubkey TEXT, "
+            # ОСВОБОЖДЁННЫЙ СЛОТ ОСТЫВАЕТ, А НЕ ИСЧЕЗАЕТ. Строка удалялась, и
+            # это обнуляло единственную границу, которую мы принуждаем:
+            # контейнер отдавал слот сам, поднимался следующий, и на тарифе в
+            # один инстанс их поднималось пять подряд.
+            "released_at REAL, released_by TEXT, "
             "issued_at REAL, ttl_seconds INTEGER)"
         )
         # Keyed by (org, instance) and holding the LATEST CUMULATIVE totals — not
@@ -130,6 +136,10 @@ class LicenseStore:
                    self._conn.execute("PRAGMA table_info(leases)")}
         if "pubkey" not in columns:
             self._conn.execute("ALTER TABLE leases ADD COLUMN pubkey TEXT")
+        for column, ddl in (("released_at", "released_at REAL"),
+                            ("released_by", "released_by TEXT")):
+            if column not in columns:
+                self._conn.execute(f"ALTER TABLE leases ADD COLUMN {ddl}")
         usage_columns = {row[1] for row in
                          self._conn.execute("PRAGMA table_info(usage)")}
         for column, ddl in (("seq", "seq INTEGER DEFAULT 0"),
@@ -459,6 +469,23 @@ class LicenseStore:
     # клиенту придётся поднимать контейнеры с малым числом воркеров, то есть
     # тратить память впустую. 32 покрывает любой разумный узел.
     PROCESSES_PER_INSTANCE = 32
+    # СКОЛЬКО СЛОТ ОСТЫВАЕТ ПОСЛЕ ОСВОБОЖДЕНИЯ.
+    #
+    # Выбрано НЕ по времени редеплоя, а по цене трюка, и вот почему редеплой
+    # этим не задет вовсе: `instance_id` — это `AUDIT.installation_id()`, то
+    # есть идентификатор ТОМА, а документированная команда запуска содержит
+    # `-v pseudex-data:/data`. Значит `docker stop` -> `docker run` на том же
+    # томе приходит с ТЕМ ЖЕ идентификатором и проходит по ветке «этот инстанс
+    # уже держит слот». Платит только тот, у кого личность контейнера
+    # действительно новая, — то есть ровно тот, кто крутит контейнеры по кругу.
+    RELEASE_COOLDOWN_SECONDS = int(
+        os.environ.get("PSEUDEX_RELEASE_COOLDOWN_SECONDS", "300"))
+    # Остывание ограничивает ТЕМП, но не количество. Второй рычаг — бюджет:
+    # сверх него `/v1/release` ничего не делает, и слот истекает по TTL, как до
+    # появления ручки. Честному клиенту это ничего не стоит: `_release` на
+    # выключении и так глотает любую ошибку.
+    RELEASE_BUDGET_PER_HOUR = int(
+        os.environ.get("PSEUDEX_RELEASE_BUDGET_PER_HOUR", "0")) or 0
     # Mirrors billing/management/commands/seed_plans.py. Two places, because
     # the licensing server must not depend on the storefront — but they are
     # checked against each other by test_storefront.py.
@@ -545,14 +572,28 @@ class LicenseStore:
         The same window `may_lease` counts with, so what the customer reads is
         exactly what the limit is applied to.
         """
-        cutoff = time.time() - window_seconds
+        now = time.time()
+        cutoff = now - window_seconds
         rows = self._fetchall(
-            "SELECT instance_id, MAX(issued_at) FROM leases "
-            "WHERE org_id=? AND issued_at>=? GROUP BY instance_id "
+            "SELECT instance_id, MAX(issued_at), MAX(COALESCE(released_at, 0)) "
+            "FROM leases WHERE org_id=? AND issued_at>=? GROUP BY instance_id "
             "ORDER BY MAX(issued_at) DESC",
             (org_id, cutoff),
         )
-        return [{"instance_id": row[0], "last_lease": float(row[1])} for row in rows]
+        listed = []
+        for instance_id, last_lease, released_at in rows:
+            # ЧТО ВИДИТ ПОДДЕРЖКА, ТО И ПРИМЕНЯЕТСЯ. Слот, освобождённый и ещё
+            # остывающий, — не «активный» и не «свободный»; без третьего
+            # состояния разговор с клиентом снова становится про контейнер,
+            # которого он не видит.
+            free_at = (float(released_at) + self.RELEASE_COOLDOWN_SECONDS
+                       if released_at else 0.0)
+            cooling = bool(released_at) and free_at > now
+            listed.append({"instance_id": instance_id,
+                           "last_lease": float(last_lease),
+                           "state": "cooling" if cooling else "active",
+                           "free_at": free_at if cooling else None})
+        return listed
 
     def release_instance(self, org_id: str, instance_id: str) -> bool:
         """Give a slot back before its window expires. Operator lever.
@@ -602,10 +643,15 @@ class LicenseStore:
         #
         # It used to be a flat 36 hours, which meant one `docker rm` cost the
         # customer a day and a half on a single-instance plan.
-        cutoff = time.time() - window_seconds
+        now = time.time()
+        cutoff = now - window_seconds
+        # ОСВОБОЖДЁННЫЙ СЛОТ СЧИТАЕТСЯ ЗАНЯТЫМ, ПОКА ОСТЫВАЕТ. Освобождение —
+        # единственный рычаг, который есть у контейнера, и без остывания оно
+        # обнуляло весь потолок: проверено, пять контейнеров на тарифе в один.
         rows = self._fetchall(
             "SELECT DISTINCT instance_id, pubkey FROM leases "
-            "WHERE org_id=? AND issued_at>=?", (org_id, cutoff),
+            "WHERE org_id=? AND issued_at>=? AND (released_at IS NULL OR released_at>=?)",
+            (org_id, cutoff, now - self.RELEASE_COOLDOWN_SECONDS),
         )
         instances = {row[0] for row in rows}
         keys = {row[1] for row in rows if row[1]}
@@ -635,10 +681,25 @@ class LicenseStore:
         # контейнеры, упирается в неё раньше и видит понятное сообщение про
         # контейнеры, а не про процессы.
         if instance_id not in instances and len(instances) >= allowed:
+            # ОТКАЗ ОБЯЗАН НАЗВАТЬ РАБОТАЮЩИЙ ПУТЬ, А НЕ ТОЛЬКО ЗАПРЕТ. Ровно
+            # та болезнь, которую лечил `active_instances`: персоне сказали
+            # «остановите лишний контейнер» про контейнер, которого не было.
+            # Здесь то же самое было бы про остывающий слот.
+            cooling = [row[0] for row in rows
+                       if row[0] not in (instance_id,)
+                       and self.slot_free_at(org_id, row[0]) > now]
+            hint = (
+                " Один из слотов освобождён и остывает —"
+                f" освободится через {int((self.slot_free_at(org_id, cooling[0]) - now) / 60) + 1} мин."
+                " Так мы не даём обойти тариф чередой контейнеров."
+                " Если это переразвёртывание, поднимите контейнер НА ТОМ ЖЕ ТОМЕ"
+                " (-v pseudex-data:/data): он сохранит свой идентификатор и"
+                " займёт слот сразу." if cooling else
+                " Остановите лишний контейнер или перейдите на больший тариф."
+            )
             return False, (
                 f"тариф допускает {allowed} инстанс(ов), сейчас активно "
-                f"{len(instances)}. Остановите лишний контейнер или перейдите "
-                f"на больший тариф."
+                f"{len(instances)}.{hint}"
             )
         if len(keys) >= ceiling:
             # ОТНОШЕНИЕ КЛЮЧЕЙ К ИНСТАНСАМ — НАШЕ НАБЛЮДЕНИЕ, а не то, что
@@ -755,12 +816,40 @@ class LicenseStore:
                 # целиком наша запись; `requests` рядом остаётся справочным.
                 "granted": self.granted_total(org_id)}
 
-    def release_process(self, org_id: str, pubkey: str) -> None:
-        """Освободить слот ОДНОГО процесса, названного его собственным ключом."""
+    def release_process(self, org_id: str, pubkey: str) -> bool:
+        """Пометить слот процесса освобождённым. Слот остывает, а не исчезает.
+
+        Возвращает, освободилось ли что-нибудь: раньше ручка отвечала
+        `{"released": true}` даже когда ни одна строка не совпала.
+        """
         with self._lock:
-            self._conn.execute(
-                "DELETE FROM leases WHERE org_id=? AND pubkey=?", (org_id, pubkey))
+            cursor = self._conn.execute(
+                "UPDATE leases SET released_at=?, released_by='process' "
+                "WHERE org_id=? AND pubkey=? AND released_at IS NULL",
+                (time.time(), org_id, pubkey))
             self._conn.commit()
+        return cursor.rowcount > 0
+
+    def releases_last_hour(self, org_id: str) -> int:
+        """Сколько раз контейнеры этой организации освобождали слот за час."""
+        row = self._fetchone(
+            "SELECT COUNT(*) FROM leases WHERE org_id=? AND released_by='process' "
+            "AND released_at>=?", (org_id, time.time() - 3600))
+        return int(row[0] or 0)
+
+    def release_budget(self, plan: str) -> int:
+        """Потолок освобождений в час. По умолчанию выводится из тарифа:
+        `max(3, инстансов)` — переразвёртывание одного контейнера укладывается,
+        карусель нет."""
+        return self.RELEASE_BUDGET_PER_HOUR or max(3, self.instances_allowed(plan))
+
+    def slot_free_at(self, org_id: str, instance_id: str) -> float:
+        """Когда освободится последний остывающий слот этого инстанса."""
+        row = self._fetchone(
+            "SELECT MAX(released_at) FROM leases WHERE org_id=? AND instance_id=? "
+            "AND released_at IS NOT NULL", (org_id, instance_id))
+        released = float(row[0] or 0.0) if row else 0.0
+        return released + self.RELEASE_COOLDOWN_SECONDS if released else 0.0
 
     def instances(self, org_id: str) -> list[dict[str, object]]:
         rows = self._fetchall(

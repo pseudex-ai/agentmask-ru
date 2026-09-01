@@ -15,7 +15,7 @@
     python3 licensing/test_metering_attacks.py
 """
 import hashlib
-import os, sys, tempfile, threading
+import os, sys, tempfile, threading, time
 sys.path.insert(0, ".")
 from licensing.store import LicenseStore
 import secrets as _secrets
@@ -208,15 +208,24 @@ for bad, name in ((("подпись"), "не-ASCII"), ("zz" * 32, "не-hex"), (
         held = False
     check(f"MAC-подпись {name} отвергается без TypeError", held)
 
-# release освобождает только свой слот
+# release освобождает только свой слот, И СЛОТ ПОСЛЕ ЭТОГО ОСТЫВАЕТ.
+# Строка больше не удаляется: удаление обнуляло потолок, потому что контейнер
+# уступал место следующему мгновенно и сколько угодно раз.
 s9 = fresh()
 s9.record_lease("l1", "acme", "c1", "p", 86400, pubkey="MINE")
-s9.release_process("acme", "SOMEONE-ELSE")
-check("release чужим ключом ничего не удаляет",
-      s9._conn.execute("SELECT count(*) FROM leases").fetchone()[0] == 1)
-s9.release_process("acme", "MINE")
-check("release своим ключом освобождает",
-      s9._conn.execute("SELECT count(*) FROM leases").fetchone()[0] == 0)
+check("release чужим ключом ничего не освобождает",
+      not s9.release_process("acme", "SOMEONE-ELSE"))
+check("освобождённый слот остывает, а не исчезает",
+      s9.release_process("acme", "MINE")
+      and s9._fetchone("SELECT count(*) FROM leases", ())[0] == 1
+      and s9.slot_free_at("acme", "c1") > time.time(),
+      f"остынет через {int(s9.slot_free_at('acme', 'c1') - time.time())} с")
+check("остывающий слот занимает место в потолке",
+      not s9.may_lease("acme", "start", "c2", 86400, pubkey="OTHER")[0],
+      "второй контейнер не поднимается, пока слот остывает")
+check("переразвёртывание на том же instance_id проходит немедленно",
+      s9.may_lease("acme", "start", "c1", 86400, pubkey="FRESH")[0])
+
 
 
 # --- ГРАНТЫ ЁМКОСТИ: счёт строится на выданном нами ---------------------

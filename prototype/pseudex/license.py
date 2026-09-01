@@ -72,6 +72,18 @@ STATE_EXPIRED = "expired"
 # the grace window and a warning naming the required version.
 _GRACE_WORTHY_STATUS = frozenset({408, 409, 429, 500, 502, 503, 504})
 
+# ...КРОМЕ ЭТИХ ОТВЕТОВ, ПРИШЕДШИХ С ТЕМ ЖЕ КОДОМ. 409 попал в список выше
+# ради «движок слишком стар», и это верно. Но `may_lease` отказывает ТЕМ ЖЕ
+# кодом — с обоснованием «подписка в порядке, ключ валиден, вы просто запустили
+# больше контейнеров, чем купили», — и два независимо верных решения
+# столкнулись: контейнер, которому отказали за превышение тарифа, уходил в
+# STALE и обслуживал БЕЗЛИМИТНО семьдесят два часа. То есть превышение тарифа
+# оплачивалось трёхсуточным подарком.
+#
+# Различается по полю `error` в теле, которое клиент и так разбирает, — код
+# ответа менять не нужно, а значит и контракт не ломается.
+_ANSWER_CODES = frozenset({"instance_limit", "release_budget"})
+
 _STARTUP_ATTEMPTS = 3
 _STARTUP_BACKOFF_SECONDS = 2.0
 
@@ -408,7 +420,7 @@ class LicenseClient:
             detail = str(body.get("detail", ""))
         except ValueError:
             code, detail = "license_invalid", response.text[:200]
-        if response.status_code in _GRACE_WORTHY_STATUS:
+        if response.status_code in _GRACE_WORTHY_STATUS and code not in _ANSWER_CODES:
             raise _TransientLeaseError(
                 f"licensing server returned {response.status_code} "
                 f"({code}: {detail}) for {self._base_url}"
