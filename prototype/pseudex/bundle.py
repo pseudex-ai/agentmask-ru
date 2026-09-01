@@ -25,7 +25,6 @@ and would still say nothing about what is inside.
 import base64
 import hashlib
 import hmac
-import hashlib
 import json
 from dataclasses import dataclass
 
@@ -58,6 +57,21 @@ class ProcessKey:
 def generate_process_key() -> ProcessKey:
     identity = x25519.Identity.generate()
     return ProcessKey(identity=identity, public=str(identity.to_public()))
+
+
+def is_recipient(encoded: str) -> bool:
+    """Разбирается ли строка как получатель age — БЕЗ шифрования.
+
+    Нужна серверу, чтобы отказать 400 на битом `pubkey`, а не упасть внутри
+    `seal` в 500. Пятисотка у клиента grace-worthy, то есть чужой мусор в теле
+    запроса покупал сорок восемь часов работы в долг — ровно тот же примитив,
+    что и отчёт с нечисловым счётчиком, только другой дверью.
+    """
+    try:
+        x25519.Recipient.from_str(encoded)
+    except Exception:  # noqa: BLE001 — pyrage бросает свой тип, см. `seal`
+        return False
+    return True
 
 
 def seal(plaintext: bytes, recipient_public: str) -> str:

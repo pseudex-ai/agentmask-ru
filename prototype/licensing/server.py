@@ -20,6 +20,7 @@ import os
 import secrets
 import time
 from contextlib import asynccontextmanager
+from typing import Annotated
 from dataclasses import dataclass
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -34,8 +35,8 @@ from licensing.store import (
     STATUS_UNPAID,
     LicenseStore,
 )
-from pseudex.bundle import (BundleError, plaintext_hash, seal, sign_lease,
-                            verify_report)
+from pseudex.bundle import (BundleError, is_recipient, plaintext_hash, seal,
+                            sign_lease, verify_report)
 
 _log = logging.getLogger("licensing.server")
 
@@ -246,8 +247,123 @@ def _version_tuple(version: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
+# ПРЕДЕЛ НА ТЕЛО И ОДНА ДВЕРЬ ДЛЯ ЕГО РАЗБОРА.
+#
+# 64 KiB с запасом покрывают лизу и отчёт: самое большое, что клиент присылает,
+# — это счётчики по типам сущностей, их девятнадцать.
+_MAX_BODY_BYTES = 64 * 1024
+
+
+async def json_object(request: Request) -> dict[str, object]:
+    """Тело запроса как объект — или 400, и НИКОГДА 500.
+
+    Пятисотка — это наше обещание «сломались мы», и клиент его исполняет:
+    `500 ∈ _GRACE_WORTHY_STATUS` в `pseudex/license.py`, то есть уезжает в
+    grace на сорок восемь часов. Значит любой вход, роняющий нас в 500, — это
+    примитив «вызвать чужой отказ», доступный из тела запроса. Проверено: до
+    этой правки `{"usage": {"requests": "abc"}}` и просто битый JSON давали
+    ровно 500, и клиенту достаточно было отравить СВОЙ ЖЕ отчёт, чтобы ехать
+    на grace, не трогая сеть.
+
+    Зависимость, а не `try` в каждой ручке: их было семь, и в шести из них
+    защиты не было вовсе. Ручка, написанная завтра без этой зависимости,
+    заметна на ревью — пропущенный `try` не заметен.
+    """
+    raw = await request.body()
+    if len(raw) > _MAX_BODY_BYTES:
+        raise HTTPException(status_code=413, detail="body too large")
+    try:
+        body = json.loads(raw or b"{}")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="body is not JSON")
+    if not isinstance(body, dict):
+        # Валидный JSON, но не объект: `[]`, `5`, `"x"`. Дальше по коду везде
+        # `body.get(...)`, то есть AttributeError и та же пятисотка.
+        raise HTTPException(status_code=400, detail="body must be a JSON object")
+    return body
+
+
+class ReportRejected(ValueError):
+    """Отчёт не разобран. Несёт причину, потому что она едет клиенту."""
+
+
+# Потолки. Не «на всякий случай»: `prev`, `signature` и `build` уходят в
+# `process_reports` как есть, а `entities` — в JSON внутри строки `usage`.
+_MAX_COUNTER = 2 ** 53
+_MAX_ENTITY_TYPES = 200
+_MAX_ENTITY_KEY = 64
+_MAX_OPAQUE = 256
+
+
+def _counter(report: dict[str, object], field: str) -> int:
+    value = report.get(field, 0)
+    # `bool` — подкласс `int`, и `True` прошёл бы как единица. Строку "5" тоже
+    # не принимаем: честный клиент шлёт `int` всегда (`audit.billing_totals`),
+    # а мягкая коррекция — это отчёт, о котором никто не узнал.
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ReportRejected(f"{field} must be an integer")
+    if not 0 <= value <= _MAX_COUNTER:
+        raise ReportRejected(f"{field} out of range")
+    return value
+
+
+def _opaque(report: dict[str, object], field: str) -> str:
+    value = report.get(field, "")
+    if not isinstance(value, str):
+        raise ReportRejected(f"{field} must be a string")
+    if len(value) > _MAX_OPAQUE:
+        raise ReportRejected(f"{field} too long")
+    return value
+
+
+def parse_usage_report(usage: object) -> dict[str, object] | None:
+    """Разобрать отчёт о расходе или отказать с причиной.
+
+    `None` — законное «отчёта нет»: первая аренда процесса отчитываться нечем.
+
+    ОТРИЦАТЕЛЬНОЕ НЕ ПРИНИМАЕТСЯ, И ЭТО НЕ ПЕДАНТИЗМ. Подписанный отчёт с
+    `requests = -10**9` под свежим `instance_id` уводил итоги организации в
+    минус: защита от отката ключуется на `(org_id, instance_id)`, а его
+    выбирает клиент, и `usage_totals` строки суммирует. Дальше `build_invoice`
+    записывал отрицательное значение как ПОСТОЯННУЮ ватермарку, и все
+    следующие периоды давали ноль.
+
+    `entities` проверяется ПО ЗНАЧЕНИЯМ, а не только как dict. Нечисловое
+    значение переживало запись и роняло `/admin/usage` в 500 НАВСЕГДА —
+    строка перечитывается на каждом вызове, — а вместе с ним кабинет и
+    выставление счёта этому клиенту.
+    """
+    if usage is None:
+        return None
+    if not isinstance(usage, dict):
+        raise ReportRejected("usage must be an object")
+    entities = usage.get("entities", {})
+    if not isinstance(entities, dict):
+        raise ReportRejected("entities must be an object")
+    if len(entities) > _MAX_ENTITY_TYPES:
+        raise ReportRejected("too many entity types")
+    clean_entities: dict[str, int] = {}
+    for entity_type, count in entities.items():
+        if not isinstance(entity_type, str) or len(entity_type) > _MAX_ENTITY_KEY:
+            raise ReportRejected("entity type must be a short string")
+        if isinstance(count, bool) or not isinstance(count, int):
+            raise ReportRejected(f"count for {entity_type!r} must be an integer")
+        if not 0 <= count <= _MAX_COUNTER:
+            raise ReportRejected(f"count for {entity_type!r} out of range")
+        clean_entities[entity_type] = count
+    return {
+        "requests": _counter(usage, "requests"),
+        "values": _counter(usage, "values"),
+        "seq": _counter(usage, "seq"),
+        "entities": clean_entities,
+        "prev": _opaque(usage, "prev"),
+        "signature": _opaque(usage, "signature"),
+        "build": _opaque(usage, "build"),
+    }
+
+
 def _store_usage(instance_id: str, org_id: str, usage: object,
-                 pubkey: str = "") -> None:
+                 pubkey: str) -> None:
     """Record the instance's cumulative counters. No-op on the first lease of a
     process, which has nothing to report yet.
 
@@ -256,12 +372,20 @@ def _store_usage(instance_id: str, org_id: str, usage: object,
     продолжает обслуживать своих людей, а мы получаем помеченную запись и
     разговор. Ронять `/mask` за расхождение в биллинге значило бы наказывать
     конечного пользователя за спор двух юрлиц.
+
+    Разбор — `parse_usage_report`, и он бросает `ReportRejected`. Что с этим
+    делать, решает ВЫЗЫВАЮЩИЙ, потому что решение разное: на `/v1/lease` отчёт
+    отбрасывается и аренда выдаётся (та же политика, что для плохой подписи), а
+    на `/v1/usage`, где отчёт и есть весь смысл запроса, это 400 с причиной.
     """
-    if not isinstance(usage, dict) or not instance_id:
+    if not instance_id:
+        return
+    report = parse_usage_report(usage)
+    if report is None:
         return
     trust = "unsigned"
     secret_hex = STORE.report_secret(org_id, pubkey) if pubkey else ""
-    if secret_hex and usage.get("signature"):
+    if secret_hex and report["signature"]:
         try:
             verify_report(usage, bytes.fromhex(secret_hex))
             trust = "signed"
@@ -269,20 +393,16 @@ def _store_usage(instance_id: str, org_id: str, usage: object,
             _log.warning("usage report signature failed for org=%s instance=%s: %s",
                          org_id, instance_id, error)
             trust = "bad_signature"
-    entities = usage.get("entities")
     STORE.record_usage(
-        org_id, instance_id, int(usage.get("requests", 0)),
-        entities if isinstance(entities, dict) else {},
-        int(usage.get("values", 0)),
-        seq=int(usage.get("seq", 0)), prev=str(usage.get("prev", "")),
-        signature=str(usage.get("signature", "")), trust=trust,
-        report_pubkey=pubkey,
-        build=str(usage.get("build", "")),
+        org_id, instance_id, report["requests"], report["entities"],
+        report["values"], seq=report["seq"], prev=report["prev"],
+        signature=report["signature"], trust=trust, report_pubkey=pubkey,
+        build=report["build"],
     )
 
 
 @app.post("/v1/release")
-async def release(request: Request) -> JSONResponse:
+async def release(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     """Give a slot back when a container shuts down cleanly.
 
     ОСВОБОЖДАЕТСЯ ТОЛЬКО СВОЙ СЛОТ. Раньше слот удалялся по `instance_id`,
@@ -296,7 +416,6 @@ async def release(request: Request) -> JSONResponse:
     окно освобождения — решение продуктовое: оно бьёт по переразвёртыванию,
     ради которого release и существует.
     """
-    body = await request.json()
     record = STORE.lookup(str(body.get("key", "")))
     if record is None:
         return JSONResponse({"error": "unknown key"}, status_code=403)
@@ -308,11 +427,10 @@ async def release(request: Request) -> JSONResponse:
 
 
 @app.post("/v1/lease")
-async def lease(request: Request) -> JSONResponse:
-    raw = await request.body()
+async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     if _LOG_RAW_BODY:
-        _log.info("RAW_LEASE_BODY %s", raw.decode("utf-8", "replace"))
-    body = json.loads(raw)
+        _log.info("RAW_LEASE_BODY %s",
+                  json.dumps(body, ensure_ascii=False, sort_keys=True))
     key = body.get("key")
     if not isinstance(key, str) or not key:
         return JSONResponse({"error": "license_missing", "detail": "no key presented"},
@@ -346,6 +464,13 @@ async def lease(request: Request) -> JSONResponse:
     if not isinstance(recipient, str) or not recipient:
         return JSONResponse({"error": "license_invalid", "detail": "no process public key"},
                             status_code=400)
+    # ФОРМА ПРОВЕРЯЕТСЯ ДО ЛЮБОЙ РАБОТЫ. Битый ключ разваливался внутри
+    # `seal()` в 500, а 500 у клиента grace-worthy: строки `age1x` в теле
+    # хватало, чтобы получить сорок восемь часов работы в долг.
+    if not is_recipient(recipient):
+        return JSONResponse({"error": "license_invalid",
+                             "detail": "process public key is not an age recipient"},
+                            status_code=400)
 
     instance_id = str(body.get("instance_id", ""))
     process_id = str(body.get("process_id", ""))
@@ -367,7 +492,17 @@ async def lease(request: Request) -> JSONResponse:
     lease_id = "ls_" + secrets.token_urlsafe(16)
     # Counters ride in on the renewal request. Recorded BEFORE the new lease is
     # minted so a client that dies mid-renewal has still been accounted for.
-    _store_usage(instance_id, record.org_id, body.get("usage"), recipient)
+    #
+    # ИСПОРЧЕННЫЙ ОТЧЁТ ОТБРАСЫВАЕТСЯ, А АРЕНДА ВЫДАЁТСЯ. Ровно та политика,
+    # которую докстринг `_store_usage` уже объявляет для плохой подписи: спор о
+    # биллинге не имеет права останавливать конечного пользователя. Но и тишиной
+    # это быть не должно — считается отдельно от «расхода не было».
+    try:
+        _store_usage(instance_id, record.org_id, body.get("usage"), recipient)
+    except ReportRejected as error:
+        _log.warning("malformed usage report from org=%s instance=%s: %s",
+                     record.org_id, instance_id, error)
+        STORE.record_malformed(record.org_id, instance_id)
     allowed, why_not = STORE.lease_if_allowed(
         lease_id, record.org_id, record.plan, instance_id, process_id,
         _TTL_SECONDS, pubkey=recipient)
@@ -423,18 +558,23 @@ async def lease(request: Request) -> JSONResponse:
 
 
 @app.post("/v1/usage")
-async def usage(request: Request) -> JSONResponse:
+async def usage(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     """Out-of-band counter delivery. Normally counters ride on /v1/lease; this
     exists for a client that wants to report before its renewal is due."""
-    body = await request.json()
     key = body.get("key")
     if not isinstance(key, str):
         return JSONResponse({"error": "license_missing"}, status_code=401)
     record = STORE.lookup(key)
     if record is None or record.status != STATUS_ACTIVE:
         return JSONResponse({"error": "license_invalid"}, status_code=403)
-    _store_usage(str(body.get("instance_id", "")), record.org_id,
-                 body.get("usage"), str(body.get("pubkey", "")))
+    # ЗДЕСЬ ОТЧЁТ И ЕСТЬ ВЕСЬ СМЫСЛ ЗАПРОСА, поэтому неразобранный — это 400 с
+    # причиной, а не молчаливый пропуск.
+    try:
+        _store_usage(str(body.get("instance_id", "")), record.org_id,
+                     body.get("usage"), str(body.get("pubkey", "")))
+    except ReportRejected as error:
+        return JSONResponse({"error": "report_rejected", "detail": str(error)},
+                            status_code=400)
     return JSONResponse({"status": "recorded"})
 
 
@@ -450,9 +590,8 @@ async def admin_instances(request: Request) -> JSONResponse:
 
 
 @admin_app.post("/admin/release")
-async def admin_release(request: Request) -> JSONResponse:
+async def admin_release(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     """Free a slot held by a container that is no longer running."""
-    body = await request.json()
     org_id = str(body.get("org_id", ""))
     instance_id = str(body.get("instance_id", ""))
     if not org_id or not instance_id:
@@ -463,8 +602,7 @@ async def admin_release(request: Request) -> JSONResponse:
 
 
 @admin_app.post("/admin/issue")
-async def admin_issue(request: Request) -> JSONResponse:
-    body = await request.json()
+async def admin_issue(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     org_id = str(body.get("org_id", ""))
     if not org_id:
         return JSONResponse({"error": "org_id required"}, status_code=400)
@@ -472,8 +610,7 @@ async def admin_issue(request: Request) -> JSONResponse:
     return JSONResponse({"org_id": org_id, "key": key})
 
 
-async def _set_status(request: Request, status: str) -> JSONResponse:
-    body = await request.json()
+async def _set_status(body: dict, status: str) -> JSONResponse:
     org_id = str(body.get("org_id", ""))
     changed = STORE.set_status(org_id, status)
     if changed == 0:
@@ -482,18 +619,17 @@ async def _set_status(request: Request, status: str) -> JSONResponse:
 
 
 @admin_app.post("/admin/revoke")
-async def admin_revoke(request: Request) -> JSONResponse:
-    return await _set_status(request, STATUS_REVOKED)
+async def admin_revoke(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
+    return await _set_status(body, STATUS_REVOKED)
 
 
 @admin_app.post("/admin/revoke_key")
-async def admin_revoke_key(request: Request) -> JSONResponse:
+async def admin_revoke_key(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     """Revoke a single key by its hash, without touching the organisation.
 
     The organisation-wide levers stop everything the customer runs; this one
     exists so "this key leaked" is not the same action as "stop this customer".
     """
-    body = await request.json()
     key_hash = str(body.get("key_hash", ""))
     if not key_hash:
         return JSONResponse({"error": "key_hash required"}, status_code=400)
@@ -505,18 +641,18 @@ async def admin_revoke_key(request: Request) -> JSONResponse:
 
 
 @admin_app.post("/admin/suspend")
-async def admin_suspend(request: Request) -> JSONResponse:
-    return await _set_status(request, STATUS_SUSPENDED)
+async def admin_suspend(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
+    return await _set_status(body, STATUS_SUSPENDED)
 
 
 @admin_app.post("/admin/unpaid")
-async def admin_unpaid(request: Request) -> JSONResponse:
-    return await _set_status(request, STATUS_UNPAID)
+async def admin_unpaid(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
+    return await _set_status(body, STATUS_UNPAID)
 
 
 @admin_app.post("/admin/resume")
-async def admin_resume(request: Request) -> JSONResponse:
-    return await _set_status(request, STATUS_ACTIVE)
+async def admin_resume(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
+    return await _set_status(body, STATUS_ACTIVE)
 
 
 @admin_app.get("/admin/list")

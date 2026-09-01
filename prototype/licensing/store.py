@@ -110,6 +110,9 @@ class LicenseStore:
             "trust TEXT DEFAULT 'unsigned', chain_breaks INTEGER DEFAULT 0, "
             "unverified_reports INTEGER DEFAULT 0, "
             "unverified_requests INTEGER DEFAULT 0, "
+            # «Не смогли разобрать» — это НЕ «расхода не было». Без отдельной
+            # колонки испорченный отчёт был неотличим от молчания.
+            "malformed_reports INTEGER DEFAULT 0, "
             "PRIMARY KEY (org_id, instance_id))"
         )
         # НИ ОДНОГО ИНДЕКСА ЗДЕСЬ НЕ БЫЛО. `leases` растёт примерно на три
@@ -137,7 +140,9 @@ class LicenseStore:
                             ("unverified_reports",
                              "unverified_reports INTEGER DEFAULT 0"),
                             ("unverified_requests",
-                             "unverified_requests INTEGER DEFAULT 0")):
+                             "unverified_requests INTEGER DEFAULT 0"),
+                            ("malformed_reports",
+                             "malformed_reports INTEGER DEFAULT 0")):
             if column not in usage_columns:
                 self._conn.execute(f"ALTER TABLE usage ADD COLUMN {ddl}")
         self._conn.commit()
@@ -364,6 +369,24 @@ class LicenseStore:
                 (org_id, instance_id, time.time(), requests, json.dumps(entities),
                  values, accumulated, seq, prev, signature, trust, breaks),
             )
+            self._conn.commit()
+
+    def record_malformed(self, org_id: str, instance_id: str) -> None:
+        """Отчёт пришёл и не разобрался. Считается отдельно от всего.
+
+        Раньше такой отчёт ронял сервер в 500, а 500 у клиента grace-worthy —
+        то есть отравить собственный отчёт было способом уехать в grace, не
+        трогая сеть. Теперь это запись, и она видна в итогах: инвойс не должен
+        путать «расхода не было» с «расход был, но мы его не прочитали».
+        """
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO usage (org_id, instance_id, updated_at, reports, "
+                "malformed_reports) VALUES (?,?,?,0,1) "
+                "ON CONFLICT(org_id, instance_id) DO UPDATE SET "
+                "updated_at=excluded.updated_at, "
+                "malformed_reports=usage.malformed_reports+1",
+                (org_id, instance_id, time.time()))
             self._conn.commit()
 
     def _chain_breaks(self, org_id: str, instance_id: str, seq: int, prev: str,
@@ -677,16 +700,16 @@ class LicenseStore:
             # СЧЁТ ОБЯЗАН ВИДЕТЬ, ЧТО ЕМУ НЕ ПОКАЗАЛИ. Без этих двух колонок
             # инвойс не мог отличить «расхода не было» от «расход был, но его
             # никто не подтвердил».
-            "unverified_reports, unverified_requests, chain_breaks "
-            "FROM usage WHERE org_id=?",
+            "unverified_reports, unverified_requests, chain_breaks, "
+            "malformed_reports FROM usage WHERE org_id=?",
             (org_id,),
         )
         entities: dict[str, int] = {}
         requests = reports = values = resets = 0
-        unverified_reports = unverified_requests = breaks = 0
+        unverified_reports = unverified_requests = breaks = malformed = 0
         for row in rows:
             (_instance, row_reports, row_requests, row_entities, row_values,
-             row_resets, row_unver, row_unver_req, row_breaks) = row
+             row_resets, row_unver, row_unver_req, row_breaks, row_malformed) = row
             requests += int(row_requests or 0)
             reports += int(row_reports or 0)
             values += int(row_values or 0)
@@ -694,7 +717,23 @@ class LicenseStore:
             unverified_reports += int(row_unver or 0)
             unverified_requests += int(row_unver_req or 0)
             breaks += int(row_breaks or 0)
-            for entity_type, count in json.loads(row_entities or "{}").items():
+            malformed += int(row_malformed or 0)
+            # ТЕРПИМО К ТОМУ, ЧТО УЖЕ ЛЕЖИТ. Вход теперь проверяется, но в
+            # проде могут лежать строки, записанные до этого: нечисловое
+            # значение здесь давало TypeError, то есть `/admin/usage` отвечал
+            # 500 НАВСЕГДА для этой организации — а вместе с ним падали кабинет
+            # и выставление счёта. Первая же правка обязана поднять ручку, а не
+            # ждать чистки (`licensing/repair_usage.py`).
+            try:
+                stored = json.loads(row_entities or "{}")
+            except ValueError:
+                _log.warning("unreadable entities for org=%s instance=%s", org_id, _instance)
+                continue
+            for entity_type, count in stored.items():
+                if isinstance(count, bool) or not isinstance(count, int):
+                    _log.warning("non-numeric count %r for %s in org=%s instance=%s",
+                                 count, entity_type, org_id, _instance)
+                    continue
                 entities[entity_type] = entities.get(entity_type, 0) + count
         return {"org_id": org_id, "instances": len(rows), "reports": reports,
                 "requests": requests, "entities": entities,
@@ -710,6 +749,8 @@ class LicenseStore:
                 "unverified_reports": unverified_reports,
                 "unverified_requests": unverified_requests,
                 "chain_breaks": breaks,
+                # Отчёты, которые пришли и не разобрались.
+                "malformed_reports": malformed,
                 # ЧИСЛО, НА КОТОРОМ СТРОИТСЯ СЧЁТ. Сумма выданной ёмкости —
                 # целиком наша запись; `requests` рядом остаётся справочным.
                 "granted": self.granted_total(org_id)}
