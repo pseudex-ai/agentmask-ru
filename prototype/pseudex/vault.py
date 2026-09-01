@@ -372,6 +372,38 @@ _NUMERIC_TYPES = (
 )
 
 
+# ЧТО ВОЗВРАЩАЕТСЯ ВМЕСТО ПОДМЕНЫ, И ПОЧЕМУ ЭТО ДВА РАЗНЫХ ОТВЕТА.
+#
+# Имя возвращается КАНОНИЧЕСКИМ — «Иванов Пётр», а не «Иванову Петру»: падеж
+# нужен предложению, а не CRM. Всё остальное возвращается КАК НАПИСАНО, потому
+# что телефон «+7 999 123-45-67» клиент так и записал, и нормализовать его за
+# него мы не вправе.
+#
+# ПРОДИКТОВАННОЕ ВСЛУХ ЛОМАЕТ ЭТО ПРАВИЛО. «восемь девятьсот двадцать шесть
+# четыреста сорок…» — это тоже «как написано», и именно оно уезжало в аргумент
+# инструмента: модель получила подмену ЦИФРАМИ, честно передала цифры, а мы на
+# обратном пути положили в поле `phone` предложение по-русски. Ни одна CRM
+# такого не примет. 20+ случаев живого прогона: телефон, СНИЛС, паспорт, карта.
+#
+# Признак различает их без нового столбца и без флага на спане: у
+# продиктованного значения в `original` НЕТ НИ ОДНОЙ ЦИФРЫ, а в `canonical` они
+# есть — `_digits_of` собирает их из числительных. У записанного цифрами обе
+# формы цифровые, и правило его не касается: «+7 999 123-45-67» приходит в
+# инструмент ровно так, как его написали.
+#
+# Разделение ровно то же, что уже сделано для падежа: АРГУМЕНТ ДОСЛОВЕН, ПРОЗА
+# СОГЛАСОВАНА. В прозе агент продолжает говорить клиенту его же словами.
+_VALUE_SQL = ("CASE WHEN entity_type='NAME' THEN canonical ELSE original END")
+_VALUE_SQL_TOOL = (
+    "CASE WHEN entity_type='NAME' THEN canonical "
+    "WHEN original NOT GLOB '*[0-9]*' AND canonical GLOB '*[0-9]*' THEN canonical "
+    "ELSE original END")
+
+
+def _value_sql(for_tool: bool) -> str:
+    return _VALUE_SQL_TOOL if for_tool else _VALUE_SQL
+
+
 def name_key(token: str) -> str:
     """Case-invariant signature of a personal name: its nominative, lowercased.
 
@@ -1728,7 +1760,7 @@ class Vault:
         """
         with self._lock:
             row = self._conn.execute(
-                "SELECT CASE WHEN entity_type='NAME' THEN canonical ELSE original END FROM tokens WHERE customer=? AND token=?",
+                f"SELECT {_VALUE_SQL} FROM tokens WHERE customer=? AND token=?",
                 (self._customer, token),
             ).fetchone()
         return row[0] if row is not None else None
@@ -1830,7 +1862,7 @@ class Vault:
             self._conn.execute("ALTER TABLE tokens ADD COLUMN minted_in TEXT")
             self._conn.commit()
 
-    def reveal(self, token: str) -> tuple[str | None, str]:
+    def reveal(self, token: str, for_tool: bool = False) -> tuple[str | None, str]:
         """Value and its entity type in one lookup, for the audited reveal path.
 
         Separate from `detokenize` because that one is the hot detokenization
@@ -1839,7 +1871,8 @@ class Vault:
         one path that must not be discouraged from being audited."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT CASE WHEN entity_type='NAME' THEN canonical ELSE original END, entity_type FROM tokens WHERE customer=? AND token=?",
+                f"SELECT {_value_sql(for_tool)}, entity_type FROM tokens "
+                "WHERE customer=? AND token=?",
                 (self._customer, token),
             ).fetchone()
         return (row[0], row[1]) if row is not None else (None, "")
@@ -1890,21 +1923,24 @@ class Vault:
             ).fetchall()
         return tuple(row[0] for row in rows)
 
-    def detokenize_many(self, tokens: set[str]) -> dict[str, str]:
+    def detokenize_many(self, tokens: set[str],
+                        for_tool: bool = False) -> dict[str, str]:
         """Resolve a batch of candidate tokens in indexed point queries. Unknown
         candidates are simply absent from the result — the caller leaves that text
         untouched. This is what keeps the response leg independent of vault size."""
-        return self._lookup("token", tokens)
+        return self._lookup("token", tokens, for_tool)
 
-    def resolve_digit_signatures(self, signatures: set[str]) -> dict[str, str]:
+    def resolve_digit_signatures(self, signatures: set[str],
+                                 for_tool: bool = False) -> dict[str, str]:
         """Resolve numeric tokens by digit signature, for the case where the model
         reformatted one so it no longer matches its minted shape. A full-signature
         hit wins over a phone last-10 hit (the caller asks in that order)."""
-        resolved = self._lookup("digits10", signatures)
-        resolved.update(self._lookup("digits", signatures))  # exact wins over tail
+        resolved = self._lookup("digits10", signatures, for_tool)
+        resolved.update(self._lookup("digits", signatures, for_tool))  # exact wins
         return resolved
 
-    def resolve_name_keys_typed(self, keys: set[str]) -> dict[str, tuple[str, str]]:
+    def resolve_name_keys_typed(self, keys: set[str], for_tool: bool = False,
+                                ) -> dict[str, tuple[str, str]]:
         """Same lookup, but carrying the entity type with each value.
 
         The caller has to put the restored value back in the case the token was
@@ -1914,9 +1950,10 @@ class Vault:
         parts and inflected one that was already in the target case. The type is
         recorded at mint time and costs one more column in a query that already
         runs — there is no reason to infer it."""
-        return self._lookup_typed("name_key", keys)
+        return self._lookup_typed("name_key", keys, for_tool)
 
-    def _lookup_typed(self, column: str, keys: set[str]) -> dict[str, tuple[str, str]]:
+    def _lookup_typed(self, column: str, keys: set[str], for_tool: bool = False,
+                      ) -> dict[str, tuple[str, str]]:
         keys = {key for key in keys if key}
         if not keys:
             return {}
@@ -1927,8 +1964,7 @@ class Vault:
             placeholders = ",".join("?" * len(chunk))
             with stage(f"vault.lookup.{column}"), self._lock:
                 rows = self._conn.execute(
-                    f"SELECT {column}, entity_type, "
-                    f"CASE WHEN entity_type='NAME' THEN canonical ELSE original END "
+                    f"SELECT {column}, entity_type, {_value_sql(for_tool)} "
                     f"FROM tokens WHERE customer=? AND {column} IN ({placeholders})",
                     (self._customer, *chunk),
                 ).fetchall()
@@ -1946,7 +1982,8 @@ class Vault:
         """
         return self._lookup("name_key", keys)
 
-    def _lookup(self, column: str, keys: set[str]) -> dict[str, str]:
+    def _lookup(self, column: str, keys: set[str],
+                for_tool: bool = False) -> dict[str, str]:
         """Point-query `keys` against an indexed column. `column` is chosen from
         this module's own literals, never from caller input, so interpolating it
         into the statement cannot carry injection."""
@@ -1963,7 +2000,7 @@ class Vault:
             placeholders = ",".join("?" * len(chunk))
             with stage(stage_name), self._lock:
                 rows = self._conn.execute(
-                    f"SELECT {column}, CASE WHEN entity_type='NAME' THEN canonical ELSE original END FROM tokens "
+                    f"SELECT {column}, {_value_sql(for_tool)} FROM tokens "
                     f"WHERE customer=? AND {column} IN ({placeholders})",
                     (self._customer, *chunk),
                 ).fetchall()

@@ -89,7 +89,8 @@ def _token_for_text(span: Span, vault: Vault) -> str:
         token, case, morph_names.detect_gender(span.value))
 
 
-def unmask_text(text: str, vault: Vault, inflect: bool = True) -> str:
+def unmask_text(text: str, vault: Vault, inflect: bool = True,
+                for_tool: bool = False) -> str:
     """Replace tokens with their real values, then catch numeric tokens the model
     REFORMATTED via a digit-signature match.
 
@@ -99,8 +100,9 @@ def unmask_text(text: str, vault: Vault, inflect: bool = True) -> str:
     minted and substring-scanned the text once per token, which made an org with
     100k tokens pay 100k scans on every single response."""
     with stage("unmask.total"):
-        restored = _restore_reformatted(_restore_tokens(text, vault), vault)
-        return _restore_inflected(restored, vault, inflect)
+        restored = _restore_reformatted(
+            _restore_tokens(text, vault, for_tool), vault, for_tool)
+        return _restore_inflected(restored, vault, inflect, for_tool)
 
 
 # The ГОСТ plate alphabet was chosen precisely because every letter in it has a
@@ -147,7 +149,7 @@ def _date_readings(value: str) -> list[str]:
     return []
 
 
-def _restore_tokens(text: str, vault: Vault) -> str:
+def _restore_tokens(text: str, vault: Vault, for_tool: bool = False) -> str:
     matches = list(TOKEN_RE.finditer(text))
     if not matches:
         return text
@@ -162,7 +164,7 @@ def _restore_tokens(text: str, vault: Vault) -> str:
         readings[value] = [alt for alt in alternates if alt != value]
 
     asked = candidates | {alt for group in readings.values() for alt in group}
-    values = vault.detokenize_many(asked)
+    values = vault.detokenize_many(asked, for_tool)
 
     def resolved(written: str) -> str | None:
         if written in values:
@@ -180,7 +182,8 @@ def _restore_tokens(text: str, vault: Vault) -> str:
     return _splice(text, spans)
 
 
-def _restore_reformatted(text: str, vault: Vault) -> str:
+def _restore_reformatted(text: str, vault: Vault,
+                         for_tool: bool = False) -> str:
     """Numeric tokens the model rewrote (+7… -> 8…, separators stripped) no longer
     match their minted shape, so they are resolved by digit signature instead."""
     runs = [(match, re.sub(r"\D", "", match.group())) for match in _NUM_RUN.finditer(text)]
@@ -191,7 +194,7 @@ def _restore_reformatted(text: str, vault: Vault) -> str:
         candidates.add(digits)
         if len(digits) >= 10:
             candidates.add(digits[-10:])
-    resolved = vault.resolve_digit_signatures(candidates)
+    resolved = vault.resolve_digit_signatures(candidates, for_tool)
     if not resolved:
         return text
     spans: list[tuple[int, int, str]] = []
@@ -287,7 +290,8 @@ def _name_windows(text: str) -> list[tuple[int, int, str]]:
     return windows
 
 
-def _restore_inflected(text: str, vault: Vault, inflect: bool = True) -> str:
+def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
+                       for_tool: bool = False) -> str:
     """NAME tokens the model put into another case no longer match their minted
     shape, so they are resolved by case-invariant key instead.
 
@@ -353,7 +357,8 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True) -> str:
             windows.append((start, end, surface))
     if not windows:
         return text
-    resolved = vault.resolve_name_keys_typed({k for group in keys.values() for k in group})
+    resolved = vault.resolve_name_keys_typed(
+        {k for group in keys.values() for k in group}, for_tool)
     # NO EARLY RETURN ON AN EMPTY KEY LOOKUP. The fragment fallback below is the
     # only thing that resolves «Филипп Алексеевич», and a fragment never has a
     # key hit by construction — returning here meant the fallback could only ever
@@ -378,7 +383,7 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True) -> str:
             # with a real customer resolves to more than one token and is
             # refused. `name_key` is untouched — it is also called on the REAL
             # value, and widening it there would break the minting side.
-            owner = _residual_owner(surface, vault)
+            owner = _residual_owner(surface, vault, for_tool)
             if owner is None:
                 continue
             found = owner
@@ -391,7 +396,8 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True) -> str:
     return _splice(text, spans)
 
 
-def _residual_owner(surface: str, vault: Vault) -> tuple[str, str] | None:
+def _residual_owner(surface: str, vault: Vault,
+                    for_tool: bool = False) -> tuple[str, str] | None:
     """The (type, real value) behind a fragment of a substitute, or None.
 
     Only NAME substitutes have a parts index, and only a fragment of two words
@@ -404,7 +410,7 @@ def _residual_owner(surface: str, vault: Vault) -> tuple[str, str] | None:
     token = vault.residual_of(surface)
     if token is None:
         return None
-    value, entity_type = vault.reveal(token)
+    value, entity_type = vault.reveal(token, for_tool)
     if not value:
         return None
     # RETURN THE MATCHING PART, NOT THE WHOLE PERSON. The model wrote «Геннадий
@@ -560,13 +566,13 @@ def unmask_arguments(raw: str, vault: Vault) -> str:
     try:
         parsed = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
-        return unmask_text(raw, vault, inflect=False)
+        return unmask_text(raw, vault, inflect=False, for_tool=True)
 
     def walk(node: object) -> object:
         if isinstance(node, str):
             # VERBATIM, NOT AGREED. A tool executes on the value; grammar is a
             # property of prose. See `_in_case_of`.
-            return unmask_text(node, vault, inflect=False)
+            return unmask_text(node, vault, inflect=False, for_tool=True)
         if isinstance(node, list):
             return [walk(item) for item in node]
         if isinstance(node, dict):
