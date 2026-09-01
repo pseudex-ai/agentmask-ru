@@ -70,7 +70,34 @@ class LicenseKeyAdmin(admin.ModelAdmin):
     # The hash is not a secret, but showing it invites someone to treat it as an
     # identifier to paste around. Nothing here needs it.
     exclude = ("key_hash",)
-    readonly_fields = ("prefix", "created_at", "last_seen_at")
+    # `revoked_at` ТОЛЬКО ДЛЯ ЧТЕНИЯ, и это не косметика. Поддержка ставила дату
+    # руками, кабинет показывал ключ отозванным — а на лицензионном сервере он
+    # оставался ACTIVE и продолжал арендовать. Ровно тот дефект, который
+    # `revoke_key_hash` в своём докстринге называет починенным: он починен в
+    # кабинете и остался здесь, другой дверью.
+    readonly_fields = ("prefix", "created_at", "last_seen_at", "revoked_at")
+    actions = ("action_revoke",)
+
+    def has_delete_permission(self, request, obj=None) -> bool:
+        """Удаление строки локально оставляет ключ вечно живым на сервере —
+        та же дыра, что и правка `revoked_at` руками, только тише."""
+        return False
+
+    @admin.action(description="Отозвать ключ (и на лицензионном сервере)")
+    def action_revoke(self, request, queryset):
+        for key in queryset.filter(revoked_at__isnull=True):
+            # Лицензионный сервер ПЕРВЫМ, как в кабинете: локальная отметка без
+            # реального отзыва — это сообщение об успехе поверх работающего
+            # ключа.
+            try:
+                licensing.revoke_key(key.key_hash)
+            except licensing.LicensingError as error:
+                self.message_user(request, f"{key.prefix}: {error}",
+                                  level=messages.ERROR)
+                continue
+            key.revoked_at = timezone.now()
+            key.save(update_fields=["revoked_at"])
+            self.message_user(request, f"{key.prefix}: отозван, аренду больше не продлит")
 
 
 @admin.register(Invoice)

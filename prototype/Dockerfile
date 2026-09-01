@@ -39,6 +39,24 @@ COPY pseudex/ ./pseudex/
 COPY serve_main.py entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 
+# Compile the authored TUNING into the engine (docs/tz-license-packaging §2.2).
+# The cue words, address regex, priority table and look-alike folds no longer
+# travel in the lease — a client used to read them by decrypting their own
+# bundle — so they are baked in here as an opaque blob. Needs ONLY assets_source
+# (no bulk dictionaries, no ГАР dump), so three files go to a temporary path, get
+# used, and are removed: `licensing/` itself must never ship. The generated
+# module holds only `BLOB`/`VERSION`, so the "no import licensing" check below
+# still passes.
+# PSEUDEX_TUNING_KEY seals the blob (docs/tz-license-packaging §2.2, anti-patch
+# tie). The SAME key must reach the licensing server, which delivers it in every
+# lease so the engine can open its own tuning.
+ARG PSEUDEX_TUNING_KEY
+COPY licensing/__init__.py licensing/assets_source.py licensing/pack.py /tmp/lic/licensing/
+RUN test -n "$PSEUDEX_TUNING_KEY" || (echo "PSEUDEX_TUNING_KEY build-arg is required" && exit 1) \
+    && PSEUDEX_TUNING_KEY="$PSEUDEX_TUNING_KEY" PYTHONPATH=/tmp/lic \
+       python -m licensing.pack --emit-tuning ./pseudex/_tuning_blob.py \
+    && rm -rf /tmp/lic
+
 # The verification key is BAKED IN at build time, not read from the environment.
 # If the customer could point it at a key of their own, they could sign their own
 # bundles and the signature would prove nothing. `pseudex/license.py` only falls

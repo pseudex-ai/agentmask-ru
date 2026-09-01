@@ -12,7 +12,9 @@ against a real licensing server, which is the only thing that proves the lease
 works (docs/tz-license-packaging.md §4.1).
 """
 
+import base64
 import os
+import secrets
 import socket
 import tempfile
 import threading
@@ -20,15 +22,43 @@ import time
 
 import httpx
 
-from licensing.pack import build_plaintext
+from pathlib import Path
+
+from licensing.pack import build_plaintext, emit_tuning_module
 from pseudex.assets import ASSETS
 
+# The engine now carries the authored tuning compiled in, not leased, and SEALED
+# under a key the lease delivers. In a real build the Dockerfile emits it and the
+# server env holds the key; in-process both ends are us, so a single ephemeral key
+# is generated here and put in the env BEFORE emit (which seals with it) and before
+# any server start (build_plaintext delivers it). `setdefault` lets a real key win.
+# The blob must exist before ANY engine load — the dev-bundle path AND the real-
+# licence path both import it — so it is generated here at import, once. A
+# generated artifact (gitignored), like the datasets.
+os.environ.setdefault("PSEUDEX_TUNING_KEY",
+                      base64.b64encode(secrets.token_bytes(32)).decode("ascii"))
+_TUNING_BLOB = Path(__file__).resolve().parent / "pseudex" / "_tuning_blob.py"
+emit_tuning_module(_TUNING_BLOB)
 
 
-# Учётные данные админки лицензионного сервера. Пусто — заголовка нет, и сервер
-# ответит 401: ходить молча без токена хуже, чем громко не дойти.
-ADMIN_TOKEN = os.environ.get("PSEUDEX_LICENSE_ADMIN_TOKEN", "")
-ADMIN_AUTH = {"Authorization": f"Bearer {ADMIN_TOKEN}"} if ADMIN_TOKEN else {}
+
+# Учётные данные админки лицензионного сервера.
+#
+# СТЕНД ВЛАДЕЕТ ОБОИМИ КОНЦАМИ, ПОЭТОМУ САМ И ЧЕКАНИТ ТОКЕН. Раньше он читался
+# из окружения, и пусто означало «заголовка нет» — а сервер с тех пор требует
+# токен на каждой админской ручке. В CI переменная не задана, поэтому
+# `/admin/issue` отвечал 401, ключ не выпускался, и `test_localui.py` падал
+# `KeyError: 'key'` — то есть проверка операторской поверхности не выполнялась
+# вообще, а сообщение об этом не называло причину.
+#
+# Здесь генерировать его правильно ровно потому, почему на лицензионном
+# сервере — нельзя: там процесс наш и «сгенерировали и написали в лог» означает
+# «витрина не подключится, а кто читает логи — войдёт». Тут оба конца в одном
+# процессе и живут секунды.
+ADMIN_TOKEN = (os.environ.get("PSEUDEX_LICENSE_ADMIN_TOKEN")
+               or "testkit-" + secrets.token_urlsafe(16))
+os.environ["PSEUDEX_LICENSE_ADMIN_TOKEN"] = ADMIN_TOKEN
+ADMIN_AUTH = {"Authorization": f"Bearer {ADMIN_TOKEN}"}
 
 def load_dev_bundle() -> None:
     """Make the detector usable in-process. Idempotent."""
@@ -84,7 +114,14 @@ def start_local_license() -> str:
     else:
         raise RuntimeError("local licensing server did not start")
 
-    key = httpx.post(f"{admin}/admin/issue", json={"org_id": "testkit"}, timeout=10, headers=ADMIN_AUTH).json()["key"]
+    issued = httpx.post(f"{admin}/admin/issue", json={"org_id": "testkit"},
+                        timeout=10, headers=ADMIN_AUTH)
+    if issued.status_code != 200 or "key" not in issued.json():
+        # Своими словами, а не `KeyError: 'key'` двадцатью строками ниже.
+        raise RuntimeError(
+            f"local licensing server refused to issue a key: "
+            f"{issued.status_code} {issued.text[:200]}")
+    key = issued.json()["key"]
     os.environ["PSEUDEX_LICENSE_URL"] = f"http://127.0.0.1:{port}"
     os.environ["PSEUDEX_LICENSE_KEY"] = key
     os.environ["PSEUDEX_LICENSE_PUBKEY"] = server.PUBLIC_KEY

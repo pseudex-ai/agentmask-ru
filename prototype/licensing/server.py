@@ -13,6 +13,7 @@ misconfigured reverse proxy cannot accidentally expose key issuance: the admin
 routes are not mounted in the public app at all.
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -20,6 +21,8 @@ import os
 import secrets
 import time
 from contextlib import asynccontextmanager
+from typing import Annotated
+from dataclasses import dataclass
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -33,8 +36,8 @@ from licensing.store import (
     STATUS_UNPAID,
     LicenseStore,
 )
-from pseudex.bundle import (BundleError, plaintext_hash, seal, sign_lease,
-                            verify_report)
+from pseudex.bundle import (BundleError, is_recipient, nonce_wrap,
+                            plaintext_hash, seal, sign_lease, verify_report)
 
 _log = logging.getLogger("licensing.server")
 
@@ -42,6 +45,40 @@ _DB = os.environ.get("PSEUDEX_LICENSE_DB", "license.db")
 _TTL_SECONDS = int(os.environ.get("PSEUDEX_LEASE_TTL_SECONDS", "86400"))
 _GRACE_SECONDS = int(os.environ.get("PSEUDEX_GRACE_SECONDS", "172800"))
 _MIN_ENGINE = os.environ.get("PSEUDEX_MIN_ENGINE_VERSION", "")
+
+# ДРЕЙФ БАНДЛА — ГЛАВНЫЙ ДОЛГОВЕЧНЫЙ РЫЧАГ ПРОТИВ ПИРАТСТВА, и он держится на
+# одном неравенстве: захваченный plaintext-бандл обслуживает не дольше TTL+grace,
+# а содержимое бандла ротируется на каденции ГАР (дважды в неделю, ≤3.5 суток).
+# Пока TTL меньше окна ротации, украденная копия ПРОТУХАЕТ внутри своего же срока
+# годности — детектор на ней начинает течь, и пиратство превращается в гонку, а
+# не в разовую кражу (тот же принцип, что ре-версии Denuvo; research
+# 2026-09-01-antitamper-nuitka §7 ход №4). Рычаг бесплатный и уже работает — его
+# единственный враг за пять лет сопровождения это тихое «давайте TTL на месяц,
+# чтобы реже дёргать сервер»: это НЕ операционная настройка, это снятие защиты.
+# Поэтому потолок объявляется громко на старте, а не живёт устным знанием.
+_DRIFT_TTL_CEILING_SECONDS = 7 * 86400
+
+# How often to drop leases too old to count in any window. `leases` gains ~3 rows
+# per worker per day (lease_id is fresh on every renewal, so INSERT replaces
+# nothing); `may_lease` already ignores the old ones, this only reclaims disk.
+_PRUNE_INTERVAL_SECONDS = int(os.environ.get("PSEUDEX_PRUNE_INTERVAL_SECONDS", "3600"))
+
+
+async def _prune_loop() -> None:
+    """Periodically prune expired lease rows so the table does not grow forever.
+
+    The method existed but nothing called it in production — only a test — so the
+    table grew unbounded on the very machine we run on. Offloaded to a thread
+    because `prune_leases` takes the store lock; a bare except keeps a maintenance
+    task from ever killing the loop."""
+    while True:
+        await asyncio.sleep(_PRUNE_INTERVAL_SECONDS)
+        try:
+            removed = await asyncio.to_thread(STORE.prune_leases, _TTL_SECONDS)
+            if removed:
+                _log.info("pruned %d lease rows too old to count", removed)
+        except Exception:  # noqa: BLE001 — maintenance must not die
+            _log.exception("lease prune failed; will retry next interval")
 
 # Fault injection for the e2e stand (gate L13). It exists in the REAL server,
 # not in a test double, because the gates forbid a separate server
@@ -75,12 +112,25 @@ async def _lifespan(_app: FastAPI):
     should ever discover by surprise."""
     _log.info("licensing server up: bundle=%s ttl=%ss grace=%ss pubkey=%s",
               _PLAINTEXT_HASH[:12], _TTL_SECONDS, _GRACE_SECONDS, PUBLIC_KEY)
+    if _TTL_SECONDS + _GRACE_SECONDS > _DRIFT_TTL_CEILING_SECONDS:
+        _log.warning(
+            "LEASE WINDOW %ss (ttl+grace) EXCEEDS THE BUNDLE-DRIFT CEILING %ss. A "
+            "captured bundle now outlives the ГАР rotation window, so the anti-"
+            "piracy drift lever is materially weakened — a stolen copy no longer "
+            "rots within its own validity. This is a security posture change, not "
+            "an ops convenience; shorten PSEUDEX_LEASE_TTL_SECONDS / "
+            "PSEUDEX_GRACE_SECONDS unless this is deliberate.",
+            _TTL_SECONDS + _GRACE_SECONDS, _DRIFT_TTL_CEILING_SECONDS)
     if _FAULT:
         _log.warning("FAULT INJECTION ACTIVE (%s) — this server is deliberately "
                      "returning broken leases. Never run this in production.", _FAULT)
     if _LOG_RAW_BODY:
         _log.warning("RAW BODY LOGGING ACTIVE — lease request bodies go to the log.")
-    yield
+    prune_task = asyncio.create_task(_prune_loop())
+    try:
+        yield
+    finally:
+        prune_task.cancel()
 
 
 _STATUS_RESPONSE = {
@@ -112,22 +162,65 @@ if not _ADMIN_TOKEN:  # noqa: F821 - checked at import, before anything is serve
 
 
 # ВТОРОЙ ТОКЕН, С МЕНЬШИМИ ПРАВАМИ, ДЛЯ ВИТРИНЫ. Один общий секрет означал, что
-# компрометация витрины — а она единственная смотрит в интернет — отдаёт список
-# всех абонентов и массовые действия: приостановить, отозвать, пометить
-# неоплаченным. Витрине нужны пять ручек из одиннадцати, и ни одна из них не
-# массовая.
+# компрометация витрины — а она единственная смотрит в интернет — отдаёт СПИСОК
+# ВСЕХ АБОНЕНТОВ с их расходом.
 #
 # Это НЕ делает витрину безопасной: токен лежит у неё в окружении, и тот, кто
-# исполнил там код, его прочитает. Это ограничивает РАДИУС — выпустить себе
-# ключ он сможет, погасить всех клиентов нет.
+# исполнил там код, его прочитает. Это ограничивает РАДИУС.
 _STOREFRONT_TOKEN = os.environ.get("PSEUDEX_LICENSE_STOREFRONT_TOKEN", "")
 
-# Список БЕЛЫЙ: новая ручка по умолчанию требует полного токена, а не наследует
-# права по невнимательности того, кто её добавил.
-_STOREFRONT_PATHS = frozenset({
-    "/admin/issue", "/admin/revoke_key", "/admin/release",
-    "/admin/instances", "/admin/usage",
-})
+
+@dataclass(frozen=True)
+class AdminAction:
+    """Одна ручка админки: путь, метод и аудитория.
+
+    ОДНА ТАБЛИЦА ВМЕСТО ДВУХ РАЗЪЕХАВШИХСЯ СПИСКОВ. Белый список путей был
+    отдельным литералом, а витрина строила свои пути в другом репозитории и в
+    другом venv — сверять их было нечем. Разъезд стоил денег дважды и обоими
+    способами сразу:
+
+      * `/admin/resume` в списке НЕ БЫЛО, поэтому клиент платил, вебхук звал
+        `mark_paid`, тот получал 403 внутри `transaction.atomic()`, и счёт
+        оставался `draft` с непродлённой подпиской. Деньги списаны, шлюз стоит,
+        ЮKassa ретраит вечно с тем же результатом;
+      * витрина строила путь АРИФМЕТИКОЙ ПО СТРОКЕ статуса и для `revoked` и
+        `suspended` попадала в `/admin/revoked` и `/admin/suspended`, которых
+        не существует, — 404 даже под полным токеном.
+
+    ПОЧЕМУ `revoke` И `suspend` ВИТРИНЕ ТЕПЕРЬ МОЖНО. Прежнее обоснование —
+    «ни одна из них не массовая» — верно и для них: они бьют по одной
+    организации. А держатель витринного токена и так может остановить любого
+    клиента через `unpaid`, который в списке был и минует grace ровно так же.
+    Запрет не покупал ничего и создавал ровно тот класс расхождения, который
+    стоил денег. Настоящая ценность белого списка одна: `/admin/list` —
+    единственная ручка, отдающая КАТАЛОГ ВСЕХ АБОНЕНТОВ. Она и остаётся
+    операторской.
+
+    Правило по умолчанию не изменилось: новая ручка не получает витринных прав,
+    пока автор не решит её аудиторию, — только теперь нерешённая аудитория
+    роняет старт, а не тихо разъезжается.
+    """
+
+    path: str
+    method: str
+    storefront: bool
+
+
+ADMIN_ACTIONS: tuple[AdminAction, ...] = (
+    AdminAction("/admin/issue", "POST", True),
+    AdminAction("/admin/revoke_key", "POST", True),
+    AdminAction("/admin/revoke", "POST", True),
+    AdminAction("/admin/suspend", "POST", True),
+    AdminAction("/admin/unpaid", "POST", True),
+    AdminAction("/admin/resume", "POST", True),
+    AdminAction("/admin/release", "POST", True),
+    AdminAction("/admin/instances", "GET", True),
+    AdminAction("/admin/usage", "GET", True),
+    # Каталог абонентов. Единственная ручка, которой у витрины быть не должно.
+    AdminAction("/admin/list", "GET", False),
+)
+
+_STOREFRONT_PATHS = frozenset(a.path for a in ADMIN_ACTIONS if a.storefront)
 
 
 def _matches(presented: str, secret: str) -> bool:
@@ -161,7 +254,11 @@ def _require_admin(request: Request) -> None:
 
 
 admin_app = FastAPI(title="Pseudex licensing admin",
-                    dependencies=[Depends(_require_admin)])
+                    dependencies=[Depends(_require_admin)],
+                    # Автодокументация перечисляет все рычаги, а это
+                    # машинный API: читать её приходит только тот, кто
+                    # ищет, что тут можно нажать.
+                    docs_url=None, redoc_url=None, openapi_url=None)
 
 
 @app.get("/health")
@@ -169,13 +266,18 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "bundle": _PLAINTEXT_HASH[:12]}
 
 
-# ВЕРСИЯ КОНТРАКТА АРЕНДЫ. Движок с версии 2 требует в лизе полей, которых
-# сервер версии 1 не шлёт: `recipient`, `report_secret`, `issued_at`. Он их
-# ОТСУТСТВИЕ трактует как «сервер старше меня или это повтор» и не стартует —
-# что верно по существу и выглядит как наш сбой, если выкатить образы в
-# неверном порядке. Марка публичная и не требует токена, чтобы выкатчик мог
-# спросить сервер ДО того, как раскатает движок.
-LEASE_CONTRACT = 2
+# ВЕРСИЯ КОНТРАКТА АРЕНДЫ. Движок версии 2 требовал `recipient`,
+# `report_secret` и `issued_at`; версия 3 добавляет ЭХО НОНСА и блок `capacity`
+# с адресом ручки ёмкости. Отсутствие обязательного поля движок трактует как
+# «сервер старше меня или это повтор» и не стартует — верно по существу и
+# похоже на наш сбой, если выкатить образы в неверном порядке. Марка публичная
+# и без токена, чтобы выкатчик мог спросить сервер ДО раскатки движка.
+#
+# Сервер держит ОБЕ схемы и различает их по наличию `nonce` в теле аренды:
+# движок 2 против сервера 3 работает без изменений (подпись покрывает весь
+# словарь, лишние поля он не читает), движок 3 против сервера 2 отказывается
+# стартовать и называет причину.
+LEASE_CONTRACT = 3
 
 
 @app.get("/v1/pubkey")
@@ -198,22 +300,147 @@ def _version_tuple(version: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
+# ПРЕДЕЛ НА ТЕЛО И ОДНА ДВЕРЬ ДЛЯ ЕГО РАЗБОРА.
+#
+# 64 KiB с запасом покрывают лизу и отчёт: самое большое, что клиент присылает,
+# — это счётчики по типам сущностей, их девятнадцать.
+_MAX_BODY_BYTES = 64 * 1024
+
+
+async def json_object(request: Request) -> dict[str, object]:
+    """Тело запроса как объект — или 400, и НИКОГДА 500.
+
+    Пятисотка — это наше обещание «сломались мы», и клиент его исполняет:
+    `500 ∈ _GRACE_WORTHY_STATUS` в `pseudex/license.py`, то есть уезжает в
+    grace на сорок восемь часов. Значит любой вход, роняющий нас в 500, — это
+    примитив «вызвать чужой отказ», доступный из тела запроса. Проверено: до
+    этой правки `{"usage": {"requests": "abc"}}` и просто битый JSON давали
+    ровно 500, и клиенту достаточно было отравить СВОЙ ЖЕ отчёт, чтобы ехать
+    на grace, не трогая сеть.
+
+    Зависимость, а не `try` в каждой ручке: их было семь, и в шести из них
+    защиты не было вовсе. Ручка, написанная завтра без этой зависимости,
+    заметна на ревью — пропущенный `try` не заметен.
+    """
+    raw = await request.body()
+    if len(raw) > _MAX_BODY_BYTES:
+        raise HTTPException(status_code=413, detail="body too large")
+    try:
+        body = json.loads(raw or b"{}")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="body is not JSON")
+    if not isinstance(body, dict):
+        # Валидный JSON, но не объект: `[]`, `5`, `"x"`. Дальше по коду везде
+        # `body.get(...)`, то есть AttributeError и та же пятисотка.
+        raise HTTPException(status_code=400, detail="body must be a JSON object")
+    return body
+
+
+class ReportRejected(ValueError):
+    """Отчёт не разобран. Несёт причину, потому что она едет клиенту."""
+
+
+# Потолки. Не «на всякий случай»: `prev`, `signature` и `build` уходят в
+# `process_reports` как есть, а `entities` — в JSON внутри строки `usage`.
+_MAX_COUNTER = 2 ** 53
+_MAX_ENTITY_TYPES = 200
+_MAX_ENTITY_KEY = 64
+_MAX_OPAQUE = 256
+
+
+def _counter(report: dict[str, object], field: str) -> int:
+    value = report.get(field, 0)
+    # `bool` — подкласс `int`, и `True` прошёл бы как единица. Строку "5" тоже
+    # не принимаем: честный клиент шлёт `int` всегда (`audit.billing_totals`),
+    # а мягкая коррекция — это отчёт, о котором никто не узнал.
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ReportRejected(f"{field} must be an integer")
+    if not 0 <= value <= _MAX_COUNTER:
+        raise ReportRejected(f"{field} out of range")
+    return value
+
+
+def _opaque(report: dict[str, object], field: str) -> str:
+    value = report.get(field, "")
+    if not isinstance(value, str):
+        raise ReportRejected(f"{field} must be a string")
+    if len(value) > _MAX_OPAQUE:
+        raise ReportRejected(f"{field} too long")
+    return value
+
+
+def parse_usage_report(usage: object) -> dict[str, object] | None:
+    """Разобрать отчёт о расходе или отказать с причиной.
+
+    `None` — законное «отчёта нет»: первая аренда процесса отчитываться нечем.
+
+    ОТРИЦАТЕЛЬНОЕ НЕ ПРИНИМАЕТСЯ, И ЭТО НЕ ПЕДАНТИЗМ. Подписанный отчёт с
+    `requests = -10**9` под свежим `instance_id` уводил итоги организации в
+    минус: защита от отката ключуется на `(org_id, instance_id)`, а его
+    выбирает клиент, и `usage_totals` строки суммирует. Дальше `build_invoice`
+    записывал отрицательное значение как ПОСТОЯННУЮ ватермарку, и все
+    следующие периоды давали ноль.
+
+    `entities` проверяется ПО ЗНАЧЕНИЯМ, а не только как dict. Нечисловое
+    значение переживало запись и роняло `/admin/usage` в 500 НАВСЕГДА —
+    строка перечитывается на каждом вызове, — а вместе с ним кабинет и
+    выставление счёта этому клиенту.
+    """
+    if usage is None:
+        return None
+    if not isinstance(usage, dict):
+        raise ReportRejected("usage must be an object")
+    entities = usage.get("entities", {})
+    if not isinstance(entities, dict):
+        raise ReportRejected("entities must be an object")
+    if len(entities) > _MAX_ENTITY_TYPES:
+        raise ReportRejected("too many entity types")
+    clean_entities: dict[str, int] = {}
+    for entity_type, count in entities.items():
+        if not isinstance(entity_type, str) or len(entity_type) > _MAX_ENTITY_KEY:
+            raise ReportRejected("entity type must be a short string")
+        if isinstance(count, bool) or not isinstance(count, int):
+            raise ReportRejected(f"count for {entity_type!r} must be an integer")
+        if not 0 <= count <= _MAX_COUNTER:
+            raise ReportRejected(f"count for {entity_type!r} out of range")
+        clean_entities[entity_type] = count
+    return {
+        "requests": _counter(usage, "requests"),
+        "values": _counter(usage, "values"),
+        "seq": _counter(usage, "seq"),
+        "entities": clean_entities,
+        "prev": _opaque(usage, "prev"),
+        "signature": _opaque(usage, "signature"),
+        "build": _opaque(usage, "build"),
+    }
+
+
 def _store_usage(instance_id: str, org_id: str, usage: object,
-                 pubkey: str = "") -> None:
+                 pubkey: str) -> None:
     """Record the instance's cumulative counters. No-op on the first lease of a
     process, which has nothing to report yet.
 
-    ПОДПИСЬ И ЦЕПЬ ПРОВЕРЯЮТСЯ ЗДЕСЬ, И ОТКАЗ НЕ РОНЯЕТ АРЕНДУ. Отчёт, который
-    не сходится, — это счёт, а не право работать: клиент с испорченной цепью
+    ПОДПИСЬ И ЦЕПЬ ПРОВЕРЯЮТСЯ ЗДЕСЬ, И ОТКАЗ НЕ РОНЯЕТ АРЕНДУ. «Сходится»
+    здесь значит «не переписан В КАНАЛЕ» и ничего не говорит о правдивости
+    чисел — полностью это разобрано в `pseudex/bundle.py::mac_report`. Отчёт,
+    который не сходится, — это счёт, а не право работать: клиент с испорченной цепью
     продолжает обслуживать своих людей, а мы получаем помеченную запись и
     разговор. Ронять `/mask` за расхождение в биллинге значило бы наказывать
     конечного пользователя за спор двух юрлиц.
+
+    Разбор — `parse_usage_report`, и он бросает `ReportRejected`. Что с этим
+    делать, решает ВЫЗЫВАЮЩИЙ, потому что решение разное: на `/v1/lease` отчёт
+    отбрасывается и аренда выдаётся (та же политика, что для плохой подписи), а
+    на `/v1/usage`, где отчёт и есть весь смысл запроса, это 400 с причиной.
     """
-    if not isinstance(usage, dict) or not instance_id:
+    if not instance_id:
+        return
+    report = parse_usage_report(usage)
+    if report is None:
         return
     trust = "unsigned"
     secret_hex = STORE.report_secret(org_id, pubkey) if pubkey else ""
-    if secret_hex and usage.get("signature"):
+    if secret_hex and report["signature"]:
         try:
             verify_report(usage, bytes.fromhex(secret_hex))
             trust = "signed"
@@ -221,20 +448,16 @@ def _store_usage(instance_id: str, org_id: str, usage: object,
             _log.warning("usage report signature failed for org=%s instance=%s: %s",
                          org_id, instance_id, error)
             trust = "bad_signature"
-    entities = usage.get("entities")
     STORE.record_usage(
-        org_id, instance_id, int(usage.get("requests", 0)),
-        entities if isinstance(entities, dict) else {},
-        int(usage.get("values", 0)),
-        seq=int(usage.get("seq", 0)), prev=str(usage.get("prev", "")),
-        signature=str(usage.get("signature", "")), trust=trust,
-        report_pubkey=pubkey,
-        build=str(usage.get("build", "")),
+        org_id, instance_id, report["requests"], report["entities"],
+        report["values"], seq=report["seq"], prev=report["prev"],
+        signature=report["signature"], trust=trust, report_pubkey=pubkey,
+        build=report["build"],
     )
 
 
 @app.post("/v1/release")
-async def release(request: Request) -> JSONResponse:
+async def release(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     """Give a slot back when a container shuts down cleanly.
 
     ОСВОБОЖДАЕТСЯ ТОЛЬКО СВОЙ СЛОТ. Раньше слот удалялся по `instance_id`,
@@ -248,23 +471,31 @@ async def release(request: Request) -> JSONResponse:
     окно освобождения — решение продуктовое: оно бьёт по переразвёртыванию,
     ради которого release и существует.
     """
-    body = await request.json()
     record = STORE.lookup(str(body.get("key", "")))
     if record is None:
         return JSONResponse({"error": "unknown key"}, status_code=403)
     pubkey = str(body.get("pubkey", ""))
     if not pubkey:
         return JSONResponse({"error": "no process public key"}, status_code=400)
-    STORE.release_process(record.org_id, pubkey)
-    return JSONResponse({"released": True})
+    # БЮДЖЕТ ОСВОБОЖДЕНИЙ. Остывание ограничивает темп, но не количество:
+    # контейнер, отдавший слот, продолжает обслуживать до конца TTL, и это не
+    # чинится в софте, работающем в чужом периметре. Сверх бюджета ручка не
+    # делает ничего, и слот истекает по TTL — как до её появления.
+    budget = STORE.release_budget(record.plan)
+    if STORE.releases_last_hour(record.org_id) >= budget:
+        _log.warning("release budget exhausted for org=%s: %d in the last hour",
+                     record.org_id, budget)
+        return JSONResponse({"error": "release_budget",
+                             "detail": f"не более {budget} освобождений в час"},
+                            status_code=429)
+    return JSONResponse({"released": STORE.release_process(record.org_id, pubkey)})
 
 
 @app.post("/v1/lease")
-async def lease(request: Request) -> JSONResponse:
-    raw = await request.body()
+async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     if _LOG_RAW_BODY:
-        _log.info("RAW_LEASE_BODY %s", raw.decode("utf-8", "replace"))
-    body = json.loads(raw)
+        _log.info("RAW_LEASE_BODY %s",
+                  json.dumps(body, ensure_ascii=False, sort_keys=True))
     key = body.get("key")
     if not isinstance(key, str) or not key:
         return JSONResponse({"error": "license_missing", "detail": "no key presented"},
@@ -298,6 +529,13 @@ async def lease(request: Request) -> JSONResponse:
     if not isinstance(recipient, str) or not recipient:
         return JSONResponse({"error": "license_invalid", "detail": "no process public key"},
                             status_code=400)
+    # ФОРМА ПРОВЕРЯЕТСЯ ДО ЛЮБОЙ РАБОТЫ. Битый ключ разваливался внутри
+    # `seal()` в 500, а 500 у клиента grace-worthy: строки `age1x` в теле
+    # хватало, чтобы получить сорок восемь часов работы в долг.
+    if not is_recipient(recipient):
+        return JSONResponse({"error": "license_invalid",
+                             "detail": "process public key is not an age recipient"},
+                            status_code=400)
 
     instance_id = str(body.get("instance_id", ""))
     process_id = str(body.get("process_id", ""))
@@ -312,29 +550,62 @@ async def lease(request: Request) -> JSONResponse:
     # "you are running more containers than you bought", which is a different
     # sentence and must not be read by the client as a payment failure — those
     # bypass grace and stop everything.
-    allowed, why_not = STORE.may_lease(record.org_id, record.plan, instance_id,
-                                       _TTL_SECONDS, pubkey=recipient)
+    # ПРОВЕРКА И ЗАПИСЬ — ОДНА КРИТИЧЕСКАЯ СЕКЦИЯ. Раньше это были два вызова
+    # с отпущенным между ними локом, и N одновременных аренд все видели место
+    # свободным. Идентификатор аренды готовится заранее, потому что решение и
+    # запись теперь неразделимы.
+    lease_id = "ls_" + secrets.token_urlsafe(16)
+    allowed, why_not = STORE.lease_if_allowed(
+        lease_id, record.org_id, record.plan, instance_id, process_id,
+        _TTL_SECONDS, pubkey=recipient)
     if not allowed:
         _log.warning("lease refused for org=%s instance=%s: %s",
                      record.org_id, instance_id, why_not)
         return JSONResponse({"error": "instance_limit", "detail": why_not},
                             status_code=409)
-    # Counters ride in on the renewal request. Recorded BEFORE the new lease is
-    # minted so a client that dies mid-renewal has still been accounted for.
-    _store_usage(instance_id, record.org_id, body.get("usage"), recipient)
-
-    lease_id = "ls_" + secrets.token_urlsafe(16)
-    STORE.record_lease(lease_id, record.org_id, instance_id, process_id,
-                       _TTL_SECONDS, pubkey=recipient)
-    STORE.record_grant(record.org_id, recipient, STORE.grant_size(record.plan))
-
-    # СЕКРЕТ ОТЧЁТОВ, ЗАПЕЧАТАННЫЙ ПОЛУЧАТЕЛЮ. Достать его может только тот, у
-    # кого приватная половина `recipient`, — а `recipient` теперь под подписью,
-    # так что подменить его на свой перехватчик не может: контейнер сверит с
-    # собственным ключом и откажется стартовать.
+    # Counters are recorded AFTER the instance is admitted, not before. An
+    # over-limit renewal is refused above (409) and must leave NO usage row: a
+    # single valid key sending a fresh client-chosen instance_id each time would
+    # otherwise INSERT an unbounded number of usage rows and inflate the
+    # instance/missing counters, all past a cap that only bounds the `leases`
+    # table. An admitted instance loses nothing — `lease_if_allowed` persisted
+    # its slot in the same critical section, so the "died mid-renewal is still
+    # accounted for" intent holds for every instance that is actually serving.
+    #
+    # ИСПОРЧЕННЫЙ ОТЧЁТ ОТБРАСЫВАЕТСЯ, А АРЕНДА ВЫДАЁТСЯ. Ровно та политика,
+    # которую докстринг `_store_usage` уже объявляет для плохой подписи: спор о
+    # биллинге не имеет права останавливать конечного пользователя. Но и тишиной
+    # это быть не должно — считается отдельно от «расхода не было».
+    # ПРОДЛЕНИЕ БЕЗ ОТЧЁТА — ЭТО ЗАПИСЬ, А НЕ ТИШИНА. `lease_id` клиент шлёт с
+    # самого начала, и до этой правки сервер его не читал вовсе, поэтому
+    # перехватчик, выбрасывающий поле `usage`, не двигал НИ ОДНОГО счётчика:
+    # подделать отчёт было видно, повторить видно, снять целиком — нет.
+    if body.get("lease_id") and body.get("usage") is None:
+        _log.warning("renewal without a usage report for org=%s instance=%s",
+                     record.org_id, instance_id)
+        STORE.record_missing_report(record.org_id, instance_id)
+    try:
+        _store_usage(instance_id, record.org_id, body.get("usage"), recipient)
+    except ReportRejected as error:
+        _log.warning("malformed usage report from org=%s instance=%s: %s",
+                     record.org_id, instance_id, error)
+        STORE.record_malformed(record.org_id, instance_id)
+    # СЕКРЕТ ОТЧЁТОВ, ЗАПЕЧАТАННЫЙ ПОЛУЧАТЕЛЮ. Это закрывает ПЕРЕХВАТЧИКА:
+    # `recipient` под подписью, поэтому подменить его на свой он не может —
+    # контейнер сверит с собственным ключом и откажется стартовать. Про самого
+    # клиента отсюда не следует ничего: получателя называет он сам, и владелец
+    # ключа подписывает что угодно (`pseudex/bundle.py::mac_report`). Поэтому
+    # счёт строится на выданной ёмкости, а не на отчёте.
     report_secret = secrets.token_bytes(32)
     STORE.record_report_secret(record.org_id, recipient, report_secret.hex())
 
+    # ЭХО НОНСА — ЕДИНСТВЕННОЕ, ЧТО УБИВАЕТ ПОВТОР. Свежесть по часам не
+    # годится: часы в контейнере чужие, а окно `ttl + skew` на проде это
+    # двадцать пять часов, в течение которых захваченная лиза принималась как
+    # своя — проверено, `granted` при этом замирал навсегда, а движок показывал
+    # `state=active` и ноль ошибок.
+    nonce = str(body.get("nonce", ""))
+    contract_3 = bool(nonce)
     payload: dict[str, object] = {
         "lease_id": lease_id,
         # КОМУ ЗАПЕЧАТАНО — В ПОДПИСИ. Без этого поля перехватчик на хосте
@@ -357,12 +628,29 @@ async def lease(request: Request) -> JSONResponse:
         # ГРАНТ ЁМКОСТИ. Счёт строится на ЭТОМ числе, а не на том, что контейнер
         # о себе сообщит: скрыть расход можно, скрыть собственную просьбу о
         # ёмкости — нет, потому что без неё движок перестаёт обслуживать.
+        # ПОЛЕ КОНТРАКТА 2, ОСТАЁТСЯ ПОКА В ПАРКЕ ЕСТЬ СТАРЫЕ ДВИЖКИ. Для
+        # контракта 3 ёмкость покупается на `/v1/meter`, и здесь не чеканится
+        # ничего.
         "requests_granted": STORE.grant_size(record.plan),
     }
+    if contract_3:
+        payload["nonce"] = nonce
+        payload["capacity"] = {"endpoint": "/v1/meter",
+                               "target_seconds": STORE.METER_TARGET_SECONDS}
+        payload["lease_contract"] = LEASE_CONTRACT
+    else:
+        # Мост: движок контракта 2 по-прежнему получает грант по времени и
+        # считается по старой, завышающей схеме. Никого не бьёт, пока тариф
+        # фиксированный, и исчезает вместе с последним старым образом.
+        STORE.record_grant(record.org_id, recipient, STORE.grant_size(record.plan))
     payload["report_secret_sha256"] = hashlib.sha256(report_secret).hexdigest()
     payload["signature"] = sign_lease(payload, SIGNING_KEY)
 
-    sealed = seal(_PLAINTEXT, recipient)
+    # КОНТРАКТ 3: внутренний слой, чей ключ выведен из СВЕЖЕГО нонса клиента.
+    # Повтор старой аренды у пропатченного клиента даёт нерасшифровываемый
+    # бандл (`pseudex/bundle.py::nonce_wrap`). Контракт 2 получает голый бандл.
+    inner = nonce_wrap(_PLAINTEXT, nonce) if contract_3 else _PLAINTEXT
+    sealed = seal(inner, recipient)
     if _FAULT == "corrupt_bundle":
         # Flip one byte in the middle of the ciphertext. age is authenticated, so
         # this must surface as a decryption failure, not as garbled assets.
@@ -372,19 +660,109 @@ async def lease(request: Request) -> JSONResponse:
     return JSONResponse(payload)
 
 
+@app.post("/v1/meter")
+async def meter(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
+    """Купить следующий квант ёмкости, назвав свой расход.
+
+    ЛЁГКАЯ РУЧКА, И ЭТО АРИФМЕТИКА, А НЕ ЭСТЕТИКА. Аренда пересобирает и
+    заново шифрует весь бандл — 1481 КБ после zlib, около двух мегабайт
+    age+base64 на КАЖДОЕ обращение, синхронно на цикле однопроцессного
+    uvicorn. Покупать этим ценой квант в несколько сотен запросов нельзя.
+    Здесь около килобайта: один HMAC, одна подпись, одна запись.
+
+    Частота обращений — `1 / (0.75 · τ_Q)`, то есть одно в четыре минуты на
+    процесс НЕЗАВИСИМО ОТ ТРАФИКА: квант растёт вместе с расходом. Клиент под
+    нагрузкой не создаёт нагрузки нам.
+    """
+    key = body.get("key")
+    if not isinstance(key, str) or not key:
+        return JSONResponse({"error": "license_missing", "detail": "no key presented"},
+                            status_code=401)
+    record = STORE.lookup(key)
+    if record is None:
+        return JSONResponse({"error": "license_invalid", "detail": "unknown key"},
+                            status_code=403)
+    if record.status != STATUS_ACTIVE:
+        status_code, error, detail = _STATUS_RESPONSE.get(
+            record.status,
+            (403, "license_invalid", f"key is in an unusable state ({record.status!r})"))
+        return JSONResponse({"error": error, "detail": detail}, status_code=status_code)
+
+    pubkey = str(body.get("pubkey", ""))
+    nonce = str(body.get("nonce", ""))
+    if not pubkey or not nonce:
+        return JSONResponse({"error": "license_invalid",
+                             "detail": "pubkey and nonce are required"},
+                            status_code=400)
+
+    # ОТЧЁТ О РАСХОДЕ ЕДЕТ ТЕМ ЖЕ MAC, ЧТО И ВСЕГДА. Новых секретов нет:
+    # `report_secret` уже запечатан на этот ключ процесса.
+    acked: int | None = None
+    trust = "none"
+    ack = body.get("ack")
+    if isinstance(ack, dict):
+        try:
+            consumed = _counter(ack, "consumed")
+        except ReportRejected as error:
+            return JSONResponse({"error": "report_rejected", "detail": str(error)},
+                                status_code=400)
+        secret_hex = STORE.report_secret(record.org_id, pubkey)
+        if secret_hex and ack.get("signature"):
+            try:
+                verify_report(ack, bytes.fromhex(secret_hex))
+                acked, trust = consumed, "signed"
+            except (BundleError, ValueError) as error:
+                _log.warning("capacity ack failed for org=%s pubkey=%s: %s",
+                             record.org_id, pubkey[:12], error)
+                trust = "bad_signature"
+        else:
+            trust = "unsigned"
+
+    # ДЕШЁВЫЙ ПОТОЛОК ЧАСТОТЫ. Инфляция ёмкости атакующему бесполезна — она
+    # только поднимает его же счёт, — но ручка публичная, а сервер
+    # однопроцессный, и долбёжка по ней это уже наша проблема, а не его.
+    # 429 у клиента grace-worthy, поэтому честного это ничем не задевает: он
+    # приходит раз в четыре минуты на процесс.
+    if STORE.metered_too_recently(record.org_id, pubkey, time.time()):
+        return JSONResponse({"error": "too_fast", "detail": "one grant per second"},
+                            status_code=429)
+    quantum = STORE.issue_quantum(record.org_id, pubkey, record.plan, acked,
+                                  time.time())
+    payload: dict[str, object] = {
+        "kind": "capacity",
+        # Квант не может быть прочитан как лиза, а лиза как квант: тип внутри
+        # подписи, и клиент его сверяет.
+        "recipient": pubkey,
+        "nonce": nonce,
+        "org_id": record.org_id,
+        "plan": record.plan,
+        "issued_at": int(time.time()),
+        "ack_trust": trust,
+        "lease_contract": LEASE_CONTRACT,
+        **quantum,
+    }
+    payload["signature"] = sign_lease(payload, SIGNING_KEY)
+    return JSONResponse(payload)
+
+
 @app.post("/v1/usage")
-async def usage(request: Request) -> JSONResponse:
+async def usage(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     """Out-of-band counter delivery. Normally counters ride on /v1/lease; this
     exists for a client that wants to report before its renewal is due."""
-    body = await request.json()
     key = body.get("key")
     if not isinstance(key, str):
         return JSONResponse({"error": "license_missing"}, status_code=401)
     record = STORE.lookup(key)
     if record is None or record.status != STATUS_ACTIVE:
         return JSONResponse({"error": "license_invalid"}, status_code=403)
-    _store_usage(str(body.get("instance_id", "")), record.org_id,
-                 body.get("usage"), str(body.get("pubkey", "")))
+    # ЗДЕСЬ ОТЧЁТ И ЕСТЬ ВЕСЬ СМЫСЛ ЗАПРОСА, поэтому неразобранный — это 400 с
+    # причиной, а не молчаливый пропуск.
+    try:
+        _store_usage(str(body.get("instance_id", "")), record.org_id,
+                     body.get("usage"), str(body.get("pubkey", "")))
+    except ReportRejected as error:
+        return JSONResponse({"error": "report_rejected", "detail": str(error)},
+                            status_code=400)
     return JSONResponse({"status": "recorded"})
 
 
@@ -396,13 +774,14 @@ async def admin_instances(request: Request) -> JSONResponse:
         return JSONResponse({"error": "org_id required"}, status_code=400)
     return JSONResponse({"org_id": org_id,
                          "window_seconds": _TTL_SECONDS,
+                         "cooldown_seconds": STORE.RELEASE_COOLDOWN_SECONDS,
+                         "releases_last_hour": STORE.releases_last_hour(org_id),
                          "instances": STORE.active_instances(org_id, _TTL_SECONDS)})
 
 
 @admin_app.post("/admin/release")
-async def admin_release(request: Request) -> JSONResponse:
+async def admin_release(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     """Free a slot held by a container that is no longer running."""
-    body = await request.json()
     org_id = str(body.get("org_id", ""))
     instance_id = str(body.get("instance_id", ""))
     if not org_id or not instance_id:
@@ -413,8 +792,7 @@ async def admin_release(request: Request) -> JSONResponse:
 
 
 @admin_app.post("/admin/issue")
-async def admin_issue(request: Request) -> JSONResponse:
-    body = await request.json()
+async def admin_issue(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     org_id = str(body.get("org_id", ""))
     if not org_id:
         return JSONResponse({"error": "org_id required"}, status_code=400)
@@ -422,8 +800,7 @@ async def admin_issue(request: Request) -> JSONResponse:
     return JSONResponse({"org_id": org_id, "key": key})
 
 
-async def _set_status(request: Request, status: str) -> JSONResponse:
-    body = await request.json()
+async def _set_status(body: dict, status: str) -> JSONResponse:
     org_id = str(body.get("org_id", ""))
     changed = STORE.set_status(org_id, status)
     if changed == 0:
@@ -432,18 +809,17 @@ async def _set_status(request: Request, status: str) -> JSONResponse:
 
 
 @admin_app.post("/admin/revoke")
-async def admin_revoke(request: Request) -> JSONResponse:
-    return await _set_status(request, STATUS_REVOKED)
+async def admin_revoke(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
+    return await _set_status(body, STATUS_REVOKED)
 
 
 @admin_app.post("/admin/revoke_key")
-async def admin_revoke_key(request: Request) -> JSONResponse:
+async def admin_revoke_key(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     """Revoke a single key by its hash, without touching the organisation.
 
     The organisation-wide levers stop everything the customer runs; this one
     exists so "this key leaked" is not the same action as "stop this customer".
     """
-    body = await request.json()
     key_hash = str(body.get("key_hash", ""))
     if not key_hash:
         return JSONResponse({"error": "key_hash required"}, status_code=400)
@@ -455,18 +831,18 @@ async def admin_revoke_key(request: Request) -> JSONResponse:
 
 
 @admin_app.post("/admin/suspend")
-async def admin_suspend(request: Request) -> JSONResponse:
-    return await _set_status(request, STATUS_SUSPENDED)
+async def admin_suspend(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
+    return await _set_status(body, STATUS_SUSPENDED)
 
 
 @admin_app.post("/admin/unpaid")
-async def admin_unpaid(request: Request) -> JSONResponse:
-    return await _set_status(request, STATUS_UNPAID)
+async def admin_unpaid(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
+    return await _set_status(body, STATUS_UNPAID)
 
 
 @admin_app.post("/admin/resume")
-async def admin_resume(request: Request) -> JSONResponse:
-    return await _set_status(request, STATUS_ACTIVE)
+async def admin_resume(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
+    return await _set_status(body, STATUS_ACTIVE)
 
 
 @admin_app.get("/admin/list")
@@ -481,3 +857,27 @@ async def admin_usage(request: Request) -> JSONResponse:
         "usage": STORE.usage_totals(org_id),
         "instances": STORE.instances(org_id),
     })
+
+
+def _check_admin_surface() -> None:
+    """Смонтированное обязано совпасть с объявленным — иначе процесс не встаёт.
+
+    КОД ПРОТИВ КОДА, А НЕ КОД ПРОТИВ ПАМЯТИ. Ручка, добавленная без строки в
+    `ADMIN_ACTIONS`, и строка без ручки — одинаково валят старт. Инвариант
+    детерминированный, поэтому в проде он упасть не может, не упав раньше в CI;
+    а разъезд, который стоил нам оплаченного и невозобновлённого обслуживания,
+    перестаёт быть тем, что замечают по жалобе клиента.
+    """
+    mounted = {(route.path, method)
+               for route in admin_app.routes
+               for method in (getattr(route, "methods", None) or set()) - {"HEAD", "OPTIONS"}
+               if getattr(route, "path", "").startswith("/admin")}
+    declared = {(action.path, action.method) for action in ADMIN_ACTIONS}
+    if mounted != declared:
+        raise RuntimeError(
+            "admin surface drift: смонтировано без объявления "
+            f"{sorted(mounted - declared)}, объявлено без ручки "
+            f"{sorted(declared - mounted)}")
+
+
+_check_admin_surface()

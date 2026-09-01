@@ -429,6 +429,14 @@ def cabinet(request):
     used = int(reported.get("values", 0))
     requests = int(reported.get("requests", 0))
     included = subscription.plan.included_values if subscription else 0
+    # ЁМКОСТЬ: НА ЧЁМ СТРОИТСЯ СЧЁТ И ЧЕМ ОНО ЗАЖАТО. Клиент должен видеть обе
+    # границы, потому что расстояние между ними — это ровно та скидка, которую
+    # он получает за подтверждённые отчёты. Без этого фраза «отчёт — ваша
+    # защита» остаётся обещанием.
+    billable = int(reported.get("capacity_billable", 0) or 0)
+    ceiling = int(reported.get("capacity_granted", 0) or 0)
+    acknowledged = int(reported.get("capacity_acked", 0) or 0)
+    unacked = int(reported.get("capacity_unacked_quanta", 0) or 0)
     return render(request, "app/cabinet.html", {
         "instances": slots,
         "organization": organization,
@@ -437,8 +445,15 @@ def cabinet(request):
         "invoices": organization.invoices.all()[:12],
         "used": used,
         "requests": requests,
+        "billable": billable,
+        "ceiling": ceiling,
+        "acknowledged": acknowledged,
+        "unacked_quanta": unacked,
+        # Сколько клиент НЕ платит благодаря тому, что его контейнеры
+        # отчитываются. Ноль здесь значит, что отчёты не доходят.
+        "capacity_discount": max(0, ceiling - billable),
         "included": included,
-        "percent": min(100, round(used / included * 100)) if included else 0,
+        "percent": min(100, round(billable / included * 100)) if included else 0,
         "unreachable": unreachable,
         "image": settings.DOCKER_IMAGE,
         "license_url_env": (f"-e PSEUDEX_LICENSE_URL={settings.LICENSE_URL} "
@@ -579,7 +594,7 @@ def yookassa_webhook(request):
     if invoice is None:
         _log.error("payment %s references unknown invoice %r", payment_id, number)
         return HttpResponse("unknown invoice", status=200)
-    if invoice.state == Invoice.PAID:
+    if invoice.state == Invoice.PAID and invoice.service_resumed_at is not None:
         return HttpResponse("already paid", status=200)
     # Underpayment must not resume service. Amounts come back as Decimal from
     # both sides, so this is an exact comparison and not a float near-miss.
@@ -588,9 +603,19 @@ def yookassa_webhook(request):
                    payment_id, number, amount, invoice.total)
         return HttpResponse("amount mismatch", status=200)
 
-    invoice.payment_ref = payment_id
-    invoice.save(update_fields=["payment_ref"])
-    services.mark_paid(invoice)
+    # `payment_ref` едет ВНУТРЬ `mark_paid` и пишется тем же коммитом, что и
+    # оплата. Раньше он записывался здесь, до вызова, и откат внутри `mark_paid`
+    # оставлял счёт с проставленным `payment_ref` в состоянии `draft` — при
+    # уникальном поле это ещё и упирало повторную доставку в конфликт.
+    try:
+        services.mark_paid(invoice, payment_ref=payment_id)
+    except services.ServiceNotResumed as error:
+        # 502, а не 500 из необработанного исключения: деньги записаны и не
+        # откатятся, не доехало только возобновление, и провайдер ДОЛЖЕН
+        # повторить — повтор его и дочинит. Та же дверь, что у
+        # `payments.PaymentError` выше, и по той же причине.
+        _log.error("invoice %s paid but service not resumed: %s", number, error)
+        return HttpResponse("paid, service not resumed", status=502)
     _log.info("invoice %s paid via %s", number, payment_id)
     return HttpResponse("ok", status=200)
 

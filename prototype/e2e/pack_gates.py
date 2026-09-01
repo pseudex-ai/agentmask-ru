@@ -78,6 +78,12 @@ def build_images(skip_build: bool) -> str:
                    if existing else Ed25519PrivateKey.generate())
     private_b64 = encode_private(signing_key)
     public_b64 = encode_public(signing_key.public_key())
+    # The tuning key seals the compiled blob and is delivered in the lease. Like
+    # the signing key it is baked into the image, so a fresh one forces a rebuild —
+    # persist it across runs for `--skip-build`, and pin the SAME value into both
+    # the build-arg (seals) and the server env (delivers).
+    tuning_b64 = os.environ.get("PSEUDEX_TUNING_KEY", "") \
+        or base64.b64encode(os.urandom(32)).decode("ascii")
     certs.generate(_HERE / "certs", "license")
 
     # The licensing image is always rebuilt, even with --skip-build: it takes
@@ -91,11 +97,13 @@ def build_images(skip_build: bool) -> str:
             started = time.monotonic()
             sh(["docker", "build", "-f", str(dockerfile),
                 "--build-arg", f"PSEUDEX_LICENSE_PUBKEY={public_b64}",
+                "--build-arg", f"PSEUDEX_TUNING_KEY={tuning_b64}",
                 "-t", tag, str(_ROOT)], True, 5400)
             print(f"  {tag} built in {(time.monotonic() - started) / 60:.1f} min")
 
     _ENV_FILE.write_text(
         f"PSEUDEX_SIGNING_KEY={private_b64}\n"
+        f"PSEUDEX_TUNING_KEY={tuning_b64}\n"
         f"PSEUDEX_IMAGE={COMPILED_IMAGE}\n"
         f"PSEUDEX_KEY=\n"
         f"PSEUDEX_WORKERS=4\n"
@@ -182,10 +190,18 @@ def gate_p1() -> bool:
 def gate_p2() -> bool:
     """The tuned vocabulary must not be sitting in the shipped image as bytes.
 
-    Checked against words that are ASSETS — they belong to the leased bundle —
-    never against anything the engine legitimately contains. If this passes, the
-    asset split alone did the job and Nuitka Commercial's constant encryption is
-    not needed; if it fails, that plugin is what the €250/year buys."""
+    Two forms now, and NEITHER may leak. The bulk (names, ГАР streets) is still
+    leased, so it is simply not in the image — `marker_surname()` probes that. The
+    authored TUNING (cue words, address regex, priority table, key→type map) is
+    compiled INTO the engine as an opaque zlib+hex blob (docs/tz-license-packaging
+    §2.2), so its plaintext must not appear either — the regex, cue and compound-
+    key probes check that the blob stays compressed and was not accidentally
+    shipped in the clear. This is what makes Nuitka Commercial's constant
+    encryption unnecessary: if any plaintext probe is found, the blob leaked and
+    that plugin is what the €250/year would buy.
+
+    Checked against words that are ASSETS — authored tuning or leased bulk — never
+    against anything the engine legitimately contains in the clear."""
     # THE PROBES MUST BE UNAMBIGUOUSLY OURS. Common words are useless here and
     # the first version of this gate proved it: "саша" was found in
     # /app/natasha/data/dict/first.txt — natasha's OWN name dictionary, a
@@ -218,8 +234,46 @@ def gate_p2() -> bool:
     out = sh(["docker", "run", "--rm", "--entrypoint", "sh", COMPILED_IMAGE, "-c", checks],
              False, 900).stdout
     found = [line for line in out.splitlines() if line.strip() and not line.rstrip().endswith(":")]
-    return gate("P2 leased vocabulary not extractable from the binary", not found,
+    return gate("P2 tuned vocabulary not extractable: blob opaque, bulk leased",
+                not found,
                 f"found_in_image={found[:3] or 'none'} checked={len(samples)}")
+
+
+def gate_p2b() -> bool:
+    """Строки-маяки лицензионного тракта не должны лежать в образе plaintext.
+
+    P2 проверяет, что не утёк арендованный СЛОВАРЬ; этот — что не утекла КАРТА к
+    лицензионной проверке. Замерено до `build_harden_strings.py`: `grep
+    license_expired` находил строку, а рядом — ветку лестницы деградации, и это
+    первый ход любителя с LLM. Пасс заменяет литералы на выражение с тем же
+    значением в рантайме, но без исходной строки. Гейт проверяет, что Nuitka не
+    свернул их обратно в константу — иначе весь ход бесполезен и об этом надо
+    узнать в CI, а не от того, кто вскрыл образ.
+
+    Проверяется вместе с ПОЗИТИВОМ: закодированный шестнадцатеричный вид ДОЛЖЕН
+    присутствовать. Иначе гейт зеленел бы и на образе, где пасс просто не
+    отработал."""
+    beacons = ["license_expired", "capacity_exhausted", "instance_limit",
+               "bundle_corrupt", "no valid detection lease",
+               "detection assets unloaded",
+               "lease signature is not ours", "this is not a capacity grant",
+               "capacity grant answers a different request",
+               "report secret does not match its signed hash"]
+    plain = " ; ".join(
+        f"echo \"P:{word}:$(grep -alr -F -- '{word}' /app 2>/dev/null | head -1)\""
+        for word in beacons)
+    encoded_probe = "license_expired".encode("utf-8").hex()
+    check = (f"{plain} ; echo \"E:$(grep -alr -F -- '{encoded_probe}' /app "
+             f"2>/dev/null | head -1)\"")
+    out = sh(["docker", "run", "--rm", "--entrypoint", "sh", COMPILED_IMAGE,
+              "-c", check], False, 900).stdout
+    leaked = [l for l in out.splitlines()
+              if l.startswith("P:") and not l.rstrip().endswith(":")]
+    encoded_present = any(l.startswith("E:") and not l.rstrip().endswith(":")
+                          for l in out.splitlines())
+    ok = not leaked and encoded_present
+    return gate("P2b licence beacon strings are hardened, not folded back", ok,
+                f"leaked={leaked[:3] or 'none'} encoded_present={encoded_present}")
 
 
 def gate_p3(source_report: Path, compiled_report: Path) -> bool:
@@ -554,6 +608,8 @@ def main() -> None:
             gate_p1()
         if wanted("P2"):
             gate_p2()
+        if wanted("P2b"):
+            gate_p2b()
 
         # Bringing up two stands and running the whole detection suite through
         # both takes ~20 minutes, so it is skipped entirely when no selected gate

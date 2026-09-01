@@ -73,10 +73,12 @@ python3 e2e/gates.py                              # L1-L21 (+L2b), licensing + v
 python3 e2e/gates.py --only L4,L5                 # a subset while iterating
 python3 e2e/pack_gates.py                         # P1-P9, packaging (builds both images)
 
-# The verification key is COMPILED INTO the release binary, so a fresh key forces
-# a full Nuitka rebuild. Pass the key an image was built with to reuse it:
-PSEUDEX_SIGNING_KEY=<base64> python3 e2e/gates.py --image pseudex:compiled --skip-build
-PSEUDEX_SIGNING_KEY=<base64> python3 e2e/pack_gates.py --skip-build
+# TWO keys are COMPILED INTO the release binary, so a fresh either forces a full
+# Nuitka rebuild: the Ed25519 verification key AND PSEUDEX_TUNING_KEY (which seals
+# the tuning blob and must match the server, which delivers it in the lease). Pass
+# BOTH values an image was built with to reuse it with --skip-build:
+PSEUDEX_SIGNING_KEY=<base64> PSEUDEX_TUNING_KEY=<base64> python3 e2e/gates.py --image pseudex:compiled --skip-build
+PSEUDEX_SIGNING_KEY=<base64> PSEUDEX_TUNING_KEY=<base64> python3 e2e/pack_gates.py --skip-build
 ```
 
 Two images, and the difference is only HOW the engine is built — `Dockerfile`
@@ -194,8 +196,15 @@ pseudex/assets.py            in-memory registry; compiles every regex ONCE at lo
   counted with `time.monotonic()`, so winding the clock back does nothing, and a restart needs a
   fresh lease anyway — there is no persisted expiry to edit.
 - **Grace covers OUR outage only.** 402/403 (unpaid, revoked) bypass it entirely.
-- Split rule for what is an asset: **in the bundle, everything we tuned; in the binary, everything
-  published and every algorithm.** СНИЛС checksums stay in the engine; 28k names do not.
+- Split rule for what is an asset: **in the LEASED bundle, only the semi-public BULK that rotates
+  (name lists, ГАР streets — open data); in the BINARY, every algorithm AND all the authored TUNING**
+  (cue words, address regex, priority table, look-alike folds, key→type map). СНИЛС checksums stay
+  in the engine; 28k names lease. The tuning USED to lease and was inverted: a client with root
+  decrypts their own bundle in one step, so leased tuning was readable — it now rides compiled into
+  the engine as an opaque `zlib+hex` blob (`licensing/pack.py::emit_tuning_module` →
+  `pseudex/_tuning_blob.py`, merged at load by `assets.py`), so reconstructing it needs REVERSING the
+  binary, not a bundle dump. Matching protection to change-rate: bulk drifts (lease + rotation), tuning
+  is stable (static barrier). The lease still gates detection — no bulk, no names/streets, no output.
 
 ### Detection pipeline (`detect_all.py` is the only place that composes it)
 
@@ -406,7 +415,9 @@ Env knobs: `PSEUDEX_DB_DIR`, `PSEUDEX_WORKERS`, `PSEUDEX_MASK_CONCURRENCY`, `PSE
 `PSEUDEX_UI_ORG`, `PSEUDEX_UI_STATIC`, `PSEUDEX_ROLE` (`engine` | `proxy` | `ui` | `probe` | `rekey` | `decrypt`),
 `PSEUDEX_VAULT_KEY`, `PSEUDEX_VAULT_KEY_FILE`, `PSEUDEX_VAULT_KEY_CMD`, `PSEUDEX_VAULT_KEY_NEW`,
 `PSEUDEX_VAULT_ENCRYPTION` (`auto` | `required` | `off`; empty means `auto`),
-`PSEUDEX_VAULT_MIGRATION_BACKUP`.
+`PSEUDEX_VAULT_MIGRATION_BACKUP`, `PSEUDEX_TUNING_KEY` (base64 of 32 bytes — seals the
+compiled tuning blob at engine build AND is set on the LICENSING SERVER, which delivers it in
+each lease so the engine can open its own tuning; the two must match, like the signing key).
 
 ## Eval discipline
 

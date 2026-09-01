@@ -30,6 +30,13 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 FAILURES: list[str] = []
+SKIPPED: list[str] = []
+
+
+def skip(name: str) -> None:
+    """Пропуск ПЕЧАТАЕТСЯ ОТДЕЛЬНО и никогда не путается с прохождением."""
+    print(f"SKIP  {name}")
+    SKIPPED.append(name)
 
 
 def check(name: str, condition: bool, detail: str = "") -> None:
@@ -172,13 +179,35 @@ def main() -> int:
     # The card cannot be completed headlessly (ЮKassa hosts the form), so the
     # transition itself is exercised directly — which is the part that is ours.
     # Everything upstream of it has just been proved against the real API.
+    # ПРЕДУСЛОВИЕ РЕШАЕТСЯ ОДИН РАЗ И ЗАРАНЕЕ, А НЕ ЛОВИТСЯ ПОТОМ.
+    #
+    # Здесь стоял голый `except Exception`, и он приравнивал «лицензионного
+    # сервера нет» к «лицензионный сервер отказал». Комментарий называл первое,
+    # а ловилось второе: 403 на `/admin/resume` — то есть оплаченный и НЕ
+    # возобновлённый клиент — глотался, три проверки молча пропускались, прогон
+    # оставался зелёным. Проверка, исчезающая ровно тогда, когда ломается то,
+    # что она проверяет.
+    #
+    # Пробник идёт по адресу и токену ИЗ `settings`, а не по своей константе:
+    # иначе можно опросить не тот адрес, куда пойдёт код под тестом.
+    from django.conf import settings as _settings
+    import httpx as _httpx
     try:
+        _httpx.get(f"{_settings.LICENSING_ADMIN_URL.rstrip('/')}/admin/list",
+                   timeout=2,
+                   headers={"Authorization": f"Bearer {_settings.LICENSING_ADMIN_TOKEN}"})
+        licensing_up = True
+    except _httpx.HTTPError as error:
+        licensing_up = False
+        skip(f"оплата возобновляет обслуживание "
+             f"(лицензионный сервер по {_settings.LICENSING_ADMIN_URL} не отвечает: {error})")
+
+    if licensing_up:
+        # ПОСЛЕ ПРОБНИКА `except` НЕ ОСТАЁТСЯ НИ ОДНОГО. Отказ здесь — это
+        # провал теста, а не повод отменить проверку.
         mark_paid(company_invoice)
         moved = True
-    except Exception as error:  # licensing server may not be running
-        moved = False
-        print(f"      (licensing server unreachable: {error})")
-    if moved:
+    if licensing_up:
         company_invoice.refresh_from_db()
         subscription = company_org.subscription
         subscription.refresh_from_db()
@@ -202,6 +231,11 @@ def main() -> int:
               "работы приняты только после оплаты")
 
     print()
+    # ПРОПУСК ПЕЧАТАЕТСЯ ОТДЕЛЬНОЙ СТРОКОЙ И НИКОГДА НЕ СЧИТАЕТСЯ ПРОХОЖДЕНИЕМ.
+    # Раньше пропущенные проверки просто исчезали из вывода, и «зелёный прогон»
+    # означал «тест не сделал того, ради чего написан».
+    if SKIPPED:
+        print(f"SKIPPED: {len(SKIPPED)} — {', '.join(SKIPPED)}")
     if FAILURES:
         print(f"FAILED: {len(FAILURES)} — {', '.join(FAILURES)}")
         return 1

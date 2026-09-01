@@ -190,6 +190,21 @@ class Invoice(models.Model):
     paid_at = models.DateTimeField(null=True, blank=True)
     due_at = models.DateField(null=True, blank=True)
 
+    # КОГДА ОБСЛУЖИВАНИЕ БЫЛО ВОССТАНОВЛЕНО НА ЛИЦЕНЗИОННОМ СЕРВЕРЕ, а не когда
+    # деньги записаны у нас. Два разных факта, и раньше они были одним.
+    #
+    # `mark_paid` держал сетевой вызов внутри `transaction.atomic()`, поэтому
+    # его отказ откатывал и оплату: счёт возвращался в `draft`, а вебхук на
+    # повторной доставке видел «не оплачен» и повторял ту же неудачу вечно.
+    # Теперь деньги записываются первыми и не откатываются никогда, а вот это
+    # поле остаётся пустым, пока возобновление не доехало.
+    #
+    # Без него повтор нечем было бы дочинить: ранний выход по `state == PAID`
+    # съедал бы вторую попытку. С ним повторная доставка сама доводит дело до
+    # конца, а сторож видит оплаченные счета с пустым полем как список того,
+    # где мы должны клиенту работу.
+    service_resumed_at = models.DateTimeField(null=True, blank=True)
+
     # Whatever the payment provider calls this. Nullable because a customer
     # paying by bank transfer against a счёт never gets one.
     #
@@ -210,6 +225,17 @@ class Invoice(models.Model):
     # subtraction. It is on the invoice rather than on the subscription because
     # it must survive re-issuing and voiding — the previous ISSUED invoice is
     # the watermark, not the current state of anything.
+    # ЁМКОСТЬ ЗА ПЕРИОД — ОСНОВАНИЕ БУДУЩЕГО НАЧИСЛЕНИЯ, записанное уже сейчас.
+    #
+    # Ставка за запрос — продуктовое решение, и оно ещё не принято; выдумывать
+    # её здесь нельзя. Но число, на котором она будет считаться, уже верное и
+    # уже проверяемое, и его надо ватермаркить С ЭТОГО МОМЕНТА: иначе первый же
+    # счёт по объёму придётся считать от накопительного итога, а это ровно та
+    # ошибка, из-за которой месяц двенадцатый выставлялся в тридцать четыре
+    # раза больше правды.
+    requests_billable_in_period = models.BigIntegerField(default=0)
+    requests_billable_at_period_end = models.BigIntegerField(default=0)
+
     values_at_period_end = models.BigIntegerField(default=0)
     # Kept alongside, not billed on: the cabinet shows both, and the rate
     # guardrail is expressed in requests even though the meter is not.

@@ -20,6 +20,32 @@ would be protecting a channel whose only other reachable endpoint is us.
 import httpx
 from django.conf import settings
 
+# ПУТИ ЛЕЖАТ ТАБЛИЦЕЙ, А НЕ СОБИРАЮТСЯ ИЗ ЗНАЧЕНИЯ СТАТУСА.
+#
+# `f"/admin/{ {'active': 'resume'}.get(status, status) }"` выглядело как
+# сокращение и было арифметикой по строке: `unpaid` совпадал с именем ручки
+# случайно, а `revoked` и `suspended` попадали в `/admin/revoked` и
+# `/admin/suspended`, которых не существует. Проверено — 404 даже под полным
+# админ-токеном, то есть отзыв и приостановка из витрины не работали ни для
+# кого. Валидатор строкой ниже эти два значения при этом разрешал.
+#
+# Таблица делает неверный путь НЕПРЕДСТАВИМЫМ, а не «проверяемым». Дублирование
+# с `licensing/server.py::ADMIN_ACTIONS` сознательное и по той же причине, что у
+# `PLAN_INSTANCES`: лицензионный сервер не должен зависеть от витрины. Сверяет
+# их `test_storefront.py`.
+ISSUE = "/admin/issue"
+REVOKE_KEY = "/admin/revoke_key"
+RELEASE = "/admin/release"
+INSTANCES = "/admin/instances"
+USAGE = "/admin/usage"
+
+_STATUS_ACTION = {
+    "active": "/admin/resume",
+    "unpaid": "/admin/unpaid",
+    "revoked": "/admin/revoke",
+    "suspended": "/admin/suspend",
+}
+
 
 class LicensingError(RuntimeError):
     """The licensing server refused or could not be reached.
@@ -69,7 +95,7 @@ def _get(path: str, params: dict[str, str]) -> dict[str, object]:
 
 def issue_key(org_id: str, plan: str) -> str:
     """Mint a key. Returned ONCE, in full — see `billing.models.LicenseKey`."""
-    body = _post("/admin/issue", {"org_id": org_id, "plan": plan})
+    body = _post(ISSUE, {"org_id": org_id, "plan": plan})
     key = str(body.get("key", ""))
     if not key:
         raise LicensingError(f"licensing server issued no key for {org_id}")
@@ -84,11 +110,11 @@ def set_status(org_id: str, status: str) -> int:
     paying, while `revoked` is for a key that should never work again. Both
     bypass grace on the client, so both stop the customer within a minute.
     """
-    allowed = {"active", "unpaid", "revoked", "suspended"}
-    if status not in allowed:
-        raise LicensingError(f"unknown status {status!r}, expected one of {sorted(allowed)}")
-    body = _post(f"/admin/{ {'active': 'resume'}.get(status, status) }",
-                 {"org_id": org_id})
+    path = _STATUS_ACTION.get(status)
+    if path is None:
+        raise LicensingError(
+            f"unknown status {status!r}, expected one of {sorted(_STATUS_ACTION)}")
+    body = _post(path, {"org_id": org_id})
     return int(body.get("keys_changed", 0))
 
 
@@ -99,7 +125,7 @@ def revoke_key(key_hash: str) -> None:
     message: the key kept leasing, so an engineer who left with a copy kept a
     working credential for the customer's whole gateway.
     """
-    _post("/admin/revoke_key", {"key_hash": key_hash})
+    _post(REVOKE_KEY, {"key_hash": key_hash})
 
 
 def usage(org_id: str) -> dict[str, object]:
@@ -109,7 +135,7 @@ def usage(org_id: str) -> dict[str, object]:
     number an invoice may be based on. The storefront never counts anything
     itself — it has no way to and must not acquire one.
     """
-    return _get("/admin/usage", {"org_id": org_id})
+    return _get(USAGE, {"org_id": org_id})
 
 
 def instances(org_id: str) -> dict[str, object]:
@@ -121,7 +147,7 @@ def instances(org_id: str) -> dict[str, object]:
     перейдите на больший тариф» — asked to stop something that did not exist,
     and offered a bigger plan as the remedy.
     """
-    return _get("/admin/instances", {"org_id": org_id})
+    return _get(INSTANCES, {"org_id": org_id})
 
 
 def release_instance(org_id: str, instance_id: str) -> bool:
@@ -131,5 +157,5 @@ def release_instance(org_id: str, instance_id: str) -> bool:
     production the window is a day — so without this they wait a day to run the
     product they pay for.
     """
-    result = _post("/admin/release", {"org_id": org_id, "instance_id": instance_id})
+    result = _post(RELEASE, {"org_id": org_id, "instance_id": instance_id})
     return bool(result.get("released"))

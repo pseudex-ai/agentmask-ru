@@ -15,7 +15,7 @@
     python3 licensing/test_metering_attacks.py
 """
 import hashlib
-import os, os, sys, tempfile
+import os, sys, tempfile, threading, time
 sys.path.insert(0, ".")
 from licensing.store import LicenseStore
 import secrets as _secrets
@@ -26,9 +26,9 @@ def fresh(plan="start"):
     s = LicenseStore(tempfile.mktemp(suffix=".db")); s.issue_key("acme", plan); return s
 
 def lease(s, inst, key, plan="start"):
-    ok, why = s.may_lease("acme", plan, inst, 86400, pubkey=key)
-    if ok: s.record_lease(f"ls-{inst}-{key}", "acme", inst, "p", 86400, pubkey=key)
-    return ok, why
+    # Через ту же ручку, которой ходит сервер: решение и запись — одна секция.
+    return s.lease_if_allowed(f"ls-{inst}-{key}", "acme", plan, inst, "p",
+                              86400, pubkey=key)
 
 fails = []
 def check(name, held, detail=""):
@@ -51,6 +51,49 @@ check("ПУСТОЙ ключ", n <= 32, f"прошло {n}")
 s = fresh()
 n = sum(1 for i in range(500) if lease(s, f"c{i}", f"k{i}")[0])
 check("честные разные контейнеры и ключи", n <= 32, f"прошло {n}")
+
+# ГОНКА ЗА ПОСЛЕДНИЙ СЛОТ. Раньше `may_lease` и `record_lease` были двумя
+# вызовами с отпущенным между ними локом, и потолок держался ровно на том, что
+# клиенты стучатся по очереди. Сто потоков разом — и все видели место свободным.
+s = fresh()
+passed, barrier = [], threading.Barrier(100)
+def race(i):
+    barrier.wait()
+    if lease(s, "one", f"rk{i}")[0]: passed.append(i)
+threads = [threading.Thread(target=race, args=(i,)) for i in range(100)]
+for t in threads: t.start()
+for t in threads: t.join()
+check("сто одновременных аренд не пробивают потолок процессов",
+      len(passed) <= 32, f"прошло {len(passed)}, потолок 32")
+
+# КАЖДЫЙ ЧИТАТЕЛЬ ХОТЬ РАЗ ВЫЗВАН. Перевод чтений на общий помощник под локом
+# пропустил единственный вызов без параметров, и `list_orgs` начал отдавать 500
+# — то есть админка легла целиком. Ни один тест этого не увидел, потому что
+# читателей никто не звал; проверка тупая и стоит секунду.
+s = fresh()
+s.record_lease("l1", "acme", "i1", "p1", 86400, pubkey="k1")
+s.record_report_secret("acme", "k1", "de" * 16)
+s.record_usage("acme", "i1", 5, {"PHONE": 2}, 3, seq=1, prev="", signature="x",
+               trust="signed", report_pubkey="k1", build="modules:abc")
+s.record_grant("acme", "k1", 5000)
+readers = [("lookup", lambda: s.lookup("nope")),
+           ("report_secret", lambda: s.report_secret("acme", "k1")),
+           ("granted_total", lambda: s.granted_total("acme")),
+           ("builds_seen", lambda: s.builds_seen("acme")),
+           ("active_instances", lambda: s.active_instances("acme", 86400)),
+           ("may_lease", lambda: s.may_lease("acme", "start", "i1", 86400, pubkey="k1")),
+           ("usage_totals", lambda: s.usage_totals("acme")),
+           ("instances", lambda: s.instances("acme")),
+           ("list_orgs", lambda: s.list_orgs()),
+           ("prune_leases", lambda: s.prune_leases(86400))]
+broken = []
+for name, call in readers:
+    try:
+        call()
+    except Exception as error:
+        broken.append(f"{name}: {error}")
+check("каждый читатель store вызывается без ошибки", not broken,
+      f"проверено {len(readers)}" + (f", сломано {broken}" if broken else ""))
 
 print("\nАТАКИ НА ЦЕПЬ ОТЧЁТОВ")
 def send(s, rep, trust="signed", inst="c1"):
@@ -165,15 +208,24 @@ for bad, name in ((("подпись"), "не-ASCII"), ("zz" * 32, "не-hex"), (
         held = False
     check(f"MAC-подпись {name} отвергается без TypeError", held)
 
-# release освобождает только свой слот
+# release освобождает только свой слот, И СЛОТ ПОСЛЕ ЭТОГО ОСТЫВАЕТ.
+# Строка больше не удаляется: удаление обнуляло потолок, потому что контейнер
+# уступал место следующему мгновенно и сколько угодно раз.
 s9 = fresh()
 s9.record_lease("l1", "acme", "c1", "p", 86400, pubkey="MINE")
-s9.release_process("acme", "SOMEONE-ELSE")
-check("release чужим ключом ничего не удаляет",
-      s9._conn.execute("SELECT count(*) FROM leases").fetchone()[0] == 1)
-s9.release_process("acme", "MINE")
-check("release своим ключом освобождает",
-      s9._conn.execute("SELECT count(*) FROM leases").fetchone()[0] == 0)
+check("release чужим ключом ничего не освобождает",
+      not s9.release_process("acme", "SOMEONE-ELSE"))
+check("освобождённый слот остывает, а не исчезает",
+      s9.release_process("acme", "MINE")
+      and s9._fetchone("SELECT count(*) FROM leases", ())[0] == 1
+      and s9.slot_free_at("acme", "c1") > time.time(),
+      f"остынет через {int(s9.slot_free_at('acme', 'c1') - time.time())} с")
+check("остывающий слот занимает место в потолке",
+      not s9.may_lease("acme", "start", "c2", 86400, pubkey="OTHER")[0],
+      "второй контейнер не поднимается, пока слот остывает")
+check("переразвёртывание на том же instance_id проходит немедленно",
+      s9.may_lease("acme", "start", "c1", 86400, pubkey="FRESH")[0])
+
 
 
 # --- ГРАНТЫ ЁМКОСТИ: счёт строится на выданном нами ---------------------
@@ -196,26 +248,14 @@ check("замолчавший клиент не уменьшает счёт",
       s10.usage_totals("acme")["granted"] == 4 * s10.grant_size("start"),
       "granted не зависит от usage")
 
-def client(granted, state):
-    c = _L.LicenseClient.__new__(_L.LicenseClient)
-    c._lock = threading.Lock(); c._granted = granted; c._consumed = 0
-    c.state = lambda: state
-    return c
-
-c = client(5, _L.STATE_LEASED)
-for _ in range(5):
-    c.consume()
-check("исчерпанный грант перестаёт обслуживать", not c.has_capacity(),
-      "движок идёт за новым грантом")
-
-c2 = client(5, _L.STATE_STALE)
-for _ in range(9):
-    c2.consume()
-check("НАШ сбой обслуживается в долг", c2.has_capacity(),
-      "простой у нас не становится простоем у клиента")
-
-check("сервер без грантов не ломает старый клиент",
-      client(0, _L.STATE_LEASED).has_capacity(), "грант 0 = без ограничения")
+# ПРОВЕРКИ ЁМКОСТИ ПЕРЕЕХАЛИ В `test_admin_api.py`.
+#
+# Здесь стояла заглушка `LicenseClient.__new__` без `__init__`, и она ломалась
+# на каждом новом поле состояния — потому что проверяла не клиента, а свою
+# копию его арифметики. Ёмкость теперь покупается по сети, у неё есть нонс,
+# порядковый номер и подпись, и ничто из этого заглушке не видно. Настоящий
+# клиент против настоящего сервера — там же, где живут остальные проверки
+# протокола.
 
 # перезапуск обнуляет счётчик — и стоит нового гранта
 s11 = fresh()

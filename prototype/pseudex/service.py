@@ -44,6 +44,7 @@ from pseudex.envelope import (
     unmask_response,
 )
 from pseudex.license import ENGINE_VERSION, LicenseClient, LicenseError, explain
+from pseudex import metering
 from pseudex.maskcache import MaskCache
 from pseudex.operator import build_router
 from pseudex.profiling import snapshot as profiling_snapshot
@@ -314,7 +315,7 @@ def _mask_request(
     # so a request that raised was blocked and never reached a model. Billing a
     # blocked request would charge the customer for the one outcome they did not
     # get. Runs on this thread, so the commit is off the event loop.
-    AUDIT.record_request(org_id, agent_id)
+    metering.bill(AUDIT, LICENSE, org_id, agent_id)
     return result
 
 
@@ -355,12 +356,24 @@ def _license_block() -> JSONResponse | None:
     if LICENSE.is_serving():
         return None
     status = LICENSE.status()
+    # ИСЧЕРПАНИЕ ЁМКОСТИ — НЕ ИСТЁКШАЯ ЛИЦЕНЗИЯ, и называть его так значило
+    # отправлять оператора проверять оплату вместо исходящего доступа. Подписка
+    # цела, ключ валиден, аренда свежая — кончилась предоплаченная ёмкость, а
+    # взять следующую не у кого.
+    code = status.code
+    if code is None:
+        code = ("capacity_exhausted"
+                if status.capacity_left == 0 else "license_expired")
     return JSONResponse(
         {
-            "error": status.code or "license_expired",
+            "error": code,
+            # Ведущая фраза — ОТДЕЛЬНАЯ КОНСТАНТА, а не часть f-строки: так её
+            # берёт `build_harden_strings.py` (фрагмент f-строки закодировать
+            # нельзя), и говорящий маяк не лежит в бинарнике открытым текстом.
             "detail": (
-                f"no valid detection lease (state={status.state}); "
-                f"last successful lease {status.seconds_since_lease:.0f}s ago"
+                "no valid detection lease"
+                + f" (state={status.state}); "
+                + f"last successful lease {status.seconds_since_lease:.0f}s ago"
                 if status.seconds_since_lease is not None
                 else "no detection lease was ever obtained"
             ),
@@ -368,7 +381,10 @@ def _license_block() -> JSONResponse | None:
                 "state": status.state,
                 "last_error": status.last_error,
                 "bundle_version": status.bundle_version,
+                "consumed": status.consumed,
+                "granted": status.granted,
             },
+            "remedy": explain(code),
         },
         status_code=503,
     )
@@ -441,13 +457,6 @@ async def license_status() -> JSONResponse:
 @app.post("/mask", dependencies=[Depends(_require_gateway)])
 async def mask(request: Request) -> JSONResponse:
     blocked = _license_block()
-    if blocked is None:
-        # ЁМКОСТЬ СПИСЫВАЕТСЯ ПО ЗАПРОСУ, и запрос — это то, что продано.
-        # Счёт строится на выданных грантах, а не на этом счётчике: он живёт в
-        # памяти воркера и нужен лишь для того, чтобы движок ВОВРЕМЯ пошёл за
-        # следующим грантом. Сбросить его перезапуском можно — перезапуск
-        # требует новой аренды, то есть нового гранта.
-        LICENSE.consume()
     if blocked is not None:
         return blocked
     body = await request.json()
@@ -674,13 +683,6 @@ async def spans(request: Request) -> JSONResponse:
     """PII spans per text for dialog highlighting (read-only).
     Body: {org_id, texts: [str]} -> {results: [[{start,end,type,token,preview}], ...]}."""
     blocked = _license_block()
-    if blocked is None:
-        # ЁМКОСТЬ СПИСЫВАЕТСЯ ПО ЗАПРОСУ, и запрос — это то, что продано.
-        # Счёт строится на выданных грантах, а не на этом счётчике: он живёт в
-        # памяти воркера и нужен лишь для того, чтобы движок ВОВРЕМЯ пошёл за
-        # следующим грантом. Сбросить его перезапуском можно — перезапуск
-        # требует новой аренды, то есть нового гранта.
-        LICENSE.consume()
     if blocked is not None:
         return blocked
     body = await request.json()

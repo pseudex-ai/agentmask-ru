@@ -14,6 +14,7 @@ an unsalted digest is what lets a lookup be a single indexed point query.
 import hashlib
 import json
 import logging
+import os
 import secrets
 import threading
 import time
@@ -46,7 +47,10 @@ class LicenseStore:
     """Connector to the licensing database (external state -> class)."""
 
     def __init__(self, db_path: str) -> None:
-        self._lock = threading.Lock()
+        # RLock, НЕ Lock, И ЭТО НЕ ВКУСОВЩИНА. `_accumulate_values` читает и
+        # пишет, будучи вызванным ИЗ-ПОД уже взятого лока в `record_usage`;
+        # обычный `Lock` встанет там намертво и остановит учёт целиком.
+        self._lock = threading.RLock()
         self._conn = sqlite_connect(db_path, LICENSING_STORE)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS keys ("
@@ -74,6 +78,11 @@ class LicenseStore:
             # пропатченными. Всё остальное, чем контейнер представляется, —
             # переменные окружения.
             "pubkey TEXT, "
+            # ОСВОБОЖДЁННЫЙ СЛОТ ОСТЫВАЕТ, А НЕ ИСЧЕЗАЕТ. Строка удалялась, и
+            # это обнуляло единственную границу, которую мы принуждаем:
+            # контейнер отдавал слот сам, поднимался следующий, и на тарифе в
+            # один инстанс их поднималось пять подряд.
+            "released_at REAL, released_by TEXT, "
             "issued_at REAL, ttl_seconds INTEGER)"
         )
         # Keyed by (org, instance) and holding the LATEST CUMULATIVE totals — not
@@ -100,20 +109,72 @@ class LicenseStore:
             # `values_total` never decreases.
             "values_reported INTEGER DEFAULT 0, values_total INTEGER DEFAULT 0, "
             "resets INTEGER DEFAULT 0, "
-            # Доказательная часть: последний номер в цепи, хеш предыдущей
-            # подписи, сама подпись и вердикт о ней. `chain_breaks` считает
+            # Доказательная часть ПРОТИВ КАНАЛА: последний номер в цепи, хеш
+            # предыдущей подписи, сама подпись и вердикт о ней. Против самого
+            # клиента она ничего не доказывает — см. `bundle.py::mac_report`. `chain_breaks` считает
             # разрывы — пропуск, перестановку или подмену старым отчётом.
             "seq INTEGER DEFAULT 0, prev TEXT DEFAULT '', signature TEXT DEFAULT '', "
             "trust TEXT DEFAULT 'unsigned', chain_breaks INTEGER DEFAULT 0, "
             "unverified_reports INTEGER DEFAULT 0, "
             "unverified_requests INTEGER DEFAULT 0, "
+            # «Не смогли разобрать» — это НЕ «расхода не было». Без отдельной
+            # колонки испорченный отчёт был неотличим от молчания.
+            "malformed_reports INTEGER DEFAULT 0, "
+            # Продление ПРИШЛО, а отчёта в нём НЕ БЫЛО. Раньше это была полная
+            # тишина: перехватчик, выбрасывающий поле `usage`, не двигал ни
+            # одного счётчика — подделать отчёт было видно, повторить видно, а
+            # снять целиком не видно ничем.
+            "reports_missing INTEGER DEFAULT 0, "
             "PRIMARY KEY (org_id, instance_id))"
         )
+        # НИ ОДНОГО ИНДЕКСА ЗДЕСЬ НЕ БЫЛО. `leases` растёт примерно на три
+        # строки в сутки на воркера и никогда не чистится (`lease_id` свежий на
+        # каждое продление, поэтому `INSERT OR REPLACE` ничего не заменяет), а
+        # `may_lease` сканирует её целиком на КАЖДОЙ аренде — то есть на
+        # запросе, который решает, обслуживать ли клиента.
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS leases_org_issued "
+            "ON leases(org_id, issued_at)")
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS leases_org_pubkey ON leases(org_id, pubkey)")
+        # ЛЕДЖЕР ЁМКОСТИ. Ключ строки — ключ ПРОЦЕССА: единственный
+        # идентификатор, который клиент не выбирает.
+        #
+        # `granted` — потолок, растёт только у нас и только вверх. `acked` —
+        # высшее подтверждённое значение расхода, названное клиентом под MAC.
+        # Счёт строится на `acked`, ЗАЖАТОМ между `granted - Q - R` и
+        # `granted`: отчёт может двигать сумму только внутри полосы, которую
+        # чеканим мы, поэтому занизить его выгодно ровно до нуля.
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS meter ("
+            "org_id TEXT, pubkey TEXT, first_seen REAL, updated_at REAL, "
+            "quantum_seq INTEGER DEFAULT 0, quantum_size INTEGER DEFAULT 0, "
+            "reserve INTEGER DEFAULT 0, granted INTEGER DEFAULT 0, "
+            # Порог, на котором движок обязан прийти за следующим квантом. Сам
+            # факт прихода — это и есть оценка расхода, когда отчёта нет.
+            "prefetch_at INTEGER DEFAULT 0, "
+            "acked INTEGER DEFAULT 0, acked_at REAL, "
+            "ack_trust TEXT DEFAULT 'none', rate_per_second REAL DEFAULT 0, "
+            # Кванты подряд без проверенного отчёта. Молчание перестаёт быть
+            # тишиной: оно видно числом и стоит клиенту скидки.
+            "unacked_quanta INTEGER DEFAULT 0, "
+            # Расход поехал назад под одним ключом процесса. Процесс не может
+            # обслужить меньше, чем уже обслужил, — значит либо два процесса на
+            # одном ключе, либо повтор.
+            "ack_regressions INTEGER DEFAULT 0, "
+            "PRIMARY KEY (org_id, pubkey))"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS meter_org ON meter(org_id)")
         # Существующие тома пережили релизы без этой колонки.
         columns = {row[1] for row in
                    self._conn.execute("PRAGMA table_info(leases)")}
         if "pubkey" not in columns:
             self._conn.execute("ALTER TABLE leases ADD COLUMN pubkey TEXT")
+        for column, ddl in (("released_at", "released_at REAL"),
+                            ("released_by", "released_by TEXT")):
+            if column not in columns:
+                self._conn.execute(f"ALTER TABLE leases ADD COLUMN {ddl}")
         usage_columns = {row[1] for row in
                          self._conn.execute("PRAGMA table_info(usage)")}
         for column, ddl in (("seq", "seq INTEGER DEFAULT 0"),
@@ -124,10 +185,35 @@ class LicenseStore:
                             ("unverified_reports",
                              "unverified_reports INTEGER DEFAULT 0"),
                             ("unverified_requests",
-                             "unverified_requests INTEGER DEFAULT 0")):
+                             "unverified_requests INTEGER DEFAULT 0"),
+                            ("malformed_reports",
+                             "malformed_reports INTEGER DEFAULT 0"),
+                            ("reports_missing",
+                             "reports_missing INTEGER DEFAULT 0")):
             if column not in usage_columns:
                 self._conn.execute(f"ALTER TABLE usage ADD COLUMN {ddl}")
         self._conn.commit()
+
+    def _fetchall(self, sql: str, params: tuple) -> list[tuple]:
+        """Every READ goes through here, under the same lock the writes take.
+
+        The rule and the measurement behind it are `pseudex/audit.py::_fetchall`:
+        `check_same_thread=False` lets threads share one connection, it does not
+        make the connection concurrent, and a read interleaved with another
+        thread's INSERT+commit returns a row with COLUMNS MISSING rather than an
+        error anyone would recognise as a locking bug.
+
+        Here it is worse than in the audit, because one of the readers is
+        `may_lease` — the query that decides whether a customer may serve
+        traffic at all — and `devserver.py` runs the admin app on a second
+        thread against this same connection.
+        """
+        with self._lock:
+            return self._conn.execute(sql, params).fetchall()
+
+    def _fetchone(self, sql: str, params: tuple) -> tuple | None:
+        with self._lock:
+            return self._conn.execute(sql, params).fetchone()
 
     def issue_key(self, org_id: str, plan: str) -> str:
         key = KEY_PREFIX + secrets.token_urlsafe(32)
@@ -140,9 +226,9 @@ class LicenseStore:
         return key
 
     def lookup(self, key: str) -> KeyRecord | None:
-        row = self._conn.execute(
+        row = self._fetchone(
             "SELECT org_id, status, plan FROM keys WHERE key_hash=?", (hash_key(key),)
-        ).fetchone()
+        )
         return KeyRecord(row[0], row[1], row[2]) if row is not None else None
 
     def revoke_key_hash(self, key_hash: str) -> int:
@@ -197,10 +283,10 @@ class LicenseStore:
         migration or a disk failure. It is recorded as a `reset` so a pattern is
         visible, and a pattern is a conversation, not an accusation.
         """
-        row = self._conn.execute(
+        row = self._fetchone(
             "SELECT values_reported, values_total, resets FROM usage "
             "WHERE org_id=? AND instance_id=?", (org_id, instance_id),
-        ).fetchone()
+        )
         if row is None:
             return reported
         previous, total, resets = int(row[0] or 0), int(row[1] or 0), int(row[2] or 0)
@@ -245,9 +331,9 @@ class LicenseStore:
             self._conn.commit()
 
     def report_secret(self, org_id: str, pubkey: str) -> str:
-        row = self._conn.execute(
+        row = self._fetchone(
             "SELECT secret FROM process_reports WHERE org_id=? AND pubkey=?",
-            (org_id, pubkey)).fetchone()
+            (org_id, pubkey))
         return (row[0] or "") if row else ""
 
     def record_usage(self, org_id: str, instance_id: str, requests: int,
@@ -311,9 +397,9 @@ class LicenseStore:
         # `requests` и так растёт.
         with self._lock:
             accumulated = self._accumulate_values(org_id, instance_id, values)
-            previous = self._conn.execute(
+            previous = self._fetchone(
                 "SELECT requests FROM usage WHERE org_id=? AND instance_id=?",
-                (org_id, instance_id)).fetchone()
+                (org_id, instance_id))
             if previous is not None:
                 requests = max(requests, int(previous[0] or 0))
             self._conn.execute(
@@ -332,6 +418,41 @@ class LicenseStore:
             )
             self._conn.commit()
 
+    def record_missing_report(self, org_id: str, instance_id: str) -> None:
+        """Продление без отчёта, хотя `lease_id` в теле есть.
+
+        `lease_id` клиент шлёт с самого начала, и сервер его НЕ ЧИТАЛ вовсе —
+        поэтому «это продление, отчёт обязан быть» установить было нечем.
+        Теперь установить есть чем, и молчание стало записью.
+        """
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO usage (org_id, instance_id, updated_at, reports, "
+                "reports_missing) VALUES (?,?,?,0,1) "
+                "ON CONFLICT(org_id, instance_id) DO UPDATE SET "
+                "updated_at=excluded.updated_at, "
+                "reports_missing=usage.reports_missing+1",
+                (org_id, instance_id, time.time()))
+            self._conn.commit()
+
+    def record_malformed(self, org_id: str, instance_id: str) -> None:
+        """Отчёт пришёл и не разобрался. Считается отдельно от всего.
+
+        Раньше такой отчёт ронял сервер в 500, а 500 у клиента grace-worthy —
+        то есть отравить собственный отчёт было способом уехать в grace, не
+        трогая сеть. Теперь это запись, и она видна в итогах: инвойс не должен
+        путать «расхода не было» с «расход был, но мы его не прочитали».
+        """
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO usage (org_id, instance_id, updated_at, reports, "
+                "malformed_reports) VALUES (?,?,?,0,1) "
+                "ON CONFLICT(org_id, instance_id) DO UPDATE SET "
+                "updated_at=excluded.updated_at, "
+                "malformed_reports=usage.malformed_reports+1",
+                (org_id, instance_id, time.time()))
+            self._conn.commit()
+
     def _chain_breaks(self, org_id: str, instance_id: str, seq: int, prev: str,
                       trust: str, report_pubkey: str = "") -> int:
         """Разрывы цепи отчётов ОДНОГО ПРОЦЕССА.
@@ -345,10 +466,10 @@ class LicenseStore:
         """
         if not report_pubkey:
             return 0
-        row = self._conn.execute(
+        row = self._fetchone(
             "SELECT seq, signature, chain_breaks FROM process_reports "
             "WHERE org_id=? AND pubkey=?", (org_id, report_pubkey),
-        ).fetchone()
+        )
         if row is None:
             return 0
         last_seq, last_signature, breaks = (int(row[0] or 0), row[1] or "",
@@ -380,16 +501,6 @@ class LicenseStore:
                 (org_id, pubkey, seq, prev, signature, breaks, time.time()),
             )
             self._conn.commit()
-            return breaks
-        if last_seq == 0:
-            return breaks
-        expected_prev = hashlib.sha256(last_signature.encode("ascii")).hexdigest()
-        if seq == last_seq + 1 and (not prev or prev == expected_prev):
-            return breaks
-        _log.warning("usage chain break for org=%s instance=%s: seq %d -> %d, "
-                     "prev %s (trust=%s)", org_id, instance_id, last_seq, seq,
-                     "ok" if prev == expected_prev else "mismatch", trust)
-        return breaks + 1
 
     # How many containers each plan may run at once. THE ONE THING WE ENFORCE,
     # and the only thing that can be enforced: it is decided here, on our side,
@@ -412,6 +523,23 @@ class LicenseStore:
     # клиенту придётся поднимать контейнеры с малым числом воркеров, то есть
     # тратить память впустую. 32 покрывает любой разумный узел.
     PROCESSES_PER_INSTANCE = 32
+    # СКОЛЬКО СЛОТ ОСТЫВАЕТ ПОСЛЕ ОСВОБОЖДЕНИЯ.
+    #
+    # Выбрано НЕ по времени редеплоя, а по цене трюка, и вот почему редеплой
+    # этим не задет вовсе: `instance_id` — это `AUDIT.installation_id()`, то
+    # есть идентификатор ТОМА, а документированная команда запуска содержит
+    # `-v pseudex-data:/data`. Значит `docker stop` -> `docker run` на том же
+    # томе приходит с ТЕМ ЖЕ идентификатором и проходит по ветке «этот инстанс
+    # уже держит слот». Платит только тот, у кого личность контейнера
+    # действительно новая, — то есть ровно тот, кто крутит контейнеры по кругу.
+    RELEASE_COOLDOWN_SECONDS = int(
+        os.environ.get("PSEUDEX_RELEASE_COOLDOWN_SECONDS", "300"))
+    # Остывание ограничивает ТЕМП, но не количество. Второй рычаг — бюджет:
+    # сверх него `/v1/release` ничего не делает, и слот истекает по TTL, как до
+    # появления ручки. Честному клиенту это ничего не стоит: `_release` на
+    # выключении и так глотает любую ошибку.
+    RELEASE_BUDGET_PER_HOUR = int(
+        os.environ.get("PSEUDEX_RELEASE_BUDGET_PER_HOUR", "0")) or 0
     # Mirrors billing/management/commands/seed_plans.py. Two places, because
     # the licensing server must not depend on the storefront — but they are
     # checked against each other by test_storefront.py.
@@ -421,6 +549,31 @@ class LicenseStore:
     # ожидаемого трафика» выбран так, чтобы клиент, остановившийся посреди
     # гранта, переплатил незначительно — гранты не возвращаются, и это цена
     # того, что число неподделываемо.
+    # СКОЛЬКО СЕКУНД СОБСТВЕННОГО ТРАФИКА КЛИЕНТА СОСТАВЛЯЮТ КВАНТ И РЕЗЕРВ.
+    #
+    # Погрешность счёта при таком выборе равна `(τ_Q + τ_R) / период` и НЕ
+    # зависит ни от объёма, ни от числа воркеров, ни от тарифа. При 300 с и 6 ч
+    # это 0.84% в худшем случае — когда цепь отчётов порвана и счёт идёт по
+    # потолку, — и РОВНО НОЛЬ, когда отчёты доходят.
+    #
+    # Квант вносит в эту цифру 23 миллионных, резерв — почти всё. Поэтому квант
+    # выгодно делать КРУПНЫМ (в пять раз меньше обращений при той же точности),
+    # а торговаться стоит за часы резерва: каждый час страховки от НАШЕГО
+    # простоя стоит 0.14% худшей погрешности.
+    METER_TARGET_SECONDS = int(os.environ.get("PSEUDEX_METER_TARGET_SECONDS", "300"))
+    RESERVE_SECONDS = int(os.environ.get("PSEUDEX_RESERVE_SECONDS", str(6 * 3600)))
+    # Порог предвыборки внутри РЕЗЕРВА: движок идёт за следующим квантом, пока
+    # страховка ещё цела. Резерв — страховка, а не оборотный капитал.
+    PREFETCH_FRACTION = 0.25
+
+    # Нижние и верхние границы кванта и резерва по тарифам. Нижняя нужна, чтобы
+    # почти простаивающий процесс не ходил к нам за единицами; верхняя — чтобы
+    # всплеск не выдал вперёд месячный объём.
+    QUANTUM_BOUNDS = {"start": (200, 2_000), "work": (200, 10_000),
+                      "industrial": (500, 40_000), "enterprise": (500, 100_000)}
+    RESERVE_MAX = {"start": 20_000, "work": 100_000,
+                   "industrial": 400_000, "enterprise": 2_000_000}
+
     PLAN_GRANT = {"start": 5_000, "work": 25_000, "industrial": 100_000,
                   "enterprise": 500_000}
 
@@ -442,20 +595,152 @@ class LicenseStore:
             )
             self._conn.commit()
 
+    def meter_row(self, org_id: str, pubkey: str) -> dict[str, object]:
+        row = self._fetchone(
+            "SELECT quantum_seq, quantum_size, reserve, granted, acked, acked_at, "
+            "unacked_quanta, ack_regressions, prefetch_at "
+            "FROM meter WHERE org_id=? AND pubkey=?",
+            (org_id, pubkey))
+        if row is None:
+            return {"quantum_seq": 0, "quantum_size": 0, "reserve": 0,
+                    "granted": 0, "acked": 0, "acked_at": 0.0,
+                    "unacked_quanta": 0, "ack_regressions": 0, "prefetch_at": 0}
+        return {"quantum_seq": int(row[0] or 0), "quantum_size": int(row[1] or 0),
+                "reserve": int(row[2] or 0), "granted": int(row[3] or 0),
+                "acked": int(row[4] or 0), "acked_at": float(row[5] or 0.0),
+                "unacked_quanta": int(row[6] or 0),
+                "ack_regressions": int(row[7] or 0),
+                "prefetch_at": int(row[8] or 0)}
+
+    MIN_METER_INTERVAL_SECONDS = 1.0
+
+    def metered_too_recently(self, org_id: str, pubkey: str, now: float) -> bool:
+        """Просил ли этот процесс квант меньше секунды назад."""
+        row = self._fetchone(
+            "SELECT updated_at FROM meter WHERE org_id=? AND pubkey=?",
+            (org_id, pubkey))
+        if row is None or row[0] is None:
+            return False
+        return now - float(row[0]) < self.MIN_METER_INTERVAL_SECONDS
+
+    def issue_quantum(self, org_id: str, pubkey: str, plan: str,
+                      acked: int | None, now: float) -> dict[str, int]:
+        """Выдать следующий квант ёмкости. ОДНА транзакция, одна запись.
+
+        `acked` — подтверждённый расход процесса, или `None`, если отчёта не
+        было или он не сошёлся. Тогда шаг СЛЕПОЙ: считаем, что предыдущий квант
+        выбран целиком. Слепой шаг не может быть выгоднее честного — он
+        завышает, — и это то, что делает молчание невыгодным без единого
+        механизма принуждения.
+
+        ЦЕЛЬ, А НЕ ПРИБАВКА. `granted += Q` — это учёт по числу ОБРАЩЕНИЙ, то
+        есть по времени: ровно тот дефект, из-за которого простаивающий воркер
+        накапливал 45 000 выданных за полторы минуты и тринадцать запросов.
+        `granted = max(granted, consumed + Q + R)` делает прирост равным
+        расходу, а разрыв `granted - consumed` — КОНСТАНТОЙ на процесс.
+        """
+        with self._lock:
+            row = self.meter_row(org_id, pubkey)
+            regressed = acked is not None and acked < row["acked"]
+            if acked is None or regressed:
+                # СЛЕПАЯ ОЦЕНКА — ЭТО ПОРОГ ПРЕДВЫБОРКИ, А НЕ «ПОТОЛОК МИНУС
+                # КВАНТ». Движок приходит за следующим квантом ТОЛЬКО перейдя
+                # порог, поэтому сам факт прихода и есть измерение: он обслужил
+                # не меньше, чем `prefetch_at`.
+                #
+                # Первая версия считала `granted - quantum_size`, и на первом же
+                # слепом шаге это давало НОЛЬ (потолок 200 при кванте 200), то
+                # есть занижала счёт ровно там, где снятие отчёта и должно было
+                # стать невыгодным. Найдено прогоном: расход 150, к счёту 0.
+                consumed = max(row["prefetch_at"], row["acked"])
+                trust_step = "blind"
+            else:
+                consumed = acked
+                trust_step = "acked"
+
+            elapsed = now - row["acked_at"] if row["acked_at"] else 0.0
+            gained = max(0, consumed - row["acked"])
+            rate = gained / elapsed if elapsed > 1.0 else 0.0
+
+            low, high = self.QUANTUM_BOUNDS.get(plan, self.QUANTUM_BOUNDS["start"])
+            quantum = min(max(int(rate * self.METER_TARGET_SECONDS), low), high)
+            # РЕЗЕРВ ВЫДАЁТСЯ СО ВТОРОГО КВАНТА. Процессу, который ещё ничего не
+            # обслужил, нечего страховать от нашего простоя, а выдавая резерв
+            # сразу, мы заставили бы платить за него каждый воркер каждого
+            # перезапуска — дефект «грант по времени» вернулся бы другой дверью.
+            if row["quantum_seq"] == 0:
+                reserve = 0
+            else:
+                reserve = min(max(int(rate * self.RESERVE_SECONDS), quantum),
+                              self.RESERVE_MAX.get(plan, self.RESERVE_MAX["start"]))
+            granted = max(row["granted"], consumed + quantum + reserve)
+            prefetch_at = max(1, granted - reserve
+                              - max(1, int(quantum * self.PREFETCH_FRACTION)))
+            unacked = 0 if trust_step == "acked" else row["unacked_quanta"] + 1
+
+            self._conn.execute(
+                "INSERT INTO meter (org_id, pubkey, first_seen, updated_at, "
+                "quantum_seq, quantum_size, reserve, granted, acked, acked_at, "
+                "ack_trust, rate_per_second, unacked_quanta, ack_regressions, "
+                "prefetch_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(org_id, pubkey) DO UPDATE SET updated_at=excluded.updated_at, "
+                "quantum_seq=excluded.quantum_seq, quantum_size=excluded.quantum_size, "
+                "reserve=excluded.reserve, granted=excluded.granted, "
+                "acked=excluded.acked, acked_at=excluded.acked_at, "
+                "ack_trust=excluded.ack_trust, rate_per_second=excluded.rate_per_second, "
+                "unacked_quanta=excluded.unacked_quanta, "
+                "ack_regressions=meter.ack_regressions+excluded.ack_regressions, "
+                "prefetch_at=excluded.prefetch_at",
+                (org_id, pubkey, now, now, row["quantum_seq"] + 1, quantum, reserve,
+                 granted, max(consumed, row["acked"]), now, trust_step, rate,
+                 unacked, 1 if regressed else 0, prefetch_at))
+            self._conn.commit()
+        if regressed:
+            _log.warning("consumed went backwards under one process key for "
+                         "org=%s pubkey=%s: %d -> %s", org_id, pubkey[:12],
+                         row["acked"], acked)
+        return {"quantum_seq": row["quantum_seq"] + 1, "quantum_size": quantum,
+                "reserve": reserve, "grant_total": granted,
+                "prefetch_at": prefetch_at}
+
+    def billable(self, org_id: str) -> dict[str, int]:
+        """Сколько выставить. ПОДТВЕРЖДЁННОЕ, ЗАЖАТОЕ ВЫДАННЫМ.
+
+        `clamp(acked, granted - Q - R, granted)` на каждый процесс, и сумма.
+        Верхнюю границу клиент не перепрыгнет — без гранта движок не
+        обслуживает; нижнюю не продавит — она наша запись. Значит отчёт двигает
+        счёт только ВНУТРИ полосы шириной `Q + R`, и снять его — значит
+        отказаться от скидки за неиспользованное, а не спрятать расход.
+        """
+        rows = self._fetchall(
+            "SELECT granted, acked, quantum_size, reserve, unacked_quanta "
+            "FROM meter WHERE org_id=?", (org_id,))
+        billable = ceiling = acknowledged = unacked = 0
+        for granted, acked, quantum, reserve, row_unacked in rows:
+            floor = max(0, int(granted or 0) - int(quantum or 0) - int(reserve or 0))
+            billable += min(max(int(acked or 0), floor), int(granted or 0))
+            ceiling += int(granted or 0)
+            acknowledged += int(acked or 0)
+            unacked += int(row_unacked or 0)
+        return {"billable": billable, "granted": ceiling, "acked": acknowledged,
+                "processes": len(rows), "unacked_quanta": unacked}
+
     def _record_build(self, org_id: str, pubkey: str, build: str,
                       trust: str) -> None:
         """Какая сборка отчиталась, и менялась ли она под одним ключом процесса.
 
-        Ключ процесса живёт ровно столько же, сколько процесс, поэтому мера под
-        ним меняться НЕ МОЖЕТ: тот же процесс исполняет тот же файл. Смена —
-        это либо подмена отчёта, либо сборка, которая врёт о себе; и то и другое
-        стоит записать с датой, а не обсуждать по памяти.
+        Ключ процесса живёт ровно столько же, сколько процесс, поэтому у ЧЕСТНОГО
+        процесса мера под ним меняться не может: тот же процесс исполняет тот же
+        файл. Смена — это либо подмена отчёта, либо сборка, которая врёт о себе;
+        и то и другое стоит записать с датой, а не обсуждать по памяти. Это
+        доказуемость, а не невозможность: пропатченный бинарник соврёт и о мере
+        тоже.
         """
         if not build or trust != "signed":
             return
-        row = self._conn.execute(
+        row = self._fetchone(
             "SELECT build FROM process_reports WHERE org_id=? AND pubkey=?",
-            (org_id, pubkey)).fetchone()
+            (org_id, pubkey))
         previous = (row[0] or "") if row else ""
         with self._lock:
             if previous and previous != build:
@@ -471,39 +756,20 @@ class LicenseStore:
             self._conn.commit()
 
     def builds_seen(self, org_id: str) -> list[dict[str, object]]:
-        rows = self._conn.execute(
+        rows = self._fetchall(
             "SELECT build, count(*), sum(build_changes) FROM process_reports "
-            "WHERE org_id=? AND build!='' GROUP BY build", (org_id,)).fetchall()
+            "WHERE org_id=? AND build!='' GROUP BY build", (org_id,))
         return [{"build": r[0], "processes": r[1], "changes": int(r[2] or 0)}
                 for r in rows]
 
     def granted_total(self, org_id: str) -> int:
-        row = self._conn.execute(
+        row = self._fetchone(
             "SELECT COALESCE(SUM(granted), 0) FROM grants WHERE org_id=?",
-            (org_id,)).fetchone()
+            (org_id,))
         return int(row[0] or 0)
 
     def instances_allowed(self, plan: str) -> int:
         return self.PLAN_INSTANCES.get(plan, 1)
-
-    def release_instance(self, org_id: str, instance_id: str) -> None:
-        """Free a slot the moment a container shuts down cleanly.
-
-        Without this the slot lingers for the whole window, and a customer who
-        redeploys onto a fresh volume is locked out of their own product with a
-        message that blames them and suggests paying more. A persona client
-        called that disqualifying for production, and they were right: a release
-        happens on every `docker stop`, which is every deploy.
-
-        Best effort by construction — a container that is killed cannot tell us
-        anything, which is exactly what the time-based expiry below is for.
-        """
-        with self._lock:
-            self._conn.execute(
-                "DELETE FROM leases WHERE org_id=? AND instance_id=?",
-                (org_id, instance_id),
-            )
-            self._conn.commit()
 
     def active_instances(self, org_id: str, window_seconds: int) -> list[dict]:
         """The instances currently holding a slot, newest lease first.
@@ -517,28 +783,58 @@ class LicenseStore:
         The same window `may_lease` counts with, so what the customer reads is
         exactly what the limit is applied to.
         """
-        cutoff = time.time() - window_seconds
-        rows = self._conn.execute(
-            "SELECT instance_id, MAX(issued_at) FROM leases "
-            "WHERE org_id=? AND issued_at>=? GROUP BY instance_id "
+        now = time.time()
+        cutoff = now - window_seconds
+        rows = self._fetchall(
+            "SELECT instance_id, MAX(issued_at), MAX(COALESCE(released_at, 0)), "
+            # Пока жив ХОТЯ БЫ ОДИН воркер (released_at IS NULL) — инстанс
+            # активен. `MAX(released_at)` в одиночку показывал бы обслуживающий
+            # инстанс «остывающим» в ту же секунду, как остановился любой из его
+            # воркеров, — ровно то враньё оператору, которое эта функция чинит.
+            "SUM(CASE WHEN released_at IS NULL THEN 1 ELSE 0 END) "
+            "FROM leases WHERE org_id=? AND issued_at>=? GROUP BY instance_id "
             "ORDER BY MAX(issued_at) DESC",
             (org_id, cutoff),
-        ).fetchall()
-        return [{"instance_id": row[0], "last_lease": float(row[1])} for row in rows]
+        )
+        listed = []
+        for instance_id, last_lease, released_at, live_workers in rows:
+            # ЧТО ВИДИТ ПОДДЕРЖКА, ТО И ПРИМЕНЯЕТСЯ. Слот, освобождённый и ещё
+            # остывающий, — не «активный» и не «свободный»; без третьего
+            # состояния разговор с клиентом снова становится про контейнер,
+            # которого он не видит. Но «остывает» — только когда освобождены ВСЕ
+            # воркеры инстанса: пока жив хоть один, слот занят и остывать не начал.
+            fully_released = not live_workers
+            free_at = (float(released_at) + self.RELEASE_COOLDOWN_SECONDS
+                       if fully_released and released_at else 0.0)
+            cooling = fully_released and bool(released_at) and free_at > now
+            listed.append({"instance_id": instance_id,
+                           "last_lease": float(last_lease),
+                           "state": "cooling" if cooling else "active",
+                           "free_at": free_at if cooling else None})
+        return listed
 
     def release_instance(self, org_id: str, instance_id: str) -> bool:
-        """Give a slot back before its window expires.
+        """Give a slot back before its window expires. Operator lever.
 
-        A customer who recreated a volume is a NEW instance by construction, and
-        in production the window is a day — so without this they wait a day to
-        run the product they are paying for. Deleting the leases is safe: the
-        engine is fail-closed and a container without a live lease is not
-        serving, so a slot released by mistake costs one renewal round trip.
+        A release happens on every `docker stop`, which is every deploy, and a
+        customer who recreated a volume is a NEW instance by construction — so
+        without this they wait out the whole window to run the product they are
+        paying for. A persona client called that disqualifying for production
+        and they were right.
+
+        ONE DEFINITION, UNDER THE SAME LOCK AS EVERY OTHER WRITE. There were two
+        of these, and the second silently replaced the first: same name, same
+        class, different return type and different locking. The survivor was the
+        one that wrote under `with self._conn` instead of `self._lock`, which
+        made slot release the only unserialized writer on a connection opened
+        `check_same_thread=False` — while `devserver.py` runs the admin app on a
+        second thread.
         """
-        with self._conn:
+        with self._lock:
             cursor = self._conn.execute(
                 "DELETE FROM leases WHERE org_id=? AND instance_id=?",
                 (org_id, instance_id))
+            self._conn.commit()
         return cursor.rowcount > 0
 
     def may_lease(self, org_id: str, plan: str, instance_id: str,
@@ -565,11 +861,16 @@ class LicenseStore:
         #
         # It used to be a flat 36 hours, which meant one `docker rm` cost the
         # customer a day and a half on a single-instance plan.
-        cutoff = time.time() - window_seconds
-        rows = self._conn.execute(
+        now = time.time()
+        cutoff = now - window_seconds
+        # ОСВОБОЖДЁННЫЙ СЛОТ СЧИТАЕТСЯ ЗАНЯТЫМ, ПОКА ОСТЫВАЕТ. Освобождение —
+        # единственный рычаг, который есть у контейнера, и без остывания оно
+        # обнуляло весь потолок: проверено, пять контейнеров на тарифе в один.
+        rows = self._fetchall(
             "SELECT DISTINCT instance_id, pubkey FROM leases "
-            "WHERE org_id=? AND issued_at>=?", (org_id, cutoff),
-        ).fetchall()
+            "WHERE org_id=? AND issued_at>=? AND (released_at IS NULL OR released_at>=?)",
+            (org_id, cutoff, now - self.RELEASE_COOLDOWN_SECONDS),
+        )
         instances = {row[0] for row in rows}
         keys = {row[1] for row in rows if row[1]}
         # ПРОДЛЕНИЕ НЕ МОЖЕТ БЫТЬ ОТКАЗАНО. Ключ процесса создаётся один раз в
@@ -598,10 +899,25 @@ class LicenseStore:
         # контейнеры, упирается в неё раньше и видит понятное сообщение про
         # контейнеры, а не про процессы.
         if instance_id not in instances and len(instances) >= allowed:
+            # ОТКАЗ ОБЯЗАН НАЗВАТЬ РАБОТАЮЩИЙ ПУТЬ, А НЕ ТОЛЬКО ЗАПРЕТ. Ровно
+            # та болезнь, которую лечил `active_instances`: персоне сказали
+            # «остановите лишний контейнер» про контейнер, которого не было.
+            # Здесь то же самое было бы про остывающий слот.
+            cooling = [row[0] for row in rows
+                       if row[0] not in (instance_id,)
+                       and self.slot_free_at(org_id, row[0]) > now]
+            hint = (
+                " Один из слотов освобождён и остывает —"
+                f" освободится через {int((self.slot_free_at(org_id, cooling[0]) - now) / 60) + 1} мин."
+                " Так мы не даём обойти тариф чередой контейнеров."
+                " Если это переразвёртывание, поднимите контейнер НА ТОМ ЖЕ ТОМЕ"
+                " (-v pseudex-data:/data): он сохранит свой идентификатор и"
+                " займёт слот сразу." if cooling else
+                " Остановите лишний контейнер или перейдите на больший тариф."
+            )
             return False, (
                 f"тариф допускает {allowed} инстанс(ов), сейчас активно "
-                f"{len(instances)}. Остановите лишний контейнер или перейдите "
-                f"на больший тариф."
+                f"{len(instances)}.{hint}"
             )
         if len(keys) >= ceiling:
             # ОТНОШЕНИЕ КЛЮЧЕЙ К ИНСТАНСАМ — НАШЕ НАБЛЮДЕНИЕ, а не то, что
@@ -617,27 +933,64 @@ class LicenseStore:
             )
         return True, ""
 
+    def lease_if_allowed(self, lease_id: str, org_id: str, plan: str,
+                         instance_id: str, process_id: str, window_seconds: int,
+                         pubkey: str) -> tuple[bool, str]:
+        """Проверить потолок и занять слот В ОДНОЙ критической секции.
+
+        ПОТОЛОК ДЕРЖАЛСЯ НА ТОМ, ЧТО КЛИЕНТЫ СТУЧАТСЯ ПО ОЧЕРЕДИ. `may_lease` и
+        `record_lease` — два отдельных публичных вызова, между которыми сервер
+        отпускал лок: N одновременных запросов на аренду все видели
+        `len(instances) < allowed` и все проходили. Это не гонка в драйвере, это
+        дыра в единственной границе, которую мы вообще принуждаем.
+
+        Лок реентрантный, поэтому оба вызова внутри берут его повторно и это
+        по-прежнему одна секция.
+        """
+        with self._lock:
+            allowed, why_not = self.may_lease(org_id, plan, instance_id,
+                                              window_seconds, pubkey=pubkey)
+            if not allowed:
+                return False, why_not
+            self.record_lease(lease_id, org_id, instance_id, process_id,
+                              window_seconds, pubkey=pubkey)
+            return True, ""
+
+    def prune_leases(self, window_seconds: int) -> int:
+        """Выбросить аренды, которые давно не считаются ни в одном окне.
+
+        `may_lease` их и так не видит; смысл в том, чтобы таблица не росла
+        вечно на машине, где мы сами и живём."""
+        cutoff = time.time() - 2 * window_seconds
+        with self._lock:
+            cursor = self._conn.execute("DELETE FROM leases WHERE issued_at<?",
+                                        (cutoff,))
+            self._conn.commit()
+        return cursor.rowcount
+
     def usage_totals(self, org_id: str) -> dict[str, object]:
         """Billing view: the org's consumption, summed across its INSTANCES.
 
         Summing instances is right (two containers are two deployments doing real
         work); summing reports would not be, because each report restates the same
         cumulative total."""
-        rows = self._conn.execute(
+        rows = self._fetchall(
             "SELECT instance_id, reports, requests, entities, values_total, resets, "
             # СЧЁТ ОБЯЗАН ВИДЕТЬ, ЧТО ЕМУ НЕ ПОКАЗАЛИ. Без этих двух колонок
             # инвойс не мог отличить «расхода не было» от «расход был, но его
             # никто не подтвердил».
-            "unverified_reports, unverified_requests, chain_breaks "
-            "FROM usage WHERE org_id=?",
+            "unverified_reports, unverified_requests, chain_breaks, "
+            "malformed_reports, reports_missing FROM usage WHERE org_id=?",
             (org_id,),
-        ).fetchall()
+        )
         entities: dict[str, int] = {}
         requests = reports = values = resets = 0
-        unverified_reports = unverified_requests = breaks = 0
+        unverified_reports = unverified_requests = breaks = malformed = 0
+        missing = 0
         for row in rows:
             (_instance, row_reports, row_requests, row_entities, row_values,
-             row_resets, row_unver, row_unver_req, row_breaks) = row
+             row_resets, row_unver, row_unver_req, row_breaks, row_malformed,
+             row_missing) = row
             requests += int(row_requests or 0)
             reports += int(row_reports or 0)
             values += int(row_values or 0)
@@ -645,7 +998,24 @@ class LicenseStore:
             unverified_reports += int(row_unver or 0)
             unverified_requests += int(row_unver_req or 0)
             breaks += int(row_breaks or 0)
-            for entity_type, count in json.loads(row_entities or "{}").items():
+            malformed += int(row_malformed or 0)
+            missing += int(row_missing or 0)
+            # ТЕРПИМО К ТОМУ, ЧТО УЖЕ ЛЕЖИТ. Вход теперь проверяется, но в
+            # проде могут лежать строки, записанные до этого: нечисловое
+            # значение здесь давало TypeError, то есть `/admin/usage` отвечал
+            # 500 НАВСЕГДА для этой организации — а вместе с ним падали кабинет
+            # и выставление счёта. Первая же правка обязана поднять ручку, а не
+            # ждать чистки (`licensing/repair_usage.py`).
+            try:
+                stored = json.loads(row_entities or "{}")
+            except ValueError:
+                _log.warning("unreadable entities for org=%s instance=%s", org_id, _instance)
+                continue
+            for entity_type, count in stored.items():
+                if isinstance(count, bool) or not isinstance(count, int):
+                    _log.warning("non-numeric count %r for %s in org=%s instance=%s",
+                                 count, entity_type, org_id, _instance)
+                    continue
                 entities[entity_type] = entities.get(entity_type, 0) + count
         return {"org_id": org_id, "instances": len(rows), "reports": reports,
                 "requests": requests, "entities": entities,
@@ -661,27 +1031,69 @@ class LicenseStore:
                 "unverified_reports": unverified_reports,
                 "unverified_requests": unverified_requests,
                 "chain_breaks": breaks,
+                # Отчёты, которые пришли и не разобрались.
+                "malformed_reports": malformed,
+                # Продления, в которых отчёта не было вовсе.
+                "reports_missing": missing,
+                # ЧИСЛО, НА КОТОРОМ СТРОИТСЯ СЧЁТ, И ВСЁ, ЧЕМ ОНО ЗАЖАТО.
+                **{f"capacity_{name}": value
+                   for name, value in self.billable(org_id).items()},
                 # ЧИСЛО, НА КОТОРОМ СТРОИТСЯ СЧЁТ. Сумма выданной ёмкости —
                 # целиком наша запись; `requests` рядом остаётся справочным.
                 "granted": self.granted_total(org_id)}
 
-    def release_process(self, org_id: str, pubkey: str) -> None:
-        """Освободить слот ОДНОГО процесса, названного его собственным ключом."""
+    def release_process(self, org_id: str, pubkey: str) -> bool:
+        """Пометить слот процесса освобождённым. Слот остывает, а не исчезает.
+
+        Возвращает, освободилось ли что-нибудь: раньше ручка отвечала
+        `{"released": true}` даже когда ни одна строка не совпала.
+        """
         with self._lock:
-            self._conn.execute(
-                "DELETE FROM leases WHERE org_id=? AND pubkey=?", (org_id, pubkey))
+            cursor = self._conn.execute(
+                "UPDATE leases SET released_at=?, released_by='process' "
+                "WHERE org_id=? AND pubkey=? AND released_at IS NULL",
+                (time.time(), org_id, pubkey))
             self._conn.commit()
+        return cursor.rowcount > 0
+
+    def releases_last_hour(self, org_id: str) -> int:
+        """Сколько раз контейнеры этой организации освобождали слот за час."""
+        row = self._fetchone(
+            "SELECT COUNT(*) FROM leases WHERE org_id=? AND released_by='process' "
+            "AND released_at>=?", (org_id, time.time() - 3600))
+        return int(row[0] or 0)
+
+    def release_budget(self, plan: str) -> int:
+        """Потолок освобождений в час. По умолчанию выводится из тарифа:
+        `max(3, инстансов)` — переразвёртывание одного контейнера укладывается,
+        карусель нет."""
+        return self.RELEASE_BUDGET_PER_HOUR or max(3, self.instances_allowed(plan))
+
+    def slot_free_at(self, org_id: str, instance_id: str) -> float:
+        """Когда освободится последний остывающий слот этого инстанса."""
+        row = self._fetchone(
+            "SELECT MAX(released_at) FROM leases WHERE org_id=? AND instance_id=? "
+            "AND released_at IS NOT NULL", (org_id, instance_id))
+        released = float(row[0] or 0.0) if row else 0.0
+        return released + self.RELEASE_COOLDOWN_SECONDS if released else 0.0
 
     def instances(self, org_id: str) -> list[dict[str, object]]:
-        rows = self._conn.execute(
+        rows = self._fetchall(
             "SELECT instance_id, process_id, issued_at FROM leases WHERE org_id=? "
             "ORDER BY issued_at DESC LIMIT 100", (org_id,)
-        ).fetchall()
+        )
         return [{"instance_id": r[0], "process_id": r[1], "issued_at": r[2]} for r in rows]
 
     def list_orgs(self) -> list[dict[str, object]]:
-        rows = self._conn.execute(
-            "SELECT org_id, plan, status, created_at FROM keys ORDER BY created_at"
-        ).fetchall()
-        return [{"org_id": r[0], "plan": r[1], "status": r[2], "created_at": r[3]}
+        # `last_lease` ОТДАЁТСЯ ЗДЕСЬ, И ЭТО НЕ УКРАШЕНИЕ. `deploy/watch.sh`
+        # читает это поле, чтобы поймать клиента, который вот-вот встанет; поля
+        # не было, поэтому проверка «не продлевают аренду больше суток» была
+        # ВСЕГДА ПУСТОЙ — а это ровно тот сигнал, который поймал бы и блэкхол, и
+        # повтор лизы: и то и другое выглядит как «клиент перестал продлеваться».
+        rows = self._fetchall(
+            "SELECT k.org_id, k.plan, k.status, k.created_at, "
+            "(SELECT MAX(issued_at) FROM leases l WHERE l.org_id=k.org_id) "
+            "FROM keys k ORDER BY k.created_at", ())
+        return [{"org_id": r[0], "plan": r[1], "status": r[2], "created_at": r[3],
+                 "last_lease": r[4]}
                 for r in rows]

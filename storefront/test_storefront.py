@@ -51,7 +51,7 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
-def start_licensing() -> tuple[subprocess.Popen, str]:
+def start_licensing() -> tuple[subprocess.Popen, str, str]:
     """The real licensing server, in its own interpreter.
 
     A subprocess rather than an import because it lives in the engine's
@@ -80,10 +80,11 @@ def start_licensing() -> tuple[subprocess.Popen, str]:
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     admin_url = f"http://127.0.0.1:{admin}"
+    public_url = f"http://127.0.0.1:{public}"
     for _ in range(120):
         try:
             httpx.get(f"{admin_url}/admin/list", timeout=2)
-            return process, admin_url
+            return process, admin_url, public_url
         except httpx.HTTPError:
             time.sleep(0.25)
     process.kill()
@@ -91,7 +92,7 @@ def start_licensing() -> tuple[subprocess.Popen, str]:
 
 
 def main() -> int:
-    process, admin_url = start_licensing()
+    process, admin_url, public_url = start_licensing()
     # Админка лицензионного сервера теперь под токеном; тест поднимает
     # НАСТОЯЩИЙ сервер, поэтому оба конца должны знать один секрет.
     os.environ["PSEUDEX_LICENSE_ADMIN_TOKEN"] = _ADMIN_TOKEN
@@ -118,7 +119,7 @@ def main() -> int:
     call_command("seed_plans", verbosity=0)
 
     try:
-        run_checks(Client())
+        run_checks(Client(), admin_url, public_url)
     finally:
         process.terminate()
         process.wait(timeout=10)
@@ -132,7 +133,7 @@ def main() -> int:
     return 0
 
 
-def run_checks(client) -> None:
+def run_checks(client, admin_url: str, public_url: str) -> None:
     from accounts.models import Organization
     from billing.models import LicenseKey
 
@@ -381,6 +382,121 @@ def run_checks(client) -> None:
           invoice.state != "paid" and forged.status_code in (200, 502),
           f"status={forged.status_code} invoice={invoice.state}")
 
+    # ОПЛАТА, КОТОРАЯ ПРОШЛА. Всё, что было по вебхуку, — отрицательные ветки:
+    # подделку не пускаем, мусор не пускаем. Единственная нота, ради которой
+    # этот стенд и собран — «клиент заплатил, обслуживание вернулось», — не
+    # игралась ни разу, и ровно поэтому 403 на `/admin/resume` прожил в дереве
+    # незамеченным, откатывая оплату целиком.
+    from django.conf import settings
+    from billing import licensing, services
+    # Ключ для ЭТОЙ организации, выпущенный нашим же путём: дальше проверяется,
+    # что контейнер с ним обслуживается и перестаёт обслуживаться.
+    raw_key = services.issue_additional_key(org, "проверка оплаты", "live")
+
+    def licence_status() -> str:
+        rows = httpx.get(f"{admin_url}/admin/list", timeout=5,
+                         headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}).json()["orgs"]
+        return next((r["status"] for r in rows if r["org_id"] == org.id), "нет такой")
+
+    def engine_sees() -> int:
+        """Что увидел бы КОНТЕЙНЕР этого клиента, придя за арендой.
+
+        Статус ключа проверяется РАНЬШЕ получателя, поэтому пустой `pubkey`
+        даёт 400 «ключ активен», 402 «не оплачено», 403 «отозван» — и для
+        проверки не нужен ни движок, ни `pyrage` в venv витрины.
+        """
+        return httpx.post(f"{public_url}/v1/lease", timeout=5,
+                          json={"key": raw_key, "instance_id": "t", "pubkey": "",
+                                "engine_version": "1.0.0"}).status_code
+
+    # УЗКИЙ `except`, КОТОРЫЙ ФИКСИРУЕТ ПРОВАЛ, А НЕ ОТМЕНЯЕТ ПРОВЕРКУ. Разница
+    # с тем, что стояло в `test_billing_e2e.py`, ровно в этом: там голый
+    # `except Exception` пропускал три проверки и оставлял прогон зелёным,
+    # поэтому 403 на `/admin/resume` жил незамеченным. Здесь отказ — красная
+    # строка, и остальные проверки всё равно выполняются.
+    try:
+        services.mark_paid(invoice, payment_ref="4f0e1c3a-1111-4000-8000-abcdefabcdef")
+    except services.ServiceNotResumed as error:
+        check("paying resumes the service", False, str(error)[:160])
+    invoice.refresh_from_db()
+    subscription = org.subscription
+    subscription.refresh_from_db()
+    check("paying records the money, resumes the service and says so",
+          invoice.state == "paid" and invoice.paid_at is not None
+          and invoice.service_resumed_at is not None
+          and subscription.state == "active" and licence_status() == "active",
+          f"invoice={invoice.state} resumed={invoice.service_resumed_at is not None} "
+          f"subscription={subscription.state} licence={licence_status()}")
+    check("the customer's own container is served again", engine_sees() == 400,
+          f"POST /v1/lease -> {engine_sees()}")
+
+    period_end = subscription.current_period_end
+    services.mark_paid(invoice, payment_ref="4f0e1c3a-1111-4000-8000-abcdefabcdef")
+    subscription.refresh_from_db()
+    check("a duplicate delivery does not grant a second month",
+          subscription.current_period_end == period_end,
+          "ЮKassa redelivers; two deliveries once meant two free months")
+
+    # ВОЗОБНОВЛЕНИЕ НЕ ДОЕХАЛО — ДЕНЬГИ ВСЁ РАВНО НАШИ. Ломается только то, что
+    # можно починить повтором; факт платежа восстановить неоткуда.
+    services.mark_unpaid(org)
+    invoice.service_resumed_at = None
+    invoice.save(update_fields=["service_resumed_at"])
+    dead, settings.LICENSING_ADMIN_URL = settings.LICENSING_ADMIN_URL, "http://127.0.0.1:1"
+    try:
+        services.mark_paid(invoice, payment_ref="4f0e1c3a-2222-4000-8000-abcdefabcdef")
+        raised = False
+    except services.ServiceNotResumed:
+        raised = True
+    finally:
+        settings.LICENSING_ADMIN_URL = dead
+    invoice.refresh_from_db()
+    check("an unreachable licensing server does not un-pay the invoice",
+          raised and invoice.state == "paid" and invoice.service_resumed_at is None,
+          f"raised={raised} invoice={invoice.state} "
+          f"resumed={invoice.service_resumed_at is not None}")
+
+    services.mark_paid(invoice, payment_ref="4f0e1c3a-2222-4000-8000-abcdefabcdef")
+    invoice.refresh_from_db()
+    check("the retry finishes what the outage interrupted",
+          invoice.service_resumed_at is not None and licence_status() == "active",
+          f"resumed={invoice.service_resumed_at is not None} licence={licence_status()}")
+
+    # ВСЕ ЧЕТЫРЕ СТАТУСА ДОЕЗЖАЮТ. Два из них строили несуществующий путь и
+    # отвечали 404 под любым токеном, а вызывающих у них не было — то есть
+    # дыра ждала первого, кто нажмёт «отозвать» в поддержке.
+    # И проверяется не только запись у нас, но и то, что видит КОНТЕЙНЕР: 402
+    # «не оплачено» и 403 «отозван» минуют grace и останавливают клиента за
+    # минуту, 400 значит «ключ в порядке».
+    for status, seen in (("revoked", 403), ("suspended", 403),
+                         ("unpaid", 402), ("active", 400)):
+        licensing.set_status(org.id, status)
+        check(f"set_status({status}) reaches the licensing server and the container",
+              licence_status() == status and engine_sees() == seen,
+              f"licence={licence_status()} POST /v1/lease -> {engine_sees()}")
+
+    # БЮДЖЕТ КЛЮЧЕЙ И ОСИРОТЕВШИЙ КЛЮЧ. Отказ по `max_keys` обязан не оставить
+    # на лицензионном сервере активную запись, не привязанную ни к какому
+    # кабинету: она лизует вечно и не видна ни в одной сверке.
+    def keys_on_server() -> int:
+        rows = httpx.get(f"{admin_url}/admin/list", timeout=5,
+                         headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}).json()["orgs"]
+        return sum(1 for row in rows if row["org_id"] == org.id
+                   and row["status"] != "revoked")
+
+    allowed = org.subscription.plan.max_keys
+    while org.keys.filter(revoked_at__isnull=True).count() < allowed:
+        services.issue_additional_key(org, "добивка", "live")
+    before = keys_on_server()
+    try:
+        services.issue_additional_key(org, "лишний", "live")
+        refused = False
+    except ValueError:
+        refused = True
+    check("a key beyond the plan is refused and leaves nothing behind on the server",
+          refused and keys_on_server() == before,
+          f"refused={refused} keys on server {before} -> {keys_on_server()}")
+
     # A second period must bill the DELTA, not the lifetime counter again.
     from billing.models import Invoice as InvoiceModel
     invoice.values_at_period_end = 500
@@ -391,6 +507,55 @@ def run_checks(client) -> None:
           second.values_in_period == 0,
           f"watermark=500 reported={second.values_at_period_end} "
           f"in_period={second.values_in_period}")
+
+    from unittest.mock import patch
+
+    # ЁМКОСТЬ ВИДНА КЛИЕНТУ И ВАТЕРМАРКИТСЯ НА СЧЁТЕ. Ставка ещё не назначена —
+    # это продуктовое решение, — но число, на котором она будет считаться, уже
+    # верное, и его надо ватермаркить с этого момента: иначе первый же счёт по
+    # объёму пришлось бы считать от накопительного итога.
+    with patch("billing.licensing.usage",
+               return_value={"usage": {"capacity_billable": 4000, "values": 10,
+                                       "requests": 4000}}):
+        metered = build_invoice(org, date.today(), date.today() + timedelta(days=30))
+    metered.state = InvoiceModel.ISSUED
+    metered.save(update_fields=["state"])
+    with patch("billing.licensing.usage",
+               return_value={"usage": {"capacity_billable": 6500, "values": 10,
+                                       "requests": 6500}}):
+        metered_next = build_invoice(org, date.today(), date.today() + timedelta(days=30))
+    check("the invoice watermarks the capacity the volume charge will use",
+          metered_next.requests_billable_in_period == 2500,
+          f"в периоде {metered_next.requests_billable_in_period}, "
+          f"ватермарка {metered_next.requests_billable_at_period_end}")
+
+    cabinet_page = client.get("/app/").content.decode()
+    check("the cabinet shows what is billed and what it is capped by",
+          "запросов к начислению" in cabinet_page
+          and "выдано ёмкости" in cabinet_page,
+          "без обеих границ фраза «отчёт — ваша защита» остаётся обещанием")
+
+    # ОТРАВЛЕННЫЙ ОТВЕТ НЕ ДЕЛАЕТ КЛИЕНТА ВЕЧНО БЕСПЛАТНЫМ. Отрицательное
+    # значение раньше записывалось как ПОСТОЯННАЯ ватермарка, после чего каждый
+    # следующий период давал ноль. Вход теперь проверяется, но инвариант,
+    # державшийся на чужом поведении, обязан держаться на своём.
+    poison = {"usage": {"values": -10 ** 9, "requests": -10 ** 9}}
+    with patch("billing.licensing.usage", return_value=poison):
+        poisoned = build_invoice(org, date.today(), date.today() + timedelta(days=30))
+    poisoned.state = InvoiceModel.ISSUED
+    poisoned.save(update_fields=["state"])
+    with patch("billing.licensing.usage",
+               return_value={"usage": {"values": 5000, "requests": 7000}}):
+        after_poison = build_invoice(org, date.today(), date.today() + timedelta(days=30))
+    # Инвариант — НЕ «ватермарка обнулилась», а «ватермарка не поехала вниз»:
+    # она держится на прежнем значении, и следующий период считает дельту от
+    # него, а не от минуса.
+    before_poison = second.values_at_period_end
+    check("a poisoned counter cannot make a customer permanently free",
+          poisoned.values_at_period_end >= before_poison
+          and after_poison.values_in_period == 5000 - before_poison,
+          f"watermark {before_poison} -> {poisoned.values_at_period_end}, "
+          f"next period={after_poison.values_in_period}")
 
     # 54-ФЗ splits our customers in two, and only the payer kind tells them
     # apart. A receipt sent where none is required fiscalises a transaction that
