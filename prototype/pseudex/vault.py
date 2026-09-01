@@ -1472,8 +1472,20 @@ class Vault:
             # («улицу Тополиную»), и сравнение написанного не нашло бы ничего.
             fake_parts: set[str] = set()
             if entity_type == "NAME":
-                fake_parts = {word.casefold() for word in token.split()
-                              if len(word) > 2}
+                # И КАК НАПИСАНО, И В ИМЕНИТЕЛЬНОМ. Модель называет человека в
+                # том падеже, которого требует фраза — «Телефон Олеси?», «Софию
+                # не беспокоить», — а части лежали ровно как написаны, поэтому
+                # «олеси» не находило «олеся» и агент называл клиенту
+                # выдуманное имя как его собственное. Приведение к именительному
+                # здесь безопасно: это сторона ПОДМЕНЫ, тот же индекс, что и
+                # `name_key`; на стороне настоящего значения оно осталось бы
+                # запрещённым.
+                fake_parts = set()
+                for word in token.split():
+                    if len(word) <= 2:
+                        continue
+                    fake_parts.add(word.casefold())
+                    fake_parts.add(morph_names.to_nominative(word).casefold())
             elif entity_type == "LOC":
                 stems, numbers = morph_places.signature_parts(token)
                 fake_parts = set(stems) | set(numbers)
@@ -1516,14 +1528,23 @@ class Vault:
         parts = [*stems, *numbers]
         if not parts:
             return None
+        # ОБЛАСТЬ РАЗГОВОРА ОБЯЗАТЕЛЬНА ЗДЕСЬ, а не желательна. Целая подмена
+        # уникальна, и разрешать её по всему клиенту безопасно: назвать её мог
+        # только тот, кому мы её отдали. ФРАГМЕНТ не уникален — «Полевая 35»
+        # выглядит одинаково у всех, — и без области диалог B получал адрес,
+        # отчеканенный в диалоге A. Это ровно то раскрытие, ради запрета
+        # которого область и заведена.
+        scope = " AND (k.minted_in=? OR k.minted_in IS NULL OR k.minted_in='')"
         with self._lock:
             owners: list[set[str]] = []
             for part in parts:
                 rows = self._conn.execute(
                     "SELECT t.token FROM token_parts AS t "
                     "JOIN tokens AS k ON k.customer=t.customer AND k.token=t.token "
-                    "WHERE t.customer=? AND t.part=? AND k.entity_type='LOC'",
-                    (self._customer, part),
+                    "WHERE t.customer=? AND t.part=? AND k.entity_type='LOC'"
+                    + (scope if self._conversation else ""),
+                    (self._customer, part, self._conversation)
+                    if self._conversation else (self._customer, part),
                 ).fetchall()
                 if not rows:
                     return None
@@ -1544,15 +1565,18 @@ class Vault:
         word would fire on a real customer who happens to be called Юлия, and a
         warning that cries on ordinary traffic is a warning nobody reads.
         """
-        words = [word.casefold() for word in candidate.split() if len(word) > 2]
+        words = [word for word in candidate.split() if len(word) > 2]
         if not words:
             return None
         with self._lock:
             owners: list[set[str]] = []
             for word in words:
+                forms = sorted({word.casefold(),
+                                morph_names.to_nominative(word).casefold()})
                 rows = self._conn.execute(
-                    "SELECT token FROM token_parts WHERE customer=? AND part=?",
-                    (self._customer, word),
+                    "SELECT token FROM token_parts WHERE customer=? AND part IN "
+                    f"({','.join('?' * len(forms))})",
+                    (self._customer, *forms),
                 ).fetchall()
                 if not rows:
                     return None

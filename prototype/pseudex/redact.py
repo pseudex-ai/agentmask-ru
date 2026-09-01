@@ -264,6 +264,8 @@ _FLAT_TAIL = re.compile(r",?\s*(?:кв|квартир\w*|офис\w*|оф)\.?\s*
 _HOUSE_TAIL = re.compile(r",?\s*(?:(?:д|дом|вл|влад|владение)\.?\s*)?\d{1,4}"
                          r"(?:/\d{1,3})?[а-яё]?(?![\w])")
 _CITY_HEAD = re.compile(r"(?-i:[А-ЯЁ])[а-яё-]+,\s*$")
+# Город в начале самой ПОДМЕНЫ — чтобы понять, назвала его модель или нет.
+_CITY_OF_TOKEN = re.compile(r"^([А-ЯЁ][а-яё-]+),\s")
 
 
 def _name_windows(text: str) -> list[tuple[int, int, str]]:
@@ -383,7 +385,9 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
             # with a real customer resolves to more than one token and is
             # refused. `name_key` is untouched — it is also called on the REAL
             # value, and widening it there would break the minting side.
-            owner = _residual_owner(surface, vault, for_tool)
+            owner = (_residual_owner(surface, vault, for_tool)
+                     or (None if for_tool
+                         else _place_fragment(surface, vault, for_tool)))
             if owner is None:
                 continue
             found = owner
@@ -394,6 +398,47 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
         spans.append((start, end,
                       _in_case_of(value, surface, entity_type, inflect)))
     return _splice(text, spans)
+
+
+def _place_fragment(surface: str, vault: Vault,
+                    for_tool: bool = False) -> tuple[str, str] | None:
+    """Настоящий адрес по НЕПОЛНОЙ адресной подмене, урезанный до тех же частей.
+
+    Ключ адреса несёт все его цифры, поэтому подмена «улица Лавандовая 135,
+    кв. 210», написанная моделью как «Лавандовая 135», даёт другой ключ и не
+    находится. Живьём это выглядело так: в аргумент инструмента адрес пришёл
+    настоящим, а в ответе клиенту агент переспросил «Да, Лавандовая 135?» —
+    назвал ему выдуманную улицу как его собственную.
+
+    Индекс частей (`place_owner`) отвечает на этот вопрос и уже стоит на разборе
+    адреса по полям схемы. Правило единственного владельца прежнее: если частям
+    отвечает больше одной подмены, ответа нет.
+
+    ТОЛЬКО ДЛЯ ПРОЗЫ, И ЭТО ИЗМЕРЕНО. В аргумент модель кладёт адрес целиком, а
+    разложенный по полям собирает `_join_address_fields` — там своя область
+    разговора и свои роли. Тот же догадчик, включённый и на пути аргумента,
+    разрешал окна, которым разрешаться было нечем, и стоил 2.7 пункта возврата:
+    87.6% -> 84.9% на всём корпусе. Ровно ради такой проверки прибор и чинили
+    первым.
+
+    ВОЗВРАЩАЕТСЯ РОВНО ТО, ЧТО НАЗВАЛИ: фраза, в которую дописали
+    непроизнесённую квартиру, читается как чужая.
+    """
+    token = vault.place_owner(surface)
+    if token is None:
+        return None
+    value, entity_type = vault.reveal(token, for_tool)
+    if not value or entity_type != "LOC":
+        return None
+    if for_tool:
+        return entity_type, value
+    fake_roles = morph_places.split_roles(token)
+    lowered = surface.lower()
+    keep_tail = any(fake_roles.get(role) and fake_roles[role].lower() in lowered
+                    for role in ("flat", "entrance", "floor"))
+    city = _CITY_OF_TOKEN.match(token)
+    keep_city = city is None or city.group(1).lower() in lowered
+    return entity_type, morph_places.reduce_address(value, keep_city, keep_tail)
 
 
 def _residual_owner(surface: str, vault: Vault,
@@ -422,10 +467,17 @@ def _residual_owner(surface: str, vault: Vault,
     # not, the mirror does not hold and the whole value is the safe answer.
     fake_parts, real_parts = token.split(), value.split()
     if len(fake_parts) == len(real_parts):
-        wanted = [word.casefold() for word in surface.split()]
+        # СРАВНЕНИЕ ПО ИМЕНИТЕЛЬНОМУ, а не по написанному. Модель называет
+        # человека в падеже фразы — «Телефон Тамары?» — и сопоставление написанного
+        # не находило ни одной части, так что вместо имени в реплику
+        # подставлялось ФИО целиком: «Телефон Аширбаевой Ирины Маратовны?».
+        wanted = {morph_names.to_nominative(word).casefold()
+                  for word in surface.split()}
+        wanted |= {word.casefold() for word in surface.split()}
         picked = [real for fake, real in zip(fake_parts, real_parts)
-                  if fake.casefold() in wanted]
-        if len(picked) == len(wanted):
+                  if fake.casefold() in wanted
+                  or morph_names.to_nominative(fake).casefold() in wanted]
+        if len(picked) == len(surface.split()):
             return entity_type, " ".join(picked)
     return entity_type, value
 

@@ -801,3 +801,28 @@ def split_roles(phrase: str) -> dict[str, str]:
     elif not claimed:
         out["street"] = text
     return out
+
+
+_CITY_LEAD = re.compile(r"^[А-ЯЁ][а-яё-]+,\s+")
+_TAIL_MARKER = re.compile(
+    r"(?i),?\s*\b(?:кв|кварт\w*|офис\w*|оф|подъезд\w*|под|этаж\w*)\b")
+
+
+def reduce_address(phrase: str, keep_city: bool, keep_tail: bool) -> str:
+    """Адрес, урезанный до тех частей, которые НАЗВАЛИ.
+
+    Режет исходную строку, а не пересобирает её из кусков: у настоящего адреса
+    своя пунктуация и свои маркеры («д. 19, кв. 76»), и склейка частей пробелом
+    превратила бы его в «19 76». Голова — город перед запятой, хвост — всё,
+    начиная с маркера квартиры, подъезда или этажа.
+    """
+    out = phrase.strip()
+    if not keep_city:
+        head = _CITY_LEAD.match(out)
+        if head is not None:
+            out = out[head.end():]
+    if not keep_tail:
+        tail = _TAIL_MARKER.search(out)
+        if tail is not None:
+            out = out[:tail.start()]
+    return out.strip().strip(" ,.")
