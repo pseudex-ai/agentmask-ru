@@ -1,0 +1,24 @@
+$ python3 test_persona_defects.py
+
+PASS  нормализация: look-alike на краю слова
+PASS  строчное ФИО в косвенном падеже
+PASS  KV-спан несёт своё свидетельство
+PASS  счёт держится на формате, не на слове
+PASS  двусмысленные слова не ключи
+PASS  /usage требует известный ключ
+PASS  просторечные имена не утекают
+PASS  слипшиеся написания не прячут ПД
+PASS  регистр и ё не расщепляют человека
+
+все 9 дефекта прогона персон закрыты
+
+WARNING:pseudex.vault_key:vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/persona-defects-egobxuof/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+WARNING:pseudex:PSEUDEX_ADMIN_TOKEN was not set — generated a per-process one. With more than one worker the operator interface will fail intermittently. entrypoint.sh sets one for the container.
+WARNING:pseudex:PSEUDEX_GATEWAY_TOKEN was not set — generated a per-process one. With more than one worker the gateway will be rejected at random. entrypoint.sh sets it once for the container.
+WARNING:pseudex.service:PSEUDEX_GATEWAY_TOKEN was not set — generated a per-process one. With more than one worker the gateway will be rejected at random. entrypoint.sh sets it once for the container.
+WARNING:pseudex.service:PSEUDEX_ADMIN_TOKEN was not set — generated a per-process one. With more than one worker the operator interface will fail intermittently. Set it once for the container.
+INFO:httpx:HTTP Request: GET http://t/usage "HTTP/1.1 401 Unauthorized"
+INFO:httpx:HTTP Request: GET http://t/usage "HTTP/1.1 401 Unauthorized"
+INFO:httpx:HTTP Request: GET http://t/usage "HTTP/1.1 401 Unauthorized"
+INFO:httpx:HTTP Request: GET http://t/usage?org_id=x "HTTP/1.1 401 Unauthorized"
+WARNING:pseudex.vault_key:vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/one-person-e5dhqlh1/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
