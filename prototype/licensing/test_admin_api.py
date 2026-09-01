@@ -227,5 +227,23 @@ for number in range(8):
 check("бюджет освобождений исчерпывается и отвечает 429", 429 in codes,
       f"коды освобождений: {codes}")
 
+
+# --- ОДНА ТОЧКА СПИСАНИЯ, И ОНА ЕСТЬ НА ОБОИХ ЛЕГАХ ----------------------
+# Греп-проверяемый инвариант вместо памяти: `consume` забывали на прокси-леге
+# дважды подряд — сначала счётчик запросов, потом ёмкость.
+print("\nТОЧКА СПИСАНИЯ")
+import pathlib  # noqa: E402
+
+sources = {path.name: path.read_text(encoding="utf-8")
+           for path in pathlib.Path("pseudex").glob("*.py")}
+# `metering.py` содержит определение, а не вызов — его исключаем по имени.
+billing_legs = {name for name, text in sources.items()
+                if "metering.bill(" in text and name != "metering.py"}
+stray = {name for name, text in sources.items()
+         if ".consume(" in text and name not in ("metering.py", "license.py")}
+check("оба лега списывают через одну функцию",
+      billing_legs == {"service.py", "proxy.py"}, f"списывают: {sorted(billing_legs)}")
+check("мимо неё ёмкость больше никто не трогает", not stray, f"мимо: {sorted(stray)}")
+
 print(f"\nсломано {len(fails)}")
 raise SystemExit(1 if fails else 0)

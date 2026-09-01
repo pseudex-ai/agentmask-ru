@@ -36,6 +36,7 @@ from pseudex.envelope import (
     unmask_response,
 )
 from pseudex.license import ENGINE_VERSION, LicenseClient, LicenseError, explain
+from pseudex import metering
 from pseudex.maskcache import MaskCache
 from pseudex.operator import build_router
 from pseudex.profiling import snapshot as profiling_snapshot, stage
@@ -386,7 +387,7 @@ def _mask_request(
     #
     # After masking succeeds, never before: masking is fail-closed, so a request
     # that raised was blocked and never reached a model.
-    AUDIT.record_request(customer_id, agent_id)
+    metering.bill(AUDIT, LICENSE, customer_id, agent_id)
     return result
 
 
