@@ -1236,13 +1236,20 @@ def _trim_lead(start: int, stop: int, text: str, address: AddressAssets) -> int:
         # остаток БЕЗ него всё ещё адрес. Иначе правило зависело бы от того,
         # как морфология угадала незнакомое слово.
         interjection = best is not None and best.POS == "INTJ"
+        # МЕСТОИМЕНИЕ НЕ НАЗЫВАЕТ УЛИЦУ. «меня зовут фомин проезд пятьдесят»
+        # становилось одним адресом целиком: «мой»/«наш» снимает признак Apro,
+        # а «меня», «это», «вы» — это NPRO, и цикл останавливался на первом же
+        # слове. Условие то же, что у глагола: снимаем, только если остаток без
+        # него всё ещё адрес.
+        pronoun = best is not None and best.POS in ("NPRO", "PRCL", "CONJ")
         stretched = (len(word) > 2 and len(set(word.lower())) <= 2
                      and not (parses and parses[0].is_known))
         verbal = best is not None and best.POS in ("VERB", "INFN", "GRND", "PRTF")
         if interjection or stretched:
             start += match.end()
             continue
-        if verbal and _still_an_address(text[start + match.end():stop], address):
+        if (verbal or pronoun) and _still_an_address(
+                text[start + match.end():stop], address):
             start += match.end()
             continue
         # CUE-СЛОВО В ЛЮБОМ ПАДЕЖЕ. `fullmatch` по написанному снимал «адрес» и
