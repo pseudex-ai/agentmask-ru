@@ -187,6 +187,26 @@ def open_tuning(sealed: bytes, key: bytes) -> bytes:
         ) from error
 
 
+def merge_payload(bulk: dict[str, object],
+                  tuning: dict[str, object]) -> dict[str, object]:
+    """Recombine the leased bulk with the compiled tuning into the full payload.
+
+    `names` and `address` appear in both (a bulk dictionary beside authored
+    tuning); everything else in exactly one. Used on BOTH sides — the pack builds
+    the full payload to hash it (`licensing/pack.py`), the engine merges the
+    leased bulk with its compiled tuning at load (`pseudex/assets.py`) — so it
+    lives here, in the module both import, rather than as two copies on a
+    correctness-critical path that must stay byte-identical by hand."""
+    merged: dict[str, object] = {}
+    for key in set(bulk) | set(tuning):
+        left, right = bulk.get(key), tuning.get(key)
+        if isinstance(left, dict) and isinstance(right, dict):
+            merged[key] = {**left, **right}
+        else:
+            merged[key] = left if left is not None else right
+    return merged
+
+
 def plaintext_hash(plaintext: bytes) -> str:
     return hashlib.sha256(plaintext).hexdigest()
 

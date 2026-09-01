@@ -787,6 +787,13 @@ class LicenseClient:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
+            # Cleared BEFORE the work below, never after the wait. A consume()
+            # that crosses prefetch_at and calls _wake.set() DURING the work would
+            # be lost if we cleared once wait() had already returned; clearing
+            # first means such a set() leaves the event set, so the wait() at the
+            # bottom returns at once and the next pass meters promptly instead of
+            # stalling up to ~5 s for the scheduled wake.
+            self._wake.clear()
             due = self._renew_after_seconds
             if self._terminal_code is not None:
                 # A revoked or unpaid licence keeps asking, just slowly. Stopping
@@ -825,8 +832,9 @@ class LicenseClient:
                 _log.exception("unexpected error in the licence loop; continuing")
             # Wake often enough that EXPIRED is entered promptly even with no
             # traffic — the assets must go away on time, not on the next request.
+            # No clear() here: it happens at the top of the next pass, so a set()
+            # arriving now is not swallowed.
             self._wake.wait(min(5.0, max(1.0, due / 4.0)))
-            self._wake.clear()
 
     def start(self) -> None:
         if self._thread is not None:

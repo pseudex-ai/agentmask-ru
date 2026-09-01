@@ -30,6 +30,7 @@ import threading
 import zlib
 from dataclasses import dataclass
 
+from pseudex.bundle import merge_payload
 from pseudex.morph import MORPH
 
 
@@ -345,22 +346,6 @@ def _load_embedded_tuning(key: bytes) -> tuple[dict[str, object], str]:
     return tuning, _tuning_blob.VERSION
 
 
-def _merge_payload(bulk: dict[str, object],
-                   tuning: dict[str, object]) -> dict[str, object]:
-    """Recombine the leased bulk with the compiled tuning. `names` and `address`
-    appear in both (a bulk dictionary beside authored tuning); everything else in
-    exactly one. The SAME merge runs on the pack side — see
-    `licensing/pack.py::_deep_merge`."""
-    merged: dict[str, object] = {}
-    for key in set(bulk) | set(tuning):
-        left, right = bulk.get(key), tuning.get(key)
-        if isinstance(left, dict) and isinstance(right, dict):
-            merged[key] = {**left, **right}
-        else:
-            merged[key] = left if left is not None else right
-    return merged
-
-
 class Assets:
     """Connector to the leased asset state (external state -> class)."""
 
@@ -375,7 +360,8 @@ class Assets:
         authored TUNING is compiled into the engine and merged in here, so a
         client decrypting their own bundle finds no cue words, no address regex,
         no priority table — those require reversing the binary, not a bundle dump.
-        See `licensing/pack.py::split_payload` and docs/tz-license-packaging §2.2.
+        See `licensing/pack.py` (_bulk_payload / _tuning_payload) and
+        docs/tz-license-packaging §2.2.
 
         Called on the renewal path too, so it must be atomic from a reader's
         point of view: the new struct is built fully before it is published, and
@@ -395,7 +381,7 @@ class Assets:
                 f"leased bulk stamped for tuning {stamp!r} but the engine carries "
                 f"{blob_version!r} — the lease and the binary are from different "
                 f"builds; refusing to detect with a mismatched pair")
-        payload = _merge_payload(bulk, tuning)
+        payload = merge_payload(bulk, tuning)
         built = _build(payload)
         with self._lock:
             self._current = built

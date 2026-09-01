@@ -374,21 +374,16 @@ def _mask_request(
     # OpenAI's chat API carries no conversation id, so this leg always derives
     # one from the transcript — there is no caller field to prefer over it.
     context = _context(customer_id, agent_id, conversation_key(messages))
-    result = (
+    # Billing is NOT done here. This helper is shared by the real request leg
+    # (`/v1/chat/completions`) and the SANDBOX `/mask`, and the sandbox is «the
+    # only way a security officer can verify masking works WITHOUT sending real
+    # traffic» — billing it would charge the customer for proving the product
+    # works, the same reason the sidecar excludes SELFCHECK_ORG. The real leg
+    # bills at its own call site, after masking succeeds.
+    return (
         mask_messages(messages, context, False),
         mask_tools(tools, context, False),
     )
-    # Counted here too, and it was not. `record_request` was added on the
-    # sidecar leg only, so every customer on THIS deployment shape reported
-    # {"requests": 0} forever: their plan limit was unenforceable and the
-    # cabinet's usage bar sat at zero. It is a regression rather than an
-    # omission — before the counter existed, `billing_totals` returned
-    # sum(entities), which this path did populate.
-    #
-    # After masking succeeds, never before: masking is fail-closed, so a request
-    # that raised was blocked and never reached a model.
-    metering.bill(AUDIT, LICENSE, customer_id, agent_id)
-    return result
 
 
 
@@ -670,6 +665,13 @@ async def chat_completions(request: Request):
         _agent_of(request),
         limiter=_MASK_LIMITER,
     )
+    # Billed HERE, on the real request leg, and only after masking succeeded (a
+    # failure raised above and never reached a model — fail-closed). The sandbox
+    # `/mask` shares `_mask_request` but not this call, so verifying the product
+    # does not draw the customer's capacity. `record_request` was added on the
+    # sidecar leg only, so before this every customer on THIS shape reported
+    # {"requests": 0} and their plan limit was unenforceable.
+    metering.bill(AUDIT, LICENSE, tenant.customer_id, _agent_of(request))
     masked_body = dict(body)
     masked_body["messages"] = masked_messages
     if body.get("tools") is not None:

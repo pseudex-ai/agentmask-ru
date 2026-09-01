@@ -786,20 +786,27 @@ class LicenseStore:
         now = time.time()
         cutoff = now - window_seconds
         rows = self._fetchall(
-            "SELECT instance_id, MAX(issued_at), MAX(COALESCE(released_at, 0)) "
+            "SELECT instance_id, MAX(issued_at), MAX(COALESCE(released_at, 0)), "
+            # Пока жив ХОТЯ БЫ ОДИН воркер (released_at IS NULL) — инстанс
+            # активен. `MAX(released_at)` в одиночку показывал бы обслуживающий
+            # инстанс «остывающим» в ту же секунду, как остановился любой из его
+            # воркеров, — ровно то враньё оператору, которое эта функция чинит.
+            "SUM(CASE WHEN released_at IS NULL THEN 1 ELSE 0 END) "
             "FROM leases WHERE org_id=? AND issued_at>=? GROUP BY instance_id "
             "ORDER BY MAX(issued_at) DESC",
             (org_id, cutoff),
         )
         listed = []
-        for instance_id, last_lease, released_at in rows:
+        for instance_id, last_lease, released_at, live_workers in rows:
             # ЧТО ВИДИТ ПОДДЕРЖКА, ТО И ПРИМЕНЯЕТСЯ. Слот, освобождённый и ещё
             # остывающий, — не «активный» и не «свободный»; без третьего
             # состояния разговор с клиентом снова становится про контейнер,
-            # которого он не видит.
+            # которого он не видит. Но «остывает» — только когда освобождены ВСЕ
+            # воркеры инстанса: пока жив хоть один, слот занят и остывать не начал.
+            fully_released = not live_workers
             free_at = (float(released_at) + self.RELEASE_COOLDOWN_SECONDS
-                       if released_at else 0.0)
-            cooling = bool(released_at) and free_at > now
+                       if fully_released and released_at else 0.0)
+            cooling = fully_released and bool(released_at) and free_at > now
             listed.append({"instance_id": instance_id,
                            "last_lease": float(last_lease),
                            "state": "cooling" if cooling else "active",

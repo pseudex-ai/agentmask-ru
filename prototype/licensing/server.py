@@ -13,6 +13,7 @@ misconfigured reverse proxy cannot accidentally expose key issuance: the admin
 routes are not mounted in the public app at all.
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -56,6 +57,28 @@ _MIN_ENGINE = os.environ.get("PSEUDEX_MIN_ENGINE_VERSION", "")
 # чтобы реже дёргать сервер»: это НЕ операционная настройка, это снятие защиты.
 # Поэтому потолок объявляется громко на старте, а не живёт устным знанием.
 _DRIFT_TTL_CEILING_SECONDS = 7 * 86400
+
+# How often to drop leases too old to count in any window. `leases` gains ~3 rows
+# per worker per day (lease_id is fresh on every renewal, so INSERT replaces
+# nothing); `may_lease` already ignores the old ones, this only reclaims disk.
+_PRUNE_INTERVAL_SECONDS = int(os.environ.get("PSEUDEX_PRUNE_INTERVAL_SECONDS", "3600"))
+
+
+async def _prune_loop() -> None:
+    """Periodically prune expired lease rows so the table does not grow forever.
+
+    The method existed but nothing called it in production — only a test — so the
+    table grew unbounded on the very machine we run on. Offloaded to a thread
+    because `prune_leases` takes the store lock; a bare except keeps a maintenance
+    task from ever killing the loop."""
+    while True:
+        await asyncio.sleep(_PRUNE_INTERVAL_SECONDS)
+        try:
+            removed = await asyncio.to_thread(STORE.prune_leases, _TTL_SECONDS)
+            if removed:
+                _log.info("pruned %d lease rows too old to count", removed)
+        except Exception:  # noqa: BLE001 — maintenance must not die
+            _log.exception("lease prune failed; will retry next interval")
 
 # Fault injection for the e2e stand (gate L13). It exists in the REAL server,
 # not in a test double, because the gates forbid a separate server
@@ -103,7 +126,11 @@ async def _lifespan(_app: FastAPI):
                      "returning broken leases. Never run this in production.", _FAULT)
     if _LOG_RAW_BODY:
         _log.warning("RAW BODY LOGGING ACTIVE — lease request bodies go to the log.")
-    yield
+    prune_task = asyncio.create_task(_prune_loop())
+    try:
+        yield
+    finally:
+        prune_task.cancel()
 
 
 _STATUS_RESPONSE = {
@@ -528,8 +555,22 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     # свободным. Идентификатор аренды готовится заранее, потому что решение и
     # запись теперь неразделимы.
     lease_id = "ls_" + secrets.token_urlsafe(16)
-    # Counters ride in on the renewal request. Recorded BEFORE the new lease is
-    # minted so a client that dies mid-renewal has still been accounted for.
+    allowed, why_not = STORE.lease_if_allowed(
+        lease_id, record.org_id, record.plan, instance_id, process_id,
+        _TTL_SECONDS, pubkey=recipient)
+    if not allowed:
+        _log.warning("lease refused for org=%s instance=%s: %s",
+                     record.org_id, instance_id, why_not)
+        return JSONResponse({"error": "instance_limit", "detail": why_not},
+                            status_code=409)
+    # Counters are recorded AFTER the instance is admitted, not before. An
+    # over-limit renewal is refused above (409) and must leave NO usage row: a
+    # single valid key sending a fresh client-chosen instance_id each time would
+    # otherwise INSERT an unbounded number of usage rows and inflate the
+    # instance/missing counters, all past a cap that only bounds the `leases`
+    # table. An admitted instance loses nothing — `lease_if_allowed` persisted
+    # its slot in the same critical section, so the "died mid-renewal is still
+    # accounted for" intent holds for every instance that is actually serving.
     #
     # ИСПОРЧЕННЫЙ ОТЧЁТ ОТБРАСЫВАЕТСЯ, А АРЕНДА ВЫДАЁТСЯ. Ровно та политика,
     # которую докстринг `_store_usage` уже объявляет для плохой подписи: спор о
@@ -549,14 +590,6 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
         _log.warning("malformed usage report from org=%s instance=%s: %s",
                      record.org_id, instance_id, error)
         STORE.record_malformed(record.org_id, instance_id)
-    allowed, why_not = STORE.lease_if_allowed(
-        lease_id, record.org_id, record.plan, instance_id, process_id,
-        _TTL_SECONDS, pubkey=recipient)
-    if not allowed:
-        _log.warning("lease refused for org=%s instance=%s: %s",
-                     record.org_id, instance_id, why_not)
-        return JSONResponse({"error": "instance_limit", "detail": why_not},
-                            status_code=409)
     # СЕКРЕТ ОТЧЁТОВ, ЗАПЕЧАТАННЫЙ ПОЛУЧАТЕЛЮ. Это закрывает ПЕРЕХВАТЧИКА:
     # `recipient` под подписью, поэтому подменить его на свой он не может —
     # контейнер сверит с собственным ключом и откажется стартовать. Про самого

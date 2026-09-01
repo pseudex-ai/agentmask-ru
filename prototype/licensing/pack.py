@@ -30,7 +30,7 @@ from pathlib import Path
 from licensing import assets_source
 # Allowed direction: shared crypto lives in pseudex.bundle and is imported BY the
 # licensing side, never the other way (CLAUDE.md). The server already imports it.
-from pseudex.bundle import seal_tuning
+from pseudex.bundle import merge_payload, seal_tuning
 
 _DATA = Path(__file__).resolve().parent / "data"
 
@@ -250,22 +250,6 @@ def _tuning_payload() -> dict[str, object]:
     }
 
 
-def _deep_merge(bulk: dict[str, object],
-                tuning: dict[str, object]) -> dict[str, object]:
-    """Recombine the two halves into the full payload. `names` and `address`
-    appear in both (a bulk dictionary beside authored tuning); everything else in
-    exactly one. The engine does the SAME merge at load — see
-    `pseudex/assets.py::_merge_payload`."""
-    merged: dict[str, object] = {}
-    for key in set(bulk) | set(tuning):
-        left, right = bulk.get(key), tuning.get(key)
-        if isinstance(left, dict) and isinstance(right, dict):
-            merged[key] = {**left, **right}
-        else:
-            merged[key] = left if left is not None else right
-    return merged
-
-
 def _canonical(payload: dict[str, object]) -> bytes:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
 
@@ -304,7 +288,7 @@ def tuning_key() -> bytes:
 def build_payload() -> dict[str, object]:
     """The full payload (bulk + tuning), for tests and evals. Deterministic: same
     sources in, byte-identical out, so the content hash is a stable identity."""
-    payload = _deep_merge(_bulk_payload(), _tuning_payload())
+    payload = merge_payload(_bulk_payload(), _tuning_payload())
     payload["version"] = hashlib.sha256(_canonical(payload)).hexdigest()[:16]
     return payload
 
@@ -346,7 +330,7 @@ def build_plaintext() -> bytes:
     engine checks against its compiled-in tuning). The tuning half itself is
     emitted separately by `emit_tuning_module` at engine-build time."""
     bulk = _bulk_payload()
-    full = _deep_merge(bulk, _tuning_payload())
+    full = merge_payload(bulk, _tuning_payload())
     bulk["version"] = hashlib.sha256(_canonical(full)).hexdigest()[:16]
     bulk["tuning_version"] = tuning_version()
     # The key that opens the engine's SEALED tuning. It rides here, inside the
