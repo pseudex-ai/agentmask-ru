@@ -443,5 +443,41 @@ check("обе формы MAC отчёта принимаются, пока в п
       _forms == ["новая", "старая"], f"приняты: {_forms}")
 check("поле `bundle` в отчёте больше не вне подписи", not _outside)
 
+
+# --- МОСТ МЕЖДУ КОНТРАКТАМИ, В ОБЕ СТОРОНЫ --------------------------------
+# Правило выката (`operations.md` §2bis) держится ровно на этом: сервер первым,
+# движок потом. Проверяется, что первое направление безопасно, а второе
+# отказывает ВНЯТНО, а не выглядит как наш сбой.
+from pseudex.bundle import decode_public_key, verify_lease  # noqa: E402
+
+legacy_key = server.STORE.issue_key("bridge-old", "start")
+legacy_pk = generate_process_key().public
+legacy_lease = httpx.post(f"{_base}/v1/lease", timeout=60, json={
+    "key": legacy_key, "instance_id": "i", "pubkey": legacy_pk,
+    "engine_version": "1.0.0"}).json()          # БЕЗ nonce — так ходит контракт 2
+signature_holds = True
+try:
+    verify_lease(legacy_lease, decode_public_key(server.PUBLIC_KEY))
+except BundleError:
+    signature_holds = False
+check("движок контракта 2 работает против сервера контракта 3 без изменений",
+      signature_holds and "bundle" in legacy_lease
+      and legacy_lease.get("requests_granted")
+      and server.STORE.granted_total("bridge-old") > 0,
+      f"грант по времени (мост) = {server.STORE.granted_total('bridge-old')}")
+
+modern = LicenseClient(base_url=_base, key=server.STORE.issue_key("bridge-new", "start"),
+                       instance_id="j", ca_path="",
+                       usage_provider=lambda: {"requests": 0, "entities": {}, "values": 0})
+modern._pending_nonce = "expected"
+try:
+    modern._apply(dict(legacy_lease))           # ответ сервера контракта 2
+    refused, reason = False, ""
+except BundleError as error:
+    refused, reason = True, str(error)
+check("движок контракта 3 против сервера контракта 2 отказывается, назвав причину",
+      refused and "contract 3" in reason and "deploy it FIRST" in reason,
+      reason[:80])
+
 print(f"\nсломано {len(fails)}")
 raise SystemExit(1 if fails else 0)
