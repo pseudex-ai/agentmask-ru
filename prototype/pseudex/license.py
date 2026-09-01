@@ -46,6 +46,7 @@ from pseudex.assets import ASSETS
 from pseudex.measure import build_measurement
 from pseudex.bundle import (
     BundleError,
+    nonce_unwrap,
     mac_report,
     ProcessKey,
     decode_public_key,
@@ -624,7 +625,14 @@ class LicenseClient:
             raise BundleError(
                 f"lease is {int(age)}s old, past its {ttl}s lifetime — refusing "
                 f"a replayed lease")
-        plaintext = open_sealed(str(lease["bundle"]), self._process_key)
+        inner = open_sealed(str(lease["bundle"]), self._process_key)
+        # КОНТРАКТ 3: снять внутренний слой ключом из НОНСА, который сгенерировал
+        # ЭТОТ процесс для ЭТОГО запроса. Повтор старой/чужой аренды не
+        # расшифруется — ветки, которую можно инвертировать, здесь нет: нонс это
+        # ключ. `self._pending_nonce`, а не эхо из ответа: иначе патчер просто
+        # скормил бы старый нонс из захваченной аренды.
+        plaintext = (nonce_unwrap(inner, self._pending_nonce)
+                     if lease.get("capacity") else inner)
         actual = plaintext_hash(plaintext)
         expected = str(lease["bundle_sha256"])
         if actual != expected:

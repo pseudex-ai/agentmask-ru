@@ -35,8 +35,8 @@ from licensing.store import (
     STATUS_UNPAID,
     LicenseStore,
 )
-from pseudex.bundle import (BundleError, is_recipient, plaintext_hash, seal,
-                            sign_lease, verify_report)
+from pseudex.bundle import (BundleError, is_recipient, nonce_wrap,
+                            plaintext_hash, seal, sign_lease, verify_report)
 
 _log = logging.getLogger("licensing.server")
 
@@ -592,7 +592,11 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     payload["report_secret_sha256"] = hashlib.sha256(report_secret).hexdigest()
     payload["signature"] = sign_lease(payload, SIGNING_KEY)
 
-    sealed = seal(_PLAINTEXT, recipient)
+    # КОНТРАКТ 3: внутренний слой, чей ключ выведен из СВЕЖЕГО нонса клиента.
+    # Повтор старой аренды у пропатченного клиента даёт нерасшифровываемый
+    # бандл (`pseudex/bundle.py::nonce_wrap`). Контракт 2 получает голый бандл.
+    inner = nonce_wrap(_PLAINTEXT, nonce) if contract_3 else _PLAINTEXT
+    sealed = seal(inner, recipient)
     if _FAULT == "corrupt_bundle":
         # Flip one byte in the middle of the ciphertext. age is authenticated, so
         # this must surface as a decryption failure, not as garbled assets.

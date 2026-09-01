@@ -35,6 +35,9 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
+from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives import hashes
 from pyrage import decrypt, encrypt, x25519
 
 
@@ -90,6 +93,57 @@ def open_sealed(sealed_b64: str, process_key: ProcessKey) -> bytes:
         raise BundleError(
             "bundle did not decrypt with this process's key — it was sealed to "
             "someone else, or the payload is corrupt"
+        ) from error
+
+
+# ВНЕШНИЙ СЛОЙ БАНДЛА, КЛЮЧ КОТОРОГО = СВЕЖИЙ НОНС КЛИЕНТА.
+#
+# Зачем поверх age-печати. Проверка «эхо нонса совпало» — булева ветка, и на
+# машине атакующего её снимают одним NOP: тогда снятый из памяти реальный
+# бандл можно предъявлять пропатченному клиенту вечно (§3.4-остаток). Если же
+# КЛЮЧ расшифровки выводится из нонса, который клиент сгенерировал ДЛЯ ЭТОГО
+# запроса, то повтор старой аренды даёт нерасшифровываемый бандл — ветку
+# снимать бесполезно, надо перенаправить сам вход KDF на старый нонс, а это уже
+# не «инвертировать переход», а понять и переписать поток данных.
+#
+# Не закрывает остаток полностью (полный патч клиента + снятие нонса из
+# захваченной аренды всё ещё возможны) — но поднимает планку ровно так, как
+# сформулирована цель: с «инвертировать один переход» до «разобрать и
+# перенаправить KDF». Ломается ГРОМКО: ошибка здесь = бандл не расшифровался =
+# 503, а не тихое ослабление.
+#
+# Аддитивно к age: per-process-привязка (захваченная аренда бесполезна на
+# другой машине) сохраняется внешним age-слоем, этот — внутренний.
+_BUNDLE_INFO = b"pseudex-bundle-nonce-v1"
+
+
+def _bundle_key(nonce: str) -> bytes:
+    return HKDF(algorithm=hashes.SHA256(), length=32, salt=None,
+               info=_BUNDLE_INFO).derive(nonce.encode("utf-8"))
+
+
+def nonce_wrap(plaintext: bytes, nonce: str) -> bytes:
+    """AEAD-обёртка бандла ключом из нонса. 12 байт AEAD-нонса впереди."""
+    aead_nonce = hashlib.sha256(nonce.encode("utf-8") + b"aead").digest()[:12]
+    ct = ChaCha20Poly1305(_bundle_key(nonce)).encrypt(aead_nonce, plaintext, None)
+    return aead_nonce + ct
+
+
+def nonce_unwrap(wrapped: bytes, nonce: str) -> bytes:
+    """Снять обёртку ключом из нонса, который сгенерировал ЭТОТ процесс.
+
+    Неверный нонс (повтор чужой/старой аренды) → провал аутентификации AEAD →
+    `BundleError`. Ветки, которую можно инвертировать, здесь нет: нонс — это
+    ключ."""
+    if len(wrapped) < 12:
+        raise BundleError("nonce-wrapped bundle is too short")
+    aead_nonce, ct = wrapped[:12], wrapped[12:]
+    try:
+        return ChaCha20Poly1305(_bundle_key(nonce)).decrypt(aead_nonce, ct, None)
+    except Exception as error:
+        raise BundleError(
+            "bundle does not decrypt under this request's nonce — a replayed or "
+            "foreign lease, or a tampered nonce source"
         ) from error
 
 
