@@ -45,6 +45,18 @@ _TTL_SECONDS = int(os.environ.get("PSEUDEX_LEASE_TTL_SECONDS", "86400"))
 _GRACE_SECONDS = int(os.environ.get("PSEUDEX_GRACE_SECONDS", "172800"))
 _MIN_ENGINE = os.environ.get("PSEUDEX_MIN_ENGINE_VERSION", "")
 
+# ДРЕЙФ БАНДЛА — ГЛАВНЫЙ ДОЛГОВЕЧНЫЙ РЫЧАГ ПРОТИВ ПИРАТСТВА, и он держится на
+# одном неравенстве: захваченный plaintext-бандл обслуживает не дольше TTL+grace,
+# а содержимое бандла ротируется на каденции ГАР (дважды в неделю, ≤3.5 суток).
+# Пока TTL меньше окна ротации, украденная копия ПРОТУХАЕТ внутри своего же срока
+# годности — детектор на ней начинает течь, и пиратство превращается в гонку, а
+# не в разовую кражу (тот же принцип, что ре-версии Denuvo; research
+# 2026-09-01-antitamper-nuitka §7 ход №4). Рычаг бесплатный и уже работает — его
+# единственный враг за пять лет сопровождения это тихое «давайте TTL на месяц,
+# чтобы реже дёргать сервер»: это НЕ операционная настройка, это снятие защиты.
+# Поэтому потолок объявляется громко на старте, а не живёт устным знанием.
+_DRIFT_TTL_CEILING_SECONDS = 7 * 86400
+
 # Fault injection for the e2e stand (gate L13). It exists in the REAL server,
 # not in a test double, because the gates forbid a separate server
 # implementation — a stand that runs different code proves nothing about the code
@@ -77,6 +89,15 @@ async def _lifespan(_app: FastAPI):
     should ever discover by surprise."""
     _log.info("licensing server up: bundle=%s ttl=%ss grace=%ss pubkey=%s",
               _PLAINTEXT_HASH[:12], _TTL_SECONDS, _GRACE_SECONDS, PUBLIC_KEY)
+    if _TTL_SECONDS + _GRACE_SECONDS > _DRIFT_TTL_CEILING_SECONDS:
+        _log.warning(
+            "LEASE WINDOW %ss (ttl+grace) EXCEEDS THE BUNDLE-DRIFT CEILING %ss. A "
+            "captured bundle now outlives the ГАР rotation window, so the anti-"
+            "piracy drift lever is materially weakened — a stolen copy no longer "
+            "rots within its own validity. This is a security posture change, not "
+            "an ops convenience; shorten PSEUDEX_LEASE_TTL_SECONDS / "
+            "PSEUDEX_GRACE_SECONDS unless this is deliberate.",
+            _TTL_SECONDS + _GRACE_SECONDS, _DRIFT_TTL_CEILING_SECONDS)
     if _FAULT:
         _log.warning("FAULT INJECTION ACTIVE (%s) — this server is deliberately "
                      "returning broken leases. Never run this in production.", _FAULT)
