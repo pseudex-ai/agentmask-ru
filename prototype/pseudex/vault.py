@@ -25,7 +25,8 @@ import threading
 import time
 
 from pseudex import morph_names, morph_places
-from pseudex.spoken import numeral_runs, run_to_digits
+from pseudex.spoken import (numeral_runs, plate_from_words,
+                            run_to_digits)
 from pseudex.profiling import stage
 from pseudex.ru_pii import validate_inn, validate_luhn, validate_ogrn, validate_snils
 from pseudex.sqlite_setup import (
@@ -318,6 +319,15 @@ def canonicalize(entity_type: str, value: str) -> str:
         # chosen so every letter has a Latin twin — «а123вс777», «А123ВС777» and
         # «A123BC777» are one number to everyone except a string comparison.
         # Keyed as written, one car became three.
+        # ПРОДИКТОВАННЫЙ НОМЕР — ЭТО РУССКАЯ ФРАЗА, А НЕ НОМЕР. `upper()` над
+        # «а двести шестьдесят три о ка регион шестьдесят шесть» возвращает ту
+        # же фразу заглавными, и она уезжала в аргумент инструмента вместо
+        # «А263ОК66». Разбор живёт в `spoken.py`, рядом с распознаванием той же
+        # формы; пустая строка означает «фраза номером не является», и тогда
+        # прежний путь остаётся в силе.
+        spoken = plate_from_words(value)
+        if spoken:
+            return spoken
         return (value.strip().upper()
                 .translate(str.maketrans("ABEKMHOPCTYX", "АВЕКМНОРСТУХ")))
     if entity_type == "LOC":

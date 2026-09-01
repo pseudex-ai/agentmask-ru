@@ -104,7 +104,18 @@ def _group(words: list[str], index: int) -> tuple[int, int]:
     number: «девятьсот» opens a new hundreds group, and «восемь» before it was
     already closed.
     """
+    # НОЛЬ НИКОГДА НЕ ПРОДОЛЖАЕТ ГРУППУ, И ЭТО НЕ ТОНКОСТЬ. По-русски «двадцать
+    # ноль» не значит двадцать — так диктуют две цифры подряд. А сложение через
+    # `_UNITS` съедало слово целиком, потому что прибавляло к группе ноль:
+    # «карта двести двадцать ноль семьдесят…» превращалась в 220|70|…, и в
+    # инструмент уезжала карта из ПЯТНАДЦАТИ цифр вместо шестнадцати. Такая
+    # карта не проходит Луна, и клиент видит отказ платежа без объяснения.
+    #
+    # Проверяется здесь, в начале группы, а не в двух ветках ниже: ноль
+    # самостоятелен всегда — и после десятков, и после сотен, и сам по себе.
     word = words[index]
+    if _UNITS.get(word) == 0:
+        return 0, index + 1
     if word in _HUNDREDS:
         total = _HUNDREDS[word]
         index += 1
@@ -113,11 +124,13 @@ def _group(words: list[str], index: int) -> tuple[int, int]:
         if index < len(words) and words[index] in _TENS:
             total += _TENS[words[index]]
             index += 1
-            if index < len(words) and words[index] in _UNITS:
+            if (index < len(words) and words[index] in _UNITS
+                and _UNITS[words[index]] != 0):
                 total += _UNITS[words[index]]
                 index += 1
             return total, index
-        if index < len(words) and words[index] in _UNITS:
+        if (index < len(words) and words[index] in _UNITS
+                and _UNITS[words[index]] != 0):
             return total + _UNITS[words[index]], index + 1
         return total, index
     if word in _TEENS:
@@ -125,7 +138,8 @@ def _group(words: list[str], index: int) -> tuple[int, int]:
     if word in _TENS:
         total = _TENS[word]
         index += 1
-        if index < len(words) and words[index] in _UNITS:
+        if (index < len(words) and words[index] in _UNITS
+                and _UNITS[words[index]] != 0):
             total += _UNITS[words[index]]
             index += 1
         return total, index
@@ -263,6 +277,53 @@ def detect_spoken_email(text: str) -> list[Span]:
     """«воронина собака яндекс точка ру» — почта, продиктованная вслух."""
     return [Span(m.start(), m.end(), "EMAIL", m.group(0))
             for m in _SPOKEN_EMAIL.finditer(text)]
+
+
+# Как называют букву госномера вслух. Алфавит ГОСТа выбран так, что у каждой
+# буквы есть латинский двойник, поэтому список короткий и закрытый.
+_PLATE_LETTER_SOUND: dict[str, str] = {
+    "а": "А", "вэ": "В", "ве": "В", "е": "Е", "ка": "К", "эм": "М", "эн": "Н",
+    "о": "О", "эр": "Р", "эс": "С", "тэ": "Т", "у": "У", "ха": "Х",
+}
+
+
+def plate_from_words(phrase: str) -> str:
+    """Госномер, продиктованный вслух, в той форме, в какой его ждёт ГИБДД.
+
+    ЗАЧЕМ. Каноническая форма для PLATE — это `value.upper()`, и для написанного
+    номера она верна. Для произнесённого она возвращает РУССКУЮ ФРАЗУ: «а
+    двести шестьдесят три о ка регион шестьдесят шесть» уезжало в аргумент
+    инструмента вместо «А263ОК66». Ни одна база ГИБДД такого не примет, и агент
+    здесь ни при чём — он получил подмену номером и номер же передал.
+
+    Разбор идёт по той же форме, что и распознавание: буква, число, две буквы,
+    регион. Числа переводит `run_to_digits` — та же функция, что и для телефона,
+    так что второго перевода слов в цифры в движке не заводится.
+    """
+    words = [word for word in re.findall(r"[а-яёa-z]+", phrase.lower())
+             if word not in ("регион", "регионе", "региона")]
+    letters: list[str] = []
+    numbers: list[str] = []
+    run: list[str] = []
+    for word in words:
+        if word in _PLATE_LETTER_SOUND and not run:
+            letters.append((word, len(numbers)))
+            continue
+        if word in _UNITS or word in _TEENS or word in _TENS or word in _HUNDREDS:
+            run.append(word)
+            continue
+        if run:
+            numbers.append(run_to_digits(run))
+            run = []
+        if word in _PLATE_LETTER_SOUND:
+            letters.append((word, len(numbers)))
+    if run:
+        numbers.append(run_to_digits(run))
+    if len(letters) != 3 or len(numbers) != 2:
+        return ""
+    head = _PLATE_LETTER_SOUND[letters[0][0]]
+    pair = "".join(_PLATE_LETTER_SOUND[letters[index][0]] for index in (1, 2))
+    return f"{head}{numbers[0]}{pair}{numbers[1]}"
 
 
 def detect_spoken_plate(text: str) -> list[Span]:
