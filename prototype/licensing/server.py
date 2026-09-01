@@ -20,6 +20,7 @@ import os
 import secrets
 import time
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -112,22 +113,65 @@ if not _ADMIN_TOKEN:  # noqa: F821 - checked at import, before anything is serve
 
 
 # ВТОРОЙ ТОКЕН, С МЕНЬШИМИ ПРАВАМИ, ДЛЯ ВИТРИНЫ. Один общий секрет означал, что
-# компрометация витрины — а она единственная смотрит в интернет — отдаёт список
-# всех абонентов и массовые действия: приостановить, отозвать, пометить
-# неоплаченным. Витрине нужны пять ручек из одиннадцати, и ни одна из них не
-# массовая.
+# компрометация витрины — а она единственная смотрит в интернет — отдаёт СПИСОК
+# ВСЕХ АБОНЕНТОВ с их расходом.
 #
 # Это НЕ делает витрину безопасной: токен лежит у неё в окружении, и тот, кто
-# исполнил там код, его прочитает. Это ограничивает РАДИУС — выпустить себе
-# ключ он сможет, погасить всех клиентов нет.
+# исполнил там код, его прочитает. Это ограничивает РАДИУС.
 _STOREFRONT_TOKEN = os.environ.get("PSEUDEX_LICENSE_STOREFRONT_TOKEN", "")
 
-# Список БЕЛЫЙ: новая ручка по умолчанию требует полного токена, а не наследует
-# права по невнимательности того, кто её добавил.
-_STOREFRONT_PATHS = frozenset({
-    "/admin/issue", "/admin/revoke_key", "/admin/release",
-    "/admin/instances", "/admin/usage",
-})
+
+@dataclass(frozen=True)
+class AdminAction:
+    """Одна ручка админки: путь, метод и аудитория.
+
+    ОДНА ТАБЛИЦА ВМЕСТО ДВУХ РАЗЪЕХАВШИХСЯ СПИСКОВ. Белый список путей был
+    отдельным литералом, а витрина строила свои пути в другом репозитории и в
+    другом venv — сверять их было нечем. Разъезд стоил денег дважды и обоими
+    способами сразу:
+
+      * `/admin/resume` в списке НЕ БЫЛО, поэтому клиент платил, вебхук звал
+        `mark_paid`, тот получал 403 внутри `transaction.atomic()`, и счёт
+        оставался `draft` с непродлённой подпиской. Деньги списаны, шлюз стоит,
+        ЮKassa ретраит вечно с тем же результатом;
+      * витрина строила путь АРИФМЕТИКОЙ ПО СТРОКЕ статуса и для `revoked` и
+        `suspended` попадала в `/admin/revoked` и `/admin/suspended`, которых
+        не существует, — 404 даже под полным токеном.
+
+    ПОЧЕМУ `revoke` И `suspend` ВИТРИНЕ ТЕПЕРЬ МОЖНО. Прежнее обоснование —
+    «ни одна из них не массовая» — верно и для них: они бьют по одной
+    организации. А держатель витринного токена и так может остановить любого
+    клиента через `unpaid`, который в списке был и минует grace ровно так же.
+    Запрет не покупал ничего и создавал ровно тот класс расхождения, который
+    стоил денег. Настоящая ценность белого списка одна: `/admin/list` —
+    единственная ручка, отдающая КАТАЛОГ ВСЕХ АБОНЕНТОВ. Она и остаётся
+    операторской.
+
+    Правило по умолчанию не изменилось: новая ручка не получает витринных прав,
+    пока автор не решит её аудиторию, — только теперь нерешённая аудитория
+    роняет старт, а не тихо разъезжается.
+    """
+
+    path: str
+    method: str
+    storefront: bool
+
+
+ADMIN_ACTIONS: tuple[AdminAction, ...] = (
+    AdminAction("/admin/issue", "POST", True),
+    AdminAction("/admin/revoke_key", "POST", True),
+    AdminAction("/admin/revoke", "POST", True),
+    AdminAction("/admin/suspend", "POST", True),
+    AdminAction("/admin/unpaid", "POST", True),
+    AdminAction("/admin/resume", "POST", True),
+    AdminAction("/admin/release", "POST", True),
+    AdminAction("/admin/instances", "GET", True),
+    AdminAction("/admin/usage", "GET", True),
+    # Каталог абонентов. Единственная ручка, которой у витрины быть не должно.
+    AdminAction("/admin/list", "GET", False),
+)
+
+_STOREFRONT_PATHS = frozenset(a.path for a in ADMIN_ACTIONS if a.storefront)
 
 
 def _matches(presented: str, secret: str) -> bool:
@@ -161,7 +205,11 @@ def _require_admin(request: Request) -> None:
 
 
 admin_app = FastAPI(title="Pseudex licensing admin",
-                    dependencies=[Depends(_require_admin)])
+                    dependencies=[Depends(_require_admin)],
+                    # Автодокументация перечисляет все рычаги, а это
+                    # машинный API: читать её приходит только тот, кто
+                    # ищет, что тут можно нажать.
+                    docs_url=None, redoc_url=None, openapi_url=None)
 
 
 @app.get("/health")
@@ -483,3 +531,27 @@ async def admin_usage(request: Request) -> JSONResponse:
         "usage": STORE.usage_totals(org_id),
         "instances": STORE.instances(org_id),
     })
+
+
+def _check_admin_surface() -> None:
+    """Смонтированное обязано совпасть с объявленным — иначе процесс не встаёт.
+
+    КОД ПРОТИВ КОДА, А НЕ КОД ПРОТИВ ПАМЯТИ. Ручка, добавленная без строки в
+    `ADMIN_ACTIONS`, и строка без ручки — одинаково валят старт. Инвариант
+    детерминированный, поэтому в проде он упасть не может, не упав раньше в CI;
+    а разъезд, который стоил нам оплаченного и невозобновлённого обслуживания,
+    перестаёт быть тем, что замечают по жалобе клиента.
+    """
+    mounted = {(route.path, method)
+               for route in admin_app.routes
+               for method in (getattr(route, "methods", None) or set()) - {"HEAD", "OPTIONS"}
+               if getattr(route, "path", "").startswith("/admin")}
+    declared = {(action.path, action.method) for action in ADMIN_ACTIONS}
+    if mounted != declared:
+        raise RuntimeError(
+            "admin surface drift: смонтировано без объявления "
+            f"{sorted(mounted - declared)}, объявлено без ручки "
+            f"{sorted(declared - mounted)}")
+
+
+_check_admin_surface()
