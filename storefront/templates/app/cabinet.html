@@ -44,11 +44,17 @@
       {% if unreachable %}
         <div style="font-size:14px;color:var(--amber);line-height:1.6">Счётчики сейчас недоступны — лицензионный сервер не отвечает. Это не влияет на работу вашего контейнера: он продолжает маскировать на выданной аренде.</div>
       {% else %}
-        <div style="font-size:30px;font-weight:900;letter-spacing:-.02em">{{ used }}</div>
-        <div style="font-size:12.5px;color:var(--dim-2);margin-top:2px">значений защищено · ориентир тарифа {{ included }}</div>
+        <div style="font-size:30px;font-weight:900;letter-spacing:-.02em">{{ billable }}</div>
+        <div style="font-size:12.5px;color:var(--dim-2);margin-top:2px">запросов к начислению · выдано ёмкости {{ ceiling }}</div>
         <div class="meter"><i class="{% if percent >= 100 %}over{% endif %}" style="width:{{ percent }}%"></i></div>
-        <div style="font-size:12.5px;color:var(--dim-2);margin-top:10px">запросов через шлюз: {{ requests }}</div>
-        <div style="font-size:13px;color:var(--dim-2);margin-top:12px;line-height:1.6">Ориентир, а не лимит: превышение не ограничивает работу и не меняет счёт — подписка не зависит от объёма. Цифра приходит из ваших же контейнеров вместе с продлением аренды; мы её не измеряем и измерить не можем.</div>
+        <div style="font-size:12.5px;color:var(--dim-2);margin-top:10px">значений защищено: {{ used }} · ориентир тарифа {{ included }}</div>
+        {% if capacity_discount %}
+          <div style="font-size:13px;color:var(--dim-2);margin-top:12px;line-height:1.6">Ваши контейнеры подтвердили фактический расход, и это <b style="color:var(--text)">снизило начисление на {{ capacity_discount }}</b> запрос(ов) против выданной ёмкости.</div>
+        {% endif %}
+        {% if unacked_quanta %}
+          <div style="font-size:13px;color:var(--amber);margin-top:12px;line-height:1.6">Порций ёмкости без подтверждённого отчёта: {{ unacked_quanta }}. Пока отчёт не доходит, начисление идёт по выданной ёмкости, а не по фактическому расходу — проверьте исходящий доступ контейнера к лицензионному серверу.</div>
+        {% endif %}
+        <div style="font-size:13px;color:var(--dim-2);margin-top:12px;line-height:1.6">Начисление считается по ёмкости, которую выдали мы: контейнер обслуживает ровно столько, на сколько её получил. Отчёт ваших контейнеров работает в обратную сторону — он <b style="color:var(--text)">уменьшает</b> начисление до фактического расхода. Единица — запрос, поэтому эти цифры можно сверить с логом вашего собственного шлюза.</div>
       {% endif %}
     </div>
     <div>

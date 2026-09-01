@@ -225,6 +225,17 @@ class Invoice(models.Model):
     # subtraction. It is on the invoice rather than on the subscription because
     # it must survive re-issuing and voiding — the previous ISSUED invoice is
     # the watermark, not the current state of anything.
+    # ЁМКОСТЬ ЗА ПЕРИОД — ОСНОВАНИЕ БУДУЩЕГО НАЧИСЛЕНИЯ, записанное уже сейчас.
+    #
+    # Ставка за запрос — продуктовое решение, и оно ещё не принято; выдумывать
+    # её здесь нельзя. Но число, на котором она будет считаться, уже верное и
+    # уже проверяемое, и его надо ватермаркить С ЭТОГО МОМЕНТА: иначе первый же
+    # счёт по объёму придётся считать от накопительного итога, а это ровно та
+    # ошибка, из-за которой месяц двенадцатый выставлялся в тридцать четыре
+    # раза больше правды.
+    requests_billable_in_period = models.BigIntegerField(default=0)
+    requests_billable_at_period_end = models.BigIntegerField(default=0)
+
     values_at_period_end = models.BigIntegerField(default=0)
     # Kept alongside, not billed on: the cabinet shows both, and the rate
     # guardrail is expressed in requests even though the meter is not.

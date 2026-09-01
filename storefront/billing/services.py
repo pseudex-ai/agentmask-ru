@@ -284,6 +284,9 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     # державшийся на чужом поведении, обязан держаться на своём.
     values = max(0, _int_or_zero(reported.get("values")))
     requests = max(0, _int_or_zero(reported.get("requests")))
+    # То, на чём будет считаться объёмная часть, когда ставка будет назначена.
+    # Накопительное, как и `values`, поэтому за период — разница с ватермаркой.
+    billable = max(0, _int_or_zero(reported.get("capacity_billable")))
 
     # The counter is CUMULATIVE since the installation's first report. What this
     # period used is the difference from the previous invoice's watermark.
@@ -296,6 +299,8 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     # быть записана до клампов выше и тогда обнуляла бы каждый следующий
     # период навсегда.
     watermark = max(0, previous.values_at_period_end if previous else 0)
+    billable_watermark = max(
+        0, previous.requests_billable_at_period_end if previous else 0)
     # A counter that went BACKWARDS means the customer started from an empty
     # data directory — a new volume, a restore, a fresh deployment. Billing the
     # negative as zero and re-basing is the only reading that cannot overcharge.
@@ -322,6 +327,8 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
         values_in_period=used_this_period,
         total=_round(subscription_amount),
         due_at=(timezone.now() + timedelta(days=7)).date(),
+        requests_billable_in_period=max(0, billable - billable_watermark),
+        requests_billable_at_period_end=max(billable_watermark, billable),
         values_at_period_end=max(watermark, values),
         requests_at_period_end=requests,
     )

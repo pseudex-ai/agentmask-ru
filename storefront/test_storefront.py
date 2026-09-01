@@ -508,11 +508,37 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
           f"watermark=500 reported={second.values_at_period_end} "
           f"in_period={second.values_in_period}")
 
+    from unittest.mock import patch
+
+    # ЁМКОСТЬ ВИДНА КЛИЕНТУ И ВАТЕРМАРКИТСЯ НА СЧЁТЕ. Ставка ещё не назначена —
+    # это продуктовое решение, — но число, на котором она будет считаться, уже
+    # верное, и его надо ватермаркить с этого момента: иначе первый же счёт по
+    # объёму пришлось бы считать от накопительного итога.
+    with patch("billing.licensing.usage",
+               return_value={"usage": {"capacity_billable": 4000, "values": 10,
+                                       "requests": 4000}}):
+        metered = build_invoice(org, date.today(), date.today() + timedelta(days=30))
+    metered.state = InvoiceModel.ISSUED
+    metered.save(update_fields=["state"])
+    with patch("billing.licensing.usage",
+               return_value={"usage": {"capacity_billable": 6500, "values": 10,
+                                       "requests": 6500}}):
+        metered_next = build_invoice(org, date.today(), date.today() + timedelta(days=30))
+    check("the invoice watermarks the capacity the volume charge will use",
+          metered_next.requests_billable_in_period == 2500,
+          f"в периоде {metered_next.requests_billable_in_period}, "
+          f"ватермарка {metered_next.requests_billable_at_period_end}")
+
+    cabinet_page = client.get("/app/").content.decode()
+    check("the cabinet shows what is billed and what it is capped by",
+          "запросов к начислению" in cabinet_page
+          and "выдано ёмкости" in cabinet_page,
+          "без обеих границ фраза «отчёт — ваша защита» остаётся обещанием")
+
     # ОТРАВЛЕННЫЙ ОТВЕТ НЕ ДЕЛАЕТ КЛИЕНТА ВЕЧНО БЕСПЛАТНЫМ. Отрицательное
     # значение раньше записывалось как ПОСТОЯННАЯ ватермарка, после чего каждый
     # следующий период давал ноль. Вход теперь проверяется, но инвариант,
     # державшийся на чужом поведении, обязан держаться на своём.
-    from unittest.mock import patch
     poison = {"usage": {"values": -10 ** 9, "requests": -10 ** 9}}
     with patch("billing.licensing.usage", return_value=poison):
         poisoned = build_invoice(org, date.today(), date.today() + timedelta(days=30))

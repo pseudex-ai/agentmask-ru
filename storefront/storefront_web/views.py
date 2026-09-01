@@ -429,6 +429,14 @@ def cabinet(request):
     used = int(reported.get("values", 0))
     requests = int(reported.get("requests", 0))
     included = subscription.plan.included_values if subscription else 0
+    # ЁМКОСТЬ: НА ЧЁМ СТРОИТСЯ СЧЁТ И ЧЕМ ОНО ЗАЖАТО. Клиент должен видеть обе
+    # границы, потому что расстояние между ними — это ровно та скидка, которую
+    # он получает за подтверждённые отчёты. Без этого фраза «отчёт — ваша
+    # защита» остаётся обещанием.
+    billable = int(reported.get("capacity_billable", 0) or 0)
+    ceiling = int(reported.get("capacity_granted", 0) or 0)
+    acknowledged = int(reported.get("capacity_acked", 0) or 0)
+    unacked = int(reported.get("capacity_unacked_quanta", 0) or 0)
     return render(request, "app/cabinet.html", {
         "instances": slots,
         "organization": organization,
@@ -437,8 +445,15 @@ def cabinet(request):
         "invoices": organization.invoices.all()[:12],
         "used": used,
         "requests": requests,
+        "billable": billable,
+        "ceiling": ceiling,
+        "acknowledged": acknowledged,
+        "unacked_quanta": unacked,
+        # Сколько клиент НЕ платит благодаря тому, что его контейнеры
+        # отчитываются. Ноль здесь значит, что отчёты не доходят.
+        "capacity_discount": max(0, ceiling - billable),
         "included": included,
-        "percent": min(100, round(used / included * 100)) if included else 0,
+        "percent": min(100, round(billable / included * 100)) if included else 0,
         "unreachable": unreachable,
         "image": settings.DOCKER_IMAGE,
         "license_url_env": (f"-e PSEUDEX_LICENSE_URL={settings.LICENSE_URL} "
