@@ -113,6 +113,7 @@ from pseudex.redact import (  # noqa: E402
     unmask_text,
 )
 from pseudex.vault import Vault  # noqa: E402
+from bench.agentpii3 import rewrite  # noqa: E402
 from testkit import load_dev_bundle  # noqa: E402
 
 if __package__ in (None, ""):
@@ -290,6 +291,40 @@ class Masked:
     text: str
     masked: str
     pieces: tuple[Piece, ...]
+
+
+# КАК ПРИБОР МОДЕЛИРУЕТ МОДЕЛЬ. `True` — подмена переписывается так, как её
+# переписывает настоящая модель (`rewrite.py`); `False` — прежнее допущение
+# «копирует дословно», оставленное ради одного сравнения: показать, на сколько
+# это допущение завышало ось 2. По умолчанию честный режим.
+REWRITE_LIKE_A_MODEL = True
+
+
+def _model_writes(seen: str, expected: str, argument: str, how: str,
+                  item: schema.PiiItem | None, key: str) -> str:
+    """Что модель ПОЛОЖИТ в аргумент, увидев подмену `seen`.
+
+    Три ветки, и каждая отвечает форме, которую живой прогон показал:
+
+      1. Поле схемы называет ЧАСТЬ адреса (`street`, `house`, `flat`) — модель
+         кладёт туда соответствующую часть подмены. Пустая часть (у подмены нет
+         подъезда) остаётся пустой: подставить туда всю фразу значило бы
+         утверждать, что модель кладёт весь адрес в поле `entrance`, а живьём
+         она кладёт выдуманное число.
+      2. Поле принимает адрес целиком — модель его ПЕРЕФОРМАТИРУЕТ.
+      3. Поле принимает часть имени — модель берёт слово той же позиции.
+
+    Вне этих форм подмена копируется дословно, как и раньше.
+    """
+    if not REWRITE_LIKE_A_MODEL or item is None:
+        return seen
+    if item.type == "LOC":
+        if rewrite.role_of(argument):
+            return rewrite.decompose_for_role(seen, argument)
+        return rewrite.reformat_address(seen, key)
+    if item.type == "NAME" and how == "часть значения":
+        return rewrite.name_part(seen, item.value, expected)
+    return seen
 
 
 def _mask_message(text: str, detector: Detector, vault: Vault) -> Masked:
@@ -553,7 +588,11 @@ def _score_call(case: schema.Case, call: schema.ExpectedCall,
         # and one defect moving two numbers leaves a reader unable to tell how
         # many defects there were.
         touched[argument] = seen != raw
-        model_args[argument] = seen if seen != raw else expected
+        model_args[argument] = (
+            _model_writes(seen, expected, argument, where.how,
+                          by_id.get(where.item_id or ""),
+                          f"{case.id}|{call.name}|{argument}")
+            if seen != raw else expected)
 
     restored = _restore_call(call, model_args, vault)
 
@@ -1395,12 +1434,18 @@ def main() -> int:
     parser.add_argument("--judge", default="deterministic",
                         choices=("deterministic", "sdk"),
                         help="кто судит ось 3")
+    parser.add_argument("--verbatim-model", action="store_true",
+                        help="прежнее допущение: модель копирует подмену "
+                             "дословно. Только для сравнения — оно "
+                             "завышает ось 2 на ~19 пунктов")
     parser.add_argument("--judge-model", default="claude-sonnet-5")
     parser.add_argument("--judge-budget", type=float, default=2.0,
                         help="потолок трат судьи в долларах, жёсткий")
     parser.add_argument("--judge-cap", type=float, default=0.05,
                         help="потолок на один вердикт")
     args = parser.parse_args()
+    global REWRITE_LIKE_A_MODEL
+    REWRITE_LIKE_A_MODEL = not args.verbatim_model
 
     everything, digest = _load(Path(args.corpus))
     cases = schema.tier(everything, _ladder(Path(args.ladder)), args.tier)

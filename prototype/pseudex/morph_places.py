@@ -646,11 +646,31 @@ def match_signature(phrase: str) -> str:
     number is appended because two streets can share a stem, and it is a number,
     so no inflection touches it.
     """
-    digits = "".join(ch for ch in phrase if ch.isdigit())
+    stems, digits = signature_parts(phrase)
+    return "|".join(sorted(stems)) + "|" + "".join(digits)
+
+
+def signature_parts(phrase: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Основы и числа фразы по отдельности — то, из чего склеен ключ выше.
+
+    ВЫДЕЛЕНО, ЧТОБЫ ЧАСТЬ АДРЕСА МОЖНО БЫЛО ИСКАТЬ. Ключ целой фразы не находит
+    фрагмент по построению: он несёт ВСЕ цифры, поэтому «улица Тополиная» даёт
+    `тополиный|`, а «49» даёт `|49`, и ни один из них не равен складскому
+    `тополиный|49`. Схемы инструментов адрес именно разбирают — `street`,
+    `house`, `entrance` отдельными полями, — и на живом прогоне это 50 из 54
+    неразрешённых аргументов. Части индексируются отдельно, и фрагмент ищется
+    по ним.
+
+    Родовые слова («улица», «ул.», «дом») выброшены из обеих половин: они не
+    отличают один адрес от другого и меняются от того, как модель перепишет
+    фразу.
+    """
+    digits = tuple(re.findall(r"\d+", phrase))
     stems: list[str] = []
     for token in re.findall(r"[А-Яа-яЁё]+", phrase):
         lowered = token.lower()
-        if lowered in _GENERIC or _GENERIC_STEMS.match(lowered):
+        if (lowered in _GENERIC or lowered in _SIGNATURE_NOISE
+                or _GENERIC_STEMS.match(lowered)):
             continue
         parses = MORPH.parse(token)
         if not parses:
@@ -659,7 +679,7 @@ def match_signature(phrase: str) -> str:
         geo = [p for p in parses if "Geox" in p.tag.grammemes]
         best = max(geo or parses, key=lambda p: p.score)
         stems.append(best.normal_form.lower())
-    return "|".join(sorted(stems)) + "|" + digits
+    return tuple(stems), digits
 
 
 # The generic word in any of its forms — dropped from the signature because it
@@ -668,3 +688,22 @@ _GENERIC_STEMS = re.compile(
     r"(?i)^(?:улиц|проспект|переул|переулк|бульвар|шоссе|проезд|площад|"
     r"набережн|алле|лини|просек|тупик|квартал|микрорайон)"
 )
+
+# СЛОВА, КОТОРЫЕ НЕ ОТЛИЧАЮТ ОДИН АДРЕС ОТ ДРУГОГО. Сокращения родовых слов и
+# структурные маркеры записи. Выкидываются ТОЛЬКО из сигнатуры и ТОЛЬКО точным
+# совпадением, а не префиксом, как `_GENERIC_STEMS`: односимвольный префикс «д»
+# съел бы «Дзержинского», а «к» — «Кирова».
+#
+# ПОЧЕМУ ЭТО ВАЖНО. Модель переписывает адрес своими словами, и «улица» у неё
+# становится «ул.», а перед номером появляется «д.». В сигнатуре «ул» оставалось
+# основой, а «д» pymorphy3 нормализует в «далее» — так «улица Тополиная 49» и
+# «ул. Тополиная, д. 49» получали РАЗНЫЕ ключи, восстановление промахивалось, и
+# подмена уходила в инструмент клиента. 35 из 43 случаев, когда агент назвал
+# клиенту фейковый адрес как его собственный.
+_SIGNATURE_NOISE = frozenset({
+    "ул", "пр", "прт", "пр-т", "просп", "пер", "наб", "б", "бр", "б-р", "ш",
+    "пл", "мкр", "туп",
+    "дом", "д", "корпус", "корп", "кор", "к", "строение", "стр", "владение",
+    "вл", "квартира", "кв", "офис", "оф", "помещение", "пом", "комната",
+    "комн", "литер", "лит", "подъезд", "под", "этаж",
+})

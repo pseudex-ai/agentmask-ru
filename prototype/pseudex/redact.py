@@ -223,22 +223,43 @@ _PLACE_RUN = re.compile(LOC_TOKEN_PATTERN)
 
 
 def _place_windows(text: str, start: int, end: int) -> list[tuple[int, int]]:
-    """Framings of one address run: as matched, plus a following «, кв. N», plus
-    the preceding «Город, ». Deduplicated, longest first so the fullest framing
-    wins the overlap resolution below."""
+    """Framings of one address run: as matched, plus a following house number,
+    plus a following «, кв. N», plus the preceding «Город, ». Deduplicated,
+    longest first so the fullest framing wins the overlap resolution below.
+
+    THE HOUSE NUMBER NEEDED ITS OWN FRAMING because the minted pattern writes it
+    bare («улица Тополиная 49») and the model writes it with a marker («улица
+    Тополиная, д. 49», «дом 49»). The marker is outside `LOC_TOKEN_PATTERN`, so
+    the run stopped before the number, the signature lost it, and the address
+    resolved to nothing — a fake street handed to the customer's tool. Extending
+    the window here rather than widening the minted pattern keeps the two
+    concerns apart: that pattern says what we MINT, this one says what a model
+    might have WRITTEN.
+    """
     candidates = {(start, end)}
-    tail = _FLAT_TAIL.match(text, end)
-    if tail is not None:
-        candidates.add((start, tail.end()))
+    ends = [end]
+    house = _HOUSE_TAIL.match(text, end)
+    if house is not None:
+        ends.append(house.end())
+    for stop in list(ends):
+        candidates.add((start, stop))
+        tail = _FLAT_TAIL.match(text, stop)
+        if tail is not None:
+            candidates.add((start, tail.end()))
+            ends.append(tail.end())
     head = _CITY_HEAD.search(text[:start])
     if head is not None and head.end() == start:
-        candidates.add((head.start(), end))
-        if tail is not None:
-            candidates.add((head.start(), tail.end()))
+        for stop in ends:
+            candidates.add((head.start(), stop))
     return sorted(candidates, key=lambda pair: pair[1] - pair[0], reverse=True)
 
 
 _FLAT_TAIL = re.compile(r",?\s*(?:кв|квартир\w*|офис\w*|оф)\.?\s*\d{1,4}")
+# A house number as a MODEL writes it: bare, or behind «д.» / «дом» / «влад.».
+# Bounded to four digits and never spanning a sentence, so it cannot swallow an
+# order number that happens to follow the address.
+_HOUSE_TAIL = re.compile(r",?\s*(?:(?:д|дом|вл|влад|владение)\.?\s*)?\d{1,4}"
+                         r"(?:/\d{1,3})?[а-яё]?(?![\w])")
 _CITY_HEAD = re.compile(r"(?-i:[А-ЯЁ])[а-яё-]+,\s*$")
 
 
@@ -304,6 +325,24 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True) -> str:
     # guessing. A miss costs one indexed point query that returns nothing, so
     # offering the vault three or four framings of the same text is cheap and
     # removes the guess entirely.
+    # A NAME WINDOW WITH A HOUSE NUMBER AFTER IT IS AN ADDRESS WITH THE GENERIC
+    # WORD DROPPED. «Кленовая, 162» — the model shortened «улица Кленовая 162»
+    # and `_PLACE_RUN` cannot see it, because every one of its alternatives needs
+    # a generic word. The window is offered with a PLACE key only: a person
+    # followed by a number («Иванов, 25 лет») produces a key no address token
+    # has, and the miss costs one indexed query.
+    for start, end, surface in list(windows):
+        if " " in surface:
+            continue
+        for low, high in _place_windows(text, start, end):
+            if (low, high) == (start, end) or (low, high) in keys:
+                continue
+            try:
+                keys[(low, high)] = [place_key(text[low:high])]
+            except Exception:  # noqa: BLE001
+                continue
+            windows.append((low, high, text[low:high]))
+
     for match in _PLACE_RUN.finditer(text):
         for start, end in _place_windows(text, match.start(), match.end()):
             surface = text[start:end]

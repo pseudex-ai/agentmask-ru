@@ -1419,14 +1419,31 @@ class Vault:
                         (self._customer, self._conversation, part, canonical,
                          time.time()))
                     self._expire_place_parts()
+            # ЧАСТИ ПОДМЕНЫ — для NAME по словам, для LOC по сигнатуре.
+            #
+            # ПОЧЕМУ АДРЕС ТОЖЕ. Схемы инструментов раскладывают его по полям —
+            # `dispatch_car(street, house, entrance)` — и `unmask_arguments`
+            # обходит листья JSON независимо, так что «улица Тополиная» и «49»
+            # приходят на разрешение поодиночке. Ключ целой фразы несёт ВСЕ её
+            # цифры и фрагменту не равен по построению: 50 из 54 неразрешённых
+            # аргументов живого прогона — ровно это. Без индекса частей фрагмент
+            # не только не разрешался, но и не попадал в `residual_tokens`, то
+            # есть фейковый адрес уходил в CRM клиента с 200 и пустым журналом.
+            #
+            # Части нормализованы ЛЕММОЙ, а не casefold: модель склоняет адрес
+            # («улицу Тополиную»), и сравнение написанного не нашло бы ничего.
+            fake_parts: set[str] = set()
             if entity_type == "NAME":
                 fake_parts = {word.casefold() for word in token.split()
                               if len(word) > 2}
-                if fake_parts:
-                    self._conn.executemany(
-                        "INSERT OR IGNORE INTO token_parts (customer, part, token) "
-                        "VALUES (?,?,?)",
-                        [(self._customer, part, token) for part in fake_parts])
+            elif entity_type == "LOC":
+                stems, numbers = morph_places.signature_parts(token)
+                fake_parts = set(stems) | set(numbers)
+            if fake_parts:
+                self._conn.executemany(
+                    "INSERT OR IGNORE INTO token_parts (customer, part, token) "
+                    "VALUES (?,?,?)",
+                    [(self._customer, part, token) for part in fake_parts])
             self._conn.commit()
             return token
 
@@ -1443,6 +1460,38 @@ class Vault:
             raise RuntimeError(
                 f"lost the insert race for {canonical!r} but no row followed")
         return row[0]
+
+    def place_owner(self, candidate: str) -> str | None:
+        """Адресная подмена, ЧАСТЬЮ которой является этот фрагмент.
+
+        Тот же вопрос, что `residual_of` задаёт про имя, и то же единственное
+        правило, которое делает ответ безопасным: все части фрагмента должны
+        сойтись на ОДНОЙ подмене. Улица без дома у клиента с двумя адресами на
+        ней даёт двух владельцев, и тогда ответа нет — вернуть любого из них
+        значило бы отправить курьера к тому, кто просто говорил первым.
+
+        Части берутся сигнатурой, а не написанием: поле схемы приходит
+        склонённым («улицу Тополиную») и сокращённым («ул. Тополиная»), и
+        сравнение строк не нашло бы ничего.
+        """
+        stems, numbers = morph_places.signature_parts(candidate)
+        parts = [*stems, *numbers]
+        if not parts:
+            return None
+        with self._lock:
+            owners: list[set[str]] = []
+            for part in parts:
+                rows = self._conn.execute(
+                    "SELECT t.token FROM token_parts AS t "
+                    "JOIN tokens AS k ON k.customer=t.customer AND k.token=t.token "
+                    "WHERE t.customer=? AND t.part=? AND k.entity_type='LOC'",
+                    (self._customer, part),
+                ).fetchall()
+                if not rows:
+                    return None
+                owners.append({row[0] for row in rows})
+        common = set.intersection(*owners)
+        return next(iter(common)) if len(common) == 1 else None
 
     def residual_of(self, candidate: str) -> str | None:
         """The minted token this leftover string is a piece of, if any.

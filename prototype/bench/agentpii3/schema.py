@@ -338,7 +338,9 @@ BREAK_KINDS: tuple[str, ...] = (
     "other_person",        # resolved to a REAL value belonging to someone else
     "renumbered",          # went in spelled out, came back in digits (or back)
     "inflected",           # resolved, but declined or otherwise re-formed
-    "truncated",           # a prefix came back; the tail leaked or was lost
+    "head_junk",           # the value came back with words glued to its FRONT
+    "tail_junk",           # ... or to its END. Both are our span, not the model
+    "truncated",           # part of the value did not come back at all
     "space_repaired",      # differs only in whitespace
     "lookalike_repaired",  # differs only by a Latin/Cyrillic twin
     "call_absent",         # the model never made the call — not the gateway
@@ -1180,7 +1182,18 @@ def classify_break(item: PiiItem, expected: str, restored: str | None,
     if (restored.lower().translate(_LOOKALIKE)
             == expected.lower().translate(_LOOKALIKE)):
         return "lookalike_repaired"
-    if expected.startswith(restored) or restored.startswith(expected):
+    # ЧТО ИМЕННО ЛИШНЕЕ И С КАКОЙ СТОРОНЫ. Прежде «пришло больше, чем ждали» и
+    # «пришло меньше» лежали в одном `truncated`, а всё, что не было префиксом,
+    # падало в `inflected` — и 358 «склонений» офлайнового прогона оказались
+    # захваченными филлерами и глаголами: «аааа ленина двадцать семь»,
+    # «находитсяя репина двадцать», «советская 66 а». Читатель чинил склонение,
+    # которого там нет. Лишнее с краю — это ГРАНИЦА НАШЕГО СПАНА, и она чинится
+    # в другом файле, чем падеж.
+    if restored.startswith(expected):
+        return "tail_junk"
+    if restored.endswith(expected):
+        return "head_junk"
+    if expected.startswith(restored) or expected.endswith(restored):
         return "truncated"
     return "inflected"
 
