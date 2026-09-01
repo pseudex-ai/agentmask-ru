@@ -238,7 +238,10 @@ def gate_p2b() -> bool:
     отработал."""
     beacons = ["license_expired", "capacity_exhausted", "instance_limit",
                "bundle_corrupt", "no valid detection lease",
-               "detection assets unloaded"]
+               "detection assets unloaded",
+               "lease signature is not ours", "this is not a capacity grant",
+               "capacity grant answers a different request",
+               "report secret does not match its signed hash"]
     plain = " ; ".join(
         f"echo \"P:{word}:$(grep -alr -F -- '{word}' /app 2>/dev/null | head -1)\""
         for word in beacons)

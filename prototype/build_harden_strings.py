@@ -41,6 +41,19 @@ _SENSITIVE: frozenset[str] = frozenset({
     "instance_limit", "release_budget",
     "no valid detection lease", "no detection lease was ever obtained",
     "detection assets unloaded — /mask now returns 503",
+    # Сообщения крипто/лицензионных проверок — карта к местам, которые патчат.
+    "lease signature is not ours — refusing to load the bundle",
+    "lease carries no acceptable signature", "lease carries no signature",
+    "lease carries no report secret", "lease carries no issue time or lifetime",
+    "report secret does not match its signed hash",
+    "this is not a capacity grant",
+    "capacity grant answers a different request",
+    "capacity grant carries no acceptable signature",
+    "nonce-wrapped bundle is too short",
+    "lease renewed: %s bundle=%s",
+    "lease terminated (%s): %s — refusing further requests",
+    "lease renewal failed, running on the leased bundle: %s",
+    "capacity grant %d: +%d (reserve %d), ceiling %d, consumed %d",
 })
 
 
@@ -58,6 +71,15 @@ class _Marker(ast.NodeVisitor):
 
     def __init__(self) -> None:
         self.hits: list[tuple[int, int, int, int, str]] = []
+
+    def visit_JoinedStr(self, node: ast.JoinedStr) -> None:
+        # НЕ ЗАХОДИМ ВНУТРЬ f-СТРОК. Их литеральные части — это Constant-узлы, но
+        # заменить их фрагмент на `bytes.fromhex(...)` = сломать f-строку
+        # синтаксически. Такие маяки переводятся в явную конкатенацию в
+        # исходнике (см. `no valid detection lease`), а не трогаются здесь.
+        for value in node.values:
+            if isinstance(value, ast.FormattedValue):
+                self.visit(value.value)
 
     def visit_Constant(self, node: ast.Constant) -> None:
         if isinstance(node.value, str) and node.value in _SENSITIVE:
