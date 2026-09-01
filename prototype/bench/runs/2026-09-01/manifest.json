@@ -1,0 +1,311 @@
+{
+  "date": "2026-09-01T13:28:56+0500",
+  "git_head": "7600eb56487f5796b00e70f94de1b5995605f914",
+  "git_dirty": false,
+  "python": "3.12.12",
+  "inputs": {
+    "nerel": "dir",
+    "massive_test": "d53f1c58d753e64b",
+    "pii_bench": "ca9792598ef962da",
+    "voice_addresses": "65e5abdd09a1cb05",
+    "rudevices_addresses": "771e91868c88af36",
+    "gate_labels": "d2133f5d45555fad",
+    "agentpii3_corpus": "4f331868a0abaa85",
+    "nerel_prose": "b3f9c06c44deb369"
+  },
+  "steps": [
+    {
+      "step": "00-make-golden",
+      "why": "порождает dataset.json",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 0.1,
+      "argv": [
+        "make_dataset.py"
+      ]
+    },
+    {
+      "step": "00-make-dirty",
+      "why": "порождает dirty.json",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 0.0,
+      "argv": [
+        "make_dirty.py"
+      ]
+    },
+    {
+      "step": "00-make-stress",
+      "why": "порождает stress.json",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 0.0,
+      "argv": [
+        "make_stress.py"
+      ]
+    },
+    {
+      "step": "00-make-holdout",
+      "why": "порождает holdout.json",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 0.0,
+      "argv": [
+        "make_holdout.py"
+      ]
+    },
+    {
+      "step": "00-make-addr-fresh",
+      "why": "адресный набор на СВЕЖЕМ зерне — по нему не настраивались",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 0.0,
+      "argv": [
+        "make_addr_real.py",
+        "addr_s41.json",
+        "41"
+      ]
+    },
+    {
+      "step": "10-golden",
+      "why": "золотой набор: полнота и точность по типам",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 1.4,
+      "argv": [
+        "eval_detect.py"
+      ]
+    },
+    {
+      "step": "11-dirty",
+      "why": "грязный набор: F2, ложные маски, тип-слепая утечка",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 2.7,
+      "argv": [
+        "eval_dirty.py"
+      ]
+    },
+    {
+      "step": "12-stress",
+      "why": "состязательный набор, построен ЛОМАТЬ детектор",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 3.8,
+      "argv": [
+        "eval_stress.py"
+      ]
+    },
+    {
+      "step": "13-addr-fresh-seed",
+      "why": "адреса на зерне, которого движок не видел",
+      "status": "FAIL",
+      "rc": 1,
+      "seconds": 3.8,
+      "argv": [
+        "eval_dirty.py",
+        "addr_s41.json"
+      ]
+    },
+    {
+      "step": "14-overmasking",
+      "why": "чистая деловая речь: сколько лишнего маскируем, с интервалом",
+      "status": "FAIL",
+      "rc": 1,
+      "seconds": 4.4,
+      "argv": [
+        "test_overmasking.py"
+      ]
+    },
+    {
+      "step": "20-nerel-recall",
+      "why": "полнота на корпусе, который писали не мы",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 21.8,
+      "argv": [
+        "bench/eval_external_ner.py",
+        "/Users/igor/.cache/pseudex-bench/nerel/NEREL-v1.1",
+        "--splits",
+        "dev,test"
+      ]
+    },
+    {
+      "step": "21-nerel-precision",
+      "why": "что мы маскируем из того, чего аннотатор не размечал",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 119.7,
+      "argv": [
+        "bench/eval_external_precision.py",
+        "/Users/igor/.cache/pseudex-bench/nerel/NEREL-v1.1"
+      ]
+    },
+    {
+      "step": "22-massive-ru",
+      "why": "16 521 реплика, слоты размечены третьей стороной, ноль заглавных",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 12.4,
+      "argv": [
+        "bench/eval_massive_ru.py"
+      ]
+    },
+    {
+      "step": "23-pii-bench",
+      "why": "чужой русский корпус ПД в чатовом регистре",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 11.0,
+      "argv": [
+        "bench/eval_piibench.py"
+      ]
+    },
+    {
+      "step": "24-voice",
+      "why": "настоящие звонки: адреса, произнесённые вслух",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 8.3,
+      "argv": [
+        "bench/voice/score.py"
+      ]
+    },
+    {
+      "step": "25-gate",
+      "why": "600 вхождений живой речи, размеченных РУКОЙ: потолок словарного гейта",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 5.0,
+      "argv": [
+        "bench/gate/sheet.py"
+      ]
+    },
+    {
+      "step": "26-prose-volume",
+      "why": "новостная проза объёмом: над-маскирование там, где ПД нет вовсе",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 77.9,
+      "argv": [
+        "bench/eval_overmasking_volume.py",
+        "/Users/igor/.cache/pseudex-bench/nerel_prose.jsonl"
+      ]
+    },
+    {
+      "step": "30-noise-ladder",
+      "why": "ступени шума живого чата: где детекция падает",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 5.3,
+      "argv": [
+        "bench/eval_noise_ladder.py",
+        "--dataset",
+        "dataset.json"
+      ]
+    },
+    {
+      "step": "31-noise-by-type",
+      "why": "та же лестница ПО ТИПАМ — одно число прячет виновника",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 6.3,
+      "argv": [
+        "bench/eval_noise_by_type.py",
+        "dataset.json"
+      ]
+    },
+    {
+      "step": "32-metamorphic",
+      "why": "инвариантность к переписыванию входа",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 19.8,
+      "argv": [
+        "bench/eval_metamorphic.py"
+      ]
+    },
+    {
+      "step": "33-gar-cut",
+      "why": "чем платится отсечение словаря улиц по частоте",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 5.4,
+      "argv": [
+        "bench/eval_gar_cut.py"
+      ]
+    },
+    {
+      "step": "34-fuzz-registers",
+      "why": "одни и те же значения × стили письма",
+      "status": "FAIL",
+      "rc": 1,
+      "seconds": 4.3,
+      "argv": [
+        "bench/fuzz_registers.py"
+      ]
+    },
+    {
+      "step": "40-v3-offline",
+      "why": "три оси на всём корпусе, детерминированный судья",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 140.8,
+      "argv": [
+        "bench/agentpii3/score.py",
+        "bench/agentpii3/corpus.json"
+      ]
+    },
+    {
+      "step": "50-loop",
+      "why": "ПД не доходят до модели, вызов инструмента жив",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 0.1,
+      "argv": [
+        "test_loop.py"
+      ]
+    },
+    {
+      "step": "51-product",
+      "why": "тенантность, аудит, потоковая детокенизация",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 4.4,
+      "argv": [
+        "test_product.py"
+      ]
+    },
+    {
+      "step": "52-vault",
+      "why": "канонизация и переживание перезапуска",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 0.1,
+      "argv": [
+        "vault_test.py"
+      ]
+    },
+    {
+      "step": "53-persona",
+      "why": "дефекты, найденные прогоном персон",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 5.1,
+      "argv": [
+        "test_persona_defects.py"
+      ]
+    },
+    {
+      "step": "54-collisions",
+      "why": "подмена, совпавшая с настоящим значением: обе половины",
+      "status": "OK",
+      "rc": 0,
+      "seconds": 10.1,
+      "argv": [
+        "test_collisions.py"
+      ]
+    }
+  ],
+  "note": "Прогон сделан ДО коммита правки коллизий; код тот же самый, поэтому здесь стоит sha коммита, в который он вошёл. Живой ярус (60-*) запущен отдельно и дописан после."
+}

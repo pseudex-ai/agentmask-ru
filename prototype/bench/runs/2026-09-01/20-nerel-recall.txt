@@ -1,0 +1,21 @@
+$ python3 bench/eval_external_ner.py /Users/igor/.cache/pseudex-bench/nerel/NEREL-v1.1 --splits dev,test
+
+corpus: /Users/igor/.cache/pseudex-bench/nerel/NEREL-v1.1  splits=dev,test  docs=187
+
+GOLD TYPE     MENTIONS   CAUGHT   RECALL  SHIELDED   note
+------------------------------------------------------------------------
+PERSON            1908     1766   92.6%    92.9%   
+DATE              1049        0    0.0%     4.0%   
+CITY               447        4    0.9%     4.3%   low BY DESIGN (bare toponym != PII)
+AGE                275       19    6.9%    10.2%   
+FACILITY           148       22   14.9%    33.8%   low BY DESIGN (bare toponym != PII)
+LOCATION           125        0    0.0%     1.6%   low BY DESIGN (bare toponym != PII)
+------------------------------------------------------------------------
+RECALL — типизировано как нужный тип. SHIELDED — закрыто хоть чем-то,
+то есть до модели не дошло. Расходятся они там, где мы защитили, но не
+назвали человеком; утечка — это только падение SHIELDED.
+
+PERSON, Cyrillic-only subset (our actual population): 1715/1835 = 93.5%
+
+sample PERSON misses: ['Строгановское', 'Мессии', 'Уортмане', 'Джонсон', 'Джонсон', 'Джонсон', 'Стефани', 'Джонсон', 'Мадонна', 'Мадонны', 'Мадонна', 'Тома', 'Том', 'Тома', 'Б.Обама', 'Фрули-Пулли', 'Mimeng', 'Mimeng', 'Mimeng', '咪 蒙']
+

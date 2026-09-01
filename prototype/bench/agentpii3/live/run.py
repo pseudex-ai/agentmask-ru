@@ -907,7 +907,7 @@ def _came_back(required: str, kind: str, reply: str) -> bool:
 
 
 def _answer_request(case: schema.Case, reply: str, vault: Vault,
-                    ) -> score.JudgeRequest:
+                    minted: tuple[str, ...]) -> score.JudgeRequest:
     """The reply as the CUSTOMER sees it, with the vault facts already decided.
 
     THE VAULT FACTS ARE NOT THE JUDGE'S BUSINESS. Which strings this dialogue
@@ -932,6 +932,13 @@ def _answer_request(case: schema.Case, reply: str, vault: Vault,
         must_not_contain=case.final.must_not_contain,
         closed_answer=case.final.answer,
         substitutes_present=surviving,
+        # ВСЕ отчеканенные, не только уцелевшие в тексте. Судья, которому дают
+        # лишь то, что уже нашёл строковый поиск, отвечает на заданный вопрос
+        # вместо незаданного — это и есть `judge.only_what_the_vault_matched`.
+        # Поле появилось в `score.JudgeRequest` вместе с починкой судьи, а этот
+        # вызов остался прежним, и живой прогон падал на первом же случае с
+        # TypeError — после того как за агента уже заплачено.
+        substitutes_minted=minted,
         residual_present=opaque,
         missing=missing)
 
@@ -1147,7 +1154,7 @@ async def _one_case(case: schema.Case, lead: schema.Case | None,
     # AXIS 3.
     reply = gateway.restore_text(agent.final_text)
     record["answer_text"] = reply
-    request = _answer_request(case, reply, gateway.vault)
+    request = _answer_request(case, reply, gateway.vault, gateway.substitutes())
     verdict, judgement, trouble = await _judge_answer(
         request, gateway.substitutes(), config)
     judge_cost = judgement.cost_usd if judgement else 0.0
