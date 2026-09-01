@@ -512,6 +512,14 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     # которую докстринг `_store_usage` уже объявляет для плохой подписи: спор о
     # биллинге не имеет права останавливать конечного пользователя. Но и тишиной
     # это быть не должно — считается отдельно от «расхода не было».
+    # ПРОДЛЕНИЕ БЕЗ ОТЧЁТА — ЭТО ЗАПИСЬ, А НЕ ТИШИНА. `lease_id` клиент шлёт с
+    # самого начала, и до этой правки сервер его не читал вовсе, поэтому
+    # перехватчик, выбрасывающий поле `usage`, не двигал НИ ОДНОГО счётчика:
+    # подделать отчёт было видно, повторить видно, снять целиком — нет.
+    if body.get("lease_id") and body.get("usage") is None:
+        _log.warning("renewal without a usage report for org=%s instance=%s",
+                     record.org_id, instance_id)
+        STORE.record_missing_report(record.org_id, instance_id)
     try:
         _store_usage(instance_id, record.org_id, body.get("usage"), recipient)
     except ReportRejected as error:

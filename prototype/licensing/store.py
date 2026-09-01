@@ -119,6 +119,11 @@ class LicenseStore:
             # «Не смогли разобрать» — это НЕ «расхода не было». Без отдельной
             # колонки испорченный отчёт был неотличим от молчания.
             "malformed_reports INTEGER DEFAULT 0, "
+            # Продление ПРИШЛО, а отчёта в нём НЕ БЫЛО. Раньше это была полная
+            # тишина: перехватчик, выбрасывающий поле `usage`, не двигал ни
+            # одного счётчика — подделать отчёт было видно, повторить видно, а
+            # снять целиком не видно ничем.
+            "reports_missing INTEGER DEFAULT 0, "
             "PRIMARY KEY (org_id, instance_id))"
         )
         # НИ ОДНОГО ИНДЕКСА ЗДЕСЬ НЕ БЫЛО. `leases` растёт примерно на три
@@ -178,7 +183,9 @@ class LicenseStore:
                             ("unverified_requests",
                              "unverified_requests INTEGER DEFAULT 0"),
                             ("malformed_reports",
-                             "malformed_reports INTEGER DEFAULT 0")):
+                             "malformed_reports INTEGER DEFAULT 0"),
+                            ("reports_missing",
+                             "reports_missing INTEGER DEFAULT 0")):
             if column not in usage_columns:
                 self._conn.execute(f"ALTER TABLE usage ADD COLUMN {ddl}")
         self._conn.commit()
@@ -405,6 +412,23 @@ class LicenseStore:
                 (org_id, instance_id, time.time(), requests, json.dumps(entities),
                  values, accumulated, seq, prev, signature, trust, breaks),
             )
+            self._conn.commit()
+
+    def record_missing_report(self, org_id: str, instance_id: str) -> None:
+        """Продление без отчёта, хотя `lease_id` в теле есть.
+
+        `lease_id` клиент шлёт с самого начала, и сервер его НЕ ЧИТАЛ вовсе —
+        поэтому «это продление, отчёт обязан быть» установить было нечем.
+        Теперь установить есть чем, и молчание стало записью.
+        """
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO usage (org_id, instance_id, updated_at, reports, "
+                "reports_missing) VALUES (?,?,?,0,1) "
+                "ON CONFLICT(org_id, instance_id) DO UPDATE SET "
+                "updated_at=excluded.updated_at, "
+                "reports_missing=usage.reports_missing+1",
+                (org_id, instance_id, time.time()))
             self._conn.commit()
 
     def record_malformed(self, org_id: str, instance_id: str) -> None:
@@ -919,15 +943,17 @@ class LicenseStore:
             # инвойс не мог отличить «расхода не было» от «расход был, но его
             # никто не подтвердил».
             "unverified_reports, unverified_requests, chain_breaks, "
-            "malformed_reports FROM usage WHERE org_id=?",
+            "malformed_reports, reports_missing FROM usage WHERE org_id=?",
             (org_id,),
         )
         entities: dict[str, int] = {}
         requests = reports = values = resets = 0
         unverified_reports = unverified_requests = breaks = malformed = 0
+        missing = 0
         for row in rows:
             (_instance, row_reports, row_requests, row_entities, row_values,
-             row_resets, row_unver, row_unver_req, row_breaks, row_malformed) = row
+             row_resets, row_unver, row_unver_req, row_breaks, row_malformed,
+             row_missing) = row
             requests += int(row_requests or 0)
             reports += int(row_reports or 0)
             values += int(row_values or 0)
@@ -936,6 +962,7 @@ class LicenseStore:
             unverified_requests += int(row_unver_req or 0)
             breaks += int(row_breaks or 0)
             malformed += int(row_malformed or 0)
+            missing += int(row_missing or 0)
             # ТЕРПИМО К ТОМУ, ЧТО УЖЕ ЛЕЖИТ. Вход теперь проверяется, но в
             # проде могут лежать строки, записанные до этого: нечисловое
             # значение здесь давало TypeError, то есть `/admin/usage` отвечал
@@ -969,6 +996,11 @@ class LicenseStore:
                 "chain_breaks": breaks,
                 # Отчёты, которые пришли и не разобрались.
                 "malformed_reports": malformed,
+                # Продления, в которых отчёта не было вовсе.
+                "reports_missing": missing,
+                # ЧИСЛО, НА КОТОРОМ СТРОИТСЯ СЧЁТ, И ВСЁ, ЧЕМ ОНО ЗАЖАТО.
+                **{f"capacity_{name}": value
+                   for name, value in self.billable(org_id).items()},
                 # ЧИСЛО, НА КОТОРОМ СТРОИТСЯ СЧЁТ. Сумма выданной ёмкости —
                 # целиком наша запись; `requests` рядом остаётся справочным.
                 "granted": self.granted_total(org_id)}

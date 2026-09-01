@@ -363,5 +363,26 @@ check("снятый отчёт не занижает счёт и виден чи
       f"расход {spent}, к счёту {quiet['billable']}, "
       f"квантов без отчёта {quiet['unacked_quanta']}")
 
+
+# СНЯТЫЙ ПО ДОРОГЕ ОТЧЁТ — ЭТО ЗАПИСЬ У НАС. Ровно тот сценарий, который на
+# живом стенде не двигал ни одного счётчика: подделать было видно, повторить
+# видно, снять целиком — нет.
+stripped_key = admin.post("/admin/issue", json={"org_id": "stripped", "plan": "start"},
+                          headers=ADMIN).json()["key"]
+stripped_pk = generate_process_key().public
+opened = public.post("/v1/lease", json={
+    "key": stripped_key, "instance_id": "s", "pubkey": stripped_pk,
+    "engine_version": "1.0.0", "nonce": "one"}).json()
+for _ in range(3):
+    public.post("/v1/lease", json={
+        "key": stripped_key, "instance_id": "s", "pubkey": stripped_pk,
+        "engine_version": "1.0.0", "nonce": "two",
+        "lease_id": opened["lease_id"]})   # продление БЕЗ поля usage
+stripped_totals = admin.get("/admin/usage", params={"org_id": "stripped"},
+                            headers=ADMIN).json()["usage"]
+check("продление без отчёта считается, а не проходит тишиной",
+      stripped_totals["reports_missing"] == 3,
+      f"пропущенных отчётов {stripped_totals['reports_missing']}")
+
 print(f"\nсломано {len(fails)}")
 raise SystemExit(1 if fails else 0)
