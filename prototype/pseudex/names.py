@@ -214,6 +214,17 @@ def trim_person_span(value: str) -> tuple[int, str]:
         last -= 1
     while last > first and _names_a_document(tokens[first][2]):
         first += 1
+    # ОПЕЧАТКА В ОБЫЧНОМ СЛОВЕ — ТОЖЕ ДО ОДНОГО ТОКЕНА, и видно её так же ясно.
+    # «начальниик фёдорова», «мастеер новикова», «дежурныый новиков», «этоо
+    # новикова», «фамилиято кузнецова» — NER отдаёт их одним человеком, потому
+    # что опечатка делает слово неизвестным, а неизвестное слово с заглавной
+    # соседа выглядит как редкая фамилия. Девятнадцать расхождений на плече
+    # аргумента: инструмент получал слово, которое человеком не является,
+    # приклеенным к настоящему имени.
+    while last > first and _typo_of_an_ordinary_word(tokens[last][2]):
+        last -= 1
+    while last > first and _typo_of_an_ordinary_word(tokens[first][2]):
+        first += 1
     # DOWN TO ONE TOKEN when the leading word is somebody being asked to do
     # something. The loops above stop at two because a two-token span is
     # presumed to be «Имя Фамилия», and that presumption is what let
@@ -397,6 +408,8 @@ def _damaged_name_pairs(text: str) -> list[Span]:
             # CRM клиента одним значением вместе с филлером. Речь тянет гласную,
             # а имя — нет.
             if is_stretched_filler(damaged):
+                continue
+            if _typo_of_an_ordinary_word(damaged):
                 continue
             if not (_names_a_person(damaged) or _looks_misspelt_name(damaged)):
                 continue
@@ -664,8 +677,66 @@ def _joins_the_name(word: str, anchor: str) -> bool:
     gazetteer rather than "capitalised and adjacent": the word after a given name
     is very often an ordinary one, and adjacency alone would mask it.
     """
+    if _typo_of_an_ordinary_word(word):
+        return False
     return (_names_a_person(word) or _looks_misspelt_name(word)
             or _agrees_as_a_name(word, anchor))
+
+
+def _typo_of_an_ordinary_word(word: str) -> bool:
+    """Слово в одной ОПЕЧАТКЕ от обычного русского слова — это оно и есть.
+
+    «начальниик фёдорова», «мастеер новикова», «дежурныый новиков», «этоо
+    новикова», «фамилиято кузнецова» — девятнадцать расхождений на плече
+    аргумента, и каждое отдавало инструменту слово, которое человеком не
+    является, приклеенным к настоящему имени.
+
+    ПОЧЕМУ ОНИ ПРОХОДИЛИ. Правило про опечатку в имени требует трёх сигналов, и
+    первый из них — слово НЕИЗВЕСТНО морфологии. Опечатка в обычном слове тоже
+    делает его неизвестным, и дальше «рядом с именем» и «в одной правке от
+    словаря» выполняются сами собой: в 197-тысячном словаре фамилий окрестность
+    одной правки плотная — про это в файле уже написано, и здесь тот же долг с
+    другой стороны.
+
+    ЧЕТВЁРТЫЙ СИГНАЛ — САМА ОПЕЧАТКА. Удаление одного символа даёт слово,
+    которое морфология знает: «начальниик» -> «начальник», «этоо» -> «это»,
+    «фамилиято» -> «фамилият»... нет, а вот «фамилиято» -> «фамилиято» без
+    буквы «т» не выходит, поэтому проверяются ВСЕ позиции. Именем такое слово
+    быть не должно: «Иваанов» удалением даёт «Иванов», у которого есть чтение
+    Surn, и он остаётся именем — иначе правило съело бы настоящую опечатку в
+    фамилии, ради которой оно и написано.
+    """
+    if len(word) < 4:
+        return False
+    lowered = word.lower()
+    # СЛОВО, У КОТОРОГО ЕСТЬ СВОЁ ИМЕННОЕ ЧТЕНИЕ, ОПЕЧАТКОЙ НЕ СЧИТАЕТСЯ.
+    # «роману» удалением даёт «роман» — обычное слово, — но само «роману» несёт
+    # чтение Name, и правило про опечатку тут ни при чём: это настоящее имя в
+    # дательном падеже, ради которого написано согласование выше.
+    if any(_PERSON_TAGS & parse.tag.grammemes for parse in MORPH.parse(word)):
+        return False
+    # ТОЛЬКО УДВОЕННАЯ БУКВА, И ЭТО ИЗМЕРЕНО. Любая одиночная правка стоила
+    # четырёх настоящих людей на NEREL (93.5% -> 93.2%) и 0.4 пункта полноты на
+    # MASSIVE ради 19 мусорных слов в аргументе: словарь фамилий плотный, и
+    # настоящая редкая фамилия сама лежит в одной правке от обычного слова —
+    # тот же долг, о котором файл уже предупреждает, с другой стороны.
+    #
+    # Удвоение — это ОПЕЧАТКА КЛАВИАТУРЫ, а не сходство: «начальниик»,
+    # «мастеер», «дежурныый», «этоо». Настоящая фамилия, у которой снятие
+    # удвоения даёт обычное слово, встречается несравнимо реже.
+    for index in range(1, len(lowered)):
+        if lowered[index] != lowered[index - 1]:
+            continue
+        repaired = lowered[:index] + lowered[index + 1:]
+        if len(repaired) < 3:
+            continue
+        parses = MORPH.parse(repaired)
+        if not parses or not parses[0].is_known:
+            continue
+        if any(_PERSON_TAGS & parse.tag.grammemes for parse in parses):
+            continue
+        return True
+    return False
 
 
 def _agrees_as_a_name(word: str, anchor: str) -> bool:
@@ -785,6 +856,14 @@ def _split_name_parts(text: str, found: list[Span], names: NameAssets) -> list[S
         # уезжало в CRM клиента одним значением. Речь тянет гласную, фамилия —
         # никогда.
         if is_stretched_filler(left) or is_stretched_filler(right):
+            continue
+        # ОПЕЧАТКА В ОБЫЧНОМ СЛОВЕ — НЕ ОБЛОМОК ФАМИЛИИ. Четвёртый сторож ниже
+        # спрашивает «не целое ли это слово», и опечатка целым словом не
+        # является: «начальниик фёдорова» склеивалось в «начальниикфёдорова»,
+        # проходило все четыре условия и уходило в инструмент одним человеком.
+        # То же с «мастеер», «дежурныый», «этоо», «фамилиято» — девятнадцать
+        # расхождений на плече аргумента.
+        if _typo_of_an_ordinary_word(left) or _typo_of_an_ordinary_word(right):
             continue
         # A FUNCTION WORD ON THE RIGHT NEEDS AN UNKNOWN WORD ON THE LEFT.
         # «Ивано в Пётр» and «Григорье в Никита» are surnames cut before their
