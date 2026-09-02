@@ -21,7 +21,7 @@ from bench.agentpii4.tools import FieldSpec
 
 DIVERGENCE_KINDS: tuple[str, ...] = (
     "agree", "absent", "extra", "residual", "validated_refused", "ref_refused",
-    "derived", "other_person", "stale_value", "container_embedded",
+    "control_erred", "derived", "other_person", "stale_value", "container_embedded",
     "reformatted", "fragment", "composed", "other")
 TRANSFORM_KINDS: tuple[str, ...] = (
     "verbatim", "reformatted", "fragment", "composed", "derived",
@@ -200,7 +200,10 @@ def classify_field(spec: FieldSpec, ref: FieldObs, obs: FieldObs, real: PiiItem 
         return verdict("absent")
     if not ref.present and obs.present:
         return verdict("extra")
-    if obs.residual:
+    if obs.residual and not _typed_equal(obs.parsed or obs.restored, ref.parsed or ref.restored, spec):
+        # A substitute that happens to EQUAL the real value (a fake city drawn
+        # from the same pool as the customer's) is not a residual: the tool got
+        # the right value. Only a residual that changed the value counts.
         return verdict("residual", "", f"подмена дошла до инструмента: {obs.residual[0]}")
     if obs.refused_rule and not ref.refused_rule:
         return verdict("validated_refused", obs.refused_rule)
@@ -208,6 +211,16 @@ def classify_field(spec: FieldSpec, ref: FieldObs, obs: FieldObs, real: PiiItem 
         return verdict("ref_refused", ref.refused_rule)
     if _typed_equal(obs.parsed or obs.restored, ref.parsed or ref.restored, spec):
         return verdict("agree")
+    # THE CONTROL CAN BE WRONG, and then «I differs from C» is the gateway being
+    # RIGHT. «восемь девятьсот пятьдесят пяять…» was heard by the control as
+    # +79005556677 and restored by the gateway as the corpus's +79505556677;
+    # «сорок девятнадцать» became 4919 in the control and 4019 through the
+    # gateway. The corpus canonical is the tie-breaker, and the class is kept
+    # apart because it is neither agreement nor a defect of the gateway.
+    if spec.kind == "identity" and spec.pii_type and real is None:
+        truth = bind_item(spec, obs, [item for item in others if not item.stale] + ([real] if real else []))
+        if truth is not None:
+            return verdict("control_erred", truth.id, "контроль ошибся; шлюз восстановил эталон корпуса")
     if spec.kind == "derived":
         if real is not None:
             from_real = _derived_ok(spec, obs.restored, dict(real.parts), now)

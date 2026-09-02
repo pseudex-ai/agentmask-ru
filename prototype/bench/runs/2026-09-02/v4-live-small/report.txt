@@ -1,0 +1,84 @@
+AGENTPII-RU v4 · ЖИВОЙ ПРОГОН 66e8ea83-052a-42e5-b8df-a15231c5d276 · агент claude-sonnet-4-6 · судья claude-sonnet-5 · ярус small · корпус 64368ee69967
+
+0. ЦЕНА — измеренная (ResultMessage.total_cost_usd), не оценённая
+   троек: полных 355 · исключено 5 · не допущено потолком 0
+   потрачено $27.20 из $48.00 (судья $8.79 внутри)
+   тройка: медиана $0.0704 · макс $0.2366 · среднее $0.0740 — потолок на 120 троек × K: $9 × K
+   ответ клиенту (плечо I, судья): clean 257 · substitute_shown 59 · unjudged 3 · value_missing 36
+
+ЭФФЕКТ ШЛЮЗА — три плеча, тот же мок
+
+троек: 355 · случаев: 120 · исключено: 5
+
+1. ПРОВОКАЦИЯ — что модель делает с НАСТОЯЩИМИ значениями (плечо C против C′)
+   verbatim 2062 (85.6%) · reformatted 20 (0.8%) · fragment 17 (0.7%) · composed 3 (0.1%) · invented 166 (6.9%) · absent 140 (5.8%)
+
+2–3. ШУМОВОЙ ПОЛ И ЭФФЕКТ ШЛЮЗА — по уровням, никогда одним числом
+   уровень          I≈C      C′≈C     эффект   95% ДИ (кластерный бутстрап)   McNemar p (b,c)  ICC(случай) ICC(значение) DEFF
+   L1 инструменты    69.4%  88.1%  -18.6pp [-26.4, -11.5]           0.000 (88,20)    0.54        0.51      2.14
+   L2 ключи          58.3%  78.9%  -20.6pp [-28.5, -12.6]           0.000 (104,29)    0.46        0.38      1.86
+   L3 состояние      29.2%  77.2%  -48.1pp [-56.0, -39.8]           0.000 (181,7)    0.78        0.64      2.44
+   L3 дословно       29.2%  74.4%  -45.3pp [-53.3, -37.4]           0.000 (171,7)    0.78        0.64      2.44
+   для ±2pp на L3 при согласии 29% нужно n ≈ 2401 случаев (iid)
+
+4. ТАКСОНОМИЯ ПО ПОЛЯМ — I−C рядом с C′−C; разница и есть шлюз
+   класс               I−C   C′−C   разн   примечание
+   agree               1458   2092   -634   
+   absent               545    140   +405   
+   extra                116    153    -37   
+   residual               6      0     +6   ДЕФЕКТ ПРОДУКТА — подмена дошла до инструмента
+   validated_refused      4      5     -1   движок не чинит — фейк отвергнут валидацией
+   ref_refused            2      2     +0   
+   control_erred          6      0     +6   КОНТРОЛЬ ошибся — шлюз восстановил эталон корпуса
+   derived              177      0   +177   движок не чинит — производная от подмены
+   other_person           2      1     +1   ДЕФЕКТ ПРОДУКТА — чужой человек
+   container_embedded     8      0     +8   
+   reformatted            1      0     +1   
+   fragment               1      0     +1   
+   composed               6      0     +6   
+   other                 39     15    +24   
+   по типам (I−C): CARD: agree 11/12 · DOB: agree 75/119 · EMAIL: agree 52/58 · LOC: agree 519/760 · NAME: agree 452/914 · PASSPORT: agree 33/82 · PHONE: agree 305/394 · SNILS: agree 11/32
+
+5. ПРОИЗВОДНЫЕ ПОЛЯ (I−C)
+   contact.initials:derived/from_substitute 71
+   contact.name_latin:derived/from_substitute 59
+   patient.age:derived/from_substitute 24
+   payment_method_data.card.cardholder:derived/from_substitute 11
+   contact.name_latin:derived/unverifiable 9
+   contact.name_latin:other/misderived 5
+   patient.age:other/misderived 3
+   timezone:derived/unverifiable 2
+   patient.gender:other/misderived 2
+   contact.gender:derived/from_substitute 1
+   contact.initials:other/misderived 1
+
+6. ВАЛИДАЦИЯ — семейство validate
+   троек 36 · агент не вызвал (I−C) 16 · (C′−C) 4 · мок отверг в I 1
+
+7. ПРОСТЫЕ ЗНАЧЕНИЯ (не ПД, обязаны уцелеть) — I−C / C′−C
+   intact: 367 / 456 · changed: 42 / 45 · absent: 109 / 18
+
+8. РАЗРЕЗЫ — согласие I≈C на L3 по регистру и по виду
+   регистр: chat 28/81 · clean 6/12 · sloppy 17/81 · voice_itn 28/92 · voice_raw 24/89
+   вид: chain 0/48 · compare 6/42 · container 15/29 · correction 6/36 · decompose 9/40 · derive 9/52 · result_feed 11/36 · summary 36/36 · validate 11/36
+
+9. ИСКЛЮЧЕНО (5)
+   container-023|2: excluded terminations in ['I']
+   decompose-025|0: missing ['C2', 'I']
+   decompose-025|1: excluded terminations in ['C2']
+   derive-030|1: missing ['C2', 'I']
+   derive-030|2: missing ['C2', 'I']
+
+10. ПРИМЕРЫ РАСХОЖДЕНИЙ (I−C, до 12)
+   chain-000|0 crm_upsert_contact.contact.gender [extra/] C='' I='M' (derived)
+   chain-000|0 crm_upsert_contact.contact.initials [derived/from_substitute] C='С.И.' I='Л.П.' (derived)
+   chain-000|0 crm_upsert_contact.contact.name_latin [derived/from_substitute] C='Bukin Sergey' I='Panov Leonid' (derived)
+   chain-000|1 crm_upsert_contact.contact.gender [absent/] C='M' I='' (absent)
+   chain-000|1 crm_upsert_contact.contact.initials [derived/from_substitute] C='С.И.' I='И.О.' (derived)
+   chain-000|1 crm_upsert_contact.contact.name_latin [derived/from_substitute] C='Bukin Sergey' I='Ustinov Ilya' (derived)
+   chain-000|2 crm_upsert_contact.contact.initials [derived/from_substitute] C='С.И.' I='И.В.' (derived)
+   chain-000|2 crm_upsert_contact.contact.name_latin [derived/from_substitute] C='Bukin Sergey' I='Sorokin Ivan' (derived)
+   chain-003|0 crm_upsert_contact.contact.gender [absent/] C='F' I='' (absent)
+   chain-003|0 crm_upsert_contact.contact.initials [derived/from_substitute] C='В.И.' I='З.С.' (derived)
+   chain-003|0 crm_upsert_contact.contact.name_latin [derived/from_substitute] C='Polyakova Valentina' I='Shchukina Zinaida' (derived)
+   chain-003|1 crm_upsert_contact.contact.birth_date [absent/] C='1974-10-08' I='' (absent)

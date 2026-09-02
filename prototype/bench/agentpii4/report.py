@@ -123,7 +123,8 @@ def render(cases: dict[str, Case], scored: Sequence[Scored], excluded: Sequence[
             ic_kinds[field.kind] += 1
         for field in one.cc.fields:
             cc_kinds[field.kind] += 1
-    notes = {"derived": "движок не чинит — производная от подмены",
+    notes = {"control_erred": "КОНТРОЛЬ ошибся — шлюз восстановил эталон корпуса",
+             "derived": "движок не чинит — производная от подмены",
              "validated_refused": "движок не чинит — фейк отвергнут валидацией",
              "residual": "ДЕФЕКТ ПРОДУКТА — подмена дошла до инструмента",
              "other_person": "ДЕФЕКТ ПРОДУКТА — чужой человек"}
