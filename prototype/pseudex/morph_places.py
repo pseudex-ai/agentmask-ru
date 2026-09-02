@@ -559,8 +559,24 @@ def place_shape(phrase: str) -> dict[str, object]:
     as gender and case for names; this is the address half of it.
 
     Returns the generic word to reuse verbatim (with the gender it imposes), and
-    whether a city, a house number and a flat were present.
+    whether a city, a house number, an entrance and a flat were present.
+
+    ЧАСТИ СЧИТАЕТ `split_roles`, А НЕ ВТОРАЯ ПАРА РЕГУЛЯРОК. Здесь стояли свои,
+    и они были слабее: «квартира 58» не проходило (`квартир` без `\w*` не
+    доедало окончание), а «второй подъезд» не проходило нигде — маркер там
+    стоит ПОСЛЕ порядкового, и это основная форма русской диспетчерской речи.
+    Подъезда в результате не было ни в одном ответе, поэтому подмена его
+    ПРОСТО ТЕРЯЛА: «улица клубная дом 160 второй подъезд» превращалось в
+    «улица Сиреневая 166», модель не видела подъезда и не могла положить его в
+    аргумент, и настоящий подъезд не доезжал до диспетчера никогда.
+
+    `split_roles` эти же формы уже разбирает правильно — он для того и написан.
+    Две читалки одной фразы расходятся ровно так, как разошлись эти.
     """
+    roles = split_roles(phrase) if phrase else {}
+    has_house = "house" in roles
+    has_flat = "flat" in roles
+    has_entrance = "entrance" in roles
     generic = ""
     gender = "femn"
     # A HOUSE NUMBER SAID ALOUD IS STILL A HOUSE NUMBER. Every question below
@@ -572,8 +588,6 @@ def place_shape(phrase: str) -> dict[str, object]:
     # every type whose substitute keeps its shape, because a one-word substitute
     # also drags the case-agreement machinery onto the whole restored value —
     # «ленина пятьдесят» came back as «ленина пятидесяти».
-    spoken_house = _SPOKEN_HOUSE.search(phrase) is not None
-    spoken_flat = _SPOKEN_FLAT.search(phrase) is not None
     # Abbreviations first, and kept VERBATIM: a customer who wrote «пр-т» reads
     # a substitute that says «проспект» as a different address, and expanding it
     # is a change we make for no reason.
@@ -583,9 +597,9 @@ def place_shape(phrase: str) -> dict[str, object]:
                 "generic": short,
                 "gender": sex,
                 "has_city": _has_city(phrase),
-                "has_house": bool(re.search(r"\d", phrase)) or spoken_house,
-                "has_flat": bool(re.search(r"(?i)\b(?:кв|квартир|офис|оф)\.?\s*\d", phrase))
-                            or spoken_flat,
+                "has_house": has_house,
+                "has_flat": has_flat,
+                "has_entrance": has_entrance,
             }
     for token in re.findall(r"[А-Яа-яЁё]+", phrase):
         lowered = token.lower()
@@ -604,9 +618,9 @@ def place_shape(phrase: str) -> dict[str, object]:
         "generic": generic,
         "gender": gender,
         "has_city": _has_city(phrase),
-        "has_house": bool(re.search(r"\d", phrase)) or spoken_house,
-        "has_flat": bool(re.search(r"(?i)\b(?:кв|квартир|офис|оф)\.?\s*\d", phrase))
-                    or spoken_flat,
+        "has_house": has_house,
+        "has_flat": has_flat,
+        "has_entrance": has_entrance,
     }
 
 

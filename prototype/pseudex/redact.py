@@ -246,6 +246,15 @@ def _place_windows(text: str, start: int, end: int) -> list[tuple[int, int]]:
         ends.append(house.end())
     for stop in list(ends):
         candidates.add((start, stop))
+        # ПОДЪЕЗД — ТАКОЙ ЖЕ ХВОСТ, КАК КВАРТИРА, и стоит перед ней. Пока
+        # подмена его не несла, окно о нём и не спрашивало; теперь несёт, и без
+        # этой ступени окно обрывается на номере дома, ключ теряет подъезд и
+        # адрес не разрешается.
+        entrance = _ENTRANCE_TAIL.match(text, stop)
+        if entrance is not None:
+            candidates.add((start, entrance.end()))
+            ends.append(entrance.end())
+            stop = entrance.end()
         tail = _FLAT_TAIL.match(text, stop)
         if tail is not None:
             candidates.add((start, tail.end()))
@@ -258,6 +267,8 @@ def _place_windows(text: str, start: int, end: int) -> list[tuple[int, int]]:
 
 
 _FLAT_TAIL = re.compile(r",?\s*(?:кв|квартир\w*|офис\w*|оф)\.?\s*\d{1,4}")
+# Подъезд, как его пишет МОДЕЛЬ: «подъезд 2», «под. 2», «подъезда 2».
+_ENTRANCE_TAIL = re.compile(r",?\s*(?:под[ъь]езд\w*|под)\.?\s*\d{1,4}")
 # A house number as a MODEL writes it: bare, or behind «д.» / «дом» / «влад.».
 # Bounded to four digits and never spanning a sentence, so it cannot swallow an
 # order number that happens to follow the address.

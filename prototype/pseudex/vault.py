@@ -735,6 +735,19 @@ def _fake_place(original: str) -> str:
         # «улица Рябиновая 83, кв. 203» is detected whole; the comma version is
         # not, and it is also how people actually write it.
         out = f"{out} {secrets.randbelow(_FAKE_HOUSE_MAX) + 1}"
+    # ПОДЪЕЗД ЧЕКАНИТСЯ, ПОТОМУ ЧТО ИНАЧЕ ЕГО НЕЛЬЗЯ ВЕРНУТЬ. Подмена его просто
+    # теряла — «улица клубная дом 160 второй подъезд» становилось «улица
+    # Сиреневая 166», — и дальше ломалось не восстановление, а сам разговор:
+    # схема инструмента просит `entrance`, модель в подмене подъезда НЕ ВИДИТ,
+    # кладёт в поле пустоту или выдумывает число, и настоящий подъезд не
+    # доезжает до диспетчера ни при каком обратном пути. 39 из 201 расхождения
+    # на плече аргумента — это он.
+    #
+    # Порядок русский: подъезд перед квартирой. Форма — как у квартиры, через
+    # запятую: «улица Рябиновая 83, подъезд 2, кв. 203» детектируется целиком,
+    # а без запятой перед номером дома `_merge_places` обрывает спан.
+    if shape.get("has_entrance"):
+        out = f"{out}, подъезд {secrets.randbelow(24) + 1}"
     if shape.get("has_flat"):
         out = f"{out}, кв. {secrets.randbelow(250) + 1}"
     return out
@@ -1063,7 +1076,12 @@ def _loc_token_pattern() -> str:
     # The house number is written without a comma now, but tokens minted
     # BEFORE that change are in customers' vaults and still have to be
     # recognised in a reply — so both separators are accepted.
-    return rf"(?:(?:{city}), )?{head}(?:,? \d{{1,3}})?(?:,? кв\.? ?\d{{1,3}})?"
+    # ПОДЪЕЗД СТОИТ МЕЖДУ ДОМОМ И КВАРТИРОЙ, и добавить его в чеканку, забыв
+    # добавить сюда, значит отчеканить подмену, которую восстановитель не узнаёт:
+    # измерено, аргумент падал с 87.7% до 65.0%, а `not_resolved` рос с 45 до 433.
+    # Шаблон описывает то, что мы чеканим, и живёт в одном коммите с генератором.
+    return (rf"(?:(?:{city}), )?{head}(?:,? \d{{1,3}})?"
+            rf"(?:,? (?i:подъезд|под)\.? ?\d{{1,3}})?(?:,? кв\.? ?\d{{1,3}})?")
 
 
 LOC_TOKEN_PATTERN = _loc_token_pattern()

@@ -433,6 +433,23 @@ _ENTRANCE = (r"(?:" + _ORDINAL + r"|последн\w+|крайн\w+|углов\w
 # просмотра вперёд, который запрещал форму, а не то, что ломалось.
 _LITERA = r"(?:\s+(?![яЯ](?![а-яё]))[а-яё](?![а-яё]))?"
 
+# ЛИТЕРА ПРИ ЦИФРОВОМ НОМЕРЕ ДОМА — ТА ЖЕ БУКВА, НО ДРУГОЙ РЕГИСТР ТЕКСТА.
+# «воткинское шоссе 4 а квартира 58» обрывалось на «4»: у речевых арок литера
+# есть, у цифровых её не было, и спан кончался перед ней — вместе с литерой
+# терялась и квартира, потому что «а» вставало в разрыв и слияние до неё не
+# доходило. У безмаркерной арки литера есть давно, поэтому «ленина 14 а
+# квартира 58» работало, а то же самое с родовым словом — нет.
+#
+# ПРОСМОТР ВПЕРЁД ЗДЕСЬ УМЕСТЕН, А У РЕЧЕВОЙ АРКИ БЫЛ НЕТ, и разница не в
+# букве, а в том, что вокруг. Цифровая арка срабатывает на письменном тексте —
+# новостях, деловой переписке, — где «дом 5 и 7» и «в 2014 а также» встречаются
+# постоянно, а речевая живёт в диктовке, где измерено: жёсткий просмотр вперёд
+# резал номер дома на каждом третьем настоящем адресе. Условие не может ничего
+# сломать по построению: литера необязательна, и когда просмотр не сходится,
+# остаётся ровно сегодняшнее поведение.
+_LITERA_WRITTEN = (r"(?:\s+(?![яЯ](?![а-яё]))[а-яё](?![а-яё])"
+                   r"(?=\s*(?:[,;.]|$|\s*" + _CHAIN_MARKER + r"\b)))?")
+
 # НАЗВАНИЕ УЛИЦЫ НЕ ИМЕЕТ ПРАВА СЪЕСТЬ ЧИСЛИТЕЛЬНОЕ. `_LOWER_NAME` берёт до трёх
 # слов подряд, и в «улицу культуры восемь» оно забирало «культуры восемь»
 # целиком — номеру дома не оставалось ничего, и адрес не находился. С цифрой
@@ -500,11 +517,11 @@ ADDRESS_PATTERNS: dict[str, str] = {
     # priority contest to it (PHONE 5 > ADDR 4) and took the real street down
     # with it — so removing punctuation made an address that WAS detected
     # disappear entirely.
-    "street_lower_first": rf"(?i)\b{_ST_FULL}\s*{_LOWER_NAME}{_HOUSE_LEAD}\d{{1,4}}(?!\d)",
-    "street_lower_last": rf"(?i)\b{_LOWER_NAME}\s*{_ST_FULL}{_HOUSE_LEAD}\d{{1,4}}(?!\d)",
-    "street_abbr_lower": rf"(?i)\b{_ST_ABBR}{_LOWER_NAME}{_HOUSE_LEAD}\d{{1,4}}(?!\d)",
+    "street_lower_first": rf"(?i)\b{_ST_FULL}\s*{_LOWER_NAME}{_HOUSE_LEAD}\d{{1,4}}(?!\d){_LITERA_WRITTEN}",
+    "street_lower_last": rf"(?i)\b{_LOWER_NAME}\s*{_ST_FULL}{_HOUSE_LEAD}\d{{1,4}}(?!\d){_LITERA_WRITTEN}",
+    "street_abbr_lower": rf"(?i)\b{_ST_ABBR}{_LOWER_NAME}{_HOUSE_LEAD}\d{{1,4}}(?!\d){_LITERA_WRITTEN}",
     # The same shape with the abbreviation AFTER the name — see `_ST_ABBR_LAST`.
-    "street_abbr_lower_last": rf"(?i)\b{_LOWER_NAME}{_ST_ABBR_LAST}{_HOUSE_LEAD}\d{{1,4}}(?!\d)",
+    "street_abbr_lower_last": rf"(?i)\b{_LOWER_NAME}{_ST_ABBR_LAST}{_HOUSE_LEAD}\d{{1,4}}(?!\d){_LITERA_WRITTEN}",
     # THE HOUSE NUMBER SPOKEN — a SEPARATE arm, and gated in the engine.
     # Folding `_SPELLED_NUM` into the arms above was measured and rejected: it
     # found all seven verbatim call transcripts AND turned «на улице минус

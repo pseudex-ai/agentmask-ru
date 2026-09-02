@@ -44,6 +44,13 @@ _LONG_TO_SHORT = {
 # бы, что прибор умеет больше, чем то, что он моделирует.
 _CITY_HEAD = re.compile(r"^([А-ЯЁ][а-яё\-]+),\s+")
 _FLAT_TAIL = re.compile(r",?\s*(?:кв\.?|квартира)\s*(\d{1,4})\s*$", re.IGNORECASE)
+# Подъезд стоит между домом и квартирой. Без него `_HOUSE_TAIL` забирал НОМЕР
+# ПОДЪЕЗДА за номер дома, а слово «подъезд» оставалось в названии улицы, и
+# прибор выдавал «улица Ольховая 147, подъезд, дом 22» — строку, которой ни одна
+# настоящая модель не напишет. Прибор, который переписывает хуже модели, мерит
+# не шлюз, а себя.
+_ENTRANCE_TAIL = re.compile(r",?\s*(?:под[ъь]езд\w*|под\.?)\s*(\d{1,4})\s*$",
+                            re.IGNORECASE)
 _HOUSE_TAIL = re.compile(r",?\s+(\d{1,4}(?:/\d{1,3})?[а-яё]?)\s*$", re.IGNORECASE)
 
 
@@ -65,6 +72,10 @@ def split_address(phrase: str) -> dict[str, str]:
     if flat:
         out["flat"] = flat.group(1)
         rest = rest[:flat.start()]
+    entrance = _ENTRANCE_TAIL.search(rest)
+    if entrance:
+        out["entrance"] = entrance.group(1)
+        rest = rest[:entrance.start()]
     house = _HOUSE_TAIL.search(rest)
     if house:
         out["house"] = house.group(1)
@@ -123,6 +134,8 @@ def reformat_address(phrase: str, key: str) -> str:
         out = street_text
         if "house" in parts:
             out += f", {house_marker}{parts['house']}" if house_marker else f", {parts['house']}"
+        if "entrance" in parts:
+            out += f", подъезд {parts['entrance']}"
         if "flat" in parts:
             out += f", {flat_marker}{parts['flat']}"
         if "city" in parts:
