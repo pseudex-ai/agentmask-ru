@@ -591,6 +591,14 @@ def _place_fragment(surface: str, vault: Vault,
     if not value or entity_type != "LOC":
         return None
     if for_tool:
+        # THE CITY ALONE. A `locality` field holds the substitute's city and
+        # nothing else, and `in_form_of` read a lone word as a STREET — so the
+        # real street went into the city field («центральная» for «Алексин»).
+        # The token says which of its parts the surface is.
+        fake_city = token.split(",", 1)[0].strip() if "," in token else ""
+        if fake_city and surface.strip().casefold() == fake_city.casefold():
+            real_city = morph_places.split_roles(value).get("city") or value.split(",", 1)[0].strip()
+            return entity_type, real_city
         return entity_type, value
     fake_roles = morph_places.split_roles(token)
     lowered = surface.lower()
@@ -647,19 +655,17 @@ def _residual_owner(surface: str, vault: Vault,
         # came out «Владислав Сазонов», and a positional zip handed
         # `last_name` the GIVEN name «валерий». The role of the matched fake
         # word, looked up in the real name's own shape, is the right word.
-        # The role is read off EACH WORD ALONE, not off the phrase: the minted
-        # token and the real value can be read in different orders as phrases
-        # («Родион Тарасов» / «ерохин пётр»), and a phrase shape then maps a
-        # surname onto a given name. A lone word has one reading.
-        def role_of(word: str) -> str:
-            shape = morph_names.name_shape(word)
-            return shape[0] if len(shape) == 1 else ""
+        # POSITIONAL, BY CONSTRUCTION. The substitute is built slot by slot from
+        # `name_shape(original)`, so fake word i stands for real word i. A pick
+        # by the word's own role was tried and mapped «Мещеряков» — a surname
+        # pymorphy does not know and reads as a given name — onto «артём».
+        # When `last_name` still gets the given name, the SHAPE READING at mint
+        # time was wrong («миллер валерий» read as given-first), and that is
+        # fixed in `name_shape`, not here.
         picked = []
         for fake, real in zip(fake_parts, real_parts):
             if fake.casefold() in wanted or morph_names.to_nominative(fake).casefold() in wanted:
-                role = role_of(fake)
-                same_role = [candidate for candidate in real_parts if role and role_of(candidate) == role]
-                picked.append(same_role[0] if len(same_role) == 1 else real)
+                picked.append(real)
         if len(picked) == len(surface.split()):
             return entity_type, " ".join(picked)
     return entity_type, value
@@ -971,7 +977,12 @@ def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
         # not, so the first is the settlement. Both conditions, or «большая
         # садовая» would lose its first word.
         head = roles["street"].split()
-        if len(head) == 2 and not _STREET_TYPE_WORD.match(head[0]) and not _STREET_TYPE_WORD.match(head[1]):
+        if len(head) >= 3 and not _STREET_TYPE_WORD.match(head[0]) and _STREET_TYPE_WORD.match(head[1]):
+            # «ижевск проезд ленина»: the type word marks where the street
+            # begins, so the word before it is the settlement.
+            roles["city"] = head[0].strip(" ,.")
+            roles["street"] = " ".join(head[1:])
+        elif len(head) == 2 and not _STREET_TYPE_WORD.match(head[0]) and not _STREET_TYPE_WORD.match(head[1]):
             from pseudex import address as address_mod
             from pseudex.assets import ASSETS
             register = ASSETS.get().address if ASSETS.is_loaded else None

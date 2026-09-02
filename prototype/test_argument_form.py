@@ -124,6 +124,20 @@ def main() -> int:
     failures += not _check("в прозе — как написал клиент", prose,
                            "перезвоним на 8 916 402 11 87")
 
+    # --- фамилия, которой морфология не знает, перед известным именем -------
+    # «миллер валерий» читалось как (имя, фамилия): подмена чеканилась в том же
+    # порядке, и `last_name` получал «валерий». Форма читается по документному
+    # порядку, пара фейк↔настоящее позиционна по построению.
+    for source, want_last, want_first in (("это миллер валерий, телефон 8 916 402 11 87", "миллер", "валерий"),
+                                          ("это ерохин пётр николаевич", "ерохин", "пётр")):
+        vault = Vault(":memory:", "acme").for_conversation("c1")
+        masked = mask_text(source, vault, detector.detect(source))
+        fake = re.search(r"это ([А-ЯЁ][а-яё]+) ([А-ЯЁ][а-яё]+)", masked)
+        restored = json.loads(unmask_arguments(json.dumps(
+            {"last_name": fake.group(1), "first_name": fake.group(2)}, ensure_ascii=False), vault))  # type: ignore[union-attr]
+        failures += not _check(f"фамилия перед именем: {source.split()[1]}", restored,
+                               {"last_name": want_last, "first_name": want_first})
+
     # --- имя: агент берёт одну часть ---------------------------------------
     source = "Иванов Пётр Сергеевич"
     for name, index, want in (("одна фамилия", 0, "Иванов"),

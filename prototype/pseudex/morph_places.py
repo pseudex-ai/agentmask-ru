@@ -112,7 +112,12 @@ def looks_like_street(value: str) -> bool:
     # and fixing only one of them fixes nothing: that one decides what the
     # substitute is MADE of, this one decides whether a street is being minted
     # at all.
-    return bool(re.search(rf"(?i)[а-яё]{{3,}}\s+(?:\d|{_NUMERAL_WORD})", value))
+    # THE DIRECTORY FORM PUTS A COMMA BEFORE THE HOUSE. «Краснодар, центральная,
+    # 100» is how DaData and every CRM export write an address; with the comma
+    # the name-then-number test failed, the tool result's address was judged a
+    # SETTLEMENT, and the model saw a bare city where it had just asked about a
+    # street (live v4, `compare`).
+    return bool(re.search(rf"(?i)[а-яё]{{3,}},?\s+(?:\d|{_NUMERAL_WORD})", value))
 
 
 @functools.lru_cache(maxsize=4096)
@@ -437,7 +442,17 @@ def _has_city(phrase: str) -> bool:
     if re.search(r"(?i)\b(?:г|гор|город|пос|посёлок|поселок|село|дер|станиц)\.?\s", phrase):
         return True
     head = phrase.split(",", 1)[0].strip()
-    if "," not in phrase or not head:
+    if "," not in phrase:
+        # NO COMMA, NO CAPITAL — SPEECH. «можга проезд пушкина восемьдесят
+        # девять»: the detector put the settlement into the span (pymorphy tags
+        # «можга» Geox whatever its case), but this reader wanted a capital and
+        # a comma, so the substitute was minted WITHOUT a city and the agent
+        # asked «в каком городе?» in every gateway arm (live v4, derive-034).
+        # A leading word that morphology knows only as a place — Geox, and no
+        # surname or adjective reading («тверская», «пушкина» carry both) —
+        # names the settlement. Nothing about span boundaries changes here.
+        return _leading_settlement(phrase) is not None
+    if not head:
         return False
     words = re.findall(r"[А-ЯЁа-яё]+", head)
     if not words or len(words) > 2:
@@ -450,7 +465,9 @@ def _has_city(phrase: str) -> bool:
     if any(word.lower() in _GENERIC or _GENERIC_STEMS.match(word.lower())
            for word in words):
         return False
-    return words[0][:1].isupper()
+    # A lower-case head before the comma («москва, садовая 46», the chat
+    # register) is admitted by morphology, exactly as the comma-less form is.
+    return words[0][:1].isupper() or _leading_settlement(head) is not None
 
 
 def generic_full(written: str) -> str:
@@ -493,14 +510,49 @@ def street_house_key(phrase: str) -> str:
         # it left the finer parts out: «мира 7» has to find «г. Казань, ул.
         # Мира, д. 7, кв. 12», and with «кв 12» still in the key it never did.
         # Street and house are what both writings of one place always carry.
-        if token in ("кв", "к", "стр"):
+        # The entrance and the floor are finer parts too, and speech puts the
+        # ordinal BEFORE the marker («второй подъезд»), so it is popped.
+        if token in _SHORT_KEY_STOP:
+            if kept and _ORDINAL_ONLY.fullmatch(kept[-1]):
+                kept.pop()
             break
         if token in _GENERIC:
             continue
         if any("Geox" in parse.tag for parse in MORPH.parse(token)):
             continue
+        # A lone letter after a number is the house litera, and the glued
+        # written form («100а») has already lost it in `address_key`.
+        if len(token) == 1 and token.isalpha() and kept and kept[-1][-1:].isdigit():
+            continue
         kept.append(token)
-    return " ".join(kept)
+    # THE HOUSE NUMBER IS SAID IN WORDS AND WRITTEN IN DIGITS, and the two
+    # mentions of one place are one place: «центральная сто» from the customer,
+    # «Краснодар, центральная, 100» back from the directory. Lemmatisation
+    # keeps «сто» a word, so the keys never met and the same address was
+    # minted twice inside one conversation (live v4, 30 of 42 `compare`
+    # triples). Folded HERE and not in `address_key`: that one is the stored
+    # canonical, and re-keying every existing row is not on the table.
+    return " ".join(_fold_cardinals(kept))
+
+
+_SHORT_KEY_STOP = frozenset({"кв", "к", "стр", "подъезд", "под", "этаж"})
+
+
+def _fold_cardinals(tokens: list[str]) -> list[str]:
+    """Maximal runs of cardinal words become their digits; the rest is kept."""
+    out: list[str] = []
+    run: list[str] = []
+    for token in tokens:
+        if token in spoken.CARDINALS:
+            run.append(token)
+            continue
+        if run:
+            out.append(spoken.run_to_digits(run) or " ".join(run))
+            run = []
+        out.append(token)
+    if run:
+        out.append(spoken.run_to_digits(run) or " ".join(run))
+    return out
 
 
 _FLAT_TAIL = re.compile(
@@ -847,12 +899,49 @@ def role_spans(phrase: str) -> dict[str, tuple[int, int]]:
     # намеренно — без заглавной запятая одна не отличает город от улицы.
     if "street" in out:
         s_start, s_end = out["street"]
-        city = _LEADING_CITY.match(text[s_start:s_end])
+        street_text = text[s_start:s_end]
+        city = _LEADING_CITY.match(street_text)
         if city is not None and city.end() < s_end - s_start:
             out["city"] = (s_start + city.start(1), s_start + city.end(1))
             rest = text[s_start + city.end():s_end]
             out["street"] = (s_start + city.end() + (len(rest) - len(rest.lstrip())), s_end)
+        else:
+            # The spoken form: a lower-case settlement with no comma, decided
+            # by morphology alone (see `_has_city`). The street keeps its type
+            # word: «можга проезд пушкина» -> city «можга», street «проезд пушкина».
+            settlement = _leading_settlement(street_text)
+            if settlement is not None and settlement.end() < len(street_text):
+                out["city"] = (s_start + settlement.start(1), s_start + settlement.end(1))
+                rest = street_text[settlement.end():]
+                out["street"] = (s_start + settlement.end() + (len(rest) - len(rest.lstrip())), s_end)
     return {role: (start + offset, end + offset) for role, (start, end) in out.items()}
+
+
+_LEADING_WORD = re.compile(r"^\s*([А-ЯЁа-яё][а-яё-]+),?(?=\s|$)")
+
+
+def _leading_settlement(phrase: str) -> re.Match[str] | None:
+    """The first word, when morphology knows it ONLY as a place.
+
+    pymorphy tags settlements Geox regardless of case, and no city gazetteer is
+    leased on purpose (address.py: the dictionary already makes the separation).
+    A word with a surname or adjective reading beside Geox is a street name in
+    disguise — «тверская», «пушкина», «ленина» — and is refused. A street-type
+    word in first position is never a settlement.
+    """
+    match = _LEADING_WORD.match(phrase)
+    if match is None:
+        return None
+    word = match.group(1)
+    low = word.lower()
+    if low in _GENERIC or _GENERIC_STEMS.match(low):
+        return None
+    parses = MORPH.parse(word)
+    if not any("Geox" in parse.tag.grammemes for parse in parses):
+        return None
+    if any("Surn" in parse.tag.grammemes or parse.tag.POS == "ADJF" for parse in parses):
+        return None
+    return match
 
 
 _LEADING_CITY = re.compile(

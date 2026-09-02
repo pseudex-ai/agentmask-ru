@@ -749,13 +749,41 @@ def _fake_place(original: str) -> str:
     # КОРПУС И СТРОЕНИЕ — ТА ЖЕ ИСТОРИЯ, ЧТО И ПОДЪЕЗД. «репина тридцать пять
     # строение один» приходило моделью как «Речная, 56»: строения в подмене нет,
     # положить его в аргумент неоткуда, и до диспетчера оно не доезжает.
+    return _decorate_place(out, shape, {})
+
+
+def _decorate_place(out: str, shape: dict[str, object], reuse: dict[str, str]) -> str:
+    """The tails a mention carries, in Russian order; a tail the substitute
+    being extended already had is kept, a new one is drawn."""
     if shape.get("has_building"):
-        out = f"{out}, корп. {secrets.randbelow(12) + 1}"
+        out = f"{out}, корп. {reuse.get('building') or secrets.randbelow(12) + 1}"
     if shape.get("has_entrance"):
-        out = f"{out}, подъезд {secrets.randbelow(24) + 1}"
+        out = f"{out}, подъезд {reuse.get('entrance') or secrets.randbelow(24) + 1}"
     if shape.get("has_flat"):
-        out = f"{out}, кв. {secrets.randbelow(250) + 1}"
+        out = f"{out}, кв. {reuse.get('flat') or secrets.randbelow(250) + 1}"
     return out
+
+
+def _extend_place(short_token: str, original: str, shape: dict[str, object]) -> str | None:
+    """The FULL substitute grown from the short one already minted for this
+    place: the same head and house, a fake city in front, the tails the
+    fuller mention names.
+
+    The head and house are copied VERBATIM, which keeps the short token a
+    literal substring of the full one — the property `test_short_address…`
+    pins for the other direction — and makes `strip_leading_city(full)` equal
+    to the short token, so a later short mention links straight back.
+    """
+    spans = morph_places.role_spans(short_token)
+    if "house" not in spans:
+        return None
+    base = short_token[: spans["house"][1]]
+    if not base.strip():
+        return None
+    out = f"{_fake_city(original)}, {base}"
+    reuse = {role: part for role, part in morph_places.split_roles(short_token).items()
+             if role in ("building", "entrance", "flat")}
+    return _decorate_place(out, shape, reuse)
 
 
 _INITIAL_LETTERS = "АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЭЮЯ"
@@ -1217,6 +1245,7 @@ class Vault:
             "customer TEXT NOT NULL, conversation TEXT NOT NULL, "
             "part TEXT NOT NULL, canonical TEXT NOT NULL, "
             "created REAL NOT NULL DEFAULT 0, "
+            "has_city INTEGER NOT NULL DEFAULT 1, "
             "PRIMARY KEY (customer, conversation, part, canonical))"
         )
         self._conn.execute(
@@ -1232,8 +1261,10 @@ class Vault:
         self._migrate_original_form()
         self._migrate_first_seen()
         self._migrate_place_created()
+        self._migrate_place_has_city()
         self._migrate_fold_key()
         self._migrate_minted_in()
+        self._migrate_extends()
         # Every lookup on the response leg is an indexed point query, so
         # detokenization cost tracks the length of the answer, not the size of
         # the vault. Without these indexes each one degrades to a table scan.
@@ -1344,8 +1375,21 @@ class Vault:
             # candidate and the pool "exhausted" after 200 tries on the first
             # address. The rule is about a substitute repeating the PERSON it
             # replaces, which is where the collision actually leaks something.
-            if entity_type == "NAME" and original and _shares_a_word(token, original):
-                continue
+            if self._is_free_token(token, entity_type, original, canonical):
+                return token
+        raise RuntimeError(
+            f"exhausted the {entity_type} token pool for customer "
+            f"{self._customer!r} after {_TOKEN_MINT_ATTEMPTS} attempts — widen "
+            f"the pool in _render_token"
+        )
+
+    def _is_free_token(self, token: str, entity_type: str, original: str = "",
+                       canonical: str = "") -> bool:
+        """The four guards every candidate substitute passes, whether drawn at
+        random or composed from parts already minted. Called under the lock."""
+        if entity_type == "NAME" and original and _shares_a_word(token, original):
+            return False
+        if True:
             # THE ROW BEING MINTED IS NOT IN THE TABLE YET, so the lookup below
             # cannot see it and a substitute is free to come out equal to the
             # very value it replaces. Measured: «15.06.1963» minted as
@@ -1354,7 +1398,7 @@ class Vault:
             # other person who shares it. The pools are large enough that this is
             # rare and small enough that it happens.
             if token == canonical or (original and token == original):
-                continue
+                return False
             # A SUBSTITUTE MAY NOT BE SOMEBODY'S REAL VALUE. `canonical` is the
             # key masking looks a value up by and `token` is the key
             # detokenization looks a string up by, so a string that is both
@@ -1388,12 +1432,8 @@ class Vault:
                 (self._customer, token, self._customer, token,
                  self._customer, fold_key(token)),
             ).fetchone() is None:
-                return token
-        raise RuntimeError(
-            f"exhausted the {entity_type} token pool for customer "
-            f"{self._customer!r} after {_TOKEN_MINT_ATTEMPTS} attempts — widen "
-            f"the pool in _render_token"
-        )
+                return True
+        return False
 
     def for_conversation(self, conversation: str) -> "Vault":
         """A view of this vault scoped to ONE conversation.
@@ -1468,11 +1508,26 @@ class Vault:
                 reordered = self._same_person_reordered(canonical)
                 if reordered is not None:
                     return reordered
-            token = self._linked_token(canonical, value) if entity_type == "NAME" else None
-            linked_place = (self._linked_place(canonical, value)
-                            if entity_type == "LOC" else None)
-            if linked_place is not None:
-                token, canonical = linked_place, scoped
+            shape = morph_places.place_shape(value) if entity_type == "LOC" else {}
+            extends: str | None = None
+            token = None
+            linked_place = None
+            if entity_type == "NAME":
+                linked = self._linked_token(canonical, value)
+                if linked is not None:
+                    token, extends = linked
+                elif self._conversation:
+                    grown = self._extends_known_person(canonical, value, gender)
+                    if grown is not None:
+                        token, extends = grown
+            elif entity_type == "LOC":
+                linked_place = self._linked_place(canonical, value, shape)
+                if linked_place is not None:
+                    (token, extends), canonical = linked_place, scoped
+                elif self._conversation:
+                    grown_place = self._extends_linked_place(canonical, value, shape)
+                    if grown_place is not None:
+                        token, extends = grown_place
             if token is None:
                 token = self._unique_token(entity_type, gender, value, canonical)
             digits, digits10 = _digit_signatures(token, entity_type)
@@ -1484,14 +1539,14 @@ class Vault:
                 self._conn.execute(
                     "INSERT INTO tokens "
                     "(customer, canonical, entity_type, token, digits, digits10, "
-                    "original, first_seen, name_key, canonical_fold, minted_in) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    "original, first_seen, name_key, canonical_fold, minted_in, extends) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                     (self._customer, canonical, entity_type, token, digits, digits10,
                      value, time.time(),
                      name_key(token) if entity_type == "NAME"
                      else place_key(token) if entity_type == "LOC" else None,
                      fold_key(canonical) if entity_type == "NAME" else None,
-                     self._conversation),
+                     self._conversation, extends),
                 )
             except IntegrityError:
                 # ANOTHER PROCESS GOT THERE FIRST, and that is not an error.
@@ -1528,16 +1583,23 @@ class Vault:
             # Only one that names a city: without one there is nothing shorter
             # for a mention to be, and indexing it would make the short form its
             # own owner and block the real one.
-            if (entity_type == "LOC" and self._conversation
-                    and morph_places.place_shape(value).get("has_city")):
+            # A CITY-LESS MENTION WITH A HOUSE IS INDEXED TOO, marked as such:
+            # the fuller form may arrive LATER — from the directory, from the
+            # CRM record a tool returns — and must find this one and grow it,
+            # not mint a second place. `has_city=0` keeps it from ever being an
+            # OWNER for a later short mention, which is the trap the previous
+            # rule guarded against. A projection (`linked_place`) is never
+            # indexed: it is a view of a full address, not a place of its own.
+            if (entity_type == "LOC" and self._conversation and linked_place is None
+                    and (shape.get("has_city") or shape.get("has_house"))):
                 part = morph_places.street_house_key(value)
                 if part:
                     self._conn.execute(
                         "INSERT OR IGNORE INTO place_parts "
-                        "(customer, conversation, part, canonical, created) "
-                        "VALUES (?,?,?,?,?)",
+                        "(customer, conversation, part, canonical, created, has_city) "
+                        "VALUES (?,?,?,?,?,?)",
                         (self._customer, self._conversation, part, canonical,
-                         time.time()))
+                         time.time(), 1 if shape.get("has_city") else 0))
                     self._expire_place_parts()
             # ЧАСТИ ПОДМЕНЫ — для NAME по словам, для LOC по сигнатуре.
             #
@@ -1632,7 +1694,12 @@ class Vault:
                     return None
                 owners.append({row[0] for row in rows})
         common = set.intersection(*owners)
-        return next(iter(common)) if len(common) == 1 else None
+        if len(common) == 1:
+            return next(iter(common))
+        # Two owners that are ONE place — the short mention and the full one
+        # grown from it — answer with the fullest; two real places refuse.
+        with self._lock:
+            return self._one_identity(common) if common else None
 
     def digit_fragment_owner(self, fragment: str) -> tuple[str, str] | None:
         """Настоящие цифры на МЕСТЕ этого куска чужой подмены, и её тип.
@@ -1733,7 +1800,9 @@ class Vault:
                     return None
                 owners.append({row[0] for row in rows})
         shared = set.intersection(*owners)
-        return next(iter(shared)) if len(shared) == 1 else None
+        if len(shared) == 1:
+            return next(iter(shared))
+        return self._one_identity(shared) if shared else None
 
     def _same_person_reordered(self, canonical: str) -> str | None:
         """The token of a person already on file, written in another word order.
@@ -1782,7 +1851,8 @@ class Vault:
         self._conn.execute("DELETE FROM place_parts WHERE created < ?",
                            (now - _PLACE_PART_TTL,))
 
-    def _linked_place(self, canonical: str, value: str) -> str | None:
+    def _linked_place(self, canonical: str, value: str,
+                      shape: dict[str, object]) -> tuple[str, str] | None:
         """The substitute for an address we already met, named more briefly.
 
         «вы находитесь на Ленина 14?» while the fuller «г. Москва, ул. Ленина,
@@ -1818,26 +1888,73 @@ class Vault:
             return None
         # A mention that already names a city is not a short one — it is either
         # the full address (found by the canonical lookup) or a different place.
-        if morph_places.place_shape(value).get("has_city"):
+        if shape.get("has_city"):
             return None
+        # ONLY A CITY-BEARING ROW OWNS A SHORT MENTION. City-less mentions are
+        # indexed too now (so a later fuller form can grow them), and without
+        # this filter the short form would be its own owner.
         rows = self._conn.execute(
             "SELECT t.token FROM place_parts p "
             "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
-            "WHERE p.customer=? AND p.conversation=? AND p.part=? "
+            "WHERE p.customer=? AND p.conversation=? AND p.part=? AND p.has_city=1 "
             "AND t.entity_type='LOC' LIMIT 2",
             (self._customer, self._conversation, part),
         ).fetchall()
         if len(rows) != 1:
             return None
-        derived = morph_places.strip_leading_city(rows[0][0])
-        if not morph_places.place_shape(value).get("has_flat"):
+        full = rows[0][0]
+        derived = morph_places.strip_leading_city(full)
+        if not shape.get("has_flat"):
             derived = morph_places.strip_flat(derived)
         # A projection identical to the full token is not a projection: the
         # stored address had no city either, so there is nothing shorter to
         # render and the two mentions are the same string anyway.
-        return derived or None
+        return (derived, full) if derived else None
 
-    def _linked_token(self, canonical: str, surface: str) -> str | None:
+    def _extends_linked_place(self, canonical: str, value: str,
+                              shape: dict[str, object]) -> tuple[str, str] | None:
+        """The mirror of `_linked_place`: a FULLER mention arriving after a
+        shorter one in the same conversation.
+
+        «центральная сто» from the customer, then «Краснодар, центральная,
+        100» from the address directory the model asked — one place, and the
+        model was handed two substitutes and could not match what it had just
+        asked for (live v4: 30 of 42 `compare` triples, twice a NEIGHBOUR's
+        record picked instead). The full substitute is GROWN from the short
+        one: same head and house, a fake city in front, the tails the fuller
+        mention names — so the short token stays a literal substring of the
+        full one and a later short mention links straight back.
+
+        Single owner or nothing, read across both kinds of rows: a city-bearing
+        address on the same street and house in this conversation means the
+        fuller mention is a different place (the canonical lookup would have
+        found the same one), and two short candidates mean a guess.
+        """
+        if not self._conversation or not shape.get("has_city"):
+            return None
+        part = morph_places.street_house_key(value)
+        if not part:
+            return None
+        rows = self._conn.execute(
+            "SELECT p.has_city, t.token FROM place_parts p "
+            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
+            "WHERE p.customer=? AND p.conversation=? AND p.part=? "
+            "AND t.entity_type='LOC' LIMIT 3",
+            (self._customer, self._conversation, part),
+        ).fetchall()
+        if len(rows) != 1 or rows[0][0] != 0:
+            return None
+        short = rows[0][1]
+        if morph_places.strip_leading_city(short) != short:
+            return None
+        grown = _extend_place(short, value, shape)
+        if grown is None or not re.fullmatch(LOC_TOKEN_PATTERN, grown):
+            return None
+        if not self._is_free_token(grown, "LOC", value, canonical):
+            return None
+        return grown, short
+
+    def _linked_token(self, canonical: str, surface: str) -> tuple[str, str] | None:
         """The substitute for a person we have already met, named more briefly.
 
         «Иванов Пётр Сергеевич» in one turn and «Петру» in the next are the same
@@ -1886,6 +2003,11 @@ class Vault:
                 "WHERE p.customer=? AND p.part=? AND t.entity_type='NAME' LIMIT 2",
                 (self._customer, candidate.casefold()),
             ).fetchall()
+            if len(rows) == 2:
+                # Two rows that are ONE person — the two-word mention and the
+                # three-word one grown from it — are not an ambiguity.
+                fullest = self._one_identity({token for _, token in rows})
+                rows = [row for row in rows if row[1] == fullest] if fullest else rows
             if len(rows) != 1:
                 continue
             full_canonical, full_token = rows[0]
@@ -1899,8 +2021,120 @@ class Vault:
             ).fetchone()
             if clash:
                 continue
-            return derived
+            return derived, full_token
         return None
+
+    def _extends_known_person(self, canonical: str, value: str,
+                              gender: str | None) -> tuple[str, str] | None:
+        """A FULLER name after a shorter one, in the same conversation, reuses
+        the substitute's parts.
+
+        «букин сергей» in the user's turn, «Букин Сергей Иванович» in the CRM
+        record a tool returns — one person, two substitutes, and the model
+        joined them into a double surname (live v4, `container`). The
+        subset rule stays forbidden at customer scope (see
+        `_same_person_reordered`); it is licensed here by THREE things at once:
+        the same conversation (`minted_in`, exactly — a row that does not know
+        its conversation is not linked by one), a strict superset of the parts
+        of a ≥2-word name, and exactly one candidate. The known parts take the
+        substitute's words of the same kind; the new part (a patronymic) is
+        drawn fresh; the whole must survive its own inflection and the same
+        guards a random draw passes.
+        """
+        parts = [word.casefold() for word in canonical.split() if len(word) > 2]
+        if len(parts) < 3 or not self._conversation:
+            return None
+        rows = self._conn.execute(
+            "SELECT DISTINCT t.canonical, t.token FROM name_parts p "
+            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
+            "WHERE p.customer=? AND t.entity_type='NAME' AND t.minted_in=? "
+            f"AND p.part IN ({','.join('?' * len(parts))})",
+            (self._customer, self._conversation, *parts),
+        ).fetchall()
+        wanted = set(parts)
+        candidates = {(other, token) for other, token in rows
+                      if 2 <= len([w for w in other.split() if len(w) > 2])
+                      and set(w.casefold() for w in other.split() if len(w) > 2) < wanted}
+        tokens = {token for _, token in candidates}
+        if len(tokens) != 1:
+            return None
+        short_canonical, short_token = next(iter(candidates))
+        real_parts = canonical.split()
+        shape = morph_names.name_shape(canonical)
+        if len(shape) != len(real_parts):
+            return None
+        resolved = gender if gender in ("masc", "femn") else morph_names.detect_gender(short_token)
+        if resolved not in ("masc", "femn"):
+            resolved = secrets.choice(("masc", "femn"))
+        token_gender = morph_names.detect_gender(short_token)
+        if token_gender in ("masc", "femn") and gender in ("masc", "femn") and token_gender != gender:
+            return None
+        known = {w.casefold() for w in short_canonical.split()}
+        names = ASSETS.get().names
+        patronymics = (names.patronymics_masc if resolved == "masc" else names.patronymics_femn)
+        for _ in range(12):
+            built: list[str] = []
+            for part, kind in zip(real_parts, shape):
+                if part.casefold() in known:
+                    word = _corresponding_part(part, short_canonical, short_token)
+                    if word is None:
+                        return None
+                    built.append(word)
+                elif kind == "patr":
+                    built.append(secrets.choice(patronymics))
+                elif kind == "surn":
+                    surname = secrets.choice(_FAKE_LAST)
+                    built.append(morph_names.feminine_surname(surname) if resolved == "femn" else surname)
+                elif kind == "init":
+                    built.append(secrets.choice(_INITIAL_LETTERS) + ".")
+                else:
+                    built.append(secrets.choice(_first_names_by_gender()[resolved]))
+            candidate = " ".join(built)
+            if len(set(w.casefold() for w in built)) != len(built):
+                continue
+            checkable = " ".join(w for w, kind in zip(built, shape) if kind != "init")
+            if checkable and not morph_names.survives_round_trip(checkable, resolved):
+                continue
+            if not self._is_free_token(candidate, "NAME", value, canonical):
+                continue
+            return candidate, short_token
+        return None
+
+    def _one_identity(self, tokens: set[str]) -> str | None:
+        """The FULLEST of several tokens when they are one chain of `extends`
+        — a short mention and the full mention grown from it — else None.
+        Nesting of parts is deliberately not evidence: a random draw may by
+        chance contain another person's token, and a part rule would hand a
+        fragment of one person to the other. The chain exists only where this
+        code built it."""
+        if not tokens:
+            return None
+        # ONE CONNECTED COMPONENT, not one root: a short mention linked to a
+        # full address is stored as a second row with the SAME token string and
+        # `extends` pointing at the full one, so following parents from the
+        # full token walks a cycle. Edges are undirected; the question is only
+        # whether every token in the set is joined to the others by chains
+        # this code built.
+        rows = self._conn.execute(
+            "SELECT token, extends FROM tokens WHERE customer=? AND extends IS NOT NULL "
+            f"AND (token IN ({','.join('?' * len(tokens))}) "
+            f"OR extends IN ({','.join('?' * len(tokens))}))",
+            (self._customer, *sorted(tokens), *sorted(tokens)),
+        ).fetchall()
+        parent: dict[str, str] = {}
+
+        def find(node: str) -> str:
+            parent.setdefault(node, node)
+            while parent[node] != node:
+                parent[node] = parent[parent[node]]
+                node = parent[node]
+            return node
+
+        for token, extends in rows:
+            parent[find(token)] = find(extends)
+        if len({find(token) for token in tokens}) != 1:
+            return None
+        return max(tokens, key=lambda token: (len(token.split()), len(token), token))
 
     def peek_token(self, value: str, entity_type: str) -> str | None:
         """Return the existing token for a value WITHOUT creating one (read-only).
@@ -1958,6 +2192,28 @@ class Vault:
         self._conn.execute("UPDATE place_parts SET created=? WHERE created=0",
                            (time.time(),))
         self._conn.commit()
+
+    def _migrate_place_has_city(self) -> None:
+        """Whether the indexed address named a city. Rows written before the
+        column were city-bearing by construction, so the default is 1."""
+        columns = [row[1] for row in
+                   self._conn.execute("PRAGMA table_info(place_parts)").fetchall()]
+        if "has_city" in columns:
+            return
+        self._conn.execute(
+            "ALTER TABLE place_parts ADD COLUMN has_city INTEGER NOT NULL DEFAULT 1")
+        self._conn.commit()
+
+    def _migrate_extends(self) -> None:
+        """Which substitute this one was grown from — the short mention's token
+        for a full address, the two-word name's for a three-word one. NULL for
+        every row minted before the column and for every fresh mint; the chain
+        is what lets a fragment resolve when two tokens share its parts."""
+        columns = [row[1] for row in
+                   self._conn.execute("PRAGMA table_info(tokens)").fetchall()]
+        if "extends" not in columns:
+            self._conn.execute("ALTER TABLE tokens ADD COLUMN extends TEXT")
+            self._conn.commit()
 
     def _migrate_first_seen(self) -> None:
         """When each value was FIRST protected — the billing meter.

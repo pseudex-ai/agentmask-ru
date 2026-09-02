@@ -437,6 +437,91 @@ def test_short_address_resolves_to_the_full_one() -> None:
             f"{brief!r} carries a flat the mention never named"
     print("short-address linking OK — same place, own shape, one conversation")
 
+def test_fuller_mention_reuses_the_substitute() -> None:
+    """A FULLER mention arriving AFTER a shorter one, in the same conversation,
+    grows the substitute already minted instead of minting a second one.
+
+    The live v4 pilot: the customer says «центральная сто», the model asks the
+    address directory, the directory answers «Краснодар, центральная, 100», and
+    the tool result was masked with an unrelated substitute — the model could
+    not match what it had just asked for (30 of 42 `compare` triples, twice a
+    neighbour's record picked). Names: «букин сергей» in the turn, «Букин
+    Сергей Иванович» in the CRM record, joined by the model into a double
+    surname.
+
+    Pinned: the short token is a literal substring of the grown full one; both
+    round-trip to what was written; a later short mention links back; the link
+    does not cross conversations; two short candidates refuse; fragments of the
+    short token still resolve after the extension; the spoken house number and
+    the written one share the key while the stored canonical does not move.
+    """
+    import json
+    import re as _re
+    from pseudex.morph_places import address_key, street_house_key
+    from pseudex.redact import unmask_arguments
+    from pseudex.vault import LOC_TOKEN_PATTERN
+
+    assert street_house_key("центральная сто") == street_house_key("Краснодар, центральная, 100")
+    assert street_house_key("клубная 160 второй подъезд") == street_house_key("Клубная, 160, подъезд 2")
+    assert address_key("центральная сто") == "центральный сто", "the stored canonical must not move"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "v.db")
+        talk = Vault(path, "acme").for_conversation("d-1")
+        short = talk.tokenize("центральная сто", "LOC")
+        full = talk.tokenize("Краснодар, центральная, 100", "LOC")
+        assert full != short and short in full, f"{full!r} must grow {short!r}"
+        assert _re.fullmatch(LOC_TOKEN_PATTERN, full), full
+        assert unmask_text(f"адрес {full}", talk) == "адрес Краснодар, центральная, 100"
+        assert unmask_text(f"адрес {short}", talk) == "адрес центральная сто"
+        assert talk.tokenize("центральная 100", "LOC") == short, "a later short mention links back"
+        street_word, house = short.split()[1], short.split()[-1]
+        restored = json.loads(unmask_arguments(json.dumps(
+            {"address": {"locality": full.split(",")[0], "street": street_word, "building": house}},
+            ensure_ascii=False), talk))["address"]
+        assert restored == {"locality": "Краснодар", "street": "центральная", "building": "100"}, restored
+
+        flats = Vault(path, "acme").for_conversation("d-2")
+        brief = flats.tokenize("садовая три квартира пять", "LOC")
+        grown = flats.tokenize("Казань, Садовая, 3, кв. 5", "LOC")
+        assert brief.split(",")[0] in grown and "кв." in grown, (brief, grown)
+
+        elsewhere = Vault(path, "acme").for_conversation("d-3")
+        s2 = elsewhere.tokenize("школьная шестьдесят три", "LOC")
+        f2 = Vault(path, "acme").for_conversation("d-4").tokenize("Воткинск, Школьная, 63", "LOC")
+        assert s2 not in f2, "a link decided in one conversation must not be served to another"
+
+        crowded = Vault(path, "acme").for_conversation("d-5")
+        a1 = crowded.tokenize("мира семь", "LOC")
+        a2 = crowded.tokenize("Мира 7 кв 3", "LOC")
+        a3 = crowded.tokenize("Казань, Мира, 7", "LOC")
+        assert a1 not in a3 and a2 not in a3, "two short candidates mean a guess, and a guess is refused"
+
+        people = Vault(path, "acme").for_conversation("p-1")
+        two = people.tokenize("букин сергей", "NAME")
+        three = people.tokenize("Букин Сергей Иванович", "NAME")
+        assert three.split()[:2] == two.split() and len(three.split()) == 3, (two, three)
+        assert people.detokenize(three) == "Букин Сергей Иванович"
+        assert people.detokenize(two) == "букин сергей"
+        assert people.tokenize("Сергей Иванович Букин", "NAME") == three
+        assert people.tokenize("Сергей", "NAME") == two.split()[1], "a lone given name collapses onto the chain"
+        args = json.loads(unmask_arguments(json.dumps(
+            {"last_name": two.split()[0], "first_name": two.split()[1]}, ensure_ascii=False), people))
+        assert args == {"last_name": "Букин", "first_name": "Сергей"}, args
+        assert unmask_text(f"{two.split()[1]} {two.split()[0]} звонил", people) == "Букин Сергей звонил"
+
+        a = Vault(path, "acme").for_conversation("p-2").tokenize("гусева марина", "NAME")
+        b = Vault(path, "acme").for_conversation("p-3").tokenize("Гусева Марина Олеговна", "NAME")
+        assert b.split()[:2] != a.split(), "a name grown in one conversation is not grown from another's"
+
+        twins = Vault(path, "acme").for_conversation("p-4")
+        p1 = twins.tokenize("иванов пётр", "NAME")
+        p2 = twins.tokenize("пётр иванович", "NAME")
+        p3 = twins.tokenize("Иванов Пётр Иванович", "NAME")
+        assert p3.split()[:2] != p1.split() and p3.split()[1:] != p2.split(), "two shorter people refuse"
+    print("fuller-mention reuse OK — one place and one person, in either order")
+
+
 if __name__ == "__main__":
     load_dev_bundle()
     test_tenants()
@@ -456,3 +541,4 @@ if __name__ == "__main__":
     test_lookalike_table_is_complete()
     test_conversation_scope_is_isolated()
     test_short_address_resolves_to_the_full_one()
+    test_fuller_mention_reuses_the_substitute()

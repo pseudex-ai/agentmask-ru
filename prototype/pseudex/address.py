@@ -392,9 +392,18 @@ def _counts_next_word(text: str, end: int, number: str,
         want_case, want_number = "gent", "sing"
     else:
         want_case, want_number = "gent", "plur"
+    # AN UNKNOWN WORD AGREES WITH EVERYTHING AND IS EVIDENCE OF NOTHING. For
+    # «этоо» pymorphy returns the whole paradigm at one score, so the numeral
+    # «девять» found its genitive plural and «калашникова девять» was refused as
+    # an address — and typed as a PERSON instead (live v4, 5 of 42 `compare`).
+    # The same discipline the fuzzy street arm applies: a guess about a word
+    # morphology does not know is not a signal.
+    parses = MORPH.parse(match.group(0))
+    if not parses or not parses[0].is_known:
+        return False
     return any(parse.tag.POS in ("NOUN", "ADJF", "PRTF")
                and parse.tag.case == want_case and parse.tag.number == want_number
-               for parse in MORPH.parse(match.group(0)))
+               for parse in parses)
 
 
 def _opens_address_part(tail: str, address: AddressAssets) -> bool:
@@ -442,6 +451,9 @@ def _address_continues(text: str, end: int, address: AddressAssets) -> bool:
         if found is not None and found.start() <= 1:
             return True
     return False
+
+
+_TIME_AFTER = re.compile(r"\s*(?:[а-яё]\s+)?(?:в|к|до|с|на|около|после)\s+\d{1,2}[:.]\d{2}\b")
 
 
 def _bare_street_candidates(text: str, address: AddressAssets
@@ -492,6 +504,12 @@ def _bare_street_candidates(text: str, address: AddressAssets
         if address.measure_after.match(text, match.end("bnum")):
             continue
         if address.age_after.match(text, match.end("bnum")):
+            continue
+        # A TIME AFTER THE NUMBER: «переговорной 2 в 15:00» is a meeting room,
+        # and the «в» was read as the house litera because a lone letter after a
+        # house number usually is one. What follows the letter decides: a clock
+        # time or a bare number is a schedule, not an address.
+        if _TIME_AFTER.match(text, match.end("bnum")):
             continue
         if not _gar_reaches(name, address):
             continue
@@ -1177,6 +1195,19 @@ _LEADING_WORD_RE = re.compile(r"^([А-Яа-яёЁ]+)(\s+)")
 _LEADING_NUMBER_RE = re.compile(r"^(\d+)\s+([А-Яа-яёЁ]+)\s")
 
 
+# …and the type word must be followed by the house, a comma or the end — not
+# by another name: in «Иван Петров улица Ленина 5» the street's own name comes
+# AFTER «улица», so «Петров» is the person, not half of the street.
+_NAME_THEN_TYPE = re.compile(
+    r"^\s*[А-ЯЁа-яё][а-яё-]+\s+(?:ул|улица|улице|улицу|пр-т|пр|просп|проспект\w*|пер|переулок|переулк\w*|б-р|"
+    r"бульвар\w*|ш|шоссе|пл|площад\w*|наб|набережн\w*|проезд\w*|тупик\w*|алле\w*|дорог\w*|тракт\w*)\b\.?"
+    r"(?=\s*(?:,|$|д\.|дом\b|\d))")
+_TYPE_THEN_HOUSE = re.compile(
+    r"(?i)^\s*(?:ул|улица|улице|улицу|пр-т|пр|просп|проспект\w*|пер|переулок|переулк\w*|б-р|бульвар\w*|"
+    r"ш|шоссе|пл|площад\w*|наб|набережн\w*|проезд\w*|тупик\w*|алле\w*|дорог\w*|тракт\w*|линия|линии)\.?"
+    r"[\s,]*(?:д\.?\s*|дом\s+)?\d")
+
+
 def _still_an_address(fragment: str, address: AddressAssets) -> bool:
     """Остаётся ли адресом то, что уцелеет после обрезки ведущего слова.
 
@@ -1198,6 +1229,14 @@ def _still_an_address(fragment: str, address: AddressAssets) -> bool:
            (address.house, address.spoken_chain, address.apt,
             address.spoken_apt)):
         return False
+    # A TYPE WORD WITH NOTHING BUT A HOUSE BEHIND IT IS NOT A STREET EITHER.
+    # «Ленина аллея, д. 74», «Толстого ул., дом 118Б»: the name stands BEFORE
+    # its type, the remainder «аллея, д. 74» passed as an address, and the
+    # street name was cut off and minted as a PERSON — the hard-negative set
+    # counted five such false people. The word that was about to be dropped is
+    # the street's name when the type word has none of its own.
+    if _TYPE_THEN_HOUSE.match(fragment):
+        return False
     return any(core for _, _, core in
                _regex_candidates(fragment, address)
                + _bare_street_candidates(fragment, address))
@@ -1207,6 +1246,9 @@ def _names_a_person(word: str) -> bool:
     parses = MORPH.parse(word)
     return any({"Surn", "Name", "Patr"} & set(parse.tag.grammemes)
                for parse in parses)
+
+
+_GLUED_PARTICLE = re.compile(r"-?(?:то|та|же|ка|ж)$")
 
 
 def _trim_lead(start: int, stop: int, text: str, address: AddressAssets) -> int:
@@ -1288,8 +1330,15 @@ def _trim_lead(start: int, stop: int, text: str, address: AddressAssets) -> int:
         # оставлял «адресу», а «адресу нижняя улица девяносто два» уходило в
         # инструмент вместе с «адресу». Лемма — то же слово, увиденное с другой
         # стороны.
+        # A CUE WITH A PARTICLE GLUED ON. Speech says «адресто», «адрес-то»,
+        # «телефонто»; the lemma is the glued form and matched nothing, so the
+        # cue stayed inside the span and the substitute was minted without the
+        # city that stood right after it (live v4, derive-034). The particle is
+        # stripped and the rest is asked the same question.
+        stem = _GLUED_PARTICLE.sub("", word.lower())
         if not (pronominal or preposition or address.addr_ctx.fullmatch(word)
-                or address.addr_ctx.fullmatch(lemma)):
+                or address.addr_ctx.fullmatch(lemma)
+                or (stem != word.lower() and address.addr_ctx.fullmatch(stem))):
             # ИМЯ ЧЕЛОВЕКА ПЕРЕД АДРЕСОМ — не начало адреса, а другая сущность.
             # «битюков улица сабурова 53 б квартира 9» становилось ОДНИМ спаном
             # LOC: человек и место сливались в одну подмену, в аргумент
@@ -1300,9 +1349,18 @@ def _trim_lead(start: int, stop: int, text: str, address: AddressAssets) -> int:
             # правило съело бы «Ленина 14»: «Ленина» — такая же фамилия в
             # родительном, и отличить её от человека можно лишь тем, что после
             # неё не остаётся ничего.
+            # THE STREET'S OWN NAME, WHEN THE TYPE WORD FOLLOWS IT. «Розы
+            # Люксембург бульвар», «Карла Маркса проспект»: the first word
+            # reads as a person, the remainder («Люксембург бульвар, дом 200»)
+            # is still an address, and the street lost half its name to a
+            # fake person. A person in FRONT of an address is followed by the
+            # address's type word or its house («битюков улица сабурова»,
+            # «кузнецова дом 43»); a name-then-type street puts another name
+            # word first and its type second.
+            rest = text[start + match.end():stop]
             if (_names_a_person(word)
-                    and _still_an_address(text[start + match.end():stop],
-                                          address)):
+                    and not _NAME_THEN_TYPE.match(rest)
+                    and _still_an_address(rest, address)):
                 start += match.end()
                 continue
             return start
@@ -1445,6 +1503,12 @@ def detect_address(text: str) -> list[Span]:
         start, stop = _strip(start, stop, text)
         value = text[start:stop]
         if not value or address.neg.search(value):
+            continue
+        # THE UNIT STANDS RIGHT AFTER THE SPAN. `neg` looks inside the span and
+        # «Площадь помещения 80 кв.м» ends the span on «80»; the bare arm asks
+        # `measure_after` at the number, the regex arms never did, so a floor
+        # area with a street-type word in front of it was a house.
+        if value[-1:].isdigit() and address.measure_after.match(text, stop):
             continue
         spans.append(Span(start, stop, "LOC", value))
     return spans

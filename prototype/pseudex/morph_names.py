@@ -225,6 +225,7 @@ def name_shape(surface: str) -> tuple[str, ...]:
     person, while replacing it with a patronymic would not.
     """
     shape: list[str] = []
+    guessed: list[int] = []          # indexes that fell to the «name» default
     for part in surface.split():
         stripped = part.strip(".,")
         if not stripped:
@@ -277,6 +278,21 @@ def name_shape(surface: str) -> tuple[str, ...]:
             shape.append("surn")
             continue
         shape.append("name")
+        if not best_name:
+            guessed.append(len(shape) - 1)
+    # DOCUMENT ORDER FOR A WORD MORPHOLOGY DOES NOT KNOW. «миллер валерий»,
+    # «ерохин пётр», «мещеряков савва»: the surname is absent from pymorphy's
+    # dictionary, falls to the «name» default, and the phrase reads as two given
+    # names. The substitute is then minted given-first, the positional pairing
+    # hands `last_name` the given name — measured on the live run as «валерий»
+    # and «артём» written into a CRM's surname field. When exactly ONE part is
+    # such a guess and another part carries a real given-name reading, the
+    # guess is the surname. Two unknowns stay as they are: nothing separates
+    # «цхведиани нино» from «нино цхведиани», and a wrong guess would be
+    # applied to every fake built from it.
+    if len(guessed) == 1 and any(role == "name" and index not in guessed
+                                 for index, role in enumerate(shape)):
+        shape[guessed[0]] = "surn"
     return tuple(shape)
 
 

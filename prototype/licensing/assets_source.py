@@ -570,7 +570,12 @@ ADDRESS_PATTERNS: dict[str, str] = {
     "street_lower_nohouse": (rf"(?i)\b(?:{_ST_NOHOUSE}\s+(?P<after>{_LOWER_NAME})\b"
                             rf"|(?P<before>[а-яё]{{3,}})\s+(?={_ST_NOHOUSE}\b))"),
     "street_first": rf"(?i)\b{_ST}\s*\.?\s*{_CAP}",
-    "street_last": rf"(?i){_CAP}\s+{_ST}\b",
+    # `(?!\w)` AND NOT `\b`: after an abbreviation's dot («Кирова пр., дом
+    # 235», «Ленина ш., д.114») the next character is a comma, and `\b` needs a
+    # word character on one side — so the name-then-abbreviation form never
+    # matched and the street's name was minted as a PERSON on the hard-negative
+    # set. A bare «пер» glued to «езвоните» is still refused by the lookahead.
+    "street_last": rf"(?i){_CAP}\s+{_ST}(?!\w)",
     "house": (
         r"(?i)" + _TOK + r"(?:дом|д|владени\w*|вл|уч\w*)\.?\s*№?\s*\d+(?:[а-яёА-ЯЁ](?!\d)|/\d+|-\d+)?"
         r"(?:\s*(?:корпус|корп|кор|к)\.?\s*\d+[а-яёА-ЯЁ]?)?"
@@ -632,7 +637,9 @@ ADDRESS_PATTERNS: dict[str, str] = {
     "mkr": (r"\b(?:[Мм]икрорайон\w*|[Мм]крн|[Мм]кр)(?:\.\s*|\s+)"
             r"(?:[А-ЯЁ][а-яё]+|\d+[а-яё]?)"),
     "settlement": (
-        r"(?i)" + _TOK + r"(?:город|гор|г|посёлок|поселок|пос|п|село|деревн\w*|дер|станиц\w*|ст"
+        # «д. Петрово» — the village marker written the short way; the dot is
+        # mandatory and `_NAME` wants a capital, so «д. 14» stays a house.
+        r"(?i)" + _TOK + r"(?:город|гор|г|посёлок|поселок|пос|п|село|деревн\w*|дер|д\.|станиц\w*|ст"
         r"|хутор\w*|пгт|снт|днп)\.?\s*" + _NAME
     ),
     # RURAL ADDRESSING IS A CORE PART, because in a village there is no street:
