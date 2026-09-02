@@ -40,6 +40,12 @@ def _one(ctx: c.Ctx) -> Case:
     first.say(ctx.rng.choice(("ой нет", "стоп", "простите ошиблась", "нет не так")))
     first.say("правильно")
     first.value("a_new", c.address(ctx, right))
+    # THE CITY IS SAID, because `courier_book` requires `locality` and the
+    # first live pilot showed the model asking «в каком городе?» in EVERY arm of
+    # every correction case — three arms spent to learn that the schema wants a
+    # field the utterance never carried. The address VALUES stay city-less: a
+    # correction restates the street, not the town.
+    first.say("это в").say(city)
     first.say("это").value("n1", c.name(ctx, drawn.person, ("surname", "given")))
     first.say("телефон").value("ph1", c.phone(ctx, drawn.phone))
     if ctx.register == "clean":

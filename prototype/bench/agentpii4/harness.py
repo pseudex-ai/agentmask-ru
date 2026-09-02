@@ -301,7 +301,12 @@ async def _judge(case: Case, run: ArmRun, gateway: RealGateway, config: judge_mo
     if config is None or not run.reply.strip():
         return {"verdict": base.verdict, "why": base.why, "judged_by": base.judged_by,
                 "missing": list(request.missing), "cost_usd": 0.0}
-    under = judge_mod.case_under_judgement(request, judge_mod.only_what_the_vault_matched)
+    # ALL minted substitutes, not only the ones string search already found in
+    # the reply — the half the judge exists for is the half the vault could not
+    # match (an inflected or paraphrased substitute). With the matched-only
+    # source the nano pilot asked the model nothing and reported 27 «clean» at
+    # $0.00: a deterministic floor wearing the judge's name.
+    under = judge_mod.case_under_judgement(request, lambda _r: tuple(gateway.substitutes()))
     try:
         judgement = await judge_mod.judge_answer(under, judge_mod.oracle_literals(request), config)
     except (judge_mod.BudgetExhausted, judge_mod.JudgeCallFailed) as stopped:
@@ -464,6 +469,9 @@ def main() -> int:
     parser.add_argument("--report", default="", help="пересобрать отчёт из <run>.arms.jsonl без модели и без трат")
     args = parser.parse_args()
 
+    if args.report and (Path(args.report).parent / "corpus.json").exists():
+        # The snapshot taken at run time wins over whatever the tree holds now.
+        args.corpus = str(Path(args.report).parent / "corpus.json")
     everything, digest = _load(Path(args.corpus))
     by_id = {case.id: case for case in everything}
 
@@ -499,9 +507,14 @@ def main() -> int:
     load_dev_bundle()
     detector = Detector()
     run_id = str(uuid.uuid4())
-    out = Path(args.out) if args.out else (here.parents[1] / "runs" / datetime.now().strftime("%Y-%m-%d")
+    out = Path(args.out) if args.out else (here.parent / "runs" / datetime.now().strftime("%Y-%m-%d")
                                            / f"v4-live-{tier_name}")
     out.mkdir(parents=True, exist_ok=True)
+    # THE CORPUS THE RUN SAW, beside the run: a later rebuild changes case text
+    # and spans, and `--report` must replay against what was actually played.
+    snapshot = out / "corpus.json"
+    if not snapshot.exists():
+        snapshot.write_text(Path(args.corpus).read_text(encoding="utf-8"), encoding="utf-8")
     arms_sink = out / f"{run_id}.arms.jsonl"
     triples_sink = out / f"{run_id}.triples.jsonl"
     ledger = judge_mod.SpendLedger(out / f"{run_id}.spend.tsv", args.ceiling)
