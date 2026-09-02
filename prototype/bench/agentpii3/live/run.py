@@ -500,11 +500,48 @@ def _descriptions(schema_: dict[str, object]) -> list[str]:
 # --- driving the agent ----------------------------------------------------
 
 
-def _system_prompt(case: schema.Case, gateway: LiveGateway) -> str:
+# ИНСТРУКЦИЯ ПО КОНТРАКТУ ИНСТРУМЕНТОВ, включаемая флагом.
+#
+# ЗАЧЕМ ОНА ЕСТЬ. В прогоне на 800 диалогов эталонный вызов НЕ БЫЛ СДЕЛАН в 47%
+# аргументов, и заголовочная доля «эталонный вызов целиком» делилась на них
+# тоже. Смотреть надо было не на модель: в семье `result` доля несделанных ровно
+# 100%, и разбор показал, что модель вызывает ПЕРВЫЙ инструмент (читает
+# карточку), а эталон ждёт ВТОРОЙ — действие. Агент не «не позвал инструмент»,
+# он остановился на шаг раньше, чем ждёт корпус.
+#
+# ЧТО ЭТО МЕНЯЕТ В ЧИСЛЕ. С инструкцией ось 2 отвечает на вопрос «доносит ли
+# ШЛЮЗ значения», убрав шум выбора инструмента. Без неё — на вопрос «работает ли
+# связка целиком». Оба вопроса законные и это РАЗНЫЕ числа, поэтому инструкция
+# стоит за флагом, а не становится умолчанием.
+#
+# ЧЕГО В НЕЙ НЕТ И БЫТЬ НЕ МОЖЕТ: значений аргументов. Названы только имена
+# инструментов, взятые из контракта самого корпуса, — подсказать модели, ЧТО
+# положить в поле, значило бы измерить собственную подсказку.
+# Ставится один раз из CLI, как `address.SHADOW` — прогон целиком идёт либо с
+# инструкцией, либо без, и смешивать их в одном числе нельзя.
+GUIDE_TOOLS = False
+
+_TOOL_GUIDE = (
+    "\n\nВ этом разговоре обязательно вызови инструменты: {names}. "
+    "Вызывай каждый, как только из разговора известно всё нужное для него, "
+    "и не заканчивай, пока не вызвал. Значения бери только из разговора."
+)
+
+
+def _tool_contract(case: schema.Case) -> str:
+    """Имена инструментов, которых ждёт эталон случая. Без значений."""
+    names = sorted({call.name for call in case.calls})
+    return _TOOL_GUIDE.format(names=", ".join(names)) if names else ""
+
+
+def _system_prompt(case: schema.Case, gateway: LiveGateway,
+                   guide: bool = False) -> str:
+    base = DEFAULT_SYSTEM
     for index, message in enumerate(case.messages):
         if message.role == "system":
-            return gateway.push(index)
-    return DEFAULT_SYSTEM
+            base = gateway.push(index)
+            break
+    return base + _tool_contract(case) if guide else base
 
 
 def _tool_results(case: schema.Case) -> dict[str, list[int]]:
@@ -632,7 +669,7 @@ async def run_agent(case: schema.Case, gateway: LiveGateway, model: str,
     reservation in full and record the case incomplete.
     """
     calls: list[ObservedCall] = []
-    system = _system_prompt(case, gateway)
+    system = _system_prompt(case, gateway, GUIDE_TOOLS)
     masked_schemas = gateway.tools()
     server = create_sdk_mcp_server(
         SERVER, tools=_mcp_tools(case, gateway, masked_schemas, calls))
@@ -1786,6 +1823,11 @@ def main() -> int:
     parser.add_argument("--ceiling", type=float, default=3.0,
                         help="потолок трат на весь прогон, USD (агент + судья)")
     parser.add_argument("--model", default=AGENT_MODEL)
+    parser.add_argument("--guide-tools", action="store_true",
+                        help="назвать агенту, какие инструменты он обязан "
+                             "вызвать (имена из контракта корпуса, без "
+                             "значений). Убирает шум выбора инструмента и "
+                             "делает ось 2 числом ШЛЮЗА, а не связки целиком")
     parser.add_argument("--judge-model", default=JUDGE_MODEL)
     parser.add_argument("--concurrency", type=int, default=2)
     parser.add_argument("--timeout", type=float, default=180.0,
@@ -1845,6 +1887,8 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     sink = out / f"{run_id}.jsonl"
     ledger = judge_mod.SpendLedger(out / f"{run_id}.spend.tsv", args.ceiling)
+    global GUIDE_TOOLS
+    GUIDE_TOOLS = args.guide_tools
     config = judge_mod.JudgeConfig(
         model=args.judge_model, ledger=ledger,
         query_cap_usd=judge_mod.QUERY_CAP_USD, retries=judge_mod.RETRIES,
