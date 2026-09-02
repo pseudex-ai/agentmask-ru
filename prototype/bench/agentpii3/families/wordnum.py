@@ -1729,7 +1729,21 @@ def _judged(parts: dict[str, str], names: tuple[str, ...],
     carry is neither passed nor judged, because judging an argument the message
     never gave would score the gateway on information the conversation did not
     have — the ground-truth bug that cost 162 of v1's 183 sloppy failures.
+
+    ЧАСТЬ, КОТОРУЮ ИНСТРУМЕНТ НЕ МОЖЕТ ПРИНЯТЬ, ИДЁТ ТУДА, КУДА МОЖЕТ. Литера
+    дома — отдельное слово, и `send_courier` объявляет под неё поле `letter`, а
+    `dispatch_car` нет. Сценарий, существующий РОВНО ради литеры, зовёт
+    `dispatch_car`: деться ей было некуда, кроме `house`, а эталонный `house`
+    её не нёс — и «сорок семь а» считалось мусором в хвосте, хотя буква и есть
+    «разница между двумя дверями», как говорит докстрока самого сценария.
+    16 из 22 хвостовых расхождений на литере — это оно.
+
+    Отбросить букву было бы хуже, чем спорно: тогда эталон требует от шлюза
+    ПОТЕРЯТЬ часть адреса, и правильное поведение стало бы ошибкой.
     """
+    parts = dict(parts)
+    if "letter" in parts and "letter" not in names and "house" in names:
+        parts["house"] = f"{parts.get('house', '')} {parts['letter']}".strip()
     arguments: dict[str, str] = {}
     judged: list[str] = []
     for name in names:

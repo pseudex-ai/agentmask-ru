@@ -47,8 +47,10 @@ import argparse
 import hashlib
 import json
 import random
+import re
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 
 if __package__ in (None, ""):                       # `python3 build.py`
@@ -166,7 +168,68 @@ def build_corpus_sized(seed: int, counts: dict[str, int]) -> list[Case]:
         if not produced:
             raise InvalidCorpus(f"family module {name!r} produced no cases")
         cases.extend(produced)
-    return cases
+    return [_merge_leading_city(case) for case in cases]
+
+
+_CITY_GAP = re.compile(r"^[,\s]*$")
+
+
+def _merge_leading_city(case: Case) -> Case:
+    """Город, названный ВПЛОТНУЮ перед адресом, — часть этого адреса.
+
+    Три семейства выносили его в отдельный необязательный элемент с
+    `tool_param=""`, а значение адреса начиналось после него: «едем на калуга
+    улица зеленоградская дом 28» требовало от инструмента «улица зеленоградская
+    дом 28». Так эталон требовал от шлюза ПОТЕРЯТЬ часть адреса — 24 из 31
+    головного расхождения.
+
+    ДВЕ ОСИ БЫЛИ СЛИТЫ В ОДНО ПОЛЕ. «Голый город никого не идентифицирует»
+    (152-ФЗ ст. 3 п. 1) — поэтому маскировать его НЕОБЯЗАТЕЛЬНО, и `duty`
+    говорил про это. Но что кладётся в аргумент — вопрос другой: город плюс
+    улица плюс дом идентифицируют вместе, движок находит их одним спаном, и
+    исключить город из аргумента можно только расщепив спан — то есть
+    замаскировав адрес и оставив настоящий город на виду. Хуже по обеим осям.
+
+    ВПЛОТНУЮ — это буквально: между спанами только пробелы и запятая. Город,
+    названный в другом месте фразы, остаётся отдельным необязательным
+    элементом, каким и был.
+    """
+    cities = [item for item in case.pii
+              if item.type == "LOC" and item.duty == "optional" and not item.tool_param]
+    if not cities:
+        return case
+    text_of = {index: message.content for index, message in enumerate(case.messages)}
+    merged: dict[str, str] = {}                    # id города -> id адреса
+    rewritten: dict[tuple[str, str], str] = {}     # (поле, старое) -> новое
+    pii = list(case.pii)
+    for city in cities:
+        for index, address in enumerate(pii):
+            if (address.type != "LOC" or not address.tool_param
+                    or address.msg != city.msg or address.start < city.end):
+                continue
+            gap = text_of.get(city.msg, "")[city.end:address.start]
+            if not _CITY_GAP.match(gap):
+                continue
+            whole = text_of[city.msg][city.start:address.end]
+            pii[index] = replace(
+                address, start=city.start, value=whole,
+                canonical=f"{city.canonical}, {address.canonical}")
+            rewritten[(address.tool_param, address.value)] = whole
+            merged[city.id] = address.id
+            break
+    if not merged:
+        return case
+    # Аргумент правится по СТАРОМУ значению, а не по одному имени поля: два
+    # адреса в одном вызове («откуда» и «куда») носят разные имена, но третий
+    # случай — тот же адрес, названный дважды, — носит одно, и замена по имени
+    # переписала бы не тот.
+    calls = tuple(
+        replace(call, arguments={
+            name: rewritten.get((name, text), text)
+            for name, text in call.arguments.items()})
+        for call in case.calls)
+    return replace(case, pii=tuple(item for item in pii if item.id not in merged),
+                   calls=calls)
 
 
 def build_corpus(seed: int) -> list[Case]:
