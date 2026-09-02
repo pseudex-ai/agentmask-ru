@@ -686,6 +686,29 @@ def _join_address_fields(restored: object, original: object, vault: Vault) -> ob
     }
     if not fragments:
         return restored
+    # ДВА АДРЕСА В ОДНОМ ВЫЗОВЕ — ЭТО ДВЕ ГРУППЫ ПОЛЕЙ. `book_ride` просит
+    # `pickup_street`/`pickup_house` и `dropoff_street`/`dropoff_house`, и,
+    # спрошенные скопом, они дают ДВУХ владельцев — правило единственного
+    # отказывало, и ни один из адресов не разрешался. Группа читается из
+    # приставки имени поля: она и есть то, чем схема их различает.
+    groups: dict[str, dict[str, str]] = {}
+    for key, value in fragments.items():
+        role = _role_of_field(key)
+        prefix = key.lower().rsplit(role, 1)[0].strip("_")
+        groups.setdefault(prefix, {})[key] = value
+    if len(groups) > 1:
+        out = dict(restored)
+        for group in groups.values():
+            out = _join_one_address(out, group, vault)
+        return out
+    return _join_one_address(restored, fragments, vault)
+
+
+def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
+                      vault: Vault) -> dict[str, object]:
+    """Одна группа полей — один адрес."""
+    if not fragments:
+        return restored
     # КАЖДОЕ ПОЛЕ ГОЛОСУЕТ ОТДЕЛЬНО, И НЕ КАЖДОЕ ГОЛОСУЕТ. У подмены нет
     # подъезда — генератор его не чеканит, — поэтому в `entrance` модель кладёт
     # выдуманное число, у которого владельца нет вовсе. Спросив все поля разом,

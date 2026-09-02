@@ -1631,8 +1631,18 @@ class Vault:
             for word in words:
                 forms = sorted({word.casefold(),
                                 morph_names.to_nominative(word).casefold()})
+                # ТОЛЬКО ИМЕНА. Таблица частей общая с адресами с тех пор, как
+                # адресный фрагмент стал разрешаться, и без фильтра одиночное
+                # слово адресной подмены находило владельца ЗДЕСЬ — мимо области
+                # разговора и мимо урезания до названных частей. Наружу это
+                # выглядело так: лист `street` со значением «переулок Рябиновый»
+                # возвращался как «переулок переулок загородный двадцать два» —
+                # родовое слово осталось от подмены, а следом встал весь
+                # настоящий адрес.
                 rows = self._conn.execute(
-                    "SELECT token FROM token_parts WHERE customer=? AND part IN "
+                    "SELECT t.token FROM token_parts AS t "
+                    "JOIN tokens AS k ON k.customer=t.customer AND k.token=t.token "
+                    "WHERE t.customer=? AND k.entity_type='NAME' AND t.part IN "
                     f"({','.join('?' * len(forms))})",
                     (self._customer, *forms),
                 ).fetchall()
