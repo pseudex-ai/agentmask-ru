@@ -653,7 +653,7 @@ def _merge_adjacent(spans: list[Span], text: str) -> list[Span]:
     return out
 
 
-def _joins_the_name(word: str) -> bool:
+def _joins_the_name(word: str, anchor: str) -> bool:
     """Whether the word beside a detected name belongs to it.
 
     Morphology first, as before. A MISSPELT name is admitted too — «Кзнецов
@@ -664,7 +664,41 @@ def _joins_the_name(word: str) -> bool:
     gazetteer rather than "capitalised and adjacent": the word after a given name
     is very often an ordinary one, and adjacency alone would mask it.
     """
-    return _names_a_person(word) or _looks_misspelt_name(word)
+    return (_names_a_person(word) or _looks_misspelt_name(word)
+            or _agrees_as_a_name(word, anchor))
+
+
+def _agrees_as_a_name(word: str, anchor: str) -> bool:
+    """Сосед согласован с найденным именем В ПАДЕЖЕ И РОДЕ — значит это пара.
+
+    ЧТО ЭТО ОБХОДИТ И ПОЧЕМУ ТОЛЬКО ЭТО. `_names_a_person` отвергает слово,
+    лучший разбор которого — НЕОДУШЕВЛЁННОЕ существительное, и сторож
+    измеренный: «романа» и «слава» — вещи, их именные чтения настоящие, но не то,
+    что значит предложение. Он же выбрасывал «роману ерохину» и «лыткиной
+    марине» — обычную форму русской диспетчерской записи, где имя стоит в
+    косвенном падеже и со строчной.
+
+    Согласование — это тот сигнал, которого сторожу не хватало. Книга рядом с
+    человеком в падеже и роде с ним не сходится: «романа ерохина» требует, чтобы
+    оба слова несли ИМЕННОЕ чтение в одном падеже и одном роде, а «слава богу» —
+    именительный против дательного — не проходит. Остальные три сторожа
+    (`длина`, `часть речи`, `филлер`) остаются: предлог рядом с именем ни в
+    каком падеже именем не станет.
+    """
+    if len(word) < 3 or is_stretched_filler(word):
+        return False
+    parses = MORPH.parse(word)
+    if not parses:
+        return False
+    if max(parses, key=lambda parse: parse.score).tag.POS in _NOT_A_NAME_POS:
+        return False
+    theirs = {(parse.tag.case, parse.tag.gender) for parse in MORPH.parse(anchor)
+              if _PERSON_TAGS & parse.tag.grammemes
+              and parse.tag.case and parse.tag.gender}
+    if not theirs:
+        return False
+    return any((parse.tag.case, parse.tag.gender) in theirs
+               for parse in parses if _PERSON_TAGS & parse.tag.grammemes)
 
 
 def _adjacent_surnames(text: str, found: list[Span]) -> list[Span]:
@@ -676,7 +710,7 @@ def _adjacent_surnames(text: str, found: list[Span]) -> list[Span]:
             if match.start() > 1:      # not the immediately adjacent word
                 break
             start, end = span.end + match.start(), span.end + match.end()
-            if (start, end) not in taken and _joins_the_name(match.group()):
+            if (start, end) not in taken and _joins_the_name(match.group(), span.value):
                 extra.append(Span(start, end, "NAME", match.group()))
             break
         for match in reversed(list(_WORD_RE.finditer(text[max(0, span.start - 24):span.start]))):
@@ -684,7 +718,7 @@ def _adjacent_surnames(text: str, found: list[Span]) -> list[Span]:
             if span.start - (offset + match.end()) > 1:
                 break
             start, end = offset + match.start(), offset + match.end()
-            if (start, end) not in taken and _joins_the_name(match.group()):
+            if (start, end) not in taken and _joins_the_name(match.group(), span.value):
                 extra.append(Span(start, end, "NAME", match.group()))
             break
     return extra
