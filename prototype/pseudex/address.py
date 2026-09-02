@@ -350,7 +350,8 @@ def _plural_or_pronoun(word: str) -> bool:
     return all("Apro" in parse.tag for parse in parses)
 
 
-def _counts_next_word(text: str, end: int, number: str) -> bool:
+def _counts_next_word(text: str, end: int, number: str,
+                      address: AddressAssets) -> bool:
     """The numeral GOVERNS the next word — so it is a quantity, not a door.
 
     Russian numerals decide the case of what they count: «один день» takes the
@@ -382,7 +383,7 @@ def _counts_next_word(text: str, end: int, number: str) -> bool:
     # THE ADDRESS PART IS JUDGED ON THE TAIL, NOT THE FIRST WORD. Russian
     # dispatch says «второй подъезд» — the ordinal comes BEFORE the marker — and
     # a veto reading only «второй» threw away thirteen real addresses.
-    if _PART_AFTER_RE.match(tail):
+    if _PART_AFTER_RE.match(tail) or _opens_address_part(tail, address):
         return False
     last = number.split()[-1].lower()
     if last in ("один", "одна", "одно"):
@@ -394,6 +395,24 @@ def _counts_next_word(text: str, end: int, number: str) -> bool:
     return any(parse.tag.POS in ("NOUN", "ADJF", "PRTF")
                and parse.tag.case == want_case and parse.tag.number == want_number
                for parse in MORPH.parse(match.group(0)))
+
+
+def _opens_address_part(tail: str, address: AddressAssets) -> bool:
+    """Открывается ли хвост АДРЕСНОЙ ЧАСТЬЮ — по арендованному словарю маркеров.
+
+    `_PART_AFTER_RE` рядом перечисляет маркеры сам, и только в ПОЛНОЙ форме, а
+    чат и JSON пишут их сокращённо: «армейская 16 кв 4» не находилось вовсе —
+    «кв» читается морфологией как существительное в родительном, согласование с
+    «16» находилось, и вето отвергало адрес ЦЕЛИКОМ. «армейская 16 квартира 4»
+    при этом работало. Утечка стоила квартиры, подъезда и всего адреса разом.
+
+    Второго списка здесь быть не должно: `apt` и `spoken_apt` арендованы, знают
+    каждое сокращение («кв», «эт», «стр», «корп», «оф», «пом») и требуют после
+    маркера ЧИСЛО — поэтому «рублей 500», «гектаров 5» и «филиалов 7» через них
+    не проходят, а именно они и есть то, ради чего вето существует.
+    """
+    return (address.apt.match(tail) is not None
+            or address.spoken_apt.match(tail) is not None)
 
 
 def _is_street_type(word: str, address: AddressAssets) -> bool:
@@ -517,7 +536,7 @@ def _bare_street_candidates(text: str, address: AddressAssets
         licensed = _street_shape(name) or preposition
         if not (spelled and _register_vouches(name, address)) and not licensed:
             continue
-        if _counts_next_word(text, match.end("bnum"), number):
+        if _counts_next_word(text, match.end("bnum"), number, address):
             continue
         out.append((match.start(), match.end(), True))   # core: street + house
     return out
