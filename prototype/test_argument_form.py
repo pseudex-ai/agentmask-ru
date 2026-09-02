@@ -12,6 +12,7 @@ JSON корректен, код 200, список остатков пуст.
 является — количество, число в прозе, — трогать нельзя.
 """
 import json
+import re
 
 import testkit
 
@@ -64,14 +65,64 @@ def main() -> int:
 
     # --- числовые части -----------------------------------------------------
     source = "паспорт 4509 123456 телефон +79261234567 снилс 112-233-445 95"
+    # Tokens are found by SHAPE, not by word index: the passport fake is minted
+    # as «4509 123456» or «45 09 123456» at random, and an index into `split()`
+    # made this check flaky.
+    def passport(m: str) -> str:
+        return re.search(r"\d{2} ?\d{2} \d{6}", m).group()  # type: ignore[union-attr]
+
     for name, take, want in (
-        ("серия паспорта", lambda m: " ".join(m.split()[1:3]), "45 09"),
-        ("номер паспорта", lambda m: m.split()[3], "123456"),
-        ("последние четыре цифры телефона", lambda m: m.split()[5][-4:], "4567"),
-        ("первая группа СНИЛС", lambda m: m.split()[7].split("-")[0], "112"),
+        ("серия паспорта", lambda m: " ".join(passport(m).replace(" ", "")[i:i + 2] for i in (0, 2)), "45 09"),
+        ("номер паспорта", lambda m: passport(m)[-6:], "123456"),
+        ("последние четыре цифры телефона", lambda m: re.search(r"\+7\d{10}", m).group()[-4:], "4567"),  # type: ignore[union-attr]
+        ("первая группа СНИЛС", lambda m: re.search(r"\d{3}-\d{3}-\d{3} \d{2}", m).group()[:3], "112"),  # type: ignore[union-attr]
     ):
         _, _, restored = _round_trip(detector, source, take)
         failures += not _check(name, restored, want)
+
+    # --- адрес, разложенный по ВЛОЖЕННЫМ полям ------------------------------
+    # Схема CRM просит `contact.address.street`, а не `street` на верхнем уровне.
+    # Сборка адреса из кусков смотрела только на верхний уровень, и улица
+    # уезжала в инструмент подменой — с кодом 200 и пустым списком остатков.
+    source = "живу: Москва, ул. Ленина 14, кв. 5"
+    vault = Vault(":memory:", "acme").for_conversation("c1")
+    masked = mask_text(source, vault, detector.detect(source))
+    fake = masked.split(": ", 1)[1]
+    fake_street = fake.split(",")[1].split()[-2] if "ул." in fake else fake.split(",")[1].split()[-2]
+    fake_house = fake.split(",")[1].split()[-1]
+    nested = json.loads(unmask_arguments(json.dumps(
+        {"contact": {"name": "x", "address": {"city": fake.split(",")[0], "street": fake_street,
+                                               "house": fake_house}}}, ensure_ascii=False), vault))
+    failures += not _check("улица во вложенном объекте", nested["contact"]["address"]["street"],
+                           "Ленина")
+    failures += not _check("дом во вложенном объекте", nested["contact"]["address"]["house"], "14")
+
+    # --- число целиком, в форме агента --------------------------------------
+    # Подмена телефона уходит к модели как «+7…»; модель пишет её дословно, как
+    # «8 (…) …-..-..» или десятью голыми цифрами — потому что так просит её
+    # схема. Обратно обязаны прийти НАСТОЯЩИЕ цифры в ЕЁ форме, а не в той, в
+    # которой клиент когда-то написал номер.
+    source = "телефон 8 916 402 11 87, паспорт 45 09 123456, родился 21.09.1955"
+    vault = Vault(":memory:", "acme").for_conversation("c1")
+    masked = mask_text(source, vault, detector.detect(source))
+    fake_phone = re.search(r"\+7\d{10}", masked).group()  # type: ignore[union-attr]
+    ten = fake_phone[2:]
+    fake_date = re.search(r"\d{2}\.\d{2}\.\d{4}", masked).group()  # type: ignore[union-attr]
+    for name, written, want in (
+        ("телефон дословно, E.164", fake_phone, "+79164021187"),
+        ("телефон через 8 со скобками", f"8 ({ten[:3]}) {ten[3:6]}-{ten[6:8]}-{ten[8:]}",
+         "8 (916) 402-11-87"),
+        ("телефон десятью цифрами", ten, "9164021187"),
+        ("телефон +7 с пробелами", f"+7 {ten[:3]} {ten[3:6]} {ten[6:]}", "+7 916 402 1187"),
+        ("дата в ISO", f"{fake_date[6:]}-{fake_date[3:5]}-{fake_date[:2]}", "1955-09-21"),
+        ("дата дословно", fake_date, "21.09.1955"),
+    ):
+        restored = json.loads(unmask_arguments(
+            json.dumps({"v": written}, ensure_ascii=False), vault))["v"]
+        failures += not _check(name, restored, want)
+    prose = unmask_text(f"перезвоним на {fake_phone}", vault)
+    failures += not _check("в прозе — как написал клиент", prose,
+                           "перезвоним на 8 916 402 11 87")
 
     # --- имя: агент берёт одну часть ---------------------------------------
     source = "Иванов Пётр Сергеевич"

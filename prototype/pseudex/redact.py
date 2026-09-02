@@ -198,6 +198,8 @@ def _restore_tokens(text: str, vault: Vault, for_tool: bool = False) -> str:
     for match in matches:
         value = resolved(match.group())
         if value is not None:
+            if for_tool:
+                value = _digits_in_form_of(match.group(), value)
             spans.append((match.start(), match.end(), value))
     return _splice(text, spans)
 
@@ -235,6 +237,8 @@ def _restore_reformatted(text: str, vault: Vault,
         # Full signature wins over the phone last-10 fallback.
         value = resolved.get(digits) or (resolved.get(digits[-10:]) if len(digits) >= 10 else None)
         if value is not None:
+            if for_tool:
+                value = _digits_in_form_of(match.group(), value)
             spans.append((match.start(), match.end(), value))
             continue
         # КУСОК ПОДМЕНЫ — ТОЖЕ НАША ПОДМЕНА. Схема просит серию паспорта без
@@ -268,6 +272,69 @@ def _same_shape(model: str, digits: str) -> str:
         elif not char.isdigit():
             out.append(char)
     return "".join(out) + digits[index:]
+
+
+# A value that is nothing but digits and the separators people put between them:
+# a phone, a СНИЛС, a passport, a card, a date. A name or an address never
+# matches, and that is the guard — splicing real digits into a FAKE street's
+# text would hand the tool an address that exists nowhere.
+_NUMERIC_FORM = re.compile(r"[+(]?\d[\d\s().\-/]*\d")
+
+
+def _digits_in_form_of(written: str, real: str) -> str:
+    """The REAL digits in the form the AGENT wrote.
+
+    THE FORM BELONGS TO THE AGENT, THE CONTENT TO THE VAULT — the same rule
+    `in_form_of` applies to a name and an address, here for the numeric types.
+    The substitute reaches the model as «+79793509887»; the model writes it
+    verbatim, or as «8 979 350-98-87», or as ten bare digits, because that is
+    what its schema asked for — and every one of those came back as the
+    customer's ORIGINAL spelling, «8 916 402 11 87», which an E.164 parser
+    refuses. Measured on the scripted agent: 54 of 54 phone arguments refused
+    by the mock for `phone_not_e164` while the value inside was right.
+
+    A phone keeps the agent's country-code convention: what stands before the
+    last ten digits is the agent's, the last ten are the customer's. A date is
+    rebuilt component-wise, because ISO reorders it and a positional splice
+    would write «2109-19-55». Anything else with a different digit count is
+    returned as the vault holds it — a splice that cannot line up is a guess.
+    """
+    if not _NUMERIC_FORM.fullmatch(written.strip()):
+        return real
+    real_digits = re.sub(r"\D", "", real)
+    written_digits = re.sub(r"\D", "", written)
+    if len(written_digits) < 3 or not real_digits:
+        return real
+    date_written = _DATE_ANY.match(written.strip())
+    date_real = _DATE_ANY.match(real.strip())
+    if date_written and date_real:
+        real_first, real_middle, real_last = date_real.groups()
+        if len(real_first) == 4:
+            year, month, day = real_first, real_middle, real_last
+        else:
+            day, month, year = real_first, real_middle, real_last
+        separator = re.search(r"[.\-/]", written).group()  # type: ignore[union-attr]
+        if len(date_written.group(1)) == 4:
+            return f"{year}{separator}{int(month):02d}{separator}{int(day):02d}"
+        return f"{int(day):02d}{separator}{int(month):02d}{separator}{year}"
+    # A PHONE FIRST, by the shape of the real value: eleven digits behind a 7 or
+    # an 8, or a leading plus. The positional rule below would otherwise put
+    # the customer's «8» under the agent's «+» and hand the tool «+8 916…».
+    # The check is on the REAL value, not the written one — a twelve-digit ИНН
+    # written verbatim has the same length as a phone with a prefix, and the
+    # prefix rule would keep two FAKE digits of it.
+    # A PHONE, BY EVIDENCE AND NOT BY A LEADING DIGIT: a plus on either side,
+    # or a different count of digits with ten or more on both. «805-387-569 27»
+    # is a СНИЛС that begins with an 8, and a rule that read the first digit
+    # spliced a phone prefix onto it — «405-387-569 27», a checksum-valid
+    # number belonging to nobody.
+    plus = written.strip().startswith("+") or real.strip().startswith("+")
+    counts_differ = len(written_digits) != len(real_digits)
+    if (plus or counts_differ) and 10 <= len(written_digits) <= 12 and 10 <= len(real_digits) <= 12:
+        return _same_shape(written, written_digits[:-10] + real_digits[-10:])
+    if len(written_digits) == len(real_digits):
+        return _same_shape(written, real_digits)
+    return real
 
 
 # One to three capitalised Cyrillic words — the shape a personal name takes in
@@ -347,6 +414,9 @@ _HOUSE_TAIL = re.compile(r",?\s*(?:(?:д|дом|вл|влад|владение)\
                          r"(?:/\d{1,3})?[а-яё]?(?![\w])")
 _CITY_HEAD = re.compile(r"(?-i:[А-ЯЁ])[а-яё-]+,\s*$")
 # Город в начале самой ПОДМЕНЫ — чтобы понять, назвала его модель или нет.
+_STREET_TYPE_WORD = re.compile(
+    r"(?i)^(?:ул\.?|улиц\w*|пр-т|пр\.?|просп\w*|пер\.?|переул\w*|б-р|бульвар\w*|ш\.?|шоссе|пл\.?|площад\w*|"
+    r"наб\.?|набережн\w*|проезд\w*|тупик\w*|алле\w*|дорог\w*|тракт\w*|линия|линии)$")
 _CITY_OF_TOKEN = re.compile(r"^([А-ЯЁ][а-яё-]+),\s")
 
 
@@ -564,9 +634,32 @@ def _residual_owner(surface: str, vault: Vault,
         wanted = {morph_names.to_nominative(word).casefold()
                   for word in surface.split()}
         wanted |= {word.casefold() for word in surface.split()}
-        picked = [real for fake, real in zip(fake_parts, real_parts)
-                  if fake.casefold() in wanted
-                  or morph_names.to_nominative(fake).casefold() in wanted]
+        # Both genders' nominatives, as `Vault.residual_of` asks: «Сорокина»
+        # copied out of «Сорокина Всеволода Михайловича» is the man's genitive,
+        # and with only the feminine reading the pick failed and the WHOLE
+        # name went into `last_name` — refused by the parser, and wrong anyway.
+        for word in surface.split():
+            for gender in ("masc", "femn"):
+                wanted.add(morph_names._part_to_nominative(word, gender).casefold())
+        # BY ROLE WHEN THE SHAPES SAY SO, BY POSITION OTHERWISE. The token is
+        # minted in the shape the detector read off the real name, and the two
+        # can disagree: «миллер валерий» was read given-first, the substitute
+        # came out «Владислав Сазонов», and a positional zip handed
+        # `last_name` the GIVEN name «валерий». The role of the matched fake
+        # word, looked up in the real name's own shape, is the right word.
+        # The role is read off EACH WORD ALONE, not off the phrase: the minted
+        # token and the real value can be read in different orders as phrases
+        # («Родион Тарасов» / «ерохин пётр»), and a phrase shape then maps a
+        # surname onto a given name. A lone word has one reading.
+        def role_of(word: str) -> str:
+            shape = morph_names.name_shape(word)
+            return shape[0] if len(shape) == 1 else ""
+        picked = []
+        for fake, real in zip(fake_parts, real_parts):
+            if fake.casefold() in wanted or morph_names.to_nominative(fake).casefold() in wanted:
+                role = role_of(fake)
+                same_role = [candidate for candidate in real_parts if role and role_of(candidate) == role]
+                picked.append(same_role[0] if len(same_role) == 1 else real)
         if len(picked) == len(surface.split()):
             return entity_type, " ".join(picked)
     return entity_type, value
@@ -737,8 +830,31 @@ def unmask_arguments(raw: str, vault: Vault) -> str:
             return {key: walk(value) for key, value in node.items()}
         return node
 
-    return json.dumps(_join_address_fields(walk(parsed), parsed, vault),
+    return json.dumps(_join_addresses_deep(walk(parsed), parsed, vault),
                       ensure_ascii=False)
+
+
+def _join_addresses_deep(restored: object, original: object, vault: Vault) -> object:
+    """`_join_address_fields` at EVERY level of the object, not only the top.
+
+    The first schema this was written against was flat — `dispatch_car` asked
+    for `street`, `house`, `entrance` beside each other. A CRM's schema nests:
+    `contact.address.street`. Measured on the scripted agent against a
+    Yandex-shaped and an amoCRM-shaped tool: every street written into a nested
+    object went to the tool as the FAKE, with a 200 and an empty residual list,
+    while the same fields one level up resolved. The join is applied to each
+    dict on the way down; a list is walked for the dicts inside it.
+    """
+    if isinstance(restored, dict) and isinstance(original, dict):
+        joined = _join_address_fields(restored, original, vault)
+        if not isinstance(joined, dict):
+            return joined
+        return {key: _join_addresses_deep(value, original.get(key), vault)
+                for key, value in joined.items()}
+    if isinstance(restored, list) and isinstance(original, list):
+        return [_join_addresses_deep(value, original[index] if index < len(original) else None, vault)
+                for index, value in enumerate(restored)]
+    return restored
 
 
 # Имена полей, которыми схемы инструментов называют части адреса. Роль читается
@@ -746,8 +862,12 @@ def unmask_arguments(raw: str, vault: Vault) -> str:
 # когда решает, что куда положить.
 _FIELD_ROLES: tuple[tuple[str, str], ...] = (
     ("street", "street"), ("house", "house"), ("building", "house"),
-    ("flat", "flat"), ("apartment", "flat"), ("apt", "flat"),
+    ("flat", "flat"), ("apartment", "flat"), ("apt", "flat"), ("sflat", "flat"),
     ("entrance", "entrance"), ("porch", "entrance"), ("floor", "floor"),
+    # The settlement is a field of its own in every delivery schema (CDEK
+    # `city`, Yandex `locality`); without a role here a bare fake city in it
+    # was never asked about and reached the tool as «Сортавала».
+    ("city", "city"), ("locality", "city"), ("town", "city"), ("settlement", "city"),
 )
 
 
@@ -781,12 +901,19 @@ def _join_address_fields(restored: object, original: object, vault: Vault) -> ob
     """
     if not isinstance(restored, dict) or not isinstance(original, dict):
         return restored
-    fragments = {
+    # EVERY address-role leaf is EVIDENCE of the owner, whether or not the leaf
+    # path already resolved it; only the unresolved ones are rewritten. The two
+    # were one set, and a correction («солнечная 33 кв 180 … правильно
+    # солнечная 5 кв 180») broke it: inside one conversation both addresses
+    # are linked to ONE fake street, so the street piece alone names two owners
+    # and is refused, while the house — the piece that told them apart — had
+    # been resolved a step earlier and was no longer asked.
+    addressed = {
         key: value for key, value in original.items()
-        if isinstance(value, str) and value.strip()
-        and _role_of_field(key)
-        and isinstance(restored.get(key), str) and restored[key] == value
+        if isinstance(value, str) and value.strip() and _role_of_field(key)
     }
+    fragments = {key: value for key, value in addressed.items()
+                 if isinstance(restored.get(key), str) and restored[key] == value}
     if not fragments:
         return restored
     # ДВА АДРЕСА В ОДНОМ ВЫЗОВЕ — ЭТО ДВЕ ГРУППЫ ПОЛЕЙ. `book_ride` просит
@@ -795,21 +922,21 @@ def _join_address_fields(restored: object, original: object, vault: Vault) -> ob
     # отказывало, и ни один из адресов не разрешался. Группа читается из
     # приставки имени поля: она и есть то, чем схема их различает.
     groups: dict[str, dict[str, str]] = {}
-    for key, value in fragments.items():
+    for key, value in addressed.items():
         role = _role_of_field(key)
         prefix = key.lower().rsplit(role, 1)[0].strip("_")
         groups.setdefault(prefix, {})[key] = value
-    if len(groups) > 1:
-        out = dict(restored)
-        for group in groups.values():
-            out = _join_one_address(out, group, vault)
-        return out
-    return _join_one_address(restored, fragments, vault)
+    out = dict(restored)
+    for group in groups.values():
+        out = _join_one_address(out, {key: value for key, value in group.items() if key in fragments},
+                                group, vault)
+    return out
 
 
 def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
-                      vault: Vault) -> dict[str, object]:
-    """Одна группа полей — один адрес."""
+                      evidence: dict[str, str], vault: Vault) -> dict[str, object]:
+    """Одна группа полей — один адрес. `evidence` — все адресные листья группы
+    как их написала модель, `fragments` — те из них, что ещё не разрешились."""
     if not fragments:
         return restored
     # КАЖДОЕ ПОЛЕ ГОЛОСУЕТ ОТДЕЛЬНО, И НЕ КАЖДОЕ ГОЛОСУЕТ. У подмены нет
@@ -818,7 +945,7 @@ def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
     # мы получали бы отказ из-за одного такого поля и не разрешали ничего.
     # Поле без владельца просто молчит и остаётся как было; поля с владельцем
     # обязаны сойтись на ОДНОЙ подмене.
-    owners = {vault.place_owner(value) for value in fragments.values()}
+    owners = {vault.place_owner(value) for value in evidence.values()}
     owners.discard(None)
     if len(owners) != 1:
         return restored
@@ -827,11 +954,39 @@ def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
     if not value or entity_type != "LOC":
         return restored
     roles = morph_places.split_roles(value)
+    # THE TOKEN KNOWS WHETHER THERE IS A CITY. The role splitter reads the real
+    # value by shape and a lower-case spoken «воткинск школьная двенадцать»
+    # carries no capital and no comma to split on — but the substitute was
+    # minted WITH a city («Тверь, улица …»), which the detector decided at
+    # mint time, so the head's first word is the settlement.
+    if "city" not in roles and _CITY_OF_TOKEN.match(owner) and roles.get("street"):
+        head = roles["street"].split()
+        if len(head) >= 2:
+            roles["city"] = head[0].strip(" ,.")
+            roles["street"] = " ".join(head[1:])
+    elif "city" not in roles and roles.get("street"):
+        # NO CITY IN THE TOKEN EITHER — the detector saw none at mint time —
+        # yet the head is two lower-case words: «воткинск школьная». The ГАР
+        # register decides: the second word names a street and the first does
+        # not, so the first is the settlement. Both conditions, or «большая
+        # садовая» would lose its first word.
+        head = roles["street"].split()
+        if len(head) == 2 and not _STREET_TYPE_WORD.match(head[0]) and not _STREET_TYPE_WORD.match(head[1]):
+            from pseudex import address as address_mod
+            from pseudex.assets import ASSETS
+            register = ASSETS.get().address if ASSETS.is_loaded else None
+            if (register is not None and address_mod._gar_reaches(head[1], register)
+                    and not address_mod._gar_reaches(head[0], register)):
+                roles["city"] = head[0].strip(" ,.")
+                roles["street"] = head[1]
     out = dict(restored)
     for key in fragments:
-        part = roles.get(_role_of_field(key))
+        role = _role_of_field(key)
+        part = roles.get(role)
         if part:
-            out[key] = part
+            # THE FORM IS THE AGENT'S: digits where it wrote digits, no type
+            # word where it wrote none. See `morph_places.part_in_form_of`.
+            out[key] = morph_places.part_in_form_of(fragments[key], part, role)
     return out
 
 

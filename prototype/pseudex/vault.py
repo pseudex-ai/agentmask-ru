@@ -1564,8 +1564,8 @@ class Vault:
                 # запрещённым.
                 fake_parts = set()
                 for word in token.split():
-                    if len(word) <= 2:
-                        continue
+                    if len(word) <= 2 and len(token.split()) > 1 and not word[:1].isupper():
+                        continue   # a particle inside a phrase, not «Ян»
                     fake_parts.add(word.casefold())
                     fake_parts.add(morph_names.to_nominative(word).casefold())
             elif entity_type == "LOC":
@@ -1694,13 +1694,26 @@ class Vault:
         warning that cries on ordinary traffic is a warning nobody reads.
         """
         words = [word for word in candidate.split() if len(word) > 2]
+        if not words and len(candidate.split()) == 1 and len(candidate.strip()) == 2:
+            # «Ян», «Ия» — a whole field of two letters is a name, not a
+            # particle. The filter exists for «на» and «по» INSIDE a phrase.
+            words = [candidate.strip()]
         if not words:
             return None
         with self._lock:
             owners: list[set[str]] = []
             for word in words:
-                forms = sorted({word.casefold(),
-                                morph_names.to_nominative(word).casefold()})
+                # BOTH GENDERS' NOMINATIVES. The token is minted in the nominative
+                # («Наумов Лев Евгеньевич») and shown to the model inflected («Наумова
+                # Льва Евгеньевича»); the model copies the surname as it read it into
+                # `last_name`, and «Наумова» is a woman's nominative as well as a man's
+                # genitive, so `to_nominative` — rightly — leaves it alone while the index
+                # holds «наумов». Measured on the scripted agent: every oblique surname
+                # argument went to the tool as the fake.
+                forms = {word.casefold(), morph_names.to_nominative(word).casefold()}
+                for gender in ("masc", "femn"):
+                    forms.add(morph_names._part_to_nominative(word, gender).casefold())
+                forms = sorted(forms)
                 # ТОЛЬКО ИМЕНА. Таблица частей общая с адресами с тех пор, как
                 # адресный фрагмент стал разрешаться, и без фильтра одиночное
                 # слово адресной подмены находило владельца ЗДЕСЬ — мимо области

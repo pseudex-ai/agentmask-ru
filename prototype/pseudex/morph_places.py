@@ -839,7 +839,52 @@ def role_spans(phrase: str) -> dict[str, tuple[int, int]]:
             out["street"] = (len(street) - len(street.lstrip()), head_end - start)
     elif not claimed:
         out["street"] = (0, len(text))
+    # ГОРОД — СВОЯ РОЛЬ, А НЕ НАЧАЛО УЛИЦЫ. «Москва, ул. Ленина 14» отдавал в
+    # поле `street` строку «Москва, ул. Ленина» — и CRM клиента получала город
+    # внутри улицы. Признак тот же, что у `_CITY_OF_TOKEN` на стороне
+    # восстановления: заглавное слово (или «г. Пермь») перед первой запятой, без
+    # цифр и без слова-типа улицы. Строчный «москва, садовая 46» сюда не входит
+    # намеренно — без заглавной запятая одна не отличает город от улицы.
+    if "street" in out:
+        s_start, s_end = out["street"]
+        city = _LEADING_CITY.match(text[s_start:s_end])
+        if city is not None and city.end() < s_end - s_start:
+            out["city"] = (s_start + city.start(1), s_start + city.end(1))
+            rest = text[s_start + city.end():s_end]
+            out["street"] = (s_start + city.end() + (len(rest) - len(rest.lstrip())), s_end)
     return {role: (start + offset, end + offset) for role, (start, end) in out.items()}
+
+
+_LEADING_CITY = re.compile(
+    r"^(?:г\.?\s*)?([А-ЯЁ][а-яё]+(?:-[А-ЯЁа-яё]+)*(?:\s[А-ЯЁ][а-яё]+)?),\s*(?=\S)")
+_STREET_TYPE_LEAD = re.compile(
+    r"(?i)^(?:ул\.?|улица|улице|улицу|пр-т|пр\.?|просп\.?|проспект\w*|пер\.?|переулок|переулк\w*|"
+    r"б-р|бульвар\w*|ш\.?|шоссе|пл\.?|площад\w*|наб\.?|набережн\w*|проезд\w*|тупик\w*|аллея|аллее)\s+")
+
+
+def part_in_form_of(agent_part: str, real_part: str, role: str) -> str:
+    """Одна часть адреса, вписанная в форму, которой пользуется агент.
+
+    То же правило, что `in_form_of` для целой фразы, но для ОДНОГО поля схемы.
+    Агент написал в `house` цифры — настоящий дом, сказанный словами, уходит
+    цифрами («шестьдесят три» -> «63»); написал улицу без слова-типа — слово-тип
+    настоящей улицы снимается («ул. Ленина» -> «Ленина»); написал со словом-типом
+    — его слово остаётся перед настоящим названием. Измерено на скриптовом
+    агенте: «двадцать три» в `building` отвергалось парсером Яндекс Доставки как
+    `house_format`, а «Москва, ул. Ленина» в `street` уезжало городом в улицу.
+    """
+    if role in ("house", "flat", "entrance", "floor", "building"):
+        if _ANY_DIGIT.search(agent_part) and not _ANY_DIGIT.search(real_part):
+            return _part_to_digits(real_part) or real_part
+        return real_part
+    if role == "street":
+        agent_type = _STREET_TYPE_LEAD.match(agent_part.strip())
+        real_type = _STREET_TYPE_LEAD.match(real_part.strip())
+        if real_type and not agent_type:
+            return real_part.strip()[real_type.end():]
+        if agent_type and not real_type:
+            return agent_type.group() + real_part.strip()
+    return real_part
 
 
 _ANY_DIGIT = re.compile(r"\d")
@@ -1023,47 +1068,6 @@ def _splice_parts(text: str, spans: list[tuple[int, int, str]]) -> str:
         last = end
     out.append(text[last:])
     return "".join(out)
-
-
-def written_address(phrase: str) -> str:
-    """Продиктованный вслух адрес в форме, которую примет CRM.
-
-    ЗАЧЕМ. «гусева восемьдесят один квартира сто семнадцать» — это то, что
-    человек СКАЗАЛ, и в поле `address` чужой системы оно не исполнимо. Для
-    телефона, СНИЛС, ИНН, карты и госномера правило уже есть — `_pick_value`
-    отдаёт на плече аргумента канон, а в прозе произнесённую форму, — и адрес
-    был из него исключён, потому что у LOC `canonical` это ПОИСКОВЫЙ КЛЮЧ, а не
-    значение. Здесь появляется третья форма: не ключ и не речь, а запись.
-
-    СОБИРАЕТСЯ ИЗ РОЛЕЙ, А НЕ ПЕРЕПИСЫВАНИЕМ СТРОКИ. `split_roles` уже знает,
-    где улица, дом, квартира и подъезд, и знает это по маркерам, а не по
-    порядку слов — «первый подъезд» и «подъезд первый» говорят оба. Замена
-    числительных прямо в строке спутала бы номер дома с номером подъезда.
-
-    Родовое слово остаётся строчным, имя улицы — с заглавной: так пишется
-    адресная строка, «улица Ленина», а не «Улица Ленина».
-    """
-    roles = split_roles(phrase)
-    street = roles.get("street", "").strip()
-    if not street:
-        return phrase.strip()
-    words = street.split()
-    named = [word if _GENERIC_STEMS.match(word) or word.lower() in _GENERIC
-             else word.capitalize() for word in words]
-    out = " ".join(named)
-    house = _part_to_digits(roles.get("house", ""))
-    if house:
-        # «д.» СТАВИТСЯ, ТОЛЬКО ЕСЛИ ЕГО СКАЗАЛИ. Адресная строка пишет номер
-        # дома и так, и так; лишний маркер — это часть, которой в сообщении не
-        # было, а его отсутствие там, где слово прозвучало, — потерянная часть.
-        marker = "д. " if _HOUSE_MARKER.search(phrase) else ""
-        out = f"{out}, {marker}{house}"
-    for role, marker in (("building", "корп."), ("entrance", "подъезд"),
-                         ("floor", "этаж"), ("flat", "кв.")):
-        part = _part_to_digits(roles.get(role, ""))
-        if part:
-            out = f"{out}, {marker} {part}"
-    return out
 
 
 _CITY_LEAD = re.compile(r"^[А-ЯЁ][а-яё-]+,\s+")
