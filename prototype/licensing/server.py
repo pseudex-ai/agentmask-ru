@@ -793,10 +793,29 @@ async def admin_release(body: Annotated[dict, Depends(json_object)]) -> JSONResp
 
 @admin_app.post("/admin/issue")
 async def admin_issue(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
+    """Mint a key. The full key is returned ONCE and never stored in the clear.
+
+    THE PLAN IS VALIDATED HERE, and the default is a plan that exists. It was
+    `"standard"` — a string present in none of `PLAN_INSTANCES`, `PLAN_GRANT`,
+    `QUANTUM_BOUNDS` or `RESERVE_MAX` — so every key issued without an explicit
+    plan silently got the smallest tariff's limits: one container, 5 000-request
+    grants, the "start" quantum bounds. Nothing failed and nothing logged; the
+    customer simply hit an instance ceiling belonging to a tariff they had not
+    bought, and the refusal named a limit no screen could explain.
+
+    Refusing an unknown plan rather than defaulting is the point: a typo in the
+    storefront's plan code, or a plan added to the shop and not to the licensing
+    server, must be a 400 somebody reads — not a downgrade nobody sees.
+    """
     org_id = str(body.get("org_id", ""))
     if not org_id:
         return JSONResponse({"error": "org_id required"}, status_code=400)
-    key = STORE.issue_key(org_id, str(body.get("plan", "standard")))
+    plan = str(body.get("plan", "start"))
+    if not STORE.known_plan(plan):
+        return JSONResponse(
+            {"error": "unknown plan", "plan": plan, "known": STORE.known_plans()},
+            status_code=400)
+    key = STORE.issue_key(org_id, plan)
     return JSONResponse({"org_id": org_id, "key": key})
 
 
@@ -852,7 +871,19 @@ async def admin_list() -> JSONResponse:
 
 @admin_app.get("/admin/usage")
 async def admin_usage(request: Request) -> JSONResponse:
+    """Counters for ONE org, and the org must be named.
+
+    `org_id` used to be optional here while `/admin/instances` next door required
+    it. An omitted parameter therefore queried the literal empty string and
+    returned a fully-formed, all-zero structure — indistinguishable from a real
+    customer who has not started yet. The caller that drops the parameter (a
+    console with a typo in a query string, a script whose variable is unset) gets
+    a plausible answer rather than an error, and "this customer used nothing" is
+    exactly the wrong thing to be confidently wrong about on a billing screen.
+    """
     org_id = request.query_params.get("org_id", "")
+    if not org_id:
+        return JSONResponse({"error": "org_id required"}, status_code=400)
     return JSONResponse({
         "usage": STORE.usage_totals(org_id),
         "instances": STORE.instances(org_id),

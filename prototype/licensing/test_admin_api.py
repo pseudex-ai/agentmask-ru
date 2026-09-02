@@ -19,17 +19,43 @@
 импорта, потому что сервер читает их на импорте.
 """
 
+import base64
 import os
+import secrets
 import sys
 import tempfile
 import time
+from pathlib import Path
 
 os.environ.setdefault("PSEUDEX_LICENSE_DB", tempfile.mktemp(suffix=".db"))
 os.environ["PSEUDEX_LICENSE_ADMIN_TOKEN"] = "test-admin"
 os.environ["PSEUDEX_LICENSE_STOREFRONT_TOKEN"] = "test-shop"
 sys.path.insert(0, ".")
 
+# ЭТОТ НАБОР НЕ ЗАПУСКАЛСЯ В CI НИ РАЗУ С ТЕХ ПОР, КАК ТЮНИНГ СТАЛ ЗАПЕЧАТАННЫМ.
+#
+# Он поднимает НАСТОЯЩИЙ `LicenseClient` и берёт настоящую аренду, значит ему
+# нужен и ключ тюнинга, и блоб, запечатанный ТЕМ ЖЕ ключом. `testkit` делает обе
+# вещи на импорте, но этот файл его не импортирует — он ходит по HTTP, а не через
+# стенд, — поэтому падал на импорте `licensing.server` с «PSEUDEX_TUNING_KEY is
+# not set», а с одним лишь ключом (без блоба под ним) — на `acquire()` с
+# «bundle_corrupt». Проверено на нетронутом main.
+#
+# Стоило это ровно того, ради чего шаг заводили: комментарий в `checks.yml` над
+# ним говорит «ДЕНЕЖНЫЙ ТРАКТ БЕГАЕТ НА КАЖДОМ ПУШЕ», а бежал он в красное на
+# каждом пуше. Ключ эфемерный и генерируется здесь, потому что в этом наборе оба
+# конца — мы: и тот, кто печатает блоб, и тот, кто его открывает. `setdefault`
+# оставляет победу настоящему ключу, если он задан снаружи.
+os.environ.setdefault("PSEUDEX_TUNING_KEY",
+                      base64.b64encode(secrets.token_bytes(32)).decode("ascii"))
+
 from fastapi.testclient import TestClient  # noqa: E402
+
+from licensing.pack import emit_tuning_module  # noqa: E402
+
+# ДО импорта `licensing.server`: он строит бандл на импорте, а движок ниже
+# импортирует блоб. Порядок здесь тот же, что в `testkit`, и по той же причине.
+emit_tuning_module(Path(__file__).resolve().parents[1] / "pseudex" / "_tuning_blob.py")
 
 from licensing import server  # noqa: E402
 from pseudex.bundle import generate_process_key  # noqa: E402
@@ -175,6 +201,48 @@ after = admin.get("/admin/usage", params={"org_id": "v"}, headers=ADMIN)
 check("отравленная строка не делает итоги недоступными навсегда",
       after.status_code == 200 and after.json()["usage"]["entities"].get("NAME") == 2,
       f"код={after.status_code}")
+
+# ПРОПУЩЕННЫЙ org_id — ОШИБКА, А НЕ ПРАВДОПОДОБНЫЙ НОЛЬ.
+#
+# `/admin/instances` рядом требует параметр, а `/admin/usage` не требовал:
+# отсутствующий org_id запрашивался буквально пустой строкой и возвращал
+# полностью оформленную структуру из нулей. Отличить её от настоящего клиента,
+# который ещё не начал работать, нельзя ничем — а «этот клиент ничего не
+# использовал» ровно то, в чём нельзя уверенно ошибаться на экране, по которому
+# выставляют счёт. Вызывающий, потерявший параметр (опечатка в строке запроса
+# консоли, незаданная переменная в скрипте), получал ответ вместо ошибки.
+no_org = admin.get("/admin/usage", headers=ADMIN)
+check("итоги без org_id отказывают, а не отдают ноль",
+      no_org.status_code == 400,
+      f"код={no_org.status_code} тело={no_org.text[:120]}")
+
+# НЕИЗВЕСТНЫЙ ТАРИФ — 400, А НЕ ТИХОЕ ПОНИЖЕНИЕ ДО «СТАРТА».
+#
+# Дефолтом стояло `"standard"` — строка, которой нет ни в `PLAN_INSTANCES`, ни в
+# `PLAN_GRANT`, ни в `QUANTUM_BOUNDS`, ни в `RESERVE_MAX`. Каждый lookup молча
+# откатывался на «старт», поэтому ключ, выпущенный без явного тарифа, получал
+# один контейнер и гранты по 5 000 запросов независимо от того, что купили. Ни
+# отказа, ни строки в логе: клиент упирался в потолок инстансов чужого тарифа, и
+# отказ называл предел, который ни один экран не мог объяснить.
+unknown = admin.post("/admin/issue", json={"org_id": "u", "plan": "standard"},
+                     headers=ADMIN)
+check("неизвестный тариф отказывает при выпуске ключа",
+      unknown.status_code == 400 and "known" in unknown.json(),
+      f"код={unknown.status_code} тело={unknown.text[:160]}")
+
+defaulted = admin.post("/admin/issue", json={"org_id": "d"}, headers=ADMIN)
+check("тариф по умолчанию существует на самом деле",
+      defaulted.status_code == 200
+      and server.STORE.known_plan(server.STORE.lookup(defaulted.json()["key"]).plan),
+      f"код={defaulted.status_code}")
+
+# Таблицы тарифов проверяются ВСЕ, а не одна: план, добавленный в
+# `PLAN_INSTANCES` и забытый в `PLAN_GRANT`, — то же тихое понижение одной
+# таблицей дальше.
+check("каждый объявленный тариф есть во всех таблицах разом",
+      set(server.STORE.known_plans()) == set(server.STORE.PLAN_INSTANCES),
+      f"полные={server.STORE.known_plans()} "
+      f"объявлено={sorted(server.STORE.PLAN_INSTANCES)}")
 
 
 # --- ПОТОЛОК ИНСТАНСОВ: ОСВОБОЖДЁННЫЙ СЛОТ ОСТЫВАЕТ ----------------------

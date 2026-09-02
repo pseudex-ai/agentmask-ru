@@ -39,6 +39,7 @@ import testkit  # noqa: E402
 os.environ["PSEUDEX_LICENSE_KEY"] = testkit.start_local_license()
 testkit.load_dev_bundle()
 
+from pseudex import license as license_module  # noqa: E402
 from pseudex import service  # noqa: E402
 from pseudex.localui import server as ui_server  # noqa: E402
 
@@ -110,6 +111,38 @@ def test_operator_surface_is_closed(client: TestClient) -> None:
                           "messages": [{"role": "user", "content": "привет"}]})
     check("the operator token does not open the masking path",
           crossed.status_code == 401, f"status={crossed.status_code}")
+
+
+def test_license_alarm_is_silent_while_healthy(client: TestClient) -> None:
+    """`/license` is the ALARM, and an alarm stuck ON is an alarm nobody keeps.
+
+    The docstring on `service.py::license_status` tells customers to point
+    monitoring here precisely because `/health` must stay 200 through the grace
+    window — an orchestrator that restarts a degraded container needs a fresh
+    lease, which is the thing that is unavailable, so a failing healthcheck turns
+    a survivable outage into an unrecoverable one.
+
+    That endpoint compared `status.state != "leased"` while the wire value of
+    `STATE_LEASED` is `"active"`, so it answered 503 on a perfectly healthy
+    container — for its whole life, on the leg the documentation points at. The
+    proxy leg had the mirror defect: 200 unconditionally, an alarm that could not
+    fire at all.
+
+    Checked HERE, and not only in gate L4, because the gates cost a container and
+    fifteen minutes and run nightly; this file runs on every push. A one-line
+    comparison is exactly the kind of thing that regresses between releases.
+    """
+    healthy = client.get("/license")
+    check("the licence alarm is silent while leased",
+          healthy.status_code == 200,
+          f"{healthy.status_code} state={healthy.json().get('state')}")
+    check("the licence alarm reports the leased state by its own constant",
+          healthy.json().get("state") == license_module.STATE_LEASED,
+          f"state={healthy.json().get('state')!r} "
+          f"STATE_LEASED={license_module.STATE_LEASED!r}")
+    # /health stays 200 for the reason above, and the two must not be confused.
+    check("liveness answers 200 while serving",
+          client.get("/health").status_code == 200)
 
 
 def test_reveal_requires_an_actor(client: TestClient) -> None:
@@ -322,6 +355,7 @@ def _forgery_checks(ui: TestClient, server, thread) -> None:
 def main() -> int:
     client = _client()
     test_operator_surface_is_closed(client)
+    test_license_alarm_is_silent_while_healthy(client)
     test_reveal_requires_an_actor(client)
     test_requests_are_counted_apart_from_entities(client)
     test_selfcheck_is_not_billable(client)

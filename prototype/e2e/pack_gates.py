@@ -649,8 +649,20 @@ def main() -> None:
             # that has already had real traffic through it.
             if wanted("P9"):
                 gate_p9()
-            if wanted("P10"):
-                gate_p10()
+        # P10 STANDS OUT HERE, WITH P6, BECAUSE IT NEEDS NO STAND — one
+        # `docker run --rm` against the compiled image and a `sha256sum` of the
+        # file inside it. Its call sat inside the block above while its name was
+        # absent from `needs_stand`, so `--only P10` skipped the block, never ran
+        # the gate, and printed `0/0 packaging gates passed` — exiting ZERO. A
+        # selector that silently measures nothing is worse than one that errors:
+        # the operator reads a green line and believes the release binary's
+        # self-measurement was checked.
+        #
+        # Adding the name to the tuple would have fixed the exit code and bought
+        # two stands and two full parity runs — about twenty minutes — for a gate
+        # that wants neither. The call moves instead.
+        if wanted("P10"):
+            gate_p10()
         if wanted("P6"):
             gate_p6()
     finally:
@@ -670,6 +682,13 @@ def _report(started: float) -> int:
           f"in {(time.monotonic() - started) / 60:.1f} min")
     print("P7 (the whole L1-L21 suite on the compiled image) runs separately:\n"
           f"    python3 e2e/gates.py --image {COMPILED_IMAGE}")
+    # Same guard as `gates.py::_report`, and this file is where the class was
+    # found: `--only P10` printed `0/0` and exited zero for as long as P10 has
+    # existed, because its name was absent from the `needs_stand` tuple while its
+    # call site sat inside the block that tuple guards.
+    if not RESULTS:
+        print("NO GATE RAN. Check the --only names against the roster above.")
+        return 1
     return 1 if failed else 0
 
 

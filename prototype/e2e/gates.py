@@ -142,6 +142,24 @@ def license_state() -> dict[str, object]:
     return httpx.get(f"{SIDECAR}/license", timeout=10).json()
 
 
+def license_probe() -> tuple[int, dict[str, object]]:
+    """The body AND the status code.
+
+    `license_state` reads only `.json()`, and that is how `/license` came to
+    answer 503 on a healthy container for its whole life: `service.py` compared
+    the state against the literal `"leased"` while the wire value of
+    `STATE_LEASED` is `"active"`. L7 and L8 both assert on the body's `state`
+    field, so the ladder looked correct from here while the one signal the
+    documentation tells customers to alert on was stuck on.
+
+    The code is the contract — `/health` is liveness and stays 200 while serving,
+    `/license` is the alarm and goes 503 the moment the state is not LEASED — so
+    it is checked at both ends of the ladder, in L4 and in L8.
+    """
+    response = httpx.get(f"{SIDECAR}/license", timeout=10)
+    return response.status_code, response.json()
+
+
 def wait_until(predicate, timeout: float, interval: float, what: str) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -398,11 +416,17 @@ def gate_l4() -> bool:
     }).json()["response"]["choices"][0]["message"]["content"]
     round_tripped = [value for value in fixtures.PII_PAYLOAD.values() if value in restored]
 
+    # The alarm endpoint must be SILENT while everything is fine. Checked here
+    # rather than in its own gate because "healthy" is exactly what L4 sets up,
+    # and an alarm that cannot be off is as useless as one that cannot fire.
+    licence_code, licence_body = license_probe()
+
     ok = (health.get("license") == "active" and response.status_code == 200
-          and not leaked and len(round_tripped) >= 6)
+          and licence_code == 200 and not leaked and len(round_tripped) >= 6)
     return gate("L4 happy path masks and round-trips", ok,
                 f"health={health.get('license')} leaked={leaked} "
-                f"restored={len(round_tripped)}/{len(fixtures.PII_PAYLOAD)}")
+                f"restored={len(round_tripped)}/{len(fixtures.PII_PAYLOAD)} "
+                f"license={licence_code}/{licence_body.get('state')}")
 
 
 
@@ -619,13 +643,15 @@ def gate_l8() -> bool:
     response = post_mask(90)
     body = response.json()
     health = httpx.get(f"{SIDECAR}/health", timeout=15)
-    assets = license_state()["assets_loaded"]
+    # The other end of the contract L4 checks: here the alarm MUST fire.
+    licence_code, licence_body = license_probe()
+    assets = licence_body["assets_loaded"]
     leaked = [v for v in fixtures.PII_PAYLOAD.values() if v in json.dumps(body, ensure_ascii=False)]
     ok = (reached and response.status_code == 503 and health.status_code == 503
-          and assets is False and not leaked)
+          and licence_code == 503 and assets is False and not leaked)
     return gate("L8 grace exhausted -> 503, assets unloaded", ok,
                 f"expired={reached} mask={response.status_code} health={health.status_code} "
-                f"assets_loaded={assets} error={body.get('error')}")
+                f"license={licence_code} assets_loaded={assets} error={body.get('error')}")
 
 
 def gate_l14b() -> bool:
@@ -1260,6 +1286,14 @@ def _report(started: float) -> int:
     print("=" * 64)
     print(f"{len(RESULTS) - len(failed)}/{len(RESULTS)} gates passed "
           f"in {(time.monotonic() - started) / 60:.1f} min")
+    # A RUN THAT MEASURED NOTHING IS A FAILURE, NOT A PASS. `0/0` with exit 0
+    # reads as "everything green" to a human and to CI alike, and that is how a
+    # `--only` name nobody mounts — a typo, or a gate whose call site sits behind
+    # a condition its name was left out of — turns into a clean bill of health.
+    # Costs nothing when gates ran; catches the whole class when they did not.
+    if not RESULTS:
+        print("NO GATE RAN. Check the --only names against the roster above.")
+        return 1
     return 1 if failed else 0
 
 

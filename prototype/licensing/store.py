@@ -577,6 +577,30 @@ class LicenseStore:
     PLAN_GRANT = {"start": 5_000, "work": 25_000, "industrial": 100_000,
                   "enterprise": 500_000}
 
+    def known_plan(self, plan: str) -> bool:
+        """Whether every plan-keyed table above actually has this plan.
+
+        ASKED AT ISSUE TIME, BECAUSE EVERY LOOKUP AFTERWARDS DEFAULTS SILENTLY.
+        `instances_allowed` falls back to 1, `grant_size` to 5 000,
+        `QUANTUM_BOUNDS` and `RESERVE_MAX` to their "start" entries — so a plan
+        string in none of them does not fail, it quietly becomes the smallest
+        tariff. `/admin/issue` defaulted to `"standard"`, which is in none of
+        them, so a key issued without an explicit plan was an invisible "start"
+        no matter what the customer had bought.
+
+        Every table is consulted, not just one: a plan added to `PLAN_INSTANCES`
+        and forgotten in `PLAN_GRANT` is the same silent downgrade one table
+        further along, and that is a mistake worth catching at issue time rather
+        than in somebody's capacity arithmetic a month later.
+        """
+        return (plan in self.PLAN_INSTANCES and plan in self.PLAN_GRANT
+                and plan in self.QUANTUM_BOUNDS and plan in self.RESERVE_MAX)
+
+    def known_plans(self) -> list[str]:
+        """The plans that satisfy `known_plan`, for an error message that says
+        what WAS acceptable instead of only what was not."""
+        return sorted(p for p in self.PLAN_INSTANCES if self.known_plan(p))
+
     def grant_size(self, plan: str) -> int:
         return self.PLAN_GRANT.get(plan, 5_000)
 

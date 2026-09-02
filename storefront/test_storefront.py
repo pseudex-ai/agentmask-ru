@@ -18,8 +18,10 @@ No pytest, matching the engine repo: run it, read the lines, non-zero is broken.
     python3 test_storefront.py
 """
 
+import base64
 import os
 import pathlib
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -73,22 +75,58 @@ def start_licensing() -> tuple[subprocess.Popen, str, str]:
         # окружение, поэтому задавать их ниже было поздно.
         "PSEUDEX_LICENSE_ADMIN_TOKEN": _ADMIN_TOKEN,
         "PSEUDEX_LICENSE_STOREFRONT_TOKEN": _SHOP_TOKEN,
+        # БЕЗ НЕГО СЕРВЕР НЕ ВСТАЁТ, И ЭТОТ НАБОР НЕ БЕЖАЛ В CI НИ РАЗУ С ТЕХ
+        # ПОР, КАК ТЮНИНГ СТАЛ ЗАПЕЧАТАННЫМ. `build_plaintext` кладёт ключ
+        # тюнинга в бандл на импорте, поэтому пустая переменная роняет процесс
+        # ещё до первого порта. Проверено на нетронутом main: тот же отказ.
+        #
+        # Ключ эфемерный, и это правильно именно здесь: набор проверяет
+        # ЛИЦЕНЗИОННЫЙ СЕРВЕР и витрину, а движка, который открывал бы блоб
+        # тюнинга, в нём нет вовсе — он ходит на `/v1/lease` напрямую и смотрит
+        # на коды. `setdefault`-семантика через `os.environ.get` оставляет
+        # победу настоящему ключу, если прогон задал его снаружи.
+        "PSEUDEX_TUNING_KEY": os.environ.get("PSEUDEX_TUNING_KEY")
+        or base64.b64encode(secrets.token_bytes(32)).decode("ascii"),
     }
+    # ПРИЧИНА ОТКАЗА НЕ ВЫБРАСЫВАЕТСЯ В DEVNULL.
+    #
+    # Оба потока шли в никуда, поэтому «the licensing server never came up» было
+    # всем, что оставалось от любого отказа старта, — и настоящая причина
+    # (отсутствующий ключ тюнинга) не называлась ни в CI, ни на машине. Тридцать
+    # секунд ожидания и одна строка без диагноза: ровно тот случай, ради
+    # которого в репозитории есть `e2e/lint_tests.py`.
+    # ФАЙЛ, А НЕ PIPE. Сервер живёт весь прогон и логирует КАЖДЫЙ запрос; никто
+    # не читает его stderr, пока идут проверки, поэтому труба на 64 КБ
+    # заполняется, дочерний процесс блокируется в `write()` и перестаёт
+    # обслуживать — а `process.wait(timeout=10)` в `finally` затем маскирует
+    # настоящий результат прогона таймаутом и оставляет процесс сиротой.
+    # Временный файл даёт ту же диагностику и не имеет предела.
+    stderr = tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace")
+
+    def _stderr_tail(limit: int = 2000) -> str:
+        stderr.flush()
+        stderr.seek(0)
+        return stderr.read()[-limit:]
+
     process = subprocess.Popen(
         [str(_PROTOTYPE / ".venv/bin/python"), "-m", "licensing.devserver"],
         cwd=str(_PROTOTYPE), env=env,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL, stderr=stderr, text=True,
     )
     admin_url = f"http://127.0.0.1:{admin}"
     public_url = f"http://127.0.0.1:{public}"
     for _ in range(120):
+        if process.poll() is not None:
+            # Умер — читать можно сразу и целиком, ждать оставшиеся секунды незачем.
+            raise RuntimeError("the licensing server exited "
+                               f"({process.returncode}):\n{_stderr_tail()}")
         try:
             httpx.get(f"{admin_url}/admin/list", timeout=2)
             return process, admin_url, public_url
         except httpx.HTTPError:
             time.sleep(0.25)
     process.kill()
-    raise RuntimeError("the licensing server never came up")
+    raise RuntimeError(f"the licensing server never came up:\n{_stderr_tail()}")
 
 
 def main() -> int:
@@ -585,13 +623,28 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
          "print(json.dumps(S.PLAN_INSTANCES))"],
         cwd=proto, capture_output=True, text=True).stdout or "{}")
     from billing.models import Plan as PlanModel
+    shop_plans = list(PlanModel.objects.all())
     mismatched = [
-        p.code for p in PlanModel.objects.all()
+        p.code for p in shop_plans
         if limits.get(p.code) is not None and limits[p.code] != p.max_instances
     ]
+    # ТАРИФ, КОТОРОГО ЛИЦЕНЗИОННЫЙ СЕРВЕР НЕ ЗНАЕТ, — ТОЖЕ РАСХОЖДЕНИЕ, и до
+    # сих пор эта проверка пропускала ровно его: `limits.get(p.code) is not
+    # None` отсеивал именно те коды, которых на той стороне нет.
+    #
+    # Раньше это было почти безобидно — незнакомый тариф молча получал лимиты
+    # «старта». Теперь `/admin/issue` отвечает на него 400, потому что тихое
+    # понижение и есть тот дефект, ради которого всё это чинится: клиент упирался
+    # в потолок чужого тарифа, и ни одна строка об этом не говорила. Но громкий
+    # отказ означает, что клиент на таком тарифе НЕ ПОЛУЧИТ КЛЮЧ ВОВСЕ, а
+    # `seed_plans` выводит тарифы из продажи, НЕ удаляя их (подписка помнит
+    # условия, на которых куплена). Значит расхождение обязано падать здесь, до
+    # выката, а не у клиента при выпуске ключа.
+    unknown_to_licensing = sorted(p.code for p in shop_plans if p.code not in limits)
     check("the licensing server and the storefront agree on instance limits",
-          bool(limits) and not mismatched,
-          f"licensing={limits} mismatched={mismatched or 'none'}")
+          bool(limits) and not mismatched and not unknown_to_licensing,
+          f"licensing={limits} mismatched={mismatched or 'none'} "
+          f"unknown_to_licensing={unknown_to_licensing or 'none'}")
 
     # A second organisation must not be able to read the first one's invoices.
     other_user = User.objects.create_user(email="stranger@example.com")

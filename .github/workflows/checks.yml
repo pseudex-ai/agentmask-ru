@@ -71,7 +71,11 @@ jobs:
       # строка в файле, чей докстринг обещает, что одна строка всегда красная.
       - name: no tautological checks in our own tests
         run: |
-          if grep -rnE "or True[,)]|assert True\b" --include="test_*.py" . ; then
+          # --exclude-dir=.venv: CI installs into the system interpreter and has
+          # no virtualenv, but a developer running this same line locally hits
+          # numpy's own test suite and gets a failure that has nothing to do with
+          # their change. A guard people cannot run is a guard people ignore.
+          if grep -rnE "or True[,)]|assert True\b" --include="test_*.py" --exclude-dir=.venv . ; then
             echo "проверка, которая не может упасть, — это удалённая проверка"
             exit 1
           fi

@@ -35,7 +35,8 @@ from pseudex.envelope import (
     mask_tools,
     unmask_response,
 )
-from pseudex.license import ENGINE_VERSION, LicenseClient, LicenseError, explain
+from pseudex.license import (
+    ENGINE_VERSION, STATE_LEASED, LicenseClient, LicenseError, explain)
 from pseudex import metering
 from pseudex.maskcache import MaskCache
 from pseudex.operator import build_router
@@ -549,13 +550,25 @@ async def health() -> JSONResponse:
 
 @app.get("/license")
 async def license_status() -> JSONResponse:
+    """What the licence is doing right now — the ALARM endpoint, on this leg too.
+
+    `/health` is liveness and answers 200 while serving; this one answers 503
+    while the state is anything but LEASED. The sidecar's docstring carries the
+    full argument for the split; what matters here is that both legs owe the
+    same contract, and this one did not pay it: it answered 200 unconditionally,
+    so a customer on the proxy leg who wired the documented alert got an alarm
+    that could not fire — through grace and through expiry alike. The sidecar had
+    the mirror-image defect (503 forever, comparing against a literal that is not
+    the state's wire value), which is why neither leg's monitoring worked and why
+    both are fixed together.
+    """
     status = LICENSE.status()
     return JSONResponse({
         "state": status.state, "code": status.code, "lease_id": status.lease_id,
         "bundle_version": status.bundle_version, "last_error": status.last_error,
         "grace_left_s": (None if status.grace_left_seconds is None
                          else round(status.grace_left_seconds)),
-    })
+    }, status_code=200 if status.state == STATE_LEASED else 503)
 
 
 @app.exception_handler(BundleNotLeased)
