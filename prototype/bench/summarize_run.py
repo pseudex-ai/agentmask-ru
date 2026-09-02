@@ -38,7 +38,11 @@ PATTERNS: dict[str, tuple[str, int]] = {
     "34-fuzz-registers": (r"вариантов|подмен", 0),
     "40-v3-offline": (r"^ВСЕГО|^взвешенно|ЭТАЛОННЫЙ ВЫЗОВ|настоящее значение|"
                       r"разные люди|один человек|^  clean|^  value_missing|^  unjudged", 0),
+    "41-v4-build": (r"^случаев|^доказательство|^кластеров", 0),
+    "42-v4-smoke": (r"^ИТОГО|^FAIL", 0),
+    "43-v4-scripted-engine": (r"^троек|^   L[13] |^   agree|^   residual|^   validated_refused|^   derived|по типам", 0),
     "54-collisions": (r"OK|потолок", 0),
+    "61-v4-live": (r"^троек|потрачено|^   L[13] |^   agree|^   residual|^   validated_refused|^   derived|по типам|ответ клиенту", 0),
     "60-v3-live-medium": (r"израсходовано|^   на случай|^ВСЕГО|^взвешенно|тот ли инструмент|ЭТАЛОННЫЙ ВЫЗОВ|настоящее значение|из них модель|разные люди|один человек|^  clean|^  substitute_shown|^  third_party|^  value_missing|^  unjudged|^  done", 0),
 }
 

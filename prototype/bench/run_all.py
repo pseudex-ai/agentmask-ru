@@ -107,6 +107,16 @@ def steps() -> list[tuple[str, list[str], list[pathlib.Path], str]]:
          [ROOT / "bench" / "agentpii3" / "corpus.json"],
          "три оси на всём корпусе, детерминированный судья"),
 
+        # --- AgentPII-RU v4, три плеча (без модели)
+        ("41-v4-build", ["bench/agentpii4/build.py", "--check"],
+         [ROOT / "bench" / "agentpii4" / "corpus.json"],
+         "корпус v4: валидатор, prove_no_search, покрытие"),
+        ("42-v4-smoke", ["bench/agentpii4/smoke.py"], [],
+         "уровень A: каждый класс таксономии производим на фейковом шлюзе"),
+        ("43-v4-scripted-engine", ["bench/agentpii4/smoke.py", "--engine"],
+         [ROOT / "bench" / "agentpii4" / "corpus.json"],
+         "скриптовый агент через НАСТОЯЩИЙ шлюз: труба, не модель"),
+
         # --- продуктовые проверки
         ("50-loop", ["test_loop.py"], [], "ПД не доходят до модели, вызов инструмента жив"),
         ("51-product", ["test_product.py"], [], "тенантность, аудит, потоковая детокенизация"),
@@ -172,6 +182,7 @@ def main() -> int:
             "rudevices_addresses": _sha(CACHE / "rudevices_addresses.json"),
             "gate_labels": _sha(ROOT / "bench" / "gate" / "labels.json"),
             "agentpii3_corpus": _sha(ROOT / "bench" / "agentpii3" / "corpus.json"),
+            "agentpii4_corpus": _sha(ROOT / "bench" / "agentpii4" / "corpus.json"),
             "nerel_prose": _sha(CACHE / "nerel_prose.jsonl"),
         },
         "steps": records,
