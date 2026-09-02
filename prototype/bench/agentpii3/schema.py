@@ -1115,6 +1115,176 @@ def numeral_run(text: str) -> int:
     return best
 
 
+# --- адрес сравнивается ПО ЧАСТЯМ, и это не послабление ------------------
+#
+# У правильно восстановленного адреса НЕТ ОДНОЙ ПРАВИЛЬНОЙ СТРОКИ. Форма
+# принадлежит агенту: он пишет «ул. Липовая, д. 119, кв. 10» или «липовая сто
+# девятнадцать квартира десять», и шлюз обязан вернуть настоящий адрес В ЭТОЙ
+# ЖЕ форме — иначе он ломает то, что агент передавал, и навязывает его схеме
+# свою пунктуацию. Эталон при этом хранит ОДНУ строку, и три семейства выбрали
+# для неё разные соглашения (`repair` — канон CRM, `compare` — сказанное).
+#
+# Сравнение одной строкой поэтому меряет согласие о пунктуации, а не передачу
+# значения: движок, вернувший «гусева, дом 81, квартира 117» там, где эталон
+# написал «Гусева, 81, кв. 117», доставил ВСЁ и был засчитан в ошибку.
+#
+# ПОСЛАБЛЕНИЕМ ЭТО НЕ ЯВЛЯЕТСЯ, И РАЗНИЦА ПРОВЕРЯЕМА. Сравниваются ЧАСТИ:
+# слова названия улицы (без родового слова, которое агент волен сократить или
+# опустить) и ЦИФРЫ дома, корпуса, подъезда, этажа и квартиры по отдельности.
+# Ошибка в любой части — по-прежнему ошибка, и потерянная часть тоже: пропавшая
+# квартира не «прощается формой», она отсутствует в наборе.
+#
+# РАЗБОР ЖИВЁТ ЗДЕСЬ, А НЕ БЕРЁТСЯ ИЗ `pseudex/`. Позвать разбор движка значило
+# бы дать движку самому решать, совпали ли его части с эталонными.
+_ROLE_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("flat", ("кв", "квартира", "квартиры", "квартиру", "квартире", "офис",
+              "оф", "офиса")),
+    ("entrance", ("подъезд", "подъезда", "подъезде", "под")),
+    ("floor", ("этаж", "этажа", "этаже")),
+    ("building", ("корпус", "корпуса", "корп", "кор", "стр", "строение",
+                  "строения", "литера", "литер", "лит")),
+)
+_ORDINAL_VALUE: dict[str, int] = {
+    "перв": 1, "втор": 2, "трет": 3, "четв": 4, "пят": 5, "шест": 6,
+    "седьм": 7, "восьм": 8, "девят": 9, "десят": 10, "одиннадцат": 11,
+    "двенадцат": 12,
+}
+_UNIT_VALUE: dict[str, int] = {
+    "ноль": 0, "один": 1, "одна": 1, "два": 2, "две": 2, "три": 3,
+    "четыре": 4, "пять": 5, "шесть": 6, "семь": 7, "восемь": 8, "девять": 9,
+    "десять": 10, "одиннадцать": 11, "двенадцать": 12, "тринадцать": 13,
+    "четырнадцать": 14, "пятнадцать": 15, "шестнадцать": 16,
+    "семнадцать": 17, "восемнадцать": 18, "девятнадцать": 19, "двадцать": 20,
+    "тридцать": 30, "сорок": 40, "пятьдесят": 50, "шестьдесят": 60,
+    "семьдесят": 70, "восемьдесят": 80, "девяносто": 90, "сто": 100,
+    "двести": 200, "триста": 300, "четыреста": 400, "пятьсот": 500,
+    "шестьсот": 600, "семьсот": 700, "восемьсот": 800, "девятьсот": 900,
+}
+_ADDRESS_WORD = re.compile(r"\d+[а-яё]?|[а-яёa-z]+", re.IGNORECASE)
+# СОКРАЩЕНИЯ РОДОВЫХ СЛОВ И СЛОВО «НОМЕР». Агент волен написать «ул.» вместо
+# «улица» и «подъезд номер три» вместо «подъезд три»; ни то, ни другое не
+# меняет адрес. `STREET_TYPE_WORDS` собран для другой задачи и полных форм, а
+# второго списка родовых слов быть не должно — он дополняется здесь, рядом с
+# единственным местом, которое его читает.
+_TYPE_ABBR: frozenset[str] = frozenset({
+    "ул", "просп", "пр", "прт", "пер", "наб", "бр", "б", "ш", "пл", "мкр",
+    "туп", "проезд", "шоссе", "аллея", "линия", "бульвар", "проспект",
+    "переулок", "площадь", "набережная", "улица",
+})
+# «номер» стоит между маркером и числом и не является ни тем, ни другим.
+_FILLER_WORDS: frozenset[str] = frozenset({"номер", "но", "дом", "д"})
+
+
+def _is_cardinal(word: str) -> bool:
+    """Количественное ли это слово. Порядковое — нет, и это важно.
+
+    «квартира четыре первый подъезд»: прогон после маркера квартиры тянулся
+    через «первый» и складывался в 5. Порядковое принадлежит СЛЕДУЮЩЕМУ
+    маркеру — «первый подъезд», — и в чужой прогон входить не может.
+    """
+    return word in _UNIT_VALUE
+
+
+def _numeral_value(words: Sequence[str]) -> str:
+    """Прогон числительных — цифрами. Пусто, если это не числительные."""
+    total = 0
+    seen = False
+    for word in words:
+        if word in _UNIT_VALUE:
+            total += _UNIT_VALUE[word]
+            seen = True
+            continue
+        for stem, value in _ORDINAL_VALUE.items():
+            if word.startswith(stem):
+                total += value
+                seen = True
+                break
+        else:
+            return ""
+    return str(total) if seen else ""
+
+
+def _address_parts(text: str) -> dict[str, str]:
+    """Адрес, разложенный на улицу и пронумерованные части. Цифрами.
+
+    Опечатки числительных корпуса («семесят», «песят») сюда НЕ добавлены
+    намеренно: они живут в исходной речи, а не в восстановленном значении, и
+    таблица, знающая их, начала бы прощать неверно распознанное число.
+    """
+    words = [word.lower().replace("ё", "е")
+             for word in _ADDRESS_WORD.findall(text)]
+    parts: dict[str, str] = {}
+    used = [False] * len(words)
+    for role, markers in _ROLE_MARKERS:
+        for index, word in enumerate(words):
+            if word not in markers or used[index]:
+                continue
+            after = index + 1
+            while after < len(words) and words[after] in _FILLER_WORDS:
+                after += 1
+            head = after
+            while after < len(words) and (words[after].isdigit()
+                                          or _is_cardinal(words[after])):
+                after += 1
+            if after == head:
+                after = index + 1
+            if after > head:
+                run = words[head:after]
+                parts.setdefault(role, run[0] if run[0].isdigit()
+                                 else _numeral_value(run))
+                for pos in range(index, after):
+                    used[pos] = True
+                break
+            before = index - 1
+            if before >= 0 and not used[before]:
+                value = _numeral_value([words[before]])
+                if value:
+                    parts.setdefault(role, value)
+                    used[before] = used[index] = True
+                    break
+            used[index] = True
+    house = ""
+    street: list[str] = []
+    for index, word in enumerate(words):
+        if used[index]:
+            continue
+        if house:
+            continue
+        # НАЗВАНИЕ УЛИЦЫ МОЖЕТ НАЧИНАТЬСЯ С ЧИСЛА: «Третья Тверская», «8 Марта».
+        # Дом стоит ПОСЛЕ названия, поэтому число, перед которым нет ни одного
+        # слова названия, домом быть не может.
+        if not street:
+            if word[0].isdigit() or _numeral_value([word]):
+                continue
+        if word[0].isdigit():
+            house = re.sub(r"[^\d]", "", word) or word
+            continue
+        run = [word]
+        after = index + 1
+        while after < len(words) and not used[after] and _is_cardinal(words[after]):
+            run.append(words[after])
+            after += 1
+        value = _numeral_value(run)
+        if value:
+            house = value
+            for pos in range(index, after):
+                used[pos] = True
+            continue
+        if (word not in STREET_TYPE_WORDS and word not in HOUSE_MARKERS
+                and word not in _TYPE_ABBR and word not in _FILLER_WORDS):
+            street.append(word)
+    if house:
+        parts["house"] = house
+    if street:
+        parts["street"] = " ".join(sorted(street))
+    return parts
+
+
+def _same_address(produced: str, expected: str) -> bool:
+    """Один ли это адрес. Части сравниваются поимённо, ни одна не прощается."""
+    return _address_parts(produced) == _address_parts(expected)
+
+
 def same_value(produced: str | None, expected: str, kind: str) -> bool:
     """Whether the tool received the right thing.
 
@@ -1139,6 +1309,8 @@ def same_value(produced: str | None, expected: str, kind: str) -> bool:
         return False
     if kind not in TYPES:
         raise InvalidCase(f"unknown type {kind!r}; the adapter must map into TYPES")
+    if kind in ("LOC", "ADDR"):
+        return _same_address(produced, expected)
     if kind in DIGIT_TYPES:
         expected_digits = digits_of(expected)
         produced_digits = digits_of(produced)

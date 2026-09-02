@@ -250,6 +250,11 @@ def _place_windows(text: str, start: int, end: int) -> list[tuple[int, int]]:
         # подмена его не несла, окно о нём и не спрашивало; теперь несёт, и без
         # этой ступени окно обрывается на номере дома, ключ теряет подъезд и
         # адрес не разрешается.
+        building = _BUILDING_TAIL.match(text, stop)
+        if building is not None:
+            candidates.add((start, building.end()))
+            ends.append(building.end())
+            stop = building.end()
         entrance = _ENTRANCE_TAIL.match(text, stop)
         if entrance is not None:
             candidates.add((start, entrance.end()))
@@ -269,6 +274,8 @@ def _place_windows(text: str, start: int, end: int) -> list[tuple[int, int]]:
 _FLAT_TAIL = re.compile(r",?\s*(?:кв|квартир\w*|офис\w*|оф)\.?\s*\d{1,4}")
 # Подъезд, как его пишет МОДЕЛЬ: «подъезд 2», «под. 2», «подъезда 2».
 _ENTRANCE_TAIL = re.compile(r",?\s*(?:под[ъь]езд\w*|под)\.?\s*\d{1,4}")
+# Корпус/строение — такой же хвост, и стоит перед подъездом.
+_BUILDING_TAIL = re.compile(r",?\s*(?:корп\w*|кор|стр|строен\w*|литер\w*)\.?\s*\d{1,4}")
 # A house number as a MODEL writes it: bare, or behind «д.» / «дом» / «влад.».
 # Bounded to four digits and never spanning a sentence, so it cannot swallow an
 # order number that happens to follow the address.
@@ -396,9 +403,17 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
             # with a real customer resolves to more than one token and is
             # refused. `name_key` is untouched — it is also called on the REAL
             # value, and widening it there would break the minting side.
+            # ФРАГМЕНТ АДРЕСА РАЗРЕШАЕТСЯ И В АРГУМЕНТЕ. Раньше — только в
+            # прозе: включение его для аргумента стоило 2.7 пункта, потому что
+            # найденный владелец возвращался ЦЕЛИКОМ и дописывал агенту части,
+            # которых в его схеме нет. Возвращает теперь `in_form_of`, по форме
+            # самой строки, и цена исчезла вместе с причиной.
+            #
+            # Без этого схема «улица и дом, без квартиры» не работает вовсе:
+            # ключ префикса не равен ключу отчеканенной подмены, владелец не
+            # находится, и в инструмент уходит НАША подмена целиком.
             owner = (_residual_owner(surface, vault, for_tool)
-                     or (None if for_tool
-                         else _place_fragment(surface, vault, for_tool)))
+                     or _place_fragment(surface, vault, for_tool))
             if owner is None:
                 continue
             found = owner
@@ -526,6 +541,19 @@ def _in_case_of(value: str, surface: str, entity_type: str = "NAME",
     #
     # Prose still agrees; only the argument path asks for the value itself.
     if not inflect:
+        # ФОРМА АДРЕСА ПРИНАДЛЕЖИТ АГЕНТУ. `inflect=False` — это плечо аргумента,
+        # и здесь возвращалось наше значение целиком: продиктованный адрес
+        # уезжал в CRM словами («гусева восемьдесят один квартира сто
+        # семнадцать»), которые она не исполнит. Своя каноническая форма чинила
+        # бы это наполовину — не ломала бы CRM, но ломала бы то, что агент
+        # передавал, навязывая его схеме нашу пунктуацию.
+        #
+        # `in_form_of` вписывает настоящие части ВНУТРЬ строки модели: маркеры,
+        # порядок и стиль числа остаются агентские. Имя так делать нельзя — у
+        # него нет частей с маркерами, и `_residual_owner` уже отвечает за
+        # «часть подмены».
+        if entity_type in ("LOC", "ADDR"):
+            return morph_places.in_form_of(value, surface)
         return value
     if entity_type in ("LOC", "ADDR"):
         case = morph_places.detect_case(surface)

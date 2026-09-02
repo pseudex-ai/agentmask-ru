@@ -51,6 +51,9 @@ _FLAT_TAIL = re.compile(r",?\s*(?:кв\.?|квартира)\s*(\d{1,4})\s*$", re
 # не шлюз, а себя.
 _ENTRANCE_TAIL = re.compile(r",?\s*(?:под[ъь]езд\w*|под\.?)\s*(\d{1,4})\s*$",
                             re.IGNORECASE)
+_BUILDING_TAIL = re.compile(
+    r",?\s*(?:корп\w*|кор|стр|строен\w*|литер\w*)\.?\s*(\d{1,4})\s*$",
+    re.IGNORECASE)
 _HOUSE_TAIL = re.compile(r",?\s+(\d{1,4}(?:/\d{1,3})?[а-яё]?)\s*$", re.IGNORECASE)
 
 
@@ -76,6 +79,10 @@ def split_address(phrase: str) -> dict[str, str]:
     if entrance:
         out["entrance"] = entrance.group(1)
         rest = rest[:entrance.start()]
+    building = _BUILDING_TAIL.search(rest)
+    if building:
+        out["building"] = building.group(1)
+        rest = rest[:building.start()]
     house = _HOUSE_TAIL.search(rest)
     if house:
         out["house"] = house.group(1)
@@ -89,6 +96,10 @@ def split_address(phrase: str) -> dict[str, str]:
 # Роль поля выводится из ИМЕНИ аргумента, а не из формы значения. Схемы корпуса
 # называют поля прямо (`street`, `pickup_house`, `dropoff_flat`), и имя — это
 # то единственное, что модель тоже видит, когда решает, что куда положить.
+# `building` — КОРПУС, А НЕ ДОМ. Он был псевдонимом `house`, и в схеме
+# `register_building`, которая объявляет ОБА поля, модель клала номер дома в
+# поле корпуса. Псевдоним имеет смысл лишь там, где `house` не объявлен, а такой
+# схемы в корпусе нет.
 _ROLES = ("street", "house", "flat", "entrance", "city", "apartment", "building")
 
 
@@ -97,7 +108,7 @@ def role_of(argument: str) -> str:
     parts = argument.lower().split("_")
     for role in _ROLES:
         if role in parts:
-            return {"apartment": "flat", "building": "house"}.get(role, role)
+            return {"apartment": "flat"}.get(role, role)
     return ""
 
 
@@ -134,6 +145,8 @@ def reformat_address(phrase: str, key: str) -> str:
         out = street_text
         if "house" in parts:
             out += f", {house_marker}{parts['house']}" if house_marker else f", {parts['house']}"
+        if "building" in parts:
+            out += f", корп. {parts['building']}"
         if "entrance" in parts:
             out += f", подъезд {parts['entrance']}"
         if "flat" in parts:

@@ -21,6 +21,7 @@ person's name in the genitive and does not agree with anything. Adjectival names
 import functools
 import re
 
+from pseudex import spoken
 from pseudex.morph import MORPH
 
 # Generic words that head a Russian address, with the gender each one imposes on
@@ -577,6 +578,7 @@ def place_shape(phrase: str) -> dict[str, object]:
     has_house = "house" in roles
     has_flat = "flat" in roles
     has_entrance = "entrance" in roles
+    has_building = "building" in roles
     generic = ""
     gender = "femn"
     # A HOUSE NUMBER SAID ALOUD IS STILL A HOUSE NUMBER. Every question below
@@ -600,6 +602,7 @@ def place_shape(phrase: str) -> dict[str, object]:
                 "has_house": has_house,
                 "has_flat": has_flat,
                 "has_entrance": has_entrance,
+                "has_building": has_building,
             }
     for token in re.findall(r"[А-Яа-яЁё]+", phrase):
         lowered = token.lower()
@@ -621,6 +624,7 @@ def place_shape(phrase: str) -> dict[str, object]:
         "has_house": has_house,
         "has_flat": has_flat,
         "has_entrance": has_entrance,
+        "has_building": has_building,
     }
 
 
@@ -786,20 +790,34 @@ def split_roles(phrase: str) -> dict[str, str]:
     Дом — первое число, которое не забрал ни один маркер. Улица — всё, что
     стоит до него.
     """
+    return {role: phrase[start:end].strip()
+            for role, (start, end) in role_spans(phrase).items()}
+
+
+def role_spans(phrase: str) -> dict[str, tuple[int, int]]:
+    """Те же роли, но ГРАНИЦАМИ в исходной строке.
+
+    Нужны, чтобы восстанавливать адрес В ФОРМЕ, КОТОРОЙ ПОЛЬЗУЕТСЯ АГЕНТ:
+    подставить настоящие части внутрь его собственной строки, не переписывая её
+    своей пунктуацией и своими маркерами. Границы для этого обязательны — по
+    одним лишь строкам частей нельзя сказать, где в «ул. Липовая, д. 119, кв.
+    10» кончается дом и начинается квартира.
+    """
+    offset = len(phrase) - len(phrase.lstrip())
     text = phrase.strip()
     claimed: list[tuple[int, int]] = []
-    out: dict[str, str] = {}
+    out: dict[str, tuple[int, int]] = {}
     for role, marker in _PART_MARKERS:
         for hit in re.finditer(rf"(?i)\b(?:{marker})\.?(?![а-яё])", text):
             after = _number_at(text, hit.end())
             if after is not None:
                 claimed.append((hit.start(), after.end()))
-                out.setdefault(role, after.group().strip())
+                out.setdefault(role, (after.start(), after.end()))
                 continue
             before = list(_ORDINAL_ONLY.finditer(text[:hit.start()]))
             if before and not text[before[-1].end():hit.start()].strip():
                 claimed.append((before[-1].start(), hit.end()))
-                out.setdefault(role, before[-1].group().strip())
+                out.setdefault(role, (before[-1].start(), before[-1].end()))
     house = None
     for pattern in (_DIGIT_NUMBER, _WORD_NUMBER):
         for number in pattern.finditer(text):
@@ -809,16 +827,242 @@ def split_roles(phrase: str) -> dict[str, str]:
                 house = number
             break
     if house is not None:
-        out["house"] = house.group().strip()
-        head = text[:house.start()]
-        marker = _HOUSE_MARKER.search(head)
-        if marker is not None and not head[marker.end():].strip(" ,."):
-            head = head[:marker.start()]
-        street = head.strip().strip(" ,.")
-        if street:
-            out["street"] = street
+        out["house"] = (house.start(), house.end())
+        head_end = house.start()
+        marker = _HOUSE_MARKER.search(text[:head_end])
+        if marker is not None and not text[marker.end():head_end].strip(" ,."):
+            head_end = marker.start()
+        head = text[:head_end]
+        start = head_end - len(head.rstrip(" ,."))
+        street = head.rstrip(" ,.")
+        if street.strip():
+            out["street"] = (len(street) - len(street.lstrip()), head_end - start)
     elif not claimed:
-        out["street"] = text
+        out["street"] = (0, len(text))
+    return {role: (start + offset, end + offset) for role, (start, end) in out.items()}
+
+
+_ANY_DIGIT = re.compile(r"\d")
+_ORDINAL_TO_INT: dict[str, int] = {
+    "перв": 1, "втор": 2, "трет": 3, "четв": 4, "пят": 5, "шест": 6,
+    "седьм": 7, "восьм": 8, "девят": 9, "десят": 10, "одиннадцат": 11,
+    "двенадцат": 12,
+}
+_TRAILING_LITERA = re.compile(r"\s+([а-яё])$")
+
+
+def _part_to_digits(part: str) -> str:
+    """Часть адреса, сказанная словами, — цифрами. Литера дома остаётся буквой.
+
+    Порядковое («первый подъезд») числительным не является, поэтому его таблица
+    отдельная и по ОСНОВЕ: «четвёртый», «четвертого», «четвёртом» — одно и то же
+    число, а падеж здесь ничего не значит.
+    """
+    text = part.strip()
+    if not text or _ANY_DIGIT.search(text):
+        return text
+    litera = ""
+    tail = _TRAILING_LITERA.search(text)
+    if tail is not None:
+        litera, text = tail.group(1), text[:tail.start()]
+    # КОЛИЧЕСТВЕННОЕ ПРОБУЕТСЯ ПЕРВЫМ, И ПОРЯДОК ЗДЕСЬ — ЭТО ПРАВИЛЬНОСТЬ НОМЕРА
+    # ДОМА. Основа «шест» открывает и «шестой», и «шестнадцать»: при обратном
+    # порядке «воронцовский шестнадцать» уезжало в CRM домом номер 6.
+    words = re.findall(r"[а-яё]+", text.lower())
+    # `run_to_digits` ждёт прогон, УЖЕ признанный числительным, и на чужом слове
+    # падает по ключу — поэтому состав проверяется здесь, а не ловится исключение.
+    if words and all(word in spoken.CARDINALS for word in words):
+        digits = spoken.run_to_digits(words)
+        if digits:
+            return f"{digits}{litera}"
+    for stem, value in _ORDINAL_TO_INT.items():
+        if text.lower().startswith(stem) and _ORDINAL_ONLY.fullmatch(text):
+            return f"{value}{litera}"
+    return part.strip()
+
+
+_WORD_OF_DIGIT = {
+    "0": "ноль", "1": "один", "2": "два", "3": "три", "4": "четыре",
+    "5": "пять", "6": "шесть", "7": "семь", "8": "восемь", "9": "девять",
+    "10": "десять", "11": "одиннадцать", "12": "двенадцать",
+    "13": "тринадцать", "14": "четырнадцать", "15": "пятнадцать",
+    "16": "шестнадцать", "17": "семнадцать", "18": "восемнадцать",
+    "19": "девятнадцать", "20": "двадцать", "30": "тридцать", "40": "сорок",
+    "50": "пятьдесят", "60": "шестьдесят", "70": "семьдесят",
+    "80": "восемьдесят", "90": "девяносто", "100": "сто", "200": "двести",
+    "300": "триста", "400": "четыреста", "500": "пятьсот", "600": "шестьсот",
+    "700": "семьсот", "800": "восемьсот", "900": "девятьсот",
+}
+
+
+def _spell_number(digits: str) -> str:
+    """Целое число словами: «81» -> «восемьдесят один». Пусто, если не выходит."""
+    if not digits.isdigit() or not 0 < int(digits) < 1000:
+        return ""
+    rest, words = int(digits), []
+    for size in (100, 10, 1):
+        if rest == 0:
+            break
+        if str(rest) in _WORD_OF_DIGIT:
+            words.append(_WORD_OF_DIGIT[str(rest)])
+            rest = 0
+            break
+        chunk = rest - rest % size
+        if chunk:
+            words.append(_WORD_OF_DIGIT[str(chunk)])
+            rest -= chunk
+    return " ".join(words)
+
+
+def _like(part: str, model: str) -> str:
+    """Настоящая часть в том СТИЛЕ ЧИСЛА, которым написана часть модели."""
+    if not model:
+        return part
+    if _ANY_DIGIT.search(model):
+        return _part_to_digits(part)
+    if _ANY_DIGIT.search(part):
+        spelled = _spell_number(re.sub(r"\D", "", part))
+        litera = part[len(re.sub(r"\D", "", part)):].strip()
+        if spelled:
+            return f"{spelled} {litera}".strip()
+    return part
+
+
+def _street_like(street: str, model: str) -> str:
+    """Название улицы в том виде, в каком родовое слово написал АГЕНТ.
+
+    То же правило, что и для частей, на слово ниже: агент написал «Речная» без
+    «улицы» — значит поле его схемы хочет одно название, и «улица Ленина» в нём
+    лишнее слово. Написал «ул.» — вернём «ул.», а не «улица»: сокращение он
+    выбрал сам.
+    """
+    words = street.split()
+    generic = [word for word in words if _GENERIC_STEMS.match(word)
+               or word.lower().strip(".") in _SIGNATURE_NOISE]
+    named = [word for word in words if word not in generic]
+    if not named:
+        return street
+    theirs = [word for word in model.split()
+              if _GENERIC_STEMS.match(word) or word.lower().strip(".") in _SIGNATURE_NOISE]
+    if not theirs:
+        return " ".join(named)
+    if not generic:
+        return street
+    # Порядок и написание родового слова — агентские: «ул. Ленина» и «Ленина
+    # улица» это его выбор, а не наш.
+    lead = model.split()[0] in theirs
+    return f"{theirs[0]} {' '.join(named)}" if lead else f"{' '.join(named)} {theirs[0]}"
+
+
+def in_form_of(value: str, surface: str) -> str:
+    """Настоящий адрес, вписанный В ФОРМУ, КОТОРОЙ ПОЛЬЗУЕТСЯ АГЕНТ.
+
+    ЧТО БЫЛО НЕ ТАК. Восстановление подставляло вместо подмены нашу строку
+    целиком, и форма приходила наша: клиент диктует «гусева восемьдесят один
+    квартира сто семнадцать», модель кладёт в аргумент «ул. Липовая, д. 119,
+    кв. 10» — письменную форму нашей же подмены, — а обратно уезжало
+    «гусева восемьдесят один квартира сто семнадцать», которое CRM не исполнит.
+    Своя каноническая форма чинит это ровно наполовину: она не ломает CRM, но
+    ломает то, что агент передавал, и навязывает нашу пунктуацию его схеме.
+
+    ФОРМА ПРИНАДЛЕЖИТ АГЕНТУ, СОДЕРЖИМОЕ — ВОЛТУ. Строка модели разбирается на
+    роли с границами, и каждая часть заменяется настоящей ВНУТРИ неё: маркеры,
+    порядок и пунктуация остаются агентские, стиль числа — тоже («д. 119» ->
+    «д. 81», «сто девятнадцать» -> «восемьдесят один»).
+
+    ЧАСТЬ, КОТОРОЙ У НАСТОЯЩЕГО АДРЕСА НЕТ, УДАЛЯЕТСЯ. Модель дописала
+    квартиру, которой клиент не называл, — оставить её значит отдать
+    инструменту выдуманное значение под видом настоящего.
+
+    ЧАСТЬ, КОТОРОЙ НЕТ У МОДЕЛИ, НЕ ДОПИСЫВАЕТСЯ, и это то же правило с другой
+    стороны. Схема инструмента может просить улицу и дом без подъезда — агент
+    тогда пишет их и только их, — и дописанный нами «подъезд 2» ломает ровно то,
+    что мы обещали не ломать. Форма принадлежит агенту целиком: и то, что в ней
+    есть, и то, чего в ней нет.
+    """
+    surface = surface.strip()
+    if not surface:
+        return value
+    theirs = role_spans(surface)
+    ours = split_roles(value)
+    if "street" not in theirs or "street" not in ours:
+        return value
+    spans: list[tuple[int, int, str]] = []
+    for role, (start, end) in sorted(theirs.items(), key=lambda item: item[1][0]):
+        model_part = surface[start:end]
+        if role not in ours:
+            # Хвостовой маркер уходит вместе со своим числом; иначе в строке
+            # остаётся «, кв.» без номера.
+            spans.append((_marker_start(surface, start), end, ""))
+            continue
+        spans.append((start, end,
+                      _street_like(ours[role], model_part) if role == "street"
+                      else _like(ours[role], model_part)))
+    out = _splice_parts(surface, spans)
+    return re.sub(r"\s{2,}", " ", out).strip().strip(",").strip()
+
+
+_MARKER_BEFORE = re.compile(
+    r"(?i),?\s*\b(?:кв|кварт\w*|офис\w*|оф|под[ъь]езд\w*|под|этаж\w*"
+    r"|корп\w*|кор|стр|строен\w*|литер\w*|лит|дом|д)\.?\s*$")
+
+
+def _marker_start(text: str, start: int) -> int:
+    """Начало маркера, стоящего вплотную перед частью, или сама часть."""
+    hit = _MARKER_BEFORE.search(text[:start])
+    return hit.start() if hit is not None else start
+
+
+def _splice_parts(text: str, spans: list[tuple[int, int, str]]) -> str:
+    out, last = [], 0
+    for start, end, piece in sorted(spans):
+        if start < last:
+            continue
+        out.append(text[last:start])
+        out.append(piece)
+        last = end
+    out.append(text[last:])
+    return "".join(out)
+
+
+def written_address(phrase: str) -> str:
+    """Продиктованный вслух адрес в форме, которую примет CRM.
+
+    ЗАЧЕМ. «гусева восемьдесят один квартира сто семнадцать» — это то, что
+    человек СКАЗАЛ, и в поле `address` чужой системы оно не исполнимо. Для
+    телефона, СНИЛС, ИНН, карты и госномера правило уже есть — `_pick_value`
+    отдаёт на плече аргумента канон, а в прозе произнесённую форму, — и адрес
+    был из него исключён, потому что у LOC `canonical` это ПОИСКОВЫЙ КЛЮЧ, а не
+    значение. Здесь появляется третья форма: не ключ и не речь, а запись.
+
+    СОБИРАЕТСЯ ИЗ РОЛЕЙ, А НЕ ПЕРЕПИСЫВАНИЕМ СТРОКИ. `split_roles` уже знает,
+    где улица, дом, квартира и подъезд, и знает это по маркерам, а не по
+    порядку слов — «первый подъезд» и «подъезд первый» говорят оба. Замена
+    числительных прямо в строке спутала бы номер дома с номером подъезда.
+
+    Родовое слово остаётся строчным, имя улицы — с заглавной: так пишется
+    адресная строка, «улица Ленина», а не «Улица Ленина».
+    """
+    roles = split_roles(phrase)
+    street = roles.get("street", "").strip()
+    if not street:
+        return phrase.strip()
+    words = street.split()
+    named = [word if _GENERIC_STEMS.match(word) or word.lower() in _GENERIC
+             else word.capitalize() for word in words]
+    out = " ".join(named)
+    house = _part_to_digits(roles.get("house", ""))
+    if house:
+        # «д.» СТАВИТСЯ, ТОЛЬКО ЕСЛИ ЕГО СКАЗАЛИ. Адресная строка пишет номер
+        # дома и так, и так; лишний маркер — это часть, которой в сообщении не
+        # было, а его отсутствие там, где слово прозвучало, — потерянная часть.
+        marker = "д. " if _HOUSE_MARKER.search(phrase) else ""
+        out = f"{out}, {marker}{house}"
+    for role, marker in (("building", "корп."), ("entrance", "подъезд"),
+                         ("floor", "этаж"), ("flat", "кв.")):
+        part = _part_to_digits(roles.get(role, ""))
+        if part:
+            out = f"{out}, {marker} {part}"
     return out
 
 

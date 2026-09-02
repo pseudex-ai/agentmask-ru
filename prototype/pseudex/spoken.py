@@ -70,6 +70,10 @@ _HUNDREDS: dict[str, int] = {
 # CORRUPT the digits inside a real number, and a wrong digit string is worse
 # than a missing one: it can pass a checksum and mask the wrong thing.
 _ALL_NUMERALS = set(_UNITS) | set(_TEENS) | set(_TENS) | set(_HUNDREDS)
+# Публичное имя того же множества: `run_to_digits` ждёт прогон, УЖЕ признанный
+# числительным, и на чужом слове падает по ключу. Вызывающий обязан проверить
+# состав, и проверять его должно то же множество, по которому идёт разбор.
+CARDINALS = frozenset(_ALL_NUMERALS)
 
 _UNIT_WORDS = "|".join(sorted(_UNITS, key=len, reverse=True))
 _TEEN_WORDS = "|".join(sorted(_TEENS, key=len, reverse=True))
