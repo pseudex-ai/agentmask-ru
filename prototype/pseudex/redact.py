@@ -16,6 +16,26 @@ from pseudex.vault import LOC_TOKEN_PATTERN, TOKEN_RE, Vault, name_key, place_ke
 # A number-like run (digits + phone separators), >=7 digits — a candidate for
 # digit-core detokenization when the model reformatted a numeric token.
 _NUM_RUN = re.compile(r"(?<![\d])[+(]?\d[\d\s().\-]{5,}\d(?!\d)")
+# Значение поля целиком: только цифры и разделители, не меньше трёх цифр.
+_WHOLE_NUMBER = re.compile(r"[+(]?\d[\d\s().\-]*\d(?:\D*)?")
+
+
+class _Whole:
+    """Совпадение-заглушка для случая «всё поле — одно число»."""
+
+    __slots__ = ("_start", "_end", "_text")
+
+    def __init__(self, start: int, end: int, text: str) -> None:
+        self._start, self._end, self._text = start, end, text
+
+    def start(self) -> int:
+        return self._start
+
+    def end(self) -> int:
+        return self._end
+
+    def group(self) -> str:
+        return self._text
 
 
 def _splice(text: str, spans: list[tuple[int, int, str]]) -> str:
@@ -187,6 +207,18 @@ def _restore_reformatted(text: str, vault: Vault,
     """Numeric tokens the model rewrote (+7… -> 8…, separators stripped) no longer
     match their minted shape, so they are resolved by digit signature instead."""
     runs = [(match, re.sub(r"\D", "", match.group())) for match in _NUM_RUN.finditer(text)]
+    # ПОЛЕ, СОСТОЯЩЕЕ ТОЛЬКО ИЗ ЧИСЛА, — ЭТО ЧАСТЬ ЗНАЧЕНИЯ, А НЕ ЧИСЛО В ТЕКСТЕ.
+    # `_NUM_RUN` намеренно требует длинного прогона: короткое число в прозе — это
+    # обычно количество, и подменять его настоящими цифрами значило бы называть
+    # персональные данные там, где их не называли. Но «серия паспорта» и
+    # «последние четыре цифры» — это ОТДЕЛЬНЫЕ поля схемы, и в них не стоит
+    # ничего, кроме числа. Три цифры минимум: группа СНИЛС — три, серия и хвост
+    # телефона — четыре, а двузначное — это «количество: 12».
+    if for_tool and not runs and _WHOLE_NUMBER.fullmatch(text.strip()):
+        stripped = text.strip()
+        offset = text.index(stripped)
+        runs = [(_Whole(offset, offset + len(stripped), stripped),
+                 re.sub(r"\D", "", stripped))]
     if not runs:
         return text
     candidates: set[str] = set()
@@ -195,15 +227,47 @@ def _restore_reformatted(text: str, vault: Vault,
         if len(digits) >= 10:
             candidates.add(digits[-10:])
     resolved = vault.resolve_digit_signatures(candidates, for_tool)
-    if not resolved:
-        return text
+    # БЕЗ РАННЕГО ВОЗВРАТА. Пустая выборка по сигнатурам — это ровно тот случай,
+    # ради которого заведён разбор куска ниже: агент положил в поле часть
+    # подмены, и целой сигнатуры у неё нет по построению.
     spans: list[tuple[int, int, str]] = []
     for match, digits in runs:
         # Full signature wins over the phone last-10 fallback.
         value = resolved.get(digits) or (resolved.get(digits[-10:]) if len(digits) >= 10 else None)
         if value is not None:
             spans.append((match.start(), match.end(), value))
+            continue
+        # КУСОК ПОДМЕНЫ — ТОЖЕ НАША ПОДМЕНА. Схема просит серию паспорта без
+        # номера, оператор переспрашивает последние четыре цифры телефона — и
+        # такой кусок целая сигнатура не находит, поэтому он уходил в инструмент
+        # КАК ЕСТЬ, то есть фейком, с кодом 200 и пустыми остатками.
+        #
+        # Только на плече аргумента: в прозе кусок числа — это чаще всего просто
+        # число, и подменять его настоящими цифрами значило бы раскрывать
+        # персональные данные там, где их не называли.
+        if not for_tool or len(digits) < 3:
+            continue
+        owner = vault.digit_fragment_owner(digits)
+        if owner is not None:
+            spans.append((match.start(), match.end(),
+                          _same_shape(match.group(), owner[0])))
     return _splice(text, spans)
+
+
+def _same_shape(model: str, digits: str) -> str:
+    """Настоящие цифры В РАЗДЕЛИТЕЛЯХ, которые расставил агент.
+
+    «90 71» и «45 09» — одна форма и разное содержимое; вернуть «4509» значило
+    бы переписать поле его схемы своим представлением о том, как пишут серию.
+    """
+    out, index = [], 0
+    for char in model:
+        if char.isdigit() and index < len(digits):
+            out.append(digits[index])
+            index += 1
+        elif not char.isdigit():
+            out.append(char)
+    return "".join(out) + digits[index:]
 
 
 # One to three capitalised Cyrillic words — the shape a personal name takes in

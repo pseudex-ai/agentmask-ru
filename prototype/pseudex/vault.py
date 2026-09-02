@@ -1634,6 +1634,52 @@ class Vault:
         common = set.intersection(*owners)
         return next(iter(common)) if len(common) == 1 else None
 
+    def digit_fragment_owner(self, fragment: str) -> tuple[str, str] | None:
+        """Настоящие цифры на МЕСТЕ этого куска чужой подмены, и её тип.
+
+        ПОЛЕ СХЕМЫ БЫВАЕТ МЕНЬШЕ ЗНАЧЕНИЯ. Российская форма просит серию и номер
+        паспорта ОТДЕЛЬНО, оператор переспрашивает последние четыре цифры
+        телефона, СНИЛС диктуют группами. Агент кладёт в такое поле КУСОК
+        подмены, целая сигнатура его не находит — и кусок уходил в инструмент
+        как есть, то есть ФЕЙКОМ, с кодом 200 и пустым списком остатков. Ни
+        одного способа заметить это снаружи не было.
+
+        ОТВЕЧАЕТ СМЕЩЕНИЕ, А НЕ НОМЕР ГРУППЫ. «26 35 534625» и «4509 123456»
+        разбиты на группы по-разному, но цифры стоят на одних местах: серия —
+        первые четыре, номер — следующие шесть. Кусок ищется в цифрах подмены,
+        и на том же смещении берутся цифры настоящего значения.
+
+        ОБЛАСТЬ РАЗГОВОРА И ЕДИНСТВЕННЫЙ КАНДИДАТ — как у `place_owner`, и по
+        той же причине: «35» встречается в цифрах половины подмен клиента.
+        Несколько кандидатов означают отказ, а не выбор.
+        """
+        digits = "".join(ch for ch in fragment if ch.isdigit())
+        if len(digits) < 2:
+            return None
+        scope = " AND (minted_in=? OR minted_in IS NULL OR minted_in='')"
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT token, digits, entity_type, canonical, original "
+                "FROM tokens WHERE customer=? AND digits IS NOT NULL "
+                "AND length(digits) > ? AND instr(digits, ?) > 0"
+                + (scope if self._conversation else ""),
+                (self._customer, len(digits), digits, self._conversation)
+                if self._conversation else (self._customer, len(digits), digits),
+            ).fetchall()
+        found: list[tuple[str, str]] = []
+        for _token, token_digits, entity_type, canonical, original in rows:
+            value = _pick_value(entity_type, canonical or "", original or "", True)
+            real = "".join(ch for ch in value if ch.isdigit())
+            if len(real) != len(token_digits):
+                # Разной длины — смещение не переносится, и угадывать нельзя.
+                continue
+            start = token_digits.find(digits)
+            while start >= 0:
+                found.append((real[start:start + len(digits)], entity_type))
+                start = token_digits.find(digits, start + 1)
+        unique = {pair for pair in found}
+        return next(iter(unique)) if len(unique) == 1 else None
+
     def residual_of(self, candidate: str) -> str | None:
         """The minted token this leftover string is a piece of, if any.
 
