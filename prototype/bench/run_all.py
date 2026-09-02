@@ -124,6 +124,10 @@ def steps() -> list[tuple[str, list[str], list[pathlib.Path], str]]:
         ("53-persona", ["test_persona_defects.py"], [], "дефекты, найденные прогоном персон"),
         ("54-collisions", ["test_collisions.py"], [],
          "подмена, совпавшая с настоящим значением: обе половины"),
+        ("55-hard-cases", ["test_hard_cases.py"], [],
+         "неудобное, редкое и намеренно враждебное: детекция, возврат, без лишнего"),
+        ("56-prose-fragments", ["test_prose_fragments.py"], [],
+         "кусок и производная подмены в ответе клиенту возвращаются настоящим значением"),
     ]
 
 

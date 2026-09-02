@@ -9,7 +9,7 @@ import json
 import re
 
 from pseudex.detect import Span
-from pseudex import morph_names, morph_places
+from pseudex import morph_names, morph_places, translit
 from pseudex.profiling import stage
 from pseudex.vault import LOC_TOKEN_PATTERN, TOKEN_RE, Vault, name_key, place_key
 
@@ -122,7 +122,81 @@ def unmask_text(text: str, vault: Vault, inflect: bool = True,
     with stage("unmask.total"):
         restored = _restore_reformatted(
             _restore_tokens(text, vault, for_tool), vault, for_tool)
+        if not for_tool:
+            restored = _restore_cued_numbers(restored, vault)
         return _restore_inflected(restored, vault, inflect, for_tool)
+
+
+# A SHORT NUMBER IN PROSE IS A QUANTITY — unless the word before it says what
+# it is. «Верен ли номер дома 74?», «серия 45 09», «последние четыре цифры
+# 4567», «контрольное число 59»: the model confirms a PIECE of the substitute
+# with the customer, and the customer reads a house that is not theirs. The cue
+# is the licence; without one nothing here fires, and the window is one
+# adjacency, never a sentence.
+_CUE_NUMBER = re.compile(
+    r"(?i)(?<![\wа-яё])(?P<cue>(?:\*{4}\s?){2,3}|дом\w*|д\.|кв\.|кв(?=\s)|квартир\w*|подъезд\w*|корпус\w*|"
+    r"серия|серии|номер\w*|последн\w+\s+(?:[а-яё]+\s+){0,2}?цифр\w*(?:\s+[а-яё]+){0,2}|"
+    r"контрольн\w+\s+числ\w*|заканчива\w+\s+на)\s*[:—–-]?\s*(?:\*\*)?(?P<num>\d(?:[\d\s]{0,10}\d)?)(?![\d:])")
+_HOUSE_CUES = ("дом", "д.", "кв", "квартир", "подъезд", "корпус")
+
+
+def _cue_kind(cue: str) -> tuple[str | None, str | None]:
+    """What the cue says about the fragment: the identifier's type and whether
+    the digits are its start or its end."""
+    if cue.startswith("*"):
+        return "CARD", "end"
+    if cue.startswith("контрольн"):
+        return "SNILS", "end"
+    if cue.startswith("сери"):
+        return "PASSPORT", "start"
+    if cue.startswith("последн") or cue.startswith("заканчива"):
+        for word, kind in (("телефон", "PHONE"), ("карт", "CARD"), ("снилс", "SNILS"), ("паспорт", "PASSPORT")):
+            if word in cue:
+                return kind, "end"
+        return None, "end"
+    return None, None
+
+
+def _restore_cued_numbers(text: str, vault: Vault) -> str:
+    # A NUMBER INSIDE A WHOLE ADDRESS OR TOKEN IS NOT A FRAGMENT. «кв. 83» in
+    # «Кинешму, ул. Озёрную 96, кв. 83» belongs to the token the inflected
+    # window restores as one piece; replacing its flat here first broke the
+    # window's key and the address came back as «ул. Баумана 5, ул. ул. …».
+    protected = [m.span() for m in _PLACE_RUN.finditer(text)]
+    protected += [m.span() for m in TOKEN_RE.finditer(text)]
+    spans: list[tuple[int, int, str]] = []
+    for match in _CUE_NUMBER.finditer(text):
+        number = match.group("num")
+        digits = re.sub(r"\D", "", number)
+        if not digits:
+            continue
+        if any(a <= match.start("num") and match.end("num") <= b for a, b in protected):
+            continue
+        cue = match.group("cue").lower()
+        replacement: str | None = None
+        if cue.startswith(_HOUSE_CUES):
+            token = vault.place_owner(number)
+            if token is not None:
+                value, entity_type = vault.reveal(token)
+                if value and entity_type == "LOC":
+                    fake_roles = morph_places.split_roles(token)
+                    real_roles = morph_places.split_roles(value)
+                    role = next((name for name, part in fake_roles.items()
+                                 if re.sub(r"\D", "", part) == digits and name != "street"), "")
+                    if role and real_roles.get(role):
+                        replacement = morph_places.part_in_form_of(number, real_roles[role], role)
+        else:
+            if len(digits) < 2:
+                continue
+            kind, position = _cue_kind(cue)
+            owner = vault.digit_fragment_owner(digits, kind, position)
+            if owner is None and kind is not None:
+                owner = vault.digit_fragment_owner(digits, None, position)
+            if owner is not None:
+                replacement = _same_shape(number, owner[0])
+        if replacement is not None and replacement != number:
+            spans.append((match.start("num"), match.end("num"), replacement))
+    return _splice(text, spans)
 
 
 # The ГОСТ plate alphabet was chosen precisely because every letter in it has a
@@ -249,7 +323,14 @@ def _restore_reformatted(text: str, vault: Vault,
         # Только на плече аргумента: в прозе кусок числа — это чаще всего просто
         # число, и подменять его настоящими цифрами значило бы раскрывать
         # персональные данные там, где их не называли.
-        if not for_tool or len(digits) < 3:
+        # IN PROSE TOO, for a run this long. `_NUM_RUN` admits only seven or
+        # more characters of digits and separators, and a СНИЛС the model
+        # spelled digit by digit for the customer — «4 4 5 3 0 1 9 2 5,
+        # контрольное число 59» — is exactly that: a fragment of OUR substitute
+        # shown as the customer's own number (v4 small run, 22 of 59 replies
+        # the judge flagged). A short bare number stays untouched here; the
+        # cue-gated path below is where «дом 74» is decided.
+        if len(digits) < 3:
             continue
         owner = vault.digit_fragment_owner(digits)
         if owner is not None:
@@ -441,7 +522,26 @@ def _name_windows(text: str) -> list[tuple[int, int, str]]:
             if re.fullmatch(r"[А-ЯЁа-яё\s-]+", text[start:end]) is None:
                 continue
             windows.append((start, end, text[start:end]))
+    # THE DERIVED FORMS: a transliteration («Tsvetkov Vsevolod», «YAN
+    # RYBAKOV») and a pair of initials («Ж.М.»). Neither is Cyrillic, so no
+    # window above ever offered them, and a fake name reached the customer in
+    # Latin letters with an empty residual list. Misses cost one lookup.
+    latin = [(m.start(), m.end(), m.group()) for m in _LATIN_WORD.finditer(text)]
+    for i in range(len(latin)):
+        for size in (2, 1):
+            if i + size > len(latin):
+                continue
+            start, end = latin[i][0], latin[i + size - 1][1]
+            if re.fullmatch(r"[A-Za-z\s]+", text[start:end]) is None:
+                continue
+            windows.append((start, end, text[start:end]))
+    for m in _INITIALS_PAIR.finditer(text):
+        windows.append((m.start(), m.end(), m.group()))
     return windows
+
+
+_LATIN_WORD = re.compile(r"(?<![A-Za-z])(?:[A-Z][a-z]{2,}|[A-Z]{3,})(?![A-Za-z])")
+_INITIALS_PAIR = re.compile(r"(?<![А-ЯЁа-яё])([А-ЯЁ])\.\s?([А-ЯЁ])\.(?![А-ЯЁа-яё])")
 
 
 def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
@@ -522,7 +622,10 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
     for start, end, surface in sorted(windows, key=lambda w: w[1] - w[0], reverse=True):
         found = next((resolved[k] for k in keys.get((start, end), [])
                       if k in resolved), None)
-        if found is None:
+        derived = _derived_owner(surface, vault) if found is None and _is_derived_surface(surface) else None
+        if found is None and derived is None:
+            if _is_derived_surface(surface):
+                continue
             # PART OF A SUBSTITUTE IS STILL OURS. The key above is built from the
             # whole window, so «Жуков Филипп Алексеевич» resolves and «Филипп
             # Алексеевич» — the way a Russian speaker actually addresses someone
@@ -551,13 +654,70 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
             if owner is None:
                 continue
             found = owner
-        entity_type, value = found
         if any(a < end and start < b for a, b in taken):
             continue
         taken.append((start, end))
+        if derived is not None:
+            spans.append((start, end, derived))
+            continue
+        entity_type, value = found
         spans.append((start, end,
                       _in_case_of(value, surface, entity_type, inflect)))
     return _splice(text, spans)
+
+
+def _is_derived_surface(surface: str) -> bool:
+    return bool(_LATIN_WORD.search(surface) or _INITIALS_PAIR.fullmatch(surface.strip()))
+
+
+def _derived_owner(surface: str, vault: Vault) -> str | None:
+    """The SAME derivation of the real name that the model applied to the fake.
+
+    «Tsvetkov Vsevolod» is the substitute through the ICAO table; the answer is
+    the real name through the ICAO table, in the same letter case. «Ж.М.» is
+    the substitute's given name and patronymic abbreviated; the answer is the
+    real person's, in the same punctuation. The table is found by which one
+    reproduces the surface from the fake — a spelling we cannot reproduce is
+    not ours to restore.
+    """
+    initials = _INITIALS_PAIR.fullmatch(surface.strip())
+    if initials is not None:
+        key = (initials.group(1) + initials.group(2)).lower()
+        token = vault.residual_of(key)
+        if token is None:
+            return None
+        value, entity_type = vault.reveal(token)
+        if not value or entity_type != "NAME":
+            return None
+        shape = morph_names.name_shape(value)
+        words = value.split()
+        if len(shape) != len(words):
+            return None
+        given = next((w for w, k in zip(words, shape) if k == "name"), "")
+        patronymic = next((w for w, k in zip(words, shape) if k == "patr"), "")
+        if not given or not patronymic:
+            return None
+        gap = " " if re.search(r"\.\s[А-ЯЁ]", surface) else ""
+        return f"{given[0].upper()}.{gap}{patronymic[0].upper()}."
+    words = surface.split()
+    token = vault.residual_of(" ".join(words))
+    if token is None:
+        return None
+    value, entity_type = vault.reveal(token)
+    if not value or entity_type != "NAME":
+        return None
+    fake_parts, real_parts = token.split(), value.split()
+    if len(fake_parts) != len(real_parts):
+        return None
+    out: list[str] = []
+    for word in words:
+        index = next((i for i, fake in enumerate(fake_parts) if translit.table_for(fake, word) is not None), None)
+        if index is None:
+            return None
+        table = translit.table_for(fake_parts[index], word)
+        assert table is not None
+        out.append(translit.match_case(word, translit.apply(table, real_parts[index])))
+    return " ".join(out)
 
 
 def _place_fragment(surface: str, vault: Vault,

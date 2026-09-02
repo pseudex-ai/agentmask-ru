@@ -24,7 +24,7 @@ from pseudex.normalize import normalize
 import threading
 import time
 
-from pseudex import morph_names, morph_places
+from pseudex import morph_names, morph_places, translit
 from pseudex.spoken import (email_from_words, numeral_runs,
                             plate_from_words, run_to_digits)
 from pseudex.profiling import stage
@@ -1630,6 +1630,20 @@ class Vault:
                         continue   # a particle inside a phrase, not «Ян»
                     fake_parts.add(word.casefold())
                     fake_parts.add(morph_names.to_nominative(word).casefold())
+                    # THE DERIVED FORMS THE MODEL WRITES. A cardholder field, a
+                    # `name_latin`, a summary «| Латиница | Tsvetkov Vsevolod |»
+                    # — the model transliterates the substitute it read, and
+                    # none of those strings is the token. Indexed here, a few
+                    # rows per person, so the prose leg finds them by exact
+                    # match and answers with the same derivation of the real.
+                    fake_parts.update(translit.variants(word))
+                fake_shape = morph_names.name_shape(token)
+                fake_words = token.split()
+                if len(fake_shape) == len(fake_words):
+                    given = next((w for w, k in zip(fake_words, fake_shape) if k == "name"), "")
+                    patronymic = next((w for w, k in zip(fake_words, fake_shape) if k == "patr"), "")
+                    if given and patronymic:
+                        fake_parts.add(translit.squeezed_initials((given, patronymic)))
             elif entity_type == "LOC":
                 stems, numbers = morph_places.signature_parts(token)
                 fake_parts = set(stems) | set(numbers)
@@ -1701,7 +1715,8 @@ class Vault:
         with self._lock:
             return self._one_identity(common) if common else None
 
-    def digit_fragment_owner(self, fragment: str) -> tuple[str, str] | None:
+    def digit_fragment_owner(self, fragment: str, entity_type: str | None = None,
+                             position: str | None = None) -> tuple[str, str] | None:
         """Настоящие цифры на МЕСТЕ этого куска чужой подмены, и её тип.
 
         ПОЛЕ СХЕМЫ БЫВАЕТ МЕНЬШЕ ЗНАЧЕНИЯ. Российская форма просит серию и номер
@@ -1733,16 +1748,26 @@ class Vault:
                 (self._customer, len(digits), digits, self._conversation)
                 if self._conversation else (self._customer, len(digits), digits),
             ).fetchall()
+        # THE CUE NARROWS THE QUESTION. «контрольное число 77» is the END of a
+        # СНИЛС, «серия 4509» the START of a passport, «последние четыре цифры
+        # телефона» the end of a phone — and a two-digit fragment read against
+        # every substitute's digits finds three owners and refuses, while read
+        # against one type at one position it has exactly one.
         found: list[tuple[str, str]] = []
-        for _token, token_digits, entity_type, canonical, original in rows:
-            value = _pick_value(entity_type, canonical or "", original or "", True)
+        for _token, token_digits, row_type, canonical, original in rows:
+            if entity_type is not None and row_type != entity_type:
+                continue
+            value = _pick_value(row_type, canonical or "", original or "", True)
             real = "".join(ch for ch in value if ch.isdigit())
             if len(real) != len(token_digits):
                 # Разной длины — смещение не переносится, и угадывать нельзя.
                 continue
             start = token_digits.find(digits)
             while start >= 0:
-                found.append((real[start:start + len(digits)], entity_type))
+                at_end = start + len(digits) == len(token_digits)
+                if (position is None or (position == "end" and at_end)
+                        or (position == "start" and start == 0)):
+                    found.append((real[start:start + len(digits)], row_type))
                 start = token_digits.find(digits, start + 1)
         unique = {pair for pair in found}
         return next(iter(unique)) if len(unique) == 1 else None
