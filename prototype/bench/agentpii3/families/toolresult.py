@@ -1025,6 +1025,21 @@ class _Payload:
 # are judged: `limit`, a page size and an idempotency key are the model's
 # business, and comparing them would fail a gateway for a model's choice.
 
+# Чем клиент просит сделать то, чего ждёт эталон. По одной строке на
+# инструмент, словами самого корпуса и БЕЗ ЗНАЧЕНИЙ: просьба ссылается на
+# карточку, а не пересказывает её.
+_ACTION_REQUEST: dict[str, str] = {
+    "notify_operator": "передайте эти данные оператору пожалуйста",
+    "create_delivery": "оформите доставку по этой карточке",
+    "schedule_courier": "назначьте курьера по этой карточке",
+    "send_sms": "отправьте клиенту смс по этой карточке",
+    "verify_identity": "сверьте личность по этим данным",
+    "update_fiscal": "обновите реквизиты по этой карточке",
+    "create_order": "оформите заказ по этой карточке",
+    "find_client": "найдите клиента по этим данным",
+}
+
+
 def _tool(name: str, description: str,
           properties: tuple[tuple[str, str], ...]) -> dict[str, object]:
     return {
@@ -2484,6 +2499,25 @@ def _one_case(index: int, subshape: str, kind: str, register: str, context: str,
             register, 2 * rng.randrange(pairs_low, pairs_high + 1),
             minimum_chars, rng, short_filler, long_filler))
     request_index = len(prefix)
+    # ПРОСЬБА О ДЕЙСТВИИ ЕДЕТ В ПЕРВОЙ ЖЕ РЕПЛИКЕ, а не отдельной. Смысл семьи в
+    # том, что персональные данные приходят из РЕЗУЛЬТАТА инструмента и уходят
+    # обратно вторым вызовом. Второго вызова агент не делал: в живом прогоне на
+    # 800 диалогов доля несделанных здесь была 100% (189 из 189), и чтение
+    # показало, что он честно вызывает первый инструмент — читает карточку, — а
+    # дальше его никто ни о чём не просит.
+    #
+    # Отдельной репликой это добавить нельзя: короткий случай держит полосу
+    # длины в 1-2 сообщения, и лишнее ломает `require_valid`. Клиент просит обе
+    # вещи сразу — так и говорят по телефону.
+    #
+    # ЗНАЧЕНИЙ В ПРОСЬБЕ НЕТ: она ссылается на карточку, а не пересказывает её.
+    # Назвать имя или адрес значило бы вернуть данные в реплику пользователя и
+    # измерить не ту ногу. Приписка идёт В КОНЕЦ, поэтому смещения спанов,
+    # посчитанные по `request_text`, не сдвигаются.
+    action = next((_ACTION_REQUEST[call.name] for call in payload.calls
+                   if call.name in _ACTION_REQUEST), "")
+    if action:
+        request_text = f"{request_text} и {action}"
     tool_index = request_index + 1
     messages = list(prefix)
     messages.append(schema.Message(role="user", content=request_text,
@@ -2506,6 +2540,16 @@ def _one_case(index: int, subshape: str, kind: str, register: str, context: str,
             source=(_source_of(tail_text, tail_key, tail_line)
                     if tail_key else None), name=""))
 
+    # ПРОСЬБА О ДЕЙСТВИИ, БЕЗ КОТОРОЙ ЭТАЛОН НЕ МОТИВИРОВАН. Смысл семьи в том,
+    # что персональные данные приходят из РЕЗУЛЬТАТА инструмента и уходят
+    # обратно вторым вызовом. Второго вызова агент не делал: в живом прогоне на
+    # 800 диалогов доля несделанных здесь была 100% (189 из 189), и чтение
+    # показало, что он честно вызывает первый инструмент — читает карточку, — а
+    # никто в разговоре не просит его сделать что-то дальше.
+    #
+    # ЗНАЧЕНИЙ В ПРОСЬБЕ НЕТ. Она говорит «сделай это с тем, что вернула
+    # карточка», и ни одного имени, адреса или телефона не называет: назвать их
+    # значило бы вернуть данные в реплику пользователя и измерить не ту ногу.
     pii: list[schema.PiiItem] = []
     negatives: list[schema.Negative] = []
     for tag, span in sorted(request_spans.items()):
