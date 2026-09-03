@@ -16,6 +16,7 @@ urlpatterns = [
     path("", views.fleet, name="ops_fleet"),
     path("chains/", views.chains, name="ops_chains"),
     path("plans/", views.plans, name="ops_plans"),
+    path("demand/", views.demand, name="ops_demand"),
     path("plans/<str:code>/", views.edit_plan, name="ops_edit_plan"),
     # Последними: `org_` — свободная строка, и маршруты выше по конкретному пути
     # иначе были бы съедены ими. Внутри этой пары порядок тоже значим — более

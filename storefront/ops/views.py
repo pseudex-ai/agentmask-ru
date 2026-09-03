@@ -20,14 +20,20 @@
 """
 
 import csv
+import datetime
 from decimal import Decimal
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.paginator import Paginator
+from django.db.models import Sum
 from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
+from django.utils import timezone
+
+from ops.models import DemandDay
+from storefront_web import detection_types
 from django.views.decorators.http import require_POST
 
 from accounts.models import Organization
@@ -75,6 +81,50 @@ def _unpaid_by_org(org_ids: list[str]) -> dict[str, Decimal]:
     for org_id, total in rows:
         unpaid[org_id] = unpaid.get(org_id, Decimal("0")) + (total or Decimal("0"))
     return unpaid
+
+
+@staff_member_required
+def demand(request):
+    """Спрос на типы, которых мы не находим — по нему строится очередь работ.
+
+    ЧИТАЕТСЯ НЕ ПОПУЛЯРНОСТЬ, А ДЕФИЦИТ. Рядом с числом стоит, покрыта ли группа
+    сегодня, потому что «имена спросили сто раз» — это не задача, а «телеком
+    спросили двадцать» — задача. Сортировка по числу внутри непокрытых, а
+    покрытые идут ниже отдельным списком: они здесь как подтверждение, что
+    спрашивают не только про дырки.
+
+    ТЗ вертикалей §1 называет это достаточной причиной для конфигуратора даже
+    без денег: сегодня очередь работ строится из наших догадок.
+    """
+    try:
+        days = min(365, max(1, int(request.GET.get("days", "30"))))
+    except ValueError:
+        days = 30
+    since = timezone.localdate() - datetime.timedelta(days=days - 1)
+    totals = dict(DemandDay.objects.filter(day__gte=since)
+                  .values_list("group")
+                  .annotate(total=Sum("count"))
+                  .values_list("group", "total"))
+    rows = []
+    for group in detection_types.GROUPS:
+        rows.append({"code": group["code"], "label": group["label"],
+                     "covered": bool(group.get("found")),
+                     "total": totals.get(group["code"], 0)})
+    # ГРУППЫ, КОТОРЫХ БОЛЬШЕ НЕТ В РЕЕСТРЕ, НЕ ТЕРЯЮТСЯ. Формулировки будут
+    # меняться, коды — исчезать, а числа за прошлый квартал останутся в базе;
+    # молча их не показывать значило бы тихо переписать историю спроса.
+    known = {group["code"] for group in detection_types.GROUPS}
+    retired = [{"code": code, "label": code, "covered": False, "total": total,
+                "retired": True}
+               for code, total in sorted(totals.items()) if code not in known]
+    gaps = sorted([row for row in rows if not row["covered"]],
+                  key=lambda row: (-row["total"], row["label"]))
+    covered = sorted([row for row in rows if row["covered"]],
+                     key=lambda row: (-row["total"], row["label"]))
+    return render(request, "ops/demand.html", {
+        "days": days, "gaps": gaps, "covered": covered, "retired": retired,
+        "asked": sum(totals.values()), "periods": (30, 90, 365),
+    })
 
 
 @staff_member_required

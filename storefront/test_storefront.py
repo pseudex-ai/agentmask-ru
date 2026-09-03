@@ -842,6 +842,7 @@ def _check_ops_console(client, admin_url: str, public_url: str,
           f"витрина={plan_start.max_instances} сервер=3")
 
     _check_reconciliation(staff_client, base, org)
+    _check_configurator(client, staff_client, base)
 
     _screens_with_reconcile = screens + (f"{base}{org.id}/reconcile/",)
 
@@ -867,6 +868,159 @@ def _check_ops_console(client, admin_url: str, public_url: str,
           "не отвечает" in down[base].content.decode(),
           "плашка вместо молча пустых колонок")
 
+
+
+def _check_configurator(client, staff_client, base: str) -> None:
+    """Конфигуратор, спрос и то, что оба списка типов — ОДИН список.
+
+    Проверка существует потому, что до неё страница `/detection` дважды обещала
+    «напишите — это меняет очередь работ», а адреса для связи нет ни на одной
+    странице сайта, и кнопка под этим обещанием вела в блок тарифов с подписью
+    «ПРОВЕРИТЬ НА СВОЁМ ТЕКСТЕ» — при том что своего текста лендинг не принимает
+    намеренно.
+    """
+    import json as _json
+
+    from django.test import Client as _FreshClient
+
+    from ops.models import DemandDay
+    from storefront_web import detection_types
+
+    body = client.get("/").content.decode()
+    check("на лендинге есть блок конфигуратора", 'id="configurator"' in body)
+    missing_groups = [group["code"] for group in detection_types.GROUPS
+                      if f'data-group="{group["code"]}"' not in body]
+    check("все группы реестра отрисованы", not missing_groups, str(missing_groups))
+    # НИ ОДНОГО ПОЛЯ ДЛЯ ЧУЖОГО ТЕКСТА — В САМОМ БЛОКЕ. Утверждать это про всю
+    # страницу нельзя: ниже стоит форма регистрации, и поле названия компании в
+    # ней законно. Проверка по целой странице падала именно на нём, то есть
+    # говорила не о том, о чём написана.
+    section = body[body.index('id="configurator"'):body.index('id="start"')]
+    check("конфигуратор не просит чужой текст",
+          "<textarea" not in section and 'type="text"' not in section
+          and 'type="email"' not in section, section[:0] or "проверен сам блок")
+
+    # ОДИН РЕЕСТР НА ДВЕ СТРАНИЦЫ. Сверяется не двумя списками в тесте, а тем,
+    # что подписи типов со страницы /detection приезжают из того же модуля.
+    detection = client.get("/detection").content.decode()
+    absent = [label for label, _example, _holds in detection_types.FOUND
+              if label not in detection]
+    check("страница /detection перечисляет реестр целиком", not absent, str(absent))
+    check("и обещание «напишите» ведёт туда, где это можно сделать",
+          "#configurator" in detection and "СВОЁМ ТЕКСТЕ" not in detection)
+
+    gap = next(group["code"] for group in detection_types.GROUPS
+               if not group.get("found"))
+    other = next(group["code"] for group in detection_types.GROUPS
+                 if not group.get("found") and group["code"] != gap)
+
+    def send(sender, codes):
+        return sender.post("/demand", data=_json.dumps({"groups": codes}),
+                           content_type="application/json")
+
+    visitor = _FreshClient()
+    first = send(visitor, [gap])
+    check("отметка записывается", first.status_code == 204,
+          f"status={first.status_code}")
+    check("и появляется ровно одна строка",
+          DemandDay.objects.filter(group=gap).count() == 1
+          and DemandDay.objects.get(group=gap).count == 1)
+
+    # ПОВТОР ИЗ ТОЙ ЖЕ СЕССИИ НЕ СЧИТАЕТСЯ. Это и есть настоящая граница: троттл
+    # по IP слаб по устройству (CACHES не задан, значит LocMemCache на процесс,
+    # и при N воркерах лимит делится на N), а этот предел живёт в сессии.
+    send(visitor, [gap])
+    send(visitor, [gap])
+    check("повтор из той же сессии счётчик не двигает",
+          DemandDay.objects.get(group=gap).count == 1,
+          f"стало {DemandDay.objects.get(group=gap).count}")
+    # А ДРУГАЯ ГРУППА ИЗ ТОЙ ЖЕ СЕССИИ — СЧИТАЕТСЯ: предел на группу, не на
+    # человека, иначе первая отметка глушила бы остальные.
+    send(visitor, [other])
+    check("другая группа из той же сессии считается",
+          DemandDay.objects.get(group=other).count == 1)
+
+    send(_FreshClient(), [gap])
+    check("новая сессия считается", DemandDay.objects.get(group=gap).count == 2)
+
+    before = DemandDay.objects.count()
+    unknown = send(_FreshClient(), ["не-такой-код"])
+    check("неизвестный код отвергается и не пишет строку",
+          unknown.status_code == 400 and DemandDay.objects.count() == before,
+          f"status={unknown.status_code}")
+    mixed = send(_FreshClient(), [gap, "не-такой-код"])
+    check("известный вместе с неизвестным — отказ целиком, а не половина",
+          mixed.status_code == 400 and DemandDay.objects.count() == before,
+          f"status={mixed.status_code}")
+    check("GET на ручку спроса отвергается",
+          _FreshClient().get("/demand").status_code == 405)
+    check("пустой список отвергается",
+          send(_FreshClient(), []).status_code == 400)
+
+    # ВАЛИДНЫЙ JSON, У КОТОРОГО НЕТ `.get`. `[]`, `5`, `"x"` и `null` роняли
+    # обработчик в 500 — анонимная ручка, падающая от тела из одного символа.
+    #
+    # `raise_request_exception=False` ОБЯЗАТЕЛЕН. Под `DEBUG=1` тестовый клиент
+    # пробрасывает исключение вью наружу вместо 500 — то есть регрессия здесь
+    # роняла бы ВЕСЬ прогон трейсбеком вместо строки «FAIL мусорное тело».
+    # Проверено откатом: без него снятие проверки не давало ни одной строки
+    # FAIL, только обрыв.
+    broken = []
+    for body_text in ("[]", "5", '"x"', "null", "{"):
+        answer = _FreshClient(raise_request_exception=False).post(
+            "/demand", data=body_text, content_type="application/json")
+        if answer.status_code != 400:
+            broken.append(f"{body_text}={answer.status_code}")
+    check("мусорное тело — 400, а не 500", not broken, str(broken))
+
+    # СТРОКИ О ПОСЕТИТЕЛЕ НЕ ПОЯВЛЯЕТСЯ, И ЭТО ПРОВЕРЯЕТСЯ, А НЕ ОБЕЩАЕТСЯ.
+    # Дедуп жил в `request.session`, то есть в СТРОКЕ БАЗЫ на каждого анонима —
+    # при том, что докстринг рядом обещал «ни отпечатка, ни идентификатора
+    # сессии». Обещание было неправдой на соседней строке.
+    from django.contrib.sessions.models import Session
+    sessions_before = Session.objects.count()
+    for _ in range(5):
+        send(_FreshClient(), [gap])
+    check("отметки не заводят строк сессий",
+          Session.objects.count() == sessions_before,
+          f"{sessions_before} -> {Session.objects.count()}")
+
+    # РЕЕСТР СОГЛАСОВАН В ОБЕ СТОРОНЫ. Проверка ловила только «группа ссылается
+    # на несуществующий тип»; обратная сторона — тип, не попавший ни в одну
+    # группу, — молча выкидывала его с конфигуратора, что и случилось с
+    # ОГРН/ОГРНИП.
+    grouped = {label for group in detection_types.GROUPS
+               for label in group.get("found", ())}
+    check("каждый найденный тип попал в группу конфигуратора",
+          grouped == {label for label, _e, _h in detection_types.FOUND},
+          str({label for label, _e, _h in detection_types.FOUND} - grouped))
+    # ПРОВЕРЯЕТСЯ ИСХОДНИК ШАБЛОНА, А НЕ ОТРЕНДЕРЕННАЯ СТРАНИЦА: в выводе
+    # литерал «18 типов» и вычисленный `{{ found_count }}` неотличимы по
+    # построению, пока в реестре ровно восемнадцать. Первая версия этой строки
+    # смотрела на вывод и утверждала бессмыслицу.
+    from pathlib import Path as _Path
+    templates = _Path(__file__).resolve().parent / "templates"
+    hardcoded = [str(f.relative_to(templates))
+                 for f in (templates / "landing.html",
+                           templates / "legal" / "detection.html")
+                 if f"{len(detection_types.FOUND)} типов" in f.read_text(encoding="utf-8")]
+    check("число типов в шаблонах не литерал, а длина реестра",
+          not hardcoded, str(hardcoded))
+    check("и страница его действительно печатает",
+          f"{len(detection_types.FOUND)} типов" in detection)
+
+    # ЭКРАН, РАДИ КОТОРОГО ВСЁ ЭТО ПИШЕТСЯ: очередь работ должна читаться
+    # глазами, иначе счётчик существует для себя.
+    screen = staff_client.get(f"{base}demand/")
+    text = screen.content.decode()
+    check("сотрудник видит экран спроса", screen.status_code == 200)
+    check("и на нём непокрытая группа с числом",
+          gap in text or dict(
+              (group["code"], group["label"]) for group in detection_types.GROUPS
+          )[gap] in text)
+    check("аноним экран спроса не видит",
+          _FreshClient().get(f"{base}demand/").status_code in (302, 404),
+          f"status={_FreshClient().get(f'{base}demand/').status_code}")
 
 
 def _check_reconciliation(staff_client, base: str, org) -> None:

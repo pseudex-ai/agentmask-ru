@@ -24,6 +24,10 @@ urlpatterns = [
     path("welcome", views.welcome, name="welcome"),
     path("healthz", views.healthz, name="healthz"),
 
+    # Отметки конфигуратора. Вторая (и последняя) анонимная запись на сайте —
+    # см. докстринг `views.demand`: ни текста, ни почты, счётчик на сутки.
+    path("demand", views.demand, name="demand"),
+
     # The three documents the footer has always linked to. They pointed at an
     # anchor on the landing page, so a customer who came for a document to
     # forward to their own client's security officer found a section of a

@@ -122,7 +122,7 @@
   </div>
   <div style="margin-top:14px;font-size:13.5px;line-height:1.6;color:var(--dim-2);max-width:760px">Третья строка — та, о которой обычно забывают. Ваш инструмент возвращает в диалог настоящие данные из CRM, и они снова идут в модель. Она получает <b>тот же самый псевдоним</b>, что и в первой строке: один человек остаётся одним человеком на всём протяжении диалога.</div>
   <div class="trio">
-    <div><div class="step">ШАГ 1</div><h3>Находим</h3><p>18 типов персональных данных: ФИО, телефоны, адреса, СНИЛС, ИНН, паспорт, ОМС, карты, счета и другие. Русская морфология и разбор адресов — не набор регулярок. <a href="/detection">Полный список и то, чего мы не находим →</a></p></div>
+    <div><div class="step">ШАГ 1</div><h3>Находим</h3><p>{{ found_count }} типов персональных данных: ФИО, телефоны, адреса, СНИЛС, ИНН, паспорт, ОМС, карты, счета и другие. Русская морфология и разбор адресов — не набор регулярок. <a href="/detection">Полный список и то, чего мы не находим →</a></p></div>
     <div><div class="step">ШАГ 2</div><h3>Подменяем</h3><p>Каждое значение получает правдоподобный фейк того же формата, вида и <b>грамматической формы</b>: женское имя заменяется женским, «позвоните Иванову Петру» становится «позвоните Виктору Шилову» в том же падеже, улица остаётся улицей. Это не косметика — рассогласованную подмену модель пытается исправить, а исправленную мы уже не узнаём, и в инструмент уходит несуществующий человек.</p></div>
     <div><div class="step">ШАГ 3</div><h3>Возвращаем</h3><p>Когда модель вызывает ваш инструмент, Pseudex подставляет настоящие значения обратно. Инструмент отрабатывает на реальных данных, модель их не видела.</p></div>
   </div>
@@ -210,6 +210,36 @@
   </div>
 </section>
 
+<section id="configurator">
+  <div class="sec-head">
+    <h2>Что у вас в переписке</h2>
+    <div class="sec-meta">БЕЗ ВАШЕГО ТЕКСТА · ОТМЕТКА = ЗАЯВКА НА ТИП</div>
+  </div>
+  <p style="margin:0 0 6px;font-size:16px;line-height:1.65;color:var(--dim);max-width:760px">Отметьте, какие данные у вас в трафике. Мы скажем, что находим сегодня, а чего не находим — <b style="color:var(--text-3)">и второе честнее первого</b>. Своего текста мы не просим и не примем: это и есть то, что мы продаём не делать.</p>
+  <p style="margin:0 0 26px;font-size:13.5px;line-height:1.6;color:var(--dim-2);max-width:760px">Каждая отметка попадает в счётчик спроса — по нему строится очередь работ. Ни текста, ни адреса, ни кто вы: только «эту группу спросили N раз за сутки».</p>
+
+  <div class="cfg" id="cfg">
+    {% for group in groups %}
+    <label class="cfg-item">
+      <input type="checkbox" data-group="{{ group.code }}"
+             data-covered="{{ group.covered|yesno:"1,0" }}"
+             data-verdict="{{ group.verdict }}">
+      <span class="cfg-label">{{ group.label }}</span>
+      <span class="cfg-tag {% if group.covered %}yes{% else %}no{% endif %}">{% if group.covered %}находим{% else %}пока нет{% endif %}</span>
+    </label>
+    {% endfor %}
+  </div>
+
+  <div class="cfg-out" id="cfg-out" hidden>
+    <div class="cfg-verdicts" id="cfg-verdicts"></div>
+    <div class="cfg-foot">
+      <div class="cfg-note" id="cfg-note"></div>
+      <button class="btn" id="cfg-send" type="button">ОТПРАВИТЬ КАК ЗАЯВКУ</button>
+    </div>
+  </div>
+  <div style="margin-top:16px;font-size:13.5px;color:var(--dim-2)"><a href="/detection">Полный список типов и то, чем каждый держится →</a></div>
+</section>
+
 <section id="start">
   <div class="sec-head">
     <h2>Быстрый старт</h2>
@@ -282,7 +312,7 @@
       </div>
       <ul>
         <li><b style="color:var(--text)">Ёмкость пополняется сама, простоя из-за неё нет</b></li>
-        <li>18 типов ПД, включая СНИЛС, ИНН и паспорт</li>
+        <li>{{ found_count }} типов ПД, включая СНИЛС, ИНН и паспорт</li>
         <li>Инструменты агента получают настоящие значения</li>
         <li>Локальный интерфейс и журнал раскрытий</li>
         <li>{{ plan.max_keys }} {{ plan.max_keys|plural:"ключ,ключа,ключей" }} доступа</li>

@@ -19,6 +19,7 @@ from django.core import signing
 from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db import transaction
+from django.db.models import F
 from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
@@ -29,6 +30,8 @@ from accounts.models import Membership, Organization
 from billing import onboarding, licensing, payments, services
 from accounts.models import User
 from billing.models import Invoice, LicenseKey, Plan
+from ops.models import DemandDay
+from storefront_web import detection_types
 
 _log = logging.getLogger("storefront")
 
@@ -71,20 +74,28 @@ def _client_ip(request) -> str:
             or request.META.get("REMOTE_ADDR", "unknown"))
 
 
-def _too_many_signups(request) -> bool:
-    bucket = f"signup:{_client_ip(request)}"
-    seen = cache.get(bucket, 0)
-    if seen >= _SIGNUP_LIMIT:
+def _too_many(request, kind: str, limit: int, window: int) -> bool:
+    """Счётчик на IP в окне. ОДНА реализация на все анонимные записи.
+
+    Их было две с одинаковыми восемью строками (регистрация и вебхук), и третья
+    копия ради конфигуратора была бы третьим местом, где живёт одна и та же
+    тонкость: `add` перед `incr`, чтобы окно начиналось с ПЕРВОЙ попытки и не
+    продлевалось следующими — иначе ровный ручеёк держит ключ живым вечно и
+    вызывающий заперт навсегда.
+    """
+    bucket = f"{kind}:{_client_ip(request)}"
+    if cache.get(bucket, 0) >= limit:
         return True
-    # `add` then `incr` so the window starts at the first attempt and is not
-    # extended by later ones — otherwise a steady trickle keeps the key alive
-    # forever and the caller is locked out permanently.
-    cache.add(bucket, 0, _SIGNUP_WINDOW_SECONDS)
+    cache.add(bucket, 0, window)
     try:
         cache.incr(bucket)
     except ValueError:
-        cache.set(bucket, 1, _SIGNUP_WINDOW_SECONDS)
+        cache.set(bucket, 1, window)
     return False
+
+
+def _too_many_signups(request) -> bool:
+    return _too_many(request, "signup", _SIGNUP_LIMIT, _SIGNUP_WINDOW_SECONDS)
 
 
 # ЮKassa payment ids are UUIDs. Anything else cannot be one of ours, so it is
@@ -95,15 +106,93 @@ _WEBHOOK_WINDOW_SECONDS = 60
 
 
 def _too_many_webhooks(request) -> bool:
-    bucket = f"webhook:{_client_ip(request)}"
-    if cache.get(bucket, 0) >= _WEBHOOK_LIMIT:
-        return True
-    cache.add(bucket, 0, _WEBHOOK_WINDOW_SECONDS)
+    return _too_many(request, "webhook", _WEBHOOK_LIMIT, _WEBHOOK_WINDOW_SECONDS)
+
+
+# ── СПРОС НА ТИПЫ, КОТОРЫХ МЫ НЕ НАХОДИМ ────────────────────────────────────
+#
+# Лимиты щедрее регистрационных: здесь ничего не выпускается и ничего не стоит,
+# а строка в базе одна на сутки и группу независимо от числа обращений.
+_DEMAND_LIMIT = 30
+_DEMAND_WINDOW_SECONDS = 300
+# ПОДПИСАННАЯ КУКА, А НЕ СЕССИЯ, И ЭТО НЕ МЕЛОЧЬ. Первая версия писала флаг в
+# `request.session`, а сессия у анонима — это СТРОКА В БАЗЕ: каждый посетитель,
+# нажавший кнопку, оставлял запись в `django_session`, никакой `clearsessions`
+# её не убирал, и главное — соседний докстринг в `ops/models.py` обещает «ни
+# адреса, ни отпечатка, ни идентификатора сессии». Обещание было неправдой на
+# соседней строке.
+#
+# Подписанная кука хранит то же самое У ПОСЕТИТЕЛЯ: сервер не запоминает о нём
+# ничего, подделать её нельзя (подпись ключом сайта), а испорченную мы просто
+# игнорируем — худшее, что даёт подделка, это лишняя единица в счётчике, ради
+# которой проще нажать кнопку в новом окне.
+_DEMAND_COOKIE = "demand_marked"
+
+
+@require_POST
+def demand(request):
+    """Отметки конфигуратора — счётчиком, без строки о посетителе.
+
+    ПОЧЕМУ ЭТО ВООБЩЕ ПИШЕТСЯ НА СЕРВЕР, если вердикт считается в браузере.
+    Вердикт — да, а вот ЧТО ЛЮДИ СПРАШИВАЮТ, в браузере не остаётся. Страница
+    /detection дважды обещала «напишите — это меняет очередь работ», и писать
+    было некуда: адреса для связи на сайте нет. Отметка и есть то письмо.
+
+    НИ ТЕКСТА, НИ ПОЧТЫ. Текста — потому что это приём чужих персональных данных
+    на наш сервер, ровно то, что мы продаём не делать (`landing` докстринг, ТЗ
+    вертикалей §4.4). Почты — потому что цель сайта «15 минут от лендинга до
+    первого замаскированного запроса» (`docs/tz-site.md` §0), и вторая форма,
+    конкурирующая с регистрацией, эти минуты удлиняет.
+
+    НЕИЗВЕСТНЫЙ КОД ОТВЕРГАЕТСЯ, А НЕ ЗАПИСЫВАЕТСЯ. Иначе таблица, по которой
+    строится очередь работ, наполняется тем, что придумал вызывающий.
+    """
+    if _too_many(request, "demand", _DEMAND_LIMIT, _DEMAND_WINDOW_SECONDS):
+        return HttpResponse(status=429)
+
     try:
-        cache.incr(bucket)
+        payload = json.loads(request.body or b"{}")
     except ValueError:
-        cache.set(bucket, 1, _WEBHOOK_WINDOW_SECONDS)
-    return False
+        return HttpResponse(status=400)
+    # `[]`, `5`, `"x"` и `null` — ВАЛИДНЫЙ JSON, и у них нет `.get`. Без этой
+    # строки любой из них давал 500 вместо 400: анонимная ручка, роняющая
+    # обработчик телом из одного символа.
+    if not isinstance(payload, dict):
+        return HttpResponse(status=400)
+    asked = payload.get("groups")
+    if not isinstance(asked, list):
+        return HttpResponse(status=400)
+    # Длина ограничена ДО разбора: список из миллиона строк не должен доходить
+    # до множества, даже если каждая из них будет отвергнута.
+    if len(asked) > len(detection_types.CODES):
+        return HttpResponse(status=400)
+    codes = {code for code in asked if isinstance(code, str)}
+    if not codes or not codes <= detection_types.CODES:
+        return HttpResponse(status=400)
+
+    today = timezone.localdate()
+    stamp = today.isoformat()
+    try:
+        marked = request.get_signed_cookie(_DEMAND_COOKIE, default="")
+    except Exception:                               # noqa: BLE001 — подпись не сошлась
+        marked = ""
+    # Формат «дата:код,код». Дата внутри самой куки: со сменой суток прежние
+    # отметки перестают учитываться, и один человек может сказать то же самое
+    # завтра — спрос это поток, а не разовая перепись.
+    day, _, listed = marked.partition(":")
+    already = set(listed.split(",")) if day == stamp and listed else set()
+    fresh = sorted(codes - already)
+
+    response = HttpResponse(status=204)
+    if not fresh:
+        return response
+    for code in fresh:
+        row, _created = DemandDay.objects.get_or_create(day=today, group=code)
+        DemandDay.objects.filter(pk=row.pk).update(count=F("count") + 1)
+    response.set_signed_cookie(
+        _DEMAND_COOKIE, f"{stamp}:{','.join(sorted(already | set(fresh)))}",
+        max_age=86400, samesite="Lax", secure=not settings.DEBUG, httponly=True)
+    return response
 
 
 def landing(request):
@@ -112,6 +201,13 @@ def landing(request):
     personal data onto our servers, which is precisely what we sell not doing."""
     return render(request, "landing.html", {
         "plans": Plan.objects.filter(is_public=True),
+        # Группы конфигуратора — из того же реестра, что и страница /detection.
+        "groups": detection_types.groups_for_page(),
+        # ЧИСЛО ТИПОВ СЧИТАЕТСЯ, А НЕ ПИШЕТСЯ. «18» стояло литералом в трёх
+        # местах, пока список был разметкой; теперь список — данные, и
+        # следующий добавленный тип сделал бы страницу противоречащей
+        # собственной таблице.
+        "found_count": len(detection_types.FOUND),
         "trial_days": services.TRIAL_DAYS,
         "image": settings.DOCKER_IMAGE,
         "license_url_env": (f"-e PSEUDEX_LICENSE_URL={settings.LICENSE_URL} "
@@ -165,7 +261,12 @@ def detection(request):
     promised published defects with nothing to click. A count with no list reads
     as a marketing counter; a promise of transparency with no page is worse than
     saying nothing."""
-    return render(request, "legal/detection.html", _legal_context())
+    # СПИСКИ ПРИЕЗЖАЮТ ИЗ РЕЕСТРА, а не лежат разметкой: те же факты нужны
+    # конфигуратору на лендинге, и два экземпляра одного утверждения расходятся.
+    return render(request, "legal/detection.html", _legal_context() | {
+        "found": detection_types.found_rows(),
+        "missing": detection_types.missing_numbered(),
+    })
 
 
 def resend_activation(request):
@@ -215,10 +316,14 @@ def signup(request):
         messages.error(request, "Нужен рабочий email.")
         return redirect("landing")
 
-    # Sign-up is the only unauthenticated write on the site, and every call
-    # MINTS A KEY on the licensing server. Unthrottled, a loop would fill that
-    # database — the one whose loss stops every customer in the field — with
-    # junk, for free, from anywhere.
+    # Sign-up is the DEAREST unauthenticated write on the site — `demand` below
+    # is the other one — and every call MINTS A KEY on the licensing server.
+    # Unthrottled, a loop would fill that database — the one whose loss stops
+    # every customer in the field — with junk, for free, from anywhere.
+    #
+    # («the only unauthenticated write» стояло здесь до конфигуратора. Вторая
+    # появилась, и утверждение поправлено вместе с ней: комментарий, ставший
+    # неправдой, опаснее отсутствующего — по нему принимают решения.)
     if _too_many_signups(request):
         messages.error(request, "Слишком много попыток. Подождите минуту.")
         return redirect("landing")

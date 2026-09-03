@@ -137,6 +137,17 @@ jobs:
       - name: storefront end to end
         run: .venv/bin/python test_storefront.py
 
+      # ВЕРДИКТ КОНФИГУРАТОРА СЧИТАЕТСЯ В БРАУЗЕРЕ, и «страница отдала 200» его
+      # не проверяет: блок остался бы отрендеренным, даже если `landing.js`
+      # падает на первой строке. Эта проверка нашла в своём же диффе две вещи —
+      # многострочный `{# #}`, отрендеренный как видимый текст, и кнопку,
+      # которой `hidden` не помогал, потому что `.btn{display:inline-block}`
+      # перебивает браузерное `[hidden]{display:none}`.
+      - name: браузер для проверки конфигуратора
+        run: .venv/bin/pip install -q playwright && .venv/bin/python -m playwright install --with-deps chromium
+      - name: конфигуратор исполняется, а не просто отдаёт 200
+        run: .venv/bin/python test_configurator_renders.py
+
   deploy:
     name: deploy scripts and compose
     runs-on: ubuntu-latest
