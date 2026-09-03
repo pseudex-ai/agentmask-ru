@@ -1,0 +1,14 @@
+$ python3 eval_dirty.py addr_s41.json
+
+dataset: addr_s41.json
+TYPE         GT  RECALL   PREC     F2
+LOC         240   100%   100%   100%
+-------------------------------------
+OVERALL     240   100%   100%   100%
+type-aware miss: 0/240 | HARD-NEG false-mask: 0/110
+TRUE-LEAK (value not masked by ANY type): 0/240
+
+--- TRUE LEAKS (PII value actually reached the model) ---
+
+--- FALSE POSITIVES (over-masked) ---
+

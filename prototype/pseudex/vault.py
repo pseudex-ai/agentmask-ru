@@ -24,7 +24,8 @@ from pseudex.normalize import normalize
 import threading
 import time
 
-from pseudex import morph_names, morph_places, translit
+from pseudex.fuzzy import within_one_typo
+from pseudex import morph_names, morph_places, spoken, translit
 from pseudex.spoken import (email_from_words, numeral_runs,
                             plate_from_words, run_to_digits)
 from pseudex.profiling import stage
@@ -255,6 +256,42 @@ def _digits_of(value: str) -> str:
     return ""
 
 
+_NUMERIC_DATE_RE = re.compile(r"(\d{1,4})[./-](\d{1,2})[./-](\d{1,4})")
+_MONTH_WORD_DATE_RE = re.compile(r"(?i)(\d{1,2})\s+([а-яё]+)(?:\s+(\d{4}))?")
+
+
+def _date_canonical(value: str) -> str:
+    """«dd.mm.yyyy» from any way a date of birth is written or said."""
+    text = re.sub(r"(?i)\s*(?:г\.?|года|год)\s*$", "", value.strip())
+    numeric = _NUMERIC_DATE_RE.search(text)
+    if numeric:
+        first, middle, last = numeric.groups()
+        if len(first) == 4:
+            year, month, day = first, middle, last
+        else:
+            day, month, year = first, middle, last
+        if len(year) == 2:
+            year = ("20" if int(year) <= time.localtime().tm_year % 100 else "19") + year
+        return f"{int(day):02d}.{int(month):02d}.{year}" if len(year) == 4 else ""
+    worded = _MONTH_WORD_DATE_RE.fullmatch(text)
+    if worded:
+        month = spoken._month_value(worded.group(2).lower().replace("ё", "е"))
+        if month is not None:
+            return (f"{int(worded.group(1)):02d}.{month:02d}.{worded.group(3)}" if worded.group(3)
+                    else f"{int(worded.group(1)):02d}.{month:02d}")
+    return spoken.date_from_words(text)
+
+
+def canonicalize_person(value: str, cases: tuple[str, ...]) -> str:
+    """`canonicalize("NAME", …)` with the cases the sentence allows the name to
+    stand in. With a governor the joint reading decides even a lone word: «у
+    Иванова» is a man, whatever a lone «Иванова» would be."""
+    if not cases:
+        return canonicalize("NAME", value)
+    surface = _INTERNAL_CAPITAL_RE.sub(r"\1 \2", value.strip())
+    return morph_names.to_nominative_governed(surface, cases)
+
+
 def canonicalize(entity_type: str, value: str) -> str:
     """Normalize a value so equivalent forms collapse to one key.
 
@@ -275,6 +312,18 @@ def canonicalize(entity_type: str, value: str) -> str:
         # failure this product treats as unacceptable. Measured, not imagined:
         # two distinct spoken СНИЛС came back as the same token.
         return _digits_of(value) or value
+    if entity_type == "DOB":
+        # ONE DATE OF BIRTH IS ONE KEY, however it was said: «21.09.1980»,
+        # «21 сентября 1980» and «двадцать первое сентября восьмидесятого
+        # года» were three rows, and the spoken one restored to the tool as
+        # the words the customer said — the agent's schema asks for a date,
+        # the control writes 21.09.1980, and the axis counted every spoken date
+        # as lost (v3 DOB 48% -> 32% the day the engine learned to hear them).
+        # The digits form is what a CRM stores and what the substitute mirrors.
+        canonical = _date_canonical(value)
+        if canonical:
+            return canonical
+        return value.strip().lower()
     if entity_type == "EMAIL":
         # ПРОДИКТОВАННАЯ ПОЧТА — РУССКАЯ ФРАЗА, А НЕ АДРЕС. `lower()` над
         # «ситникова собака мэйл точка ру» возвращает ту же фразу, и она уезжала
@@ -465,7 +514,9 @@ _VALUE_SQL_BOTH = "entity_type, canonical, original"
 _SPOKEN_WORD = re.compile(r"[А-Яа-яЁё]{2,}")
 # Типы, у которых канонизация даёт САМО ЗНАЧЕНИЕ в нормальной форме, а не ключ
 # для поиска. Для них и только для них аргументу отдаётся канон.
-_CANONICAL_IS_THE_VALUE = frozenset(_NUMERIC_TYPES) | {"EMAIL", "PLATE"}
+# DOB is here for the same reason as a phone: a birth date said aloud is a
+# phrase the tool cannot store, and the agent's schema asks for a date.
+_CANONICAL_IS_THE_VALUE = frozenset(_NUMERIC_TYPES) | {"EMAIL", "PLATE", "DOB"}
 
 
 def looks_dictated(original: str, canonical: str) -> bool:
@@ -659,6 +710,30 @@ def _place_identity(canonical: str) -> tuple[str, ...]:
     folded to digits («сто» and «100» are one house, as in `street_house_key`)."""
     return tuple(morph_places._fold_cardinals(
         [part for part in canonical.split() if part not in morph_places._GENERIC]))
+
+
+def _keys_match(left: str, right: str) -> bool:
+    """Two `street_house_key`s name one place: equal, or the same numbers with
+    street stems one typo apart. The customer's «дзержнского сорок четыре»
+    and the register's «ул Дзержинского, д 44» keyed as two streets and got
+    two substitutes — the typo is the customer's, the place is one."""
+    if left == right:
+        return True
+    a, b = left.split(), right.split()
+    if len(a) != len(b):
+        return False
+    for x, y in zip(a, b):
+        if x == y:
+            continue
+        if x.isdigit() or y.isdigit() or len(x) < 5 or len(y) < 5 or not within_one_typo(x, y):
+            return False
+    return True
+
+
+def _same_house(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
+    """Two house identities name one house — exactly, or with the street one
+    typo apart (`_keys_match`); the litera and every number must agree."""
+    return _keys_match(" ".join(left), " ".join(right))
 
 
 def _house_identity(canonical: str, has_city: bool) -> tuple[str, ...]:
@@ -1601,8 +1676,15 @@ class Vault:
         with stage("vault.tokenize"):
             return self._tokenize(value, entity_type)
 
-    def _tokenize(self, value: str, entity_type: str) -> str:
-        canonical = canonicalize(entity_type, value)
+    def tokenize_person(self, value: str, cases: tuple[str, ...]) -> str:
+        """`tokenize` for a NAME whose sentence says which cases it may be in
+        (`detect.NameSpan`); the key and the substitute's gender follow one
+        reading of the phrase instead of two votes."""
+        return self._tokenize(value, "NAME", cases)
+
+    def _tokenize(self, value: str, entity_type: str, cases: tuple[str, ...] = ()) -> str:
+        canonical = (canonicalize_person(value, cases) if entity_type == "NAME" and cases
+                     else canonicalize(entity_type, value))
         with self._lock:
             row = self._conn.execute(
                 "SELECT token FROM tokens WHERE customer=? AND canonical=?",
@@ -1631,7 +1713,7 @@ class Vault:
                     return row[0]
             # The REAL person's gender decides the fake's, so the substitute
             # agrees with the sentence around it and the model leaves it alone.
-            gender = (morph_names.detect_gender(value)
+            gender = (morph_names.read_person(value, cases)[0]
                       if entity_type == "NAME" else None)
             if entity_type == "NAME":
                 # The FOLD first: it is one indexed point query and it catches
@@ -2056,6 +2138,25 @@ class Vault:
         self._conn.execute("DELETE FROM place_parts WHERE created < ?",
                            (now - _PLACE_PART_TTL,))
 
+    def _place_rows(self, part: str, has_city: int | None) -> list:
+        """This conversation's indexed places whose short key names the same
+        street and house as `part` — exactly, or one typo apart in the street
+        (`_keys_match`). A conversation holds a handful of places, so the
+        rows are read once and compared in Python rather than by `=`. Returns
+        (canonical, token) pairs, or (has_city, canonical, token) triples when
+        `has_city` is None."""
+        rows = self._conn.execute(
+            "SELECT p.has_city, p.canonical, p.part, t.token FROM place_parts p "
+            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
+            "WHERE p.customer=? AND p.conversation=? AND t.entity_type='LOC' LIMIT 64",
+            (self._customer, self._conversation),
+        ).fetchall()
+        matched = [(city_flag, owner, token) for city_flag, owner, stored, token in rows
+                   if _keys_match(stored, part) and (has_city is None or city_flag == has_city)]
+        if has_city is None:
+            return matched
+        return [(owner, token) for _, owner, token in matched]
+
     def _same_place_written_differently(self, canonical: str, value: str,
                                         shape: dict[str, object]) -> tuple[str, str] | None:
         """The substitute for a CITY-BEARING address this conversation already
@@ -2080,20 +2181,14 @@ class Vault:
         part = morph_places.street_house_key(value)
         if not part:
             return None
-        rows = self._conn.execute(
-            "SELECT p.canonical, t.token FROM place_parts p "
-            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
-            "WHERE p.customer=? AND p.conversation=? AND p.part=? AND p.has_city=1 "
-            "AND t.entity_type='LOC' LIMIT 8",
-            (self._customer, self._conversation, part),
-        ).fetchall()
+        rows = self._place_rows(part, has_city=1)
         # THE WHOLE IDENTITY MINUS THE TYPE WORD: settlement, street stem and
         # every number as written. The short key drops the house litera on
         # purpose (a short mention may omit it), and read alone it linked the
         # register's NEIGHBOUR — «д 10А» to «д 10» — into one substitute.
         wanted = _place_identity(canonical)
         same = [token for owner_canonical, token in rows
-                if _place_identity(owner_canonical) == wanted]
+                if _same_house(_place_identity(owner_canonical), wanted)]
         if len(same) != 1:
             return None
         return same[0], same[0]
@@ -2170,19 +2265,13 @@ class Vault:
         # ONLY A CITY-BEARING ROW OWNS A SHORT MENTION. City-less mentions are
         # indexed too now (so a later fuller form can grow them), and without
         # this filter the short form would be its own owner.
-        rows = self._conn.execute(
-            "SELECT p.canonical, t.token FROM place_parts p "
-            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
-            "WHERE p.customer=? AND p.conversation=? AND p.part=? AND p.has_city=1 "
-            "AND t.entity_type='LOC' LIMIT 8",
-            (self._customer, self._conversation, part),
-        ).fetchall()
+        rows = self._place_rows(part, has_city=1)
         # Candidates by the tolerant key, the decision by the exact house
         # (see `_house_identity`): the register's «д 10» and «д 10А» are two
         # owners of one key and one owner of «луговая 10».
         wanted = _house_identity(canonical, False)
         owners = [token for owner_canonical, token in rows
-                  if _house_identity(owner_canonical, True) == wanted]
+                  if _same_house(_house_identity(owner_canonical, True), wanted)]
         if len(owners) != 1:
             return None
         full = owners[0]
@@ -2218,22 +2307,16 @@ class Vault:
         part = morph_places.street_house_key(value)
         if not part:
             return None
-        rows = self._conn.execute(
-            "SELECT p.has_city, p.canonical, t.token FROM place_parts p "
-            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
-            "WHERE p.customer=? AND p.conversation=? AND p.part=? "
-            "AND t.entity_type='LOC' LIMIT 8",
-            (self._customer, self._conversation, part),
-        ).fetchall()
+        rows = [(has_city, owner, token) for has_city, owner, token in self._place_rows(part, has_city=None)]
         wanted = _house_identity(canonical, True)
         # A city-bearing row on this EXACT street and house is another town's
         # (the same town would have been found by `_same_place_written_
         # differently`), and then the short mention is a guess between the two.
-        if any(has_city == 1 and _house_identity(owner, True) == wanted
+        if any(has_city == 1 and _same_house(_house_identity(owner, True), wanted)
                for has_city, owner, _ in rows):
             return None
         shorts = [token for has_city, owner, token in rows
-                  if has_city == 0 and _house_identity(owner, False) == wanted]
+                  if has_city == 0 and _same_house(_house_identity(owner, False), wanted)]
         if len(shorts) != 1:
             return None
         short = shorts[0]

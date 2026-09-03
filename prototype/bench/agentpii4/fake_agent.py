@@ -14,6 +14,7 @@ directly. That is the whole point: an agent that reads the answer key cannot
 test whether the answer survives the gateway.
 """
 import json
+import functools
 import random
 import re
 from dataclasses import dataclass
@@ -37,6 +38,10 @@ class Policy:
     swaps_person: bool = False       # use another identity's value where two exist
     noise: float = 0.0               # probability of skipping a call (C′ floor)
     seed: int = 0
+
+
+import pymorphy3  # noqa: E402
+_MORPH = pymorphy3.MorphAnalyzer()
 
 
 POLICIES: dict[str, Policy] = {
@@ -195,14 +200,75 @@ def parts_of_any(fake: str) -> tuple[str, ...]:
 # --- the scripted agent ------------------------------------------------------
 
 def _seen_values(case: Case, gateway: object) -> dict[str, tuple[str, dict[str, str]]]:
-    """item id -> (what the agent reads, its parts as the agent would split them)."""
+    """item id -> (what the agent reads, its parts as the agent would split them).
+
+    A NAME IS WRITTEN INTO A FIELD IN THE NOMINATIVE, as a model writes it: the
+    live controls put «Марина» into `contact.name` for «на имя марину» (every
+    `compare` triple of both live runs). The scripted control copied the
+    oblique surface verbatim, so «сергея» met the gateway's «сергей» and 28 of
+    42 `compare` triples disagreed on the instrument's own habit, not on the
+    engine. The corpus canonical IS the nominative of what was written; for a
+    substitute the agent reads, the nominative comes from morphology, which is
+    what a model does with a name it has never seen."""
     seen = gateway.substitutes_seen()  # type: ignore[attr-defined]
     out: dict[str, tuple[str, dict[str, str]]] = {}
     for item in case.pii:
         surface = seen.get(item.id, item.value)
-        parts = parts_of(item.type, surface) if surface != item.value else dict(item.parts)
+        if item.type == "NAME":
+            if surface == item.value:
+                surface, parts = item.canonical, dict(item.parts)
+            else:
+                surface = _nominative_name(surface)
+                parts = parts_of(item.type, surface)
+        else:
+            parts = parts_of(item.type, surface) if surface != item.value else dict(item.parts)
         out[item.id] = (surface, parts)
     return out
+
+
+@functools.lru_cache(maxsize=4096)
+def _nominative_name(surface: str) -> str:
+    """The name in the nominative, read the way a Russian speaker reads it:
+    ONE gender and case for the whole phrase, every word agreeing. Word by
+    word, «Щукину Анну» gave «Щукин Анна» — the surname's dative reading of a
+    man outscored its accusative reading of a woman, and the instrument wrote
+    a person the gateway had never minted. pymorphy3 directly — the instrument
+    must not borrow the engine's reading of a name, or it could not disagree
+    with it."""
+    words = surface.split()
+    parsed = []
+    for word in words:
+        parses = [p for p in _MORPH.parse(word)
+                  if {"Surn", "Name", "Patr"} & set(p.tag.grammemes) and p.tag.gender in ("masc", "femn")
+                  and p.tag.case and p.tag.number != "plur"]
+        parsed.append(parses)
+    readings = None
+    for parses in parsed:
+        if not parses:
+            continue
+        pairs = {(p.tag.gender, p.tag.case) for p in parses}
+        readings = pairs if readings is None else readings & pairs
+    best: tuple[str, str] | None = None
+    if readings:
+        def score(pair: tuple[str, str]) -> float:
+            return sum(max((p.score for p in parses if (p.tag.gender, p.tag.case) == pair), default=0.0)
+                       for parses in parsed)
+        best = max(readings, key=score)
+    out: list[str] = []
+    for word, parses in zip(words, parsed):
+        chosen = None
+        if best is not None:
+            chosen = next((p for p in sorted(parses, key=lambda p: -p.score)
+                           if (p.tag.gender, p.tag.case) == best), None)
+        if chosen is None and parses:
+            chosen = max(parses, key=lambda p: p.score)
+        if chosen is None:
+            out.append(word)
+            continue
+        form = chosen.inflect({"nomn"}) if chosen.tag.case != "nomn" else None
+        nominative = form.word if form is not None else word
+        out.append(nominative.capitalize() if word[:1].isupper() else nominative)
+    return " ".join(out)
 
 
 def _pick(case: Case, kind: str, view: dict[str, tuple[str, dict[str, str]]],
@@ -312,7 +378,7 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
         if policy.derives and name["first"]:
             options = derive.initials({"given": name["first"], "patronymic": name["middle"]})
             contact["initials"] = next((one for one in sorted(options) if re.fullmatch(r"[А-ЯЁ]\.(?:[А-ЯЁ]\.)?", one)), "И.")
-            contact["name_latin"] = " ".join(sorted(derive.translit_variants(word))[0] for word in (name["last"], name["first"]) if word).upper()
+            contact["name_latin"] = " ".join(derive.translit_icao(word) for word in (name["last"], name["first"]) if word).upper()
             gender = derive.gender({"given": name["first"], "surname": name["last"], "patronymic": name["middle"]})
             contact["gender"] = "F" if "female" in gender else "M"
         if phone:
@@ -377,7 +443,7 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
         if policy.validates_checksum and card_surface and not _checksum_ok("CARD", card_surface, card_parts):
             pass
         elif digits:
-            holder = " ".join(sorted(derive.translit_variants(word))[0] for word in (name["first"], name["last"]) if word).upper() if policy.derives else "CARD HOLDER"
+            holder = " ".join(derive.translit_icao(word) for word in (name["first"], name["last"]) if word).upper() if policy.derives else "CARD HOLDER"
             maybe("payment_create", {
                 "amount": {"value": "780.00", "currency": "RUB"},
                 "payment_method_data": {"type": "bank_card",

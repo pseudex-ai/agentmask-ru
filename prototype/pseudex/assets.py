@@ -272,8 +272,21 @@ def _build_address(raw: dict[str, object], months: list[str]) -> AddressAssets:
 def _build_quasi(raw: dict[str, object]) -> QuasiAssets:
     months = "|".join(raw["months"])
     # A written-out day+month, optionally with the year: `12 марта`, `3 мая 1985`.
+    # AND THE SPOKEN DATE. A birth date said aloud has no digit anywhere —
+    # «двадцать первое сентября восьмидесятого года» — and every arm here
+    # waited for one, so it reached the model in the clear (live v4,
+    # derive-020, three of three repeats). The day is an ordinal, the year an
+    # ordinal before «года», with or without the century said out loud. Both
+    # still sit behind the birth-context gate below.
+    day = (r"(?:(?:двадцать|тридцать)\s+)?(?:перв|втор|трет|четвёрт|четверт|пят|шест|седьм|восьм|девят"
+           r"|десят|одиннадцат|двенадцат|тринадцат|четырнадцат|пятнадцат|шестнадцат|семнадцат"
+           r"|восемнадцат|девятнадцат|двадцат|тридцат)(?:ое|ого|ый|ым|ой|ий|его|ье|ья|ьего)")
+    spoken_year = (r"(?:\s+(?:тысяча\s+девятьсот|две\s+тысячи|тысяча))?"
+                   r"(?:\s+(?:[а-яё]+десят|[а-яё]+сот|двадцать|тридцать|сорок|девяносто|сто))?"
+                   r"\s+[а-яё]{3,}(?:ого|его)\s+года?")
     text_date = re.compile(
-        r"\b(\d{1,2})\s+(?:" + months + r")(?:\s+(?:19|20)\d{2}(?:\s*г\w*)?)?",
+        r"\b(\d{1,2})\s+(?:" + months + r")(?:\s+(?:19|20)\d{2}(?:\s*г\w*)?)?"
+        r"|\b" + day + r"\s+(?:" + months + r")(?:" + spoken_year + r"|\s+(?:19|20)\d{2}(?:\s*г\w*)?)?",
         re.IGNORECASE,
     )
     return QuasiAssets(

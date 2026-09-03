@@ -19,6 +19,21 @@ class Span:
 
 
 @dataclass(frozen=True)
+class NameSpan(Span):
+    """A person, with the CASES the word in front of the span allows.
+
+    «на имя марину» is the accusative of Марина; read alone, «марину» is just
+    as well the dative of the man Марин, and pymorphy3 scores the two 0.5 /
+    0.5. The vault then keyed her as «марин», minted a man, and the customer's
+    CRM received a man (live v4: every `compare` triple with a woman named in
+    the accusative). Only the sentence can break the tie, and only the
+    detector sees the sentence — so the governing cases ride with the span.
+    Empty means nothing governs, and the vault reads the phrase alone.
+    """
+    cases: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class PartSpan(Span):
     """One FIELD of an address a structured record spells out in pieces.
 

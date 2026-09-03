@@ -511,8 +511,21 @@ def _bare_street_candidates(text: str, address: AddressAssets
         # time or a bare number is a schedule, not an address.
         if _TIME_AFTER.match(text, match.end("bnum")):
             continue
+        # A MISTYPED BARE STREET, behind an INTENT word. «курьера на вишёнвая
+        # 28», «на нидняя 59», «на пушкна шестьдесят пять» — the sloppy and the
+        # voice register both damage the street name, and with no type word
+        # the fuzzy arm could not see it; every one reached the model in the
+        # clear (live v4: 15 of the 46 leaked values). Same discipline as that
+        # arm — unknown to morphology, one typo from the register, five letters
+        # or more — and one signal on top, because a bare word plus a number is
+        # the riskiest shape here: somebody must be saying they live or receive
+        # things there, not a preposition alone.
+        fuzzy = False
         if not _gar_reaches(name, address):
-            continue
+            if not (_fuzzy_names_a_street(name, address)
+                    and _intent_before(text, match.start(), address)):
+                continue
+            fuzzy = True
         if _is_numeral(name) or _is_street_type(name, address):
             continue
         if _names_a_settlement(name, address):
@@ -551,7 +564,7 @@ def _bare_street_candidates(text: str, address: AddressAssets
         preposition = address.prep_before.search(text[:match.start()][-8:]) is not None
         if not preposition and _never_oblique(name):
             continue
-        licensed = _street_shape(name) or preposition
+        licensed = _street_shape(name) or preposition or fuzzy
         if not (spelled and _register_vouches(name, address)) and not licensed:
             continue
         if _counts_next_word(text, match.end("bnum"), number, address):

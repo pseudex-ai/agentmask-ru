@@ -89,6 +89,35 @@ _FILLER = frozenset({"эээ", "ээ", "ммм", "мм", "аа", "ааа", "ну
 _WORD_RE = re.compile(r"[а-яё]+", re.IGNORECASE)
 
 
+def is_numeral_word(word: str) -> bool:
+    """A number word — spelled right, or as the leased typo table says a
+    transcript misspells it. The one test every reader of a spoken number
+    should ask, so that «сто семьдесят четыыре» is one house to the role
+    splitter, the key and the digit run alike."""
+    low = word.lower().replace("ё", "е")
+    if low in _FOLDED_NUMERALS:
+        return True
+    return ASSETS.is_loaded and low in ASSETS.get().spoken.numeral_typos
+
+
+def numeral_alternation() -> str:
+    """Every number word the engine can read now, longest first, for a regex —
+    the leased misspellings included when a bundle is loaded."""
+    words = set(_ALL_NUMERALS)
+    if ASSETS.is_loaded:
+        words |= set(ASSETS.get().spoken.numeral_typos)
+    return "|".join(sorted(words, key=len, reverse=True))
+
+
+_FOLDED_NUMERALS = {word.replace("ё", "е") for word in _ALL_NUMERALS}
+
+
+def canonical_numeral(word: str) -> str | None:
+    """The numeral this word is — itself, or the one the leased typo table says
+    the transcript meant; None for a word that is not a numeral."""
+    return _canonical(word)
+
+
 def _canonical(word: str) -> str | None:
     low = word.lower().replace("ё", "е")
     for table in (_UNITS, _TEENS, _TENS, _HUNDREDS):
@@ -150,6 +179,93 @@ def _group(words: list[str], index: int) -> tuple[int, int]:
     return _UNITS[word], index + 1
 
 
+# A DATE SAID ALOUD: «двадцать первое сентября восьмидесятого года», «первого
+# марта тысяча девятьсот девяносто первого». The day is an ordinal (a cardinal
+# ten plus an ordinal unit above twenty), the month a calendar word, the year
+# a cardinal thousand and hundred followed by an ordinal, or an ordinal alone
+# for the century a speaker leaves out. Calendar words are grammar, not tuning.
+_ORDINAL_STEMS: dict[str, int] = {
+    "перв": 1, "втор": 2, "трет": 3, "четверт": 4, "четвёрт": 4, "пят": 5, "шест": 6,
+    "седьм": 7, "восьм": 8, "девят": 9, "десят": 10, "одиннадцат": 11, "двенадцат": 12,
+    "тринадцат": 13, "четырнадцат": 14, "пятнадцат": 15, "шестнадцат": 16,
+    "семнадцат": 17, "восемнадцат": 18, "девятнадцат": 19, "двадцат": 20, "тридцат": 30,
+    "сороков": 40, "пятидесят": 50, "шестидесят": 60, "семидесят": 70, "восьмидесят": 80,
+    "девяност": 90, "сот": 100, "двухсот": 200, "трёхсот": 300, "трехсот": 300,
+    "четырёхсот": 400, "четырехсот": 400, "пятисот": 500, "шестисот": 600, "семисот": 700,
+    "восьмисот": 800, "девятисот": 900, "тысячн": 1000, "двухтысячн": 2000,
+}
+_MONTH_STEMS: tuple[tuple[str, int], ...] = (
+    ("январ", 1), ("феврал", 2), ("март", 3), ("апрел", 4), ("ма", 5), ("июн", 6), ("июл", 7),
+    ("август", 8), ("сентябр", 9), ("октябр", 10), ("ноябр", 11), ("декабр", 12))
+_THOUSANDS = {"тысяча": 1000, "тысячи": 1000, "тысяч": 1000}
+
+
+def _ordinal_value(word: str) -> int | None:
+    for stem in sorted(_ORDINAL_STEMS, key=len, reverse=True):
+        if word.startswith(stem) and len(word) - len(stem) <= 4:
+            return _ORDINAL_STEMS[stem]
+    return None
+
+
+def _month_value(word: str) -> int | None:
+    for stem, number in _MONTH_STEMS:
+        if word.startswith(stem) and (stem != "ма" or word in ("мая", "май", "маю", "мае")):
+            return number
+    return None
+
+
+def date_from_words(phrase: str) -> str:
+    """«dd.mm.yyyy» for a date said in words, or "" when the words are not one."""
+    words = [w for w in _WORD_RE.findall(phrase.lower().replace("ё", "е")) if w not in ("года", "год", "г")]
+    words = [w.replace("е", "ё") if w in ("четвертого", "четвертое") else w for w in words]
+    month_at = next((i for i, w in enumerate(words) if _month_value(w) is not None), None)
+    if month_at is None or month_at == 0:
+        return ""
+    day = 0
+    for word in words[:month_at]:
+        if word in _TENS:
+            day += _TENS[word]
+        else:
+            value = _ordinal_value(word) if word not in _UNITS and word not in _TEENS else _UNITS.get(word, _TEENS.get(word))
+            if value is None:
+                return ""
+            day += value
+    if not 1 <= day <= 31:
+        return ""
+    month = _month_value(words[month_at])
+    year = 0
+    tail = words[month_at + 1:]
+    if tail and tail[0].isdigit():
+        year = int(tail[0])
+    elif tail:
+        index = 0
+        while index < len(tail):
+            word = tail[index]
+            if word in _UNITS or word in _HUNDREDS or word in _TENS or word in _TEENS:
+                value = _UNITS.get(word, _HUNDREDS.get(word, _TENS.get(word, _TEENS.get(word, 0))))
+                if index + 1 < len(tail) and tail[index + 1] in _THOUSANDS:
+                    year += value * 1000
+                    index += 2
+                    continue
+                year += value
+            elif word in _THOUSANDS:
+                year += 1000
+            else:
+                value = _ordinal_value(word)
+                if value is None:
+                    return ""
+                year += value
+            index += 1
+        if year < 100:
+            # The century left unsaid: «восьмидесятого года» is 1980, «пятого
+            # года» is 2005 — a two-digit year not yet reached belongs to the
+            # previous century.
+            year += 2000 if year <= int(__import__("time").localtime().tm_year) % 100 else 1900
+    if not 1900 <= year <= 2100:
+        return "" if tail else f"{day:02d}.{month:02d}"
+    return f"{day:02d}.{month:02d}.{year}"
+
+
 def run_to_digits(words: list[str]) -> str:
     """Concatenate a run of numeral groups into the digit string that was said.
 
@@ -158,6 +274,9 @@ def run_to_digits(words: list[str]) -> str:
     produces is a sequence of groups, and each group contributes its own digits
     in order.
     """
+    # The leased misspellings are read as the numerals they are, so a caller
+    # that admitted «триц» through `is_numeral_word` gets 30 and not a KeyError.
+    words = [_canonical(word) or word for word in words]
     out: list[str] = []
     index = 0
     while index < len(words):

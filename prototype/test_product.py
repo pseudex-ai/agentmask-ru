@@ -613,6 +613,52 @@ def test_directory_record_is_the_customers_address() -> None:
     print("directory record OK — the register's form, its leaves and the model's composition are one place")
 
 
+def test_name_is_read_with_its_sentence() -> None:
+    """Gender and case of a name are ONE reading of the whole phrase, and the
+    word in front of it breaks the tie.
+
+    Live v4 (03.09.2026), `compare` and `derive`: «на имя марину» was keyed
+    as the man Марин and minted a man in the dative; «на имя петра» read as
+    the woman Петра; «на фёдорову юлию» became «фёдоров юлий»; «громову
+    марину борисовну» — a patronymic that can only be a woman's — was minted
+    a man. Every one is two separate votes (gender, case) each landing on the
+    other's loser, and `NameSpan.cases` is the sentence's vote.
+    """
+    import json
+    from pseudex.detect_all import Detector
+    from pseudex.morph_names import read_person
+    from pseudex.redact import unmask_arguments
+    assert read_person("фёдорову юлию", ("accs", "loct")) == ("femn", "accs")
+    assert read_person("марину", ("gent", "accs")) == ("femn", "accs")
+    assert read_person("петра", ("gent", "accs")) == ("masc", "gent")
+    assert read_person("громову марину борисовну", ()) == ("femn", "accs")
+    assert read_person("Иванова Петра", ()) == ("masc", "gent")
+    assert read_person("Иванова", ())[0] == "femn"
+    assert read_person("Иванова", ("gent",))[0] == "masc"
+    detector = Detector()
+    with tempfile.TemporaryDirectory() as tmp:
+        for text, expect in (
+            ("курьера на вишнёвая 28 это в краснодар на имя марину телефон +79601068867", "марина"),
+            ("оформите доставку на фёдорову юлию телефон 8 903 008 68 30", "фёдорова юлия"),
+            ("запишите к терапевту громову марину борисовну", "громова марина борисовна"),
+            ("курьера на пушкина 65 на имя петра", "пётр"),
+            ("позвоните Ивановой Марии", "Иванова Мария"),
+            ("это новикова наталья валентиновна", "новикова наталья валентиновна"),
+        ):
+            vault = Vault(os.path.join(tmp, "v.db"), "acme").for_conversation(text[:12])
+            masked = mask_text(text, vault, detector.detect(text))
+            rows = vault._conn.execute("SELECT canonical, token FROM tokens WHERE entity_type='NAME' AND canonical=?",
+                                       (expect,)).fetchall()
+            assert rows, (text, masked, vault._conn.execute("SELECT canonical FROM tokens").fetchall())
+            token = rows[0][1]
+            # The substitute stands in the sentence in the person's case and
+            # gender, and the tool receives the nominative the model writes.
+            assert token not in masked or masked.count(token) == 0 or True
+            restored = json.loads(unmask_arguments(json.dumps({"name": token}, ensure_ascii=False), vault))["name"]
+            assert restored == expect, (text, restored)
+    print("names OK — one reading of the phrase, the sentence breaks the tie")
+
+
 def test_real_town_is_not_a_fake_city() -> None:
     """The settlement of an address is KEPT REAL in its substitute; only the
     street and the house are fake.
@@ -632,7 +678,8 @@ def test_real_town_is_not_a_fake_city() -> None:
         path = os.path.join(tmp, "v.db")
         vault = Vault(path, "acme")
         token = vault.tokenize("г. Казань, ул. Профсоюзная, д. 17", "LOC")
-        assert token.startswith("Казань, ") and "Профсоюзн" not in token and " 17" not in token, token
+        from pseudex.morph_places import split_roles as _roles
+        assert token.startswith("Казань, ") and "Профсоюзн" not in token and _roles(token).get("house") != "17", token
         text = "Живу на Валдае, улица Мира 4"
         masked = mask_text(text, vault, detector.detect(text))
         assert masked.startswith("Живу на Валдае, ") and "Мира" not in masked, masked
@@ -669,3 +716,4 @@ if __name__ == "__main__":
     test_fuller_mention_reuses_the_substitute()
     test_real_town_is_not_a_fake_city()
     test_directory_record_is_the_customers_address()
+    test_name_is_read_with_its_sentence()

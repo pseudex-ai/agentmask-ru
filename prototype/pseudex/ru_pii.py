@@ -218,6 +218,18 @@ _PASSPORT_RE = re.compile(r"\b\d{2}\s+\d{2}\s+\d{6}\b|\b\d{4}\s+\d{6}\b")
 # данные: 4518123456» is the commonest phrasing there is and it needs nine —
 # the number was missed by ONE character. A hyphen joins the space as a
 # separator («4607-238914»), which is how a form field renders it.
+# THE CUE TYPES THE NUMBER, AND A CHECKSUM ONLY GATES A BARE ONE. A customer
+# who mistypes one digit of their СНИЛС has still typed their СНИЛС — ten of
+# the eleven digits are real — and the checksum gate sent it to the model in
+# the clear (live v4: four of four `validate` cases built with a broken
+# digit). The checksum earns its keep on a number standing alone; behind the
+# word «снилс» the evidence is the word. The cue tolerates the one-edit
+# spellings the deny lists already tolerate.
+_SNILS_CUE_RE = re.compile(
+    r"(?i:с\s?н\s?и\s?л\s?с|силс|снилз|снилсс|снил\b)\D{0,12}?(\d{3}[ -]?\d{3}[ -]?\d{3}[ -]?\d{2})(?!\d)")
+_INN_CUE_RE = re.compile(r"(?i:\bинн\b)\D{0,12}?(\d{12})(?!\d)")
+_CARD_CUE_RE = re.compile(
+    r"(?i:карт\w*|card)\D{0,16}?(\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{4})(?!\d)")
 _PASSPORT_CTX_RE = re.compile(
     r"(?i:пас{1,2}п{1,2}орт\w*)\D{0,16}?(\d{2}[\s-]?\d{2}[\s-]?\d{6})\b")
 # «серия 4607 номер 238914» — the two halves named separately, with words
@@ -290,6 +302,9 @@ def detect_structured(text: str) -> list[Span]:
             if not any(w in window for w in ru_pii.inn_context):
                 continue
         spans.append(Span(match.start(), match.end(), "INN", match.group()))
+    for entity_type, pattern in (("SNILS", _SNILS_CUE_RE), ("INN", _INN_CUE_RE), ("CARD", _CARD_CUE_RE)):
+        for match in pattern.finditer(text):
+            spans.append(Span(match.start(1), match.end(1), entity_type, match.group(1)))
     for match in _PASSPORT_RE.finditer(text):
         spans.append(Span(match.start(), match.end(), "PASSPORT", match.group()))
     # No-separator passport is ambiguous alone; trust it when "паспорт" precedes.

@@ -420,6 +420,9 @@ def address_key(phrase: str) -> str:
     # `phrase_to_nominative` read «на Ленинском» as a stem rather than an
     # adjective, so stripping them afterwards would be too late.
     phrase = phrase[region_prefix_end(phrase):] or phrase
+    # «152кв7» and «152 кв 7» are one flat: the glued marker is split before the
+    # key is built, so both writings meet in one row.
+    phrase = _GLUED_MARKER_RE.sub(r"\1 \2 \3", phrase)
     stripped = " ".join(word for word in phrase.strip().split()
                         if word.strip(",.").casefold() not in _PREPOSITIONS)
     parts: list[str] = []
@@ -474,6 +477,13 @@ def address_key(phrase: str) -> str:
             # A DIGIT-LED TOKEN IS A NUMBER, whatever letter is glued to it.
             # pymorphy read «160в» as a verb and lemmatised it to «160ть», so
             # the house with a litera was a key nothing else could reach.
+            # A NUMBER WORD IS KEPT AS THE NUMERAL IT IS — «четыыре» is
+            # «четыре», not the lemma «четыыр» pymorphy invents for it — so a
+            # dictated house with a slip keys with the same house said right.
+            numeral = spoken.canonical_numeral(raw)
+            if numeral is not None:
+                parts.append(numeral)
+                continue
             parses = MORPH.parse(raw) if not raw[:1].isdigit() else []
             parts.append(parses[0].normal_form if parses else raw)
             if names_city:
@@ -591,7 +601,7 @@ def street_house_key(phrase: str) -> str:
             # cardinal is never popped («девять» read as an ordinal left
             # «восемьдесят девять» keyed as 80).
             if (token in ("подъезд", "под", "этаж") and kept
-                    and _ORDINAL_ONLY.fullmatch(kept[-1]) and kept[-1] not in spoken.CARDINALS):
+                    and _ORDINAL_ONLY.fullmatch(kept[-1]) and not spoken.is_numeral_word(kept[-1])):
                 kept.pop()
             break
         if token in _GENERIC:
@@ -624,6 +634,7 @@ def street_house_key(phrase: str) -> str:
 
 
 _SHORT_KEY_STOP = frozenset({"кв", "к", "стр", "подъезд", "под", "этаж"})
+_GLUED_MARKER_RE = re.compile(r"(?i)(\d)(кв|к|стр|корп)\.?(\d)")
 
 
 def _is_settlement_word(word: str) -> bool:
@@ -642,7 +653,7 @@ def _fold_cardinals(tokens: list[str]) -> list[str]:
     out: list[str] = []
     run: list[str] = []
     for token in tokens:
-        if token in spoken.CARDINALS:
+        if spoken.is_numeral_word(token):
             run.append(token)
             continue
         if run:
@@ -655,7 +666,7 @@ def _fold_cardinals(tokens: list[str]) -> list[str]:
 
 
 _FLAT_TAIL = re.compile(
-    r"(?i)[\s,]*\b(?:кв|квартир\w*|оф|офис\w*|пом|помещени\w*|комн\w*"
+    r"(?i)[\s,]*(?:\b|(?<=\d))(?:кв|квартир\w*|оф|офис\w*|пом|помещени\w*|комн\w*"
     r"|под[ъь]езд\w*|эт|этаж\w*)\.?\s*\d+[а-яё]?\s*$")
 
 
@@ -897,6 +908,24 @@ _NUMERAL_LONGEST = "|".join(sorted(
 _WORD_NUMBER = re.compile(
     rf"(?i)\b(?:{_NUMERAL_LONGEST})\b(?:\s+\b(?:{_NUMERAL_LONGEST})\b)*"
     rf"(?:\s+[а-яёА-ЯЁ](?![а-яёА-ЯЁ]))?")
+
+
+@functools.lru_cache(maxsize=4)
+def _word_number_for(version: str) -> re.Pattern[str]:
+    """`_WORD_NUMBER` with the leased misspellings of the numerals folded in:
+    «дом сто семьдесят четыыре» stopped at «семьдесят», the flat became the
+    house and the real house went to the tool as 170 (scripted v4, four of
+    the last eight diverging triples). Keyed on the bundle version so a fresh
+    lease rebuilds it."""
+    alternation = spoken.numeral_alternation()
+    return re.compile(
+        rf"(?i)\b(?:{alternation})\b(?:\s+\b(?:{alternation})\b)*"
+        rf"(?:\s+[а-яёА-ЯЁ](?![а-яёА-ЯЁ]))?")
+
+
+def _word_number() -> re.Pattern[str]:
+    from pseudex.assets import ASSETS
+    return _word_number_for(ASSETS.version or "") if ASSETS.is_loaded else _WORD_NUMBER
 # ЛИТЕРА ОТДЕЛЬНЫМ СЛОВОМ — ЧАСТЬ НОМЕРА ДОМА. «садовая 89 а», «барамзиной 112
 # а»: без этого разбор считал дом законченным на цифре, обрезка ориентира резала
 # «а» вместе с хвостом, и буква настоящего дома уходила к модели открытым
@@ -921,7 +950,7 @@ def _number_at(text: str, position: int) -> re.Match[str] | None:
     """Число (цифрами или словами), начинающееся сразу за `position`."""
     gap = re.match(r"[\s,.]*", text[position:])
     at = position + (gap.end() if gap else 0)
-    for pattern in (_DIGIT_NUMBER, _WORD_NUMBER):
+    for pattern in (_DIGIT_NUMBER, _word_number()):
         found = pattern.match(text, at)
         if found is not None:
             return found
@@ -964,7 +993,9 @@ def role_spans(phrase: str) -> dict[str, tuple[int, int]]:
     claimed: list[tuple[int, int]] = []
     out: dict[str, tuple[int, int]] = {}
     for role, marker in _PART_MARKERS:
-        for hit in re.finditer(rf"(?i)\b(?:{marker})\.?(?![а-яё])", text):
+        # `(?<=\d)` beside `\b`: «152кв7» glues the marker to the house and
+        # there is no word boundary between a digit and a letter.
+        for hit in re.finditer(rf"(?i)(?:\b|(?<=\d))(?:{marker})\.?(?![а-яё])", text):
             after = _number_at(text, hit.end())
             if after is not None:
                 claimed.append((hit.start(), after.end()))
@@ -975,7 +1006,7 @@ def role_spans(phrase: str) -> dict[str, tuple[int, int]]:
                 claimed.append((before[-1].start(), hit.end()))
                 out.setdefault(role, (before[-1].start(), before[-1].end()))
     house = None
-    for pattern in (_DIGIT_NUMBER, _WORD_NUMBER):
+    for pattern in (_DIGIT_NUMBER, _word_number()):
         for number in pattern.finditer(text):
             if any(start <= number.start() < end for start, end in claimed):
                 continue
@@ -1173,7 +1204,7 @@ def _part_to_digits(part: str) -> str:
     words = re.findall(r"[а-яё]+", text.lower())
     # `run_to_digits` ждёт прогон, УЖЕ признанный числительным, и на чужом слове
     # падает по ключу — поэтому состав проверяется здесь, а не ловится исключение.
-    if words and all(word in spoken.CARDINALS for word in words):
+    if words and all(spoken.is_numeral_word(word) for word in words):
         digits = spoken.run_to_digits(words)
         if digits:
             return f"{digits}{litera}"

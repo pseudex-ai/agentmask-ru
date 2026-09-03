@@ -166,6 +166,13 @@ def _apply(table: dict[str, str], word: str) -> str:
     return "".join(table.get(letter, letter) for letter in word.lower())
 
 
+def translit_icao(word: str) -> str:
+    """The ICAO spelling — what a model writes unprompted («Kuznetsov», not the
+    ГОСТ «Kuzneczov»); the scripted agent uses it so the instrument's habit is
+    a model's habit."""
+    return "".join(ch for ch in _apply(_ICAO, word) if ch.isalpha())
+
+
 def translit_variants(word: str) -> Accepted:
     """Every accepted Latin spelling of one Cyrillic word, lowercased."""
     if not word:

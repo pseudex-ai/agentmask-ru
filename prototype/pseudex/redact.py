@@ -8,7 +8,7 @@ lighter one. Reverse uses longest-token-first to avoid prefix collisions.
 import json
 import re
 
-from pseudex.detect import PartSpan, Span
+from pseudex.detect import NameSpan, PartSpan, Span
 from pseudex import morph_names, morph_places, translit
 from pseudex.profiling import stage
 from pseudex.vault import LOC_TOKEN_PATTERN, TOKEN_RE, Vault, name_key, place_key
@@ -82,13 +82,40 @@ def is_own_substitute(span: Span, vault: Vault) -> bool:
     them, so production and the instrument disagreed about the same text."""
     if vault.is_minted_token(span.value):
         return True
-    return span.entity_type == "LOC" and vault.holds_minted_place(span.value)
+    # THE MODEL'S OWN DERIVATION OF OUR SUBSTITUTE IS OURS TOO. It wrote
+    # «LEBEDEVA ALINA» into `name_latin` from the token it was given; that call
+    # rides in the transcript, the Latin name detector found a person in it,
+    # and the vault minted «Герман Тимур» for a string that was never anybody
+    # (scripted v4, chain-028). The restorer already knows how to tell a
+    # derivation of a token from a real Latin name — the same test decides here.
+    if span.entity_type == "NAME" and _is_derived_surface(span.value):
+        return _derived_owner(span.value, vault) is not None
+    if span.entity_type != "LOC":
+        return False
+    # A FIELD OF AN ADDRESS OBJECT IS JUDGED BY THE WHOLE OBJECT. The model's
+    # own tool call — {"locality": "можга", "street": "кленовую", "building":
+    # "112"} around the token it was given — rides in the transcript and is
+    # re-masked with it; leaf by leaf nothing is a token, and the object was
+    # minted a THIRD address (scripted v4: compare 14/42 -> 1/42 the day
+    # address objects were introduced).
+    whole = vault_value(span)
+    return vault.holds_minted_place(whole) or (whole != span.value and vault.is_minted_token(whole))
 
 
 def vault_value(span: Span) -> str:
     """What the vault keys for this span: the whole address for a field of
     one, the span's own text otherwise."""
     return span.whole if isinstance(span, PartSpan) else span.value
+
+
+def tokenize_span(span: Span, vault: Vault) -> str:
+    """The substitute the vault holds for this span — ONE entry for the
+    masking, the audit and the benchmark's scorer, so a span that carries
+    evidence (an address field, a governed name) is minted the same way
+    wherever it is asked about."""
+    if isinstance(span, NameSpan) and span.cases:
+        return vault.tokenize_person(span.value, span.cases)
+    return vault.tokenize(vault_value(span), span.entity_type)
 
 
 def _agree_settlement(token: str, original: str) -> str:
@@ -134,7 +161,7 @@ def _token_for_text(span: Span, vault: Vault) -> str:
         if span.value.isupper():
             return part.upper()
         return part
-    token = vault.tokenize(span.value, span.entity_type)
+    token = tokenize_span(span, vault)
     if span.entity_type == "LOC":
         # Same reason as NAME: a nominative phrase dropped into an oblique slot
         # reads as broken Russian, and broken Russian is what makes a model
@@ -145,16 +172,14 @@ def _token_for_text(span: Span, vault: Vault) -> str:
         return morph_places.inflect_place(token, case)
     if span.entity_type != "NAME":
         return token
-    case = morph_names.detect_case(span.value)
+    # ONE reading for the key, the gender and the case (`read_person`): the
+    # token was minted for this gender, and it is bent into the case the
+    # sentence — not a vote over the words — says the person stands in.
+    gender, case = morph_names.read_person(
+        span.value, span.cases if isinstance(span, NameSpan) else ())
     if case is None or case == "nomn":
         return token
-    # Gender comes from the REAL person, not from re-reading the token. The two
-    # agree by construction — the token was minted for this gender — and asking
-    # the token again can only lose: a fake first name the dictionary happens
-    # not to know (София) makes the whole span read as the wrong gender, and
-    # then the surname is inflected as a man's.
-    return morph_names.inflect_person(
-        token, case, morph_names.detect_gender(span.value))
+    return morph_names.inflect_person(token, case, gender)
 
 
 def unmask_text(text: str, vault: Vault, inflect: bool = True,

@@ -1,0 +1,56 @@
+$ python3 bench/agentpii4/smoke.py --engine
+
+СКРИПТОВЫЙ АГЕНТ «decomposer» — не живой прогон; три плеча через настоящий шлюз
+
+троек: 360 · случаев: 360 · исключено: 0
+
+1. ПРОВОКАЦИЯ — что модель делает с НАСТОЯЩИМИ значениями (плечо C против C′)
+   verbatim 2303 (95.0%) · absent 120 (5.0%)
+
+2–3. ШУМОВОЙ ПОЛ И ЭФФЕКТ ШЛЮЗА — по уровням, никогда одним числом
+   уровень          I≈C      C′≈C     эффект   95% ДИ (кластерный бутстрап)   McNemar p (b,c)  ICC(случай) ICC(значение) DEFF
+   L1 инструменты   100.0% 100.0%   +0.0pp [ +0.0,  +0.0]           1.000 (0,0)    0.00        0.00      1.00
+   L2 ключи         100.0% 100.0%   +0.0pp [ +0.0,  +0.0]           1.000 (0,0)    0.00        0.00      1.00
+   L3 состояние      91.7% 100.0%   -8.3pp [-11.2,  -5.5]           0.000 (30,0)    0.00        0.00      1.00
+   L3 дословно       90.6% 100.0%   -9.4pp [-12.5,  -6.5]           0.000 (34,0)    0.00        0.00      1.00
+   для ±2pp на L3 при согласии 92% нужно n ≈ 734 случаев (iid)
+
+4. ТАКСОНОМИЯ ПО ПОЛЯМ — I−C рядом с C′−C; разница и есть шлюз
+   класс               I−C   C′−C   разн   примечание
+   agree               2386   2423    -37   
+   residual               3      0     +3   ДЕФЕКТ ПРОДУКТА — подмена дошла до инструмента
+   validated_refused      2      0     +2   движок не чинит — фейк отвергнут валидацией
+   derived               18      0    +18   движок не чинит — производная от подмены
+   reformatted            6      0     +6   
+   other                  8      0     +8   
+   по типам (I−C): CARD: agree 14/14 · DOB: agree 84/100 · LOC: agree 841/854 · NAME: agree 884/892 · PASSPORT: agree 100/100 · PHONE: agree 413/413 · SNILS: agree 50/50
+
+5. ПРОИЗВОДНЫЕ ПОЛЯ (I−C)
+   patient.age:derived/from_substitute 14
+   contact.initials:derived/from_substitute 3
+   to_location.postal_code:derived/unverifiable 1
+
+6. ВАЛИДАЦИЯ — семейство validate
+   троек 36 · агент не вызвал (I−C) 0 · (C′−C) 0 · мок отверг в I 0
+
+7. ПРОСТЫЕ ЗНАЧЕНИЯ (не ПД, обязаны уцелеть) — I−C / C′−C
+   intact: 529 / 529 · changed: 0 / 0 · absent: 0 / 0
+
+8. РАЗРЕЗЫ — согласие I≈C на L3 по регистру и по виду
+   регистр: chat 100/107 · clean 5/6 · sloppy 43/51 · voice_itn 77/78 · voice_raw 105/118
+   вид: chain 40/48 · compare 40/42 · container 30/30 · correction 34/36 · decompose 40/42 · derive 39/54 · result_feed 36/36 · summary 35/36 · validate 36/36
+
+10. ПРИМЕРЫ РАСХОЖДЕНИЙ (I−C, до 12)
+   chain-005|0 crm_upsert_contact.contact.address.house [reformatted/] C='37' I='7' (verbatim)
+   chain-005|0 crm_upsert_contact.contact.address.street [other/tail_junk] C='коммунаров' I='коммунаров дом триц' (verbatim)
+   chain-025|0 crm_upsert_contact.contact.address.house [reformatted/] C='174' I='170' (verbatim)
+   chain-028|0 crm_upsert_contact.contact.initials [derived/from_substitute] C='Е.С.' I='П.Л.' (derived)
+   chain-028|0 crm_upsert_contact.contact.last_name [other/inflected] C='воронина' I='елена' (verbatim)
+   chain-041|0 crm_upsert_contact.contact.initials [derived/from_substitute] C='И.П.' I='Н.Б.' (derived)
+   chain-041|0 crm_upsert_contact.contact.last_name [other/inflected] C='лебедева' I='ирина' (verbatim)
+   compare-006|0 courier_book.address.building [reformatted/] C='31' I='1' (invented)
+   compare-006|0 courier_book.address.street [other/tail_junk] C='подлесная' I='подлесная тридц' (invented)
+   compare-006|0 courier_book.contact.name [other/inflected] C='пётр' I='петра' (verbatim)
+   compare-011|0 courier_book.contact.name [other/inflected] C='пётр' I='петра' (verbatim)
+   correction-015|0 courier_book.address.building [reformatted/] C='135' I='100' (verbatim)
+

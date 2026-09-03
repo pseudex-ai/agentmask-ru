@@ -27,6 +27,7 @@ from pseudex.assets import ASSETS, NameAssets
 from pseudex.detect import Span
 from pseudex.fuzzy import build_index, lookup, within_one_edit, within_one_typo
 from pseudex.morph import MORPH, is_stretched_filler
+from pseudex import spoken
 
 _WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё]+")
 _INITIALS_RE = re.compile(r"[А-ЯЁ][а-яё]+\s+[А-ЯЁ]\.\s?[А-ЯЁ]\.?")
@@ -409,7 +410,7 @@ def _damaged_name_pairs(text: str) -> list[Span]:
             # а имя — нет.
             if is_stretched_filler(damaged):
                 continue
-            if _typo_of_an_ordinary_word(damaged):
+            if _typo_of_an_ordinary_word(damaged) or _is_numeral_word(damaged) or _is_numeral_word(other):
                 continue
             if not (_names_a_person(damaged) or _looks_misspelt_name(damaged)):
                 continue
@@ -677,10 +678,21 @@ def _joins_the_name(word: str, anchor: str) -> bool:
     gazetteer rather than "capitalised and adjacent": the word after a given name
     is very often an ordinary one, and adjacency alone would mask it.
     """
-    if _typo_of_an_ordinary_word(word):
+    if _typo_of_an_ordinary_word(word) or _is_numeral_word(word):
         return False
     return (_names_a_person(word) or _looks_misspelt_name(word)
             or _agrees_as_a_name(word, anchor))
+
+
+def _is_numeral_word(word: str) -> bool:
+    """A number word, spelled right or as the transcript misspells it. A
+    numeral is never part of a person: «подлесная тридц один» is a street and
+    a house, and the name arm made it a three-word person because «тридц» is
+    unknown to morphology and sits beside a word that can be a surname."""
+    low = word.lower()
+    if low in spoken.CARDINALS:
+        return True
+    return ASSETS.is_loaded and low in ASSETS.get().spoken.numeral_typos
 
 
 def _typo_of_an_ordinary_word(word: str) -> bool:

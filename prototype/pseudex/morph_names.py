@@ -543,6 +543,144 @@ def full_patronymic(word: str) -> str:
     return ""
 
 
+# WHAT THE WORD BEFORE A NAME SAYS ABOUT ITS CASE. Grammar, not tuning: a
+# preposition governs a closed set of cases, and the handful of verbs are the
+# ones a dispatcher, a clinic and a CRM agent use on a person. A colon after
+# the word («имя: Марина») is a form field, and a form field is nominative.
+_GOVERNOR_CASES: dict[str, tuple[str, ...]] = {
+    "в": ("accs", "loct"), "во": ("accs", "loct"), "на": ("accs", "loct"),
+    "к": ("datv",), "ко": ("datv",), "по": ("datv",),
+    "у": ("gent",), "для": ("gent",), "от": ("gent",), "без": ("gent",), "до": ("gent",),
+    "из": ("gent",), "после": ("gent",), "около": ("gent",), "возле": ("gent",),
+    "кроме": ("gent",), "вместо": ("gent",), "против": ("gent",), "ради": ("gent",),
+    "среди": ("gent",), "из-за": ("gent",), "насчёт": ("gent",), "насчет": ("gent",),
+    "с": ("ablt", "gent"), "со": ("ablt", "gent"),
+    "о": ("loct",), "об": ("loct",), "обо": ("loct",), "при": ("loct",),
+    "за": ("accs", "ablt"), "под": ("accs", "ablt"), "перед": ("ablt",), "над": ("ablt",),
+    "между": ("ablt",), "про": ("accs",), "через": ("accs",), "сквозь": ("accs",),
+    # «на имя X», «от имени X»
+    "имя": ("gent", "accs"), "имени": ("gent", "accs"),
+    # a subject or an apposition: «это Иванова», «получатель Иванова», «зовут Марина»
+    "это": ("nomn",), "зовут": ("nomn", "ablt"), "получатель": ("nomn",), "клиент": ("nomn",),
+    "пациент": ("nomn",), "заказчик": ("nomn",), "абонент": ("nomn",), "фамилия": ("nomn",),
+    "фио": ("nomn",), "отправитель": ("nomn",), "гражданин": ("nomn",), "гражданка": ("nomn",),
+}
+_ACCUSATIVE_VERBS = ("запиш", "запис", "оформ", "добав", "завед", "завест", "найд", "найт",
+                     "вызов", "вызв", "приглас", "прим", "зарегистр", "внес", "удал", "провер",
+                     "сверь", "свер", "ищ", "жд", "ожида", "встреч", "пропуст", "отмет")
+_DATIVE_VERBS = ("позвон", "перезвон", "напиш", "напис", "сообщ", "переда", "отправ", "скаж",
+                 "ответ", "помог", "верн", "покаж", "перечисл", "отда", "напомн", "объясн")
+_GOVERNOR_RE = re.compile(r"([а-яё-]+)([\s:,—–-]*)$")
+
+
+def governing_cases(text: str, start: int) -> tuple[str, ...]:
+    """The cases the word standing before `start` allows the name to be in,
+    or () when nothing there governs it."""
+    match = _GOVERNOR_RE.search(text[:start].lower())
+    if match is None:
+        return ()
+    word, separator = match.group(1), match.group(2)
+    # A STRETCHED GOVERNOR IS THE SAME GOVERNOR. Voice transcripts double a
+    # vowel — «наа имяя петра», «этоо новикова» — and the word then matched
+    # nothing, so the name was read alone. A doubled letter never makes
+    # another word of these.
+    word = re.sub(r"([а-яё])\1+", r"\1", word)
+    if ":" in separator:
+        return ("nomn",)
+    if "," in separator or "—" in separator or "–" in separator:
+        return ()
+    cases = _GOVERNOR_CASES.get(word)
+    if cases is not None:
+        return cases
+    if word.startswith(_ACCUSATIVE_VERBS):
+        return ("accs",)
+    if word.startswith(_DATIVE_VERBS):
+        return ("datv",)
+    return ()
+
+
+def _patronymic_gender_any_case(parts: list[str]) -> str | None:
+    """The gender a patronymic names, in WHATEVER case it stands: «Борисовну» is
+    the accusative of Борисовна and can only be a woman, and the nominative
+    endings alone let it through unread (live v4, derive-036: a woman minted
+    as a man)."""
+    for part in parts:
+        gender = _gender_from_patronymic(part)
+        if gender is not None:
+            return gender
+        genders = {p.tag.gender for p in _name_parses(part)
+                   if "Patr" in p.tag.grammemes and p.tag.gender in ("masc", "femn")}
+        if len(genders) == 1:
+            return next(iter(genders))
+    return None
+
+
+def read_person(surface: str, cases: tuple[str, ...]) -> tuple[str | None, str | None]:
+    """ONE reading of the whole name — (gender, case) — chosen so that EVERY
+    word supports it, with the word in front of the name breaking a tie.
+
+    Gender and case were decided by two separate votes, and a tie in one
+    silently picked the other's loser: «фёдорову юлию» is the accusative of a
+    woman AND the dative of a man in both words, the case vote fell on the
+    dative by list order and the gender on nothing, so the vault keyed the
+    woman as «фёдоров юлий» and minted her substitute in the dative. Read as
+    one pair, the two words agree on exactly two readings, and «доставку НА
+    фёдорову юлию» leaves one. A patronymic fixes the gender first, in any
+    case it stands in; a word with no name reading abstains rather than voting
+    for a guess. Returns what `detect_gender` / `detect_case` return when no
+    joint reading exists, so nothing that worked before works differently.
+    """
+    parts = surface.split()
+    fixed = _patronymic_gender_any_case(parts)
+    per_part: list[dict[tuple[str, str], float]] = []
+    for part in parts:
+        readings: dict[tuple[str, str], float] = {}
+        for parse in _name_parses(part):
+            if (not parse.is_known or parse.tag.number == "plur" or parse.tag.case in (None, "voct")
+                    or parse.tag.gender not in ("masc", "femn")):
+                continue
+            weight = 3.0 if "Name" in parse.tag.grammemes else 1.0
+            key = (parse.tag.gender, parse.tag.case)
+            readings[key] = max(readings.get(key, 0.0), parse.score * weight)
+        if readings:
+            per_part.append(readings)
+    if not per_part:
+        gender = fixed or detect_gender(surface)
+        return gender, detect_case(surface, None if has_given_name(surface) else gender)
+    candidates = set(per_part[0])
+    for readings in per_part[1:]:
+        candidates &= set(readings)
+    if fixed:
+        candidates = {c for c in candidates if c[0] == fixed}
+    if cases:
+        governed = {c for c in candidates if c[1] in cases}
+        if governed:
+            candidates = governed
+    if not candidates:
+        gender = fixed or detect_gender(surface)
+        return gender, detect_case(surface, None if has_given_name(surface) else gender)
+    if len(candidates) > 1 and not cases and len(parts) == 1:
+        # The lone-word rule the vault's key already lives by: a single
+        # «Иванова» is a woman in the nominative, not a man in the genitive.
+        lone = lone_nominative_gender(surface)
+        if lone is not None and any(c[0] == lone for c in candidates):
+            candidates = {c for c in candidates if c[0] == lone}
+    best = max(candidates, key=lambda c: (sum(r.get(c, 0.0) for r in per_part),
+                                          c[1] == "nomn", -_CASES.index(c[1])))
+    return best
+
+
+def to_nominative_governed(surface: str, cases: tuple[str, ...]) -> str:
+    """`to_nominative` with the cases the sentence allows — see `read_person`
+    and the rules recorded in `to_nominative`."""
+    if not cases:
+        return to_nominative(surface)
+    gender, case = read_person(surface, cases)
+    if case in (None, "nomn"):
+        return surface
+    return " ".join(_part_to_nominative(part, gender, case) for part in surface.split())
+
+
 def to_nominative(surface: str) -> str:
     """The nominative form — the vault's case-invariant key for a person.
 
@@ -554,7 +692,10 @@ def to_nominative(surface: str) -> str:
     Capitalisation of the input is preserved part by part, because the caller
     may show this to a human.
     """
-    gender = detect_gender(surface)
+    # ONE READING FOR GENDER AND CASE, see `read_person`: two separate votes
+    # let a tie in one pick the other's loser («фёдорову юлию» — the dative of
+    # a man by list order, the woman by every word).
+    gender, case = read_person(surface, ())
     # The case of the WHOLE span, decided by agreement across its parts, then
     # imposed on each part. Analysing a word alone loses the one fact that
     # disambiguates it: pymorphy3 reads `Марку` as an indeclinable surname and
@@ -563,8 +704,7 @@ def to_nominative(surface: str) -> str:
     # evidence — and without using it, canonicalisation is unstable and one
     # person splits into several vault rows again.
     # The gender is handed to the case decision ONLY when no given name was
-    # there to decide it — see `has_given_name`.
-    case = detect_case(surface, None if has_given_name(surface) else gender)
+    # there to decide it — see `has_given_name` (inside `read_person` now).
     # NO EVIDENCE OF AN OBLIQUE CASE MEANS NO CONVERSION. Agreement across the
     # parts is the evidence, and it is already computed; when it says nominative
     # — or says nothing — the safest form is the one the customer wrote.

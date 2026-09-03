@@ -1,0 +1,62 @@
+$ python3 bench/agentpii4/smoke.py --engine
+
+СКРИПТОВЫЙ АГЕНТ «decomposer» — не живой прогон; три плеча через настоящий шлюз
+
+троек: 360 · случаев: 360 · исключено: 0
+
+1. ПРОВОКАЦИЯ — что модель делает с НАСТОЯЩИМИ значениями (плечо C против C′)
+   verbatim 2303 (95.0%) · absent 120 (5.0%)
+
+2–3. ШУМОВОЙ ПОЛ И ЭФФЕКТ ШЛЮЗА — по уровням, никогда одним числом
+   уровень          I≈C      C′≈C     эффект   95% ДИ (кластерный бутстрап)   McNemar p (b,c)  ICC(случай) ICC(значение) DEFF
+   L1 инструменты   100.0% 100.0%   +0.0pp [ +0.0,  +0.0]           1.000 (0,0)    0.00        0.00      1.00
+   L2 ключи          99.7% 100.0%   -0.3pp [ -0.9,  +0.0]           1.000 (1,0)    0.00        1.00      1.18
+   L3 состояние      77.5% 100.0%  -22.5pp [-26.7, -18.3]           0.000 (81,0)    0.00        0.00      1.00
+   L3 дословно       77.2% 100.0%  -22.8pp [-27.1, -18.5]           0.000 (82,0)    0.00        0.00      1.00
+   для ±2pp на L3 при согласии 78% нужно n ≈ 1675 случаев (iid)
+
+4. ТАКСОНОМИЯ ПО ПОЛЯМ — I−C рядом с C′−C; разница и есть шлюз
+   класс               I−C   C′−C   разн   примечание
+   agree               2330   2423    -93   
+   absent                 1      0     +1   
+   residual               8      0     +8   ДЕФЕКТ ПРОДУКТА — подмена дошла до инструмента
+   validated_refused      2      0     +2   движок не чинит — фейк отвергнут валидацией
+   derived               29      0    +29   движок не чинит — производная от подмены
+   reformatted            4      0     +4   
+   fragment              22      0    +22   
+   other                 27      0    +27   
+   по типам (I−C): CARD: agree 13/14 · DOB: agree 91/100 · LOC: agree 842/854 · NAME: agree 822/892 · PASSPORT: agree 100/100 · PHONE: agree 413/413 · SNILS: agree 49/50
+
+5. ПРОИЗВОДНЫЕ ПОЛЯ (I−C)
+   patient.gender:derived/from_substitute 13
+   patient.age:derived/from_substitute 8
+   contact.name_latin:derived/unverifiable 5
+   payment_method_data.card.cardholder:other/misderived 3
+   contact.initials:derived/from_substitute 2
+   contact.name_latin:other/misderived 2
+   to_location.postal_code:derived/unverifiable 1
+
+6. ВАЛИДАЦИЯ — семейство validate
+   троек 36 · агент не вызвал (I−C) 0 · (C′−C) 0 · мок отверг в I 0
+
+7. ПРОСТЫЕ ЗНАЧЕНИЯ (не ПД, обязаны уцелеть) — I−C / C′−C
+   intact: 529 / 529 · changed: 0 / 0 · absent: 0 / 0
+
+8. РАЗРЕЗЫ — согласие I≈C на L3 по регистру и по виду
+   регистр: chat 87/107 · clean 5/6 · sloppy 34/51 · voice_itn 66/78 · voice_raw 87/118
+   вид: chain 37/48 · compare 14/42 · container 29/30 · correction 32/36 · decompose 35/42 · derive 25/54 · result_feed 36/36 · summary 35/36 · validate 36/36
+
+10. ПРИМЕРЫ РАСХОЖДЕНИЙ (I−C, до 12)
+   chain-005|0 crm_upsert_contact.contact.initials [derived/from_substitute] C='З.Н.' I='А.Я.' (derived)
+   chain-005|0 crm_upsert_contact.contact.last_name [other/inflected] C='битюкова' I='зинаида' (verbatim)
+   chain-005|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='BITIUKOVA ZINAIDA' I='BITYUKOVA ZINAIDA' (derived)
+   chain-014|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='KUZNECZOV DMITRII' I='KUZNETSOV DMITRII' (derived)
+   chain-015|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='KUZNECZOVA OLGA' I='KUZNETSOVA OLGA' (derived)
+   chain-025|0 crm_upsert_contact.contact.address.house [reformatted/] C='174' I='170' (verbatim)
+   chain-030|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='KUZNECZOV DMITRII' I='KUZNETSOV DMITRII' (derived)
+   chain-039|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='KUZNECZOV DMITRII' I='KUZNETSOV DMITRII' (derived)
+   chain-046|0 crm_upsert_contact.contact.address.flat [reformatted/] C='104' I='825' (verbatim)
+   compare-000|0 courier_book.contact.name [fragment/given] C='сергея' I='сергей' (verbatim)
+   compare-001|0 courier_book.contact.name [fragment/given] C='максима' I='максим' (verbatim)
+   compare-002|0 courier_book.contact.name [fragment/given] C='анну' I='анна' (verbatim)
+
