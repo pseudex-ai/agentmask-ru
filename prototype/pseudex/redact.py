@@ -660,6 +660,12 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
                      or _place_fragment(surface, vault, for_tool))
             if owner is None:
                 continue
+            # ALREADY REAL. Whole tokens were restored a step earlier, so this
+            # window may be a piece of a REAL value now standing in the text;
+            # a fragment that its owner's real value already contains is not
+            # ours to rewrite («Валдае» inside «Валдае, улица Мира 4»).
+            if surface.strip().casefold() in owner[1].casefold():
+                continue
             found = owner
         if any(a < end and start < b for a, b in taken):
             continue
@@ -669,8 +675,12 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
             # substitute, whatever token happens to bear the same name — see
             # `Vault.real_place_with_stem`. The whole-address window above has
             # already restored the real address when this word was part of it.
-            if (entity_type == "LOC" and " " not in surface.strip() and not any(ch.isdigit() for ch in value)
-                    and vault.real_place_with_stem(morph_places.to_nominative(surface).lower())):
+            # …in BOTH directions: a bare fake city minted for somebody else
+            # before the customer named their real town (Казань's substitute
+            # drew «Валдай», then «Живу на Валдае» arrived) resolves the real
+            # word to the stranger's address just the same.
+            if (entity_type == "LOC" and " " not in surface.strip() and not any(ch.isdigit() for ch in surface)
+                    and vault.real_place_with_stem(_stem_of(surface))):
                 continue
         taken.append((start, end))
         if derived is not None:
@@ -680,6 +690,13 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
         spans.append((start, end,
                       _in_case_of(value, surface, entity_type, inflect)))
     return _splice(text, spans)
+
+
+def _stem_of(word: str) -> str:
+    """The invariant head of a place word, as `Vault.real_place_with_stem`
+    wants it: one trailing vowel dropped («Валдае» -> «валда»)."""
+    low = morph_places.to_nominative(word.strip()).lower()
+    return low[:-1] if len(low) > 4 and low[-1] in "аеёиоуыэюяьй" else low
 
 
 def _is_derived_surface(surface: str) -> bool:

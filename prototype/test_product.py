@@ -531,6 +531,41 @@ def test_fuller_mention_reuses_the_substitute() -> None:
     print("fuller-mention reuse OK — one place and one person, in either order")
 
 
+def test_real_town_is_not_a_fake_city() -> None:
+    """A fake city is a real town, and the customer may live there.
+
+    Backwards: an address in Валдай must not draw «Валдай» as its own fake
+    city, and no later address may draw it either. Forwards: when a substitute
+    minted EARLIER already bears «Валдай» and the customer then names the real
+    Валдай, the lone word must not resolve to the stranger's address. Both
+    were measured on the hard-case suite as «Живу на г. Казани, ул.
+    Профсоюзной, д. 17, улица Мира 4» for «Живу на Валдае, улица Мира 4».
+    """
+    import re as _re
+    from pseudex.detect_all import Detector
+    detector = Detector()
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "v.db")
+        vault = Vault(path, "acme")
+        # Forwards: mint Kazan addresses until one draws «Валдай» as its city.
+        bearer = None
+        for index in range(400):
+            token = vault.tokenize(f"г. Казань, ул. Профсоюзная, д. {index + 1}", "LOC")
+            if token.startswith("Валдай,"):
+                bearer = token
+                break
+        assert bearer is not None, "the pool never drew «Валдай» in 400 mints — widen the loop, not the rule"
+        text = "Живу на Валдае, улица Мира 4"
+        masked = mask_text(text, vault, detector.detect(text))
+        assert not masked.startswith("Живу на Валдай"), f"the fake city equals the real one: {masked!r}"
+        assert unmask_text(masked, vault) == text, unmask_text(masked, vault)
+        assert vault.real_place_with_stem("валда")
+        # Backwards: with the real Валдай on file, no new address may draw it.
+        for index in range(200):
+            assert not vault.tokenize(f"Тверь, ул. Садовая, д. {index + 1}", "LOC").startswith("Валдай,")
+    print("real-town collision OK — a customer's town is never our fake city, in either order")
+
+
 if __name__ == "__main__":
     load_dev_bundle()
     test_tenants()
@@ -551,3 +586,4 @@ if __name__ == "__main__":
     test_conversation_scope_is_isolated()
     test_short_address_resolves_to_the_full_one()
     test_fuller_mention_reuses_the_substitute()
+    test_real_town_is_not_a_fake_city()

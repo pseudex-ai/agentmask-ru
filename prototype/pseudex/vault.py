@@ -1452,6 +1452,14 @@ class Vault:
             # 200 attempts ran out — measured as a ten-minute test run.
             city = token.split(",", 1)[0].strip()
             stem = _city_stem(city).replace("\\", "")   # `_city_stem` escapes for a regex; LIKE wants the letters
+            # …nor the ORIGINAL's own city: «Валдай» drawn for an address in
+            # Валдай restored the whole token and then re-read the real city as
+            # our fake — «Живу на улице Мира 4, улица Мира 4».
+            own = morph_places.split_roles(original).get("city", "") if original else ""
+            if not own and original:
+                own = original.split(",", 1)[0].strip() if "," in original else original.split()[0]
+            if stem and own and _city_stem(own).replace("\\", "").lower() == stem.lower():
+                return False
             if stem and self._real_place_with_stem_locked(stem):
                 return False
         if True:
@@ -1751,10 +1759,14 @@ class Vault:
         # PREFIX ONLY: `address_key` writes the city first, so the index on
         # (customer, canonical) serves this; a `'% stem%'` form scanned every
         # address the customer has, per candidate, up to 200 times a mint.
+        # The canonical AND the written form: «на Валдае, улица Мира 4» keys
+        # as «улица валдай мир 4» (a town pymorphy does not tag), so only the
+        # surface still starts with the city. SQLite's LIKE folds ASCII only,
+        # hence both spellings of the first letter.
         row = self._conn.execute(
             "SELECT 1 FROM tokens WHERE customer=? AND entity_type='LOC' "
-            "AND canonical LIKE ? LIMIT 1",
-            (self._customer, f"{stem}%"),
+            "AND (canonical LIKE ? OR original LIKE ? OR original LIKE ?) LIMIT 1",
+            (self._customer, f"{stem}%", f"{stem}%", f"{stem[:1].upper()}{stem[1:]}%"),
         ).fetchone()
         return row is not None
 
