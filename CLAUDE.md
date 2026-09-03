@@ -44,6 +44,8 @@ python3 test_localui.py        # operator surface is closed, reveals audited, re
 python3 test_persona_defects.py  # the five defects a persona run found and no corpus of ours did
 python3 test_preflight.py      # how many workers fit, and what happens when they do not
 python3 test_pseudexctl.py     # the ops CLI: command shapes, doctor verdicts, the rekey proof
+python3 test_localui_renders.py  # the interface in a REAL browser (needs playwright + chromium):
+                                 # a 200 and a matching CSP header are not evidence it executed
 python3 test_collisions.py     # подмена, совпавшая с настоящим значением: обе половины
 ```
 
