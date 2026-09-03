@@ -1,6 +1,6 @@
 ---
 name: gates
-description: Run the pseudex container gates — L1-L20 for licensing and degradation, P1-P8 for packaging, plus P7 on the compiled image. Use before a release, after touching the vault, the licence layer, the entrypoint, either Dockerfile, or any gateway endpoint. Explains what each family proves, how to reuse the signing key so Nuitka does not rebuild, and what a red gate actually means.
+description: Run the pseudex container gates — L1-L21 for licensing, degradation and the vault, P1-P10 for packaging, plus P7 on the compiled image. Use before a release, after touching the vault, the licence layer, the entrypoint, either Dockerfile, or any gateway endpoint. Explains what each family proves, how to reuse the signing key so Nuitka does not rebuild, and what a red gate actually means.
 ---
 
 # Контейнерные гейты
@@ -11,6 +11,9 @@ description: Run the pseudex container gates — L1-L20 for licensing and degrad
 ## Когда обязательны
 
 - перед релизом (CI делает это сам);
+- **ночью и по метке `run-gates` на PR — тоже сам** (`.github/workflows/gates.yml`);
+  на пуш, задевший волт, лицензирование, `entrypoint.sh`, Dockerfile или `e2e/`,
+  бежит срез `--only L19,L20,L21` — он не ждёт истечения и укладывается в минуты;
 - после правок волта, лицензионного слоя, `entrypoint.sh`, любого Dockerfile;
 - после появления или изменения эндпоинта шлюзовой поверхности;
 - после дня глубоких правок — как замыкание.
@@ -20,9 +23,9 @@ description: Run the pseudex container gates — L1-L20 for licensing and degrad
 ```bash
 cd prototype && source .venv/bin/activate
 
-python3 e2e/gates.py                    # L1-L20, ~13 мин, исходный образ
+python3 e2e/gates.py                    # L1-L21, ~13 мин, исходный образ
 python3 e2e/gates.py --only L4,L18      # подмножество, пока итерируешь
-python3 e2e/pack_gates.py               # P1-P8, собирает ОБА образа, ~5 мин
+python3 e2e/pack_gates.py               # P1-P10, собирает ОБА образа, ~5 мин
 
 # P7 — те же L-гейты, но против скомпилированного образа
 python3 e2e/gates.py --image pseudex:compiled
@@ -74,6 +77,19 @@ PSEUDEX_SIGNING_KEY=<тот, с которым собирали> python3 e2e/gat
 
 **P4** — компиляция не стоит производительности. **P5** — N процессов делят порт
 и держат всплеск. **P6** — приватный реестр и подпись. **P8** — старт и размер.
+**P9** — том релизного образа не читается обычным SQLite. **P10** — релизный
+бинарник меряет сам себя, и мера совпадает с файлом.
+
+**L19–L21** — волт: том не выдаёт настоящих значений, открытый том мигрирует не
+теряя токенов, чужой ключ останавливает контейнер нашими словами. Это семейство и
+гоняется на каждом пуше, потому что колонки волта меняются чаще всего.
+
+**P3 ТРЕБУЕТ СГЕНЕРИРОВАННЫХ ДАТАСЕТОВ.** `parity.py` без `dirty.json` пишет
+`{"skipped": True}`, и раньше оба отчёта получали одинаковое «пропущено» — разниц
+нет, гейт зелёный, грязный набор не сравнивался ни одним значением. Датасеты
+гитигнорятся, поэтому в CI это была не редкость, а норма. Теперь P3 на пропуск
+краснеет; перед `pack_gates.py` нужно `python3 make_dirty.py` — и он же теперь
+проверяется ДО сборки, поэтому забытый набор стоит секунду, а не полчаса.
 
 ## Красный гейт: сначала спроси, кто врёт
 

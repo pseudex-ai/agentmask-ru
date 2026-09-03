@@ -71,7 +71,9 @@ python3 -m licensing.devserver                    # the real licensing server, :
 
 python3 e2e/gates.py                              # L1-L21 (+L2b), licensing + vault, ~15 min
 python3 e2e/gates.py --only L4,L5                 # a subset while iterating
-python3 e2e/pack_gates.py                         # P1-P9, packaging (builds both images)
+python3 make_dirty.py                             # P3 compares the two images on it; without
+                                                  # it pack_gates refuses BEFORE the Nuitka build
+python3 e2e/pack_gates.py                         # P1-P10, packaging (builds both images)
 
 # TWO keys are COMPILED INTO the release binary, so a fresh either forces a full
 # Nuitka rebuild: the Ed25519 verification key AND PSEUDEX_TUNING_KEY (which seals

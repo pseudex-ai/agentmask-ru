@@ -120,6 +120,19 @@ jobs:
       - name: fix a tuning key for this run
         run: echo "PSEUDEX_TUNING_KEY=$(python -c 'import os, base64; print(base64.b64encode(os.urandom(32)).decode())')" >> $GITHUB_ENV
 
+      # P3 СРАВНИВАЕТ ОБРАЗЫ НА ЭТОМ НАБОРЕ, И БЕЗ НЕГО ОНО СРАВНИВАЛО ПОЛОВИНУ.
+      #
+      # `*.json` гитигнорятся, а `needs: [engine]` — другой раннер, так что файл
+      # оттуда сюда не доезжает. `parity.py` без `dirty.json` тихо пишет
+      # `{"skipped": True}`, оба отчёта получали одинаковое «пропущено», разниц
+      # не было — и гейт, который обязан доказать «скомпилированный образ
+      # детектирует ровно то же», проходил, не сравнив ни одного значения
+      # грязного набора. Единственным следом было исчезновение recall и
+      # precision из его же строки. Теперь P3 на пропуск краснеет, поэтому
+      # наборы обязаны быть здесь.
+      - name: the dirty set P3 compares the two images on
+        run: python make_dirty.py
+
       - name: packaging gates (builds both images)
         run: python -u e2e/pack_gates.py
       - name: licensing gates on the release image
