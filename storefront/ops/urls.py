@@ -17,7 +17,10 @@ urlpatterns = [
     path("chains/", views.chains, name="ops_chains"),
     path("plans/", views.plans, name="ops_plans"),
     path("plans/<str:code>/", views.edit_plan, name="ops_edit_plan"),
-    # Последним: `org_` — свободная строка, и маршрут выше по конкретному пути
-    # иначе был бы съеден им.
+    # Последними: `org_` — свободная строка, и маршруты выше по конкретному пути
+    # иначе были бы съедены ими. Внутри этой пары порядок тоже значим — более
+    # длинный путь первым.
+    path("<str:org_id>/reconcile/", views.reconcile, name="ops_reconcile"),
+    path("<str:org_id>/usage.csv", views.usage_csv, name="ops_usage_csv"),
     path("<str:org_id>/", views.customer, name="ops_customer"),
 ]

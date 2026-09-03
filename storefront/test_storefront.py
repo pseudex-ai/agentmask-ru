@@ -841,6 +841,10 @@ def _check_ops_console(client, admin_url: str, public_url: str,
           plan_start.max_instances != 3 and "pill bad" in plans_body,
           f"витрина={plan_start.max_instances} сервер=3")
 
+    _check_reconciliation(staff_client, base, org)
+
+    _screens_with_reconcile = screens + (f"{base}{org.id}/reconcile/",)
+
     # И ГЛАВНОЕ: КОНСОЛЬ ОТКРЫВАЕТСЯ, КОГДА ЛИЦЕНЗИОННЫЙ СЕРВЕР ЛЕЖИТ. Это ровно
     # та минута, ради которой её открывают, и пятисотка здесь — худшее из
     # возможных поведений.
@@ -854,7 +858,7 @@ def _check_ops_console(client, admin_url: str, public_url: str,
     down_client.force_login(staff)
     with mock.patch("billing.licensing._get",
                     side_effect=licensing.LicensingError("сервер не отвечает")):
-        down = {path: down_client.get(path) for path in screens}
+        down = {path: down_client.get(path) for path in _screens_with_reconcile}
     fell = [f"{path}={response.status_code}"
             for path, response in down.items() if response.status_code != 200]
     check("консоль открывается при лежащем лицензионном сервере", not fell,
@@ -863,6 +867,164 @@ def _check_ops_console(client, admin_url: str, public_url: str,
           "не отвечает" in down[base].content.decode(),
           "плашка вместо молча пустых колонок")
 
+
+
+def _check_reconciliation(staff_client, base: str, org) -> None:
+    """Сверка счёта с логом шлюза клиента — арифметика и экран.
+
+    `docs/billing-integrity.md` объявляет запрос единицей тарификации ИМЕННО
+    потому, что «запрос виден в логе шлюза самого клиента» и спор о деньгах
+    превращается в сравнение двух независимых источников. Сравнивать до сих пор
+    было нечем.
+    """
+    from billing import reconcile as R
+
+    # ТРИ МАСШТАБА ИЗ `docs/billing-integrity.md`, ЧЕСТНАЯ ЦЕПЬ: там измерено
+    # 0.00% на всех трёх, значит числа обязаны совпадать РОВНО, а не «примерно».
+    exact = [R.reconcile(ours=volume, theirs=volume,
+                         quantum_max=q, reserve_max=r)
+             for volume, q, r in ((10_000, 2_000, 20_000),
+                                  (100_000, 10_000, 100_000),
+                                  (1_000_000, 40_000, 400_000))]
+    check("на трёх масштабах при целой цепи счёт сходится точно",
+          all(item.verdict == R.MATCH and item.difference == 0 for item in exact),
+          f"вердикты={[item.verdict for item in exact]}")
+
+    # Полоса — это `Q + R` из строки тарифа, и она объявлена несущей.
+    band = R.band_width(quantum_max=2_000, reserve_max=20_000)
+    check("полоса погрешности равна Q + R из тарифа", band == 22_000, f"полоса={band}")
+
+    # И ОНА СКЛАДЫВАЕТСЯ ПО ПРОЦЕССАМ. `LicenseStore.billable` зажимает
+    # `clamp(acked, granted − Q − R, granted)` НА КАЖДЫЙ процесс и складывает —
+    # леджер ёмкости ключуется на ключ процесса. Восьмиворкерный контейнер на
+    # «Старте» законно расходится на 8 × 22 000, и полоса в одну штуку объявила
+    # бы это «мы выставили больше, смотреть надо у нас».
+    check("полоса складывается по процессам, а не берётся за один",
+          R.band_width(2_000, 20_000, processes=8) == 8 * 22_000,
+          f"на восьми процессах={R.band_width(2_000, 20_000, processes=8)}")
+    eight = R.reconcile(ours=10_000, theirs=10_000 + 8 * 22_000 - 1,
+                        quantum_max=2_000, reserve_max=20_000, processes=8)
+    check("законное расхождение восьми воркеров не зовётся нашим дефектом",
+          eight.agrees, f"вердикт={eight.verdict}")
+
+    # ПОЛОСА НЕИЗВЕСТНА — ВЕРДИКТА НЕТ. Нет подписки, нет тарифа на сервере, ни
+    # один процесс не брал ёмкость: ноль здесь значит «не знаем, на сколько
+    # можно», а не «расходиться нельзя».
+    blind = R.reconcile(ours=10_000, theirs=10_001, quantum_max=0, reserve_max=0)
+    check("без известной полосы вердикт не выносится",
+          blind.verdict == R.UNKNOWN_BAND and not blind.agrees
+          and "по какому тарифу" in blind.reasons[0],
+          f"вердикт={blind.verdict}")
+
+    inside = R.reconcile(ours=10_000, theirs=10_000 + band,
+                         quantum_max=2_000, reserve_max=20_000)
+    outside = R.reconcile(ours=10_000, theirs=10_000 + band + 1,
+                          quantum_max=2_000, reserve_max=20_000)
+    check("на самой границе полосы расхождение ещё объяснимо",
+          inside.verdict == R.WITHIN_BAND and inside.agrees,
+          f"вердикт={inside.verdict}")
+    check("на шаг за границей — уже нет",
+          outside.verdict == R.THEY_COUNTED_MORE and not outside.agrees,
+          f"вердикт={outside.verdict}")
+
+    # САМАЯ ЧАСТАЯ ПРИЧИНА НАЗЫВАЕТСЯ ПЕРВОЙ. У клиента больше нашего — почти
+    # всегда он посчитал то, что запросом не считается; проверяется за минуту, в
+    # отличие от разбора цепи.
+    check("когда у клиента больше, первым назван его собственный подсчёт",
+          outside.reasons and "/spans" in outside.reasons[0],
+          f"первая причина={outside.reasons[0][:70] if outside.reasons else 'нет'}")
+
+    # ОБРАТНЫЙ СЛУЧАЙ — ЕДИНСТВЕННЫЙ, ГДЕ ВИНОВАТЫ СКОРЕЕ МЫ, и текст обязан это
+    # говорить: при доходящих отчётах счёт равен расходу, значит расхождение в
+    # эту сторону при целой цепи — наша сторона.
+    ours_more = R.reconcile(ours=50_000, theirs=10_000,
+                            quantum_max=2_000, reserve_max=20_000)
+    check("перевыставление при целой цепи названо нашей стороной",
+          ours_more.verdict == R.WE_BILLED_MORE
+          and any("наша сторона" in reason for reason in ours_more.reasons),
+          f"вердикт={ours_more.verdict}")
+
+    # ПОРВАННАЯ ЦЕПЬ — НЕ ОБВИНЕНИЕ. Счёт идёт по выданной ёмкости, а отчёт
+    # только уменьшил бы его: это отказ от скидки, а не приписка. Формулировка
+    # тут и есть продукт — с неё начинается разговор с клиентом.
+    dirty = R.reconcile(ours=50_000, theirs=10_000, quantum_max=2_000,
+                        reserve_max=20_000, reports_missing=3, chain_breaks=1)
+    check("порванная цепь объясняется скидкой, а не припиской",
+          not dirty.chain_clean
+          and any("не приписка" in reason for reason in dirty.reasons)
+          and not any("наша сторона" in reason for reason in dirty.reasons),
+          f"причин={len(dirty.reasons)}")
+
+    # Первая точка ряда прироста не имеет — предшественника в окне нет.
+    rows = R.daily_rows([{"day": "2026-09-01", "requests": 100},
+                         {"day": "2026-09-02", "requests": 250}])
+    check("в выгрузке первая точка не выдаёт накопленное за прирост",
+          rows[0]["requests_delta"] == "" and rows[1]["requests_delta"] == 150,
+          f"ряд={[row['requests_delta'] for row in rows]}")
+
+    # СВЕРЯЕТСЯ КОНКРЕТНЫЙ СЧЁТ, А НЕ «ТО, ЧТО НАКАПАЛО ПОСЛЕ НЕГО».
+    #
+    # Спор начинается со счёта в руках, поэтому число обязано быть тем самым,
+    # что на нём напечатано. Здесь считалось «накопленное минус ватермарка
+    # последнего счёта» — то есть объём ЕЩЁ НЕ ВЫСТАВЛЕННОГО периода, — и
+    # подписывалось именем того самого счёта: клиент, пришедший спорить про
+    # INV-N, получал разницу с чужим числом, тем большую, чем дольше работает.
+    from datetime import date, timedelta
+
+    from billing.models import Invoice
+
+    disputed = Invoice.objects.create(
+        organization=org, number=Invoice.next_number(), state=Invoice.ISSUED,
+        period_start=date.today() - timedelta(days=30), period_end=date.today(),
+        requests_billable_in_period=4_242,
+        requests_billable_at_period_end=9_999)
+    with_invoice = staff_client.get(
+        f"{base}{org.id}/reconcile/?invoice={disputed.number}").content.decode()
+    # Разделитель разрядов у Django — НЕРАЗРЫВНЫЙ пробел (`USE_THOUSAND_SEPARATOR`),
+    # поэтому «4242» на странице не встречается буквально ни при каком раскладе.
+    flat = with_invoice.replace("\u00a0", "").replace(" ", "")
+    check("сверяется число С САМОГО СЧЁТА, а не остаток после него",
+          "4242" in flat and disputed.number in with_invoice,
+          f"счёт {disputed.number} несёт 4242 за период")
+
+    # ЭКРАН И ВЫГРУЗКА.
+    page = staff_client.get(f"{base}{org.id}/reconcile/")
+    check("экран сверки открывается", page.status_code == 200,
+          f"код={page.status_code}")
+    body = page.content.decode()
+    check("экран говорит, что лог сюда не загружается",
+          "не загружается" in body,
+          "иначе кто-нибудь однажды приделает загрузку файла")
+    check("экран перечисляет, что запросом не считается",
+          "/spans" in body and "fail-closed" in body)
+
+    # ПРОВЕРЯЕТСЯ ВЕРДИКТ, А НЕ ЭХО. Число уезжает обратно в `value` формы,
+    # поэтому «999999 есть на странице» истинно и тогда, когда сверка не
+    # считалась вовсе, — то есть проверка не могла упасть.
+    swept = staff_client.get(f"{base}{org.id}/reconcile/?theirs=999999").content.decode()
+    check("экран выносит вердикт по названному числу",
+          "Чем объясняется" in swept and "запросом не считается" in swept,
+          "вердикта на странице нет — сверка не посчиталась")
+    junk = staff_client.get(f"{base}{org.id}/reconcile/?theirs=много", follow=True)
+    check("мусор вместо числа не роняет сверку",
+          junk.status_code == 200 and "нужно целое число" in junk.content.decode(),
+          f"код={junk.status_code}")
+
+    csv_response = staff_client.get(f"{base}{org.id}/usage.csv")
+    # Колонка называет ЧАСОВОЙ ПОЯС. Срез режет UTC (`time.gmtime` на
+    # лицензионном сервере), а витрина рисует в Europe/Moscow: без пометки
+    # вечерний московский трафик молча ложится в предыдущую строку, и клиент
+    # ищет расхождение там, где его нет.
+    check("выгрузка отдаётся файлом и называет часовой пояс суток",
+          csv_response.status_code == 200
+          and "attachment" in csv_response.headers.get("Content-Disposition", "")
+          and b"day_utc,requests_total" in csv_response.content,
+          f"код={csv_response.status_code}")
+    # Имя файла строится из идентификатора, а не из названия организации:
+    # название — свободная строка, и она уехала бы в заголовок ответа.
+    check("имя файла выгрузки не несёт свободной строки",
+          org.display_name not in csv_response.headers.get("Content-Disposition", ""),
+          csv_response.headers.get("Content-Disposition", ""))
 
 if __name__ == "__main__":
     sys.exit(main())

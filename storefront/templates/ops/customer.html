@@ -15,6 +15,7 @@
       <div class="sec-meta" style="margin-top:8px">org_id <span class="mono" style="color:var(--text-3)">{{ organization.id }}</span> · {{ organization.get_kind_display }}</div>
     </div>
     <div>
+      <a class="btn" href="{% url 'ops_reconcile' organization.id %}">СВЕРИТЬ СЧЁТ</a>
       {% if subscription %}
         {% if subscription.state == 'trial' %}<span class="pill warn">ПРОБНЫЙ ДО {{ subscription.trial_ends_at|date:"d.m.Y" }}</span>
         {% elif subscription.state == 'active' %}<span class="pill ok">АКТИВНА</span>
@@ -70,7 +71,7 @@
   <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Запросы по суткам</h3>
   {% if history %}
   <table class="list">
-    <tr><th>СУТКИ</th><th>ПРИРОСТ</th><th>НАКОПЛЕНО</th><th>ИНСТАНСОВ</th><th style="width:40%"></th></tr>
+    <tr><th>СУТКИ (UTC)</th><th>ПРИРОСТ</th><th>НАКОПЛЕНО</th><th>ИНСТАНСОВ</th><th style="width:40%"></th></tr>
     {% for point in history %}
     <tr>
       <td class="mono">{{ point.day }}</td>

@@ -19,17 +19,20 @@
 становится плашкой, а всё, что витрина знает сама, остаётся на экране.
 """
 
+import csv
 from decimal import Decimal
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.paginator import Paginator
+from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
 
 from accounts.models import Organization
 from billing import licensing
+from billing import reconcile as billing_reconcile
 from billing.models import Invoice, Plan
 
 # СТРАНИЦА БЬЁТСЯ О ПОТОЛОК ПАКЕТНОЙ РУЧКИ, А НЕ О ЧИСЛО КЛИЕНТОВ.
@@ -83,6 +86,15 @@ def fleet(request):
     page = Paginator(organizations, PAGE_SIZE).get_page(request.GET.get("page"))
     state, error = _fleet_rows(page.object_list)
     unpaid = _unpaid_by_org([org.id for org in page.object_list])
+    # ПОТОЛОК БЕРЁТСЯ ОТТУДА, ГДЕ ОН ПРИНУЖДАЕТСЯ, а не из витринного `Plan`.
+    # Эти два числа обязаны сходиться, но теперь тариф правится на сервере без
+    # выката — и первая же правка сделала бы КАЖДОГО клиента «сверх лимита» на
+    # экране, оставаясь совершенно правильной на деле. Экран тарифов существует
+    # ровно чтобы такое расхождение показать; флот показывать его не должен.
+    try:
+        limits = {row["code"]: row["max_instances"] for row in licensing.plans()}
+    except licensing.LicensingError:
+        limits = {}
 
     rows = []
     for organization in page.object_list:
@@ -94,7 +106,9 @@ def fleet(request):
             "subscription": subscription,
             "plan": subscription.plan if subscription else None,
             "instances": len(licence.get("instances", []) or []),
-            "allowed": subscription.plan.max_instances if subscription else 0,
+            "allowed": (limits.get(subscription.plan.code,
+                                   subscription.plan.max_instances)
+                        if subscription else 0),
             "requests": int(usage.get("requests", 0) or 0),
             "billable": int(usage.get("capacity_billable", 0) or 0),
             # Красный флаг. Он и есть причина, по которой экран существует:
@@ -278,3 +292,141 @@ def edit_plan(request, code: str):
                               f"{', '.join(f'{k}={v}' for k, v in values.items())}. "
                               f"Автор записан как {plan.get('updated_by', '')}.")
     return redirect("ops_plans")
+
+
+def _period_totals(usage: dict, invoice) -> tuple[int, str]:
+    """Сколько мы выставляем ЗА ПЕРИОД, и как именно это число получено.
+
+    СВЕРЯЮТ КОНКРЕТНЫЙ СЧЁТ, А НЕ «ТО, ЧТО НАКАПАЛО ПОСЛЕ НЕГО». Спор начинается
+    со счёта в руках, поэтому число обязано быть тем самым, что на нём напечатано:
+    `Invoice.requests_billable_in_period` записан при выставлении и переживает
+    любые последующие отчёты.
+
+    Здесь стояло «накопленное минус ватермарка последнего счёта», то есть объём
+    ЕЩЁ НЕ ВЫСТАВЛЕННОГО периода, — и подписано это было именем того самого
+    счёта. Клиент, пришедший спорить про INV-N, получал бы разницу с чужим
+    числом и тем большую, чем дольше он работает после выставления.
+
+    Счёта нет — сверять можно только текущий незакрытый период, и тогда это
+    сказано прямо, а не подразумевается.
+    """
+    if invoice is not None:
+        return max(0, int(invoice.requests_billable_in_period or 0)), (
+            f"со счёта {invoice.number} за "
+            f"{invoice.period_start:%d.%m.%Y}—{invoice.period_end:%d.%m.%Y}")
+    total = int(usage.get("capacity_billable", 0) or 0)
+    return total, ("счетов ещё не было — сверяется ТЕКУЩИЙ незакрытый период, "
+                   f"накопленный с первого отчёта установки: {total}")
+
+
+@staff_member_required
+def reconcile(request, org_id: str):
+    """Свести наш счёт с числом из лога шлюза клиента.
+
+    ОБЕЩАНИЕ `docs/billing-integrity.md` НАКОНЕЦ ИСПОЛНИМО РУКАМИ. Единица
+    тарификации — запрос именно потому, что «запрос виден в логе шлюза самого
+    клиента», и спор о деньгах должен превращаться в сравнение двух независимых
+    источников. Сравнивать до сих пор было нечем.
+
+    ЧИСЛО, А НЕ ФАЙЛ. Форма принимает одно число, а не лог: в логе шлюза лежат
+    тела запросов, то есть персональные данные, и принимать их сюда значило бы
+    сломать ровно ту границу, ради которой продукт существует.
+    """
+    organization = (Organization.objects
+                    .select_related("subscription__plan")
+                    .filter(pk=org_id).first())
+    if organization is None:
+        messages.error(request, f"Организации {org_id} нет.")
+        return redirect("ops_fleet")
+
+    usage, history, plan_row, error = {}, [], {}, ""
+    subscription = getattr(organization, "subscription", None)
+    try:
+        usage = licensing.usage(organization.id).get("usage", {}) or {}
+        history = licensing.chains(organization.id).get("history", []) or []
+        if subscription:
+            plan_row = next((row for row in licensing.plans()
+                             if row["code"] == subscription.plan.code), {})
+    except licensing.LicensingError as caught:
+        error = str(caught)
+
+    # Сверяется НАЗВАННЫЙ счёт, а по умолчанию — последний выставленный: с ним
+    # и приходят спорить.
+    invoices = list(organization.invoices.exclude(state=Invoice.VOID)
+                    .order_by("-period_end", "-id")[:24])
+    wanted = request.GET.get("invoice", "").strip()
+    invoice = next((item for item in invoices if item.number == wanted),
+                   invoices[0] if invoices else None)
+    ours, ours_explained = _period_totals(usage, invoice)
+    quantum_max = int(plan_row.get("quantum_max", 0) or 0)
+    reserve_max = int(plan_row.get("reserve_max", 0) or 0)
+
+    result, theirs_raw = None, request.GET.get("theirs", "").strip()
+    if theirs_raw and not error:
+        try:
+            theirs = int(theirs_raw.replace(" ", "").replace(" ", ""))
+        except ValueError:
+            messages.error(request, f"«{theirs_raw}»: нужно целое число запросов.")
+            return redirect("ops_reconcile", org_id=org_id)
+        result = billing_reconcile.reconcile(
+            ours=ours, theirs=theirs,
+            quantum_max=quantum_max, reserve_max=reserve_max,
+            # Полоса складывается ПО ПРОЦЕССАМ: леджер ёмкости ключуется на ключ
+            # процесса, и `billable` зажимает каждый отдельно, а потом сложит.
+            processes=int(usage.get("capacity_processes", 0) or 0),
+            reports_missing=int(usage.get("reports_missing", 0) or 0),
+            chain_breaks=int(usage.get("chain_breaks", 0) or 0),
+            unverified_reports=int(usage.get("unverified_reports", 0) or 0),
+            unacked_quanta=int(usage.get("capacity_unacked_quanta", 0) or 0),
+        )
+
+    return render(request, "ops/reconcile.html", {
+        "organization": organization, "subscription": subscription,
+        "ours": ours, "ours_explained": ours_explained,
+        "theirs_raw": theirs_raw, "result": result, "error": error,
+        "plan_row": plan_row,
+        "band": billing_reconcile.band_width(
+            quantum_max, reserve_max, int(usage.get("capacity_processes", 0) or 0)),
+        "processes": int(usage.get("capacity_processes", 0) or 0),
+        "invoices": invoices, "invoice": invoice,
+        "not_billable": billing_reconcile.NOT_BILLABLE,
+        "rows": billing_reconcile.daily_rows(history),
+    })
+
+
+@staff_member_required
+def usage_csv(request, org_id: str):
+    """Посуточный ряд НАШИХ чисел — файлом, чтобы клиент разложил его по своим.
+
+    Выгрузка, а не загрузка: наружу уходят только счётчики, внутрь не приходит
+    ничего. Одно число в форме сверки годится для итога за период, но найти, В
+    КАКИЕ СУТКИ разошлось, можно только рядом — ради этого `usage_daily` и
+    заведён.
+    """
+    organization = Organization.objects.filter(pk=org_id).first()
+    if organization is None:
+        raise Http404("организация не найдена")
+    try:
+        history = licensing.chains(organization.id).get("history", []) or []
+    except licensing.LicensingError as error:
+        messages.error(request, f"Лицензионный сервер не отвечает: {error}")
+        return redirect("ops_reconcile", org_id=org_id)
+
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    # Имя файла из ИДЕНТИФИКАТОРА, а не из названия организации: название —
+    # свободная строка, а она уехала бы в заголовок ответа.
+    safe = "".join(char for char in organization.id if char.isalnum() or char in "-_")
+    response["Content-Disposition"] = f'attachment; filename="pseudex-{safe}-usage.csv"'
+    writer = csv.writer(response)
+    # `day_utc`, А НЕ `day`. Срез режется по UTC (`time.gmtime` на стороне
+    # лицензионного сервера), а витрина рисует в Europe/Moscow: без пометки
+    # вечерний московский трафик молча ложится в предыдущую строку, и клиент,
+    # раскладывающий выгрузку по СВОИМ суткам, ищет расхождение там, где его нет.
+    # Резать по клиентскому поясу нельзя — сервер его не знает и знать не должен;
+    # значит остаётся назвать пояс честно.
+    writer.writerow(["day_utc", "requests_total", "requests_delta",
+                     "values_total", "reports", "instances"])
+    for row in billing_reconcile.daily_rows(history):
+        writer.writerow([row["day"], row["requests_total"], row["requests_delta"],
+                         row["values_total"], row["reports"], row["instances"]])
+    return response
