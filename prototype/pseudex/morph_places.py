@@ -1077,6 +1077,19 @@ def _leading_settlement(phrase: str) -> re.Match[str] | None:
     parses = MORPH.parse(word)
     if not any("Geox" in parse.tag.grammemes for parse in parses):
         return None
+    # A TYPE WORD RIGHT AFTER IT SETTLES THE ROLE: «глазов проспект
+    # маяковского» — Глазов is a surname too, but a person is never followed
+    # by «проспект <name>», a town is. Without this the substitute was
+    # minted without the city the customer named.
+    rest = phrase[match.end():].lstrip().split()
+    following = rest[0].lower().strip(".,") if rest else ""
+    after_type = rest[1].strip(".,") if len(rest) > 1 else ""
+    if (following and (following in _GENERIC or _GENERIC_STEMS.match(following))
+            and after_type and not after_type[:1].isdigit() and not spoken.is_numeral_word(after_type)):
+        # …and the type word is followed by the STREET'S NAME, not a number:
+        # «пушкина улица 5» is a street written name-first, «глазов проспект
+        # маяковского» is a town before a street.
+        return match
     if any("Surn" in parse.tag.grammemes or parse.tag.POS == "ADJF" for parse in parses):
         return None
     return match
