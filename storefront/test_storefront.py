@@ -678,6 +678,191 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     check("one organisation cannot open another's invoice",
           leaked.status_code == 404, f"status={leaked.status_code}")
 
+    _check_ops_console(client, admin_url, public_url, org, raw_key)
+
+
+def _check_ops_console(client, admin_url: str, public_url: str,
+                       org, raw_key: str) -> None:
+    """Операторская консоль: все клиенты, один клиент, цепи, тарифы.
+
+    ПЕРВЫЙ СОТРУДНИК В ЭТИХ ТЕСТАХ. До сих пор `create_user` заводил только
+    клиентов — `is_staff` по умолчанию `False`, — поэтому доступ к консоли не с
+    чем было сравнивать: проверка «клиент не войдёт» без проверки «сотрудник
+    войдёт» проходит и на сломанной странице.
+    """
+    from unittest import mock
+
+    from django.conf import settings
+    from django.test import Client as _FreshClient
+
+    from accounts.models import User
+    from billing import licensing
+    from billing.models import Plan
+
+    base = f"/{settings.ADMIN_PATH}/ops/"
+    screens = (base, f"{base}chains/", f"{base}plans/", f"{base}{org.id}/")
+
+    # ЗАКРЫТО ДЛЯ КЛИЕНТА И ДЛЯ АНОНИМА. `client` вошёл как покупатель ещё выше и
+    # остаётся им — это и есть нужный случай: обычный клиент витрины не должен
+    # видеть ни своих соседей, ни их счётчиков.
+    customer_saw = [path for path in screens if client.get(path).status_code == 200]
+    check("консоль закрыта для обычного клиента", not customer_saw,
+          f"открылось={customer_saw or 'ничего'}")
+    anonymous = _FreshClient()
+    anonymous_saw = [path for path in screens if anonymous.get(path).status_code == 200]
+    check("консоль закрыта для анонима", not anonymous_saw,
+          f"открылось={anonymous_saw or 'ничего'}")
+
+    staff_client = _FreshClient()
+    staff = User.objects.create_user(email="ops@pseudex.ru", is_staff=True)
+    staff_client.force_login(staff)
+
+    rendered = {path: staff_client.get(path) for path in screens}
+    broken = [f"{path}={response.status_code}"
+              for path, response in rendered.items() if response.status_code != 200]
+    check("сотрудник открывает все четыре экрана", not broken,
+          f"не открылось={broken or 'ничего'}")
+
+    fleet_body = rendered[base].content.decode()
+    check("флот показывает организацию и её тариф",
+          org.id in fleet_body and org.subscription.plan.title in fleet_body,
+          f"org={org.id in fleet_body} plan={org.subscription.plan.title in fleet_body}")
+
+    # ДВА ПОЛЯ С ОДНИМ ИМЕНЕМ `instances`, И ЭТО ЛОВУШКА.
+    #
+    # У `/admin/usage` это СЫРЫЕ СТРОКИ АРЕНД — по строке на каждую выдачу,
+    # вместе с освобождёнными, с потолком в сотню. Их количество не считает
+    # контейнеры: у клиента с одним контейнером колонка «занято по тарифу»
+    # показала бы «100 / 1» через сутки работы. У `/admin/fleet` и
+    # `/admin/instances` это ДЕРЖАЩИЕ СЛОТ, сгруппированные по `instance_id`, и
+    # только у них есть `state` и `last_lease`, которые рисует экран клиента.
+    # НАСТОЯЩАЯ АРЕНДА, иначе оба списка пусты и обе проверки ниже проходят
+    # впустую: `all(...)` по пустому списку истинно, то есть проверка,
+    # неспособная упасть. Ключ процесса генерируется в venv движка — витрина
+    # такой зависимости не имеет и иметь не должна.
+    process_key = subprocess.run(
+        [str(_PROTOTYPE / ".venv/bin/python"), "-c",
+         "from pseudex.bundle import generate_process_key; "
+         "print(generate_process_key().public)"],
+        cwd=str(_PROTOTYPE), capture_output=True, text=True).stdout.strip()
+    leased = httpx.post(f"{public_url}/v1/lease", timeout=10,
+                        json={"key": raw_key, "instance_id": "ops-console-probe",
+                              "process_id": "p1", "pubkey": process_key,
+                              "engine_version": "1.0.0"})
+    check("стенд смог взять настоящую аренду для проверки формы ответов",
+          leased.status_code == 200, f"код={leased.status_code} {leased.text[:120]}")
+
+    fleet_rows = httpx.get(f"{admin_url}/admin/fleet",
+                           params={"org_ids": org.id}, timeout=5,
+                           headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}).json()["orgs"]
+    fleet_slots = fleet_rows[0]["instances"]
+    raw_leases = httpx.get(f"{admin_url}/admin/usage", params={"org_id": org.id},
+                           timeout=5,
+                           headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}
+                           ).json()["instances"]
+    check("флот считает контейнеры, а не строки аренд",
+          bool(fleet_slots) and all("state" in slot for slot in fleet_slots),
+          f"поля={sorted(fleet_slots[0]) if fleet_slots else 'СЛОТОВ НЕТ — проверка пуста'}")
+    check("а сырые строки аренд остались там, где и были",
+          bool(raw_leases) and all("state" not in row for row in raw_leases),
+          f"поля={sorted(raw_leases[0]) if raw_leases else 'АРЕНД НЕТ — проверка пуста'}")
+
+    # НИ ОДНОГО ЗНАЧЕНИЯ ИЗ ТРАФИКА. Та же граница, что у кабинета
+    # (`docs/tz-site.md` §1): витрина не имеет права нарисовать экран, где виден
+    # диалог, сообщение, токен или значение. Консоль показывает счётчики и
+    # идентификаторы — и полный ключ тоже никогда, у неё его и нет.
+    leaked_key = [path for path, response in rendered.items()
+                  if "ps_live_" in response.content.decode()]
+    check("консоль не рисует ни одного полного ключа", not leaked_key,
+          f"утекло на={leaked_key or 'нигде'}")
+
+    # Страницы бэк-офиса не кэшируются. Заголовок ставит middleware, и он берёт
+    # префикс из настройки: раньше там стоял литерал `/admin/`, поэтому
+    # перенесённая админка молча оставалась без `no-store`.
+    uncached = [path for path, response in rendered.items()
+                if "no-store" not in response.headers.get("Cache-Control", "")]
+    check("страницы консоли не кэшируются", not uncached,
+          f"без no-store={uncached or 'нигде'}")
+
+    # ...И ЗАГОЛОВОК ДЕРЖИТСЯ НА НАСТРОЙКЕ, А НЕ НА ЛИТЕРАЛЕ `/admin/`.
+    #
+    # Этот прогон идёт с путём по умолчанию, поэтому подмена литерала настройкой
+    # в нём не видна вообще — а именно ею и был дефект: `PSEUDEX_ADMIN_PATH`
+    # существует, чтобы админку можно было перенести, и перенесённая переставала
+    # получать `no-store`. То есть настройка, которую включают ради
+    # безопасности, тихо снимала заголовок со всего бэк-офиса. Проверяется
+    # вызовом middleware напрямую: маршруты собраны на импорте и переезжать по
+    # ходу теста не умеют.
+    from django.http import HttpResponse
+    from storefront_web.middleware import SecurityHeadersMiddleware
+
+    def _header_for(path: str, admin_path: str) -> str:
+        with mock.patch.object(settings, "ADMIN_PATH", admin_path):
+            request = _FreshClient().request(PATH_INFO=path).wsgi_request
+            middleware = SecurityHeadersMiddleware(lambda _request: HttpResponse("ok"))
+            return middleware(request).headers.get("Cache-Control", "")
+
+    check("перенесённая админка не теряет no-store",
+          "no-store" in _header_for("/g7x2q/anything", "g7x2q"),
+          f"заголовок={_header_for('/g7x2q/anything', 'g7x2q')!r}")
+    check("посторонний путь заголовка не получает",
+          "no-store" not in _header_for("/landing", "g7x2q"),
+          "иначе проверка выше проходила бы на чём угодно")
+
+    # ПРАВКА ТАРИФА ДОЕЗЖАЕТ ДО СЕРВЕРА И НАЗЫВАЕТ АВТОРА.
+    edited = staff_client.post(f"{base}plans/start/", {"max_instances": "3"},
+                               follow=True)
+    remote = {row["code"]: row for row in
+              httpx.get(f"{admin_url}/admin/plans", timeout=5,
+                        headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}
+                        ).json()["plans"]}
+    check("правка тарифа из консоли доезжает до лицензионного сервера",
+          edited.status_code == 200 and remote["start"]["max_instances"] == 3,
+          f"на сервере={remote['start']['max_instances']}")
+    check("автор правки записан почтой сотрудника",
+          remote["start"]["updated_by"] == "ops@pseudex.ru"
+          and remote["start"]["source"] == "edited",
+          f"автор={remote['start']['updated_by']!r} источник={remote['start']['source']}")
+
+    # Мусор в форме — сообщение, а не пятисотка и не тихое ничего.
+    junk = staff_client.post(f"{base}plans/start/", {"max_instances": "много"},
+                             follow=True)
+    check("мусор в форме тарифа не роняет страницу",
+          junk.status_code == 200 and "нужно целое число" in junk.content.decode(),
+          f"код={junk.status_code}")
+
+    # РАСХОЖДЕНИЕ ДВУХ ИСТОЧНИКОВ ВИДНО ГЛАЗОМ. Мы только что подвинули потолок на
+    # сервере до 3, а витрина продаёт 1 — экран обязан это показать, иначе он не
+    # нужен: расхождение и так уже ловит красный тест, ценность консоли в том,
+    # что человек видит его до того, как оно станет отказом клиенту.
+    plans_body = staff_client.get(f"{base}plans/").content.decode()
+    plan_start = Plan.objects.get(code="start")
+    check("консоль показывает расхождение витрины и сервера",
+          plan_start.max_instances != 3 and "pill bad" in plans_body,
+          f"витрина={plan_start.max_instances} сервер=3")
+
+    # И ГЛАВНОЕ: КОНСОЛЬ ОТКРЫВАЕТСЯ, КОГДА ЛИЦЕНЗИОННЫЙ СЕРВЕР ЛЕЖИТ. Это ровно
+    # та минута, ради которой её открывают, и пятисотка здесь — худшее из
+    # возможных поведений.
+    #
+    # `raise_request_exception=False` ОБЯЗАТЕЛЕН, и не ради удобства. Под
+    # `DEBUG=1` тестовый клиент пробрасывает исключение вью наружу вместо того,
+    # чтобы вернуть 500, — то есть регрессия здесь роняла бы весь прогон
+    # трейсбеком вместо строки «упало=/admin/ops/=500». Проверено снятием
+    # `except` во вью: набор падал, но не говорил, что именно сломалось.
+    down_client = _FreshClient(raise_request_exception=False)
+    down_client.force_login(staff)
+    with mock.patch("billing.licensing._get",
+                    side_effect=licensing.LicensingError("сервер не отвечает")):
+        down = {path: down_client.get(path) for path in screens}
+    fell = [f"{path}={response.status_code}"
+            for path, response in down.items() if response.status_code != 200]
+    check("консоль открывается при лежащем лицензионном сервере", not fell,
+          f"упало={fell or 'ничего'}")
+    check("и честно говорит, что цифр сейчас нет",
+          "не отвечает" in down[base].content.decode(),
+          "плашка вместо молча пустых колонок")
+
 
 if __name__ == "__main__":
     sys.exit(main())

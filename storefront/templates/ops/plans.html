@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Тарифы — операции pseudex{% endblock %}
+{% block nav %}
+<nav>
+  <a href="{% url 'ops_fleet' %}">ФЛОТ</a>
+  <a href="{% url 'ops_chains' %}">ЦЕПИ</a>
+  <a href="{% url 'ops_plans' %}">ТАРИФЫ</a>
+</nav>
+{% endblock %}
+{% block content %}
+<section>
+  <div class="sec-head">
+    <div>
+      <h2>Тарифы</h2>
+      <div class="sec-meta" style="margin-top:8px">слева витрина · справа лицензионный сервер</div>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="msg error">Лицензионный сервер не отвечает — что он думает о тарифах,
+    сейчас неизвестно, и править их нельзя. Продажные тарифы ниже наши и верны.
+    <div class="mono" style="margin-top:10px;font-size:12px;color:var(--dim-2)">{{ error }}</div></div>
+  {% endif %}
+
+  <p style="color:var(--dim-2);font-size:14px;line-height:1.65;max-width:760px">
+  Числа продажи живут у нас, числа принуждения — на лицензионном сервере, и они
+  обязаны сходиться. Потолок инстансов — единственное, что обе стороны называют
+  одним и тем же именем, поэтому расхождение видно именно по нему. Правка уходит
+  на сервер сразу и без выката: там это строка, а не константа. Константа в коде
+  осталась сидом для чистой базы, поэтому <b style="color:var(--text)">поправить её
+  и выкатить релиз работающий тариф больше не изменит</b> — источник
+  <span class="mono">edited</span> в таблице ниже и означает, что здесь правили руками.</p>
+
+  <table class="list" style="margin-top:24px">
+    <tr>
+      <th>ТАРИФ</th><th>ЦЕНА</th><th>КОНТЕЙНЕРОВ<br>ВИТРИНА</th><th>КОНТЕЙНЕРОВ<br>СЕРВЕР</th>
+      <th>ПРОЦЕССОВ</th><th>ГРАНТ</th><th>КВАНТ</th><th>РЕЗЕРВ</th><th>ИСТОЧНИК</th>
+    </tr>
+    {% for row in rows %}
+    <tr>
+      <td>{{ row.plan.title }}<div class="mono" style="font-size:11.5px;color:var(--dim-3)">{{ row.plan.code }}</div></td>
+      <td class="mono">{{ row.plan.monthly_price|floatformat:0 }} ₽</td>
+      <td class="mono">{{ row.plan.max_instances }}</td>
+      {% if row.known %}
+        <td class="mono">{% if row.diverged %}<span class="pill bad">{{ row.remote.max_instances }}</span>{% else %}{{ row.remote.max_instances }}{% endif %}</td>
+        <td class="mono">{{ row.remote.processes_per_instance }}</td>
+        <td class="mono">{{ row.remote.grant_size }}</td>
+        <td class="mono">{{ row.remote.quantum_min }}–{{ row.remote.quantum_max }}</td>
+        <td class="mono">{{ row.remote.reserve_max }}</td>
+        <td>
+          {% if row.remote.source == 'edited' %}<span class="pill warn">ПРАВЛЕН</span>
+          <div class="mono" style="font-size:11px;color:var(--dim-3);margin-top:4px">{{ row.remote.updated_by }}</div>
+          {% else %}<span class="pill">ПОСЕЯН</span>{% endif %}
+        </td>
+      {% else %}
+        <td colspan="6"><span class="pill bad">СЕРВЕР НЕ ЗНАЕТ ЭТОТ ТАРИФ</span>
+        <div style="font-size:12.5px;color:var(--dim-2);margin-top:6px">Клиент на нём не получит ключ вовсе: выпуск отвечает 400 на незнакомый тариф.</div></td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+
+  {% if orphans %}
+  <div class="msg error" style="margin-top:24px">На лицензионном сервере есть тарифы,
+  которых нет в продаже: {% for row in orphans %}<span class="mono">{{ row.code }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}.
+  Это не ломает клиентов, но означает, что кто-то завёл тариф мимо витрины.</div>
+  {% endif %}
+
+  <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Поправить</h3>
+  <p style="color:var(--dim-2);font-size:13.5px;line-height:1.6;max-width:760px">Пустое
+  поле — не трогать. Правка записывается вместе с вашей почтой: без имени автора
+  запись о правке не отличалась бы от посева.</p>
+
+  {% for row in rows %}
+  {% if row.known %}
+  <form method="post" action="{% url 'ops_edit_plan' row.plan.code %}"
+        style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">
+    {% csrf_token %}
+    <span class="mono" style="min-width:110px;color:var(--text-2)">{{ row.plan.code }}</span>
+    {% for field in fields %}
+      <input class="field" type="number" min="1" name="{{ field }}"
+             placeholder="{{ field }}" style="width:150px" aria-label="{{ field }}">
+    {% endfor %}
+    <button class="btn accent" type="submit">ПРИМЕНИТЬ</button>
+  </form>
+  {% endif %}
+  {% endfor %}
+</section>
+{% endblock %}

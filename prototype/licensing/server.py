@@ -960,6 +960,14 @@ async def admin_fleet(request: Request) -> JSONResponse:
 
     Экран «все клиенты» строится из СВОЕГО списка организаций (витрина их и
     создала) плюс один такой запрос, а не из каталога лицензионного сервера.
+
+    ИНСТАНСЫ ЗДЕСЬ — ДЕРЖАЩИЕ СЛОТ, а не строки аренд, и это НЕ то же самое, что
+    отдаёт `/admin/usage`. Там `STORE.instances` — сырые строки таблицы аренд,
+    по строке на КАЖДУЮ выдачу, вместе с освобождёнными и с `LIMIT 100`: их
+    количество не считает контейнеры, оно упирается в сотню за сутки работы. На
+    экране флота колонка называется «занято по тарифу», поэтому здесь берётся
+    ровно то, чем этот потолок и принуждается, — `active_instances`, как в
+    `/admin/instances`.
     """
     raw = request.query_params.get("org_ids", "")
     org_ids = [part.strip() for part in raw.split(",") if part.strip()]
@@ -977,7 +985,7 @@ async def admin_fleet(request: Request) -> JSONResponse:
             continue
         seen[org_id] = {"org_id": org_id,
                         "usage": STORE.usage_totals(org_id),
-                        "instances": STORE.instances(org_id)}
+                        "instances": STORE.active_instances(org_id, _TTL_SECONDS)}
     return JSONResponse({"orgs": list(seen.values()),
                          "window_seconds": _TTL_SECONDS})
 

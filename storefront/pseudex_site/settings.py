@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     "accounts",
     "billing",
     "storefront_web",
+    "ops",
 ]
 
 MIDDLEWARE = [

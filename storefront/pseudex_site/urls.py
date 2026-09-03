@@ -51,5 +51,9 @@ urlpatterns = [
     # the form on the landing, which issues the key.
     path("accounts/signup/", RedirectView.as_view(url="/#start", permanent=False)),
     path("accounts/", include("allauth.urls")),
+    # ОПЕРАТОРСКАЯ КОНСОЛЬ — СОСЕД АДМИНКИ, а не отдельный угадываемый путь.
+    # Она показывает всех клиентов разом, поэтому обязана наследовать то же
+    # свойство: путь настраивается, и на угадывании его не найти.
+    path(f"{settings.ADMIN_PATH}/ops/", include("ops.urls")),
     path(f"{settings.ADMIN_PATH}/", admin.site.urls),
 ]
