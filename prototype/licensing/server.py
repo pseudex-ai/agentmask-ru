@@ -216,6 +216,22 @@ ADMIN_ACTIONS: tuple[AdminAction, ...] = (
     AdminAction("/admin/release", "POST", True),
     AdminAction("/admin/instances", "GET", True),
     AdminAction("/admin/usage", "GET", True),
+    # ЧТЕНИЕ И ПРАВКА ПРАЙС-ЛИСТА — ВИТРИНЕ, и решение стоит записать, раз
+    # аудитория обязана быть решена. Белый список защищает КАТАЛОГ АБОНЕНТОВ, а
+    # не цены: держатель витринного токена уже умеет выпускать, отзывать,
+    # приостанавливать и возобновлять ключи ЛЮБОЙ организации, и строка прайса
+    # слабее любого из этих рычагов. Запрет не купил бы ничего и создал бы ровно
+    # тот класс расхождения, которым этот файл уже дважды заплатил.
+    AdminAction("/admin/plans", "GET", True),
+    AdminAction("/admin/plans", "POST", True),
+    # ПАКЕТ ПО НАЗВАННЫМ ИДЕНТИФИКАТОРАМ — НЕ ПЕРЕЧИСЛЕНИЕ. Витрина сама создала
+    # все организации и знает их список; перечислять ей незачем, ей нужно быстро
+    # спросить про тех, кого она уже назвала. Поэтому ручка не отдаёт ничего, что
+    # вызывающий не мог бы получить, позвав `/admin/usage` по одному, — она лишь
+    # схлопывает N обращений в одно, и свойство «ни одна не массовая» цело.
+    AdminAction("/admin/fleet", "GET", True),
+    # Детализация за суммой `chain_breaks`, по ОДНОЙ организации.
+    AdminAction("/admin/chains", "GET", True),
     # Каталог абонентов. Единственная ручка, которой у витрины быть не должно.
     AdminAction("/admin/list", "GET", False),
 )
@@ -342,6 +358,12 @@ class ReportRejected(ValueError):
 
 # Потолки. Не «на всякий случай»: `prev`, `signature` и `build` уходят в
 # `process_reports` как есть, а `entities` — в JSON внутри строки `usage`.
+# Потолок на пакетный запрос флота. Каждый идентификатор — два прохода по
+# счётчикам, а строка запроса приходит снаружи: без границы один URL превращается
+# в сколь угодно долгую работу под локом store, то есть в остановку выдачи аренд
+# всем остальным. Двести покрывает экран любого разумного размера с запасом, а
+# витрина всё равно листает свой собственный список.
+_MAX_FLEET_ORGS = 200
 _MAX_COUNTER = 2 ** 53
 _MAX_ENTITY_TYPES = 200
 _MAX_ENTITY_KEY = 64
@@ -862,6 +884,118 @@ async def admin_unpaid(body: Annotated[dict, Depends(json_object)]) -> JSONRespo
 @admin_app.post("/admin/resume")
 async def admin_resume(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     return await _set_status(body, STATUS_ACTIVE)
+
+
+@admin_app.get("/admin/plans")
+async def admin_plans() -> JSONResponse:
+    """Тарифы как они есть НА САМОМ ДЕЛЕ — строки, не константы в коде.
+
+    `source` отличает посеянное от правленного руками, и это не украшение: сид
+    идёт `INSERT OR IGNORE`, поэтому поправить константу и выкатить релиз больше
+    НЕ меняет работающий тариф. Единственный способ увидеть это снаружи — вот
+    это поле.
+    """
+    return JSONResponse({"plans": STORE.plans()})
+
+
+@admin_app.post("/admin/plans")
+async def admin_set_plan(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
+    """Создать или поправить тариф.
+
+    `actor` обязателен по той же причине, по которой он обязателен у `/reveal`:
+    запись без того, кто её сделал, — не запись. Она и отличает `edited` от
+    `seed`, так что пустой `actor` сделал бы правку неотличимой от посева.
+
+    Числа проверяются на неотрицательность и на потолок, потому что тело сюда
+    приходит из интерфейса: `max_instances` со знаком минус превратил бы
+    `instances_allowed` в отказ всем контейнерам организации, а нулевой
+    `quantum_max` — в процесс, которому никогда не выдадут ёмкость.
+    """
+    code = str(body.get("code", "")).strip()
+    if not code:
+        return JSONResponse({"error": "code required"}, status_code=400)
+    actor = str(body.get("actor", "")).strip()
+    if not actor:
+        return JSONResponse({"error": "actor required"}, status_code=400)
+
+    values: dict[str, object] = {}
+    for field in STORE._PLAN_FIELDS:
+        if field not in body:
+            continue
+        try:
+            number = int(body[field])
+        except (TypeError, ValueError):
+            return JSONResponse({"error": f"{field} must be a whole number"},
+                                status_code=400)
+        # Верхняя граница есть у каждого поля по одной причине: число из тела
+        # уезжает в арифметику ёмкости, а `int` в Python не переполняется — он
+        # просто становится очень большим, и `granted` вместе с ним.
+        if number < 1 or number > 10_000_000:
+            return JSONResponse(
+                {"error": f"{field} must be between 1 and 10000000", "got": number},
+                status_code=400)
+        values[field] = number
+    if not values:
+        return JSONResponse({"error": "nothing to change",
+                             "fields": list(STORE._PLAN_FIELDS)}, status_code=400)
+    try:
+        # Согласованность строки — забота store, а не этой ручки: тариф правит и
+        # интерфейс, и однажды CLI, и запись, оставляющая пол выше потолка, не
+        # должна зависеть от того, кто её позвал.
+        row = STORE.set_plan(code, values, actor)
+    except ValueError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    _log.info("plan %s changed by %s: %s", code, actor, values)
+    return JSONResponse({"plan": row})
+
+
+@admin_app.get("/admin/fleet")
+async def admin_fleet(request: Request) -> JSONResponse:
+    """Счётчики и инстансы СРАЗУ ПО НЕСКОЛЬКИМ названным организациям.
+
+    Ровно то же, что `/admin/usage` отдаёт по одной, — и намеренно ничего сверх.
+    Вызывающий обязан назвать идентификаторы, поэтому ручка не перечисляет
+    абонентов и не становится вторым `/admin/list`: она экономит round-trip, а не
+    расширяет права.
+
+    Экран «все клиенты» строится из СВОЕГО списка организаций (витрина их и
+    создала) плюс один такой запрос, а не из каталога лицензионного сервера.
+    """
+    raw = request.query_params.get("org_ids", "")
+    org_ids = [part.strip() for part in raw.split(",") if part.strip()]
+    if not org_ids:
+        return JSONResponse({"error": "org_ids required"}, status_code=400)
+    if len(org_ids) > _MAX_FLEET_ORGS:
+        return JSONResponse(
+            {"error": "too many org_ids", "limit": _MAX_FLEET_ORGS,
+             "got": len(org_ids)}, status_code=400)
+    # Порядок и дубликаты — вызывающего: повтор идентификатора не должен стоить
+    # двух проходов по счётчикам.
+    seen: dict[str, dict[str, object]] = {}
+    for org_id in org_ids:
+        if org_id in seen:
+            continue
+        seen[org_id] = {"org_id": org_id,
+                        "usage": STORE.usage_totals(org_id),
+                        "instances": STORE.instances(org_id)}
+    return JSONResponse({"orgs": list(seen.values()),
+                         "window_seconds": _TTL_SECONDS})
+
+
+@admin_app.get("/admin/chains")
+async def admin_chains(request: Request) -> JSONResponse:
+    """Цепь отчётов по каждому процессу ОДНОЙ организации.
+
+    `/admin/usage` отдаёт `chain_breaks` суммой по организации — по ней видно,
+    что что-то не так, и совершенно нечего делать дальше. Здесь видно, КАКОЙ
+    процесс, на каком месте цепи и когда его слышали в последний раз.
+    """
+    org_id = request.query_params.get("org_id", "")
+    if not org_id:
+        return JSONResponse({"error": "org_id required"}, status_code=400)
+    detail = STORE.chain_detail(org_id)
+    return JSONResponse({"org_id": org_id, "history": STORE.usage_history(org_id),
+                         **detail})
 
 
 @admin_app.get("/admin/list")

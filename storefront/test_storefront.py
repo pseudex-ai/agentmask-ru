@@ -517,10 +517,14 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     # на лицензионном сервере активную запись, не привязанную ни к какому
     # кабинету: она лизует вечно и не видна ни в одной сверке.
     def keys_on_server() -> int:
+        # СЧИТАЮТСЯ КЛЮЧИ, А НЕ СТРОКИ КАТАЛОГА. `/admin/list` отдаёт одну
+        # строку на ОРГАНИЗАЦИЮ (раньше — на каждый ключ), поэтому сумма по
+        # строкам стала бы сравнением единицы с единицей: проверка перестала бы
+        # уметь падать, оставаясь зелёной. Число живых ключей организация теперь
+        # называет сама.
         rows = httpx.get(f"{admin_url}/admin/list", timeout=5,
                          headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}).json()["orgs"]
-        return sum(1 for row in rows if row["org_id"] == org.id
-                   and row["status"] != "revoked")
+        return sum(int(row["active_keys"]) for row in rows if row["org_id"] == org.id)
 
     allowed = org.subscription.plan.max_keys
     while org.keys.filter(revoked_at__isnull=True).count() < allowed:
@@ -615,13 +619,19 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     # two places: the storefront's plans and the licensing server's own table.
     # They must agree, or a customer buys four instances and is refused the
     # second — or buys one and runs twelve.
-    import subprocess, json as _json
-    proto = str(_HERE.parent / "prototype")
-    limits = _json.loads(subprocess.run(
-        [proto + "/.venv/bin/python", "-c",
-         "import json; from licensing.store import LicenseStore as S; "
-         "print(json.dumps(S.PLAN_INSTANCES))"],
-        cwd=proto, capture_output=True, text=True).stdout or "{}")
+    # ЧЕРЕЗ РУЧКУ, А НЕ ЧЕРЕЗ SUBPROCESS В ЧУЖОЙ VENV. Здесь стояло `python -c
+    # "print(S.PLAN_INSTANCES)"` в интерпретаторе движка — сверка АТРИБУТА
+    # КЛАССА, а не того, по чему сервер на самом деле принимает решения. Тариф
+    # теперь строка в его базе, и константа осталась только сидом: правка,
+    # сделанная оператором, не изменила бы прочитанный так словарь ни на йоту, и
+    # сверка продолжала бы говорить «сходится» про числа, которых больше нет.
+    #
+    # Заодно уходит хрупкость: путь `../prototype/.venv/bin/python` был зашит, и
+    # его отсутствие давало пустой stdout, то есть `{}` — сверку, которая
+    # проходит, ничего не сверив.
+    plans = httpx.get(f"{admin_url}/admin/plans", timeout=5,
+                      headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}).json()["plans"]
+    limits = {row["code"]: row["max_instances"] for row in plans}
     from billing.models import Plan as PlanModel
     shop_plans = list(PlanModel.objects.all())
     mismatched = [
