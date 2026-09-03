@@ -162,7 +162,14 @@ def _restore_cued_numbers(text: str, vault: Vault) -> str:
     # «Кинешму, ул. Озёрную 96, кв. 83» belongs to the token the inflected
     # window restores as one piece; replacing its flat here first broke the
     # window's key and the address came back as «ул. Баумана 5, ул. ул. …».
-    protected = [m.span() for m in _PLACE_RUN.finditer(text)]
+    # The whole framing — house, building, entrance, flat tails included —
+    # because `_PLACE_RUN` stops at the street and «корп. 3» after it is part
+    # of the same token; touched here first, the window's key no longer
+    # matched and the address came back with the fake's building.
+    protected: list[tuple[int, int]] = []
+    for m in _PLACE_RUN.finditer(text):
+        framings = _place_windows(text, m.start(), m.end())
+        protected.append((min(s for s, _ in framings), max(e for _, e in framings)))
     protected += [m.span() for m in TOKEN_RE.finditer(text)]
     spans: list[tuple[int, int, str]] = []
     for match in _CUE_NUMBER.finditer(text):
@@ -656,6 +663,15 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
             found = owner
         if any(a < end and start < b for a, b in taken):
             continue
+        if derived is None:
+            entity_type, value = found
+            # A LONE CITY WORD THAT THE CUSTOMER'S OWN ADDRESS CARRIES is not a
+            # substitute, whatever token happens to bear the same name — see
+            # `Vault.real_place_with_stem`. The whole-address window above has
+            # already restored the real address when this word was part of it.
+            if (entity_type == "LOC" and " " not in surface.strip() and not any(ch.isdigit() for ch in value)
+                    and vault.real_place_with_stem(morph_places.to_nominative(surface).lower())):
+                continue
         taken.append((start, end))
         if derived is not None:
             spans.append((start, end, derived))

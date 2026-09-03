@@ -68,8 +68,12 @@ def ctx_for(kind: str, seed: int, index: int, register: str) -> Ctx:
 # --- system prompts ------------------------------------------------------------
 
 _ROLE_PROMPTS: dict[str, str] = {
+    # The weight and the postcode are named here because the live pilot showed
+    # the model asking for both in EVERY arm of the summary family — a schema
+    # field the utterance never carries measures nothing about the gateway.
     "delivery": "Ты оператор службы доставки. Оформляй заказы и вызовы курьера инструментами, "
-                "переспрашивай только то, чего не хватает для вызова.",
+                "переспрашивай только то, чего не хватает для вызова. Вес посылки, если не "
+                "назван, — 1000 г; почтовый индекс подбери сам по городу получателя.",
     "clinic": "Ты администратор клиники. Записывай пациентов инструментом clinic_book; "
               "возраст и пол пациента вычисли сам из даты рождения и имени.",
     "crm": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; "

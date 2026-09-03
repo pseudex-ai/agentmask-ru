@@ -252,14 +252,23 @@ def test_tokens_are_not_valid_documents() -> None:
     assert not collisions, (
         f"{len(collisions)}/{samples} PHONE tokens are valid СНИЛС, e.g. {collisions[:3]}"
     )
-    for entity_type, checker in (("SNILS", validate_snils), ("INN", validate_inn),
-                                 ("OGRN", validate_ogrn)):
+    # A СНИЛС and an ОГРН stay checksum-INVALID: neither carries a structural
+    # field that could be impossible for a bearer.
+    for entity_type, checker in (("SNILS", validate_snils), ("OGRN", validate_ogrn)):
         bad = [token for token in (_render_token(entity_type) for _ in range(500))
                if checker(token)]
         assert not bad, f"{entity_type} minted a CHECKSUM-VALID token: {bad[:3]}"
-    cards = [token for token in (_render_token("CARD") for _ in range(500))
-             if validate_luhn(token)]
-    assert not cards, f"CARD minted a Luhn-VALID token: {cards[:3]}"
+    # An ИНН, a card and a passport are VALID to every algorithm an agent runs
+    # and IMPOSSIBLE by structure: tax region «00», industry identifier «0»,
+    # ОКАТО region «00» (research/2026-09-03-checksum-valid-substitutes.md).
+    for original in ("770512345650", "7705123452"):
+        for token in (_render_token("INN", None, original) for _ in range(300)):
+            assert validate_inn(token) and token.startswith("00") and len(token) == len(original), token
+    for token in (_render_token("CARD") for _ in range(300)):
+        digits = token.replace(" ", "")
+        assert validate_luhn(digits) and digits.startswith("0") and len(digits) == 16, token
+    for token in (_render_token("PASSPORT") for _ in range(300)):
+        assert token.startswith("00 ") and len(token.replace(" ", "")) == 10, token
     print(f"token/document collisions OK — {samples} PHONE samples, none a valid СНИЛС")
 
 

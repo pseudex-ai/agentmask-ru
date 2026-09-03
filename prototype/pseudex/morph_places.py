@@ -505,6 +505,7 @@ def street_house_key(phrase: str) -> str:
     named one.
     """
     kept: list[str] = []
+    city_skipped = False
     for token in address_key(phrase).split():
         # THE KEY STOPS AT THE FLAT. A short mention is short precisely because
         # it left the finer parts out: «мира 7» has to find «г. Казань, ул.
@@ -513,12 +514,22 @@ def street_house_key(phrase: str) -> str:
         # The entrance and the floor are finer parts too, and speech puts the
         # ordinal BEFORE the marker («второй подъезд»), so it is popped.
         if token in _SHORT_KEY_STOP:
-            if kept and _ORDINAL_ONLY.fullmatch(kept[-1]):
+            # «второй подъезд» — the ordinal before an ENTRANCE or FLOOR marker
+            # only; before «кв» the previous word is the house number, and a
+            # cardinal is never popped («девять» read as an ordinal left
+            # «восемьдесят девять» keyed as 80).
+            if (token in ("подъезд", "под", "этаж") and kept
+                    and _ORDINAL_ONLY.fullmatch(kept[-1]) and kept[-1] not in spoken.CARDINALS):
                 kept.pop()
             break
         if token in _GENERIC:
             continue
-        if any("Geox" in parse.tag for parse in MORPH.parse(token)):
+        # ONLY THE LEADING PLACE WORD IS THE CITY. «Пушкин», «Киров», «Калинин»
+        # are towns AND the commonest street names; dropping every Geox token
+        # left «можга проезд пушкина 89» keyed as «89» — a key that would link
+        # any house 89 in the conversation to this address.
+        if not kept and not city_skipped and any("Geox" in parse.tag for parse in MORPH.parse(token)):
+            city_skipped = True
             continue
         # A lone letter after a number is the house litera, and the glued
         # written form («100а») has already lost it in `address_key`.
