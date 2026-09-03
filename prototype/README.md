@@ -63,12 +63,15 @@ No pytest: every test and eval is a script with a `main()`.
 ```bash
 python3 test_loop.py             # the core proof
 python3 test_product.py          # tenancy, audit, streaming detok
-python3 test_coverage_152fz.py   # 23 personal-data types, both directions
+python3 test_coverage_152fz.py   # 152-ФЗ coverage, both directions
+python3 test_preflight.py        # how many workers fit; refuse or lower, never OOM
+python3 test_pseudexctl.py       # the ops CLI: doctor verdicts and the rekey proof
 python3 vault_test.py            # canonicalization + persistence across restart
 python3 test_perf_masking.py     # cache, audit de-dup, leak regression, responsiveness
 
-python3 e2e/gates.py             # L1-L15 licensing, against real containers
-python3 e2e/pack_gates.py        # P1-P8 packaging, source vs compiled parity
+python3 e2e/gates.py             # L1-L22 licensing, vault and preflight, against real containers
+python3 make_dirty.py            # P3 compares the two images on it; without it, it refuses
+python3 e2e/pack_gates.py        # P1-P10 packaging, source vs compiled parity
 ```
 
 Detection quality needs generated datasets (gitignored — regenerate first):
@@ -81,8 +84,15 @@ python3 bench/eval_external_ner.py <NEREL corpus>    # the only non-circular rec
 ## Where the numbers stand
 
 - 0 leaks on the dirty set; 0 of 12 hard negatives falsely masked
-- 23/23 personal-data types caught and typed correctly, 7/7 look-alikes untouched
-- 80.6% PERSON recall on NEREL — externally annotated, so this is the honest one.
-  The remaining misses are foreign celebrities, out of scope for RU business traffic.
+- `test_coverage_152fz.py` is the authority on coverage and prints its own
+  counts: it asserts 22 cases over 21 types, plus 8 look-alikes that must stay
+  untouched. The number
+  the PRODUCT claims is **18 types** — that is the customer-facing list on
+  `/detection`, and it is deliberately smaller than the engine's internal type
+  count. A count with no list is a marketing counter, which is why the site
+  publishes the list.
+- 91.5% PERSON recall on NEREL (Cyrillic 92.3%) — externally annotated, so this is
+  the honest one. It was 80.6% until single-token NER people stopped being thrown
+  away for not being in the dictionary; see CLAUDE.md for that change and its cost.
 - Agent-level damage on BFCL v3 multi-turn (n=200): Δ +2.5 pp, McNemar p=0.560 —
   not distinguishable from the model's own run-to-run variance
