@@ -653,7 +653,15 @@ def _fake_date(original: str) -> str:
         # about relative dates.
         year = year_now + secrets.randbelow(3) + 1
     else:
-        year = 1960 + secrets.randbelow(max(1, year_now - 1960))
+        # A PAST DATE KEEPS ITS YEAR. The agent derives the AGE from a date of
+        # birth — a clinic's `patient.age`, an insurer's tariff — and from a
+        # random year the derivation is wrong by construction (live v4: every
+        # `age` field in the `derive` family). The year alone identifies
+        # nobody (≈1.5 million people a year in Russia); the day and the month,
+        # which do, stay fake — the same line the settlement of an address
+        # draws (`_settlement_of`).
+        known = _date_canonical(original)
+        year = int(known[-4:]) if len(known) == 10 else 1960 + secrets.randbelow(max(1, year_now - 1960))
     return (f"{secrets.randbelow(28) + 1:02d}."
             f"{secrets.randbelow(12) + 1:02d}.{year}")
 

@@ -7,6 +7,8 @@ are never touched here (they're handled by priority in detect_all).
 
 import re
 
+from pseudex.fuzzy import within_one_typo
+
 from pseudex.assets import ASSETS, ContextAssets
 from pseudex.detect import Span
 
@@ -180,7 +182,23 @@ def _passport_is_evidenced(text: str, span: Span, context) -> bool:
     governs INN-10, the other identifier whose checksum is too weak to stand
     alone."""
     window = text[max(0, span.start - 40): span.end + 20].lower()
-    return any(trigger in window for trigger in context.passport_trigger)
+    return _passport_cue_in(window, context.passport_trigger)
+
+
+def _passport_cue_in(window: str, triggers: tuple[str, ...]) -> bool:
+    """A passport cue in the window — as written, stretched («паспоорт») or
+    one typo away («паспрот»). THE CUE MAY BE DAMAGED and the detector already
+    admitted the number on that damaged cue; both tests here must read the
+    word the same way, or the span is found and then suppressed for lack of
+    the cue it was found by — worse, «паспоорт» is one edit from the DENY
+    word «паспорт» and was refused as a deny with no cue to save it."""
+    if any(trigger in window for trigger in triggers):
+        return True
+    for token in re.findall(r"[а-яё]+", window):
+        word = re.sub(r"([а-яё])\1+", r"\1", token)
+        if len(word) >= 5 and (word.startswith("паспорт") or within_one_typo(word[:7], "паспорт")):
+            return True
+    return False
 
 
 def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
@@ -333,7 +351,7 @@ def suppress(text: str, spans: list[Span]) -> list[Span]:
             last_word = match.group(1) if match else ""
             window = text[max(0, span.start - 30): span.end + 30].lower()
             deny = _denied_nearby(last_word, context.deny)
-            cue = any(word in window for word in context.passport_trigger)
+            cue = _passport_cue_in(window, context.passport_trigger)
             if deny and not cue:
                 continue
         if span.entity_type == "NAME":

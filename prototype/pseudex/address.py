@@ -31,7 +31,7 @@ from pseudex import _morph_compat  # noqa: F401  (aliases pymorphy2->pymorphy3 b
 from pseudex.assets import ASSETS, AddressAssets
 from pseudex.detect import Span
 from pseudex.fuzzy import build_index, lookup, within_one_typo
-from pseudex import morph_places
+from pseudex import morph_places, spoken
 from pseudex.morph import MORPH
 
 _log = logging.getLogger("pseudex.address")
@@ -528,7 +528,10 @@ def _bare_street_candidates(text: str, address: AddressAssets
             fuzzy = True
         if _is_numeral(name) or _is_street_type(name, address):
             continue
-        if _names_a_settlement(name, address):
+        # A mistyped word is unknown to morphology, and morphology GUESSES a
+        # settlement reading for it («луогвая»); the register just said the
+        # word is one typo from a street, and a guess does not outrank that.
+        if _names_a_settlement(name, address) and not fuzzy:
             continue
         # ПЛЮРАЛЬ ПРОПУСКАЕТСЯ ТОЛЬКО С АДРЕСНЫМ ПРОДОЛЖЕНИЕМ ПОСЛЕ НОМЕРА.
         # «улица Коммунаров», «Металлистов», «Строителей», «Космонавтов»,
@@ -545,7 +548,11 @@ def _bare_street_candidates(text: str, address: AddressAssets
         # квартира или корпус; за количеством — глагол или предлог. Продолжение
         # покупает «металлистов пятьдесят шесть первый подъезд» и не покупает
         # «коммунаров сто восемьдесят шесть» — узко и намеренно.
-        if _plural_or_pronoun(name) and not (
+        # THE MARKER IS THE DOOR TOO: «коммунаров дом сто девяносто шесть» — a
+        # quantity is never introduced by «дом», so the plural veto stands down
+        # when the customer wrote the marker.
+        marked = re.match(r"\s+дом\s", text[match.end("bare"):match.start("bnum")]) is not None
+        if _plural_or_pronoun(name) and not marked and not (
                 not number[0].isdigit() and _register_vouches(name, address)
                 and _address_continues(text, match.end("bnum"), address)):
             continue
@@ -778,6 +785,24 @@ _PAIR_GAP_RE = re.compile(r"[\s,.:;()«»\"'-]{0,3}\Z")
 # often than a door, and «улица Ленина 2024 года» must not swallow the year.
 _HOUSE_AFTER_RE = re.compile(
     r"[\s,]{0,3}(?:дом|д)?\.?\s*\d{1,3}[А-ЯЁа-яё]?(?:/\d+)?(?![0-9A-Za-zА-Яа-яёЁ])")
+
+
+@functools.lru_cache(maxsize=4)
+def _spoken_house_after_for(version: str) -> re.Pattern[str]:
+    alternation = spoken.numeral_alternation()
+    return re.compile(
+        rf"[\s,]{{0,3}}(?:дом\s+)?(?:(?:{alternation})\b\s*){{1,4}}(?:[а-яё](?![а-яё]))?")
+
+
+def _house_after(text: str, stop: int) -> re.Match[str] | None:
+    """The house after a street — digits, or SAID IN WORDS with or without
+    «дом»: the fuzzy type-word arm took only digits, so «переулок коммнаров
+    дом сто восемьдесят семь б» had no house, no intent word in reach, and
+    the mistyped street went to the model in the clear."""
+    house = _HOUSE_AFTER_RE.match(text, stop)
+    if house is not None:
+        return house
+    return _spoken_house_after_for(ASSETS.version or "").match(text, stop)
 # Below five letters a single edit reaches too much of the language, and the
 # bucket index cannot see all of it anyway: its guarantee — that an edit at
 # position p is caught by one key or the other — only closes at six letters, so
@@ -905,7 +930,7 @@ def _fuzzy_street_candidates(text: str, address: AddressAssets
                 continue
             start = min(type_at[0], first[0])
             stop = max(type_at[1], second[1])
-            house = _HOUSE_AFTER_RE.match(text, stop)
+            house = _house_after(text, stop)
             if house is not None and address.measure_after.match(text, house.end()):
                 house = None
             if house is not None:
@@ -946,7 +971,7 @@ def _fuzzy_street_candidates(text: str, address: AddressAssets
             # simply falls back to needing an intent word, and the two tiers
             # then decide it themselves: the weak tier has nothing left, the
             # strong tier asks for the cue.
-            house = _HOUSE_AFTER_RE.match(text, stop)
+            house = _house_after(text, stop)
             if house is not None and address.measure_after.match(text, house.end()):
                 house = None
             if house is not None:
@@ -966,6 +991,9 @@ def _fuzzy_street_candidates(text: str, address: AddressAssets
 
 # A word and the punctuation that may stand between it and an address part.
 _NEIGHBOUR_LEFT = re.compile(r"([А-Яа-яЁё][А-Яа-яЁё-]*)[\s,.;]{0,3}$")
+_TYPE_WORD_FIRST = re.compile(
+    r"(?i)^\s*(?:улиц|проспект|переул|бульвар|шоссе|проезд|площад|набережн|алле|лини|просек|тупик"
+    r"|квартал|микрорайон|ул\.|пр-т|пр\.|пер\.|б-р|наб\.|мкр)")
 _NEIGHBOUR_RIGHT = re.compile(r"^[\s,.;]{0,3}([А-Яа-яЁё][А-Яа-яЁё-]*)")
 
 
@@ -1035,6 +1063,21 @@ _CUE_WINDOW = 60
 _SENTENCE_SPLIT = re.compile(r"[.!?]\s+(?=[А-ЯЁA-Z])")
 
 
+def _fuzzy_intent(clause: str) -> bool:
+    if not ASSETS.is_loaded:
+        return False
+    stems = [stem for stem in ASSETS.get().context.addr_intent if " " not in stem and len(stem) >= 5]
+    for token in _CYR_TOKEN_RE.findall(clause):
+        word = re.sub(r"([а-яё])\1+", r"\1", token.lower())
+        if len(word) < 5:
+            continue
+        for stem in stems:
+            for length in (len(stem) - 1, len(stem), len(stem) + 1):
+                if 4 <= length <= len(word) and within_one_typo(word[:length], stem):
+                    return True
+    return False
+
+
 def _intent_before(text: str, start: int, address: AddressAssets) -> bool:
     """An INTENT word in the sentence tail — never a bare preposition.
 
@@ -1049,8 +1092,13 @@ def _intent_before(text: str, start: int, address: AddressAssets) -> bool:
     agree about the window and the sentence boundary, and a copy is where two
     of them stopped agreeing."""
     tail = text[max(0, start - _CUE_WINDOW):start]
-    if address.addr_ctx.search(
-            _SENTENCE_SPLIT.split(tail + text[start:start + 1])[-1]):
+    clause = _SENTENCE_SPLIT.split(tail + text[start:start + 1])[-1]
+    if address.addr_ctx.search(clause):
+        return True
+    # THE INTENT WORD MAY BE MISTYPED, like every cue («курьеа на мончегорсуая
+    # 195»): a stretched or one-typo intent word is the same intent, judged on
+    # the stem the way a mistyped street type is.
+    if _fuzzy_intent(clause):
         return True
     # AND AFTER IT, because speech puts the intent on the other side. Written
     # traffic says «адрес доставки: улица Пушкина»; a telephone says «улица
@@ -1128,6 +1176,10 @@ _HOUSE_MARKER_RE = re.compile(r"(?i)(?:дом(?![а-яё])|д\.)")
 # The one word standing immediately in front of it. Four letters, because that
 # is the shortest name the ГАР register actually holds («Мира», «Тихая»).
 _NAME_BEFORE_HOUSE_RE = re.compile(r"([А-Яа-яЁё]{4,})\s+$")
+_NAME_COMMA_BEFORE_HOUSE_RE = re.compile(r"([А-Яа-яЁё]{4,}),\s*$")
+_CITY_STREET_HOUSE_RE = re.compile(
+    r"(?<![А-Яа-яЁё])([А-ЯЁ][а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?),\s*([А-Яа-яЁё]{4,}),\s*(\d{1,3}(?:[а-яё](?![а-яё]))?)(?!\d)")
+_CITY_CLAUSE_BEFORE_RE = re.compile(r"[А-ЯЁ][а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?,\s*$")
 
 
 def _street_before_house(text: str, cands: list[tuple[int, int, bool]],
@@ -1159,9 +1211,25 @@ def _street_before_house(text: str, cands: list[tuple[int, int, bool]],
     """
     out: list[tuple[int, int, bool]] = []
     for start, _stop, core in cands:
-        if not core or _HOUSE_MARKER_RE.match(text, start) is None:
+        if not core:
             continue
-        before = _NAME_BEFORE_HOUSE_RE.search(text[:start])
+        core_out = False
+        if _HOUSE_MARKER_RE.match(text, start) is not None:
+            before = _NAME_BEFORE_HOUSE_RE.search(text[:start])
+        else:
+            # THE WRITTEN FORM WITH COMMAS: «Ижевск, Маяковского, 141» — the
+            # street is a surname in the genitive, a comma stands between it
+            # and the house, and the town's own clause stands before it. With
+            # no marker the number alone opened nothing, so the street went
+            # to the model as a PERSON and the house as an address (clean
+            # register, decompose-016). The city clause is what licenses it:
+            # «Иванова, 25 лет» has no town in front.
+            before = _NAME_COMMA_BEFORE_HOUSE_RE.search(text[:start])
+            if before is None or _CITY_CLAUSE_BEFORE_RE.search(text[:before.start(1)]) is None:
+                continue
+            # Vouched three ways — the register, a town in front, a house after —
+            # so it is a core the town can attach to (`_toponym_neighbours`).
+            core_out = True
         if before is None:
             continue
         word = before.group(1).lower()
@@ -1173,7 +1241,28 @@ def _street_before_house(text: str, cands: list[tuple[int, int, bool]],
             continue
         if word not in address.street_names and word not in address.street_gaz:
             continue
-        out.append((before.start(1), start, False))
+        out.append((before.start(1), start, core_out))
+    return out
+
+
+def _city_street_house_candidates(text: str, address: AddressAssets) -> list[tuple[int, int, bool]]:
+    """«Москва, Ленина, 14» — the commonest WRITTEN form of a Russian address,
+    and no arm opened it: a bare number is never a core, so the street had
+    nothing to stand in front of, and the street — a surname in the genitive
+    — was minted as a PERSON. The town's clause, a street the register knows
+    in any of its forms and a number after it, with the age and measure vetoes
+    the bare arm already applies. A core, so the town attaches to it."""
+    out: list[tuple[int, int, bool]] = []
+    for match in _CITY_STREET_HOUSE_RE.finditer(text):
+        if not _is_toponym(match.group(1).split()[-1]):
+            continue
+        if not _gar_reaches(match.group(2), address):
+            continue
+        if address.measure_after.match(text, match.end(3)) or address.age_after.match(text, match.end(3)):
+            continue
+        if _counts_next_word(text, match.end(3), match.group(3), address):
+            continue
+        out.append((match.start(2), match.end(3), True))
     return out
 
 
@@ -1371,6 +1460,14 @@ def _trim_lead(start: int, stop: int, text: str, address: AddressAssets) -> int:
             # «кузнецова дом 43»); a name-then-type street puts another name
             # word first and its type second.
             rest = text[start + match.end():stop]
+            # A SETTLEMENT BEFORE THE TYPE WORD IS THE ADDRESS'S OWN. «глазов
+            # проспект маяковского 163» — Глазов is a surname too, and the
+            # rule below cut the town off as a person in front of the address,
+            # so the substitute was minted without a city (seven of the
+            # forty-seven values the corpus still leaked). A person's name is
+            # never followed by «проспект <name>»; a town is.
+            if (_is_toponym(word) and _TYPE_WORD_FIRST.match(rest)):
+                return start
             if (_names_a_person(word)
                     and not _NAME_THEN_TYPE.match(rest)
                     and _still_an_address(rest, address)):
@@ -1482,9 +1579,11 @@ def detect_address(text: str) -> list[Span]:
     if SHADOW:
         _log_shadow_diff(text, natasha, regex)
     cands = (natasha + regex + _fuzzy_street_candidates(text, address)
-             + _bare_street_candidates(text, address))
+             + _bare_street_candidates(text, address)
+             + _city_street_house_candidates(text, address))
     if not cands:
         return []
+    cands = cands + _street_before_house(text, cands, address)
     cands = cands + _toponym_neighbours(text, cands) + _street_before_house(
         text, cands, address)
     # THE TRAILING HOUSE NUMBER HAS TO JOIN BEFORE THE SECOND MERGE, not after.

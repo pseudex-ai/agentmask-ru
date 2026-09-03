@@ -69,6 +69,29 @@ def render(cases: dict[str, Case], scored: Sequence[Scored], excluded: Sequence[
         lines.extend(excluded[:dump])
         return lines
 
+    # 0 — LEAKS: personal data in a message the gateway arm never substituted.
+    # The three levels cannot see this: a value that reached the model in the
+    # clear reaches the tool in the clear, and the two arms AGREE. It is the one
+    # failure the product exists to prevent, and the first report had no line
+    # for it (46 of 723 message values on the 03.09 re-run, found by hand).
+    leaks: Counter[str] = Counter()
+    seen_values = 0
+    leaked_items: list[str] = []
+    for one in scored:
+        case = cases[one.triple.case_id]
+        for item in case.pii:
+            if item.where.kind != "message":
+                continue
+            seen_values += 1
+            if item.id not in one.triple.I.substitutes:
+                leaks[f"{item.type}/{case.register}"] += 1
+                leaked_items.append(f"{one.triple.case_id}|{one.triple.repeat} {item.type} «{item.value[:48]}»")
+    lines += ["", f"0. УТЕЧКИ В МОДЕЛЬ — значения из сообщений, для которых плечо шлюза НЕ показало подмену: "
+                  f"{sum(leaks.values())} из {seen_values} ({_pct(sum(leaks.values()), seen_values).strip()})"]
+    if leaks:
+        lines.append("   " + " · ".join(f"{key} {count}" for key, count in leaks.most_common()))
+        lines += [f"   {row}" for row in leaked_items[:dump]]
+
     # 1 — provocation: what the CONTROL arm did to real values
     lines += ["", "1. ПРОВОКАЦИЯ — что модель делает с НАСТОЯЩИМИ значениями (плечо C против C′)"]
     transforms: Counter[str] = Counter()

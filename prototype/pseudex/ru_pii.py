@@ -7,6 +7,8 @@ if its checksum passes.
 
 import re
 
+from pseudex.fuzzy import within_one_typo
+
 from pseudex.assets import ASSETS
 from pseudex.detect import Span
 
@@ -230,6 +232,20 @@ _SNILS_CUE_RE = re.compile(
 _INN_CUE_RE = re.compile(r"(?i:\bинн\b)\D{0,12}?(\d{12})(?!\d)")
 _CARD_CUE_RE = re.compile(
     r"(?i:карт\w*|card)\D{0,16}?(\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{4})(?!\d)")
+_PASSPORT_SHAPE_RE = re.compile(r"\b\d{2}[\s-]?\d{2}[\s-]?\d{6}\b")
+_SNILS_SHAPE_RE = re.compile(r"\b\d{3}[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{2}\b")
+_CUE_TAIL_RE = re.compile(r"([а-яё]+)\W{0,12}$")
+
+
+def _damaged_cue_before(text: str, start: int, cues: tuple[str, ...]) -> bool:
+    match = _CUE_TAIL_RE.search(text[max(0, start - 30):start].lower())
+    if match is None:
+        return False
+    word = re.sub(r"([а-яё])\1+", r"\1", match.group(1))
+    return any(word.startswith(cue) or (len(word) >= 4 and within_one_typo(word[:len(cue)], cue))
+               for cue in cues)
+
+
 _PASSPORT_CTX_RE = re.compile(
     r"(?i:пас{1,2}п{1,2}орт\w*)\D{0,16}?(\d{2}[\s-]?\d{2}[\s-]?\d{6})\b")
 # «серия 4607 номер 238914» — the two halves named separately, with words
@@ -305,6 +321,16 @@ def detect_structured(text: str) -> list[Span]:
     for entity_type, pattern in (("SNILS", _SNILS_CUE_RE), ("INN", _INN_CUE_RE), ("CARD", _CARD_CUE_RE)):
         for match in pattern.finditer(text):
             spans.append(Span(match.start(1), match.end(1), entity_type, match.group(1)))
+    # THE CUE ITSELF MAY BE DAMAGED — «паспрот 0312943300», «сннилс 40621994460»,
+    # «паспоот 4119424336» — and the shape alone is refused on purpose (a bare
+    # ten-digit number collides with everything). One typo or a stretched
+    # letter in the cue is still the cue.
+    for entity_type, shape, cues in (
+            ("PASSPORT", _PASSPORT_SHAPE_RE, ("паспорт", "пасспорт")),
+            ("SNILS", _SNILS_SHAPE_RE, ("снилс",))):
+        for match in shape.finditer(text):
+            if _damaged_cue_before(text, match.start(), cues):
+                spans.append(Span(match.start(), match.end(), entity_type, match.group()))
     for match in _PASSPORT_RE.finditer(text):
         spans.append(Span(match.start(), match.end(), "PASSPORT", match.group()))
     # No-separator passport is ambiguous alone; trust it when "паспорт" precedes.

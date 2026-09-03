@@ -215,6 +215,14 @@ def trim_person_span(value: str) -> tuple[int, str]:
         last -= 1
     while last > first and _names_a_document(tokens[first][2]):
         first += 1
+    # A NUMBER WORD IS NEVER PART OF A PERSON — the last word of a dictated
+    # СНИЛС («сорок восемсь кукушкин валерий михайлович») was swallowed into
+    # the name, the name then overlapped the СНИЛС, lost the overlap, and the
+    # whole person went to the model in the clear.
+    while last > first and _is_numeral_word(tokens[last][2]):
+        last -= 1
+    while last > first and _is_numeral_word(tokens[first][2]):
+        first += 1
     # ОПЕЧАТКА В ОБЫЧНОМ СЛОВЕ — ТОЖЕ ДО ОДНОГО ТОКЕНА, и видно её так же ясно.
     # «начальниик фёдорова», «мастеер новикова», «дежурныый новиков», «этоо
     # новикова», «фамилиято кузнецова» — NER отдаёт их одним человеком, потому
@@ -333,6 +341,8 @@ def _names_a_person(word: str) -> bool:
       * animacy, because «романа» and «слава» are things, and their person
         readings (Роман, Слава) are real but not what the sentence means.
     """
+    if _is_numeral_word(word):
+        return False
     if len(word) < 3:
         return False
     # ЧЕТВЁРТЫЙ СТОРОЖ: растянутый филлер. Морфология незнакомое «иии» ни к чему
@@ -469,6 +479,12 @@ def _extend_left_of_patronymic(text: str, start: int) -> int:
         best = max(parses, key=lambda parse: parse.score)
         if best.tag.POS in _NOT_A_NAME_POS:
             break
+        # A NUMBER WORD IS NOT A SURNAME: the last word of a dictated СНИЛС
+        # («сорок восемсь кукушкин валерий михайлович») passed the part-of-
+        # speech guard as a noun and the name then lost its overlap with the
+        # СНИЛС — the whole person went to the model in the clear.
+        if _is_numeral_word(candidate):
+            break
         # AND the role words NER already over-tags. «клиент», «заказ»,
         # «получатель» are ordinary nouns, so a part-of-speech guard admits
         # them, and «клиент ИвановПётр Сергеевич» became one name — the tool
@@ -525,6 +541,8 @@ def _looks_misspelt_name(word: str) -> bool:
     the same tolerance the cue-word deny matching already uses, bounded the same
     way at a single edit.
     """
+    if _is_numeral_word(word):
+        return False
     lowered = word.lower()
     if len(lowered) < 5:
         # Below five letters a single edit reaches too much of the language:
@@ -884,7 +902,9 @@ def _split_name_parts(text: str, found: list[Span], names: NameAssets) -> list[S
         # проходило все четыре условия и уходило в инструмент одним человеком.
         # То же с «мастеер», «дежурныый», «этоо», «фамилиято» — девятнадцать
         # расхождений на плече аргумента.
-        if _typo_of_an_ordinary_word(left) or _typo_of_an_ordinary_word(right):
+        # A numeral is never half of a surname («восемсь» + «кукушкин»).
+        if (_typo_of_an_ordinary_word(left) or _typo_of_an_ordinary_word(right)
+                or _is_numeral_word(left) or _is_numeral_word(right)):
             continue
         # A FUNCTION WORD ON THE RIGHT NEEDS AN UNKNOWN WORD ON THE LEFT.
         # «Ивано в Пётр» and «Григорье в Никита» are surnames cut before their

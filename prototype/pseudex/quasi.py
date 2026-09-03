@@ -6,6 +6,8 @@ no equivalence class, so k-anonymity is undefined — per dd4-C).
 
 import re
 
+from pseudex.fuzzy import within_one_typo
+
 from pseudex.assets import ASSETS
 from pseudex.detect import Span
 
@@ -17,7 +19,7 @@ _YEAR_RE = re.compile(r"\b(19\d{2}|20\d{2})\b")
 # всей даты маскировался только ГОД — «родился 21.09.1955» отдавало модели день
 # и месяц. 23 значения на AgentPII v3.
 _NUM_DATE_RE = re.compile(
-    r"\b\d{2}[.\-/]\d{2}[.\-/]\d{4}\b"
+    r"\b\d{2}[.\-/ ]\d{2}[.\-/ ]\d{4}\b"
     r"|(?<!\d)(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])(?!\d)")
 _AGE_RE = re.compile(r"\b(\d{2,3})\s*(?:лет|года|год)\b")
 
@@ -48,7 +50,16 @@ def _birth_context_near(low: str, start: int, end: int, birth_ctx: tuple[str, ..
     the abbreviation `д.р.`, and splitting on `.` would throw it away."""
     before = low[max(0, start - 24):start].rsplit(",", 1)[-1].rsplit(";", 1)[-1]
     after = low[end:end + 16].split(",", 1)[0].split(";", 1)[0]
-    return any(ctx in before or ctx in after for ctx in birth_ctx)
+    if any(ctx in before or ctx in after for ctx in birth_ctx):
+        return True
+    # «дата рожжения 28.04.1975», «рдилась 22.04.1994»: the cue mistyped is
+    # still the cue — one typo, judged on the same words the list holds.
+    for token in re.findall(r"[а-яё]+", before + " " + after):
+        word = re.sub(r"([а-яё])\1+", r"\1", token)
+        if len(word) >= 5 and any(within_one_typo(word[:len(cue)], cue)
+                                  for cue in ("рождения", "родился", "родилась", "рожден")):
+            return True
+    return False
 
 
 def detect_quasi(text: str) -> list[Span]:

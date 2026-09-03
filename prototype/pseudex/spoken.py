@@ -32,6 +32,7 @@ form, because that is what the operator typed into the CRM.
 import re
 
 from pseudex.assets import ASSETS
+from pseudex.fuzzy import within_one_typo
 from pseudex.detect import Span
 from pseudex.ru_pii import validate_inn, validate_luhn, validate_snils
 
@@ -324,6 +325,18 @@ _PASSPORT_CUE = re.compile(
     r"(?i)(паспорт\w*|пасспорт\w*|документ\w*|удостовер\w*|серия\b)[^.!?]{0,40}$")
 
 
+def _cue_near(before: str, cues: tuple[str, ...]) -> bool:
+    """A cue word in the last few words before the run — as written, stretched
+    («паспоорт»), or one typo away («паспрот»)."""
+    words = _WORD_RE.findall(before.lower())[-4:]
+    for raw in words:
+        word = re.sub(r"([а-яё])\1+", r"\1", raw)
+        for cue in cues:
+            if word.startswith(cue) or (len(word) >= 4 and within_one_typo(word[:len(cue)], cue)):
+                return True
+    return False
+
+
 def _classify(digits: str, before: str) -> str | None:
     """Which identifier this digit string is, decided by the SAME rules the
     digit path uses and in the order of how much each one proves.
@@ -334,6 +347,17 @@ def _classify(digits: str, before: str) -> str | None:
     is far more likely to be the СНИЛС somebody just read out.
     """
     length = len(digits)
+    # THE CUE OUTRANKS A COINCIDENTAL CHECKSUM. «паспорт ноль три четырнадцать
+    # …» satisfied the ten-digit ИНН weights by chance and went out as an ИНН;
+    # a dictated СНИЛС with one digit misheard failed mod 101 and went out in
+    # the clear. Behind the word the evidence is the word (same rule as the
+    # digit path's `_SNILS_CUE_RE`), and the word may be stretched or mistyped.
+    if length == 10 and _cue_near(before, ("паспорт", "пасспорт", "документ", "удостоверение", "серия")):
+        return "PASSPORT"
+    if length == 11 and _cue_near(before, ("снилс",)):
+        return "SNILS"
+    if length == 12 and _cue_near(before, ("инн",)):
+        return "INN"
     if length == 11 and validate_snils(digits):
         return "SNILS"
     if length in (10, 12) and validate_inn(digits):
