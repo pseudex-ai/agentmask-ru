@@ -371,9 +371,13 @@ async def drive(cases: list[Case], repeats: int, detector: Detector, ledger: jud
     limiter = asyncio.Semaphore(max(1, concurrency))
     by_id = {case.id: case for case in cases}
     jobs = [(case, repeat) for repeat in range(repeats) for case in cases]
-    # Most-expensive-first: a reservation is held at full cap for the life of
-    # a triple, and running the cheap ones first refuses the dear ones last.
-    jobs.sort(key=lambda job: -cap_usd(job[0]))
+    # REPEAT FIRST, THEN COST. The first repeat of every case is worth more
+    # than the third repeat of any, and a ceiling reached early must cost
+    # REPEATS, not FAMILIES: sorted by cap alone, the second live run refused
+    # every validate, summary and container triple — the cheap one-turn
+    # families sat at the end of the list. Within one repeat the dearest go
+    # first, for the reservation reason.
+    jobs.sort(key=lambda job: (job[1], -cap_usd(job[0])))
     total = len(jobs)
     runs: list[ArmRun] = []
     triples: list[dict[str, object]] = []
