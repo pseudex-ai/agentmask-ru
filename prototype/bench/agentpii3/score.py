@@ -108,6 +108,7 @@ from pseudex.maskcache import MaskCache  # noqa: E402
 from pseudex.redact import (  # noqa: E402
     _splice,
     _token_for_text,
+    is_own_substitute,
     residual_tokens,
     unmask_arguments,
     unmask_text,
@@ -338,7 +339,7 @@ def _mask_message(text: str, detector: Detector, vault: Vault) -> Masked:
     person's identity change every turn.
     """
     spans = [span for span in detector.detect(text)
-             if not vault.is_minted_token(span.value)]
+             if not is_own_substitute(span, vault)]
     pieces = tuple(
         Piece(start=span.start, end=span.end,
               substitute=_token_for_text(span, vault),

@@ -531,6 +531,86 @@ def test_fuller_mention_reuses_the_substitute() -> None:
     print("fuller-mention reuse OK — one place and one person, in either order")
 
 
+def test_directory_record_is_the_customers_address() -> None:
+    """The address directory answers the customer's own address in the
+    REGISTER'S FORM, and the model must recognise it as the one it asked about.
+
+    Live v4, `compare`: the customer said «луговая 10 это в самара», the model
+    asked `address_suggest` for «Самара, <substitute>», and the answer — the
+    same place — came back unrecognisable in four ways at once, each measured
+    on the run and each pinned here:
+
+      * the record leads with the REGION («Самарская область, г Самара, …»),
+        so the canonical never met the customer's mention;
+      * a glued house litera was lemmatised («160в» → «160ть»);
+      * the record spells the address out AGAIN in `data.city` / `street` /
+        `house`, and no leaf is an address on its own, so all three went to
+        the model in the clear beside the masked `value`;
+      * the model's own query — a public city composed around our token —
+        rides in the transcript and was re-masked into a THIRD address.
+    """
+    import json
+    from pseudex.morph_places import address_key, split_roles, street_house_key
+    from pseudex.redact import unmask_arguments
+
+    register = "Самарская область, г Самара, ул Луговая, д 10"
+    assert address_key(register) == address_key("г. Самара, ул. Луговая, д. 10")
+    assert address_key("Санкт-Петербург, г Колпино, ул Полевая, д 160в") == address_key("Колпино, ул Полевая, 160в")
+    assert split_roles(register) == {"city": "Самара", "street": "ул Луговая", "house": "10"}
+    assert split_roles("г Пермь, ул Добролюбова, д 154б") == {"city": "Пермь", "street": "ул Добролюбова", "house": "154б"}
+    assert street_house_key("ул Полевая, д 160в") == street_house_key("полевая 160 в") == "полевой 160"
+    assert address_key("ул Полевая, д 160в") != address_key("ул Полевая, д 160"), "the litera is part of the house"
+
+    detector = Detector()
+
+    def mask(text: str, vault: Vault) -> str:
+        return mask_text(text, vault, detector.detect(text))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "v.db")
+        talk = Vault(path, "acme").for_conversation("d-1")
+        seen = mask("курьера на луговая 10 это в самара", talk)
+        short = re.search(r"на (\S+ \S+ \d+) это", seen).group(1)
+        assert "самара" in seen and "луговая" not in seen, seen
+
+        composed = f"Самара, {short}"
+        assert mask(composed, talk) == composed, "the model's own composition is not re-minted"
+        assert json.loads(unmask_arguments(json.dumps({"query": composed}, ensure_ascii=False), talk))["query"] \
+            == "Самара, луговая 10"
+
+        answer = json.dumps({"suggestions": [
+            {"value": register, "data": {"postal_code": "443000", "region": "Самарская область",
+                                         "city": "самара", "street": "луговая", "house": "10", "flat": ""}},
+            {"value": register + "А", "data": {"city": "самара", "street": "луговая", "house": "10А", "flat": ""}},
+            {"value": "Самарская область, г Тольятти, ул Луговая, д 10",
+             "data": {"city": "тольятти", "street": "луговая", "house": "10", "flat": ""}},
+        ]}, ensure_ascii=False)
+        masked = json.loads(mask(answer, talk))["suggestions"]
+        for suggestion in masked:
+            for real in ("луговая", "самара", "тольятти", "Самара", "Тольятти"):
+                assert real not in json.dumps(suggestion, ensure_ascii=False), (real, suggestion)
+        exact, neighbour, elsewhere = masked
+        assert exact["value"].endswith(short), (exact["value"], short)
+        assert exact["data"]["postal_code"] == "443000" and exact["data"]["region"] == "Самарская область"
+        assert exact["data"]["street"] == short.split()[1].lower() and exact["data"]["house"] == short.split()[-1]
+        assert exact["data"]["city"] == exact["value"].split(",")[0].lower(), exact
+        assert neighbour["value"] != exact["value"] and neighbour["data"]["house"] != exact["data"]["house"], \
+            "the neighbour with a litera is another building"
+        assert elsewhere["value"] != exact["value"], "the same street and house in another city is another place"
+
+        booked = json.loads(unmask_arguments(json.dumps({"address": {
+            "locality": exact["data"]["city"], "street": exact["data"]["street"],
+            "building": exact["data"]["house"]}}, ensure_ascii=False), talk))["address"]
+        assert booked == {"locality": "Самара", "street": "Луговая", "building": "10"}, booked
+
+        alone = Vault(path, "acme").for_conversation("d-2")
+        assert mask('{"city": "Самара", "temp": "25"}', alone) == '{"city": "Самара", "temp": "25"}'
+        assert mask('{"street": "", "house": "5"}', alone) == '{"street": "", "house": "5"}'
+        record = json.loads(mask('{"street": "ул. Мира", "house": "5", "flat": "12"}', alone))
+        assert record["street"] != "ул. Мира" and record["street"].startswith("ул. ") and record["flat"] != "12"
+    print("directory record OK — the register's form, its leaves and the model's composition are one place")
+
+
 def test_real_town_is_not_a_fake_city() -> None:
     """A fake city is a real town, and the customer may live there.
 
@@ -587,3 +667,4 @@ if __name__ == "__main__":
     test_short_address_resolves_to_the_full_one()
     test_fuller_mention_reuses_the_substitute()
     test_real_town_is_not_a_fake_city()
+    test_directory_record_is_the_customers_address()

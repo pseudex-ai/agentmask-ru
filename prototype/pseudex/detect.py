@@ -18,6 +18,23 @@ class Span:
     value: str
 
 
+@dataclass(frozen=True)
+class PartSpan(Span):
+    """One FIELD of an address a structured record spells out in pieces.
+
+    A directory answers «"city": "самара", "street": "луговая", "house": "10"»
+    and no leaf is an address on its own — a bare street name and a bare number
+    are exactly what the detector refuses in prose — so the three went to the
+    model in the clear while the `value` beside them was masked (live v4,
+    every `address_suggest` answer). The object IS the address: `whole` is what
+    the vault keys and mints, `role` says which part of the substitute this
+    leaf shows. `value` stays the leaf, so offsets, previews and `/spans` keep
+    describing the text that is actually there.
+    """
+    whole: str
+    role: str
+
+
 # RU phone: +7 / 8 followed by 10 digits with optional separators.
 _PHONE_RE = re.compile(
     r"(?:\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}"

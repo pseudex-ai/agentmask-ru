@@ -18,7 +18,8 @@ from pseudex.audit import AuditLog
 from pseudex.detect_all import Detector
 from pseudex.maskcache import MaskCache, content_key
 from pseudex.profiling import stage
-from pseudex.redact import mask_text, unmask_arguments, unmask_text
+from pseudex.redact import (is_own_substitute, mask_text, unmask_arguments, unmask_text,
+                            vault_value)
 from pseudex.vault import Vault
 
 
@@ -92,14 +93,14 @@ def mask_one(text: str, context: MaskContext) -> str:
         # multi-turn agent the model quotes its own tokens constantly, so the
         # inflation was proportional to conversation length.
         spans = [span for span in context.detector.detect(text)
-                 if not context.vault.is_minted_token(span.value)]
+                 if not is_own_substitute(span, context.vault)]
         with stage("mask.tokenize_and_audit"):
             # Collected first, written once: one commit per MESSAGE instead of one
             # per entity. See AuditLog.record_many — per-span commits made four
             # workers under load fail most requests with `database is locked`.
             events = [
                 (span.entity_type,
-                 context.vault.tokenize(span.value, span.entity_type),
+                 context.vault.tokenize(vault_value(span), span.entity_type),
                  span.value)
                 for span in spans
             ]

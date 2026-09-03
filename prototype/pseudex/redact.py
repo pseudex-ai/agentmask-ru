@@ -8,7 +8,7 @@ lighter one. Reverse uses longest-token-first to avoid prefix collisions.
 import json
 import re
 
-from pseudex.detect import Span
+from pseudex.detect import PartSpan, Span
 from pseudex import morph_names, morph_places, translit
 from pseudex.profiling import stage
 from pseudex.vault import LOC_TOKEN_PATTERN, TOKEN_RE, Vault, name_key, place_key
@@ -70,8 +70,25 @@ def mask_text(text: str, vault: Vault, spans: list[Span]) -> str:
     return _splice(text, [
         (span.start, span.end, _token_for_text(span, vault))
         for span in spans
-        if not vault.is_minted_token(span.value)
+        if not is_own_substitute(span, vault)
     ])
+
+
+def is_own_substitute(span: Span, vault: Vault) -> bool:
+    """A detected span that is OURS coming back: the exact token, or an
+    address the model composed around one. THE ONE RULE FOR THREE CALLERS —
+    `mask_text`, the envelope's audit loop and the benchmark's scorer each
+    filtered echoes on their own, and the second rule reached only one of
+    them, so production and the instrument disagreed about the same text."""
+    if vault.is_minted_token(span.value):
+        return True
+    return span.entity_type == "LOC" and vault.holds_minted_place(span.value)
+
+
+def vault_value(span: Span) -> str:
+    """What the vault keys for this span: the whole address for a field of
+    one, the span's own text otherwise."""
+    return span.whole if isinstance(span, PartSpan) else span.value
 
 
 def _token_for_text(span: Span, vault: Vault) -> str:
@@ -86,6 +103,22 @@ def _token_for_text(span: Span, vault: Vault) -> str:
     Only NAME is inflected. Numbers and documents have no case, and LOC is
     generated as a whole phrase whose internal agreement is the generator's job.
     """
+    if isinstance(span, PartSpan):
+        # ONE substitute for the record, this leaf's part of it, in the leaf's
+        # own form — lower case where the record wrote lower case, no type
+        # word where it wrote none. A role the substitute cannot show (it
+        # mirrors the whole's shape, so this is a defence, not a path) gets
+        # the whole substitute rather than the real part.
+        whole = vault.tokenize(span.whole, "LOC")
+        part = morph_places.split_roles(whole).get(span.role, "")
+        if not part:
+            return whole
+        part = morph_places.part_in_form_of(span.value, part, span.role)
+        if span.value.islower():
+            return part.lower()
+        if span.value.isupper():
+            return part.upper()
+        return part
     token = vault.tokenize(span.value, span.entity_type)
     if span.entity_type == "LOC":
         # Same reason as NAME: a nominative phrase dropped into an oblique slot
@@ -1059,23 +1092,7 @@ def _join_addresses_deep(restored: object, original: object, vault: Vault) -> ob
 # Имена полей, которыми схемы инструментов называют части адреса. Роль читается
 # из имени, а не из формы значения: имя — это единственное, что видит и модель,
 # когда решает, что куда положить.
-_FIELD_ROLES: tuple[tuple[str, str], ...] = (
-    ("street", "street"), ("house", "house"), ("building", "house"),
-    ("flat", "flat"), ("apartment", "flat"), ("apt", "flat"), ("sflat", "flat"),
-    ("entrance", "entrance"), ("porch", "entrance"), ("floor", "floor"),
-    # The settlement is a field of its own in every delivery schema (CDEK
-    # `city`, Yandex `locality`); without a role here a bare fake city in it
-    # was never asked about and reached the tool as «Сортавала».
-    ("city", "city"), ("locality", "city"), ("town", "city"), ("settlement", "city"),
-)
-
-
-def _role_of_field(name: str) -> str:
-    parts = name.lower().split("_")
-    for word, role in _FIELD_ROLES:
-        if word in parts:
-            return role
-    return ""
+_role_of_field = morph_places.role_of_field
 
 
 def _join_address_fields(restored: object, original: object, vault: Vault) -> object:
@@ -1120,10 +1137,16 @@ def _join_address_fields(restored: object, original: object, vault: Vault) -> ob
     # спрошенные скопом, они дают ДВУХ владельцев — правило единственного
     # отказывало, и ни один из адресов не разрешался. Группа читается из
     # приставки имени поля: она и есть то, чем схема их различает.
+    # THE PREFIX IS WHAT IS LEFT WHEN THE SCHEMA'S OWN WORD COMES OFF, not the
+    # role's name. `locality` holds the city and `building` the house, and
+    # cutting the ROLE out of them cut nothing — each became a group of its
+    # own, asked alone, and the city with two owners in the conversation was
+    # never resolved (live v4: `courier_book.address.locality` reached the
+    # tool as our fake town).
     groups: dict[str, dict[str, str]] = {}
     for key, value in addressed.items():
-        role = _role_of_field(key)
-        prefix = key.lower().rsplit(role, 1)[0].strip("_")
+        word, _ = morph_places.field_role(key)
+        prefix = key.lower().rsplit(word, 1)[0].strip("_")
         groups.setdefault(prefix, {})[key] = value
     out = dict(restored)
     for group in groups.values():

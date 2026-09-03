@@ -355,6 +355,50 @@ _PREPOSITIONS = frozenset({"на", "в", "во", "по", "с", "со", "у", "д
 _KEY_SPLIT_RE = re.compile(r"[\s,;./№#]+")
 
 
+# THE REGISTER WRITES THE REGION FIRST, AND NOBODY SAYS IT. A DaData / ФИАС
+# record reads «Самарская область, г Самара, ул Луговая, д 10»; the customer
+# who lives there says «Самара, Луговая 10» or just «луговая 10». The region
+# clauses are the same place written at a level of detail no mention from a
+# person carries, so the key, the roles and the shape all read PAST them.
+# Measured on the live v4 run: every `address_suggest` answer keyed with the
+# region inside («самарский самара область луговой 10») and never met the
+# customer's own mention, so the model was handed a second substitute for the
+# address it had just asked about.
+#
+# A federal city before a MARKED settlement («Санкт-Петербург, г Колпино») is a
+# region too — Колпино is the town, the city is its subject. Without the
+# marker the leading city is the city.
+_REGION_WORDS = (r"(?:область|обл|край|республика|респ|автономн\w*\s+округ|автономн\w*\s+область"
+                 r"|ао|округ|район|р-н|муниципальн\w*\s+район|городск\w*\s+округ)")
+_REGION_CLAUSE = re.compile(
+    rf"(?i)\s*(?:респ(?:ублика)?\.?\s+[А-ЯЁа-яё-]+|[А-ЯЁа-яё-]+(?:\s+[А-ЯЁа-яё-]+)?\s+{_REGION_WORDS}\.?)\s*,\s*")
+_FEDERAL_CITY_CLAUSE = re.compile(r"\s*(?:Москва|Санкт-Петербург|Севастополь)\s*,\s*")
+# No `^`: these are applied with `match(phrase, pos)`, which anchors at `pos`
+# on its own, and a caret would refuse every clause after the first.
+_MARKED_SETTLEMENT = re.compile(
+    r"(?i)(?:г|гор|город|пос|посёлок|поселок|с|село|дер|деревня|ст|станица|рп|пгт|х|хутор|аул)\.?\s+[А-ЯЁа-яё]")
+
+
+def region_prefix_end(phrase: str) -> int:
+    """Where the leading region / district clauses end; 0 when there are none."""
+    pos = 0
+    while True:
+        match = _REGION_CLAUSE.match(phrase, pos)
+        if match is None:
+            match = _FEDERAL_CITY_CLAUSE.match(phrase, pos)
+            if match is None or not _MARKED_SETTLEMENT.match(phrase, match.end()):
+                break
+        pos = match.end()
+    return pos
+
+
+# A word that INTRODUCES the settlement in the written register. «с», «д» and
+# «п» are left out on purpose: they are a preposition, the house marker and a
+# bare letter far more often than село, деревня and посёлок.
+_CITY_MARKERS = frozenset({"г", "гор", "город", "пос", "посёлок", "поселок", "село", "дер",
+                           "деревня", "станица", "пгт", "рп", "хутор", "аул"})
+
+
 def address_key(phrase: str) -> str:
     """A structural signature of an address, for the VAULT KEY only.
 
@@ -375,13 +419,31 @@ def address_key(phrase: str) -> str:
     # Prepositions come off BEFORE normalisation: they are what makes
     # `phrase_to_nominative` read «на Ленинском» as a stem rather than an
     # adjective, so stripping them afterwards would be too late.
+    phrase = phrase[region_prefix_end(phrase):] or phrase
     stripped = " ".join(word for word in phrase.strip().split()
                         if word.strip(",.").casefold() not in _PREPOSITIONS)
     parts: list[str] = []
-    for raw in _KEY_SPLIT_RE.split((stripped or phrase.strip())
-                                   .casefold().replace("ё", "е")):
+    # THE CITY IS FOUND BY STRUCTURE, NOT ONLY BY THE LIST BELOW. A settlement
+    # marker names the next word («г Можга»), and a leading word morphology
+    # knows only as a place is one too («можга проезд пушкина 89»). `_CITY_RE`
+    # stays for the big cities written bare after the street («ул. Ленина 5,
+    # Казань»), which the two structural signals cannot see.
+    cities: list[str] = []
+    previous = ""
+    # «ул Маяковского 82, Можга» — the settlement written LAST, after the
+    # house, as a one-word clause morphology knows only as a place.
+    tail = phrase.strip().rsplit(",", 1)
+    trailing_city = (_KEY_SPLIT_RE.sub("", tail[1].strip().casefold().replace("ё", "е"))
+                     if len(tail) == 2 and " " not in tail[1].strip() else "")
+    if trailing_city and not _is_settlement_word(trailing_city):
+        trailing_city = ""
+    for index, raw in enumerate(_KEY_SPLIT_RE.split((stripped or phrase.strip())
+                                                    .casefold().replace("ё", "е"))):
         if not raw or raw in _PREPOSITIONS:
             continue
+        names_city = (previous in _CITY_MARKERS or (index == 0 and _is_settlement_word(raw))
+                      or (raw == trailing_city))
+        previous = raw
         alias = _SLOT_ALIASES.get(raw)
         if alias is not None:
             if alias:
@@ -409,8 +471,13 @@ def address_key(phrase: str) -> str:
                 parts.append(generic)
                 break
         else:
-            parses = MORPH.parse(raw) if not raw.isdigit() else []
+            # A DIGIT-LED TOKEN IS A NUMBER, whatever letter is glued to it.
+            # pymorphy read «160в» as a verb and lemmatised it to «160ть», so
+            # the house with a litera was a key nothing else could reach.
+            parses = MORPH.parse(raw) if not raw[:1].isdigit() else []
             parts.append(parses[0].normal_form if parses else raw)
+            if names_city:
+                cities.append(parts[-1])
     # A city named anywhere goes to the front, so «Москва, X» and «X, Москва»
     # are one address. Everything else keeps the order it was written in.
     # The city first, then the street TYPE, then everything else in the order it
@@ -418,8 +485,8 @@ def address_key(phrase: str) -> str:
     # «Тверская улица» are one street — so its position cannot be part of the
     # key. The numbers keep their order: house 42 flat 118 is not house 118
     # flat 42.
-    city = [part for part in parts if _CITY_RE.match(part)]
-    rest = [part for part in parts if not _CITY_RE.match(part)]
+    city = [part for part in parts if part in cities or _CITY_RE.match(part)]
+    rest = [part for part in parts if part not in city]
     generic = [part for part in rest if part in _GENERIC]
     tail = [part for part in rest if part not in _GENERIC]
     return " ".join(city + generic[:1] + tail)
@@ -439,6 +506,7 @@ def _has_city(phrase: str) -> bool:
     phrase. That is where a settlement goes in a Russian address, whatever it is
     called. The explicit marker («г.», «город») still counts on its own.
     """
+    phrase = phrase[region_prefix_end(phrase):] or phrase
     if re.search(r"(?i)\b(?:г|гор|город|пос|посёлок|поселок|село|дер|станиц)\.?\s", phrase):
         return True
     head = phrase.split(",", 1)[0].strip()
@@ -454,6 +522,10 @@ def _has_city(phrase: str) -> bool:
         return _leading_settlement(phrase) is not None
     if not head:
         return False
+    tail = phrase.rsplit(",", 1)[1].strip()
+    if tail and " " not in tail and re.fullmatch(r"[А-ЯЁа-яё-]+", tail) \
+            and _is_settlement_word(tail.casefold().replace("ё", "е")):
+        return True
     words = re.findall(r"[А-ЯЁа-яё]+", head)
     if not words or len(words) > 2:
         return False
@@ -535,6 +607,11 @@ def street_house_key(phrase: str) -> str:
         # written form («100а») has already lost it in `address_key`.
         if len(token) == 1 and token.isalpha() and kept and kept[-1][-1:].isdigit():
             continue
+        # The glued litera («160в») is now kept by `address_key`; the short
+        # mention «полевая 160 в» lost its separate one above, so both key
+        # to the bare number here.
+        if len(token) > 1 and token[:-1].isdigit() and token[-1].isalpha():
+            token = token[:-1]
         kept.append(token)
     # THE HOUSE NUMBER IS SAID IN WORDS AND WRITTEN IN DIGITS, and the two
     # mentions of one place are one place: «центральная сто» from the customer,
@@ -547,6 +624,17 @@ def street_house_key(phrase: str) -> str:
 
 
 _SHORT_KEY_STOP = frozenset({"кв", "к", "стр", "подъезд", "под", "этаж"})
+
+
+def _is_settlement_word(word: str) -> bool:
+    """`_leading_settlement` for one already-lowered token: a place to
+    morphology and nothing else — no surname, no adjective, no street type."""
+    if word in _GENERIC or _GENERIC_STEMS.match(word) or word[:1].isdigit():
+        return False
+    parses = MORPH.parse(word)
+    if not any("Geox" in parse.tag.grammemes for parse in parses):
+        return False
+    return not any("Surn" in parse.tag.grammemes or parse.tag.POS == "ADJF" for parse in parses)
 
 
 def _fold_cardinals(tokens: list[str]) -> list[str]:
@@ -808,15 +896,19 @@ _NUMERAL_LONGEST = "|".join(sorted(
      "восемьсот", "девятьсот"), key=len, reverse=True))
 _WORD_NUMBER = re.compile(
     rf"(?i)\b(?:{_NUMERAL_LONGEST})\b(?:\s+\b(?:{_NUMERAL_LONGEST})\b)*"
-    rf"(?:\s+[а-яё](?![а-яё]))?")
+    rf"(?:\s+[а-яёА-ЯЁ](?![а-яёА-ЯЁ]))?")
 # ЛИТЕРА ОТДЕЛЬНЫМ СЛОВОМ — ЧАСТЬ НОМЕРА ДОМА. «садовая 89 а», «барамзиной 112
 # а»: без этого разбор считал дом законченным на цифре, обрезка ориентира резала
 # «а» вместе с хвостом, и буква настоящего дома уходила к модели открытым
 # текстом. Слитную форму («89а») паттерн знал и раньше. Двусмысленность «а» как
 # союза снимается НИЖЕ по потоку, в `_trim_tail`, где видно следующее слово.
-_DIGIT_NUMBER = re.compile(r"\d+(?:/\d+)?(?:[а-яё]\b|\s+[а-яё](?![а-яё]))?")
+# THE REGISTER WRITES THE LITERA IN CAPITALS. ФИАС / DaData spell «д 10А», and
+# a lower-case class stopped the house at «10» — the «А» fell outside the
+# role, outside the key, and outside the detector's span.
+_DIGIT_NUMBER = re.compile(r"\d+(?:/\d+)?(?:[а-яёА-ЯЁ]\b|\s+[а-яёА-ЯЁ](?![а-яёА-ЯЁ]))?")
 _ORDINAL_ONLY = re.compile(rf"(?i)\b{_ORDINAL_WORD}\b")
 _HOUSE_MARKER = re.compile(r"(?i)\b(?:дом|д|влад\w*|вл)\.?")
+_HOUSE_MARKER_TAIL = re.compile(r"(?i)\b(?:дом|д|влад\w*|вл)\.?[\s,.]*$")
 _PART_MARKERS: tuple[tuple[str, str], ...] = (
     ("flat", r"кв|кварт\w*|офис\w*|оф"),
     ("entrance", r"подъезд\w*|под"),
@@ -866,8 +958,9 @@ def role_spans(phrase: str) -> dict[str, tuple[int, int]]:
     одним лишь строкам частей нельзя сказать, где в «ул. Липовая, д. 119, кв.
     10» кончается дом и начинается квартира.
     """
-    offset = len(phrase) - len(phrase.lstrip())
-    text = phrase.strip()
+    body = phrase[region_prefix_end(phrase):] or phrase
+    offset = len(phrase) - len(body) + (len(body) - len(body.lstrip()))
+    text = body.strip()
     claimed: list[tuple[int, int]] = []
     out: dict[str, tuple[int, int]] = {}
     for role, marker in _PART_MARKERS:
@@ -892,8 +985,11 @@ def role_spans(phrase: str) -> dict[str, tuple[int, int]]:
     if house is not None:
         out["house"] = (house.start(), house.end())
         head_end = house.start()
-        marker = _HOUSE_MARKER.search(text[:head_end])
-        if marker is not None and not text[marker.end():head_end].strip(" ,."):
+        # THE LAST marker before the number, not the first. `search` took
+        # the «Д» of «Добролюбова» and the «Влад» of «Владимирская», found
+        # text after them, and left the real «д» inside the street.
+        marker = _HOUSE_MARKER_TAIL.search(text[:head_end])
+        if marker is not None:
             head_end = marker.start()
         head = text[:head_end]
         start = head_end - len(head.rstrip(" ,."))
@@ -960,6 +1056,55 @@ _LEADING_CITY = re.compile(
 _STREET_TYPE_LEAD = re.compile(
     r"(?i)^(?:ул\.?|улица|улице|улицу|пр-т|пр\.?|просп\.?|проспект\w*|пер\.?|переулок|переулк\w*|"
     r"б-р|бульвар\w*|ш\.?|шоссе|пл\.?|площад\w*|наб\.?|набережн\w*|проезд\w*|тупик\w*|аллея|аллее)\s+")
+
+
+# WHICH FIELD HOLDS WHICH PART OF AN ADDRESS — one list for both legs. The
+# restorer reads a tool call's `address.locality` / `street` / `building`; the
+# detector reads a tool RESULT's `city` / `street` / `house`. The vocabulary
+# is the structure of delivery schemas (CDEK, Yandex, DaData), not tuned data.
+FIELD_ROLES: tuple[tuple[str, str], ...] = (
+    ("street", "street"), ("house", "house"), ("building", "house"),
+    ("flat", "flat"), ("apartment", "flat"), ("apt", "flat"), ("sflat", "flat"),
+    ("entrance", "entrance"), ("porch", "entrance"), ("floor", "floor"),
+    # The settlement is a field of its own in every delivery schema (CDEK
+    # `city`, Yandex `locality`); without a role here a bare fake city in it
+    # was never asked about and reached the tool as «Сортавала».
+    ("city", "city"), ("locality", "city"), ("town", "city"), ("settlement", "city"),
+)
+_CAMEL_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def field_role(name: str) -> tuple[str, str]:
+    """(the schema word that names the part, its role) for a field, or ("", "")."""
+    parts = _CAMEL_RE.sub("_", name).lower().split("_")
+    for word, role in FIELD_ROLES:
+        if word in parts:
+            return word, role
+    return "", ""
+
+
+def role_of_field(name: str) -> str:
+    """The address part a schema field holds, or "" for a field that holds none."""
+    return field_role(name)[1]
+
+
+def address_from_fields(fields: dict[str, str]) -> str:
+    """The address a record spells out field by field, written as one line
+    in the register's order — the string the vault keys and mints for."""
+    out: list[str] = []
+    if fields.get("city"):
+        out.append(fields["city"])
+    out.append(fields["street"])
+    out.append(fields["house"])
+    if fields.get("building"):
+        out.append(f"корп. {fields['building']}")
+    if fields.get("entrance"):
+        out.append(f"подъезд {fields['entrance']}")
+    if fields.get("floor"):
+        out.append(f"этаж {fields['floor']}")
+    if fields.get("flat"):
+        out.append(f"кв. {fields['flat']}")
+    return ", ".join(out)
 
 
 def part_in_form_of(agent_part: str, real_part: str, role: str) -> str:

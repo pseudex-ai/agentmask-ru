@@ -654,6 +654,46 @@ def _first_names_by_gender() -> dict[str, tuple[str, ...]]:
     return {"masc": tuple(buckets["masc"]), "femn": tuple(buckets["femn"])}
 
 
+def _place_identity(canonical: str) -> tuple[str, ...]:
+    """An address canonical without its street-type words, the spoken numbers
+    folded to digits («сто» and «100» are one house, as in `street_house_key`)."""
+    return tuple(morph_places._fold_cardinals(
+        [part for part in canonical.split() if part not in morph_places._GENERIC]))
+
+
+def _house_identity(canonical: str, has_city: bool) -> tuple[str, ...]:
+    """The street and the house AS WRITTEN — litera included — of a canonical,
+    without the city and without anything finer than the house.
+
+    `street_house_key` is deliberately tolerant (it drops the litera, so a
+    short mention may omit it) and is only ever used to FIND candidates; the
+    decision to link is taken on this. The register answers three neighbours
+    on one street — «д 10», «д 10А», the same house in the next town — and a
+    tolerant decision joined them into one substitute."""
+    parts = _place_identity(canonical)
+    if has_city and parts:
+        parts = parts[1:]
+    out: list[str] = []
+    for part in parts:
+        if part in morph_places._SHORT_KEY_STOP:
+            break
+        out.append(part)
+    return tuple(out)
+
+
+def _street_stem(phrase: str) -> str:
+    """The street's last word, folded and lemmatised, or "" when there is none."""
+    street = morph_places.split_roles(phrase).get("street", "") if phrase else ""
+    if not street:
+        return ""
+    words = [word for word in re.split(r"[\s,.]+", street.casefold().replace("ё", "е"))
+             if word and word not in morph_places._GENERIC and not morph_places._GENERIC_STEMS.match(word)]
+    if not words:
+        return ""
+    parses = morph_places.MORPH.parse(words[-1])
+    return parses[0].normal_form if parses else words[-1]
+
+
 def _fake_city(original: str) -> str:
     """A city of the same GENDER as the one it replaces.
 
@@ -1437,6 +1477,15 @@ class Vault:
         random or composed from parts already minted. Called under the lock."""
         if entity_type == "NAME" and original and _shares_a_word(token, original):
             return False
+        # THE SAME RULE FOR A STREET. «Луговая» is in the fake pool because it
+        # is a common street, and a common street is what the customer lives
+        # on: drawn for «ул Луговая, д 10» it put the real street name into
+        # the model's view labelled as ours (the register's neighbour record
+        # did exactly that on the live run).
+        if entity_type == "LOC" and original:
+            fake_stem = _street_stem(token)
+            if fake_stem and fake_stem == _street_stem(original):
+                return False
         # A FAKE CITY IS A REAL TOWN, and the customer may name that town. Our
         # pool is «Валдай», «Суздаль», «Елец» — real places on purpose, so a
         # substitute reads as one — and a customer living in Валдай then met a
@@ -1594,10 +1643,18 @@ class Vault:
                     if grown is not None:
                         token, extends = grown
             elif entity_type == "LOC":
-                linked_place = self._linked_place(canonical, value, shape)
-                if linked_place is not None:
+                same = self._same_place_written_differently(canonical, value, shape)
+                if same is not None:
+                    # Not a guess, so the PLAIN canonical keeps it: one place,
+                    # one substitute, and `linked_place` set so the second
+                    # writing is not indexed as a second owner.
+                    token, extends = same
+                    linked_place = same
+                else:
+                    linked_place = self._linked_place(canonical, value, shape)
+                if linked_place is not None and same is None:
                     (token, extends), canonical = linked_place, scoped
-                elif self._conversation:
+                elif token is None and self._conversation:
                     grown_place = self._extends_linked_place(canonical, value, shape)
                     if grown_place is not None:
                         token, extends = grown_place
@@ -1977,6 +2034,78 @@ class Vault:
         self._conn.execute("DELETE FROM place_parts WHERE created < ?",
                            (now - _PLACE_PART_TTL,))
 
+    def _same_place_written_differently(self, canonical: str, value: str,
+                                        shape: dict[str, object]) -> tuple[str, str] | None:
+        """The substitute for a CITY-BEARING address this conversation already
+        holds with the same city, street and house — written another way.
+
+        «Самара, Луговая 10» from the customer and «Самарская область, г
+        Самара, ул Луговая, д 10» back from the directory are one place, and
+        the canonical keeps them apart on purpose: the type word is part of the
+        identity («Ленинский проспект» is not «Ленинская улица»), so a key
+        that dropped it would merge two streets. What it may not do is mint a
+        second substitute for one place — the model then compares the address
+        it asked about with a different fake and answers «не найден» (live v4,
+        `compare`: 29 of 42 triples).
+
+        Same discipline as every link here: exactly one owner on that street
+        and house in this conversation, AND the same settlement — a different
+        city on the same street and house is a different place and gets its own
+        substitute.
+        """
+        if not self._conversation or not shape.get("has_city"):
+            return None
+        part = morph_places.street_house_key(value)
+        if not part:
+            return None
+        rows = self._conn.execute(
+            "SELECT p.canonical, t.token FROM place_parts p "
+            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
+            "WHERE p.customer=? AND p.conversation=? AND p.part=? AND p.has_city=1 "
+            "AND t.entity_type='LOC' LIMIT 8",
+            (self._customer, self._conversation, part),
+        ).fetchall()
+        # THE WHOLE IDENTITY MINUS THE TYPE WORD: settlement, street stem and
+        # every number as written. The short key drops the house litera on
+        # purpose (a short mention may omit it), and read alone it linked the
+        # register's NEIGHBOUR — «д 10А» to «д 10» — into one substitute.
+        wanted = _place_identity(canonical)
+        same = [token for owner_canonical, token in rows
+                if _place_identity(owner_canonical) == wanted]
+        if len(same) != 1:
+            return None
+        return same[0], same[0]
+
+    def holds_minted_place(self, value: str) -> bool:
+        """A LOC mention that CONTAINS a substitute of this conversation.
+
+        The model was handed «улица Мятная 151» and, told the city in the
+        clear, wrote «Самара, улица Мятная 151» into its tool call. That call
+        rides in the transcript and is re-masked with it on the next request —
+        production behaviour, the role of a message is not evidence — and the
+        composition is a well-formed address that `is_minted_token` cannot
+        recognise because it is not exactly the token. It was minted AGAIN, so
+        the model saw its own query rewritten into a third address a turn
+        later. Nothing in the composition is new to the model: the city is one
+        it was already shown, the rest is ours. So it is left as written.
+
+        Scoped to the conversation that minted the token, like the guard it
+        extends; a caller that named none gets nothing here, because outside a
+        conversation the composition cannot be told from a real address.
+        """
+        if not self._conversation:
+            return False
+        key = morph_places.street_house_key(value)
+        if not key:
+            return False
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT token FROM tokens WHERE customer=? AND entity_type='LOC' "
+                "AND minted_in=?",
+                (self._customer, self._conversation),
+            ).fetchall()
+        return any(morph_places.street_house_key(token) == key for (token,) in rows)
+
     def _linked_place(self, canonical: str, value: str,
                       shape: dict[str, object]) -> tuple[str, str] | None:
         """The substitute for an address we already met, named more briefly.
@@ -2020,15 +2149,21 @@ class Vault:
         # indexed too now (so a later fuller form can grow them), and without
         # this filter the short form would be its own owner.
         rows = self._conn.execute(
-            "SELECT t.token FROM place_parts p "
+            "SELECT p.canonical, t.token FROM place_parts p "
             "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
             "WHERE p.customer=? AND p.conversation=? AND p.part=? AND p.has_city=1 "
-            "AND t.entity_type='LOC' LIMIT 2",
+            "AND t.entity_type='LOC' LIMIT 8",
             (self._customer, self._conversation, part),
         ).fetchall()
-        if len(rows) != 1:
+        # Candidates by the tolerant key, the decision by the exact house
+        # (see `_house_identity`): the register's «д 10» and «д 10А» are two
+        # owners of one key and one owner of «луговая 10».
+        wanted = _house_identity(canonical, False)
+        owners = [token for owner_canonical, token in rows
+                  if _house_identity(owner_canonical, True) == wanted]
+        if len(owners) != 1:
             return None
-        full = rows[0][0]
+        full = owners[0]
         derived = morph_places.strip_leading_city(full)
         if not shape.get("has_flat"):
             derived = morph_places.strip_flat(derived)
@@ -2062,15 +2197,24 @@ class Vault:
         if not part:
             return None
         rows = self._conn.execute(
-            "SELECT p.has_city, t.token FROM place_parts p "
+            "SELECT p.has_city, p.canonical, t.token FROM place_parts p "
             "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
             "WHERE p.customer=? AND p.conversation=? AND p.part=? "
-            "AND t.entity_type='LOC' LIMIT 3",
+            "AND t.entity_type='LOC' LIMIT 8",
             (self._customer, self._conversation, part),
         ).fetchall()
-        if len(rows) != 1 or rows[0][0] != 0:
+        wanted = _house_identity(canonical, True)
+        # A city-bearing row on this EXACT street and house is another town's
+        # (the same town would have been found by `_same_place_written_
+        # differently`), and then the short mention is a guess between the two.
+        if any(has_city == 1 and _house_identity(owner, True) == wanted
+               for has_city, owner, _ in rows):
             return None
-        short = rows[0][1]
+        shorts = [token for has_city, owner, token in rows
+                  if has_city == 0 and _house_identity(owner, False) == wanted]
+        if len(shorts) != 1:
+            return None
+        short = shorts[0]
         if morph_places.strip_leading_city(short) != short:
             return None
         grown = _extend_place(short, value, shape)

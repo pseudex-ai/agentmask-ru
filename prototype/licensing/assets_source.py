@@ -458,7 +458,11 @@ _LITERA_WRITTEN = (r"(?:\s+(?![яЯ](?![а-яё]))[а-яё](?![а-яё])"
 _LOWER_NAME_NONUM = (r"(?!" + _SPELLED + r"\b)[а-яё]{3,}"
                      r"(?:[\s-](?!" + _SPELLED + r"\b)[а-яё]{3,}){0,2}")
 
-_HOUSE_NUM = rf"(?:\d{{1,4}}(?!\d)|{_SPELLED_NUM})"
+# THE GLUED LITERA, IN EITHER CASE. ФИАС and DaData write «д 10А», and the
+# arms ended the span at «10»: the capital fell outside the address, outside
+# the vault key, and reached the model beside the substitute. Glued only — a
+# capital after a SPACE is the next word — and never followed by a letter.
+_HOUSE_NUM = rf"(?:\d{{1,4}}(?!\d)(?:[а-яёА-ЯЁ](?![а-яёА-ЯЁ]))?|{_SPELLED_NUM})"
 
 # A TRAILING ABBREVIATED MARKER. `_ST_ABBR` requires a dot or space AFTER it, so
 # it can only stand BEFORE the name — «пр-кт Ленинский 55» matched and «Ленинский
@@ -836,7 +840,7 @@ ADDRESS_PATTERNS: dict[str, str] = {
     # No (?i) — deliberately. `[а-яё]` here is the lowercase letter that can
     # follow a house number ("12а"); made case-insensitive it would also swallow
     # the capital that starts the NEXT word.
-    "trail_house": r"[\s,]+\d{1,4}[а-яё]?(?:/\d+)?\b",
+    "trail_house": r"[\s,]+\d{1,4}(?:[а-яёА-ЯЁ](?![а-яёА-ЯЁ]))?(?:/\d+)?\b",
 }
 
 # --- quasi-identifiers ---------------------------------------------------
