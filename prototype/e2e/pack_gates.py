@@ -713,7 +713,7 @@ def _report(started: float) -> int:
     print("=" * 64)
     print(f"{len(RESULTS) - len(failed)}/{len(RESULTS)} packaging gates passed "
           f"in {(time.monotonic() - started) / 60:.1f} min")
-    print("P7 (the whole L1-L21 suite on the compiled image) runs separately:\n"
+    print("P7 (the whole L1-L22 suite on the compiled image) runs separately:\n"
           f"    python3 e2e/gates.py --image {COMPILED_IMAGE}")
     # Same guard as `gates.py::_report`, and this file is where the class was
     # found: `--only P10` printed `0/0` and exited zero for as long as P10 has

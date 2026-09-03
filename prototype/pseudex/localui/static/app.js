@@ -287,6 +287,7 @@ function Status({ status, engineDown, org, goSandbox, onBlocked }) {
 
   const license = status?.license || {};
   const engine = status?.engine || {};
+  const memory = engine.memory;
   const today = status?.today || {};
   const vault = status?.vault || {};
   const big = engineDown
@@ -400,6 +401,12 @@ function Status({ status, engineDown, org, goSandbox, onBlocked }) {
                   <span class="up">${duration(process.uptime_s)}</span>
                 </div>`)
             : html`<div class="foot-note">${engineDown ? 'нет ответа' : 'список процессов доступен только внутри контейнера Linux'}</div>`}
+          ${memory && memory.limit_mb ? html`
+            <div class="foot-note">Память: ${memory.used_mb} из ${memory.limit_mb} МБ, крупнейший процесс ${memory.largest_process_mb} МБ при бюджете воркера ${memory.worker_mb_budget} МБ.</div>
+            ${memory.largest_process_mb > memory.worker_mb_budget && html`
+              <div class="foot-note">Воркер вырос выше бюджета, на котором посчитан запуск. Это и есть тот контейнер, который однажды остановит OOM-killer: поднимите лимит памяти или уменьшите PSEUDEX_WORKERS.</div>`}`
+            : !engineDown && html`
+            <div class="foot-note">Лимита памяти не видно — контейнер запущен без него, и предполётная проверка ничего не проверяла.</div>`}
         </div>
         <div class="cell">
           <div class="label mb">ЕСЛИ ЧТО-ТО НЕ ТАК</div>

@@ -25,7 +25,7 @@ import anyio
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from pseudex import sqlite_setup
+from pseudex import preflight, sqlite_setup
 from pseudex.audit import SELFCHECK_ORG
 from pseudex.profiling import snapshot as profiling_snapshot
 
@@ -48,6 +48,9 @@ _SHOWN_ENV = (
     "PSEUDEX_ADDR_EXTRACTOR",
     "PSEUDEX_LICENSE_URL",
     "PSEUDEX_UI_PORT",
+    "PSEUDEX_WORKER_MB",
+    "PSEUDEX_HEADROOM_MB",
+    "PSEUDEX_MEMORY_LIMIT_MB",
     "TZ",
 )
 
@@ -130,6 +133,57 @@ def processes() -> list[dict[str, object]]:
     return found
 
 
+def memory(snapshot: list[dict[str, object]] | None = None) -> dict[str, object]:
+    """What the preflight decided, re-asked against what is actually running.
+
+    THE PREFLIGHT'S ANSWER GOES STALE AND THIS ONE DOES NOT. The budget was
+    computed from a measured 350 MB per worker; a customer whose traffic holds
+    longer transcripts, or a container whose limit was raised without a restart,
+    lives at a different number. So this reports the same arithmetic beside the
+    RESIDENT sizes the processes actually have, and the interesting line is where
+    the two disagree — that is the container which will be killed later today,
+    visible before it is.
+
+    IT DOES NOT CLAIM TO KNOW WHICH PROCESS IS A WORKER, and the first version
+    did. `processes()` derives its `role` from AGE — the oldest is the master —
+    which is right for the picture it draws and wrong here twice over: the shell
+    that fans the workers out is not in the list at all, so the oldest entry is a
+    real worker labelled «master», and the interface IS in the list, so filtering
+    on `role == "worker"` dropped one worker and counted a 50 MB UI process as
+    one. With one worker and the interface on, the «largest worker» was the
+    interface and the drift warning could never fire.
+
+    Nothing distinguishes them from outside: the interface is the same binary
+    under a different role, so its cmdline is identical. So the honest report is
+    the LARGEST process — a worker whenever any worker runs, since the
+    interface is an order of magnitude smaller — and it is named that way.
+
+    Takes the snapshot so `/status` does not scan `/proc` twice for one answer:
+    two scans are two moments, and `used_mb` describing a different set of
+    processes than the count beside it is a small lie that costs nothing to
+    avoid.
+    """
+    limit = preflight.memory_limit_mb()
+    found = processes() if snapshot is None else snapshot
+    used_mb = sum(int(item.get("rss_mb", 0)) for item in found)
+    # The same arithmetic the preflight ran, asked the same way: from the
+    # environment and the affinity, never from the process list — a container
+    # whose workers are being killed one by one would otherwise report a
+    # shrinking budget as though that were the plan.
+    plan = preflight.plan(limit, preflight.cpus_available())
+    return {
+        "limit_mb": limit,
+        "used_mb": used_mb,
+        "processes_running": len(found),
+        "worker_mb_budget": plan["worker_mb"],
+        "largest_process_mb": max((int(item.get("rss_mb", 0)) for item in found),
+                                  default=0),
+        "headroom_mb": (limit - used_mb) if limit is not None else None,
+        "verdict": plan["verdict"],
+        "reason": plan["reason"],
+    }
+
+
 def _period_start(period: str) -> float:
     """Start of a named period. Unknown values collapse to 14 days rather than
     raising: this comes off a query string, and a typo should narrow nothing."""
@@ -161,6 +215,10 @@ def build_router(audit, license_client, assets, detector_version: str,
     async def status(request: Request) -> JSONResponse:
         org_id = request.query_params.get("org_id", "default")
         state = license_client.status()
+        # ONE SCAN OF /proc for both the process list and the memory report:
+        # they are drawn side by side on one screen, and two scans would be two
+        # different moments rendered as one.
+        running = processes()
         series = await anyio.to_thread.run_sync(audit.daily_series, org_id, 1, "")
         today = series[0] if series else {"requests": 0, "values": 0}
         # The breakdown beside "СЕГОДНЯ" must cover the same day the numbers
@@ -174,7 +232,15 @@ def build_router(audit, license_client, assets, detector_version: str,
                 "version": detector_version,
                 "assets_loaded": assets.is_loaded,
                 "bundle_version": state.bundle_version,
-                "processes": processes(),
+                "processes": running,
+                # HERE AND NOT ONLY IN /diagnostics. The preflight refuses at
+                # START; this is the same arithmetic asked of a container that
+                # already started and has since drifted — a raised limit nobody
+                # restarted for, or traffic heavier than the 350 MB the budget
+                # was measured on. The operator's screen is where that is worth
+                # seeing, and /diagnostics is the screen they open after the
+                # trouble rather than before it.
+                "memory": memory(running),
             },
             "license": {
                 "state": state.state,
@@ -325,10 +391,12 @@ def build_router(audit, license_client, assets, detector_version: str,
 
     @router.get("/diagnostics")
     async def diagnostics(request: Request) -> JSONResponse:
+        diagnostics_processes = processes()
         return JSONResponse({
             "env": {name: os.environ[name] for name in _SHOWN_ENV if name in os.environ},
             "profile": profiling_snapshot(),
-            "processes": processes(),
+            "processes": diagnostics_processes,
+            "memory": memory(diagnostics_processes),
             "lease_errors": license_client.recent_errors(),
         })
 

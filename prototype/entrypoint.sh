@@ -10,9 +10,11 @@
 # SO_REUSEPORT socket to the same port and the kernel balances between them —
 # see serve_main.py.
 #
-# MEMORY/THROUGHPUT TRADEOFF (measured ~300 MB resident per worker for the model
-# stack): pick PSEUDEX_WORKERS so N*300 MB fits the container memory limit with
-# headroom, and N <= vCPU count.
+# MEMORY/THROUGHPUT TRADEOFF (measured ~350 MB resident per worker for the model
+# stack): N*350 MB has to fit the container's memory limit with headroom, and
+# N <= vCPU count. That is no longer advice — `PSEUDEX_ROLE=preflight` below
+# does the arithmetic before the fan-out and refuses or lowers N, because a
+# comment cannot stop an OOM kill and 137 names neither memory nor us.
 #
 # Each worker LEASES ITS OWN BUNDLE: its X25519 keypair never leaves its memory,
 # so there is nothing to share and no IPC. A worker that cannot lease exits on
@@ -39,16 +41,54 @@ set -e
 #
 # `exec`, so the role's exit code is the container's: the probe's non-zero is
 # what a healthcheck and a script read.
+#
+# `preflight` СТОИТ ЗДЕСЬ ЖЕ, хотя ниже этот же скрипт вызывает её сам: без
+# строки в этом списке `docker run -e PSEUDEX_ROLE=preflight` уходил дальше по
+# файлу, печатал ключ шлюза, «запускал» N процессов, каждый из которых просто
+# печатал число и выходил нулём, — и контейнер выходил нулём тоже. Роль,
+# объявленная в документации, обязана быть одноразовой на самом деле.
+# Рекурсии нет: ниже вызывается БИНАРНИК, а не этот скрипт.
 case "${PSEUDEX_ROLE:-sidecar}" in
-    probe|rekey|decrypt)
+    preflight|probe|rekey|decrypt)
         exec ${PSEUDEX_SERVE_CMD:-./pseudex-serve}
         ;;
 esac
 
-if [ -n "$PSEUDEX_WORKERS" ]; then
-    WORKERS="$PSEUDEX_WORKERS"
-else
-    WORKERS="$(nproc 2>/dev/null || echo 1)"
+# СКОЛЬКО ВОРКЕРОВ ВЛЕЗАЕТ — СПРАШИВАЕТСЯ ДО ТОГО, КАК ЗАПУЩЕН ХОТЬ ОДИН.
+#
+# Выше стоял комментарий «подберите PSEUDEX_WORKERS так, чтобы N*300 МБ влезли в
+# лимит контейнера», и комментарий не умеет отказывать. Вместо отказа
+# происходило вот что: фан-аут стартовал, OOM-killer забирал того воркера,
+# который последним попросил страницу, супервизор ниже видел ушедшего ребёнка и
+# ронял контейнер со статусом 137 — числом, которое не называет ни память, ни
+# нас. Всё это известно ЗАРАНЕЕ: лимит лежит в файле, цена воркера измерена,
+# арифметика — одно деление.
+#
+# Роль вызывается ровно как `probe` ниже, и по тому же контракту: единственная
+# строка stdout — число воркеров, всё человеческое — в stderr, ненулевой код —
+# отказ. Причина уже напечатана ролью, поэтому здесь только вывод.
+if ! WORKERS="$(PSEUDEX_ROLE=preflight ${PSEUDEX_SERVE_CMD:-./pseudex-serve})"; then
+    echo ""
+    echo "pseudex: контейнер остановлен — под запрошенные воркеры не хватает памяти."
+    echo "         Строка «pseudex preflight:» выше говорит, сколько дать или сколько просить."
+    exit 4
+fi
+
+# ЧИСЛО ПРОВЕРЯЕТСЯ, А НЕ ПРИНИМАЕТСЯ НА ВЕРУ, и это нашёл негативный прогон
+# собственной проверки. Пустой ответ (роль вышла нулём, но ничего не напечатала)
+# превращает цикл ниже в `seq 1 ""`, который не запускает НИ ОДНОГО воркера, —
+# а супервизор в конце файла обходит пустой список и крутится вечно. Контейнер
+# при этом «запущен», отвечает на `docker ps`, и не делает ничего. Это худший из
+# отказов: он не виден ни одним способом, каким смотрят на контейнер.
+case "$WORKERS" in
+    ''|*[!0-9]*)
+        echo "pseudex: предполёт вернул «${WORKERS}» вместо числа воркеров — это наша ошибка, а не ваша конфигурация."
+        exit 4
+        ;;
+esac
+if [ "$WORKERS" -lt 1 ]; then
+    echo "pseudex: предполёт вернул ${WORKERS} воркеров — запускать нечего."
+    exit 4
 fi
 
 # One id per CONTAINER, so the licensing server can tell "eight workers of one
@@ -124,6 +164,15 @@ for i in $(seq 1 "${WORKERS}"); do
     ${PSEUDEX_SERVE_CMD:-./pseudex-serve} &
     pids="$pids $!"
 done
+
+# ПУСТОЙ СПИСОК — ЭТО ОТКАЗ, А НЕ СОСТОЯНИЕ ПОКОЯ. Супервизор внизу обходит
+# `pids` и спит; по пустому списку он обходит ничего и спит вечно, ничего не
+# напечатав. Проверка выше делает это недостижимым, и она же однажды перестанет
+# быть верной — поэтому второй рубеж стоит здесь, у самого цикла.
+if [ -z "$pids" ]; then
+    echo "pseudex: не запущено ни одного воркера — контейнер остановлен."
+    exit 4
+fi
 
 # The interface is supervised separately and deliberately does NOT join `pids`.
 # A worker exiting means "no valid licence" and must stop the container; the

@@ -69,7 +69,7 @@ they run against real containers, never against mocks:
 python3 -m licensing.pack --out /tmp/bundle.bin   # build the detection bundle
 python3 -m licensing.devserver                    # the real licensing server, :8443 + admin :9443
 
-python3 e2e/gates.py                              # L1-L21 (+L2b), licensing + vault, ~15 min
+python3 e2e/gates.py                              # L1-L22 (+L2b), licensing, vault, preflight, ~15 min
 python3 e2e/gates.py --only L4,L5                 # a subset while iterating
 python3 make_dirty.py                             # P3 compares the two images on it; without
                                                   # it pack_gates refuses BEFORE the Nuitka build
@@ -404,8 +404,10 @@ makes the rule mean anything and what makes it safe, and one change buys both.**
 ## Concurrency and perf model
 
 pymorphy3 holds the GIL during morphology, so **real parallelism comes from processes, not
-threads**. `entrypoint.sh` starts N uvicorn workers (default = CPU count, ~300 MB resident each
-for the model stack). Inside a worker, `service.py` offloads detection via `anyio.to_thread` under
+threads**. `entrypoint.sh` starts N uvicorn workers (default = CPU count, ~350 MB resident each
+for the model stack — `PSEUDEX_ROLE=preflight` does that arithmetic against the cgroup
+limit BEFORE the fan-out and refuses or lowers N, rather than leaving it to the OOM
+killer, whose verdict is status 137 and names neither memory nor us). Inside a worker, `service.py` offloads detection via `anyio.to_thread` under
 a `CapacityLimiter` so `/health` stays responsive and bursts queue instead of thrashing cores.
 
 `MaskCache` is per-worker and holds only masked output; the SQLite vault + audit are shared, which
@@ -413,8 +415,9 @@ is what keeps tokens consistent across workers. Audit is recorded on the cache *
 same value re-sent in a growing transcript is one protected value, not N.
 
 Env knobs: `PSEUDEX_DB_DIR`, `PSEUDEX_WORKERS`, `PSEUDEX_MASK_CONCURRENCY`, `PSEUDEX_MASK_CACHE_SIZE`,
-`PSEUDEX_ADMIN_TOKEN`, `PSEUDEX_GATEWAY_TOKEN`, `PSEUDEX_UI_PORT`, `PSEUDEX_UI_TOKEN`, `PSEUDEX_UI_PASSWORD`, `PSEUDEX_UI`,
-`PSEUDEX_UI_ORG`, `PSEUDEX_UI_STATIC`, `PSEUDEX_ROLE` (`engine` | `proxy` | `ui` | `probe` | `rekey` | `decrypt`),
+`PSEUDEX_ADMIN_TOKEN`, `PSEUDEX_GATEWAY_TOKEN`,
+`PSEUDEX_WORKER_MB`, `PSEUDEX_HEADROOM_MB`, `PSEUDEX_MEMORY_LIMIT_MB`, `PSEUDEX_UI_PORT`, `PSEUDEX_UI_TOKEN`, `PSEUDEX_UI_PASSWORD`, `PSEUDEX_UI`,
+`PSEUDEX_UI_ORG`, `PSEUDEX_UI_STATIC`, `PSEUDEX_ROLE` (`engine` | `proxy` | `ui` | `preflight` | `probe` | `rekey` | `decrypt`),
 `PSEUDEX_VAULT_KEY`, `PSEUDEX_VAULT_KEY_FILE`, `PSEUDEX_VAULT_KEY_CMD`, `PSEUDEX_VAULT_KEY_NEW`,
 `PSEUDEX_VAULT_ENCRYPTION` (`auto` | `required` | `off`; empty means `auto`),
 `PSEUDEX_VAULT_MIGRATION_BACKUP`, `PSEUDEX_TUNING_KEY` (base64 of 32 bytes — seals the

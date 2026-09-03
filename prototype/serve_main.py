@@ -29,7 +29,7 @@ import sys
 
 import uvicorn
 
-from pseudex import sqlite_setup, vault_key, vault_migrate
+from pseudex import preflight, sqlite_setup, vault_key, vault_migrate
 
 # What the volume looks like, in one word, for the header line of the roles
 # below. The per-file verdicts follow it — this is the sentence an operator reads
@@ -190,6 +190,31 @@ def _decrypt() -> int:
     return 1 if failures else 0
 
 
+def _preflight() -> int:
+    """Say how many workers fit in this container, before any of them starts.
+
+    THE CONTRACT WITH `entrypoint.sh` IS THE STREAM, NOT THE FORMAT: exactly one
+    line on stdout — the worker count to run — and every human sentence on
+    stderr. The caller substitutes stdout into a variable, so a diagnostic line
+    that slipped into it would become the worker count and `seq 1 "…"` would
+    start nothing at all. The same split is why this is a role and not a print
+    inside the engine.
+
+    Exit code is the refusal: non-zero means do not start, and the reason is
+    already on stderr where the operator reads it.
+    """
+    limit = preflight.memory_limit_mb()
+    decision = preflight.plan(limit, preflight.cpus_available())
+    print(f"pseudex preflight: {decision['reason']}", file=sys.stderr)
+    if decision["verdict"] == "refused":
+        return 1
+    if decision["verdict"] == "reduced":
+        print("           ВНИМАНИЕ: воркеров меньше, чем ядер — это решение "
+              "приняли мы, а не вы", file=sys.stderr)
+    print(decision["workers"])
+    return 0
+
+
 def _listening_socket(port: int, backlog: int) -> socket.socket:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -240,6 +265,8 @@ def main() -> None:
     if role == "ui":
         _serve_ui(log_level)
         return
+    if role == "preflight":
+        raise SystemExit(_preflight())
     if role == "probe":
         raise SystemExit(_probe())
     if role == "rekey":

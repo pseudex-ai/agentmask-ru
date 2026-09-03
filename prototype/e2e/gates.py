@@ -1,4 +1,4 @@
-"""The closing gate for the licensing layer: L1-L21 against a real local instance.
+"""The closing gate for the licensing layer: L1-L22 against a real local instance.
 
 RULES THIS FILE OBEYS (docs/tz-license-packaging.md §4.1), because a gate that
 cheats is worse than no gate:
@@ -173,7 +173,8 @@ def wait_until(predicate, timeout: float, interval: float, what: str) -> bool:
     return False
 
 
-def run_disposable_sidecar(image: str, env: dict[str, str], timeout: int) -> tuple[int, str]:
+def run_disposable_sidecar(image: str, env: dict[str, str], timeout: int,
+                           flags: list[str] | None = None) -> tuple[int, str]:
     """Start a one-shot sidecar and report how it died.
 
     Used by the startup gates. Returns (exit_code, logs). A container still alive
@@ -181,7 +182,7 @@ def run_disposable_sidecar(image: str, env: dict[str, str], timeout: int) -> tup
     failure — 'it kept running' is exactly what must not happen."""
     name = f"pseudex-oneshot-{int(time.monotonic() * 1000)}"
     args = ["docker", "run", "--name", name, "--network", NETWORK,
-            "-v", f"{_HERE / 'certs'}:/certs:ro"]
+            "-v", f"{_HERE / 'certs'}:/certs:ro", *(flags or [])]
     for key, value in env.items():
         args += ["-e", f"{key}={value}"]
     args.append(image)
@@ -1180,6 +1181,49 @@ def gate_l21() -> bool:
                 f"driver_sentence_alone={'file is not a database' in output and not spoke}")
 
 
+def gate_l22(image: str) -> bool:
+    """Too little memory stops the container with a sentence, not with 137.
+
+    BOTH HALVES ARE THE GATE, and the refusal alone would be the weaker one: a
+    preflight that refuses everything also passes it. So the same image is
+    started twice, and what separates the runs is only `--memory`.
+
+    The refusal is also proof of ORDER. `--memory=384m` is given with NO licence
+    key at all, so the container has two reasons to stop — and it must stop on
+    ours, before the licence layer is ever reached. A container that answers
+    `license_missing` here would be one whose workers had already been started
+    and had already asked for the memory that is not there; the OOM killer would
+    then decide the outcome, and its verdict is status 137, which names neither
+    memory nor us.
+    """
+    # ОДИН ВОРКЕР В ОБЕИХ ПОЛОВИНАХ, ЯВНО. Без этого число берётся из ядер
+    # РАННЕРА: на шестнадцати ядрах просторная половина запускает шестнадцать
+    # воркеров, каждый строит модель при импорте — то есть ДО того, как дойдёт
+    # до лицензии, — и два гигабайта кончаются раньше, чем гейт добирается до
+    # того, что проверяет. Красный, зависящий от машины, хуже отсутствующего.
+    small_code, small_output = run_disposable_sidecar(image, {
+        "PSEUDEX_LICENSE_URL": "https://license:8443",
+        "PSEUDEX_LICENSE_CA": "/certs/ca.pem",
+        "PSEUDEX_WORKERS": "1",
+    }, 120, ["--memory=384m"])
+    refused = "preflight" in small_output and "не помещается" in small_output
+    before_licence = "license_missing" not in small_output
+
+    big_code, big_output = run_disposable_sidecar(image, {
+        "PSEUDEX_LICENSE_URL": "https://license:8443",
+        "PSEUDEX_LICENSE_CA": "/certs/ca.pem",
+        "PSEUDEX_WORKERS": "1",
+    }, 120, ["--memory=2g"])
+    # It has enough memory, so it gets far enough to fail for the reason L1
+    # already pins. That is the point: the preflight let it through.
+    passed_through = "license_missing" in big_output
+
+    return gate("L22 too little memory stops it with words, enough lets it through",
+                small_code == 4 and refused and before_licence and passed_through,
+                f"exit={small_code} refused={refused} before_licence={before_licence} "
+                f"roomy_exit={big_code} roomy_reached_licence={passed_through}")
+
+
 def gate_l15() -> bool:
     combined = all_logs()
     leaked = [value for value in fixtures.leak_values() if value in combined]
@@ -1268,6 +1312,8 @@ def main() -> None:
             run_gate("L20", gate_l20)
         if wanted("L21"):
             run_gate("L21", gate_l21)
+        if wanted("L22"):
+            run_gate("L22", gate_l22, args.image)
 
         if wanted("L15"):
             run_gate("L15", gate_l15)
