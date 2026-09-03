@@ -587,13 +587,15 @@ def test_directory_record_is_the_customers_address() -> None:
         ]}, ensure_ascii=False)
         masked = json.loads(mask(answer, talk))["suggestions"]
         for suggestion in masked:
-            for real in ("луговая", "самара", "тольятти", "Самара", "Тольятти"):
-                assert real not in json.dumps(suggestion, ensure_ascii=False), (real, suggestion)
+            assert "луговая" not in json.dumps(suggestion, ensure_ascii=False).lower(), suggestion
         exact, neighbour, elsewhere = masked
-        assert exact["value"].endswith(short), (exact["value"], short)
+        # THE SETTLEMENT STAYS REAL — a city identifies nobody, and the model
+        # must be able to match this record to the «Самара» it already holds.
+        assert exact["value"] == f"Самара, {short}", (exact["value"], short)
         assert exact["data"]["postal_code"] == "443000" and exact["data"]["region"] == "Самарская область"
         assert exact["data"]["street"] == short.split()[1].lower() and exact["data"]["house"] == short.split()[-1]
-        assert exact["data"]["city"] == exact["value"].split(",")[0].lower(), exact
+        assert exact["data"]["city"] == "самара", exact
+        assert elsewhere["value"].startswith("Тольятти, ") and elsewhere["data"]["city"] == "тольятти", elsewhere
         assert neighbour["value"] != exact["value"] and neighbour["data"]["house"] != exact["data"]["house"], \
             "the neighbour with a litera is another building"
         assert elsewhere["value"] != exact["value"], "the same street and house in another city is another place"
@@ -612,38 +614,37 @@ def test_directory_record_is_the_customers_address() -> None:
 
 
 def test_real_town_is_not_a_fake_city() -> None:
-    """A fake city is a real town, and the customer may live there.
+    """The settlement of an address is KEPT REAL in its substitute; only the
+    street and the house are fake.
 
-    Backwards: an address in Валдай must not draw «Валдай» as its own fake
-    city, and no later address may draw it either. Forwards: when a substitute
-    minted EARLIER already bears «Валдай» and the customer then names the real
-    Валдай, the lone word must not resolve to the stranger's address. Both
-    were measured on the hard-case suite as «Живу на г. Казани, ул.
-    Профсоюзной, д. 17, улица Мира 4» for «Живу на Валдае, улица Мира 4».
+    A city alone identifies nobody (152-ФЗ ст. 3 п. 1) — the engine has always
+    let a bare «это в самара» through — while the same city inside the address
+    used to be replaced by a fake town. The model then held two cities for one
+    place and refused to match the directory's answer to its own query (live
+    v4, `compare`). Pinned: the substitute leads with the real settlement in
+    the nominative, inflected with the sentence; the street and the house are
+    not the real ones; the round trip closes; a lone mention of the town later
+    is left alone; a two-word settlement survives.
     """
-    import re as _re
     from pseudex.detect_all import Detector
     detector = Detector()
     with tempfile.TemporaryDirectory() as tmp:
         path = os.path.join(tmp, "v.db")
         vault = Vault(path, "acme")
-        # Forwards: mint Kazan addresses until one draws «Валдай» as its city.
-        bearer = None
-        for index in range(400):
-            token = vault.tokenize(f"г. Казань, ул. Профсоюзная, д. {index + 1}", "LOC")
-            if token.startswith("Валдай,"):
-                bearer = token
-                break
-        assert bearer is not None, "the pool never drew «Валдай» in 400 mints — widen the loop, not the rule"
+        token = vault.tokenize("г. Казань, ул. Профсоюзная, д. 17", "LOC")
+        assert token.startswith("Казань, ") and "Профсоюзн" not in token and " 17" not in token, token
         text = "Живу на Валдае, улица Мира 4"
         masked = mask_text(text, vault, detector.detect(text))
-        assert not masked.startswith("Живу на Валдай"), f"the fake city equals the real one: {masked!r}"
+        assert masked.startswith("Живу на Валдае, ") and "Мира" not in masked, masked
         assert unmask_text(masked, vault) == text, unmask_text(masked, vault)
+        alone = "а сам Валдай — маленький город"
+        assert mask_text(alone, vault, detector.detect(alone)) == alone
+        assert unmask_text(alone, vault) == alone
+        two = vault.tokenize("Нижний Новгород, ул. Рождественская, д. 3", "LOC")
+        assert two.startswith("Нижний Новгород, ") and "Рождественск" not in two, two
+        assert unmask_text(f"адрес {two}", vault) == "адрес Нижний Новгород, ул. Рождественская, д. 3"
         assert vault.real_place_with_stem("валда")
-        # Backwards: with the real Валдай on file, no new address may draw it.
-        for index in range(200):
-            assert not vault.tokenize(f"Тверь, ул. Садовая, д. {index + 1}", "LOC").startswith("Валдай,")
-    print("real-town collision OK — a customer's town is never our fake city, in either order")
+    print("real settlement OK — the city stays true, the street and house are fake")
 
 
 if __name__ == "__main__":

@@ -694,6 +694,39 @@ def _street_stem(phrase: str) -> str:
     return parses[0].normal_form if parses else words[-1]
 
 
+_SETTLEMENT_MARKER_RE = morph_places.SETTLEMENT_MARKER_RE
+
+
+def _capitalised(phrase: str) -> str:
+    """«нижний новгород» -> «Нижний Новгород», «санкт-петербург» -> «Санкт-Петербург»."""
+    return " ".join("-".join(part[:1].upper() + part[1:] for part in word.split("-"))
+                    for word in phrase.split())
+
+
+def _settlement_of(original: str) -> str:
+    """The settlement the original names, in the nominative — KEPT REAL.
+
+    THE CITY IS NOT PERSONAL DATA, AND HIDING IT BROKE THE AGENT. 152-ФЗ
+    (ст. 3 п. 1) makes a person identifiable by a combination; a city alone
+    identifies nobody, which is why the engine has always let a bare «это в
+    самара» through in the clear. The same city INSIDE an address was replaced
+    by a fake town, so the model held two cities for one place — its own
+    «Самара, улица Мятная 151» composed from what it was shown, and «Чернь,
+    улица Мятная 151» from the directory — and answered «адрес не найден»
+    (live v4, `compare`: 29 of 42 triples). Every derivation the agent makes
+    from the city (postcode, delivery zone, time zone) was wrong too, by
+    construction. What identifies the household — the street and the house —
+    stays fake; what the law does not protect stays true. A settlement that
+    stands alone (no street) still draws a fake in `_fake_place`, because
+    there the whole span IS the settlement.
+    """
+    city = morph_places.split_roles(original).get("city", "") if original else ""
+    city = _SETTLEMENT_MARKER_RE.sub("", city.strip(" ,."))
+    if not city or not re.fullmatch(r"[А-Яа-яЁё][А-Яа-яЁё -]*", city):
+        return ""
+    return _capitalised(morph_places.phrase_to_nominative(city).replace("ё", "ё"))
+
+
 def _fake_city(original: str) -> str:
     """A city of the same GENDER as the one it replaces.
 
@@ -810,7 +843,7 @@ def _fake_place(original: str) -> str:
 
     out = head
     if shape.get("has_city"):
-        out = f"{_fake_city(original)}, {out}"
+        out = f"{_settlement_of(original) or _fake_city(original)}, {out}"
     if shape.get("has_house", True):
         # NO COMMA before the house number. With one, `_merge_places` stops at
         # the house and the flat is left outside the span — so the token we mint
@@ -864,7 +897,7 @@ def _extend_place(short_token: str, original: str, shape: dict[str, object]) -> 
     base = short_token[: spans["house"][1]]
     if not base.strip():
         return None
-    out = f"{_fake_city(original)}, {base}"
+    out = f"{_settlement_of(original) or _fake_city(original)}, {base}"
     reuse = {role: part for role, part in morph_places.split_roles(short_token).items()
              if role in ("building", "entrance", "flat")}
     return _decorate_place(out, shape, reuse)
@@ -1193,7 +1226,11 @@ def _loc_token_pattern() -> str:
     # (with city). Same stem treatment as the generics; the mandatory «, » that
     # follows a city in a minted token is what keeps a short stem from running
     # into an unrelated word.
-    city = "|".join(_city_stem(value) + r"\w{0,2}" for value in _FAKE_CITIES)
+    # ANY settlement, not the fake pool: the city in a minted token is the
+    # customer's own (`_settlement_of`), one or two capitalised words, and it
+    # inflects with the sentence — «в Самаре, на улице …». The mandatory «, »
+    # after it is what keeps an unrelated capitalised word out.
+    city = r"[А-ЯЁ][а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?"
     # The house number is written without a comma now, but tokens minted
     # BEFORE that change are in customers' vaults and still have to be
     # recognised in a reply — so both separators are accepted.
@@ -1486,31 +1523,10 @@ class Vault:
             fake_stem = _street_stem(token)
             if fake_stem and fake_stem == _street_stem(original):
                 return False
-        # A FAKE CITY IS A REAL TOWN, and the customer may name that town. Our
-        # pool is «Валдай», «Суздаль», «Елец» — real places on purpose, so a
-        # substitute reads as one — and a customer living in Валдай then met a
-        # substitute «Валдай, улица Осиновая 174» minted for somebody else: the
-        # restore leg resolved their real «Валдае» to that stranger's address.
-        # The city of a candidate may not be the city of any real address this
-        # customer already has (the other direction is `real_place_with_stem`
-        # on the restore leg).
-        if entity_type == "LOC" and "," in token:
-            # Only a token that CARRIES a city («Валдай, улица …»): for a
-            # city-less one the first word is the generic, «улиц…» prefixes
-            # every real address, and every candidate was refused until the
-            # 200 attempts ran out — measured as a ten-minute test run.
-            city = token.split(",", 1)[0].strip()
-            stem = _city_stem(city).replace("\\", "")   # `_city_stem` escapes for a regex; LIKE wants the letters
-            # …nor the ORIGINAL's own city: «Валдай» drawn for an address in
-            # Валдай restored the whole token and then re-read the real city as
-            # our fake — «Живу на улице Мира 4, улица Мира 4».
-            own = morph_places.split_roles(original).get("city", "") if original else ""
-            if not own and original:
-                own = original.split(",", 1)[0].strip() if "," in original else original.split()[0]
-            if stem and own and _city_stem(own).replace("\\", "").lower() == stem.lower():
-                return False
-            if stem and self._real_place_with_stem_locked(stem):
-                return False
+        # The settlement of a city-bearing token is the ORIGINAL's own (see
+        # `_settlement_of`), so no guard against a real town applies here any
+        # more; the fake town is drawn only for a span that is a bare settlement,
+        # which carries no comma and never reached the guard that stood here.
         if True:
             # THE ROW BEING MINTED IS NOT IN THE TABLE YET, so the lookup below
             # cannot see it and a substitute is free to come out equal to the
@@ -1777,6 +1793,12 @@ class Vault:
             elif entity_type == "LOC":
                 stems, numbers = morph_places.signature_parts(token)
                 fake_parts = set(stems) | set(numbers)
+                # The settlement is REAL, so it is not a piece of the fake: a
+                # bare «Самара» in a tool argument is the customer's word, not
+                # a residual of ours, and must not be resolved or reported.
+                city = morph_places.split_roles(token).get("city", "")
+                if city:
+                    fake_parts -= set(morph_places.signature_parts(city)[0])
             if fake_parts:
                 self._conn.executemany(
                     "INSERT OR IGNORE INTO token_parts (customer, part, token) "

@@ -91,6 +91,21 @@ def vault_value(span: Span) -> str:
     return span.whole if isinstance(span, PartSpan) else span.value
 
 
+def _agree_settlement(token: str, original: str) -> str:
+    """The token's settlement in the case the original's settlement stands in.
+
+    The settlement is real now, so the sentence reads it as a word: «Живу на
+    Валдае, улица Мира 4» keeps a nominative street after an oblique city, and
+    `detect_case` of the whole phrase says nominative. Only the city is bent."""
+    case = morph_places.city_case(original)
+    if case is None or case == "nomn":
+        return token
+    city = morph_places.split_roles(token).get("city", "")
+    if not city:
+        return token
+    return token.replace(city, morph_places.inflect_place(city, case), 1)
+
+
 def _token_for_text(span: Span, vault: Vault) -> str:
     """The token as it should READ in this sentence.
 
@@ -126,7 +141,7 @@ def _token_for_text(span: Span, vault: Vault) -> str:
         # rewrite the token instead of using it.
         case = morph_places.detect_case(span.value)
         if case is None or case == "nomn":
-            return token
+            return _agree_settlement(token, span.value)
         return morph_places.inflect_place(token, case)
     if span.entity_type != "NAME":
         return token
@@ -520,6 +535,15 @@ def _place_windows(text: str, start: int, end: int) -> list[tuple[int, int]]:
     if head is not None and head.end() == start:
         for stop in ends:
             candidates.add((head.start(), stop))
+    # …AND WITHOUT THE CITY THE RUN ITSELF BEGINS WITH. `_PLACE_RUN` matches
+    # any settlement in front now (the token's city is real), so the model's
+    # «Самара, улица Осиновая 79» — a public city composed around a city-less
+    # token — arrives as one run, and the only framing that has a key is the
+    # one that starts at the street.
+    lead = _CITY_LEAD.match(text, start)
+    if lead is not None and lead.end() < end:
+        for stop in ends:
+            candidates.add((lead.end(), stop))
     return sorted(candidates, key=lambda pair: pair[1] - pair[0], reverse=True)
 
 
@@ -533,12 +557,14 @@ _BUILDING_TAIL = re.compile(r",?\s*(?:корп\w*|кор|стр|строен\w*|
 # order number that happens to follow the address.
 _HOUSE_TAIL = re.compile(r",?\s*(?:(?:д|дом|вл|влад|владение)\.?\s*)?\d{1,4}"
                          r"(?:/\d{1,3})?[а-яё]?(?![\w])")
-_CITY_HEAD = re.compile(r"(?-i:[А-ЯЁ])[а-яё-]+,\s*$")
+# Two words as well: the settlement is real now, and «Нижний Новгород, » is one.
+_CITY_HEAD = re.compile(r"(?-i:[А-ЯЁ])[а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?,\s*$")
+_CITY_LEAD = re.compile(r"(?-i:[А-ЯЁ])[а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?,\s*")
 # Город в начале самой ПОДМЕНЫ — чтобы понять, назвала его модель или нет.
 _STREET_TYPE_WORD = re.compile(
     r"(?i)^(?:ул\.?|улиц\w*|пр-т|пр\.?|просп\w*|пер\.?|переул\w*|б-р|бульвар\w*|ш\.?|шоссе|пл\.?|площад\w*|"
     r"наб\.?|набережн\w*|проезд\w*|тупик\w*|алле\w*|дорог\w*|тракт\w*|линия|линии)$")
-_CITY_OF_TOKEN = re.compile(r"^([А-ЯЁ][а-яё-]+),\s")
+_CITY_OF_TOKEN = re.compile(r"^([А-ЯЁ][а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?),\s")
 
 
 def _name_windows(text: str) -> list[tuple[int, int, str]]:
@@ -641,6 +667,7 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
                 continue
             windows.append((low, high, text[low:high]))
 
+    place_framings: set[tuple[int, int]] = set()
     for match in _PLACE_RUN.finditer(text):
         for start, end in _place_windows(text, match.start(), match.end()):
             surface = text[start:end]
@@ -649,6 +676,7 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
             except Exception:  # noqa: BLE001
                 continue
             windows.append((start, end, surface))
+            place_framings.add((start, end))
     if not windows:
         return text
     resolved = vault.resolve_name_keys_typed(
@@ -659,7 +687,19 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
     # run for text that had already resolved by some other window.
     spans: list[tuple[int, int, str]] = []
     taken: list[tuple[int, int]] = []
-    for start, end, surface in sorted(windows, key=lambda w: w[1] - w[0], reverse=True):
+    # AN EXACT ADDRESS HIT OUTRANKS A WIDER FRAMING RESOLVED BY INFERENCE. The
+    # settlement in a token is real now, so «Самара, улица Барбарисовая 170»
+    # is one `_PLACE_RUN` match: its widest framing has no key of its own and
+    # falls to the fragment fallback, which rebuilt the address from parts and
+    # kept the type word the customer never wrote; the framing one step
+    # shorter resolves exactly to «луговая 10». Address framings only — a
+    # reordered NAME is one identity and its words resolve one by one, so for
+    # names the widest window must keep winning.
+    hit = {(start, end) for start, end, _ in windows
+           if (start, end) in place_framings
+           and any(k in resolved for k in keys.get((start, end), []))}
+    for start, end, surface in sorted(windows, key=lambda w: ((w[0], w[1]) in hit, w[1] - w[0]),
+                                      reverse=True):
         found = next((resolved[k] for k in keys.get((start, end), [])
                       if k in resolved), None)
         derived = _derived_owner(surface, vault) if found is None and _is_derived_surface(surface) else None

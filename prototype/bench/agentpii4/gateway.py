@@ -215,11 +215,15 @@ class RealGateway:
         model, lower-cased; short pieces (a house number) are left out because
         «12» is also a quantity."""
         out: set[str] = set()
+        # THE SETTLEMENT INSIDE A SUBSTITUTE IS REAL (vault `_settlement_of`), so
+        # the customer's own city is not a piece of ours — counting it would
+        # report every «Самара» in a reply as a substitute shown.
+        real = {part.casefold() for item in self._case.pii for part in item.parts.values() if part}
         for kind, surface in self._typed_substitutes():
             if kind not in ("LOC", "NAME", "PASSPORT"):
                 continue
             for part in parts_of(kind, surface).values():
-                if part and len(part) >= 2 and not part.isdigit():
+                if part and len(part) >= 2 and not part.isdigit() and part.casefold() not in real:
                     out.add(part.casefold())
         return tuple(sorted(out))
 

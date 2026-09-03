@@ -1088,6 +1088,18 @@ def role_of_field(name: str) -> str:
     return field_role(name)[1]
 
 
+SETTLEMENT_MARKER_RE = re.compile(
+    r"(?i)^(?:г|гор|город|пос|посёлок|поселок|село|дер|деревня|станица|пгт|рп|хутор|аул)\.?\s+")
+
+
+def city_case(phrase: str) -> str | None:
+    """The case of the settlement alone. `detect_case` reads the whole phrase
+    and a nominative street outvotes an oblique city: «Валдае, улица Мира 4»
+    is nominative to it, and the substitute came out «Живу на Валдай, …»."""
+    city = SETTLEMENT_MARKER_RE.sub("", split_roles(phrase).get("city", "").strip(" ,."))
+    return detect_case(city) if city else None
+
+
 def address_from_fields(fields: dict[str, str]) -> str:
     """The address a record spells out field by field, written as one line
     in the register's order — the string the vault keys and mints for."""
