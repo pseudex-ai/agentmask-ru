@@ -25,7 +25,7 @@ from typing import Annotated
 from dataclasses import dataclass
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from licensing.keys import encode_public, load_signing_key
 from licensing.pack import build_plaintext
@@ -36,6 +36,7 @@ from licensing.store import (
     STATUS_UNPAID,
     LicenseStore,
 )
+from pseudex import metrics as metrics_format
 from pseudex.bundle import (BundleError, is_recipient, nonce_wrap,
                             plaintext_hash, seal, sign_lease, verify_report)
 
@@ -141,6 +142,55 @@ _STATUS_RESPONSE = {
 
 
 app = FastAPI(title="Pseudex licensing", lifespan=_lifespan)
+
+# ИСХОДЫ СЧИТАЮТСЯ В ОДНОМ МЕСТЕ, А НЕ В ВЕТКАХ. `/v1/lease` возвращает из
+# двенадцати мест, и счётчик на каждом возврате — это счётчик, который однажды
+# забудут в тринадцатом; middleware видит ещё и 500, которых в тексте
+# обработчика вообще нет. Именно доля 402/403 названа в `docs/operations.md` §5
+# метрикой, которая отличает волну неоплат от НАШЕЙ ошибки в статусах, — и была
+# там же честно помечена как нереализованная.
+#
+# Мощность меток ограничена ТАБЛИЦЕЙ МАРШРУТОВ, а не тем, что прислали: см.
+# `_route_label`. Ни org_id, ни ключ в метку не попадают, и это не
+# забывчивость — метка со значением из клиентской базы даёт Prometheus по
+# временному ряду на клиента навсегда.
+_OUTCOMES = metrics_format.Counter()
+
+
+@app.middleware("http")
+async def _count_outcomes(request: Request, call_next):
+    # ПЯТИСОТКА НЕ ПРИХОДИТ СЮДА ОТВЕТОМ — ОНА ПРИХОДИТ ИСКЛЮЧЕНИЕМ. В тексте
+    # обработчиков нет ни одного явного 5xx: их делает `ServerErrorMiddleware`,
+    # который стоит ВЫШЕ пользовательских, поэтому `await call_next(...)` не
+    # возвращается, а бросает. Первая версия просто считала возвращённый ответ —
+    # то есть счётчик 5xx был бы вечным нулём, а тревога `PseudexLeaseServerErrors`
+    # никогда бы не сработала. И это худший из нулей: клиент трактует 5xx как НАШ
+    # сбой и берёт полные сорок восемь часов работы в долг, так что пятисотки на
+    # аренде — это молчаливая раздача grace.
+    try:
+        response = await call_next(request)
+    except Exception:
+        _OUTCOMES.add((_route_label(request), "500"))
+        raise
+    _OUTCOMES.add((_route_label(request), str(response.status_code)))
+    return response
+
+
+def _route_label(request: Request) -> str:
+    """МАРШРУТ, А НЕ ПУТЬ ИЗ ЗАПРОСА, и разница здесь безгранична.
+
+    Публичное приложение смотрит в интернет (`ports: 443:8443`), а
+    `request.url.path` — это то, что прислал вызывающий: один сканер за ночь
+    заводит десятки тысяч НАВСЕГДА живущих временных рядов в Prometheus и
+    столько же ключей в этом словаре. «Путей четыре» верно для маршрутов и
+    неверно для того, что приходит.
+
+    Всё, что не попало ни в один маршрут, сливается в одну метку: сам факт
+    сканирования видеть полезно, перечислять его выдумки — нет.
+    """
+    route = request.scope.get("route")
+    path = getattr(route, "path", "") if route is not None else ""
+    return path or "<no route>"
 # ВТОРОЙ ЗАМОК НА АДМИНКЕ, ПОТОМУ ЧТО ПЕРВЫЙ — ЭТО СЕТЬ. Порт 9443 не
 # публикуется наружу (`deploy/compose.yml` даёт ему `expose`, не `ports`), и
 # это верно, но единственный контроль. В той же docker-сети стоит витрина на
@@ -234,6 +284,11 @@ ADMIN_ACTIONS: tuple[AdminAction, ...] = (
     AdminAction("/admin/chains", "GET", True),
     # Каталог абонентов. Единственная ручка, которой у витрины быть не должно.
     AdminAction("/admin/list", "GET", False),
+    # СКРЕЙП — ОПЕРАТОРУ, и по той же причине, по которой каталог не витрине:
+    # это сводка по ВСЕМУ флоту в одной строке, и организации с порванной цепью
+    # названы в ней поимённо. Витрине она не нужна — её консоль спрашивает про
+    # тех, кого назвала сама, — а Prometheus и так наш.
+    AdminAction("/admin/metrics", "GET", False),
 )
 
 _STOREFRONT_PATHS = frozenset(a.path for a in ADMIN_ACTIONS if a.storefront)
@@ -1009,6 +1064,66 @@ async def admin_chains(request: Request) -> JSONResponse:
 @admin_app.get("/admin/list")
 async def admin_list() -> JSONResponse:
     return JSONResponse({"orgs": STORE.list_orgs()})
+
+
+@admin_app.get("/admin/metrics")
+async def admin_metrics() -> PlainTextResponse:
+    """The fleet in one scrape: lease outcomes, capacity, and broken chains.
+
+    ЭТО ВТОРАЯ ПОЛОВИНА НАБЛЮДАЕМОСТИ, И ОНА НЕ ЗАМЕНЯЕТ ПЕРВУЮ. Движок отдаёт
+    своё собственное состояние клиенту, который его держит; здесь — то, что
+    видно только у нас: сколько аренд отказано и с каким кодом, сколько
+    контейнеров обслуживает прямо сейчас, и у кого порвана цепь отчётов.
+
+    `chain_breaks` уже писался в базу и уже был виден в консоли — но КОНСОЛЬ
+    НАДО ОТКРЫТЬ, а тревога должна прийти сама. Ровно этой разницы стоила
+    метрика 402/403: она описана в `docs/operations.md` §5 и была помечена там
+    «не реализовано», потому что честнее, чем оставлять описание метрики,
+    которой нет.
+    """
+    fleet = STORE.fleet_totals(_TTL_SECONDS)
+    out = [
+        metrics_format.series(
+            "pseudex_license_responses_total", _OUTCOMES.snapshot(),
+            "Responses on /v1/*, by path and status code. The 402/403 share "
+            "separates a wave of non-payment from our own error in statuses",
+            ("path", "code"), "counter"),
+        metrics_format.series(
+            "pseudex_keys", fleet["keys_by_status"],
+            "Issued keys by status", "status"),
+        metrics_format.render("pseudex_orgs_serving", fleet["orgs_serving"],
+                              "Organisations holding a live lease"),
+        metrics_format.render("pseudex_instances_serving", fleet["instances_serving"],
+                              "Containers holding a live lease"),
+        metrics_format.render("pseudex_processes_serving", fleet["processes_serving"],
+                              "Worker processes holding a live lease"),
+        metrics_format.render("pseudex_fleet_requests_total", fleet["requests"],
+                              "Requests reported by the whole fleet", "counter"),
+        metrics_format.render("pseudex_fleet_values_total", fleet["values"],
+                              "Personal values reported by the whole fleet", "counter"),
+        metrics_format.render("pseudex_chain_breaks_total", fleet["chain_breaks"],
+                              "Report-chain breaks across the fleet: a gap, a "
+                              "reorder, or an old report replayed", "counter"),
+        # ПОИМЁННО — ТОЛЬКО ПОРВАННЫЕ. Метка по организации обычно означает ряд
+        # на клиента навсегда; здесь множество ограничено бедой, а не продажами,
+        # и схлопывается обратно, когда беда починена.
+        metrics_format.series("pseudex_chain_breaks_by_org", fleet["breaks_by_org"],
+                              "Chain breaks, named — only organisations that have any",
+                              "org", "counter"),
+        metrics_format.render("pseudex_unverified_reports_total",
+                              fleet["unverified_reports"],
+                              "Reports accepted with a bad or missing signature", "counter"),
+        metrics_format.render("pseudex_malformed_reports_total",
+                              fleet["malformed_reports"],
+                              "Reports we could not parse — NOT the same as no usage",
+                              "counter"),
+        metrics_format.render("pseudex_reports_missing_total", fleet["reports_missing"],
+                              "Renewals that carried no usage report at all", "counter"),
+        metrics_format.render("pseudex_counter_resets_total", fleet["resets"],
+                              "Times a cumulative counter went backwards", "counter"),
+    ]
+    return PlainTextResponse("".join(out),
+                             media_type="text/plain; version=0.0.4; charset=utf-8")
 
 
 @admin_app.get("/admin/usage")

@@ -31,6 +31,10 @@ stress.json
 deploy/.local-signing-key
 deploy/.local-tuning-key
 deploy/.local-admin
+# Полный админский токен для скрейпа Prometheus: он кладётся файлом именно
+# потому, что переменная окружения видна в `docker inspect`, — и закоммитить
+# его было бы тем же самым, только навсегда.
+deploy/secrets/
 
 # Tooling
 .playwright-mcp/

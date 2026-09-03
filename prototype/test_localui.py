@@ -79,6 +79,12 @@ def test_operator_surface_is_closed(client: TestClient) -> None:
                          # operator surface missed, and next to an open /unmask
                          # it made the whole reveal audit bypassable.
                          ("get", "/usage"),
+                         # /metrics says how many people this customer protected
+                         # today and in which categories — a description of their
+                         # business, and at a small enough scale of their traffic.
+                         # Every other product leaves /metrics open because «it is
+                         # just numbers»; this one has no claim to the exception.
+                         ("get", "/metrics"),
                          ("post", "/selfcheck")]:
         response = (client.post(path, json={}) if method == "post" else client.get(path))
         if response.status_code != 401:
@@ -352,6 +358,66 @@ def _forgery_checks(ui: TestClient, server, thread) -> None:
         thread.join(timeout=10)
 
 
+def test_metrics_carry_counts_and_never_values(client: TestClient) -> None:
+    """The scrape must be a READ, must parse, and must hold no personal value.
+
+    The last one is not a formality: this endpoint is polled every fifteen
+    seconds for ever and its output lands in a time-series database that lives
+    outside the container. A value that leaked here would be copied for ever, by
+    design, into the one place the vault exists to keep it out of.
+    """
+    headers = AUTH
+    body = {"org_id": "metrics-org", "messages": [{
+        "role": "user",
+        "content": "Иванов Пётр Сергеевич, +7 916 214-88-03, ул. Ленина 14 кв 3",
+    }]}
+    masked = client.post("/mask", json=body,
+                         headers=GATEWAY)
+    check("traffic to measure went through", masked.status_code == 200,
+          f"status={masked.status_code}")
+
+    scrape = client.get("/metrics", params={"org_id": "metrics-org"}, headers=headers)
+    text = scrape.text
+    check("the scrape answers and is Prometheus text",
+          scrape.status_code == 200 and "text/plain" in scrape.headers.get("content-type", ""),
+          scrape.headers.get("content-type", ""))
+
+    names = [line.split()[2] for line in text.splitlines() if line.startswith("# TYPE ")]
+    check("no metric name is declared twice", len(names) == len(set(names)),
+          str([n for n in names if names.count(n) > 1]))
+    # Prometheus fails a scrape WHOLE, so one unparseable line takes down every
+    # metric in the response rather than its own.
+    malformed = [line for line in text.splitlines()
+                 if line and not line.startswith("#") and len(line.rsplit(" ", 1)) != 2]
+    check("every sample line parses", not malformed, str(malformed[:3]))
+
+    leaked = [value for value in ("Иванов", "Пётр", "214-88-03", "Ленина")
+              if value in text]
+    check("no personal value reaches the scrape", not leaked, str(leaked))
+    check("the ladder is four series and not an enum",
+          'pseudex_license_state{state="active"}' in text
+          and 'pseudex_license_state{state="expired"}' in text)
+    check("what was protected is there, by TYPE — a closed set of nine",
+          "pseudex_values_today{" in text and "pseudex_requests_today" in text)
+
+    # A SCRAPE MAY NOT MINT OR BILL. It runs for ever on a timer; a diagnostic
+    # that moves the number it reports is not one — the same rule `/spans` and
+    # `peek_token` already live by.
+    before = client.get("/metrics", params={"org_id": "metrics-org"},
+                        headers=headers).text
+    for _ in range(3):
+        client.get("/metrics", params={"org_id": "metrics-org"}, headers=headers)
+    after = client.get("/metrics", params={"org_id": "metrics-org"},
+                       headers=headers).text
+
+    def requests_line(text: str) -> str:
+        return next((line for line in text.splitlines()
+                     if line.startswith("pseudex_requests_today")), "")
+    check("scraping does not bill the customer for being scraped",
+          requests_line(before) == requests_line(after),
+          f"{requests_line(before)!r} -> {requests_line(after)!r}")
+
+
 def main() -> int:
     client = _client()
     test_operator_surface_is_closed(client)
@@ -359,6 +425,7 @@ def main() -> int:
     test_reveal_requires_an_actor(client)
     test_requests_are_counted_apart_from_entities(client)
     test_selfcheck_is_not_billable(client)
+    test_metrics_carry_counts_and_never_values(client)
     test_ui_refuses_without_a_session()
     test_actor_cannot_be_forged_through_the_ui()
     print()

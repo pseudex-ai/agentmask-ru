@@ -25,6 +25,7 @@ import anyio
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
+from pseudex import metrics as metrics_format
 from pseudex import preflight, sqlite_setup
 from pseudex.audit import SELFCHECK_ORG
 from pseudex.profiling import snapshot as profiling_snapshot
@@ -340,6 +341,105 @@ def build_router(audit, license_client, assets, detector_version: str,
                      + re.sub(r"[^A-Za-z0-9_.-]", "_", org_id)
                      + f'-{days}d.csv"'},
         )
+
+    @router.get("/metrics")
+    async def prometheus(request: Request) -> PlainTextResponse:
+        """Everything /status shows, in the format a scraper reads.
+
+        WHY IT IS ON THE OPERATOR TOKEN AND NOT OPEN. Every other product puts
+        /metrics behind no auth because metrics are «just numbers»; here the
+        numbers say how many people this customer protected today and in which
+        categories, which is a description of their business and, at a small
+        enough scale, of their traffic. It is also a live inventory of a
+        container holding personal data. The whole of `operator.py` is behind
+        one token for that reason and this endpoint has no claim to be the
+        exception — Prometheus carries a bearer token (`authorization` in the
+        scrape config) and that is the whole integration.
+
+        NO VALUES AND NO TOKENS, ONLY COUNTS — the same rule the audit log
+        lives by, and here it is also a cardinality rule: a label whose values
+        come from traffic would give Prometheus a new time series per person.
+        The entity TYPE is a closed set of nine, so it is safe as a label; an
+        org id is not, and the container knows only its own anyway.
+
+        A SCRAPE MUST NOT MINT ANYTHING OR WRITE AUDIT, exactly like `/spans`
+        and `peek_token`: it runs every fifteen seconds for ever, and a
+        diagnostic that changes what it measures is not one. Everything below
+        is a read.
+        """
+        org_id = request.query_params.get("org_id", os.environ.get("PSEUDEX_UI_ORG", "default"))
+        state = license_client.status()
+        running = processes()
+        mem = memory(running)
+        today = await anyio.to_thread.run_sync(
+            audit.counts, org_id, _period_start("today"), "")
+        series = await anyio.to_thread.run_sync(audit.daily_series, org_id, 1, "")
+        volume = sqlite_setup.volume_state(os.environ.get("PSEUDEX_DB_DIR", "."))
+
+        out = [
+            # THE LADDER AS FOUR SERIES, NOT ONE NUMBER. An enum encoded as
+            # 0/1/2/3 forces every alert and every panel to carry the mapping,
+            # and the mapping is exactly what changes: `STATE_LEASED` is the
+            # string "active", which has already cost this product a /license
+            # endpoint that answered 503 for the life of every healthy
+            # container. One series per state, valued 0 or 1, needs no legend.
+            metrics_format.series(
+                "pseudex_license_state",
+                {name: int(state.state == name)
+                 for name in ("boot", "active", "stale", "expired")},
+                "1 for the state the licence is in, 0 for the others", "state"),
+            metrics_format.render(
+                "pseudex_license_seconds_since_lease",
+                None if state.seconds_since_lease is None else round(state.seconds_since_lease),
+                "Seconds since the last successful lease"),
+            metrics_format.render(
+                "pseudex_license_grace_seconds_left",
+                None if state.grace_left_seconds is None else round(state.grace_left_seconds),
+                "Seconds of grace remaining; absent while the lease is healthy"),
+            metrics_format.render(
+                "pseudex_assets_loaded", int(assets.is_loaded),
+                "1 when the detection bundle is in memory; 0 means /mask answers 503"),
+            metrics_format.render(
+                "pseudex_processes", len(running),
+                "Engine processes of this container, the interface included"),
+            metrics_format.render(
+                "pseudex_memory_used_bytes", mem["used_mb"] * 1024 * 1024,
+                "Resident memory of those processes"),
+            metrics_format.render(
+                "pseudex_memory_limit_bytes",
+                None if mem["limit_mb"] is None else mem["limit_mb"] * 1024 * 1024,
+                "The container's memory limit; absent when it has none"),
+            metrics_format.render(
+                "pseudex_memory_largest_process_bytes",
+                mem["largest_process_mb"] * 1024 * 1024,
+                "The biggest single process — the one the OOM killer would take"),
+            metrics_format.render(
+                "pseudex_memory_worker_budget_bytes",
+                mem["worker_mb_budget"] * 1024 * 1024,
+                "What the preflight budgeted per worker; compare with the largest process"),
+            metrics_format.render(
+                "pseudex_requests_today", int(series[0]["requests"]) if series else 0,
+                "Requests protected today — the BILLED quantity, not sum(values)",
+                "gauge"),
+            metrics_format.series(
+                "pseudex_values_today", {k: int(v) for k, v in today.items()},
+                "Personal values protected today, by type", "type"),
+            # FOUR STATES, NOT A BOOLEAN, for the same reason the licence
+            # ladder is four series: `== ENCRYPTED` collapsed «a correctly
+            # configured volume nobody has written to yet» (EMPTY) and «half the
+            # stores are still plain text» (MIXED) into the same zero, and those
+            # two need opposite responses — wait, versus stop and look now.
+            metrics_format.series(
+                "pseudex_vault_state",
+                {name: int(volume.get("on_disk") == name)
+                 for name in (sqlite_setup.ENCRYPTED, sqlite_setup.PLAINTEXT,
+                              sqlite_setup.MIXED, sqlite_setup.EMPTY)},
+                "1 for what is ON DISK, 0 for the others: encrypted, plaintext, "
+                "mixed (a migration stopped half way), empty (nothing written yet)",
+                "state"),
+        ]
+        return PlainTextResponse("".join(out),
+                                 media_type="text/plain; version=0.0.4; charset=utf-8")
 
     @router.get("/reveals")
     async def reveals(request: Request) -> JSONResponse:

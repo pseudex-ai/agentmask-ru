@@ -22,6 +22,7 @@
 import base64
 import os
 import secrets
+import subprocess
 import sys
 import tempfile
 import time
@@ -766,6 +767,109 @@ except BundleError as error:
 check("движок контракта 3 против сервера контракта 2 отказывается, назвав причину",
       refused and "contract 3" in reason and "deploy it FIRST" in reason,
       reason[:80])
+
+# --- СКРЕЙП: ИСХОДЫ СЧИТАЮТСЯ, И ЦЕПЬ ВИДНА НЕ ТОЛЬКО В КОНСОЛИ ----------
+#
+# Доля 402/403 на `/v1/lease` описана в `docs/operations.md` §5 и была там
+# помечена «не реализовано». Проверяется не наличие ручки, а то, что счётчик
+# ДВИГАЕТСЯ на настоящем отказе: метрика, которая всегда ноль, — это описание
+# метрики, а не метрика.
+print("\nСКРЕЙП")
+
+
+def _scrape() -> str:
+    response = admin.get("/admin/metrics", headers=ADMIN)
+    return response.text if response.status_code == 200 else f"HTTP {response.status_code}"
+
+
+def _sample(text: str, needle: str) -> float | None:
+    for line in text.splitlines():
+        if line.startswith(needle) and not line.startswith("#"):
+            return float(line.rsplit(" ", 1)[1])
+    return None
+
+
+before = _sample(_scrape(), 'pseudex_license_responses_total{path="/v1/lease",code="403"}') or 0
+refused = public.post("/v1/lease", json={"key": "ps_live_no_such_key",
+                                         "pubkey": generate_process_key().public})
+after_text = _scrape()
+after = _sample(after_text, 'pseudex_license_responses_total{path="/v1/lease",code="403"}') or 0
+check("отказ аренды считается по коду, а не теряется в ветке обработчика",
+      refused.status_code == 403 and after == before + 1,
+      f"{before} -> {after}, ответ {refused.status_code}")
+
+# Middleware считает ВСЁ /v1/*, включая успех: без знаменателя доля 402/403
+# неотличима от единицы — делить не на что.
+public.get("/v1/pubkey")
+check("успех тоже считается, иначе у доли 402/403 нет знаменателя",
+      (_sample(_scrape(), 'pseudex_license_responses_total{path="/v1/pubkey",code="200"}') or 0) >= 1)
+
+scrape = _scrape()
+# Заголовок HELP/TYPE — по ОДНОМУ на имя. Второй такой же Prometheus считает
+# дубликатом и роняет скрейп ЦЕЛИКОМ: одна кривая строка убивает не свою
+# метрику, а все.
+names = [line.split()[2] for line in scrape.splitlines() if line.startswith("# TYPE ")]
+check("ни одно имя метрики не объявлено дважды", len(names) == len(set(names)),
+      str([n for n in names if names.count(n) > 1]))
+check("в скрейпе нет ни ключей, ни токенов",
+      "ps_live_" not in scrape and "test-admin" not in scrape and "test-shop" not in scrape)
+check("сводка по флоту отвечает на вопросы, ради которых заведена",
+      all(metric in scrape for metric in
+          ("pseudex_chain_breaks_total", "pseudex_instances_serving",
+           "pseudex_unverified_reports_total", "pseudex_reports_missing_total")))
+
+# СЧИТАЮТСЯ ЛИЧНОСТИ, А НЕ СТРОКИ. `lease_id` свежий на каждом продлении, и
+# `COUNT(*)` завысил бы флот втрое: при TTL сутки и продлении через треть TTL
+# один живой воркер оставляет в окне три-четыре строки. Ошибиться здесь значит
+# рассказывать себе, что клиентов втрое больше, чем есть.
+for _renewal in range(3):
+    for _worker in ("age1metric-a", "age1metric-b"):
+        server.STORE.lease_if_allowed(
+            f"ls_metric_{_renewal}_{_worker}", "fleet-org", "start",
+            "fleet-inst", _worker, 86400, pubkey=_worker)
+fleet = server.STORE.fleet_totals(86400)
+check("шесть строк аренды — это один контейнер и два воркера",
+      fleet["instances_serving"] >= 1 and fleet["processes_serving"] >= 2,
+      f"организаций={fleet['orgs_serving']} контейнеров={fleet['instances_serving']} "
+      f"воркеров={fleet['processes_serving']}")
+_by_pubkey = server.STORE.fleet_totals(86400)["processes_serving"]
+for _renewal in range(3, 6):
+    server.STORE.lease_if_allowed(
+        f"ls_metric_{_renewal}", "fleet-org", "start", "fleet-inst",
+        "age1metric-a", 86400, pubkey="age1metric-a")
+check("ещё три продления того же воркера флот не увеличивают",
+      server.STORE.fleet_totals(86400)["processes_serving"] == _by_pubkey,
+      f"{_by_pubkey} -> {server.STORE.fleet_totals(86400)['processes_serving']}")
+
+# --- ОБРАЗ: СПИСОК COPY ПРОТИВ ТОГО, ЧТО РЕАЛЬНО ГРУЗИТСЯ ----------------
+#
+# `licensing/Dockerfile` копирует модули `pseudex/` ПОИМЁННО — намеренно, чтобы
+# движок не уехал в образ лицензий целиком. Цена в том, что новый импорт ломает
+# не тест, а ОБРАЗ: `metrics.py` приехал вместе со скрейпом, в списке его не
+# было, и боевой контейнер лицензий не стартовал бы вовсе — единственный отказ,
+# после которого весь флот начинает жечь grace. Увидеть это можно было только
+# собрав образ; теперь видно отсюда.
+print("\nОБРАЗ ЛИЦЕНЗИОННОГО СЕРВЕРА")
+_dockerfile = (Path(__file__).resolve().parent / "Dockerfile").read_text(encoding="utf-8")
+_copied = {word.split("/")[-1] for word in _dockerfile.split()
+           if word.startswith("pseudex/") and word.endswith(".py")}
+#
+# В ОТДЕЛЬНОМ ПРОЦЕССЕ, И ЭТО НЕ ПЕДАНТИЗМ: сам тест поднимает ещё и КЛИЕНТСКУЮ
+# половину (`pseudex.license`, `assets`, `morph`), которой в образе лицензий
+# делать нечего. Считать `sys.modules` здесь значило бы требовать в Dockerfile
+# половину движка — то есть ровно то, ради предотвращения чего список поимённый.
+_probe = subprocess.run(
+    [sys.executable, "-c",
+     "import sys, licensing.server; "
+     "print(' '.join(sorted(n.split('.', 1)[1] + '.py' for n in sys.modules "
+     "if n.startswith('pseudex.') and '.' not in n.split('.', 1)[1])))"],
+    capture_output=True, text=True, timeout=300,
+    cwd=str(Path(__file__).resolve().parent.parent), env=dict(os.environ))
+_loaded = set(_probe.stdout.split())
+check("всё, что грузит сервер, есть в COPY образа",
+      bool(_loaded) and _loaded <= _copied,
+      f"грузится {sorted(_loaded) or 'НИЧЕГО — проба не запустилась'}, "
+      f"не скопировано: {sorted(_loaded - _copied) or 'ничего'}")
 
 print(f"\nсломано {len(fails)}")
 raise SystemExit(1 if fails else 0)

@@ -25,8 +25,16 @@ RUN pip install --no-cache-dir fastapi "uvicorn[standard]" pyrage cryptography s
 
 # The engine modules the server genuinely shares (bundle format, sqlite setup),
 # plus the licensing package with the assets themselves.
+#
+# СПИСОК ПОИМЁННЫЙ, ПОЭТОМУ НОВЫЙ ИМПОРТ ЛОМАЕТ ОБРАЗ, А НЕ ТЕСТЫ. `metrics.py`
+# приехал сюда вместе со скрейпом: без него `licensing/server.py` падает на
+# импорте, то есть боевой контейнер лицензий НЕ СТАРТУЕТ — а это единственный
+# отказ, после которого весь флот начинает жечь grace. В репозитории и в тестах
+# файл лежит рядом и импортируется, поэтому увидеть это можно было только
+# собрав образ.
 COPY pseudex/__init__.py pseudex/bundle.py pseudex/sqlite_setup.py \
-     pseudex/vault_key.py pseudex/vault_migrate.py pseudex/profiling.py ./pseudex/
+     pseudex/vault_key.py pseudex/vault_migrate.py pseudex/profiling.py \
+     pseudex/metrics.py ./pseudex/
 COPY licensing/ ./licensing/
 
 # THIS SERVER'S OWN DATABASE STAYS IN PLAIN TEXT, and that is a decision rather

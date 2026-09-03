@@ -141,7 +141,7 @@ When you change masking semantics, decide explicitly whether both need it.
 
 | | gateway surface | operator surface (`pseudex/operator.py`) |
 |---|---|---|
-| Paths | `/mask`, `/unmask`, `/unmask_chunk`, `/spans`, `/health` | `/status`, `/events`, `/stats`, `/stats.csv`, `/reveals`, `/subscription`, `/diagnostics`, `/selfcheck`, `/reveal` |
+| Paths | `/mask`, `/unmask`, `/unmask_chunk`, `/spans`, `/health` | `/status`, `/events`, `/stats`, `/stats.csv`, `/reveals`, `/subscription`, `/diagnostics`, `/selfcheck`, `/reveal`, `/metrics` |
 | Auth | `Authorization: Bearer $PSEUDEX_GATEWAY_TOKEN` | `Authorization: Bearer $PSEUDEX_ADMIN_TOKEN` |
 | Why | a cheap credential the customer's gateway holds; it is NOT the admin one, so a compromised gateway config cannot reveal values | these disclose real values and the list of what exists to disclose |
 

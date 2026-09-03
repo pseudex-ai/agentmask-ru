@@ -569,6 +569,79 @@ class LicenseStore:
             bucket["instances"] = len(latest)
         return [by_day[day] for day in sorted(by_day)][-window:]
 
+    def fleet_totals(self, window_seconds: int) -> dict[str, object]:
+        """One row of numbers about the WHOLE fleet, for the scrape.
+
+        AGGREGATED IN SQL AND NOT BY WALKING `list_orgs()`. The console reads
+        per-organisation rows because a human is going to look at one of them;
+        a scrape every fifteen seconds must not carry a cost that grows with the
+        customer base, and `/admin/list` is the operator-only catalogue anyway.
+
+        `breaks_by_org` is the ONE thing labelled by organisation, and only
+        organisations that actually have a break appear in it. Prometheus keeps
+        a series per label combination for ever, so labelling by customer
+        normally means the series count grows with sales and never shrinks —
+        here it grows with TROUBLE, which is bounded, drops back to nothing when
+        the trouble is fixed, and is exactly the list somebody needs to be handed
+        rather than to go looking for.
+        """
+        totals = self._fetchone(
+            "SELECT COUNT(DISTINCT org_id), COALESCE(SUM(requests), 0), "
+            "COALESCE(SUM(values_total), 0), 0, "
+            "COALESCE(SUM(unverified_reports), 0), COALESCE(SUM(malformed_reports), 0), "
+            "COALESCE(SUM(reports_missing), 0), COALESCE(SUM(resets), 0) FROM usage", ()
+        ) or (0, 0, 0, 0, 0, 0, 0, 0)
+        keys = self._fetchall("SELECT status, COUNT(*) FROM keys GROUP BY status", ())
+        cutoff = time.time() - window_seconds
+        # СЧИТАЮТСЯ ЛИЧНОСТИ, А НЕ СТРОКИ, и разница здесь кратная. `lease_id`
+        # свежий на КАЖДОМ продлении, а `released_at` ставится только при явном
+        # освобождении: при TTL 86400 и продлении через TTL//3 один живой воркер
+        # оставляет в окне три-четыре строки, и `COUNT(*)` завысил бы флот
+        # втрое. Считается `pubkey` — единственный идентификатор, который клиент
+        # НЕ выбирает: он рождается в памяти воркера, на него запечатывается
+        # бандл, и два процесса не могут иметь один и тот же, не будучи
+        # пропатченными.
+        #
+        # Инстанс считается ПАРОЙ с организацией: `instance_id` приходит из
+        # переменной окружения, то есть его выбирает клиент, и два разных
+        # клиента, оставивших умолчание, слились бы в один. SQLite не умеет
+        # `COUNT(DISTINCT a, b)`, отсюда подзапрос.
+        live = "FROM leases WHERE issued_at >= ? AND released_at IS NULL"
+        instances = self._fetchone(
+            f"SELECT (SELECT COUNT(DISTINCT org_id) {live}), "
+            f"(SELECT COUNT(*) FROM (SELECT DISTINCT org_id, instance_id {live})), "
+            f"(SELECT COUNT(DISTINCT pubkey) {live})",
+            (cutoff, cutoff, cutoff)) or (0, 0, 0)
+        # ЦЕПЬ БЕРЁТСЯ ИЗ `process_reports`, А НЕ ИЗ `usage`, и это не выбор
+        # источника, а исправление. `usage.chain_breaks` ПЕРЕЗАПИСЫВАЕТСЯ
+        # накопительным счётчиком того процесса, чей отчёт пришёл последним, —
+        # при нескольких воркерах на инстанс число скачет и может УМЕНЬШАТЬСЯ.
+        # Экспортированное как `counter` и опрошенное через `increase()`, оно
+        # рисовало бы призрачные сбросы и приросты. `process_reports` хранит
+        # строку на (организация, процесс) и растёт только вверх — и это же то,
+        # что суммирует `/admin/chains`, так что метрика и консоль больше не
+        # спорят.
+        broken = self._fetchall(
+            "SELECT org_id, SUM(chain_breaks) FROM process_reports GROUP BY org_id "
+            "HAVING SUM(chain_breaks) > 0", ())
+        chain_total = self._fetchone(
+            "SELECT COALESCE(SUM(chain_breaks), 0) FROM process_reports", ()) or (0,)
+        return {
+            "orgs_with_usage": int(totals[0] or 0),
+            "requests": int(totals[1] or 0),
+            "values": int(totals[2] or 0),
+            "chain_breaks": int(chain_total[0] or 0),
+            "unverified_reports": int(totals[4] or 0),
+            "malformed_reports": int(totals[5] or 0),
+            "reports_missing": int(totals[6] or 0),
+            "resets": int(totals[7] or 0),
+            "keys_by_status": {str(row[0] or "unknown"): int(row[1] or 0) for row in keys},
+            "orgs_serving": int(instances[0] or 0),
+            "instances_serving": int(instances[1] or 0),
+            "processes_serving": int(instances[2] or 0),
+            "breaks_by_org": {str(row[0]): int(row[1] or 0) for row in broken},
+        }
+
     def chain_detail(self, org_id: str, limit: int = 200) -> dict[str, object]:
         """Строки цепи отчётов по каждому ПРОЦЕССУ организации.
 
