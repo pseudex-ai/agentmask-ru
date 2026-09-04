@@ -1358,8 +1358,20 @@ def _biographic_pairs(text: str, names: NameAssets) -> list[Span]:
             continue
         if not (_not_ordinary(head) and _not_ordinary(tail)):
             continue
-        window = low[max(0, first.start() - _BIO_WINDOW):second.end() + _BIO_WINDOW]
-        if not any(cue in window for cue in names.bio_cues):
+        # A MISSPELT ORDINARY WORD IS NOT A FOREIGN NAME, AND A PATRONYMIC IS
+        # NOT HALF OF ONE. «миллера валерия леонидовича родилсяя двадцать
+        # первого сентября»: «родилсяя» is unknown to morphology, «леонидовича»
+        # is in no first-name or surname list, and the cue the pair needed was
+        # the misspelt verb ITSELF — so the patient's name grew a fourth word
+        # and the agent asked which of them was the surname (live v4 04.09,
+        # derive-020). The cue is looked for OUTSIDE the pair.
+        if _typo_of_an_ordinary_word(head) or _typo_of_an_ordinary_word(tail):
+            continue
+        if any("Patr" in parse.tag.grammemes for word in (head, tail) for parse in MORPH.parse(word)):
+            continue
+        before = low[max(0, first.start() - _BIO_WINDOW):first.start()]
+        after = low[second.end():second.end() + _BIO_WINDOW]
+        if not any(cue in before or cue in after for cue in names.bio_cues):
             continue
         spans.append(Span(first.start(), second.end(), "NAME",
                           text[first.start():second.end()]))

@@ -482,7 +482,11 @@ _ENTRANCE = (r"(?:" + _ORDINAL + r"|последн\w+|крайн\w+|углов\w
 # нумерации домов не бывает — ГАР ведёт литеры от «а» вглубь алфавита, а «я» в
 # русском тексте почти всегда местоимение. Запрет на одну букву честнее
 # просмотра вперёд, который запрещал форму, а не то, что ломалось.
-_LITERA = r"(?:\s+(?![яЯ](?![а-яё]))[а-яё](?![а-яё]))?"
+# …AND NOT «к» OR «с» IN FRONT OF A NUMBER: those are the корпус and строение
+# markers («д 65 к 1»), and read as a litera the marker closed the span at
+# «65 к» — the корпус went to the model outside an address already reported
+# as found, and the directory record keyed without it.
+_LITERA = r"(?:\s+(?![яЯ](?![а-яё]))(?![кс]\.?\s*\d)[а-яё](?![а-яё]))?"
 
 # ЛИТЕРА ПРИ ЦИФРОВОМ НОМЕРЕ ДОМА — ТА ЖЕ БУКВА, НО ДРУГОЙ РЕГИСТР ТЕКСТА.
 # «воткинское шоссе 4 а квартира 58» обрывалось на «4»: у речевых арок литера
@@ -660,7 +664,16 @@ ADDRESS_PATTERNS: dict[str, str] = {
     "apt": (r"(?i)(?:" + _TOK_OR_DIGIT
             + r"(?:квартир\w*|кв|офис\w*|оф|помещени\w*|пом|комнат\w*|комн"
               r"|корпус\w*|корп|кор|строени\w*|стр|под[ъь]езд\w*|под|этаж\w*|эт)\.?\s*\d+[а-яёА-ЯЁ]?"
-            + r"|(?<=\d)к\s*\d+)"),
+            # …AND WITH ONE SPACE, when a digit follows and no word does: «ул.
+            # Кирова 12 к 3 кв 300» is how a courier form writes the корпус, and
+            # the tail after «12» went to the model. Still SUPPORT — «в 12 к 5
+            # часам» has no core address to merge with and is dropped.
+            # The spaced form must be FOLLOWED by the end, punctuation or another
+            # address marker: «привезите на ленина 14 к 10 часам» is a time,
+            # and the bare preposition took eight of v3's time-of-day negatives.
+            + r"|(?<=\d)к\.?\s*\d+"
+            + r"|(?<=\d)\sк\.?\s*\d+(?=\s*(?:[,;.)]|$"
+              r"|(?:кв|квартир\w*|подъезд\w*|под|этаж\w*|эт|стр|строен\w*|литер\w*|лит|оф|офис\w*|пом|комн\w*|дом|д)\b)))"),
     # ХВОСТ АДРЕСА, СКАЗАННЫЙ СЛОВАМИ. `apt` требует `\d+`, поэтому «улица
     # дербенёвская двадцать четыре строение пять» маскировалась по «четыре», а
     # строение уходило в модель внутри уже найденного адреса — ровно тот разрыв

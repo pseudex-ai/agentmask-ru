@@ -271,12 +271,27 @@ def _inflect_word(word: str, case: str, gender: str | None) -> str:
     return _match_capitalisation(word, inflected.word)
 
 
+# HEAD markers only — the city's and the street type's. A tail abbreviation
+# («д.», «кв.», «корп.») sits inside inflected sentences all the time («на
+# проспекте Жасминовом 176, корп. 9»), and read as a record it put a
+# nominative substitute into an oblique slot; the head is what does not
+# decline: «на ул. Тверская», never «на ул. Тверской».
+_ABBREVIATED_MARKER_RE = re.compile(r"(?i)(?:^|[\s,])(?:г|гор|ул|пр-т|пр-кт|просп|пер|наб|пл|б-р|ш|мкр)\.?(?=[\s,]|$)")
+
+
 def detect_case(phrase: str) -> str | None:
     """The case a place phrase is written in, decided by its generic word first.
 
     The generic word is the reliable signal: `улице` is unambiguously dative
     while the name beside it (`Тополиной`) is four cases at once.
     """
+    # AN ABBREVIATED MARKER IS A RECORD, NOT A SENTENCE. «г Глазов, ул Кирова,
+    # д 79» is how a directory writes an address; «Кирова» is a genitive by
+    # nature and out-voted the abbreviations, which decline in no case, so the
+    # substitute went to the model as «Глазова, ул. Сосновой 20» — the real
+    # town's name bent into a genitive it never had.
+    if _ABBREVIATED_MARKER_RE.search(phrase):
+        return "nomn"
     tally: dict[str, float] = {}
     for token in phrase.split():
         stripped = token.strip(",.")
@@ -602,7 +617,9 @@ def street_house_key(phrase: str) -> str:
     """
     kept: list[str] = []
     city_skipped = False
-    for token in address_key(phrase).split():
+    tokens = address_key(phrase).split()
+    for index, token in enumerate(tokens):
+        following = tokens[index + 1] if index + 1 < len(tokens) else ""
         # THE KEY STOPS AT THE FLAT. A short mention is short precisely because
         # it left the finer parts out: «мира 7» has to find «г. Казань, ул.
         # Мира, д. 7, кв. 12», and with «кв 12» still in the key it never did.
@@ -624,7 +641,16 @@ def street_house_key(phrase: str) -> str:
         # are towns AND the commonest street names; dropping every Geox token
         # left «можга проезд пушкина 89» keyed as «89» — a key that would link
         # any house 89 in the conversation to this address.
-        if not kept and not city_skipped and any("Geox" in parse.tag for parse in MORPH.parse(token)):
+        # …AND A CITY TAKES NO HOUSE NUMBER. «кирова 79» opens with a word
+        # morphology calls a town (Киров), and dropping it keyed the customer's
+        # street as «79» — a key the directory's «г Глазов, ул Кирова, д 79»
+        # («киров 79») never met, so the record the model had just asked for
+        # came back as a second substitute and the model reported the address
+        # as not found (live v4 04.09, the Б8-echo residue). A leading place
+        # word followed directly by a number is the street.
+        if (not kept and not city_skipped and following
+                and not following[:1].isdigit() and not spoken.is_numeral_word(following)
+                and any("Geox" in parse.tag for parse in MORPH.parse(token))):
             city_skipped = True
             continue
         # A lone letter after a number is the house litera, and the glued
@@ -949,7 +975,12 @@ def _word_number() -> re.Pattern[str]:
 # THE REGISTER WRITES THE LITERA IN CAPITALS. ФИАС / DaData spell «д 10А», and
 # a lower-case class stopped the house at «10» — the «А» fell outside the
 # role, outside the key, and outside the detector's span.
-_DIGIT_NUMBER = re.compile(r"\d+(?:/\d+)?(?:[а-яёА-ЯЁ]\b|\s+[а-яёА-ЯЁ](?![а-яёА-ЯЁ]))?")
+# …AND «к» OR «с» BEFORE A NUMBER IS A MARKER, NOT A LITERA. «д 65 к 1» read
+# as house «65 к», the корпус had no role, and `_trim_landmark` cut the «1»
+# off the span as a landmark — the directory record keyed without its корпус
+# and the model was handed a second substitute for the place it had just
+# asked about.
+_DIGIT_NUMBER = re.compile(r"\d+(?:/\d+)?(?:[а-яёА-ЯЁ]\b|\s+(?![кс]\.?\s*\d)[а-яёА-ЯЁ](?![а-яёА-ЯЁ]))?")
 _ORDINAL_ONLY = re.compile(rf"(?i)\b{_ORDINAL_WORD}\b")
 _HOUSE_MARKER = re.compile(r"(?i)\b(?:дом|д|влад\w*|вл)\.?")
 _HOUSE_MARKER_TAIL = re.compile(r"(?i)\b(?:дом|д|влад\w*|вл)\.?[\s,.]*$")
@@ -957,7 +988,7 @@ _PART_MARKERS: tuple[tuple[str, str], ...] = (
     ("flat", r"кв|кварт\w*|офис\w*|оф"),
     ("entrance", r"подъезд\w*|под"),
     ("floor", r"этаж\w*"),
-    ("building", r"корп\w*|кор|стр|строен\w*|литер\w*|лит"),
+    ("building", r"корп\w*|кор|стр|строен\w*|литер\w*|лит|к(?=\.?\s*\d)|с(?=\.?\s*\d)"),
 )
 
 

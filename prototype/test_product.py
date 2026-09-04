@@ -616,6 +616,49 @@ def test_directory_record_is_the_customers_address() -> None:
     print("directory record OK — the register's form, its leaves and the model's composition are one place")
 
 
+def test_directory_record_links_to_the_short_mention() -> None:
+    """The record the model asked the directory for is the customer's own
+    short mention, whatever the street's word looks like to morphology.
+
+    Live v4 04.09, the Б8-echo residue: «кирова 79» keyed as «79» because
+    «Кирова» reads as the town Киров and the short key dropped it as a city, so
+    «г Глазов, ул Кирова, д 79» came back as a SECOND substitute and the model
+    reported the address as not found. Three more things on the same leg: the
+    record's abbreviations were out-voted by the genitive street name and the
+    substitute went out as «Глазова, ул. Сосновой» — the real town bent into a
+    case it never had; «д 65 к 1» lost its корпус to a litera reading; and a
+    bare «к 3» between the house and the flat fell outside the span.
+    """
+    import json
+    from pseudex.morph_places import detect_case, split_roles, street_house_key
+
+    assert street_house_key("кирова 79") == street_house_key("г Глазов, ул Кирова, д 79") == "киров 79"
+    assert street_house_key("можга проезд пушкина 89") == "пушкин 89", "a city before a street is still skipped"
+    assert detect_case("г Глазов, ул Кирова, д 79") == "nomn"
+    assert detect_case("Офис на проспекте Жасминовом 176, корп. 9") != "nomn", "a tail abbreviation pins nothing"
+    assert split_roles("г Самара, ул Пушкина, д 65 к 1") == {"city": "Самара", "street": "ул Пушкина", "house": "65", "building": "1"}
+    assert split_roles("ул Пушкина 65 с 2")["building"] == "2" and split_roles("садовая 89 а")["house"] == "89 а"
+
+    detector = Detector()
+
+    def mask(text: str, vault: Vault) -> str:
+        return mask_text(text, vault, detector.detect(text))
+
+    assert [s.value for s in detector.detect("ул. Кирова 12 к 3 кв 300")] == ["ул. Кирова 12 к 3 кв 300"]
+    assert [s.value for s in detector.detect("привезите на ленина 14 к 10 часам")] == ["ленина 14"]
+    for said, city, record in (("курьера в глазов на кирова 79 для анны", "Глазов", "г Глазов, ул Кирова, д 79"),
+                               ("курьера на пушкна шестьдесят пять корпус один это самара", "Самара", "г Самара, ул Пушкина, д 65 к 1")):
+        talk = Vault(":memory:", "acme").for_conversation("d-1")
+        seen = mask(said, talk)
+        answer = json.dumps({"suggestions": [{"value": record, "data": {"city": city}}]}, ensure_ascii=False)
+        shown = json.loads(mask(answer, talk))["suggestions"][0]["value"]
+        tokens = [row[0] for row in talk._conn.execute("SELECT token FROM tokens WHERE entity_type='LOC'").fetchall()]  # noqa: SLF001
+        assert shown.startswith(f"{city}, ") and shown[len(city) + 2:] in tokens[0] + tokens[0].replace("улица", "улица"), (seen, shown, tokens)
+        assert len({t.replace(f"{city}, ", "") for t in tokens}) == 1, ("one place, one substitute", tokens)
+        assert "к" not in record or ", корп. " in shown, ("the корпус rides in the substitute", shown)
+    print("directory link OK — a surname-street keys with its street, the record reads nominative, the корпус stays")
+
+
 def test_name_is_read_with_its_sentence() -> None:
     """Gender and case of a name are ONE reading of the whole phrase, and the
     word in front of it breaks the tie.
@@ -719,4 +762,5 @@ if __name__ == "__main__":
     test_fuller_mention_reuses_the_substitute()
     test_real_town_is_not_a_fake_city()
     test_directory_record_is_the_customers_address()
+    test_directory_record_links_to_the_short_mention()
     test_name_is_read_with_its_sentence()
