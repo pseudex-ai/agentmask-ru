@@ -424,6 +424,17 @@ def _damaged_name_pairs(text: str) -> list[Span]:
                 continue
             if not (_names_a_person(damaged) or _looks_misspelt_name(damaged)):
                 continue
+            # A LONG UNKNOWN WORD ONE EDIT FROM AN ORDINARY WORD IS THAT WORD —
+            # HERE, and only here. «выгрузуой воронина елена»: «выгрузкой» with a
+            # letter slipped, predicted as a given name, prepended to a real
+            # person. In this arm neither word is anchored by the gazetteer, so
+            # the collision is the rule; at the join of a found given name to its
+            # neighbour it is the exception, and the veto there cost «константин
+            # хабенский», «анна седокова», «елены росовой» (one edit from
+            # «рисовой») — 1.0pp of MASSIVE person.
+            if (not _looks_misspelt_name(damaged) and len(damaged) >= 7
+                    and _one_edit_from_known_word(damaged)):
+                continue
             # THE PREDICTED-PERSON READING IS THE WEAK SIGNAL, and for a LONG
             # word one edit from an ordinary one it is wrong: «выгрузуой
             # воронина елена» — «выгрузкой» with one letter slipped, predicted
@@ -793,15 +804,6 @@ def _typo_of_an_ordinary_word(word: str) -> bool:
     # edit from the leased list of field-opening words is an ordinary word.
     if any(within_one_typo(lowered, cue) for cue in ASSETS.get().names.never_cues):
         return True
-    # A LONG UNKNOWN WORD ONE EDIT FROM AN ORDINARY WORD IS THAT WORD.
-    # «выгрузуой воронина елена» — «выгрузкой» with one letter slipped,
-    # predicted as a given name and prepended to a real person, so the
-    # customer's `first_name` became «выгрузуой». The general one-edit veto
-    # was measured at four real people on NEREL and refused; bounded at seven
-    # letters it leaves «игрь», «алексй» and every short mistyped name alone,
-    # and long words are where the ordinary vocabulary is dense.
-    if len(lowered) >= 7 and not MORPH.word_is_known(lowered) and _one_edit_from_known_word(lowered):
-        return True
     # СЛОВО, У КОТОРОГО ЕСТЬ СВОЁ ИМЕННОЕ ЧТЕНИЕ, ОПЕЧАТКОЙ НЕ СЧИТАЕТСЯ.
     # «роману» удалением даёт «роман» — обычное слово, — но само «роману» несёт
     # чтение Name, и правило про опечатку тут ни при чём: это настоящее имя в
@@ -826,6 +828,11 @@ def _typo_of_an_ordinary_word(word: str) -> bool:
     # Удвоение — это ОПЕЧАТКА КЛАВИАТУРЫ, а не сходство: «начальниик»,
     # «мастеер», «дежурныый», «этоо». Настоящая фамилия, у которой снятие
     # удвоения даёт обычное слово, встречается несравнимо реже.
+    return _doubled_letter_typo(lowered)
+
+
+def _doubled_letter_typo(lowered: str) -> bool:
+    """One doubled letter away from a word the dictionary knows and no person."""
     for index in range(1, len(lowered)):
         if lowered[index] != lowered[index - 1]:
             continue
@@ -839,6 +846,20 @@ def _typo_of_an_ordinary_word(word: str) -> bool:
             continue
         return True
     return False
+
+
+def _damaged_common_word(word: str) -> bool:
+    """The narrow half of `_typo_of_an_ordinary_word` — a filler, a damaged
+    cue word, a doubled letter — WITHOUT the one-edit rule. The public-figure
+    arm exists for words the dictionary has never seen, and «фримена» is one
+    edit from «времена»: the wide rule cost 1.3pp of MASSIVE person recall."""
+    low = word.lower()
+    if is_stretched_filler(low):
+        return True
+    # No doubled-letter test either: a double letter is the NORM in a
+    # transliterated name — «Билл», «Пуллман», «Стелла», «Джонни» — and
+    # «билл» collapses to the verb «бил».
+    return any(within_one_typo(low, cue) for cue in ASSETS.get().names.never_cues)
 
 
 def _agrees_as_a_name(word: str, anchor: str) -> bool:
@@ -874,6 +895,11 @@ def _agrees_as_a_name(word: str, anchor: str) -> bool:
                for parse in parses if _PERSON_TAGS & parse.tag.grammemes)
 
 
+def _prepended_ordinary(word: str) -> bool:
+    low = word.lower()
+    return len(low) >= 7 and not MORPH.word_is_known(low) and _one_edit_from_known_word(low)
+
+
 def _adjacent_surnames(text: str, found: list[Span]) -> list[Span]:
     """Extend a known given name to the person-word beside it."""
     extra: list[Span] = []
@@ -891,6 +917,15 @@ def _adjacent_surnames(text: str, found: list[Span]) -> list[Span]:
             if span.start - (offset + match.end()) > 1:
                 break
             start, end = offset + match.start(), offset + match.end()
+            # A LONG DAMAGED ORDINARY WORD IN FRONT OF A NAME is the word before
+            # the name, not a part of it: «выгрузуой воронина елена»
+            # («выгрузкой» with a letter slipped, predicted as a given name,
+            # joined to «воронина» before «елена» was). To the RIGHT of a given
+            # name the same test is not asked — «константин хабенский» is one
+            # edit from nothing and «елены росовой» is one edit from «рисовой»,
+            # and both are people; that side cost 1.0pp of MASSIVE person.
+            if _prepended_ordinary(match.group()):
+                break
             if (start, end) not in taken and _joins_the_name(match.group(), span.value):
                 extra.append(Span(start, end, "NAME", match.group()))
             break
@@ -937,6 +972,12 @@ def _split_name_parts(text: str, found: list[Span], names: NameAssets) -> list[S
     extra: list[Span] = []
     for match in _SPLIT_PAIR_RE.finditer(text):
         left, right = match.group(1), match.group(2)
+        # A LONG DAMAGED ORDINARY WORD IS NOT HALF OF A SPLIT SURNAME.
+        # «выгрузуой воронина» joins to «выгрузуойворонина», which ENDS like a
+        # surname, so the arm read the customer's «выгрузкой» (one letter
+        # slipped) as the first half of the person's name.
+        if _prepended_ordinary(left):
+            continue
         # THE LEFT FRAGMENT MAY NOT BE A FUNCTION WORD. `_is_surname_shaped`
         # reads the suffix and nothing else, so «на»+«Лебедева» joins to
         # «наЛебедева», ends in «ева» and passes — every «Заказ на Лебедева
@@ -1428,7 +1469,7 @@ def _biographic_pairs(text: str, names: NameAssets) -> list[Span]:
         # the misspelt verb ITSELF — so the patient's name grew a fourth word
         # and the agent asked which of them was the surname (live v4 04.09,
         # derive-020). The cue is looked for OUTSIDE the pair.
-        if _typo_of_an_ordinary_word(head) or _typo_of_an_ordinary_word(tail):
+        if _damaged_common_word(head) or _damaged_common_word(tail):
             continue
         if any("Patr" in parse.tag.grammemes for word in (head, tail) for parse in MORPH.parse(word)):
             continue
