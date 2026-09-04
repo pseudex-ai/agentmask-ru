@@ -1024,6 +1024,16 @@ BIO_CUES: tuple[str, ...] = (
 KEY_TYPE: dict[str, str] = {
     "имя": "NAME", "фио": "NAME", "клиент": "NAME", "заказчик": "NAME",
     "получатель": "NAME", "name": "NAME",
+    # THE PARTS OF A NAME AS A CRM WRITES THEM. A record answered
+    # {"last_name": "кузнецов", "first_name": "дмитрий"} and the surname leaf
+    # went to the model in the clear — a lower-case surname alone passes no
+    # gate, and the key that names it was not in this map. The model then saw
+    # a card whose surname differed from the person it was talking to and
+    # asked whose card it was (live v4, chain-014). Keys are matched with
+    # separators removed (`_KEY_CLEAN_RE`), so «last_name» is «lastname».
+    "фамилия": "NAME", "отчество": "NAME", "lastname": "NAME", "firstname": "NAME",
+    "middlename": "NAME", "surname": "NAME", "patronymic": "NAME", "givenname": "NAME",
+    "fullname": "NAME", "секондфамилия": "NAME",
     "телефон": "PHONE", "тел": "PHONE", "моб": "PHONE", "мобильный": "PHONE",
     "номертелефона": "PHONE", "phone": "PHONE", "контактныйтелефон": "PHONE",
     "снилс": "SNILS", "snils": "SNILS",

@@ -156,7 +156,13 @@ def _token_for_text(span: Span, vault: Vault) -> str:
         whole = vault.tokenize(span.whole, "LOC")
         part = morph_places.split_roles(whole).get(span.role, "")
         if not part:
-            return whole
+            # A CITY LEAF THE SUBSTITUTE CANNOT SHOW STAYS AS WRITTEN — a
+            # settlement alone is not personal data (the same line the bare
+            # city and `_settlement_of` draw), and the whole token in a field
+            # called «city» told the model the record was another address
+            # (live v4, chain-009). Any other missing role still gets the
+            # whole substitute: fail closed on the street and the house.
+            return span.value if span.role == "city" else whole
         part = morph_places.part_in_form_of(span.value, part, span.role)
         if span.value.islower():
             return part.lower()

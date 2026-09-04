@@ -615,7 +615,8 @@ def _patronymic_gender_any_case(parts: list[str]) -> str | None:
     return None
 
 
-def read_person(surface: str, cases: tuple[str, ...]) -> tuple[str | None, str | None]:
+def read_person(surface: str, cases: tuple[str, ...],
+                lone_rule: bool = True) -> tuple[str | None, str | None]:
     """ONE reading of the whole name — (gender, case) — chosen so that EVERY
     word supports it, with the word in front of the name breaking a tie.
 
@@ -659,14 +660,29 @@ def read_person(surface: str, cases: tuple[str, ...]) -> tuple[str | None, str |
     if not candidates:
         gender = fixed or detect_gender(surface)
         return gender, detect_case(surface, None if has_given_name(surface) else gender)
-    if len(candidates) > 1 and not cases and len(parts) == 1:
+    if lone_rule and len(candidates) > 1 and not cases and len(parts) == 1:
         # The lone-word rule the vault's key already lives by: a single
         # «Иванова» is a woman in the nominative, not a man in the genitive.
+        # NOT for `to_nominative` (`lone_rule=False`): that one also reduces
+        # the model's inflected FAKE, and a fake surname that stops reducing
+        # stops resolving — the model writes «Тарасова», `name_key` misses,
+        # the substitute reaches the tool. Every masculine one-word substitute
+        # failed its own round trip that way and silently became two words.
         lone = lone_nominative_gender(surface)
         if lone is not None and any(c[0] == lone for c in candidates):
             candidates = {c for c in candidates if c[0] == lone}
+    # A TIE IS BROKEN TOWARDS THE NOMINATIVE FOR A REAL VALUE (a lone
+    # «Иванова» stays herself) AND AWAY FROM IT FOR A FAKE (`lone_rule=False`):
+    # the model's «Тарасова» is the genitive of our «Тарасов», and a reading
+    # that keeps it nominative keeps it from resolving.
+    # …and for a fake the ENDING says the gender first («лебедеву» is a
+    # woman's accusative, not a man's dative), which is the old `detect_gender`
+    # signal a surname alone was always read by.
+    hinted = detect_gender(surface) if not lone_rule and len(parts) == 1 else None
     best = max(candidates, key=lambda c: (sum(r.get(c, 0.0) for r in per_part),
-                                          c[1] == "nomn", -_CASES.index(c[1])))
+                                          (c[0] == hinted) if hinted else False,
+                                          (c[1] == "nomn") if lone_rule else (c[1] != "nomn"),
+                                          -_CASES.index(c[1])))
     return best
 
 
@@ -675,7 +691,7 @@ def to_nominative_governed(surface: str, cases: tuple[str, ...]) -> str:
     and the rules recorded in `to_nominative`."""
     if not cases:
         return to_nominative(surface)
-    gender, case = read_person(surface, cases)
+    gender, case = read_person(surface, cases, lone_rule=False)
     if case in (None, "nomn"):
         return surface
     return " ".join(_part_to_nominative(part, gender, case) for part in surface.split())
@@ -695,7 +711,7 @@ def to_nominative(surface: str) -> str:
     # ONE READING FOR GENDER AND CASE, see `read_person`: two separate votes
     # let a tie in one pick the other's loser («фёдорову юлию» — the dative of
     # a man by list order, the woman by every word).
-    gender, case = read_person(surface, ())
+    gender, case = read_person(surface, (), lone_rule=False)
     # The case of the WHOLE span, decided by agreement across its parts, then
     # imposed on each part. Analysing a word alone loses the one fact that
     # disambiguates it: pymorphy3 reads `Марку` as an indeclinable surname and

@@ -736,12 +736,21 @@ def _keys_match(left: str, right: str) -> bool:
         if x.isdigit() or y.isdigit() or len(x) < 5 or len(y) < 5:
             return False
         # The register's word is LEMMATISED («пушкина» -> «пушкин») and the
-        # customer's mistyped one is not (it is unknown to morphology), so
-        # «пушкна» stood two edits from the key of its own street. Compared
-        # without the final vowel both sides show the same stem.
-        if not (within_one_typo(x, y) or within_one_typo(x.rstrip("аяыие"), y.rstrip("аяыие"))):
+        # customer's mistyped one is not (it is unknown to morphology, so its
+        # spelling is kept), so «пушкна» stood two edits from the key of its
+        # own street. Compared as STEMS — the inflectional ending off both
+        # sides — they are one typo apart.
+        if not (within_one_typo(x, y) or within_one_typo(_stem_of_word(x), _stem_of_word(y))):
             return False
     return True
+
+
+_ENDING_RE = re.compile(r"(?:ого|ему|ому|ыми|ими|ая|яя|ый|ий|ой|ые|ие|ым|им|ом|ем|ах|ях|ов|ев|а|я|ы|и|е|у|ю|о)$")
+
+
+def _stem_of_word(word: str) -> str:
+    stem = _ENDING_RE.sub("", word)
+    return stem if len(stem) >= 4 else word
 
 
 def _same_house(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
@@ -1019,6 +1028,20 @@ def _invariant_last_names() -> tuple[str, ...]:
     return usable
 
 
+@functools.lru_cache(maxsize=2)
+def _round_trip_last_names(gender: str) -> tuple[str, ...]:
+    """The surnames whose form in this gender resolves back from every case
+    when it stands ALONE — the feminine invariant list, and the masculine
+    entries of the pool that pass the same check."""
+    if gender == "femn":
+        return _invariant_last_names()
+    usable = tuple(s for s in _FAKE_LAST + _FAKE_LAST_INVARIANT
+                   if morph_names.survives_round_trip(s, "masc"))
+    if len(usable) < 12:
+        raise RuntimeError(f"only {len(usable)} masculine surname(s) survive a lone round trip — widen _FAKE_LAST")
+    return usable
+
+
 def _fake_name(gender: str | None, shape: tuple[str, ...] = ()) -> str:
     """A fake full name that AGREES WITH ITSELF and with the real person.
 
@@ -1055,8 +1078,12 @@ def _fake_name(gender: str | None, shape: tuple[str, ...] = ()) -> str:
         # and sometimes silently produce a two-word name instead. The subset is
         # DERIVED, not a second list, so it cannot drift out of step with the
         # first (the same reason `feminine_surname` derives rather than stores).
-        surnames = (_invariant_last_names()
-                    if plan == ("surn",) and resolved == "femn" else _FAKE_LAST)
+        # …AND THE MASCULINE HALF NEEDS THE SAME CHECK. A masculine surname
+        # that failed its lone round trip twelve times fell through to «Имя
+        # Фамилия», and the CRM card's `last_name` leaf was shown a two-word
+        # person (live v4, chain-014).
+        surnames = (_round_trip_last_names(resolved)
+                    if plan == ("surn",) else _FAKE_LAST)
         parts: list[str] = []
         for slot in plan:
             if slot == "surn":

@@ -423,6 +423,11 @@ def address_key(phrase: str) -> str:
     # «152кв7» and «152 кв 7» are one flat: the glued marker is split before the
     # key is built, so both writings meet in one row.
     phrase = _GLUED_MARKER_RE.sub(r"\1 \2 \3", phrase)
+    # «д 65, к 1», «65 с 2»: a bare «к» or «с» BETWEEN two numbers is корпус or
+    # строение, not the preposition the list below drops — the register writes
+    # exactly this, and the spoken «корпус один» keyed with «к» while the
+    # record's «к 1» lost it.
+    phrase = _MARKER_BETWEEN_NUMBERS_RE.sub(lambda m: f"{m.group(1)} {'корп' if m.group(2).lower() == 'к' else 'стр'} {m.group(3)}", phrase)
     stripped = " ".join(word for word in phrase.strip().split()
                         if word.strip(",.").casefold() not in _PREPOSITIONS)
     parts: list[str] = []
@@ -485,7 +490,13 @@ def address_key(phrase: str) -> str:
                 parts.append(numeral)
                 continue
             parses = MORPH.parse(raw) if not raw[:1].isdigit() else []
-            parts.append(parses[0].normal_form if parses else raw)
+            # AN UNKNOWN WORD KEEPS ITS SPELLING. pymorphy guesses a lemma for
+            # a word it does not know, and the guess is noise: «вишёнвая» (a
+            # slip for Вишнёвая) became the verb «вишенвать», «пушкна» the
+            # town «пушкно» — keys no register record could ever meet, so the
+            # customer's mistyped street and the directory's answer were two
+            # places (live v4, compare-014 / 034: «адрес не найден»).
+            parts.append(parses[0].normal_form if parses and parses[0].is_known else raw)
             if names_city:
                 cities.append(parts[-1])
     # A city named anywhere goes to the front, so «Москва, X» and «X, Москва»
@@ -499,7 +510,10 @@ def address_key(phrase: str) -> str:
     rest = [part for part in parts if part not in city]
     generic = [part for part in rest if part in _GENERIC]
     tail = [part for part in rest if part not in _GENERIC]
-    return " ".join(city + generic[:1] + tail)
+    # ё IS FOLDED IN THE KEY, AFTER lemmatisation too: the input was folded
+    # before the lemma and pymorphy handed back «вишнёвый» with its ё, so the
+    # customer's «вишенвая» and the register's «Вишнёвая» never met.
+    return " ".join(city + generic[:1] + tail).replace("ё", "е")
 
 
 def _has_city(phrase: str) -> bool:
@@ -635,6 +649,7 @@ def street_house_key(phrase: str) -> str:
 
 _SHORT_KEY_STOP = frozenset({"кв", "к", "стр", "подъезд", "под", "этаж"})
 _GLUED_MARKER_RE = re.compile(r"(?i)(\d)(кв|к|стр|корп)\.?(\d)")
+_MARKER_BETWEEN_NUMBERS_RE = re.compile(r"(?i)(\d[а-яё]?)[\s,]+([кс])\.?\s+(\d)")
 
 
 def _is_settlement_word(word: str) -> bool:
@@ -1089,6 +1104,13 @@ def _leading_settlement(phrase: str) -> re.Match[str] | None:
         # …and the type word is followed by the STREET'S NAME, not a number:
         # «пушкина улица 5» is a street written name-first, «глазов проспект
         # маяковского» is a town before a street.
+        return match
+    # A COMMA RIGHT AFTER THE WORD, WITH A CLAUSE BEHIND IT, is how a record
+    # writes its city: «глазов, дзержинского, 19». Nobody writes a person that
+    # way, so the surname reading does not veto here — without this the CRM
+    # card's address lost its city and the city LEAF was shown the whole
+    # substitute (live v4, chain-009: «"city": "улица Каштановая 101, кв. 199"»).
+    if match.group(0).rstrip().endswith(",") and rest:
         return match
     if any("Surn" in parse.tag.grammemes or parse.tag.POS == "ADJF" for parse in parses):
         return None
