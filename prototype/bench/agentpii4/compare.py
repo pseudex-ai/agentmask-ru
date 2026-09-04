@@ -77,9 +77,18 @@ def _names(run: ArmRun) -> tuple[str, ...]:
     return tuple(call.name for call in run.calls)
 
 
+def _accepted_names(run: ArmRun) -> tuple[str, ...]:
+    """The calls the mock ACCEPTED. A control that fumbled the house format
+    twice and got it right on the third attempt used the same tools as an arm
+    that got it right first; counting the fumbles as tools made the cleaner
+    arm «missing_call» (live v4 04.09: compare-011, two triples). Refusals
+    stay visible where they belong — per field, as `validated_refused`."""
+    return tuple(call.name for call in run.calls if not call.refusal_rule)
+
+
 def level_tools(ref: ArmRun, obs: ArmRun) -> tuple[bool, str]:
     left, right = _names(ref), _names(obs)
-    if left == right:
+    if left == right or _accepted_names(ref) == _accepted_names(obs):
         return True, ""
     if left and not right:
         return False, "no_call"

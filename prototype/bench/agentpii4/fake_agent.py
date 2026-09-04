@@ -253,7 +253,14 @@ def _nominative_name(surface: str) -> str:
         def score(pair: tuple[str, str]) -> float:
             return sum(max((p.score for p in parses if (p.tag.gender, p.tag.case) == pair), default=0.0)
                        for parses in parsed)
-        best = max(readings, key=score)
+        # A GIVEN NAME THAT IS ALSO A SURNAME WINS THE TIE — the reading a
+        # speaker takes. «Регину» scores the same as the woman «Регина» in
+        # the accusative and the man «Регин» in the dative; the arbitrary
+        # winner wrote «Регин», a person the gateway never minted.
+        def names(pair: tuple[str, str]) -> int:
+            return sum(1 for parses in parsed for p in parses
+                       if (p.tag.gender, p.tag.case) == pair and "Name" in p.tag.grammemes)
+        best = max(readings, key=lambda pair: (score(pair), names(pair)))
     out: list[str] = []
     for word, parses in zip(words, parsed):
         chosen = None

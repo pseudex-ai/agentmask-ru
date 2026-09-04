@@ -188,6 +188,30 @@ def test_pool_is_not_narrowed_by_the_extra_rejections() -> None:
           f"(до правок столько же); дальше клиент получает 5xx навсегда")
 
 
+def test_two_people_in_one_dialogue_never_share_a_fake_surname(detector: Detector) -> None:
+    """Два человека в одной беседе не получают одну фамилию подмены.
+
+    С пулом в 28 фамилий сообщение с двумя людьми вытягивало одну и ту же
+    примерно раз в 28 — «Шилов Семён» и «Шилова Иванна». Агент строит из них
+    CSV, а «Шилова» — это и её именительный, и его родительный: два владельца,
+    отказ, и подмена уходит в CRM клиента (container-009/015/027 в скриптовом
+    прогоне 04.09). Проверяется по 300 чеканкам: ни одной пары с общей основой
+    в одной беседе — и что чужая беседа по-прежнему свободна брать ту же.
+    """
+    text = "занесите двоих в базу васильев иван телефон 8 977 388 78 79 и мамедова лейла телефон +79602859294"
+    spans = detector.detect(text)
+    shared = 0
+    for _ in range(300):
+        vault = Vault(":memory:", _ORG).for_conversation("one")
+        mask_text(text, vault, spans)
+        tokens = [row[0] for row in vault._conn.execute(  # noqa: SLF001 - the test reads the store directly
+            "SELECT token FROM tokens WHERE entity_type='NAME'").fetchall()]
+        stems = {token.split()[0].casefold().rstrip("а") for token in tokens}
+        shared += 1 if len(tokens) == 2 and len(stems) < 2 else 0
+    assert shared == 0, f"{shared} из 300 чеканок дали двум людям одну фамилию в одной беседе"
+    print("основа фамилии OK — два человека в одной беседе не делят подмену; 300 чеканок")
+
+
 def main() -> int:
     testkit.load_dev_bundle()
     detector = Detector()
@@ -198,6 +222,7 @@ def main() -> int:
     test_echo_in_its_own_conversation_is_left_alone(detector)
     test_migrated_vault_keeps_the_old_behaviour(detector)
     test_pool_is_not_narrowed_by_the_extra_rejections()
+    test_two_people_in_one_dialogue_never_share_a_fake_surname(detector)
     print("\nвсе проверки коллизий пройдены")
     return 0
 

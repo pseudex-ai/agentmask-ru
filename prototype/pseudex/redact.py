@@ -1306,6 +1306,10 @@ def residual_tokens(text: str, vault: Vault) -> list[str]:
     string is ours, and it should not have survived.
     """
     candidates = {match.group() for match in TOKEN_RE.finditer(text)}
+    # A PHONE TOKEN IS WRITTEN THE CUSTOMER'S WAY (vault `_digits_in_customer_
+    # form`), so `TOKEN_RE`'s «+79…» shape no longer names it; every digit run
+    # is offered and the vault answers by signature.
+    candidates |= {match.group().strip() for match in _NUM_RUN.finditer(text)}
     # A NAME the model REWROTE no longer matches any token, so `TOKEN_RE` alone
     # would miss exactly the case this exists for. Capitalised runs are offered
     # too, and the vault decides which of them are made of its own words.

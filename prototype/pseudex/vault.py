@@ -98,6 +98,8 @@ _FAKE_LAST = [
     "Ершов", "Зимин", "Карпов", "Лужин", "Мещеряков", "Наумов", "Осипов",
     "Панов", "Рыбаков", "Сазонов", "Тарасов", "Устинов", "Фомин", "Хвостов",
     "Цветков", "Чижов", "Шилов", "Щукин", "Юдин", "Яровой", "Бирюков",
+    # Added 04.09: the entries that also pass `survives_round_trip` alone.
+    "Бобров", "Кудрявцев", "Мухин", "Титов", "Уваров", "Якушев", "Крылов", "Фролов",
 ]
 # A WOMAN MENTIONED BY SURNAME ALONE CANNOT BE GIVEN ANY NAME ABOVE. Every one
 # ends in -ов/-ин, whose feminine form is syncretic: «Лебедева» is the woman's
@@ -620,6 +622,38 @@ def place_key(token: str) -> str:
     return morph_places.match_signature(token) if token else ""
 
 
+def _digits_in_customer_form(original: str, canonical_token: str) -> str:
+    """The fake's digits laid into the original's separators and prefix.
+    «89896866953» -> «89077509228», «8-999-106-11-83» -> «8-964-510-18-44»,
+    «+7 (912) 257-90-12» -> «+7 (935) 179-44-08»; a form the splice cannot
+    line up with (a dictated phone, a different digit count) keeps the
+    canonical «+7…»."""
+    fake = re.sub(r"\D", "", canonical_token)
+    real = re.sub(r"\D", "", original)
+    # Ten or eleven digits is a phone; anything longer carries an extension
+    # («+79162148803, доб. 214») or a second number, and laying the fake's
+    # tail across those positions would spread the phone into the extension.
+    if len(real) not in (10, 11) or not fake:
+        return canonical_token
+    # Keep the customer's prefix convention: whatever stands before the last
+    # ten digits is theirs («8», «+7», «7», nothing), the last ten are ours.
+    out: list[str] = []
+    tail = fake[-10:]
+    taken = 0
+    kept_prefix = len(real) - 10
+    for ch in original:
+        if ch.isdigit():
+            if taken < kept_prefix:
+                out.append(ch)
+            else:
+                out.append(tail[taken - kept_prefix])
+            taken += 1
+        else:
+            out.append(ch)
+    rendered = "".join(out)
+    return rendered if re.sub(r"\D", "", rendered)[-10:] == tail else canonical_token
+
+
 def _digit_signatures(token: str, entity_type: str) -> tuple[str | None, str | None]:
     """Digit signature of a NUMERIC token, so a token the model reformatted
     (separators stripped, +7 rewritten as 8) still resolves. Phones also key on
@@ -768,6 +802,14 @@ def _keys_match(left: str, right: str) -> bool:
 
 
 _ENDING_RE = re.compile(r"(?:ого|ему|ому|ыми|ими|ая|яя|ый|ий|ой|ые|ие|ым|им|ом|ем|ах|ях|ов|ев|а|я|ы|и|е|у|ю|о)$")
+
+
+def _stems_related(left: str, right: str) -> bool:
+    """One stem is the other or begins with it (both at least four letters)."""
+    if left == right:
+        return True
+    shorter, longer = sorted((left, right), key=len)
+    return len(shorter) >= 4 and longer.startswith(shorter)
 
 
 def _stem_of_word(word: str) -> str:
@@ -1638,13 +1680,41 @@ class Vault:
             # candidate and the pool "exhausted" after 200 tries on the first
             # address. The rule is about a substitute repeating the PERSON it
             # replaces, which is where the collision actually leaks something.
-            if self._is_free_token(token, entity_type, original, canonical):
-                return token
+            if not self._is_free_token(token, entity_type, original, canonical):
+                continue
+            # TWO PEOPLE IN ONE DIALOGUE MAY NOT SHARE A FAKE SURNAME. With 28
+            # surnames in the pool, a message naming two people drew the same
+            # one for both once in 28 times — «Шилов Семён» and «Шилова Иванна»
+            # — and the CSV the agent then built carried «Шилова», which is the
+            # woman's nominative AND the man's genitive: two owners, refused,
+            # and the fake reached the customer's CRM. Any shared word stem is
+            # refused for the first half of the attempts, and only for the first
+            # half: a dialogue naming more people than the pool has surnames
+            # must still be served rather than 5xx'd.
+            if (entity_type == "NAME" and self._conversation
+                    and attempt < _TOKEN_MINT_ATTEMPTS // 2
+                    and self._shares_a_stem_in_conversation(token)):
+                continue
+            return token
         raise RuntimeError(
             f"exhausted the {entity_type} token pool for customer "
             f"{self._customer!r} after {_TOKEN_MINT_ATTEMPTS} attempts — widen "
             f"the pool in _render_token"
         )
+
+    def _shares_a_stem_in_conversation(self, token: str) -> bool:
+        """Whether any word of the candidate shares its stem with a NAME token
+        already minted in this conversation. Called under the lock."""
+        # `_stem_of_word` strips ONE ending, so «Сазонов» gives «сазон» and
+        # «Сазонова» gives «сазонов»; the man's and the woman's form of one
+        # surname are related by prefix, not by equality.
+        stems = {_stem_of_word(word.casefold()) for word in token.split()}
+        rows = self._conn.execute(
+            "SELECT token FROM tokens WHERE customer=? AND entity_type='NAME' AND minted_in=?",
+            (self._customer, self._conversation),
+        ).fetchall()
+        return any(_stems_related(_stem_of_word(word.casefold()), stem)
+                   for (other,) in rows for word in other.split() for stem in stems)
 
     def _is_free_token(self, token: str, entity_type: str, original: str = "",
                        canonical: str = "") -> bool:
@@ -1821,6 +1891,18 @@ class Vault:
                         token, extends = grown_place
             if token is None:
                 token = self._unique_token(entity_type, gender, value, canonical)
+            if entity_type == "PHONE" and any(ch.isdigit() for ch in value):
+                # THE SUBSTITUTE IS WRITTEN THE WAY THE CUSTOMER WROTE THE REAL
+                # ONE. The vault minted «+79782727764» and the text showed
+                # exactly that where the customer had typed «89896866953» or
+                # «8-999-106-11-83» — a number in a machine's form inside a
+                # human's sentence; in the correction family the gateway arm
+                # then treated the contact as already on file and did not save
+                # the card (six triples, 04.09). Rendered ONCE, at the mint, so
+                # one person stays one string across the dialogue — the same
+                # digits under whatever form the customer used first — and the
+                # digit-signature index resolves every rewriting of it.
+                token = _digits_in_customer_form(value, token)
             digits, digits10 = _digit_signatures(token, entity_type)
             # `value` (not `canonical`) — the surface form the user actually
             # typed, which is what the tool must receive. First writer wins: the
@@ -2760,6 +2842,18 @@ class Vault:
                 "SELECT minted_in FROM tokens WHERE customer=? AND token=? LIMIT 1",
                 (self._customer, value),
             ).fetchone()
+            if row is None and value.strip() and any(ch.isdigit() for ch in value):
+                # A NUMERIC TOKEN IS OURS IN ANY WRITING: it is shown to the
+                # model in the customer's form («8-978-272-77-64») and echoed
+                # in that form or another; the digit signature is what the
+                # vault indexes it by, the same way the restore leg finds it.
+                digits = re.sub(r"\D", "", value)
+                tail = digits[-10:] if len(digits) >= 10 else digits
+                row = self._conn.execute(
+                    "SELECT minted_in FROM tokens WHERE customer=? AND (digits=? OR digits10=?) "
+                    "AND entity_type IN ('PHONE','SNILS','INN','CARD','PASSPORT','DOB') LIMIT 1",
+                    (self._customer, digits, tail),
+                ).fetchone()
         if row is None:
             return False
         # SCOPED TO THE DIALOGUE THAT MINTED IT. A substitute comes back to us

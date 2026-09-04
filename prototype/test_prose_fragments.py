@@ -45,7 +45,7 @@ def main() -> int:
     card = re.search(r"карта (\d{4} \d{4} \d{4} \d{4})", masked).group(1)  # type: ignore[union-attr]
     snils = re.search(r"снилс (\d{3}-\d{3}-\d{3} \d\d)", masked).group(1)  # type: ignore[union-attr]
     passport = re.search(r"паспорт (\d{2} ?\d{2} \d{6})", masked).group(1)  # type: ignore[union-attr]
-    phone = re.search(r"\+7\d{10}", masked).group()  # type: ignore[union-attr]
+    phone = re.sub(r"\D", "", re.search(r"телефон ([\d\s()+\-]+)", masked).group(1))  # type: ignore[union-attr]
     surname, given, patronymic = name.split()
     latin = " ".join(translit.apply(translit.ICAO, w).capitalize() for w in (surname, given))
     snils_digits = re.sub(r"\D", "", snils)
