@@ -63,7 +63,7 @@ from bench.agentpii4.fake_agent import seed_backend  # noqa: E402
 from bench.agentpii4.gateway import HarnessError, PassThrough, RealGateway  # noqa: E402
 from bench.agentpii4.records import ArmMeta, arm_from_record, arm_record  # noqa: E402
 from bench.agentpii4.schema import (  # noqa: E402
-    EXCLUDED_TERMINATIONS, ARMS, Case, Ladder, case_from_json, corpus_digest, tier)
+    EXCLUDED_TERMINATIONS, ARMS, Case, Ladder, case_from_json, corpus_digest, sample, tier)
 from pseudex.audit import AuditLog  # noqa: E402
 from pseudex.detect_all import Detector  # noqa: E402
 from pseudex.maskcache import MaskCache  # noqa: E402
@@ -469,6 +469,9 @@ def main() -> int:
     parser.add_argument("--ladder", default=str(here / "ladder.json"))
     parser.add_argument("--tier", default="nano")
     parser.add_argument("--ids", default="", help="запятые: точный список случаев вместо яруса")
+    parser.add_argument("--sample", type=int, default=0,
+                        help="N случаев случайной выборкой по семействам вместо яруса; нужен --seed")
+    parser.add_argument("--seed", type=int, default=-1, help="зерно для --sample; пишется в meta и в имя каталога")
     parser.add_argument("--repeats", type=int, default=1, help="K повторов каждой тройки")
     parser.add_argument("--ceiling", type=float, default=12.0, help="потолок на весь прогон, USD (агент + судья)")
     parser.add_argument("--model", default=AGENT_MODEL)
@@ -508,6 +511,12 @@ def main() -> int:
             return 2
         cases = [by_id[one] for one in wanted]
         tier_name = "ids"
+    elif args.sample:
+        if args.seed < 0:
+            print("--sample требует --seed: выборка без зерна невоспроизводима", file=sys.stderr)
+            return 2
+        cases = sample(everything, args.sample, args.seed)
+        tier_name = f"sample{args.sample}-s{args.seed}"
     else:
         cases = tier(everything, _ladder(Path(args.ladder)), args.tier)
         tier_name = args.tier
@@ -536,6 +545,7 @@ def main() -> int:
     payload: dict[str, object] = {
         "run_id": run_id, "benchmark": "agentpii4", "model": args.model,
         "judge_model": "" if args.no_judge else args.judge_model, "tier": tier_name, "repeats": args.repeats,
+        "sample": args.sample, "seed": args.seed, "case_ids": [case.id for case in cases],
         "digest": digest, "ceiling_usd": args.ceiling, "arms": list(ARMS),
         "cap_base_usd": CAP_BASE_USD, "started": datetime.now(timezone.utc).isoformat(),
         "ids": [case.id for case in cases], "spent_usd": 0.0,

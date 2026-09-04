@@ -13,6 +13,7 @@ Reused from v3 (imported, not copied): `Message`, `Provenance`, `Source`,
 `tier`, `corpus_digest`, `TERMINATIONS`. Two rule sets that had to stay equal
 would be one rule set and a drift waiting to happen.
 """
+import random
 import hashlib
 import json
 from collections.abc import Sequence
@@ -413,6 +414,36 @@ class Ladder:
     seed: int
     corpus_sha256: str
     tiers: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+def sample(cases: Sequence[Case], count: int, seed: int) -> list[Case]:
+    """A seeded random sample of the corpus, STRATIFIED by family.
+
+    The ladder's tiers are frozen lists, and a frozen list is what gets
+    debugged case by case: every fix of this week was read off `small`, so
+    `small` can no longer tell whether the engine improved or the fixes did.
+    A sample drawn from a seed nobody has looked at is the answer, and it is
+    stratified so a 60-case draw still carries every family — a uniform draw
+    of that size drops `container` (30 of 360) one time in five.
+
+    Reproducible by (corpus digest, count, seed); the ids ride in the run's
+    meta so a replay never has to redraw.
+    """
+    if count <= 0 or count > len(cases):
+        raise InvalidCorpus(f"sample of {count} from a corpus of {len(cases)}")
+    rng = random.Random(f"v4-sample:{corpus_digest(cases)}:{count}:{seed}")
+    by_kind: dict[str, list[Case]] = {}
+    for case in cases:
+        by_kind.setdefault(case.kind, []).append(case)
+    # Largest-remainder apportionment, so the shares add up to `count` exactly.
+    shares = {kind: count * len(group) / len(cases) for kind, group in by_kind.items()}
+    quota = {kind: int(share) for kind, share in shares.items()}
+    for kind in sorted(shares, key=lambda k: shares[k] - quota[k], reverse=True)[: count - sum(quota.values())]:
+        quota[kind] += 1
+    chosen: list[Case] = []
+    for kind in sorted(by_kind):
+        chosen.extend(rng.sample(by_kind[kind], quota[kind]))
+    return sorted(chosen, key=lambda case: case.id)
 
 
 def tier(cases: Sequence[Case], ladder: Ladder, name: str) -> list[Case]:
