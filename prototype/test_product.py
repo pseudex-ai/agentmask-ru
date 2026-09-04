@@ -777,6 +777,7 @@ def test_fresh_seed_shapes() -> None:
         ("пять ноль два ии саркисян карен телефон", ["саркисян карен"]),                             # a held letter is a filler
         ("запишите к офтальмологуу кузнецова дмитрия андреевича родился одиннадцатое сентября", ["кузнецова дмитрия андреевича"]),
         ("в каком году родился билл пуллман", ["билл пуллман"]),                                       # …and a double letter in a foreign name is not
+        ("клиенты: сидоров иван из самары и петрова анна из казани, оба с телефонами", ["сидоров иван", "петрова анна"]),  # a key types a NAME-shaped value only
     ):
         assert [s.value for s in detector.detect(said) if s.entity_type == "NAME"] == want, (said, detector.detect(said))
     for said in ("тарасову аллу анатольевну она двадцать третье ноября восемьдесят первого года телефон",

@@ -35,6 +35,16 @@ def _is_filename(value: str) -> bool:
 _SENTENCE_BREAK = re.compile(r"[А-Яа-яЁёA-Za-z]{2,}\.\s+[А-ЯЁA-Z]")
 
 
+_NOT_IN_A_NAME = frozenset({"из", "в", "во", "на", "и", "или", "с", "со", "по", "у", "к", "ко", "от", "для", "за",
+                            "о", "об", "про", "оба", "обе", "не", "the", "and"})
+
+
+def _name_shaped(value: str) -> bool:
+    words = value.replace("-", " ").split()
+    return (1 <= len(words) <= 4 and not any(ch.isdigit() for ch in value)
+            and not any(word.lower() in _NOT_IN_A_NAME for word in words))
+
+
 def _is_running_text(value: str) -> bool:
     return bool(_SENTENCE_BREAK.search(value))
 
@@ -180,6 +190,15 @@ def detect_structured_kv(text: str) -> list[Span]:
             # gateway. Ambiguous bare words (`test`, `config`) therefore stay
             # masked — over-masking is the safe side of this trade.
             if entity_type == "NAME" and _is_filename(value):
+                continue
+            # A NAME VALUE HAS THE SHAPE OF A NAME. «клиенты: сидоров иван из
+            # самары и петрова анна из казани» — the key typed the whole clause
+            # as ONE person: two customers and their cities became a nine-word
+            # substitute, the cities vanished from the model's view, and the
+            # count by city the agent was asked for had nothing to count. A
+            # person is at most four words with no preposition or conjunction
+            # between them; anything wider is prose for the name arms to read.
+            if entity_type == "NAME" and not _name_shaped(value):
                 continue
             # Key matching is prefix-based, so a compound key can pick up the
             # wrong stem: `cardholder_name` starts with `card` and was typed
