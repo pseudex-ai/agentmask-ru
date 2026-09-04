@@ -765,6 +765,8 @@ def test_fresh_seed_shapes() -> None:
         ("адрес коммунаров 12", ["коммунаров 12"]), ("шахтёров 200 спасли", []),
         # seed 8080
         ("теперь репна сто тридцать семь квартира семьдесят три", ["репна сто тридцать семь квартира семьдесят три"]),  # short adjective reading
+        # live run on seed 6060: the flat glued to the entrance number
+        ("курьера на воткинск нижняя 39 подъезд 6кв169 это в воткинск", ["воткинск нижняя 39 подъезд 6кв169"]),
     ):
         assert [s.value for s in detector.detect(said) if s.entity_type == "LOC"] == want, (said, detector.detect(said))
     for said, want in (
@@ -773,6 +775,8 @@ def test_fresh_seed_shapes() -> None:
         ("запишите миллера валерия леонидовича родилсяя двадцать первого сентября", ["миллера валерия леонидовича"]),
         ("игрь павлов и алексй волков", ["игрь павлов", "алексй волков"]),                          # short damaged names stay
         ("пять ноль два ии саркисян карен телефон", ["саркисян карен"]),                             # a held letter is a filler
+        ("запишите к офтальмологуу кузнецова дмитрия андреевича родился одиннадцатое сентября", ["кузнецова дмитрия андреевича"]),
+        ("в каком году родился билл пуллман", ["билл пуллман"]),                                       # …and a double letter in a foreign name is not
     ):
         assert [s.value for s in detector.detect(said) if s.entity_type == "NAME"] == want, (said, detector.detect(said))
     for said in ("тарасову аллу анатольевну она двадцать третье ноября восемьдесят первого года телефон",

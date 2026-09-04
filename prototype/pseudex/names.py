@@ -856,10 +856,14 @@ def _damaged_common_word(word: str) -> bool:
     low = word.lower()
     if is_stretched_filler(low):
         return True
-    # No doubled-letter test either: a double letter is the NORM in a
-    # transliterated name — «Билл», «Пуллман», «Стелла», «Джонни» — and
-    # «билл» collapses to the verb «бил».
-    return any(within_one_typo(low, cue) for cue in ASSETS.get().names.never_cues)
+    if any(within_one_typo(low, cue) for cue in ASSETS.get().names.never_cues):
+        return True
+    # The doubled-letter test only from eight letters: a double letter is the
+    # NORM in a transliterated name — «Билл», «Стелла», «Джонни», «Пуллман» —
+    # and «билл» collapses to the verb «бил»; «офтальмологуу» (thirteen
+    # letters, one held vowel, «офтальмологу» behind it) is the typo the test
+    # exists for, and it joined a patient's name as a fourth word.
+    return len(low) >= 8 and _doubled_letter_typo(low)
 
 
 def _agrees_as_a_name(word: str, anchor: str) -> bool:
