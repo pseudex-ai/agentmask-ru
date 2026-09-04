@@ -1005,6 +1005,10 @@ ADDR_INTENT: tuple[str, ...] = (
     # «записывайте лермонтого сто а квартира двести шесть» — the dispatcher's
     # word for «here is my address», and the only intent the utterance carries.
     "записывай", "запишите", "запиши",
+    # «курькра на совхоззная 146», «курера на зарчная 23» — the courier word
+    # is the intent in the delivery register, and here it is misspelt: the
+    # exact cue regex already holds it, the fuzzy matcher reads this list.
+    "курьер",
 )
 PLACE_REF: tuple[str, ...] = (
     "час", "режим", "филиал", "магазин", "офис", "находит", "погод",

@@ -626,6 +626,16 @@ def place_key(token: str) -> str:
     return morph_places.match_signature(token) if token else ""
 
 
+def _place_numbers_collide(token: str, original: str) -> bool:
+    numbers = re.findall(r"\d+", token)
+    if any(a != b and a in b for a in numbers for b in numbers) or len(numbers) != len(set(numbers)):
+        return True
+    if not original:
+        return False
+    folded = " ".join(morph_places._fold_cardinals(morph_places.address_key(original).split()))
+    return bool(set(numbers) & set(re.findall(r"\d+", folded)))
+
+
 def _digits_in_customer_form(original: str, canonical_token: str) -> str:
     """The fake's digits laid into the original's separators and prefix.
     «89896866953» -> «89077509228», «8-999-106-11-83» -> «8-964-510-18-44»,
@@ -1330,6 +1340,11 @@ def _render_token(entity_type: str, gender: str | None = None,
         # (blanks of 1997–2026), the format check passes, and no person can
         # hold it. See the note above `_fake_inn`.
         year = 1997 + secrets.randbelow(30)
+        # …but never the blank year 2000: a series «00 00» is the placeholder
+        # shape the credential rules refuse, and the agent's `series` field
+        # then came back as the fake (fresh-seed v4, decompose-006).
+        if year == 2000:
+            year = 2001
         return f"00 {year % 100:02d} {_rand_digits(6)}"
     if entity_type in ("DATE", "DOB"):
         # DOB WAS FALLING THROUGH TO REDACTED…, and it only started to matter
@@ -1695,6 +1710,23 @@ class Vault:
             # replaces, which is where the collision actually leaks something.
             if not self._is_free_token(token, entity_type, original, canonical):
                 continue
+            # A NAME NEVER REPEATS A WORD. A foreign «тагиев рустам» reads as
+            # two given names, and the two slots drew the same one — «Кирилл
+            # Кирилл» — so the CSV's two cells each resolved to the whole
+            # person: «тагиев рустам;тагиев рустам». One draw in a hundred.
+            if entity_type == "NAME" and len(set(token.split())) != len(token.split()):
+                continue
+            # THE NUMBERS OF A FRESH PLACE DRAW MUST NOT CONTAIN EACH OTHER, AND
+            # NONE MAY BE A NUMBER OF THE REAL VALUE. «улица Барбарисовая 1,
+            # корп. 11» for «мончегорсуая 195 корпус 1» came back from prose as
+            # «… корпус 195» (the house «1» found inside the building «11»),
+            # and «улица Вишнёвая 1, корп. 8» for the same value wrote the real
+            # house into the building (the fake house IS the real building).
+            # Here and not in `_is_free_token`: a token GROWN from a short one
+            # shares its numbers by construction. The real value's numbers are
+            # read off its key, where a spoken «один» is already «1».
+            if entity_type == "LOC" and _place_numbers_collide(token, original):
+                continue
             # TWO PEOPLE IN ONE DIALOGUE MAY NOT SHARE A FAKE SURNAME. With 28
             # surnames in the pool, a message naming two people drew the same
             # one for both once in 28 times — «Шилов Семён» and «Шилова Иванна»
@@ -1764,22 +1796,6 @@ class Vault:
         if entity_type == "LOC" and original:
             fake_stem = _street_stem(token)
             if fake_stem and fake_stem == _street_stem(original):
-                return False
-        # THE NUMBERS INSIDE ONE SUBSTITUTE MUST NOT CONTAIN EACH OTHER. «улица
-        # Барбарисовая 1, корп. 11» for «мончегорсуая 195 корпус 1» came back
-        # from prose as «мончегорсуая 195 корпус 195»: the house «1» is a
-        # substring of the building «11», and a window that finds the house
-        # finds it inside the building too. One draw in sixty; refused at the
-        # mint, where it costs a redraw and nothing else.
-        if entity_type == "LOC":
-            numbers = re.findall(r"\d+", token)
-            if any(a != b and a in b for a in numbers for b in numbers) or len(numbers) != len(set(numbers)):
-                return False
-            # …AND NONE OF THEM MAY BE A NUMBER OF THE REAL VALUE. «улица
-            # Вишнёвая 1, корп. 8» for «мончегорсуая 195 корпус 1»: the fake
-            # house is the real building, and the prose window that maps the
-            # fake «1» to the real house wrote «195» into the building too.
-            if original and set(numbers) & set(re.findall(r"\d+", original)):
                 return False
         # The settlement of a city-bearing token is the ORIGINAL's own (see
         # `_settlement_of`), so no guard against a real town applies here any

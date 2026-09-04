@@ -702,7 +702,12 @@ def _merge_adjacent(spans: list[Span], text: str) -> list[Span]:
     them. The token is then masked a second time and the person changes identity
     mid-conversation — the exact failure `mask(mask(x)) != mask(x)` describes.
     """
-    ordered = sorted(spans, key=lambda span: (span.start, span.end))
+    # A STRETCHED FILLER IS NEVER PART OF A NAME. «ноль два ии саркисян
+    # карен» — «ии» arrived as a NAME span of its own and the merge glued it
+    # on as a first name; the agent's CSV then had three cells for two.
+    ordered = sorted((span for span in spans
+                      if not (span.entity_type == "NAME" and is_stretched_filler(span.value.lower()))),
+                     key=lambda span: (span.start, span.end))
     out: list[Span] = []
     for span in ordered:
         # OVERLAPPING SPANS MERGE TOO, not just adjacent ones. The rules produce
@@ -777,6 +782,11 @@ def _typo_of_an_ordinary_word(word: str) -> bool:
     if len(word) < 4:
         return False
     lowered = word.lower()
+    # A STRETCHED FILLER IS AN ORDINARY WORD: «ноль два ии саркисян карен» —
+    # the conjunction held for a beat — joined the name as its first word,
+    # and the CSV row the agent built had three cells for two.
+    if is_stretched_filler(lowered):
+        return True
     # A DAMAGED CUE WORD IS THE COMMONEST TYPO NEXT TO A NAME, and it is not a
     # doubled letter: «телефн», «телфеон» — the word that opens the NEXT field,
     # which pymorphy3 then predicts as a person because it is unknown. One

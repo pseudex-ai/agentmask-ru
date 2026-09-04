@@ -743,6 +743,12 @@ def test_fresh_seed_shapes() -> None:
         ("теперь новя 86 в квартира 186", ["новя 86 в квартира 186"]),                    # four letters, behind a door
         ("стоп правильно толстго одиннадцать квартира двадцать восемь", ["толстго одиннадцать квартира двадцать восемь"]),  # not a numeral
         ("у нас новя 86 коробок", []), ("теперь заказ 71 готов", []),
+        # seed 7311
+        ("коммунаров 22 квартира 113", ["коммунаров 22 квартира 113"]),                    # plural door behind a digit
+        ("здрасте курькра на совхоззная 146 это в колпино", ["совхоззная 146"]),          # misspelt intent word
+        ("курера на зарчная 23 это в ижевск", ["зарчная 23"]),
+        ("курьера на шумайлого восемь это в воткинск", ["шумайлого восемь"]),              # stem, intent, spoken number
+        ("курьера на добролюбова сорок один это в сарапуул", ["добролюбова сорок один"]),  # «это» counts nothing
     ):
         assert [s.value for s in detector.detect(said) if s.entity_type == "LOC"] == want, (said, detector.detect(said))
     for said, want in (
@@ -750,6 +756,7 @@ def test_fresh_seed_shapes() -> None:
         ("курьера на чапаева 17 на имя ирину телефн 89505973171", ["ирину"]),                        # a damaged cue word
         ("запишите миллера валерия леонидовича родилсяя двадцать первого сентября", ["миллера валерия леонидовича"]),
         ("игрь павлов и алексй волков", ["игрь павлов", "алексй волков"]),                          # short damaged names stay
+        ("пять ноль два ии саркисян карен телефон", ["саркисян карен"]),                             # a held letter is a filler
     ):
         assert [s.value for s in detector.detect(said) if s.entity_type == "NAME"] == want, (said, detector.detect(said))
     for said in ("тарасову аллу анатольевну она двадцать третье ноября восемьдесят первого года телефон",
@@ -786,6 +793,33 @@ def test_fresh_seed_shapes() -> None:
     back = json.loads(unmask_arguments(json.dumps({"house": roles["house"], "flat": roles["flat"]}), talk))
     assert back == {"house": "99 в", "flat": "196"}, (token, back)
     print("fresh-seed shapes OK — every span the two unseen corpora found, exact")
+
+
+def test_restored_ranges_are_closed_to_later_passes() -> None:
+    """A value put back by the exact-token pass is never re-resolved by the
+    window passes that follow.
+
+    The passes ran one after another on the text the previous pass had
+    restored, so the name windows ran over REAL values already put back — and
+    a real «Иван» that happened to equal another customer's substitute «Иван»
+    was resolved a second time into that other person («Иван Петров улица
+    Ленина 5» → «валерий Петров …», one vault, many tokens). Every pass now
+    reads the same masked text and the exact tokens win.
+    """
+    import os
+    import tempfile
+    from pseudex.redact import unmask_text
+
+    detector = Detector()
+    with tempfile.TemporaryDirectory() as tmp:
+        vault = Vault(os.path.join(tmp, "v.db"), "acme")
+        texts = ["Клиент Алиев Рустам Ахмед оглы", "Иван Петров улица Ленина 5", "звоните Ивану Сергеевичу",
+                 "новый адрес челюскинцев 159 квартира 183", "телефон 89162148803, карта 4276 1600 1234 5675"]
+        for _ in range(25):
+            for said in texts:
+                shown = mask_text(said, vault, detector.detect(said))
+                assert unmask_text(shown, vault) == said, (said, shown, unmask_text(shown, vault))
+    print("restored ranges OK — one splice, exact tokens protected, 125 round trips in one vault")
 
 
 def test_name_is_read_with_its_sentence() -> None:
@@ -895,4 +929,5 @@ if __name__ == "__main__":
     test_card_leaves_link_by_position()
     test_spoken_birth_date_in_the_agents_form()
     test_fresh_seed_shapes()
+    test_restored_ranges_are_closed_to_later_passes()
     test_name_is_read_with_its_sentence()

@@ -201,11 +201,23 @@ def unmask_text(text: str, vault: Vault, inflect: bool = True,
     minted and substring-scanned the text once per token, which made an org with
     100k tokens pay 100k scans on every single response."""
     with stage("unmask.total"):
-        restored = _restore_reformatted(
-            _restore_tokens(text, vault, for_tool), vault, for_tool)
+        # EVERY PASS READS THE SAME MASKED TEXT, AND THE EXACT TOKENS WIN. The
+        # passes used to run one after another on the text the previous pass
+        # had restored, so the name windows ran over REAL values already put
+        # back — and a real «Иван» that happened to equal another customer's
+        # substitute «Иван» was resolved a second time into that other
+        # person («Иван Петров» → «валерий Петров», hard cases, one vault).
+        # A restored range is closed to every later pass.
+        taken: list[tuple[int, int, str]] = _restore_tokens_spans(text, vault, for_tool)
+        passes = [_restore_reformatted_spans(text, vault, for_tool)]
         if not for_tool:
-            restored = _restore_cued_numbers(restored, vault)
-        return _restore_inflected(restored, vault, inflect, for_tool)
+            passes.append(_restore_cued_numbers_spans(text, vault))
+        passes.append(_restore_inflected_spans(text, vault, inflect, for_tool))
+        for spans in passes:
+            for span in sorted(spans, key=lambda item: (item[0], -item[1])):
+                if not any(span[0] < end and start < span[1] for start, end, _ in taken):
+                    taken.append(span)
+        return _splice(text, taken)
 
 
 # A SHORT NUMBER IN PROSE IS A QUANTITY — unless the word before it says what
@@ -238,7 +250,7 @@ def _cue_kind(cue: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def _restore_cued_numbers(text: str, vault: Vault) -> str:
+def _restore_cued_numbers_spans(text: str, vault: Vault) -> list[tuple[int, int, str]]:
     # A NUMBER INSIDE A WHOLE ADDRESS OR TOKEN IS NOT A FRAGMENT. «кв. 83» in
     # «Кинешму, ул. Озёрную 96, кв. 83» belongs to the token the inflected
     # window restores as one piece; replacing its flat here first broke the
@@ -284,7 +296,7 @@ def _restore_cued_numbers(text: str, vault: Vault) -> str:
                 replacement = _same_shape(number, owner[0])
         if replacement is not None and replacement != number:
             spans.append((match.start("num"), match.end("num"), replacement))
-    return _splice(text, spans)
+    return spans
 
 
 # The ГОСТ plate alphabet was chosen precisely because every letter in it has a
@@ -296,6 +308,12 @@ def _restore_cued_numbers(text: str, vault: Vault) -> str:
 # Seen in a persona run, once in four round trips, on a real tool call. Phones
 # have had a second line of defence since the digit-signature reindex — a plate
 # is the same failure with a different alphabet, and this is its equivalent.
+
+
+def _restore_cued_numbers(text: str, vault: Vault) -> str:
+    return _splice(text, _restore_cued_numbers_spans(text, vault))
+
+
 _PLATE_FOLD = str.maketrans("ABEKMHOPCTYXabekmhopctyx", "АВЕКМНОРСТУХавекмнорстух")
 
 # THE MODEL TRANSLITERATES BY SOUND, WE FOLDED BY SHAPE. The ГОСТ alphabet was
@@ -331,10 +349,10 @@ def _date_readings(value: str) -> list[str]:
     return []
 
 
-def _restore_tokens(text: str, vault: Vault, for_tool: bool = False) -> str:
+def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> list[tuple[int, int, str]]:
     matches = list(TOKEN_RE.finditer(text))
     if not matches:
-        return text
+        return []
     candidates = {match.group() for match in matches}
     # Every way the model might have rewritten a token, offered alongside the
     # token itself. A miss costs one indexed point query; a hit is the difference
@@ -363,11 +381,15 @@ def _restore_tokens(text: str, vault: Vault, for_tool: bool = False) -> str:
             if for_tool:
                 value = _digits_in_form_of(match.group(), value)
             spans.append((match.start(), match.end(), value))
-    return _splice(text, spans)
+    return spans
 
 
-def _restore_reformatted(text: str, vault: Vault,
-                         for_tool: bool = False) -> str:
+def _restore_tokens(text: str, vault: Vault, for_tool: bool = False) -> str:
+    return _splice(text, _restore_tokens_spans(text, vault, for_tool))
+
+
+def _restore_reformatted_spans(text: str, vault: Vault,
+                         for_tool: bool = False) -> list[tuple[int, int, str]]:
     """Numeric tokens the model rewrote (+7… -> 8…, separators stripped) no longer
     match their minted shape, so they are resolved by digit signature instead."""
     runs = [(match, re.sub(r"\D", "", match.group())) for match in _NUM_RUN.finditer(text)]
@@ -384,7 +406,7 @@ def _restore_reformatted(text: str, vault: Vault,
         runs = [(_Whole(offset, offset + len(stripped), stripped),
                  re.sub(r"\D", "", stripped))]
     if not runs:
-        return text
+        return []
     candidates: set[str] = set()
     for _, digits in runs:
         candidates.add(digits)
@@ -424,7 +446,12 @@ def _restore_reformatted(text: str, vault: Vault,
         if owner is not None:
             spans.append((match.start(), match.end(),
                           _same_shape(match.group(), owner[0])))
-    return _splice(text, spans)
+    return spans
+
+
+def _restore_reformatted(text: str, vault: Vault,
+                         for_tool: bool = False) -> str:
+    return _splice(text, _restore_reformatted_spans(text, vault, for_tool))
 
 
 def _same_shape(model: str, digits: str) -> str:
@@ -653,8 +680,8 @@ _LATIN_WORD = re.compile(r"(?<![A-Za-z])(?:[A-Z][a-z]{2,}|[A-Z]{3,})(?![A-Za-z])
 _INITIALS_PAIR = re.compile(r"(?<![А-ЯЁа-яё])([А-ЯЁ])\.\s?([А-ЯЁ])\.(?![А-ЯЁа-яё])")
 
 
-def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
-                       for_tool: bool = False) -> str:
+def _restore_inflected_spans(text: str, vault: Vault, inflect: bool = True,
+                       for_tool: bool = False) -> list[tuple[int, int, str]]:
     """NAME tokens the model put into another case no longer match their minted
     shape, so they are resolved by case-invariant key instead.
 
@@ -721,7 +748,7 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
             windows.append((start, end, surface))
             place_framings.add((start, end))
     if not windows:
-        return text
+        return []
     resolved = vault.resolve_name_keys_typed(
         {k for group in keys.values() for k in group}, for_tool)
     # NO EARLY RETURN ON AN EMPTY KEY LOOKUP. The fragment fallback below is the
@@ -805,7 +832,12 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
         entity_type, value = found
         spans.append((start, end,
                       _in_case_of(value, surface, entity_type, inflect)))
-    return _splice(text, spans)
+    return spans
+
+
+def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
+                       for_tool: bool = False) -> str:
+    return _splice(text, _restore_inflected_spans(text, vault, inflect, for_tool))
 
 
 def _stem_of(word: str) -> str:

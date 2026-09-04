@@ -405,7 +405,11 @@ def _counts_next_word(text: str, end: int, number: str,
     parses = MORPH.parse(match.group(0))
     if not parses or not parses[0].is_known:
         return False
-    return any(parse.tag.POS in ("NOUN", "ADJF", "PRTF")
+    # A PRONOMINAL ADJECTIVE IS NOT A COUNTED THING. «добролюбова сорок один
+    # это в сарапуул»: «это» reads as the neuter of «этот», agrees with «один»
+    # in the nominative, and the customer's street went to the model as a
+    # person. «это», «такой», «мой» open the next clause; they count nothing.
+    return any(parse.tag.POS in ("NOUN", "ADJF", "PRTF") and "Apro" not in parse.tag
                and parse.tag.case == want_case and parse.tag.number == want_number
                for parse in parses)
 
@@ -543,7 +547,11 @@ def _bare_street_candidates(text: str, address: AddressAssets
             # riskiest shape here. The «дом» marker with an intent word keeps
             # «курьера на ленна дом сорок три а» an address after the
             # dictionary calls «ленна» a short adjective.
+            # An intent word with a SPOKEN number reaches the stem too: «курьера
+            # на шумайлого восемь» — the register is speech, the ending is what
+            # speech damages, and nobody dictates a quantity to a courier.
             if not ((intent and _fuzzy_names_a_street(name, address))
+                    or (intent and not number[0].isdigit() and _fuzzy_stem_names_a_street(name, address))
                     or (door and (_fuzzy_names_a_street(name, address)
                                   or _fuzzy_stem_names_a_street(name, address)
                                   or _typo_of_a_street(name, address)
@@ -579,8 +587,11 @@ def _bare_street_candidates(text: str, address: AddressAssets
         marked = re.match(r"\s+дом\s", text[match.end("bare"):match.start("bnum")]) is not None
         # A mistyped word's number reading is a guess («толстго» predicted
         # plural), so the plural veto is not asked of a fuzzy match.
+        # THE DOOR OPENS BEHIND A DIGIT TOO: «коммунаров 22 квартира 113» is
+        # chat's spelling of the dictated form, and «строителей 5 пришло» has
+        # no flat after its number.
         if _plural_or_pronoun(name) and not marked and not fuzzy and not (
-                not number[0].isdigit() and _register_vouches(name, address)
+                _register_vouches(name, address)
                 and _address_continues(text, match.end("bnum"), address)):
             continue
         spelled = not number[0].isdigit()

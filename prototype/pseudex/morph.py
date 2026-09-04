@@ -26,7 +26,13 @@ def is_stretched_filler(word: str) -> bool:
     Живьём филлер попадал ВНУТРЬ спана и уезжал в инструмент вместе со
     значением: «аааа ленина двадцать семь», «иии ерохин».
     """
-    if len(word) <= 2 or len(set(word.lower())) > 2:
+    # «ии» — one letter held for a beat — is two characters long and a filler
+    # all the same; it joined a name as its first word on a fresh corpus.
+    if len(word) < 2 or (len(word) == 2 and len(set(word.lower())) != 1) or len(set(word.lower())) > 2:
         return False
+    # ONE LETTER HELD is a filler whatever the dictionary says: it knows «ии»
+    # as a rare given name, and «ноль два ии саркисян карен» is not her.
+    if len(set(word.lower())) == 1:
+        return True
     parses = MORPH.parse(word)
     return not (parses and parses[0].is_known)
