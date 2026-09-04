@@ -749,6 +749,9 @@ def test_fresh_seed_shapes() -> None:
         ("курера на зарчная 23 это в ижевск", ["зарчная 23"]),
         ("курьера на шумайлого восемь это в воткинск", ["шумайлого восемь"]),              # stem, intent, spoken number
         ("курьера на добролюбова сорок один это в сарапуул", ["добролюбова сорок один"]),  # «это» counts nothing
+        # seed 5150
+        ("курьера на коммунаров 115 это в глазов", ["коммунаров 115"]),                       # plural, intent word, digit
+        ("адрес коммунаров 12", ["коммунаров 12"]), ("шахтёров 200 спасли", []),
     ):
         assert [s.value for s in detector.detect(said) if s.entity_type == "LOC"] == want, (said, detector.detect(said))
     for said, want in (

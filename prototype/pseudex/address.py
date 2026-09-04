@@ -590,9 +590,13 @@ def _bare_street_candidates(text: str, address: AddressAssets
         # THE DOOR OPENS BEHIND A DIGIT TOO: «коммунаров 22 квартира 113» is
         # chat's spelling of the dictated form, and «строителей 5 пришло» has
         # no flat after its number.
-        if _plural_or_pronoun(name) and not marked and not fuzzy and not (
-                _register_vouches(name, address)
-                and _address_continues(text, match.end("bnum"), address)):
+        # …AND AN INTENT WORD WITH A DIGIT: «курьера на коммунаров 115» is the
+        # chat register saying where to send the courier; the approximate
+        # quantity («строителей пять пришло») is speech and spells its number.
+        plural_door = _register_vouches(name, address) and (
+            _address_continues(text, match.end("bnum"), address)
+            or (number[0].isdigit() and _intent_before(text, match.start(), address)))
+        if _plural_or_pronoun(name) and not marked and not fuzzy and not plural_door:
             continue
         spelled = not number[0].isdigit()
         # AN OBLIQUE ADJECTIVE IS LICENSED BY A PREPOSITION, NOT BY AGREEMENT.
@@ -619,8 +623,7 @@ def _bare_street_candidates(text: str, address: AddressAssets
         # for «Челюскинцев», «Строителей», «Космонавтов». The door is what the
         # spelled branch above already trusts; a quantity («строителей 5
         # пришло») has no flat after it.
-        door = _register_vouches(name, address) and _address_continues(text, match.end("bnum"), address)
-        licensed = _street_shape(name) or preposition or fuzzy or door
+        licensed = _street_shape(name) or preposition or fuzzy or plural_door
         if not (spelled and _register_vouches(name, address)) and not licensed:
             continue
         # A NUMBER WITH A FLAT GLUED TO IT IS NEVER A QUANTITY. «депутатская
