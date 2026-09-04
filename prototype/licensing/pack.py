@@ -205,6 +205,7 @@ def _tuning_payload() -> dict[str, object]:
             "translit": assets_source.TRANSLIT,
             "cues": list(assets_source.NAME_CUES),
             "bio_cues": list(assets_source.BIO_CUES),
+            "never_cues": list(assets_source.NAME_NEVER_CUES),
             "stopwords": list(assets_source.STOPWORDS),
         },
         "address": {

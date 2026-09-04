@@ -11,7 +11,7 @@ import re
 from pseudex.detect import NameSpan, PartSpan, Span
 from pseudex import morph_names, morph_places, translit
 from pseudex.profiling import stage
-from pseudex.vault import LOC_TOKEN_PATTERN, TOKEN_RE, Vault, name_key, place_key
+from pseudex.vault import LOC_TOKEN_PATTERN, TOKEN_RE, Vault, name_key, place_key, _date_canonical
 
 # A number-like run (digits + phone separators), >=7 digits — a candidate for
 # digit-core detokenization when the model reformatted a numeric token.
@@ -470,12 +470,22 @@ def _digits_in_form_of(written: str, real: str) -> str:
     """
     if not _NUMERIC_FORM.fullmatch(written.strip()):
         return real
-    real_digits = re.sub(r"\D", "", real)
-    written_digits = re.sub(r"\D", "", written)
-    if len(written_digits) < 3 or not real_digits:
-        return real
     date_written = _DATE_ANY.match(written.strip())
     date_real = _DATE_ANY.match(real.strip())
+    # A DATE OF BIRTH SAID IN WORDS has no digits to splice, and the agent
+    # wrote ISO: «четырнадцатое марта восемьдесят седьмого года» behind
+    # «1987-01-25» came back as «1403-19-87» — the real digits laid by
+    # position into the agent's layout (fresh-seed v4, derive-000/004). The
+    # spoken date is read into its parts first, the same reading the vault
+    # keys it by, and then rebuilt component-wise like any other.
+    if date_written and not date_real:
+        canonical = _date_canonical(real)
+        if canonical:
+            date_real = _DATE_ANY.match(canonical)
+    real_digits = re.sub(r"\D", "", real)
+    written_digits = re.sub(r"\D", "", written)
+    if len(written_digits) < 3 or (not real_digits and not date_real):
+        return real
     if date_written and date_real:
         real_first, real_middle, real_last = date_real.groups()
         if len(real_first) == 4:
@@ -1091,6 +1101,15 @@ def unmask_stream_chunk(delta: str, carry: str, vault: Vault, flush: bool) -> tu
     return unmask_text(raw[:cut], vault), raw[cut:]
 
 
+_BARE_NUMBER_LEAF = re.compile(r"\s*\d{1,4}\s*[а-яёА-ЯЁ]?\s*")
+
+
+def _bare_address_leaf(key: str, value: object) -> bool:
+    """A house / flat / building / entrance / floor field holding a bare number."""
+    return (isinstance(value, str) and bool(_BARE_NUMBER_LEAF.fullmatch(value))
+            and morph_places.role_of_field(key) in ("house", "flat", "building", "entrance", "floor"))
+
+
 def unmask_arguments(raw: str, vault: Vault) -> str:
     """Detokenise a tool call's `arguments` AS JSON, not as flat text.
 
@@ -1132,7 +1151,14 @@ def unmask_arguments(raw: str, vault: Vault) -> str:
             # Keys are the tool's own schema, not customer text — but a token
             # can only ever appear in a value, so rewriting keys would be a way
             # to break the schema and never a way to restore a value.
-            return {key: walk(value) for key, value in node.items()}
+            # A BARE NUMBER UNDER AN ADDRESS KEY IS AN ADDRESS PART, and it is
+            # answered by the join below against LOC tokens only. Restored on
+            # its own first, «139» in `sflat` was found INSIDE the fake phone's
+            # digits by the cross-type fragment owner and came back as the
+            # customer's phone fragment «230» — a flat that is nobody's, with
+            # a 200 (fresh-seed v4: 3 of 300 two-address draws).
+            return {key: (value if _bare_address_leaf(key, value) else walk(value))
+                    for key, value in node.items()}
         return node
 
     return json.dumps(_join_addresses_deep(walk(parsed), parsed, vault),

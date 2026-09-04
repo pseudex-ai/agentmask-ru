@@ -424,11 +424,42 @@ def _damaged_name_pairs(text: str) -> list[Span]:
                 continue
             if not (_names_a_person(damaged) or _looks_misspelt_name(damaged)):
                 continue
+            # THE PREDICTED-PERSON READING IS THE WEAK SIGNAL, and for a LONG
+            # word one edit from an ordinary one it is wrong: «выгрузуой
+            # воронина елена» — «выгрузкой» with one letter slipped, predicted
+            # as a given name, prepended to a real person, and the customer's
+            # `first_name` became «выгрузуой». Short damaged names («игрь»,
+            # «алексй») are one edit from short ordinary words too, so the
+            # veto starts at seven letters, where the collision is the rule.
             if not _names_a_person(other):
                 continue
             spans.append(Span(match.start(), match.end(), "NAME", match.group(0)))
             break
     return spans
+
+
+_ALPHABET = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
+
+
+def _one_edit_from_known_word(word: str) -> bool:
+    """Whether one deletion, substitution or insertion turns the word into a
+    word pymorphy3 knows. About 33 × (2n + 1) lookups, asked only of a long
+    unknown lower-case word standing next to a name."""
+    low = word.lower()
+    variants: list[str] = []
+    for index in range(len(low)):
+        variants.append(low[:index] + low[index + 1:])
+        variants.extend(low[:index] + letter + low[index + 1:] for letter in _ALPHABET if letter != low[index])
+    for index in range(len(low) + 1):
+        variants.extend(low[:index] + letter + low[index:] for letter in _ALPHABET)
+    return any(_ordinary_known(variant) for variant in variants if MORPH.word_is_known(variant))
+
+
+def _ordinary_known(word: str) -> bool:
+    """Known to the dictionary as something other than a person. «павлович»
+    is a dictionary word too, and «иван павловтч» is a patronymic with a slip,
+    not «павлович» the ordinary word — there is no such thing."""
+    return any(parse.is_known and not (_PERSON_TAGS & parse.tag.grammemes) for parse in MORPH.parse(word))
 
 
 def _patronymic_anchors(text: str) -> list[Span]:
@@ -563,6 +594,13 @@ def _looks_misspelt_name(word: str) -> bool:
     # likely a rare surname than a stray ordinary one.
     parses = MORPH.parse(word)
     if not parses or parses[0].is_known:
+        return False
+    # A DAMAGED CUE WORD IS NOT A NAME. «на имя ирину телефн 89505973171»,
+    # «вольнов евгений телфеон» — unknown to morphology because it is
+    # misspelt, adjacent to the name because it introduces the next field,
+    # and one edit from a rare surname because the neighbourhood is dense.
+    # The list is leased and short: the words that open a field.
+    if any(within_one_typo(lowered, cue) for cue in ASSETS.get().names.never_cues):
         return False
     return lookup(lowered, _misspelling_index(ASSETS.version or ""))
 
@@ -739,6 +777,21 @@ def _typo_of_an_ordinary_word(word: str) -> bool:
     if len(word) < 4:
         return False
     lowered = word.lower()
+    # A DAMAGED CUE WORD IS THE COMMONEST TYPO NEXT TO A NAME, and it is not a
+    # doubled letter: «телефн», «телфеон» — the word that opens the NEXT field,
+    # which pymorphy3 then predicts as a person because it is unknown. One
+    # edit from the leased list of field-opening words is an ordinary word.
+    if any(within_one_typo(lowered, cue) for cue in ASSETS.get().names.never_cues):
+        return True
+    # A LONG UNKNOWN WORD ONE EDIT FROM AN ORDINARY WORD IS THAT WORD.
+    # «выгрузуой воронина елена» — «выгрузкой» with one letter slipped,
+    # predicted as a given name and prepended to a real person, so the
+    # customer's `first_name` became «выгрузуой». The general one-edit veto
+    # was measured at four real people on NEREL and refused; bounded at seven
+    # letters it leaves «игрь», «алексй» and every short mistyped name alone,
+    # and long words are where the ordinary vocabulary is dense.
+    if len(lowered) >= 7 and not MORPH.word_is_known(lowered) and _one_edit_from_known_word(lowered):
+        return True
     # СЛОВО, У КОТОРОГО ЕСТЬ СВОЁ ИМЕННОЕ ЧТЕНИЕ, ОПЕЧАТКОЙ НЕ СЧИТАЕТСЯ.
     # «роману» удалением даёт «роман» — обычное слово, — но само «роману» несёт
     # чтение Name, и правило про опечатку тут ни при чём: это настоящее имя в

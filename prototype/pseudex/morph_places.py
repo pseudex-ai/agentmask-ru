@@ -236,6 +236,9 @@ def inflect_place(phrase: str, case: str) -> str:
     return "".join(out)
 
 
+_INFLECTABLE_POS = frozenset({"ADJF", "NOUN", "PRTF", "NUMR"})
+
+
 def _inflect_word(word: str, case: str, gender: str | None) -> str:
     parses = MORPH.parse(word)
     if not parses:
@@ -247,6 +250,14 @@ def _inflect_word(word: str, case: str, gender: str | None) -> str:
     # has a masculine locative reading that a feminine filter drops, and the
     # word was then inflected a second time into «Ленинске».
     if any(parse.tag.case == case for parse in parses):
+        return word
+    # ONLY A FULL FORM THE DICTIONARY KNOWS IS INFLECTED. «ленна» — a typo of
+    # «Ленина» admitted by the fuzzy arm — is in the dictionary as the SHORT
+    # adjective of «ленный», and bending it through that lemma restored the
+    # customer's street as «ленную». A predicted paradigm for an unknown word
+    # is the same guess from the other side. A word with no full-form reading
+    # (adjective, noun, participle) from the dictionary is left as written.
+    if not any(parse.is_known and parse.tag.POS in _INFLECTABLE_POS for parse in parses):
         return word
     # A geographic reading first, for the same reason `to_nominative` does it:
     # `Луга` is a town and also the genitive of `луг`, and the meadow does not
@@ -292,16 +303,41 @@ def detect_case(phrase: str) -> str | None:
     # town's name bent into a genitive it never had.
     if _ABBREVIATED_MARKER_RE.search(phrase):
         return "nomn"
+    # THE GENERIC WORD DECIDES ALONE when there is one. The name beside it is
+    # either an adjective that agrees (no new information) or a frozen genitive
+    # («Ленина», «Победы») that out-voted it: «на улице Ленина 1 кв 11» read as
+    # the genitive, went to the model as «улицы Пихтовой 165» and came back as
+    # «улицы Ленина» — the commonest address form in the language, wrong both
+    # ways. Among the generic's own readings («улице» is dative and locative
+    # alike) the locative wins: an address is said with «на» and «в».
+    generic: dict[str, float] = {}
+    for token in phrase.split():
+        stripped = token.strip(",.")
+        parses = MORPH.parse(stripped)
+        if stripped.lower() in _GENERIC or any(parse.normal_form in _GENERIC for parse in parses):
+            for parse in parses:
+                if parse.normal_form in _GENERIC and parse.tag.case and parse.tag.number != "plur":
+                    generic[parse.tag.case] = generic.get(parse.tag.case, 0.0) + parse.score
+    if generic:
+        # A masculine inanimate generic («проезд», «проспект», «бульвар») has
+        # one form for the nominative and the accusative; the nominative is
+        # the reading, or «я в можга проезд пушкина» minted «в Можгу».
+        if "nomn" in generic and "accs" in generic:
+            generic["accs"] = 0.0
+        return max(generic, key=lambda case: (generic[case], -_CASE_PREFERENCE.index(case)
+                                              if case in _CASE_PREFERENCE else -99))
     tally: dict[str, float] = {}
     for token in phrase.split():
         stripped = token.strip(",.")
-        weight = 3.0 if stripped.lower() in _GENERIC else 1.0
         for parse in MORPH.parse(stripped):
             if parse.tag.case:
-                tally[parse.tag.case] = tally.get(parse.tag.case, 0.0) + parse.score * weight
+                tally[parse.tag.case] = tally.get(parse.tag.case, 0.0) + parse.score
     if not tally:
         return None
     return max(tally, key=lambda case: tally[case])
+
+
+_CASE_PREFERENCE = ("loct", "nomn", "accs", "datv", "gent", "ablt")
 
 
 # Written forms of the generic word that carry no letters to match on. Mapped to
@@ -437,6 +473,7 @@ def address_key(phrase: str) -> str:
     phrase = phrase[region_prefix_end(phrase):] or phrase
     # «152кв7» and «152 кв 7» are one flat: the glued marker is split before the
     # key is built, so both writings meet in one row.
+    phrase = _SPACED_LITERA_GLUED_RE.sub(r"\1\2", phrase)
     phrase = _GLUED_MARKER_RE.sub(r"\1 \2 \3", phrase)
     # «д 65, к 1», «65 с 2»: a bare «к» or «с» BETWEEN two numbers is корпус or
     # строение, not the preposition the list below drops — the register writes
@@ -674,7 +711,8 @@ def street_house_key(phrase: str) -> str:
 
 
 _SHORT_KEY_STOP = frozenset({"кв", "к", "стр", "подъезд", "под", "этаж"})
-_GLUED_MARKER_RE = re.compile(r"(?i)(\d)(кв|к|стр|корп)\.?(\d)")
+_GLUED_MARKER_RE = re.compile(r"(?i)(\d[а-яё]?)(кв|к|стр|корп)\.?(\d)")
+_SPACED_LITERA_GLUED_RE = re.compile(r"(?i)(\d)\s+([а-яё])(?=(?:кв|к|стр|корп)\.?\d)")
 _MARKER_BETWEEN_NUMBERS_RE = re.compile(r"(?i)(\d[а-яё]?)[\s,]+([кс])\.?\s+(\d)")
 
 
@@ -980,7 +1018,11 @@ def _word_number() -> re.Pattern[str]:
 # off the span as a landmark — the directory record keyed without its корпус
 # and the model was handed a second substitute for the place it had just
 # asked about.
-_DIGIT_NUMBER = re.compile(r"\d+(?:/\d+)?(?:[а-яёА-ЯЁ]\b|\s+(?![кс]\.?\s*\d)[а-яёА-ЯЁ](?![а-яёА-ЯЁ]))?")
+# …AND THE LITERA MAY BE GLUED TO THE FLAT MARKER: «зеленоградская 8 бкв150»,
+# «тельмана 99 вкв196» is how a phone keyboard writes «8б, кв. 150». The
+# litera is one letter followed by the end, a separator or a glued marker.
+_DIGIT_NUMBER = re.compile(r"\d+(?:/\d+)?(?:[а-яёА-ЯЁ](?=$|[\s,.;]|кв\d|к\d|стр\d)"
+                           r"|\s+(?![кс]\.?\s*\d)[а-яёА-ЯЁ](?=$|[\s,.;]|кв\d|к\d|стр\d))?")
 _ORDINAL_ONLY = re.compile(rf"(?i)\b{_ORDINAL_WORD}\b")
 _HOUSE_MARKER = re.compile(r"(?i)\b(?:дом|д|влад\w*|вл)\.?")
 _HOUSE_MARKER_TAIL = re.compile(r"(?i)\b(?:дом|д|влад\w*|вл)\.?[\s,.]*$")
@@ -1041,7 +1083,7 @@ def role_spans(phrase: str) -> dict[str, tuple[int, int]]:
     for role, marker in _PART_MARKERS:
         # `(?<=\d)` beside `\b`: «152кв7» glues the marker to the house and
         # there is no word boundary between a digit and a letter.
-        for hit in re.finditer(rf"(?i)(?:\b|(?<=\d))(?:{marker})\.?(?![а-яё])", text):
+        for hit in re.finditer(rf"(?i)(?:\b|(?<=\d)|(?<=\d[а-яё])|(?<=\d\s[а-яё]))(?:{marker})\.?(?![а-яё])", text):
             after = _number_at(text, hit.end())
             if after is not None:
                 claimed.append((hit.start(), after.end()))
@@ -1123,6 +1165,15 @@ def _leading_settlement(phrase: str) -> re.Match[str] | None:
     parses = MORPH.parse(word)
     if not any("Geox" in parse.tag.grammemes for parse in parses):
         return None
+    # A PREDICTED place reading — the word is not in the dictionary — counts
+    # only with the structure a settlement stands in: a comma or a street-type
+    # word after it. «лугвая сто шестнадцать» is a mistyped street that
+    # pymorphy3 guessed to be a town, and the address grew a city it never had.
+    if not any(parse.is_known for parse in parses):
+        rest_ = phrase[match.end():].lstrip().split()
+        next_ = rest_[0].lower().strip(".,") if rest_ else ""
+        if not (match.group(0).rstrip().endswith(",") or next_ in _GENERIC or _GENERIC_STEMS.match(next_)):
+            return None
     # A TYPE WORD RIGHT AFTER IT SETTLES THE ROLE: «глазов проспект
     # маяковского» — Глазов is a surname too, but a person is never followed
     # by «проспект <name>», a town is. Without this the substitute was

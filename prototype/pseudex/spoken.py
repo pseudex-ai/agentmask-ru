@@ -96,7 +96,7 @@ def is_numeral_word(word: str) -> bool:
     should ask, so that «сто семьдесят четыыре» is one house to the role
     splitter, the key and the digit run alike."""
     low = word.lower().replace("ё", "е")
-    if low in _FOLDED_NUMERALS:
+    if low in _FOLDED_NUMERALS or low in _DOUBLED_NUMERALS:
         return True
     return ASSETS.is_loaded and low in ASSETS.get().spoken.numeral_typos
 
@@ -104,13 +104,36 @@ def is_numeral_word(word: str) -> bool:
 def numeral_alternation() -> str:
     """Every number word the engine can read now, longest first, for a regex —
     the leased misspellings included when a bundle is loaded."""
-    words = set(_ALL_NUMERALS)
+    words = set(_ALL_NUMERALS) | set(_DOUBLED_NUMERALS)
     if ASSETS.is_loaded:
         words |= set(ASSETS.get().spoken.numeral_typos)
     return "|".join(sorted(words, key=len, reverse=True))
 
 
 _FOLDED_NUMERALS = {word.replace("ё", "е") for word in _ALL_NUMERALS}
+
+
+def _doubled_forms() -> dict[str, str]:
+    """Every numeral with ONE letter doubled, mapped to the numeral.
+
+    «пяять», «четыыре», «двадцатть» — a held key or a stretched vowel in a
+    transcript, and the commonest damage a spoken number carries. This is not
+    the distance-1 matching the module forbids: a doubling never turns one
+    word into another («есть» is a substitution away from «шесть», not a
+    doubling), and none of the 296 forms is a word pymorphy3 knows — checked
+    at the time of writing, and cheap to check again.
+    """
+    out: dict[str, str] = {}
+    for word in _ALL_NUMERALS:
+        folded = word.replace("ё", "е")
+        for index in range(len(folded)):
+            form = folded[:index + 1] + folded[index] + folded[index + 1:]
+            if form not in _FOLDED_NUMERALS:
+                out.setdefault(form, word)
+    return out
+
+
+_DOUBLED_NUMERALS = _doubled_forms()
 
 
 def canonical_numeral(word: str) -> str | None:
@@ -125,6 +148,9 @@ def _canonical(word: str) -> str | None:
         for key in table:
             if key.replace("ё", "е") == low:
                 return key
+    doubled = _DOUBLED_NUMERALS.get(low)
+    if doubled:
+        return doubled
     fixed = ASSETS.get().spoken.numeral_typos.get(low)
     return fixed if fixed else None
 
@@ -358,6 +384,14 @@ def _classify(digits: str, before: str) -> str | None:
         return "SNILS"
     if length == 12 and _cue_near(before, ("инн",)):
         return "INN"
+    # …BUT THE CUE THE CUSTOMER SAID OUTRANKS A CHECKSUM THAT HAPPENS TO
+    # HOLD. «телефон восемь девятьсот пятьдесят сто шестьдесят двадцать
+    # десять» satisfies mod 101 one time in a hundred, and that one time the
+    # number was minted as a СНИЛС, restored as one, and the agent's phone
+    # validator refused every call (fresh-seed v4, chain-014).
+    if length == 11 and digits[0] in "78" and digits[1] == "9" and _cue_near(
+            before, ("телефон", "тел", "номер", "мобильн", "сотов", "звонит", "позвон")):
+        return "PHONE"
     if length == 11 and validate_snils(digits):
         return "SNILS"
     if length in (10, 12) and validate_inn(digits):

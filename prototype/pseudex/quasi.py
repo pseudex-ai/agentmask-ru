@@ -22,6 +22,9 @@ _NUM_DATE_RE = re.compile(
     r"\b\d{2}[.\-/ ]\d{2}[.\-/ ]\d{4}\b"
     r"|(?<!\d)(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])(?!\d)")
 _AGE_RE = re.compile(r"\b(\d{2,3})\s*(?:лет|года|год)\b")
+# A stretched pronoun («оон», «онаа») is the same pronoun: the voice register
+# holds a vowel, and a date of birth was lost to it.
+_PERSON_BEFORE_DATE_RE = re.compile(r"(?:^|[^а-яё])(?:о+н|о+на+|ему+|ей|его|её|пациент\w*|клиент\w*|ребён\w*|ребен\w*)\s*(?:-\s*)?$")
 
 # The birth cues, the month names and the medical stem list are LEASED. The
 # written-out day+month pattern is assembled from the leased months when the
@@ -71,10 +74,18 @@ def detect_quasi(text: str) -> list[Span]:
         if any(ctx in window for ctx in quasi.birth_ctx):
             spans.append(Span(match.start(), match.end(), "DOB", match.group()))
     for match in _NUM_DATE_RE.finditer(text):
-        if _birth_context_near(low, match.start(), match.end(), quasi.birth_ctx):
+        # A DATE SAID RIGHT AFTER THE PERSON IS THEIR DATE OF BIRTH. «запишите
+        # к неврологу букина сергея ивановича он 19 12 1992» carries no birth
+        # cue at all — the pronoun is the cue: nothing else about a person is
+        # given as a full date in the same breath. Bounded to the pronoun
+        # standing directly before the date, so «счёт от 19 12 1992» and a
+        # date after a verb stay what they are.
+        if (_birth_context_near(low, match.start(), match.end(), quasi.birth_ctx)
+                or _PERSON_BEFORE_DATE_RE.search(low[max(0, match.start() - 24):match.start()])):
             spans.append(Span(match.start(), match.end(), "DOB", match.group()))
     for match in quasi.text_date.finditer(text):
-        if _birth_context_near(low, match.start(), match.end(), quasi.birth_ctx):
+        if (_birth_context_near(low, match.start(), match.end(), quasi.birth_ctx)
+                or _PERSON_BEFORE_DATE_RE.search(low[max(0, match.start() - 24):match.start()])):
             spans.append(Span(match.start(), match.end(), "DOB", match.group()))
     for match in _AGE_RE.finditer(text):
         if int(match.group(1)) >= 90:  # HIPAA: ages over 89 are identifiers

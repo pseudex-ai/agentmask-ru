@@ -46,6 +46,7 @@ class NameAssets:
     ambiguous: frozenset[str]
     cues: tuple[str, ...]
     bio_cues: tuple[str, ...]
+    never_cues: tuple[str, ...]
     stopwords: frozenset[str]
     surname_suffixes: tuple[str, ...]
     patronymic_suffixes: tuple[str, ...]
@@ -236,6 +237,7 @@ def _build_names(raw: dict[str, object]) -> NameAssets:
         ambiguous=ambiguous,
         cues=tuple(raw["cues"]),
         bio_cues=tuple(raw["bio_cues"]),
+        never_cues=tuple(raw["never_cues"]),
         stopwords=frozenset(raw["stopwords"]),
         surname_suffixes=tuple(raw["surname_suffixes"]),
         patronymic_suffixes=tuple(raw["patronymic_suffixes"]),

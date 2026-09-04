@@ -260,7 +260,12 @@ def _nominative_name(surface: str) -> str:
         def names(pair: tuple[str, str]) -> int:
             return sum(1 for parses in parsed for p in parses
                        if (p.tag.gender, p.tag.case) == pair and "Name" in p.tag.grammemes)
-        best = max(readings, key=lambda pair: (score(pair), names(pair)))
+        # A NAME ALREADY IN THE NOMINATIVE STAYS AS WRITTEN. «Бирюкова Регина»
+        # has a masculine genitive reading for both words that outscores the
+        # feminine nominative one, and the instrument wrote «Бирюков Регин» —
+        # a man the gateway never minted. A reader does not re-gender a name
+        # that already parses whole in the nominative.
+        best = max(readings, key=lambda pair: (pair[1] == "nomn", score(pair), names(pair)))
     out: list[str] = []
     for word, parses in zip(words, parsed):
         chosen = None

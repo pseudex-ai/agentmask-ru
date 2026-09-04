@@ -258,7 +258,11 @@ def _digits_of(value: str) -> str:
     return ""
 
 
-_NUMERIC_DATE_RE = re.compile(r"(\d{1,4})[./-](\d{1,2})[./-](\d{1,4})")
+# A SPACE IS A SEPARATOR TOO: «дата рождения 14 03 1987» is how the voice
+# register writes a date, and unread it drew a random year for the substitute
+# (the agent's `age` off by decades) and spliced «1403-19-87» into the ISO
+# field on the way back (fresh-seed v4, derive-000/004).
+_NUMERIC_DATE_RE = re.compile(r"(\d{1,4})[./ -](\d{1,2})[./ -](\d{1,4})")
 _MONTH_WORD_DATE_RE = re.compile(r"(?i)(\d{1,2})\s+([а-яё]+)(?:\s+(\d{4}))?")
 
 
@@ -671,7 +675,7 @@ def _digit_signatures(token: str, entity_type: str) -> tuple[str | None, str | N
 # The WHOLE date, not just its year. Comparing years alone puts «30.09.2026»
 # in the past for all of 2026 — which is most of the traffic that matters, since
 # a booking is usually made for later this year.
-_DATE_PARTS = re.compile(r"(?:^|\D)(\d{1,4})[.\-/](\d{1,2})[.\-/](\d{1,4})(?:\D|$)")
+_DATE_PARTS = re.compile(r"(?:^|\D)(\d{1,4})[.\-/ ](\d{1,2})[.\-/ ](\d{1,4})(?:\D|$)")
 
 
 def _is_future(original: str) -> bool:
@@ -1004,8 +1008,15 @@ def _fake_place(original: str) -> str:
         head = f"{generic} {street}"
 
     out = head
+    # NEVER A FAKE TOWN INSIDE AN ADDRESS. The shape may say «has a city» on a
+    # predicted reading — «лугвая сто шестнадцать», a mistyped street pymorphy3
+    # guesses to be a place — and the fake town drawn for it reached the
+    # courier's `locality` as «Торжка» (fresh-seed v4, compare-014,
+    # correction-018). The settlement is the real one or none at all.
     if shape.get("has_city"):
-        out = f"{_settlement_of(original) or _fake_city(original)}, {out}"
+        settlement = _settlement_of(original)
+        if settlement:
+            out = f"{settlement}, {out}"
     if shape.get("has_house", True):
         # NO COMMA before the house number. With one, `_merge_places` stops at
         # the house and the flat is left outside the span — so the token we mint
@@ -1252,21 +1263,23 @@ def _corresponding_part(mention: str, full_canonical: str, full_token: str) -> s
     person written in two orders — so the slot is found by KIND (surname, given
     name, patronymic) and looked up by kind on the substitute side.
     """
-    real_shape = morph_names.name_shape(full_canonical)
-    fake_shape = morph_names.name_shape(full_token)
+    # POSITION, BY CONSTRUCTION. The substitute is minted slot by slot in the
+    # ORDER of the real name (`_fake_name(gender, shape)` mirrors it), so the
+    # word standing where the mention stands is the answer, whatever the two
+    # orders of «Иванов Пётр» / «Пётр Иванов» — the mention is found in the
+    # CANONICAL, not in the sentence. Reading the fake's kinds with morphology
+    # was the defect: «Мещерякова» has no dictionary reading and came back as
+    # a given name, so the CRM card's «Ирина» was linked to «Мещерякова», its
+    # «Лебедева» found no surname slot and minted «Белых», and the agent's
+    # `last_name` then restored to «Ирина» (fresh-seed v4, chain-001).
     real_parts = full_canonical.split()
     fake_parts = full_token.split()
-    if len(real_shape) != len(real_parts) or len(fake_shape) != len(fake_parts):
+    if len(real_parts) != len(fake_parts):
         return None
     lowered = mention.casefold()
     for index, part in enumerate(real_parts):
-        if part.casefold() != lowered:
-            continue
-        kind = real_shape[index]
-        for fake_index, fake_kind in enumerate(fake_shape):
-            if fake_kind == kind:
-                return fake_parts[fake_index]
-        return None
+        if part.casefold() == lowered:
+            return fake_parts[index]
     return None
 
 
@@ -1695,6 +1708,15 @@ class Vault:
                     and attempt < _TOKEN_MINT_ATTEMPTS // 2
                     and self._shares_a_stem_in_conversation(token)):
                 continue
+            # …AND TWO PLACES IN ONE DIALOGUE MAY NOT SHARE A HOUSE NUMBER. A
+            # corrected address («сто сорок семь … ой нет, сто девятнадцать»)
+            # is two tokens, and the agent fills `building` with the house
+            # alone; a house both fakes carry has two owners, is refused, and
+            # the fake number reaches the courier. 2 of 300 draws.
+            if (entity_type == "LOC" and self._conversation
+                    and attempt < _TOKEN_MINT_ATTEMPTS // 2
+                    and self._shares_a_house_in_conversation(token)):
+                continue
             return token
         raise RuntimeError(
             f"exhausted the {entity_type} token pool for customer "
@@ -1716,6 +1738,18 @@ class Vault:
         return any(_stems_related(_stem_of_word(word.casefold()), stem)
                    for (other,) in rows for word in other.split() for stem in stems)
 
+    def _shares_a_house_in_conversation(self, token: str) -> bool:
+        """Whether a LOC token of this conversation carries the same house
+        number as the candidate. Called under the lock."""
+        house = morph_places.split_roles(token).get("house", "")
+        if not house:
+            return False
+        rows = self._conn.execute(
+            "SELECT token FROM tokens WHERE customer=? AND entity_type='LOC' AND minted_in=?",
+            (self._customer, self._conversation),
+        ).fetchall()
+        return any(morph_places.split_roles(other).get("house", "") == house for (other,) in rows)
+
     def _is_free_token(self, token: str, entity_type: str, original: str = "",
                        canonical: str = "") -> bool:
         """The four guards every candidate substitute passes, whether drawn at
@@ -1730,6 +1764,22 @@ class Vault:
         if entity_type == "LOC" and original:
             fake_stem = _street_stem(token)
             if fake_stem and fake_stem == _street_stem(original):
+                return False
+        # THE NUMBERS INSIDE ONE SUBSTITUTE MUST NOT CONTAIN EACH OTHER. «улица
+        # Барбарисовая 1, корп. 11» for «мончегорсуая 195 корпус 1» came back
+        # from prose as «мончегорсуая 195 корпус 195»: the house «1» is a
+        # substring of the building «11», and a window that finds the house
+        # finds it inside the building too. One draw in sixty; refused at the
+        # mint, where it costs a redraw and nothing else.
+        if entity_type == "LOC":
+            numbers = re.findall(r"\d+", token)
+            if any(a != b and a in b for a in numbers for b in numbers) or len(numbers) != len(set(numbers)):
+                return False
+            # …AND NONE OF THEM MAY BE A NUMBER OF THE REAL VALUE. «улица
+            # Вишнёвая 1, корп. 8» for «мончегорсуая 195 корпус 1»: the fake
+            # house is the real building, and the prose window that maps the
+            # fake «1» to the real house wrote «195» into the building too.
+            if original and set(numbers) & set(re.findall(r"\d+", original)):
                 return False
         # The settlement of a city-bearing token is the ORIGINAL's own (see
         # `_settlement_of`), so no guard against a real town applies here any

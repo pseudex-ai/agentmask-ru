@@ -659,6 +659,135 @@ def test_directory_record_links_to_the_short_mention() -> None:
     print("directory link OK — a surname-street keys with its street, the record reads nominative, the корпус stays")
 
 
+def test_card_leaves_link_by_position() -> None:
+    """A CRM card's `last_name` / `first_name` leaves link to the substitute's
+    parts BY POSITION, never by re-reading the fake with morphology.
+
+    Fresh-seed v4 (04.09), chain-001: the fake «Мещерякова Людмила Михайловна»
+    has no dictionary reading for its surname, `name_shape` called it a given
+    name, the card's «Ирина» was linked to «Мещерякова», «Лебедева» found no
+    surname slot and minted a second surname, and the agent's `last_name`
+    came back as «Ирина». The substitute is minted slot by slot in the order
+    of the real name, so the position IS the correspondence.
+    """
+    import json
+    from pseudex.redact import unmask_arguments
+    from pseudex.vault import _corresponding_part
+
+    assert _corresponding_part("Ирина", "лебедева ирина петровна", "Мещерякова Людмила Михайловна") == "Людмила"
+    assert _corresponding_part("Лебедева", "лебедева ирина петровна", "Мещерякова Людмила Михайловна") == "Мещерякова"
+    detector = Detector()
+    said = "добрый день это лебедева ирина петровна хочу поменять адрес доставки"
+    card = json.dumps({"contacts": [{"id": "c-1", "last_name": "Лебедева", "first_name": "Ирина", "middle_name": "Петровна"}]}, ensure_ascii=False)
+    spans, card_spans = detector.detect(said), detector.detect(card)
+    for _ in range(60):
+        talk = Vault(":memory:", "acme").for_conversation("d-1")
+        mask_text(said, talk, spans)
+        leaves = json.loads(mask_text(card, talk, card_spans))["contacts"][0]
+        token = talk._conn.execute("SELECT token FROM tokens WHERE entity_type='NAME'").fetchone()[0].split()  # noqa: SLF001
+        assert [leaves["last_name"], leaves["first_name"], leaves["middle_name"]] == token, (leaves, token)
+        back = json.loads(unmask_arguments(json.dumps({"last_name": token[0], "first_name": token[1]}, ensure_ascii=False), talk))
+        assert {k: v.lower() for k, v in back.items()} == {"last_name": "лебедева", "first_name": "ирина"}, (token, back)
+    print("card leaves OK — linked by position across 60 draws, the surname the dictionary does not know included")
+
+
+def test_spoken_birth_date_in_the_agents_form() -> None:
+    """A birth date SAID IN WORDS comes back in whatever layout the agent
+    wrote — ISO, dotted or slashed — rebuilt from its parts.
+
+    Fresh-seed v4 (04.09), derive-000/004: the agent wrote the fake as
+    «1987-01-25», the real value had no digits to splice, and the positional
+    rule produced «1403-19-87».
+    """
+    import json
+    from pseudex.redact import unmask_arguments
+
+    detector = Detector()
+    said = "запишите к кардиологу иванова петра сергеевича он родился четырнадцатого марта восемьдесят седьмого года"
+    spans = detector.detect(said)
+    assert [s.entity_type for s in spans] == ["NAME", "DOB"], spans
+    talk = Vault(":memory:", "acme").for_conversation("d-1")
+    mask_text(said, talk, spans)
+    token = talk._conn.execute("SELECT token FROM tokens WHERE entity_type='DOB'").fetchone()[0]  # noqa: SLF001
+    day, month, year = token.split(".")
+    for written, want in ((f"{year}-{month}-{day}", "1987-03-14"), (token, "14.03.1987"), (f"{day}/{month}/{year}", "14/03/1987")):
+        back = json.loads(unmask_arguments(json.dumps({"birth_date": written}), talk))["birth_date"]
+        assert back == want, (written, back, want)
+    print("spoken birth date OK — rebuilt component-wise into ISO, dotted and slashed forms")
+
+
+def test_fresh_seed_shapes() -> None:
+    """The shapes two FRESH-SEED corpora (2026, 4242) found on 04.09 that no
+    corpus of ours had ever contained. Exact spans, because for most of these
+    the defect was a span one word too short or one word too long.
+    """
+    import json
+    from pseudex.morph_places import split_roles
+    from pseudex.redact import unmask_arguments
+
+    detector = Detector()
+    for said, want in (
+        ("курьера на депутатская 55кв18 стоп правильно депутатская 27кв18 это в сарапул",
+         ["депутатская 55кв18", "депутатская 27кв18"]),                       # «18 стоп» is not a count
+        ("правильно ленна сто восемнадцать квартира восемьдесят восемь это в краснодар",
+         ["ленна сто восемнадцать квартира восемьдесят восемь"]),                # typo street, spoken number, a door
+        ("аллоо курьера на шумайлого дом сто тридц девять корпус три этоо в можга",
+         ["шумайлого дом сто тридц девять корпус три"]),                        # two-letter typo in the ending, marker
+        ("привет куррьера на адрес пдлесная 46кв8 простите ошиблась праавильно подленая 18 кв 8 это в можга",
+         ["пдлесная 46кв8", "подленая 18 кв 8"]),                                # «праавильно» is not a town
+        ("записывайте зеленоградская 8 бкв150", ["зеленоградская 8 бкв150"]),     # litera glued to the flat marker
+        ("новый адрес челюскинцев 159 квартира 183", ["челюскинцев 159 квартира 183"]),
+        ("привезите на ленина 14 к 10 часам", ["ленина 14"]),
+        # seed 9001
+        ("теперь гагрина 71кв169", ["гагрина 71кв169"]),                                  # the door is the intent
+        ("теперь новя 86 в квартира 186", ["новя 86 в квартира 186"]),                    # four letters, behind a door
+        ("стоп правильно толстго одиннадцать квартира двадцать восемь", ["толстго одиннадцать квартира двадцать восемь"]),  # not a numeral
+        ("у нас новя 86 коробок", []), ("теперь заказ 71 готов", []),
+    ):
+        assert [s.value for s in detector.detect(said) if s.entity_type == "LOC"] == want, (said, detector.detect(said))
+    for said, want in (
+        ("привет занесите двоих в базу одной выгрузуой воронина елена телефон", ["воронина елена"]),   # a long damaged word
+        ("курьера на чапаева 17 на имя ирину телефн 89505973171", ["ирину"]),                        # a damaged cue word
+        ("запишите миллера валерия леонидовича родилсяя двадцать первого сентября", ["миллера валерия леонидовича"]),
+        ("игрь павлов и алексй волков", ["игрь павлов", "алексй волков"]),                          # short damaged names stay
+    ):
+        assert [s.value for s in detector.detect(said) if s.entity_type == "NAME"] == want, (said, detector.detect(said))
+    for said in ("тарасову аллу анатольевну она двадцать третье ноября восемьдесят первого года телефон",
+                 "букина сергея ивановича он 19 12 1992 телефон",
+                 "букина сергея ивановича оон четырнадцатое марта восемьдесят седьмого года телефон"):
+        assert [s.entity_type for s in detector.detect(said)] == ["NAME", "DOB"], detector.detect(said)
+    assert split_roles("зеленоградская 8 бкв150") == {"street": "зеленоградская", "house": "8 б", "flat": "150"}
+    # THE GENERIC WORD DECIDES THE CASE. «на улице Ленина 1 кв 11» — the
+    # commonest address form in the language — was read as the genitive
+    # («Ленина» out-voted «улице»), minted «улицы Пихтовой» and restored
+    # «улицы Ленина»; a masculine generic («проезд») has one form for the
+    # nominative and the accusative and is the nominative.
+    from pseudex.morph_places import detect_case
+    from pseudex.redact import unmask_text
+    assert detect_case("улице Ленина 1 кв 11") == "loct" and detect_case("улицу Ленина 14") == "accs"
+    assert detect_case("можга проезд пушкина восемьдесят девять квартира шестьдесят семь") == "nomn"
+    for said in ("живу на улице Ленина 1 кв 11", "иду по улице Ленина 14", "я в можга проезд пушкина восемьдесят девять квартира шестьдесят семь"):
+        spans = detector.detect(said)
+        for _ in range(8):
+            talk = Vault(":memory:", "acme").for_conversation("d-3")
+            shown = mask_text(said, talk, spans)
+            assert unmask_text(shown, talk) == said, (said, shown, unmask_text(shown, talk))
+    # A mistyped street pymorphy3 guesses to be a town gets NO fake town: the
+    # substitute carries the real settlement or none (compare-014 «Торжка»).
+    for said in ("курьера на лугвая сто шестнадцать это в глазов", "правльно школьаня 140 кв 60 это в ижевск"):
+        talk = Vault(":memory:", "acme").for_conversation("d-0")
+        shown = mask_text(said, talk, detector.detect(said))
+        assert not re.search(r"(?:^|\s)[А-ЯЁ][а-яё-]+, (?:улиц|проспект|пер|бульвар)", shown), ("no settlement was named before «это в», none may appear", shown)
+    talk = Vault(":memory:", "acme").for_conversation("d-1")
+    said = "новый адрес тельмана 99 вкв196"
+    mask_text(said, talk, detector.detect(said))
+    token = talk._conn.execute("SELECT token FROM tokens WHERE entity_type='LOC'").fetchone()[0]  # noqa: SLF001
+    roles = split_roles(token)
+    back = json.loads(unmask_arguments(json.dumps({"house": roles["house"], "flat": roles["flat"]}), talk))
+    assert back == {"house": "99 в", "flat": "196"}, (token, back)
+    print("fresh-seed shapes OK — every span the two unseen corpora found, exact")
+
+
 def test_name_is_read_with_its_sentence() -> None:
     """Gender and case of a name are ONE reading of the whole phrase, and the
     word in front of it breaks the tie.
@@ -763,4 +892,7 @@ if __name__ == "__main__":
     test_real_town_is_not_a_fake_city()
     test_directory_record_is_the_customers_address()
     test_directory_record_links_to_the_short_mention()
+    test_card_leaves_link_by_position()
+    test_spoken_birth_date_in_the_agents_form()
+    test_fresh_seed_shapes()
     test_name_is_read_with_its_sentence()

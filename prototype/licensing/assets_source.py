@@ -307,7 +307,10 @@ _TOK = r"(?:(?<=^)|(?<=[\s,;(№#\"'«»\[\]{}<>=:|/\\]))"
 #
 # «кв» after a digit stays safe because the pattern demands DIGITS AFTER the
 # marker: «100кв.м» (square metres) has «м» there and still does not match.
-_TOK_OR_DIGIT = r"(?:(?<=^)|(?<=[\s,;(№#\"'«»\[\]{}<>=:|/\\])|(?<=\d))"
+# …AND AFTER A HOUSE LITERA, glued or spaced: «зеленоградская 8 бкв150»,
+# «тельмана 99 вкв196» — a phone keyboard's «8б, кв. 150», and the flat went
+# to the model outside a span already reported as found.
+_TOK_OR_DIGIT = r"(?:(?<=^)|(?<=[\s,;(№#\"'«»\[\]{}<>=:|/\\])|(?<=\d)|(?<=\d[а-яё])|(?<=\d\s[а-яё]))"
 _NUM_NAME = r"\d{1,4}[-\s]?[яейои]?\s+(?:" + "|".join(NUMBERED_TAIL) + r")"
 
 # EACH PATTERN CARRIES ITS OWN CASE FLAG as a leading `(?i)`, and the engine
@@ -486,7 +489,7 @@ _ENTRANCE = (r"(?:" + _ORDINAL + r"|последн\w+|крайн\w+|углов\w
 # markers («д 65 к 1»), and read as a litera the marker closed the span at
 # «65 к» — the корпус went to the model outside an address already reported
 # as found, and the directory record keyed without it.
-_LITERA = r"(?:\s+(?![яЯ](?![а-яё]))(?![кс]\.?\s*\d)[а-яё](?![а-яё]))?"
+_LITERA = r"(?:\s+(?![яЯ](?![а-яё]))(?![кс]\.?\s*\d)[а-яё](?=(?:кв|к|стр)\.?\d|[^а-яё]|$))?"
 
 # ЛИТЕРА ПРИ ЦИФРОВОМ НОМЕРЕ ДОМА — ТА ЖЕ БУКВА, НО ДРУГОЙ РЕГИСТР ТЕКСТА.
 # «воткинское шоссе 4 а квартира 58» обрывалось на «4»: у речевых арок литера
@@ -502,8 +505,10 @@ _LITERA = r"(?:\s+(?![яЯ](?![а-яё]))(?![кс]\.?\s*\d)[а-яё](?![а-яё]
 # резал номер дома на каждом третьем настоящем адресе. Условие не может ничего
 # сломать по построению: литера необязательна, и когда просмотр не сходится,
 # остаётся ровно сегодняшнее поведение.
-_LITERA_WRITTEN = (r"(?:\s+(?![яЯ](?![а-яё]))[а-яё](?![а-яё])"
-                   r"(?=\s*(?:[,;.]|$|\s*" + _CHAIN_MARKER + r"\b)))?")
+# …AND THE LITERA MAY HAVE THE FLAT MARKER GLUED TO IT: «зеленоградская 8
+# бкв150» — the letter is followed by «кв» and digits, not by a boundary.
+_LITERA_WRITTEN = (r"(?:\s+(?![яЯ](?![а-яё]))[а-яё](?=(?:кв|к|стр)\.?\d|[^а-яё]|$)"
+                   r"(?=\s*(?:[,;.]|$|\s*" + _CHAIN_MARKER + r"(?:\b|(?=\d)))))?")
 
 # НАЗВАНИЕ УЛИЦЫ НЕ ИМЕЕТ ПРАВА СЪЕСТЬ ЧИСЛИТЕЛЬНОЕ. `_LOWER_NAME` берёт до трёх
 # слов подряд, и в «улицу культуры восемь» оно забирало «культуры восемь»
@@ -893,7 +898,9 @@ ADDRESS_PATTERNS: dict[str, str] = {
         # модели открытой. Ошибка ровно того вида, который ловит только
         # колонка покрытия: полнота считала эти адреса найденными.
         + _LITERA +
-        r"(?![А-Яа-яЁё\d])"
+        # The guard against a partial word after the number stands down for a
+        # flat marker glued to the litera («8 бкв150»).
+        r"(?!(?!(?:кв|к|стр)\.?\d)[А-Яа-яЁё\d])"
     ),
     "measure_after": (
         r"(?i)\s*(?:м²|м2|%"
@@ -1026,6 +1033,19 @@ VERSION_CTX: tuple[str, ...] = (
 # Слова именно биографические, а не транзакционные: «зовут» и «перезвоните»
 # уже стоят в `cues` и работают на другой класс. Здесь спрашивают возраст,
 # рост, дату рождения, роли и книги — то, о чём спрашивают ЧЕЛОВЕКА.
+# WORDS A MISTYPED NAME IS NEVER ONE EDIT FROM. The three-signal rule for a
+# mistyped name (adjacent to a name, unknown to morphology, one edit from the
+# gazetteer) admitted «телефн» and «телфеон»: a damaged cue word is unknown to
+# morphology by definition, and the 197k-surname neighbourhood reaches it. A
+# one-edit veto against ORDINARY words was measured at four real people on
+# NEREL; against the dozen words that introduce the next field it costs
+# nothing, because none of them is ever a person.
+NAME_NEVER_CUES = (
+    "телефон", "телефона", "телефону", "адрес", "адреса", "паспорт", "паспорта", "снилс",
+    "почта", "почту", "индекс", "квартира", "квартиру", "подъезд", "получатель", "получателя",
+    "доставка", "доставку", "курьер", "курьера", "заказ", "заказа", "клиент", "клиента",
+    "номер", "номера", "оплата", "оплату", "карта", "карту", "договор", "договора",
+)
 BIO_CUES: tuple[str, ...] = (
     "родил", "умер", "скончал", "биограф", "женат", "замуж", "рост",
     "возраст", "лет", "сколько лет", "кто так", "расскажи о", "расскажи про",
