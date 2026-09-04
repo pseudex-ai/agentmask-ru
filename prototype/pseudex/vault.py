@@ -398,12 +398,35 @@ def canonicalize(entity_type: str, value: str) -> str:
 
 
 def _fake_snils() -> str:
+    """A СНИЛС that PASSES the ПФР check.
+
+    It was minted invalid on purpose — «a substitute must never be somebody's
+    real number» — and an agent told to verify identifiers refused it and
+    never called the tool: 12 of 24 `validate` triples on the 04.09 live run,
+    the whole class that remained. The fear behind the invalid sum is answered
+    elsewhere now, the way it is for every other type: a fake NAME is a real
+    name and a fake street a real street, and what keeps a real bearer from
+    being read as our token is the CONVERSATION SCOPE (`tokens.minted_in`),
+    not the number's impossibility; the other direction — a substitute equal
+    to a value this customer already holds — is refused by `_unique_token`
+    against the vault. A random valid СНИЛС is somebody's in about one case
+    in seven across Russia, and in the one dialogue it was minted for the
+    chance that that person walks in is nil. Numbers at or below 001-001-998
+    are the earliest real registrations, exempt from the check, and are not
+    drawn (research/2026-09-03-checksum-valid-substitutes.md, revised).
+    """
     for _ in range(50):
         body = _rand_digits(9)
-        candidate = f"{body[:3]}-{body[3:6]}-{body[6:9]} {_rand_digits(2)}"
-        if not validate_snils(candidate):
+        if int(body) <= 1001998:
+            continue
+        total = sum(int(digit) * (9 - index) for index, digit in enumerate(body))
+        control = total if total < 100 else (0 if total in (100, 101) else total % 101)
+        if control in (100, 101):
+            control = 0
+        candidate = f"{body[:3]}-{body[3:6]}-{body[6:9]} {control:02d}"
+        if validate_snils(candidate):
             return candidate
-    raise RuntimeError("could not generate a checksum-INVALID СНИЛС")
+    raise RuntimeError("could not generate a checksum-valid СНИЛС")
 
 
 # VALID TO EVERY ALGORITHM, IMPOSSIBLE FOR A PERSON. A model told to check
@@ -414,10 +437,9 @@ def _fake_snils() -> str:
 # the tax region in its first two digits and «00» is no region; a passport
 # series carries the ОКАТО region and «00» is no region; a card's first digit
 # is the industry, and «0» is reserved for ISO/TC 68, no bank issues under it.
-# A СНИЛС has no such field — numbers below 001-001-998 are the EARLIEST real
-# registrations, exempt from the check, not free — so it stays invalid and the
-# refusal it causes is a measured, accepted price. Sources and arithmetic in
-# research/2026-09-03-checksum-valid-substitutes.md.
+# A СНИЛС has no such field, so its substitute is valid and NOT impossible —
+# guarded by the conversation scope instead, like a name (see `_fake_snils`).
+# Sources and arithmetic in research/2026-09-03-checksum-valid-substitutes.md.
 _INN_WEIGHTS_10 = (2, 4, 10, 3, 5, 9, 4, 6, 8)
 _INN_WEIGHTS_11 = (7, 2, 4, 10, 3, 5, 9, 4, 6, 8)
 _INN_WEIGHTS_12 = (3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8)

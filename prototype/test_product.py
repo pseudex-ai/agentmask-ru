@@ -252,12 +252,15 @@ def test_tokens_are_not_valid_documents() -> None:
     assert not collisions, (
         f"{len(collisions)}/{samples} PHONE tokens are valid СНИЛС, e.g. {collisions[:3]}"
     )
-    # A СНИЛС and an ОГРН stay checksum-INVALID: neither carries a structural
-    # field that could be impossible for a bearer.
-    for entity_type, checker in (("SNILS", validate_snils), ("OGRN", validate_ogrn)):
-        bad = [token for token in (_render_token(entity_type) for _ in range(500))
-               if checker(token)]
-        assert not bad, f"{entity_type} minted a CHECKSUM-VALID token: {bad[:3]}"
+    # An ОГРН stays checksum-INVALID (no structural field, no agent validates
+    # it); a СНИЛС is VALID since 04.09.2026 — an agent that verifies it refused
+    # the invalid one — and never at or below 001-001-998, the numbers exempt
+    # from the check. The scope, not the sum, keeps a real bearer apart.
+    bad = [token for token in (_render_token("OGRN") for _ in range(500)) if validate_ogrn(token)]
+    assert not bad, f"OGRN minted a CHECKSUM-VALID token: {bad[:3]}"
+    snils = [_render_token("SNILS") for _ in range(500)]
+    assert all(validate_snils(token) for token in snils), [t for t in snils if not validate_snils(t)][:3]
+    assert all(int("".join(ch for ch in token if ch.isdigit())[:9]) > 1001998 for token in snils)
     # An ИНН, a card and a passport are VALID to every algorithm an agent runs
     # and IMPOSSIBLE by structure: tax region «00», industry identifier «0»,
     # ОКАТО region «00» (research/2026-09-03-checksum-valid-substitutes.md).
