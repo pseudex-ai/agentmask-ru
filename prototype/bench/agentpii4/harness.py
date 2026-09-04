@@ -374,10 +374,12 @@ async def run_triple(case: Case, repeat: int, detector: Detector, ledger: judge_
 
 async def drive(cases: list[Case], repeats: int, detector: Detector, ledger: judge_mod.SpendLedger,
                 config: judge_mod.JudgeConfig | None, model: str, run_id: str, concurrency: int,
-                arms_sink: Path, triples_sink: Path) -> tuple[list[ArmRun], list[dict[str, object]]]:
+                arms_sink: Path, triples_sink: Path,
+                already: frozenset[tuple[str, int]] = frozenset()) -> tuple[list[ArmRun], list[dict[str, object]]]:
     limiter = asyncio.Semaphore(max(1, concurrency))
     by_id = {case.id: case for case in cases}
-    jobs = [(case, repeat) for repeat in range(repeats) for case in cases]
+    jobs = [(case, repeat) for repeat in range(repeats) for case in cases
+            if (case.id, repeat) not in already]
     # REPEAT FIRST, THEN COST. The first repeat of every case is worth more
     # than the third repeat of any, and a ceiling reached early must cost
     # REPEATS, not FAMILIES: sorted by cap alone, the second live run refused
@@ -481,6 +483,9 @@ def main() -> int:
     parser.add_argument("--out", default="")
     parser.add_argument("--dump", type=int, default=12)
     parser.add_argument("--report", default="", help="пересобрать отчёт из <run>.arms.jsonl без модели и без трат")
+    parser.add_argument("--resume", default="",
+                        help="каталог прерванного прогона: готовые тройки берутся как есть, спрашиваются только "
+                             "недостающие; потолок считается на весь замер")
     args = parser.parse_args()
 
     if args.report and (Path(args.report).parent / "corpus.json").exists():
@@ -535,9 +540,47 @@ def main() -> int:
     snapshot = out / "corpus.json"
     if not snapshot.exists():
         snapshot.write_text(Path(args.corpus).read_text(encoding="utf-8"), encoding="utf-8")
+    # A RUN INTERRUPTED BY THE PROVIDER IS RESUMED, NOT REPLAYED. A session
+    # limit, a 529 or a killed shell leaves a directory holding complete
+    # triples that cost real money; re-running the corpus would pay for them
+    # twice and, worse, mix two engine versions in one report. `--resume`
+    # reads every triple already finished CLEANLY (all three arms `done`) in
+    # that directory, keeps them, and asks the model only for the rest. The
+    # ledger starts from what those triples already spent, so the ceiling
+    # bounds the WHOLE measurement rather than each attempt.
+    already: frozenset[tuple[str, int]] = frozenset()
+    kept_runs: list[ArmRun] = []
+    kept_triples: list[dict[str, object]] = []
+    resumed_usd = 0.0
+    if args.resume:
+        source = Path(args.resume)
+        source = source if source.is_dir() else source.parent
+        for triples_file in sorted(source.glob("*.triples.jsonl")):
+            arms_file = triples_file.with_name(triples_file.name.replace(".triples.jsonl", ".arms.jsonl"))
+            if not arms_file.exists():
+                continue
+            by_key: dict[tuple[str, int], list[dict[str, object]]] = {}
+            for line in arms_file.read_text(encoding="utf-8").splitlines():
+                row = json.loads(line)
+                by_key.setdefault((row["case_id"], int(row["repeat"])), []).append(row)
+            for line in triples_file.read_text(encoding="utf-8").splitlines():
+                triple = json.loads(line)
+                key = (triple["case_id"], int(triple["repeat"]))
+                rows = by_key.get(key, [])
+                arms = {row["arm"]: row for row in rows}
+                if key in already or set(arms) != set(ARMS):
+                    continue
+                if any(row.get("termination") != "done" for row in arms.values()):
+                    continue
+                already |= {key}
+                kept_triples.append(triple)
+                kept_runs.extend(arm_from_record(arms[name]) for name in ARMS)
+                resumed_usd += float(triple.get("cost_usd") or 0.0)
+        print(f"продолжение: взято {len(already)} готовых троек на ${resumed_usd:.2f} из {source}", flush=True)
+
     arms_sink = out / f"{run_id}.arms.jsonl"
     triples_sink = out / f"{run_id}.triples.jsonl"
-    ledger = judge_mod.SpendLedger(out / f"{run_id}.spend.tsv", args.ceiling)
+    ledger = judge_mod.SpendLedger(out / f"{run_id}.spend.tsv", max(0.0, args.ceiling - resumed_usd))
     config = None if args.no_judge else judge_mod.JudgeConfig(
         model=args.judge_model, ledger=ledger, query_cap_usd=judge_mod.QUERY_CAP_USD,
         retries=judge_mod.RETRIES, trace_path=out / f"{run_id}.judge.jsonl")
@@ -557,7 +600,9 @@ def main() -> int:
     print(f"инкрементальная запись: {arms_sink}", flush=True)
     started = time.time()
     runs, triples = asyncio.run(drive(cases, args.repeats, detector, ledger, config, args.model, run_id,
-                                      args.concurrency, arms_sink, triples_sink))
+                                      args.concurrency, arms_sink, triples_sink, already))
+    runs = kept_runs + runs
+    triples = kept_triples + triples
     payload["finished"] = datetime.now(timezone.utc).isoformat()
     payload["spent_usd"] = round(ledger.committed(), 6)
     payload["wall_s"] = round(time.time() - started, 1)
