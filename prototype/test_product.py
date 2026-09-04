@@ -713,6 +713,17 @@ def test_spoken_birth_date_in_the_agents_form() -> None:
     for written, want in ((f"{year}-{month}-{day}", "1987-03-14"), (token, "14.03.1987"), (f"{day}/{month}/{year}", "14/03/1987")):
         back = json.loads(unmask_arguments(json.dumps({"birth_date": written}), talk))["birth_date"]
         assert back == want, (written, back, want)
+    # «четвёртое августа девяносто седьмого года»: restoring every «е» of the
+    # ordinal to «ё» gave «чётвёртоё», so the date was no date, the fake drew a
+    # random year and the copied token came back as the spoken words.
+    from pseudex.spoken import date_from_words
+    assert date_from_words("четвёртое августа девяносто седьмого года") == "04.08.1997"
+    said = "запишите воронину елену сергеевну дата рождения четвёртое августа девяносто седьмого года"
+    talk = Vault(":memory:", "acme").for_conversation("d-2")
+    mask_text(said, talk, detector.detect(said))
+    token = talk._conn.execute("SELECT token FROM tokens WHERE entity_type='DOB'").fetchone()[0]  # noqa: SLF001
+    assert token.endswith(".1997"), token
+    assert json.loads(unmask_arguments(json.dumps({"birth_date": token}), talk))["birth_date"] == "04.08.1997"
     print("spoken birth date OK — rebuilt component-wise into ISO, dotted and slashed forms")
 
 
@@ -752,6 +763,8 @@ def test_fresh_seed_shapes() -> None:
         # seed 5150
         ("курьера на коммунаров 115 это в глазов", ["коммунаров 115"]),                       # plural, intent word, digit
         ("адрес коммунаров 12", ["коммунаров 12"]), ("шахтёров 200 спасли", []),
+        # seed 8080
+        ("теперь репна сто тридцать семь квартира семьдесят три", ["репна сто тридцать семь квартира семьдесят три"]),  # short adjective reading
     ):
         assert [s.value for s in detector.detect(said) if s.entity_type == "LOC"] == want, (said, detector.detect(said))
     for said, want in (

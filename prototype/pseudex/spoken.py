@@ -244,7 +244,9 @@ def _month_value(word: str) -> int | None:
 def date_from_words(phrase: str) -> str:
     """«dd.mm.yyyy» for a date said in words, or "" when the words are not one."""
     words = [w for w in _WORD_RE.findall(phrase.lower().replace("ё", "е")) if w not in ("года", "год", "г")]
-    words = [w.replace("е", "ё") if w in ("четвертого", "четвертое") else w for w in words]
+    # Only the stem's «ё» is restored: replacing every «е» gave «чётвёртоё», a
+    # word no table holds, and «четвёртое августа» was not a date at all.
+    words = [w.replace("четверт", "четвёрт", 1) if w in ("четвертого", "четвертое") else w for w in words]
     month_at = next((i for i, w in enumerate(words) if _month_value(w) is not None), None)
     if month_at is None or month_at == 0:
         return ""

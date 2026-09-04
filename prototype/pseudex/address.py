@@ -233,6 +233,13 @@ def _gar_reaches(word: str, address: AddressAssets) -> bool:
     if low in address.street_names or low in address.street_gaz:
         return True
     for parse in MORPH.parse(word):
+        # A SHORT ADJECTIVE DOES NOT REACH THE REGISTER. «репна» — «Репина»
+        # with a letter dropped — is the short form of «репный», its lemma
+        # lands on a real street, and the word was then judged as a register
+        # street by its shape (which a short adjective fails) instead of as
+        # the typo it is. Only full forms take the lemma road.
+        if parse.tag.POS in _NEVER_A_STREET_POS:
+            continue
         if parse.normal_form in address.street_names:
             return True
         nominative = parse.inflect({"nomn"})
