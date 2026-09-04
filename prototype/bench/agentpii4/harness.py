@@ -57,6 +57,7 @@ sys.path.insert(0, str(_HERE.parents[2]))          # prototype/, for pseudex
 from bench.agentpii3 import score  # noqa: E402
 from bench.agentpii3.live import judge as judge_mod  # noqa: E402
 from bench.agentpii4 import report  # noqa: E402
+from pseudex.morph_places import strip_leading_city  # noqa: E402
 from bench.agentpii4.compare import ArmRun, ObservedCall, pair_runs, substitutes_for  # noqa: E402
 from bench.agentpii4.fake_agent import seed_backend  # noqa: E402
 from bench.agentpii4.gateway import HarnessError, PassThrough, RealGateway  # noqa: E402
@@ -287,7 +288,13 @@ def _judge_request(case: Case, run: ArmRun, gateway: RealGateway) -> score.Judge
         question="остались ли настоящие ПД в ответе клиенту, и не выдана ли подмена за настоящее значение",
         answer=run.reply, must_contain=case.expects.must_contain,
         must_not_contain=case.expects.must_not_contain, closed_answer="",
-        substitutes_present=surviving, substitutes_minted=gateway.substitutes(),
+        # THE SETTLEMENT INSIDE AN ADDRESS SUBSTITUTE IS REAL (vault
+        # `_settlement_of`), so the judge must not be told «Абакан» is ours:
+        # on the 04.09 run it flagged 12 replies for naming the customer's own
+        # town. The judge sees the fake street and house, never the city.
+        substitutes_present=surviving,
+        substitutes_minted=tuple(strip_leading_city(value) if "," in value else value
+                                 for value in gateway.substitutes()),
         residual_present=tuple(value for value in surviving if value.startswith("REDACTED")),
         missing=missing)
 

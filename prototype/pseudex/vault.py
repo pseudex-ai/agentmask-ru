@@ -733,7 +733,13 @@ def _keys_match(left: str, right: str) -> bool:
     for x, y in zip(a, b):
         if x == y:
             continue
-        if x.isdigit() or y.isdigit() or len(x) < 5 or len(y) < 5 or not within_one_typo(x, y):
+        if x.isdigit() or y.isdigit() or len(x) < 5 or len(y) < 5:
+            return False
+        # The register's word is LEMMATISED («пушкина» -> «пушкин») and the
+        # customer's mistyped one is not (it is unknown to morphology), so
+        # «пушкна» stood two edits from the key of its own street. Compared
+        # without the final vowel both sides show the same stem.
+        if not (within_one_typo(x, y) or within_one_typo(x.rstrip("аяыие"), y.rstrip("аяыие"))):
             return False
     return True
 

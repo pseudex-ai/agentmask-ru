@@ -15,7 +15,9 @@ from pseudex.vault import LOC_TOKEN_PATTERN, TOKEN_RE, Vault, name_key, place_ke
 
 # A number-like run (digits + phone separators), >=7 digits — a candidate for
 # digit-core detokenization when the model reformatted a numeric token.
-_NUM_RUN = re.compile(r"(?<![\d])[+(]?\d[\d\s().\-]{5,}\d(?!\d)")
+# «/» joins the halves of a passport the model laid out as «0022 / 385996»
+# (live v4: nine replies showed the customer a fake passport in a table).
+_NUM_RUN = re.compile(r"(?<![\d])[+(]?\d[\d\s()./\-]{5,}\d(?!\d)")
 # Значение поля целиком: только цифры и разделители, не меньше трёх цифр.
 _WHOLE_NUMBER = re.compile(r"[+(]?\d[\d\s().\-]*\d(?:\D*)?")
 
@@ -209,7 +211,7 @@ def unmask_text(text: str, vault: Vault, inflect: bool = True,
 _CUE_NUMBER = re.compile(
     r"(?i)(?<![\wа-яё])(?P<cue>(?:\*{4}\s?){2,3}|дом\w*|д\.|кв\.|кв(?=\s)|квартир\w*|подъезд\w*|корпус\w*|"
     r"серия|серии|номер\w*|последн\w+\s+(?:[а-яё]+\s+){0,2}?цифр\w*(?:\s+[а-яё]+){0,2}|"
-    r"контрольн\w+\s+числ\w*|заканчива\w+\s+на)\s*[:—–-]?\s*(?:\*\*)?(?P<num>\d(?:[\d\s]{0,10}\d)?)(?![\d:])")
+    r"контрольн\w+\s+числ\w*|заканчива\w+\s+на)\s*[:—–|-]?\s*(?:\*\*|`|«|\")?(?P<num>\d(?:[\d\s]{0,10}\d)?)(?![\d:])")
 _HOUSE_CUES = ("дом", "д.", "кв", "квартир", "подъезд", "корпус")
 
 
