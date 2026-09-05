@@ -749,6 +749,58 @@ CLINIC = ToolSpec(
     parse=_clinic_parse, mutating=True)
 
 
+def _segment_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "crm_segment_report"
+    miss = _required(args, tool, "", ("group_by", "members"))
+    if miss:
+        return miss
+    group_by = parse_enum(args["group_by"], tool, "group_by", ("city", "birth_year"))
+    if isinstance(group_by, Refusal):
+        return group_by
+    members = args.get("members")
+    if not isinstance(members, list) or not members:
+        return Refusal(tool, "members", "array_required", str(members))
+    rows: list[dict[str, object]] = []
+    for index, member in enumerate(members):
+        if not isinstance(member, dict):
+            return Refusal(tool, f"members[{index}]", "object_required", str(member))
+        base = f"members[{index}]"
+        miss = _required(member, tool, base, ("name", "bucket"))
+        if miss:
+            return miss
+        name = parse_name_word(str(member["name"]).split()[0], tool, f"{base}.name")
+        if isinstance(name, Refusal):
+            return name
+        bucket = parse_text(member["bucket"], tool, f"{base}.bucket", 40)
+        if isinstance(bucket, Refusal):
+            return bucket
+        rows.append({"name": str(member["name"]).strip(), "bucket": bucket})
+    return {"group_by": group_by, "members": rows}
+
+
+SEGMENT = ToolSpec(
+    name="crm_segment_report",
+    source="amoCRM/Bitrix24 segment report: several contacts grouped by one attribute",
+    schema=_schema(
+        "crm_segment_report",
+        "Построить сводку по нескольким клиентам: у каждого имя и значение признака, по которому группируем.",
+        {"group_by": {"type": "string", "enum": ["city", "birth_year"]},
+         "members": {"type": "array",
+                     "description": "По одному объекту на клиента",
+                     "items": {"type": "object",
+                               "properties": {"name": {"type": "string"},
+                                              "bucket": {"type": "string",
+                                                         "description": "Город или год рождения"}}}}},
+        ("group_by", "members")),
+    # SEVERAL PEOPLE IN ONE CALL, one row each. `members[].name` is an ARRAY
+    # path — `spec_for` erases the index — so every row is scored against the
+    # identity it belongs to, and two people merged into one row are visible.
+    fields=(FieldSpec("group_by", "enum", required=True),
+            FieldSpec("members[].name", "identity", "NAME", "", required=True),
+            FieldSpec("members[].bucket", "plain", required=True)),
+    parse=_segment_parse, mutating=False)
+
+
 def _find_parse(args: dict[str, object]) -> Parsed | Refusal:
     tool = "crm_find_contact"
     query = _obj(args.get("query"), tool, "query")
@@ -1114,7 +1166,7 @@ CSV_IMPORT = ToolSpec(
 
 REGISTRY: dict[str, ToolSpec] = {spec.name: spec for spec in (
     DELIVERY, COURIER, SUGGEST, PAYMENT, PASSPORT, CLINIC, FIND, UPSERT, SMS, CALLBACK, CSV_IMPORT,
-    NOTE, TEMPLATE)}
+    NOTE, TEMPLATE, SEGMENT)}
 
 
 def spec_for(tool: str, path: str) -> FieldSpec | None:
@@ -1167,6 +1219,9 @@ def main() -> int:
                 "text": "Клиент Громова Марина просит перенести доставку на пятницу; телефон +79164021187."}),
         (TEMPLATE, {"template_id": "callback", "number": "+79164021187",
                     "variables": {"name": "Марина", "phone": "+79164021187", "when": "завтра"}}),
+        (SEGMENT, {"group_by": "city",
+                   "members": [{"name": "Громова Марина", "bucket": "Ижевск"},
+                               {"name": "Букин Сергей", "bucket": "Самара"}]}),
         (PAYMENT, {"amount": {"value": "1500.00", "currency": "RUB"},
                    "payment_method_data": {"type": "bank_card",
                                            "card": {"number": card, "expiry_month": "09",
@@ -1192,6 +1247,9 @@ def main() -> int:
         (NOTE, {"entity_id": "c-1", "note_type": "voicemail", "text": "…"}, "enum_mismatch"),
         (TEMPLATE, {"template_id": "callback", "number": "+79164021187",
                     "variables": {"name": "Марина", "when": "завтра"}}, "missing_variable"),
+        (SEGMENT, {"group_by": "city", "members": []}, "array_required"),
+        (SEGMENT, {"group_by": "region",
+                   "members": [{"name": "Громова", "bucket": "Ижевск"}]}, "enum_mismatch"),
         (PAYMENT, {"amount": {"value": "1500.00", "currency": "RUB"},
                    "payment_method_data": {"type": "bank_card",
                                            "card": {"number": card, "expiry_month": "09",

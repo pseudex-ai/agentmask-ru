@@ -1,8 +1,8 @@
 {
  "version": 4,
  "seed": 4,
- "cases": 456,
- "digest": "7fb445c5d93b47c503166b38cf6532d6eb901f8f7d4863224a3cb708510a48df",
+ "cases": 474,
+ "digest": "617c7b581e84574a031afa2a3c1f43ac6e9e53a97203a27655521ac1dca214fc",
  "corpus": [
   {
    "id": "chain-000",
@@ -190922,6 +190922,5484 @@
     }
    ],
    "note": "чек на телефон: один номер и в чеке, и контактом"
+  },
+  {
+   "id": "analytics-000",
+   "kind": "analytics",
+   "register": "voice_itn",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:букин сергей иванович",
+   "conversation_id": "conv-analytics-0",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "добрый день сгруппируйте по городам клиенты букин сергей из сарапул и саркисян карен из воткинск за 60 дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p0a",
+     "value": "букин сергей",
+     "canonical": "букин сергей",
+     "parts": {
+      "surname": "букин",
+      "given": "сергей",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 44,
+      "end": 56,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p0b",
+     "value": "саркисян карен",
+     "canonical": "саркисян карен",
+     "parts": {
+      "surname": "саркисян",
+      "given": "карен",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 70,
+      "end": 84,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "60 дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 100,
+      "end": 107,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p0a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 6,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 6,
+     "end": 7,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 11,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 11,
+     "end": 12,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 24,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 25,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 27,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 27,
+     "end": 28,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 36,
+     "end": 43,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 43,
+     "end": 44,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 44,
+     "end": 56,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 56,
+     "end": 57,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 57,
+     "end": 59,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 59,
+     "end": 60,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 60,
+     "end": 67,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 67,
+     "end": 68,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 68,
+     "end": 69,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 69,
+     "end": 70,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 70,
+     "end": 84,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 84,
+     "end": 85,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 85,
+     "end": 87,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 87,
+     "end": 88,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 88,
+     "end": 96,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 96,
+     "end": 97,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 97,
+     "end": 99,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 99,
+     "end": 100,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 100,
+     "end": 107,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
+  },
+  {
+   "id": "analytics-001",
+   "kind": "analytics",
+   "register": "chat",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:захаров владислав юрьевич",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "сгруппируйте по городам клиенты захаров владислав из сарапул и абдуллаев тимур из воткинск за 60 дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p1a",
+     "value": "захаров владислав",
+     "canonical": "захаров владислав",
+     "parts": {
+      "surname": "захаров",
+      "given": "владислав",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 32,
+      "end": 49,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p1b",
+     "value": "абдуллаев тимур",
+     "canonical": "абдуллаев тимур",
+     "parts": {
+      "surname": "абдуллаев",
+      "given": "тимур",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 63,
+      "end": 78,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "60 дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 94,
+      "end": 101,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p1a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 15,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 15,
+     "end": 16,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 16,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 32,
+     "end": 49,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 50,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 50,
+     "end": 52,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 52,
+     "end": 53,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 53,
+     "end": 60,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 60,
+     "end": 61,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 61,
+     "end": 62,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 62,
+     "end": 63,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 63,
+     "end": 78,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 78,
+     "end": 79,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 79,
+     "end": 81,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 81,
+     "end": 82,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 82,
+     "end": 90,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 90,
+     "end": 91,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 91,
+     "end": 93,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 93,
+     "end": 94,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 94,
+     "end": 101,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
+  },
+  {
+   "id": "analytics-002",
+   "kind": "analytics",
+   "register": "chat",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:лебедев максим константинович",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "привет сгруппируйте по городам клиенты лебедев максим из сортавала и валиахметов ильдар из сарапул за 7 дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p2a",
+     "value": "лебедев максим",
+     "canonical": "лебедев максим",
+     "parts": {
+      "surname": "лебедев",
+      "given": "максим",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 39,
+      "end": 53,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p2b",
+     "value": "валиахметов ильдар",
+     "canonical": "валиахметов ильдар",
+     "parts": {
+      "surname": "валиахметов",
+      "given": "ильдар",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 69,
+      "end": 87,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "7 дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 102,
+      "end": 108,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p2a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 6,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 6,
+     "end": 7,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 19,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 19,
+     "end": 20,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 20,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 30,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 30,
+     "end": 31,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 31,
+     "end": 38,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 38,
+     "end": 39,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 39,
+     "end": 53,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 53,
+     "end": 54,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 54,
+     "end": 56,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 56,
+     "end": 57,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 57,
+     "end": 66,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 66,
+     "end": 67,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 67,
+     "end": 68,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 68,
+     "end": 69,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 69,
+     "end": 87,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 87,
+     "end": 88,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 88,
+     "end": 90,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 90,
+     "end": 91,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 91,
+     "end": 98,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 98,
+     "end": 99,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 99,
+     "end": 101,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 101,
+     "end": 102,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 102,
+     "end": 108,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
+  },
+  {
+   "id": "analytics-003",
+   "kind": "analytics",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:букин сергей иванович",
+   "conversation_id": "conv-analytics-3",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "сгруппируйтее по городаам клиенты букин сергей ииз краснодаар и ким виктор из воткинск за девяносто дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p3a",
+     "value": "букин сергей",
+     "canonical": "букин сергей",
+     "parts": {
+      "surname": "букин",
+      "given": "сергей",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 34,
+      "end": 46,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p3b",
+     "value": "ким виктор",
+     "canonical": "ким виктор",
+     "parts": {
+      "surname": "ким",
+      "given": "виктор",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 64,
+      "end": 74,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "девяносто дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 90,
+      "end": 104,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p3a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 13,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 14,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 14,
+     "end": 16,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 16,
+     "end": 17,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 17,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 33,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 34,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 34,
+     "end": 46,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 46,
+     "end": 47,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 47,
+     "end": 50,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 50,
+     "end": 51,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 51,
+     "end": 61,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 61,
+     "end": 62,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 62,
+     "end": 63,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 63,
+     "end": 64,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 64,
+     "end": 74,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 74,
+     "end": 75,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 75,
+     "end": 77,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 77,
+     "end": 78,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 78,
+     "end": 86,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 86,
+     "end": 87,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 87,
+     "end": 89,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 89,
+     "end": 90,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 90,
+     "end": 104,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
+  },
+  {
+   "id": "analytics-004",
+   "kind": "analytics",
+   "register": "voice_itn",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:сергеев кирилл сергеевич",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "добрый день сгруппируйте по городам клиенты сергеев кирилл из сортавала и абдуллаев тимур из самара за 30 дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p4a",
+     "value": "сергеев кирилл",
+     "canonical": "сергеев кирилл",
+     "parts": {
+      "surname": "сергеев",
+      "given": "кирилл",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 44,
+      "end": 58,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p4b",
+     "value": "абдуллаев тимур",
+     "canonical": "абдуллаев тимур",
+     "parts": {
+      "surname": "абдуллаев",
+      "given": "тимур",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 74,
+      "end": 89,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "30 дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 103,
+      "end": 110,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p4a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 6,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 6,
+     "end": 7,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 11,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 11,
+     "end": 12,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 24,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 25,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 27,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 27,
+     "end": 28,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 36,
+     "end": 43,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 43,
+     "end": 44,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 44,
+     "end": 58,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 58,
+     "end": 59,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 59,
+     "end": 61,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 61,
+     "end": 62,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 62,
+     "end": 71,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 71,
+     "end": 72,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 72,
+     "end": 73,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 73,
+     "end": 74,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 74,
+     "end": 89,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 89,
+     "end": 90,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 90,
+     "end": 92,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 92,
+     "end": 93,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 93,
+     "end": 99,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 99,
+     "end": 100,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 100,
+     "end": 102,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 102,
+     "end": 103,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 103,
+     "end": 110,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
+  },
+  {
+   "id": "analytics-005",
+   "kind": "analytics",
+   "register": "voice_itn",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:битюкова зинаида николаевна",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "здравствуйте сгруппируйте по городам клиенты битюкова зинаида из самара и ким виктор из можга за 90 дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p5a",
+     "value": "битюкова зинаида",
+     "canonical": "битюкова зинаида",
+     "parts": {
+      "surname": "битюкова",
+      "given": "зинаида",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 45,
+      "end": 61,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p5b",
+     "value": "ким виктор",
+     "canonical": "ким виктор",
+     "parts": {
+      "surname": "ким",
+      "given": "виктор",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 74,
+      "end": 84,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "90 дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 97,
+      "end": 104,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p5a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 36,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 36,
+     "end": 37,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 37,
+     "end": 44,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 44,
+     "end": 45,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 45,
+     "end": 61,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 61,
+     "end": 62,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 62,
+     "end": 64,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 64,
+     "end": 65,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 65,
+     "end": 71,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 71,
+     "end": 72,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 72,
+     "end": 73,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 73,
+     "end": 74,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 74,
+     "end": 84,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 84,
+     "end": 85,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 85,
+     "end": 87,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 87,
+     "end": 88,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 88,
+     "end": 93,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 93,
+     "end": 94,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 94,
+     "end": 96,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 96,
+     "end": 97,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 97,
+     "end": 104,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
+  },
+  {
+   "id": "analytics-006",
+   "kind": "analytics",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:васильев иван павлович",
+   "conversation_id": "conv-analytics-6",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "здравствуйте сгруппируйте поо городам клиентыы васильев иван из воткинск и тагиев рустам из можгаа заа четырнадцать дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p6a",
+     "value": "васильев иван",
+     "canonical": "васильев иван",
+     "parts": {
+      "surname": "васильев",
+      "given": "иван",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 47,
+      "end": 60,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p6b",
+     "value": "тагиев рустам",
+     "canonical": "тагиев рустам",
+     "parts": {
+      "surname": "тагиев",
+      "given": "рустам",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 75,
+      "end": 88,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "четырнадцать дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 103,
+      "end": 120,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p6a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 29,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 30,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 30,
+     "end": 37,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 37,
+     "end": 38,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 38,
+     "end": 46,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 46,
+     "end": 47,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 47,
+     "end": 60,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 60,
+     "end": 61,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 61,
+     "end": 63,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 63,
+     "end": 64,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 64,
+     "end": 72,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 72,
+     "end": 73,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 73,
+     "end": 74,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 74,
+     "end": 75,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 75,
+     "end": 88,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 88,
+     "end": 89,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 89,
+     "end": 91,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 91,
+     "end": 92,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 92,
+     "end": 98,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 98,
+     "end": 99,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 99,
+     "end": 102,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 102,
+     "end": 103,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 103,
+     "end": 120,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
+  },
+  {
+   "id": "analytics-007",
+   "kind": "analytics",
+   "register": "sloppy",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:ерохин пётр николаевич",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "добрый сгруппируйте по грродам клиенты ерохин пётр из сарапул и мамедова лейла из колпино за 90 дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p7a",
+     "value": "ерохин пётр",
+     "canonical": "ерохин пётр",
+     "parts": {
+      "surname": "ерохин",
+      "given": "пётр",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 39,
+      "end": 50,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p7b",
+     "value": "мамедова лейла",
+     "canonical": "мамедова лейла",
+     "parts": {
+      "surname": "мамедова",
+      "given": "лейла",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 64,
+      "end": 78,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "90 дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 93,
+      "end": 100,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p7a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 6,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 6,
+     "end": 7,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 19,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 19,
+     "end": 20,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 20,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 30,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 30,
+     "end": 31,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 31,
+     "end": 38,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 38,
+     "end": 39,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 39,
+     "end": 50,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 50,
+     "end": 51,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 51,
+     "end": 53,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 53,
+     "end": 54,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 54,
+     "end": 61,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 61,
+     "end": 62,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 62,
+     "end": 63,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 63,
+     "end": 64,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 64,
+     "end": 78,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 78,
+     "end": 79,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 79,
+     "end": 81,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 81,
+     "end": 82,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 82,
+     "end": 89,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 89,
+     "end": 90,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 90,
+     "end": 92,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 92,
+     "end": 93,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 93,
+     "end": 100,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
+  },
+  {
+   "id": "analytics-008",
+   "kind": "analytics",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:павлова тамара владимировна",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "аа здравствуйте сгруппируйтее поо городам клиенты павлова тамара из сортавала ии абдуллаев тимур из ижеевск заа четырнадцать дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p8a",
+     "value": "павлова тамара",
+     "canonical": "павлова тамара",
+     "parts": {
+      "surname": "павлова",
+      "given": "тамара",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 50,
+      "end": 64,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p8b",
+     "value": "абдуллаев тимур",
+     "canonical": "абдуллаев тимур",
+     "parts": {
+      "surname": "абдуллаев",
+      "given": "тимур",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 81,
+      "end": 96,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "четырнадцать дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 112,
+      "end": 129,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p8a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 2,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 2,
+     "end": 3,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 3,
+     "end": 15,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 15,
+     "end": 16,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 16,
+     "end": 29,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 30,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 30,
+     "end": 33,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 34,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 34,
+     "end": 41,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 41,
+     "end": 42,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 42,
+     "end": 49,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 50,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 50,
+     "end": 64,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 64,
+     "end": 65,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 65,
+     "end": 67,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 67,
+     "end": 68,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 68,
+     "end": 77,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 77,
+     "end": 78,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 78,
+     "end": 80,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 80,
+     "end": 81,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 81,
+     "end": 96,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 96,
+     "end": 97,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 97,
+     "end": 99,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 99,
+     "end": 100,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 100,
+     "end": 107,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 107,
+     "end": 108,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 108,
+     "end": 111,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 111,
+     "end": 112,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 112,
+     "end": 129,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
+  },
+  {
+   "id": "analytics-009",
+   "kind": "analytics",
+   "register": "chat",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:павлова тамара владимировна",
+   "conversation_id": "conv-analytics-9",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "добрый день сгруппируйте по городам клиенты павлова тамара из абакан и валиахметов ильдар из сортавала за 14 дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p9a",
+     "value": "павлова тамара",
+     "canonical": "павлова тамара",
+     "parts": {
+      "surname": "павлова",
+      "given": "тамара",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 44,
+      "end": 58,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p9b",
+     "value": "валиахметов ильдар",
+     "canonical": "валиахметов ильдар",
+     "parts": {
+      "surname": "валиахметов",
+      "given": "ильдар",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 71,
+      "end": 89,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "14 дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 106,
+      "end": 113,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p9a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 6,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 6,
+     "end": 7,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 11,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 11,
+     "end": 12,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 24,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 25,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 27,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 27,
+     "end": 28,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 36,
+     "end": 43,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 43,
+     "end": 44,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 44,
+     "end": 58,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 58,
+     "end": 59,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 59,
+     "end": 61,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 61,
+     "end": 62,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 62,
+     "end": 68,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 68,
+     "end": 69,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 69,
+     "end": 70,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 70,
+     "end": 71,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 71,
+     "end": 89,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 89,
+     "end": 90,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 90,
+     "end": 92,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 92,
+     "end": 93,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 93,
+     "end": 102,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 102,
+     "end": 103,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 103,
+     "end": 105,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 105,
+     "end": 106,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 106,
+     "end": 113,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
+  },
+  {
+   "id": "analytics-010",
+   "kind": "analytics",
+   "register": "sloppy",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:ерохин пётр николаевич",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "зжрасте сгруппируйте по городам клиенты ерохин пётр из ижнвск и абдуллаев тимур из абакан за 60 дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p10a",
+     "value": "ерохин пётр",
+     "canonical": "ерохин пётр",
+     "parts": {
+      "surname": "ерохин",
+      "given": "пётр",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 40,
+      "end": 51,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p10b",
+     "value": "абдуллаев тимур",
+     "canonical": "абдуллаев тимур",
+     "parts": {
+      "surname": "абдуллаев",
+      "given": "тимур",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 64,
+      "end": 79,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "60 дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 93,
+      "end": 100,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p10a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 7,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 8,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 8,
+     "end": 20,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 20,
+     "end": 21,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 21,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 32,
+     "end": 39,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 39,
+     "end": 40,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 40,
+     "end": 51,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 51,
+     "end": 52,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 52,
+     "end": 54,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 54,
+     "end": 55,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 55,
+     "end": 61,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 61,
+     "end": 62,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 62,
+     "end": 63,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 63,
+     "end": 64,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 64,
+     "end": 79,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 79,
+     "end": 80,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 80,
+     "end": 82,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 82,
+     "end": 83,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 83,
+     "end": 89,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 89,
+     "end": 90,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 90,
+     "end": 92,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 92,
+     "end": 93,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 93,
+     "end": 100,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
+  },
+  {
+   "id": "analytics-011",
+   "kind": "analytics",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:битюков олег викторович",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "ааа здравствуйте сгруппируйте поо городам клиенты битюков олег из ижеевск и ким виктор из самара за семь дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p11a",
+     "value": "битюков олег",
+     "canonical": "битюков олег",
+     "parts": {
+      "surname": "битюков",
+      "given": "олег",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 50,
+      "end": 62,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p11b",
+     "value": "ким виктор",
+     "canonical": "ким виктор",
+     "parts": {
+      "surname": "ким",
+      "given": "виктор",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 76,
+      "end": 86,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "семь дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 100,
+      "end": 109,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p11a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 3,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 3,
+     "end": 4,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 4,
+     "end": 16,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 16,
+     "end": 17,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 17,
+     "end": 29,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 30,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 30,
+     "end": 33,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 34,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 34,
+     "end": 41,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 41,
+     "end": 42,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 42,
+     "end": 49,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 50,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 50,
+     "end": 62,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 62,
+     "end": 63,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 63,
+     "end": 65,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 65,
+     "end": 66,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 66,
+     "end": 73,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 73,
+     "end": 74,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 74,
+     "end": 75,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 75,
+     "end": 76,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 76,
+     "end": 86,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 86,
+     "end": 87,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 87,
+     "end": 89,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 89,
+     "end": 90,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 90,
+     "end": 96,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 96,
+     "end": 97,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 97,
+     "end": 99,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 99,
+     "end": 100,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 100,
+     "end": 109,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
+  },
+  {
+   "id": "analytics-012",
+   "kind": "analytics",
+   "register": "chat",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:кузнецов дмитрий андреевич",
+   "conversation_id": "conv-analytics-12",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "здравствуйте сгруппируйте по городам клиенты кузнецов дмитрий из абакан и мкртчян ашот из краснодар за 7 дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p12a",
+     "value": "кузнецов дмитрий",
+     "canonical": "кузнецов дмитрий",
+     "parts": {
+      "surname": "кузнецов",
+      "given": "дмитрий",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 45,
+      "end": 61,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p12b",
+     "value": "мкртчян ашот",
+     "canonical": "мкртчян ашот",
+     "parts": {
+      "surname": "мкртчян",
+      "given": "ашот",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 74,
+      "end": 86,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "7 дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 103,
+      "end": 109,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p12a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 36,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 36,
+     "end": 37,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 37,
+     "end": 44,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 44,
+     "end": 45,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 45,
+     "end": 61,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 61,
+     "end": 62,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 62,
+     "end": 64,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 64,
+     "end": 65,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 65,
+     "end": 71,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 71,
+     "end": 72,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 72,
+     "end": 73,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 73,
+     "end": 74,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 74,
+     "end": 86,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 86,
+     "end": 87,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 87,
+     "end": 89,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 89,
+     "end": 90,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 90,
+     "end": 99,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 99,
+     "end": 100,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 100,
+     "end": 102,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 102,
+     "end": 103,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 103,
+     "end": 109,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
+  },
+  {
+   "id": "analytics-013",
+   "kind": "analytics",
+   "register": "chat",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:новиков игорь валентинович",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "здравствуйте сгруппируйте по городам клиенты новиков игорь из краснодар и мкртчян ашот из сортавала за 7 дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p13a",
+     "value": "новиков игорь",
+     "canonical": "новиков игорь",
+     "parts": {
+      "surname": "новиков",
+      "given": "игорь",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 45,
+      "end": 58,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p13b",
+     "value": "мкртчян ашот",
+     "canonical": "мкртчян ашот",
+     "parts": {
+      "surname": "мкртчян",
+      "given": "ашот",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 74,
+      "end": 86,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "7 дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 103,
+      "end": 109,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p13a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 36,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 36,
+     "end": 37,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 37,
+     "end": 44,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 44,
+     "end": 45,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 45,
+     "end": 58,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 58,
+     "end": 59,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 59,
+     "end": 61,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 61,
+     "end": 62,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 62,
+     "end": 71,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 71,
+     "end": 72,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 72,
+     "end": 73,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 73,
+     "end": 74,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 74,
+     "end": 86,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 86,
+     "end": 87,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 87,
+     "end": 89,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 89,
+     "end": 90,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 90,
+     "end": 99,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 99,
+     "end": 100,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 100,
+     "end": 102,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 102,
+     "end": 103,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 103,
+     "end": 109,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
+  },
+  {
+   "id": "analytics-014",
+   "kind": "analytics",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:новикова наталья валентиновна",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "сгруппируйте по городаам клиенты новикова наталья ииз глазов и ким виктор из самараа за тридцать дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p14a",
+     "value": "новикова наталья",
+     "canonical": "новикова наталья",
+     "parts": {
+      "surname": "новикова",
+      "given": "наталья",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 33,
+      "end": 49,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p14b",
+     "value": "ким виктор",
+     "canonical": "ким виктор",
+     "parts": {
+      "surname": "ким",
+      "given": "виктор",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 63,
+      "end": 73,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "тридцать дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 88,
+      "end": 101,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p14a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 15,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 15,
+     "end": 16,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 16,
+     "end": 24,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 25,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 32,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 32,
+     "end": 33,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 33,
+     "end": 49,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 50,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 50,
+     "end": 53,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 53,
+     "end": 54,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 54,
+     "end": 60,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 60,
+     "end": 61,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 61,
+     "end": 62,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 62,
+     "end": 63,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 63,
+     "end": 73,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 73,
+     "end": 74,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 74,
+     "end": 76,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 76,
+     "end": 77,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 77,
+     "end": 84,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 84,
+     "end": 85,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 85,
+     "end": 87,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 87,
+     "end": 88,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 88,
+     "end": 101,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
+  },
+  {
+   "id": "analytics-015",
+   "kind": "analytics",
+   "register": "sloppy",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:кузнецова ольга дмитриевна",
+   "conversation_id": "conv-analytics-15",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "зддрасте сгруппируйте по городам клиенты кузнецова ольга из воткинск и валиахметов ильдар из можга за 7 дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p15a",
+     "value": "кузнецова ольга",
+     "canonical": "кузнецова ольга",
+     "parts": {
+      "surname": "кузнецова",
+      "given": "ольга",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 41,
+      "end": 56,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p15b",
+     "value": "валиахметов ильдар",
+     "canonical": "валиахметов ильдар",
+     "parts": {
+      "surname": "валиахметов",
+      "given": "ильдар",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 71,
+      "end": 89,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "7 дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 102,
+      "end": 108,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p15a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 8,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 8,
+     "end": 9,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 9,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 22,
+     "end": 24,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 25,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 32,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 32,
+     "end": 33,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 40,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 40,
+     "end": 41,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 41,
+     "end": 56,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 56,
+     "end": 57,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 57,
+     "end": 59,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 59,
+     "end": 60,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 60,
+     "end": 68,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 68,
+     "end": 69,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 69,
+     "end": 70,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 70,
+     "end": 71,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 71,
+     "end": 89,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 89,
+     "end": 90,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 90,
+     "end": 92,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 92,
+     "end": 93,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 93,
+     "end": 98,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 98,
+     "end": 99,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 99,
+     "end": 101,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 101,
+     "end": 102,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 102,
+     "end": 108,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
+  },
+  {
+   "id": "analytics-016",
+   "kind": "analytics",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:заболотный руслан фёдорович",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "аа здравствуйте сгруппируйте поо городам клиентыы заболотный руслан из абакан ии джонсон майкл из воткинск за шестьдесят дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p16a",
+     "value": "заболотный руслан",
+     "canonical": "заболотный руслан",
+     "parts": {
+      "surname": "заболотный",
+      "given": "руслан",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 50,
+      "end": 67,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p16b",
+     "value": "джонсон майкл",
+     "canonical": "джонсон майкл",
+     "parts": {
+      "surname": "джонсон",
+      "given": "майкл",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 81,
+      "end": 94,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "шестьдесят дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 110,
+      "end": 125,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p16a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 2,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 2,
+     "end": 3,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 3,
+     "end": 15,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 15,
+     "end": 16,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 16,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 32,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 32,
+     "end": 33,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 40,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 40,
+     "end": 41,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 41,
+     "end": 49,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 50,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 50,
+     "end": 67,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 67,
+     "end": 68,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 68,
+     "end": 70,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 70,
+     "end": 71,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 71,
+     "end": 77,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 77,
+     "end": 78,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 78,
+     "end": 80,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 80,
+     "end": 81,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 81,
+     "end": 94,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 94,
+     "end": 95,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 95,
+     "end": 97,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 97,
+     "end": 98,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 98,
+     "end": 106,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 106,
+     "end": 107,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 107,
+     "end": 109,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 109,
+     "end": 110,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 110,
+     "end": 125,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
+  },
+  {
+   "id": "analytics-017",
+   "kind": "analytics",
+   "register": "voice_itn",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "NAME:громова марина борисовна",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор CRM. Находи и обновляй карточки клиентов инструментами; инициалы и латинское написание имени заполняй сам по ФИО. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "алло сгруппируйте по городам клиенты громова марина из можга и абдуллаев тимур из колпино за 90 дней",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_segment_report",
+    "crm_find_contact",
+    "notify_sms"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p17a",
+     "value": "громова марина",
+     "canonical": "громова марина",
+     "parts": {
+      "surname": "громова",
+      "given": "марина",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 37,
+      "end": 51,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p17b",
+     "value": "абдуллаев тимур",
+     "canonical": "абдуллаев тимур",
+     "parts": {
+      "surname": "абдуллаев",
+      "given": "тимур",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 63,
+      "end": 78,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "90 дней",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 93,
+      "end": 100,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "период — не ПД, обязан уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "crm_segment_report"
+    ],
+    "primary_identity": "p17a",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 4,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 4,
+     "end": 5,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 5,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 18,
+     "end": 20,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 20,
+     "end": 21,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 21,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 36,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 36,
+     "end": 37,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 37,
+     "end": 51,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 51,
+     "end": 52,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 52,
+     "end": 54,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 54,
+     "end": 55,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 55,
+     "end": 60,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 60,
+     "end": 61,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 61,
+     "end": 62,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 62,
+     "end": 63,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n2",
+     "start": 63,
+     "end": 78,
+     "origin": "value:n2"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 78,
+     "end": 79,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 79,
+     "end": 81,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 81,
+     "end": 82,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 82,
+     "end": 89,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 89,
+     "end": 90,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 90,
+     "end": 92,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 92,
+     "end": 93,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "q1",
+     "start": 93,
+     "end": 100,
+     "origin": "plain:q1"
+    }
+   ],
+   "note": "двое в одной фразе и сводка по городам; города настоящие, границы людей — разные"
   }
  ]
 }

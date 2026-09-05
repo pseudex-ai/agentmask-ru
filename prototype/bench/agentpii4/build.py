@@ -16,7 +16,7 @@ from collections import Counter
 from pathlib import Path
 
 from bench.agentpii4 import schema, validate
-from bench.agentpii4.scenarios import (chain, compare, container, correction, crm_note,
+from bench.agentpii4.scenarios import (analytics, chain, compare, container, correction, crm_note,
                                        decompose, derive, lookup_list, receipt,
                                        result_feed, send_template, summary)
 from bench.agentpii4.scenarios import validate as validate_kind
@@ -31,6 +31,7 @@ PLAN: tuple[tuple[object, int, int], ...] = (
     (container, 10, 30), (derive, 18, 54), (decompose, 14, 42),
     # 05.09: the flow axis (research/2026-09-05-agent-scenario-coverage.md).
     (lookup_list, 10, 30), (crm_note, 8, 24), (send_template, 8, 24), (receipt, 6, 18),
+    (analytics, 6, 18),
 )
 
 

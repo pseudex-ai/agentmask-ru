@@ -48,6 +48,7 @@ SCENARIO_KINDS: tuple[str, ...] = (
     "crm_note",     # the model WRITES the PII itself, in prose, into a CRM field
     "send_template",  # PII goes into a template VARIABLE; the placeholder must survive
     "receipt",      # the contact is a CONDITION of the sale, not an accuracy question
+    "analytics",    # SEVERAL people in one utterance, and an aggregate over them
 )
 ARMS: tuple[str, ...] = ("C", "I", "C2")          # control, intervention, second control
 INV_LEVELS: tuple[str, ...] = ("tools", "keys", "state")

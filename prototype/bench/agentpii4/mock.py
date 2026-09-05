@@ -205,6 +205,20 @@ class Backend:
             record = self._store("contacts", tool, merged, "c", contact_id)
             data = {"id": record.id, "updated_fields": updated}
             return data, dict(data)
+        if tool == "crm_segment_report":
+            # READ-ONLY: no id is allocated, because ids are allocated by writes
+            # only. The answer is the count per bucket — a real aggregate, and
+            # it carries no personal data of its own.
+            counts: dict[str, int] = {}
+            for member in parsed["members"]:  # type: ignore[union-attr]
+                bucket = str(dict(member)["bucket"])  # type: ignore[arg-type]
+                counts[bucket] = counts.get(bucket, 0) + 1
+            data = {"group_by": parsed["group_by"],
+                    "buckets": [{"bucket": bucket, "count": count}
+                                for bucket, count in sorted(counts.items())]}
+            return data, {"group_by": str(parsed["group_by"]),
+                          "buckets": [{"bucket": str(one["bucket"]), "count": int(one["count"])}
+                                      for one in data["buckets"]]}  # type: ignore[index,arg-type]
         if tool == "send_template":
             # THE RENDERED TEXT IS WHAT THE CUSTOMER READS, so it comes back as
             # a Slot: a placeholder left unfilled or a substitute put into one

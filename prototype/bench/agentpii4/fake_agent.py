@@ -520,6 +520,15 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
     if "callback_schedule" in tools and phone:
         zone = sorted(derive.timezone(city))[0] if (policy.derives and derive.timezone(city)) else "Europe/Moscow"
         maybe("callback_schedule", {"phone": phone, "at": "2026-09-03T18:00:00+04:00", "timezone": zone})
+    if "crm_segment_report" in tools:
+        # ONE ROW PER PERSON, and the bucket is the city the customer named —
+        # a real value that must NOT be masked, which is what makes the
+        # aggregate meaningful at all.
+        people = [item for item in case.pii if item.type == "NAME" and item.where.kind == "message"]
+        rows = [{"name": view[item.id][0], "bucket": _city_of(case) or "Москва"}
+                for item in people if item.id in view]
+        if rows:
+            maybe("crm_segment_report", {"group_by": "city", "members": rows})
     if "send_template" in tools:
         # THE AGENT FILLS VARIABLES, never the template body. Which variables
         # exist is the template's business, so the tool is asked for the set it

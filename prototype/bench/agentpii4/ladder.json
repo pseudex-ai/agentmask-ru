@@ -1,7 +1,7 @@
 {
  "version": 1,
  "seed": 4,
- "corpus_sha256": "7fb445c5d93b47c503166b38cf6532d6eb901f8f7d4863224a3cb708510a48df",
+ "corpus_sha256": "617c7b581e84574a031afa2a3c1f43ac6e9e53a97203a27655521ac1dca214fc",
  "tiers": {
   "nano": [
    "chain-014",
@@ -187,7 +187,13 @@
    "receipt-000",
    "receipt-016",
    "receipt-007",
-   "receipt-008"
+   "receipt-008",
+   "analytics-003",
+   "analytics-017",
+   "analytics-012",
+   "analytics-010",
+   "analytics-011",
+   "analytics-004"
   ],
   "medium": [
    "chain-000",
@@ -645,7 +651,25 @@
    "receipt-014",
    "receipt-015",
    "receipt-016",
-   "receipt-017"
+   "receipt-017",
+   "analytics-000",
+   "analytics-001",
+   "analytics-002",
+   "analytics-003",
+   "analytics-004",
+   "analytics-005",
+   "analytics-006",
+   "analytics-007",
+   "analytics-008",
+   "analytics-009",
+   "analytics-010",
+   "analytics-011",
+   "analytics-012",
+   "analytics-013",
+   "analytics-014",
+   "analytics-015",
+   "analytics-016",
+   "analytics-017"
   ]
  }
 }
