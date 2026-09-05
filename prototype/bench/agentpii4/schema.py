@@ -45,6 +45,7 @@ SCENARIO_KINDS: tuple[str, ...] = (
     # above share one axis — what the agent does to a VALUE — and it is nearly
     # exhausted. What follows asks where the value COMES FROM and where it GOES.
     "lookup_list",  # a search returns OTHER people's records; one is chosen
+    "crm_note",     # the model WRITES the PII itself, in prose, into a CRM field
 )
 ARMS: tuple[str, ...] = ("C", "I", "C2")          # control, intervention, second control
 INV_LEVELS: tuple[str, ...] = ("tools", "keys", "state")

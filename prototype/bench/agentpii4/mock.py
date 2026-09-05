@@ -59,7 +59,7 @@ class Backend:
         self._tables: dict[str, dict[str, Record]] = {
             "contacts": {}, "addresses": {}, "orders": {}, "claims": {},
             "payments": {}, "verifications": {}, "appointments": {},
-            "sms": {}, "callbacks": {}}
+            "sms": {}, "callbacks": {}, "notes": {}}
         self._counters: dict[str, int] = {}
         self._seq = 0
         self.calls: list[CallLog] = []
@@ -204,6 +204,15 @@ class Backend:
             merged.update(parsed["contact"])  # type: ignore[arg-type]
             record = self._store("contacts", tool, merged, "c", contact_id)
             data = {"id": record.id, "updated_fields": updated}
+            return data, dict(data)
+        if tool == "crm_add_note":
+            # A NOTE IS A WRITE WHOSE RESULT CARRIES NOTHING PERSONAL: the text
+            # the model wrote is already in `parsed`, and echoing it back would
+            # hand the same string to the detector twice. The id and the length
+            # are what a CRM returns.
+            record = self._store("notes", tool, parsed, "note")
+            data = {"id": record.id, "entity_id": parsed["entity_id"],
+                    "length": len(str(parsed["text"]))}
             return data, dict(data)
         if tool == "notify_sms":
             record = self._store("sms", tool, parsed, "sms")

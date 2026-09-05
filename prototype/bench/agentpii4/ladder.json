@@ -1,7 +1,7 @@
 {
  "version": 1,
  "seed": 4,
- "corpus_sha256": "a9d21696d73e0d936f37ee174e3405a5eb0dd9b2553794311c9235ea0c9d128c",
+ "corpus_sha256": "523c2367f62360d573c93ab40e803436efb24ba350987738f0a4375ea688522b",
  "tiers": {
   "nano": [
    "chain-014",
@@ -165,7 +165,15 @@
    "lookup_list-011",
    "lookup_list-000",
    "lookup_list-029",
-   "lookup_list-024"
+   "lookup_list-024",
+   "crm_note-018",
+   "crm_note-007",
+   "crm_note-000",
+   "crm_note-014",
+   "crm_note-015",
+   "crm_note-021",
+   "crm_note-002",
+   "crm_note-012"
   ],
   "medium": [
    "chain-000",
@@ -557,7 +565,31 @@
    "lookup_list-026",
    "lookup_list-027",
    "lookup_list-028",
-   "lookup_list-029"
+   "lookup_list-029",
+   "crm_note-000",
+   "crm_note-001",
+   "crm_note-002",
+   "crm_note-003",
+   "crm_note-004",
+   "crm_note-005",
+   "crm_note-006",
+   "crm_note-007",
+   "crm_note-008",
+   "crm_note-009",
+   "crm_note-010",
+   "crm_note-011",
+   "crm_note-012",
+   "crm_note-013",
+   "crm_note-014",
+   "crm_note-015",
+   "crm_note-016",
+   "crm_note-017",
+   "crm_note-018",
+   "crm_note-019",
+   "crm_note-020",
+   "crm_note-021",
+   "crm_note-022",
+   "crm_note-023"
   ]
  }
 }

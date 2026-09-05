@@ -506,6 +506,16 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
     if "callback_schedule" in tools and phone:
         zone = sorted(derive.timezone(city))[0] if (policy.derives and derive.timezone(city)) else "Europe/Moscow"
         maybe("callback_schedule", {"phone": phone, "at": "2026-09-03T18:00:00+04:00", "timezone": zone})
+    if "crm_add_note" in tools:
+        # THE AGENT WRITES THE NOTE IN ITS OWN WORDS, and its words are the
+        # substitutes it was shown. Deterministic prose, so two control arms
+        # agree and the floor measures the policy's noise rather than this line.
+        pieces = [f"Клиент {name_surface}." if name_surface else "Клиент.",
+                  f"Телефон {phone}." if phone else "",
+                  f"Адрес {addr_surface}." if addr_surface else ""]
+        maybe("crm_add_note", {"entity_id": _chosen_record(case, view) or "c-1",
+                               "note_type": "call_in",
+                               "text": " ".join(part for part in pieces if part)})
     if "crm_import_csv" in tools:
         rows = []
         people = [item for item in case.pii if item.type == "NAME" and item.where.kind == "message"]

@@ -920,6 +920,40 @@ SMS = ToolSpec(
     parse=_sms_parse, mutating=True)
 
 
+def _note_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "crm_add_note"
+    miss = _required(args, tool, "", ("entity_id", "note_type", "text"))
+    if miss:
+        return miss
+    entity = parse_text(args["entity_id"], tool, "entity_id", 40)
+    note_type = parse_enum(args["note_type"], tool, "note_type",
+                           ("common", "call_in", "call_out", "service_message"))
+    text = parse_text(args["text"], tool, "text", 800)
+    bad = _first(entity, note_type, text)
+    if bad:
+        return bad
+    return {"entity_id": entity, "note_type": note_type, "text": text}
+
+
+NOTE = ToolSpec(
+    name="crm_add_note",
+    source="amoCRM POST /api/v4/contacts/{id}/notes (note_type common|call_in|call_out, params.text free)",
+    schema=_schema(
+        "crm_add_note",
+        "Записать в карточку клиента заметку — итог разговора своими словами.",
+        {"entity_id": {"type": "string", "description": "id карточки"},
+         "note_type": {"type": "string", "enum": ["common", "call_in", "call_out", "service_message"]},
+         "text": {"type": "string", "description": "Текст заметки, до 800 символов"}},
+        ("entity_id", "note_type", "text")),
+    # THE MODEL WRITES THIS FIELD ITSELF, in its own words, and the words it has
+    # are SUBSTITUTES. `free` is never equality-compared — it is read for leaks —
+    # which is exactly the question a summary written into a CRM asks.
+    fields=(FieldSpec("entity_id", "plain", required=True),
+            FieldSpec("note_type", "enum", required=True),
+            FieldSpec("text", "free", required=True)),
+    parse=_note_parse, mutating=True)
+
+
 RU_TIMEZONES = ("Europe/Kaliningrad", "Europe/Moscow", "Europe/Samara", "Europe/Volgograd",
                 "Asia/Yekaterinburg", "Asia/Omsk", "Asia/Novosibirsk", "Asia/Tomsk",
                 "Asia/Krasnoyarsk", "Asia/Irkutsk", "Asia/Yakutsk", "Asia/Vladivostok")
@@ -1006,7 +1040,8 @@ CSV_IMPORT = ToolSpec(
 
 
 REGISTRY: dict[str, ToolSpec] = {spec.name: spec for spec in (
-    DELIVERY, COURIER, SUGGEST, PAYMENT, PASSPORT, CLINIC, FIND, UPSERT, SMS, CALLBACK, CSV_IMPORT)}
+    DELIVERY, COURIER, SUGGEST, PAYMENT, PASSPORT, CLINIC, FIND, UPSERT, SMS, CALLBACK, CSV_IMPORT,
+    NOTE)}
 
 
 def spec_for(tool: str, path: str) -> FieldSpec | None:
@@ -1055,6 +1090,8 @@ def main() -> int:
         (SMS, {"number": "+79164021187", "text": "Заказ 4471823: https://t.example.ru/o?order=4471823&phone=79164021187"}),
         (CALLBACK, {"phone": "+79164021187", "at": "2026-09-03T18:00:00+04:00", "timezone": "Europe/Samara"}),
         (CSV_IMPORT, {"csv": f"{CSV_HEADER}\nГромова;Марина;+79164021187;;1987-03-14\nБукин;Сергей;+79261234567;bukin@mail.ru;"}),
+        (NOTE, {"entity_id": "c-1", "note_type": "call_in",
+                "text": "Клиент Громова Марина просит перенести доставку на пятницу; телефон +79164021187."}),
         (PAYMENT, {"amount": {"value": "1500.00", "currency": "RUB"},
                    "payment_method_data": {"type": "bank_card",
                                            "card": {"number": card, "expiry_month": "09",
@@ -1072,6 +1109,8 @@ def main() -> int:
         (DELIVERY, {"recipient": {"name": "x", "phones": [{"number": "+79164021187"}]},
                     "to_location": {"postal_code": "42603", "city": "Ижевск", "address": "a"},
                     "packages": [{"weight": 1}]}, "postal_code_format"),
+        (NOTE, {"entity_id": "c-1", "note_type": "voicemail", "text": "…"}, "enum_mismatch"),
+        (NOTE, {"entity_id": "c-1", "note_type": "common", "text": "x" * 801}, "too_long"),
         (PASSPORT, {"passport": {"series": "45 09", "number": "123456"}, "person": {"last_name": "а", "first_name": "б"}}, "series_format"),
         (PASSPORT, {"passport": {"series": "4509", "number": "123456"}, "snils": "112-233-445 96",
                     "person": {"last_name": "Иванов", "first_name": "Пётр"}}, "snils_checksum"),
