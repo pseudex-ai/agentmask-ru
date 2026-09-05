@@ -42,7 +42,7 @@ from pseudex.operator import build_router
 from pseudex.profiling import snapshot as profiling_snapshot, stage
 from pseudex.redact import StreamDetokenizer, residual_tokens
 from pseudex.tenants import Tenant, Tenants
-from pseudex.vault import Vault, count_values_since
+from pseudex.vault import PSEUDONYM_SCOPES, Vault, count_values_since
 
 logging.basicConfig(level=logging.INFO)
 _log = logging.getLogger("pseudex")
@@ -53,6 +53,12 @@ DETECTOR = Detector()
 # working directory instead of the mounted volume — every tenant key and every
 # counter gone on restart, silently.
 _DB_DIR = os.environ.get("PSEUDEX_DB_DIR", ".")
+# The default scope for «is this string our own substitute?». The proxy has no
+# per-request field for it — its wire is OpenAI's — so a tenant that turns agent
+# memory on sets it for the process. `Vault.with_pseudonym_scope` states the trade.
+_PSEUDONYM_SCOPE = os.environ.get("PSEUDEX_PSEUDONYM_SCOPE", "").strip() or "conversation"
+if _PSEUDONYM_SCOPE not in PSEUDONYM_SCOPES:
+    raise SystemExit(f"PSEUDEX_PSEUDONYM_SCOPE must be one of {list(PSEUDONYM_SCOPES)}, got {_PSEUDONYM_SCOPE!r}")
 # THE VAULT IS OPENED FIRST, before any other store is constructed, and that is
 # not redundant with the `Vault` built per org further down. `AuditLog` and
 # `Tenants` are process singletons, so a key that does not open THEM stops the
@@ -348,7 +354,8 @@ def _context(customer_id: str, agent_id: str, conversation_id: str) -> MaskConte
     """
     return MaskContext(
         detector=DETECTOR,
-        vault=_get_vault(customer_id).for_conversation(conversation_id),
+        vault=(_get_vault(customer_id).for_conversation(conversation_id)
+               .with_pseudonym_scope(_PSEUDONYM_SCOPE)),
         audit=AUDIT,
         cache=_MASK_CACHE,
         org_id=customer_id,

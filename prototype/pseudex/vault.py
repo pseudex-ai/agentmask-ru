@@ -1453,6 +1453,10 @@ def _loc_token_pattern() -> str:
 
 LOC_TOKEN_PATTERN = _loc_token_pattern()
 
+# Where the question «is this string our own substitute?» is asked. Named here
+# so the two entry points, the vault and the docs use ONE spelling of each.
+PSEUDONYM_SCOPES = ("conversation", "customer")
+
 TOKEN_RE = re.compile("|".join([
     r"[a-z]{8}@example\.ru",                      # EMAIL
     # NAME is combinatorial, so it is anchored on the FIRST-NAME pool rather than
@@ -1531,6 +1535,10 @@ class Vault:
         # while a conversation lives for one request. `for_conversation` hands
         # out a view instead — see there for why the scope has to exist at all.
         self._conversation = ""
+        # WHOSE SUBSTITUTE THIS IS, asked at conversation scope by default. See
+        # `with_pseudonym_scope` for the one reason a host widens it (agent
+        # memory) and for the price of widening.
+        self._pseudonym_scope = "conversation"
         self._lock = threading.Lock()
         self._conn = sqlite_connect(db_path, VAULT_STORE)
         self._conn.execute(
@@ -1869,6 +1877,39 @@ class Vault:
         """
         view = copy.copy(self)
         view._conversation = conversation
+        return view
+
+    def with_pseudonym_scope(self, scope: str) -> "Vault":
+        """A view whose question «is this string OUR substitute?» is asked at
+        `scope`: `conversation` (the default) or `customer`.
+
+        THE HOST'S MEMORY IS WHY THIS SETTING EXISTS. An agent with long-term
+        memory recalls a fact from an earlier dialogue — and every framework in
+        the field keys that store by USER, not by conversation (LangGraph Store,
+        Mem0, Google ADK, Anthropic's memory tool; a `fork` and a per-agent
+        handoff session do the same by other means). The recalled text carries
+        the substitute the model was shown then. Judged at conversation scope
+        that string is a stranger: it is masked a SECOND time, and the tool
+        receives the first dialogue's fake — 200 OK, empty residual list, and
+        nobody the wiser. Measured here, not argued.
+
+        THE PRICE OF WIDENING IS A REAL PERSON. `is_minted_token` is what stops
+        us re-masking our own substitute; widened to the customer it also stops
+        us masking a REAL person who happens to bear a name minted for somebody
+        else, and they reach the model in the clear for ever — 2-3 per run on
+        2979 people from NEREL. So the default does not move: a host without
+        memory must not pay for a problem it does not have, and 152-ФЗ counts
+        the leak, not the broken tool call.
+
+        A HOST THAT TURNS MEMORY ON DECLARES IT and trades that residual risk
+        for consistency across dialogues; a host that can pass a customer-level
+        conversation id instead pays nothing but the short-mention linking
+        inside one dialogue.
+        """
+        if scope not in PSEUDONYM_SCOPES:
+            raise ValueError(f"unknown pseudonym scope {scope!r}; expected one of {sorted(PSEUDONYM_SCOPES)}")
+        view = copy.copy(self)
+        view._pseudonym_scope = scope
         return view
 
     def tokenize(self, value: str, entity_type: str) -> str:
@@ -2935,6 +2976,12 @@ class Vault:
         # compare, so the guard behaves as it always did rather than inventing a
         # mismatch and re-masking somebody's echo.
         minted_in = row[0]
+        # THE HOST MAY HAVE DECLARED MEMORY. At customer scope the row alone
+        # settles it: our substitute is ours wherever it comes back from —
+        # a memory store keyed by user, a fork, another agent's session.
+        # `with_pseudonym_scope` states what that costs.
+        if self._pseudonym_scope == "customer":
+            return True
         if not minted_in or not self._conversation:
             return True
         return minted_in == self._conversation

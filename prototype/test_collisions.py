@@ -22,6 +22,7 @@ NEREL — чужая разметка, не наша: 3-7 обратных и 2-
 ОДИН клиент проходит через шлюз тысячами значений подряд — а это ровно та форма,
 в которой продукт и работает.
 """
+import json
 import random
 import sys
 
@@ -30,14 +31,16 @@ from pseudex.audit import AuditLog
 from pseudex.detect_all import Detector
 from pseudex.envelope import MaskContext, mask_one
 from pseudex.maskcache import MaskCache
-from pseudex.redact import mask_text, unmask_text
+from pseudex.redact import mask_text, unmask_arguments, unmask_text
 from pseudex.vault import Vault
 
 _ORG = "collide"
 
 
-def _context(detector: Detector, vault: Vault, conversation: str) -> MaskContext:
-    return MaskContext(detector=detector, vault=vault.for_conversation(conversation),
+def _context(detector: Detector, vault: Vault, conversation: str,
+             scope: str = "conversation") -> MaskContext:
+    return MaskContext(detector=detector,
+                       vault=vault.for_conversation(conversation).with_pseudonym_scope(scope),
                        audit=AuditLog(":memory:"), cache=MaskCache(4096),
                        org_id=_ORG, agent_id="a", conversation_id=conversation)
 
@@ -124,6 +127,56 @@ def test_real_person_named_like_a_substitute_is_masked(detector: Detector) -> No
     out = mask_one(f"Клиент {token} просит перезвонить", other)
     assert token not in out, f"тёзка подмены ушёл к модели открытым: {out!r}"
     print(f"вперёд OK — {token!r} в чужом разговоре замаскирован: {out!r}")
+
+
+def test_memory_recall_across_conversations(detector: Detector) -> None:
+    """ПАМЯТЬ АГЕНТА — ЭТО ЭХО ИЗ ДРУГОГО ДИАЛОГА, и область подмены решает,
+    чем оно окажется.
+
+    Агент с долговременной памятью вспоминает факт из прошлой беседы, и текст,
+    который хост подмешивает в промпт, несёт ПОДМЕНУ, показанную тогда. Все
+    известные хранилища памяти ключуются по ПОЛЬЗОВАТЕЛЮ, а не по беседе
+    (LangGraph Store, Mem0, Google ADK, memory tool Anthropic; fork сессии и
+    handoff с отдельной сессией дают то же самое другим способом).
+
+    ОБЕ ПОЛОВИНЫ РАЗМЕНА ПРОВЕРЯЮТСЯ ЗДЕСЬ, и вторая — не меньше первой:
+
+      * при `conversation` подмена из прошлой беседы читается как чужая строка,
+        маскируется ВТОРОЙ раз, и инструмент получает ФЕЙК первой беседы с
+        кодом 200 и пустым списком остатков;
+      * при `customer` она узнаётся, и инструмент получает настоящее значение;
+      * ценой этого узнавания идёт настоящий человек-тёзка чужой подмены: при
+        `customer` он уходит к модели ОТКРЫТЫМ ТЕКСТОМ, при `conversation` —
+        маскируется. Поэтому умолчание не двигается, а хост объявляет память
+        сам (`pseudonym_scope`, `PSEUDEX_PSEUDONYM_SCOPE`).
+    """
+    said = "это иванов пётр сергеевич, телефон 89162148803"
+    for scope, recalled_is_ours in (("conversation", False), ("customer", True)):
+        vault = Vault(":memory:", _ORG)
+        first = _context(detector, vault, "conv-A", scope)
+        shown = mask_one(said, first)
+        token = vault._conn.execute(  # noqa: SLF001 - the test reads the store directly
+            "SELECT token FROM tokens WHERE customer=? AND entity_type='NAME'", (_ORG,)).fetchone()[0]
+        assert token in shown, (scope, shown)
+
+        later = _context(detector, vault, "conv-B", scope)
+        memory = f"из памяти: клиент {token} звонил на прошлой неделе"
+        seen = mask_one(memory, later)
+        assert (token in seen) is recalled_is_ours, (scope, seen)
+        back = unmask_arguments(json.dumps({"name": token}, ensure_ascii=False),
+                                vault.for_conversation("conv-B").with_pseudonym_scope(scope))
+        # The token itself always resolves — the vault's own lookup is
+        # customer-wide. What the scope decides is whether the model was shown
+        # that string or a SECOND substitute standing for it.
+        assert json.loads(back)["name"].lower().startswith("иванов"), (scope, back)
+
+        # THE PRICE, measured in the same test rather than promised in a comment.
+        namesake = _context(detector, vault, "conv-C", scope)
+        out = mask_one(f"Клиент {token} просит перезвонить", namesake)
+        leaked = token in out
+        assert leaked is recalled_is_ours, (scope, out)
+    print("память OK — при `customer` подмена из прошлой беседы узнаётся, "
+          "при `conversation` перечеканивается; тёзка подмены — цена расширения")
 
 
 def test_echo_in_its_own_conversation_is_left_alone(detector: Detector) -> None:
@@ -219,6 +272,7 @@ def main() -> int:
     test_substitute_is_never_a_real_value()
     test_substitute_is_never_the_value_it_replaces()
     test_real_person_named_like_a_substitute_is_masked(detector)
+    test_memory_recall_across_conversations(detector)
     test_echo_in_its_own_conversation_is_left_alone(detector)
     test_migrated_vault_keeps_the_old_behaviour(detector)
     test_pool_is_not_narrowed_by_the_extra_rejections()

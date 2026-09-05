@@ -382,6 +382,21 @@ makes the rule mean anything and what makes it safe, and one change buys both.**
     another one. `tokens.minted_in` carries it and `is_minted_token` compares.
     A NULL (a row minted before the column) and an empty scope both behave as
     before — a caller that named no conversation has nothing to compare.
+- **AGENT MEMORY IS AN ECHO FROM ANOTHER DIALOGUE, and the conversation scope
+  reads it as a stranger.** Every long-term memory store in the field keys by
+  USER, not by conversation (LangGraph Store, Mem0, Google ADK, Anthropic's
+  memory tool; `fork` and a per-agent handoff session arrive at the same place
+  by other means), so the text the host injects carries the substitute the model
+  was shown in an earlier dialogue. Judged at conversation scope it is masked a
+  SECOND time and the tool receives the FIRST dialogue's fake — 200 OK, empty
+  residual list. Widening the question costs a real person: `is_minted_token`
+  is also what stops us masking somebody who bears a name minted elsewhere, and
+  at customer scope they reach the model in the clear (2-3 per run on 2979
+  NEREL people). So the default does NOT move — 152-ФЗ counts the leak, not the
+  broken tool call — and a host with memory declares it: `pseudonym_scope` on
+  `/mask`, `PSEUDEX_PSEUDONYM_SCOPE` for the process. `Vault.with_pseudonym_scope`
+  holds the argument; `test_collisions` pins BOTH halves of the trade, because a
+  price stated only in a comment is a price nobody re-measures.
 - **The role of the message is NOT that discriminator, and using it would leak
   everything.** The answer is detokenized before it is returned, so the assistant
   messages the customer re-sends carry REAL values, not tokens. «assistant means
@@ -411,6 +426,7 @@ is what keeps tokens consistent across workers. Audit is recorded on the cache *
 same value re-sent in a growing transcript is one protected value, not N.
 
 Env knobs: `PSEUDEX_DB_DIR`, `PSEUDEX_WORKERS`, `PSEUDEX_MASK_CONCURRENCY`, `PSEUDEX_MASK_CACHE_SIZE`,
+`PSEUDEX_PSEUDONYM_SCOPE` (`conversation` | `customer`; the sidecar also takes `pseudonym_scope` per request),
 `PSEUDEX_ADMIN_TOKEN`, `PSEUDEX_GATEWAY_TOKEN`, `PSEUDEX_UI_PORT`, `PSEUDEX_UI_TOKEN`, `PSEUDEX_UI_PASSWORD`, `PSEUDEX_UI`,
 `PSEUDEX_UI_ORG`, `PSEUDEX_UI_STATIC`, `PSEUDEX_ROLE` (`engine` | `proxy` | `ui` | `probe` | `rekey` | `decrypt`),
 `PSEUDEX_VAULT_KEY`, `PSEUDEX_VAULT_KEY_FILE`, `PSEUDEX_VAULT_KEY_CMD`, `PSEUDEX_VAULT_KEY_NEW`,

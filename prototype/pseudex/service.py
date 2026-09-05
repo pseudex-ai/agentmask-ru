@@ -49,7 +49,7 @@ from pseudex.maskcache import MaskCache
 from pseudex.operator import build_router
 from pseudex.profiling import snapshot as profiling_snapshot
 from pseudex.redact import residual_tokens, unmask_arguments, unmask_stream_chunk
-from pseudex.vault import Vault, count_values_since
+from pseudex.vault import PSEUDONYM_SCOPES, Vault, count_values_since
 
 # Without this the sidecar has NO logging configuration at all, so everything
 # below WARNING is silently discarded — including every "lease renewed" line. The
@@ -63,6 +63,12 @@ _log = logging.getLogger("pseudex.service")
 # Persistent vault + audit live under PSEUDEX_DB_DIR (a mounted volume in
 # production) so tokens stay reversible across restarts and workers.
 _DB_DIR = os.environ.get("PSEUDEX_DB_DIR", ".")
+# The default scope for «is this string our own substitute?», overridable per
+# request. Read once: a setting that changed under a running process would make
+# two halves of one dialogue disagree about whose the substitute is.
+_PSEUDONYM_SCOPE = os.environ.get("PSEUDEX_PSEUDONYM_SCOPE", "").strip() or "conversation"
+if _PSEUDONYM_SCOPE not in PSEUDONYM_SCOPES:
+    raise SystemExit(f"PSEUDEX_PSEUDONYM_SCOPE must be one of {list(PSEUDONYM_SCOPES)}, got {_PSEUDONYM_SCOPE!r}")
 # THE VAULT IS OPENED FIRST, before any other store is constructed, and that is
 # not redundant with the `Vault` built per org further down. `AuditLog` and
 # `Tenants` are process singletons, so a key that does not open THEM stops the
@@ -276,10 +282,12 @@ def _vault(org_id: str) -> Vault:
         return vault
 
 
-def _context(org_id: str, agent_id: str, conversation_id: str) -> MaskContext:
+def _context(org_id: str, agent_id: str, conversation_id: str,
+             pseudonym_scope: str = "") -> MaskContext:
     return MaskContext(
         detector=DETECTOR,
-        vault=_vault(org_id).for_conversation(conversation_id),
+        vault=(_vault(org_id).for_conversation(conversation_id)
+               .with_pseudonym_scope(pseudonym_scope or _PSEUDONYM_SCOPE)),
         audit=AUDIT,
         cache=_MASK_CACHE,
         org_id=org_id,
@@ -295,6 +303,7 @@ def _mask_request(
     agent_id: str,
     conversation_id: str,
     skip_template: bool,
+    pseudonym_scope: str = "",
 ) -> tuple[list[dict[str, object]], object]:
     """One unit of CPU-heavy work, so messages and tools share a single hop onto
     the worker thread instead of paying the offload twice.
@@ -306,7 +315,7 @@ def _mask_request(
     `time.sleep` on the loop, stalling /health and every other in-flight request
     in this worker. That is the exact failure the threadpool offload exists to
     prevent."""
-    context = _context(org_id, agent_id, conversation_id)
+    context = _context(org_id, agent_id, conversation_id, pseudonym_scope)
     result = (
         mask_messages(messages, context, skip_template),
         mask_tools(tools, context, skip_template),
@@ -475,6 +484,17 @@ async def mask(request: Request) -> JSONResponse:
     # "this payload carries the agent's own TEMPLATE", which covers both the
     # system prompt and the tool schemas.
     skip_template = bool(body.get("skip_system", False))
+    # THE HOST DECLARES WHETHER ITS AGENT HAS MEMORY. A substitute recalled from
+    # an earlier dialogue is only recognisable as ours at customer scope; the
+    # default stays `conversation`, because widening it also stops us masking a
+    # real person who bears a name we minted elsewhere. `Vault.with_pseudonym_
+    # scope` states the whole trade. An unknown value is a 400 rather than a
+    # silent fallback: a host that misspells the field must not believe it asked
+    # for a scope it did not get.
+    pseudonym_scope = str(body.get("pseudonym_scope", "")) or _PSEUDONYM_SCOPE
+    if pseudonym_scope not in PSEUDONYM_SCOPES:
+        return JSONResponse(
+            {"error": f"pseudonym_scope must be one of {list(PSEUDONYM_SCOPES)}"}, status_code=400)
     tools = body.get("tools")
     # CPU-heavy morphology runs in a worker thread (NOT the event loop), so
     # /health and other requests stay responsive while a large /mask is in
@@ -484,7 +504,7 @@ async def mask(request: Request) -> JSONResponse:
     # to a 5xx, which the caller treats as a block (it never sees raw PII).
     masked_messages, masked_tools = await anyio.to_thread.run_sync(
         _mask_request, messages, tools, org_id, agent_id, conversation_id,
-        skip_template,
+        skip_template, pseudonym_scope,
         limiter=_MASK_LIMITER,
     )
     payload: dict[str, object] = {"messages": masked_messages}
