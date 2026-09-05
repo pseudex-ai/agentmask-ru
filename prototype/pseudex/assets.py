@@ -283,9 +283,25 @@ def _build_quasi(raw: dict[str, object]) -> QuasiAssets:
     day = (r"(?:(?:двадцать|тридцать)\s+)?(?:перв|втор|трет|четвёрт|четверт|пят|шест|седьм|восьм|девят"
            r"|десят|одиннадцат|двенадцат|тринадцат|четырнадцат|пятнадцат|шестнадцат|семнадцат"
            r"|восемнадцат|девятнадцат|двадцат|тридцат)(?:ое|ого|ый|ым|ой|ий|его|ье|ья|ьего)")
-    spoken_year = (r"(?:\s+(?:тысяча\s+девятьсот|две\s+тысячи|тысяча))?"
-                   r"(?:\s+(?:[а-яё]+десят|[а-яё]+сот|двадцать|тридцать|сорок|девяносто|сто))?"
-                   r"\s+[а-яё]{3,}(?:ого|его)\s+года?")
+    # …AND «ГОДА» IS OPTIONAL WHEN THE YEAR CANNOT BE MISTAKEN FOR ANYTHING ELSE.
+    # «одиннадцатого сентября пятьдесят пятого» and «двадцать третьего марта
+    # тысяча девятьсот восемьдесят второго» are how the corpus's voice register
+    # says a birth date, and both ended at the month: the year stayed outside
+    # the span, next to a substitute carrying another year (seed-6060 run, 9 of
+    # 9 spoken dates of birth). A spoken century, or a tens word followed by an
+    # ordinal, or a decade ordinal («восьмидесятого») is a year on its own; a
+    # bare ordinal («пятого») still needs «года», or «родился третьего марта
+    # первого ребёнка» would end at the child.
+    century = r"(?:тысяча\s+девятьсот|две\s+тысячи|тысяча|двухтысячн\w+|тысяча\s+девятисот\w+)"
+    tens_card = r"(?:двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто)"
+    tens_ord = r"(?:двадцат|тридцат|сороков|пятидесят|шестидесят|семидесят|восьмидесят|девяност)(?:ого|его)"
+    unit_ord = r"[а-яё]{3,}(?:ого|его)"
+    spoken_year = (r"(?:"
+                   rf"\s+{century}(?:\s+{tens_card})?(?:\s+{unit_ord})?"
+                   rf"|\s+{tens_card}\s+{unit_ord}"
+                   rf"|\s+{tens_ord}"
+                   rf"|\s+{unit_ord}\s+года?"
+                   r")(?:\s+года?)?")
     text_date = re.compile(
         r"\b(\d{1,2})\s+(?:" + months + r")(?:\s+(?:19|20)\d{2}(?:\s*г\w*)?)?"
         r"|\b" + day + r"\s+(?:" + months + r")(?:" + spoken_year + r"|\s+(?:19|20)\d{2}(?:\s*г\w*)?)?",

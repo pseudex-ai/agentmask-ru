@@ -30,6 +30,7 @@ form, because that is what the operator typed into the CRM.
 """
 
 import re
+import time
 
 from pseudex.assets import ASSETS
 from pseudex.fuzzy import within_one_typo
@@ -293,6 +294,81 @@ def date_from_words(phrase: str) -> str:
     if not 1900 <= year <= 2100:
         return "" if tail else f"{day:02d}.{month:02d}"
     return f"{day:02d}.{month:02d}.{year}"
+
+
+# THE WAY BACK: a date in WORDS, for a substitute that replaces a date the
+# customer SAID. «родился одиннадцатого сентября пятьдесят пятого» was masked
+# as «родился 28.03.1972 пятьдесят пятого» (seed-6060 run, 9 of 9 spoken dates
+# of birth): a digit date in a spoken sentence, and the year left outside the
+# span standing next to a substitute that carries another year. The register
+# is part of what the model reads; a substitute in another register is a
+# substitute the model notices, and what it notices it edits.
+_ORDINAL_GEN: dict[int, str] = {
+    1: "первого", 2: "второго", 3: "третьего", 4: "четвёртого", 5: "пятого", 6: "шестого",
+    7: "седьмого", 8: "восьмого", 9: "девятого", 10: "десятого", 11: "одиннадцатого",
+    12: "двенадцатого", 13: "тринадцатого", 14: "четырнадцатого", 15: "пятнадцатого",
+    16: "шестнадцатого", 17: "семнадцатого", 18: "восемнадцатого", 19: "девятнадцатого",
+    20: "двадцатого", 30: "тридцатого", 40: "сорокового", 50: "пятидесятого",
+    60: "шестидесятого", 70: "семидесятого", 80: "восьмидесятого", 90: "девяностого",
+}
+_TENS_CARD: dict[int, str] = {20: "двадцать", 30: "тридцать", 40: "сорок", 50: "пятьдесят",
+                              60: "шестьдесят", 70: "семьдесят", 80: "восемьдесят", 90: "девяносто"}
+_MONTH_GEN: dict[int, str] = {1: "января", 2: "февраля", 3: "марта", 4: "апреля", 5: "мая", 6: "июня",
+                              7: "июля", 8: "августа", 9: "сентября", 10: "октября", 11: "ноября",
+                              12: "декабря"}
+
+
+def _ordinal_gen(value: int) -> str:
+    """«двадцать первого» for 21, «пятидесятого» for 50 — the genitive ordinal
+    a Russian date is said in, for 1..99."""
+    if value in _ORDINAL_GEN:
+        return _ORDINAL_GEN[value]
+    tens, unit = value - value % 10, value % 10
+    return f"{_TENS_CARD[tens]} {_ORDINAL_GEN[unit]}"
+
+
+def date_to_words(canonical: str, like: str) -> str:
+    """«dd.mm.yyyy» (or «dd.mm») said the way `like` says its own date: the
+    century spelled out when `like` spells it («тысяча девятьсот …»), two
+    digits otherwise («пятьдесят пятого»), «года» appended when `like` says
+    it. "" when the canonical is not a date. Every output reads back through
+    `date_from_words` to the same canonical — the module's self-test proves it."""
+    match = re.fullmatch(r"(\d{2})\.(\d{2})(?:\.(\d{4}))?", canonical.strip())
+    if not match:
+        return ""
+    day, month = int(match.group(1)), int(match.group(2))
+    if not (1 <= day <= 31 and 1 <= month <= 12):
+        return ""
+    words = [_ordinal_gen(day), _MONTH_GEN[month]]
+    if match.group(3):
+        year = int(match.group(3))
+        century, short = divmod(year, 100)
+        # THE CENTURY IS SPELLED WHEN TWO DIGITS WOULD READ BACK WRONG. «двадцать
+        # шестого» is 2026 to `date_from_words` and to a listener — a year not
+        # yet reached belongs to the previous century — so a person born in
+        # 1926 is said with the century whatever the customer's own habit was.
+        now = time.localtime().tm_year % 100
+        ambiguous = (century == 19 and short <= now) or (century == 20 and short > now)
+        spelled = "тысяч" in like.lower() or ambiguous
+        if century == 20:
+            if short == 0:
+                words.append("двухтысячного")
+            elif spelled:
+                words.extend(["две", "тысячи", _ordinal_gen(short)])
+            else:
+                words.append(_ordinal_gen(short))
+        elif century == 19:
+            if short == 0:
+                words.append("тысяча девятисотого")
+            elif spelled:
+                words.extend(["тысяча", "девятьсот", _ordinal_gen(short)])
+            else:
+                words.append(_ordinal_gen(short))
+        else:
+            return ""
+        if re.search(r"\bгод", like.lower()):
+            words.append("года")
+    return " ".join(words)
 
 
 def run_to_digits(words: list[str]) -> str:
@@ -569,3 +645,30 @@ def detect_spoken_plate(text: str) -> list[Span]:
     """
     return [Span(m.start(), m.end(), "PLATE", m.group(0))
             for m in _SPOKEN_PLATE.finditer(text)]
+
+
+def main() -> int:
+    """Self-test: every spoken date reads back to the canonical it was made from."""
+    import time as _time
+    failures = 0
+    year_now = _time.localtime().tm_year
+    for year in (1930, 1955, 1960, 1980, 1987, 1999, 2000, 2005, 2010, 2021, year_now % 100 + 1900):
+        for day in (1, 3, 4, 11, 17, 20, 21, 28, 30, 31):
+            for month in (1, 5, 9, 12):
+                canonical = f"{day:02d}.{month:02d}.{year}"
+                for like in ("одиннадцатого сентября пятьдесят пятого", "двадцать третьего марта тысяча девятьсот восемьдесят второго года"):
+                    words = date_to_words(canonical, like)
+                    back = date_from_words(words)
+                    if back != canonical:
+                        failures += 1
+                        if failures <= 8:
+                            print(f"FAIL {canonical} -> {words!r} -> {back!r}")
+    if date_to_words("17.08", "родился семнадцатого августа") != "семнадцатого августа":
+        failures += 1
+        print("FAIL a date without a year stays without one")
+    print("spoken: PASS" if not failures else f"spoken: FAIL ({failures})")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

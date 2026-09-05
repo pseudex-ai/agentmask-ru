@@ -419,6 +419,84 @@ def test_preposition_is_not_a_litera(vault: Vault, detector: Detector) -> None:
           f"token={token!r} back={back}")
 
 
+def test_corrected_address_shares_its_street(vault: Vault, detector: Detector) -> None:
+    """A customer who corrects the HOUSE keeps the STREET, and so must the
+    substitutes: «заречная пятьдесят семь … ой нет, правильно заречная двадцать
+    девять» was «Черёмуховая 15 … Грушевая 107» — a correction between two
+    unrelated places (32 of 36 two-address `correction` cases on the seed-6060
+    run). One real street in a dialogue is one fake street; the numbers differ,
+    the `street` field the agent fills from the fake resolves to the corrected
+    real spelling, and the house to the corrected house."""
+    import json
+    from pseudex.redact import unmask_arguments
+    for said, street, house in (
+        ("курьера на адрес заречная пятьдесят семь квартира сто восемьдесят семь ой нет правильно заречная двадцать девять квартира сто восемьдесят семь это в воткинск", "заречная", "29"),
+        ("курьера на адрес калашнкова 61кв134 стоп правильно калашникова 33 квартира 134 это в абакан", "калашникова", "33"),
+        ("привет курьера на энгельса 134 кв 92 нет не так правильно энгельса 106 квартира 92 это в воткинск", "энгельса", "106"),
+    ):
+        talk = Vault(":memory:", "acme").for_conversation("fix")
+        masked = mask_text(said, talk, detector.detect(said))
+        tokens = [row[0] for row in talk._conn.execute("SELECT token FROM tokens WHERE entity_type='LOC' ORDER BY rowid").fetchall()]  # noqa: SLF001
+        heads = {morph_places.split_roles(token).get("street", "") for token in tokens}
+        check(f"one fake street for one real street: {said[:30]}…", len(tokens) == 2 and len(heads) == 1,
+              f"tokens={tokens}")
+        houses = {morph_places.split_roles(token).get("house", "") for token in tokens}
+        check("two different fake houses", len(houses) == 2, f"tokens={tokens}")
+        last = morph_places.split_roles(tokens[-1])
+        back = json.loads(unmask_arguments(json.dumps({"address": {"street": last["street"], "building": last["house"]}}, ensure_ascii=False), talk))
+        check("street and house restore to the CORRECTED real address",
+              back == {"address": {"street": street, "building": house}}, f"masked={masked!r} back={back}")
+    # two DIFFERENT streets in one dialogue still get two different fake streets
+    said = "курьера на заречная 57 квартира 187 а потом на энгельса 106 квартира 92 это в воткинск"
+    talk = Vault(":memory:", "acme").for_conversation("two")
+    mask_text(said, talk, detector.detect(said))
+    tokens = [row[0] for row in talk._conn.execute("SELECT token FROM tokens WHERE entity_type='LOC' ORDER BY rowid").fetchall()]  # noqa: SLF001
+    heads = {morph_places.split_roles(token).get("street", "") for token in tokens}
+    check("two real streets keep two fake streets", len(tokens) == 2 and len(heads) == 2, f"tokens={tokens}")
+
+
+def test_spoken_birth_date_keeps_its_register(vault: Vault, detector: Detector) -> None:
+    """A date of birth SAID is replaced by a date SAID: «родился одиннадцатого
+    сентября пятьдесят пятого» was masked as «родился 28.03.1972 пятьдесят
+    пятого» (9 of 9 spoken dates on the seed-6060 run) — digits in a spoken
+    sentence and the real year left standing outside the span. Now the span
+    reaches the year with or without «года», the substitute is in words, in
+    the customer's own century style, keeps the year and the side of today
+    (so the age the agent derives agrees), the ISO the agent writes resolves,
+    and the prose paraphrase comes back as the real date."""
+    import json
+    import time
+    from pseudex.redact import unmask_arguments
+    from pseudex.vault import _date_canonical
+    today = (time.localtime().tm_mon, time.localtime().tm_mday)
+    for said, real_iso, year_words in (
+        ("запишите кузнецова дмитрия андреевича родился одиннадцатого сентября пятьдесят пятого", "1955-09-11", "пятьдесят"),
+        ("пациент родилась двадцать третьего марта тысяча девятьсот восемьдесят второго", "1982-03-23", "тысяча девятьсот"),
+        ("дата рождения двадцать первого сентября восьмидесятого года", "1980-09-21", "года"),
+    ):
+        talk = Vault(":memory:", "acme").for_conversation("dob")
+        spans = [s for s in detector.detect(said) if s.entity_type == "DOB"]
+        check(f"the spoken year is inside the DOB span: {said[-40:]}", len(spans) == 1 and said.endswith(spans[0].value.rstrip()),
+              f"spans={[s.value for s in spans]}")
+        masked = mask_text(said, talk, detector.detect(said))
+        check("no digit in the substitute of a spoken date", not any(ch.isdigit() for ch in masked), masked)
+        token = talk._conn.execute("SELECT token FROM tokens WHERE entity_type='DOB'").fetchone()[0]  # noqa: SLF001
+        fake = _date_canonical(token)
+        real_d, real_m, real_y = int(real_iso[8:]), int(real_iso[5:7]), int(real_iso[:4])
+        check("the year is kept", fake.endswith(str(real_y)), f"token={token!r}")
+        check("the century style of the customer is mirrored", year_words in token, f"token={token!r}")
+        fake_md = (int(fake[3:5]), int(fake[:2]))
+        check("the same side of today, so the derived age agrees",
+              (fake_md < today) == ((real_m, real_d) < today) and fake_md != (real_m, real_d), f"fake={fake} real={real_iso}")
+        iso = f"{fake[6:]}-{fake[3:5]}-{fake[:2]}"
+        back = json.loads(unmask_arguments(json.dumps({"patient": {"birth_date": iso}}), talk))
+        check("the ISO the agent writes resolves to the real ISO", back == {"patient": {"birth_date": real_iso}}, f"{iso} -> {back}")
+        check("the prose paraphrase comes back as the real date",
+              unmask_text(f"Пациент родился {token}, записал.", talk) == f"Пациент родился {said.split('родил', 1)[-1].split(' ', 1)[-1] if 'родил' in said else said.split('рождения ', 1)[-1]}, записал.",
+              unmask_text(f"Пациент родился {token}, записал.", talk))
+        check("the spoken substitute is recognised as ours when echoed", talk.is_minted_token(token), token)
+
+
 def test_address_signature_is_inflection_proof() -> None:
     """Every pool entry must key the same in every case, or restoration misses.
 
@@ -480,6 +558,8 @@ def main() -> int:
     test_address_signature_is_inflection_proof()
     test_street_stays_a_street(vault, detector)
     test_preposition_is_not_a_litera(vault, detector)
+    test_corrected_address_shares_its_street(vault, detector)
+    test_spoken_birth_date_keeps_its_register(vault, detector)
     test_chat_register(detector)
 
     print()

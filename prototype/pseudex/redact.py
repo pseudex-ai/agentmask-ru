@@ -10,6 +10,7 @@ import re
 
 from pseudex.detect import NameSpan, PartSpan, Span
 from pseudex import morph_names, morph_places, translit
+from pseudex.assets import ASSETS
 from pseudex.profiling import stage
 from pseudex.vault import LOC_TOKEN_PATTERN, TOKEN_RE, Vault, name_key, place_key, _date_canonical
 
@@ -350,7 +351,17 @@ def _date_readings(value: str) -> list[str]:
 
 
 def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> list[tuple[int, int, str]]:
-    matches = list(TOKEN_RE.finditer(text))
+    matches: list[re.Match[str]] = list(TOKEN_RE.finditer(text))
+    # A DATE SAID IN WORDS is a token too, since a spoken date of birth is
+    # replaced by a spoken substitute; `TOKEN_RE` knows the digit shapes only,
+    # so the spoken-date arm of the detector supplies the candidates. A miss
+    # costs one indexed lookup, as every other candidate does.
+    if ASSETS.is_loaded:
+        taken = [(m.start(), m.end()) for m in matches]
+        for spoken_date in ASSETS.get().quasi.text_date.finditer(text):
+            if not any(a < spoken_date.end() and spoken_date.start() < b for a, b in taken):
+                matches.append(spoken_date)
+        matches.sort(key=lambda m: m.start())
     if not matches:
         return []
     candidates = {match.group() for match in matches}
@@ -365,6 +376,16 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> li
 
     asked = candidates | {alt for group in readings.values() for alt in group}
     values = vault.detokenize_many(asked, for_tool)
+    # A DATE THE VAULT HOLDS IN WORDS. The agent writes «1955-08-17» for the
+    # substitute «семнадцатого августа пятьдесят пятого года»; the reading
+    # «17.08.1955» is no token, but it is the canonical the vault indexed the
+    # spoken substitute under.
+    for value in candidates:
+        for alternate in (value, *readings.get(value, ())):
+            if alternate not in values and _DATE_ANY.match(alternate):
+                owner = vault.date_owner(alternate, for_tool)
+                if owner is not None:
+                    values[alternate] = owner
 
     def resolved(written: str) -> str | None:
         if written in values:

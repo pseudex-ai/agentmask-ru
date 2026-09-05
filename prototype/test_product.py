@@ -709,8 +709,15 @@ def test_spoken_birth_date_in_the_agents_form() -> None:
     talk = Vault(":memory:", "acme").for_conversation("d-1")
     mask_text(said, talk, spans)
     token = talk._conn.execute("SELECT token FROM tokens WHERE entity_type='DOB'").fetchone()[0]  # noqa: SLF001
-    day, month, year = token.split(".")
-    for written, want in ((f"{year}-{month}-{day}", "1987-03-14"), (token, "14.03.1987"), (f"{day}/{month}/{year}", "14/03/1987")):
+    # THE SUBSTITUTE FOR A SPOKEN DATE IS SPOKEN TOO (05.09): no digit in it,
+    # the same century style and «года» as the customer's; its canonical is
+    # what the agent's ISO / dotted / slashed writings resolve through.
+    from pseudex.vault import _date_canonical
+    assert not any(ch.isdigit() for ch in token) and token.endswith("года"), token
+    day, month, year = _date_canonical(token).split(".")
+    assert year == "1987", token
+    for written, want in ((f"{year}-{month}-{day}", "1987-03-14"), (f"{day}.{month}.{year}", "14.03.1987"),
+                          (f"{day}/{month}/{year}", "14/03/1987"), (token, "14.03.1987")):
         back = json.loads(unmask_arguments(json.dumps({"birth_date": written}), talk))["birth_date"]
         assert back == want, (written, back, want)
     # «четвёртое августа девяносто седьмого года»: restoring every «е» of the
@@ -722,9 +729,9 @@ def test_spoken_birth_date_in_the_agents_form() -> None:
     talk = Vault(":memory:", "acme").for_conversation("d-2")
     mask_text(said, talk, detector.detect(said))
     token = talk._conn.execute("SELECT token FROM tokens WHERE entity_type='DOB'").fetchone()[0]  # noqa: SLF001
-    assert token.endswith(".1997"), token
+    assert _date_canonical(token).endswith(".1997") and "девяносто" in token, token
     assert json.loads(unmask_arguments(json.dumps({"birth_date": token}), talk))["birth_date"] == "04.08.1997"
-    print("spoken birth date OK — rebuilt component-wise into ISO, dotted and slashed forms")
+    print("spoken birth date OK — a spoken substitute, rebuilt component-wise into ISO, dotted and slashed forms")
 
 
 def test_fresh_seed_shapes() -> None:

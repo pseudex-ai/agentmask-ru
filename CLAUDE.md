@@ -1042,6 +1042,30 @@ direction when done the obvious way:
   `tools.state_spec_for` maps the record path; one typed comparison per value
   at every level.
 
+- **ONE REAL STREET IN A DIALOGUE IS ONE FAKE STREET.** A customer who corrects
+  the house keeps the street — «заречная пятьдесят семь … ой нет, правильно
+  заречная двадцать девять» — and the two mentions minted two unrelated streets,
+  so the model read a correction between two places (32 of 36 two-address
+  `correction` cases). `_same_street_in_conversation` hands the mint the fake
+  street already standing for that stem (equal or one typo apart, as
+  `_keys_match`), only the numbers are drawn, and a bare street with two owners
+  on one street answers with the LATEST row — the correction is the later
+  mention. Two different streets still get two different fakes.
+- **A DATE THE CUSTOMER SAID IS REPLACED BY A DATE IN WORDS, and the span
+  reaches the year without «года».** «родился одиннадцатого сентября пятьдесят
+  пятого» was masked as «родился 28.03.1972 пятьдесят пятого»: digits in a
+  spoken sentence, the real year left outside. The spoken-year arm accepts a
+  century, tens+ordinal or a decade ordinal on their own; a bare ordinal still
+  needs «года». `spoken.date_to_words` mirrors the customer's century style and
+  spells the century when two digits would read back to the wrong one; the ISO
+  the agent writes resolves through the canonical-date index (`date_owner`), and
+  the exact-token pass takes spoken dates from the detector's own arm.
+- **THE FAKE DATE OF BIRTH KEEPS THE YEAR AND THE SIDE OF TODAY — the owner's
+  decision, one bit of leak budget beyond the year.** The year alone left the
+  derived age off by one in 37 triples (real birthday still to come, fake one
+  passed). A year identifies nobody (~1.5M people a year); the day and month are
+  what turn a bucket into a person, and they stay fake.
+
 ## Conventions
 
 - Comments are in English; product docs (`docs/`) are in Russian. Both are unusually dense —
