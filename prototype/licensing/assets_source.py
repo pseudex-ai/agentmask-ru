@@ -1076,6 +1076,23 @@ KEY_TYPE: dict[str, str] = {
     "снилс": "SNILS", "snils": "SNILS",
     "инн": "INN", "inn": "INN",
     "паспорт": "PASSPORT", "passport": "PASSPORT",
+    # THE REQUISITE OBJECT NAMES THE DOCUMENT IN ITS OWN KEYS. Bitrix24's
+    # `crm.requisite` is where a Russian CRM keeps identity documents, and it
+    # splits the passport across `RQ_IDENT_DOC_SER` and `RQ_IDENT_DOC_NUM` —
+    # a four-digit and a six-digit field that no shape rule can claim on its
+    # own, arriving from the CUSTOMER'S OWN system. Both went to the model in
+    # the clear. Keys are matched with separators removed, so `RQ_IDENT_DOC_SER`
+    # is «rqidentdocser».
+    #
+    # `RQ_KPP` and `RQ_OGRN` are deliberately ABSENT: they identify a legal
+    # entity, which 152-ФЗ does not cover, and masking them would break the
+    # very requisites the object exists for. `RQ_OGRNIP` is likewise left to
+    # the shape recogniser, which already types it — an individual
+    # entrepreneur is a physical person.
+    "rqidentdocser": "PASSPORT", "rqidentdocnum": "PASSPORT",
+    "rqidentdoc": "PASSPORT", "identdocser": "PASSPORT", "identdocnum": "PASSPORT",
+    "rqinn": "INN", "rqlastname": "NAME", "rqfirstname": "NAME", "rqsecondname": "NAME",
+    "rqname": "NAME", "rqemail": "EMAIL", "rqphone": "PHONE",
     "карта": "CARD", "карты": "CARD", "card": "CARD",
     "почта": "EMAIL", "email": "EMAIL", "мейл": "EMAIL", "емейл": "EMAIL",
     "адрес": "LOC", "address": "LOC",
