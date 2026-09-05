@@ -997,9 +997,23 @@ def _word_number_for(version: str) -> re.Pattern[str]:
     the last eight diverging triples). Keyed on the bundle version so a fresh
     lease rebuilds it."""
     alternation = spoken.numeral_alternation()
+    # A ONE-LETTER PREPOSITION IN FRONT OF WHAT IT GOVERNS IS NOT A LITERA.
+    # «бульвар комиссарова двадцать семь в третий подъезд» read as house «27в»
+    # here even after the detector's own pattern learnt better, because the
+    # roles are cut by THIS pattern and the detector's is only the span. The
+    # test is the word after the letter: an ordinal («в третий», «к пятому»)
+    # or a marker in an oblique case («в квартиру», «к дому») — a litera is
+    # followed by neither, and a marker in the nominative («в квартира двести
+    # двадцать девять», a real call) keeps the letter a litera. Only the
+    # letters that are prepositions are tested: «двадцать пять а третий
+    # подъезд» keeps its «а».
     return re.compile(
         rf"(?i)\b(?:{alternation})\b(?:\s+\b(?:{alternation})\b)*"
-        rf"(?:\s+[а-яёА-ЯЁ](?![а-яёА-ЯЁ]))?")
+        rf"(?:\s+(?![вксуо]\s+{_PREP_GOVERNS})[а-яёА-ЯЁ](?![а-яёА-ЯЁ]))?")
+
+
+_PREP_GOVERNS = (r"(?:" + _ORDINAL_WORD + r"|квартир[уе]|под[ъь]езд[еу]|дом[еу]|корпус[еу]"
+                 r"|этаж[еу]|строени[ие]|офис[еу]|помещени[ие])\b")
 
 
 def _word_number() -> re.Pattern[str]:

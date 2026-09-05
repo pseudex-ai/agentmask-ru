@@ -489,7 +489,20 @@ _ENTRANCE = (r"(?:" + _ORDINAL + r"|последн\w+|крайн\w+|углов\w
 # markers («д 65 к 1»), and read as a litera the marker closed the span at
 # «65 к» — the корпус went to the model outside an address already reported
 # as found, and the directory record keyed without it.
-_LITERA = r"(?:\s+(?![яЯ](?![а-яё]))(?![кс]\.?\s*\d)[а-яё](?=(?:кв|к|стр)\.?\d|[^а-яё]|$))?"
+# …AND NOT A PREPOSITION IN FRONT OF WHAT IT GOVERNS. «бульвар комиссарова
+# двадцать семь **в** третий подъезд» — the «в» is «in», not house 27в: it
+# stands before an ORDINAL («в третий», «к пятому») or before a marker in an
+# oblique case («в квартиру», «в подъезде», «к дому»), and a litera is never
+# followed by either. The building went to the courier as «27в» on the 05.09
+# medium run (decompose-001, three triples, voice register). Only the letters
+# that ARE prepositions are tested — «двадцать пять а третий подъезд» keeps
+# its «а», which is a litera and never a preposition — and a marker in the
+# NOMINATIVE after the letter still reads as a litera («дом семнадцать в
+# квартира двести двадцать девять» is a real call and stays whole).
+_PREP_GOVERNS = (r"(?:" + _ORDINAL + r"|квартир[уе]|под[ъь]езд[еу]|дом[еу]|корпус[еу]"
+                 r"|этаж[еу]|строени[ие]|офис[еу]|помещени[ие])\b")
+_LITERA = (r"(?:\s+(?![яЯ](?![а-яё]))(?![кс]\.?\s*\d)(?![вксуо]\s+" + _PREP_GOVERNS + r")"
+           r"[а-яё](?=(?:кв|к|стр)\.?\d|[^а-яё]|$))?")
 
 # ЛИТЕРА ПРИ ЦИФРОВОМ НОМЕРЕ ДОМА — ТА ЖЕ БУКВА, НО ДРУГОЙ РЕГИСТР ТЕКСТА.
 # «воткинское шоссе 4 а квартира 58» обрывалось на «4»: у речевых арок литера

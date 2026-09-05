@@ -43,6 +43,7 @@ python3 test_perf_masking.py   # cache/audit-dedup/leak-regression/loop-responsi
 python3 test_localui.py        # operator surface is closed, reveals audited, requests billed apart from entities
 python3 test_persona_defects.py  # the five defects a persona run found and no corpus of ours did
 python3 test_collisions.py     # подмена, совпавшая с настоящим значением: обе половины
+python3 test_derived_forms.py  # транслит и инициалы в аргументе: в конвенции модели, разговор решает
 ```
 
 Detection quality (needs generated datasets — all gitignored, regenerate before use):
@@ -997,6 +998,49 @@ direction when done the obvious way:
   already leased for the arms that look for a type word; asking them here needs
   no second list. «дорог» was also simply MISSING from those stems, which is why
   the collision was reachable at all.
+
+- **A MODEL TRANSLITERATES BY LETTER, NOT BY STANDARD, AND THE RESTORED NAME
+  MUST FOLLOW THE MODEL.** Four tables and «which one reproduces the model's
+  word» was the first design; measured on 1 812 Latin words the control arm
+  wrote for real names, no table reproduces «Meshcheryakova» and 96 words
+  follow endings no standard lists. Worse, when several tables explained the
+  word equally the FIRST won and ICAO's «iu» went into «BITIUKOVA» against the
+  control's «BITYUKOVA» — 38 triples, 33 with both controls agreeing. The unit
+  is the letter or the ending (`translit.UNITS`): `align` learns the model's
+  choice per unit from the SUBSTITUTE, `render` applies it to the real name and
+  fills the rest from the measured `DEFAULT` (й→y 112:24, ю→yu 87:0, «-ия»→ia
+  36:0); the vault indexes one `fold` under which every rendering collides. The
+  benchmark's scripted agent writes the same measured convention from its own
+  copy — an instrument writing ICAO scored the engine against a convention no
+  model uses.
+- **A PIECE OF A NAME IS AMBIGUOUS ACROSS A CUSTOMER AND UNAMBIGUOUS IN A
+  CONVERSATION; A SINGLE INITIAL IS AMBIGUOUS EVEN THERE.** «Т.О.» is owned by
+  many substitutes in a vault that served a thousand dialogues, and «no single
+  owner» sent the fake to the CRM. `residual_of` breaks the tie by `minted_in`
+  — the conversation the substitute was handed to — and refuses when two
+  substitutes of ONE conversation share the piece. A lone «С.» is one letter,
+  which no index may hold; its evidence is the OBJECT: the name it abbreviates
+  was restored one key over in the same tool call (`_join_initials`,
+  positional, from the same fake). 50 of 56 initials the gateway wrote
+  differently on the 05.09 medium run were single, and every such call carried
+  `first_name` beside them.
+- **A ONE-LETTER PREPOSITION IN FRONT OF WHAT IT GOVERNS IS NOT A LITERA.**
+  «двадцать семь в третий подъезд» is house 27 IN the third entrance; it went to
+  the courier as «27в». The test is the word after the letter — an ordinal («в
+  третий», «к пятому») or a marker in an oblique case («в квартиру», «к дому»)
+  — and only the letters that ARE prepositions (в, к, с, у, о) are tested, so
+  «двадцать пять а третий подъезд» keeps its litera and «семнадцать в квартира
+  двести двадцать девять» (a real call, nominative marker) stays whole. The rule
+  lives in TWO places, the leased `_LITERA` of the detector and
+  `_word_number_for` of the role split: the span was already whole, the roles
+  were cut by the second.
+- **THE THREE LEVELS OF THE BENCHMARK ARE A LADDER OF STRICTNESS, NOT THREE
+  EQUALITIES.** The mock stores a RECORD (`address.house`), the schema names an
+  argument (`contact.address.house`); read through `spec_for`, no spec resolved
+  and L3 fell back to raw string equality while L2 called the same value
+  `agree` — 186 of 437 diverging triples consisted of such lines only.
+  `tools.state_spec_for` maps the record path; one typed comparison per value
+  at every level.
 
 ## Conventions
 

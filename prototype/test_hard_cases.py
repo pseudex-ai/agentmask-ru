@@ -387,6 +387,38 @@ def test_addresses(vault: Vault, detector: Detector) -> None:
           not nominative_in_oblique, f"{nominative_in_oblique}")
 
 
+def test_preposition_is_not_a_litera(vault: Vault, detector: Detector) -> None:
+    """«двадцать семь в третий подъезд» is house 27 IN the third entrance, not
+    house 27в. The letter is a preposition when what follows is what a
+    preposition governs — an ordinal, a marker in an oblique case — and a
+    litera when a nominative marker follows («семнадцать в квартира двести
+    двадцать девять» is a real call). The building went to the courier as
+    «27в» on the 05.09 medium run (decompose-001, voice register)."""
+    import json
+    from pseudex.redact import unmask_arguments
+    for said, house in (
+        ("здравствуйте курьера на воткинск бульвар комиссарого двадцать семь в третий подъезд квартира сто шестьдесят два", "двадцать семь"),
+        ("адрес улица ленина двадцать семь в квартиру пять", "двадцать семь"),
+        ("адрес улица ленина двадцать семь к пятому подъезду", "двадцать семь"),
+        ("бибиревская дом семнадцать в квартира двести двадцать девять", "семнадцать в"),
+        ("так двадцать пять а корпус два квартира двадцать семь", "двадцать пять а"),
+    ):
+        spans = [s for s in detector.detect(said) if s.entity_type == "LOC"]
+        check(f"one address span: {said[:40]}…", len(spans) == 1, f"{[s.value for s in spans]}")
+        if len(spans) != 1:
+            continue
+        roles = morph_places.split_roles(spans[0].value)
+        check(f"house role is «{house}»", roles.get("house") == house, f"roles={roles}")
+    said = "здравствуйте курьера на воткинск бульвар комиссарого двадцать семь в третий подъезд квартира сто шестьдесят два"
+    talk = Vault(":memory:", "acme").for_conversation("litera")
+    masked = mask_text(said, talk, detector.detect(said))
+    token = talk._conn.execute("SELECT token FROM tokens WHERE entity_type='LOC'").fetchone()[0]  # noqa: SLF001
+    fake = morph_places.split_roles(token)
+    back = json.loads(unmask_arguments(json.dumps({"address": {"building": fake["house"], "porch": fake["entrance"], "sflat": fake["flat"]}}), talk))
+    check("building 27, porch 3, flat 162 reach the courier", back == {"address": {"building": "27", "porch": "3", "sflat": "162"}},
+          f"token={token!r} back={back}")
+
+
 def test_address_signature_is_inflection_proof() -> None:
     """Every pool entry must key the same in every case, or restoration misses.
 
@@ -447,6 +479,7 @@ def main() -> int:
     test_addresses(vault, detector)
     test_address_signature_is_inflection_proof()
     test_street_stays_a_street(vault, detector)
+    test_preposition_is_not_a_litera(vault, detector)
     test_chat_register(detector)
 
     print()
