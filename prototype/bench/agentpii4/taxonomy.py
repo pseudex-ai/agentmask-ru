@@ -21,8 +21,8 @@ from bench.agentpii4.tools import FieldSpec
 
 DIVERGENCE_KINDS: tuple[str, ...] = (
     "agree", "absent", "extra", "residual", "validated_refused", "ref_refused",
-    "control_erred", "derived", "other_person", "stale_value", "container_embedded",
-    "reformatted", "fragment", "composed", "other")
+    "control_erred", "derived", "same_person_variant", "other_person", "stale_value",
+    "container_embedded", "reformatted", "fragment", "composed", "other")
 TRANSFORM_KINDS: tuple[str, ...] = (
     "verbatim", "reformatted", "fragment", "composed", "derived",
     "container_embedded", "invented", "absent")
@@ -241,6 +241,18 @@ def classify_field(spec: FieldSpec, ref: FieldObs, obs: FieldObs, real: PiiItem 
         if other.type == spec.pii_type:
             try:
                 if same_value(obs.restored, other.canonical, other.type) or is_part_of(obs.restored, other.parts):
+                    # THE SAME PERSON, ANOTHER SPELLING. The customer wrote
+                    # «каллашникова 10»; the control, reading the typo, sent the
+                    # directory's «Калашникова, 10» and bound to the directory
+                    # item; the gateway returned the customer's own words, which
+                    # are ALSO an item of this case — the message one. Ten fields
+                    # on the 05.09 medium run were filed as `other_person` this
+                    # way, and every one was one person, one place, two spellings.
+                    # The identity's first segment names the person («p18.sugg0»,
+                    # «p18.addr»); a different person has a different one.
+                    if real is not None and _person_of(other.identity) == _person_of(real.identity):
+                        return verdict("same_person_variant", other.id,
+                                       "то же лицо и место в другом написании: контроль нормализовал, шлюз вернул как написано")
                     return verdict("other_person", other.identity)
             except Exception:  # noqa: BLE001
                 continue
@@ -268,6 +280,10 @@ def classify_field(spec: FieldSpec, ref: FieldObs, obs: FieldObs, real: PiiItem 
                              [(one.type, one.canonical) for one in others])
         return verdict("other", sub)
     return verdict("other", "unbound")
+
+
+def _person_of(identity: str) -> str:
+    return identity.split(".", 1)[0]
 
 
 def substitute_parts(pii_type: str, surface: str) -> dict[str, str]:

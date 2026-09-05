@@ -432,7 +432,7 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
         if policy.derives and name["first"]:
             options = derive.initials({"given": name["first"], "patronymic": name["middle"]})
             contact["initials"] = next((one for one in sorted(options) if re.fullmatch(r"[А-ЯЁ]\.(?:[А-ЯЁ]\.)?", one)), "И.")
-            contact["name_latin"] = " ".join(derive.translit_icao(word) for word in (name["last"], name["first"]) if word).upper()
+            contact["name_latin"] = " ".join(derive.translit_common(word) for word in (name["last"], name["first"]) if word).upper()
             gender = derive.gender({"given": name["first"], "surname": name["last"], "patronymic": name["middle"]})
             contact["gender"] = "F" if "female" in gender else "M"
         if phone:
@@ -497,7 +497,7 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
         if policy.validates_checksum and card_surface and not _checksum_ok("CARD", card_surface, card_parts):
             pass
         elif digits:
-            holder = " ".join(derive.translit_icao(word) for word in (name["first"], name["last"]) if word).upper() if policy.derives else "CARD HOLDER"
+            holder = " ".join(derive.translit_common(word) for word in (name["first"], name["last"]) if word).upper() if policy.derives else "CARD HOLDER"
             # THE RECEIPT IS NOT OPTIONAL WHEN A CONTACT IS KNOWN. 54-ФЗ makes
             # one of email/phone mandatory, and both acquirers refuse without
             # it — an agent holding a phone fills it, or the sale stops.

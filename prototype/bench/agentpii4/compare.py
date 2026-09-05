@@ -16,7 +16,7 @@ from bench.agentpii4 import taxonomy
 from bench.agentpii4.parts import parts_of
 from bench.agentpii4.schema import Case, PiiItem
 from bench.agentpii4.taxonomy import FieldObs, FieldVerdict
-from bench.agentpii4.tools import REGISTRY, flatten, spec_for
+from bench.agentpii4.tools import REGISTRY, flatten, spec_for, state_spec_for
 
 
 @dataclass(frozen=True)
@@ -153,7 +153,7 @@ def level_state(ref: ArmRun, obs: ArmRun) -> tuple[bool, bool, tuple[str, ...]]:
         lf = flatten(left["fields"])
         rf = flatten(right["fields"])
         for path in sorted(set(lf) | set(rf)):
-            field_spec = spec_for(str(left["tool"]), path)
+            field_spec = state_spec_for(str(left["tool"]), path)
             if field_spec is not None and field_spec.kind == "free":
                 continue
             lv, rv = lf.get(path), rf.get(path)

@@ -167,10 +167,39 @@ def _apply(table: dict[str, str], word: str) -> str:
 
 
 def translit_icao(word: str) -> str:
-    """The ICAO spelling — what a model writes unprompted («Kuznetsov», not the
-    ГОСТ «Kuzneczov»); the scripted agent uses it so the instrument's habit is
-    a model's habit."""
+    """The ICAO spelling («Kuznetsov», not the ГОСТ «Kuzneczov»)."""
     return "".join(ch for ch in _apply(_ICAO, word) if ch.isalpha())
+
+
+# WHAT A MODEL ACTUALLY WRITES, measured — not a standard. Over 1 812 Latin
+# words the CONTROL arm wrote for real names on three live runs (03.09, 04.09,
+# 05.09; claude-sonnet-4-6), letter by letter: й→y 112:24, ю→yu 87:0, я→ya
+# 37:26, х→kh 93:0, ц→ts 104:0, ё→e 72:24, ь dropped 149:0; endings «-ий»→iy
+# 77:51, «-ый»→y 24:2, «-ия»→ia 36:0, «ья»→ia 22:2. The scripted agent wrote
+# ICAO before, and the smoke test then scored the engine against a convention
+# no model uses: 44 divergences on 474 cases, all of them «SERGEI» against
+# «SERGEY». The instrument's habit must be a MODEL's habit, and this is the
+# measured one; it is kept here, as the engine's own table is kept there, so
+# neither copies the other.
+_COMMON_ENDINGS: tuple[tuple[str, str], ...] = (("ий", "iy"), ("ый", "y"), ("ия", "ia"), ("ья", "ia"))
+_COMMON_LETTERS: dict[str, str] = dict(_COMMON, **{"щ": "shch"})
+
+
+def translit_common(word: str) -> str:
+    """The everyday spelling a model writes unprompted; see the note above."""
+    low = word.lower()
+    out: list[str] = []
+    i = 0
+    while i < len(low):
+        for ending, latin in _COMMON_ENDINGS:
+            if low.startswith(ending, i):
+                out.append(latin)
+                i += len(ending)
+                break
+        else:
+            out.append(_COMMON_LETTERS.get(low[i], low[i]))
+            i += 1
+    return "".join(ch for ch in "".join(out) if ch.isalpha())
 
 
 def translit_variants(word: str) -> Accepted:
@@ -229,6 +258,9 @@ def main() -> int:
         (translit_matches("IUliia Fedorova", ("фёдорова", "юлия")), True),
         (translit_matches("Yulia Fyodorova", ("фёдорова", "юлия")), False),
         (translit_matches("BUKIN", ("букин", "сергей")), False),
+        (translit_common("Сергей") == "sergey" and translit_common("Заболотный") == "zabolotny"
+         and translit_common("Юлия") == "yulia" and translit_common("Наталья") == "natalia"
+         and translit_common("Щукин") == "shchukin" and translit_common("Ерохин") == "erokhin", True),
         (timezone("самара"), frozenset({"Europe/Samara"})),
         (e164("8 916 402 11 87"), frozenset({"+79164021187"})),
     ]

@@ -23,6 +23,8 @@ Cause rules, first match wins, all on recorded facts:
   typo-normalised  the control corrected the customer's typo; the gateway restored it as written
   case-only        a name differs only in grammatical case (control nominative, gateway verbatim)
   partial-call     the gateway arm made a subset of the control's calls
+  control-partial  the control made a subset of the gateway arm's calls (the same variance, mirrored)
+  control-refused  the mock refused the control's call and accepted the gateway arm's
   other            everything else — read it by hand
 """
 import argparse
@@ -57,10 +59,21 @@ def _cause(case: Case, triple: Triple, fields: list) -> str:
     i_tools = [c.name for c in triple.I.calls]
     c_tools = [c.name for c in triple.C.calls]
     reply = triple.I.reply.casefold()
-    if kinds and set(kinds) <= {"control_erred"}:
-        return "control_erred"
     if kinds.get("residual"):
         return "residual"
+    # THE CONTROL NORMALISED WHAT THE CUSTOMER WROTE — a typo in a street, a
+    # digit heard differently — and the gateway restored the customer's own
+    # words. Read first, because the field level files it under
+    # `control_erred` (the gateway matched the corpus canonical, the control
+    # did not) and under `same_person_variant` (the control's value bound to
+    # the directory's record of the same place), and both are this one class:
+    # not a gateway defect, the customer's data as written.
+    normalised = {"control_erred", "same_person_variant", "derived", "extra", "absent", "agree"}
+    if kinds and set(kinds) <= normalised and (kinds.get("control_erred") or kinds.get("same_person_variant")):
+        if all(f.kind != "control_erred" or _one_edit(f.ref, f.obs) for f in fields):
+            return "typo-normalised"
+    if kinds and set(kinds) <= {"control_erred"}:
+        return "control_erred"
     if any(f.kind == "other_person" and ".sugg" in f.sub for f in fields):
         return "Б8-echo"
     if c_tools and i_tools and i_tools[-1] in LOOKUPS and len(i_tools) < len(c_tools):
@@ -95,6 +108,17 @@ def _cause(case: Case, triple: Triple, fields: list) -> str:
     # controls disagreed too: the model's own variance, not the gateway's.
     if i_tools and c_tools and set(i_tools) < set(c_tools):
         return "partial-call"
+    # THE CONTROL MADE A SUBSET OF THE GATEWAY'S CALLS — the mirror image, and
+    # the same variance: on the 05.09 medium run 17 of the 36 «extra»-only
+    # triples were a control that stopped after the lookup while the gateway
+    # arm went on to write. Every field the gateway wrote is then «extra».
+    if i_tools and c_tools and set(c_tools) < set(i_tools):
+        return "control-partial"
+    # THE MOCK REFUSED THE CONTROL'S CALL and accepted the gateway's — «26 к5»
+    # in a house field that takes an integer. The control fumbled, the gateway
+    # arm did not, and the states differ because of the control.
+    if kinds.get("ref_refused") and not any(f.kind in ("residual", "validated_refused", "other_person") for f in fields):
+        return "control-refused"
     return "other"
 
 

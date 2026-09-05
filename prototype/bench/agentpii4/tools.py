@@ -1178,6 +1178,23 @@ def spec_for(tool: str, path: str) -> FieldSpec | None:
     return None
 
 
+# THE MOCK STORES A RECORD, NOT AN ARGUMENT OBJECT. `crm_upsert_contact` takes
+# `{"id", "contact": {...}}` and the CRM row IS the contact, so the stored path
+# is `address.house` where the argument path is `contact.address.house`. Read
+# through `spec_for`, no spec resolved and the state level fell back to raw
+# string equality — «20а» vs «20 а» and «проспект Чапаева» vs «Чапаева проспект»
+# were state divergences while the field level, one screen up, called both
+# `agree`. 186 of 437 diverging triples on the 05.09 medium run consisted of
+# such lines ONLY. The ladder L1 → L2 → L3 is a ladder of strictness, not of
+# equality rules: one typed comparison per value, at every level.
+STATE_PATH_PREFIX: dict[str, str] = {"crm_upsert_contact": "contact."}
+
+
+def state_spec_for(tool: str, path: str) -> FieldSpec | None:
+    """`spec_for` for a path read off a stored RECORD rather than off the call."""
+    return spec_for(tool, STATE_PATH_PREFIX.get(tool, "") + path)
+
+
 def flatten(value: object, prefix: str = "") -> dict[str, object]:
     """Dotted leaves of a nested argument object; arrays by index."""
     out: dict[str, object] = {}
@@ -1282,6 +1299,13 @@ def main() -> int:
     if spec_for("delivery_create_order", "recipient.phones[0].number") is None:
         failures += 1
         print("FAIL spec_for array path")
+    if state_spec_for("crm_upsert_contact", "address.house") is None or \
+            state_spec_for("crm_upsert_contact", "address.house").role != "house":
+        failures += 1
+        print("FAIL state_spec_for record path")
+    if state_spec_for("courier_book", "address.building") is not spec_for("courier_book", "address.building"):
+        failures += 1
+        print("FAIL state_spec_for identity for a tool that stores its arguments")
     print("tools: PASS" if not failures else f"tools: FAIL ({failures})")
     return 1 if failures else 0
 
