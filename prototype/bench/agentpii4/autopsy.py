@@ -36,7 +36,7 @@ _HERE = Path(__file__).resolve()
 sys.path.insert(0, str(_HERE.parents[2]))
 
 from bench.agentpii4.compare import Triple, compare_triple, pair_runs  # noqa: E402
-from bench.agentpii4.records import arm_from_record  # noqa: E402
+from bench.agentpii4.records import arm_from_record, merged_arm_records  # noqa: E402
 from bench.agentpii4.schema import Case, case_from_json  # noqa: E402
 
 LOOKUPS = ("address_suggest", "crm_find_contact")
@@ -47,8 +47,7 @@ def _load_run(run_dir: Path) -> tuple[dict[str, Case], list[Triple], list[str]]:
     if not corpus_path.exists():
         corpus_path = _HERE.parent / "corpus.json"
     corpus = {c["id"]: case_from_json(c) for c in json.loads(corpus_path.read_text(encoding="utf-8"))["corpus"]}
-    arms_file = sorted(glob.glob(str(run_dir / "*.arms.jsonl")))[-1]
-    arms = [arm_from_record(json.loads(line)) for line in Path(arms_file).read_text(encoding="utf-8").splitlines() if line.strip()]
+    arms = [arm_from_record(row) for row in merged_arm_records(run_dir)]
     triples, excluded = pair_runs(arms)
     return corpus, triples, excluded
 

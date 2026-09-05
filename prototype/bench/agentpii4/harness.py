@@ -61,7 +61,7 @@ from pseudex.morph_places import strip_leading_city  # noqa: E402
 from bench.agentpii4.compare import ArmRun, ObservedCall, pair_runs, substitutes_for  # noqa: E402
 from bench.agentpii4.fake_agent import seed_backend  # noqa: E402
 from bench.agentpii4.gateway import HarnessError, PassThrough, RealGateway  # noqa: E402
-from bench.agentpii4.records import ArmMeta, arm_from_record, arm_record  # noqa: E402
+from bench.agentpii4.records import ArmMeta, arm_from_record, arm_record, merged_arm_records  # noqa: E402
 from bench.agentpii4.schema import (  # noqa: E402
     EXCLUDED_TERMINATIONS, ARMS, Case, Ladder, case_from_json, corpus_digest, sample, tier)
 from pseudex.audit import AuditLog  # noqa: E402
@@ -496,14 +496,26 @@ def main() -> int:
 
     if args.report:
         source = Path(args.report)
-        runs = [arm_from_record(json.loads(line)) for line in source.read_text(encoding="utf-8").splitlines()
-                if line.strip()]
-        stem = source.name[:-len(".arms.jsonl")] if source.name.endswith(".arms.jsonl") else source.stem
-        triples_path = source.with_name(stem + ".triples.jsonl")
-        triples = ([json.loads(line) for line in triples_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-                   if triples_path.exists() else [])
-        meta_path = source.with_name(stem + ".meta.json")
-        payload = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {"run_id": stem}
+        # A DIRECTORY IS THE WHOLE RUN, a file is one attempt. A run resumed
+        # after an outage has two `arms.jsonl` beside each other, and reading
+        # either alone reports a fraction of what was paid for; the directory
+        # form merges them with the completed arm winning (`merged_arm_records`).
+        if source.is_dir():
+            runs = [arm_from_record(row) for row in merged_arm_records(source)]
+            triples = [json.loads(line) for path in sorted(source.glob("*.triples.jsonl"))
+                       for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            metas = sorted(source.glob("*.meta.json"))
+            payload = json.loads(metas[0].read_text(encoding="utf-8")) if metas else {"run_id": source.name}
+            payload["run_id"] = f"{source.name} (объединено: {len(metas)} попыт{'ка' if len(metas) == 1 else 'ки'})"
+        else:
+            runs = [arm_from_record(json.loads(line)) for line in source.read_text(encoding="utf-8").splitlines()
+                    if line.strip()]
+            stem = source.name[:-len(".arms.jsonl")] if source.name.endswith(".arms.jsonl") else source.stem
+            triples_path = source.with_name(stem + ".triples.jsonl")
+            triples = ([json.loads(line) for line in triples_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+                       if triples_path.exists() else [])
+            meta_path = source.with_name(stem + ".meta.json")
+            payload = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {"run_id": stem}
         for line in _render(by_id, runs, triples, payload, args.dump):
             print(line)
         return 0
