@@ -2113,10 +2113,14 @@ class Vault:
                     # THE DERIVED FORMS THE MODEL WRITES. A cardholder field, a
                     # `name_latin`, a summary «| Латиница | Tsvetkov Vsevolod |»
                     # — the model transliterates the substitute it read, and
-                    # none of those strings is the token. Indexed here, a few
-                    # rows per person, so the prose leg finds them by exact
-                    # match and answers with the same derivation of the real.
-                    fake_parts.update(translit.variants(word))
+                    # none of those strings is the token. ONE row per word, the
+                    # FOLDED default rendering: the four standards' spellings
+                    # were indexed here and the model wrote a fifth
+                    # («Meshcheryakova»), which reached the tool unresolved.
+                    # Every rendering folds to this key (`translit.fold`), and
+                    # the lookup folds what the model wrote.
+                    if translit.is_cyrillic_word(word):
+                        fake_parts.add(translit.folded(word))
                 fake_shape = morph_names.name_shape(token)
                 fake_words = token.split()
                 if len(fake_shape) == len(fake_words):
@@ -2309,17 +2313,24 @@ class Vault:
         with self._lock:
             owners: list[set[str]] = []
             for word in words:
-                # BOTH GENDERS' NOMINATIVES. The token is minted in the nominative
-                # («Наумов Лев Евгеньевич») and shown to the model inflected («Наумова
-                # Льва Евгеньевича»); the model copies the surname as it read it into
-                # `last_name`, and «Наумова» is a woman's nominative as well as a man's
-                # genitive, so `to_nominative` — rightly — leaves it alone while the index
-                # holds «наумов». Measured on the scripted agent: every oblique surname
-                # argument went to the tool as the fake.
-                forms = {word.casefold(), morph_names.to_nominative(word).casefold()}
-                for gender in ("masc", "femn"):
-                    forms.add(morph_names._part_to_nominative(word, gender).casefold())
-                forms = sorted(forms)
+                if word.isascii():
+                    # A LATIN WORD IS LOOKED UP FOLDED, never by its letters:
+                    # the index holds one canonical spelling per fake word and
+                    # the model may have chosen any rendering of it. Morphology
+                    # has nothing to say about a Latin string.
+                    forms = [translit.fold(word)]
+                else:
+                    # BOTH GENDERS' NOMINATIVES. The token is minted in the nominative
+                    # («Наумов Лев Евгеньевич») and shown to the model inflected («Наумова
+                    # Льва Евгеньевича»); the model copies the surname as it read it into
+                    # `last_name`, and «Наумова» is a woman's nominative as well as a man's
+                    # genitive, so `to_nominative` — rightly — leaves it alone while the index
+                    # holds «наумов». Measured on the scripted agent: every oblique surname
+                    # argument went to the tool as the fake.
+                    variants = {word.casefold(), morph_names.to_nominative(word).casefold()}
+                    for gender in ("masc", "femn"):
+                        variants.add(morph_names._part_to_nominative(word, gender).casefold())
+                    forms = sorted(variants)
                 # ТОЛЬКО ИМЕНА. Таблица частей общая с адресами с тех пор, как
                 # адресный фрагмент стал разрешаться, и без фильтра одиночное
                 # слово адресной подмены находило владельца ЗДЕСЬ — мимо области
@@ -2341,7 +2352,30 @@ class Vault:
         shared = set.intersection(*owners)
         if len(shared) == 1:
             return next(iter(shared))
-        return self._one_identity(shared) if shared else None
+        if not shared:
+            return None
+        one = self._one_identity(shared)
+        if one is not None:
+            return one
+        # THE CONVERSATION BREAKS THE TIE. A pair of initials is two letters,
+        # a given name in Latin is «Anna»: across a customer's whole vault
+        # such a piece belongs to many substitutes, and «no single owner»
+        # returned None — the fake went to the CRM with a 200 («Т.О.» for a
+        # woman whose initials are А.И., on the 05.09 medium run, where the
+        # same vault had served a thousand dialogues). The model writes the
+        # piece INSIDE the dialogue that handed it the substitute, which is
+        # exactly what `minted_in` records; a piece shared by two substitutes
+        # of ONE conversation stays unresolved, because then the dialogue
+        # itself cannot say which person it means.
+        if not self._conversation:
+            return None
+        rows = self._conn.execute(
+            "SELECT token FROM tokens WHERE customer=? AND minted_in=? "
+            f"AND token IN ({','.join('?' * len(shared))})",
+            (self._customer, self._conversation, *sorted(shared)),
+        ).fetchall()
+        here = {row[0] for row in rows}
+        return next(iter(here)) if len(here) == 1 else None
 
     def _same_person_reordered(self, canonical: str) -> str | None:
         """The token of a person already on file, written in another word order.

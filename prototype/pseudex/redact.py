@@ -890,15 +890,30 @@ def _derived_owner(surface: str, vault: Vault) -> str | None:
     fake_parts, real_parts = token.split(), value.split()
     if len(fake_parts) != len(real_parts):
         return None
-    out: list[str] = []
+    # ONE CONVENTION FOR THE WHOLE NAME, READ OFF THE MODEL'S OWN WORDS. Each
+    # Latin word is aligned to the fake part it spells and every letter choice
+    # that alignment reveals is kept; the real parts are then rendered with
+    # those choices and, for a letter the fake never contained, with the
+    # measured default. Per-word table lookup stood here and wrote ICAO's
+    # «iu» into «BITIUKOVA» because the fake «Шилова» could not say which
+    # table the model meant — the answer was in the control arm all along.
+    learned: dict[str, str] = {}
+    taken: list[int] = []
     for word in words:
-        index = next((i for i, fake in enumerate(fake_parts) if translit.table_for(fake, word) is not None), None)
-        if index is None:
+        found = None
+        for index, fake in enumerate(fake_parts):
+            if index in taken:
+                continue
+            mapping = translit.align(fake, word)
+            if mapping is not None:
+                found = index
+                learned.update(mapping)
+                break
+        if found is None:
             return None
-        table = translit.table_for(fake_parts[index], word)
-        assert table is not None
-        out.append(translit.match_case(word, translit.apply(table, real_parts[index])))
-    return " ".join(out)
+        taken.append(found)
+    return " ".join(translit.match_case(word, translit.render(real_parts[index], learned))
+                    for word, index in zip(words, taken))
 
 
 def _place_fragment(surface: str, vault: Vault,
@@ -1193,8 +1208,102 @@ def unmask_arguments(raw: str, vault: Vault) -> str:
                     for key, value in node.items()}
         return node
 
-    return json.dumps(_join_addresses_deep(walk(parsed), parsed, vault),
+    return json.dumps(_join_initials_deep(_join_addresses_deep(walk(parsed), parsed, vault), parsed),
                       ensure_ascii=False)
+
+
+_INITIALS_LEAF = re.compile(r"^\s*([А-ЯЁ])\.?(?:\s?([А-ЯЁ])\.?)?\s*$")
+_NAME_LEAF = re.compile(r"^[А-ЯЁа-яё][А-ЯЁа-яё\- ]{1,60}$")
+
+
+def _join_initials_deep(restored: object, original: object) -> object:
+    """`_join_initials` at every level of the object; see there."""
+    if isinstance(restored, dict) and isinstance(original, dict):
+        joined = _join_initials(restored, original)
+        return {key: _join_initials_deep(value, original.get(key)) for key, value in joined.items()}
+    if isinstance(restored, list) and isinstance(original, list):
+        return [_join_initials_deep(value, original[index] if index < len(original) else None)
+                for index, value in enumerate(restored)]
+    return restored
+
+
+def _join_initials(restored: dict, original: dict) -> dict:
+    """AN INITIAL IN A TOOL CALL ABBREVIATES THE NAME WRITTEN BESIDE IT.
+
+    A CRM schema asks for `first_name`, `middle_name` AND `initials`; the model
+    fills the third from the first two. A pair («Т.О.») is a two-letter key
+    the vault indexes and resolves; a SINGLE initial («С.») is one letter, which
+    is nobody's key — every given name in the vault starting with С owns it —
+    and it stayed the substitute's: 50 of the 56 initials the gateway arm wrote
+    differently on the 05.09 medium run were single, and every one of the 55
+    calls that carried initials carried `first_name` beside them. The evidence
+    is not the letter, it is the OBJECT: the name the initial abbreviates was
+    restored one key over in the same call, positionally, from the same fake.
+    A leaf is touched only when an earlier pass left it exactly as written,
+    and only when the letters match the fake name's initials — an initial that
+    is not the substitute's is the customer's, and stays.
+    """
+    pairs: list[tuple[str, str, str]] = []   # (role hint from the key, fake word, real word)
+    for key, before in original.items():
+        after = restored.get(key)
+        if not isinstance(before, str) or not isinstance(after, str) or before == after:
+            continue
+        if not _NAME_LEAF.match(before.strip()) or not _NAME_LEAF.match(after.strip()):
+            continue
+        fake_words, real_words = before.split(), after.split()
+        if len(fake_words) != len(real_words):
+            continue
+        low = key.lower()
+        hint = ("given" if any(mark in low for mark in ("first", "given", "имя")) else
+                "patr" if any(mark in low for mark in ("middle", "patronym", "отчеств")) else
+                "surn" if any(mark in low for mark in ("last", "surname", "family", "фамил")) else "")
+        if len(fake_words) == 1:
+            pairs.append((hint, fake_words[0], real_words[0]))
+            continue
+        shape = morph_names.name_shape(before.strip())
+        if len(shape) != len(fake_words):
+            continue
+        for kind, fake, real in zip(shape, fake_words, real_words):
+            pairs.append(({"name": "given", "patr": "patr", "surn": "surn"}.get(kind, ""), fake, real))
+    if not pairs:
+        return restored
+
+    def letter_of(letter: str, roles: tuple[str, ...], used: set[str]) -> str | None:
+        for role in roles:
+            for hint, fake, real in pairs:
+                if hint == role and fake not in used and fake[:1].upper() == letter:
+                    used.add(fake)
+                    return real[:1].upper()
+        for hint, fake, real in pairs:
+            if fake not in used and fake[:1].upper() == letter:
+                used.add(fake)
+                return real[:1].upper()
+        return None
+
+    out = dict(restored)
+    for key, before in original.items():
+        after = restored.get(key)
+        if not isinstance(before, str) or after != before:
+            continue
+        found = _INITIALS_LEAF.match(before)
+        if found is None:
+            continue
+        used: set[str] = set()
+        first = letter_of(found.group(1), ("given", "patr", "surn"), used)
+        if first is None:
+            continue
+        second = None
+        if found.group(2):
+            second = letter_of(found.group(2), ("patr", "surn", "given"), used)
+            if second is None:
+                continue
+        # the same punctuation the model used, letters swapped in place
+        text = before.replace(found.group(1), first, 1)
+        if second is not None:
+            head = text.index(first) + 1
+            text = text[:head] + text[head:].replace(found.group(2), second, 1)
+        out[key] = text
+    return out
 
 
 def _join_addresses_deep(restored: object, original: object, vault: Vault) -> object:
