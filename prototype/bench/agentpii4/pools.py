@@ -628,7 +628,13 @@ MONTH_ORDINALS: tuple[str, ...] = (
     "четырнадцатое", "пятнадцатое", "шестнадцатое", "семнадцатое", "восемнадцатое",
     "девятнадцатое", "двадцатое", "двадцать первое", "двадцать второе",
     "двадцать третье", "двадцать четвёртое", "двадцать пятое", "двадцать шестое",
-    "двадцать седьмое", "двадцать восьмое")
+    "двадцать седьмое", "двадцать восьмое",
+    # A LATENT CRASH, FOUND BY A NEW FAMILY AND NOT BY A NEW SEED. The table
+    # stopped at the 28th because `draw_dob` never draws further — but the
+    # hand-written shared people do («30 июня 1992»), and the first of them to
+    # be dealt `voice_raw` would raise IndexError while BUILDING the corpus.
+    # People are born on the 29th, 30th and 31st; the table says so now.
+    "двадцать девятое", "тридцатое", "тридцать первое")
 
 # Simple ASCII transliteration for e-mail local parts (what a person types for
 # a mailbox, not a passport). The passport tables live in `derive.py`.

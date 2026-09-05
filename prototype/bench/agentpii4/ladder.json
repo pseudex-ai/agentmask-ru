@@ -1,7 +1,7 @@
 {
  "version": 1,
  "seed": 4,
- "corpus_sha256": "5509bdd7eca14b68fab13268c849cdf56b0ffddd196204c8fde41d8e5bafbabe",
+ "corpus_sha256": "a9d21696d73e0d936f37ee174e3405a5eb0dd9b2553794311c9235ea0c9d128c",
  "tiers": {
   "nano": [
    "chain-014",
@@ -155,7 +155,17 @@
    "decompose-041",
    "decompose-006",
    "decompose-018",
-   "decompose-019"
+   "decompose-019",
+   "lookup_list-021",
+   "lookup_list-023",
+   "lookup_list-004",
+   "lookup_list-012",
+   "lookup_list-022",
+   "lookup_list-028",
+   "lookup_list-011",
+   "lookup_list-000",
+   "lookup_list-029",
+   "lookup_list-024"
   ],
   "medium": [
    "chain-000",
@@ -517,7 +527,37 @@
    "decompose-038",
    "decompose-039",
    "decompose-040",
-   "decompose-041"
+   "decompose-041",
+   "lookup_list-000",
+   "lookup_list-001",
+   "lookup_list-002",
+   "lookup_list-003",
+   "lookup_list-004",
+   "lookup_list-005",
+   "lookup_list-006",
+   "lookup_list-007",
+   "lookup_list-008",
+   "lookup_list-009",
+   "lookup_list-010",
+   "lookup_list-011",
+   "lookup_list-012",
+   "lookup_list-013",
+   "lookup_list-014",
+   "lookup_list-015",
+   "lookup_list-016",
+   "lookup_list-017",
+   "lookup_list-018",
+   "lookup_list-019",
+   "lookup_list-020",
+   "lookup_list-021",
+   "lookup_list-022",
+   "lookup_list-023",
+   "lookup_list-024",
+   "lookup_list-025",
+   "lookup_list-026",
+   "lookup_list-027",
+   "lookup_list-028",
+   "lookup_list-029"
   ]
  }
 }

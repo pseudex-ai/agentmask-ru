@@ -283,6 +283,36 @@ def _nominative_name(surface: str) -> str:
     return " ".join(out)
 
 
+def _chosen_record(case: Case, view: dict[str, tuple[str, dict[str, str]]]) -> str:
+    """Which seeded card the agent updates — decided by what it was SHOWN.
+
+    With one seeded card the id is that card. With several (`lookup_list`) the
+    agent must tell them apart, and it may only use what reached it: the
+    substitute standing for the date of birth or the phone the customer named
+    has to be the SAME string as the one inside the right card. Picking by
+    position would pass the family without reading anything, and picking by the
+    real value would read what the model never saw.
+    """
+    records = case.seed_records
+    if not records:
+        return ""
+    if len(records) == 1:
+        return records[0].id
+    by_record: dict[str, dict[str, str]] = {}
+    for item in case.pii:
+        if item.where.kind == "seed" and item.id in view:
+            by_record.setdefault(item.where.record, {})[item.type] = view[item.id][0]
+    for kind in ("DOB", "PHONE", "EMAIL"):
+        said = [view[item.id][0] for item in case.pii
+                if item.where.kind == "message" and item.type == kind and item.id in view]
+        if not said:
+            continue
+        hits = [record for record, seen in by_record.items() if seen.get(kind) in said]
+        if len(hits) == 1:
+            return hits[0]
+    return records[0].id
+
+
 def _pick(case: Case, kind: str, view: dict[str, tuple[str, dict[str, str]]],
           policy: Policy, prefer_current: bool = True) -> tuple[str, dict[str, str]]:
     """The agent's choice of which item of a type to use."""
@@ -370,6 +400,13 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
 
     name_surface, name_parts = _pick(case, "NAME", view, policy)
     phone_surface, phone_parts = _pick(case, "PHONE", view, policy)
+    # WHAT THE CUSTOMER SAID, separately from what a card would tell us. `_pick`
+    # falls back to seed items so a family that looks a card up first can use
+    # what came back — but a SEARCH KEY may only be something the customer
+    # actually uttered. Without this the agent «searched» by a phone it could
+    # not know yet, and `lookup_list` never asked its own question.
+    said_phone = next((view[item.id][0] for item in case.pii
+                       if item.type == "PHONE" and item.where.kind == "message" and item.id in view), "")
     addr_surface, addr_parts = _pick(case, "LOC", view, policy)
     dob_surface, dob_parts = _pick(case, "DOB", view, policy)
     phone = _e164(phone_surface, phone_parts, policy) if phone_surface else ""
@@ -377,8 +414,13 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
     address = _address_args(addr_surface, addr_parts, policy)
     city = address.get("city") or _city_of(case)
 
-    if "crm_find_contact" in tools and phone:
-        maybe("crm_find_contact", {"query": {"phone": phone}})
+    if "crm_find_contact" in tools and said_phone:
+        maybe("crm_find_contact", {"query": {"phone": _e164(said_phone, phone_parts, policy)}})
+    elif "crm_find_contact" in tools and name["last"]:
+        # NO PHONE MEANS SEARCHING BY SURNAME, and the answer is then a LIST —
+        # the `lookup_list` shape. The tool takes exactly one key, and the
+        # surname is the one a customer gives when they do not recite a number.
+        maybe("crm_find_contact", {"query": {"last_name": name["last"]}})
     if "crm_upsert_contact" in tools:
         contact: dict[str, object] = {}
         if name["last"]:
@@ -398,7 +440,7 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
         if address["street"]:
             contact["address"] = {"city": city, "street": address["street"], "house": address["house"] or "1",
                                   "flat": address["flat"]}
-        maybe("crm_upsert_contact", {"id": "c-1" if case.seed_records else "", "contact": contact})
+        maybe("crm_upsert_contact", {"id": _chosen_record(case, view), "contact": contact})
     if "delivery_create_order" in tools and phone:
         # The last three digits are the agent's invention; seeded by the CASE so
         # two control arms of a deterministic agent agree and the noise floor

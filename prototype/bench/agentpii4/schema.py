@@ -41,6 +41,10 @@ SCENARIO_KINDS: tuple[str, ...] = (
     "container",    # PII inside a URL / CSV string argument
     "derive",       # age, gender, initials, translit, postcode, timezone
     "decompose",    # series/number, last/first/middle, street/house/flat
+    # Added 05.09 from research/2026-09-05-agent-scenario-coverage.md. The nine
+    # above share one axis — what the agent does to a VALUE — and it is nearly
+    # exhausted. What follows asks where the value COMES FROM and where it GOES.
+    "lookup_list",  # a search returns OTHER people's records; one is chosen
 )
 ARMS: tuple[str, ...] = ("C", "I", "C2")          # control, intervention, second control
 INV_LEVELS: tuple[str, ...] = ("tools", "keys", "state")

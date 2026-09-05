@@ -767,6 +767,27 @@ def _is_numeral_word(word: str) -> bool:
     return ASSETS.is_loaded and low in ASSETS.get().spoken.numeral_typos
 
 
+# The particles Russian writes with a hyphen and chat writes glued. Closed
+# class, short on purpose: a longer list would start eating real endings.
+_GLUED_PARTICLES: tuple[str, ...] = ("то", "же", "ка", "либо", "нибудь", "таки")
+
+
+def _glued_particle_word(lowered: str) -> bool:
+    """A word that is an ordinary word plus a glued particle. Strip, then demand
+    a stem the dictionary knows and does NOT read as a person, so «Петров»+«то»
+    stays a surname while «фамилия»+«то» does not."""
+    for particle in _GLUED_PARTICLES:
+        if not lowered.endswith(particle):
+            continue
+        stem = lowered[: -len(particle)]
+        if len(stem) < 4:
+            continue
+        parses = MORPH.parse(stem)
+        if parses and parses[0].is_known and not any(_PERSON_TAGS & parse.tag.grammemes for parse in parses):
+            return True
+    return False
+
+
 def _typo_of_an_ordinary_word(word: str) -> bool:
     """Слово в одной ОПЕЧАТКЕ от обычного русского слова — это оно и есть.
 
@@ -819,6 +840,17 @@ def _typo_of_an_ordinary_word(word: str) -> bool:
     parses = MORPH.parse(word)
     if parses and parses[0].is_known and any(_PERSON_TAGS & parse.tag.grammemes for parse in parses):
         return False
+    # A PARTICLE GLUED TO AN ORDINARY WORD IS THAT WORD. Chat and speech write
+    # «фамилиято», «адресто», «телефонже» without the hyphen the grammar asks
+    # for, the result is unknown to morphology, and pymorphy3 then predicts it
+    # as a feminine given name — «фамилиято тарасова» reached the tool as a
+    # first name «фамилиято» and a surname. The docstring above already named
+    # this case; the doubled-letter rule cannot see it, because nothing is
+    # doubled. Same discipline as that rule: strip, then demand a word the
+    # dictionary knows AND does not read as a person, so «Петров»+«то» stays a
+    # surname while «фамилия»+«то» does not.
+    if _glued_particle_word(lowered):
+        return True
     # ТОЛЬКО УДВОЕННАЯ БУКВА, И ЭТО ИЗМЕРЕНО. Любая одиночная правка стоила
     # четырёх настоящих людей на NEREL (93.5% -> 93.2%) и 0.4 пункта полноты на
     # MASSIVE ради 19 мусорных слов в аргументе: словарь фамилий плотный, и
@@ -857,6 +889,12 @@ def _damaged_common_word(word: str) -> bool:
     if is_stretched_filler(low):
         return True
     if any(within_one_typo(low, cue) for cue in ASSETS.get().names.never_cues):
+        return True
+    # A CUE WORD WITH A PARTICLE GLUED TO IT is a cue word, and a foreign name
+    # is not built that way: «фамилиято тарасова» was read as a pair of unusual
+    # words — which is exactly what this arm looks for — and the customer's own
+    # word for «surname» went into the tool as a given name.
+    if _glued_particle_word(low):
         return True
     # The doubled-letter test only from eight letters: a double letter is the
     # NORM in a transliterated name — «Билл», «Стелла», «Джонни», «Пуллман» —

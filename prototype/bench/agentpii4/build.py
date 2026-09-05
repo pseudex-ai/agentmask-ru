@@ -17,7 +17,7 @@ from pathlib import Path
 
 from bench.agentpii4 import schema, validate
 from bench.agentpii4.scenarios import (chain, compare, container, correction, decompose,
-                                       derive, result_feed, summary)
+                                       derive, lookup_list, result_feed, summary)
 from bench.agentpii4.scenarios import validate as validate_kind
 from bench.agentpii4.schema import Case, Ladder
 
@@ -28,6 +28,8 @@ PLAN: tuple[tuple[object, int, int], ...] = (
     (chain, 16, 48), (result_feed, 12, 36), (correction, 12, 36),
     (validate_kind, 12, 36), (compare, 14, 42), (summary, 12, 36),
     (container, 10, 30), (derive, 18, 54), (decompose, 14, 42),
+    # 05.09: the flow axis (research/2026-09-05-agent-scenario-coverage.md).
+    (lookup_list, 10, 30),
 )
 
 
