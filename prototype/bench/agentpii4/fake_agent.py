@@ -498,11 +498,25 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
             pass
         elif digits:
             holder = " ".join(derive.translit_icao(word) for word in (name["first"], name["last"]) if word).upper() if policy.derives else "CARD HOLDER"
-            maybe("payment_create", {
+            # THE RECEIPT IS NOT OPTIONAL WHEN A CONTACT IS KNOWN. 54-ФЗ makes
+            # one of email/phone mandatory, and both acquirers refuse without
+            # it — an agent holding a phone fills it, or the sale stops.
+            call: dict[str, object] = {
                 "amount": {"value": "780.00", "currency": "RUB"},
                 "payment_method_data": {"type": "bank_card",
                                         "card": {"number": digits, "expiry_month": "09", "expiry_year": "2028",
-                                                 "cardholder": holder or "CARD HOLDER"}}})
+                                                 "cardholder": holder or "CARD HOLDER"}}}
+            email_surface, _email_parts = _pick(case, "EMAIL", view, policy)
+            if phone or email_surface:
+                customer: dict[str, object] = {}
+                if name_surface:
+                    customer["full_name"] = name_surface
+                if phone:
+                    customer["phone"] = phone
+                elif email_surface:
+                    customer["email"] = email_surface
+                call["receipt"] = {"customer": customer}
+            maybe("payment_create", call)
     if "callback_schedule" in tools and phone:
         zone = sorted(derive.timezone(city))[0] if (policy.derives and derive.timezone(city)) else "Europe/Moscow"
         maybe("callback_schedule", {"phone": phone, "at": "2026-09-03T18:00:00+04:00", "timezone": zone})

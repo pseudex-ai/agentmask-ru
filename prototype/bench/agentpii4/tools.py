@@ -543,6 +543,14 @@ def _payment_parse(args: dict[str, object]) -> Parsed | Refusal:
             if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[a-z]{2,}", str(customer["email"]).lower()):
                 return Refusal(tool, "receipt.customer.email", "email_format", str(customer["email"]))
             parsed_customer["email"] = str(customer["email"]).lower()
+        # 54-ФЗ MAKES A CONTACT MANDATORY, and both acquirers say so in the same
+        # words: ЮKassa requires `customer.email` or `customer.phone` in a
+        # receipt, T-Bank requires exactly one of `Receipt.Email` /
+        # `Receipt.Phone`. A receipt without either is not an imperfect receipt,
+        # it is a refused fiscalisation — so a substitute that fails to restore
+        # here does not merely look wrong, it stops the sale.
+        if not parsed_customer.get("email") and not parsed_customer.get("phone"):
+            return Refusal(tool, "receipt.customer", "receipt_contact_required", str(customer))
         out["receipt"] = {"customer": parsed_customer}
     return out
 
@@ -1162,6 +1170,11 @@ def main() -> int:
         (PAYMENT, {"amount": {"value": "1500.00", "currency": "RUB"},
                    "payment_method_data": {"type": "bank_card",
                                            "card": {"number": card, "expiry_month": "09",
+                                                    "expiry_year": "2028", "cardholder": "TAMARA PAVLOVA"}},
+                   "receipt": {"customer": {"full_name": "Павлова Тамара", "phone": "+79164021187"}}}),
+        (PAYMENT, {"amount": {"value": "1500.00", "currency": "RUB"},
+                   "payment_method_data": {"type": "bank_card",
+                                           "card": {"number": card, "expiry_month": "09",
                                                     "expiry_year": "2028", "cardholder": "TAMARA PAVLOVA"}}}),
     ]
     for spec, args in good:
@@ -1179,6 +1192,11 @@ def main() -> int:
         (NOTE, {"entity_id": "c-1", "note_type": "voicemail", "text": "…"}, "enum_mismatch"),
         (TEMPLATE, {"template_id": "callback", "number": "+79164021187",
                     "variables": {"name": "Марина", "when": "завтра"}}, "missing_variable"),
+        (PAYMENT, {"amount": {"value": "1500.00", "currency": "RUB"},
+                   "payment_method_data": {"type": "bank_card",
+                                           "card": {"number": card, "expiry_month": "09",
+                                                    "expiry_year": "2028", "cardholder": "TAMARA PAVLOVA"}},
+                   "receipt": {"customer": {"full_name": "Павлова Тамара"}}}, "receipt_contact_required"),
         (TEMPLATE, {"template_id": "callback", "number": "+79164021187",
                     "variables": {"name": "Марина", "phone": "+79164021187", "when": "завтра",
                                   "surname": "Громова"}}, "unknown_variable"),

@@ -1,7 +1,7 @@
 {
  "version": 1,
  "seed": 4,
- "corpus_sha256": "8be075fde1f9779e50d6942c921140541cc1bbb33cdd485965c421abb4d556d9",
+ "corpus_sha256": "7fb445c5d93b47c503166b38cf6532d6eb901f8f7d4863224a3cb708510a48df",
  "tiers": {
   "nano": [
    "chain-014",
@@ -181,7 +181,13 @@
    "send_template-005",
    "send_template-002",
    "send_template-017",
-   "send_template-010"
+   "send_template-010",
+   "receipt-009",
+   "receipt-003",
+   "receipt-000",
+   "receipt-016",
+   "receipt-007",
+   "receipt-008"
   ],
   "medium": [
    "chain-000",
@@ -621,7 +627,25 @@
    "send_template-020",
    "send_template-021",
    "send_template-022",
-   "send_template-023"
+   "send_template-023",
+   "receipt-000",
+   "receipt-001",
+   "receipt-002",
+   "receipt-003",
+   "receipt-004",
+   "receipt-005",
+   "receipt-006",
+   "receipt-007",
+   "receipt-008",
+   "receipt-009",
+   "receipt-010",
+   "receipt-011",
+   "receipt-012",
+   "receipt-013",
+   "receipt-014",
+   "receipt-015",
+   "receipt-016",
+   "receipt-017"
   ]
  }
 }

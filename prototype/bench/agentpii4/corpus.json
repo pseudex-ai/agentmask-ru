@@ -1,8 +1,8 @@
 {
  "version": 4,
  "seed": 4,
- "cases": 438,
- "digest": "8be075fde1f9779e50d6942c921140541cc1bbb33cdd485965c421abb4d556d9",
+ "cases": 456,
+ "digest": "7fb445c5d93b47c503166b38cf6532d6eb901f8f7d4863224a3cb708510a48df",
  "corpus": [
   {
    "id": "chain-000",
@@ -185137,6 +185137,5791 @@
     }
    ],
    "note": "шаблон callback: один и тот же телефон адресатом и переменной"
+  },
+  {
+   "id": "receipt-000",
+   "kind": "receipt",
+   "register": "chat",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9164021187",
+   "conversation_id": "conv-receipt-0",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "привет проведите оплату 940 рублей карта 4276 0922 8869 5626 держатель сергей букин чек пришлите на почту bukin85@list.ru",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p0",
+     "value": "4276 0922 8869 5626",
+     "canonical": "4276 0922 8869 5626",
+     "parts": {
+      "digits": "4276092288695626"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 41,
+      "end": 60,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p0",
+     "value": "сергей букин",
+     "canonical": "сергей букин",
+     "parts": {
+      "given": "сергей",
+      "surname": "букин",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 71,
+      "end": 83,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "EMAIL",
+     "identity": "p0",
+     "value": "bukin85@list.ru",
+     "canonical": "bukin85@list.ru",
+     "parts": {
+      "local": "bukin85",
+      "domain": "list.ru"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 106,
+      "end": 121,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "940",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 24,
+      "end": 27,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p0",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 6,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 6,
+     "end": 7,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 16,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 16,
+     "end": 17,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 17,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 24,
+     "end": 27,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 27,
+     "end": 28,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 34,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 34,
+     "end": 35,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 35,
+     "end": 40,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 40,
+     "end": 41,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 41,
+     "end": 60,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 60,
+     "end": 61,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 61,
+     "end": 70,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 70,
+     "end": 71,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 71,
+     "end": 83,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 83,
+     "end": 84,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 84,
+     "end": 87,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 87,
+     "end": 88,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 88,
+     "end": 96,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 96,
+     "end": 97,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 97,
+     "end": 99,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 99,
+     "end": 100,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 100,
+     "end": 105,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 105,
+     "end": 106,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "e1",
+     "start": 106,
+     "end": 121,
+     "origin": "value:e1"
+    }
+   ],
+   "note": "чек на почту: EMAIL — условие фискализации"
+  },
+  {
+   "id": "receipt-001",
+   "kind": "receipt",
+   "register": "voice_itn",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9639110059",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "алло проведите оплату 780 рублей карта 5469064924560104 держатель марина громова чек пришлите на номер 89639110059",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p1",
+     "value": "5469064924560104",
+     "canonical": "5469064924560104",
+     "parts": {
+      "digits": "5469064924560104"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 39,
+      "end": 55,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p1",
+     "value": "марина громова",
+     "canonical": "марина громова",
+     "parts": {
+      "given": "марина",
+      "surname": "громова",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 66,
+      "end": 80,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "PHONE",
+     "identity": "p1",
+     "value": "89639110059",
+     "canonical": "+79639110059",
+     "parts": {
+      "digits": "9639110059"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 103,
+      "end": 114,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "780",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 22,
+      "end": 25,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p1",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 4,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 4,
+     "end": 5,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 5,
+     "end": 14,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 14,
+     "end": 15,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 15,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 22,
+     "end": 25,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 32,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 32,
+     "end": 33,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 38,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 38,
+     "end": 39,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 39,
+     "end": 55,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 55,
+     "end": 56,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 56,
+     "end": 65,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 65,
+     "end": 66,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 66,
+     "end": 80,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 80,
+     "end": 81,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 81,
+     "end": 84,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 84,
+     "end": 85,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 85,
+     "end": 93,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 93,
+     "end": 94,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 94,
+     "end": 96,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 96,
+     "end": 97,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 97,
+     "end": 102,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 102,
+     "end": 103,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 103,
+     "end": 114,
+     "origin": "value:ph1"
+    }
+   ],
+   "note": "чек на телефон: один номер и в чеке, и контактом"
+  },
+  {
+   "id": "receipt-002",
+   "kind": "receipt",
+   "register": "sloppy",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9120350116",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "проведите оплату 320 рублей карта 2202470811047510 держатель пётр ерохин чек пришлите на почту erohin72@yandex.ru",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p2",
+     "value": "2202470811047510",
+     "canonical": "2202470811047510",
+     "parts": {
+      "digits": "2202470811047510"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 34,
+      "end": 50,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p2",
+     "value": "пётр ерохин",
+     "canonical": "пётр ерохин",
+     "parts": {
+      "given": "пётр",
+      "surname": "ерохин",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 61,
+      "end": 72,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "EMAIL",
+     "identity": "p2",
+     "value": "erohin72@yandex.ru",
+     "canonical": "erohin72@yandex.ru",
+     "parts": {
+      "local": "erohin72",
+      "domain": "yandex.ru"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 95,
+      "end": 113,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "320",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 17,
+      "end": 20,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p2",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 9,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 9,
+     "end": 10,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 10,
+     "end": 16,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 16,
+     "end": 17,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 17,
+     "end": 20,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 20,
+     "end": 21,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 21,
+     "end": 27,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 27,
+     "end": 28,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 33,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 34,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 34,
+     "end": 50,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 50,
+     "end": 51,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 51,
+     "end": 60,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 60,
+     "end": 61,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 61,
+     "end": 72,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 72,
+     "end": 73,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 73,
+     "end": 76,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 76,
+     "end": 77,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 77,
+     "end": 85,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 85,
+     "end": 86,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 86,
+     "end": 88,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 88,
+     "end": 89,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 89,
+     "end": 94,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 94,
+     "end": 95,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "e1",
+     "start": 95,
+     "end": 113,
+     "origin": "value:e1"
+    }
+   ],
+   "note": "чек на почту: EMAIL — условие фискализации"
+  },
+  {
+   "id": "receipt-003",
+   "kind": "receipt",
+   "register": "voice_itn",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9192260505",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "здравствуйте проведите оплату 615 рублей карта 2200854984526883 держатель максим лебедев чек пришлите на номер 89192260505",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p3",
+     "value": "2200854984526883",
+     "canonical": "2200854984526883",
+     "parts": {
+      "digits": "2200854984526883"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 47,
+      "end": 63,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p3",
+     "value": "максим лебедев",
+     "canonical": "максим лебедев",
+     "parts": {
+      "given": "максим",
+      "surname": "лебедев",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 74,
+      "end": 88,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "PHONE",
+     "identity": "p3",
+     "value": "89192260505",
+     "canonical": "+79192260505",
+     "parts": {
+      "digits": "9192260505"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 111,
+      "end": 122,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "615",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 30,
+      "end": 33,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p3",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 29,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 30,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 30,
+     "end": 33,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 34,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 34,
+     "end": 40,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 40,
+     "end": 41,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 41,
+     "end": 46,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 46,
+     "end": 47,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 47,
+     "end": 63,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 63,
+     "end": 64,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 64,
+     "end": 73,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 73,
+     "end": 74,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 74,
+     "end": 88,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 88,
+     "end": 89,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 89,
+     "end": 92,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 92,
+     "end": 93,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 93,
+     "end": 101,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 101,
+     "end": 102,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 102,
+     "end": 104,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 104,
+     "end": 105,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 105,
+     "end": 110,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 110,
+     "end": 111,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 111,
+     "end": 122,
+     "origin": "value:ph1"
+    }
+   ],
+   "note": "чек на телефон: один номер и в чеке, и контактом"
+  },
+  {
+   "id": "receipt-004",
+   "kind": "receipt",
+   "register": "chat",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9255523325",
+   "conversation_id": "conv-receipt-4",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "привет проведите оплату 780 рублей карта 2200 3503 0790 7504 держатель вячеслав фомин чек пришлите на почту fomin71@yandex.ru",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p4",
+     "value": "2200 3503 0790 7504",
+     "canonical": "2200 3503 0790 7504",
+     "parts": {
+      "digits": "2200350307907504"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 41,
+      "end": 60,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p4",
+     "value": "вячеслав фомин",
+     "canonical": "вячеслав фомин",
+     "parts": {
+      "given": "вячеслав",
+      "surname": "фомин",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 71,
+      "end": 85,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "EMAIL",
+     "identity": "p4",
+     "value": "fomin71@yandex.ru",
+     "canonical": "fomin71@yandex.ru",
+     "parts": {
+      "local": "fomin71",
+      "domain": "yandex.ru"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 108,
+      "end": 125,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "780",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 24,
+      "end": 27,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p4",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 6,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 6,
+     "end": 7,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 16,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 16,
+     "end": 17,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 17,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 24,
+     "end": 27,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 27,
+     "end": 28,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 34,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 34,
+     "end": 35,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 35,
+     "end": 40,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 40,
+     "end": 41,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 41,
+     "end": 60,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 60,
+     "end": 61,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 61,
+     "end": 70,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 70,
+     "end": 71,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 71,
+     "end": 85,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 85,
+     "end": 86,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 86,
+     "end": 89,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 89,
+     "end": 90,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 90,
+     "end": 98,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 98,
+     "end": 99,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 99,
+     "end": 101,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 101,
+     "end": 102,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 102,
+     "end": 107,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 107,
+     "end": 108,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "e1",
+     "start": 108,
+     "end": 125,
+     "origin": "value:e1"
+    }
+   ],
+   "note": "чек на почту: EMAIL — условие фискализации"
+  },
+  {
+   "id": "receipt-005",
+   "kind": "receipt",
+   "register": "sloppy",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9261234567",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "здрасте провеидте оплату 320 рублей карта 2200938963964833 держатель зинаида битюкова чек пришлите на номер 8 926 123 45 67",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p5",
+     "value": "2200938963964833",
+     "canonical": "2200938963964833",
+     "parts": {
+      "digits": "2200938963964833"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 42,
+      "end": 58,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p5",
+     "value": "зинаида битюкова",
+     "canonical": "зинаида битюкова",
+     "parts": {
+      "given": "зинаида",
+      "surname": "битюкова",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 69,
+      "end": 85,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "PHONE",
+     "identity": "p5",
+     "value": "8 926 123 45 67",
+     "canonical": "+79261234567",
+     "parts": {
+      "digits": "9261234567"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 108,
+      "end": 123,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "320",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 25,
+      "end": 28,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p5",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 7,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 8,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 8,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 18,
+     "end": 24,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 25,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 25,
+     "end": 28,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 36,
+     "end": 41,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 41,
+     "end": 42,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 42,
+     "end": 58,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 58,
+     "end": 59,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 59,
+     "end": 68,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 68,
+     "end": 69,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 69,
+     "end": 85,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 85,
+     "end": 86,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 86,
+     "end": 89,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 89,
+     "end": 90,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 90,
+     "end": 98,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 98,
+     "end": 99,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 99,
+     "end": 101,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 101,
+     "end": 102,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 102,
+     "end": 107,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 107,
+     "end": 108,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 108,
+     "end": 123,
+     "origin": "value:ph1"
+    }
+   ],
+   "note": "чек на телефон: один номер и в чеке, и контактом"
+  },
+  {
+   "id": "receipt-006",
+   "kind": "receipt",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9194321900",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "здравствуйте проведите оплату семьсот восемьдесят рублей карта двадцать два ноль два ноль пять ноль четыре семьдесят шейсят три тридцать шесть двадцать шесть держатеель евгений вольнов чек пришлитее на номер восемь девятьсот девятнадцать четыреста тридцать два девятнадцать ноль ноль",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p6",
+     "value": "двадцать два ноль два ноль пять ноль четыре семьдесят шейсят три тридцать шесть двадцать шесть",
+     "canonical": "2202050470633626",
+     "parts": {
+      "digits": "2202050470633626"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 63,
+      "end": 157,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p6",
+     "value": "евгений вольнов",
+     "canonical": "евгений вольнов",
+     "parts": {
+      "given": "евгений",
+      "surname": "вольнов",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 169,
+      "end": 184,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "PHONE",
+     "identity": "p6",
+     "value": "восемь девятьсот девятнадцать четыреста тридцать два девятнадцать ноль ноль",
+     "canonical": "+79194321900",
+     "parts": {
+      "digits": "9194321900"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 208,
+      "end": 283,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "семьсот восемьдесят",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 30,
+      "end": 49,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p6",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 29,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 30,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 30,
+     "end": 49,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 50,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 50,
+     "end": 56,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 56,
+     "end": 57,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 57,
+     "end": 62,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 62,
+     "end": 63,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 63,
+     "end": 157,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 157,
+     "end": 158,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 158,
+     "end": 168,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 168,
+     "end": 169,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 169,
+     "end": 184,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 184,
+     "end": 185,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 185,
+     "end": 188,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 188,
+     "end": 189,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 189,
+     "end": 198,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 198,
+     "end": 199,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 199,
+     "end": 201,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 201,
+     "end": 202,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 202,
+     "end": 207,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 207,
+     "end": 208,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 208,
+     "end": 283,
+     "origin": "value:ph1"
+    }
+   ],
+   "note": "чек на телефон: один номер и в чеке, и контактом"
+  },
+  {
+   "id": "receipt-007",
+   "kind": "receipt",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9097680941",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "добрый день проведите оплату семьсот восемьдесят рублей карта пясят четыыре шестьдесят девять сто восемнадцать пять триц девять двадцать семь восемесят тридцать девять держатель леонид морозов чеек пришлите на номер восемь девятьсот девять семьсот шестьдесят восемь ноль девять сорок один",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p7",
+     "value": "пясят четыыре шестьдесят девять сто восемнадцать пять триц девять двадцать семь восемесят тридцать девять",
+     "canonical": "5469118539278039",
+     "parts": {
+      "digits": "5469118539278039"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 62,
+      "end": 167,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p7",
+     "value": "леонид морозов",
+     "canonical": "леонид морозов",
+     "parts": {
+      "given": "леонид",
+      "surname": "морозов",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 178,
+      "end": 192,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "PHONE",
+     "identity": "p7",
+     "value": "восемь девятьсот девять семьсот шестьдесят восемь ноль девять сорок один",
+     "canonical": "+79097680941",
+     "parts": {
+      "digits": "9097680941"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 216,
+      "end": 288,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "семьсот восемьдесят",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 29,
+      "end": 48,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p7",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 6,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 6,
+     "end": 7,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 11,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 11,
+     "end": 12,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 22,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 29,
+     "end": 48,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 48,
+     "end": 49,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 55,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 55,
+     "end": 56,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 56,
+     "end": 61,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 61,
+     "end": 62,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 62,
+     "end": 167,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 167,
+     "end": 168,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 168,
+     "end": 177,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 177,
+     "end": 178,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 178,
+     "end": 192,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 192,
+     "end": 193,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 193,
+     "end": 197,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 197,
+     "end": 198,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 198,
+     "end": 206,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 206,
+     "end": 207,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 207,
+     "end": 209,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 209,
+     "end": 210,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 210,
+     "end": 215,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 215,
+     "end": 216,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 216,
+     "end": 288,
+     "origin": "value:ph1"
+    }
+   ],
+   "note": "чек на телефон: один номер и в чеке, и контактом"
+  },
+  {
+   "id": "receipt-008",
+   "kind": "receipt",
+   "register": "voice_itn",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9128161400",
+   "conversation_id": "conv-receipt-8",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "алло проведите оплату 615 рублей карта 2200430447736367 держатель зинаида битюкова чек пришлите на номер 89128161400",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p8",
+     "value": "2200430447736367",
+     "canonical": "2200430447736367",
+     "parts": {
+      "digits": "2200430447736367"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 39,
+      "end": 55,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p8",
+     "value": "зинаида битюкова",
+     "canonical": "зинаида битюкова",
+     "parts": {
+      "given": "зинаида",
+      "surname": "битюкова",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 66,
+      "end": 82,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "PHONE",
+     "identity": "p8",
+     "value": "89128161400",
+     "canonical": "+79128161400",
+     "parts": {
+      "digits": "9128161400"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 105,
+      "end": 116,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "615",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 22,
+      "end": 25,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p8",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 4,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 4,
+     "end": 5,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 5,
+     "end": 14,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 14,
+     "end": 15,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 15,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 22,
+     "end": 25,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 32,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 32,
+     "end": 33,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 38,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 38,
+     "end": 39,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 39,
+     "end": 55,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 55,
+     "end": 56,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 56,
+     "end": 65,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 65,
+     "end": 66,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 66,
+     "end": 82,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 82,
+     "end": 83,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 83,
+     "end": 86,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 86,
+     "end": 87,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 87,
+     "end": 95,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 95,
+     "end": 96,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 96,
+     "end": 98,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 98,
+     "end": 99,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 99,
+     "end": 104,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 104,
+     "end": 105,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 105,
+     "end": 116,
+     "origin": "value:ph1"
+    }
+   ],
+   "note": "чек на телефон: один номер и в чеке, и контактом"
+  },
+  {
+   "id": "receipt-009",
+   "kind": "receipt",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9618667507",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "здравствуйте проведитее оплату шестьсот пятнадцать рублеей картаа сорок два семьдесят шесть триц шесть ноль восемь ноль ноль пяесят пять шестьдесят шесть семьдесят девять держатель марина громова чеек пришлите на номер восемь девятьсот шестьдесят один восемьсот шестьдесят шесть семьдесят пять ноль семь",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p9",
+     "value": "сорок два семьдесят шесть триц шесть ноль восемь ноль ноль пяесят пять шестьдесят шесть семьдесят девять",
+     "canonical": "4276360800556679",
+     "parts": {
+      "digits": "4276360800556679"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 66,
+      "end": 170,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p9",
+     "value": "марина громова",
+     "canonical": "марина громова",
+     "parts": {
+      "given": "марина",
+      "surname": "громова",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 181,
+      "end": 195,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "PHONE",
+     "identity": "p9",
+     "value": "восемь девятьсот шестьдесят один восемьсот шестьдесят шесть семьдесят пять ноль семь",
+     "canonical": "+79618667507",
+     "parts": {
+      "digits": "9618667507"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 219,
+      "end": 303,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "шестьсот пятнадцать",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 31,
+      "end": 50,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p9",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 30,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 30,
+     "end": 31,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 31,
+     "end": 50,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 50,
+     "end": 51,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 51,
+     "end": 58,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 58,
+     "end": 59,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 59,
+     "end": 65,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 65,
+     "end": 66,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 66,
+     "end": 170,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 170,
+     "end": 171,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 171,
+     "end": 180,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 180,
+     "end": 181,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 181,
+     "end": 195,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 195,
+     "end": 196,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 196,
+     "end": 200,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 200,
+     "end": 201,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 201,
+     "end": 209,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 209,
+     "end": 210,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 210,
+     "end": 212,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 212,
+     "end": 213,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 213,
+     "end": 218,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 218,
+     "end": 219,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 219,
+     "end": 303,
+     "origin": "value:ph1"
+    }
+   ],
+   "note": "чек на телефон: один номер и в чеке, и контактом"
+  },
+  {
+   "id": "receipt-010",
+   "kind": "receipt",
+   "register": "chat",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9037654321",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "здравствуйте проведите оплату 615 рублей карта 2200 3345 1245 4221 держатель пётр ерохин чек пришлите на почту erohin89@bk.ru",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p10",
+     "value": "2200 3345 1245 4221",
+     "canonical": "2200 3345 1245 4221",
+     "parts": {
+      "digits": "2200334512454221"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 47,
+      "end": 66,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p10",
+     "value": "пётр ерохин",
+     "canonical": "пётр ерохин",
+     "parts": {
+      "given": "пётр",
+      "surname": "ерохин",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 77,
+      "end": 88,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "EMAIL",
+     "identity": "p10",
+     "value": "erohin89@bk.ru",
+     "canonical": "erohin89@bk.ru",
+     "parts": {
+      "local": "erohin89",
+      "domain": "bk.ru"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 111,
+      "end": 125,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "615",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 30,
+      "end": 33,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p10",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 29,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 30,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 30,
+     "end": 33,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 34,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 34,
+     "end": 40,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 40,
+     "end": 41,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 41,
+     "end": 46,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 46,
+     "end": 47,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 47,
+     "end": 66,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 66,
+     "end": 67,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 67,
+     "end": 76,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 76,
+     "end": 77,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 77,
+     "end": 88,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 88,
+     "end": 89,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 89,
+     "end": 92,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 92,
+     "end": 93,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 93,
+     "end": 101,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 101,
+     "end": 102,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 102,
+     "end": 104,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 104,
+     "end": 105,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 105,
+     "end": 110,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 110,
+     "end": 111,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "e1",
+     "start": 111,
+     "end": 125,
+     "origin": "value:e1"
+    }
+   ],
+   "note": "чек на почту: EMAIL — условие фискализации"
+  },
+  {
+   "id": "receipt-011",
+   "kind": "receipt",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9899585010",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "проведите оплату шестьсот пятнадцать рублей карта сорок два семьдесят шесть четыреста тридцать четыре два сорок восемь двадцать один двадцать один семьдесят семь держатель леонид морозов чеек пришлитее на номер восемь девятьсот восемесят девять девяносто пяять восемьдесят пяять ноль один ноль",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p11",
+     "value": "сорок два семьдесят шесть четыреста тридцать четыре два сорок восемь двадцать один двадцать один семьдесят семь",
+     "canonical": "4276434248212177",
+     "parts": {
+      "digits": "4276434248212177"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 50,
+      "end": 161,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p11",
+     "value": "леонид морозов",
+     "canonical": "леонид морозов",
+     "parts": {
+      "given": "леонид",
+      "surname": "морозов",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 172,
+      "end": 186,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "PHONE",
+     "identity": "p11",
+     "value": "восемь девятьсот восемесят девять девяносто пяять восемьдесят пяять ноль один ноль",
+     "canonical": "+79899585010",
+     "parts": {
+      "digits": "9899585010"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 211,
+      "end": 293,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "шестьсот пятнадцать",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 17,
+      "end": 36,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p11",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 9,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 9,
+     "end": 10,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 10,
+     "end": 16,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 16,
+     "end": 17,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 17,
+     "end": 36,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 36,
+     "end": 37,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 37,
+     "end": 43,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 43,
+     "end": 44,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 44,
+     "end": 49,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 50,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 50,
+     "end": 161,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 161,
+     "end": 162,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 162,
+     "end": 171,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 171,
+     "end": 172,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 172,
+     "end": 186,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 186,
+     "end": 187,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 187,
+     "end": 191,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 191,
+     "end": 192,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 192,
+     "end": 201,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 201,
+     "end": 202,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 202,
+     "end": 204,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 204,
+     "end": 205,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 205,
+     "end": 210,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 210,
+     "end": 211,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 211,
+     "end": 293,
+     "origin": "value:ph1"
+    }
+   ],
+   "note": "чек на телефон: один номер и в чеке, и контактом"
+  },
+  {
+   "id": "receipt-012",
+   "kind": "receipt",
+   "register": "chat",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9251598199",
+   "conversation_id": "conv-receipt-12",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "здравствуйте проведите оплату 450 рублей карта 2202 7423 1630 4087 держатель юлия фёдорова чек пришлите на почту fedorova72@yandex.ru",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p12",
+     "value": "2202 7423 1630 4087",
+     "canonical": "2202 7423 1630 4087",
+     "parts": {
+      "digits": "2202742316304087"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 47,
+      "end": 66,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p12",
+     "value": "юлия фёдорова",
+     "canonical": "юлия фёдорова",
+     "parts": {
+      "given": "юлия",
+      "surname": "фёдорова",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 77,
+      "end": 90,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "EMAIL",
+     "identity": "p12",
+     "value": "fedorova72@yandex.ru",
+     "canonical": "fedorova72@yandex.ru",
+     "parts": {
+      "local": "fedorova72",
+      "domain": "yandex.ru"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 113,
+      "end": 133,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "450",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 30,
+      "end": 33,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p12",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 29,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 30,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 30,
+     "end": 33,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 34,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 34,
+     "end": 40,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 40,
+     "end": 41,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 41,
+     "end": 46,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 46,
+     "end": 47,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 47,
+     "end": 66,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 66,
+     "end": 67,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 67,
+     "end": 76,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 76,
+     "end": 77,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 77,
+     "end": 90,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 90,
+     "end": 91,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 91,
+     "end": 94,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 94,
+     "end": 95,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 95,
+     "end": 103,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 103,
+     "end": 104,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 104,
+     "end": 106,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 106,
+     "end": 107,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 107,
+     "end": 112,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 112,
+     "end": 113,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "e1",
+     "start": 113,
+     "end": 133,
+     "origin": "value:e1"
+    }
+   ],
+   "note": "чек на почту: EMAIL — условие фискализации"
+  },
+  {
+   "id": "receipt-013",
+   "kind": "receipt",
+   "register": "voice_itn",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9267867819",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "алло проведите оплату 780 рублей карта 2200080316128053 держатель евгений вольнов чек пришлите на номер 8-926-786-78-19",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p13",
+     "value": "2200080316128053",
+     "canonical": "2200080316128053",
+     "parts": {
+      "digits": "2200080316128053"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 39,
+      "end": 55,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p13",
+     "value": "евгений вольнов",
+     "canonical": "евгений вольнов",
+     "parts": {
+      "given": "евгений",
+      "surname": "вольнов",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 66,
+      "end": 81,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "PHONE",
+     "identity": "p13",
+     "value": "8-926-786-78-19",
+     "canonical": "+79267867819",
+     "parts": {
+      "digits": "9267867819"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 104,
+      "end": 119,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "780",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 22,
+      "end": 25,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p13",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 4,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 4,
+     "end": 5,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 5,
+     "end": 14,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 14,
+     "end": 15,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 15,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 22,
+     "end": 25,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 32,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 32,
+     "end": 33,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 38,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 38,
+     "end": 39,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 39,
+     "end": 55,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 55,
+     "end": 56,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 56,
+     "end": 65,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 65,
+     "end": 66,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 66,
+     "end": 81,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 81,
+     "end": 82,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 82,
+     "end": 85,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 85,
+     "end": 86,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 86,
+     "end": 94,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 94,
+     "end": 95,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 95,
+     "end": 97,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 97,
+     "end": 98,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 98,
+     "end": 103,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 103,
+     "end": 104,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 104,
+     "end": 119,
+     "origin": "value:ph1"
+    }
+   ],
+   "note": "чек на телефон: один номер и в чеке, и контактом"
+  },
+  {
+   "id": "receipt-014",
+   "kind": "receipt",
+   "register": "chat",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9059773291",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "здравствуйте проведите оплату 320 рублей карта 2200 8151 1928 2767 держатель владислав захаров чек пришлите на почту zaharov75@list.ru",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p14",
+     "value": "2200 8151 1928 2767",
+     "canonical": "2200 8151 1928 2767",
+     "parts": {
+      "digits": "2200815119282767"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 47,
+      "end": 66,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p14",
+     "value": "владислав захаров",
+     "canonical": "владислав захаров",
+     "parts": {
+      "given": "владислав",
+      "surname": "захаров",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 77,
+      "end": 94,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "EMAIL",
+     "identity": "p14",
+     "value": "zaharov75@list.ru",
+     "canonical": "zaharov75@list.ru",
+     "parts": {
+      "local": "zaharov75",
+      "domain": "list.ru"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 117,
+      "end": 134,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "320",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 30,
+      "end": 33,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p14",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 29,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 30,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 30,
+     "end": 33,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 34,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 34,
+     "end": 40,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 40,
+     "end": 41,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 41,
+     "end": 46,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 46,
+     "end": 47,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 47,
+     "end": 66,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 66,
+     "end": 67,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 67,
+     "end": 76,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 76,
+     "end": 77,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 77,
+     "end": 94,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 94,
+     "end": 95,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 95,
+     "end": 98,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 98,
+     "end": 99,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 99,
+     "end": 107,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 107,
+     "end": 108,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 108,
+     "end": 110,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 110,
+     "end": 111,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 111,
+     "end": 116,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 116,
+     "end": 117,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "e1",
+     "start": 117,
+     "end": 134,
+     "origin": "value:e1"
+    }
+   ],
+   "note": "чек на почту: EMAIL — условие фискализации"
+  },
+  {
+   "id": "receipt-015",
+   "kind": "receipt",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9129876543",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "добрыый день проведите оплату семьсот восемьдесят рублей картаа двадцать два ноль ноль тристо сорок три восемь сорок шесть тридцать три двадцать семь девяно семь держатель ольга кузнецова чек пришлитее на номер восемь девятьсот двенадцать девятьсот восемьдесят семь шесят пять сорок три",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p15",
+     "value": "двадцать два ноль ноль тристо сорок три восемь сорок шесть тридцать три двадцать семь девяно семь",
+     "canonical": "2200343846332797",
+     "parts": {
+      "digits": "2200343846332797"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 64,
+      "end": 161,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p15",
+     "value": "ольга кузнецова",
+     "canonical": "ольга кузнецова",
+     "parts": {
+      "given": "ольга",
+      "surname": "кузнецова",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 172,
+      "end": 187,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "PHONE",
+     "identity": "p15",
+     "value": "восемь девятьсот двенадцать девятьсот восемьдесят семь шесят пять сорок три",
+     "canonical": "+79129876543",
+     "parts": {
+      "digits": "9129876543"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 211,
+      "end": 286,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "семьсот восемьдесят",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 30,
+      "end": 49,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p15",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 7,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 8,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 8,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 29,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 30,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 30,
+     "end": 49,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 50,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 50,
+     "end": 56,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 56,
+     "end": 57,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 57,
+     "end": 63,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 63,
+     "end": 64,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 64,
+     "end": 161,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 161,
+     "end": 162,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 162,
+     "end": 171,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 171,
+     "end": 172,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 172,
+     "end": 187,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 187,
+     "end": 188,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 188,
+     "end": 191,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 191,
+     "end": 192,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 192,
+     "end": 201,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 201,
+     "end": 202,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 202,
+     "end": 204,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 204,
+     "end": 205,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 205,
+     "end": 210,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 210,
+     "end": 211,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 211,
+     "end": 286,
+     "origin": "value:ph1"
+    }
+   ],
+   "note": "чек на телефон: один номер и в чеке, и контактом"
+  },
+  {
+   "id": "receipt-016",
+   "kind": "receipt",
+   "register": "sloppy",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9269860597",
+   "conversation_id": "conv-receipt-16",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "добрый проведдите оплату 320 рблей карта 5469960895663399 держатель ольга кузнецова чек пршлите на почту kuznecova93@yandex.ru",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p16",
+     "value": "5469960895663399",
+     "canonical": "5469960895663399",
+     "parts": {
+      "digits": "5469960895663399"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 41,
+      "end": 57,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p16",
+     "value": "ольга кузнецова",
+     "canonical": "ольга кузнецова",
+     "parts": {
+      "given": "ольга",
+      "surname": "кузнецова",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 68,
+      "end": 83,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "EMAIL",
+     "identity": "p16",
+     "value": "kuznecova93@yandex.ru",
+     "canonical": "kuznecova93@yandex.ru",
+     "parts": {
+      "local": "kuznecova93",
+      "domain": "yandex.ru"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 105,
+      "end": 126,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "320",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 25,
+      "end": 28,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p16",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 6,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 6,
+     "end": 7,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 18,
+     "end": 24,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 25,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 25,
+     "end": 28,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 34,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 34,
+     "end": 35,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 35,
+     "end": 40,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 40,
+     "end": 41,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 41,
+     "end": 57,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 57,
+     "end": 58,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 58,
+     "end": 67,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 67,
+     "end": 68,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 68,
+     "end": 83,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 83,
+     "end": 84,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 84,
+     "end": 87,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 87,
+     "end": 88,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 88,
+     "end": 95,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 95,
+     "end": 96,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 96,
+     "end": 98,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 98,
+     "end": 99,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 99,
+     "end": 104,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 104,
+     "end": 105,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "e1",
+     "start": 105,
+     "end": 126,
+     "origin": "value:e1"
+    }
+   ],
+   "note": "чек на почту: EMAIL — условие фискализации"
+  },
+  {
+   "id": "receipt-017",
+   "kind": "receipt",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9891450262",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор платёжного сервиса. Создавай платежи инструментом payment_create; держатель карты — латиницей заглавными, как на карте. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "здравствуйте проведитее оплату четыреста пятьдесят рублей карта двадцать два ноль ноль восемнадцать девяносто семь тридц шесть девяносто восем сорок пять тридцать держатель руслан заболотный чек пришлите наа номерто восемь девятьсот восемьдесят девять сто сорок пять ноль два шестьдесят два",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "payment_create",
+    "notify_sms",
+    "crm_find_contact"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "CARD",
+     "identity": "p17",
+     "value": "двадцать два ноль ноль восемнадцать девяносто семь тридц шесть девяносто восем сорок пять тридцать",
+     "canonical": "2200189736984530",
+     "parts": {
+      "digits": "2200189736984530"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 64,
+      "end": 162,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "NAME",
+     "identity": "p17",
+     "value": "руслан заболотный",
+     "canonical": "руслан заболотный",
+     "parts": {
+      "given": "руслан",
+      "surname": "заболотный",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 173,
+      "end": 190,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "PHONE",
+     "identity": "p17",
+     "value": "восемь девятьсот восемьдесят девять сто сорок пять ноль два шестьдесят два",
+     "canonical": "+79891450262",
+     "parts": {
+      "digits": "9891450262"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 216,
+      "end": 290,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "четыреста пятьдесят",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 31,
+      "end": 50,
+      "record": "",
+      "path": ""
+     },
+     "family": "quantity",
+     "why": "сумма — не ПД, обязана уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "payment_create"
+    ],
+    "primary_identity": "p17",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 30,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 30,
+     "end": 31,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "s1",
+     "start": 31,
+     "end": 50,
+     "origin": "plain:s1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 50,
+     "end": 51,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 51,
+     "end": 57,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 57,
+     "end": 58,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 58,
+     "end": 63,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 63,
+     "end": 64,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "c1",
+     "start": 64,
+     "end": 162,
+     "origin": "value:c1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 162,
+     "end": 163,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 163,
+     "end": 172,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 172,
+     "end": 173,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 173,
+     "end": 190,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 190,
+     "end": 191,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 191,
+     "end": 194,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 194,
+     "end": 195,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 195,
+     "end": 203,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 203,
+     "end": 204,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 204,
+     "end": 207,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 207,
+     "end": 208,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 208,
+     "end": 215,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 215,
+     "end": 216,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 216,
+     "end": 290,
+     "origin": "value:ph1"
+    }
+   ],
+   "note": "чек на телефон: один номер и в чеке, и контактом"
   }
  ]
 }
