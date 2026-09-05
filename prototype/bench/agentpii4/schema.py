@@ -46,11 +46,15 @@ SCENARIO_KINDS: tuple[str, ...] = (
     # exhausted. What follows asks where the value COMES FROM and where it GOES.
     "lookup_list",  # a search returns OTHER people's records; one is chosen
     "crm_note",     # the model WRITES the PII itself, in prose, into a CRM field
+    "send_template",  # PII goes into a template VARIABLE; the placeholder must survive
 )
 ARMS: tuple[str, ...] = ("C", "I", "C2")          # control, intervention, second control
 INV_LEVELS: tuple[str, ...] = ("tools", "keys", "state")
 DUTIES: tuple[str, ...] = ("required", "optional")
-CORPUS_SIZE_BAND: tuple[int, int] = (330, 420)
+# 05.09: raised from 420 with the flow axis (research/2026-09-05-agent-scenario-
+# coverage.md). The band is a sanity check on authoring effort, not a statistical
+# constraint — the tiers are what bound the money, and `small` is still the pilot.
+CORPUS_SIZE_BAND: tuple[int, int] = (330, 520)
 TIER_SIZES: dict[str, int] = {"nano": 30, "small": 120, "medium": 0}
 MIN_CLUSTER_MULTI: int = 8         # clusters of size >= 3, so ICC is measured, not assumed
 MIN_FIND_DISTINCT_CASES: int = 12  # cases where text.find(value) != start — see validate.py

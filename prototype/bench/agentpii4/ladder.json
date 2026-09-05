@@ -1,7 +1,7 @@
 {
  "version": 1,
  "seed": 4,
- "corpus_sha256": "523c2367f62360d573c93ab40e803436efb24ba350987738f0a4375ea688522b",
+ "corpus_sha256": "8be075fde1f9779e50d6942c921140541cc1bbb33cdd485965c421abb4d556d9",
  "tiers": {
   "nano": [
    "chain-014",
@@ -173,7 +173,15 @@
    "crm_note-015",
    "crm_note-021",
    "crm_note-002",
-   "crm_note-012"
+   "crm_note-012",
+   "send_template-001",
+   "send_template-003",
+   "send_template-021",
+   "send_template-007",
+   "send_template-005",
+   "send_template-002",
+   "send_template-017",
+   "send_template-010"
   ],
   "medium": [
    "chain-000",
@@ -589,7 +597,31 @@
    "crm_note-020",
    "crm_note-021",
    "crm_note-022",
-   "crm_note-023"
+   "crm_note-023",
+   "send_template-000",
+   "send_template-001",
+   "send_template-002",
+   "send_template-003",
+   "send_template-004",
+   "send_template-005",
+   "send_template-006",
+   "send_template-007",
+   "send_template-008",
+   "send_template-009",
+   "send_template-010",
+   "send_template-011",
+   "send_template-012",
+   "send_template-013",
+   "send_template-014",
+   "send_template-015",
+   "send_template-016",
+   "send_template-017",
+   "send_template-018",
+   "send_template-019",
+   "send_template-020",
+   "send_template-021",
+   "send_template-022",
+   "send_template-023"
   ]
  }
 }

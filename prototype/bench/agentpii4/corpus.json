@@ -1,8 +1,8 @@
 {
  "version": 4,
  "seed": 4,
- "cases": 414,
- "digest": "523c2367f62360d573c93ab40e803436efb24ba350987738f0a4375ea688522b",
+ "cases": 438,
+ "digest": "8be075fde1f9779e50d6942c921140541cc1bbb33cdd485965c421abb4d556d9",
  "corpus": [
   {
    "id": "chain-000",
@@ -177735,6 +177735,7408 @@
     }
    ],
    "note": "в заметке двое: клиент и курьер; каждому своя подмена"
+  },
+  {
+   "id": "send_template-000",
+   "kind": "send_template",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9164021187",
+   "conversation_id": "conv-tpl-0",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор службы доставки. Оформляй заказы и вызовы курьера инструментами, переспрашивай только то, чего не хватает для вызова. Вес посылки, если не назван, — 1000 г; почтовый индекс подбери сам по городу получателя. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "добрыый день пришлите смс о доставке по шаблону этоо сергей телефон восем девятьсот шестнадцать четыреста два сто восемнадцать семь адрес воткинск проспект толстого дом тринадцать квартира двести один привезитее к одиннадцать ноль ноль",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p0",
+     "value": "сергей",
+     "canonical": "сергей",
+     "parts": {
+      "given": "сергей",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 53,
+      "end": 59,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p0",
+     "value": "восем девятьсот шестнадцать четыреста два сто восемнадцать семь",
+     "canonical": "+79164021187",
+     "parts": {
+      "digits": "9164021187"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 68,
+      "end": 131,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "LOC",
+     "identity": "p0.home",
+     "value": "воткинск проспект толстого дом тринадцать квартира двести один",
+     "canonical": "воткинск проспект толстого дом тринадцать квартира двести один",
+     "parts": {
+      "street": "толстого",
+      "street_type": "проспект",
+      "house": "13",
+      "flat": "201",
+      "city": "воткинск"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 138,
+      "end": 200,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к одиннадцать ноль ноль",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 212,
+      "end": 235,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p0",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 7,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 8,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 8,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 27,
+     "end": 28,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 36,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 36,
+     "end": 37,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 37,
+     "end": 39,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 39,
+     "end": 40,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 40,
+     "end": 47,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 47,
+     "end": 48,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 48,
+     "end": 52,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 52,
+     "end": 53,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 53,
+     "end": 59,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 59,
+     "end": 60,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 60,
+     "end": 67,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 67,
+     "end": 68,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 68,
+     "end": 131,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 131,
+     "end": 132,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 132,
+     "end": 137,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 137,
+     "end": 138,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "a1",
+     "start": 138,
+     "end": 200,
+     "origin": "value:a1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 200,
+     "end": 201,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 201,
+     "end": 211,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 211,
+     "end": 212,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 212,
+     "end": 235,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон delivery_eta: имя и адрес переменными, плейсхолдеры обязаны уцелеть"
+  },
+  {
+   "id": "send_template-001",
+   "kind": "send_template",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9600225888",
+   "conversation_id": "conv-tpl-1",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор колл-центра. Планируй обратные звонки и отправляй смс инструментами. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "аа здравствуйтее подтвердитее шаблоноом что перезвонитее меняя зовут валентина номер восемь девятьсот шестьдесят ноль два двадцать пять восемьдесят восемсь восемь перезвоните к четырнадцать ноль ноль",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p1",
+     "value": "валентина",
+     "canonical": "валентина",
+     "parts": {
+      "given": "валентина",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 69,
+      "end": 78,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p1",
+     "value": "восемь девятьсот шестьдесят ноль два двадцать пять восемьдесят восемсь восемь",
+     "canonical": "+79600225888",
+     "parts": {
+      "digits": "9600225888"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 85,
+      "end": 162,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к четырнадцать ноль ноль",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 175,
+      "end": 199,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p1",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 2,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 2,
+     "end": 3,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 3,
+     "end": 16,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 16,
+     "end": 17,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 17,
+     "end": 29,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 30,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 30,
+     "end": 39,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 39,
+     "end": 40,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 40,
+     "end": 43,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 43,
+     "end": 44,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 44,
+     "end": 56,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 56,
+     "end": 57,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 57,
+     "end": 62,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 62,
+     "end": 63,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 63,
+     "end": 68,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 68,
+     "end": 69,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 69,
+     "end": 78,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 78,
+     "end": 79,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 79,
+     "end": 84,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 84,
+     "end": 85,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 85,
+     "end": 162,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 162,
+     "end": 163,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 163,
+     "end": 174,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 174,
+     "end": 175,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 175,
+     "end": 199,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон callback: один и тот же телефон адресатом и переменной"
+  },
+  {
+   "id": "send_template-002",
+   "kind": "send_template",
+   "register": "voice_itn",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9524474647",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор службы доставки. Оформляй заказы и вызовы курьера инструментами, переспрашивай только то, чего не хватает для вызова. Вес посылки, если не назван, — 1000 г; почтовый индекс подбери сам по городу получателя. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "алло пришлите смс о доставке по шаблону это артём телефон 8-952-447-46-47 адрес абакан проезд кирова 85 квартира 97 привезите к 18 00",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p2",
+     "value": "артём",
+     "canonical": "артём",
+     "parts": {
+      "given": "артём",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 44,
+      "end": 49,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p2",
+     "value": "8-952-447-46-47",
+     "canonical": "+79524474647",
+     "parts": {
+      "digits": "9524474647"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 58,
+      "end": 73,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "LOC",
+     "identity": "p2.home",
+     "value": "абакан проезд кирова 85 квартира 97",
+     "canonical": "абакан проезд кирова 85 квартира 97",
+     "parts": {
+      "street": "кирова",
+      "street_type": "проезд",
+      "house": "85",
+      "flat": "97",
+      "city": "абакан"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 80,
+      "end": 115,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к 18 00",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 126,
+      "end": 133,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p2",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 4,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 4,
+     "end": 5,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 5,
+     "end": 13,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 14,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 14,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 18,
+     "end": 19,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 19,
+     "end": 20,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 20,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 32,
+     "end": 39,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 39,
+     "end": 40,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 40,
+     "end": 43,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 43,
+     "end": 44,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 44,
+     "end": 49,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 50,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 50,
+     "end": 57,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 57,
+     "end": 58,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 58,
+     "end": 73,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 73,
+     "end": 74,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 74,
+     "end": 79,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 79,
+     "end": 80,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "a1",
+     "start": 80,
+     "end": 115,
+     "origin": "value:a1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 115,
+     "end": 116,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 116,
+     "end": 125,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 125,
+     "end": 126,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 126,
+     "end": 133,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон delivery_eta: имя и адрес переменными, плейсхолдеры обязаны уцелеть"
+  },
+  {
+   "id": "send_template-003",
+   "kind": "send_template",
+   "register": "voice_itn",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9254276029",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор колл-центра. Планируй обратные звонки и отправляй смс инструментами. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "алло подтвердите шаблоном что перезвоните меня зовут пётр номер 8 925 427 60 29 перезвоните к 10 00",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p3",
+     "value": "пётр",
+     "canonical": "пётр",
+     "parts": {
+      "given": "пётр",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 53,
+      "end": 57,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p3",
+     "value": "8 925 427 60 29",
+     "canonical": "+79254276029",
+     "parts": {
+      "digits": "9254276029"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 64,
+      "end": 79,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к 10 00",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 92,
+      "end": 99,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p3",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 4,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 4,
+     "end": 5,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 5,
+     "end": 16,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 16,
+     "end": 17,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 17,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 29,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 30,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 30,
+     "end": 41,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 41,
+     "end": 42,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 42,
+     "end": 46,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 46,
+     "end": 47,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 47,
+     "end": 52,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 52,
+     "end": 53,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 53,
+     "end": 57,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 57,
+     "end": 58,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 58,
+     "end": 63,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 63,
+     "end": 64,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 64,
+     "end": 79,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 79,
+     "end": 80,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 80,
+     "end": 91,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 91,
+     "end": 92,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 92,
+     "end": 99,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон callback: один и тот же телефон адресатом и переменной"
+  },
+  {
+   "id": "send_template-004",
+   "kind": "send_template",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9896564659",
+   "conversation_id": "conv-tpl-4",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор службы доставки. Оформляй заказы и вызовы курьера инструментами, переспрашивай только то, чего не хватает для вызова. Вес посылки, если не назван, — 1000 г; почтовый индекс подбери сам по городу получателя. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "аа здравствуйтее пришлите смс о доставке по шаблонуу это ольга телефонто восемь девятьсот восемесят девять шестьсот пятьдесят шесть сорок шесть пятьдесят девять адрес колпино бульвар добролюбова пять квартира сто пять привезите к десять ноль ноль",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p4",
+     "value": "ольга",
+     "canonical": "ольга",
+     "parts": {
+      "given": "ольга",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 57,
+      "end": 62,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p4",
+     "value": "восемь девятьсот восемесят девять шестьсот пятьдесят шесть сорок шесть пятьдесят девять",
+     "canonical": "+79896564659",
+     "parts": {
+      "digits": "9896564659"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 73,
+      "end": 160,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "LOC",
+     "identity": "p4.home",
+     "value": "колпино бульвар добролюбова пять квартира сто пять",
+     "canonical": "колпино бульвар добролюбова пять квартира сто пять",
+     "parts": {
+      "street": "добролюбова",
+      "street_type": "бульвар",
+      "house": "5",
+      "flat": "105",
+      "city": "колпино"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 167,
+      "end": 217,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к десять ноль ноль",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 228,
+      "end": 246,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p4",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 2,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 2,
+     "end": 3,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 3,
+     "end": 16,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 16,
+     "end": 17,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 17,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 29,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 30,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 30,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 32,
+     "end": 40,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 40,
+     "end": 41,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 41,
+     "end": 43,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 43,
+     "end": 44,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 44,
+     "end": 52,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 52,
+     "end": 53,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 53,
+     "end": 56,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 56,
+     "end": 57,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 57,
+     "end": 62,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 62,
+     "end": 63,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 63,
+     "end": 72,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 72,
+     "end": 73,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 73,
+     "end": 160,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 160,
+     "end": 161,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 161,
+     "end": 166,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 166,
+     "end": 167,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "a1",
+     "start": 167,
+     "end": 217,
+     "origin": "value:a1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 217,
+     "end": 218,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 218,
+     "end": 227,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 227,
+     "end": 228,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 228,
+     "end": 246,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон delivery_eta: имя и адрес переменными, плейсхолдеры обязаны уцелеть"
+  },
+  {
+   "id": "send_template-005",
+   "kind": "send_template",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9261234567",
+   "conversation_id": "conv-tpl-5",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор колл-центра. Планируй обратные звонки и отправляй смс инструментами. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "алло подтвердите шаблоном чтоо перезвоните меняя зовуут зинаида номер восемсь девятьсот двадцать шесть двенадцать тридцать четыыре пеесят шесть семь перезвонитее к пятнадцать ноль ноль",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p5",
+     "value": "зинаида",
+     "canonical": "зинаида",
+     "parts": {
+      "given": "зинаида",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 56,
+      "end": 63,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p5",
+     "value": "восемсь девятьсот двадцать шесть двенадцать тридцать четыыре пеесят шесть семь",
+     "canonical": "+79261234567",
+     "parts": {
+      "digits": "9261234567"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 70,
+      "end": 148,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к пятнадцать ноль ноль",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 162,
+      "end": 184,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p5",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 4,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 4,
+     "end": 5,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 5,
+     "end": 16,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 16,
+     "end": 17,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 17,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 30,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 30,
+     "end": 31,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 31,
+     "end": 42,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 42,
+     "end": 43,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 43,
+     "end": 48,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 48,
+     "end": 49,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 55,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 55,
+     "end": 56,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 56,
+     "end": 63,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 63,
+     "end": 64,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 64,
+     "end": 69,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 69,
+     "end": 70,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 70,
+     "end": 148,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 148,
+     "end": 149,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 149,
+     "end": 161,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 161,
+     "end": 162,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 162,
+     "end": 184,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон callback: один и тот же телефон адресатом и переменной"
+  },
+  {
+   "id": "send_template-006",
+   "kind": "send_template",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9855205466",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор службы доставки. Оформляй заказы и вызовы курьера инструментами, переспрашивай только то, чего не хватает для вызова. Вес посылки, если не назван, — 1000 г; почтовый индекс подбери сам по городу получателя. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "ааа здравствуйте пришлите смс оо доставке по шаблонуу это наталья телефонто восемь девятьсот восемьдесят пять пятьсот двадцать пятьсот сорок шесть шесть адресто ижевск переулок октябрьский десять квартира восемьдесят привезите к восемнадцать ноль ноль",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p6",
+     "value": "наталья",
+     "canonical": "наталья",
+     "parts": {
+      "given": "наталья",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 58,
+      "end": 65,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p6",
+     "value": "восемь девятьсот восемьдесят пять пятьсот двадцать пятьсот сорок шесть шесть",
+     "canonical": "+79855205466",
+     "parts": {
+      "digits": "9855205466"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 76,
+      "end": 152,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "LOC",
+     "identity": "p6.home",
+     "value": "ижевск переулок октябрьский десять квартира восемьдесят",
+     "canonical": "ижевск переулок октябрьский десять квартира восемьдесят",
+     "parts": {
+      "street": "октябрьский",
+      "street_type": "переулок",
+      "house": "10",
+      "flat": "80",
+      "city": "ижевск"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 161,
+      "end": 216,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к восемнадцать ноль ноль",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 227,
+      "end": 251,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p6",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 3,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 3,
+     "end": 4,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 4,
+     "end": 16,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 16,
+     "end": 17,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 17,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 29,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 30,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 30,
+     "end": 32,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 32,
+     "end": 33,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 41,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 41,
+     "end": 42,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 42,
+     "end": 44,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 44,
+     "end": 45,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 45,
+     "end": 53,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 53,
+     "end": 54,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 54,
+     "end": 57,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 57,
+     "end": 58,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 58,
+     "end": 65,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 65,
+     "end": 66,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 66,
+     "end": 75,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 75,
+     "end": 76,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 76,
+     "end": 152,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 152,
+     "end": 153,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 153,
+     "end": 160,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 160,
+     "end": 161,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "a1",
+     "start": 161,
+     "end": 216,
+     "origin": "value:a1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 216,
+     "end": 217,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 217,
+     "end": 226,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 226,
+     "end": 227,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 227,
+     "end": 251,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон delivery_eta: имя и адрес переменными, плейсхолдеры обязаны уцелеть"
+  },
+  {
+   "id": "send_template-007",
+   "kind": "send_template",
+   "register": "sloppy",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9778744672",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор колл-центра. Планируй обратные звонки и отправляй смс инструментами. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "добрый подтвердите шаблоном что перезвоните меня зовут валерий номер 89778744672 перезвоните к 18 00",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p7",
+     "value": "валерий",
+     "canonical": "валерий",
+     "parts": {
+      "given": "валерий",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 55,
+      "end": 62,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p7",
+     "value": "89778744672",
+     "canonical": "+79778744672",
+     "parts": {
+      "digits": "9778744672"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 69,
+      "end": 80,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к 18 00",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 93,
+      "end": 100,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p7",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 6,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 6,
+     "end": 7,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 18,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 18,
+     "end": 19,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 19,
+     "end": 27,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 27,
+     "end": 28,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 32,
+     "end": 43,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 43,
+     "end": 44,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 44,
+     "end": 48,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 48,
+     "end": 49,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 54,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 54,
+     "end": 55,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 55,
+     "end": 62,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 62,
+     "end": 63,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 63,
+     "end": 68,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 68,
+     "end": 69,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 69,
+     "end": 80,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 80,
+     "end": 81,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 81,
+     "end": 92,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 92,
+     "end": 93,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 93,
+     "end": 100,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон callback: один и тот же телефон адресатом и переменной"
+  },
+  {
+   "id": "send_template-008",
+   "kind": "send_template",
+   "register": "sloppy",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9099800954",
+   "conversation_id": "conv-tpl-8",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор службы доставки. Оформляй заказы и вызовы курьера инструментами, переспрашивай только то, чего не хватает для вызова. Вес посылки, если не назван, — 1000 г; почтовый индекс подбери сам по городу получателя. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "добрый пришлите смс о доставке по шаблону это евгений тлефон 89099800954 адрес сортавала переулок репина 22 кв 40 привезите к 9 00",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p8",
+     "value": "евгений",
+     "canonical": "евгений",
+     "parts": {
+      "given": "евгений",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 46,
+      "end": 53,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p8",
+     "value": "89099800954",
+     "canonical": "+79099800954",
+     "parts": {
+      "digits": "9099800954"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 61,
+      "end": 72,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "LOC",
+     "identity": "p8.home",
+     "value": "сортавала переулок репина 22 кв 40",
+     "canonical": "сортавала переулок репина 22 кв 40",
+     "parts": {
+      "street": "репина",
+      "street_type": "переулок",
+      "house": "22",
+      "flat": "40",
+      "city": "сортавала"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 79,
+      "end": 113,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к 9 00",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 124,
+      "end": 130,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p8",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 6,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 6,
+     "end": 7,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 15,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 15,
+     "end": 16,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 16,
+     "end": 19,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 19,
+     "end": 20,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 20,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 22,
+     "end": 30,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 30,
+     "end": 31,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 31,
+     "end": 33,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 34,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 34,
+     "end": 41,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 41,
+     "end": 42,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 42,
+     "end": 45,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 45,
+     "end": 46,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 46,
+     "end": 53,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 53,
+     "end": 54,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 54,
+     "end": 60,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 60,
+     "end": 61,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 61,
+     "end": 72,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 72,
+     "end": 73,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 73,
+     "end": 78,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 78,
+     "end": 79,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "a1",
+     "start": 79,
+     "end": 113,
+     "origin": "value:a1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 113,
+     "end": 114,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 114,
+     "end": 123,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 123,
+     "end": 124,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 124,
+     "end": 130,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон delivery_eta: имя и адрес переменными, плейсхолдеры обязаны уцелеть"
+  },
+  {
+   "id": "send_template-009",
+   "kind": "send_template",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9190041970",
+   "conversation_id": "conv-tpl-9",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор колл-центра. Планируй обратные звонки и отправляй смс инструментами. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "девушка здравствуйтее подтвердите шаблоноом что перезвоните меня зовуут валентина номер восемь девятьсот девятнадцать ноль ноль четыре девятнадцать семьдесят перезвоните к восемнадцать ноль ноль",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p9",
+     "value": "валентина",
+     "canonical": "валентина",
+     "parts": {
+      "given": "валентина",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 72,
+      "end": 81,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p9",
+     "value": "восемь девятьсот девятнадцать ноль ноль четыре девятнадцать семьдесят",
+     "canonical": "+79190041970",
+     "parts": {
+      "digits": "9190041970"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 88,
+      "end": 157,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к восемнадцать ноль ноль",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 170,
+      "end": 194,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p9",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 7,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 8,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 8,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 22,
+     "end": 33,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 34,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 34,
+     "end": 43,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 43,
+     "end": 44,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 44,
+     "end": 47,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 47,
+     "end": 48,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 48,
+     "end": 59,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 59,
+     "end": 60,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 60,
+     "end": 64,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 64,
+     "end": 65,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 65,
+     "end": 71,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 71,
+     "end": 72,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 72,
+     "end": 81,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 81,
+     "end": 82,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 82,
+     "end": 87,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 87,
+     "end": 88,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 88,
+     "end": 157,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 157,
+     "end": 158,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 158,
+     "end": 169,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 169,
+     "end": 170,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 170,
+     "end": 194,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон callback: один и тот же телефон адресатом и переменной"
+  },
+  {
+   "id": "send_template-010",
+   "kind": "send_template",
+   "register": "sloppy",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9037654321",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор службы доставки. Оформляй заказы и вызовы курьера инструментами, переспрашивай только то, чего не хватает для вызова. Вес посылки, если не назван, — 1000 г; почтовый индекс подбери сам по городу получателя. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "здрасте пришлите смс о доставке по швблону это пётр телефон +79037654321 адерс сортавала бульвар барвшникова 34кв53 привезите к 9 00",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p10",
+     "value": "пётр",
+     "canonical": "пётр",
+     "parts": {
+      "given": "пётр",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 47,
+      "end": 51,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p10",
+     "value": "+79037654321",
+     "canonical": "+79037654321",
+     "parts": {
+      "digits": "9037654321"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 60,
+      "end": 72,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "LOC",
+     "identity": "p10.home",
+     "value": "сортавала бульвар барвшникова 34кв53",
+     "canonical": "сортавала бульвар барвшникова 34кв53",
+     "parts": {
+      "street": "барвшникова",
+      "street_type": "бульвар",
+      "house": "34",
+      "flat": "53",
+      "city": "сортавала"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 79,
+      "end": 115,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к 9 00",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 126,
+      "end": 132,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p10",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 7,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 8,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 8,
+     "end": 16,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 16,
+     "end": 17,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 17,
+     "end": 20,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 20,
+     "end": 21,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 32,
+     "end": 34,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 34,
+     "end": 35,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 35,
+     "end": 42,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 42,
+     "end": 43,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 43,
+     "end": 46,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 46,
+     "end": 47,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 47,
+     "end": 51,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 51,
+     "end": 52,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 52,
+     "end": 59,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 59,
+     "end": 60,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 60,
+     "end": 72,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 72,
+     "end": 73,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 73,
+     "end": 78,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 78,
+     "end": 79,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "a1",
+     "start": 79,
+     "end": 115,
+     "origin": "value:a1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 115,
+     "end": 116,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 116,
+     "end": 125,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 125,
+     "end": 126,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 126,
+     "end": 132,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон delivery_eta: имя и адрес переменными, плейсхолдеры обязаны уцелеть"
+  },
+  {
+   "id": "send_template-011",
+   "kind": "send_template",
+   "register": "chat",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9050596466",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор колл-центра. Планируй обратные звонки и отправляй смс инструментами. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "привет подтвердите шаблоном что перезвоните меня зовут владислав номер 89050596466 перезвоните к 10:00",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p11",
+     "value": "владислав",
+     "canonical": "владислав",
+     "parts": {
+      "given": "владислав",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 55,
+      "end": 64,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p11",
+     "value": "89050596466",
+     "canonical": "+79050596466",
+     "parts": {
+      "digits": "9050596466"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 71,
+      "end": 82,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к 10:00",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 95,
+      "end": 102,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p11",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 6,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 6,
+     "end": 7,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 18,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 18,
+     "end": 19,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 19,
+     "end": 27,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 27,
+     "end": 28,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 32,
+     "end": 43,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 43,
+     "end": 44,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 44,
+     "end": 48,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 48,
+     "end": 49,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 54,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 54,
+     "end": 55,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 55,
+     "end": 64,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 64,
+     "end": 65,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 65,
+     "end": 70,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 70,
+     "end": 71,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 71,
+     "end": 82,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 82,
+     "end": 83,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 83,
+     "end": 94,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 94,
+     "end": 95,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 95,
+     "end": 102,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон callback: один и тот же телефон адресатом и переменной"
+  },
+  {
+   "id": "send_template-012",
+   "kind": "send_template",
+   "register": "voice_itn",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9859653351",
+   "conversation_id": "conv-tpl-12",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор службы доставки. Оформляй заказы и вызовы курьера инструментами, переспрашивай только то, чего не хватает для вызова. Вес посылки, если не назван, — 1000 г; почтовый индекс подбери сам по городу получателя. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "добрый день пришлите смс о доставке по шаблону это ольга телефон 8-985-965-33-51 адрес краснодар бульвар барышникова 7 б квартира 234 привезите к 18 00",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p12",
+     "value": "ольга",
+     "canonical": "ольга",
+     "parts": {
+      "given": "ольга",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 51,
+      "end": 56,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p12",
+     "value": "8-985-965-33-51",
+     "canonical": "+79859653351",
+     "parts": {
+      "digits": "9859653351"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 65,
+      "end": 80,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "LOC",
+     "identity": "p12.home",
+     "value": "краснодар бульвар барышникова 7 б квартира 234",
+     "canonical": "краснодар бульвар барышникова 7 б квартира 234",
+     "parts": {
+      "street": "барышникова",
+      "street_type": "бульвар",
+      "house": "7б",
+      "flat": "234",
+      "city": "краснодар"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 87,
+      "end": 133,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к 18 00",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 144,
+      "end": 151,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p12",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 6,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 6,
+     "end": 7,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 11,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 11,
+     "end": 12,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 20,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 20,
+     "end": 21,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 21,
+     "end": 24,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 25,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 27,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 36,
+     "end": 38,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 38,
+     "end": 39,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 39,
+     "end": 46,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 46,
+     "end": 47,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 47,
+     "end": 50,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 50,
+     "end": 51,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 51,
+     "end": 56,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 56,
+     "end": 57,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 57,
+     "end": 64,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 64,
+     "end": 65,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 65,
+     "end": 80,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 80,
+     "end": 81,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 81,
+     "end": 86,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 86,
+     "end": 87,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "a1",
+     "start": 87,
+     "end": 133,
+     "origin": "value:a1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 133,
+     "end": 134,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 134,
+     "end": 143,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 143,
+     "end": 144,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 144,
+     "end": 151,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон delivery_eta: имя и адрес переменными, плейсхолдеры обязаны уцелеть"
+  },
+  {
+   "id": "send_template-013",
+   "kind": "send_template",
+   "register": "chat",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9190245301",
+   "conversation_id": "conv-tpl-13",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор колл-центра. Планируй обратные звонки и отправляй смс инструментами. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "добрый день подтвердите шаблоном что перезвоните меня зовут ирина номер +79190245301 перезвоните к 10:00",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p13",
+     "value": "ирина",
+     "canonical": "ирина",
+     "parts": {
+      "given": "ирина",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 60,
+      "end": 65,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p13",
+     "value": "+79190245301",
+     "canonical": "+79190245301",
+     "parts": {
+      "digits": "9190245301"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 72,
+      "end": 84,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к 10:00",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 97,
+      "end": 104,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p13",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 6,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 6,
+     "end": 7,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 11,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 11,
+     "end": 12,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 32,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 32,
+     "end": 33,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 36,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 36,
+     "end": 37,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 37,
+     "end": 48,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 48,
+     "end": 49,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 53,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 53,
+     "end": 54,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 54,
+     "end": 59,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 59,
+     "end": 60,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 60,
+     "end": 65,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 65,
+     "end": 66,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 66,
+     "end": 71,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 71,
+     "end": 72,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 72,
+     "end": 84,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 84,
+     "end": 85,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 85,
+     "end": 96,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 96,
+     "end": 97,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 97,
+     "end": 104,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон callback: один и тот же телефон адресатом и переменной"
+  },
+  {
+   "id": "send_template-014",
+   "kind": "send_template",
+   "register": "voice_itn",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9528834920",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор службы доставки. Оформляй заказы и вызовы курьера инструментами, переспрашивай только то, чего не хватает для вызова. Вес посылки, если не назван, — 1000 г; почтовый индекс подбери сам по городу получателя. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "здравствуйте пришлите смс о доставке по шаблону это олег телефон 8 952 883 49 20 адрес краснодар проспект тельмана 14 квартира 224 привезите к 17 00",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p14",
+     "value": "олег",
+     "canonical": "олег",
+     "parts": {
+      "given": "олег",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 52,
+      "end": 56,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p14",
+     "value": "8 952 883 49 20",
+     "canonical": "+79528834920",
+     "parts": {
+      "digits": "9528834920"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 65,
+      "end": 80,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "LOC",
+     "identity": "p14.home",
+     "value": "краснодар проспект тельмана 14 квартира 224",
+     "canonical": "краснодар проспект тельмана 14 квартира 224",
+     "parts": {
+      "street": "тельмана",
+      "street_type": "проспект",
+      "house": "14",
+      "flat": "224",
+      "city": "краснодар"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 87,
+      "end": 130,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к 17 00",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 141,
+      "end": 148,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p14",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 27,
+     "end": 28,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 36,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 36,
+     "end": 37,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 37,
+     "end": 39,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 39,
+     "end": 40,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 40,
+     "end": 47,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 47,
+     "end": 48,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 48,
+     "end": 51,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 51,
+     "end": 52,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 52,
+     "end": 56,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 56,
+     "end": 57,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 57,
+     "end": 64,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 64,
+     "end": 65,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 65,
+     "end": 80,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 80,
+     "end": 81,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 81,
+     "end": 86,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 86,
+     "end": 87,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "a1",
+     "start": 87,
+     "end": 130,
+     "origin": "value:a1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 130,
+     "end": 131,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 131,
+     "end": 140,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 140,
+     "end": 141,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 141,
+     "end": 148,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон delivery_eta: имя и адрес переменными, плейсхолдеры обязаны уцелеть"
+  },
+  {
+   "id": "send_template-015",
+   "kind": "send_template",
+   "register": "chat",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9129876543",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор колл-центра. Планируй обратные звонки и отправляй смс инструментами. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "подтвердите шаблоном что перезвоните меня зовут ольга номер +79129876543 перезвоните к 15:00",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p15",
+     "value": "ольга",
+     "canonical": "ольга",
+     "parts": {
+      "given": "ольга",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 48,
+      "end": 53,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p15",
+     "value": "+79129876543",
+     "canonical": "+79129876543",
+     "parts": {
+      "digits": "9129876543"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 60,
+      "end": 72,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к 15:00",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 85,
+      "end": 92,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p15",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 11,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 11,
+     "end": 12,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 20,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 20,
+     "end": 21,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 21,
+     "end": 24,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 25,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 36,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 36,
+     "end": 37,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 37,
+     "end": 41,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 41,
+     "end": 42,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 42,
+     "end": 47,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 47,
+     "end": 48,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 48,
+     "end": 53,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 53,
+     "end": 54,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 54,
+     "end": 59,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 59,
+     "end": 60,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 60,
+     "end": 72,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 72,
+     "end": 73,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 73,
+     "end": 84,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 84,
+     "end": 85,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 85,
+     "end": 92,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон callback: один и тот же телефон адресатом и переменной"
+  },
+  {
+   "id": "send_template-016",
+   "kind": "send_template",
+   "register": "chat",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9056510061",
+   "conversation_id": "conv-tpl-16",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор службы доставки. Оформляй заказы и вызовы курьера инструментами, переспрашивай только то, чего не хватает для вызова. Вес посылки, если не назван, — 1000 г; почтовый индекс подбери сам по городу получателя. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "пришлите смс о доставке по шаблону это ольга телефон +79056510061 адрес ижевск проспект маяковского 49 кв 138 привезите к 17:00",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p16",
+     "value": "ольга",
+     "canonical": "ольга",
+     "parts": {
+      "given": "ольга",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 39,
+      "end": 44,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p16",
+     "value": "+79056510061",
+     "canonical": "+79056510061",
+     "parts": {
+      "digits": "9056510061"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 53,
+      "end": 65,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "LOC",
+     "identity": "p16.home",
+     "value": "ижевск проспект маяковского 49 кв 138",
+     "canonical": "ижевск проспект маяковского 49 кв 138",
+     "parts": {
+      "street": "маяковского",
+      "street_type": "проспект",
+      "house": "49",
+      "flat": "138",
+      "city": "ижевск"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 72,
+      "end": 109,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к 17:00",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 120,
+      "end": 127,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p16",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 8,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 8,
+     "end": 9,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 9,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 14,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 14,
+     "end": 15,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 15,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 27,
+     "end": 34,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 34,
+     "end": 35,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 35,
+     "end": 38,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 38,
+     "end": 39,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 39,
+     "end": 44,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 44,
+     "end": 45,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 45,
+     "end": 52,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 52,
+     "end": 53,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 53,
+     "end": 65,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 65,
+     "end": 66,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 66,
+     "end": 71,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 71,
+     "end": 72,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "a1",
+     "start": 72,
+     "end": 109,
+     "origin": "value:a1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 109,
+     "end": 110,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 110,
+     "end": 119,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 119,
+     "end": 120,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 120,
+     "end": 127,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон delivery_eta: имя и адрес переменными, плейсхолдеры обязаны уцелеть"
+  },
+  {
+   "id": "send_template-017",
+   "kind": "send_template",
+   "register": "chat",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9221316752",
+   "conversation_id": "conv-tpl-17",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор колл-центра. Планируй обратные звонки и отправляй смс инструментами. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "здравствуйте подтвердите шаблоном что перезвоните меня зовут ольга номер 89221316752 перезвоните к 17:00",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p17",
+     "value": "ольга",
+     "canonical": "ольга",
+     "parts": {
+      "given": "ольга",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 61,
+      "end": 66,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p17",
+     "value": "89221316752",
+     "canonical": "+79221316752",
+     "parts": {
+      "digits": "9221316752"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 73,
+      "end": 84,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к 17:00",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 97,
+      "end": 104,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p17",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 24,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 25,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 33,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 34,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 34,
+     "end": 37,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 37,
+     "end": 38,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 38,
+     "end": 49,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 50,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 50,
+     "end": 54,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 54,
+     "end": 55,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 55,
+     "end": 60,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 60,
+     "end": 61,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 61,
+     "end": 66,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 66,
+     "end": 67,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 67,
+     "end": 72,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 72,
+     "end": 73,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 73,
+     "end": 84,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 84,
+     "end": 85,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 85,
+     "end": 96,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 96,
+     "end": 97,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 97,
+     "end": 104,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон callback: один и тот же телефон адресатом и переменной"
+  },
+  {
+   "id": "send_template-018",
+   "kind": "send_template",
+   "register": "voice_itn",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9262656003",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор службы доставки. Оформляй заказы и вызовы курьера инструментами, переспрашивай только то, чего не хватает для вызова. Вес посылки, если не назван, — 1000 г; почтовый индекс подбери сам по городу получателя. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "добрый день пришлите смс о доставке по шаблону это зинаида телефон +79262656003 адрес абакан бульвар маяковского 18 квартира 118 привезите к 18 00",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p18",
+     "value": "зинаида",
+     "canonical": "зинаида",
+     "parts": {
+      "given": "зинаида",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 51,
+      "end": 58,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p18",
+     "value": "+79262656003",
+     "canonical": "+79262656003",
+     "parts": {
+      "digits": "9262656003"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 67,
+      "end": 79,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "LOC",
+     "identity": "p18.home",
+     "value": "абакан бульвар маяковского 18 квартира 118",
+     "canonical": "абакан бульвар маяковского 18 квартира 118",
+     "parts": {
+      "street": "маяковского",
+      "street_type": "бульвар",
+      "house": "18",
+      "flat": "118",
+      "city": "абакан"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 86,
+      "end": 128,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к 18 00",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 139,
+      "end": 146,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p18",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 6,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 6,
+     "end": 7,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 11,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 11,
+     "end": 12,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 20,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 20,
+     "end": 21,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 21,
+     "end": 24,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 25,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 27,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 36,
+     "end": 38,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 38,
+     "end": 39,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 39,
+     "end": 46,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 46,
+     "end": 47,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 47,
+     "end": 50,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 50,
+     "end": 51,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 51,
+     "end": 58,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 58,
+     "end": 59,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 59,
+     "end": 66,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 66,
+     "end": 67,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 67,
+     "end": 79,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 79,
+     "end": 80,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 80,
+     "end": 85,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 85,
+     "end": 86,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "a1",
+     "start": 86,
+     "end": 128,
+     "origin": "value:a1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 128,
+     "end": 129,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 129,
+     "end": 138,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 138,
+     "end": 139,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 139,
+     "end": 146,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон delivery_eta: имя и адрес переменными, плейсхолдеры обязаны уцелеть"
+  },
+  {
+   "id": "send_template-019",
+   "kind": "send_template",
+   "register": "chat",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9096821305",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор колл-центра. Планируй обратные звонки и отправляй смс инструментами. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "добрый день подтвердите шаблоном что перезвоните меня зовут елена номер 89096821305 перезвоните к 9:00",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p19",
+     "value": "елена",
+     "canonical": "елена",
+     "parts": {
+      "given": "елена",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 60,
+      "end": 65,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p19",
+     "value": "89096821305",
+     "canonical": "+79096821305",
+     "parts": {
+      "digits": "9096821305"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 72,
+      "end": 83,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к 9:00",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 96,
+      "end": 102,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p19",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 6,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 6,
+     "end": 7,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 11,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 11,
+     "end": 12,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 32,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 32,
+     "end": 33,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 36,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 36,
+     "end": 37,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 37,
+     "end": 48,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 48,
+     "end": 49,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 53,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 53,
+     "end": 54,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 54,
+     "end": 59,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 59,
+     "end": 60,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 60,
+     "end": 65,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 65,
+     "end": 66,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 66,
+     "end": 71,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 71,
+     "end": 72,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 72,
+     "end": 83,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 83,
+     "end": 84,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 84,
+     "end": 95,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 95,
+     "end": 96,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 96,
+     "end": 102,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон callback: один и тот же телефон адресатом и переменной"
+  },
+  {
+   "id": "send_template-020",
+   "kind": "send_template",
+   "register": "sloppy",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9221112233",
+   "conversation_id": "conv-tpl-20",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор службы доставки. Оформляй заказы и вызовы курьера инструментами, переспрашивай только то, чего не хватает для вызова. Вес посылки, если не назван, — 1000 г; почтовый индекс подбери сам по городу получателя. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "пришлите смс о доставке по шаблону это валерий телеффон +79221112233 адрес колпино бульвар кирова 199кв130 привезите к 17 00",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p20",
+     "value": "валерий",
+     "canonical": "валерий",
+     "parts": {
+      "given": "валерий",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 39,
+      "end": 46,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p20",
+     "value": "+79221112233",
+     "canonical": "+79221112233",
+     "parts": {
+      "digits": "9221112233"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 56,
+      "end": 68,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "LOC",
+     "identity": "p20.home",
+     "value": "колпино бульвар кирова 199кв130",
+     "canonical": "колпино бульвар кирова 199кв130",
+     "parts": {
+      "street": "кирова",
+      "street_type": "бульвар",
+      "house": "199",
+      "flat": "130",
+      "city": "колпино"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 75,
+      "end": 106,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к 17 00",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 117,
+      "end": 124,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p20",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 8,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 8,
+     "end": 9,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 9,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 14,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 14,
+     "end": 15,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 15,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 24,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 27,
+     "end": 34,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 34,
+     "end": 35,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 35,
+     "end": 38,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 38,
+     "end": 39,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 39,
+     "end": 46,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 46,
+     "end": 47,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 47,
+     "end": 55,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 55,
+     "end": 56,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 56,
+     "end": 68,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 68,
+     "end": 69,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 69,
+     "end": 74,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 74,
+     "end": 75,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "a1",
+     "start": 75,
+     "end": 106,
+     "origin": "value:a1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 106,
+     "end": 107,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 107,
+     "end": 116,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 116,
+     "end": 117,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 117,
+     "end": 124,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон delivery_eta: имя и адрес переменными, плейсхолдеры обязаны уцелеть"
+  },
+  {
+   "id": "send_template-021",
+   "kind": "send_template",
+   "register": "chat",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9824013724",
+   "conversation_id": "conv-tpl-21",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор колл-центра. Планируй обратные звонки и отправляй смс инструментами. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "привет подтвердите шаблоном что перезвоните меня зовут владислав номер +79824013724 перезвоните к 14:00",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p21",
+     "value": "владислав",
+     "canonical": "владислав",
+     "parts": {
+      "given": "владислав",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 55,
+      "end": 64,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p21",
+     "value": "+79824013724",
+     "canonical": "+79824013724",
+     "parts": {
+      "digits": "9824013724"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 71,
+      "end": 83,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к 14:00",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 96,
+      "end": 103,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p21",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 6,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 6,
+     "end": 7,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 7,
+     "end": 18,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 18,
+     "end": 19,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 19,
+     "end": 27,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 27,
+     "end": 28,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 28,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 32,
+     "end": 43,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 43,
+     "end": 44,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 44,
+     "end": 48,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 48,
+     "end": 49,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 54,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 54,
+     "end": 55,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 55,
+     "end": 64,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 64,
+     "end": 65,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 65,
+     "end": 70,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 70,
+     "end": 71,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 71,
+     "end": 83,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 83,
+     "end": 84,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 84,
+     "end": 95,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 95,
+     "end": 96,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 96,
+     "end": 103,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон callback: один и тот же телефон адресатом и переменной"
+  },
+  {
+   "id": "send_template-022",
+   "kind": "send_template",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9229062869",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор службы доставки. Оформляй заказы и вызовы курьера инструментами, переспрашивай только то, чего не хватает для вызова. Вес посылки, если не назван, — 1000 г; почтовый индекс подбери сам по городу получателя. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "алло пришлите смс о доставкее поо шаблонуу это анна телефон восемь девятьсот двадцать два девятьсот шесть двадцать восемь шестьдесят девять адрес абакан улица базсная шестьдесят пять в квартира сто сорок восемь привезите к одиннадцать ноль ноль",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p22",
+     "value": "анна",
+     "canonical": "анна",
+     "parts": {
+      "given": "анна",
+      "gender": "f"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 47,
+      "end": 51,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p22",
+     "value": "восемь девятьсот двадцать два девятьсот шесть двадцать восемь шестьдесят девять",
+     "canonical": "+79229062869",
+     "parts": {
+      "digits": "9229062869"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 60,
+      "end": 139,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    },
+    {
+     "id": "i3",
+     "type": "LOC",
+     "identity": "p22.home",
+     "value": "абакан улица базсная шестьдесят пять в квартира сто сорок восемь",
+     "canonical": "абакан улица базсная шестьдесят пять в квартира сто сорок восемь",
+     "parts": {
+      "street": "базсная",
+      "street_type": "улица",
+      "house": "65в",
+      "flat": "148",
+      "city": "абакан"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 146,
+      "end": 210,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к одиннадцать ноль ноль",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 221,
+      "end": 244,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p22",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 4,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 4,
+     "end": 5,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 5,
+     "end": 13,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 14,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 14,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 18,
+     "end": 19,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 19,
+     "end": 20,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 20,
+     "end": 29,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 29,
+     "end": 30,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 30,
+     "end": 33,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 33,
+     "end": 34,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 34,
+     "end": 42,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 42,
+     "end": 43,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 43,
+     "end": 46,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 46,
+     "end": 47,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 47,
+     "end": 51,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 51,
+     "end": 52,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 52,
+     "end": 59,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 59,
+     "end": 60,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 60,
+     "end": 139,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 139,
+     "end": 140,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 140,
+     "end": 145,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 145,
+     "end": 146,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "a1",
+     "start": 146,
+     "end": 210,
+     "origin": "value:a1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 210,
+     "end": 211,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 211,
+     "end": 220,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 220,
+     "end": 221,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 221,
+     "end": 244,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон delivery_eta: имя и адрес переменными, плейсхолдеры обязаны уцелеть"
+  },
+  {
+   "id": "send_template-023",
+   "kind": "send_template",
+   "register": "voice_raw",
+   "provenance": {
+    "kind": "template",
+    "corpus": "authored",
+    "key": "",
+    "shape": "",
+    "selection": "authored",
+    "weight": 1.0,
+    "licence": "authored"
+   },
+   "cluster": "PHONE:9603736798",
+   "conversation_id": "",
+   "now": "2026-09-02",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Ты оператор колл-центра. Планируй обратные звонки и отправляй смс инструментами. Сегодня 2026-09-02.",
+     "source": null,
+     "name": ""
+    },
+    {
+     "role": "user",
+     "content": "подтвердитее шаблоноом что перезвоните меня зовут сергей номерто восем девятьсот шестьдесят триста семьдесят три шестьдесят семь девяно восемь перезвонитее к пятнадцать ноль ноль",
+     "source": null,
+     "name": ""
+    }
+   ],
+   "tools": [
+    "crm_find_contact",
+    "send_template",
+    "notify_sms",
+    "callback_schedule"
+   ],
+   "seed_records": [],
+   "pii": [
+    {
+     "id": "i1",
+     "type": "NAME",
+     "identity": "p23",
+     "value": "сергей",
+     "canonical": "сергей",
+     "parts": {
+      "given": "сергей",
+      "gender": "m"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 50,
+      "end": 56,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": false,
+     "stale": false
+    },
+    {
+     "id": "i2",
+     "type": "PHONE",
+     "identity": "p23",
+     "value": "восем девятьсот шестьдесят триста семьдесят три шестьдесят семь девяно восемь",
+     "canonical": "+79603736798",
+     "parts": {
+      "digits": "9603736798"
+     },
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 65,
+      "end": 142,
+      "record": "",
+      "path": ""
+     },
+     "duty": "required",
+     "spoken": true,
+     "stale": false
+    }
+   ],
+   "plain": [
+    {
+     "value": "к пятнадцать ноль ноль",
+     "where": {
+      "kind": "message",
+      "msg": 1,
+      "start": 156,
+      "end": 178,
+      "record": "",
+      "path": ""
+     },
+     "family": "time_of_day",
+     "why": "время — не ПД, обязано уцелеть"
+    }
+   ],
+   "negatives": [],
+   "expects": {
+    "reachable_tools": [
+     "send_template"
+    ],
+    "primary_identity": "p23",
+    "must_contain": [],
+    "must_not_contain": [],
+    "validate_types": []
+   },
+   "trace": [
+    {
+     "msg": 1,
+     "key": "",
+     "start": 0,
+     "end": 12,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 12,
+     "end": 13,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 13,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 23,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 27,
+     "end": 38,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 38,
+     "end": 39,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 39,
+     "end": 43,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 43,
+     "end": 44,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 44,
+     "end": 49,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 49,
+     "end": 50,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "n1",
+     "start": 50,
+     "end": 56,
+     "origin": "value:n1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 56,
+     "end": 57,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 57,
+     "end": 64,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 64,
+     "end": 65,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "ph1",
+     "start": 65,
+     "end": 142,
+     "origin": "value:ph1"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 142,
+     "end": 143,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 143,
+     "end": 155,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 1,
+     "key": "",
+     "start": 155,
+     "end": 156,
+     "origin": "literal"
+    },
+    {
+     "msg": 1,
+     "key": "t1",
+     "start": 156,
+     "end": 178,
+     "origin": "plain:t1"
+    }
+   ],
+   "note": "шаблон callback: один и тот же телефон адресатом и переменной"
   }
  ]
 }

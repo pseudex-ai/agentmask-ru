@@ -205,6 +205,15 @@ class Backend:
             record = self._store("contacts", tool, merged, "c", contact_id)
             data = {"id": record.id, "updated_fields": updated}
             return data, dict(data)
+        if tool == "send_template":
+            # THE RENDERED TEXT IS WHAT THE CUSTOMER READS, so it comes back as
+            # a Slot: a placeholder left unfilled or a substitute put into one
+            # is visible only in the rendered string.
+            record = self._store("sms", tool, parsed, "tpl")
+            data = {"id": record.id, "status": "queued", "text": parsed["text"]}
+            node = {"id": record.id, "status": "queued",
+                    "text": Slot(str(parsed["text"]), "tpl_text")}
+            return data, node
         if tool == "crm_add_note":
             # A NOTE IS A WRITE WHOSE RESULT CARRIES NOTHING PERSONAL: the text
             # the model wrote is already in `parsed`, and echoing it back would

@@ -506,6 +506,19 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
     if "callback_schedule" in tools and phone:
         zone = sorted(derive.timezone(city))[0] if (policy.derives and derive.timezone(city)) else "Europe/Moscow"
         maybe("callback_schedule", {"phone": phone, "at": "2026-09-03T18:00:00+04:00", "timezone": zone})
+    if "send_template" in tools:
+        # THE AGENT FILLS VARIABLES, never the template body. Which variables
+        # exist is the template's business, so the tool is asked for the set it
+        # declares rather than guessed at here.
+        from bench.agentpii4.tools import TEMPLATES, _TEMPLATE_RE
+        template_id = "delivery_eta" if address["street"] else "callback"
+        wanted = sorted(set(_TEMPLATE_RE.findall(TEMPLATES[template_id])))
+        filled = {"name": name["first"] or name_surface, "phone": phone,
+                  "address": addr_surface, "when": "завтра", "code": "1234"}
+        variables = {key: filled.get(key, "") for key in wanted}
+        if phone and all(variables.values()):
+            maybe("send_template", {"template_id": template_id, "number": phone,
+                                    "variables": variables})
     if "crm_add_note" in tools:
         # THE AGENT WRITES THE NOTE IN ITS OWN WORDS, and its words are the
         # substitutes it was shown. Deterministic prose, so two control arms

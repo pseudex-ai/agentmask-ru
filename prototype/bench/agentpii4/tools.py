@@ -954,6 +954,71 @@ NOTE = ToolSpec(
     parse=_note_parse, mutating=True)
 
 
+_TEMPLATE_RE = re.compile(r"\{\{([a-z_]{2,20})\}\}")
+TEMPLATES: dict[str, str] = {
+    "delivery_eta": "Здравствуйте, {{name}}! Заказ приедет по адресу {{address}} {{when}}.",
+    "callback": "{{name}}, перезвоним вам на {{phone}} {{when}}.",
+    "code": "{{name}}, код подтверждения: {{code}}.",
+}
+
+
+def _template_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "send_template"
+    miss = _required(args, tool, "", ("template_id", "number", "variables"))
+    if miss:
+        return miss
+    template_id = parse_enum(args["template_id"], tool, "template_id", tuple(TEMPLATES))
+    number = parse_e164(args["number"], tool, "number")
+    variables = _obj(args.get("variables"), tool, "variables")
+    bad = _first(template_id, number, variables)
+    if bad:
+        return bad
+    body = TEMPLATES[str(template_id)]
+    wanted = sorted(set(_TEMPLATE_RE.findall(body)))
+    values: dict[str, object] = {}
+    for key in wanted:
+        # EVERY PLACEHOLDER MUST BE FILLED. Exolve, Unisender and SMS Aero all
+        # document named substitution, and all of them send the message with
+        # «{{name}}» in it when the variable is missing — the customer reads the
+        # markup. Refusing is the documented-rule equivalent of that failure.
+        if not str(variables.get(key, "")).strip():  # type: ignore[union-attr]
+            return Refusal(tool, f"variables.{key}", "missing_variable", str(variables))
+        value = parse_text(variables[key], tool, f"variables.{key}", 120)  # type: ignore[index]
+        if isinstance(value, Refusal):
+            return value
+        values[key] = value
+    extra = sorted(set(map(str, variables)) - set(wanted))  # type: ignore[arg-type]
+    if extra:
+        return Refusal(tool, "variables", "unknown_variable", ", ".join(extra))
+    rendered = body
+    for key, value in values.items():
+        rendered = rendered.replace("{{" + key + "}}", str(value))
+    return {"template_id": template_id, "number": number, "variables": values, "text": rendered}
+
+
+TEMPLATE = ToolSpec(
+    name="send_template",
+    source="МТС Exolve SendSMS / Unisender sendSms with named variables ({{name}} substitution)",
+    schema=_schema(
+        "send_template",
+        "Отправить клиенту сообщение по готовому шаблону. Подставляются только именованные переменные шаблона.",
+        {"template_id": {"type": "string", "enum": sorted(TEMPLATES)},
+         "number": {"type": "string", "description": "E.164"},
+         "variables": {"type": "object",
+                       "description": "Значения переменных шаблона: name, address, phone, when, code"}},
+        ("template_id", "number", "variables")),
+    # THE PLACEHOLDER IS NOT A VALUE and the variable IS: `{{name}}` must reach
+    # the sender untouched while the string put into it is personal data.
+    fields=(FieldSpec("template_id", "enum", required=True),
+            FieldSpec("number", "identity", "PHONE", "digits", required=True),
+            FieldSpec("variables.name", "identity", "NAME", ""),
+            FieldSpec("variables.address", "identity", "LOC", ""),
+            FieldSpec("variables.phone", "identity", "PHONE", "digits"),
+            FieldSpec("variables.when", "plain"),
+            FieldSpec("variables.code", "plain")),
+    parse=_template_parse, mutating=True)
+
+
 RU_TIMEZONES = ("Europe/Kaliningrad", "Europe/Moscow", "Europe/Samara", "Europe/Volgograd",
                 "Asia/Yekaterinburg", "Asia/Omsk", "Asia/Novosibirsk", "Asia/Tomsk",
                 "Asia/Krasnoyarsk", "Asia/Irkutsk", "Asia/Yakutsk", "Asia/Vladivostok")
@@ -1041,7 +1106,7 @@ CSV_IMPORT = ToolSpec(
 
 REGISTRY: dict[str, ToolSpec] = {spec.name: spec for spec in (
     DELIVERY, COURIER, SUGGEST, PAYMENT, PASSPORT, CLINIC, FIND, UPSERT, SMS, CALLBACK, CSV_IMPORT,
-    NOTE)}
+    NOTE, TEMPLATE)}
 
 
 def spec_for(tool: str, path: str) -> FieldSpec | None:
@@ -1092,6 +1157,8 @@ def main() -> int:
         (CSV_IMPORT, {"csv": f"{CSV_HEADER}\nГромова;Марина;+79164021187;;1987-03-14\nБукин;Сергей;+79261234567;bukin@mail.ru;"}),
         (NOTE, {"entity_id": "c-1", "note_type": "call_in",
                 "text": "Клиент Громова Марина просит перенести доставку на пятницу; телефон +79164021187."}),
+        (TEMPLATE, {"template_id": "callback", "number": "+79164021187",
+                    "variables": {"name": "Марина", "phone": "+79164021187", "when": "завтра"}}),
         (PAYMENT, {"amount": {"value": "1500.00", "currency": "RUB"},
                    "payment_method_data": {"type": "bank_card",
                                            "card": {"number": card, "expiry_month": "09",
@@ -1110,6 +1177,11 @@ def main() -> int:
                     "to_location": {"postal_code": "42603", "city": "Ижевск", "address": "a"},
                     "packages": [{"weight": 1}]}, "postal_code_format"),
         (NOTE, {"entity_id": "c-1", "note_type": "voicemail", "text": "…"}, "enum_mismatch"),
+        (TEMPLATE, {"template_id": "callback", "number": "+79164021187",
+                    "variables": {"name": "Марина", "when": "завтра"}}, "missing_variable"),
+        (TEMPLATE, {"template_id": "callback", "number": "+79164021187",
+                    "variables": {"name": "Марина", "phone": "+79164021187", "when": "завтра",
+                                  "surname": "Громова"}}, "unknown_variable"),
         (NOTE, {"entity_id": "c-1", "note_type": "common", "text": "x" * 801}, "too_long"),
         (PASSPORT, {"passport": {"series": "45 09", "number": "123456"}, "person": {"last_name": "а", "first_name": "б"}}, "series_format"),
         (PASSPORT, {"passport": {"series": "4509", "number": "123456"}, "snils": "112-233-445 96",
