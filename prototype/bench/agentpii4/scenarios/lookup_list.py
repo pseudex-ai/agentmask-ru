@@ -99,7 +99,10 @@ def _namesakes(ctx: c.Ctx) -> Case:
 
     second = c.MessageDraft(ctx)
     second.say(ctx.rng.choice(("запишите новый адрес", "поменяйте адрес доставки", "адрес теперь")))
-    second.value("a1", c.address(ctx, pools.draw_address(ctx.rng, "", True, False, True)))
+    # The city is named for the same reason `chain` and `correction` name it:
+    # `crm_upsert_contact` requires it with an address, and this family never
+    # mentions a town anywhere else in the dialogue.
+    second.value("a1", c.address(ctx, pools.draw_address(ctx.rng, city, True, False, True)))
     if ctx.register == "clean":
         second.punct(".")
     builder.user(second, {"a1": ("LOC", identity + ".new", "required", False)})
@@ -117,6 +120,12 @@ def _duplicates(ctx: c.Ctx) -> Case:
                    address=drawn.address, dob=drawn.dob,
                    email_local=drawn.email_local + "2", email_domain=drawn.email_domain)
     identity = f"p{ctx.index}"
+    # THE CITY IS SAID, because `crm_upsert_contact` requires it whenever an
+    # address is written (`tools._upsert_parse`), and an address the customer
+    # dictates without one leaves the agent to lift it out of a masked lookup
+    # result or invent it — two arms invent differently. The same patch
+    # `correction` already carries.
+    new_address = pools.draw_address(ctx.rng, city, True, False, True)
     builder = c.CaseBuilder(
         ctx=ctx, role="crm", tools=TOOLS,
         reachable=("crm_find_contact", "crm_upsert_contact"),
@@ -130,15 +139,27 @@ def _duplicates(ctx: c.Ctx) -> Case:
     # тарасова алла» is ungrammatical: «на» governs the accusative, the engine
     # reads the name in that case — correctly — and a woman is minted as a man.
     # A generator that writes broken Russian measures its own mistake.
+    # THE TARGET CARD IS NAMED, AND THAT IS NOT A KINDNESS TO THE AGENT. The
+    # utterance used to be «кажется я в базе дважды оставьте актуальным
+    # телефон N», which admits three readings — update the first card's phone
+    # to N, update the card that already has N, or merge — and there is no
+    # merge tool. The mock merges into the EXISTING record, so the two
+    # readings store a different `email`, and two arms that read the sentence
+    # differently diverge on a coin the case itself tossed. The family's
+    # question is «does ONE person in TWO cards get ONE substitute», not «which
+    # card do you pick»; naming the card keeps the question and drops the coin.
     first = c.MessageDraft(ctx)
     first.say(c.opener(ctx)).say("это")
     first.value("n1", c.name(ctx, drawn.person, ("surname", "given")))
-    first.say("кажется я в базе дважды оставьте актуальным телефон")
+    first.say("кажется я в базе дважды обновите ту карточку где телефон")
     first.value("ph1", c.phone(ctx, twin.phone))
+    first.say("новый адрес")
+    first.value("a1", c.address(ctx, new_address))
     if ctx.register == "clean":
         first.punct(".")
     builder.user(first, {"n1": ("NAME", identity, "required", False),
-                         "ph1": ("PHONE", identity, "required", False)})
+                         "ph1": ("PHONE", identity, "required", False),
+                         "a1": ("LOC", identity + ".new", "required", False)})
     return builder.build()
 
 
