@@ -34,6 +34,7 @@ import asyncio
 import json
 import os
 import sys
+import traceback
 import tempfile
 import time
 import uuid
@@ -150,6 +151,18 @@ def _mcp_tools(case: Case, gateway: object, backend: object, masked: list[dict[s
                 except HarnessError as broken:
                     gateway.fault(str(broken))  # type: ignore[attr-defined]
                     return {"content": [{"type": "text", "text": FILLER_RESULT}]}
+                except Exception as broken:  # noqa: BLE001 — the product failing INSIDE the SDK's tool runner
+                    # AN EXCEPTION HERE WAS INVISIBLE. The SDK turns it into a
+                    # tool error the model reads as «техническая ошибка», retries
+                    # or gives up, and the arm still ends `done` with the failed
+                    # attempt nowhere in the record: 304 such replies on the r2
+                    # run of 06.09, and not one traceback anywhere. It is a
+                    # fault of the product and terminates the arm as one.
+                    gateway.fault(f"restore_arguments raised {type(broken).__name__}: {broken}\n"  # type: ignore[attr-defined]
+                                  + traceback.format_exc())
+                    print(f"FAULT {tool_name} restore_arguments: {type(broken).__name__}: {broken}", file=sys.stderr)
+                    traceback.print_exc()
+                    return {"content": [{"type": "text", "text": FILLER_RESULT}]}
                 log = backend.call(tool_name, restored)  # type: ignore[attr-defined]
                 sink.append(ObservedCall(
                     name=tool_name, written=arguments, restored=restored, residual=residual,
@@ -160,6 +173,12 @@ def _mcp_tools(case: Case, gateway: object, backend: object, masked: list[dict[s
                     served = gateway.push_tool(tool_name, log.result_text)  # type: ignore[attr-defined]
                 except HarnessError as broken:
                     gateway.fault(str(broken))  # type: ignore[attr-defined]
+                    return {"content": [{"type": "text", "text": FILLER_RESULT}]}
+                except Exception as broken:  # noqa: BLE001 — same as above, on the result leg
+                    gateway.fault(f"push_tool raised {type(broken).__name__}: {broken}\n"  # type: ignore[attr-defined]
+                                  + traceback.format_exc())
+                    print(f"FAULT {tool_name} push_tool: {type(broken).__name__}: {broken}", file=sys.stderr)
+                    traceback.print_exc()
                     return {"content": [{"type": "text", "text": FILLER_RESULT}]}
                 # A refusal is a tool ERROR, exactly as the real API answers:
                 # the model sees the documented rule and may retry or give up.
@@ -488,9 +507,17 @@ def main() -> int:
                              "недостающие; потолок считается на весь замер")
     args = parser.parse_args()
 
-    if args.report and (Path(args.report).parent / "corpus.json").exists():
+    if args.report:
         # The snapshot taken at run time wins over whatever the tree holds now.
-        args.corpus = str(Path(args.report).parent / "corpus.json")
+        # A DIRECTORY IS THE RUN ITSELF, a file lies inside it: `.parent` of the
+        # directory form pointed one level up, found nothing, and the report was
+        # silently built against the tree's default corpus — same case ids,
+        # other people — so the r2 run of 06.09 reported fifteen «leaks» of an
+        # email that no message of the run ever carried.
+        report_path = Path(args.report)
+        snapshot_dir = report_path if report_path.is_dir() else report_path.parent
+        if (snapshot_dir / "corpus.json").exists():
+            args.corpus = str(snapshot_dir / "corpus.json")
     everything, digest = _load(Path(args.corpus))
     by_id = {case.id: case for case in everything}
 

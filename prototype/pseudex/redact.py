@@ -1430,6 +1430,13 @@ def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
     # обязаны сойтись на ОДНОЙ подмене.
     owners = {vault.place_owner(value) for value in evidence.values()}
     owners.discard(None)
+    if not owners:
+        # NO LEAF WITH A NUMBER NAMED AN OWNER — a `street` field alone, on a
+        # street this conversation faked twice (a corrected house). The street
+        # is one answer whichever row is asked; the vault says so only when
+        # every owner agrees on the real street.
+        owners = {vault.place_owner_by_street(value) for value in evidence.values()}
+        owners.discard(None)
     if len(owners) != 1:
         return restored
     owner = owners.pop()

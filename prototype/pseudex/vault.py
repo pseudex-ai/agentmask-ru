@@ -717,6 +717,13 @@ def _fake_date(original: str) -> str:
     the lookup was widened separately for the reformatting it cannot prevent.
     """
     year_now = time.localtime().tm_year
+    # READ BEFORE THE BRANCH. It stood inside the past-date branch only, and the
+    # same-side-of-today block below read it for a FUTURE date too — a courier
+    # interval or a clinic slot in a tool RESULT — and raised UnboundLocalError
+    # on the result leg of the r2 run (06.09): the SDK turned it into a tool
+    # error, the model saw «техническая ошибка», retried or gave up, and 304
+    # gateway-arm replies said so while every record read `done`.
+    known = _date_canonical(original)
     if _is_future(original):
         # Future: near enough to read as a real booking, never today itself, so
         # the substitute cannot be mistaken for «сегодня» by a model reasoning
@@ -730,7 +737,6 @@ def _fake_date(original: str) -> str:
         # nobody (≈1.5 million people a year in Russia); the day and the month,
         # which do, stay fake — the same line the settlement of an address
         # draws (`_settlement_of`).
-        known = _date_canonical(original)
         year = int(known[-4:]) if len(known) == 10 else 1960 + secrets.randbelow(max(1, year_now - 1960))
     # …AND THE SAME SIDE OF TODAY. The year alone left the AGE off by one:
     # real 11.09, fake 17.08, today 05.09 — the real birthday is still to come
@@ -2293,26 +2299,50 @@ class Vault:
         # Two owners that are ONE place — the short mention and the full one
         # grown from it — answer with the fullest; two real places refuse.
         with self._lock:
-            one = self._one_identity(common)
-            if one is not None:
-                return one
-            # TWO PLACES ON ONE STREET, ASKED ABOUT THE STREET ALONE. A corrected
-            # address is two tokens on one fake street by construction now, and
-            # a `street` field holding that street has two owners whose answer
-            # is THE SAME street — the refusal here would send the fake to the
-            # courier for the sake of a distinction the answer does not carry.
-            # Only when the fragment names no number (a house has one owner),
-            # and the latest mention wins: the correction is the later one, and
-            # its spelling is the one the customer settled on.
-            if numbers:
-                return None
+            return self._one_identity(common)
+
+    def place_owner_by_street(self, candidate: str) -> str | None:
+        """TWO PLACES ON ONE STREET, ASKED ABOUT THE STREET ALONE. A corrected
+        address is two tokens on one fake street by construction, and a
+        `street` field holding that street has two owners whose answer is THE
+        SAME street. The latest mention wins — the correction is the later one
+        and its spelling is what the customer settled on.
+
+        A SEPARATE QUESTION FROM `place_owner`, AND THE CALLER ASKS IT LAST.
+        Folded into `place_owner` it broke the address join: the join asks
+        every leaf for its owner and demands ONE, so a street leaf answering
+        with the latest row while the house leaf answered with the row that
+        carries that house made two owners of one address — and the fake
+        house went to the courier (r2 run, compare-002/012). The join asks
+        this only when no leaf with a number found an owner.
+        """
+        stems, numbers = morph_places.signature_parts(candidate)
+        if numbers or not stems:
+            return None
+        scope = " AND (k.minted_in=? OR k.minted_in IS NULL OR k.minted_in='')"
+        with self._lock:
+            owners: list[set[str]] = []
+            for part in stems:
+                rows = self._conn.execute(
+                    "SELECT t.token FROM token_parts AS t "
+                    "JOIN tokens AS k ON k.customer=t.customer AND k.token=t.token "
+                    "WHERE t.customer=? AND t.part=? AND k.entity_type='LOC'"
+                    + (scope if self._conversation else ""),
+                    (self._customer, part, self._conversation) if self._conversation else (self._customer, part),
+                ).fetchall()
+                if not rows:
+                    return None
+                owners.append({row[0] for row in rows})
+            common = set.intersection(*owners)
+            if len(common) < 2:
+                return next(iter(common)) if common else None
             rows = self._conn.execute(
                 "SELECT rowid, token, canonical FROM tokens WHERE customer=? AND entity_type='LOC' "
                 f"AND token IN ({','.join('?' * len(common))}) ORDER BY rowid",
                 (self._customer, *sorted(common)),
             ).fetchall()
-            stems = [_street_stem(morph_places.street_house_key(canonical)) for _, _, canonical in rows]
-            if len(rows) >= 2 and all(_street_stems_match(stems[0], other) for other in stems[1:]):
+            street_stems = [_street_stem(morph_places.street_house_key(canonical)) for _, _, canonical in rows]
+            if len(rows) >= 2 and all(_street_stems_match(street_stems[0], other) for other in street_stems[1:]):
                 return rows[-1][1]
             return None
 
@@ -2569,15 +2599,25 @@ class Vault:
         stem = _street_stem(part)
         if not stem:
             return ""
+        # THE SAME SETTLEMENT, OR NONE ON EITHER SIDE. «Луговая» in Колпино and
+        # «Луговая» in Ижевск are two streets: a directory that answers the
+        # customer's «луговая 9» with a record from another city shared the
+        # fake street with it, and the model — asked to compare — could no
+        # longer see they differ (r2 run, compare-012). The same rule
+        # `_same_place_written_differently` applies to the whole place.
+        settlement = _settlement_of(value).casefold() if shape.get("has_city") else ""
         rows = self._conn.execute(
-            "SELECT p.part, t.token FROM place_parts p "
+            "SELECT p.part, p.has_city, p.canonical, t.token FROM place_parts p "
             "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
             "WHERE p.customer=? AND p.conversation=? AND t.entity_type='LOC' LIMIT 64",
             (self._customer, self._conversation),
         ).fetchall()
         heads: set[str] = set()
-        for stored, token in rows:
+        for stored, city_flag, canonical, token in rows:
             if stored == part or not _street_stems_match(_street_stem(stored), stem):
+                continue
+            other_settlement = canonical.split()[0].casefold() if city_flag else ""
+            if settlement != other_settlement:
                 continue
             fake_head = morph_places.split_roles(token).get("street", "")
             if fake_head:

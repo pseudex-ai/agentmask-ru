@@ -443,9 +443,15 @@ def test_corrected_address_shares_its_street(vault: Vault, detector: Detector) -
         houses = {morph_places.split_roles(token).get("house", "") for token in tokens}
         check("two different fake houses", len(houses) == 2, f"tokens={tokens}")
         last = morph_places.split_roles(tokens[-1])
-        back = json.loads(unmask_arguments(json.dumps({"address": {"street": last["street"], "building": last["house"]}}, ensure_ascii=False), talk))
+        # the agent writes the street bare, as the live model does («Речная», not «улица Речная»)
+        bare = last["street"].split()[-1]
+        back = json.loads(unmask_arguments(json.dumps({"address": {"street": bare, "building": last["house"]}}, ensure_ascii=False), talk))
         check("street and house restore to the CORRECTED real address",
               back == {"address": {"street": street, "building": house}}, f"masked={masked!r} back={back}")
+        # …and the street ALONE, with two owners on one street, still resolves
+        back = json.loads(unmask_arguments(json.dumps({"address": {"street": bare}}, ensure_ascii=False), talk))
+        check("the street alone resolves when every owner agrees on it",
+              back == {"address": {"street": street}}, f"back={back}")
     # two DIFFERENT streets in one dialogue still get two different fake streets
     said = "курьера на заречная 57 квартира 187 а потом на энгельса 106 квартира 92 это в воткинск"
     talk = Vault(":memory:", "acme").for_conversation("two")
@@ -495,6 +501,37 @@ def test_spoken_birth_date_keeps_its_register(vault: Vault, detector: Detector) 
               unmask_text(f"Пациент родился {token}, записал.", talk) == f"Пациент родился {said.split('родил', 1)[-1].split(' ', 1)[-1] if 'родил' in said else said.split('рождения ', 1)[-1]}, записал.",
               unmask_text(f"Пациент родился {token}, записал.", talk))
         check("the spoken substitute is recognised as ours when echoed", talk.is_minted_token(token), token)
+
+
+def test_tool_result_with_a_future_date_masks(vault: Vault, detector: Detector) -> None:
+    """A tool RESULT carries a booking in the future beside a date of birth —
+    «slot: 2026-09-10T09:00» next to «birth_date: 1955-09-11» — and the result
+    leg must mask it without a sound. `_fake_date` read a variable set only on
+    the past-date branch, raised on the future one, the SDK turned the
+    exception into a tool error the model read as «техническая ошибка», and
+    304 gateway-arm replies on the r2 run of 06.09 said so while every record
+    read `done`. The future date keeps its future, the birth date its year."""
+    import time
+    from pseudex.vault import _date_canonical
+    year_now = time.localtime().tm_year
+    for text in (
+        '{"appointment_id": "apt-1", "slot": "2026-09-10T09:00:00+03:00", "status": "booked", "patient": {"birth_date": "1955-09-11"}}',
+        '{"id": "clm-1", "interval": {"from": "2026-09-10T14:00:00+04:00", "to": "2026-09-10T18:00:00+04:00"}, "address": {"street": "Заречная", "building": "29"}}',
+        "доставка 30.09.2026 получатель родился 11.09.1955",
+    ):
+        talk = Vault(":memory:", "acme").for_conversation("future")
+        try:
+            masked = mask_text(text, talk, detector.detect(text))
+        except Exception as broken:  # noqa: BLE001 — the whole point of the test
+            check(f"the result leg does not raise: {text[:40]}…", False, f"{type(broken).__name__}: {broken}")
+            continue
+        check(f"the result leg does not raise: {text[:40]}…", True)
+        for token, original in talk._conn.execute("SELECT token, original FROM tokens WHERE entity_type IN ('DOB','DATE')").fetchall():  # noqa: SLF001
+            fake, real = _date_canonical(token), _date_canonical(original)
+            if real and int(real[-4:]) > year_now:
+                check(f"a future date stays in the future: {original} → {token}", int(fake[-4:]) > year_now, token)
+            elif real:
+                check(f"a birth date keeps its year: {original} → {token}", fake[-4:] == real[-4:], token)
 
 
 def test_address_signature_is_inflection_proof() -> None:
@@ -560,6 +597,7 @@ def main() -> int:
     test_preposition_is_not_a_litera(vault, detector)
     test_corrected_address_shares_its_street(vault, detector)
     test_spoken_birth_date_keeps_its_register(vault, detector)
+    test_tool_result_with_a_future_date_masks(vault, detector)
     test_chat_register(detector)
 
     print()

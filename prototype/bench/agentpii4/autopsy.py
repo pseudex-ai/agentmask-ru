@@ -10,6 +10,7 @@ labels are the known-issues numbers (Б8, Б9, Б10, Б11 …) plus the classes 
 engine cannot fix by construction, so the table is a work list, not a score.
 
 Cause rules, first match wins, all on recorded facts:
+  engine-fault     the gateway arm's reply reports a tool error while no refusal was recorded — the product raised inside the SDK
   control_erred    a field where the gateway restored the corpus canonical and the control did not
   Б8-echo          a lookup tool (address_suggest / crm_find_contact) answered, and the gateway
                    arm stopped there, chose another record, or joined two substitutes
@@ -30,6 +31,7 @@ Cause rules, first match wins, all on recorded facts:
 import argparse
 import glob
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -42,6 +44,7 @@ from bench.agentpii4.records import arm_from_record, merged_arm_records  # noqa:
 from bench.agentpii4.schema import Case, case_from_json  # noqa: E402
 
 LOOKUPS = ("address_suggest", "crm_find_contact")
+_TOOL_ERROR_RE = re.compile(r"техническ\w+ ошибк|ошибка на стороне|ошибка при (?:записи|оформлении|создании|вызове)")
 
 
 def _load_run(run_dir: Path) -> tuple[dict[str, Case], list[Triple], list[str]]:
@@ -61,6 +64,14 @@ def _cause(case: Case, triple: Triple, fields: list) -> str:
     reply = triple.I.reply.casefold()
     if kinds.get("residual"):
         return "residual"
+    # THE MODEL REPORTED A TOOL ERROR AND NO REFUSAL WAS RECORDED: the product
+    # raised inside the SDK's tool runner, the SDK answered the model with an
+    # error, and the record kept only the retry (r2 run of 06.09: 304 gateway
+    # arms, `_fake_date` on a future date in a tool result). Read FIRST — every
+    # divergence downstream of it is the fault's, not the model's.
+    if (_TOOL_ERROR_RE.search(reply) and not any(c.refusal_rule for c in triple.I.calls)
+            and not _TOOL_ERROR_RE.search(triple.C.reply.casefold())):
+        return "engine-fault"
     # THE CONTROL NORMALISED WHAT THE CUSTOMER WROTE — a typo in a street, a
     # digit heard differently — and the gateway restored the customer's own
     # words. Read first, because the field level files it under
