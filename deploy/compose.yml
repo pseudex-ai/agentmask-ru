@@ -261,10 +261,37 @@ services:
     restart: unless-stopped
     logging: *logging
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD}
+      # `:-`, А НЕ `:?`: Compose подставляет переменные ДО отбора профилей,
+      # поэтому обязательная переменная у сервиса под
+      # `profiles: ["observability"]` требовалась даже при обычном
+      # `docker compose up -d` — опциональный сервис, который по умолчанию не
+      # поднимается, блокировал основной путь.
+      #
+      # НО ПУСТОЙ ПАРОЛЬ САМА GRAFANA НЕ ЛОВИТ, и здесь стояло обратное.
+      # Переопределения из окружения она применяет только при непустом значении
+      # (`if len(envValue) > 0`), а `defaults.ini` держит `admin_password =
+      # admin` — то есть «послабление» отдало бы дашборд с именами клиентов и их
+      # разрывами цепи под admin/admin. Поэтому отказ переехал в entrypoint
+      # ниже: он срабатывает ТОЛЬКО когда профиль реально поднимают.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-}
       # Аноним не смотрит на график, где названы организации с порванной цепью.
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
+    # ОТКАЗ ЗДЕСЬ, А НЕ В ИНТЕРПОЛЯЦИИ. `${...:?}` сработал бы на всех, включая
+    # тех, кто профиль не включает; эта проверка исполняется внутри контейнера,
+    # то есть ровно тогда, когда сервис действительно запускают. `$$` — чтобы
+    # переменную раскрыл шелл контейнера, а не Compose.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ -z "$$GF_SECURITY_ADMIN_PASSWORD" ]; then
+          echo "GRAFANA_PASSWORD не задан. Без него Grafana поднимется с" >&2
+          echo "паролем admin/admin из defaults.ini, а на дашборде видны" >&2
+          echo "клиенты и их разрывы цепи. Задайте его в .env и повторите." >&2
+          exit 1
+        fi
+        exec /run.sh
     volumes:
       - grafana-data:/var/lib/grafana
       # Дашборд лежит рядом с правилами и версионируется вместе с ними: панель,

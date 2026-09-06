@@ -19,6 +19,7 @@ import os
 import sys
 import tempfile
 import time
+from pathlib import Path
 
 os.environ.setdefault("PSEUDEX_ADMIN_TOKEN", "test-admin-token")
 os.environ.setdefault("PSEUDEX_GATEWAY_TOKEN", "test-gateway-token")
@@ -418,6 +419,50 @@ def test_metrics_carry_counts_and_never_values(client: TestClient) -> None:
           f"{requests_line(before)!r} -> {requests_line(after)!r}")
 
 
+def test_agent_prompt_is_quoted_not_paraphrased() -> None:
+    """Экран «Интеграция» обязан ЦИТИРОВАТЬ инструкцию агенту, а не пересказывать.
+
+    Она живёт в `docs/integration.md` и подпёрта живым замером v4
+    (`docs/tz-agentpii4.md` §7). На экране стоял пересказ той же мысли другими
+    словами — то есть клиент получал ДВЕ РЕДАКЦИИ одной инструкции и должен был
+    сам решать, какая правильная. Расхождение вернётся при первой же правке
+    формулировки, если его ничто не держит; вот оно и держит.
+
+    Сверяются СЛОВА, а не форматирование: в документации строка обёрнута под
+    ширину markdown, на экране — под ширину блока кода, и требовать совпадения
+    переносов значило бы ломать проверку на каждой правке вёрстки.
+    """
+    root = Path(__file__).resolve().parent.parent
+    doc = (root / "docs" / "integration.md").read_text(encoding="utf-8")
+    app = (root / "prototype" / "pseudex" / "localui" / "static" / "app.js").read_text(
+        encoding="utf-8")
+
+    # ПЕРЕИМЕНОВАННЫЙ ЗАГОЛОВОК ИЛИ КОНСТАНТА — ЭТО ПРОВАЛ, А НЕ ОБРЫВ ПРОГОНА.
+    # `.index()` бросал ValueError, а эта проверка идёт не последней: падение
+    # здесь молча уносило с собой две следующие, про сессию интерфейса и про
+    # подделку actor. Тот же класс, что уже чинился в наборе предполёта.
+    try:
+        section = doc[doc.index("## Инструкция агенту"):]
+        # ДО СЛЕДУЮЩЕГО ЗАГОЛОВКА, А НЕ ДО КОНЦА ФАЙЛА: любая цитата, добавленная
+        # ниже по документу, иначе приклеилась бы к ожидаемой строке и покраснела
+        # бы при полностью синхронном промпте.
+        cut = section.find("\n## ", 1)
+        if cut != -1:
+            section = section[:cut]
+        quoted = " ".join(" ".join(line[2:].split()) for line in section.splitlines()
+                          if line.startswith("> "))
+        start = app.index("const AGENT_PROMPT = `") + len("const AGENT_PROMPT = `")
+        screen = " ".join(app[start:app.index("`;", start)].split())
+    except ValueError as error:
+        check("инструкция агенту на экране — цитата, а не пересказ", False,
+              f"не нашёл, откуда сверять: {error}")
+        return
+
+    check("инструкция агенту на экране — цитата, а не пересказ",
+          quoted == screen,
+          f"документация: {quoted[:60]!r}… экран: {screen[:60]!r}…")
+
+
 def main() -> int:
     client = _client()
     test_operator_surface_is_closed(client)
@@ -426,6 +471,7 @@ def main() -> int:
     test_requests_are_counted_apart_from_entities(client)
     test_selfcheck_is_not_billable(client)
     test_metrics_carry_counts_and_never_values(client)
+    test_agent_prompt_is_quoted_not_paraphrased()
     test_ui_refuses_without_a_session()
     test_actor_cannot_be_forged_through_the_ui()
     print()
