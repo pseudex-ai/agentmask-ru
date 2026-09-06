@@ -162,7 +162,14 @@ def _restore_cued_numbers(text: str, vault: Vault) -> str:
     # «Кинешму, ул. Озёрную 96, кв. 83» belongs to the token the inflected
     # window restores as one piece; replacing its flat here first broke the
     # window's key and the address came back as «ул. Баумана 5, ул. ул. …».
-    protected = [m.span() for m in _PLACE_RUN.finditer(text)]
+    # The whole framing — house, building, entrance, flat tails included —
+    # because `_PLACE_RUN` stops at the street and «корп. 3» after it is part
+    # of the same token; touched here first, the window's key no longer
+    # matched and the address came back with the fake's building.
+    protected: list[tuple[int, int]] = []
+    for m in _PLACE_RUN.finditer(text):
+        framings = _place_windows(text, m.start(), m.end())
+        protected.append((min(s for s, _ in framings), max(e for _, e in framings)))
     protected += [m.span() for m in TOKEN_RE.finditer(text)]
     spans: list[tuple[int, int, str]] = []
     for match in _CUE_NUMBER.finditer(text):
@@ -653,9 +660,28 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
                      or _place_fragment(surface, vault, for_tool))
             if owner is None:
                 continue
+            # ALREADY REAL. Whole tokens were restored a step earlier, so this
+            # window may be a piece of a REAL value now standing in the text;
+            # a fragment that its owner's real value already contains is not
+            # ours to rewrite («Валдае» inside «Валдае, улица Мира 4»).
+            if surface.strip().casefold() in owner[1].casefold():
+                continue
             found = owner
         if any(a < end and start < b for a, b in taken):
             continue
+        if derived is None:
+            entity_type, value = found
+            # A LONE CITY WORD THAT THE CUSTOMER'S OWN ADDRESS CARRIES is not a
+            # substitute, whatever token happens to bear the same name — see
+            # `Vault.real_place_with_stem`. The whole-address window above has
+            # already restored the real address when this word was part of it.
+            # …in BOTH directions: a bare fake city minted for somebody else
+            # before the customer named their real town (Казань's substitute
+            # drew «Валдай», then «Живу на Валдае» arrived) resolves the real
+            # word to the stranger's address just the same.
+            if (entity_type == "LOC" and " " not in surface.strip() and not any(ch.isdigit() for ch in surface)
+                    and vault.real_place_with_stem(_stem_of(surface))):
+                continue
         taken.append((start, end))
         if derived is not None:
             spans.append((start, end, derived))
@@ -664,6 +690,13 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
         spans.append((start, end,
                       _in_case_of(value, surface, entity_type, inflect)))
     return _splice(text, spans)
+
+
+def _stem_of(word: str) -> str:
+    """The invariant head of a place word, as `Vault.real_place_with_stem`
+    wants it: one trailing vowel dropped («Валдае» -> «валда»)."""
+    low = morph_places.to_nominative(word.strip()).lower()
+    return low[:-1] if len(low) > 4 and low[-1] in "аеёиоуыэюяьй" else low
 
 
 def _is_derived_surface(surface: str) -> bool:

@@ -1,7 +1,7 @@
 {
  "version": 1,
  "seed": 4,
- "corpus_sha256": "64368ee69967d3211f0b0018ead4b5c336cc40d7f450a6694e3d38db5a52ecc9",
+ "corpus_sha256": "2ecc393be6e36c938644063b2e244e3ad212b94786089d5e179686fde1a91baa",
  "tiers": {
   "nano": [
    "chain-014",

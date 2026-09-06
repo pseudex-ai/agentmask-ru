@@ -20,6 +20,9 @@ Cause rules, first match wins, all on recorded facts:
   derived-only     every diverging field is `derived`
   residual         a substitute reached the tool
   asks             the gateway arm made no call and none of the above explains it
+  typo-normalised  the control corrected the customer's typo; the gateway restored it as written
+  case-only        a name differs only in grammatical case (control nominative, gateway verbatim)
+  partial-call     the gateway arm made a subset of the control's calls
   other            everything else — read it by hand
 """
 import argparse
@@ -78,7 +81,39 @@ def _cause(case: Case, triple: Triple, fields: list) -> str:
         return "asks"
     if kinds and set(kinds) <= {"derived", "extra", "absent"} and kinds.get("derived"):
         return "derived-only"
+    # THE CONTROL NORMALISED WHAT THE CUSTOMER WROTE. «проезд неркасова» became
+    # «проезд Некрасова» in the control arm; the gateway restores the customer's
+    # own spelling. Not a gateway defect — the typo is the customer's data.
+    if any(f.kind == "other" and f.sub in ("inflected", "unbound") and f.ref and f.obs
+           and f.ref.casefold() != f.obs.casefold() and _one_edit(f.ref, f.obs) for f in fields):
+        return "typo-normalised"
+    # A CASE-ONLY DIFFERENCE IN A NAME: the control wrote the nominative, the
+    # gateway returned the agent's oblique form («петра» / «Пётр»). Reported
+    # apart so it does not drown in «other».
+    if kinds and all(f.kind in ("agree", "other") and (f.kind == "agree" or f.sub == "inflected") for f in fields):
+        return "case-only"
+    # THE GATEWAY ARM MADE A SUBSET OF THE CONTROL'S CALLS while the two
+    # controls disagreed too: the model's own variance, not the gateway's.
+    if i_tools and c_tools and set(i_tools) < set(c_tools):
+        return "partial-call"
     return "other"
+
+
+def _one_edit(left: str, right: str) -> bool:
+    a, b = left.casefold(), right.casefold()
+    if abs(len(a) - len(b)) > 1:
+        return False
+    i = j = edits = 0
+    while i < len(a) and j < len(b):
+        if a[i] == b[j]:
+            i += 1; j += 1; continue
+        edits += 1
+        if edits > 2:
+            return False
+        if len(a) > len(b): i += 1
+        elif len(b) > len(a): j += 1
+        else: i += 1; j += 1
+    return edits + (len(a) - i) + (len(b) - j) <= 2
 
 
 def _one_example(fields: list) -> str:

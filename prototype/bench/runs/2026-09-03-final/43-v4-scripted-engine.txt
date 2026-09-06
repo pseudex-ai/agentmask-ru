@@ -1,0 +1,65 @@
+$ python3 bench/agentpii4/smoke.py --engine
+
+СКРИПТОВЫЙ АГЕНТ «decomposer» — не живой прогон; три плеча через настоящий шлюз
+
+троек: 360 · случаев: 360 · исключено: 0
+
+1. ПРОВОКАЦИЯ — что модель делает с НАСТОЯЩИМИ значениями (плечо C против C′)
+   verbatim 2303 (95.0%) · absent 120 (5.0%)
+
+2–3. ШУМОВОЙ ПОЛ И ЭФФЕКТ ШЛЮЗА — по уровням, никогда одним числом
+   уровень          I≈C      C′≈C     эффект   95% ДИ (кластерный бутстрап)   McNemar p (b,c)  ICC(случай) ICC(значение) DEFF
+   L1 инструменты   100.0% 100.0%   +0.0pp [ +0.0,  +0.0]           1.000 (0,0)    0.00        0.00      1.00
+   L2 ключи          99.7% 100.0%   -0.3pp [ -0.9,  +0.0]           1.000 (1,0)    0.00        1.00      1.18
+   L3 состояние      64.4% 100.0%  -35.6pp [-40.4, -30.3]           0.000 (128,0)    0.00        0.00      1.00
+   L3 дословно       64.4% 100.0%  -35.6pp [-40.4, -30.3]           0.000 (128,0)    0.00        0.00      1.00
+   для ±2pp на L3 при согласии 64% нужно n ≈ 2201 случаев (iid)
+
+4. ТАКСОНОМИЯ ПО ПОЛЯМ — I−C рядом с C′−C; разница и есть шлюз
+   класс               I−C   C′−C   разн   примечание
+   agree               2271   2423   -152   
+   absent                 1      0     +1   
+   residual              10      0    +10   ДЕФЕКТ ПРОДУКТА — подмена дошла до инструмента
+   validated_refused      2      0     +2   движок не чинит — фейк отвергнут валидацией
+   derived               84      0    +84   движок не чинит — производная от подмены
+   container_embedded     1      0     +1   
+   reformatted            4      0     +4   
+   fragment              22      0    +22   
+   other                 28      0    +28   
+   по типам (I−C): CARD: agree 13/14 · DOB: agree 91/100 · LOC: agree 784/854 · NAME: agree 821/892 · PASSPORT: agree 100/100 · PHONE: agree 413/413 · SNILS: agree 49/50
+
+5. ПРОИЗВОДНЫЕ ПОЛЯ (I−C)
+   to_location.postal_code:derived/unverifiable 42
+   patient.gender:derived/from_substitute 14
+   contact.name_latin:derived/unverifiable 8
+   patient.age:derived/from_substitute 8
+   timezone:derived/unverifiable 4
+   timezone:derived/from_substitute 4
+   to_location.postal_code:derived/from_substitute 4
+   payment_method_data.card.cardholder:other/misderived 3
+   contact.name_latin:other/misderived 2
+
+6. ВАЛИДАЦИЯ — семейство validate
+   троек 36 · агент не вызвал (I−C) 0 · (C′−C) 0 · мок отверг в I 0
+
+7. ПРОСТЫЕ ЗНАЧЕНИЯ (не ПД, обязаны уцелеть) — I−C / C′−C
+   intact: 529 / 529 · changed: 0 / 0 · absent: 0 / 0
+
+8. РАЗРЕЗЫ — согласие I≈C на L3 по регистру и по виду
+   регистр: chat 77/107 · clean 2/6 · sloppy 25/51 · voice_itn 57/78 · voice_raw 71/118
+   вид: chain 35/48 · compare 14/42 · container 29/30 · correction 31/36 · decompose 31/42 · derive 17/54 · result_feed 36/36 · summary 3/36 · validate 36/36
+
+10. ПРИМЕРЫ РАСХОЖДЕНИЙ (I−C, до 12)
+   chain-002|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='ZABOLOTNYI RUSLAN' I='ZABOLOTNYJ RUSLAN' (derived)
+   chain-005|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='BITIUKOVA ZINAIDA' I='BITYUKOVA ZINAIDA' (derived)
+   chain-007|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='POLIAKOVA VALENTINA' I='POLYAKOVA VALENTINA' (derived)
+   chain-014|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='KUZNECZOV DMITRII' I='KUZNETSOV DMITRII' (derived)
+   chain-015|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='KUZNECZOVA OLGA' I='KUZNETSOVA OLGA' (derived)
+   chain-025|0 crm_upsert_contact.contact.address.house [reformatted/] C='174' I='170' (verbatim)
+   chain-026|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='ZABOLOTNYI RUSLAN' I='ZABOLOTNYY RUSLAN' (derived)
+   chain-030|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='KUZNECZOV DMITRII' I='KUZNETSOV DMITRII' (derived)
+   chain-039|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='KUZNECZOV DMITRII' I='KUZNETSOV DMITRII' (derived)
+   compare-000|0 courier_book.contact.name [fragment/given] C='сергея' I='сергей' (verbatim)
+   compare-001|0 courier_book.contact.name [fragment/given] C='максима' I='максим' (verbatim)
+   compare-002|0 courier_book.contact.name [fragment/given] C='анну' I='анна' (verbatim)
+

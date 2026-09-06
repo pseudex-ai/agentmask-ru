@@ -357,22 +357,66 @@ def _fake_snils() -> str:
     raise RuntimeError("could not generate a checksum-INVALID СНИЛС")
 
 
-def _fake_inn() -> str:
+# VALID TO EVERY ALGORITHM, IMPOSSIBLE FOR A PERSON. A model told to check
+# identifiers refused a checksum-invalid substitute and never called the tool
+# (v4 small: 16 of 36 `validate` triples), and the product's reason for the
+# invalid sum — a substitute must never be somebody's real number — is just as
+# real. Both are kept where the number's STRUCTURE allows it: an ИНН carries
+# the tax region in its first two digits and «00» is no region; a passport
+# series carries the ОКАТО region and «00» is no region; a card's first digit
+# is the industry, and «0» is reserved for ISO/TC 68, no bank issues under it.
+# A СНИЛС has no such field — numbers below 001-001-998 are the EARLIEST real
+# registrations, exempt from the check, not free — so it stays invalid and the
+# refusal it causes is a measured, accepted price. Sources and arithmetic in
+# research/2026-09-03-checksum-valid-substitutes.md.
+_INN_WEIGHTS_10 = (2, 4, 10, 3, 5, 9, 4, 6, 8)
+_INN_WEIGHTS_11 = (7, 2, 4, 10, 3, 5, 9, 4, 6, 8)
+_INN_WEIGHTS_12 = (3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8)
+
+
+def _inn_check_digit(digits: str, weights: tuple[int, ...]) -> str:
+    total = sum(int(d) * w for d, w in zip(digits, weights))
+    return str(total % 11 % 10)
+
+
+def _fake_inn(original: str = "") -> str:
+    """Region «00», valid check digits, the ORIGINAL's length (10 or 12)."""
+    twelve = len("".join(ch for ch in original if ch.isdigit())) == 12
     for _ in range(50):
-        candidate = _rand_digits(10)
-        if not validate_inn(candidate):
-            return candidate
-    raise RuntimeError("could not generate a checksum-INVALID ИНН")
+        if twelve:
+            body = "00" + _rand_digits(8)
+            body += _inn_check_digit(body, _INN_WEIGHTS_11)
+            body += _inn_check_digit(body, _INN_WEIGHTS_12)
+        else:
+            body = "00" + _rand_digits(7)
+            body += _inn_check_digit(body, _INN_WEIGHTS_10)
+        if validate_inn(body):
+            return body
+    raise RuntimeError("could not generate a checksum-valid ИНН in region 00")
+
+
+def _luhn_check_digit(body: str) -> str:
+    total = 0
+    for index, ch in enumerate(reversed(body)):
+        digit = int(ch)
+        if index % 2 == 0:
+            digit *= 2
+            if digit > 9:
+                digit -= 9
+        total += digit
+    return str((10 - total % 10) % 10)
 
 
 def _fake_card() -> str:
+    """MII «0», Luhn-valid — no issuer exists under that first digit."""
     for _ in range(50):
-        body = "4" + _rand_digits(15)
-        if not validate_luhn(body):
+        body = "0" + _rand_digits(14)
+        body += _luhn_check_digit(body)
+        if validate_luhn(body):
             return f"{body[:4]} {body[4:8]} {body[8:12]} {body[12:]}"
     # Returning `body` here used to emit an UNFORMATTED 16-digit string, which
     # TOKEN_RE does not match — an unreversible token, silently.
-    raise RuntimeError("could not generate a Luhn-INVALID card number")
+    raise RuntimeError("could not generate a Luhn-valid card number under MII 0")
 
 
 # Enough that a collision streak is impossible in practice, small enough that
@@ -1012,11 +1056,15 @@ def _render_token(entity_type: str, gender: str | None = None,
     if entity_type == "SNILS":
         return _fake_snils()
     if entity_type == "INN":
-        return _fake_inn()
+        return _fake_inn(original)
     if entity_type == "CARD":
         return _fake_card()
     if entity_type == "PASSPORT":
-        return f"{_rand_digits(2)} {_rand_digits(2)} {_rand_digits(6)}"
+        # Series «00YY»: no ОКАТО region is 00, the year digits stay plausible
+        # (blanks of 1997–2026), the format check passes, and no person can
+        # hold it. See the note above `_fake_inn`.
+        year = 1997 + secrets.randbelow(30)
+        return f"00 {year % 100:02d} {_rand_digits(6)}"
     if entity_type in ("DATE", "DOB"):
         # DOB WAS FALLING THROUGH TO REDACTED…, and it only started to matter
         # when DOB became a type of its own: recall went 22.2% -> 82.8% the same
@@ -1389,6 +1437,31 @@ class Vault:
         random or composed from parts already minted. Called under the lock."""
         if entity_type == "NAME" and original and _shares_a_word(token, original):
             return False
+        # A FAKE CITY IS A REAL TOWN, and the customer may name that town. Our
+        # pool is «Валдай», «Суздаль», «Елец» — real places on purpose, so a
+        # substitute reads as one — and a customer living in Валдай then met a
+        # substitute «Валдай, улица Осиновая 174» minted for somebody else: the
+        # restore leg resolved their real «Валдае» to that stranger's address.
+        # The city of a candidate may not be the city of any real address this
+        # customer already has (the other direction is `real_place_with_stem`
+        # on the restore leg).
+        if entity_type == "LOC" and "," in token:
+            # Only a token that CARRIES a city («Валдай, улица …»): for a
+            # city-less one the first word is the generic, «улиц…» prefixes
+            # every real address, and every candidate was refused until the
+            # 200 attempts ran out — measured as a ten-minute test run.
+            city = token.split(",", 1)[0].strip()
+            stem = _city_stem(city).replace("\\", "")   # `_city_stem` escapes for a regex; LIKE wants the letters
+            # …nor the ORIGINAL's own city: «Валдай» drawn for an address in
+            # Валдай restored the whole token and then re-read the real city as
+            # our fake — «Живу на улице Мира 4, улица Мира 4».
+            own = morph_places.split_roles(original).get("city", "") if original else ""
+            if not own and original:
+                own = original.split(",", 1)[0].strip() if "," in original else original.split()[0]
+            if stem and own and _city_stem(own).replace("\\", "").lower() == stem.lower():
+                return False
+            if stem and self._real_place_with_stem_locked(stem):
+                return False
         if True:
             # THE ROW BEING MINTED IS NOT IN THE TABLE YET, so the lookup below
             # cannot see it and a substitute is free to come out equal to the
@@ -1668,6 +1741,34 @@ class Vault:
             raise RuntimeError(
                 f"lost the insert race for {canonical!r} but no row followed")
         return row[0]
+
+    def real_place_with_stem(self, stem: str) -> bool:
+        """Whether some REAL address of this customer names a settlement with
+        this stem — the check that keeps a customer's own town from being read
+        as somebody's bare fake city. One indexed prefix query."""
+        with self._lock:
+            return self._real_place_with_stem_locked(stem)
+
+    def _real_place_with_stem_locked(self, stem: str) -> bool:
+        """The same question asked from INSIDE the mint, which already holds
+        the lock — `threading.Lock` is not re-entrant, and taking it twice was
+        a silent hang on every address that carried a city."""
+        stem = stem.lower()
+        if not stem:
+            return False
+        # PREFIX ONLY: `address_key` writes the city first, so the index on
+        # (customer, canonical) serves this; a `'% stem%'` form scanned every
+        # address the customer has, per candidate, up to 200 times a mint.
+        # The canonical AND the written form: «на Валдае, улица Мира 4» keys
+        # as «улица валдай мир 4» (a town pymorphy does not tag), so only the
+        # surface still starts with the city. SQLite's LIKE folds ASCII only,
+        # hence both spellings of the first letter.
+        row = self._conn.execute(
+            "SELECT 1 FROM tokens WHERE customer=? AND entity_type='LOC' "
+            "AND (canonical LIKE ? OR original LIKE ? OR original LIKE ?) LIMIT 1",
+            (self._customer, f"{stem}%", f"{stem}%", f"{stem[:1].upper()}{stem[1:]}%"),
+        ).fetchone()
+        return row is not None
 
     def place_owner(self, candidate: str) -> str | None:
         """Адресная подмена, ЧАСТЬЮ которой является этот фрагмент.
