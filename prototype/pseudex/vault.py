@@ -582,6 +582,22 @@ def _pick_value(entity_type: str, canonical: str, original: str,
     if (for_tool and entity_type in _CANONICAL_IS_THE_VALUE
             and looks_dictated(original or "", canonical or "")):
         return canonical
+    # A STREET THE CUSTOMER MISTYPED REACHES THE TOOL AS THE REGISTER SPELLS
+    # IT, AND ONLY THE TOOL. Without the gateway the agent silently repairs
+    # «мончгорская» to «Мончегорская» and the CRM finds the address; with the
+    # gateway it is shown a clean substitute, has nothing to repair, and the
+    # customer's literal words reach the tool — a street that does not exist.
+    # 42 of the 103 street/address conflicts on the 06.09 live run, and in
+    # every one of them BOTH control arms had repaired it, so this is the
+    # reference behaviour rather than a policy of ours.
+    #
+    # IN PROSE THE CUSTOMER KEEPS HIS OWN WORDS. Repeating his address back
+    # corrected is a different act from filling a form with it: one is the
+    # agent talking to him, the other is the agent acting for him. The three
+    # signals that make the repair safe are in `address.register_spelling`.
+    if for_tool and entity_type == "LOC" and original:
+        from pseudex.address import repair_street
+        return repair_street(original)
     return original
 
 

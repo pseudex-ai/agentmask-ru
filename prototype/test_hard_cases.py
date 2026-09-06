@@ -534,6 +534,69 @@ def test_tool_result_with_a_future_date_masks(vault: Vault, detector: Detector) 
                 check(f"a birth date keeps its year: {original} → {token}", fake[-4:] == real[-4:], token)
 
 
+def test_a_mistyped_street_reaches_the_tool_as_the_register_spells_it(
+        vault: Vault, detector: Detector) -> None:
+    """The agent repairs a typo; the gateway used to take that away.
+
+    «курьера на мончгорская 195» — without the gateway the model silently
+    sends «Мончегорская» to the CRM and the address is found. With it the
+    model is shown a CLEAN substitute, has nothing to repair, and the
+    customer's literal words reach the tool: a street that does not exist.
+    42 of the 103 street/address value conflicts on the 06.09 live run, and
+    in every one of them BOTH control arms had repaired it — so the register
+    spelling is the reference behaviour, not a policy of ours.
+
+    THE OTHER HALF MATTERS MORE. A correct street in an oblique case is not in
+    the register as written either, and asked only as written the rule rewrote
+    «мончегорской» to «мончегорское» and «вишнёвой» to «вишневый» — corrupting
+    an address that was right. The register is asked in all three forms
+    `_gar_reaches` asks."""
+    import json
+    from pseudex.address import register_spelling
+    from pseudex.redact import unmask_arguments
+
+    for word, want in (("мончгорская", "мончегорская"), ("калашнкова", "калашникова"),
+                       ("грибоеодва", "грибоедова"), ("пушшкина", "пушкина")):
+        check(f"опечатка чинится по реестру: {word}", register_spelling(word) == want,
+              f"{word} -> {register_spelling(word)!r}")
+    for word in ("мончегорская", "мончегорской", "вишнёвой", "садовой", "чапаевской",
+                 "ленина", "улица", "проспект", "лениа", "ленна", "вишнвая", "шумайова"):
+        # correct as written, correct but inflected, a type word, a numeral-ish
+        # name, and the ambiguous ones — a word one edit from SEVERAL register
+        # entries is Fellegi–Sunter's middle outcome and a gateway has no human
+        # to refer it to, so it refuses.
+        check(f"правильное или неоднозначное не трогается: {word}",
+              register_spelling(word) == "", f"{word} -> {register_spelling(word)!r}")
+    check("короткое слово не чинится", register_spelling("лена") == "")
+
+    said = "курьера на мончгорская 195 квартира 12 это в мурманск"
+    talk = Vault(":memory:", "acme").for_conversation("typo")
+    mask_text(said, talk, detector.detect(said))
+    token = talk._conn.execute("SELECT token FROM tokens WHERE entity_type='LOC'").fetchone()[0]  # noqa: SLF001
+    fake = morph_places.split_roles(token)
+    back = json.loads(unmask_arguments(json.dumps(
+        {"address": {"street": fake["street"].split()[-1], "building": fake["house"],
+                     "sflat": fake.get("flat", "")}}, ensure_ascii=False), talk))
+    check("в инструмент уходит написание реестра, дом и квартира — клиента",
+          back["address"]["street"] == "мончегорская" and back["address"]["building"] == "195"
+          and back["address"]["sflat"] == "12", f"{back}")
+    # …AND IN PROSE THE CUSTOMER KEEPS HIS OWN WORDS. Repeating his address
+    # back corrected is a different act from filling a form with it.
+    check("в прозе — слова клиента", unmask_text(f"Записал: {token}.", talk)
+          == "Записал: мончгорская 195 квартира 12.",
+          unmask_text(f"Записал: {token}.", talk))
+
+    said = "курьера на мончегорской 195 квартира 12 это в мурманск"
+    talk = Vault(":memory:", "acme").for_conversation("ok")
+    mask_text(said, talk, detector.detect(said))
+    token = talk._conn.execute("SELECT token FROM tokens WHERE entity_type='LOC'").fetchone()[0]  # noqa: SLF001
+    fake = morph_places.split_roles(token)
+    back = json.loads(unmask_arguments(json.dumps(
+        {"address": {"street": fake["street"].split()[-1]}}, ensure_ascii=False), talk))
+    check("склонённая правильная улица доходит как написана",
+          back["address"]["street"] == "мончегорской", f"{back}")
+
+
 def test_address_signature_is_inflection_proof() -> None:
     """Every pool entry must key the same in every case, or restoration misses.
 
@@ -596,6 +659,7 @@ def main() -> int:
     test_street_stays_a_street(vault, detector)
     test_preposition_is_not_a_litera(vault, detector)
     test_corrected_address_shares_its_street(vault, detector)
+    test_a_mistyped_street_reaches_the_tool_as_the_register_spells_it(vault, detector)
     test_spoken_birth_date_keeps_its_register(vault, detector)
     test_tool_result_with_a_future_date_masks(vault, detector)
     test_chat_register(detector)

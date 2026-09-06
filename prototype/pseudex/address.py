@@ -30,7 +30,7 @@ from pseudex import _morph_compat  # noqa: F401  (aliases pymorphy2->pymorphy3 b
 
 from pseudex.assets import ASSETS, AddressAssets
 from pseudex.detect import Span
-from pseudex.fuzzy import build_index, lookup, within_one_typo
+from pseudex.fuzzy import build_index, deletion_keys, lookup, within_one_typo
 from pseudex.names import _typo_of_an_ordinary_word as _names_typo_of_ordinary
 from pseudex import morph_places, spoken
 from pseudex.morph import MORPH
@@ -883,6 +883,95 @@ def _street_index(version: str) -> dict[tuple[str, int], tuple[str, ...]]:
     the previous vocabulary. The version is a content hash, so equal version
     means equal contents — the same contract `_misspelling_index` runs on."""
     return build_index(ASSETS.get().address.street_names)
+
+
+def register_spelling(word: str) -> str:
+    """The ГАР register's spelling of a street name the customer mistyped, or "".
+
+    THE AGENT REPAIRS A TYPO AND THE GATEWAY TAKES THAT AWAY. A customer writes
+    «курьера на мончгорская 195»; without us the model silently sends
+    «Мончегорская» to the CRM and the address is found. With us the model is
+    shown a CLEAN substitute, has nothing to repair, writes it verbatim, and
+    the customer's literal words reach the tool — a street that does not exist.
+    Measured on the 06.09 live run: 42 of the 103 street/address conflicts.
+
+    THREE SIGNALS, THE SAME DISCIPLINE `_fuzzy_street_candidates` RUNS ON, and
+    the reason each is needed:
+
+      * THE REGISTER DOES NOT REACH THE WORD — asked in all three forms
+        `_gar_reaches` asks, not just as written. This is the signal that
+        cost the most to get right: the register stores nominatives, and a
+        customer who writes a CORRECT street in an oblique case («на
+        мончегорской 195», «к вишнёвой 8») is not in it as written. Asked
+        only as written, the gateway rewrote «мончегорской» to «мончегорское»
+        and «вишнёвой» to «вишневый» — corrupting an address that was right;
+      * EXACTLY ONE register entry is one Damerau edit away — «лениа» reaches
+        «лена», «ленин», «ленина» and «ленца», and choosing among four would be
+        the gateway sending a courier somewhere the customer never named;
+      * the word is long enough that one edit is not most of it. Below six
+        letters the neighbourhood is dense and a real short street name would
+        be rewritten into a commoner one.
+
+    Returns the register's form, never a guess. The caller decides where it is
+    allowed to matter — a tool argument, never prose.
+    """
+    written = word.strip().lower()
+    low = written.replace("ё", "е")
+    if len(low) < 6 or not low.isalpha():
+        return ""
+    address = ASSETS.get().address
+    if _gar_reaches(written, address) or _gar_reaches(low, address):
+        return ""
+    # A NUMERAL AND A STREET TYPE ARE NOT NAMES TO BE REPAIRED, the same two
+    # vetoes the bare-street arm applies before it consults the register.
+    if _is_numeral(written) or _exact_type(written, address.street_type_house) is not None:
+        return ""
+    index = _street_index(ASSETS.version or "")
+    found: set[str] = set()
+    for key in deletion_keys(low):
+        for candidate in index.candidates(key):
+            if candidate != low and within_one_typo(low, candidate):
+                found.add(candidate)
+                if len(found) > 1:
+                    return ""
+    return next(iter(found)) if found else ""
+
+
+def repair_street(value: str) -> str:
+    """`value` with every mistyped word of its STREET NAME put into the
+    register's spelling; the rest of the address, its case and its punctuation
+    are untouched. Returns `value` unchanged when nothing qualifies.
+
+    Only the street span, and only the words `register_spelling` vouches for:
+    the house number, the flat, the settlement and the type word are the
+    customer's and stay his. A type word is never rewritten because every one
+    of them IS in the register as a street name in its own right («улица
+    Улица» exists), so the first of the three signals refuses it.
+    """
+    spans = morph_places.role_spans(value)
+    span = spans.get("street")
+    if span is None:
+        return value
+    start, end = span
+    out: list[str] = []
+    cursor = start
+    for match in _CYR_TOKEN_RE.finditer(value, start, end):
+        fixed = register_spelling(match.group())
+        if not fixed:
+            continue
+        out.append(value[cursor:match.start()])
+        out.append(_in_case_of(match.group(), fixed))
+        cursor = match.end()
+    if not out:
+        return value
+    return value[:start] + "".join(out) + value[cursor:]
+
+
+def _in_case_of(pattern: str, produced: str) -> str:
+    """`produced` in the letter case `pattern` uses."""
+    if pattern[:1].isupper():
+        return produced[:1].upper() + produced[1:]
+    return produced
 
 
 def _is_unknown(token: str) -> bool:

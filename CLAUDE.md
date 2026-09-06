@@ -1066,6 +1066,22 @@ direction when done the obvious way:
   passed). A year identifies nobody (~1.5M people a year); the day and month are
   what turn a bucket into a person, and they stay fake.
 
+- **A STREET THE CUSTOMER MISTYPED REACHES THE TOOL AS THE REGISTER SPELLS IT,
+  AND ONLY THE TOOL.** Without the gateway the agent silently repairs
+  «мончгорская» to «Мончегорская» and the CRM finds the address; with a clean
+  substitute in front of it there is nothing to repair, and the customer's
+  literal words reach the tool — 88 of the 141 value conflicts on the 06.09
+  run. `address.register_spelling` asks three signals: the register does not
+  reach the word IN ANY OF THE THREE FORMS `_gar_reaches` asks (as written, by
+  lemma, by the nominative of any parse — asked only as written, the rule
+  rewrote the CORRECT «мончегорской» to «мончегорское»), exactly one register
+  entry is one Damerau edit away («лениа» reaches four and is refused), and the
+  word is at least six letters. In PROSE the customer keeps his own words:
+  repeating his address back corrected and filling a form with it are different
+  acts. v3's tool axis drops 1.1pp because its ground truth is the customer's
+  words verbatim and it has no control arm; the class is named `typo_repaired`
+  rather than folded into `ok`.
+
 ## Conventions
 
 - Comments are in English; product docs (`docs/`) are in Russian. Both are unusually dense —
