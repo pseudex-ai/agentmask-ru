@@ -641,6 +641,53 @@ def test_street_stays_a_street(vault: Vault, detector: Detector) -> None:
           not wrong, f"wrong={wrong}" if wrong else "")
 
 
+def test_a_card_address_comes_back_from_free_text(vault: Vault, detector: Detector) -> None:
+    """A CRM card stores its address LOWER CASE, and we hand the substitute back
+    the same way — then could not read our own output.
+
+    The card comes in as a tool result, so the fields are masked field by field
+    and the model is shown «{"street": "ивовая", "house": "125"}». Written back
+    into a field of the same name it resolves (`_join_address_fields`). Written
+    into a FREE-TEXT address argument — «краснодар, улица ивовая 125, кв. 53»,
+    exactly the string the model composes from what it read — it did not, and
+    the customer's real address never reached the tool. Found by `long_order`
+    on its first run: 18 of 60 cases, every one on `pickup_points_near`.
+
+    THE KEY WAS NEVER THE PROBLEM. `place_key` casefolds, so «улица Ивовая 125»
+    and «улица ивовая 125» produce the same key; the SCANNER that proposes the
+    window demanded a capital, so for lower case no window was ever offered and
+    the key was never asked. The capital is load-bearing in DETECTION, where the
+    alternative is the whole language; in RESTORATION the candidate must equal
+    one of our own minted tokens, so a window that is not ours costs one indexed
+    query that returns nothing."""
+    import json
+    from pseudex.redact import unmask_arguments
+
+    card = json.dumps({"contacts": [{"id": "c-1", "address": {
+        "city": "омск", "street": "солнечная", "house": "104", "flat": "203"}}]}, ensure_ascii=False)
+    scoped = vault.for_conversation("conv-card-address")
+    spans = detector.detect(card)
+    masked = mask_text(card, scoped, spans)
+    address = json.loads(masked)["contacts"][0]["address"]
+    check("подмена улицы в карточке — строчная, как поле",
+          address["street"] == address["street"].lower(), address["street"])
+    written = (f"{address['city']}, улица {address['street']} {address['house']}, "
+               f"кв. {address['flat']}")
+    restored = unmask_arguments(json.dumps({"address": written}, ensure_ascii=False), scoped)
+    got = json.loads(restored)["address"]
+    check("адрес из карточки, склеенный моделью в строку, восстановлен",
+          "солнечная" in got and address["street"] not in got, got)
+    # THE LIMIT, NAMED RATHER THAN TESTED. Lower case buys back every form that
+    # carries a TYPE WORD, because that is what `LOC_TOKEN_PATTERN` keys on.
+    # Without one — «каштановая 98», «омск, каштановая 98» — there is still no
+    # window: those reach the vault through `_name_windows`, which proposes only
+    # capitalised runs, and widening THAT to any word would offer every
+    # one-to-three-word window of a long reply to the vault. It is also the one
+    # form `residual_tokens` cannot warn about, for the same reason;
+    # `bench/agentpii4/gateway.py::_pieces` carries the matching note. Written
+    # down here so the next reader does not rediscover it from a customer.
+
+
 def main() -> int:
     testkit.load_dev_bundle()
     detector = Detector()
@@ -660,6 +707,7 @@ def main() -> int:
     test_preposition_is_not_a_litera(vault, detector)
     test_corrected_address_shares_its_street(vault, detector)
     test_a_mistyped_street_reaches_the_tool_as_the_register_spells_it(vault, detector)
+    test_a_card_address_comes_back_from_free_text(vault, detector)
     test_spoken_birth_date_keeps_its_register(vault, detector)
     test_tool_result_with_a_future_date_masks(vault, detector)
     test_chat_register(detector)

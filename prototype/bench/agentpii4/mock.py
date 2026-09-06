@@ -100,6 +100,16 @@ class Backend:
         self._tables[table][record_id] = record
         return record
 
+    def _domain_error(self, code: str, subject: str) -> tuple[dict[str, object], object]:
+        """A well-formed call about a state that is not there.
+
+        NOT A `Refusal`: that is the documented rejection of a malformed
+        argument and is scored as `validated_refused`. This is a 200 with an
+        error body — what a real API answers when the order does not exist —
+        and it allocates no id, because ids are allocated by writes only."""
+        data = {"error": {"code": code, "subject": subject}}
+        return data, {"error": {"code": code, "subject": subject}}
+
     def _apply(self, tool: str, parsed: dict[str, object]) -> tuple[dict[str, object], object]:
         """Mutate state and return (result as data, result as a Slot tree)."""
         if tool == "delivery_create_order":
@@ -139,8 +149,17 @@ class Backend:
                             "city": row.fields["city"], "street": row.fields["street"],
                             "house": row.fields["house"], "flat": row.fields.get("flat", ""),
                             "fias_id": row.fields["fias_id"]}
-                suggestions.append({"value": row.fields["value"], "data": data_row})
+                # THE SCORE WAS COMPUTED AND THROWN AWAY. A suggester that ranks
+                # without saying how sure it is cannot be chosen from, and «the
+                # agent picks a candidate by confidence» is a whole family of
+                # cases that could not be written. Rounded to two places: a
+                # float the two arms differ on in the sixteenth digit is noise
+                # dressed as a divergence.
+                confidence = round(scored[index][0] / max(1, len(words)), 2)
+                suggestions.append({"value": row.fields["value"], "data": data_row,
+                                    "confidence": confidence})
                 nodes.append({"value": Slot(str(row.fields["value"]), f"s{index}_value"),
+                              "confidence": f"{confidence:.2f}",
                               "data": {"postal_code": str(row.fields["postal_code"]),
                                        "region": str(row.fields["region"]),
                                        "city": str(row.fields["city"]),
@@ -245,6 +264,79 @@ class Backend:
             record = self._store("callbacks", tool, parsed, "cb")
             data = {"id": record.id, "status": "scheduled"}
             return data, dict(data)
+        if tool == "order_status":
+            record = self._tables["orders"].get(str(parsed["order_id"]))
+            if record is None:
+                return self._domain_error("ORDER_NOT_FOUND", str(parsed["order_id"]))
+            recipient = record.fields.get("recipient") or {}
+            location = record.fields.get("to_location") or {}
+            phones = recipient.get("phones") or [""]        # type: ignore[union-attr]
+            data = {"uuid": record.id, "status": record.fields.get("status", "ACCEPTED"),
+                    "date": record.fields.get("date", ""),
+                    "recipient": {"name": recipient.get("name", ""), "phone": phones[0]},  # type: ignore[union-attr]
+                    "to_location": {"city": location.get("city", ""),          # type: ignore[union-attr]
+                                    "address": location.get("address", "")}}   # type: ignore[union-attr]
+            node = {"uuid": record.id, "status": str(data["status"]), "date": str(data["date"]),
+                    "recipient": {"name": Slot(str(recipient.get("name", "")), "os_name"),  # type: ignore[union-attr]
+                                  "phone": Slot(str(phones[0]), "os_phone")},
+                    "to_location": {"city": str(location.get("city", "")),      # type: ignore[union-attr]
+                                    "address": Slot(str(location.get("address", "")), "os_addr")}}  # type: ignore[union-attr]
+            return data, node
+        if tool == "order_cancel":
+            record = self._tables["orders"].get(str(parsed["order_id"]))
+            if record is None:
+                return self._domain_error("ORDER_NOT_FOUND", str(parsed["order_id"]))
+            if record.fields.get("status") == "CANCELLED":
+                return self._domain_error("ALREADY_CANCELLED", record.id)
+            fields = dict(record.fields)
+            fields["status"] = "CANCELLED"
+            fields["cancel_reason"] = parsed.get("reason", "")
+            self._store("orders", tool, fields, "ord", record.id)
+            data = {"uuid": record.id, "status": "CANCELLED"}
+            return data, dict(data)
+        if tool == "order_reschedule":
+            record = self._tables["orders"].get(str(parsed["order_id"]))
+            if record is None:
+                return self._domain_error("ORDER_NOT_FOUND", str(parsed["order_id"]))
+            if record.fields.get("status") == "CANCELLED":
+                return self._domain_error("ORDER_CANCELLED", record.id)
+            fields = dict(record.fields)
+            fields["date"] = parsed["date"]
+            fields["status"] = "RESCHEDULED"
+            self._store("orders", tool, fields, "ord", record.id)
+            data = {"uuid": record.id, "status": "RESCHEDULED", "date": parsed["date"]}
+            return data, {"uuid": record.id, "status": "RESCHEDULED", "date": str(parsed["date"])}
+        if tool == "delivery_quote":
+            # READ-ONLY and carrying no personal data: a price and a term. It
+            # exists so a long conversation has a step whose answer the customer
+            # reacts to without the gateway being involved at all.
+            weight = int(parsed["weight"])          # type: ignore[arg-type]
+            price = 300 + weight // 100 * 7
+            data = {"city": parsed["city"], "weight": weight,
+                    "price": f"{price}.00", "currency": "RUB", "days": 2 + weight // 20000}
+            return data, {"city": str(parsed["city"]), "weight": str(weight),
+                          "price": str(data["price"]), "currency": "RUB", "days": str(data["days"])}
+        if tool == "pickup_points_near":
+            rows = list(self._tables["addresses"].values())
+            words = [word for word in str(parsed["address"]).lower().replace(",", " ").split()
+                     if len(word) > 2]
+            scored = []
+            for row in rows:
+                haystack = " ".join(str(value).lower() for value in row.fields.values())
+                scored.append((sum(1 for word in words if word in haystack), row))
+            scored.sort(key=lambda pair: (-pair[0], pair[1].id))
+            points = []
+            nodes = []
+            for index, (hits, row) in enumerate(scored[: int(parsed["limit"])]):  # type: ignore[arg-type]
+                # DISTANCE FROM THE SCORE, so a substitute that matches fewer
+                # words ranks further away — the effect the family measures.
+                metres = 300 + (len(words) - hits) * 900
+                points.append({"code": f"PVZ{index + 1:03d}", "address": row.fields["value"],
+                               "distance_m": metres})
+                nodes.append({"code": f"PVZ{index + 1:03d}",
+                              "address": Slot(str(row.fields["value"]), f"p{index}_addr"),
+                              "distance_m": str(metres)})
+            return {"points": points}, {"points": nodes}
         if tool == "crm_import_csv":
             imported = 0
             for row in parsed["rows"]:  # type: ignore[union-attr]

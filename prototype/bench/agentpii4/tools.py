@@ -1174,9 +1174,166 @@ CSV_IMPORT = ToolSpec(
     parse=_csv_parse, mutating=True)
 
 
+
+# --- reading back, cancelling, rescheduling -----------------------------------
+#
+# THE FIRST FOURTEEN TOOLS WERE ALL WRITE-ONLY OR ONE-SHOT, and a conversation
+# of eight turns cannot be built from them: nothing could be read back on turn
+# six that was written on turn two, nothing could be undone when the customer
+# changed their mind, and the model never met a DOMAIN error — only a format
+# refusal — so it never had to re-plan. All three are what a long dialogue is
+# made of.
+#
+# A DOMAIN ERROR IS A RESULT, NOT A REFUSAL. `Refusal` is the documented
+# rejection of a malformed argument and is recorded as `validated_refused`;
+# «this order does not exist» is a well-formed call about a state that is not
+# there, and a real API answers it with a body. The mock returns it as data,
+# and both arms meet it identically unless the gateway made them ask about
+# different orders — which is exactly the question.
+
+def _order_id_parse(tool: str, args: dict[str, object], extra: tuple[str, ...] = ()) -> Parsed | Refusal:
+    miss = _required(args, tool, "", ("order_id", *extra))
+    if miss:
+        return miss
+    raw = str(args["order_id"]).strip()
+    if not re.fullmatch(r"[A-Za-z]{2,4}-\d{1,6}", raw):
+        return Refusal(tool, "order_id", "order_id_format", raw)
+    return {"order_id": raw}
+
+
+def _order_status_parse(args: dict[str, object]) -> Parsed | Refusal:
+    return _order_id_parse("order_status", args)
+
+
+ORDER_STATUS = ToolSpec(
+    name="order_status",
+    source="CDEK GET /v2/orders/{uuid} (returns the order as stored, personal data included)",
+    schema=_schema(
+        "order_status",
+        "Узнать статус заказа по его номеру. Возвращает заказ целиком, включая получателя и адрес.",
+        {"order_id": {"type": "string", "description": "номер заказа, как его вернул delivery_create_order"}},
+        ("order_id",)),
+    fields=(FieldSpec("order_id", "plain", required=True),),
+    parse=_order_status_parse, mutating=False,
+    result_pii=("recipient.name", "recipient.phone", "to_location.address"))
+
+
+def _order_cancel_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "order_cancel"
+    parsed = _order_id_parse(tool, args)
+    if isinstance(parsed, Refusal):
+        return parsed
+    reason = parse_text(args.get("reason", ""), tool, "reason", 200)
+    if isinstance(reason, Refusal):
+        return reason
+    parsed["reason"] = reason
+    return parsed
+
+
+ORDER_CANCEL = ToolSpec(
+    name="order_cancel",
+    source="CDEK DELETE /v2/orders/{uuid} (idempotent; a cancelled order answers ALREADY_CANCELLED)",
+    schema=_schema(
+        "order_cancel",
+        "Отменить заказ. Причину напиши своими словами.",
+        {"order_id": {"type": "string"},
+         "reason": {"type": "string", "description": "причина отмены"}},
+        ("order_id",)),
+    fields=(FieldSpec("order_id", "plain", required=True),
+            FieldSpec("reason", "free")),
+    parse=_order_cancel_parse, mutating=True)
+
+
+def _order_reschedule_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "order_reschedule"
+    parsed = _order_id_parse(tool, args, ("date",))
+    if isinstance(parsed, Refusal):
+        return parsed
+    date = parse_iso_date(args["date"], tool, "date")
+    if isinstance(date, Refusal):
+        return date
+    parsed["date"] = date
+    return parsed
+
+
+ORDER_RESCHEDULE = ToolSpec(
+    name="order_reschedule",
+    source="CDEK POST /v2/orders/{uuid}/reschedule (date ISO 8601, future only)",
+    schema=_schema(
+        "order_reschedule",
+        "Перенести доставку заказа на другую дату.",
+        {"order_id": {"type": "string"},
+         "date": {"type": "string", "description": "ГГГГ-ММ-ДД"}},
+        ("order_id", "date")),
+    fields=(FieldSpec("order_id", "plain", required=True),
+            FieldSpec("date", "plain", required=True)),
+    parse=_order_reschedule_parse, mutating=True)
+
+
+def _quote_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "delivery_quote"
+    miss = _required(args, tool, "", ("weight", "city"))
+    if miss:
+        return miss
+    weight = parse_int(args["weight"], tool, "weight", 1, 50000)
+    if isinstance(weight, Refusal):
+        return weight
+    city = str(args["city"]).strip().lower()
+    if not re.fullmatch(r"[а-яё\- ]{2,40}", city):
+        return Refusal(tool, "city", "city_format", str(args["city"]))
+    return {"weight": weight, "city": city}
+
+
+DELIVERY_QUOTE = ToolSpec(
+    name="delivery_quote",
+    source="CDEK POST /v2/calculator/tariff (weight in grams, city name)",
+    schema=_schema(
+        "delivery_quote",
+        "Рассчитать стоимость и срок доставки. Вес в граммах, город — куда везём.",
+        {"weight": {"type": "integer", "description": "граммы"},
+         "city": {"type": "string", "description": "город получателя"}},
+        ("weight", "city")),
+    # THE CITY IS NOT PERSONAL DATA AND MUST REACH THE TOOL UNMASKED — a city
+    # identifies nobody (152-ФЗ ст. 3 п. 1) and a quote for the wrong town is a
+    # wrong price. It is typed `plain` for exactly that reason, not `identity`.
+    fields=(FieldSpec("weight", "plain", required=True),
+            FieldSpec("city", "plain", required=True)),
+    parse=_quote_parse, mutating=False)
+
+
+def _pickup_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "pickup_points_near"
+    miss = _required(args, tool, "", ("address",))
+    if miss:
+        return miss
+    address = parse_text(args["address"], tool, "address", 200)
+    if isinstance(address, Refusal):
+        return address
+    limit = parse_int(args.get("limit", 3), tool, "limit", 1, 10)
+    if isinstance(limit, Refusal):
+        return limit
+    return {"address": address, "limit": limit}
+
+
+PICKUP = ToolSpec(
+    name="pickup_points_near",
+    source="CDEK GET /v2/deliverypoints?address= (ranked by distance, each point a real address)",
+    schema=_schema(
+        "pickup_points_near",
+        "Найти пункты выдачи рядом с адресом. Возвращает список с расстоянием в метрах.",
+        {"address": {"type": "string", "description": "адрес, рядом с которым искать"},
+         "limit": {"type": "integer", "description": "сколько пунктов вернуть, 1-10"}},
+        ("address",)),
+    fields=(FieldSpec("address", "identity", "LOC", "", required=True),
+            FieldSpec("limit", "plain")),
+    parse=_pickup_parse, mutating=False,
+    result_pii=("points[].address",))
+
+
 REGISTRY: dict[str, ToolSpec] = {spec.name: spec for spec in (
     DELIVERY, COURIER, SUGGEST, PAYMENT, PASSPORT, CLINIC, FIND, UPSERT, SMS, CALLBACK, CSV_IMPORT,
-    NOTE, TEMPLATE, SEGMENT)}
+    NOTE, TEMPLATE, SEGMENT,
+    ORDER_STATUS, ORDER_CANCEL, ORDER_RESCHEDULE, DELIVERY_QUOTE, PICKUP)}
 
 
 def spec_for(tool: str, path: str) -> FieldSpec | None:

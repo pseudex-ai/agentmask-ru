@@ -49,6 +49,12 @@ SCENARIO_KINDS: tuple[str, ...] = (
     "send_template",  # PII goes into a template VARIABLE; the placeholder must survive
     "receipt",      # the contact is a CONDITION of the sale, not an accuracy question
     "analytics",    # SEVERAL people in one utterance, and an aggregate over them
+    # 06.09, Фаза 2: long conversations with a full toolbox. The fourteen above
+    # all fit into one to three turns and one or two calls; these ask whether a
+    # substitute survives seven turns, whether a person named LATE stays a
+    # different person, and whether a value that exists only in a tool's ANSWER
+    # can feed the next call.
+    "long_order",   # оформление заказа целиком: 7 ходов, 12 инструментов, поздний получатель
 )
 ARMS: tuple[str, ...] = ("C", "I", "C2")          # control, intervention, second control
 INV_LEVELS: tuple[str, ...] = ("tools", "keys", "state")
@@ -56,7 +62,7 @@ DUTIES: tuple[str, ...] = ("required", "optional")
 # 05.09: raised from 420 with the flow axis (research/2026-09-05-agent-scenario-
 # coverage.md). The band is a sanity check on authoring effort, not a statistical
 # constraint — the tiers are what bound the money, and `small` is still the pilot.
-CORPUS_SIZE_BAND: tuple[int, int] = (330, 520)
+CORPUS_SIZE_BAND: tuple[int, int] = (330, 900)
 # THE TARGET SIZE OF EACH TIER, AND WHAT IT BUYS. Not taste: at the measured
 # DEFF ≈ 2.1 and a discordance around 0.10, `stats.mde_paired` says a tier of
 # n triples can detect a paired difference no smaller than

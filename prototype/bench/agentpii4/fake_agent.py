@@ -217,11 +217,17 @@ def parts_of_any(fake: str) -> tuple[str, ...]:
 
 # --- the scripted agent ------------------------------------------------------
 
-# A ceiling, not a budget: the planner is re-run after every tool result, so a
-# value whose substitute changed on every turn would plan for ever. Twelve is
-# four times the busiest family and the error names the tool that would not
-# settle, which is the diagnosis.
-_MAX_CALLS: int = 12
+def call_ceiling(case: Case) -> int:
+    """A ceiling, not a budget: the planner is re-run after every tool result,
+    so a value whose substitute changed on every turn would plan for ever.
+
+    TIED TO THE TOOLBOX, NOT A CONSTANT. Twelve was four times the busiest
+    family when every family had four tools; `long_order` offers twelve and
+    legitimately makes thirteen calls — a search repeated with a second
+    person's phone, then the writes — so a flat number turned a working family
+    into a crash. Twice the offered tools allows every one of them to be called
+    once more with a changed argument, which is the only honest repeat."""
+    return 2 * len(case.tools) + 4
 
 def _seen_values(case: Case, gateway: object) -> dict[str, tuple[str, dict[str, str]]]:
     """item id -> (what the agent reads, its parts as the agent would split them).
@@ -275,7 +281,17 @@ def _merged_parts(item: PiiItem, surface: str) -> dict[str, str]:
         # is the leak this function exists to avoid.
         return substitute
     inside = set(parts_of(item.type, item.value))
-    parts = {role: value for role, value in item.parts.items() if role not in inside}
+    # ONLY WHAT IS NOT A VALUE. A sibling field carrying a WORD — the city, the
+    # street type — is structure the gateway leaves alone. A sibling carrying a
+    # NUMBER is a value, and the engine masks the house and the flat of a card
+    # exactly as it masks the street. Carrying those over let the agent write
+    # the customer's REAL flat while the model had been shown another one, and
+    # both arms then «agreed» on it: the same shape as the spoken birth date
+    # this function already guards against, reached by another road. The real
+    # numbers come from the tool RESULT (`card_address`), where the model reads
+    # them.
+    parts = {role: value for role, value in item.parts.items()
+             if role not in inside and not any(ch.isdigit() for ch in value)}
     parts.update(substitute)
     return parts
 
@@ -417,19 +433,31 @@ def _pick_all(items: tuple[PiiItem, ...], kind: str,
     return [view[item.id] for item in chosen]
 
 
-def _pick(items: tuple[PiiItem, ...], kind: str, view: dict[str, tuple[str, dict[str, str]]],
-          policy: Policy, prefer_current: bool = True) -> tuple[str, dict[str, str]]:
-    """The agent's choice of which item of a type to use."""
+def _pick_item(items: tuple[PiiItem, ...], kind: str, policy: Policy,
+               prefer_current: bool = True) -> PiiItem | None:
+    """WHICH item the agent uses. Separate from `_pick` because the caller
+    sometimes needs the item's LOCUS: a value the customer just said and a
+    value read off a card are handled differently, and a guess from the shape
+    of the surface gets it wrong — a spoken address carries no digit, so
+    «is there a digit» read every voice case as a card and overwrote the new
+    address with the old one (80 fields on `chain` alone)."""
     ordered = _in_order(items)
     spoken = [item for item in ordered if item.type == kind and item.where.kind == "message"]
     candidates = spoken or [item for item in ordered if item.type == kind]
     if not candidates:
-        return "", {}
+        return None
     current = [item for item in candidates if not item.stale] or candidates
     chosen = current[-1] if prefer_current else current[0]
     if policy.swaps_person and len({item.identity for item in current}) > 1:
         chosen = [item for item in current if item.identity != chosen.identity][0]
-    return view[chosen.id]
+    return chosen
+
+
+def _pick(items: tuple[PiiItem, ...], kind: str, view: dict[str, tuple[str, dict[str, str]]],
+          policy: Policy, prefer_current: bool = True) -> tuple[str, dict[str, str]]:
+    """The agent's choice of which item of a type to use."""
+    chosen = _pick_item(items, kind, policy, prefer_current)
+    return view[chosen.id] if chosen is not None and chosen.id in view else ("", {})
 
 
 def _e164(surface: str, parts: dict[str, str], policy: Policy) -> str:
@@ -488,6 +516,56 @@ def _name_args(surface: str, parts: dict[str, str], policy: Policy) -> dict[str,
         return {"last": surface, "first": "", "middle": ""}
     return {"last": parts.get("surname", surface.split()[0] if surface else ""),
             "first": parts.get("given", ""), "middle": parts.get("patronymic", "")}
+
+
+def card_address(results: tuple[tuple[str, str], ...], record_id: str) -> dict[str, str]:
+    """The address of one card AS THE AGENT WAS SHOWN IT, out of the search result.
+
+    A card's address lives across four fields and the engine masks three of
+    them; the corpus marks only the street as personal data, so the item's
+    parts carry the REAL house and flat. Reading them from the item let the
+    instrument write values the model had never seen. The search result is
+    where the model reads them, so it is where the agent reads them."""
+    for name, text in reversed(results):
+        if name != "crm_find_contact":
+            continue
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        contacts = payload.get("contacts") if isinstance(payload, dict) else None
+        if not isinstance(contacts, list):
+            continue
+        for row in contacts:
+            if not isinstance(row, dict):
+                continue
+            if record_id and str(row.get("id", "")) != record_id:
+                continue
+            address = row.get("address")
+            if isinstance(address, dict):
+                return {key: str(value) for key, value in address.items() if value}
+    return {}
+
+
+def result_field(results: tuple[tuple[str, str], ...], tool: str, key: str) -> str:
+    """A value the agent READ BACK out of a tool result, by the tool that made it.
+
+    The order id is not in the case and not in any message: it is allocated by
+    the write and comes back in its answer, so a call that refers to it can
+    only be planned AFTER that answer. This is the whole reason the planner is
+    re-run per result rather than once.
+
+    The text is the MASKED result, byte for byte what the model is handed."""
+    for name, text in reversed(results):
+        if name != tool:
+            continue
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and isinstance(payload.get(key), str):
+            return str(payload[key])
+    return ""
 
 
 def consumes(name: str) -> frozenset[str]:
@@ -590,6 +668,16 @@ def plan_calls(case: Case, gateway: object, policy: Policy, upto_msg: int,
     said_phone = next((view[item.id][0] for item in _in_order(items)
                        if item.type == "PHONE" and item.where.kind == "message" and item.id in view), "")
     addr_surface, addr_parts = _pick(items, "LOC", view, policy)
+    addr_item = _pick_item(items, "LOC", policy)
+    if addr_item is not None and addr_item.where.kind == "seed":
+        # A BARE STREET CAME OFF A CARD, and the card's numbers are in the
+        # RESULT the agent has already read — never in the item, where they are
+        # the customer's real ones. Field by field only: composing them into one
+        # string was tried and measures our renderer, not the gateway (the two
+        # arms compose differently and 80 fields came back
+        # `same_person_variant`). A free-text address argument gets the surface
+        # as read, and a bare street there is an honest `residual`.
+        addr_parts = {**addr_parts, **card_address(results, _chosen_record(case, items, view))}
     dob_surface, dob_parts = _pick(items, "DOB", view, policy)
     phone = _e164(phone_surface, phone_parts, policy) if phone_surface else ""
     name = _name_args(name_surface, name_parts, policy)
@@ -744,6 +832,22 @@ def plan_calls(case: Case, gateway: object, policy: Policy, upto_msg: int,
             rows.append(f"{parts['last']};{parts['first']};{_e164(p_surface, p_parts, Policy('x'))};;")
         if rows:
             maybe("crm_import_csv", {"csv": "\n".join([CSV_HEADER, *rows])})
+    if "delivery_quote" in tools and city:
+        # THE WEIGHT IS THE CUSTOMER'S, THE DEFAULT IS THE PROMPT'S. The system
+        # prompt names 1000 g when nobody says otherwise, so a case that omits
+        # it still reaches the tool and the two arms still agree on the number.
+        said = next((one.value for one in plain_values if one.family == "weight"), "")
+        grams = int(_as_digits(said) or 0) * 1000 or 1000
+        maybe("delivery_quote", {"weight": grams, "city": city})
+    if "pickup_points_near" in tools and addr_surface:
+        maybe("pickup_points_near", {"address": addr_surface, "limit": 3})
+    order_id = result_field(results, "delivery_create_order", "uuid")
+    if "order_status" in tools and order_id:
+        maybe("order_status", {"order_id": order_id})
+    if "order_reschedule" in tools and order_id:
+        maybe("order_reschedule", {"order_id": order_id, "date": "2026-09-10"})
+    if "order_cancel" in tools and order_id:
+        maybe("order_cancel", {"order_id": order_id, "reason": "клиент передумал"})
     if "notify_sms" in tools and phone:
         order = next((one.value for one in plain_values if one.family == "order_number"), "")
         text = f"Ваш заказ {order or 'оформлен'}"
@@ -795,8 +899,9 @@ def scripted_run(case: Case, arm: str, repeat: int, gateway: object, backend: Ba
                 break
             name, arguments = batch[0]
             done.add(call_key(name, arguments))
-            if len(calls) >= _MAX_CALLS:
-                raise RuntimeError(f"{case.id}/{arm}: {_MAX_CALLS} calls and still planning "
+            ceiling = call_ceiling(case)
+            if len(calls) >= ceiling:
+                raise RuntimeError(f"{case.id}/{arm}: {ceiling} calls and still planning "
                                    f"({name}) — a substitute that changes every turn would loop here")
             gateway.note_tool_call(name, arguments)  # type: ignore[attr-defined]
             restored, residual = gateway.restore_arguments(arguments)  # type: ignore[attr-defined]

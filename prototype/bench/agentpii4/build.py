@@ -17,7 +17,7 @@ from pathlib import Path
 
 from bench.agentpii4 import schema, stats, validate
 from bench.agentpii4.scenarios import (analytics, chain, compare, container, correction, crm_note,
-                                       decompose, derive, lookup_list, receipt,
+                                       decompose, derive, long_order, lookup_list, receipt,
                                        result_feed, send_template, summary)
 from bench.agentpii4.scenarios import validate as validate_kind
 from bench.agentpii4.schema import Case, Ladder
@@ -34,6 +34,8 @@ PLAN: tuple[tuple[object, int, int], ...] = (
     # 05.09: the flow axis (research/2026-09-05-agent-scenario-coverage.md).
     (lookup_list, 10, 30), (crm_note, 8, 24), (send_template, 8, 24), (receipt, 6, 18),
     (analytics, 6, 18),
+    # 06.09, Фаза 2 — длинные разговоры с полным набором инструментов.
+    (long_order, 8, 60),
 )
 
 
@@ -122,6 +124,19 @@ def build_ladder(cases: list[Case], seed: int) -> Ladder:
                 taken.add(pick.id)
                 quota[kind] -= 1
                 remaining -= 1
+        # Rounding down leaves a tier one or two short of the size it is named
+        # for. Topped up from the largest families, which is where the rounding
+        # lost them.
+        while remaining > 0:
+            free_by_kind = {kind: [case for case in pool if case.id not in taken]
+                            for kind, pool in debug_by_kind.items()}
+            biggest = max(free_by_kind, key=lambda kind: len(free_by_kind[kind]))
+            if not free_by_kind[biggest]:
+                break
+            pick = _register_round_robin(free_by_kind[biggest], 1, rng)[0]
+            chosen.append(pick)
+            taken.add(pick.id)
+            remaining -= 1
         chosen.sort(key=lambda case: case.id)
         tiers[name] = tuple(case.id for case in chosen)
         previous = chosen

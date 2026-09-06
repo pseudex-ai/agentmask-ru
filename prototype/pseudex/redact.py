@@ -581,6 +581,24 @@ _NAME_WORD = re.compile(r"[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?")
 # restoration window never covered the token, the lookup never ran, and a fake
 # address went to the tool. Deriving it removes the possibility.
 _PLACE_RUN = re.compile(LOC_TOKEN_PATTERN)
+# THE SAME PATTERN, ASKED WITHOUT REGARD TO CASE, AND ONLY WHEN RESTORING.
+#
+# A CRM card stores «солнечная» in lower case, so the substitute agrees with it
+# and the model is shown «улица ивовая 125». `place_key` casefolds and produces
+# the SAME key as «улица Ивовая 125» — the key was never the problem. The
+# scanner that proposes the window demanded a capital, so for lower case no
+# window was ever offered and the key was never asked: the customer's real
+# address never reached the tool, on the leg where personal data comes back
+# from their own systems. 18 of 60 `long_order` cases on its first run.
+#
+# THE CAPITAL IS LOAD-BEARING IN DETECTION AND NOT HERE, and the difference is
+# what the alternative is. A detector that drops it is choosing between an
+# address and the whole Russian language, which is the mistake this file and
+# `address.py` both carry a comment about. A RESTORER that drops it is choosing
+# between an address and OUR OWN MINTED TOKENS: a window whose key is not in the
+# vault resolves to nothing and costs one indexed point query, the same trade
+# `_place_windows` already makes four times over for its framings.
+_PLACE_RUN_ANY_CASE = re.compile(f"(?i:{LOC_TOKEN_PATTERN})")
 
 
 def _place_windows(text: str, start: int, end: int) -> list[tuple[int, int]]:
@@ -697,6 +715,10 @@ def _name_windows(text: str) -> list[tuple[int, int, str]]:
     return windows
 
 
+# Five letters is the same floor `names._LOWER_DICT_MIN` uses, and for the same
+# reason: below it an ordinary short word is as likely as a street name, and the
+# query is wasted more often than not.
+_LOWER_WORD = re.compile(r"(?<![А-ЯЁа-яё-])[а-яё]{5,}(?![А-ЯЁа-яё-])")
 _LATIN_WORD = re.compile(r"(?<![A-Za-z])(?:[A-Z][a-z]{2,}|[A-Z]{3,})(?![A-Za-z])")
 _INITIALS_PAIR = re.compile(r"(?<![А-ЯЁа-яё])([А-ЯЁ])\.\s?([А-ЯЁ])\.(?![А-ЯЁа-яё])")
 
@@ -716,6 +738,24 @@ def _restore_inflected_spans(text: str, vault: Vault, inflect: bool = True,
     # first, and the address was then never restored — a fake address delivered
     # to a tool, which is the failure this whole path exists to prevent.
     windows = _name_windows(text)
+    if for_tool:
+        # A LOWER-CASE STREET STANDING ALONE IS STILL OURS, and only a tool
+        # argument is short enough to ask.
+        #
+        # A CRM card stores «солнечная» in lower case, the substitute agrees
+        # with the field, and the model writes it straight into an `address`
+        # argument. `_name_windows` proposes capitalised runs only, so no
+        # window was ever offered, no key was ever asked, and the fake street
+        # reached the customer's tool. Seventeen of sixty `long_order` cases
+        # on the family's first run.
+        #
+        # BOUNDED TO THE ARGUMENT LEG ON PURPOSE. Offering every long word of
+        # a REPLY would put a paragraph's worth of candidates in front of the
+        # vault; an argument is a field, and the same reasoning `_place_windows`
+        # already uses four times over applies — a word that is not ours costs
+        # one indexed point query that returns nothing, and a word that IS ours
+        # is the failure this path exists to prevent.
+        windows.extend((m.start(), m.end(), m.group()) for m in _LOWER_WORD.finditer(text))
     # Each window carries BOTH signatures, because a single capitalised word can
     # be either kind and the two normalisers disagree: `Еловцке` is a settlement,
     # and asking the PERSON normaliser about it returns it unchanged, so the row
@@ -759,7 +799,11 @@ def _restore_inflected_spans(text: str, vault: Vault, inflect: bool = True,
             windows.append((low, high, text[low:high]))
 
     place_framings: set[tuple[int, int]] = set()
-    for match in _PLACE_RUN.finditer(text):
+    seen_runs: set[tuple[int, int]] = set()
+    for match in (*_PLACE_RUN.finditer(text), *_PLACE_RUN_ANY_CASE.finditer(text)):
+        if (match.start(), match.end()) in seen_runs:
+            continue
+        seen_runs.add((match.start(), match.end()))
         for start, end in _place_windows(text, match.start(), match.end()):
             surface = text[start:end]
             try:
