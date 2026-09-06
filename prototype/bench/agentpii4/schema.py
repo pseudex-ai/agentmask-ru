@@ -56,6 +56,7 @@ SCENARIO_KINDS: tuple[str, ...] = (
     # can feed the next call.
     "long_order",   # оформление заказа целиком: 7 ходов, 12 инструментов, поздний получатель
     "search_rank",  # top-k из справочника с уверенностью; подмена меняет список И порядок
+    "prompt_rule",  # бизнес-правило в промпте, которое подмена может нарушить
 )
 ARMS: tuple[str, ...] = ("C", "I", "C2")          # control, intervention, second control
 INV_LEVELS: tuple[str, ...] = ("tools", "keys", "state")

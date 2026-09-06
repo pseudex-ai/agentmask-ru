@@ -562,6 +562,36 @@ def card_address(results: tuple[tuple[str, str], ...], record_id: str) -> dict[s
     return {}
 
 
+_HOUSE_LIMIT = re.compile(r"номером дома больше (\d{1,4})")
+
+
+def house_limit(system_text: str) -> int:
+    """The delivery boundary the SYSTEM PROMPT states, read off the prompt the
+    agent was actually shown.
+
+    Not off the case: a rule the gateway rewrote on the way in is a rule the
+    agent never received, and reading the corpus instead would hide exactly
+    that. Zero when the prompt states none."""
+    hit = _HOUSE_LIMIT.search(system_text)
+    return int(hit.group(1)) if hit else 0
+
+
+def refused_by_rule(system_text: str, house: str) -> bool:
+    """Does the prompt's own rule forbid this address?
+
+    THE SUBSTITUTE CAN BREAK A BUSINESS RULE THE REAL VALUE OBEYS, and then the
+    agent refuses a customer it should have served — no tool call, a 200
+    nowhere, and nothing in any log to explain it. The owner named this shape:
+    «в промпте явно написанно что мы не возим в центр питера и так получилось
+    что подмененное значение именно центр питера … и тул бы обработал нормально
+    но моделька начнет возмущатся»."""
+    limit = house_limit(system_text)
+    if not limit:
+        return False
+    digits = "".join(ch for ch in _as_digits(house) if ch.isdigit())
+    return bool(digits) and int(digits) > limit
+
+
 def suggested_address(results: tuple[tuple[str, str], ...]) -> dict[str, str]:
     """The suggestion the agent picked, BY CONFIDENCE, out of the ranked list.
 
@@ -669,7 +699,7 @@ def call_key(name: str, arguments: dict[str, object]) -> tuple[str, str]:
 
 def plan_calls(case: Case, gateway: object, policy: Policy, upto_msg: int,
                done: frozenset[tuple[str, str]], results: tuple[tuple[str, str], ...],
-               ) -> list[tuple[str, dict[str, object]]]:
+               system_text: str = "") -> list[tuple[str, dict[str, object]]]:
     """The calls the agent makes ONCE THE CONVERSATION HAS REACHED `upto_msg`,
     from what it READS — never from the case's ground truth.
 
@@ -696,6 +726,13 @@ def plan_calls(case: Case, gateway: object, policy: Policy, upto_msg: int,
     tools = case.expects.reachable_tools
 
     def maybe(name: str, args: dict[str, object]) -> None:
+        # AN AGENT OBEYS ITS OWN SYSTEM PROMPT, and a delivery the prompt
+        # forbids is not attempted. Read off the prompt as PUSHED, so a rule
+        # the gateway rewrote is a rule the agent did not receive.
+        spec = REGISTRY.get(name)
+        if spec is not None and spec.mutating \
+                and refused_by_rule(system_text, str(address.get("house", ""))):
+            return
         # THE NOISE DRAW IS KEYED, NOT SEQUENTIAL. Planning now runs once per
         # turn, so a shared stream would make which call is dropped depend on
         # how many turns a case has rather than on the policy's rate.
@@ -939,7 +976,7 @@ def scripted_run(case: Case, arm: str, repeat: int, gateway: object, backend: Ba
     smaller version of a conversation, it is a different thing: nothing could
     depend on WHEN a value arrived, and the growing transcript the engine masks
     against was never the one the model actually saw."""
-    gateway.push_system(case.messages[0].content)  # type: ignore[attr-defined]
+    system_text = gateway.push_system(case.messages[0].content)  # type: ignore[attr-defined]
     calls: list[ObservedCall] = []
     done: set[tuple[str, str]] = set()
     results: list[tuple[str, str]] = []
@@ -954,7 +991,8 @@ def scripted_run(case: Case, arm: str, repeat: int, gateway: object, backend: Ba
         # arms «agreed» on it. `result_feed` and `lookup_list` scored 36/36 and
         # 28/30 for four months without their own question ever being asked.
         while True:
-            batch = plan_calls(case, gateway, policy, index, frozenset(done), tuple(results))
+            batch = plan_calls(case, gateway, policy, index, frozenset(done), tuple(results),
+                               system_text)
             if not batch:
                 break
             name, arguments = batch[0]

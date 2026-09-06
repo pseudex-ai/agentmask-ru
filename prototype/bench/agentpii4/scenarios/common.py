@@ -91,11 +91,16 @@ VALIDATE_CLAUSE = ("Перед вызовом инструмента прове�
                    "инструмент НЕ вызывай и попроси клиента продиктовать заново.")
 
 
-def system_prompt(role: str, now: str, validate_types: tuple[str, ...] = ()) -> str:
+def system_prompt(role: str, now: str, validate_types: tuple[str, ...] = (),
+                  rule: str = "") -> str:
     text = f"{_ROLE_PROMPTS[role]} Сегодня {now}."
     if validate_types:
         text = f"{text} {VALIDATE_CLAUSE}"
-    return text
+    # A BUSINESS RULE THE AGENT MUST APPLY, and the substitute may break it.
+    # It goes in the SYSTEM prompt because that is where a customer puts one,
+    # and the prompt passes through the gateway like everything else — so a
+    # rule the masking rewrote is a rule the agent never received.
+    return f"{text} {rule}" if rule else text
 
 
 # --- register noise on ordinary words --------------------------------------------
@@ -176,6 +181,7 @@ class CaseBuilder:
     cluster: str
     conversation_id: str = ""
     validate_types: tuple[str, ...] = ()
+    rule: str = ""
     must_contain: tuple[str, ...] = ()
     must_not_contain: tuple[str, ...] = ()
     note: str = ""
@@ -189,7 +195,8 @@ class CaseBuilder:
 
     def __post_init__(self) -> None:
         self.messages.append(Message(role="system",
-                                     content=system_prompt(self.role, NOW, self.validate_types),
+                                     content=system_prompt(self.role, NOW, self.validate_types,
+                                                           self.rule),
                                      source=None, name=""))
 
     def user(self, draft: MessageDraft,
