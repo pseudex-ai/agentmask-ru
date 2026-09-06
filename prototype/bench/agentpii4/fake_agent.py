@@ -23,7 +23,7 @@ from bench.agentpii4 import derive, pools
 from bench.agentpii4.compare import ArmRun, ObservedCall
 from bench.agentpii4.mock import Backend
 from bench.agentpii4.parts import parts_of
-from bench.agentpii4.schema import Case, message_text
+from bench.agentpii4.schema import Case, PiiItem, message_text
 from bench.agentpii4.tools import CSV_HEADER, REGISTRY, flatten
 
 
@@ -68,9 +68,10 @@ class FakeGateway:
         self._back: dict[str, str] = {}     # fake -> real
         self._seen: dict[str, str] = {}
         self._resolve_pieces = resolve_pieces
+        forbidden = {one.casefold() for item in case.pii for one in (item.value, item.canonical)}
         for item in case.pii:
             if item.value not in self._map:
-                fake = self._mint(item.type, item.value, item.parts)
+                fake = self._unique(item, forbidden)
                 self._map[item.value] = fake
                 # Restored to the CANONICAL, as the engine does on the tool leg
                 # (`_pick_value`): a dictated phone comes back as +7…, not as the
@@ -83,6 +84,23 @@ class FakeGateway:
                             self._back[part] = real_part
             self._seen[item.id] = self._map[item.value]
         self._conversation = case.conversation_id or "fake"
+
+    def _unique(self, item: object, forbidden: set[str]) -> str:
+        """A SUBSTITUTE IS DRAWN FROM THE SAME STRING SPACE AS REAL VALUES, so
+        sooner or later it IS one — the rule `vault._unique_token` already
+        states, which the level-A fake did not follow.
+
+        On `chain-033` it minted «Васильев Иван Павлович» for the customer
+        named Васильев Иван Павлович: the arms then agreed on a real name and
+        every level called it a pass. Redrawn until it is nobody's real value
+        in this case, and it raises rather than returning one — a pool a case
+        can exhaust is a defect to see, not to absorb."""
+        for _ in range(64):
+            fake = self._mint(item.type, item.value, item.parts)          # type: ignore[attr-defined]
+            if fake.casefold() not in forbidden:
+                return fake
+        raise ValueError(f"{self._case.id}: no substitute for {item.type} that is not a real value "  # type: ignore[attr-defined]
+                         f"of this case — the pool is too small for {len(forbidden)} values")
 
     def _mint(self, kind: str, value: str, parts: dict[str, str]) -> str:
         rng = self._rng
@@ -199,6 +217,12 @@ def parts_of_any(fake: str) -> tuple[str, ...]:
 
 # --- the scripted agent ------------------------------------------------------
 
+# A ceiling, not a budget: the planner is re-run after every tool result, so a
+# value whose substitute changed on every turn would plan for ever. Twelve is
+# four times the busiest family and the error names the tool that would not
+# settle, which is the diagnosis.
+_MAX_CALLS: int = 12
+
 def _seen_values(case: Case, gateway: object) -> dict[str, tuple[str, dict[str, str]]]:
     """item id -> (what the agent reads, its parts as the agent would split them).
 
@@ -219,11 +243,41 @@ def _seen_values(case: Case, gateway: object) -> dict[str, tuple[str, dict[str, 
                 surface, parts = item.canonical, dict(item.parts)
             else:
                 surface = _nominative_name(surface)
-                parts = parts_of(item.type, surface)
+                parts = _merged_parts(item, surface)
         else:
-            parts = parts_of(item.type, surface) if surface != item.value else dict(item.parts)
+            parts = _merged_parts(item, surface) if surface != item.value else dict(item.parts)
         out[item.id] = (surface, parts)
     return out
+
+
+def _merged_parts(item: PiiItem, surface: str) -> dict[str, str]:
+    """A SUBSTITUTE REPLACES ONE FIELD OF A CARD, NOT THE CARD.
+
+    A seeded record stores `address.street` in one field and `address.house`,
+    `address.flat`, `address.city` in siblings; only the street is personal
+    data and only the street is masked. Reading the substitute's parts alone
+    threw the house and the flat away, and the agent wrote an address with no
+    flat in the intervention arm and a flat in the control — a divergence the
+    instrument manufactured, on 14 of 30 `lookup_list` cases.
+
+    ONLY A ROLE THE MASKED FIELD DID NOT ITSELF EXPRESS CARRIES OVER, and the
+    test is `parts_of` asked of the REAL surface. Without that boundary the
+    rule leaks: a spoken birth date substitute («двадцать пятое января») yields
+    no `iso`, the real one's `iso` would survive the merge, and the agent would
+    write the customer's true date of birth into the tool — with every level
+    reporting agreement, because both arms then hold the same value.
+
+    A message item gets nothing: there the span IS the whole value."""
+    substitute = {role: value for role, value in parts_of(item.type, surface).items() if value}
+    if item.where.kind != "seed":
+        # NEVER `or item.parts`: an empty reading means the agent could not
+        # parse what it was shown, and falling back to the real value's parts
+        # is the leak this function exists to avoid.
+        return substitute
+    inside = set(parts_of(item.type, item.value))
+    parts = {role: value for role, value in item.parts.items() if role not in inside}
+    parts.update(substitute)
+    return parts
 
 
 @functools.lru_cache(maxsize=4096)
@@ -283,7 +337,8 @@ def _nominative_name(surface: str) -> str:
     return " ".join(out)
 
 
-def _chosen_record(case: Case, view: dict[str, tuple[str, dict[str, str]]]) -> str:
+def _chosen_record(case: Case, items: tuple[PiiItem, ...],
+                   view: dict[str, tuple[str, dict[str, str]]]) -> str:
     """Which seeded card the agent updates — decided by what it was SHOWN.
 
     With one seeded card the id is that card. With several (`lookup_list`) the
@@ -298,12 +353,20 @@ def _chosen_record(case: Case, view: dict[str, tuple[str, dict[str, str]]]) -> s
         return ""
     if len(records) == 1:
         return records[0].id
+    # THE TWO SIDES ARE WRITTEN DIFFERENTLY AND MEAN THE SAME. A card stores
+    # «+79164021187»; the customer says «восемь девятьсот шестнадцать…». Compared
+    # as strings the control arm could match neither, fell back to the first
+    # card and updated a stranger — while the intervention arm matched, because
+    # the vault gives one substitute to one canonical value. That made the
+    # gateway look wrong on all 30 `lookup_list` cases when it was the only
+    # side reading correctly.
     by_record: dict[str, dict[str, str]] = {}
-    for item in case.pii:
+    for item in items:
         if item.where.kind == "seed" and item.id in view:
-            by_record.setdefault(item.where.record, {})[item.type] = view[item.id][0]
+            surface, parts = view[item.id]
+            by_record.setdefault(item.where.record, {})[item.type] = _match_key(item.type, surface, parts)
     for kind in ("DOB", "PHONE", "EMAIL"):
-        said = [view[item.id][0] for item in case.pii
+        said = [_match_key(kind, *view[item.id]) for item in items
                 if item.where.kind == "message" and item.type == kind and item.id in view]
         if not said:
             continue
@@ -313,15 +376,56 @@ def _chosen_record(case: Case, view: dict[str, tuple[str, dict[str, str]]]) -> s
     return records[0].id
 
 
-def _pick(case: Case, kind: str, view: dict[str, tuple[str, dict[str, str]]],
+def _match_key(kind: str, surface: str, parts: dict[str, str]) -> str:
+    """One value, one key, however it was written or said.
+
+    Used only to decide WHICH record the agent is talking about. Deliberately
+    not the vault's canonicalisation: the instrument must reach the same answer
+    by its own route, or it could not disagree with the engine."""
+    if kind == "DOB":
+        # «14.03.1987» and «1987-03-14» are one date and eight digits in two
+        # orders, so stripping the separators is not enough.
+        return parts.get("iso", "") or _digits_of(surface, parts)
+    if kind in ("PHONE", "SNILS", "INN", "CARD", "PASSPORT"):
+        return _digits_of(surface, parts)
+    return surface.casefold().strip()
+
+
+def _in_order(items: tuple[PiiItem, ...]) -> list[PiiItem]:
+    """Items as the CONVERSATION delivered them, not as the generator listed them.
+
+    `_pick` took the last element of `case.pii`, which is AUTHORING order. Over
+    one or two turns the two coincide; over eight they do not, and the agent
+    would answer the sixth message with a value said in the second."""
+    spoken = [item for item in items if item.where.kind == "message"]
+    seeded = [item for item in items if item.where.kind != "message"]
+    spoken.sort(key=lambda item: (item.where.msg, item.where.start))
+    return spoken + seeded
+
+
+def _pick_all(items: tuple[PiiItem, ...], kind: str,
+              view: dict[str, tuple[str, dict[str, str]]],
+              policy: Policy) -> list[tuple[str, dict[str, str]]]:
+    """EVERY current value of a type, in the order the agent heard them.
+
+    One slot per type is a one-turn assumption. A long conversation names two
+    addresses (from and to), three people (payer, patient, contact) and two
+    phones; a planner that holds one of each cannot express such a case, let
+    alone fail it."""
+    chosen = [item for item in _in_order(items)
+              if item.type == kind and not item.stale and item.id in view]
+    return [view[item.id] for item in chosen]
+
+
+def _pick(items: tuple[PiiItem, ...], kind: str, view: dict[str, tuple[str, dict[str, str]]],
           policy: Policy, prefer_current: bool = True) -> tuple[str, dict[str, str]]:
     """The agent's choice of which item of a type to use."""
-    items = [item for item in case.pii if item.type == kind and item.where.kind == "message"]
-    if not items:
-        items = [item for item in case.pii if item.type == kind]
-    if not items:
+    ordered = _in_order(items)
+    spoken = [item for item in ordered if item.type == kind and item.where.kind == "message"]
+    candidates = spoken or [item for item in ordered if item.type == kind]
+    if not candidates:
         return "", {}
-    current = [item for item in items if not item.stale] or items
+    current = [item for item in candidates if not item.stale] or candidates
     chosen = current[-1] if prefer_current else current[0]
     if policy.swaps_person and len({item.identity for item in current}) > 1:
         chosen = [item for item in current if item.identity != chosen.identity][0]
@@ -386,33 +490,111 @@ def _name_args(surface: str, parts: dict[str, str], policy: Policy) -> dict[str,
             "first": parts.get("given", ""), "middle": parts.get("patronymic", "")}
 
 
-def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
+def consumes(name: str) -> frozenset[str]:
+    """The PII types a tool's schema says it consumes — declared, not guessed.
+
+    Read off `REGISTRY[name].fields`: `pii_type` for a field that carries a
+    value, `source_type` for one derived from it. A list written here would be
+    a second copy of the registry, and the two would drift the first time a
+    tool gained a field."""
+    spec = REGISTRY.get(name)
+    if spec is None:
+        return frozenset()
+    return frozenset(one for field_spec in spec.fields
+                     for one in (field_spec.pii_type, field_spec.source_type) if one)
+
+
+def _still_dictating(case: Case, name: str, upto_msg: int) -> bool:
+    """Is the customer still saying things this call would write?
+
+    A MUTATING TOOL IS NOT CALLED WHILE A LATER MESSAGE STILL CARRIES A TYPE IT
+    CONSUMES. Without this the turn-by-turn planner booked on the first turn
+    with half the request and booked again on the second — 75 cases of `chain`,
+    `lookup_list` and `crm_note` grew a second write, and through the real
+    gateway the two arms did not even agree on HOW MANY: a substitute the
+    engine mints against half a conversation differs from the one it mints
+    against the whole, so the second call deduplicated in one arm and not in
+    the other. `result_feed` fell to 0 of 36 on the state level from that
+    alone.
+
+    The rule is about the conversation, not about a family: an agent writes a
+    record when the customer stops dictating it. A READ is not deferred — a
+    lookup is exactly what an agent does with the first thing it is told."""
+    spec = REGISTRY.get(name)
+    if spec is None or not spec.mutating:
+        return False
+    wanted = consumes(name)
+    return any(item.where.kind == "message" and item.where.msg > upto_msg
+               and item.type in wanted for item in case.pii)
+
+
+def call_key(name: str, arguments: dict[str, object]) -> tuple[str, str]:
+    """A call's identity: the tool and the arguments it was given.
+
+    Two calls of one tool with the SAME arguments are one call; with different
+    ones they are two, which is how «найти по телефону, потом по фамилии» and
+    «записать, клиент передумал, записать снова» are expressed at all."""
+    return name, json.dumps(arguments, ensure_ascii=False, sort_keys=True)
+
+
+def plan_calls(case: Case, gateway: object, policy: Policy, upto_msg: int,
+               done: frozenset[tuple[str, str]], results: tuple[tuple[str, str], ...],
                ) -> list[tuple[str, dict[str, object]]]:
-    """The calls the scripted agent makes for this case, from what it READS."""
+    """The calls the agent makes ONCE THE CONVERSATION HAS REACHED `upto_msg`,
+    from what it READS — never from the case's ground truth.
+
+    Called after every user message, the way `harness.drive` hands the model
+    one message at a time. Planning once at the end cannot tell a value that
+    arrived on the sixth turn from one said on the first, so a case whose whole
+    point is WHEN something was said passed without being asked its question.
+
+    SEED ITEMS STAY VISIBLE FROM THE FIRST TURN. Gating them on the tool that
+    would return them is the honest rule and belongs with the read-back tools;
+    until those exist, a family whose search comes back empty would lose its
+    values instead of testing them.
+
+    `results` is what the tools have returned so far, masked exactly as the
+    model is handed them — the input a chained family reads.
+    """
     view = _seen_values(case, gateway)
+    items = tuple(item for item in case.pii
+                  if item.where.kind != "message" or upto_msg < 0 or item.where.msg <= upto_msg)
+    plain_values = tuple(one for one in case.plain
+                         if one.where.kind != "message" or upto_msg < 0 or one.where.msg <= upto_msg)
     calls: list[tuple[str, dict[str, object]]] = []
+    planned: set[tuple[str, str]] = set()
     tools = case.expects.reachable_tools
 
     def maybe(name: str, args: dict[str, object]) -> None:
-        if rng.random() < policy.noise:
+        # THE NOISE DRAW IS KEYED, NOT SEQUENTIAL. Planning now runs once per
+        # turn, so a shared stream would make which call is dropped depend on
+        # how many turns a case has rather than on the policy's rate.
+        if _still_dictating(case, name, upto_msg):
             return
+        key = call_key(name, args)
+        if key in done or key in planned:
+            return
+        if policy.noise and random.Random(
+                f"noise:{policy.seed}:{case.id}:{key[0]}:{key[1]}").random() < policy.noise:
+            return
+        planned.add(key)
         calls.append((name, args))
 
-    name_surface, name_parts = _pick(case, "NAME", view, policy)
-    phone_surface, phone_parts = _pick(case, "PHONE", view, policy)
+    name_surface, name_parts = _pick(items, "NAME", view, policy)
+    phone_surface, phone_parts = _pick(items, "PHONE", view, policy)
     # WHAT THE CUSTOMER SAID, separately from what a card would tell us. `_pick`
     # falls back to seed items so a family that looks a card up first can use
     # what came back — but a SEARCH KEY may only be something the customer
     # actually uttered. Without this the agent «searched» by a phone it could
     # not know yet, and `lookup_list` never asked its own question.
-    said_phone = next((view[item.id][0] for item in case.pii
+    said_phone = next((view[item.id][0] for item in _in_order(items)
                        if item.type == "PHONE" and item.where.kind == "message" and item.id in view), "")
-    addr_surface, addr_parts = _pick(case, "LOC", view, policy)
-    dob_surface, dob_parts = _pick(case, "DOB", view, policy)
+    addr_surface, addr_parts = _pick(items, "LOC", view, policy)
+    dob_surface, dob_parts = _pick(items, "DOB", view, policy)
     phone = _e164(phone_surface, phone_parts, policy) if phone_surface else ""
     name = _name_args(name_surface, name_parts, policy)
     address = _address_args(addr_surface, addr_parts, policy)
-    city = address.get("city") or _city_of(case)
+    city = address.get("city") or _city_of(case, items)
 
     if "crm_find_contact" in tools and said_phone:
         maybe("crm_find_contact", {"query": {"phone": _e164(said_phone, phone_parts, policy)}})
@@ -440,7 +622,7 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
         if address["street"]:
             contact["address"] = {"city": city, "street": address["street"], "house": address["house"] or "1",
                                   "flat": address["flat"]}
-        maybe("crm_upsert_contact", {"id": _chosen_record(case, view), "contact": contact})
+        maybe("crm_upsert_contact", {"id": _chosen_record(case, items, view), "contact": contact})
     if "delivery_create_order" in tools and phone:
         # The last three digits are the agent's invention; seeded by the CASE so
         # two control arms of a deterministic agent agree and the noise floor
@@ -461,8 +643,8 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
     if "address_suggest" in tools:
         maybe("address_suggest", {"query": addr_surface, "count": 3})
     if "passport_verify" in tools:
-        pp_surface, pp_parts = _pick(case, "PASSPORT", view, policy)
-        sn_surface, sn_parts = _pick(case, "SNILS", view, policy)
+        pp_surface, pp_parts = _pick(items, "PASSPORT", view, policy)
+        sn_surface, sn_parts = _pick(items, "SNILS", view, policy)
         if policy.validates_checksum and sn_surface and not _checksum_ok("SNILS", sn_surface, sn_parts):
             pass   # the validating agent refuses to call
         else:
@@ -474,7 +656,7 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
                            "middle_name": name["middle"]}}
             if sn_digits:
                 args["snils"] = f"{sn_digits[:3]}-{sn_digits[3:6]}-{sn_digits[6:9]} {sn_digits[9:11]}"
-            plain = [one.value for one in case.plain]
+            plain = [one.value for one in plain_values]
             code = next((one for one in plain if re.fullmatch(r"\d{3}-\d{3}", one)), "")
             if code:
                 args["passport"]["department_code"] = code  # type: ignore[index]
@@ -492,7 +674,7 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
                         "age": int(age), "gender": "F" if "female" in gender else "M"},
             "phone": phone, "speciality": "терапевт", "slot": "2026-09-05T09:30:00+04:00"})
     if "payment_create" in tools:
-        card_surface, card_parts = _pick(case, "CARD", view, policy)
+        card_surface, card_parts = _pick(items, "CARD", view, policy)
         digits = _digits_of(card_surface, card_parts)
         if policy.validates_checksum and card_surface and not _checksum_ok("CARD", card_surface, card_parts):
             pass
@@ -506,7 +688,7 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
                 "payment_method_data": {"type": "bank_card",
                                         "card": {"number": digits, "expiry_month": "09", "expiry_year": "2028",
                                                  "cardholder": holder or "CARD HOLDER"}}}
-            email_surface, _email_parts = _pick(case, "EMAIL", view, policy)
+            email_surface, _email_parts = _pick(items, "EMAIL", view, policy)
             if phone or email_surface:
                 customer: dict[str, object] = {}
                 if name_surface:
@@ -524,9 +706,9 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
         # ONE ROW PER PERSON, and the bucket is the city the customer named —
         # a real value that must NOT be masked, which is what makes the
         # aggregate meaningful at all.
-        people = [item for item in case.pii if item.type == "NAME" and item.where.kind == "message"]
-        rows = [{"name": view[item.id][0], "bucket": _city_of(case) or "Москва"}
-                for item in people if item.id in view]
+        spoken = tuple(item for item in items if item.where.kind == "message")
+        rows = [{"name": surface, "bucket": _city_of(case, items) or "Москва"}
+                for surface, _parts in _pick_all(spoken, "NAME", view, policy)]
         if rows:
             maybe("crm_segment_report", {"group_by": "city", "members": rows})
     if "send_template" in tools:
@@ -549,22 +731,21 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
         pieces = [f"Клиент {name_surface}." if name_surface else "Клиент.",
                   f"Телефон {phone}." if phone else "",
                   f"Адрес {addr_surface}." if addr_surface else ""]
-        maybe("crm_add_note", {"entity_id": _chosen_record(case, view) or "c-1",
+        maybe("crm_add_note", {"entity_id": _chosen_record(case, items, view) or "c-1",
                                "note_type": "call_in",
                                "text": " ".join(part for part in pieces if part)})
     if "crm_import_csv" in tools:
         rows = []
-        people = [item for item in case.pii if item.type == "NAME" and item.where.kind == "message"]
-        phones = [item for item in case.pii if item.type == "PHONE" and item.where.kind == "message"]
-        for person, ph in zip(people, phones):
-            n_surface, n_parts = view[person.id]
-            p_surface, p_parts = view[ph.id]
+        spoken = tuple(item for item in items if item.where.kind == "message")
+        people = _pick_all(spoken, "NAME", view, policy)
+        phones = _pick_all(spoken, "PHONE", view, policy)
+        for (n_surface, n_parts), (p_surface, p_parts) in zip(people, phones):
             parts = _name_args(n_surface, n_parts, Policy("x"))
             rows.append(f"{parts['last']};{parts['first']};{_e164(p_surface, p_parts, Policy('x'))};;")
         if rows:
             maybe("crm_import_csv", {"csv": "\n".join([CSV_HEADER, *rows])})
     if "notify_sms" in tools and phone:
-        order = next((one.value for one in case.plain if one.family == "order_number"), "")
+        order = next((one.value for one in plain_values if one.family == "order_number"), "")
         text = f"Ваш заказ {order or 'оформлен'}"
         if order:
             text += f": https://t.example.ru/o?order={re.sub(r'[^0-9]', '', order) or order}&phone={re.sub(r'[^0-9]', '', phone)}"
@@ -572,8 +753,8 @@ def plan_calls(case: Case, gateway: object, policy: Policy, rng: random.Random,
     return calls
 
 
-def _city_of(case: Case) -> str:
-    for item in case.pii:
+def _city_of(case: Case, items: tuple[PiiItem, ...]) -> str:
+    for item in items:
         if item.type == "LOC" and item.parts.get("city"):
             return item.parts["city"]
     for record in case.seed_records:
@@ -585,25 +766,50 @@ def _city_of(case: Case) -> str:
 
 def scripted_run(case: Case, arm: str, repeat: int, gateway: object, backend: Backend,
                  policy: Policy) -> ArmRun:
-    """Drive one arm with the scripted agent through the same MCP-shaped path
-    the live harness uses: restore -> backend.call -> serialise -> push_tool."""
-    rng = random.Random(f"{policy.name}:{case.id}:{arm}:{repeat}:{policy.seed}")
+    """Drive one arm TURN BY TURN, the shape `harness.drive` gives the model:
+    push one user message, plan what that message made possible, call it
+    (restore -> backend.call -> serialise -> push_tool), feed the result back,
+    then take the next message.
+
+    The old order pushed every message first and planned once. That is not a
+    smaller version of a conversation, it is a different thing: nothing could
+    depend on WHEN a value arrived, and the growing transcript the engine masks
+    against was never the one the model actually saw."""
     gateway.push_system(case.messages[0].content)  # type: ignore[attr-defined]
-    for index, message in enumerate(case.messages):
-        if message.role == "user":
-            gateway.push_user(index)  # type: ignore[attr-defined]
     calls: list[ObservedCall] = []
-    for seq, (name, arguments) in enumerate(plan_calls(case, gateway, policy, rng), 1):
-        gateway.note_tool_call(name, arguments)  # type: ignore[attr-defined]
-        restored, residual = gateway.restore_arguments(arguments)  # type: ignore[attr-defined]
-        log = backend.call(name, restored)
-        gateway.push_tool(name, log.result_text)  # type: ignore[attr-defined]
-        calls.append(ObservedCall(
-            name=name, written=arguments, restored=restored, residual=residual,
-            refusal_path=log.refusal.path if log.refusal else "",
-            refusal_rule=log.refusal.rule if log.refusal else "",
-            parsed=log.parsed, seq=seq))
-    name_surface, _ = _pick(case, "NAME", _seen_values(case, gateway), policy)
+    done: set[tuple[str, str]] = set()
+    results: list[tuple[str, str]] = []
+    for index, message in enumerate(case.messages):
+        if message.role != "user":
+            continue
+        gateway.push_user(index)  # type: ignore[attr-defined]
+        # ONE CALL, THEN PLAN AGAIN. Planning a whole turn at once reads the
+        # agent's view BEFORE that turn's own tool results have arrived, and in
+        # the intervention arm a seed value then has no substitute yet — so the
+        # scripted agent wrote the customer's REAL name into the tool and both
+        # arms «agreed» on it. `result_feed` and `lookup_list` scored 36/36 and
+        # 28/30 for four months without their own question ever being asked.
+        while True:
+            batch = plan_calls(case, gateway, policy, index, frozenset(done), tuple(results))
+            if not batch:
+                break
+            name, arguments = batch[0]
+            done.add(call_key(name, arguments))
+            if len(calls) >= _MAX_CALLS:
+                raise RuntimeError(f"{case.id}/{arm}: {_MAX_CALLS} calls and still planning "
+                                   f"({name}) — a substitute that changes every turn would loop here")
+            gateway.note_tool_call(name, arguments)  # type: ignore[attr-defined]
+            restored, residual = gateway.restore_arguments(arguments)  # type: ignore[attr-defined]
+            log = backend.call(name, restored)
+            # WHAT THE AGENT READS BACK is the masked result, byte for byte
+            # what the model is handed; the next plan may use it.
+            results.append((name, gateway.push_tool(name, log.result_text)))  # type: ignore[attr-defined]
+            calls.append(ObservedCall(
+                name=name, written=arguments, restored=restored, residual=residual,
+                refusal_path=log.refusal.path if log.refusal else "",
+                refusal_rule=log.refusal.rule if log.refusal else "",
+                parsed=log.parsed, seq=len(calls) + 1))
+    name_surface, _ = _pick(case.pii, "NAME", _seen_values(case, gateway), policy)
     reply_raw = f"Готово. Записал: {name_surface}." if name_surface else "Готово."
     reply = gateway.restore_text(reply_raw)  # type: ignore[attr-defined]
     gateway.note(reply_raw)  # type: ignore[attr-defined]

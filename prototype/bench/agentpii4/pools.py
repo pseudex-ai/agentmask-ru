@@ -1003,6 +1003,13 @@ def main() -> int:
                 failures += 1
     print("cardinals: PASS" if not failures else "")
 
+    try:
+        _self_test_spoken_date()
+        print("spoken dates: PASS")
+    except ValueError as broken:
+        print(f"spoken dates: FAIL — {broken}")
+        failures += 1
+
     for register in REGISTERS:
         address = draw_address(stream, "ижевск", True, True, True)
         rendered = render_address(address, register, stream, register == "voice_raw")
@@ -1015,6 +1022,81 @@ def main() -> int:
             failures += 1
     print("renderers: PASS" if not failures else f"renderers: FAIL ({failures})")
     return 1 if failures or round_trips else 0
+
+
+
+# --- reading a date back out of speech ---------------------------------------
+
+def _day_forms() -> dict[str, int]:
+    """Every way a day of the month is said, mapped back to its number.
+
+    Two endings, not one: the corpus says «четырнадцатое декабря» and the
+    engine's substitute says «девятого сентября». A reader that knows only the
+    form its own generator writes is a reader of its own output."""
+    forms: dict[str, int] = {}
+    for day in range(1, 32):
+        nominative = MONTH_ORDINALS[day]
+        forms[nominative] = day
+        head, _, tail = nominative.rpartition(" ")
+        genitive = tail[:-1] + "го" if tail.endswith(("е", "о")) else tail
+        forms[(head + " " + genitive).strip()] = day
+    return forms
+
+
+_SPOKEN_DAY: dict[str, int] = _day_forms()
+_SPOKEN_YEAR: dict[str, int] = {spell_year(year): year for year in range(1900, 2036)}
+_SPOKEN_MONTH: dict[str, int] = {name: index + 1 for index, name in enumerate(MONTHS)}
+
+
+def parse_spoken_date(text: str) -> str:
+    """«девятого сентября семьдесят четвёртого года» -> «1974-09-09»; «» if it
+    is not a spoken date.
+
+    THE INSTRUMENT MUST READ A DATE IT WAS SHOWN IN WORDS, because the agent
+    does. Without this the scripted agent fell back to the parts of the REAL
+    item and wrote the customer's true date of birth into the tool — while
+    every level reported agreement, since both arms then held the same value.
+
+    The century is the one `spell_year` spells: two digits name 19xx when they
+    exceed today's short year and 20xx otherwise, the same rule a listener
+    applies. It is a guess, and a wrong century is visible as a divergence
+    rather than hidden as a leak."""
+    words = tuple(re.findall(r"[а-яё]+", text.lower().replace("ё", "ё")))
+    if not words:
+        return ""
+    for index, word in enumerate(words):
+        month = _SPOKEN_MONTH.get(word)
+        if month is None:
+            continue
+        day = 0
+        for width in (2, 1):
+            if index >= width and " ".join(words[index - width:index]) in _SPOKEN_DAY:
+                day = _SPOKEN_DAY[" ".join(words[index - width:index])]
+                break
+        if not day:
+            return ""
+        tail = tuple(word for word in words[index + 1:] if word != "года")
+        for width in (2, 1):
+            year = _SPOKEN_YEAR.get(" ".join(tail[:width]))
+            if year is not None:
+                return f"{year:04d}-{month:02d}-{day:02d}"
+        return ""
+    return ""
+
+
+def _self_test_spoken_date() -> None:
+    for day, month, year in ((14, 12, 1974), (9, 9, 1974), (1, 1, 2001), (31, 8, 1995),
+                             (22, 11, 1995), (3, 7, 1988), (30, 6, 1992)):
+        spoken = " ".join((MONTH_ORDINALS[day], MONTHS[month - 1], spell_year(year), "года"))
+        got = parse_spoken_date(spoken)
+        want = f"{year:04d}-{month:02d}-{day:02d}"
+        if got != want:
+            raise ValueError(f"{spoken!r} -> {got!r}, wanted {want!r}")
+    if parse_spoken_date("девятого сентября семьдесят четвёртого года") != "1974-09-09":
+        raise ValueError("the engine's genitive day form is not read")
+    for text in ("улица девятого мая", "заказ семь восемь девять", ""):
+        if parse_spoken_date(text):
+            raise ValueError(f"{text!r} was read as a date")
 
 
 if __name__ == "__main__":

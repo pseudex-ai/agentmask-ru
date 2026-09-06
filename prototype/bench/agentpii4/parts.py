@@ -15,6 +15,7 @@ TWO DIRECTIONS, AND THEY ARE NOT SYMMETRIC.
 import re
 
 from bench.agentpii3.schema import _address_parts, digits_of
+from bench.agentpii4 import pools
 
 Parts = dict[str, str]
 
@@ -159,7 +160,11 @@ def dob_parts(surface: str) -> Parts:
     ru = _DATE_RU.search(surface)
     if ru:
         return {"iso": f"{int(ru.group(3)):04d}-{int(ru.group(2)):02d}-{int(ru.group(1)):02d}"}
-    return {}
+    # A DATE SAID ALOUD IS STILL A DATE, and the agent reads it. Returning
+    # nothing here made the scripted agent fall back to the REAL item's parts
+    # and write the customer's true date of birth into the tool.
+    spoken = pools.parse_spoken_date(surface)
+    return {"iso": spoken} if spoken else {}
 
 
 def email_parts(surface: str) -> Parts:
