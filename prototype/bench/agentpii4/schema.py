@@ -57,7 +57,30 @@ DUTIES: tuple[str, ...] = ("required", "optional")
 # coverage.md). The band is a sanity check on authoring effort, not a statistical
 # constraint — the tiers are what bound the money, and `small` is still the pilot.
 CORPUS_SIZE_BAND: tuple[int, int] = (330, 520)
-TIER_SIZES: dict[str, int] = {"nano": 30, "small": 120, "medium": 0}
+# THE TARGET SIZE OF EACH TIER, AND WHAT IT BUYS. Not taste: at the measured
+# DEFF ≈ 2.1 and a discordance around 0.10, `stats.mde_paired` says a tier of
+# n triples can detect a paired difference no smaller than
+# 2.802·√(0.10·2.1/n) — 17pp at 56, 10pp at 168, 7pp at 336, 5.4pp at 560,
+# 4.1pp at 1000. A tier therefore publishes its MDE, never only its size:
+# «прогон» on nano and «прогон» on max are different claims.
+# Full argument and sources in research/2026-09-06-benchmark-tiers.md.
+#
+# `holdout` IS NOT A DEBUG TIER AND IS NOT NESTED IN ONE. Every other tier
+# draws from the remaining 80%. Until now the same corpus was used to fix and
+# to claim, which is the adaptive fit this repository has already paid for once
+# («предыдущие замеры шли по корпусу, на котором я и чинил»). What is rationed
+# is not the number of holdout runs but the number of times the holdout
+# DISAGREED with the debug tier: Dwork's reusable-holdout budget is B = τ²·n,
+# and at n = 500, τ = 0.02 that is less than one.
+TIER_SIZES: dict[str, int] = {
+    "nano": 30,        # the pipe is alive, no leaks — no effect claim at all
+    "small": 120,      # ±10pp: did we break something obvious
+    "medium": 300,     # ±7pp: did a round of fixes move the needle
+    "large": 600,      # ±5pp by level, by-family only as exploration
+    "max": 0,          # every case, holdout included — the production claim
+    "holdout": 0,      # 20% never used for debugging; 0 = «whatever that is»
+}
+HOLDOUT_SHARE: float = 0.20
 MIN_CLUSTER_MULTI: int = 8         # clusters of size >= 3, so ICC is measured, not assumed
 MIN_FIND_DISTINCT_CASES: int = 12  # cases where text.find(value) != start — see validate.py
 MIN_TYPE_DENOMINATOR: int = v3.MIN_TYPE_DENOMINATOR

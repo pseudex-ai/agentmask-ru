@@ -57,7 +57,7 @@ sys.path.insert(0, str(_HERE.parents[2]))          # prototype/, for pseudex
 
 from bench.agentpii3 import score  # noqa: E402
 from bench.agentpii3.live import judge as judge_mod  # noqa: E402
-from bench.agentpii4 import report  # noqa: E402
+from bench.agentpii4 import report, stats  # noqa: E402
 from pseudex.morph_places import strip_leading_city  # noqa: E402
 from bench.agentpii4.compare import ArmRun, ObservedCall, pair_runs, substitutes_for  # noqa: E402
 from bench.agentpii4.fake_agent import seed_backend  # noqa: E402
@@ -488,7 +488,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("corpus", nargs="?", default=str(here / "corpus.json"))
     parser.add_argument("--ladder", default=str(here / "ladder.json"))
-    parser.add_argument("--tier", default="nano")
+    parser.add_argument("--tier", default="nano",
+                        choices=("nano", "small", "medium", "large", "holdout", "max"))
+    parser.add_argument("--family", default="", help="одна семья целиком, мимо лестницы")
     parser.add_argument("--ids", default="", help="запятые: точный список случаев вместо яруса")
     parser.add_argument("--sample", type=int, default=0,
                         help="N случаев случайной выборкой по семействам вместо яруса; нужен --seed")
@@ -561,9 +563,29 @@ def main() -> int:
             return 2
         cases = sample(everything, args.sample, args.seed)
         tier_name = f"sample{args.sample}-s{args.seed}"
+    elif args.family:
+        # ONE FAMILY WHOLE, AND DELIBERATELY NOT THROUGH THE LADDER. A tier is
+        # stratified so no family dominates it, which is exactly wrong when the
+        # question is about one family: `medium` holds about twenty cases of
+        # each, and twenty cases answer ±25pp. All of one family at K=5 answers
+        # ±5pp about that family for a few dollars.
+        cases = [case for case in everything if case.kind == args.family]
+        if not cases:
+            kinds = sorted({case.kind for case in everything})
+            print(f"семья {args.family!r} не найдена; есть: {', '.join(kinds)}", file=sys.stderr)
+            return 2
+        tier_name = f"family-{args.family}"
     else:
         cases = tier(everything, _ladder(Path(args.ladder)), args.tier)
         tier_name = args.tier
+        if args.tier in ("nano", "small", "medium", "large"):
+            print(f"ярус {args.tier}: отладочный, удержание в него не входит")
+        elif args.tier in ("holdout", "max"):
+            print(f"ярус {args.tier}: ЗАЯВОЧНЫЙ. Считается не число прогонов, а число "
+                  f"РАСХОЖДЕНИЙ с отладочным ярусом — бюджет B = t^2*n "
+                  f"(research/2026-09-06-benchmark-tiers.md §1)")
+        print(f"  n = {len(cases)} · MDE {stats.mde_paired(len(cases), 0.10, 2.1) * 100:.1f}pp "
+              f"при доле расхождений 0.10 и DEFF 2.1")
     if not cases:
         print("выборка пуста", file=sys.stderr)
         return 2
