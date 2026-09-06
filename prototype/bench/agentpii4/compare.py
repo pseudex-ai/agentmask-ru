@@ -63,6 +63,16 @@ class LevelVerdict:
     state: bool
     state_verbatim: bool
     state_diff: tuple[str, ...]
+    # THE ONLY LEVEL THAT ASKS WHETHER THE TOOL GOT A DIFFERENT VALUE. `state`
+    # counts a field one arm wrote and the other did not, and on an OPTIONAL
+    # field that is the model tossing a coin, not the gateway: `contact.gender`
+    # diverged in 195 fields on the 06.09 run and was NEVER wrong — only
+    # present or absent — and the omission rate is the same on real values
+    # (42.3%) as on substitutes (46.9%). `records 2 vs 1` is likewise a
+    # different NUMBER of writes, already counted at L1. What is left when
+    # both are removed is the product's own promise: the customer's tool
+    # received another value because of us.
+    state_values: bool = True
 
 
 @dataclass(frozen=True)
@@ -184,7 +194,6 @@ def compare_pair(case: Case, ref: ArmRun, obs: ArmRun, pair: str) -> PairVerdict
     tools_ok, tools_sub = level_tools(ref, obs)
     keys_ok, keys_sub = level_keys(ref, obs)
     state_ok, verbatim_ok, diff = level_state(ref, obs)
-    levels = LevelVerdict(tools_ok, tools_sub, keys_ok, keys_sub, state_ok, verbatim_ok, diff)
 
     items = [item for item in case.pii]
     fields: list[FieldVerdict] = []
@@ -228,6 +237,11 @@ def compare_pair(case: Case, ref: ArmRun, obs: ArmRun, pair: str) -> PairVerdict
                 and obs.substitutes[item.id] != substitute)
             fields.append(taxonomy.classify_field(field_spec, ref_obs, obs_obs, real, others, stale,
                                                   substitute, case.now, name, path, alternates))
+    # Built here rather than above: the value level is read off the field
+    # verdicts, which are only known once the loop has run.
+    values_ok = not any(one.kind not in ("agree", "absent", "extra") for one in fields)
+    levels = LevelVerdict(tools_ok, tools_sub, keys_ok, keys_sub, state_ok, verbatim_ok,
+                          diff, values_ok)
     return PairVerdict(pair, levels, tuple(fields), tuple(plain))
 
 

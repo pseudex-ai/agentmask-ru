@@ -1075,7 +1075,17 @@ TEMPLATE = ToolSpec(
             FieldSpec("variables.address", "identity", "LOC", ""),
             FieldSpec("variables.phone", "identity", "PHONE", "digits"),
             FieldSpec("variables.when", "plain"),
-            FieldSpec("variables.code", "plain")),
+            FieldSpec("variables.code", "plain"),
+            # THE RENDERED TEXT IS PROSE, AND PROSE IS JUDGED FOR LEAKS, NEVER
+            # COMPARED. The mock stores it (`mock.py`, `send_template`), and
+            # with no spec here `state_spec_for` found none and the state level
+            # fell back to raw string equality — so every variation in `name`,
+            # `address` or `when` was counted TWICE, once in the variable and
+            # once inside the sentence built from it. 21 of the 25 value
+            # conflicts this family showed on the 06.09 run were that double
+            # count. `notify_sms.text` and `crm_add_note.text` are already
+            # `free` for the same reason; this one was simply missed.
+            FieldSpec("text", "free", container="url")),
     parse=_template_parse, mutating=True)
 
 

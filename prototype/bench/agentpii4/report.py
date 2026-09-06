@@ -38,6 +38,8 @@ def _level_flag(verdict: PairVerdict, level: str) -> bool:
         return verdict.levels.keys
     if level == "state":
         return verdict.levels.state
+    if level == "values":
+        return verdict.levels.state_values
     return verdict.levels.state_verbatim
 
 
@@ -106,7 +108,8 @@ def render(cases: dict[str, Case], scored: Sequence[Scored], excluded: Sequence[
     lines += ["", "2–3. ШУМОВОЙ ПОЛ И ЭФФЕКТ ШЛЮЗА — по уровням, никогда одним числом",
               "   уровень          I≈C      C′≈C     эффект   95% ДИ (кластерный бутстрап)   McNemar p (b,c)  ICC(случай) ICC(значение) DEFF"]
     for level, label in (("tools", "L1 инструменты"), ("keys", "L2 ключи"),
-                         ("state", "L3 состояние"), ("verbatim", "L3 дословно")):
+                         ("state", "L3 состояние"), ("values", "L3 ЗНАЧЕНИЯ"),
+                         ("verbatim", "L3 дословно")):
         effects = case_effects(cases, scored, level)
         interval = stats.cluster_bootstrap(effects, reps=2000)
         b = sum(1 for one in scored if not _level_flag(one.ic, level) and _level_flag(one.cc, level))
