@@ -688,6 +688,37 @@ def test_a_card_address_comes_back_from_free_text(vault: Vault, detector: Detect
     # down here so the next reader does not rediscover it from a customer.
 
 
+def test_a_dictated_phone_survives_a_deny_word(vault: Vault, detector: Detector) -> None:
+    """«телефон для чека восемь девятьсот шестнадцать…» — a real leak, closed.
+
+    The deny list holds «чек», so a number directly after it is a receipt
+    number and not a phone; that rule is right and stays. The rescue beside it
+    — a phone cue ANYWHERE in the sentence beats a denying word — was gated on
+    the value LOOKING like a phone, and a phone said aloud has no digits to
+    look like one. So the cue two words away could not save it and the number
+    reached the model in the clear: 15 of 2444 values on `long_bank`'s first
+    run, in the one place 54-ФЗ makes a phone mandatory.
+
+    The gate is safe because the span is already typed: only the spoken
+    detector produces a digit-free PHONE, and only after the words decode to
+    eleven digits opening 7 or 8 followed by 9. Both directions are checked —
+    a dictated number behind «чек», «трек» or «заказ» with no phone cue stays
+    suppressed, which is what the deny list is for."""
+    found = ("телефон для чека восемь девятьсот шестнадцать четыреста два "
+             "одиннадцать восемьдесят семь",
+             "телефон для связи восемь девятьсот шестнадцать четыреста два "
+             "одиннадцать восемьдесят семь")
+    for text in found:
+        kinds = [span.entity_type for span in detector.detect(text)]
+        check(f"продиктованный телефон найден: {text[:26]}…", "PHONE" in kinds, str(kinds))
+    quiet = ("чек восемь девятьсот шестнадцать четыреста два одиннадцать восемьдесят семь",
+             "трек восемь девятьсот шестнадцать четыреста два одиннадцать восемьдесят семь",
+             "заказ восемь девятьсот шестнадцать четыреста два одиннадцать восемьдесят семь")
+    for text in quiet:
+        kinds = [span.entity_type for span in detector.detect(text)]
+        check(f"без подсказки слово-отрицание держит: {text[:18]}…", not kinds, str(kinds))
+
+
 def main() -> int:
     testkit.load_dev_bundle()
     detector = Detector()
@@ -708,6 +739,7 @@ def main() -> int:
     test_corrected_address_shares_its_street(vault, detector)
     test_a_mistyped_street_reaches_the_tool_as_the_register_spells_it(vault, detector)
     test_a_card_address_comes_back_from_free_text(vault, detector)
+    test_a_dictated_phone_survives_a_deny_word(vault, detector)
     test_spoken_birth_date_keeps_its_register(vault, detector)
     test_tool_result_with_a_future_date_masks(vault, detector)
     test_chat_register(detector)

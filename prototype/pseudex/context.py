@@ -269,8 +269,22 @@ def _phone_shaped(value: str) -> bool:
     below from reopening the holes the deny gate was built to close.
     """
     digits = "".join(ch for ch in value if ch.isdigit())
-    return value.lstrip().startswith("+") or (
-        len(digits) == 11 and digits[0] in "78")
+    if value.lstrip().startswith("+") or (len(digits) == 11 and digits[0] in "78"):
+        return True
+    # A DICTATED PHONE HAS NO DIGITS TO BE SHAPED LIKE, and the rescue below —
+    # «a phone cue anywhere in the sentence beats a denying word» — was gated on
+    # this test, so it never ran for one. «телефон для чека восемь девятьсот
+    # шестнадцать…» has the cue two words away and the deny word «чек» directly
+    # before, and the number went to the model IN THE CLEAR. Fifteen of 2444
+    # values on the first `long_bank` run, in the one place 54-ФЗ makes a phone
+    # mandatory.
+    #
+    # Safe because the span is already typed. Only `spoken.detect_spoken_ids`
+    # produces a digit-free PHONE, and it produces one only after `run_to_digits`
+    # yielded eleven digits opening 7 or 8 followed by 9 — the same test this
+    # function makes, applied to the digits the words decode to. A passport,
+    # an order number or a track number cannot arrive here without a digit.
+    return not any(ch.isdigit() for ch in value) and bool(value.strip())
 
 
 def _sentence_around(text: str, span: Span) -> str:

@@ -1097,6 +1097,54 @@ def plan_calls(case: Case, gateway: object, policy: Policy, upto_msg: int,
         maybe("order_reschedule", {"order_id": order_id, "date": "2026-09-10"})
     if "order_cancel" in tools and order_id:
         maybe("order_cancel", {"order_id": order_id, "reason": "клиент передумал"})
+    if "clinic_slots" in tools:
+        maybe("clinic_slots", {"speciality": "терапевт", "date": "2026-09-05"})
+    appointment_id = result_field(results, "clinic_book", "appointment_id")
+    if "appointment_reschedule" in tools and appointment_id:
+        maybe("appointment_reschedule", {"appointment_id": appointment_id,
+                                         "slot": "2026-09-08T11:00:00+04:00"})
+    if "appointment_cancel" in tools and appointment_id:
+        maybe("appointment_cancel", {"appointment_id": appointment_id})
+    if "referral_create" in tools and name["last"] and dob_parts.get("iso"):
+        maybe("referral_create", {"patient": {"last_name": name["last"],
+                                              "first_name": name["first"] or name["last"],
+                                              "birth_date": dob_parts["iso"]},
+                                  "speciality": "невролог"})
+    payment_id = result_field(results, "payment_create", "id")
+    if "payment_status" in tools and payment_id:
+        maybe("payment_status", {"payment_id": payment_id})
+    if "receipt_fetch" in tools and payment_id:
+        maybe("receipt_fetch", {"payment_id": payment_id})
+    if "payment_refund" in tools and payment_id:
+        maybe("payment_refund", {"payment_id": payment_id,
+                                 "amount": {"value": "780.00", "currency": "RUB"}})
+    if "ticket_find" in tools and phone:
+        maybe("ticket_find", {"phone": phone})
+    if "ticket_create" in tools and phone:
+        # THE SUBJECT AND THE BODY ARE PROSE THE AGENT WRITES, and its words are
+        # the substitutes it was shown.
+        pieces = [f"Клиент {name_surface}." if name_surface else "Клиент.",
+                  f"Телефон {phone}." if phone else "",
+                  f"Адрес {addr_surface}." if addr_surface else ""]
+        maybe("ticket_create", {"subject": f"Обращение: {name_surface or 'клиент'}",
+                                "text": " ".join(one for one in pieces if one),
+                                "phone": phone})
+    if "escalate_to_human" in tools:
+        # PERSONAL DATA IN A SENTENCE, GOING TO A PERSON. Deterministic prose so
+        # the two control arms agree and the floor measures the policy.
+        summary = [f"Клиент {name_surface}." if name_surface else "Клиент не представился.",
+                   f"Телефон {phone}." if phone else "",
+                   f"Адрес {addr_surface}." if addr_surface else "",
+                   "Вопрос не решён на первой линии."]
+        maybe("escalate_to_human", {"summary": " ".join(one for one in summary if one),
+                                    "queue": "general"})
+    if "crm_merge_contacts" in tools and len(case.seed_records) > 1:
+        # THE SURVIVOR IS THE ONE THE AGENT CHOSE, the duplicate is another card
+        # of the same person. Ids are plain and must reach the tool as written.
+        primary = _chosen_record(case, items, view) or case.seed_records[0].id
+        other = next((record.id for record in case.seed_records if record.id != primary), "")
+        if other:
+            maybe("crm_merge_contacts", {"primary_id": primary, "duplicate_id": other})
     if "notify_sms" in tools and phone:
         order = next((one.value for one in plain_values if one.family == "order_number"), "")
         text = f"Ваш заказ {order or 'оформлен'}"

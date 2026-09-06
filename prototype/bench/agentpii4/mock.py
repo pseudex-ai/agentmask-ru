@@ -59,7 +59,8 @@ class Backend:
         self._tables: dict[str, dict[str, Record]] = {
             "contacts": {}, "addresses": {}, "orders": {}, "claims": {},
             "payments": {}, "verifications": {}, "appointments": {},
-            "sms": {}, "callbacks": {}, "notes": {}}
+            "sms": {}, "callbacks": {}, "notes": {},
+            "referrals": {}, "tickets": {}, "escalations": {}}
         self._counters: dict[str, int] = {}
         self._seq = 0
         self.calls: list[CallLog] = []
@@ -383,6 +384,116 @@ class Backend:
                                    "house": Slot(house.group(0), "nm_house") if house else "",
                                    "quality": str(data["address"]["quality"])}  # type: ignore[index]
             return data, node
+        if tool == "clinic_slots":
+            # READ-ONLY, NO PERSONAL DATA. Slots derived from the date so the
+            # two arms see the same list: an answer that differed by chance
+            # would put the agent's choice in the effect.
+            date = str(parsed["date"])
+            hours = (9, 11, 14, 16, 18)
+            slots = [{"id": f"slot-{index + 1}", "at": f"{date}T{hour:02d}:00:00+04:00"}
+                     for index, hour in enumerate(hours)]
+            data = {"speciality": parsed["speciality"], "date": date, "slots": slots}
+            return data, {"speciality": str(parsed["speciality"]), "date": date,
+                          "slots": [{"id": str(one["id"]), "at": str(one["at"])} for one in slots]}
+        if tool == "appointment_cancel":
+            record = self._tables["appointments"].get(str(parsed["appointment_id"]))
+            if record is None:
+                return self._domain_error("APPOINTMENT_NOT_FOUND", str(parsed["appointment_id"]))
+            if record.fields.get("status") == "CANCELLED":
+                return self._domain_error("ALREADY_CANCELLED", record.id)
+            fields = dict(record.fields)
+            fields["status"] = "CANCELLED"
+            self._store("appointments", tool, fields, "apt", record.id)
+            data = {"appointment_id": record.id, "status": "CANCELLED"}
+            return data, dict(data)
+        if tool == "appointment_reschedule":
+            record = self._tables["appointments"].get(str(parsed["appointment_id"]))
+            if record is None:
+                return self._domain_error("APPOINTMENT_NOT_FOUND", str(parsed["appointment_id"]))
+            if record.fields.get("status") == "CANCELLED":
+                return self._domain_error("APPOINTMENT_CANCELLED", record.id)
+            fields = dict(record.fields)
+            fields["slot"] = parsed["slot"]
+            fields["status"] = "MOVED"
+            self._store("appointments", tool, fields, "apt", record.id)
+            data = {"appointment_id": record.id, "status": "MOVED", "slot": parsed["slot"]}
+            return data, {"appointment_id": record.id, "status": "MOVED", "slot": str(parsed["slot"])}
+        if tool == "referral_create":
+            record = self._store("referrals", tool, parsed, "ref")
+            data = {"referral_id": record.id, "speciality": parsed["speciality"], "status": "issued"}
+            return data, {"referral_id": record.id, "speciality": str(parsed["speciality"]),
+                          "status": "issued"}
+        if tool == "payment_status":
+            record = self._tables["payments"].get(str(parsed["payment_id"]))
+            if record is None:
+                return self._domain_error("PAYMENT_NOT_FOUND", str(parsed["payment_id"]))
+            receipt = record.fields.get("receipt") or {}
+            customer = receipt.get("customer") or {}      # type: ignore[union-attr]
+            amount = record.fields.get("amount") or {}
+            data = {"id": record.id, "status": record.fields.get("status", "pending"),
+                    "amount": dict(amount),               # type: ignore[arg-type]
+                    "receipt": {"customer": dict(customer)}}
+            node = {"id": record.id, "status": str(data["status"]),
+                    "amount": {key: str(value) for key, value in dict(amount).items()},  # type: ignore[arg-type]
+                    "receipt": {"customer": {key: Slot(str(value), f"ps_{key}")
+                                             for key, value in dict(customer).items() if value}}}
+            return data, node
+        if tool == "payment_refund":
+            record = self._tables["payments"].get(str(parsed["payment_id"]))
+            if record is None:
+                return self._domain_error("PAYMENT_NOT_FOUND", str(parsed["payment_id"]))
+            if record.fields.get("status") == "refunded":
+                return self._domain_error("ALREADY_REFUNDED", record.id)
+            fields = dict(record.fields)
+            fields["status"] = "refunded"
+            fields["refund"] = parsed["amount"]
+            self._store("payments", tool, fields, "pay", record.id)
+            data = {"payment_id": record.id, "status": "refunded", "amount": parsed["amount"]}
+            return data, {"payment_id": record.id, "status": "refunded",
+                          "amount": {key: str(value) for key, value in dict(parsed["amount"]).items()}}  # type: ignore[arg-type]
+        if tool == "receipt_fetch":
+            record = self._tables["payments"].get(str(parsed["payment_id"]))
+            if record is None:
+                return self._domain_error("PAYMENT_NOT_FOUND", str(parsed["payment_id"]))
+            receipt = record.fields.get("receipt") or {}
+            customer = receipt.get("customer") or {}      # type: ignore[union-attr]
+            data = {"payment_id": record.id, "fiscal_document": f"fd-{record.id[-3:]}",
+                    "customer": dict(customer)}
+            node = {"payment_id": record.id, "fiscal_document": str(data["fiscal_document"]),
+                    "customer": {key: Slot(str(value), f"rc_{key}")
+                                 for key, value in dict(customer).items() if value}}
+            return data, node
+        if tool == "ticket_create":
+            record = self._store("tickets", tool, parsed, "tkt")
+            data = {"ticket_id": record.id, "status": "open"}
+            return data, dict(data)
+        if tool == "ticket_find":
+            phone = str(parsed["phone"])
+            found = [row for row in self._tables["tickets"].values()
+                     if str(row.fields.get("phone", "")) == phone]
+            issues = [{"ticket_id": row.id, "subject": row.fields.get("subject", ""),
+                       "status": "open"} for row in found]
+            nodes = [{"ticket_id": row.id,
+                      "subject": Slot(str(row.fields.get("subject", "")), f"tk{index}_subject"),
+                      "status": "open"}
+                     for index, row in enumerate(found)]
+            return {"issues": issues}, {"issues": nodes}
+        if tool == "escalate_to_human":
+            record = self._store("escalations", tool, parsed, "esc")
+            data = {"escalation_id": record.id, "queue": parsed["queue"], "status": "queued"}
+            return data, {"escalation_id": record.id, "queue": str(parsed["queue"]),
+                          "status": "queued"}
+        if tool == "crm_merge_contacts":
+            primary = self._tables["contacts"].get(str(parsed["primary_id"]))
+            duplicate = self._tables["contacts"].get(str(parsed["duplicate_id"]))
+            if primary is None or duplicate is None:
+                return self._domain_error("CONTACT_NOT_FOUND",
+                                          f"{parsed['primary_id']}/{parsed['duplicate_id']}")
+            merged = {**duplicate.fields, **primary.fields}
+            self._store("contacts", tool, merged, "c", primary.id)
+            del self._tables["contacts"][duplicate.id]
+            data = {"primary_id": primary.id, "merged": duplicate.id}
+            return data, dict(data)
         if tool == "crm_import_csv":
             imported = 0
             for row in parsed["rows"]:  # type: ignore[union-attr]
