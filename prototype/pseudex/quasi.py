@@ -40,8 +40,29 @@ _PERSON_BEFORE_DATE_RE = re.compile(r"(?:^|[^а-яё])(?:о+н|о+на+|ему+|
 # and `Мой д.р. 12 марта` was missed entirely.
 
 
-def _birth_context_near(low: str, start: int, end: int, birth_ctx: tuple[str, ...]) -> bool:
-    """True if a birth cue sits in the SAME CLAUSE as this date.
+# A SENTENCE END IS A PERIOD, A SPACE AND A CAPITAL. The abbreviation «д.р.»
+# writes periods with no space («д.р») or with a digit after («д.р. 12»), and a
+# capital never follows either — so this separates a new sentence from the one
+# abbreviation the cue list depends on, without a list of abbreviations to keep
+# true. The same test the address cue already uses (CLAUDE.md, «A cue word
+# reaches 60 characters and never across a sentence end»).
+_SENTENCE_END = re.compile(r"[.!?]\s+(?=[А-ЯЁA-Z])")
+
+
+def sentence_window(text: str, start: int, end: int, back: int, forward: int) -> str:
+    """The text around a span, clipped at the sentence ends on both sides.
+
+    Shared by the two gates that ask «is a birth cue near this date» — the DOB
+    typer here and the bare-date gate in `context` — because the defect was in
+    both and one window is one rule."""
+    before = _SENTENCE_END.split(text[max(0, start - back):start])[-1]
+    after = _SENTENCE_END.split(text[end:end + forward])[0]
+    return (before + " " + after).lower()
+
+
+def _birth_context_near(text: str, low: str, start: int, end: int,
+                        birth_ctx: tuple[str, ...]) -> bool:
+    """True if a birth cue sits in the SAME CLAUSE and the SAME SENTENCE as this date.
 
     A plain proximity window is not enough: in `Заказ приедет 1 сентября, а я
     родился 7 июля` the cue `родился` is close to BOTH dates, so the delivery
@@ -49,10 +70,25 @@ def _birth_context_near(low: str, start: int, end: int, birth_ctx: tuple[str, ..
     exactly the damage this product must not cause. Clipping each window at the
     nearest comma keeps the cue bound to its own clause.
 
-    Periods are deliberately NOT treated as boundaries: the most common cue is
-    the abbreviation `д.р.`, and splitting on `.` would throw it away."""
-    before = low[max(0, start - 24):start].rsplit(",", 1)[-1].rsplit(";", 1)[-1]
-    after = low[end:end + 16].split(",", 1)[0].split(";", 1)[0]
+    AND AT THE SENTENCE END, because a host's own instruction is written in
+    sentences: «…возраст и пол пациента вычисли сам из даты рождения и имени.
+    Сегодня 2026-09-02.» — the cue is the HOST telling the agent what to derive,
+    and the date after it is TODAY. Masked, it moved the model's notion of today
+    by months and every relative date the agent computed («на пятницу», «в
+    четверг») moved with it: the clinic slot was booked in March instead of
+    September (r2 run, 10 triples, and both controls agreed every time). A bare
+    date is not personal data; a date in the next sentence is not in the cue's
+    context either.
+
+    Periods alone are still NOT boundaries: the commonest cue is the
+    abbreviation `д.р.`, and splitting on every `.` would throw it away — see
+    `_SENTENCE_END` for what separates the two."""
+    window = text[max(0, start - 24):start]
+    window = _SENTENCE_END.split(window)[-1]
+    before = window.lower().rsplit(",", 1)[-1].rsplit(";", 1)[-1]
+    tail = text[end:end + 16]
+    tail = _SENTENCE_END.split(tail)[0]
+    after = tail.lower().split(",", 1)[0].split(";", 1)[0]
     if any(ctx in before or ctx in after for ctx in birth_ctx):
         return True
     # «дата рожжения 28.04.1975», «рдилась 22.04.1994»: the cue mistyped is
@@ -80,11 +116,11 @@ def detect_quasi(text: str) -> list[Span]:
         # given as a full date in the same breath. Bounded to the pronoun
         # standing directly before the date, so «счёт от 19 12 1992» and a
         # date after a verb stay what they are.
-        if (_birth_context_near(low, match.start(), match.end(), quasi.birth_ctx)
+        if (_birth_context_near(text, low, match.start(), match.end(), quasi.birth_ctx)
                 or _PERSON_BEFORE_DATE_RE.search(low[max(0, match.start() - 24):match.start()])):
             spans.append(Span(match.start(), match.end(), "DOB", match.group()))
     for match in quasi.text_date.finditer(text):
-        if (_birth_context_near(low, match.start(), match.end(), quasi.birth_ctx)
+        if (_birth_context_near(text, low, match.start(), match.end(), quasi.birth_ctx)
                 or _PERSON_BEFORE_DATE_RE.search(low[max(0, match.start() - 24):match.start()])):
             spans.append(Span(match.start(), match.end(), "DOB", match.group()))
     for match in _AGE_RE.finditer(text):

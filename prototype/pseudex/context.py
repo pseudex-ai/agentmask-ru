@@ -10,6 +10,7 @@ import re
 from pseudex.fuzzy import within_one_typo
 
 from pseudex.assets import ASSETS, ContextAssets
+from pseudex import quasi as quasi_mod
 from pseudex.detect import Span
 
 # The deny list, the phone cues, the region set and the address/place vocabulary
@@ -224,7 +225,14 @@ def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
     if ("http" in prefix or "www." in prefix) and " " not in prefix[-30:]:
         return False
     quasi = ASSETS.get().quasi
-    window = text[max(0, span.start - 60): span.end + 60].lower()
+    # THE CUE MUST BE IN THE SAME SENTENCE. A host's own instruction says «…пол
+    # пациента вычисли сам из даты рождения и имени. Сегодня 2026-09-02.»: the
+    # cue belongs to the instruction and the date is TODAY. Masked, it moved the
+    # model's notion of today and every relative date the agent computed moved
+    # with it — the clinic slot was booked in March instead of September (r2
+    # run, 10 triples, both controls agreeing). Same window, same rule as
+    # `quasi._birth_context_near`; a period inside «д.р.» is not a sentence end.
+    window = quasi_mod.sentence_window(text, span.start, span.end, 60, 60)
     if any(cue in window for cue in quasi.birth_ctx):
         return True
     # A document word DIRECTLY before the date wins over a person elsewhere in
