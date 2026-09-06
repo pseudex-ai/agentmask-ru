@@ -18,7 +18,7 @@ from pathlib import Path
 from bench.agentpii4 import schema, stats, validate
 from bench.agentpii4.scenarios import (analytics, chain, compare, container, correction, crm_note,
                                        decompose, derive, long_order, lookup_list, receipt,
-                                       prompt_rule, search_rank,
+                                       prompt_rule, search_rank, tool_chain,
                                        result_feed, send_template, summary)
 from bench.agentpii4.scenarios import validate as validate_kind
 from bench.agentpii4.schema import Case, Ladder
@@ -37,6 +37,7 @@ PLAN: tuple[tuple[object, int, int], ...] = (
     (analytics, 6, 18),
     # 06.09, Фаза 2 — длинные разговоры с полным набором инструментов.
     (long_order, 8, 60), (search_rank, 6, 45), (prompt_rule, 5, 35),
+    (tool_chain, 6, 45),
 )
 
 

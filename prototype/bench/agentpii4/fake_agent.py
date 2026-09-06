@@ -468,11 +468,42 @@ def _pick_item(items: tuple[PiiItem, ...], kind: str, policy: Policy,
     return chosen
 
 
+_NAME_ORDER: tuple[str, ...] = ("surname", "given", "patronymic")
+
+
+def _card_name(items: tuple[PiiItem, ...], chosen: PiiItem,
+               view: dict[str, tuple[str, dict[str, str]]]) -> tuple[str, dict[str, str]]:
+    """A person read off a CARD, whole.
+
+    A card stores ФИО in three fields and the corpus registers three items, so
+    picking «one item of type NAME» picks ONE FIELD — and the last of the three
+    is the patronymic. The scripted agent booked deliveries «на Ивановича».
+    A model reading a card writes the person, not the last column of the row."""
+    kin = [item for item in items
+           if item.type == "NAME" and item.where.kind == "seed"
+           and item.identity == chosen.identity and item.id in view]
+    by_role: dict[str, str] = {}
+    for item in kin:
+        surface, parts = view[item.id]
+        for role in _NAME_ORDER:
+            if parts.get(role) or (len(kin) == 1 and role == "surname"):
+                by_role.setdefault(role, surface)
+                break
+    if len(by_role) < 2:
+        return view[chosen.id]
+    words = [by_role[role] for role in _NAME_ORDER if role in by_role]
+    return " ".join(words), {role: by_role[role] for role in _NAME_ORDER if role in by_role}
+
+
 def _pick(items: tuple[PiiItem, ...], kind: str, view: dict[str, tuple[str, dict[str, str]]],
           policy: Policy, prefer_current: bool = True) -> tuple[str, dict[str, str]]:
     """The agent's choice of which item of a type to use."""
     chosen = _pick_item(items, kind, policy, prefer_current)
-    return view[chosen.id] if chosen is not None and chosen.id in view else ("", {})
+    if chosen is None or chosen.id not in view:
+        return "", {}
+    if kind == "NAME" and chosen.where.kind == "seed":
+        return _card_name(items, chosen, view)
+    return view[chosen.id]
 
 
 def _e164(surface: str, parts: dict[str, str], policy: Policy) -> str:
@@ -531,6 +562,30 @@ def _name_args(surface: str, parts: dict[str, str], policy: Policy) -> dict[str,
         return {"last": surface, "first": "", "middle": ""}
     return {"last": parts.get("surname", surface.split()[0] if surface else ""),
             "first": parts.get("given", ""), "middle": parts.get("patronymic", "")}
+
+
+# Which tool shows which table. A seeded row is not knowledge the agent has —
+# it is knowledge the customer's systems have, and the agent gets it by asking.
+_SHOWS_TABLE: dict[str, str] = {
+    "crm_find_contact": "contacts",
+    "address_suggest": "addresses",
+    "pickup_points_near": "addresses",
+}
+
+
+def seen_tables(results: tuple[tuple[str, str], ...]) -> frozenset[str]:
+    """Which seeded tables a tool has actually shown the agent.
+
+    A SEED ROW THE AGENT HAS NOT LOOKED UP IS GROUND TRUTH, NOT KNOWLEDGE. The
+    planner read every seeded item from the first turn, so in `tool_chain` it
+    queried the directory with the customer's REAL address — the addresses
+    table is returned by `address_suggest` and by nothing else, so at that
+    moment nothing had shown it and the intervention arm had no substitute to
+    use. Both arms then «agreed» on the real value, and the leak check could
+    not see it either: an item never shown a substitute is one it skips.
+
+    Read off the results, never off the case."""
+    return frozenset(_SHOWS_TABLE[name] for name, _text in results if name in _SHOWS_TABLE)
 
 
 def card_address(results: tuple[tuple[str, str], ...], record_id: str) -> dict[str, str]:
@@ -717,8 +772,11 @@ def plan_calls(case: Case, gateway: object, policy: Policy, upto_msg: int,
     model is handed them — the input a chained family reads.
     """
     view = _seen_values(case, gateway)
+    shown = seen_tables(results)
+    table_of = {record.id: record.table for record in case.seed_records}
     items = tuple(item for item in case.pii
-                  if item.where.kind != "message" or upto_msg < 0 or item.where.msg <= upto_msg)
+                  if (item.where.kind != "message" or upto_msg < 0 or item.where.msg <= upto_msg)
+                  and (item.where.kind != "seed" or table_of.get(item.where.record, "") in shown))
     plain_values = tuple(one for one in case.plain
                          if one.where.kind != "message" or upto_msg < 0 or one.where.msg <= upto_msg)
     calls: list[tuple[str, dict[str, object]]] = []
@@ -808,9 +866,18 @@ def plan_calls(case: Case, gateway: object, policy: Policy, upto_msg: int,
         # measures the policy's noise, not this line.
         tail = random.Random(f"postcode:{case.id}:{city}").randrange(100, 999)
         postal = f"{sorted(derive.postcode_zone(city))[0]}{tail:03d}" if (policy.derives and derive.postcode_zone(city)) else "000000"
+        # A POSTCODE THE DIRECTORY GAVE US BEATS ONE WE DERIVED, which is the
+        # whole reason to ask a directory. It also makes the chain a chain: the
+        # index in the order comes from the suggestion, the suggestion came
+        # from the card, and the card came from the search — three hops, each
+        # one putting the same personal datum through the gateway again.
+        picked = suggested_address(results)
+        if picked.get("postal_code"):
+            postal = picked["postal_code"]
         maybe("delivery_create_order", {
             "recipient": {"name": name_surface, "phones": [{"number": phone}]},
-            "to_location": {"postal_code": postal, "city": city, "address": addr_surface},
+            "to_location": {"postal_code": postal, "city": picked.get("city") or city,
+                            "address": picked.get("value") or addr_surface},
             "packages": [{"weight": 1000}]})
     if "courier_book" in tools and phone:
         # A SUGGESTION THE AGENT ASKED FOR OUTRANKS ITS OWN READING of what the

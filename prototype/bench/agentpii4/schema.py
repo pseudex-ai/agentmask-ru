@@ -57,6 +57,7 @@ SCENARIO_KINDS: tuple[str, ...] = (
     "long_order",   # оформление заказа целиком: 7 ходов, 12 инструментов, поздний получатель
     "search_rank",  # top-k из справочника с уверенностью; подмена меняет список И порядок
     "prompt_rule",  # бизнес-правило в промпте, которое подмена может нарушить
+    "tool_chain",   # три перехода подряд, и одно значение живёт только в ответе
 )
 ARMS: tuple[str, ...] = ("C", "I", "C2")          # control, intervention, second control
 INV_LEVELS: tuple[str, ...] = ("tools", "keys", "state")
