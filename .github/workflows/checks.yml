@@ -300,6 +300,16 @@ jobs:
       - name: systemd units parse
         run: |
           sudo apt-get install -y --no-install-recommends systemd >/dev/null
+          # Юниты называют БОЕВОЙ путь, а раннер держит репозиторий в другом
+          # месте, поэтому `systemd-analyze` докладывал «Command ... is not
+          # executable: No such file or directory» про оба ExecStart. Шаг не мог
+          # пройти ни при каком состоянии файлов, и это стало видно только
+          # сейчас: до Э11 джоба падала раньше, на проверке compose, и сюда не
+          # доходила. Ссылка делает утверждение НАСТОЯЩИМ, а не глушит его
+          # фильтром: снятый бит исполнения или переименованный скрипт теперь
+          # красят шаг, а именно это он и должен ловить.
+          sudo ln -sfn "$GITHUB_WORKSPACE" /opt/pseudex
+          test -x /opt/pseudex/deploy/agent.sh
           systemd-analyze verify deploy/systemd/*.service deploy/systemd/*.timer 2>&1 \
             | grep -v "Unit .* not found" | grep . && exit 1 || true
 
