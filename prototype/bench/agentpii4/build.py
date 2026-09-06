@@ -18,6 +18,7 @@ from pathlib import Path
 from bench.agentpii4 import schema, stats, validate
 from bench.agentpii4.scenarios import (analytics, chain, compare, container, correction, crm_note,
                                        decompose, derive, long_order, lookup_list, receipt,
+                                       search_rank,
                                        result_feed, send_template, summary)
 from bench.agentpii4.scenarios import validate as validate_kind
 from bench.agentpii4.schema import Case, Ladder
@@ -35,7 +36,7 @@ PLAN: tuple[tuple[object, int, int], ...] = (
     (lookup_list, 10, 30), (crm_note, 8, 24), (send_template, 8, 24), (receipt, 6, 18),
     (analytics, 6, 18),
     # 06.09, Фаза 2 — длинные разговоры с полным набором инструментов.
-    (long_order, 8, 60),
+    (long_order, 8, 60), (search_rank, 6, 45),
 )
 
 

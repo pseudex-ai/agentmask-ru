@@ -55,6 +55,7 @@ SCENARIO_KINDS: tuple[str, ...] = (
     # different person, and whether a value that exists only in a tool's ANSWER
     # can feed the next call.
     "long_order",   # оформление заказа целиком: 7 ходов, 12 инструментов, поздний получатель
+    "search_rank",  # top-k из справочника с уверенностью; подмена меняет список И порядок
 )
 ARMS: tuple[str, ...] = ("C", "I", "C2")          # control, intervention, second control
 INV_LEVELS: tuple[str, ...] = ("tools", "keys", "state")

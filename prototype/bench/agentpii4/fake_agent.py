@@ -68,7 +68,15 @@ class FakeGateway:
         self._back: dict[str, str] = {}     # fake -> real
         self._seen: dict[str, str] = {}
         self._resolve_pieces = resolve_pieces
+        # PARTS TOO, NOT ONLY WHOLE VALUES. The fake street pool and the corpus
+        # street pool overlap — «Луговая» is in both — so `_mint` produced
+        # «Псков, улица Луговая 37» for a customer who lives on Луговая, and
+        # the agent then wrote the real street into the booking with every
+        # level reporting agreement. Same rule as `vault._unique_token`, one
+        # level down.
         forbidden = {one.casefold() for item in case.pii for one in (item.value, item.canonical)}
+        forbidden |= {part.casefold() for item in case.pii for part in item.parts.values()
+                      if len(part) >= 4}
         for item in case.pii:
             if item.value not in self._map:
                 fake = self._unique(item, forbidden)
@@ -97,7 +105,8 @@ class FakeGateway:
         can exhaust is a defect to see, not to absorb."""
         for _ in range(64):
             fake = self._mint(item.type, item.value, item.parts)          # type: ignore[attr-defined]
-            if fake.casefold() not in forbidden:
+            pieces = {one.casefold() for one in parts_of(item.type, fake).values() if len(one) >= 4}  # type: ignore[attr-defined]
+            if fake.casefold() not in forbidden and not (pieces & forbidden):
                 return fake
         raise ValueError(f"{self._case.id}: no substitute for {item.type} that is not a real value "  # type: ignore[attr-defined]
                          f"of this case — the pool is too small for {len(forbidden)} values")
@@ -143,8 +152,14 @@ class FakeGateway:
         return [dict(REGISTRY[name].schema) for name in self._case.tools]
 
     def _mask(self, text: str) -> str:
+        # CASE-INSENSITIVELY, because a seeded directory row writes the same
+        # street twice in two cases: «луговая» in `data.street` and «ул Луговая»
+        # inside the display string. `str.replace` missed the capitalised one,
+        # so the level-A rig showed the model a real street and the leak check
+        # caught the rig rather than the engine. The engine has never had this
+        # problem — it detects, it does not string-replace.
         for real, fake in sorted(self._map.items(), key=lambda pair: -len(pair[0])):
-            text = text.replace(real, fake)
+            text = re.sub(re.escape(real), lambda _m: fake, text, flags=re.IGNORECASE)
         return text
 
     def push_system(self, text: str) -> str:
@@ -547,6 +562,43 @@ def card_address(results: tuple[tuple[str, str], ...], record_id: str) -> dict[s
     return {}
 
 
+def suggested_address(results: tuple[tuple[str, str], ...]) -> dict[str, str]:
+    """The suggestion the agent picked, BY CONFIDENCE, out of the ranked list.
+
+    THE POINT OF ASKING A SUGGESTER IS TO USE ITS ANSWER, and the scripted agent
+    called `address_suggest` and threw the result away — so `compare`, a family
+    whose whole premise is «three real records come back and the agent chooses
+    one», never chose anything. The substitute changes both what the suggester
+    matches and how sure it is, and that is only measurable if the choice feeds
+    the next call.
+
+    Ties go to the first, which is what the tool's own ordering means."""
+    for name, text in reversed(results):
+        if name != "address_suggest":
+            continue
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        rows = payload.get("suggestions") if isinstance(payload, dict) else None
+        if not isinstance(rows, list) or not rows:
+            continue
+        best = max((row for row in rows if isinstance(row, dict)),
+                   key=lambda row: float(str(row.get("confidence", "0")) or 0), default=None)
+        if best is None:
+            continue
+        # THE STRUCTURED SUB-OBJECT, which is what a suggester returns it for.
+        # `value` is the display string — «Краснодарский край, г Краснодар, ул
+        # Солнечная, д 7» — and `parts_of` reads it as a street called «г край
+        # краснодар краснодарский солнечная». Splitting a display string is a
+        # parser we would then be measuring instead of the gateway.
+        data = best.get("data") if isinstance(best.get("data"), dict) else {}
+        parts = {key: str(value) for key, value in data.items() if value}
+        parts["value"] = str(best.get("value", ""))
+        return parts
+    return {}
+
+
 def result_field(results: tuple[tuple[str, str], ...], tool: str, key: str) -> str:
     """A value the agent READ BACK out of a tool result, by the tool that made it.
 
@@ -711,6 +763,8 @@ def plan_calls(case: Case, gateway: object, policy: Policy, upto_msg: int,
             contact["address"] = {"city": city, "street": address["street"], "house": address["house"] or "1",
                                   "flat": address["flat"]}
         maybe("crm_upsert_contact", {"id": _chosen_record(case, items, view), "contact": contact})
+    if "address_suggest" in tools:
+        maybe("address_suggest", {"query": addr_surface, "count": 3})
     if "delivery_create_order" in tools and phone:
         # The last three digits are the agent's invention; seeded by the CASE so
         # two control arms of a deterministic agent agree and the noise floor
@@ -722,14 +776,20 @@ def plan_calls(case: Case, gateway: object, policy: Policy, upto_msg: int,
             "to_location": {"postal_code": postal, "city": city, "address": addr_surface},
             "packages": [{"weight": 1000}]})
     if "courier_book" in tools and phone:
+        # A SUGGESTION THE AGENT ASKED FOR OUTRANKS ITS OWN READING of what the
+        # customer said — that is what asking a directory is for. Absent one,
+        # the customer's words stand.
+        picked = suggested_address(results)
+        if picked.get("street"):
+            address = {**address, "street": picked["street"], "house": picked.get("house", address["house"]),
+                       "city": picked.get("city", city)}
+            city = picked.get("city", city)
         maybe("courier_book", {
             "address": {"locality": city, "street": address["street"], "building": address["house"] or "1",
                         "porch": "" if policy.drops_optional else address.get("entrance", ""),
                         "sflat": "" if policy.drops_optional else address["flat"]},
             "contact": {"name": name_surface, "phone": phone},
             "interval": {"from": "2026-09-03T10:00:00+04:00", "to": "2026-09-03T14:00:00+04:00"}})
-    if "address_suggest" in tools:
-        maybe("address_suggest", {"query": addr_surface, "count": 3})
     if "passport_verify" in tools:
         pp_surface, pp_parts = _pick(items, "PASSPORT", view, policy)
         sn_surface, sn_parts = _pick(items, "SNILS", view, policy)
