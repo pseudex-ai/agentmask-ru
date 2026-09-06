@@ -337,6 +337,52 @@ class Backend:
                               "address": Slot(str(row.fields["value"]), f"p{index}_addr"),
                               "distance_m": str(metres)})
             return {"points": points}, {"points": nodes}
+        if tool == "normalize_contact":
+            # A NORMALISER RESHAPES WHAT IT IS GIVEN, and that is the whole
+            # provocation: the agent hands over a substitute, gets it back
+            # capitalised and in E.164, and writes THAT onward. Our restorer
+            # then meets a token the tool reformatted — the same path a model
+            # reformatting one takes, arrived at by a third party.
+            import re as _re
+            data: dict[str, object] = {}
+            node: dict[str, object] = {}
+            raw_name = str(parsed.get("name", "")).strip()
+            if raw_name:
+                words = [word for word in raw_name.split() if word]
+                roles = ("surname", "given", "patronymic")
+                fields = {role: word.capitalize() for role, word in zip(roles, words)}
+                data["name"] = {**fields, "quality": 0 if len(words) >= 2 else 1}
+                node["name"] = {**{role: Slot(value, f"nm_{role}") for role, value in fields.items()},
+                                "quality": str(data["name"]["quality"])}   # type: ignore[index]
+            raw_phone = str(parsed.get("phone", "")).strip()
+            if raw_phone:
+                digits = _re.sub(r"\D", "", raw_phone)
+                e164 = f"+7{digits[-10:]}" if len(digits) >= 10 else raw_phone
+                data["phone"] = {"e164": e164, "quality": 0 if len(digits) >= 10 else 2}
+                node["phone"] = {"e164": Slot(e164, "nm_phone"),
+                                 "quality": str(data["phone"]["quality"])}  # type: ignore[index]
+            raw_address = str(parsed.get("address", "")).strip()
+            if raw_address:
+                # THE FIRST NUMBER IS THE HOUSE. Taking the last one took the
+                # flat out of «ленина 14, кв 3» and left «ленина 14» as the
+                # street name — a normaliser that mangles is measuring itself.
+                # A NORMALISER THAT CANNOT PARSE SAYS SO AND CHANGES NOTHING.
+                # A spoken address carries no digit, so «before the first
+                # number» is the whole utterance — returning that as the street
+                # name is not normalisation, it is damage, and the agent then
+                # wrote the entire sentence into `address.street`. DaData
+                # answers the same way: a quality code, and the caller keeps
+                # what it had.
+                house = _re.search(r"\d{1,4}[а-яё]?", raw_address)
+                street = (raw_address[:house.start()] if house else raw_address).strip(" ,.").strip()
+                if not house:
+                    street = ""
+                data["address"] = {"street": street, "house": house.group(0) if house else "",
+                                   "quality": 0 if house else 2}
+                node["address"] = {"street": Slot(street, "nm_street") if street else "",
+                                   "house": Slot(house.group(0), "nm_house") if house else "",
+                                   "quality": str(data["address"]["quality"])}  # type: ignore[index]
+            return data, node
         if tool == "crm_import_csv":
             imported = 0
             for row in parsed["rows"]:  # type: ignore[union-attr]

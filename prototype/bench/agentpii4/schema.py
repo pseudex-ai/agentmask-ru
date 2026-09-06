@@ -58,6 +58,7 @@ SCENARIO_KINDS: tuple[str, ...] = (
     "search_rank",  # top-k из справочника с уверенностью; подмена меняет список И порядок
     "prompt_rule",  # бизнес-правило в промпте, которое подмена может нарушить
     "tool_chain",   # три перехода подряд, и одно значение живёт только в ответе
+    "normalize",    # чужой сервис переписывает подмену, и агент пишет дальше ЕЁ
 )
 ARMS: tuple[str, ...] = ("C", "I", "C2")          # control, intervention, second control
 INV_LEVELS: tuple[str, ...] = ("tools", "keys", "state")

@@ -1330,10 +1330,46 @@ PICKUP = ToolSpec(
     result_pii=("points[].address",))
 
 
+
+def _normalize_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "normalize_contact"
+    out: Parsed = {}
+    for key in ("name", "phone", "address"):
+        if args.get(key) in (None, ""):
+            continue
+        value = parse_text(args[key], tool, key, 300)
+        if isinstance(value, Refusal):
+            return value
+        out[key] = value
+    if not out:
+        return Refusal(tool, "", "nothing_to_normalize", "")
+    return out
+
+
+NORMALIZE = ToolSpec(
+    name="normalize_contact",
+    source="DaData clean/name + clean/phone + clean/address (raw string in, structured out, quality code)",
+    schema=_schema(
+        "normalize_contact",
+        "Привести ФИО, телефон и адрес к стандартному виду. Принимает то, как сказал клиент, "
+        "возвращает разобранные поля и код качества.",
+        {"name": {"type": "string", "description": "ФИО одной строкой, как назвал клиент"},
+         "phone": {"type": "string", "description": "телефон в любом виде"},
+         "address": {"type": "string", "description": "адрес одной строкой"}},
+        ()),
+    # FREE TEXT GOING IN, because that is the point: the tool takes what the
+    # customer SAID. The comparator never equality-checks a `free` field; what
+    # the family measures is what the agent does with the ANSWER.
+    fields=(FieldSpec("name", "free"), FieldSpec("phone", "free"), FieldSpec("address", "free")),
+    parse=_normalize_parse, mutating=False,
+    result_pii=("name.surname", "name.given", "name.patronymic", "phone.e164",
+                "address.street", "address.house"))
+
+
 REGISTRY: dict[str, ToolSpec] = {spec.name: spec for spec in (
     DELIVERY, COURIER, SUGGEST, PAYMENT, PASSPORT, CLINIC, FIND, UPSERT, SMS, CALLBACK, CSV_IMPORT,
     NOTE, TEMPLATE, SEGMENT,
-    ORDER_STATUS, ORDER_CANCEL, ORDER_RESCHEDULE, DELIVERY_QUOTE, PICKUP)}
+    ORDER_STATUS, ORDER_CANCEL, ORDER_RESCHEDULE, DELIVERY_QUOTE, PICKUP, NORMALIZE)}
 
 
 def spec_for(tool: str, path: str) -> FieldSpec | None:

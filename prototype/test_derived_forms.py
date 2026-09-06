@@ -118,9 +118,15 @@ def main() -> int:
     others = ("новикова наталья петровна", "букин сергей иванович", "ерохина марина львовна",
               "битюков олег викторович", "заболотный руслан фёдорович", "воронина елена сергеевна")
     collided = None
-    # ~600 distinct initial pairs in the pool, one draw per conversation:
-    # 1500 draws find a collision with near certainty and take ~10 s.
-    for attempt in range(1500):
+    # A PROBABILISTIC SEARCH, AND THE BOUND WAS MEASURED WRONG. The comment
+    # said 1500 draws find a collision «with near certainty»; measured over
+    # five runs it missed one in five, and a gate that fails one run in five is
+    # not a gate — it sends the next reader after a defect that is not there.
+    # The pool of distinct initial pairs is bigger than the 600 assumed, so the
+    # bound is raised until a miss is negligible; a miss still raises rather
+    # than passing quietly, because the check below is what this half exists
+    # for.
+    for attempt in range(9000):
         other = others[attempt % len(others)]
         scope = vault.for_conversation(f"other-{attempt}")
         # a different person each time: the canonical carries the attempt so a
@@ -130,7 +136,8 @@ def main() -> int:
             collided = token
             break
     if collided is None:
-        raise RuntimeError("no colliding initials in 1500 draws")
+        raise RuntimeError("no colliding initials in 9000 draws — the pool grew or "
+                           "the minting changed; raise the bound deliberately")
     given, patronymic = _given_patronymic(first)
     got = _restore(vault.for_conversation("c1"), {"contact": {"initials": f"{given[0]}.{patronymic[0]}."}})
     failures += not _check("инициалы неоднозначны по клиенту — разговор решает", got["initials"], "А.И.")

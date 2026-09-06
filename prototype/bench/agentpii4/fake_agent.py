@@ -23,7 +23,7 @@ from bench.agentpii4 import derive, pools
 from bench.agentpii4.compare import ArmRun, ObservedCall
 from bench.agentpii4.mock import Backend
 from bench.agentpii4.parts import parts_of
-from bench.agentpii4.schema import Case, PiiItem, message_text
+from bench.agentpii4.schema import TYPES, Case, PiiItem, message_text
 from bench.agentpii4.tools import CSV_HEADER, REGISTRY, flatten
 
 
@@ -65,6 +65,7 @@ class FakeGateway:
         self._case = case
         self._rng = random.Random(f"fake:{case.id}")
         self._map: dict[str, str] = {}      # real -> fake
+        self._pieces: dict[str, str] = {}   # real PART -> fake part, same role
         self._back: dict[str, str] = {}     # fake -> real
         self._seen: dict[str, str] = {}
         self._resolve_pieces = resolve_pieces
@@ -85,11 +86,29 @@ class FakeGateway:
                 # (`_pick_value`): a dictated phone comes back as +7…, not as the
                 # words it was said in.
                 self._back[fake] = item.canonical if item.type in ("PHONE", "SNILS", "INN", "CARD", "PASSPORT", "DOB", "EMAIL") else item.value
+                # EVERY WRITTEN FORM OF THE REAL VALUE IS MASKED, not only the
+                # surface the customer used. A normaliser is asked for exactly
+                # this: it takes «восемь девятьсот шестнадцать…» and returns
+                # «+79164021187», a string that appears nowhere in the message
+                # — so the map keyed on the surface matched nothing and the rig
+                # showed the model the customer's real number.
+                for written in (item.canonical, *_digit_forms(item)):
+                    if written and written != item.value:
+                        self._pieces.setdefault(written, fake)
                 if self._resolve_pieces:
                     for role, part in parts_of(item.type, fake).items():
                         real_part = item.parts.get(role, "")
                         if part and real_part and part not in self._back:
                             self._back[part] = real_part
+                        # …AND THE SAME MAPPING FORWARDS. A tool that returns a
+                        # value FIELD BY FIELD — a normaliser splitting ФИО into
+                        # three — writes «Букин» where the map holds only «букин
+                        # сергей иванович», so nothing matched and the level-A
+                        # rig showed the model the customer's real surname. The
+                        # engine has never had this problem: it detects each
+                        # field and mints for it.
+                        if part and real_part and len(real_part) >= 4:
+                            self._pieces.setdefault(real_part, part)
             self._seen[item.id] = self._map[item.value]
         self._conversation = case.conversation_id or "fake"
 
@@ -158,8 +177,10 @@ class FakeGateway:
         # so the level-A rig showed the model a real street and the leak check
         # caught the rig rather than the engine. The engine has never had this
         # problem — it detects, it does not string-replace.
-        for real, fake in sorted(self._map.items(), key=lambda pair: -len(pair[0])):
-            text = re.sub(re.escape(real), lambda _m: fake, text, flags=re.IGNORECASE)
+        for real, fake in sorted({**self._pieces, **self._map}.items(),
+                                 key=lambda pair: -len(pair[0])):
+            text = re.sub(rf"(?<![\w\u0400-\u04ff]){re.escape(real)}(?![\w\u0400-\u04ff])",
+                          lambda _m: fake, text, flags=re.IGNORECASE)
         return text
 
     def push_system(self, text: str) -> str:
@@ -221,6 +242,15 @@ class FakeGateway:
     @property
     def faults(self) -> tuple[str, ...]:
         return ()
+
+
+def _digit_forms(item: object) -> tuple[str, ...]:
+    """The shapes a tool writes a digit identifier in: E.164, «8…», bare."""
+    digits = getattr(item, "parts", {}).get("digits", "")
+    if not digits or getattr(item, "type", "") != "PHONE":
+        return ()
+    tail = digits[-10:]
+    return (f"+7{tail}", f"8{tail}", tail)
 
 
 def parts_of_any(fake: str) -> tuple[str, ...]:
@@ -647,6 +677,27 @@ def refused_by_rule(system_text: str, house: str) -> bool:
     return bool(digits) and int(digits) > limit
 
 
+def normalized(results: tuple[tuple[str, str], ...]) -> dict[str, dict[str, str]]:
+    """What the normaliser gave back, by section.
+
+    THE ANSWER IS A RESHAPED SUBSTITUTE. The agent hands the tool what it was
+    shown, gets it back capitalised and in E.164, and writes THAT onward — so
+    the restorer meets a token a THIRD PARTY reformatted, not the model. Same
+    path, arrived at from outside, and nothing in the corpus can tell the
+    engine which of the two happened."""
+    for name, text in reversed(results):
+        if name != "normalize_contact":
+            continue
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return {key: {k: str(v) for k, v in value.items()}
+                    for key, value in payload.items() if isinstance(value, dict)}
+    return {}
+
+
 def suggested_address(results: tuple[tuple[str, str], ...]) -> dict[str, str]:
     """The suggestion the agent picked, BY CONFIDENCE, out of the ranked list.
 
@@ -715,6 +766,13 @@ def consumes(name: str) -> frozenset[str]:
     spec = REGISTRY.get(name)
     if spec is None:
         return frozenset()
+    # A PROSE FIELD CONSUMES EVERYTHING. `crm_add_note.text` and
+    # `normalize_contact.name` declare no `pii_type` — they cannot, a sentence
+    # carries whatever the customer said — so the type-by-type reading called
+    # them harmless and the agent wrote the note on the first turn and again on
+    # the second, and normalised half a contact before the address arrived.
+    if any(field_spec.kind == "free" for field_spec in spec.fields):
+        return frozenset(TYPES)
     return frozenset(one for field_spec in spec.fields
                      for one in (field_spec.pii_type, field_spec.source_type) if one)
 
@@ -736,7 +794,12 @@ def _still_dictating(case: Case, name: str, upto_msg: int) -> bool:
     record when the customer stops dictating it. A READ is not deferred — a
     lookup is exactly what an agent does with the first thing it is told."""
     spec = REGISTRY.get(name)
-    if spec is None or not spec.mutating:
+    # A TOOL THAT RESHAPES WHAT IT WAS GIVEN WAITS LIKE A WRITE. `normalize_contact`
+    # reads nothing of the customer's systems — its answer is its own argument
+    # in another form — so calling it before the customer has finished
+    # normalises half a contact and then normalises it again.
+    prose = spec is not None and any(one.kind == "free" for one in spec.fields)
+    if spec is None or not (spec.mutating or prose):
         return False
     wanted = consumes(name)
     return any(item.where.kind == "message" and item.where.msg > upto_msg
@@ -838,6 +901,28 @@ def plan_calls(case: Case, gateway: object, policy: Policy, upto_msg: int,
         # the `lookup_list` shape. The tool takes exactly one key, and the
         # surname is the one a customer gives when they do not recite a number.
         maybe("crm_find_contact", {"query": {"last_name": name["last"]}})
+    if "normalize_contact" in tools and (name_surface or phone or addr_surface):
+        args: dict[str, object] = {}
+        if name_surface:
+            args["name"] = name_surface
+        if phone_surface:
+            args["phone"] = phone_surface
+        if addr_surface:
+            args["address"] = addr_surface
+        maybe("normalize_contact", args)
+    clean = {section: fields for section, fields in normalized(results).items()
+             if fields.get("quality") == "0"}   # 0 = разобрано; иначе агент оставляет своё
+    if clean.get("name"):
+        # THE NORMALISED FORM WINS, which is why the tool was called.
+        name = {"last": clean["name"].get("surname", name["last"]),
+                "first": clean["name"].get("given", name["first"]),
+                "middle": clean["name"].get("patronymic", name["middle"])}
+        name_surface = " ".join(one for one in (name["last"], name["first"], name["middle"]) if one)
+    if clean.get("phone", {}).get("e164"):
+        phone = clean["phone"]["e164"]
+    if clean.get("address", {}).get("street"):
+        address = {**address, "street": clean["address"]["street"],
+                   "house": clean["address"].get("house", address["house"])}
     if "crm_upsert_contact" in tools:
         contact: dict[str, object] = {}
         if name["last"]:
