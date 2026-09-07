@@ -719,6 +719,21 @@ def _name_windows(text: str) -> list[tuple[int, int, str]]:
             if re.fullmatch(r"[A-Za-z\s]+", text[start:end]) is None:
                 continue
             windows.append((start, end, text[start:end]))
+    # ПРОГОН ЗАГЛАВНЫХ — ОДНО ИМЯ, И КОРОТКОЕ СЛОВО В НЁМ ТОЖЕ НАШЕ. Порог в
+    # три буквы защищает ОДИНОЧНОЕ слово, где ошибка стоит ложной замены в
+    # прозе; внутри прогона из двух-трёх слов «ЯН», «ИЯ», «ЯР» — настоящие
+    # русские имена, и без них «ОСИПОВ ЯН» восстанавливалось наполовину:
+    # «КИМ ЯН», настоящая фамилия рядом с ПОДМЕНОЙ имени. Та же правка, что и
+    # для строчного прогона на плече аргумента, и по той же причине.
+    for run in _CAPS_RUN.finditer(text):
+        words = [(m.start(), m.end()) for m in re.finditer(r"[А-ЯЁ]{2,}", run.group())]
+        for i in range(len(words)):
+            for size in (3, 2):
+                if i + size > len(words):
+                    continue
+                start = run.start() + words[i][0]
+                end = run.start() + words[i + size - 1][1]
+                windows.append((start, end, text[start:end]))
     for m in _INITIALS_PAIR.finditer(text):
         windows.append((m.start(), m.end(), m.group()))
     return windows
@@ -741,6 +756,7 @@ _LOWER_WORD = re.compile(r"(?<![А-ЯЁа-яё-])[а-яё]{5,}(?![А-ЯЁа-яё
 # короткое слово ничем не рискует — ключ строится по ВСЕМУ окну.
 _LOWER_RUN = re.compile(r"(?<![А-ЯЁа-яё-])[а-яё]{2,}(?:[ -][а-яё]{2,}){1,2}(?![А-ЯЁа-яё-])")
 _LATIN_WORD = re.compile(r"(?<![A-Za-z])(?:[A-Z][a-z]{2,}|[A-Z]{3,})(?![A-Za-z])")
+_CAPS_RUN = re.compile(r"(?<![А-ЯЁа-яё-])[А-ЯЁ]{2,}(?:[ -][А-ЯЁ]{2,}){1,2}(?![А-ЯЁа-яё-])")
 _INITIALS_PAIR = re.compile(r"(?<![А-ЯЁа-яё])([А-ЯЁ])\.\s?([А-ЯЁ])\.(?![А-ЯЁа-яё])")
 
 

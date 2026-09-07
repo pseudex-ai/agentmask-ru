@@ -231,6 +231,29 @@ def classify_field(spec: FieldSpec, ref: FieldObs, obs: FieldObs, real: PiiItem 
             from_real = _derived_ok(spec, obs.restored, dict(real.parts), now)
             if from_real:
                 return verdict("agree", "derived_from_real")
+        # СВЯЗЫВАНИЕ ПО РАВЕНСТВУ НЕ РАБОТАЕТ ДЛЯ ПРОИЗВОДНОГО, И ЭТО ДЕФЕКТ
+        # ПРИБОРА, А НЕ ШЛЮЗА. `bind_item` ищет запись, чьё ЗНАЧЕНИЕ равно
+        # написанному, а «BUKIN SERGEY» не равно ни «букин», ни «сергей» — оно
+        # из них ВЫВЕДЕНО; вдобавок у производного поля `pii_type` пуст, и
+        # `bind_item` выходит на первой строке. Поэтому `real` был None, и обе
+        # ветки ниже давали `unverifiable` или `misderived` там, где оба плеча
+        # написали корректный транслит ОДНОГО человека. Сам контроль пишет и
+        # «SERGEI», и «SERGEY» — на живом прогоне 07.09 окончание «-ей» стоит
+        # как EY 12 раз и как EI 7, — так что это шум модели, названный
+        # дефектом шлюза.
+        #
+        # ЭТО НЕ ПОСЛАБЛЕНИЕ. Проверка строже равенства: ОБА плеча должны
+        # выводиться из частей ОДНОЙ И ТОЙ ЖЕ настоящей записи, и запись должна
+        # быть единственной. Транслит чужого человека, инициалы чужого
+        # человека, возраст от чужой даты — всё это по-прежнему расхождение.
+        if real is None and (spec.source_type or spec.pii_type):
+            wanted = spec.source_type or spec.pii_type
+            shared = [item for item in others
+                      if item.type == wanted and not item.stale
+                      and _derived_ok(spec, obs.restored, dict(item.parts), now)
+                      and _derived_ok(spec, ref.restored, dict(item.parts), now)]
+            if len(shared) == 1:
+                return verdict("agree", "derived_from_real")
         unverifiable = False
         for _seen_one, parts_one in candidates:
             from_fake = _derived_ok(spec, obs.restored, parts_one, now)

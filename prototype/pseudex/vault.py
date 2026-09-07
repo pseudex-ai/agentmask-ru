@@ -1629,6 +1629,19 @@ TOKEN_RE = re.compile("|".join([
 ]))
 
 
+def _street_stem(value: str) -> str:
+    """Основа названия улицы — то, что остаётся, когда убрали тип и падеж."""
+    street = morph_places.split_roles(value).get("street", "")
+    if not street:
+        return ""
+    words = [word for word in street.split()
+             if not morph_places.is_generic_word(word)]
+    if not words:
+        return ""
+    return " ".join(morph_places.to_nominative(word).casefold().replace("ё", "е")
+                    for word in words)
+
+
 class Vault:
     """Persistent per-customer token store (external state -> class)."""
 
@@ -2755,16 +2768,32 @@ class Vault:
         """
         if not self._conversation:
             return False
-        key = morph_places.street_house_key(value)
-        if not key:
-            return False
         with self._lock:
             rows = self._conn.execute(
                 "SELECT token FROM tokens WHERE customer=? AND entity_type='LOC' "
                 "AND minted_in=?",
                 (self._customer, self._conversation),
             ).fetchall()
-        return any(morph_places.street_house_key(token) == key for (token,) in rows)
+        key = morph_places.street_house_key(value)
+        if key:
+            return any(morph_places.street_house_key(token) == key for (token,) in rows)
+        # УЛИЦА БЕЗ ДОМА — ЭТО НАША ПОДМЕНА, РАЗОБРАННАЯ ЧУЖИМ ИНСТРУМЕНТОМ.
+        # `normalize_contact` (и любой DaData-подобный нормализатор в стеке
+        # заказчика) отдаёт адрес ПО ЧАСТЯМ: «Сортавала, переулок Кедровый» в
+        # одном поле, «160» в другом. Ключ выше требует дома, поэтому у части
+        # его нет; точечная защита не срабатывает, потому что это не токен
+        # дословно, — и подмена маскируется ВТОРОЙ раз, новым фальшивым
+        # адресом, у которого нет владельца. Дальше в инструмент заказчика
+        # уезжает фейк: 198 из 328 расхождений скриптового прогона и −78pp у
+        # семьи `normalize`.
+        #
+        # ЦЕНА — ТА ЖЕ, ЧТО У КЛЮЧА ВЫШЕ, И ОГРАНИЧЕНА ТЕМ ЖЕ РАЗГОВОРОМ:
+        # настоящая улица, совпавшая с нашей фальшивой, ушла бы к модели
+        # открытой. `_unique_token` уже отказывает кандидату, равному любому
+        # `canonical` заказчика, поэтому совпасть может только улица, названная
+        # ПОЗЖЕ, и только внутри одной беседы.
+        stem = _street_stem(value)
+        return bool(stem) and any(_street_stem(token) == stem for (token,) in rows)
 
     def _linked_place(self, canonical: str, value: str,
                       shape: dict[str, object]) -> tuple[str, str] | None:
