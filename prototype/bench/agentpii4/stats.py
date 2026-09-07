@@ -87,6 +87,46 @@ def cluster_bootstrap(cases: Sequence[CaseEffect], reps: int = 4000, seed: int =
     return Interval(effect(cases), low, high, "cluster-bootstrap", len(cases))
 
 
+def tost_equivalence(cases: Sequence[CaseEffect], delta: float, reps: int = 4000,
+                     seed: int = 0, alpha: float = 0.05) -> tuple[str, float, float]:
+    """Two one-sided tests: is the effect INSIDE (-delta, +delta)?
+
+    EVERY TEST IN THIS FILE BEFORE THIS ONE ASKS THE WRONG QUESTION. McNemar
+    and the bootstrap interval answer «is there a difference», and failing to
+    find one is not evidence of equivalence — it is equally consistent with a
+    corpus too small to see. The product's promise is the OTHER claim («the
+    gateway does not affect the agent»), and no superiority test can carry it.
+
+    The equivalence form is the interval one, and it is exact rather than an
+    approximation: TOST at level `alpha` rejects both one-sided nulls exactly
+    when the 100(1-2*alpha)% interval lies inside the margin (Schuirmann 1987;
+    Westlake 1972 for the interval reading). The interval is the SAME cluster
+    bootstrap the effect already uses, so the two lines of the report cannot
+    disagree with each other about the data.
+
+    Returns (verdict, low, high) where verdict is one of:
+      "эквивалентно"   the whole interval is inside +-delta
+      "НЕ эквивалентно" the interval reaches past delta on one side or both
+      "нет данных"     nothing comparable
+    """
+    if not cases:
+        return "нет данных", 0.0, 0.0
+    interval = cluster_bootstrap(cases, reps=reps, seed=seed, alpha=2 * alpha)
+    # A PERCENTILE BOOTSTRAP OVER IDENTICAL CASES RETURNS A ZERO-WIDTH
+    # INTERVAL, and zero width certifies ANY margin — eight cases that all
+    # agreed would «prove» equivalence at 0.1pp. The estimate cannot resolve
+    # finer than one case can move it, which is 1/n, so the interval is widened
+    # to that floor before the margin is read. This is the equivalence-testing
+    # analogue of `zero_failure_floor`: a clean run is evidence bounded by its
+    # own size, never a proof.
+    floor = 1.0 / len(cases)
+    low = min(interval.low, interval.point - floor)
+    high = max(interval.high, interval.point + floor)
+    if -delta < low and high < delta:
+        return "эквивалентно", low, high
+    return "НЕ эквивалентно", low, high
+
+
 def mcnemar_exact(b: int, c: int) -> float:
     """Two-sided exact binomial on discordant pairs. Ignores clusters."""
     n = b + c
@@ -223,6 +263,23 @@ def main() -> int:
     if abs(mcnemar_exact(3, 10) - 0.0923) > 0.001:
         failures += 1
         print(f"FAIL mcnemar {mcnemar_exact(3, 10)}")
+    # TOST. A ZERO EFFECT IS NOT AUTOMATICALLY EQUIVALENT: on eight cases the
+    # interval is wider than the margin and the honest answer is «not shown».
+    tight = [CaseEffect(f"c{i}", f"k{i}", 1, 1, 1) for i in range(400)]
+    if tost_equivalence(tight, 0.03, reps=400)[0] != "эквивалентно":
+        failures += 1
+        print("FAIL tost: 400 identical cases at delta=3pp must be equivalent")
+    thin = [CaseEffect(f"c{i}", f"k{i}", 1, 1, 1) for i in range(8)]
+    if tost_equivalence(thin, 0.001, reps=400)[0] != "НЕ эквивалентно":
+        failures += 1
+        print("FAIL tost: a margin below the resolution must not be certified")
+    apart = [CaseEffect(f"c{i}", f"k{i}", 0, 1, 1) for i in range(200)]
+    if tost_equivalence(apart, 0.03, reps=400)[0] != "НЕ эквивалентно":
+        failures += 1
+        print("FAIL tost: a -100pp effect must not be equivalent at 3pp")
+    if tost_equivalence([], 0.03)[0] != "нет данных":
+        failures += 1
+        print("FAIL tost: an empty set has no verdict")
     low, high = clopper_pearson(0, 400)
     if abs(high - 0.00918) > 0.0002 or low != 0.0:     # two-sided 95%
         failures += 1

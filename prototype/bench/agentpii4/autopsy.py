@@ -169,7 +169,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("run_dir")
     parser.add_argument("--out", default="autopsy.md")
-    parser.add_argument("--level", default="state", choices=("tools", "keys", "state"))
+    parser.add_argument("--level", default="state",
+                        choices=("action", "tools", "keys", "state", "values", "verbatim"))
     args = parser.parse_args()
     run_dir = Path(args.run_dir)
     corpus, triples, excluded = _load_run(run_dir)
@@ -179,7 +180,11 @@ def main() -> int:
     for triple in triples:
         case = corpus[triple.case_id]
         ic, cc = compare_triple(case, triple)
-        ok = {"tools": ic.levels.tools, "keys": ic.levels.keys, "state": ic.levels.state}[args.level]
+        ok = {"action": ic.levels.action, "tools": ic.levels.tools, "keys": ic.levels.keys,
+              "state": ic.levels.state, "values": ic.levels.state_values,
+              "verbatim": ic.levels.state_verbatim}[args.level]
+        if args.level not in ic.levels.comparable:
+            continue   # nothing to compare is not a divergence to autopsy
         if ok:
             continue
         fields = list(ic.fields)

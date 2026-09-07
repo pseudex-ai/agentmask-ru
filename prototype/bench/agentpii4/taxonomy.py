@@ -20,7 +20,7 @@ from bench.agentpii4.schema import PiiItem
 from bench.agentpii4.tools import FieldSpec
 
 DIVERGENCE_KINDS: tuple[str, ...] = (
-    "agree", "absent", "extra", "residual", "validated_refused", "ref_refused",
+    "agree", "absent", "absent_required", "extra", "residual", "validated_refused", "ref_refused",
     "control_erred", "derived", "same_person_variant", "other_person", "stale_value",
     "container_embedded", "reformatted", "fragment", "composed", "other")
 TRANSFORM_KINDS: tuple[str, ...] = (
@@ -197,7 +197,12 @@ def classify_field(spec: FieldSpec, ref: FieldObs, obs: FieldObs, real: PiiItem 
     if not ref.present and not obs.present:
         return verdict("agree", "both_absent")
     if ref.present and not obs.present:
-        return verdict("absent")
+        # AN OPTIONAL FIELD ONE ARM OMITTED IS A COIN TOSS; A REQUIRED ONE IS
+        # NOT. `FieldSpec.required` stood on 69 specifications and was read by
+        # no scorer, so «the control filled the field the tool demands and the
+        # gateway arm did not» scored as agreement. Two kinds, because the
+        # optional half of that argument still holds.
+        return verdict("absent_required" if spec.required else "absent")
     if not ref.present and obs.present:
         return verdict("extra")
     if obs.residual and not _typed_equal(obs.parsed or obs.restored, ref.parsed or ref.restored, spec):

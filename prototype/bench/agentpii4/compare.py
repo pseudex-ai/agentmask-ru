@@ -78,6 +78,21 @@ class LevelVerdict:
     # taxonomy gives it only when the CONTROL is the arm that departed from the
     # corpus, so counting it scored the gateway down for being right.
     state_values: bool = True
+    # DID THE ARM ACT AT ALL. `state` compares the records that exist; when the
+    # gateway arm wrote NONE it compares nothing and the level says «equal».
+    # Measured on the 07.09 max run: exactly one arm was left out of a mutation
+    # the other two performed 78 times for I against 48 for C and 41 for C′ —
+    # a floor of 44.5, so about thirty of those are the gateway, not the
+    # weather. Named so it can be read instead of inferred.
+    action: bool = True
+    action_sub: str = ""
+    # THE LEVELS THIS PAIR HAD ANYTHING TO COMPARE ON. A triple where neither
+    # arm called a tool used to pass all five levels — `values_ok` is
+    # `not any(...)` over an EMPTY list — so `receipt 18/18` was printed for a
+    # family whose tool was never reached in 12 of its 18 triples. A level not
+    # in this set is `None`, never `True`, and drops out of both the numerator
+    # and the denominator.
+    comparable: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -116,6 +131,22 @@ def level_tools(ref: ArmRun, obs: ArmRun) -> tuple[bool, str]:
     if len(right) > len(left) and all(name in right for name in left):
         return False, "extra_call"
     return False, "different_tool"
+
+
+def _acts(run: ArmRun) -> frozenset[tuple[str, str]]:
+    """The MUTATIONS an arm performed, as (table, tool): the act, not its count.
+
+    The count is already a question L1 answers; what is asked here is whether
+    the arm did the thing at all."""
+    return frozenset((str(row["table"]), str(row["tool"])) for row in run.state)
+
+
+def level_action(ref: ArmRun, obs: ArmRun) -> tuple[bool, str]:
+    """Did `obs` perform every mutation `ref` performed?"""
+    missing = _acts(ref) - _acts(obs)
+    if not missing:
+        return True, ""
+    return False, ",".join(f"{table}/{tool}" for table, tool in sorted(missing))
 
 
 def _numbered(calls: tuple[ObservedCall, ...]) -> dict[tuple[str, int], ObservedCall]:
@@ -261,6 +292,7 @@ def compare_pair(case: Case, ref: ArmRun, obs: ArmRun, pair: str) -> PairVerdict
     tools_ok, tools_sub = level_tools(ref, obs)
     keys_ok, keys_sub = level_keys(ref, obs)
     state_ok, verbatim_ok, diff = level_state(ref, obs)
+    action_ok, action_sub = level_action(ref, obs)
 
     items = [item for item in case.pii]
     fields: list[FieldVerdict] = []
@@ -330,10 +362,21 @@ def compare_pair(case: Case, ref: ArmRun, obs: ArmRun, pair: str) -> PairVerdict
     # корпуса». Counting it here scored the gateway down for being right: 15 of
     # the 60 triples where the noise floor held on the 06.09 max run had no
     # other divergence at all.
+    # `absent_required` is deliberately NOT in the whitelist: the tool demanded
+    # the field, the control supplied it and this arm did not.
     values_ok = not any(one.kind not in ("agree", "absent", "extra", "control_erred")
                         for one in fields)
+    comparable: set[str] = set()
+    if ref.calls or obs.calls:
+        comparable.update(("tools", "keys"))
+    if ref.state or obs.state:
+        comparable.update(("state", "verbatim"))
+    if ref.state:
+        comparable.add("action")
+    if fields:
+        comparable.add("values")
     levels = LevelVerdict(tools_ok, tools_sub, keys_ok, keys_sub, state_ok, verbatim_ok,
-                          diff, values_ok)
+                          diff, values_ok, action_ok, action_sub, frozenset(comparable))
     return PairVerdict(pair, levels, tuple(fields), tuple(plain))
 
 
@@ -416,6 +459,24 @@ def main() -> int:
     if ic3.fields[0].kind != "validated_refused":
         failures += 1
         print("FAIL refused", ic3.fields)
+    # A TRIPLE THAT DID NOTHING MUST NOT PASS. Every level used to say True on
+    # an empty comparison — `values_ok` is `not any(...)` over an empty list —
+    # and `receipt 18/18` was printed for a family whose tool 12 of those 18
+    # triples never reached.
+    silent = ArmRun("t-0", "C", 0, (), (), "", "done", 0.01)
+    ic4, _ = compare_triple(case, Triple("t-0", 0, silent, silent, silent))
+    if ic4.levels.comparable:
+        failures += 1
+        print("FAIL vacuous triple claims a comparable level", ic4.levels.comparable)
+    # AND A REQUIRED FIELD THE ARM DID NOT FILL IS NOT AGREEMENT.
+    I_absent = ArmRun("t-0", "I", 0, (ObservedCall("notify_sms", {"text": "hi"}, {"text": "hi"},
+                                                   {}, "", "", {"text": "hi"}, 1),), state("+79164021187"),
+                      "ok", "done", 0.01, {"i1": ("+79990001122", {"digits": "9990001122"})})
+    ic5, _ = compare_triple(case, Triple("t-0", 0, C, I_absent, C2))
+    kinds = {one.kind for one in ic5.fields}
+    if "absent_required" not in kinds or ic5.levels.state_values:
+        failures += 1
+        print("FAIL absent on a required field passed the value level", kinds, ic5.levels.state_values)
     print("compare: PASS" if not failures else f"compare: FAIL ({failures})")
     return 1 if failures else 0
 

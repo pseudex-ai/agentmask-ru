@@ -21,10 +21,14 @@ def _summary(run_dir: Path) -> dict[str, object]:
     corpus, triples, excluded = _load_run(run_dir)
     scored = report.score_triples(corpus, triples)
     out: dict[str, object] = {"triples": len(scored), "excluded": len(excluded)}
-    for level in ("tools", "keys", "state"):
+    # EVERY level, not three. Iterating a subset made the run-over-run tool
+    # blind to exactly the two axes the product promises — values and
+    # verbatimness — so a change could move them either way unseen.
+    for level, _label in report.LEVELS:
         effects = report.case_effects(corpus, scored, level)
         out[level] = (stats.agreement(effects, "ic"), stats.agreement(effects, "cc"),
-                      stats.cluster_bootstrap(effects, reps=1000))
+                      stats.cluster_bootstrap(effects, reps=1000),
+                      len(report.comparable_triples(scored, level)))
     kinds: Counter[str] = Counter()
     for one in scored:
         for field in one.ic.fields:
@@ -53,9 +57,10 @@ def main() -> int:
     a, b = _summary(before), _summary(after)
     print(f"{'':18} {'до':>22} {'после':>22}")
     print(f"{'троек':18} {a['triples']:>22} {b['triples']:>22}")
-    for level, label in (("tools", "L1 инструменты"), ("keys", "L2 ключи"), ("state", "L3 состояние")):
-        (ia, ca, ba), (ib, cb, bb) = a[level], b[level]  # type: ignore[misc]
-        print(f"{label:18} {100*ia:5.1f}% / пол {100*ca:5.1f}% {100*ib:8.1f}% / пол {100*cb:5.1f}%   эффект {100*ba.point:+.1f} -> {100*bb.point:+.1f}pp")
+    for level, label in report.LEVELS:
+        (ia, ca, ba, na), (ib, cb, bb, nb) = a[level], b[level]  # type: ignore[misc]
+        print(f"{label:18} {100*ia:5.1f}% / пол {100*ca:5.1f}% (n={na}) {100*ib:6.1f}% / пол {100*cb:5.1f}% (n={nb})"
+              f"   эффект {100*ba.point:+.1f} -> {100*bb.point:+.1f}pp")
     kinds = sorted(set(a["kinds"]) | set(b["kinds"]), key=lambda k: -(a["kinds"].get(k, 0) + b["kinds"].get(k, 0)))  # type: ignore[union-attr]
     print("\nклассы полей (I−C):")
     for kind in kinds:
