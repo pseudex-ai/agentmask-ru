@@ -171,6 +171,37 @@ def render(cases: dict[str, Case], scored: Sequence[Scored], excluded: Sequence[
                  f"({_pct(seed_masked, seed_seen).strip()}). ЭТО ПОКРЫТИЕ, НЕ УТЕЧКА: запись, "
                  f"которую агент не запросил, модели не показывали. Со строкой 0 не складывается.")
 
+    # 0в — OVER-MASKING. The other half of the instrument: recall without
+    # precision is bought by one line that masks everything, and until now v4
+    # measured only recall. A negative is a value the corpus DECLARES must
+    # survive — an order number, a track, a city used as a place — and the
+    # engine covering it with a span is a false mask.
+    negatives = 0
+    false_masks: Counter[str] = Counter()
+    examples: list[str] = []
+    for one in scored:
+        case = cases[one.triple.case_id]
+        spans = one.triple.I.masked_spans
+        for negative in case.negatives:
+            negatives += 1
+            covered = any(start < negative.end and negative.start < end
+                          for start, end in spans.get(negative.msg, ()))
+            if covered:
+                false_masks[f"{negative.family}/{case.register}"] += 1
+                if len(examples) < dump:
+                    examples.append(f"{one.triple.case_id} «{negative.value[:40]}» — {negative.why}")
+    if negatives:
+        lines += ["", f"0в. ПЕРЕМАСКИРОВАНИЕ — значения, которые ОБЯЗАНЫ уцелеть, но движок их накрыл: "
+                      f"{sum(false_masks.values())} из {negatives} "
+                      f"({_pct(sum(false_masks.values()), negatives).strip()})"]
+        if false_masks:
+            lines.append("   " + " · ".join(f"{key} {count}" for key, count in false_masks.most_common()))
+            lines += [f"   {row}" for row in examples]
+    else:
+        lines += ["", "0в. ПЕРЕМАСКИРОВАНИЕ — НЕ ИЗМЕРЯЕТСЯ: в корпусе нет ни одного негатива. "
+                      "Полнота без точности покупается одной строкой «маскировать всё», так что "
+                      "числа выше описывают половину прибора."]
+
     # 1 — provocation: what the CONTROL arm did to real values
     lines += ["", "1. ПРОВОКАЦИЯ — что модель делает с НАСТОЯЩИМИ значениями (плечо C против C′)"]
     transforms: Counter[str] = Counter()

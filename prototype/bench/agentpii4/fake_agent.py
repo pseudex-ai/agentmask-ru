@@ -252,6 +252,10 @@ class FakeGateway:
     def restore_text(self, text: str) -> str:
         return self._restore(text)
 
+    def masked_spans(self) -> dict[int, tuple[tuple[int, int], ...]]:
+        """Уровень A подмен не считает по отрезкам — ось негативов там не живёт."""
+        return {}
+
     def substitutes_seen(self) -> dict[str, str]:
         return dict(self._seen)
 
@@ -1244,7 +1248,8 @@ def scripted_run(case: Case, arm: str, repeat: int, gateway: object, backend: Ba
                        for item in case.pii if item.id in seen}
     return ArmRun(case_id=case.id, arm=arm, repeat=repeat, calls=tuple(calls),
                   state=backend.snapshot(), reply=reply, termination="done", cost_usd=0.0,
-                  substitutes=substitutes)
+                  substitutes=substitutes,
+                  masked_spans=gateway.masked_spans() if arm == "I" else {})  # type: ignore[attr-defined]
 
 
 def seed_backend(case: Case) -> Backend:

@@ -87,6 +87,8 @@ def arm_record(run: ArmRun, meta: ArmMeta, case: Case) -> dict[str, object]:
         "state": list(run.state),
         "reply": run.reply,
         "substitutes": {item_id: [surface, parts] for item_id, (surface, parts) in run.substitutes.items()},
+        "masked_spans": {str(index): [[start, end] for start, end in spans]
+                         for index, spans in run.masked_spans.items()},
         "meta": {
             "model": meta.model, "turns": meta.turns, "duration_ms": meta.duration_ms,
             "session_id": meta.session_id, "subtype": meta.subtype, "is_error": meta.is_error,
@@ -122,7 +124,9 @@ def arm_from_record(record: dict[str, object]) -> ArmRun:
     return ArmRun(case_id=str(record["case_id"]), arm=str(record["arm"]), repeat=int(record["repeat"]),  # type: ignore[arg-type]
                   calls=calls, state=tuple(dict(one) for one in record["state"]),  # type: ignore[union-attr]
                   reply=str(record["reply"]), termination=str(record["termination"]),
-                  cost_usd=float(record["cost_usd"]), substitutes=substitutes)  # type: ignore[arg-type]
+                  cost_usd=float(record["cost_usd"]), substitutes=substitutes,  # type: ignore[arg-type]
+                  masked_spans={int(index): tuple((int(a), int(b)) for a, b in spans)
+                                for index, spans in dict(record.get("masked_spans") or {}).items()})
 
 
 def main() -> int:

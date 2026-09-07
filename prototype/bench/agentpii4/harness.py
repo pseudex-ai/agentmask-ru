@@ -260,7 +260,8 @@ async def run_arm(case: Case, arm: str, repeat: int, gateway: object, backend: o
     run = ArmRun(case_id=case.id, arm=arm, repeat=repeat, calls=tuple(calls),
                  state=backend.snapshot(), reply=reply,  # type: ignore[attr-defined]
                  termination=_termination(worst), cost_usd=float(result.total_cost_usd or 0.0),
-                 substitutes=substitutes)
+                 substitutes=substitutes,
+                 masked_spans=gateway.masked_spans() if arm == "I" else {})  # type: ignore[attr-defined]
     meta = ArmMeta(model=model_name, turns=turns, duration_ms=int(result.duration_ms), session_id=sid,
                    subtype=str(worst.subtype), is_error=bool(worst.is_error),
                    api_error_status=worst.api_error_status,

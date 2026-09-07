@@ -44,6 +44,11 @@ class ArmRun:
     cost_usd: float
     substitutes: dict[str, tuple[str, dict[str, str]]] = field(default_factory=dict)
     # I only: item id -> (substitute surface the model read, its split parts)
+    masked_spans: dict[int, tuple[tuple[int, int], ...]] = field(default_factory=dict)
+    # I only: message index -> the offsets the engine replaced. The negatives
+    # axis needs the spans, not the substitutes: a value that must NOT be
+    # masked has no substitute by definition, so its evidence is a span that
+    # covers it.
 
 
 @dataclass(frozen=True)
