@@ -185,6 +185,54 @@ def mask_messages(
     return masked
 
 
+# Ключи схемы, под которыми лежит ВЛОЖЕННАЯ схема, а не значение. Обход идёт по
+# ним, а не «по всем словарям подряд»: `enum` и `default` тоже словари или
+# списки, и заходить в них нельзя — это КОНТРАКТ, а не текст.
+_SCHEMA_BRANCHES: tuple[str, ...] = ("properties", "$defs", "definitions", "patternProperties")
+_SCHEMA_NODES: tuple[str, ...] = ("items", "additionalProperties", "contains", "not")
+_SCHEMA_LISTS: tuple[str, ...] = ("anyOf", "oneOf", "allOf", "prefixItems")
+# Три формы описания инструмента, которые встречаются в поле. OpenAI кладёт
+# схему под `function.parameters`, MCP — под `inputSchema`, Anthropic — под
+# `input_schema`.
+_SCHEMA_KEYS: tuple[str, ...] = ("parameters", "inputSchema", "input_schema")
+
+
+def _mask_schema(node: object, context: MaskContext) -> object:
+    """Схема JSON, у которой замаскированы все `description`, НА ЛЮБОЙ ГЛУБИНЕ.
+
+    ОБХОД БЫЛ РОВНО ДВА УРОВНЯ, и этого мало для настоящей схемы. Пример с
+    телефоном внутри `recipient.phones[].number.description` уходил провайдеру
+    сырым на КАЖДОМ вызове — вложенный объект, элемент массива, ветка `anyOf`,
+    цель `$ref` из `$defs`: ни одного из них старый обход не видел. Персональные
+    данные в описании — это то, что писал разработчик заказчика, а не модель, и
+    попадают они туда именно в примерах вложенных полей.
+
+    `enum`, `const` и `default` НЕ ТРОГАЮТСЯ и не обходятся: это множество
+    значений, которые модели РАЗРЕШЕНО писать, то есть контракт. Подменить их
+    значит изменить контракт — обоснование то же, что было у прежней версии, и
+    оно не изменилось от того, что обход стал глубже.
+    """
+    if isinstance(node, list):
+        return [_mask_schema(one, context) for one in node]
+    if not isinstance(node, dict):
+        return node
+    out = dict(node)
+    if isinstance(out.get("description"), str):
+        out["description"] = mask_one(out["description"], context)
+    if isinstance(out.get("title"), str):
+        out["title"] = mask_one(out["title"], context)
+    for key in _SCHEMA_BRANCHES:
+        if isinstance(out.get(key), dict):
+            out[key] = {name: _mask_schema(one, context) for name, one in out[key].items()}
+    for key in _SCHEMA_NODES:
+        if isinstance(out.get(key), (dict, list)):
+            out[key] = _mask_schema(out[key], context)
+    for key in _SCHEMA_LISTS:
+        if isinstance(out.get(key), list):
+            out[key] = [_mask_schema(one, context) for one in out[key]]
+    return out
+
+
 def mask_tools(
     tools: object,
     context: MaskContext,
@@ -197,9 +245,15 @@ def mask_tools(
     call. Because tokens are format-preserving the example stays a well-formed
     phone, so the model loses nothing.
 
-    Only `description` fields are touched. Names, types and `enum` values are the
-    tool CONTRACT: masking an enum would change the set of values the model is
-    allowed to emit, and masking a name would break dispatch.
+    Only `description` (and `title`) fields are touched. Names, types and `enum`
+    values are the tool CONTRACT: masking an enum would change the set of values
+    the model is allowed to emit, and masking a name would break dispatch.
+
+    ТРИ ФОРМЫ, А НЕ ОДНА. Прежняя версия требовала ключ `function` и молча
+    пропускала инструмент без него — а это ровно форма MCP (`inputSchema`) и
+    форма Anthropic (`input_schema`), у которых описание и схема лежат на
+    верхнем уровне. Инструмент такой формы уходил провайдеру НЕТРОНУТЫМ
+    целиком.
 
     `skip_template` follows the same rule as the system prompt — on the engine leg
     the schemas are the agent's own template and are left alone."""
@@ -207,29 +261,27 @@ def mask_tools(
         return tools
     masked: list[object] = []
     for tool in tools:
-        if not isinstance(tool, dict) or not isinstance(tool.get("function"), dict):
+        if not isinstance(tool, dict):
             masked.append(tool)
             continue
         new_tool = dict(tool)
-        function = dict(new_tool["function"])
-        if isinstance(function.get("description"), str):
-            function["description"] = mask_one(function["description"], context)
-        parameters = function.get("parameters")
-        if isinstance(parameters, dict) and isinstance(parameters.get("properties"), dict):
-            new_parameters = dict(parameters)
-            properties: dict[str, object] = {}
-            for name, schema in parameters["properties"].items():
-                if isinstance(schema, dict) and isinstance(schema.get("description"), str):
-                    new_schema = dict(schema)
-                    new_schema["description"] = mask_one(schema["description"], context)
-                    properties[name] = new_schema
-                else:
-                    properties[name] = schema
-            new_parameters["properties"] = properties
-            function["parameters"] = new_parameters
-        new_tool["function"] = function
+        if isinstance(new_tool.get("function"), dict):
+            new_tool["function"] = _mask_tool_body(new_tool["function"], context)
+        else:
+            new_tool = _mask_tool_body(new_tool, context)
         masked.append(new_tool)
     return masked
+
+
+def _mask_tool_body(body: dict[str, object], context: MaskContext) -> dict[str, object]:
+    """Описание инструмента и его схема, в какой бы из трёх форм они ни лежали."""
+    out = dict(body)
+    if isinstance(out.get("description"), str):
+        out["description"] = mask_one(out["description"], context)
+    for key in _SCHEMA_KEYS:
+        if isinstance(out.get(key), dict):
+            out[key] = _mask_schema(out[key], context)
+    return out
 
 
 def unmask_response(response: dict[str, object], vault: Vault) -> dict[str, object]:

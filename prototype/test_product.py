@@ -919,6 +919,56 @@ def test_name_is_read_with_its_sentence() -> None:
     print("names OK — one reading of the phrase, the sentence breaks the tie")
 
 
+def test_tool_schemas_are_masked_at_every_depth() -> None:
+    """Описание ВЛОЖЕННОГО поля — тоже текст, который писал разработчик.
+
+    ПЕРСОНАЛЬНЫЕ ДАННЫЕ В СХЕМЕ ИНСТРУМЕНТА — ЭТО ПРИМЕРЫ, и примеры пишут
+    рядом с полем, а поле бывает вложенным: `recipient.phones[].number`.
+    Обход был ровно два уровня, поэтому такой телефон уходил провайдеру сырым
+    на КАЖДОМ вызове, а инструмент в форме MCP (`inputSchema`) или Anthropic
+    (`input_schema`) проходил насквозь целиком — обе формы не несут ключа
+    `function`, по которому старая версия узнавала инструмент.
+
+    ENUM НЕ ТРОГАЕТСЯ, И ЭТО РЕШЕНИЕ, А НЕ УПУЩЕНИЕ: множество значений,
+    которые модели РАЗРЕШЕНО писать, — это контракт, и подменить его значит
+    сломать вызов. Имена инструментов и полей — тем же правилом.
+    """
+    import json
+    from pseudex.audit import AuditLog
+    from pseudex.envelope import MaskContext, mask_tools
+    from pseudex.maskcache import MaskCache
+
+    context = MaskContext(Detector(), Vault(":memory:", "acme"), AuditLog(":memory:"),
+                          MaskCache(64), "acme", "agent", "conv-1")
+    tools = [
+        {"type": "function", "function": {
+            "name": "send", "description": "например phone='+79991234567'",
+            "parameters": {"type": "object", "properties": {
+                "recipient": {"type": "object", "properties": {
+                    "phones": {"type": "array", "items": {"type": "object", "properties": {
+                        "number": {"type": "string", "description": "например +79161234567"}}}},
+                    "name": {"type": "string", "description": "например Иванов Пётр"}}},
+                "kind": {"type": "string", "enum": ["sms", "email"], "description": "канал"}}}}},
+        {"name": "mcp_lookup", "description": "найти по +79261112233",
+         "inputSchema": {"type": "object", "properties": {
+             "q": {"type": "string", "description": "например Смирнова Анна"}}}},
+        {"name": "anthropic_tool", "description": "ok",
+         "input_schema": {"type": "object", "properties": {
+             "who": {"type": "string", "description": "например Кузнецова Ольга"}}}},
+    ]
+    masked = mask_tools(tools, context, skip_template=False)
+    text = json.dumps(masked, ensure_ascii=False)
+    for leaked in ("+79991234567", "+79161234567", "Иванов Пётр",
+                   "+79261112233", "Смирнова Анна", "Кузнецова Ольга"):
+        assert leaked not in text, (leaked, text[:400])
+    assert masked[0]["function"]["parameters"]["properties"]["kind"]["enum"] == ["sms", "email"]
+    assert masked[0]["function"]["name"] == "send" and masked[1]["name"] == "mcp_lookup"
+    assert "recipient" in masked[0]["function"]["parameters"]["properties"]
+    # Плечо движка отдаёт схемы агента как есть — то же правило, что у промпта.
+    assert mask_tools(tools, context, skip_template=True) is tools
+    print("tool schemas OK — описания на любой глубине, три формы, enum и имена целы")
+
+
 def test_real_town_is_not_a_fake_city() -> None:
     """The settlement of an address is KEPT REAL in its substitute; only the
     street and the house are fake.
@@ -982,3 +1032,4 @@ if __name__ == "__main__":
     test_fresh_seed_shapes()
     test_restored_ranges_are_closed_to_later_passes()
     test_name_is_read_with_its_sentence()
+    test_tool_schemas_are_masked_at_every_depth()

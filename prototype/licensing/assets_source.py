@@ -1112,7 +1112,19 @@ KEY_TYPE: dict[str, str] = {
     "телефон": "PHONE", "тел": "PHONE", "моб": "PHONE", "мобильный": "PHONE",
     "номертелефона": "PHONE", "phone": "PHONE", "контактныйтелефон": "PHONE",
     "снилс": "SNILS", "snils": "SNILS",
+    # ЛАТИНСКИЕ КЛЮЧИ ИНН, КОТОРЫХ НЕТ В РУССКОМ СЛОВЕ. Английская схема
+    # русского CRM пишет ИНН как `tax_id`, `taxpayer_id`, `vat_number` — ключи
+    # с головой `tax`/`vat`, до которых префиксная ветка `_key_type` не
+    # достаёт, потому что стема `tax` в карте не было. `passport_series` в этом
+    # смысле УЖЕ покрыт стемом `passport`; дыра была именно здесь.
+    #
+    # `taxrate` и `taxamount` — ставка и сумма налога, не ПД, поэтому стем
+    # взят с разделителем-в-нуле: карта нормализует ключ (`_KEY_CLEAN_RE`), так
+    # что «tax_id» это «taxid», а «tax_rate» это «taxrate», и префикс «taxid»
+    # первую пару не задевает.
     "инн": "INN", "inn": "INN",
+    "taxid": "INN", "taxnumber": "INN", "taxpayerid": "INN",
+    "innumber": "INN", "иннклиента": "INN",
     "паспорт": "PASSPORT", "passport": "PASSPORT",
     # THE REQUISITE OBJECT NAMES THE DOCUMENT IN ITS OWN KEYS. Bitrix24's
     # `crm.requisite` is where a Russian CRM keeps identity documents, and it
