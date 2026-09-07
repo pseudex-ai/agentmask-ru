@@ -112,6 +112,41 @@ def load_street_vocabulary() -> list[str]:
     return sorted(names)
 
 
+def load_frequent_streets() -> list[str]:
+    """The one-word ГАР names that occur in a HUNDRED or more places.
+
+    COUNTS ARE SUMMED ACROSS CASE. The register is case-split — «Садовая» 17 324
+    and «садовая» 1 are two lines — and `load_street_vocabulary` lower-cases
+    only after the cut, which is harmless while the cut is 1 and would silently
+    judge a name on the smaller half if it were ever raised. Here the sum is the
+    number, because the question is how many places bear the name, not how the
+    register capitalised it.
+
+    Read by `address.register_spelling` and by nothing else; the reasoning and
+    the measured margins are in `assets_source.STREET_FREQUENT_MIN`.
+    """
+    path = _DATA / "gar_streets.tsv"
+    if not path.exists():
+        raise FileNotFoundError(f"street vocabulary missing: {path}")
+    counts: dict[str, int] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        count, _, name = line.partition("\t")
+        name = name.strip().lower()
+        if len(name) < 4 or " " in name or "-" in name or any(ch.isdigit() for ch in name):
+            continue
+        counts[name] = counts.get(name, 0) + int(count)
+    names = sorted(name for name, total in counts.items()
+                   if total >= assets_source.STREET_FREQUENT_MIN)
+    if len(names) < 200:
+        raise ValueError(
+            f"only {len(names)} streets reach {assets_source.STREET_FREQUENT_MIN} "
+            f"objects — the file is truncated or the threshold is impossibly high"
+        )
+    return names
+
+
 def load_street_phrases() -> list[str]:
     """The MULTI-WORD ГАР names, stored and matched as whole phrases.
 
@@ -177,6 +212,7 @@ def _bulk_payload() -> dict[str, object]:
         },
         "address": {
             "street_names": load_street_vocabulary(),
+            "street_frequent": load_frequent_streets(),
             "street_phrases": load_street_phrases(),
         },
         "attribution": [street_attribution()],

@@ -55,6 +55,19 @@ UNITS: dict[str, tuple[str, ...]] = {
     "ия": ("ia", "iya", "iia", "ija"),        # Юлия → Yulia, Наталия → Natalia
     "ья": ("ia", "ya", "ja"),                 # Наталья → Natalia, Дарья → Daria
     "кс": ("ks", "x"),                        # Максим → Maxim
+    # «ей» IS «ei», MEASURED ON THIS MODEL: Sergei 22 : Sergey 12 across the
+    # control arms of the 06.09 run. Rendered letter by letter it came out
+    # «Sergey» and the tool received a spelling the same model would not have
+    # written — «Сергей», «Андрей», «Алексей» all take «ei» in English by
+    # convention. The fold already collides the two, so this changes what we
+    # WRITE, never what we can find.
+    "ей": ("ei", "ey", "ej"),                 # Сергей → Sergei
+    # «йя» IS ONE `ya`, NOT TWO. Rendered letter by letter it comes out «yya»
+    # and nobody writes «Mayya»; the model wrote «Maya», the fold of the two
+    # differed by the orphaned «y», the vault lookup missed, and «Майя» reached
+    # the tool as the FAKE given name beside the real surname — a chimera, on
+    # three cases of the 06.09 live run.
+    "йя": ("ya", "iya", "ja"),                # Майя → Maya, Аглая → Aglaya
     "а": ("a",), "б": ("b",), "в": ("v",), "г": ("g",), "д": ("d",),
     "е": ("e", "ye", "ie", "je"), "ё": ("e", "yo", "io", "jo"),
     "ж": ("zh", "j"), "з": ("z",), "и": ("i",), "й": ("y", "i", "j"),
@@ -66,7 +79,7 @@ UNITS: dict[str, tuple[str, ...]] = {
     "ю": ("yu", "iu", "ju"), "я": ("ya", "ia", "ja"),
 }
 DEFAULT: dict[str, str] = {unit: options[0] for unit, options in UNITS.items()}
-_ENDINGS: tuple[str, ...] = ("ий", "ый", "ия", "ья", "кс")
+_ENDINGS: tuple[str, ...] = ("ий", "ый", "ия", "ья", "кс", "йя", "ей")
 
 # The four standards, kept for the callers that name one — a test that wants
 # «the ICAO spelling», the benchmark's scripted agent — and as the source the
@@ -224,9 +237,22 @@ _FOLD: tuple[tuple[str, str], ...] = (
 )
 
 
+# A `c` AFTER A VOWEL IS «к», NOT «ц». The table folds a bare `c` to the «ц»
+# marker, which is right for «Цветаева» → «Cvetaeva» and wrong for «Виктория» →
+# «Victoria»: the model's spelling folded to `vITtorA` and ours to `vIktorA`,
+# so the lookup missed and the fake given name went to the tool. Word-initial
+# and post-consonant `c` keep the «ц» reading, which is where that spelling of
+# «ц» actually occurs.
+# …UNLESS IT OPENS A DIGRAPH THE TABLE ALREADY READS. «Кузнецов» is
+# «kuzneczov» in one of the standards: there the `c` also follows a vowel, and
+# rewriting it to `k` broke the fold invariant the self-test pins.
+_C_AS_K = re.compile(r"(?<=[aeiouy])c(?![hz])")
+
+
 def fold(latin: str) -> str:
     """The canonical spelling of a Latin rendering; see `_FOLD`."""
     text = "".join(ch for ch in latin.lower() if ch.isalpha())
+    text = _C_AS_K.sub("k", text)
     for source, marker in _FOLD:
         text = text.replace(source, marker)
     return re.sub(r"I+", "I", text)
@@ -304,8 +330,11 @@ def main() -> int:
     check("learned ending ий→y carries to Юрий", render("Юрий", learned) == "yury")
     learned = align("Мещерякова", "Meshcheryakova") or {}
     check("mixed convention learned", render("Щербакова", learned) == "shcherbakova")
+    # «Сергей» was «sergey» here until the 06.09 live run counted the control
+    # arms: Sergei 22, Sergey 12. The rule did not change — DEFAULT is what the
+    # model writes — only the count behind one ending.
     check("DEFAULT is the control arm's majority, not a standard",
-          render("Сергей", {}) == "sergey" and render("Щукин", {}) == "shchukin"
+          render("Сергей", {}) == "sergei" and render("Щукин", {}) == "shchukin"
           and render("Юлия", {}) == "yulia" and render("Наталья", {}) == "natalia"
           and render("Заболотный", {}) == "zabolotny" and render("Дмитрий", {}) == "dmitriy")
     print("translit: PASS" if not failures else f"translit: FAIL ({failures})")

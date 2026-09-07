@@ -16,6 +16,7 @@ from bench.agentpii4 import taxonomy
 from bench.agentpii4.parts import parts_of
 from bench.agentpii4.schema import Case, PiiItem
 from bench.agentpii4.taxonomy import FieldObs, FieldVerdict
+from bench.agentpii4.tools import FieldSpec as _FieldSpec
 from bench.agentpii4.tools import REGISTRY, flatten, spec_for, state_spec_for
 
 
@@ -72,6 +73,10 @@ class LevelVerdict:
     # different NUMBER of writes, already counted at L1. What is left when
     # both are removed is the product's own promise: the customer's tool
     # received another value because of us.
+    #
+    # `control_erred` is removed from the other side for the same reason: the
+    # taxonomy gives it only when the CONTROL is the arm that departed from the
+    # corpus, so counting it scored the gateway down for being right.
     state_values: bool = True
 
 
@@ -113,22 +118,81 @@ def level_tools(ref: ArmRun, obs: ArmRun) -> tuple[bool, str]:
     return False, "different_tool"
 
 
-def _align(ref: ArmRun, obs: ArmRun) -> list[tuple[ObservedCall | None, ObservedCall | None]]:
-    """Calls matched by (name, occurrence index)."""
+def _numbered(calls: tuple[ObservedCall, ...]) -> dict[tuple[str, int], ObservedCall]:
     seen: dict[str, int] = {}
-    left: dict[tuple[str, int], ObservedCall] = {}
-    for call in ref.calls:
+    out: dict[tuple[str, int], ObservedCall] = {}
+    for call in calls:
         seen[call.name] = seen.get(call.name, 0)
-        left[(call.name, seen[call.name])] = call
+        out[(call.name, seen[call.name])] = call
         seen[call.name] += 1
-    seen = {}
-    right: dict[tuple[str, int], ObservedCall] = {}
-    for call in obs.calls:
-        seen[call.name] = seen.get(call.name, 0)
-        right[(call.name, seen[call.name])] = call
-        seen[call.name] += 1
-    keys = sorted(set(left) | set(right), key=lambda k: (left.get(k) or right[k]).seq)
-    return [(left.get(key), right.get(key)) for key in keys]
+    return out
+
+
+def _shape(call: ObservedCall) -> frozenset[str]:
+    """The values a call carries, folded — its identity as an ACT.
+
+    Only used to pair repeated calls of one tool when the two arms made
+    different numbers of them; the values themselves differ between the arms by
+    construction, so what is compared is the SHAPE: which argument paths carry
+    a value at all, and which of them are equal because they are not personal
+    data (an order id, a city, a weight)."""
+    out: set[str] = set()
+    for path, value in flatten(call.restored).items():
+        if isinstance(value, str) and value.strip():
+            out.add(_generic(path))
+            out.add(f"{_generic(path)}={_norm(value)}")
+    return frozenset(out)
+
+
+def _pair_repeats(left: list[ObservedCall], right: list[ObservedCall],
+                  ) -> list[tuple[ObservedCall | None, ObservedCall | None]]:
+    """Repeated calls of ONE tool, paired by what they are ABOUT.
+
+    OCCURRENCE ORDER IS NOT AN ANSWER WHEN THE COUNTS DIFFER. In `long_order`
+    the customer names a second recipient on the fifth turn, so one arm books
+    for the buyer and re-books for the recipient while the other waits and
+    books once — both correct. Pairing by index then compared the buyer's order
+    against the recipient's and called it `other_person`: SEVEN of the seven
+    wrong-person verdicts on the 06.09 max run, and every one of them an
+    artefact of this function.
+
+    Greedy by shared shape, most in common first; what is left over stays
+    unmatched and is scored as an extra or a missing call, which is what a
+    different number of calls IS. Equal counts keep the old pairing exactly, so
+    no family that was aligned before is re-aligned now."""
+    if len(left) == len(right):
+        return list(zip(left, right))
+    scored = sorted(
+        ((len(_shape(a) & _shape(b)), -abs(a.seq - b.seq), i, j)
+         for i, a in enumerate(left) for j, b in enumerate(right)),
+        reverse=True)
+    taken_left: set[int] = set()
+    taken_right: set[int] = set()
+    pairs: list[tuple[int | None, int | None]] = []
+    for common, _closeness, i, j in scored:
+        if common <= 0 or i in taken_left or j in taken_right:
+            continue
+        taken_left.add(i)
+        taken_right.add(j)
+        pairs.append((i, j))
+    pairs += [(i, None) for i in range(len(left)) if i not in taken_left]
+    pairs += [(None, j) for j in range(len(right)) if j not in taken_right]
+    pairs.sort(key=lambda pair: left[pair[0]].seq if pair[0] is not None else right[pair[1]].seq)  # type: ignore[index]
+    return [(left[i] if i is not None else None, right[j] if j is not None else None)
+            for i, j in pairs]
+
+
+def _align(ref: ArmRun, obs: ArmRun) -> list[tuple[ObservedCall | None, ObservedCall | None]]:
+    """Calls matched by (name, occurrence index) — and, when the two arms made
+    a different number of calls of one tool, by what those calls are about."""
+    left, right = _numbered(ref.calls), _numbered(obs.calls)
+    out: list[tuple[ObservedCall | None, ObservedCall | None]] = []
+    for name in sorted({key[0] for key in left} | {key[0] for key in right}):
+        mine = [call for key, call in sorted(left.items()) if key[0] == name]
+        theirs = [call for key, call in sorted(right.items()) if key[0] == name]
+        out.extend(_pair_repeats(mine, theirs))
+    out.sort(key=lambda pair: (pair[0] or pair[1]).seq)  # type: ignore[union-attr]
+    return out
 
 
 def level_keys(ref: ArmRun, obs: ArmRun) -> tuple[bool, str]:
@@ -142,6 +206,9 @@ def level_keys(ref: ArmRun, obs: ArmRun) -> tuple[bool, str]:
             extra = sorted(rk - lk)
             return False, ("key_missing:" + ",".join(missing)) if missing else ("key_extra:" + ",".join(extra))
     return True, ""
+
+
+_NO_SPEC = _FieldSpec("", "free")
 
 
 def _generic(path: str) -> str:
@@ -239,7 +306,32 @@ def compare_pair(case: Case, ref: ArmRun, obs: ArmRun, pair: str) -> PairVerdict
                                                   substitute, case.now, name, path, alternates))
     # Built here rather than above: the value level is read off the field
     # verdicts, which are only known once the loop has run.
-    values_ok = not any(one.kind not in ("agree", "absent", "extra") for one in fields)
+    # A DERIVATION OF A VALUE THE CONTROL READ WRONG IS WRONG FOR THE SAME
+    # REASON. «запишите вольнова евгения александровича» is a MAN in the
+    # accusative; the control read a woman, wrote «Вольнова Евгения
+    # Александровна» and derived `gender: F`, while the gateway restored the
+    # corpus's man and derived `M`. Three of the four fields were already
+    # `control_erred` — the fourth is derived, so it fell to `misderived` and
+    # was scored against the gateway for deriving correctly from a value the
+    # control had got wrong.
+    erred = {one.pii_type for one in fields
+             if one.kind == "control_erred" and one.pii_type}
+    fields = [
+        FieldVerdict(**{**one.__dict__, "kind": "control_erred",
+                        "why": "производное от значения, которое контроль прочитал неверно"})
+        if (one.kind == "derived" or (one.kind == "other" and one.sub == "misderived"))
+        and (spec_for(one.tool, one.path) or _NO_SPEC).source_type in erred
+        else one
+        for one in fields
+    ]
+    # `control_erred` IS NOT GATEWAY HARM, BY ITS OWN DEFINITION. The taxonomy
+    # awards it only when the CONTROL wrote a value the corpus does not have and
+    # the intervention wrote the one it does — «шлюз восстановил эталон
+    # корпуса». Counting it here scored the gateway down for being right: 15 of
+    # the 60 triples where the noise floor held on the 06.09 max run had no
+    # other divergence at all.
+    values_ok = not any(one.kind not in ("agree", "absent", "extra", "control_erred")
+                        for one in fields)
     levels = LevelVerdict(tools_ok, tools_sub, keys_ok, keys_sub, state_ok, verbatim_ok,
                           diff, values_ok)
     return PairVerdict(pair, levels, tuple(fields), tuple(plain))

@@ -555,12 +555,24 @@ def test_a_mistyped_street_reaches_the_tool_as_the_register_spells_it(
     from pseudex.address import register_spelling
     from pseudex.redact import unmask_arguments
 
+    # SEVERAL NEIGHBOURS, BROKEN BY THE REGISTER'S OWN COUNT. «садвая» reaches
+    # садовая and садвал, «полвая» reaches полевая and полная: the rule refused
+    # every such word and so fired on ONE mistyped street in six on the 06.09
+    # live run. Only one candidate may be in the frequent set, and the margins
+    # measured are 17 325 to 1, 12 087 to 1 and — at the narrowest — 1 565 to 24.
     for word, want in (("мончгорская", "мончегорская"), ("калашнкова", "калашникова"),
-                       ("грибоеодва", "грибоедова"), ("пушшкина", "пушкина")):
+                       ("грибоеодва", "грибоедова"), ("пушшкина", "пушкина"),
+                       ("садвая", "садовая"), ("полвая", "полевая"),
+                       ("неркасова", "некрасова"), ("чапева", "чапаева"),
+                       ("вишёнвая", "вишневая")):
         check(f"опечатка чинится по реестру: {word}", register_spelling(word) == want,
               f"{word} -> {register_spelling(word)!r}")
     for word in ("мончегорская", "мончегорской", "вишнёвой", "садовой", "чапаевской",
-                 "ленина", "улица", "проспект", "лениа", "ленна", "вишнвая", "шумайова"):
+                 "ленина", "улица", "проспект", "лениа", "ленна", "вишнвая", "шумайова",
+                 # …and the two the frequency tie-break must NOT touch: a real
+                 # rare street spelt correctly is in the register, so the first
+                 # signal refuses it before the count is ever consulted.
+                 "полная", "садвал"):
         # correct as written, correct but inflected, a type word, a numeral-ish
         # name, and the ambiguous ones — a word one edit from SEVERAL register
         # entries is Fellegi–Sunter's middle outcome and a gateway has no human

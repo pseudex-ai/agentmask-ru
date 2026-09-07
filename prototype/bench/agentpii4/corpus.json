@@ -2,7 +2,7 @@
  "version": 4,
  "seed": 4,
  "cases": 834,
- "digest": "bf5e7a746729814373d9c1ff86570508b775a75520cf5f0da463210b4d80d509",
+ "digest": "d9428ef0d611bcf3b2f0f22e28055a38a55b279771c790795fb8852cfe268a87",
  "corpus": [
   {
    "id": "chain-000",
@@ -200848,7 +200848,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьте пожалуйста",
+     "content": "смс отправьте мне пожалуйста на мой телефон",
      "source": null,
      "name": ""
     }
@@ -201609,7 +201609,63 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 24,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 36,
+     "end": 43,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -201676,7 +201732,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьте пожалуйста",
+     "content": "смс отправьте мне пожалуйста наа мой телефоон",
      "source": null,
      "name": ""
     }
@@ -202408,7 +202464,63 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 24,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 32,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 33,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 33,
+     "end": 36,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 36,
+     "end": 37,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 37,
+     "end": 45,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -202475,7 +202587,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номер",
+     "content": "и смс пришлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -203234,35 +203346,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 28,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 31,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -203329,7 +203455,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пршлите на эттот номер",
+     "content": "и смс пршлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -204116,35 +204242,49 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 16,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 16,
      "end": 17,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 17,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 18,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 28,
+     "start": 18,
+     "end": 20,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 20,
+     "end": 21,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 24,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 24,
+     "end": 25,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 30,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -204211,7 +204351,7 @@
     },
     {
      "role": "user",
-     "content": "и подтверждение смс",
+     "content": "и подтверждение смс мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -204973,6 +205113,62 @@
      "start": 16,
      "end": 19,
      "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 19,
+     "end": 20,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 20,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 24,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 30,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 30,
+     "end": 31,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 36,
+     "origin": "chunk:noisy_word"
     }
    ],
    "note": "семь ходов: поиск, расчёт, оформление, поздний получатель, номер заказа из ответа инструмента, перенос или отмена, смс"
@@ -205038,7 +205234,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номер",
+     "content": "и смс пришлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -205841,35 +206037,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 28,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 31,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -205936,7 +206146,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номер",
+     "content": "и смс пришлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -206723,35 +206933,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 28,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 31,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -206818,7 +207042,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите наа этот номеер",
+     "content": "и смс пришлите мнее на моой номер",
      "source": null,
      "name": ""
     }
@@ -207549,35 +207773,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 18,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 18,
      "end": 19,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 19,
-     "end": 23,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 23,
-     "end": 24,
+     "end": 20,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 24,
-     "end": 30,
+     "start": 20,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 23,
+     "end": 27,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 28,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 33,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -207644,7 +207882,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьтее пожалуйстаа",
+     "content": "смс отправьтее мнее пожалуйста наа мой телефон",
      "source": null,
      "name": ""
     }
@@ -208418,7 +208656,63 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 26,
+     "end": 19,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 19,
+     "end": 20,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 20,
+     "end": 30,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 30,
+     "end": 31,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 34,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 34,
+     "end": 35,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 35,
+     "end": 38,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 38,
+     "end": 39,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 39,
+     "end": 46,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -208485,7 +208779,7 @@
     },
     {
      "role": "user",
-     "content": "и смс прришлите на этот номер",
+     "content": "и смс прришлите мне на мой нрмер",
      "source": null,
      "name": ""
     }
@@ -209273,35 +209567,49 @@
      "msg": 7,
      "key": "",
      "start": 16,
-     "end": 18,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 18,
      "end": 19,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 19,
-     "end": 23,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 23,
-     "end": 24,
+     "end": 20,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 24,
-     "end": 29,
+     "start": 20,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 23,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 32,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -209368,7 +209676,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьте пожалуйста",
+     "content": "смс отправьте мне пожалуйста на мой телефон",
      "source": null,
      "name": ""
     }
@@ -210142,7 +210450,63 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 24,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 36,
+     "end": 43,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -210209,7 +210573,7 @@
     },
     {
      "role": "user",
-     "content": "ии подтверждение смс",
+     "content": "ии подтверждение смс мне наа мой номеер",
      "source": null,
      "name": ""
     }
@@ -210998,6 +211362,62 @@
      "start": 17,
      "end": 20,
      "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 20,
+     "end": 21,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 24,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 24,
+     "end": 25,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 32,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 33,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 33,
+     "end": 39,
+     "origin": "chunk:noisy_word"
     }
    ],
    "note": "семь ходов: поиск, расчёт, оформление, поздний получатель, номер заказа из ответа инструмента, перенос или отмена, смс"
@@ -211063,7 +211483,7 @@
     },
     {
      "role": "user",
-     "content": "и подтверждение смс",
+     "content": "и подтверждение смс мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -211825,6 +212245,62 @@
      "start": 16,
      "end": 19,
      "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 19,
+     "end": 20,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 20,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 24,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 30,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 30,
+     "end": 31,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 36,
+     "origin": "chunk:noisy_word"
     }
    ],
    "note": "семь ходов: поиск, расчёт, оформление, поздний получатель, номер заказа из ответа инструмента, перенос или отмена, смс"
@@ -211890,7 +212366,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номеер",
+     "content": "и смс пришлите мне на моой номерто",
      "source": null,
      "name": ""
     }
@@ -212692,35 +213168,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 29,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 34,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -212787,7 +213277,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьте пожалуйстаа",
+     "content": "смс отправьте мнее пожалуйстаа на мой телефон",
      "source": null,
      "name": ""
     }
@@ -213616,7 +214106,63 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 25,
+     "end": 18,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 19,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 19,
+     "end": 30,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 30,
+     "end": 31,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 33,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 33,
+     "end": 34,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 34,
+     "end": 37,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 37,
+     "end": 38,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 38,
+     "end": 45,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -213683,7 +214229,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этоот номеер",
+     "content": "и смс пришлите мне наа моой номер",
      "source": null,
      "name": ""
     }
@@ -214485,35 +215031,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 23,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 23,
-     "end": 24,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 24,
-     "end": 30,
+     "start": 19,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 23,
+     "end": 27,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 28,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 33,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -214580,7 +215140,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номер",
+     "content": "и смс пришлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -215354,35 +215914,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 28,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 31,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -215449,7 +216023,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номер",
+     "content": "и смс пришлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -216251,35 +216825,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 28,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 31,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -216346,7 +216934,7 @@
     },
     {
      "role": "user",
-     "content": "и подтверждение смс",
+     "content": "и подтверждение смс мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -217121,6 +217709,62 @@
      "start": 16,
      "end": 19,
      "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 19,
+     "end": 20,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 20,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 24,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 30,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 30,
+     "end": 31,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 36,
+     "origin": "chunk:noisy_word"
     }
    ],
    "note": "семь ходов: поиск, расчёт, оформление, поздний получатель, номер заказа из ответа инструмента, перенос или отмена, смс"
@@ -217186,7 +217830,7 @@
     },
     {
      "role": "user",
-     "content": "ии подтверждение смс",
+     "content": "ии подтверждение смс мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -217947,6 +218591,62 @@
      "start": 17,
      "end": 20,
      "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 20,
+     "end": 21,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 24,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 24,
+     "end": 25,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 27,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 28,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 37,
+     "origin": "chunk:noisy_word"
     }
    ],
    "note": "семь ходов: поиск, расчёт, оформление, поздний получатель, номер заказа из ответа инструмента, перенос или отмена, смс"
@@ -218012,7 +218712,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите наа этоот номер",
+     "content": "и смс пришлите мнее наа мой номерто",
      "source": null,
      "name": ""
     }
@@ -218829,35 +219529,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 18,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 18,
      "end": 19,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 19,
-     "end": 24,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 24,
-     "end": 25,
+     "end": 20,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 25,
-     "end": 30,
+     "start": 20,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 24,
+     "end": 27,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 28,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 35,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -218924,7 +219638,7 @@
     },
     {
      "role": "user",
-     "content": "и подтверждение смс",
+     "content": "и подтверждение смс мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -219700,6 +220414,62 @@
      "start": 16,
      "end": 19,
      "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 19,
+     "end": 20,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 20,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 24,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 30,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 30,
+     "end": 31,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 36,
+     "origin": "chunk:noisy_word"
     }
    ],
    "note": "семь ходов: поиск, расчёт, оформление, поздний получатель, номер заказа из ответа инструмента, перенос или отмена, смс"
@@ -219765,7 +220535,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлте на этот номер",
+     "content": "и смс пришлте мне на мой нмоер",
      "source": null,
      "name": ""
     }
@@ -220496,35 +221266,49 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 16,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 16,
      "end": 17,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 17,
-     "end": 21,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 21,
-     "end": 22,
+     "end": 18,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 22,
-     "end": 27,
+     "start": 18,
+     "end": 20,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 20,
+     "end": 21,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 24,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 24,
+     "end": 25,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 30,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -220591,7 +221375,7 @@
     },
     {
      "role": "user",
-     "content": "и подтверждение смс",
+     "content": "и подтверждение смс мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -221380,6 +222164,62 @@
      "start": 16,
      "end": 19,
      "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 19,
+     "end": 20,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 20,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 24,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 30,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 30,
+     "end": 31,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 36,
+     "origin": "chunk:noisy_word"
     }
    ],
    "note": "семь ходов: поиск, расчёт, оформление, поздний получатель, номер заказа из ответа инструмента, перенос или отмена, смс"
@@ -221445,7 +222285,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номерто",
+     "content": "и смс пришлите мне на моой номер",
      "source": null,
      "name": ""
     }
@@ -222233,35 +223073,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 30,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 32,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -222328,7 +223182,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите наа этот номер",
+     "content": "и смс пришлите мнее на мой номерто",
      "source": null,
      "name": ""
     }
@@ -223117,35 +223971,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 18,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 18,
      "end": 19,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 19,
-     "end": 23,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 23,
-     "end": 24,
+     "end": 20,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 24,
-     "end": 29,
+     "start": 20,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 23,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 34,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -223212,7 +224080,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номер",
+     "content": "и смс пришлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -224013,35 +224881,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 28,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 31,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -224108,7 +224990,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номер",
+     "content": "и смс пришлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -224867,35 +225749,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 28,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 31,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -224962,7 +225858,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьте пожалуйста",
+     "content": "смс отправьте мне пожалуйста на мой телефон",
      "source": null,
      "name": ""
     }
@@ -225736,7 +226632,63 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 24,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 36,
+     "end": 43,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -225803,7 +226755,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлитее на этот номеер",
+     "content": "и смс пришлитее мне на моой номер",
      "source": null,
      "name": ""
     }
@@ -226605,35 +227557,49 @@
      "msg": 7,
      "key": "",
      "start": 16,
-     "end": 18,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 18,
      "end": 19,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 19,
-     "end": 23,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 23,
-     "end": 24,
+     "end": 20,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 24,
-     "end": 30,
+     "start": 20,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 23,
+     "end": 27,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 28,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 33,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -226700,7 +227666,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номеер",
+     "content": "и смс пришлите мне на моой номерто",
      "source": null,
      "name": ""
     }
@@ -227530,35 +228496,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 29,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 34,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -227625,7 +228605,7 @@
     },
     {
      "role": "user",
-     "content": "и подтверждение смс",
+     "content": "и подтверждение смс мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -228358,6 +229338,62 @@
      "start": 16,
      "end": 19,
      "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 19,
+     "end": 20,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 20,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 24,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 30,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 30,
+     "end": 31,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 36,
+     "origin": "chunk:noisy_word"
     }
    ],
    "note": "семь ходов: поиск, расчёт, оформление, поздний получатель, номер заказа из ответа инструмента, перенос или отмена, смс"
@@ -228423,7 +229459,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлитее на этот номер",
+     "content": "и смс пришлитее мне на мой номерто",
      "source": null,
      "name": ""
     }
@@ -229225,35 +230261,49 @@
      "msg": 7,
      "key": "",
      "start": 16,
-     "end": 18,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 18,
      "end": 19,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 19,
-     "end": 23,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 23,
-     "end": 24,
+     "end": 20,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 24,
-     "end": 29,
+     "start": 20,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 23,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 34,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -229320,7 +230370,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номер",
+     "content": "и смс пришлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -230150,35 +231200,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 28,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 31,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -230245,7 +231309,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьте пожалуйста",
+     "content": "смс отправьте мне пожалуйста на мой телефоон",
      "source": null,
      "name": ""
     }
@@ -230990,7 +232054,63 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 24,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 36,
+     "end": 44,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -231057,7 +232177,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьте пожалуйста",
+     "content": "смс отправьте мне пожалуйста на мой телефон",
      "source": null,
      "name": ""
     }
@@ -231845,7 +232965,63 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 24,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 36,
+     "end": 43,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -231912,7 +233088,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номер",
+     "content": "и смс пришлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -232700,35 +233876,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 28,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 31,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -232795,7 +233985,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этт номер",
+     "content": "и смс пришлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -233541,20 +234731,20 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
+     "end": 18,
      "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 17,
-     "end": 18,
+     "start": 18,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 18,
+     "start": 19,
      "end": 21,
      "origin": "chunk:noisy_word"
     },
@@ -233569,7 +234759,21 @@
      "msg": 7,
      "key": "",
      "start": 22,
-     "end": 27,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 31,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -233636,7 +234840,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьте пожалуйста",
+     "content": "смс отправьте мне пожалуйста на мой телефон",
      "source": null,
      "name": ""
     }
@@ -234367,7 +235571,63 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 24,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 36,
+     "end": 43,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -234434,7 +235694,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номер",
+     "content": "и смс пришлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -235207,35 +236467,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 28,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 31,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -235302,7 +236576,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этоот номерто",
+     "content": "и смс пришлите мне наа моой номер",
      "source": null,
      "name": ""
     }
@@ -236105,35 +237379,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 23,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 23,
-     "end": 24,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 24,
-     "end": 31,
+     "start": 19,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 23,
+     "end": 27,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 28,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 33,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -236200,7 +237488,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьтее пожалуйста",
+     "content": "смс отправьтее мне пожалуйста на мой телефон",
      "source": null,
      "name": ""
     }
@@ -236988,7 +238276,63 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 25,
+     "end": 18,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 19,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 19,
+     "end": 29,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 30,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 30,
+     "end": 32,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 33,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 33,
+     "end": 36,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 36,
+     "end": 37,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 37,
+     "end": 44,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -237055,7 +238399,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этоот номер",
+     "content": "и смс пришлите мне наа мой номер",
      "source": null,
      "name": ""
     }
@@ -237842,35 +239186,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 23,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 23,
-     "end": 24,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 24,
-     "end": 29,
+     "start": 19,
+     "end": 22,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 23,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 23,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 32,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -237937,7 +239295,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номер",
+     "content": "и смс пришлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -238724,35 +240082,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 28,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 31,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -238819,7 +240191,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьте пожалуйста",
+     "content": "смс отправьте мне пожалуйста на мой телефон",
      "source": null,
      "name": ""
     }
@@ -239565,7 +240937,63 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 24,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 36,
+     "end": 43,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -239632,7 +241060,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьте пожалуйста",
+     "content": "смс отправьте мне пожалуйста на мой телефон",
      "source": null,
      "name": ""
     }
@@ -240421,7 +241849,63 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 24,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 36,
+     "end": 43,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -240488,7 +241972,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номер",
+     "content": "и смс пришлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -241247,35 +242731,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 28,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 31,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -241342,7 +242840,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьте пожалуйста",
+     "content": "смс отправьте мне пожалуйста на мой телефон",
      "source": null,
      "name": ""
     }
@@ -242087,7 +243585,63 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 24,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 36,
+     "end": 43,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -242154,7 +243708,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьте пожалуйста",
+     "content": "смс отправьте мне пожалуйста на мой телефон",
      "source": null,
      "name": ""
     }
@@ -242928,7 +244482,63 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 24,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 36,
+     "end": 43,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -242995,7 +244605,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьте пожалуйста",
+     "content": "смс отправьте мне пожалуйста на мой телефон",
      "source": null,
      "name": ""
     }
@@ -243769,7 +245379,63 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 24,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 36,
+     "end": 43,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -243836,7 +245502,7 @@
     },
     {
      "role": "user",
-     "content": "и подтверждение смс",
+     "content": "и подтверждение смс мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -244654,6 +246320,62 @@
      "start": 16,
      "end": 19,
      "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 19,
+     "end": 20,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 20,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 24,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 30,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 30,
+     "end": 31,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 36,
+     "origin": "chunk:noisy_word"
     }
    ],
    "note": "семь ходов: поиск, расчёт, оформление, поздний получатель, номер заказа из ответа инструмента, перенос или отмена, смс"
@@ -244719,7 +246441,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номер",
+     "content": "и смс пришлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -245520,35 +247242,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 28,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 31,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -245615,7 +247351,7 @@
     },
     {
      "role": "user",
-     "content": "и подтверждение смс",
+     "content": "и подтверждение смс мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -246405,6 +248141,62 @@
      "start": 16,
      "end": 19,
      "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 19,
+     "end": 20,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 20,
+     "end": 23,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 23,
+     "end": 24,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 24,
+     "end": 26,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 27,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 27,
+     "end": 30,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 30,
+     "end": 31,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 36,
+     "origin": "chunk:noisy_word"
     }
    ],
    "note": "семь ходов: поиск, расчёт, оформление, поздний получатель, номер заказа из ответа инструмента, перенос или отмена, смс"
@@ -246470,7 +248262,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьте пожалуйста",
+     "content": "смс отправьте мне пожалуйста на мой телефон",
      "source": null,
      "name": ""
     }
@@ -247300,7 +249092,63 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 24,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 36,
+     "end": 43,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -247367,7 +249215,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номер",
+     "content": "и смс пришлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -248154,35 +250002,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 28,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 31,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -248249,7 +250111,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьте пожалуйста",
+     "content": "смс отправьте мне пожалуйста на мой телефон",
      "source": null,
      "name": ""
     }
@@ -248995,7 +250857,63 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 24,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 36,
+     "end": 43,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -249062,7 +250980,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьте пожалуйста",
+     "content": "смс отправьте мне пожалуйста на мой телефон",
      "source": null,
      "name": ""
     }
@@ -249850,7 +251768,63 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 24,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 36,
+     "end": 43,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -249917,7 +251891,7 @@
     },
     {
      "role": "user",
-     "content": "смс отправьте пожалуйста",
+     "content": "смс отправьте мне пожалуйста на мой телефон",
      "source": null,
      "name": ""
     }
@@ -250677,7 +252651,63 @@
      "msg": 7,
      "key": "",
      "start": 14,
-     "end": 24,
+     "end": 17,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 17,
+     "end": 18,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 18,
+     "end": 28,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 28,
+     "end": 29,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 29,
+     "end": 31,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 31,
+     "end": 32,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 32,
+     "end": 35,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 35,
+     "end": 36,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 36,
+     "end": 43,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -250744,7 +252774,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номер",
+     "content": "и смс пришлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -251531,35 +253561,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 28,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 31,
      "origin": "chunk:noisy_word"
     }
    ],
@@ -251626,7 +253670,7 @@
     },
     {
      "role": "user",
-     "content": "и смс пришлите на этот номер",
+     "content": "и смс пришлите мне на мой номер",
      "source": null,
      "name": ""
     }
@@ -252469,35 +254513,49 @@
      "msg": 7,
      "key": "",
      "start": 15,
-     "end": 17,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 17,
      "end": 18,
-     "origin": "literal"
+     "origin": "chunk:noisy_word"
     },
     {
      "msg": 7,
      "key": "",
      "start": 18,
-     "end": 22,
-     "origin": "chunk:noisy_word"
-    },
-    {
-     "msg": 7,
-     "key": "",
-     "start": 22,
-     "end": 23,
+     "end": 19,
      "origin": "literal"
     },
     {
      "msg": 7,
      "key": "",
-     "start": 23,
-     "end": 28,
+     "start": 19,
+     "end": 21,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 21,
+     "end": 22,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 22,
+     "end": 25,
+     "origin": "chunk:noisy_word"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 25,
+     "end": 26,
+     "origin": "literal"
+    },
+    {
+     "msg": 7,
+     "key": "",
+     "start": 26,
+     "end": 31,
      "origin": "chunk:noisy_word"
     }
    ],

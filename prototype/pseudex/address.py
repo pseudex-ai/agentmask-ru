@@ -932,9 +932,18 @@ def register_spelling(word: str) -> str:
         for candidate in index.candidates(key):
             if candidate != low and within_one_typo(low, candidate):
                 found.add(candidate)
-                if len(found) > 1:
-                    return ""
-    return next(iter(found)) if found else ""
+    if len(found) == 1:
+        return next(iter(found))
+    # SEVERAL NEIGHBOURS, AND THE REGISTER SAYS WHICH ONE PEOPLE LIVE ON.
+    # «садвая» reaches садовая and садвал, «полвая» reaches полевая and полная,
+    # «неркасова» reaches некрасова and черкасова — refusing all of them was
+    # refusing nearly every real typo: the repair fired on one of six mistyped
+    # streets on the 06.09 live run. The margins are not close (17 325 to 1,
+    # 12 087 to 1, and 1 565 to 24 at the narrowest), and only ONE candidate
+    # may be in the frequent set — two common neighbours is a genuine ambiguity
+    # and is still refused, as «лениа» was.
+    frequent = found & ASSETS.get().address.street_frequent
+    return next(iter(frequent)) if len(frequent) == 1 else ""
 
 
 def repair_street(value: str) -> str:

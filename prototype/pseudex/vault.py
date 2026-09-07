@@ -1831,6 +1831,20 @@ class Vault:
                     and attempt < _TOKEN_MINT_ATTEMPTS // 2
                     and self._shares_a_house_in_conversation(token)):
                 continue
+            # …AND TWO DIFFERENT REAL STREETS MAY NOT SHARE A FAKE ONE. The
+            # inverse rule — one real street, one fake street — is deliberate
+            # (`_same_street_in_conversation`) and is what `head` carries; this
+            # is the direction nothing guarded. «заречная 57 … энгельса 106»
+            # drew «Вишнёвая» twice about one draw in six, and then a bare
+            # street written by the agent has two owners, is refused, and OUR
+            # street reaches the customer's system. Skipped when `head` asked
+            # for the reuse, and only for the first half of the attempts, so a
+            # dialogue naming more streets than the pool holds is still served.
+            if (entity_type == "LOC" and self._conversation
+                    and attempt < _TOKEN_MINT_ATTEMPTS // 2
+                    and not (head and _street_stem(token) == _street_stem(head))
+                    and self._shares_a_street_in_conversation(token)):
+                continue
             return token
         raise RuntimeError(
             f"exhausted the {entity_type} token pool for customer "
@@ -1863,6 +1877,18 @@ class Vault:
             (self._customer, self._conversation),
         ).fetchall()
         return any(morph_places.split_roles(other).get("house", "") == house for (other,) in rows)
+
+    def _shares_a_street_in_conversation(self, token: str) -> bool:
+        """Whether a LOC token of this conversation already carries the
+        candidate's street. Called under the lock."""
+        stem = _street_stem(token)
+        if not stem:
+            return False
+        rows = self._conn.execute(
+            "SELECT token FROM tokens WHERE customer=? AND entity_type='LOC' AND minted_in=?",
+            (self._customer, self._conversation),
+        ).fetchall()
+        return any(_street_stem(other) == stem for (other,) in rows)
 
     def _is_free_token(self, token: str, entity_type: str, original: str = "",
                        canonical: str = "") -> bool:

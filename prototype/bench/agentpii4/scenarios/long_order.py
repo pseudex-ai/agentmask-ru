@@ -132,7 +132,13 @@ def _one(ctx: c.Ctx) -> Case:
     builder.user(sixth, {})
 
     seventh = c.MessageDraft(ctx)
-    seventh.say(ctx.rng.choice(("и смс пришлите на этот номер", "смс отправьте пожалуйста",
-                                "и подтверждение смс")))
+    # WHOSE NUMBER, SAID OUT LOUD. «смс пришлите на этот номер» after two
+    # phones have been named is ambiguous, and the arms read it differently —
+    # one texted the buyer, the other the recipient, and the comparator called
+    # a correct restoration `other_person` three times on the 06.09 max run. A
+    # case that asks the model to guess measures the guess.
+    seventh.say(ctx.rng.choice(("и смс пришлите мне на мой номер",
+                                "смс отправьте мне пожалуйста на мой телефон",
+                                "и подтверждение смс мне на мой номер")))
     builder.user(seventh, {})
     return builder.build()

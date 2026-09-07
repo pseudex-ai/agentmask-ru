@@ -213,6 +213,31 @@ CORE_PART: tuple[str, ...] = (
 # where the tail does cost precision, this is the one line that answers it.
 STREET_MIN_OBJECTS = 1
 
+# --- the frequent tail of the register, for ONE decision -------------------
+#
+# A SECOND, TINY SET, and it exists to break exactly one tie: when a mistyped
+# street reaches SEVERAL register entries one edit away, which one did the
+# customer mean. `register_spelling` used to refuse every such word, and that
+# is nearly all of them — «садвая» reaches садовая and садвал, «полвая» reaches
+# полевая and полная, «неркасова» reaches некрасова and черкасова. Measured on
+# the 06.09 live run: the repair fired on 1 of 6 mistyped streets and the other
+# five went to the customer's CRM misspelt.
+#
+# THE MARGIN IS NOT CLOSE, WHICH IS WHY THE TIE-BREAK IS SAFE. садовая has
+# 17 325 objects against садвал's 1; полевая 12 087 against полная's 1;
+# некрасова 1 565 against черкасова's 24 — the narrowest margin measured, and
+# still 65 to one. The register's 99th percentile is 58 objects, so a name
+# above a hundred is in a different population from the tail, not merely a
+# bigger number in the same one.
+#
+# THE RESIDUAL RISK, NAMED: a typo of a genuinely rare street that lands one
+# edit from a common one is repaired to the common one, and a courier goes
+# somewhere the customer did not name. It needs the mistyped word to be absent
+# from the register in ALL THREE forms `_gar_reaches` asks — so a correctly
+# spelt rare street is never touched — and it is the same bet the agent makes
+# on its own when there is no gateway in front of it.
+STREET_FREQUENT_MIN = 100
+
 # --- street types, as STEMS, for the typo-tolerant arm --------------------
 #
 # The regex arms below carry their own copies of these words, and that is
