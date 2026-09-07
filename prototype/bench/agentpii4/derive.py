@@ -166,11 +166,89 @@ def _apply(table: dict[str, str], word: str) -> str:
     return "".join(table.get(letter, letter) for letter in word.lower())
 
 
+def translit_icao(word: str) -> str:
+    """The ICAO spelling («Kuznetsov», not the ГОСТ «Kuzneczov»)."""
+    return "".join(ch for ch in _apply(_ICAO, word) if ch.isalpha())
+
+
+# WHAT A MODEL ACTUALLY WRITES, measured — not a standard. Over 1 812 Latin
+# words the CONTROL arm wrote for real names on three live runs (03.09, 04.09,
+# 05.09; claude-sonnet-4-6), letter by letter: й→y 112:24, ю→yu 87:0, я→ya
+# 37:26, х→kh 93:0, ц→ts 104:0, ё→e 72:24, ь dropped 149:0; endings «-ий»→iy
+# 77:51, «-ый»→y 24:2, «-ия»→ia 36:0, «ья»→ia 22:2. The scripted agent wrote
+# ICAO before, and the smoke test then scored the engine against a convention
+# no model uses: 44 divergences on 474 cases, all of them «SERGEI» against
+# «SERGEY». The instrument's habit must be a MODEL's habit, and this is the
+# measured one; it is kept here, as the engine's own table is kept there, so
+# neither copies the other.
+_COMMON_ENDINGS: tuple[tuple[str, str], ...] = (("ий", "iy"), ("ый", "y"), ("ия", "ia"), ("ья", "ia"))
+_COMMON_LETTERS: dict[str, str] = dict(_COMMON, **{"щ": "shch"})
+
+
+def translit_common(word: str) -> str:
+    """The everyday spelling a model writes unprompted; see the note above."""
+    low = word.lower()
+    out: list[str] = []
+    i = 0
+    while i < len(low):
+        for ending, latin in _COMMON_ENDINGS:
+            if low.startswith(ending, i):
+                out.append(latin)
+                i += len(ending)
+                break
+        else:
+            out.append(_COMMON_LETTERS.get(low[i], low[i]))
+            i += 1
+    return "".join(ch for ch in "".join(out) if ch.isalpha())
+
+
+# ЧЕТЫРЁХ СТАНДАРТОВ МАЛО, И ЭТО ИЗМЕРЕНО НА СОБСТВЕННОМ КОНТРОЛЕ. Прибор
+# принимал только побуквенные таблицы, а модель пишет СЛОГАМИ: «Dmitry», а не
+# «Dmitriy»; «Yulia», а не «Yuliya»; «Maxim», а не «Maksim»; «Vasiliev», а не
+# «Vasilev». Все четыре написания взяты не из головы — так писало КОНТРОЛЬНОЕ
+# плечо живого прогона 07.09, то есть та же модель, которую прибор судит.
+# Отвергая их, прибор объявлял дефектом шлюза разницу между двумя правильными
+# написаниями одного имени, причём обе стороны писал сам контроль: «Kuznetsov
+# Dmitry» и «Kuznetsov Dmitriy» встречаются в одном прогоне.
+#
+# ЭТО НЕ ПОСЛАБЛЕНИЕ. Множество расширяется на СЛОГИ, а не на расстояние: имя
+# другого человека по-прежнему не совпадёт ни с одним вариантом, и `derived`
+# от чужой записи остаётся расхождением.
+_ALT_ENDINGS: tuple[tuple[tuple[str, str], ...], ...] = (
+    _COMMON_ENDINGS,
+    (("ий", "y"), ("ый", "y"), ("ия", "ya"), ("ья", "ya")),
+    (("ий", "ii"), ("ый", "yi"), ("ия", "iya"), ("ья", "ia")),
+)
+# Слоги, которые ни одна из четырёх таблиц не даёт, а модель пишет: «кс» одной
+# буквой и «ье» перед гласной.
+_ALT_UNITS: tuple[tuple[str, str], ...] = (("кс", "x"), ("ье", "ie"))
+
+
+def _syllabic(word: str, endings: tuple[tuple[str, str], ...],
+              units: tuple[tuple[str, str], ...]) -> str:
+    low = word.lower()
+    out: list[str] = []
+    i = 0
+    while i < len(low):
+        for source, latin in (*endings, *units):
+            if low.startswith(source, i):
+                out.append(latin)
+                i += len(source)
+                break
+        else:
+            out.append(_COMMON_LETTERS.get(low[i], low[i]))
+            i += 1
+    return "".join(ch for ch in "".join(out) if ch.isalpha())
+
+
 def translit_variants(word: str) -> Accepted:
     """Every accepted Latin spelling of one Cyrillic word, lowercased."""
     if not word:
         return frozenset()
     out = {_apply(table, word) for table in (_ICAO, _GOST_B, _MVD_2010, _COMMON)}
+    for endings in _ALT_ENDINGS:
+        out.add(_syllabic(word, endings, ()))
+        out.add(_syllabic(word, endings, _ALT_UNITS))
     # Case-insensitive and apostrophe-free: cardholder fields are uppercase and
     # the ГОСТ soft-sign marks are dropped on every real card.
     return frozenset("".join(ch for ch in one if ch.isalpha()) for one in out)
@@ -220,8 +298,24 @@ def main() -> int:
         (translit_matches("PAVLOVA TAMARA", ("павлова", "тамара")), True),
         (translit_matches("Tamara Pavlova", ("павлова", "тамара")), True),
         (translit_matches("IUliia Fedorova", ("фёдорова", "юлия")), True),
-        (translit_matches("Yulia Fyodorova", ("фёдорова", "юлия")), False),
+        # СМЕШАННАЯ КОНВЕНЦИЯ ПРИНИМАЕТСЯ, и это не послабление. Здесь стояло
+        # False — «Yulia» из обиходной таблицы рядом с «Fyodorova» из ГОСТ, —
+        # но модель транслитерирует ПО СЛОГАМ, а не по стандарту: это
+        # измеренное свойство, на котором стоит `translit.align` в самом
+        # движке. Требовать одну таблицу на всё имя значило объявлять дефектом
+        # шлюза то, что контроль пишет сам: на прогоне 07.09 он написал и
+        # «Kuznetsov Dmitry», и «Kuznetsov Dmitriy».
+        (translit_matches("Yulia Fyodorova", ("фёдорова", "юлия")), True),
+        # А ЧУЖОЕ ИМЯ ПО-ПРЕЖНЕМУ НЕ ПРИНИМАЕТСЯ — расширение по слогам, а не
+        # по расстоянию.
+        (translit_matches("Ivanov Petr", ("кузнецов", "дмитрий")), False),
+        (translit_matches("Kuznetsov Dmitry", ("кузнецов", "дмитрий")), True),
+        (translit_matches("Lebedev Maxim", ("лебедев", "максим")), True),
+        (translit_matches("IVAN VASILIEV", ("васильев", "иван")), True),
         (translit_matches("BUKIN", ("букин", "сергей")), False),
+        (translit_common("Сергей") == "sergey" and translit_common("Заболотный") == "zabolotny"
+         and translit_common("Юлия") == "yulia" and translit_common("Наталья") == "natalia"
+         and translit_common("Щукин") == "shchukin" and translit_common("Ерохин") == "erokhin", True),
         (timezone("самара"), frozenset({"Europe/Samara"})),
         (e164("8 916 402 11 87"), frozenset({"+79164021187"})),
     ]

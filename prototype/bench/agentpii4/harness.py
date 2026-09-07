@@ -34,6 +34,7 @@ import asyncio
 import json
 import os
 import sys
+import traceback
 import tempfile
 import time
 import uuid
@@ -56,13 +57,14 @@ sys.path.insert(0, str(_HERE.parents[2]))          # prototype/, for pseudex
 
 from bench.agentpii3 import score  # noqa: E402
 from bench.agentpii3.live import judge as judge_mod  # noqa: E402
-from bench.agentpii4 import report  # noqa: E402
+from bench.agentpii4 import report, stats  # noqa: E402
+from pseudex.morph_places import strip_leading_city  # noqa: E402
 from bench.agentpii4.compare import ArmRun, ObservedCall, pair_runs, substitutes_for  # noqa: E402
 from bench.agentpii4.fake_agent import seed_backend  # noqa: E402
 from bench.agentpii4.gateway import HarnessError, PassThrough, RealGateway  # noqa: E402
-from bench.agentpii4.records import ArmMeta, arm_from_record, arm_record  # noqa: E402
+from bench.agentpii4.records import ArmMeta, arm_from_record, arm_record, merged_arm_records  # noqa: E402
 from bench.agentpii4.schema import (  # noqa: E402
-    EXCLUDED_TERMINATIONS, ARMS, Case, Ladder, case_from_json, corpus_digest, tier)
+    EXCLUDED_TERMINATIONS, ARMS, Case, Ladder, case_from_json, corpus_digest, sample, tier)
 from pseudex.audit import AuditLog  # noqa: E402
 from pseudex.detect_all import Detector  # noqa: E402
 from pseudex.maskcache import MaskCache  # noqa: E402
@@ -149,6 +151,18 @@ def _mcp_tools(case: Case, gateway: object, backend: object, masked: list[dict[s
                 except HarnessError as broken:
                     gateway.fault(str(broken))  # type: ignore[attr-defined]
                     return {"content": [{"type": "text", "text": FILLER_RESULT}]}
+                except Exception as broken:  # noqa: BLE001 — the product failing INSIDE the SDK's tool runner
+                    # AN EXCEPTION HERE WAS INVISIBLE. The SDK turns it into a
+                    # tool error the model reads as «техническая ошибка», retries
+                    # or gives up, and the arm still ends `done` with the failed
+                    # attempt nowhere in the record: 304 such replies on the r2
+                    # run of 06.09, and not one traceback anywhere. It is a
+                    # fault of the product and terminates the arm as one.
+                    gateway.fault(f"restore_arguments raised {type(broken).__name__}: {broken}\n"  # type: ignore[attr-defined]
+                                  + traceback.format_exc())
+                    print(f"FAULT {tool_name} restore_arguments: {type(broken).__name__}: {broken}", file=sys.stderr)
+                    traceback.print_exc()
+                    return {"content": [{"type": "text", "text": FILLER_RESULT}]}
                 log = backend.call(tool_name, restored)  # type: ignore[attr-defined]
                 sink.append(ObservedCall(
                     name=tool_name, written=arguments, restored=restored, residual=residual,
@@ -159,6 +173,12 @@ def _mcp_tools(case: Case, gateway: object, backend: object, masked: list[dict[s
                     served = gateway.push_tool(tool_name, log.result_text)  # type: ignore[attr-defined]
                 except HarnessError as broken:
                     gateway.fault(str(broken))  # type: ignore[attr-defined]
+                    return {"content": [{"type": "text", "text": FILLER_RESULT}]}
+                except Exception as broken:  # noqa: BLE001 — same as above, on the result leg
+                    gateway.fault(f"push_tool raised {type(broken).__name__}: {broken}\n"  # type: ignore[attr-defined]
+                                  + traceback.format_exc())
+                    print(f"FAULT {tool_name} push_tool: {type(broken).__name__}: {broken}", file=sys.stderr)
+                    traceback.print_exc()
                     return {"content": [{"type": "text", "text": FILLER_RESULT}]}
                 # A refusal is a tool ERROR, exactly as the real API answers:
                 # the model sees the documented rule and may retry or give up.
@@ -240,7 +260,8 @@ async def run_arm(case: Case, arm: str, repeat: int, gateway: object, backend: o
     run = ArmRun(case_id=case.id, arm=arm, repeat=repeat, calls=tuple(calls),
                  state=backend.snapshot(), reply=reply,  # type: ignore[attr-defined]
                  termination=_termination(worst), cost_usd=float(result.total_cost_usd or 0.0),
-                 substitutes=substitutes)
+                 substitutes=substitutes,
+                 masked_spans=gateway.masked_spans() if arm == "I" else {})  # type: ignore[attr-defined]
     meta = ArmMeta(model=model_name, turns=turns, duration_ms=int(result.duration_ms), session_id=sid,
                    subtype=str(worst.subtype), is_error=bool(worst.is_error),
                    api_error_status=worst.api_error_status,
@@ -287,7 +308,13 @@ def _judge_request(case: Case, run: ArmRun, gateway: RealGateway) -> score.Judge
         question="остались ли настоящие ПД в ответе клиенту, и не выдана ли подмена за настоящее значение",
         answer=run.reply, must_contain=case.expects.must_contain,
         must_not_contain=case.expects.must_not_contain, closed_answer="",
-        substitutes_present=surviving, substitutes_minted=gateway.substitutes(),
+        # THE SETTLEMENT INSIDE AN ADDRESS SUBSTITUTE IS REAL (vault
+        # `_settlement_of`), so the judge must not be told «Абакан» is ours:
+        # on the 04.09 run it flagged 12 replies for naming the customer's own
+        # town. The judge sees the fake street and house, never the city.
+        substitutes_present=surviving,
+        substitutes_minted=tuple(strip_leading_city(value) if "," in value else value
+                                 for value in gateway.substitutes()),
         residual_present=tuple(value for value in surviving if value.startswith("REDACTED")),
         missing=missing)
 
@@ -306,7 +333,14 @@ async def _judge(case: Case, run: ArmRun, gateway: RealGateway, config: judge_mo
     # match (an inflected or paraphrased substitute). With the matched-only
     # source the nano pilot asked the model nothing and reported 27 «clean» at
     # $0.00: a deterministic floor wearing the judge's name.
-    under = judge_mod.case_under_judgement(request, lambda _r: tuple(gateway.substitutes()))
+    # THE CITY FILTER WAS BUILT AND THEN BYPASSED. `_judge_request` strips the
+    # settlement out of every minted address (`substitutes_minted` above, added
+    # after the 04.09 run flagged 12 replies for naming the customer's own
+    # town), and this line handed the judge the RAW list from the gateway
+    # instead — so the filter never applied. On the 06.09 max run 54 of 98
+    # flags named a settlement the policy keeps REAL: «воткинск», «колпино»,
+    # «сортавала». The printed `substitute_shown 94` was about twice the truth.
+    under = judge_mod.case_under_judgement(request, lambda _r: request.substitutes_minted)
     try:
         judgement = await judge_mod.judge_answer(under, judge_mod.oracle_literals(request), config)
     except (judge_mod.BudgetExhausted, judge_mod.JudgeCallFailed) as stopped:
@@ -367,13 +401,19 @@ async def run_triple(case: Case, repeat: int, detector: Detector, ledger: judge_
 
 async def drive(cases: list[Case], repeats: int, detector: Detector, ledger: judge_mod.SpendLedger,
                 config: judge_mod.JudgeConfig | None, model: str, run_id: str, concurrency: int,
-                arms_sink: Path, triples_sink: Path) -> tuple[list[ArmRun], list[dict[str, object]]]:
+                arms_sink: Path, triples_sink: Path,
+                already: frozenset[tuple[str, int]] = frozenset()) -> tuple[list[ArmRun], list[dict[str, object]]]:
     limiter = asyncio.Semaphore(max(1, concurrency))
     by_id = {case.id: case for case in cases}
-    jobs = [(case, repeat) for repeat in range(repeats) for case in cases]
-    # Most-expensive-first: a reservation is held at full cap for the life of
-    # a triple, and running the cheap ones first refuses the dear ones last.
-    jobs.sort(key=lambda job: -cap_usd(job[0]))
+    jobs = [(case, repeat) for repeat in range(repeats) for case in cases
+            if (case.id, repeat) not in already]
+    # REPEAT FIRST, THEN COST. The first repeat of every case is worth more
+    # than the third repeat of any, and a ceiling reached early must cost
+    # REPEATS, not FAMILIES: sorted by cap alone, the second live run refused
+    # every validate, summary and container triple — the cheap one-turn
+    # families sat at the end of the list. Within one repeat the dearest go
+    # first, for the reservation reason.
+    jobs.sort(key=lambda job: (job[1], -cap_usd(job[0])))
     total = len(jobs)
     runs: list[ArmRun] = []
     triples: list[dict[str, object]] = []
@@ -456,8 +496,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("corpus", nargs="?", default=str(here / "corpus.json"))
     parser.add_argument("--ladder", default=str(here / "ladder.json"))
-    parser.add_argument("--tier", default="nano")
+    parser.add_argument("--tier", default="nano",
+                        choices=("nano", "small", "medium", "large", "holdout", "max"))
+    parser.add_argument("--family", default="", help="одна семья целиком, мимо лестницы")
     parser.add_argument("--ids", default="", help="запятые: точный список случаев вместо яруса")
+    parser.add_argument("--sample", type=int, default=0,
+                        help="N случаев случайной выборкой по семействам вместо яруса; нужен --seed")
+    parser.add_argument("--seed", type=int, default=-1, help="зерно для --sample; пишется в meta и в имя каталога")
     parser.add_argument("--repeats", type=int, default=1, help="K повторов каждой тройки")
     parser.add_argument("--ceiling", type=float, default=12.0, help="потолок на весь прогон, USD (агент + судья)")
     parser.add_argument("--model", default=AGENT_MODEL)
@@ -467,24 +512,47 @@ def main() -> int:
     parser.add_argument("--out", default="")
     parser.add_argument("--dump", type=int, default=12)
     parser.add_argument("--report", default="", help="пересобрать отчёт из <run>.arms.jsonl без модели и без трат")
+    parser.add_argument("--resume", default="",
+                        help="каталог прерванного прогона: готовые тройки берутся как есть, спрашиваются только "
+                             "недостающие; потолок считается на весь замер")
     args = parser.parse_args()
 
-    if args.report and (Path(args.report).parent / "corpus.json").exists():
+    if args.report:
         # The snapshot taken at run time wins over whatever the tree holds now.
-        args.corpus = str(Path(args.report).parent / "corpus.json")
+        # A DIRECTORY IS THE RUN ITSELF, a file lies inside it: `.parent` of the
+        # directory form pointed one level up, found nothing, and the report was
+        # silently built against the tree's default corpus — same case ids,
+        # other people — so the r2 run of 06.09 reported fifteen «leaks» of an
+        # email that no message of the run ever carried.
+        report_path = Path(args.report)
+        snapshot_dir = report_path if report_path.is_dir() else report_path.parent
+        if (snapshot_dir / "corpus.json").exists():
+            args.corpus = str(snapshot_dir / "corpus.json")
     everything, digest = _load(Path(args.corpus))
     by_id = {case.id: case for case in everything}
 
     if args.report:
         source = Path(args.report)
-        runs = [arm_from_record(json.loads(line)) for line in source.read_text(encoding="utf-8").splitlines()
-                if line.strip()]
-        stem = source.name[:-len(".arms.jsonl")] if source.name.endswith(".arms.jsonl") else source.stem
-        triples_path = source.with_name(stem + ".triples.jsonl")
-        triples = ([json.loads(line) for line in triples_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-                   if triples_path.exists() else [])
-        meta_path = source.with_name(stem + ".meta.json")
-        payload = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {"run_id": stem}
+        # A DIRECTORY IS THE WHOLE RUN, a file is one attempt. A run resumed
+        # after an outage has two `arms.jsonl` beside each other, and reading
+        # either alone reports a fraction of what was paid for; the directory
+        # form merges them with the completed arm winning (`merged_arm_records`).
+        if source.is_dir():
+            runs = [arm_from_record(row) for row in merged_arm_records(source)]
+            triples = [json.loads(line) for path in sorted(source.glob("*.triples.jsonl"))
+                       for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            metas = sorted(source.glob("*.meta.json"))
+            payload = json.loads(metas[0].read_text(encoding="utf-8")) if metas else {"run_id": source.name}
+            payload["run_id"] = f"{source.name} (объединено: {len(metas)} попыт{'ка' if len(metas) == 1 else 'ки'})"
+        else:
+            runs = [arm_from_record(json.loads(line)) for line in source.read_text(encoding="utf-8").splitlines()
+                    if line.strip()]
+            stem = source.name[:-len(".arms.jsonl")] if source.name.endswith(".arms.jsonl") else source.stem
+            triples_path = source.with_name(stem + ".triples.jsonl")
+            triples = ([json.loads(line) for line in triples_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+                       if triples_path.exists() else [])
+            meta_path = source.with_name(stem + ".meta.json")
+            payload = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {"run_id": stem}
         for line in _render(by_id, runs, triples, payload, args.dump):
             print(line)
         return 0
@@ -497,9 +565,35 @@ def main() -> int:
             return 2
         cases = [by_id[one] for one in wanted]
         tier_name = "ids"
+    elif args.sample:
+        if args.seed < 0:
+            print("--sample требует --seed: выборка без зерна невоспроизводима", file=sys.stderr)
+            return 2
+        cases = sample(everything, args.sample, args.seed)
+        tier_name = f"sample{args.sample}-s{args.seed}"
+    elif args.family:
+        # ONE FAMILY WHOLE, AND DELIBERATELY NOT THROUGH THE LADDER. A tier is
+        # stratified so no family dominates it, which is exactly wrong when the
+        # question is about one family: `medium` holds about twenty cases of
+        # each, and twenty cases answer ±25pp. All of one family at K=5 answers
+        # ±5pp about that family for a few dollars.
+        cases = [case for case in everything if case.kind == args.family]
+        if not cases:
+            kinds = sorted({case.kind for case in everything})
+            print(f"семья {args.family!r} не найдена; есть: {', '.join(kinds)}", file=sys.stderr)
+            return 2
+        tier_name = f"family-{args.family}"
     else:
         cases = tier(everything, _ladder(Path(args.ladder)), args.tier)
         tier_name = args.tier
+        if args.tier in ("nano", "small", "medium", "large"):
+            print(f"ярус {args.tier}: отладочный, удержание в него не входит")
+        elif args.tier in ("holdout", "max"):
+            print(f"ярус {args.tier}: ЗАЯВОЧНЫЙ. Считается не число прогонов, а число "
+                  f"РАСХОЖДЕНИЙ с отладочным ярусом — бюджет B = t^2*n "
+                  f"(research/2026-09-06-benchmark-tiers.md §1)")
+        print(f"  n = {len(cases)} · MDE {stats.mde_paired(len(cases), 0.10, 2.1) * 100:.1f}pp "
+              f"при доле расхождений 0.10 и DEFF 2.1")
     if not cases:
         print("выборка пуста", file=sys.stderr)
         return 2
@@ -515,9 +609,47 @@ def main() -> int:
     snapshot = out / "corpus.json"
     if not snapshot.exists():
         snapshot.write_text(Path(args.corpus).read_text(encoding="utf-8"), encoding="utf-8")
+    # A RUN INTERRUPTED BY THE PROVIDER IS RESUMED, NOT REPLAYED. A session
+    # limit, a 529 or a killed shell leaves a directory holding complete
+    # triples that cost real money; re-running the corpus would pay for them
+    # twice and, worse, mix two engine versions in one report. `--resume`
+    # reads every triple already finished CLEANLY (all three arms `done`) in
+    # that directory, keeps them, and asks the model only for the rest. The
+    # ledger starts from what those triples already spent, so the ceiling
+    # bounds the WHOLE measurement rather than each attempt.
+    already: frozenset[tuple[str, int]] = frozenset()
+    kept_runs: list[ArmRun] = []
+    kept_triples: list[dict[str, object]] = []
+    resumed_usd = 0.0
+    if args.resume:
+        source = Path(args.resume)
+        source = source if source.is_dir() else source.parent
+        for triples_file in sorted(source.glob("*.triples.jsonl")):
+            arms_file = triples_file.with_name(triples_file.name.replace(".triples.jsonl", ".arms.jsonl"))
+            if not arms_file.exists():
+                continue
+            by_key: dict[tuple[str, int], list[dict[str, object]]] = {}
+            for line in arms_file.read_text(encoding="utf-8").splitlines():
+                row = json.loads(line)
+                by_key.setdefault((row["case_id"], int(row["repeat"])), []).append(row)
+            for line in triples_file.read_text(encoding="utf-8").splitlines():
+                triple = json.loads(line)
+                key = (triple["case_id"], int(triple["repeat"]))
+                rows = by_key.get(key, [])
+                arms = {row["arm"]: row for row in rows}
+                if key in already or set(arms) != set(ARMS):
+                    continue
+                if any(row.get("termination") != "done" for row in arms.values()):
+                    continue
+                already |= {key}
+                kept_triples.append(triple)
+                kept_runs.extend(arm_from_record(arms[name]) for name in ARMS)
+                resumed_usd += float(triple.get("cost_usd") or 0.0)
+        print(f"продолжение: взято {len(already)} готовых троек на ${resumed_usd:.2f} из {source}", flush=True)
+
     arms_sink = out / f"{run_id}.arms.jsonl"
     triples_sink = out / f"{run_id}.triples.jsonl"
-    ledger = judge_mod.SpendLedger(out / f"{run_id}.spend.tsv", args.ceiling)
+    ledger = judge_mod.SpendLedger(out / f"{run_id}.spend.tsv", max(0.0, args.ceiling - resumed_usd))
     config = None if args.no_judge else judge_mod.JudgeConfig(
         model=args.judge_model, ledger=ledger, query_cap_usd=judge_mod.QUERY_CAP_USD,
         retries=judge_mod.RETRIES, trace_path=out / f"{run_id}.judge.jsonl")
@@ -525,6 +657,7 @@ def main() -> int:
     payload: dict[str, object] = {
         "run_id": run_id, "benchmark": "agentpii4", "model": args.model,
         "judge_model": "" if args.no_judge else args.judge_model, "tier": tier_name, "repeats": args.repeats,
+        "sample": args.sample, "seed": args.seed, "case_ids": [case.id for case in cases],
         "digest": digest, "ceiling_usd": args.ceiling, "arms": list(ARMS),
         "cap_base_usd": CAP_BASE_USD, "started": datetime.now(timezone.utc).isoformat(),
         "ids": [case.id for case in cases], "spent_usd": 0.0,
@@ -536,7 +669,9 @@ def main() -> int:
     print(f"инкрементальная запись: {arms_sink}", flush=True)
     started = time.time()
     runs, triples = asyncio.run(drive(cases, args.repeats, detector, ledger, config, args.model, run_id,
-                                      args.concurrency, arms_sink, triples_sink))
+                                      args.concurrency, arms_sink, triples_sink, already))
+    runs = kept_runs + runs
+    triples = kept_triples + triples
     payload["finished"] = datetime.now(timezone.utc).isoformat()
     payload["spent_usd"] = round(ledger.committed(), 6)
     payload["wall_s"] = round(time.time() - started, 1)

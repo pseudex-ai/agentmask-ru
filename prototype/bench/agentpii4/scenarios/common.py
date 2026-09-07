@@ -14,13 +14,14 @@ A scenario builds a case in three moves, and the moves are the discipline:
 Nothing here searches a finished message. `validate.prove_no_search` watches.
 """
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from bench.agentpii4 import pools
 from bench.agentpii4.pools import Address, Person, Rendered
 from bench.agentpii4.schema import (Case, Expectation, Locus, Message, Negative,
                                     PiiItem, PlainValue, Provenance, SeedRecord,
                                     TraceRow)
+from bench.agentpii4.scenarios import negatives
 from bench.agentpii4.writer import Writer
 
 NOW = "2026-09-02"
@@ -91,11 +92,16 @@ VALIDATE_CLAUSE = ("Перед вызовом инструмента прове�
                    "инструмент НЕ вызывай и попроси клиента продиктовать заново.")
 
 
-def system_prompt(role: str, now: str, validate_types: tuple[str, ...] = ()) -> str:
+def system_prompt(role: str, now: str, validate_types: tuple[str, ...] = (),
+                  rule: str = "") -> str:
     text = f"{_ROLE_PROMPTS[role]} Сегодня {now}."
     if validate_types:
         text = f"{text} {VALIDATE_CLAUSE}"
-    return text
+    # A BUSINESS RULE THE AGENT MUST APPLY, and the substitute may break it.
+    # It goes in the SYSTEM prompt because that is where a customer puts one,
+    # and the prompt passes through the gateway like everything else — so a
+    # rule the masking rewrote is a rule the agent never received.
+    return f"{text} {rule}" if rule else text
 
 
 # --- register noise on ordinary words --------------------------------------------
@@ -176,6 +182,7 @@ class CaseBuilder:
     cluster: str
     conversation_id: str = ""
     validate_types: tuple[str, ...] = ()
+    rule: str = ""
     must_contain: tuple[str, ...] = ()
     must_not_contain: tuple[str, ...] = ()
     note: str = ""
@@ -189,13 +196,52 @@ class CaseBuilder:
 
     def __post_init__(self) -> None:
         self.messages.append(Message(role="system",
-                                     content=system_prompt(self.role, NOW, self.validate_types),
+                                     content=system_prompt(self.role, NOW, self.validate_types,
+                                                           self.rule),
                                      source=None, name=""))
+
+    def _add_negative(self, draft: MessageDraft,
+                      typed: dict[str, tuple[str, str, str, bool]]) -> None:
+        """Одно значение, которое ОБЯЗАНО уцелеть, в первую реплику случая.
+
+        ЗДЕСЬ, А НЕ В ДВАДЦАТИ ДВУХ СЦЕНАРИЯХ, потому что правило одно на весь
+        корпус и повторять его двадцать два раза значит завести двадцать два
+        места, где оно разойдётся. Ровно один негатив на случай: он должен
+        мерить точность, а не переписать корпус.
+
+        СВОЙ ПОТОК СЛУЧАЙНОСТИ, А НЕ `ctx.rng`. Взять из общего значит сдвинуть
+        КАЖДЫЙ последующий розыгрыш сценария, и пересборка стала бы новым
+        корпусом целиком вместо корпуса с добавленной осью. Здесь разница
+        ровно в негативах.
+
+        РЯДОМ С АДРЕСОМ РАЗРЕШЕНО НЕ ВСЁ: голый «шестой подъезд» возле
+        настоящей улицы — это ЧАСТЬ адреса, и требовать его выживания значит
+        требовать от движка ошибки.
+        """
+        beside = (any(spec[0] == "LOC" for spec in typed.values())
+                  or any(item.type == "LOC" for item in self.pii))
+        stream = random.Random(f"v4:neg:{self.ctx.kind}:{self.ctx.seed}:{self.ctx.index}")
+        before, value, after, family, why = negatives.draw(self.ctx.register, stream, beside)
+        # СВЯЗКА ОБЯЗАТЕЛЬНА, И ЭТО НЕ УКРАШЕНИЕ РЕЧИ. Негатив почти всегда несёт
+        # числительное, а продиктованный телефон — это ПРОГОН числительных;
+        # приклеенный к нему вплотную, негатив продолжает прогон, спан телефона
+        # рвётся, и номер уходит открытым. Так вышло 44 утечки из 52 на первой
+        # же сборке — дефект корпуса, который читался бы как дефект движка.
+        # Слово-связка прогон разрывает и звучит как живая речь, а не как шов.
+        draft.say(stream.choice(("кстати", "и ещё", "да и", "а также")))
+        if before:
+            draft.say(before)
+        draft.negative("neg1", value, family, why)
+        if after:
+            draft.say(after)
+        draft.punct(".")
 
     def user(self, draft: MessageDraft,
              typed: dict[str, tuple[str, str, str, bool]]) -> int:
         """Append a user message. `typed` maps value keys to
         (pii type, identity, duty, stale)."""
+        if not self.negatives and not draft.negatives:
+            self._add_negative(draft, typed)
         text, spans, trace = draft.finish()
         index = len(self.messages)
         self.messages.append(Message(role="user", content=text, source=None, name=""))
@@ -249,7 +295,8 @@ class CaseBuilder:
             id=f"{self.ctx.kind}-{self.ctx.index:03d}", kind=self.ctx.kind,
             register=self.ctx.register,
             provenance=Provenance(kind="template", corpus="authored", key="", shape="",
-                                  selection="authored", weight=1.0, licence="authored"),
+                                  selection="rare" if is_rare_stratum(self.ctx) else "authored",
+                                  weight=1.0, licence="authored"),
             cluster=cluster, conversation_id=self.conversation_id, now=NOW,
             messages=tuple(self.messages), tools=self.tools,
             seed_records=tuple(self.seeds), pii=tuple(self.pii), plain=tuple(self.plain),
@@ -293,6 +340,23 @@ _SHARED: tuple[tuple[int, str, tuple[int, int, int]], ...] = (
 )
 
 
+def is_rare_stratum(ctx: Ctx) -> bool:
+    """Случай, чьи имя и улица взяты ВНЕ лизованных словарей.
+
+    ОСЬ ДЕТЕКЦИИ ИНАЧЕ НЕ МОЖЕТ ПРОВАЛИТЬСЯ: все 57 улиц пула лежат в словаре
+    ГАР, все имена — в словаре имён, и корпус отвечает 100% там, где два
+    независимых внешних прибора дают 68–70%. Это тот же дефект, за который
+    репозиторий уже заплатил на `bench/voice`, вшитый не в фильтр, а в пулы.
+
+    ОДИН СЛУЧАЙ ИЗ СЕМИ И НИКОГДА — КЛАСТЕРНЫЙ. Восемь общих людей держат
+    кластеры, на которых меряется ICC и работает бутстрап; подменить человека в
+    таком случае значит развалить кластер и подменить не страту, а design
+    effect. Правило детерминировано по индексу, поэтому и `draw`, и `build`
+    вычисляют его одинаково, не передавая флаг через полкорпуса.
+    """
+    return ctx.index % 7 == 3 and ctx.index % 5 != 0
+
+
 def draw(ctx: Ctx, city: str = "", with_flat: bool = True, with_entrance: bool = False,
          with_type: bool = True, foreign: bool = False) -> Drawn:
     rng = ctx.rng
@@ -303,10 +367,18 @@ def draw(ctx: Ctx, city: str = "", with_flat: bool = True, with_entrance: bool =
     if ctx.index % 5 == 0 and not foreign:
         slot, phone, dob = _SHARED[(ctx.index // 5) % len(_SHARED)]
         person = (pools.MALE + pools.FEMALE)[slot]
+    address = pools.draw_address(rng, city, with_flat, with_entrance, with_type)
+    if is_rare_stratum(ctx) and not foreign:
+        # Свой поток: взять из общего значило бы сдвинуть каждый последующий
+        # розыгрыш и превратить добавление страты в новый корпус целиком.
+        stream = random.Random(f"v4:rare:{ctx.kind}:{ctx.seed}:{ctx.index}")
+        rare = pools.RARE_MALE + pools.RARE_FEMALE
+        person = stream.choice(rare)
+        address = replace(address, street=stream.choice(pools.RARE_STREETS))
     return Drawn(
         person=person,
         phone=phone,
-        address=pools.draw_address(rng, city, with_flat, with_entrance, with_type),
+        address=address,
         dob=dob,
         email_local=pools.mail_translit(person.surname[0]) + str(rng.randrange(70, 99)),
         email_domain=rng.choice(pools.EMAIL_DOMAINS),

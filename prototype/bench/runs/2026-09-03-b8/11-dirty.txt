@@ -1,0 +1,21 @@
+$ python3 eval_dirty.py
+
+dataset: dirty.json
+TYPE         GT  RECALL   PREC     F2
+NAME         21   100%   100%   100%
+PHONE        51   100%   100%   100%
+SNILS        13   100%   100%   100%
+INN          23   100%   100%   100%
+CARD         10   100%   100%   100%
+PASSPORT     10   100%   100%   100%
+DOB           8   100%   100%   100%
+LOC          14   100%   100%   100%
+-------------------------------------
+OVERALL     150   100%   100%   100%
+type-aware miss: 0/150 | HARD-NEG false-mask: 0/12
+TRUE-LEAK (value not masked by ANY type): 0/150
+
+--- TRUE LEAKS (PII value actually reached the model) ---
+
+--- FALSE POSITIVES (over-masked) ---
+

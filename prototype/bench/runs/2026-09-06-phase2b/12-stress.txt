@@ -1,0 +1,17 @@
+$ python3 eval_stress.py
+
+stress set: 600 cases, built independently of the detector
+
+TYPE          GT   RECALL
+--------------------------
+CARD         142   100.0%
+INN          127   100.0%
+NAME         268   100.0%
+PASSPORT      34   100.0%
+PHONE        320   100.0%
+SNILS        142   100.0%
+--------------------------
+OVERALL     1033   100.0%
+
+false masks on negatives: 0
+

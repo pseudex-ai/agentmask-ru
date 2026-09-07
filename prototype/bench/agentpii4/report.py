@@ -31,19 +31,50 @@ def score_triples(cases: dict[str, Case], triples: Sequence[Triple]) -> list[Sco
     return out
 
 
-def _level_flag(verdict: PairVerdict, level: str) -> bool:
+# The order is the ladder itself: could the agent act at all, did it reach for
+# the same tools, with the same keys, leaving the same state, carrying the same
+# VALUES, spelled the same way. One number out of six is a choice of which
+# half of the truth to print, and the report makes all six or none.
+LEVELS: tuple[tuple[str, str], ...] = (
+    ("action", "L0 действие"), ("tools", "L1 инструменты"), ("keys", "L2 ключи"),
+    ("state", "L3 состояние"), ("values", "L3 ЗНАЧЕНИЯ"), ("verbatim", "L3 дословно"))
+
+# The equivalence margin the product publishes. Owner's decision, 07.09: one
+# margin for every level, so no level can be granted a looser promise than the
+# others by a choice made after the numbers were seen.
+DELTA = 0.03
+
+
+def _level_flag(verdict: PairVerdict, level: str) -> bool | None:
+    """True, False, or None when this pair had NOTHING to compare at that level."""
+    if level not in verdict.levels.comparable:
+        return None
+    if level == "action":
+        return verdict.levels.action
     if level == "tools":
         return verdict.levels.tools
     if level == "keys":
         return verdict.levels.keys
     if level == "state":
         return verdict.levels.state
+    if level == "values":
+        return verdict.levels.state_values
     return verdict.levels.state_verbatim
+
+
+def comparable_triples(scored: Sequence[Scored], level: str) -> list[Scored]:
+    """The triples on which this level says anything.
+
+    BOTH pairs must be comparable, never one: the effect is a PAIRED
+    difference, and a triple that contributes to one column and not the other
+    would move the effect without any arm having done anything."""
+    return [one for one in scored
+            if _level_flag(one.ic, level) is not None and _level_flag(one.cc, level) is not None]
 
 
 def case_effects(cases: dict[str, Case], scored: Sequence[Scored], level: str) -> list[stats.CaseEffect]:
     by_case: dict[str, list[Scored]] = defaultdict(list)
-    for one in scored:
+    for one in comparable_triples(scored, level):
         by_case[one.triple.case_id].append(one)
     effects: list[stats.CaseEffect] = []
     for case_id, rows in sorted(by_case.items()):
@@ -69,6 +100,125 @@ def render(cases: dict[str, Case], scored: Sequence[Scored], excluded: Sequence[
         lines.extend(excluded[:dump])
         return lines
 
+    level_lines: list[str] = []
+    verdicts: list[str] = []
+    for level, label in LEVELS:
+        rows = comparable_triples(scored, level)
+        effects = case_effects(cases, scored, level)
+        interval = stats.cluster_bootstrap(effects, reps=2000)
+        verdict, tost_low, tost_high = stats.tost_equivalence(effects, DELTA, reps=2000)
+        b = sum(1 for one in rows if not _level_flag(one.ic, level) and _level_flag(one.cc, level))
+        c = sum(1 for one in rows if _level_flag(one.ic, level) and not _level_flag(one.cc, level))
+        p_value = stats.mcnemar_exact(b, c)
+        by_case: dict[str, list[int]] = defaultdict(list)
+        by_value: dict[str, list[int]] = defaultdict(list)
+        for one in rows:
+            flag = int(bool(_level_flag(one.ic, level)))
+            by_case[one.triple.case_id].append(flag)
+            by_value[cases[one.triple.case_id].cluster].append(flag)
+        icc_case = stats.icc_binary(by_case)
+        icc_value = stats.icc_binary(by_value)
+        sizes = [len(v) for v in by_value.values()]
+        deff = stats.design_effect(sum(sizes) / len(sizes) if sizes else 1.0, icc_value)
+        level_lines.append(
+            f"   {label:16} {len(rows):5}/{n_triples:<5} {_pct(stats.agreement(effects, 'ic'), 1)} "
+            f"{_pct(stats.agreement(effects, 'cc'), 1)} {100 * interval.point:+6.1f}pp "
+            f"[{100 * interval.low:+5.1f}, {100 * interval.high:+5.1f}]  "
+            f"{verdict:15} [{100 * tost_low:+5.1f}, {100 * tost_high:+5.1f}]  "
+            f"{p_value:5.3f} ({b},{c})  {icc_case:5.2f} {icc_value:5.2f} {deff:4.2f}")
+        verdicts.append(f"{label.split()[0]} {100 * interval.point:+.1f}pp "
+                        f"{'=' if verdict == 'эквивалентно' else '≠'}")
+    lines.append(f"ВЕРДИКТ ЭКВИВАЛЕНТНОСТИ при δ={100 * DELTA:.0f}pp — " + " · ".join(verdicts))
+
+    # 0 — LEAKS: personal data in a message the gateway arm never substituted.
+    # The three levels cannot see this: a value that reached the model in the
+    # clear reaches the tool in the clear, and the two arms AGREE. It is the one
+    # failure the product exists to prevent, and the first report had no line
+    # for it (46 of 723 message values on the 03.09 re-run, found by hand).
+    leaks: Counter[str] = Counter()
+    seen_values = 0
+    leaked_items: list[str] = []
+    for one in scored:
+        case = cases[one.triple.case_id]
+        for item in case.pii:
+            if item.where.kind != "message":
+                continue
+            seen_values += 1
+            if item.id not in one.triple.I.substitutes:
+                leaks[f"{item.type}/{case.register}"] += 1
+                leaked_items.append(f"{one.triple.case_id}|{one.triple.repeat} {item.type} «{item.value[:48]}»")
+    lines += ["", f"0. УТЕЧКИ В МОДЕЛЬ — значения из сообщений, для которых плечо шлюза НЕ показало подмену: "
+                  f"{sum(leaks.values())} из {seen_values} ({_pct(sum(leaks.values()), seen_values).strip()})"]
+    # ДВЕ СТРАТЫ, НИКОГДА ОДНИМ ЧИСЛОМ. Пулы корпуса лежат ВНУТРИ лизованных
+    # словарей, поэтому общий процент описывает прежде всего то, насколько
+    # корпус похож на словарь. Случаи со `selection == "rare"` берут имя и улицу
+    # снаружи — по внешнему критерию, а не по «движок их не находит», — и
+    # сложенные с остальными они прячут обе половины сразу.
+    strata: dict[str, list[int]] = defaultdict(list)
+    for one in scored:
+        case = cases[one.triple.case_id]
+        for item in case.pii:
+            if item.where.kind != "message":
+                continue
+            strata[case.provenance.selection].append(int(item.id not in one.triple.I.substitutes))
+    if len(strata) > 1:
+        lines.append("   по страте: " + " · ".join(
+            f"{'вне словарей' if name == 'rare' else 'в словарях'} {sum(rows)}/{len(rows)}"
+            f" ({_pct(sum(rows), len(rows)).strip()})"
+            for name, rows in sorted(strata.items())))
+    if leaks:
+        lines.append("   " + " · ".join(f"{key} {count}" for key, count in leaks.most_common()))
+        lines += [f"   {row}" for row in leaked_items[:dump]]
+    # THE LINE ABOVE COVERS 38% OF THE LABELLED VALUES. `where.kind == "message"`
+    # is 2444 items against 3998 in the backend records, and a seed value
+    # reaches the model too — through a tool RESULT, which `gateway` masks on
+    # the same path. What cannot be said from here is which of them a tool
+    # actually returned, so the second population measures COVERAGE and is
+    # never added to the first: a record the agent did not ask for was never
+    # shown to anybody.
+    seed_seen = 0
+    seed_masked = 0
+    for one in scored:
+        for item in cases[one.triple.case_id].pii:
+            if item.where.kind != "seed":
+                continue
+            seed_seen += 1
+            seed_masked += item.id in one.triple.I.substitutes
+    lines.append(f"0б. ЗАПИСИ БЭКЕНДА — подмена показана для {seed_masked} из {seed_seen} значений "
+                 f"({_pct(seed_masked, seed_seen).strip()}). ЭТО ПОКРЫТИЕ, НЕ УТЕЧКА: запись, "
+                 f"которую агент не запросил, модели не показывали. Со строкой 0 не складывается.")
+
+    # 0в — OVER-MASKING. The other half of the instrument: recall without
+    # precision is bought by one line that masks everything, and until now v4
+    # measured only recall. A negative is a value the corpus DECLARES must
+    # survive — an order number, a track, a city used as a place — and the
+    # engine covering it with a span is a false mask.
+    negatives = 0
+    false_masks: Counter[str] = Counter()
+    examples: list[str] = []
+    for one in scored:
+        case = cases[one.triple.case_id]
+        spans = one.triple.I.masked_spans
+        for negative in case.negatives:
+            negatives += 1
+            covered = any(start < negative.end and negative.start < end
+                          for start, end in spans.get(negative.msg, ()))
+            if covered:
+                false_masks[f"{negative.family}/{case.register}"] += 1
+                if len(examples) < dump:
+                    examples.append(f"{one.triple.case_id} «{negative.value[:40]}» — {negative.why}")
+    if negatives:
+        lines += ["", f"0в. ПЕРЕМАСКИРОВАНИЕ — значения, которые ОБЯЗАНЫ уцелеть, но движок их накрыл: "
+                      f"{sum(false_masks.values())} из {negatives} "
+                      f"({_pct(sum(false_masks.values()), negatives).strip()})"]
+        if false_masks:
+            lines.append("   " + " · ".join(f"{key} {count}" for key, count in false_masks.most_common()))
+            lines += [f"   {row}" for row in examples]
+    else:
+        lines += ["", "0в. ПЕРЕМАСКИРОВАНИЕ — НЕ ИЗМЕРЯЕТСЯ: в корпусе нет ни одного негатива. "
+                      "Полнота без точности покупается одной строкой «маскировать всё», так что "
+                      "числа выше описывают половину прибора."]
+
     # 1 — provocation: what the CONTROL arm did to real values
     lines += ["", "1. ПРОВОКАЦИЯ — что модель делает с НАСТОЯЩИМИ значениями (плечо C против C′)"]
     transforms: Counter[str] = Counter()
@@ -81,34 +231,15 @@ def render(cases: dict[str, Case], scored: Sequence[Scored], excluded: Sequence[
 
     # 2 — noise floor and 3 — effect, per level
     lines += ["", "2–3. ШУМОВОЙ ПОЛ И ЭФФЕКТ ШЛЮЗА — по уровням, никогда одним числом",
-              "   уровень          I≈C      C′≈C     эффект   95% ДИ (кластерный бутстрап)   McNemar p (b,c)  ICC(случай) ICC(значение) DEFF"]
-    for level, label in (("tools", "L1 инструменты"), ("keys", "L2 ключи"),
-                         ("state", "L3 состояние"), ("verbatim", "L3 дословно")):
-        effects = case_effects(cases, scored, level)
-        interval = stats.cluster_bootstrap(effects, reps=2000)
-        b = sum(1 for one in scored if not _level_flag(one.ic, level) and _level_flag(one.cc, level))
-        c = sum(1 for one in scored if _level_flag(one.ic, level) and not _level_flag(one.cc, level))
-        p = stats.mcnemar_exact(b, c)
-        by_case = defaultdict(list)
-        by_value = defaultdict(list)
-        for one in scored:
-            flag = int(_level_flag(one.ic, level))
-            by_case[one.triple.case_id].append(flag)
-            by_value[cases[one.triple.case_id].cluster].append(flag)
-        icc_case = stats.icc_binary(by_case)
-        icc_value = stats.icc_binary(by_value)
-        sizes = [len(v) for v in by_value.values()]
-        deff = stats.design_effect(sum(sizes) / len(sizes) if sizes else 1.0, icc_value)
-        lines.append(f"   {label:16} {_pct(stats.agreement(effects, 'ic'), 1)} {_pct(stats.agreement(effects, 'cc'), 1)} "
-                     f"{100 * interval.point:+6.1f}pp [{100 * interval.low:+5.1f}, {100 * interval.high:+5.1f}]"
-                     f"           {p:5.3f} ({b},{c})   {icc_case:5.2f}       {icc_value:5.2f}      {deff:4.2f}")
+              "   уровень         сравнимо   I≈C      C′≈C   эффект  95% ДИ            "
+              f"TOST δ={100 * DELTA:.0f}pp  90% ДИ           McNemar p (b,c)  ICC(сл) ICC(зн) DEFF"]
+    lines += level_lines
+    state_rows = comparable_triples(scored, "state")
     state_effects = case_effects(cases, scored, "state")
-    zero = sum(1 for one in scored if not _level_flag(one.ic, "state"))
-    if zero == 0:
-        lines.append(f"   0 расхождений I≈C на {n_triples} тройках сертифицирует согласие ≥ "
-                     f"{100 * stats.zero_failure_floor(n_triples):.2f}%, не 100%")
-    icc_v = stats.icc_binary({cases[one.triple.case_id].cluster: [] for one in scored})  # placeholder keeps shape
-    del icc_v
+    zero = sum(1 for one in state_rows if not _level_flag(one.ic, "state"))
+    if zero == 0 and state_rows:
+        lines.append(f"   0 расхождений I≈C на {len(state_rows)} сравнимых тройках сертифицирует согласие ≥ "
+                     f"{100 * stats.zero_failure_floor(len(state_rows)):.2f}%, не 100%")
     agree_rate = stats.agreement(state_effects, "ic")
     lines.append(f"   для ±2pp на L3 при согласии {100 * agree_rate:.0f}% нужно n ≈ "
                  f"{stats.n_for_halfwidth(min(max(agree_rate, 0.5), 0.99), 0.02)} случаев (iid)")
@@ -173,14 +304,21 @@ def render(cases: dict[str, Case], scored: Sequence[Scored], excluded: Sequence[
     lines.append("   " + " · ".join(f"{status}: {plain_i.get(status, 0)} / {plain_c.get(status, 0)}"
                                     for status in ("intact", "changed", "absent")))
 
-    # 8 — cuts
-    lines += ["", "8. РАЗРЕЗЫ — согласие I≈C на L3 по регистру и по виду"]
-    for label, key in (("регистр", lambda c: c.register), ("вид", lambda c: c.kind)):
-        buckets: dict[str, list[int]] = defaultdict(list)
-        for one in scored:
-            buckets[key(cases[one.triple.case_id])].append(int(one.ic.levels.state))
-        lines.append(f"   {label}: " + " · ".join(
-            f"{name} {sum(v)}/{len(v)}" for name, v in sorted(buckets.items())))
+    # 8 — cuts. A CUT WITHOUT THE FLOOR IS NOT A NUMBER: a family whose model
+    # is unstable on its own reads as gateway harm, and 89% next to a floor of
+    # 89% is the same result as 100% next to 100%.
+    lines += ["", "8. РАЗРЕЗЫ — I≈C рядом с полом C′≈C; печатается разность"]
+    for level in ("state", "values"):
+        rows = comparable_triples(scored, level)
+        for label, key in (("регистр", lambda c: c.register), ("вид", lambda c: c.kind)):
+            buckets: dict[str, list[tuple[int, int]]] = defaultdict(list)
+            for one in rows:
+                buckets[key(cases[one.triple.case_id])].append(
+                    (int(bool(_level_flag(one.ic, level))), int(bool(_level_flag(one.cc, level)))))
+            lines.append(f"   {level}/{label}: " + " · ".join(
+                f"{name} {sum(i for i, _ in v)}/{len(v)} пол {sum(c for _, c in v)}/{len(v)} "
+                f"({100 * (sum(i for i, _ in v) - sum(c for _, c in v)) / len(v):+.0f}pp)"
+                for name, v in sorted(buckets.items())))
 
     # 9 — excluded, 10 — examples
     if excluded:

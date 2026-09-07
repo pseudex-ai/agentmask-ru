@@ -52,7 +52,9 @@ load_dev_bundle()
 
 _ORG = "parity"
 _BATCH = 40
-_TYPES = ["NAME", "PHONE", "EMAIL", "SNILS", "INN", "CARD", "PASSPORT", "DATE", "LOC"]
+# DOB became a type of its own on 2026-08-31 and the dirty set labels it; a
+# list without it made P3/P5 die on a KeyError instead of comparing.
+_TYPES = ["NAME", "PHONE", "EMAIL", "SNILS", "INN", "CARD", "PASSPORT", "DATE", "DOB", "LOC"]
 
 
 def detect_many(base_url: str, texts: list[str]) -> list[list[tuple[str, str]]]:

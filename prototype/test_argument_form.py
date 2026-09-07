@@ -105,8 +105,10 @@ def main() -> int:
     source = "телефон 8 916 402 11 87, паспорт 45 09 123456, родился 21.09.1955"
     vault = Vault(":memory:", "acme").for_conversation("c1")
     masked = mask_text(source, vault, detector.detect(source))
-    fake_phone = re.search(r"\+7\d{10}", masked).group()  # type: ignore[union-attr]
-    ten = fake_phone[2:]
+    # The substitute is written the customer's way (vault `_digits_in_customer_
+    # form`); the agent's forms below are built from its digits.
+    ten = re.sub(r"\D", "", re.search(r"\+?\d[\d\s()\-]{8,}\d", masked).group())[-10:]  # type: ignore[union-attr]
+    fake_phone = "+7" + ten
     fake_date = re.search(r"\d{2}\.\d{2}\.\d{4}", masked).group()  # type: ignore[union-attr]
     for name, written, want in (
         ("телефон дословно, E.164", fake_phone, "+79164021187"),

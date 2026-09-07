@@ -13,6 +13,7 @@ stops being an accident when a case starts quoting a licensed source.
 """
 import json
 from dataclasses import dataclass
+from pathlib import Path
 
 from bench.agentpii4.compare import ArmRun, ObservedCall
 from bench.agentpii4.schema import SHIPPABLE_LICENCES, Case
@@ -34,6 +35,31 @@ class ArmMeta:
     errors: tuple[str, ...]
     reason: str
     cap_usd: float
+
+
+def merged_arm_records(run_dir: Path) -> list[dict[str, object]]:
+    """Every arm of a run directory, deduplicated, the COMPLETED one winning.
+
+    A run resumed after a provider outage (`harness --resume`) writes a second
+    `<run>.arms.jsonl` beside the first, and the same (case, repeat, arm) then
+    appears twice: once as the failure that stopped the run, once as the retry
+    that succeeded. Readers that take the last file miss the first attempt's
+    результаты; readers that concatenate get whichever copy sorts last, which
+    on `666…` before `f3f…` is the FAILURE. One rule for every reader: prefer
+    `done`, then the later record.
+    """
+    best: dict[tuple[str, int, str], dict[str, object]] = {}
+    for path in sorted(run_dir.glob("*.arms.jsonl")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            key = (str(row["case_id"]), int(row["repeat"]), str(row["arm"]))  # type: ignore[arg-type]
+            previous = best.get(key)
+            if previous is None or (previous.get("termination") != "done"
+                                    and row.get("termination") == "done"):
+                best[key] = row
+    return list(best.values())
 
 
 def record_key(case_id: str, arm: str, repeat: int) -> str:
@@ -61,6 +87,8 @@ def arm_record(run: ArmRun, meta: ArmMeta, case: Case) -> dict[str, object]:
         "state": list(run.state),
         "reply": run.reply,
         "substitutes": {item_id: [surface, parts] for item_id, (surface, parts) in run.substitutes.items()},
+        "masked_spans": {str(index): [[start, end] for start, end in spans]
+                         for index, spans in run.masked_spans.items()},
         "meta": {
             "model": meta.model, "turns": meta.turns, "duration_ms": meta.duration_ms,
             "session_id": meta.session_id, "subtype": meta.subtype, "is_error": meta.is_error,
@@ -96,7 +124,9 @@ def arm_from_record(record: dict[str, object]) -> ArmRun:
     return ArmRun(case_id=str(record["case_id"]), arm=str(record["arm"]), repeat=int(record["repeat"]),  # type: ignore[arg-type]
                   calls=calls, state=tuple(dict(one) for one in record["state"]),  # type: ignore[union-attr]
                   reply=str(record["reply"]), termination=str(record["termination"]),
-                  cost_usd=float(record["cost_usd"]), substitutes=substitutes)  # type: ignore[arg-type]
+                  cost_usd=float(record["cost_usd"]), substitutes=substitutes,  # type: ignore[arg-type]
+                  masked_spans={int(index): tuple((int(a), int(b)) for a, b in spans)
+                                for index, spans in dict(record.get("masked_spans") or {}).items()})
 
 
 def main() -> int:

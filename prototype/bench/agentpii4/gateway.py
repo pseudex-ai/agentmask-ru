@@ -50,6 +50,7 @@ class Gateway(Protocol):
     def note_tool_call(self, name: str, arguments: dict[str, object]) -> None: ...
     def restore_arguments(self, arguments: dict[str, object]) -> tuple[dict[str, object], dict[str, tuple[str, ...]]]: ...
     def restore_text(self, text: str) -> str: ...
+    def masked_spans(self) -> dict[int, tuple[tuple[int, int], ...]]: ...
     def substitutes_seen(self) -> dict[str, str]: ...
     def substitutes(self) -> tuple[str, ...]: ...
     @property
@@ -90,6 +91,9 @@ class PassThrough:
 
     def restore_text(self, text: str) -> str:
         return text
+
+    def masked_spans(self) -> dict[int, tuple[tuple[int, int], ...]]:
+        return {}
 
     def substitutes_seen(self) -> dict[str, str]:
         return {}
@@ -215,11 +219,15 @@ class RealGateway:
         model, lower-cased; short pieces (a house number) are left out because
         «12» is also a quantity."""
         out: set[str] = set()
+        # THE SETTLEMENT INSIDE A SUBSTITUTE IS REAL (vault `_settlement_of`), so
+        # the customer's own city is not a piece of ours — counting it would
+        # report every «Самара» in a reply as a substitute shown.
+        real = {part.casefold() for item in self._case.pii for part in item.parts.values() if part}
         for kind, surface in self._typed_substitutes():
             if kind not in ("LOC", "NAME", "PASSPORT"):
                 continue
             for part in parts_of(kind, surface).values():
-                if part and len(part) >= 2 and not part.isdigit():
+                if part and len(part) >= 2 and not part.isdigit() and part.casefold() not in real:
                     out.add(part.casefold())
         return tuple(sorted(out))
 
@@ -239,6 +247,20 @@ class RealGateway:
 
     def restore_text(self, text: str) -> str:
         return unmask_text(text, self._base)
+
+    def masked_spans(self) -> dict[int, tuple[tuple[int, int], ...]]:
+        """Отрезки КАЖДОГО пользовательского сообщения, которые движок замаскировал.
+
+        ОСЬ ПЕРЕМАСКИРОВАНИЯ НЕ СУЩЕСТВОВАЛА В v4 ВООБЩЕ. Корпус умеет носить
+        негативы (`Case.negatives` — номер заказа, трек, город как место, а не
+        адрес), API для них написан (`common.MessageDraft.negative`), и ни одна
+        семья его ни разу не вызвала; скорер v3 для них есть, и v4 его не звал.
+        Значит самый частый способ сломать агента — замаскировать то, что ПД не
+        является, — не мерился НИЧЕМ. Это половина прибора, а не украшение:
+        полноту без точности покупает одна строка «маскировать всё».
+        """
+        return {index: tuple((piece.start, piece.end) for piece in one.pieces)
+                for index, one in self._masked.items()}
 
     def substitutes_seen(self) -> dict[str, str]:
         """item id -> the substitute string the model read in its place."""

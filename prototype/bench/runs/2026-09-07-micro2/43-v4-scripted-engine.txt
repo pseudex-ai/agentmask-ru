@@ -1,0 +1,67 @@
+$ python3 bench/agentpii4/smoke.py --engine
+
+СКРИПТОВЫЙ АГЕНТ «decomposer» — не живой прогон; три плеча через настоящий шлюз
+
+троек: 834 · случаев: 834 · исключено: 0
+
+0. УТЕЧКИ В МОДЕЛЬ — значения из сообщений, для которых плечо шлюза НЕ показало подмену: 0 из 2444 (0.0%)
+
+1. ПРОВОКАЦИЯ — что модель делает с НАСТОЯЩИМИ значениями (плечо C против C′)
+   verbatim 5584 (95.1%) · absent 287 (4.9%)
+
+2–3. ШУМОВОЙ ПОЛ И ЭФФЕКТ ШЛЮЗА — по уровням, никогда одним числом
+   уровень          I≈C      C′≈C     эффект   95% ДИ (кластерный бутстрап)   McNemar p (b,c)  ICC(случай) ICC(значение) DEFF
+   L1 инструменты    98.9% 100.0%   -1.1pp [ -1.8,  -0.4]           0.004 (9,0)    0.00        0.42      1.10
+   L2 ключи          98.8% 100.0%   -1.2pp [ -1.9,  -0.5]           0.002 (10,0)    0.00        0.07      1.02
+   L3 состояние      85.7% 100.0%  -14.3pp [-17.3, -11.6]           0.000 (119,0)    0.00        0.00      1.00
+   L3 ЗНАЧЕНИЯ       85.4% 100.0%  -14.6pp [-17.6, -11.9]           0.000 (122,0)    0.00        0.00      1.00
+   L3 дословно       84.4% 100.0%  -15.6pp [-18.5, -12.8]           0.000 (130,0)    0.00        0.00      1.00
+   для ±2pp на L3 при согласии 86% нужно n ≈ 1175 случаев (iid)
+
+4. ТАКСОНОМИЯ ПО ПОЛЯМ — I−C рядом с C′−C; разница и есть шлюз
+   класс               I−C   C′−C   разн   примечание
+   agree               5514   5871   -357   
+   absent                36      0    +36   
+   extra                 22      0    +22   
+   validated_refused     40      0    +40   движок не чинит — фейк отвергнут валидацией
+   control_erred         22      0    +22   КОНТРОЛЬ ошибся — шлюз восстановил эталон корпуса
+   derived                8      0     +8   движок не чинит — производная от подмены
+   same_person_variant    71      0    +71   
+   stale_value            1      0     +1   
+   reformatted           86      0    +86   
+   composed               2      0     +2   
+   other                 91      0    +91   
+   по типам (I−C): CARD: agree 77/77 · DOB: agree 208/213 · EMAIL: agree 7/7 · LOC: agree 1866/2125 · NAME: agree 1804/1861 · PASSPORT: agree 100/100 · PHONE: agree 1402/1460 · SNILS: agree 50/50
+
+5. ПРОИЗВОДНЫЕ ПОЛЯ (I−C)
+   contact.initials:other/misderived 20
+   contact.name_latin:other/misderived 6
+   payment_method_data.card.cardholder:other/misderived 5
+   contact.name_latin:derived/unverifiable 4
+   patient.age:derived/from_substitute 3
+   patient.age:derived/unverifiable 1
+
+6. ВАЛИДАЦИЯ — семейство validate
+   троек 36 · агент не вызвал (I−C) 0 · (C′−C) 0 · мок отверг в I 0
+
+7. ПРОСТЫЕ ЗНАЧЕНИЯ (не ПД, обязаны уцелеть) — I−C / C′−C
+   intact: 2602 / 2608 · changed: 3 / 0 · absent: 6 / 0
+
+8. РАЗРЕЗЫ — согласие I≈C на L3 по регистру и по виду
+   регистр: chat 217/250 · clean 6/6 · sloppy 88/119 · voice_itn 161/183 · voice_raw 243/276
+   вид: analytics 18/18 · chain 40/48 · compare 42/42 · container 30/30 · correction 35/36 · crm_note 24/24 · decompose 39/42 · derive 49/54 · long_bank 41/45 · long_clinic 45/45 · long_order 54/60 · long_support 45/45 · lookup_list 29/30 · normalize 9/40 · prompt_rule 24/35 · receipt 17/18 · result_feed 32/36 · search_rank 45/45 · send_template 23/24 · summary 34/36 · tool_chain 4/45 · validate 36/36
+
+10. ПРИМЕРЫ РАСХОЖДЕНИЙ (I−C, до 12)
+   chain-000|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='BUKIN SERGEY' I='BUKIN SERGEI' (derived)
+   chain-002|0 crm_upsert_contact.contact.address.street [other/typo_repaired] C='челюскинццев' I='челюскинцев' (verbatim)
+   chain-003|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='POLYAKOVA VALENTINA' I='POLYAKOVA MAYYA' (derived)
+   chain-007|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='POLYAKOVA VALENTINA' I='POLYAKOVA MAYYA' (derived)
+   chain-009|0 crm_upsert_contact.contact.address.street [composed/] C='вишнёвая' I='глазов вишнёвая' (verbatim)
+   chain-010|0 crm_upsert_contact.contact.address.street [composed/] C='пушкина' I='пушкина глазов' (verbatim)
+   chain-040|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='BUKIN SERGEY' I='BUKIN SERGEI' (derived)
+   chain-047|0 crm_upsert_contact.contact.address.street [other/typo_repaired] C='тельмна' I='тельмана' (verbatim)
+   compare-000|0 address_suggest.query [same_person_variant/i2] C='дзержнского сорок четыре' I='дзержинского 44' (verbatim)
+   compare-006|0 address_suggest.query [other/renumbered] C='подлесная тридц один корпус четыре' I='подлесная 31, корп. 4' (verbatim)
+   compare-012|0 address_suggest.query [same_person_variant/i4] C='пушкиан 113' I='пушкина 113' (composed)
+   compare-014|0 address_suggest.query [same_person_variant/i4] C='вишёнвая 28' I='вишневая 28' (fragment)
+

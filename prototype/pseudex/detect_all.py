@@ -10,7 +10,8 @@ import re
 from pseudex.address import detect_address
 from pseudex.assets import ASSETS
 from pseudex.context import location_is_pii, suppress
-from pseudex.detect import Span, detect_pii
+from pseudex import morph_names
+from pseudex.detect import NameSpan, Span, detect_pii
 from pseudex.names import (gazetteer_names, keep_location, keep_person,
                            trim_document_words, trim_person_span)
 from pseudex.normalize import normalize
@@ -269,5 +270,10 @@ class Detector:
             with stage("detect.resolve"):
                 resolved = _resolve(suppress(text, spans) + kv_spans,
                                     ASSETS.get().priority, text, keyed=kv_spans)
-            return [Span(s.start, s.end, "LOC", s.value) if s.entity_type == "ADDR" else s
+            # A NAME LEAVES WITH THE CASES ITS SENTENCE ALLOWS (`NameSpan`): the
+            # vault reads the phrase alone, and «на имя марину» alone is a man.
+            return [Span(s.start, s.end, "LOC", s.value) if s.entity_type == "ADDR"
+                    else NameSpan(s.start, s.end, "NAME", s.value,
+                                  morph_names.governing_cases(text, s.start))
+                    if s.entity_type == "NAME" and not isinstance(s, NameSpan) else s
                     for s in resolved]

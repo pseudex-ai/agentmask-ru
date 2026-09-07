@@ -7,7 +7,10 @@ are never touched here (they're handled by priority in detect_all).
 
 import re
 
+from pseudex.fuzzy import within_one_typo
+
 from pseudex.assets import ASSETS, ContextAssets
+from pseudex import quasi as quasi_mod
 from pseudex.detect import Span
 
 # The deny list, the phone cues, the region set and the address/place vocabulary
@@ -180,7 +183,23 @@ def _passport_is_evidenced(text: str, span: Span, context) -> bool:
     governs INN-10, the other identifier whose checksum is too weak to stand
     alone."""
     window = text[max(0, span.start - 40): span.end + 20].lower()
-    return any(trigger in window for trigger in context.passport_trigger)
+    return _passport_cue_in(window, context.passport_trigger)
+
+
+def _passport_cue_in(window: str, triggers: tuple[str, ...]) -> bool:
+    """A passport cue in the window — as written, stretched («паспоорт») or
+    one typo away («паспрот»). THE CUE MAY BE DAMAGED and the detector already
+    admitted the number on that damaged cue; both tests here must read the
+    word the same way, or the span is found and then suppressed for lack of
+    the cue it was found by — worse, «паспоорт» is one edit from the DENY
+    word «паспорт» and was refused as a deny with no cue to save it."""
+    if any(trigger in window for trigger in triggers):
+        return True
+    for token in re.findall(r"[а-яё]+", window):
+        word = re.sub(r"([а-яё])\1+", r"\1", token)
+        if len(word) >= 5 and (word.startswith("паспорт") or within_one_typo(word[:7], "паспорт")):
+            return True
+    return False
 
 
 def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
@@ -206,7 +225,14 @@ def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
     if ("http" in prefix or "www." in prefix) and " " not in prefix[-30:]:
         return False
     quasi = ASSETS.get().quasi
-    window = text[max(0, span.start - 60): span.end + 60].lower()
+    # THE CUE MUST BE IN THE SAME SENTENCE. A host's own instruction says «…пол
+    # пациента вычисли сам из даты рождения и имени. Сегодня 2026-09-02.»: the
+    # cue belongs to the instruction and the date is TODAY. Masked, it moved the
+    # model's notion of today and every relative date the agent computed moved
+    # with it — the clinic slot was booked in March instead of September (r2
+    # run, 10 triples, both controls agreeing). Same window, same rule as
+    # `quasi._birth_context_near`; a period inside «д.р.» is not a sentence end.
+    window = quasi_mod.sentence_window(text, span.start, span.end, 60, 60)
     if any(cue in window for cue in quasi.birth_ctx):
         return True
     # A document word DIRECTLY before the date wins over a person elsewhere in
@@ -243,8 +269,22 @@ def _phone_shaped(value: str) -> bool:
     below from reopening the holes the deny gate was built to close.
     """
     digits = "".join(ch for ch in value if ch.isdigit())
-    return value.lstrip().startswith("+") or (
-        len(digits) == 11 and digits[0] in "78")
+    if value.lstrip().startswith("+") or (len(digits) == 11 and digits[0] in "78"):
+        return True
+    # A DICTATED PHONE HAS NO DIGITS TO BE SHAPED LIKE, and the rescue below —
+    # «a phone cue anywhere in the sentence beats a denying word» — was gated on
+    # this test, so it never ran for one. «телефон для чека восемь девятьсот
+    # шестнадцать…» has the cue two words away and the deny word «чек» directly
+    # before, and the number went to the model IN THE CLEAR. Fifteen of 2444
+    # values on the first `long_bank` run, in the one place 54-ФЗ makes a phone
+    # mandatory.
+    #
+    # Safe because the span is already typed. Only `spoken.detect_spoken_ids`
+    # produces a digit-free PHONE, and it produces one only after `run_to_digits`
+    # yielded eleven digits opening 7 or 8 followed by 9 — the same test this
+    # function makes, applied to the digits the words decode to. A passport,
+    # an order number or a track number cannot arrive here without a digit.
+    return not any(ch.isdigit() for ch in value) and bool(value.strip())
 
 
 def _sentence_around(text: str, span: Span) -> str:
@@ -333,7 +373,7 @@ def suppress(text: str, spans: list[Span]) -> list[Span]:
             last_word = match.group(1) if match else ""
             window = text[max(0, span.start - 30): span.end + 30].lower()
             deny = _denied_nearby(last_word, context.deny)
-            cue = any(word in window for word in context.passport_trigger)
+            cue = _passport_cue_in(window, context.passport_trigger)
             if deny and not cue:
                 continue
         if span.entity_type == "NAME":

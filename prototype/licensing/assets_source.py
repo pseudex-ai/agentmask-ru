@@ -213,6 +213,31 @@ CORE_PART: tuple[str, ...] = (
 # where the tail does cost precision, this is the one line that answers it.
 STREET_MIN_OBJECTS = 1
 
+# --- the frequent tail of the register, for ONE decision -------------------
+#
+# A SECOND, TINY SET, and it exists to break exactly one tie: when a mistyped
+# street reaches SEVERAL register entries one edit away, which one did the
+# customer mean. `register_spelling` used to refuse every such word, and that
+# is nearly all of them — «садвая» reaches садовая and садвал, «полвая» reaches
+# полевая and полная, «неркасова» reaches некрасова and черкасова. Measured on
+# the 06.09 live run: the repair fired on 1 of 6 mistyped streets and the other
+# five went to the customer's CRM misspelt.
+#
+# THE MARGIN IS NOT CLOSE, WHICH IS WHY THE TIE-BREAK IS SAFE. садовая has
+# 17 325 objects against садвал's 1; полевая 12 087 against полная's 1;
+# некрасова 1 565 against черкасова's 24 — the narrowest margin measured, and
+# still 65 to one. The register's 99th percentile is 58 objects, so a name
+# above a hundred is in a different population from the tail, not merely a
+# bigger number in the same one.
+#
+# THE RESIDUAL RISK, NAMED: a typo of a genuinely rare street that lands one
+# edit from a common one is repaired to the common one, and a courier goes
+# somewhere the customer did not name. It needs the mistyped word to be absent
+# from the register in ALL THREE forms `_gar_reaches` asks — so a correctly
+# spelt rare street is never touched — and it is the same bet the agent makes
+# on its own when there is no gateway in front of it.
+STREET_FREQUENT_MIN = 100
+
 # --- street types, as STEMS, for the typo-tolerant arm --------------------
 #
 # The regex arms below carry their own copies of these words, and that is
@@ -307,7 +332,10 @@ _TOK = r"(?:(?<=^)|(?<=[\s,;(№#\"'«»\[\]{}<>=:|/\\]))"
 #
 # «кв» after a digit stays safe because the pattern demands DIGITS AFTER the
 # marker: «100кв.м» (square metres) has «м» there and still does not match.
-_TOK_OR_DIGIT = r"(?:(?<=^)|(?<=[\s,;(№#\"'«»\[\]{}<>=:|/\\])|(?<=\d))"
+# …AND AFTER A HOUSE LITERA, glued or spaced: «зеленоградская 8 бкв150»,
+# «тельмана 99 вкв196» — a phone keyboard's «8б, кв. 150», and the flat went
+# to the model outside a span already reported as found.
+_TOK_OR_DIGIT = r"(?:(?<=^)|(?<=[\s,;(№#\"'«»\[\]{}<>=:|/\\])|(?<=\d)|(?<=\d[а-яё])|(?<=\d\s[а-яё]))"
 _NUM_NAME = r"\d{1,4}[-\s]?[яейои]?\s+(?:" + "|".join(NUMBERED_TAIL) + r")"
 
 # EACH PATTERN CARRIES ITS OWN CASE FLAG as a leading `(?i)`, and the engine
@@ -370,13 +398,64 @@ _HOUSE_LEAD = r"(?:\s*,?\s*(?:дом|д)\.?|\s*,?\s*№)?\s*"
 # USED ONLY WHERE A STREET-TYPE WORD OR A MARKER IS PRESENT. In the marker-less
 # arms there would be nothing holding it down, and «на улице минус десять» — the
 # commonest shape in real consumer traffic — would become an address.
+NUMERAL_TYPOS: dict[str, str] = {
+    "песят": "пятьдесят",      # 9
+    "пеесят": "пятьдесят",     # 1
+    "пийсят": "пятьдесят",     # 1
+    "пясят": "пятьдесят",      # 1
+    "шесят": "шестьдесят",     # 3
+    # The contracted «-десят» forms the ASR corpus writes for the two commonest
+    # tens (пейсят is the textbook colloquial form); «семест» is left OUT — it
+    # is attested once as семьдесят and once as семьсот, and a form with two
+    # readings corrupts a digit, which is worse than missing it.
+    "пейсят": "пятьдесят",
+    "пяесят": "пятьдесят",
+    "шеесят": "шестьдесят",
+    "шейсят": "шестьдесят",
+    "восемест": "восемьсот",
+    "восемесят": "восемьдесят",  # 1
+    "тристо": "триста",        # 7
+    "трииста": "триста",       # 1
+    "двесте": "двести",        # 1
+    "шессот": "шестьсот",      # 1
+    "восемьст": "восемьсот",   # 1
+    "триц": "тридцать",        # 3
+    "тридц": "тридцать",       # 1
+    "одинадцать": "одиннадцать",  # 5
+    "восем": "восемь",         # 3
+    "восемсь": "восемь",       # 1
+    "восеь": "восемь",         # 1
+    "четыыре": "четыре",       # 1
+    "пяять": "пять",           # 1
+    "девяно": "девяносто",     # 1
+    "девяеносто": "девяносто",  # 1
+    "дваа": "два",             # 1
+    "деся": "десять",          # 1
+    "ноля": "ноль",            # 2
+}
+
+
+def _typo_forms(*canonicals: str) -> str:
+    """The attested misspellings of these numerals, as extra alternatives —
+    so «подлесная тридц один» is a house number to the address arms and not
+    two damaged words the name arm joins to a surname (live v4, compare-006)."""
+    return "".join("|" + form for form, canonical in NUMERAL_TYPOS.items() if canonical in canonicals)
+
+
 _HUNDREDS = (r"(?:сто|двести|триста|четыреста|пятьсот|шестьсот|семьсот"
-             r"|восемьсот|девятьсот)")
+             r"|восемьсот|девятьсот"
+             + _typo_forms("сто", "двести", "триста", "четыреста", "пятьсот", "шестьсот",
+                           "семьсот", "восемьсот", "девятьсот") + ")")
 _TEENS = (r"(?:одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать"
-          r"|шестнадцать|семнадцать|восемнадцать|девятнадцать|десять)")
+          r"|шестнадцать|семнадцать|восемнадцать|девятнадцать|десять"
+          + _typo_forms("одиннадцать", "двенадцать", "тринадцать", "четырнадцать", "пятнадцать",
+                        "шестнадцать", "семнадцать", "восемнадцать", "девятнадцать", "десять") + ")")
 _TENS = (r"(?:двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят"
-         r"|восемьдесят|девяносто)")
-_UNITS = r"(?:один|одна|два|две|три|четыре|пять|шесть|семь|восемь|девять)"
+         r"|восемьдесят|девяносто"
+         + _typo_forms("двадцать", "тридцать", "сорок", "пятьдесят", "шестьдесят", "семьдесят",
+                       "восемьдесят", "девяносто") + ")")
+_UNITS = (r"(?:один|одна|два|две|три|четыре|пять|шесть|семь|восемь|девять"
+          + _typo_forms("один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять") + ")")
 # ONE number word, for the places that have to REFUSE one — `_LOWER_NAME_NONUM`
 # needs to know that a street name may not BE a numeral, and it asks this.
 _SPELLED = rf"(?:{_HUNDREDS}|{_TEENS}|{_TENS}|{_UNITS})"
@@ -431,7 +510,24 @@ _ENTRANCE = (r"(?:" + _ORDINAL + r"|последн\w+|крайн\w+|углов\w
 # нумерации домов не бывает — ГАР ведёт литеры от «а» вглубь алфавита, а «я» в
 # русском тексте почти всегда местоимение. Запрет на одну букву честнее
 # просмотра вперёд, который запрещал форму, а не то, что ломалось.
-_LITERA = r"(?:\s+(?![яЯ](?![а-яё]))[а-яё](?![а-яё]))?"
+# …AND NOT «к» OR «с» IN FRONT OF A NUMBER: those are the корпус and строение
+# markers («д 65 к 1»), and read as a litera the marker closed the span at
+# «65 к» — the корпус went to the model outside an address already reported
+# as found, and the directory record keyed without it.
+# …AND NOT A PREPOSITION IN FRONT OF WHAT IT GOVERNS. «бульвар комиссарова
+# двадцать семь **в** третий подъезд» — the «в» is «in», not house 27в: it
+# stands before an ORDINAL («в третий», «к пятому») or before a marker in an
+# oblique case («в квартиру», «в подъезде», «к дому»), and a litera is never
+# followed by either. The building went to the courier as «27в» on the 05.09
+# medium run (decompose-001, three triples, voice register). Only the letters
+# that ARE prepositions are tested — «двадцать пять а третий подъезд» keeps
+# its «а», which is a litera and never a preposition — and a marker in the
+# NOMINATIVE after the letter still reads as a litera («дом семнадцать в
+# квартира двести двадцать девять» is a real call and stays whole).
+_PREP_GOVERNS = (r"(?:" + _ORDINAL + r"|квартир[уе]|под[ъь]езд[еу]|дом[еу]|корпус[еу]"
+                 r"|этаж[еу]|строени[ие]|офис[еу]|помещени[ие])\b")
+_LITERA = (r"(?:\s+(?![яЯ](?![а-яё]))(?![кс]\.?\s*\d)(?![вксуо]\s+" + _PREP_GOVERNS + r")"
+           r"[а-яё](?=(?:кв|к|стр)\.?\d|[^а-яё]|$))?")
 
 # ЛИТЕРА ПРИ ЦИФРОВОМ НОМЕРЕ ДОМА — ТА ЖЕ БУКВА, НО ДРУГОЙ РЕГИСТР ТЕКСТА.
 # «воткинское шоссе 4 а квартира 58» обрывалось на «4»: у речевых арок литера
@@ -447,8 +543,10 @@ _LITERA = r"(?:\s+(?![яЯ](?![а-яё]))[а-яё](?![а-яё]))?"
 # резал номер дома на каждом третьем настоящем адресе. Условие не может ничего
 # сломать по построению: литера необязательна, и когда просмотр не сходится,
 # остаётся ровно сегодняшнее поведение.
-_LITERA_WRITTEN = (r"(?:\s+(?![яЯ](?![а-яё]))[а-яё](?![а-яё])"
-                   r"(?=\s*(?:[,;.]|$|\s*" + _CHAIN_MARKER + r"\b)))?")
+# …AND THE LITERA MAY HAVE THE FLAT MARKER GLUED TO IT: «зеленоградская 8
+# бкв150» — the letter is followed by «кв» and digits, not by a boundary.
+_LITERA_WRITTEN = (r"(?:\s+(?![яЯ](?![а-яё]))[а-яё](?=(?:кв|к|стр)\.?\d|[^а-яё]|$)"
+                   r"(?=\s*(?:[,;.]|$|\s*" + _CHAIN_MARKER + r"(?:\b|(?=\d)))))?")
 
 # НАЗВАНИЕ УЛИЦЫ НЕ ИМЕЕТ ПРАВА СЪЕСТЬ ЧИСЛИТЕЛЬНОЕ. `_LOWER_NAME` берёт до трёх
 # слов подряд, и в «улицу культуры восемь» оно забирало «культуры восемь»
@@ -458,7 +556,11 @@ _LITERA_WRITTEN = (r"(?:\s+(?![яЯ](?![а-яё]))[а-яё](?![а-яё])"
 _LOWER_NAME_NONUM = (r"(?!" + _SPELLED + r"\b)[а-яё]{3,}"
                      r"(?:[\s-](?!" + _SPELLED + r"\b)[а-яё]{3,}){0,2}")
 
-_HOUSE_NUM = rf"(?:\d{{1,4}}(?!\d)|{_SPELLED_NUM})"
+# THE GLUED LITERA, IN EITHER CASE. ФИАС and DaData write «д 10А», and the
+# arms ended the span at «10»: the capital fell outside the address, outside
+# the vault key, and reached the model beside the substitute. Glued only — a
+# capital after a SPACE is the next word — and never followed by a letter.
+_HOUSE_NUM = rf"(?:\d{{1,4}}(?!\d)(?:[а-яёА-ЯЁ](?![а-яёА-ЯЁ]))?|{_SPELLED_NUM})"
 
 # A TRAILING ABBREVIATED MARKER. `_ST_ABBR` requires a dot or space AFTER it, so
 # it can only stand BEFORE the name — «пр-кт Ленинский 55» matched and «Ленинский
@@ -578,8 +680,8 @@ ADDRESS_PATTERNS: dict[str, str] = {
     "street_last": rf"(?i){_CAP}\s+{_ST}(?!\w)",
     "house": (
         r"(?i)" + _TOK + r"(?:дом|д|владени\w*|вл|уч\w*)\.?\s*№?\s*\d+(?:[а-яёА-ЯЁ](?!\d)|/\d+|-\d+)?"
-        r"(?:\s*(?:корпус|корп|кор|к)\.?\s*\d+[а-яёА-ЯЁ]?)?"
-        r"(?:\s*(?:строени\w*|стр|с)\.?\s*\d+[а-яёА-ЯЁ]?)?"
+        r"(?:\s*(?:корпус|корп|кор|к)\.?\s*\d+(?:[а-яёА-ЯЁ](?![а-яё]?\d))?)?"
+        r"(?:\s*(?:строени\w*|стр|с)\.?\s*\d+(?:[а-яёА-ЯЁ](?![а-яё]?\d))?)?"
         r"(?:\s*(?:литер\w*|лит)\.?\s*[а-яёa-z]\b)?"
     ),
     # Two branches, because the markers differ in how much they can be trusted
@@ -604,8 +706,17 @@ ADDRESS_PATTERNS: dict[str, str] = {
     # так что «см. стр. 5» рядом с которым нет улицы, не маскирует ничего.
     "apt": (r"(?i)(?:" + _TOK_OR_DIGIT
             + r"(?:квартир\w*|кв|офис\w*|оф|помещени\w*|пом|комнат\w*|комн"
-              r"|корпус\w*|корп|кор|строени\w*|стр|под[ъь]езд\w*|под|этаж\w*|эт)\.?\s*\d+[а-яёА-ЯЁ]?"
-            + r"|(?<=\d)к\s*\d+)"),
+              r"|корпус\w*|корп|кор|строени\w*|стр|под[ъь]езд\w*|под|этаж\w*|эт)\.?\s*\d+(?:[а-яёА-ЯЁ](?![а-яё]?\d))?"
+            # …AND WITH ONE SPACE, when a digit follows and no word does: «ул.
+            # Кирова 12 к 3 кв 300» is how a courier form writes the корпус, and
+            # the tail after «12» went to the model. Still SUPPORT — «в 12 к 5
+            # часам» has no core address to merge with and is dropped.
+            # The spaced form must be FOLLOWED by the end, punctuation or another
+            # address marker: «привезите на ленина 14 к 10 часам» is a time,
+            # and the bare preposition took eight of v3's time-of-day negatives.
+            + r"|(?<=\d)к\.?\s*\d+"
+            + r"|(?<=\d)\sк\.?\s*\d+(?=\s*(?:[,;.)]|$"
+              r"|(?:кв|квартир\w*|подъезд\w*|под|этаж\w*|эт|стр|строен\w*|литер\w*|лит|оф|офис\w*|пом|комн\w*|дом|д)\b)))"),
     # ХВОСТ АДРЕСА, СКАЗАННЫЙ СЛОВАМИ. `apt` требует `\d+`, поэтому «улица
     # дербенёвская двадцать четыре строение пять» маскировалась по «четыре», а
     # строение уходило в модель внутри уже найденного адреса — ровно тот разрыв
@@ -815,7 +926,9 @@ ADDRESS_PATTERNS: dict[str, str] = {
     # новостной прозы NEREL.
     "street_bare_lower": (
         r"(?<![А-Яа-яЁё])(?P<bare>[а-яё]{4,})\s+(?:дом\s+)?"
-        r"(?P<bnum>\d{1,3}(?!\d)|" + _SPELLED_CARD + r")"
+        # «базисная 152кв7», «химзаводская 3кв170»: the chat register glues the
+        # flat to the house, and the number here ended at the first letter.
+        r"(?P<bnum>\d{1,3}(?!\d)(?:кв\.?\d{1,4}|к\d{1,3})?|" + _SPELLED_CARD + r")"
         # ЛИТЕРА ДОМА БЫЛА ДОБАВЛЕНА КО ВСЕМ ВЕТКАМ, КРОМЕ ЭТОЙ, и это стоило
         # 205 обрезанных адресов из 303 — две трети всех утёкших хвостов на
         # корпусе живой речи. «пушкинская двести восемьдесят четыре а»,
@@ -823,7 +936,9 @@ ADDRESS_PATTERNS: dict[str, str] = {
         # модели открытой. Ошибка ровно того вида, который ловит только
         # колонка покрытия: полнота считала эти адреса найденными.
         + _LITERA +
-        r"(?![А-Яа-яЁё\d])"
+        # The guard against a partial word after the number stands down for a
+        # flat marker glued to the litera («8 бкв150»).
+        r"(?!(?!(?:кв|к|стр)\.?\d)[А-Яа-яЁё\d])"
     ),
     "measure_after": (
         r"(?i)\s*(?:м²|м2|%"
@@ -836,7 +951,7 @@ ADDRESS_PATTERNS: dict[str, str] = {
     # No (?i) — deliberately. `[а-яё]` here is the lowercase letter that can
     # follow a house number ("12а"); made case-insensitive it would also swallow
     # the capital that starts the NEXT word.
-    "trail_house": r"[\s,]+\d{1,4}[а-яё]?(?:/\d+)?\b",
+    "trail_house": r"[\s,]+\d{1,4}(?:[а-яёА-ЯЁ](?![а-яёА-ЯЁ]))?(?:/\d+)?\b",
 }
 
 # --- quasi-identifiers ---------------------------------------------------
@@ -861,33 +976,6 @@ ADDRESS_PATTERNS: dict[str, str] = {
 # ЧЕГО ЗДЕСЬ НЕТ НАМЕРЕННО: «семесят», «четверьый», «подъкзд» — формы, которые
 # порождает наш собственный бенчмарк и которых в настоящей речи ноль. Гнаться за
 # ними значит настраивать движок на воображение прибора.
-NUMERAL_TYPOS: dict[str, str] = {
-    "песят": "пятьдесят",      # 9
-    "пеесят": "пятьдесят",     # 1
-    "пийсят": "пятьдесят",     # 1
-    "пясят": "пятьдесят",      # 1
-    "шесят": "шестьдесят",     # 3
-    "семест": "семьдесят",     # 1
-    "восемесят": "восемьдесят",  # 1
-    "тристо": "триста",        # 7
-    "трииста": "триста",       # 1
-    "двесте": "двести",        # 1
-    "шессот": "шестьсот",      # 1
-    "восемьст": "восемьсот",   # 1
-    "триц": "тридцать",        # 3
-    "тридц": "тридцать",       # 1
-    "одинадцать": "одиннадцать",  # 5
-    "восем": "восемь",         # 3
-    "восемсь": "восемь",       # 1
-    "восеь": "восемь",         # 1
-    "четыыре": "четыре",       # 1
-    "пяять": "пять",           # 1
-    "девяно": "девяносто",     # 1
-    "девяеносто": "девяносто",  # 1
-    "дваа": "два",             # 1
-    "деся": "десять",          # 1
-    "ноля": "ноль",            # 2
-}
 
 BIRTH_CTX: tuple[str, ...] = ("рожд", "г.р", "г р", "родил", "д.р", "появил на свет")
 MONTHS: tuple[str, ...] = (
@@ -952,6 +1040,13 @@ ADDR_INTENT: tuple[str, ...] = (
     "адрес", "доставк", "доставьте", "достав", "привез", "прописан",
     "проживает", "живу", "живёт", "живет", "заберите", "на улиц", "мне на",
     "мой адрес", "куда ехать", "забронир",
+    # «записывайте лермонтого сто а квартира двести шесть» — the dispatcher's
+    # word for «here is my address», and the only intent the utterance carries.
+    "записывай", "запишите", "запиши",
+    # «курькра на совхоззная 146», «курера на зарчная 23» — the courier word
+    # is the intent in the delivery register, and here it is misspelt: the
+    # exact cue regex already holds it, the fuzzy matcher reads this list.
+    "курьер",
 )
 PLACE_REF: tuple[str, ...] = (
     "час", "режим", "филиал", "магазин", "офис", "находит", "погод",
@@ -980,6 +1075,19 @@ VERSION_CTX: tuple[str, ...] = (
 # Слова именно биографические, а не транзакционные: «зовут» и «перезвоните»
 # уже стоят в `cues` и работают на другой класс. Здесь спрашивают возраст,
 # рост, дату рождения, роли и книги — то, о чём спрашивают ЧЕЛОВЕКА.
+# WORDS A MISTYPED NAME IS NEVER ONE EDIT FROM. The three-signal rule for a
+# mistyped name (adjacent to a name, unknown to morphology, one edit from the
+# gazetteer) admitted «телефн» and «телфеон»: a damaged cue word is unknown to
+# morphology by definition, and the 197k-surname neighbourhood reaches it. A
+# one-edit veto against ORDINARY words was measured at four real people on
+# NEREL; against the dozen words that introduce the next field it costs
+# nothing, because none of them is ever a person.
+NAME_NEVER_CUES = (
+    "телефон", "телефона", "телефону", "адрес", "адреса", "паспорт", "паспорта", "снилс",
+    "почта", "почту", "индекс", "квартира", "квартиру", "подъезд", "получатель", "получателя",
+    "доставка", "доставку", "курьер", "курьера", "заказ", "заказа", "клиент", "клиента",
+    "номер", "номера", "оплата", "оплату", "карта", "карту", "договор", "договора",
+)
 BIO_CUES: tuple[str, ...] = (
     "родил", "умер", "скончал", "биограф", "женат", "замуж", "рост",
     "возраст", "лет", "сколько лет", "кто так", "расскажи о", "расскажи про",
@@ -991,11 +1099,50 @@ BIO_CUES: tuple[str, ...] = (
 KEY_TYPE: dict[str, str] = {
     "имя": "NAME", "фио": "NAME", "клиент": "NAME", "заказчик": "NAME",
     "получатель": "NAME", "name": "NAME",
+    # THE PARTS OF A NAME AS A CRM WRITES THEM. A record answered
+    # {"last_name": "кузнецов", "first_name": "дмитрий"} and the surname leaf
+    # went to the model in the clear — a lower-case surname alone passes no
+    # gate, and the key that names it was not in this map. The model then saw
+    # a card whose surname differed from the person it was talking to and
+    # asked whose card it was (live v4, chain-014). Keys are matched with
+    # separators removed (`_KEY_CLEAN_RE`), so «last_name» is «lastname».
+    "фамилия": "NAME", "отчество": "NAME", "lastname": "NAME", "firstname": "NAME",
+    "middlename": "NAME", "surname": "NAME", "patronymic": "NAME", "givenname": "NAME",
+    "fullname": "NAME", "секондфамилия": "NAME",
     "телефон": "PHONE", "тел": "PHONE", "моб": "PHONE", "мобильный": "PHONE",
     "номертелефона": "PHONE", "phone": "PHONE", "контактныйтелефон": "PHONE",
     "снилс": "SNILS", "snils": "SNILS",
+    # ЛАТИНСКИЕ КЛЮЧИ ИНН, КОТОРЫХ НЕТ В РУССКОМ СЛОВЕ. Английская схема
+    # русского CRM пишет ИНН как `tax_id`, `taxpayer_id`, `vat_number` — ключи
+    # с головой `tax`/`vat`, до которых префиксная ветка `_key_type` не
+    # достаёт, потому что стема `tax` в карте не было. `passport_series` в этом
+    # смысле УЖЕ покрыт стемом `passport`; дыра была именно здесь.
+    #
+    # `taxrate` и `taxamount` — ставка и сумма налога, не ПД, поэтому стем
+    # взят с разделителем-в-нуле: карта нормализует ключ (`_KEY_CLEAN_RE`), так
+    # что «tax_id» это «taxid», а «tax_rate» это «taxrate», и префикс «taxid»
+    # первую пару не задевает.
     "инн": "INN", "inn": "INN",
+    "taxid": "INN", "taxnumber": "INN", "taxpayerid": "INN",
+    "innumber": "INN", "иннклиента": "INN",
     "паспорт": "PASSPORT", "passport": "PASSPORT",
+    # THE REQUISITE OBJECT NAMES THE DOCUMENT IN ITS OWN KEYS. Bitrix24's
+    # `crm.requisite` is where a Russian CRM keeps identity documents, and it
+    # splits the passport across `RQ_IDENT_DOC_SER` and `RQ_IDENT_DOC_NUM` —
+    # a four-digit and a six-digit field that no shape rule can claim on its
+    # own, arriving from the CUSTOMER'S OWN system. Both went to the model in
+    # the clear. Keys are matched with separators removed, so `RQ_IDENT_DOC_SER`
+    # is «rqidentdocser».
+    #
+    # `RQ_KPP` and `RQ_OGRN` are deliberately ABSENT: they identify a legal
+    # entity, which 152-ФЗ does not cover, and masking them would break the
+    # very requisites the object exists for. `RQ_OGRNIP` is likewise left to
+    # the shape recogniser, which already types it — an individual
+    # entrepreneur is a physical person.
+    "rqidentdocser": "PASSPORT", "rqidentdocnum": "PASSPORT",
+    "rqidentdoc": "PASSPORT", "identdocser": "PASSPORT", "identdocnum": "PASSPORT",
+    "rqinn": "INN", "rqlastname": "NAME", "rqfirstname": "NAME", "rqsecondname": "NAME",
+    "rqname": "NAME", "rqemail": "EMAIL", "rqphone": "PHONE",
     "карта": "CARD", "карты": "CARD", "card": "CARD",
     "почта": "EMAIL", "email": "EMAIL", "мейл": "EMAIL", "емейл": "EMAIL",
     "адрес": "LOC", "address": "LOC",

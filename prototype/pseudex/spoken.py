@@ -30,8 +30,10 @@ form, because that is what the operator typed into the CRM.
 """
 
 import re
+import time
 
 from pseudex.assets import ASSETS
+from pseudex.fuzzy import within_one_typo
 from pseudex.detect import Span
 from pseudex.ru_pii import validate_inn, validate_luhn, validate_snils
 
@@ -89,12 +91,67 @@ _FILLER = frozenset({"эээ", "ээ", "ммм", "мм", "аа", "ааа", "ну
 _WORD_RE = re.compile(r"[а-яё]+", re.IGNORECASE)
 
 
+def is_numeral_word(word: str) -> bool:
+    """A number word — spelled right, or as the leased typo table says a
+    transcript misspells it. The one test every reader of a spoken number
+    should ask, so that «сто семьдесят четыыре» is one house to the role
+    splitter, the key and the digit run alike."""
+    low = word.lower().replace("ё", "е")
+    if low in _FOLDED_NUMERALS or low in _DOUBLED_NUMERALS:
+        return True
+    return ASSETS.is_loaded and low in ASSETS.get().spoken.numeral_typos
+
+
+def numeral_alternation() -> str:
+    """Every number word the engine can read now, longest first, for a regex —
+    the leased misspellings included when a bundle is loaded."""
+    words = set(_ALL_NUMERALS) | set(_DOUBLED_NUMERALS)
+    if ASSETS.is_loaded:
+        words |= set(ASSETS.get().spoken.numeral_typos)
+    return "|".join(sorted(words, key=len, reverse=True))
+
+
+_FOLDED_NUMERALS = {word.replace("ё", "е") for word in _ALL_NUMERALS}
+
+
+def _doubled_forms() -> dict[str, str]:
+    """Every numeral with ONE letter doubled, mapped to the numeral.
+
+    «пяять», «четыыре», «двадцатть» — a held key or a stretched vowel in a
+    transcript, and the commonest damage a spoken number carries. This is not
+    the distance-1 matching the module forbids: a doubling never turns one
+    word into another («есть» is a substitution away from «шесть», not a
+    doubling), and none of the 296 forms is a word pymorphy3 knows — checked
+    at the time of writing, and cheap to check again.
+    """
+    out: dict[str, str] = {}
+    for word in _ALL_NUMERALS:
+        folded = word.replace("ё", "е")
+        for index in range(len(folded)):
+            form = folded[:index + 1] + folded[index] + folded[index + 1:]
+            if form not in _FOLDED_NUMERALS:
+                out.setdefault(form, word)
+    return out
+
+
+_DOUBLED_NUMERALS = _doubled_forms()
+
+
+def canonical_numeral(word: str) -> str | None:
+    """The numeral this word is — itself, or the one the leased typo table says
+    the transcript meant; None for a word that is not a numeral."""
+    return _canonical(word)
+
+
 def _canonical(word: str) -> str | None:
     low = word.lower().replace("ё", "е")
     for table in (_UNITS, _TEENS, _TENS, _HUNDREDS):
         for key in table:
             if key.replace("ё", "е") == low:
                 return key
+    doubled = _DOUBLED_NUMERALS.get(low)
+    if doubled:
+        return doubled
     fixed = ASSETS.get().spoken.numeral_typos.get(low)
     return fixed if fixed else None
 
@@ -150,6 +207,170 @@ def _group(words: list[str], index: int) -> tuple[int, int]:
     return _UNITS[word], index + 1
 
 
+# A DATE SAID ALOUD: «двадцать первое сентября восьмидесятого года», «первого
+# марта тысяча девятьсот девяносто первого». The day is an ordinal (a cardinal
+# ten plus an ordinal unit above twenty), the month a calendar word, the year
+# a cardinal thousand and hundred followed by an ordinal, or an ordinal alone
+# for the century a speaker leaves out. Calendar words are grammar, not tuning.
+_ORDINAL_STEMS: dict[str, int] = {
+    "перв": 1, "втор": 2, "трет": 3, "четверт": 4, "четвёрт": 4, "пят": 5, "шест": 6,
+    "седьм": 7, "восьм": 8, "девят": 9, "десят": 10, "одиннадцат": 11, "двенадцат": 12,
+    "тринадцат": 13, "четырнадцат": 14, "пятнадцат": 15, "шестнадцат": 16,
+    "семнадцат": 17, "восемнадцат": 18, "девятнадцат": 19, "двадцат": 20, "тридцат": 30,
+    "сороков": 40, "пятидесят": 50, "шестидесят": 60, "семидесят": 70, "восьмидесят": 80,
+    "девяност": 90, "сот": 100, "двухсот": 200, "трёхсот": 300, "трехсот": 300,
+    "четырёхсот": 400, "четырехсот": 400, "пятисот": 500, "шестисот": 600, "семисот": 700,
+    "восьмисот": 800, "девятисот": 900, "тысячн": 1000, "двухтысячн": 2000,
+}
+_MONTH_STEMS: tuple[tuple[str, int], ...] = (
+    ("январ", 1), ("феврал", 2), ("март", 3), ("апрел", 4), ("ма", 5), ("июн", 6), ("июл", 7),
+    ("август", 8), ("сентябр", 9), ("октябр", 10), ("ноябр", 11), ("декабр", 12))
+_THOUSANDS = {"тысяча": 1000, "тысячи": 1000, "тысяч": 1000}
+
+
+def _ordinal_value(word: str) -> int | None:
+    for stem in sorted(_ORDINAL_STEMS, key=len, reverse=True):
+        if word.startswith(stem) and len(word) - len(stem) <= 4:
+            return _ORDINAL_STEMS[stem]
+    return None
+
+
+def _month_value(word: str) -> int | None:
+    for stem, number in _MONTH_STEMS:
+        if word.startswith(stem) and (stem != "ма" or word in ("мая", "май", "маю", "мае")):
+            return number
+    return None
+
+
+def date_from_words(phrase: str) -> str:
+    """«dd.mm.yyyy» for a date said in words, or "" when the words are not one."""
+    words = [w for w in _WORD_RE.findall(phrase.lower().replace("ё", "е")) if w not in ("года", "год", "г")]
+    # Only the stem's «ё» is restored: replacing every «е» gave «чётвёртоё», a
+    # word no table holds, and «четвёртое августа» was not a date at all.
+    words = [w.replace("четверт", "четвёрт", 1) if w in ("четвертого", "четвертое") else w for w in words]
+    month_at = next((i for i, w in enumerate(words) if _month_value(w) is not None), None)
+    if month_at is None or month_at == 0:
+        return ""
+    day = 0
+    for word in words[:month_at]:
+        if word in _TENS:
+            day += _TENS[word]
+        else:
+            value = _ordinal_value(word) if word not in _UNITS and word not in _TEENS else _UNITS.get(word, _TEENS.get(word))
+            if value is None:
+                return ""
+            day += value
+    if not 1 <= day <= 31:
+        return ""
+    month = _month_value(words[month_at])
+    year = 0
+    tail = words[month_at + 1:]
+    if tail and tail[0].isdigit():
+        year = int(tail[0])
+    elif tail:
+        index = 0
+        while index < len(tail):
+            word = tail[index]
+            if word in _UNITS or word in _HUNDREDS or word in _TENS or word in _TEENS:
+                value = _UNITS.get(word, _HUNDREDS.get(word, _TENS.get(word, _TEENS.get(word, 0))))
+                if index + 1 < len(tail) and tail[index + 1] in _THOUSANDS:
+                    year += value * 1000
+                    index += 2
+                    continue
+                year += value
+            elif word in _THOUSANDS:
+                year += 1000
+            else:
+                value = _ordinal_value(word)
+                if value is None:
+                    return ""
+                year += value
+            index += 1
+        if year < 100:
+            # The century left unsaid: «восьмидесятого года» is 1980, «пятого
+            # года» is 2005 — a two-digit year not yet reached belongs to the
+            # previous century.
+            year += 2000 if year <= int(__import__("time").localtime().tm_year) % 100 else 1900
+    if not 1900 <= year <= 2100:
+        return "" if tail else f"{day:02d}.{month:02d}"
+    return f"{day:02d}.{month:02d}.{year}"
+
+
+# THE WAY BACK: a date in WORDS, for a substitute that replaces a date the
+# customer SAID. «родился одиннадцатого сентября пятьдесят пятого» was masked
+# as «родился 28.03.1972 пятьдесят пятого» (seed-6060 run, 9 of 9 spoken dates
+# of birth): a digit date in a spoken sentence, and the year left outside the
+# span standing next to a substitute that carries another year. The register
+# is part of what the model reads; a substitute in another register is a
+# substitute the model notices, and what it notices it edits.
+_ORDINAL_GEN: dict[int, str] = {
+    1: "первого", 2: "второго", 3: "третьего", 4: "четвёртого", 5: "пятого", 6: "шестого",
+    7: "седьмого", 8: "восьмого", 9: "девятого", 10: "десятого", 11: "одиннадцатого",
+    12: "двенадцатого", 13: "тринадцатого", 14: "четырнадцатого", 15: "пятнадцатого",
+    16: "шестнадцатого", 17: "семнадцатого", 18: "восемнадцатого", 19: "девятнадцатого",
+    20: "двадцатого", 30: "тридцатого", 40: "сорокового", 50: "пятидесятого",
+    60: "шестидесятого", 70: "семидесятого", 80: "восьмидесятого", 90: "девяностого",
+}
+_TENS_CARD: dict[int, str] = {20: "двадцать", 30: "тридцать", 40: "сорок", 50: "пятьдесят",
+                              60: "шестьдесят", 70: "семьдесят", 80: "восемьдесят", 90: "девяносто"}
+_MONTH_GEN: dict[int, str] = {1: "января", 2: "февраля", 3: "марта", 4: "апреля", 5: "мая", 6: "июня",
+                              7: "июля", 8: "августа", 9: "сентября", 10: "октября", 11: "ноября",
+                              12: "декабря"}
+
+
+def _ordinal_gen(value: int) -> str:
+    """«двадцать первого» for 21, «пятидесятого» for 50 — the genitive ordinal
+    a Russian date is said in, for 1..99."""
+    if value in _ORDINAL_GEN:
+        return _ORDINAL_GEN[value]
+    tens, unit = value - value % 10, value % 10
+    return f"{_TENS_CARD[tens]} {_ORDINAL_GEN[unit]}"
+
+
+def date_to_words(canonical: str, like: str) -> str:
+    """«dd.mm.yyyy» (or «dd.mm») said the way `like` says its own date: the
+    century spelled out when `like` spells it («тысяча девятьсот …»), two
+    digits otherwise («пятьдесят пятого»), «года» appended when `like` says
+    it. "" when the canonical is not a date. Every output reads back through
+    `date_from_words` to the same canonical — the module's self-test proves it."""
+    match = re.fullmatch(r"(\d{2})\.(\d{2})(?:\.(\d{4}))?", canonical.strip())
+    if not match:
+        return ""
+    day, month = int(match.group(1)), int(match.group(2))
+    if not (1 <= day <= 31 and 1 <= month <= 12):
+        return ""
+    words = [_ordinal_gen(day), _MONTH_GEN[month]]
+    if match.group(3):
+        year = int(match.group(3))
+        century, short = divmod(year, 100)
+        # THE CENTURY IS SPELLED WHEN TWO DIGITS WOULD READ BACK WRONG. «двадцать
+        # шестого» is 2026 to `date_from_words` and to a listener — a year not
+        # yet reached belongs to the previous century — so a person born in
+        # 1926 is said with the century whatever the customer's own habit was.
+        now = time.localtime().tm_year % 100
+        ambiguous = (century == 19 and short <= now) or (century == 20 and short > now)
+        spelled = "тысяч" in like.lower() or ambiguous
+        if century == 20:
+            if short == 0:
+                words.append("двухтысячного")
+            elif spelled:
+                words.extend(["две", "тысячи", _ordinal_gen(short)])
+            else:
+                words.append(_ordinal_gen(short))
+        elif century == 19:
+            if short == 0:
+                words.append("тысяча девятисотого")
+            elif spelled:
+                words.extend(["тысяча", "девятьсот", _ordinal_gen(short)])
+            else:
+                words.append(_ordinal_gen(short))
+        else:
+            return ""
+        if re.search(r"\bгод", like.lower()):
+            words.append("года")
+    return " ".join(words)
+
+
 def run_to_digits(words: list[str]) -> str:
     """Concatenate a run of numeral groups into the digit string that was said.
 
@@ -158,6 +379,9 @@ def run_to_digits(words: list[str]) -> str:
     produces is a sequence of groups, and each group contributes its own digits
     in order.
     """
+    # The leased misspellings are read as the numerals they are, so a caller
+    # that admitted «триц» through `is_numeral_word` gets 30 and not a KeyError.
+    words = [_canonical(word) or word for word in words]
     out: list[str] = []
     index = 0
     while index < len(words):
@@ -205,6 +429,18 @@ _PASSPORT_CUE = re.compile(
     r"(?i)(паспорт\w*|пасспорт\w*|документ\w*|удостовер\w*|серия\b)[^.!?]{0,40}$")
 
 
+def _cue_near(before: str, cues: tuple[str, ...]) -> bool:
+    """A cue word in the last few words before the run — as written, stretched
+    («паспоорт»), or one typo away («паспрот»)."""
+    words = _WORD_RE.findall(before.lower())[-4:]
+    for raw in words:
+        word = re.sub(r"([а-яё])\1+", r"\1", raw)
+        for cue in cues:
+            if word.startswith(cue) or (len(word) >= 4 and within_one_typo(word[:len(cue)], cue)):
+                return True
+    return False
+
+
 def _classify(digits: str, before: str) -> str | None:
     """Which identifier this digit string is, decided by the SAME rules the
     digit path uses and in the order of how much each one proves.
@@ -215,6 +451,25 @@ def _classify(digits: str, before: str) -> str | None:
     is far more likely to be the СНИЛС somebody just read out.
     """
     length = len(digits)
+    # THE CUE OUTRANKS A COINCIDENTAL CHECKSUM. «паспорт ноль три четырнадцать
+    # …» satisfied the ten-digit ИНН weights by chance and went out as an ИНН;
+    # a dictated СНИЛС with one digit misheard failed mod 101 and went out in
+    # the clear. Behind the word the evidence is the word (same rule as the
+    # digit path's `_SNILS_CUE_RE`), and the word may be stretched or mistyped.
+    if length == 10 and _cue_near(before, ("паспорт", "пасспорт", "документ", "удостоверение", "серия")):
+        return "PASSPORT"
+    if length == 11 and _cue_near(before, ("снилс",)):
+        return "SNILS"
+    if length == 12 and _cue_near(before, ("инн",)):
+        return "INN"
+    # …BUT THE CUE THE CUSTOMER SAID OUTRANKS A CHECKSUM THAT HAPPENS TO
+    # HOLD. «телефон восемь девятьсот пятьдесят сто шестьдесят двадцать
+    # десять» satisfies mod 101 one time in a hundred, and that one time the
+    # number was minted as a СНИЛС, restored as one, and the agent's phone
+    # validator refused every call (fresh-seed v4, chain-014).
+    if length == 11 and digits[0] in "78" and digits[1] == "9" and _cue_near(
+            before, ("телефон", "тел", "номер", "мобильн", "сотов", "звонит", "позвон")):
+        return "PHONE"
     if length == 11 and validate_snils(digits):
         return "SNILS"
     if length in (10, 12) and validate_inn(digits):
@@ -390,3 +645,30 @@ def detect_spoken_plate(text: str) -> list[Span]:
     """
     return [Span(m.start(), m.end(), "PLATE", m.group(0))
             for m in _SPOKEN_PLATE.finditer(text)]
+
+
+def main() -> int:
+    """Self-test: every spoken date reads back to the canonical it was made from."""
+    import time as _time
+    failures = 0
+    year_now = _time.localtime().tm_year
+    for year in (1930, 1955, 1960, 1980, 1987, 1999, 2000, 2005, 2010, 2021, year_now % 100 + 1900):
+        for day in (1, 3, 4, 11, 17, 20, 21, 28, 30, 31):
+            for month in (1, 5, 9, 12):
+                canonical = f"{day:02d}.{month:02d}.{year}"
+                for like in ("одиннадцатого сентября пятьдесят пятого", "двадцать третьего марта тысяча девятьсот восемьдесят второго года"):
+                    words = date_to_words(canonical, like)
+                    back = date_from_words(words)
+                    if back != canonical:
+                        failures += 1
+                        if failures <= 8:
+                            print(f"FAIL {canonical} -> {words!r} -> {back!r}")
+    if date_to_words("17.08", "родился семнадцатого августа") != "семнадцатого августа":
+        failures += 1
+        print("FAIL a date without a year stays without one")
+    print("spoken: PASS" if not failures else f"spoken: FAIL ({failures})")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

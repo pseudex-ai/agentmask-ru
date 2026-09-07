@@ -47,6 +47,7 @@ python3 test_pseudexctl.py     # the ops CLI: command shapes, doctor verdicts, t
 python3 test_localui_renders.py  # the interface in a REAL browser (needs playwright + chromium):
                                  # a 200 and a matching CSP header are not evidence it executed
 python3 test_collisions.py     # подмена, совпавшая с настоящим значением: обе половины
+python3 test_derived_forms.py  # транслит и инициалы в аргументе: в конвенции модели, разговор решает
 ```
 
 Detection quality (needs generated datasets — all gitignored, regenerate before use):
@@ -388,6 +389,21 @@ makes the rule mean anything and what makes it safe, and one change buys both.**
     another one. `tokens.minted_in` carries it and `is_minted_token` compares.
     A NULL (a row minted before the column) and an empty scope both behave as
     before — a caller that named no conversation has nothing to compare.
+- **AGENT MEMORY IS AN ECHO FROM ANOTHER DIALOGUE, and the conversation scope
+  reads it as a stranger.** Every long-term memory store in the field keys by
+  USER, not by conversation (LangGraph Store, Mem0, Google ADK, Anthropic's
+  memory tool; `fork` and a per-agent handoff session arrive at the same place
+  by other means), so the text the host injects carries the substitute the model
+  was shown in an earlier dialogue. Judged at conversation scope it is masked a
+  SECOND time and the tool receives the FIRST dialogue's fake — 200 OK, empty
+  residual list. Widening the question costs a real person: `is_minted_token`
+  is also what stops us masking somebody who bears a name minted elsewhere, and
+  at customer scope they reach the model in the clear (2-3 per run on 2979
+  NEREL people). So the default does NOT move — 152-ФЗ counts the leak, not the
+  broken tool call — and a host with memory declares it: `pseudonym_scope` on
+  `/mask`, `PSEUDEX_PSEUDONYM_SCOPE` for the process. `Vault.with_pseudonym_scope`
+  holds the argument; `test_collisions` pins BOTH halves of the trade, because a
+  price stated only in a comment is a price nobody re-measures.
 - **The role of the message is NOT that discriminator, and using it would leak
   everything.** The answer is detokenized before it is returned, so the assistant
   messages the customer re-sends carry REAL values, not tokens. «assistant means
@@ -419,6 +435,7 @@ is what keeps tokens consistent across workers. Audit is recorded on the cache *
 same value re-sent in a growing transcript is one protected value, not N.
 
 Env knobs: `PSEUDEX_DB_DIR`, `PSEUDEX_WORKERS`, `PSEUDEX_MASK_CONCURRENCY`, `PSEUDEX_MASK_CACHE_SIZE`,
+`PSEUDEX_PSEUDONYM_SCOPE` (`conversation` | `customer`; the sidecar also takes `pseudonym_scope` per request),
 `PSEUDEX_ADMIN_TOKEN`, `PSEUDEX_GATEWAY_TOKEN`,
 `PSEUDEX_WORKER_MB`, `PSEUDEX_HEADROOM_MB`, `PSEUDEX_MEMORY_LIMIT_MB`, `PSEUDEX_UI_PORT`, `PSEUDEX_UI_TOKEN`, `PSEUDEX_UI_PASSWORD`, `PSEUDEX_UI`,
 `PSEUDEX_UI_ORG`, `PSEUDEX_UI_STATIC`, `PSEUDEX_ROLE` (`engine` | `proxy` | `ui` | `preflight` | `probe` | `rekey` | `decrypt`),
@@ -477,6 +494,53 @@ Recital 14 выводит его из-под регламента, 152-ФЗ пр
 работающий код: **88 из 92 карт корпуса не проходят Луна** (мы находим ровно
 четыре валидных), их `TOKEN` — любая энтропия против наших опубликованных
 префиксов, а своего типа CVC у нас нет.
+
+**AN INSTRUMENT THAT CANNOT FAIL IS NOT AN INSTRUMENT, AND v4 COULD NOT FAIL IN
+FOUR PLACES AT ONCE.** All four were found by reading the code, not by a number
+moving, and each one worked in the gateway's favour:
+
+- **A triple with nothing to compare passed all five levels.** `values_ok` is
+  `not any(...)` over an EMPTY list of fields, `level_state` compares zero records
+  and says «equal», `level_keys` never enters its loop. `receipt` printed 18/18
+  while 12 of those 18 triples made no accepted call at all. `LevelVerdict.comparable`
+  names the levels a pair had anything to say about; the rest are `None`, and BOTH
+  pairs must be comparable or the effect would move without any arm acting.
+- **`FieldSpec.required` stood on 69 specifications and was read by no scorer**, so
+  «the control filled the field the tool demands and the gateway arm did not» scored
+  as agreement. `absent_required` is outside the whitelist; the optional half of the
+  argument still holds.
+- **There was no level for «did the arm act at all».** `state` compares the records
+  that exist, and when the gateway arm wrote none it compares nothing. Exactly one
+  arm was left out of a mutation the other two performed 78 times for I against 48
+  for C and 41 for C′ — a floor of 44.5.
+- **Over-masking was not measured by anything.** `Case.negatives` was declared, the
+  API written, and no family ever called it. Recall without precision is bought by
+  one line that masks everything.
+
+**NEITHER McNEMAR NOR A CONFIDENCE INTERVAL CAN PROVE «NO EFFECT».** They answer a
+question about a DIFFERENCE, and failing to find one is equally consistent with a
+corpus too small to see it. The product's promise is the other claim, so the report
+publishes a TOST verdict at δ=3pp — one margin for every level, so none can be
+granted a looser promise by a decision made after the numbers were seen. The
+interval form is exact rather than approximate and reuses the same cluster
+bootstrap, so two lines of one report cannot disagree about the data. Plus a
+resolution floor of 1/n: a percentile bootstrap over identical cases returns a
+zero-width interval, and zero width certifies ANY margin.
+
+**A CALL THE OTHER ARM NEVER MADE PRODUCES TEN FIELD VERDICTS, AND THE TAXONOMY
+TABLE DROWNS IN THEM.** `extra +131` and `absent_required +55` read as «the gateway
+writes 131 extra fields»; the truth was thirteen net extra CALLS, counted once per
+field of each. Read the call level first, and the field level only for calls both
+arms made.
+
+**A BENCHMARK'S OWN CONVENTION IS A FOURTH CONVENTION.** The instrument accepted
+three transliteration standards plus one «common» table and scored everything else
+against the gateway — while the CONTROL arm wrote «Kuznetsov Dmitry» and «Kuznetsov
+Dmitriy» in one run, «Yulia» and «Yuliya», «Maxim» and «Maksim». Widening the
+accepted set by SYLLABLE (never by distance — another person's name still matches
+nothing) took the value axis from −1.7pp to −0.3pp with McNemar (21,20), p=1.000.
+The instrument's habit must be a MODEL's habit, and the same lesson is already
+written into the engine's own `translit.align`.
 
 `bench/gate/` is the ceiling of the dictionary gate, and it is the instrument that
 found four of the defects above. 600 occurrences of real speech labelled BY HAND
@@ -990,6 +1054,144 @@ direction when done the obvious way:
   already leased for the arms that look for a type word; asking them here needs
   no second list. «дорог» was also simply MISSING from those stems, which is why
   the collision was reachable at all.
+
+- **A MODEL TRANSLITERATES BY LETTER, NOT BY STANDARD, AND THE RESTORED NAME
+  MUST FOLLOW THE MODEL.** Four tables and «which one reproduces the model's
+  word» was the first design; measured on 1 812 Latin words the control arm
+  wrote for real names, no table reproduces «Meshcheryakova» and 96 words
+  follow endings no standard lists. Worse, when several tables explained the
+  word equally the FIRST won and ICAO's «iu» went into «BITIUKOVA» against the
+  control's «BITYUKOVA» — 38 triples, 33 with both controls agreeing. The unit
+  is the letter or the ending (`translit.UNITS`): `align` learns the model's
+  choice per unit from the SUBSTITUTE, `render` applies it to the real name and
+  fills the rest from the measured `DEFAULT` (й→y 112:24, ю→yu 87:0, «-ия»→ia
+  36:0); the vault indexes one `fold` under which every rendering collides. The
+  benchmark's scripted agent writes the same measured convention from its own
+  copy — an instrument writing ICAO scored the engine against a convention no
+  model uses.
+- **A PIECE OF A NAME IS AMBIGUOUS ACROSS A CUSTOMER AND UNAMBIGUOUS IN A
+  CONVERSATION; A SINGLE INITIAL IS AMBIGUOUS EVEN THERE.** «Т.О.» is owned by
+  many substitutes in a vault that served a thousand dialogues, and «no single
+  owner» sent the fake to the CRM. `residual_of` breaks the tie by `minted_in`
+  — the conversation the substitute was handed to — and refuses when two
+  substitutes of ONE conversation share the piece. A lone «С.» is one letter,
+  which no index may hold; its evidence is the OBJECT: the name it abbreviates
+  was restored one key over in the same tool call (`_join_initials`,
+  positional, from the same fake). 50 of 56 initials the gateway wrote
+  differently on the 05.09 medium run were single, and every such call carried
+  `first_name` beside them.
+- **A ONE-LETTER PREPOSITION IN FRONT OF WHAT IT GOVERNS IS NOT A LITERA.**
+  «двадцать семь в третий подъезд» is house 27 IN the third entrance; it went to
+  the courier as «27в». The test is the word after the letter — an ordinal («в
+  третий», «к пятому») or a marker in an oblique case («в квартиру», «к дому»)
+  — and only the letters that ARE prepositions (в, к, с, у, о) are tested, so
+  «двадцать пять а третий подъезд» keeps its litera and «семнадцать в квартира
+  двести двадцать девять» (a real call, nominative marker) stays whole. The rule
+  lives in TWO places, the leased `_LITERA` of the detector and
+  `_word_number_for` of the role split: the span was already whole, the roles
+  were cut by the second.
+- **THE THREE LEVELS OF THE BENCHMARK ARE A LADDER OF STRICTNESS, NOT THREE
+  EQUALITIES.** The mock stores a RECORD (`address.house`), the schema names an
+  argument (`contact.address.house`); read through `spec_for`, no spec resolved
+  and L3 fell back to raw string equality while L2 called the same value
+  `agree` — 186 of 437 diverging triples consisted of such lines only.
+  `tools.state_spec_for` maps the record path; one typed comparison per value
+  at every level.
+
+- **ONE REAL STREET IN A DIALOGUE IS ONE FAKE STREET.** A customer who corrects
+  the house keeps the street — «заречная пятьдесят семь … ой нет, правильно
+  заречная двадцать девять» — and the two mentions minted two unrelated streets,
+  so the model read a correction between two places (32 of 36 two-address
+  `correction` cases). `_same_street_in_conversation` hands the mint the fake
+  street already standing for that stem (equal or one typo apart, as
+  `_keys_match`), only the numbers are drawn, and a bare street with two owners
+  on one street answers with the LATEST row — the correction is the later
+  mention. Two different streets still get two different fakes.
+- **A DATE THE CUSTOMER SAID IS REPLACED BY A DATE IN WORDS, and the span
+  reaches the year without «года».** «родился одиннадцатого сентября пятьдесят
+  пятого» was masked as «родился 28.03.1972 пятьдесят пятого»: digits in a
+  spoken sentence, the real year left outside. The spoken-year arm accepts a
+  century, tens+ordinal or a decade ordinal on their own; a bare ordinal still
+  needs «года». `spoken.date_to_words` mirrors the customer's century style and
+  spells the century when two digits would read back to the wrong one; the ISO
+  the agent writes resolves through the canonical-date index (`date_owner`), and
+  the exact-token pass takes spoken dates from the detector's own arm.
+- **THE FAKE DATE OF BIRTH KEEPS THE YEAR AND THE SIDE OF TODAY — the owner's
+  decision, one bit of leak budget beyond the year.** The year alone left the
+  derived age off by one in 37 triples (real birthday still to come, fake one
+  passed). A year identifies nobody (~1.5M people a year); the day and month are
+  what turn a bucket into a person, and they stay fake.
+
+- **A STREET THE CUSTOMER MISTYPED REACHES THE TOOL AS THE REGISTER SPELLS IT,
+  AND ONLY THE TOOL.** Without the gateway the agent silently repairs
+  «мончгорская» to «Мончегорская» and the CRM finds the address; with a clean
+  substitute in front of it there is nothing to repair, and the customer's
+  literal words reach the tool — 88 of the 141 value conflicts on the 06.09
+  run. `address.register_spelling` asks three signals: the register does not
+  reach the word IN ANY OF THE THREE FORMS `_gar_reaches` asks (as written, by
+  lemma, by the nominative of any parse — asked only as written, the rule
+  rewrote the CORRECT «мончегорской» to «мончегорское»), exactly one register
+  entry is one Damerau edit away («лениа» reaches four and is refused), and the
+  word is at least six letters. In PROSE the customer keeps his own words:
+  repeating his address back corrected and filling a form with it are different
+  acts. v3's tool axis drops 1.1pp because its ground truth is the customer's
+  words verbatim and it has no control arm; the class is named `typo_repaired`
+  rather than folded into `ok`.
+
+- **THE FORM BELONGS TO THE AGENT, THE CONTENT TO THE VAULT.** The vault stores a
+  name canonically — lower case — and `_pick_value` handed that canonical straight
+  into a tool argument: the control wrote «Ким Виктор» into the CRM and the gateway
+  arm wrote «ким виктор». 262 field divergences on the 07.09 live run, 217 triples
+  of 834, the largest single class in it. `agent_form.cased_like` carries the case
+  word by word and positionally, and the rule is SYMMETRIC or it is nothing: an
+  agent that wrote lower case gets lower case back. PROSE IS UNTOUCHED — repeating
+  the customer's own address back to him is a different act from filling a form
+  with it, and there the older rule holds. The case has none of the price the CASE
+  (падеж) has: it changes nothing about WHAT is written, and no register looks up
+  with regard to it.
+- **THE AGENT'S GENERIC WORD SURVIVES EVEN WHEN OURS IS ABSENT.** `_street_like` had
+  a branch «we have no street type — return our name», and the agent's «ул.» fell
+  on the floor: he wrote «ул. Ольховая, 80» and the tool received «солнечная, 104»
+  while the control received «ул. Солнечная, 104». The type word is a marker of the
+  same class as «д.» and «кв.», which `in_form_of` already takes from the agent
+  verbatim, and the engine already preferred the agent's «ул.» over our «переулок»
+  when both existed.
+- **A SUBSTITUTE HOUSE NUMBER KEEPS THE MAGNITUDE OF THE REAL ONE.** «we do not
+  deliver above house 100» lives in the customer's system prompt, and a real house
+  33 under a fake 157 inverts it: the agent REFUSES an order nobody cancelled, and
+  the restored answer contradicts itself — «Дом 33 — номер больше 100». 12 triples
+  of `prompt_rule`, every one of them with zero calls on the gateway leg. The price
+  is named and paid deliberately: the band is under one and a half bits, less than
+  the year already given away by a fake date of birth. Owner's decision, 07.09.
+- **ONE ADDRESS IS ONE KEY, AND THE CITY MAY NOT BE IN IT.** The customer says
+  «центральная сто», the directory answers «Тульская область, г Одоев, ул
+  Центральная, д 100». `street_house_key` dropped the city by the `Geox` grammeme
+  and the dictionary knows Краснодар but not Одоев, so the keys missed each other,
+  ONE address was minted TWICE, the model asked about «Жасминовую 142», got
+  «Тополиную 161» and told the customer the address was not found. Four of the six
+  cases where the gateway leg did nothing at all, and −91pp for `tool_chain`. The
+  city is named by `split_roles` — the reader that already parses the address;
+  morphology stays as a fallback. A second reader of one phrase drifts from the
+  first, which is exactly what happened.
+- **A TWO-WORD CITY WITHOUT A COMMA IS STILL A CITY.** «нижний новгород проезд
+  калашникова 12» parsed as the street «нижний новгород проезд калашникова», so the
+  city went into the `street` field of the customer's CRM. With a comma it worked,
+  without it did not — the same gap that cost the full name beside a date of birth.
+  An adjective before a toponym, and only that: «Нижний Новгород», «Великий
+  Новгород», «Старый Оскол», «Сергиев Посад» are one class, and it cannot eat a
+  street, because a street's first word is followed by a GENERIC word, not a
+  toponym.
+- **TWO SUBSTITUTES THE MODEL GLUED WITH A HYPHEN ARE TWO SUBSTITUTES.** One person
+  is minted twice when the message calls him «Мухина» and the card «Бирюкова»; the
+  model writes «Мухина-Бирюкова», the whole resolves by no key, and BOTH fake
+  surnames reach the CRM. The rule «a hyphen glues one token, and half of one is not
+  a name» is about MASKING, where half of «Лос-Анджелес» became a person; here the
+  question is the reverse and the vault answers it, not morphology — a real toponym
+  has no halves in the vault, so the window resolves to nothing.
+- **AN IDENTIFIER LEFT WITHOUT A DICTIONARY IS THE ONLY THING THAT LEAKS.** Measured
+  on a corpus whose names and streets are drawn from OUTSIDE the leased lists:
+  0 of 2172 values inside them, 8 of 272 outside (2.9%). The number the corpus used
+  to print — zero — described how much the corpus resembled the dictionary.
 
 ## Conventions
 

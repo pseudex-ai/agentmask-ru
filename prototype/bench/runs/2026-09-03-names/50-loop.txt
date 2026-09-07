@@ -1,0 +1,10 @@
+$ python3 test_loop.py
+
+SENT TO MODEL: Найди заказ по телефону +79774319562 и почте dvtobfdv@example.ru
+MODEL TOOL CALL (tokens): {"phone": "+79774319562", "email": "dvtobfdv@example.ru"}
+TOOL EXECUTES WITH: {"phone": "+7 999 123-45-67", "email": "ivan@mail.ru"}
+
+PASS — model saw only tokens; tool received real values.
+
+/Users/igor/Projects/Obscura/prototype/pseudex/morph_places.py:728: SyntaxWarning: invalid escape sequence '\w'
+  и они были слабее: «квартира 58» не проходило (`квартир` без `\w*` не

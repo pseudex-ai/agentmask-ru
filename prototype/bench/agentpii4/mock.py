@@ -59,7 +59,8 @@ class Backend:
         self._tables: dict[str, dict[str, Record]] = {
             "contacts": {}, "addresses": {}, "orders": {}, "claims": {},
             "payments": {}, "verifications": {}, "appointments": {},
-            "sms": {}, "callbacks": {}}
+            "sms": {}, "callbacks": {}, "notes": {},
+            "referrals": {}, "tickets": {}, "escalations": {}}
         self._counters: dict[str, int] = {}
         self._seq = 0
         self.calls: list[CallLog] = []
@@ -100,6 +101,16 @@ class Backend:
         self._tables[table][record_id] = record
         return record
 
+    def _domain_error(self, code: str, subject: str) -> tuple[dict[str, object], object]:
+        """A well-formed call about a state that is not there.
+
+        NOT A `Refusal`: that is the documented rejection of a malformed
+        argument and is scored as `validated_refused`. This is a 200 with an
+        error body — what a real API answers when the order does not exist —
+        and it allocates no id, because ids are allocated by writes only."""
+        data = {"error": {"code": code, "subject": subject}}
+        return data, {"error": {"code": code, "subject": subject}}
+
     def _apply(self, tool: str, parsed: dict[str, object]) -> tuple[dict[str, object], object]:
         """Mutate state and return (result as data, result as a Slot tree)."""
         if tool == "delivery_create_order":
@@ -139,8 +150,17 @@ class Backend:
                             "city": row.fields["city"], "street": row.fields["street"],
                             "house": row.fields["house"], "flat": row.fields.get("flat", ""),
                             "fias_id": row.fields["fias_id"]}
-                suggestions.append({"value": row.fields["value"], "data": data_row})
+                # THE SCORE WAS COMPUTED AND THROWN AWAY. A suggester that ranks
+                # without saying how sure it is cannot be chosen from, and «the
+                # agent picks a candidate by confidence» is a whole family of
+                # cases that could not be written. Rounded to two places: a
+                # float the two arms differ on in the sixteenth digit is noise
+                # dressed as a divergence.
+                confidence = round(scored[index][0] / max(1, len(words)), 2)
+                suggestions.append({"value": row.fields["value"], "data": data_row,
+                                    "confidence": confidence})
                 nodes.append({"value": Slot(str(row.fields["value"]), f"s{index}_value"),
+                              "confidence": f"{confidence:.2f}",
                               "data": {"postal_code": str(row.fields["postal_code"]),
                                        "region": str(row.fields["region"]),
                                        "city": str(row.fields["city"]),
@@ -205,6 +225,38 @@ class Backend:
             record = self._store("contacts", tool, merged, "c", contact_id)
             data = {"id": record.id, "updated_fields": updated}
             return data, dict(data)
+        if tool == "crm_segment_report":
+            # READ-ONLY: no id is allocated, because ids are allocated by writes
+            # only. The answer is the count per bucket — a real aggregate, and
+            # it carries no personal data of its own.
+            counts: dict[str, int] = {}
+            for member in parsed["members"]:  # type: ignore[union-attr]
+                bucket = str(dict(member)["bucket"])  # type: ignore[arg-type]
+                counts[bucket] = counts.get(bucket, 0) + 1
+            data = {"group_by": parsed["group_by"],
+                    "buckets": [{"bucket": bucket, "count": count}
+                                for bucket, count in sorted(counts.items())]}
+            return data, {"group_by": str(parsed["group_by"]),
+                          "buckets": [{"bucket": str(one["bucket"]), "count": int(one["count"])}
+                                      for one in data["buckets"]]}  # type: ignore[index,arg-type]
+        if tool == "send_template":
+            # THE RENDERED TEXT IS WHAT THE CUSTOMER READS, so it comes back as
+            # a Slot: a placeholder left unfilled or a substitute put into one
+            # is visible only in the rendered string.
+            record = self._store("sms", tool, parsed, "tpl")
+            data = {"id": record.id, "status": "queued", "text": parsed["text"]}
+            node = {"id": record.id, "status": "queued",
+                    "text": Slot(str(parsed["text"]), "tpl_text")}
+            return data, node
+        if tool == "crm_add_note":
+            # A NOTE IS A WRITE WHOSE RESULT CARRIES NOTHING PERSONAL: the text
+            # the model wrote is already in `parsed`, and echoing it back would
+            # hand the same string to the detector twice. The id and the length
+            # are what a CRM returns.
+            record = self._store("notes", tool, parsed, "note")
+            data = {"id": record.id, "entity_id": parsed["entity_id"],
+                    "length": len(str(parsed["text"]))}
+            return data, dict(data)
         if tool == "notify_sms":
             record = self._store("sms", tool, parsed, "sms")
             data = {"id": record.id, "status": "queued"}
@@ -212,6 +264,235 @@ class Backend:
         if tool == "callback_schedule":
             record = self._store("callbacks", tool, parsed, "cb")
             data = {"id": record.id, "status": "scheduled"}
+            return data, dict(data)
+        if tool == "order_status":
+            record = self._tables["orders"].get(str(parsed["order_id"]))
+            if record is None:
+                return self._domain_error("ORDER_NOT_FOUND", str(parsed["order_id"]))
+            recipient = record.fields.get("recipient") or {}
+            location = record.fields.get("to_location") or {}
+            phones = recipient.get("phones") or [""]        # type: ignore[union-attr]
+            data = {"uuid": record.id, "status": record.fields.get("status", "ACCEPTED"),
+                    "date": record.fields.get("date", ""),
+                    "recipient": {"name": recipient.get("name", ""), "phone": phones[0]},  # type: ignore[union-attr]
+                    "to_location": {"city": location.get("city", ""),          # type: ignore[union-attr]
+                                    "address": location.get("address", "")}}   # type: ignore[union-attr]
+            node = {"uuid": record.id, "status": str(data["status"]), "date": str(data["date"]),
+                    "recipient": {"name": Slot(str(recipient.get("name", "")), "os_name"),  # type: ignore[union-attr]
+                                  "phone": Slot(str(phones[0]), "os_phone")},
+                    "to_location": {"city": str(location.get("city", "")),      # type: ignore[union-attr]
+                                    "address": Slot(str(location.get("address", "")), "os_addr")}}  # type: ignore[union-attr]
+            return data, node
+        if tool == "order_cancel":
+            record = self._tables["orders"].get(str(parsed["order_id"]))
+            if record is None:
+                return self._domain_error("ORDER_NOT_FOUND", str(parsed["order_id"]))
+            if record.fields.get("status") == "CANCELLED":
+                return self._domain_error("ALREADY_CANCELLED", record.id)
+            fields = dict(record.fields)
+            fields["status"] = "CANCELLED"
+            fields["cancel_reason"] = parsed.get("reason", "")
+            self._store("orders", tool, fields, "ord", record.id)
+            data = {"uuid": record.id, "status": "CANCELLED"}
+            return data, dict(data)
+        if tool == "order_reschedule":
+            record = self._tables["orders"].get(str(parsed["order_id"]))
+            if record is None:
+                return self._domain_error("ORDER_NOT_FOUND", str(parsed["order_id"]))
+            if record.fields.get("status") == "CANCELLED":
+                return self._domain_error("ORDER_CANCELLED", record.id)
+            fields = dict(record.fields)
+            fields["date"] = parsed["date"]
+            fields["status"] = "RESCHEDULED"
+            self._store("orders", tool, fields, "ord", record.id)
+            data = {"uuid": record.id, "status": "RESCHEDULED", "date": parsed["date"]}
+            return data, {"uuid": record.id, "status": "RESCHEDULED", "date": str(parsed["date"])}
+        if tool == "delivery_quote":
+            # READ-ONLY and carrying no personal data: a price and a term. It
+            # exists so a long conversation has a step whose answer the customer
+            # reacts to without the gateway being involved at all.
+            weight = int(parsed["weight"])          # type: ignore[arg-type]
+            price = 300 + weight // 100 * 7
+            data = {"city": parsed["city"], "weight": weight,
+                    "price": f"{price}.00", "currency": "RUB", "days": 2 + weight // 20000}
+            return data, {"city": str(parsed["city"]), "weight": str(weight),
+                          "price": str(data["price"]), "currency": "RUB", "days": str(data["days"])}
+        if tool == "pickup_points_near":
+            rows = list(self._tables["addresses"].values())
+            words = [word for word in str(parsed["address"]).lower().replace(",", " ").split()
+                     if len(word) > 2]
+            scored = []
+            for row in rows:
+                haystack = " ".join(str(value).lower() for value in row.fields.values())
+                scored.append((sum(1 for word in words if word in haystack), row))
+            scored.sort(key=lambda pair: (-pair[0], pair[1].id))
+            points = []
+            nodes = []
+            for index, (hits, row) in enumerate(scored[: int(parsed["limit"])]):  # type: ignore[arg-type]
+                # DISTANCE FROM THE SCORE, so a substitute that matches fewer
+                # words ranks further away — the effect the family measures.
+                metres = 300 + (len(words) - hits) * 900
+                points.append({"code": f"PVZ{index + 1:03d}", "address": row.fields["value"],
+                               "distance_m": metres})
+                nodes.append({"code": f"PVZ{index + 1:03d}",
+                              "address": Slot(str(row.fields["value"]), f"p{index}_addr"),
+                              "distance_m": str(metres)})
+            return {"points": points}, {"points": nodes}
+        if tool == "normalize_contact":
+            # A NORMALISER RESHAPES WHAT IT IS GIVEN, and that is the whole
+            # provocation: the agent hands over a substitute, gets it back
+            # capitalised and in E.164, and writes THAT onward. Our restorer
+            # then meets a token the tool reformatted — the same path a model
+            # reformatting one takes, arrived at by a third party.
+            import re as _re
+            data: dict[str, object] = {}
+            node: dict[str, object] = {}
+            raw_name = str(parsed.get("name", "")).strip()
+            if raw_name:
+                words = [word for word in raw_name.split() if word]
+                roles = ("surname", "given", "patronymic")
+                fields = {role: word.capitalize() for role, word in zip(roles, words)}
+                data["name"] = {**fields, "quality": 0 if len(words) >= 2 else 1}
+                node["name"] = {**{role: Slot(value, f"nm_{role}") for role, value in fields.items()},
+                                "quality": str(data["name"]["quality"])}   # type: ignore[index]
+            raw_phone = str(parsed.get("phone", "")).strip()
+            if raw_phone:
+                digits = _re.sub(r"\D", "", raw_phone)
+                e164 = f"+7{digits[-10:]}" if len(digits) >= 10 else raw_phone
+                data["phone"] = {"e164": e164, "quality": 0 if len(digits) >= 10 else 2}
+                node["phone"] = {"e164": Slot(e164, "nm_phone"),
+                                 "quality": str(data["phone"]["quality"])}  # type: ignore[index]
+            raw_address = str(parsed.get("address", "")).strip()
+            if raw_address:
+                # THE FIRST NUMBER IS THE HOUSE. Taking the last one took the
+                # flat out of «ленина 14, кв 3» and left «ленина 14» as the
+                # street name — a normaliser that mangles is measuring itself.
+                # A NORMALISER THAT CANNOT PARSE SAYS SO AND CHANGES NOTHING.
+                # A spoken address carries no digit, so «before the first
+                # number» is the whole utterance — returning that as the street
+                # name is not normalisation, it is damage, and the agent then
+                # wrote the entire sentence into `address.street`. DaData
+                # answers the same way: a quality code, and the caller keeps
+                # what it had.
+                house = _re.search(r"\d{1,4}[а-яё]?", raw_address)
+                street = (raw_address[:house.start()] if house else raw_address).strip(" ,.").strip()
+                if not house:
+                    street = ""
+                data["address"] = {"street": street, "house": house.group(0) if house else "",
+                                   "quality": 0 if house else 2}
+                node["address"] = {"street": Slot(street, "nm_street") if street else "",
+                                   "house": Slot(house.group(0), "nm_house") if house else "",
+                                   "quality": str(data["address"]["quality"])}  # type: ignore[index]
+            return data, node
+        if tool == "clinic_slots":
+            # READ-ONLY, NO PERSONAL DATA. Slots derived from the date so the
+            # two arms see the same list: an answer that differed by chance
+            # would put the agent's choice in the effect.
+            date = str(parsed["date"])
+            hours = (9, 11, 14, 16, 18)
+            slots = [{"id": f"slot-{index + 1}", "at": f"{date}T{hour:02d}:00:00+04:00"}
+                     for index, hour in enumerate(hours)]
+            data = {"speciality": parsed["speciality"], "date": date, "slots": slots}
+            return data, {"speciality": str(parsed["speciality"]), "date": date,
+                          "slots": [{"id": str(one["id"]), "at": str(one["at"])} for one in slots]}
+        if tool == "appointment_cancel":
+            record = self._tables["appointments"].get(str(parsed["appointment_id"]))
+            if record is None:
+                return self._domain_error("APPOINTMENT_NOT_FOUND", str(parsed["appointment_id"]))
+            if record.fields.get("status") == "CANCELLED":
+                return self._domain_error("ALREADY_CANCELLED", record.id)
+            fields = dict(record.fields)
+            fields["status"] = "CANCELLED"
+            self._store("appointments", tool, fields, "apt", record.id)
+            data = {"appointment_id": record.id, "status": "CANCELLED"}
+            return data, dict(data)
+        if tool == "appointment_reschedule":
+            record = self._tables["appointments"].get(str(parsed["appointment_id"]))
+            if record is None:
+                return self._domain_error("APPOINTMENT_NOT_FOUND", str(parsed["appointment_id"]))
+            if record.fields.get("status") == "CANCELLED":
+                return self._domain_error("APPOINTMENT_CANCELLED", record.id)
+            fields = dict(record.fields)
+            fields["slot"] = parsed["slot"]
+            fields["status"] = "MOVED"
+            self._store("appointments", tool, fields, "apt", record.id)
+            data = {"appointment_id": record.id, "status": "MOVED", "slot": parsed["slot"]}
+            return data, {"appointment_id": record.id, "status": "MOVED", "slot": str(parsed["slot"])}
+        if tool == "referral_create":
+            record = self._store("referrals", tool, parsed, "ref")
+            data = {"referral_id": record.id, "speciality": parsed["speciality"], "status": "issued"}
+            return data, {"referral_id": record.id, "speciality": str(parsed["speciality"]),
+                          "status": "issued"}
+        if tool == "payment_status":
+            record = self._tables["payments"].get(str(parsed["payment_id"]))
+            if record is None:
+                return self._domain_error("PAYMENT_NOT_FOUND", str(parsed["payment_id"]))
+            receipt = record.fields.get("receipt") or {}
+            customer = receipt.get("customer") or {}      # type: ignore[union-attr]
+            amount = record.fields.get("amount") or {}
+            data = {"id": record.id, "status": record.fields.get("status", "pending"),
+                    "amount": dict(amount),               # type: ignore[arg-type]
+                    "receipt": {"customer": dict(customer)}}
+            node = {"id": record.id, "status": str(data["status"]),
+                    "amount": {key: str(value) for key, value in dict(amount).items()},  # type: ignore[arg-type]
+                    "receipt": {"customer": {key: Slot(str(value), f"ps_{key}")
+                                             for key, value in dict(customer).items() if value}}}
+            return data, node
+        if tool == "payment_refund":
+            record = self._tables["payments"].get(str(parsed["payment_id"]))
+            if record is None:
+                return self._domain_error("PAYMENT_NOT_FOUND", str(parsed["payment_id"]))
+            if record.fields.get("status") == "refunded":
+                return self._domain_error("ALREADY_REFUNDED", record.id)
+            fields = dict(record.fields)
+            fields["status"] = "refunded"
+            fields["refund"] = parsed["amount"]
+            self._store("payments", tool, fields, "pay", record.id)
+            data = {"payment_id": record.id, "status": "refunded", "amount": parsed["amount"]}
+            return data, {"payment_id": record.id, "status": "refunded",
+                          "amount": {key: str(value) for key, value in dict(parsed["amount"]).items()}}  # type: ignore[arg-type]
+        if tool == "receipt_fetch":
+            record = self._tables["payments"].get(str(parsed["payment_id"]))
+            if record is None:
+                return self._domain_error("PAYMENT_NOT_FOUND", str(parsed["payment_id"]))
+            receipt = record.fields.get("receipt") or {}
+            customer = receipt.get("customer") or {}      # type: ignore[union-attr]
+            data = {"payment_id": record.id, "fiscal_document": f"fd-{record.id[-3:]}",
+                    "customer": dict(customer)}
+            node = {"payment_id": record.id, "fiscal_document": str(data["fiscal_document"]),
+                    "customer": {key: Slot(str(value), f"rc_{key}")
+                                 for key, value in dict(customer).items() if value}}
+            return data, node
+        if tool == "ticket_create":
+            record = self._store("tickets", tool, parsed, "tkt")
+            data = {"ticket_id": record.id, "status": "open"}
+            return data, dict(data)
+        if tool == "ticket_find":
+            phone = str(parsed["phone"])
+            found = [row for row in self._tables["tickets"].values()
+                     if str(row.fields.get("phone", "")) == phone]
+            issues = [{"ticket_id": row.id, "subject": row.fields.get("subject", ""),
+                       "status": "open"} for row in found]
+            nodes = [{"ticket_id": row.id,
+                      "subject": Slot(str(row.fields.get("subject", "")), f"tk{index}_subject"),
+                      "status": "open"}
+                     for index, row in enumerate(found)]
+            return {"issues": issues}, {"issues": nodes}
+        if tool == "escalate_to_human":
+            record = self._store("escalations", tool, parsed, "esc")
+            data = {"escalation_id": record.id, "queue": parsed["queue"], "status": "queued"}
+            return data, {"escalation_id": record.id, "queue": str(parsed["queue"]),
+                          "status": "queued"}
+        if tool == "crm_merge_contacts":
+            primary = self._tables["contacts"].get(str(parsed["primary_id"]))
+            duplicate = self._tables["contacts"].get(str(parsed["duplicate_id"]))
+            if primary is None or duplicate is None:
+                return self._domain_error("CONTACT_NOT_FOUND",
+                                          f"{parsed['primary_id']}/{parsed['duplicate_id']}")
+            merged = {**duplicate.fields, **primary.fields}
+            self._store("contacts", tool, merged, "c", primary.id)
+            del self._tables["contacts"][duplicate.id]
+            data = {"primary_id": primary.id, "merged": duplicate.id}
             return data, dict(data)
         if tool == "crm_import_csv":
             imported = 0

@@ -1,0 +1,64 @@
+$ python3 bench/agentpii4/smoke.py --engine
+
+СКРИПТОВЫЙ АГЕНТ «decomposer» — не живой прогон; три плеча через настоящий шлюз
+
+троек: 360 · случаев: 360 · исключено: 0
+
+1. ПРОВОКАЦИЯ — что модель делает с НАСТОЯЩИМИ значениями (плечо C против C′)
+   verbatim 2303 (95.0%) · absent 120 (5.0%)
+
+2–3. ШУМОВОЙ ПОЛ И ЭФФЕКТ ШЛЮЗА — по уровням, никогда одним числом
+   уровень          I≈C      C′≈C     эффект   95% ДИ (кластерный бутстрап)   McNemar p (b,c)  ICC(случай) ICC(значение) DEFF
+   L1 инструменты   100.0% 100.0%   +0.0pp [ +0.0,  +0.0]           1.000 (0,0)    0.00        0.00      1.00
+   L2 ключи          99.7% 100.0%   -0.3pp [ -0.9,  +0.0]           1.000 (1,0)    0.00        1.00      1.18
+   L3 состояние      66.4% 100.0%  -33.6pp [-38.4, -28.3]           0.000 (121,0)    0.00        0.00      1.00
+   L3 дословно       66.1% 100.0%  -33.9pp [-38.8, -28.5]           0.000 (122,0)    0.00        0.00      1.00
+   для ±2pp на L3 при согласии 66% нужно n ≈ 2144 случаев (iid)
+
+4. ТАКСОНОМИЯ ПО ПОЛЯМ — I−C рядом с C′−C; разница и есть шлюз
+   класс               I−C   C′−C   разн   примечание
+   agree               2278   2423   -145   
+   absent                 1      0     +1   
+   residual               6      0     +6   ДЕФЕКТ ПРОДУКТА — подмена дошла до инструмента
+   validated_refused      2      0     +2   движок не чинит — фейк отвергнут валидацией
+   derived               81      0    +81   движок не чинит — производная от подмены
+   reformatted            3      0     +3   
+   fragment              22      0    +22   
+   other                 30      0    +30   
+   по типам (I−C): CARD: agree 13/14 · DOB: agree 91/100 · LOC: agree 790/854 · NAME: agree 822/892 · PASSPORT: agree 100/100 · PHONE: agree 413/413 · SNILS: agree 49/50
+
+5. ПРОИЗВОДНЫЕ ПОЛЯ (I−C)
+   to_location.postal_code:derived/unverifiable 35
+   patient.gender:derived/from_substitute 13
+   to_location.postal_code:derived/from_substitute 11
+   patient.age:derived/from_substitute 8
+   timezone:derived/unverifiable 8
+   contact.name_latin:derived/unverifiable 5
+   payment_method_data.card.cardholder:other/misderived 5
+   contact.initials:derived/from_substitute 1
+   contact.name_latin:other/misderived 1
+
+6. ВАЛИДАЦИЯ — семейство validate
+   троек 36 · агент не вызвал (I−C) 0 · (C′−C) 0 · мок отверг в I 0
+
+7. ПРОСТЫЕ ЗНАЧЕНИЯ (не ПД, обязаны уцелеть) — I−C / C′−C
+   intact: 529 / 529 · changed: 0 / 0 · absent: 0 / 0
+
+8. РАЗРЕЗЫ — согласие I≈C на L3 по регистру и по виду
+   регистр: chat 79/107 · clean 1/6 · sloppy 29/51 · voice_itn 56/78 · voice_raw 74/118
+   вид: chain 37/48 · compare 14/42 · container 29/30 · correction 32/36 · decompose 34/42 · derive 18/54 · result_feed 36/36 · summary 3/36 · validate 36/36
+
+10. ПРИМЕРЫ РАСХОЖДЕНИЙ (I−C, до 12)
+   chain-005|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='BITIUKOVA ZINAIDA' I='BITYUKOVA ZINAIDA' (derived)
+   chain-011|0 crm_upsert_contact.contact.initials [derived/from_substitute] C='М.Б.' I='Р.Л.' (derived)
+   chain-011|0 crm_upsert_contact.contact.last_name [other/inflected] C='громова' I='марина' (verbatim)
+   chain-014|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='KUZNECZOV DMITRII' I='KUZNETSOV DMITRII' (derived)
+   chain-015|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='KUZNECZOVA OLGA' I='KUZNETSOVA OLGA' (derived)
+   chain-025|0 crm_upsert_contact.contact.address.house [reformatted/] C='174' I='170' (verbatim)
+   chain-030|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='KUZNECZOV DMITRII' I='KUZNETSOV DMITRII' (derived)
+   chain-039|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='KUZNECZOV DMITRII' I='KUZNETSOV DMITRII' (derived)
+   compare-000|0 courier_book.contact.name [fragment/given] C='сергея' I='сергей' (verbatim)
+   compare-001|0 courier_book.contact.name [fragment/given] C='максима' I='максим' (verbatim)
+   compare-002|0 courier_book.contact.name [fragment/given] C='анну' I='анна' (verbatim)
+   compare-004|0 courier_book.contact.name [fragment/given] C='зинаиду' I='зинаида' (verbatim)
+

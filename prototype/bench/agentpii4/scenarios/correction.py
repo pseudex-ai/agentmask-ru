@@ -19,7 +19,7 @@ def build(seed: int, count: int) -> list[Case]:
 
 
 def _one(ctx: c.Ctx) -> Case:
-    city = ctx.rng.choice(list(pools.CITIES)[:10])
+    city = ctx.rng.choice(list(pools.CORPUS_CITIES))
     drawn = c.draw(ctx, city=city, with_flat=True, with_type=False)
     identity = f"p{ctx.index}"
     wrong = pools.Address(street=drawn.address.street, street_type="",

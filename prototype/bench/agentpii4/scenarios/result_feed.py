@@ -19,7 +19,7 @@ def build(seed: int, count: int) -> list[Case]:
 
 
 def _one(ctx: c.Ctx) -> Case:
-    city = ctx.rng.choice(list(pools.CITIES)[:10])
+    city = ctx.rng.choice(list(pools.CORPUS_CITIES))
     drawn = c.draw(ctx, city=city)
     identity = f"p{ctx.index}"
     speciality = ctx.rng.choice(("терапевту", "кардиологу", "неврологу", "стоматологу", "офтальмологу"))

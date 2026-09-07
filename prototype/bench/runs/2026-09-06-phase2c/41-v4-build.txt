@@ -1,0 +1,17 @@
+$ python3 bench/agentpii4/build.py --check
+
+случаев: 699
+вид: analytics 18 · chain 48 · compare 42 · container 30 · correction 36 · crm_note 24 · decompose 42 · derive 54 · long_order 60 · lookup_list 30 · normalize 40 · prompt_rule 35 · receipt 18 · result_feed 36 · search_rank 45 · send_template 24 · summary 36 · tool_chain 45 · validate 36
+регистр: chat 208 · clean 6 · sloppy 101 · voice_itn 153 · voice_raw 231
+кластеров: 570 · размера ≥3: 12
+инструменты: address_suggest 132 · callback_schedule 28 · clinic_book 50 · courier_book 169 · crm_add_note 70 · crm_find_contact 278 · crm_import_csv 15 · crm_segment_report 18 · crm_upsert_contact 132 · delivery_create_order 189 · delivery_quote 95 · normalize_contact 40 · notify_sms 215 · order_cancel 20 · order_reschedule 20 · order_status 105 · passport_verify 50 · payment_create 32 · pickup_points_near 20 · send_template 24
+доказательство: `find` не нашёл бы эталон в 12 из 699 случаев
+ярусы (K=3; MDE при доле расхождений 0.10 и DEFF 2.1, мощность 80%):
+  nano       30 случаев ·    90 плеч · MDE 23.4pp
+  small     120 случаев ·   360 плеч · MDE 11.7pp
+  medium    300 случаев ·   900 плеч · MDE 7.4pp
+  large     559 случаев ·  1677 плеч · MDE 5.4pp
+  holdout   140 случаев ·   420 плеч · MDE 10.9pp
+  max       699 случаев ·  2097 плеч · MDE 4.9pp
+корпус собран и проверен, не записан (--check)
+

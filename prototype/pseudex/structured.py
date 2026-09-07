@@ -8,8 +8,9 @@ so the entire value is masked. Offsets are taken straight from the regex match
 
 import re
 
+from pseudex import morph_places
 from pseudex.assets import ASSETS, StructuredAssets
-from pseudex.detect import Span
+from pseudex.detect import PartSpan, Span
 
 # A filename/extension or a path separator. No person's name contains either, so
 # rejecting these is free of recall risk.
@@ -32,6 +33,16 @@ def _is_filename(value: str) -> bool:
 # abbreviations that a naive rule would read as sentence ends: «Г. САНКТ-
 # ПЕТЕРБУРГ» and «Д.7» are one letter and a dot, while «дословно.» is a word.
 _SENTENCE_BREAK = re.compile(r"[А-Яа-яЁёA-Za-z]{2,}\.\s+[А-ЯЁA-Z]")
+
+
+_NOT_IN_A_NAME = frozenset({"из", "в", "во", "на", "и", "или", "с", "со", "по", "у", "к", "ко", "от", "для", "за",
+                            "о", "об", "про", "оба", "обе", "не", "the", "and"})
+
+
+def _name_shaped(value: str) -> bool:
+    words = value.replace("-", " ").split()
+    return (1 <= len(words) <= 4 and not any(ch.isdigit() for ch in value)
+            and not any(word.lower() in _NOT_IN_A_NAME for word in words))
 
 
 def _is_running_text(value: str) -> bool:
@@ -70,12 +81,91 @@ def _key_type(key: str, structured: StructuredAssets) -> str | None:
     return None
 
 
+_ADDRESS_ROLES = frozenset({"city", "street", "house", "flat", "entrance", "floor", "building"})
+
+
+def _brace_events(text: str) -> list[tuple[int, int]]:
+    """Every `{` (with a fresh object id) and `}` (id 0) outside JSON strings."""
+    events: list[tuple[int, int]] = []
+    next_id = 1
+    in_string = False
+    i = 0
+    n = len(text)
+    while i < n:
+        char = text[i]
+        if in_string:
+            if char == "\\":
+                i += 2
+                continue
+            if char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char == "{":
+            events.append((i, next_id))
+            next_id += 1
+        elif char == "}":
+            events.append((i, 0))
+        i += 1
+    return events
+
+
+def _by_object(text: str, matches: list[re.Match[str]]) -> dict[int, list[re.Match[str]]]:
+    """The pairs grouped by the INNERMOST object each sits in."""
+    events = _brace_events(text)
+    stack: list[int] = []
+    groups: dict[int, list[re.Match[str]]] = {}
+    cursor = 0
+    for match in matches:
+        while cursor < len(events) and events[cursor][0] < match.start():
+            _, object_id = events[cursor]
+            cursor += 1
+            if object_id:
+                stack.append(object_id)
+            elif stack:
+                stack.pop()
+        if stack:
+            groups.setdefault(stack[-1], []).append(match)
+    return groups
+
+
+def _address_object_spans(text: str, matches: list[re.Match[str]],
+                          claimed: set[int]) -> list[Span]:
+    """AN OBJECT WITH A STREET AND A HOUSE IS ONE ADDRESS, whatever else it
+    holds. Each leaf becomes a part of ONE substitute (see `PartSpan`); the
+    street and the house are required because a city or a flat alone is not
+    an address, and a street without a house is a street."""
+    spans: list[Span] = []
+    for group in _by_object(text, matches).values():
+        leaves: dict[str, re.Match[str]] = {}
+        for match in group:
+            role = morph_places.role_of_field(match.group(1))
+            if role in _ADDRESS_ROLES and match.group(2).strip() and role not in leaves:
+                leaves[role] = match
+        if "street" not in leaves or "house" not in leaves:
+            continue
+        whole = morph_places.address_from_fields(
+            {role: match.group(2).strip() for role, match in leaves.items()})
+        for role, match in leaves.items():
+            raw = match.group(2)
+            lead = len(raw) - len(raw.lstrip())
+            value = raw.strip()
+            start = match.start(2) + lead
+            spans.append(PartSpan(start, start + len(value), "LOC", value, whole, role))
+            claimed.add(match.start())
+    return spans
+
+
 def detect_structured_kv(text: str) -> list[Span]:
     """Detect PII by typing whole values from their key name."""
     structured = ASSETS.get().structured
-    spans: list[Span] = []
+    json_matches = list(_JSON_KV.finditer(text))
+    claimed: set[int] = set()
+    spans: list[Span] = _address_object_spans(text, json_matches, claimed)
     for regex in (_JSON_KV, _FORM_KV):
         for match in regex.finditer(text):
+            if regex is _JSON_KV and match.start() in claimed:
+                continue
             entity_type = _key_type(match.group(1), structured)
             if entity_type is None:
                 continue
@@ -100,6 +190,15 @@ def detect_structured_kv(text: str) -> list[Span]:
             # gateway. Ambiguous bare words (`test`, `config`) therefore stay
             # masked — over-masking is the safe side of this trade.
             if entity_type == "NAME" and _is_filename(value):
+                continue
+            # A NAME VALUE HAS THE SHAPE OF A NAME. «клиенты: сидоров иван из
+            # самары и петрова анна из казани» — the key typed the whole clause
+            # as ONE person: two customers and their cities became a nine-word
+            # substitute, the cities vanished from the model's view, and the
+            # count by city the agent was asked for had nothing to count. A
+            # person is at most four words with no preposition or conjunction
+            # between them; anything wider is prose for the name arms to read.
+            if entity_type == "NAME" and not _name_shaped(value):
                 continue
             # Key matching is prefix-based, so a compound key can pick up the
             # wrong stem: `cardholder_name` starts with `card` and was typed

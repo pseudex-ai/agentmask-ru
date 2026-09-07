@@ -13,6 +13,7 @@ Reused from v3 (imported, not copied): `Message`, `Provenance`, `Source`,
 `tier`, `corpus_digest`, `TERMINATIONS`. Two rule sets that had to stay equal
 would be one rule set and a drift waiting to happen.
 """
+import random
 import hashlib
 import json
 from collections.abc import Sequence
@@ -40,12 +41,59 @@ SCENARIO_KINDS: tuple[str, ...] = (
     "container",    # PII inside a URL / CSV string argument
     "derive",       # age, gender, initials, translit, postcode, timezone
     "decompose",    # series/number, last/first/middle, street/house/flat
+    # Added 05.09 from research/2026-09-05-agent-scenario-coverage.md. The nine
+    # above share one axis — what the agent does to a VALUE — and it is nearly
+    # exhausted. What follows asks where the value COMES FROM and where it GOES.
+    "lookup_list",  # a search returns OTHER people's records; one is chosen
+    "crm_note",     # the model WRITES the PII itself, in prose, into a CRM field
+    "send_template",  # PII goes into a template VARIABLE; the placeholder must survive
+    "receipt",      # the contact is a CONDITION of the sale, not an accuracy question
+    "analytics",    # SEVERAL people in one utterance, and an aggregate over them
+    # 06.09, Фаза 2: long conversations with a full toolbox. The fourteen above
+    # all fit into one to three turns and one or two calls; these ask whether a
+    # substitute survives seven turns, whether a person named LATE stays a
+    # different person, and whether a value that exists only in a tool's ANSWER
+    # can feed the next call.
+    "long_order",   # оформление заказа целиком: 7 ходов, 12 инструментов, поздний получатель
+    "search_rank",  # top-k из справочника с уверенностью; подмена меняет список И порядок
+    "prompt_rule",  # бизнес-правило в промпте, которое подмена может нарушить
+    "tool_chain",   # три перехода подряд, и одно значение живёт только в ответе
+    "normalize",    # чужой сервис переписывает подмену, и агент пишет дальше ЕЁ
+    "long_clinic",  # запись, окна, перенос или отмена по идентификатору из ответа
+    "long_bank",    # платёж и чтение его обратно: статус, чек 54-ФЗ, возврат
+    "long_support", # тикет, склейка дублей, эскалация СО СВОДКОЙ — ПД в прозе
 )
 ARMS: tuple[str, ...] = ("C", "I", "C2")          # control, intervention, second control
 INV_LEVELS: tuple[str, ...] = ("tools", "keys", "state")
 DUTIES: tuple[str, ...] = ("required", "optional")
-CORPUS_SIZE_BAND: tuple[int, int] = (330, 420)
-TIER_SIZES: dict[str, int] = {"nano": 30, "small": 120, "medium": 0}
+# 05.09: raised from 420 with the flow axis (research/2026-09-05-agent-scenario-
+# coverage.md). The band is a sanity check on authoring effort, not a statistical
+# constraint — the tiers are what bound the money, and `small` is still the pilot.
+CORPUS_SIZE_BAND: tuple[int, int] = (330, 900)
+# THE TARGET SIZE OF EACH TIER, AND WHAT IT BUYS. Not taste: at the measured
+# DEFF ≈ 2.1 and a discordance around 0.10, `stats.mde_paired` says a tier of
+# n triples can detect a paired difference no smaller than
+# 2.802·√(0.10·2.1/n) — 17pp at 56, 10pp at 168, 7pp at 336, 5.4pp at 560,
+# 4.1pp at 1000. A tier therefore publishes its MDE, never only its size:
+# «прогон» on nano and «прогон» on max are different claims.
+# Full argument and sources in research/2026-09-06-benchmark-tiers.md.
+#
+# `holdout` IS NOT A DEBUG TIER AND IS NOT NESTED IN ONE. Every other tier
+# draws from the remaining 80%. Until now the same corpus was used to fix and
+# to claim, which is the adaptive fit this repository has already paid for once
+# («предыдущие замеры шли по корпусу, на котором я и чинил»). What is rationed
+# is not the number of holdout runs but the number of times the holdout
+# DISAGREED with the debug tier: Dwork's reusable-holdout budget is B = τ²·n,
+# and at n = 500, τ = 0.02 that is less than one.
+TIER_SIZES: dict[str, int] = {
+    "nano": 30,        # the pipe is alive, no leaks — no effect claim at all
+    "small": 120,      # ±10pp: did we break something obvious
+    "medium": 300,     # ±7pp: did a round of fixes move the needle
+    "large": 600,      # ±5pp by level, by-family only as exploration
+    "max": 0,          # every case, holdout included — the production claim
+    "holdout": 0,      # 20% never used for debugging; 0 = «whatever that is»
+}
+HOLDOUT_SHARE: float = 0.20
 MIN_CLUSTER_MULTI: int = 8         # clusters of size >= 3, so ICC is measured, not assumed
 MIN_FIND_DISTINCT_CASES: int = 12  # cases where text.find(value) != start — see validate.py
 MIN_TYPE_DENOMINATOR: int = v3.MIN_TYPE_DENOMINATOR
@@ -413,6 +461,36 @@ class Ladder:
     seed: int
     corpus_sha256: str
     tiers: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+def sample(cases: Sequence[Case], count: int, seed: int) -> list[Case]:
+    """A seeded random sample of the corpus, STRATIFIED by family.
+
+    The ladder's tiers are frozen lists, and a frozen list is what gets
+    debugged case by case: every fix of this week was read off `small`, so
+    `small` can no longer tell whether the engine improved or the fixes did.
+    A sample drawn from a seed nobody has looked at is the answer, and it is
+    stratified so a 60-case draw still carries every family — a uniform draw
+    of that size drops `container` (30 of 360) one time in five.
+
+    Reproducible by (corpus digest, count, seed); the ids ride in the run's
+    meta so a replay never has to redraw.
+    """
+    if count <= 0 or count > len(cases):
+        raise InvalidCorpus(f"sample of {count} from a corpus of {len(cases)}")
+    rng = random.Random(f"v4-sample:{corpus_digest(cases)}:{count}:{seed}")
+    by_kind: dict[str, list[Case]] = {}
+    for case in cases:
+        by_kind.setdefault(case.kind, []).append(case)
+    # Largest-remainder apportionment, so the shares add up to `count` exactly.
+    shares = {kind: count * len(group) / len(cases) for kind, group in by_kind.items()}
+    quota = {kind: int(share) for kind, share in shares.items()}
+    for kind in sorted(shares, key=lambda k: shares[k] - quota[k], reverse=True)[: count - sum(quota.values())]:
+        quota[kind] += 1
+    chosen: list[Case] = []
+    for kind in sorted(by_kind):
+        chosen.extend(rng.sample(by_kind[kind], quota[kind]))
+    return sorted(chosen, key=lambda case: case.id)
 
 
 def tier(cases: Sequence[Case], ladder: Ladder, name: str) -> list[Case]:

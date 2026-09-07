@@ -56,9 +56,11 @@ ASR_VARIANTS: dict[str, tuple[str, ...]] = {
     "пятьдесят": ("песят", "пеесят", "пяесят", "пейсят", "пясят"),
     "шестьдесят": ("шеесят", "шейсят", "шесят"),
     "восемьдесят": ("восемесят",),
-    "тридцать": ("триц", "тридц", "трис"),
+    # «трис» and «семест» are OUT: the first is one letter from «три» as much
+    # as from «тридцать», the second is attested as both семьдесят and
+    # семьсот — a form with two readings measures nothing about the engine.
+    "тридцать": ("триц", "тридц"),
     "девяносто": ("девяно",),
-    "семьсот": ("семест",),
     "восемьсот": ("восемест", "восемьст"),
     "триста": ("тристо", "трииста"),
     "шестьсот": ("шессот",),
@@ -387,6 +389,69 @@ FOREIGN: tuple[Person, ...] = (
     Person(("джонсон", "джонсону", "джонсона"), ("майкл", "майклу", "майкла"), ("", "", ""), "", "m"),
 )
 
+# --- страта ВНЕ пула: люди и улицы, которых наши списки не знают ------------
+
+# ОСЬ ДЕТЕКЦИИ НЕ МОГЛА ПРОВАЛИТЬСЯ. Все 57 улиц пула лежат в лизованном
+# словаре ГАР, все 35 имён и 35 фамилий — в словаре имён, поэтому корпус
+# отвечал по именам 100%, а два независимых внешних прибора — 68.0% (MASSIVE)
+# и 69.6% (AgentPII v3). Это тот же дефект, за который репозиторий уже
+# заплатил на `bench/voice`, только вшитый не в фильтр отбора, а в пулы.
+#
+# ОТБОР — ПО ВНЕШНЕМУ КРИТЕРИЮ, А НЕ ПО «МЫ ЭТО НЕ НАХОДИМ». Фамилии взяты из
+# NEREL (корпус, который писали не мы) по частоте: слова с разметкой PERSON,
+# встреченные не более двух раз, то есть обычные редкие фамилии, а не публичные
+# фигуры — тех репозиторий обрабатывает отдельным правилом. Подобрать значения
+# по признаку «движок их пропускает» значило бы настроить прибор на провал —
+# зеркало того, за что критикуют настройку на успех.
+#
+# ДВЕ ФАМИЛИИ ИЗ ИСХОДНЫХ ДВЕНАДЦАТИ ВЫБРОШЕНЫ: pymorphy3 читает «бувальцев» и
+# «вахруков» как родительный МНОЖЕСТВЕННОГО от выдуманных «бувальцы» и
+# «вахруки» и склоняет их в «бувальцам»/«вахрукам». Это ровно та ловушка, о
+# которой предупреждает правило «множественное чтение не есть свидетельство
+# падежа», и склонения здесь выписаны руками именно поэтому.
+RARE_MALE: tuple[Person, ...] = (
+    Person(("аксютин", "аксютину", "аксютина"), ("радислав", "радиславу", "радислава"),
+           ("радиславович", "радиславовичу", "радиславовича"), "радиславыч", "m"),
+    Person(("антуфьев", "антуфьеву", "антуфьева"), ("велимир", "велимиру", "велимира"),
+           ("велимирович", "велимировичу", "велимировича"), "велимирыч", "m"),
+    Person(("бадыков", "бадыкову", "бадыкова"), ("гордей", "гордею", "гордея"),
+           ("гордеевич", "гордеевичу", "гордеевича"), "гордеич", "m"),
+    Person(("бударин", "бударину", "бударина"), ("ефим", "ефиму", "ефима"),
+           ("ефимович", "ефимовичу", "ефимовича"), "ефимыч", "m"),
+    Person(("волынов", "волынову", "волынова"), ("савелий", "савелию", "савелия"),
+           ("савельевич", "савельевичу", "савельевича"), "савельич", "m"),
+    Person(("аленчиев", "аленчиеву", "аленчиева"), ("аркадий", "аркадию", "аркадия"),
+           ("аркадьевич", "аркадьевичу", "аркадьевича"), "аркадьич", "m"),
+    # Несклоняемая фамилия: падеж по ней прочитать нельзя вовсе, и это отдельный
+    # класс, а не оттенок.
+    Person(("авченко", "авченко", "авченко"), ("ефим", "ефиму", "ефима"),
+           ("гордеевич", "гордеевичу", "гордеевича"), "гордеич", "m"),
+)
+
+RARE_FEMALE: tuple[Person, ...] = (
+    Person(("аксютина", "аксютиной", "аксютину"), ("агния", "агнии", "агнию"),
+           ("радиславовна", "радиславовне", "радиславовну"), "радиславовна", "f"),
+    Person(("белобородова", "белобородовой", "белобородову"), ("злата", "злате", "злату"),
+           ("велимировна", "велимировне", "велимировну"), "велимировна", "f"),
+    Person(("боженова", "боженовой", "боженову"), ("милана", "милане", "милану"),
+           ("аркадьевна", "аркадьевне", "аркадьевну"), "аркадьевна", "f"),
+    Person(("бударина", "будариной", "бударину"), ("василиса", "василисе", "василису"),
+           ("гордеевна", "гордеевне", "гордеевну"), "гордеевна", "f"),
+    Person(("волынова", "волыновой", "волынову"), ("евдокия", "евдокии", "евдокию"),
+           ("ефимовна", "ефимовне", "ефимовну"), "ефимовна", "f"),
+    Person(("ващенко", "ващенко", "ващенко"), ("таисия", "таисии", "таисию"),
+           ("савельевна", "савельевне", "савельевну"), "савельевна", "f"),
+)
+
+# Улицы вне 57 пула. Тот же внешний критерий: реальные русские годонимы,
+# выбранные по названию, а не по тому, находит ли их движок.
+RARE_STREETS: tuple[str, ...] = (
+    "бибиревская", "мончегорская", "челюскинцев", "барышникова", "дербенёвская",
+    "хамовническая", "зацепская", "плющиха", "ольховская", "кожевническая",
+    "новослободская", "маросейка",
+)
+
+
 DIMINUTIVES: tuple[tuple[str, str, str], ...] = (
     ("ирочка", "ирочке", "ирочку"), ("витёк", "витьку", "витька"),
     ("серёжа", "серёже", "серёжу"), ("наташа", "наташе", "наташу"),
@@ -422,7 +487,7 @@ STREET_NEUTER: tuple[str, ...] = (
 )
 STREET_TYPES_HOUSE: tuple[str, ...] = ("улица", "переулок", "проезд", "проспект", "бульвар")
 
-# The ten cities of the corpus, with the postal zone (first three digits of the
+# The cities of the corpus, with the postal zone (first three digits of the
 # index, Почта России) and the IANA zone. These two columns are what a DERIVED
 # field is checked against, and they are a benchmark asset: extend the table,
 # never guess. A substitute city outside it yields `derived(unverifiable)`.
@@ -468,6 +533,21 @@ CITIES: dict[str, tuple[str, str, str]] = {
     "чернь": ("Тульская область", "301", "Europe/Moscow"),
     "еловцк": ("", "", ""),
 }
+# ГОРОДА, ИЗ КОТОРЫХ КОРПУС РИСУЕТ. Не вся таблица: почтовая зона Москвы это
+# «1», Петербурга «19», а производное поле сравнивается по ТРЁМ первым цифрам —
+# два плеча, честно выведших индекс из одного и того же реального города, дали
+# бы «101» против «125» и разошлись бы на ровном месте. Артефакт прибора,
+# который считался бы вредом шлюза, поэтому короткие зоны исключены из
+# розыгрыша и остаются в таблице как СПРАВОЧНИК: модель вправе написать Москву,
+# и проверить производное от неё надо уметь.
+#
+# Сценарии брали `list(CITIES)[:10]` — десять городов на 834 случая; остальные
+# двадцать восемь существовали только как справочник. Один регион на весь
+# корпус это не корпус, а один регион.
+CORPUS_CITIES: tuple[str, ...] = tuple(
+    city for city, (_region, zone, _tz) in CITIES.items() if len(zone) == 3)
+
+
 HOUSE_LETTERS: tuple[str, ...] = ("а", "б", "в")
 
 
@@ -537,6 +617,14 @@ def inn12_digits(stream: random.Random) -> str:
     twelfth = sum(digit * weight for digit, weight in zip(body, second)) % 11 % 10
     body.append(twelfth)
     return "".join(str(digit) for digit in body)
+
+
+def card_expiry(stream: random.Random) -> tuple[str, str]:
+    """Месяц и год действия карты — «09», «2028». Не персональные данные.
+
+    Один генератор на все семьи: `decompose` писала свой, `receipt` не писала
+    никакого, и парсер `payment_create` отвергал её вызовы целиком."""
+    return f"{stream.randint(1, 12):02d}", str(stream.randint(2027, 2031))
 
 
 def card_digits(stream: random.Random) -> str:
@@ -626,7 +714,13 @@ MONTH_ORDINALS: tuple[str, ...] = (
     "четырнадцатое", "пятнадцатое", "шестнадцатое", "семнадцатое", "восемнадцатое",
     "девятнадцатое", "двадцатое", "двадцать первое", "двадцать второе",
     "двадцать третье", "двадцать четвёртое", "двадцать пятое", "двадцать шестое",
-    "двадцать седьмое", "двадцать восьмое")
+    "двадцать седьмое", "двадцать восьмое",
+    # A LATENT CRASH, FOUND BY A NEW FAMILY AND NOT BY A NEW SEED. The table
+    # stopped at the 28th because `draw_dob` never draws further — but the
+    # hand-written shared people do («30 июня 1992»), and the first of them to
+    # be dealt `voice_raw` would raise IndexError while BUILDING the corpus.
+    # People are born on the 29th, 30th and 31st; the table says so now.
+    "двадцать девятое", "тридцатое", "тридцать первое")
 
 # Simple ASCII transliteration for e-mail local parts (what a person types for
 # a mailbox, not a passport). The passport tables live in `derive.py`.
@@ -995,6 +1089,13 @@ def main() -> int:
                 failures += 1
     print("cardinals: PASS" if not failures else "")
 
+    try:
+        _self_test_spoken_date()
+        print("spoken dates: PASS")
+    except ValueError as broken:
+        print(f"spoken dates: FAIL — {broken}")
+        failures += 1
+
     for register in REGISTERS:
         address = draw_address(stream, "ижевск", True, True, True)
         rendered = render_address(address, register, stream, register == "voice_raw")
@@ -1007,6 +1108,81 @@ def main() -> int:
             failures += 1
     print("renderers: PASS" if not failures else f"renderers: FAIL ({failures})")
     return 1 if failures or round_trips else 0
+
+
+
+# --- reading a date back out of speech ---------------------------------------
+
+def _day_forms() -> dict[str, int]:
+    """Every way a day of the month is said, mapped back to its number.
+
+    Two endings, not one: the corpus says «четырнадцатое декабря» and the
+    engine's substitute says «девятого сентября». A reader that knows only the
+    form its own generator writes is a reader of its own output."""
+    forms: dict[str, int] = {}
+    for day in range(1, 32):
+        nominative = MONTH_ORDINALS[day]
+        forms[nominative] = day
+        head, _, tail = nominative.rpartition(" ")
+        genitive = tail[:-1] + "го" if tail.endswith(("е", "о")) else tail
+        forms[(head + " " + genitive).strip()] = day
+    return forms
+
+
+_SPOKEN_DAY: dict[str, int] = _day_forms()
+_SPOKEN_YEAR: dict[str, int] = {spell_year(year): year for year in range(1900, 2036)}
+_SPOKEN_MONTH: dict[str, int] = {name: index + 1 for index, name in enumerate(MONTHS)}
+
+
+def parse_spoken_date(text: str) -> str:
+    """«девятого сентября семьдесят четвёртого года» -> «1974-09-09»; «» if it
+    is not a spoken date.
+
+    THE INSTRUMENT MUST READ A DATE IT WAS SHOWN IN WORDS, because the agent
+    does. Without this the scripted agent fell back to the parts of the REAL
+    item and wrote the customer's true date of birth into the tool — while
+    every level reported agreement, since both arms then held the same value.
+
+    The century is the one `spell_year` spells: two digits name 19xx when they
+    exceed today's short year and 20xx otherwise, the same rule a listener
+    applies. It is a guess, and a wrong century is visible as a divergence
+    rather than hidden as a leak."""
+    words = tuple(re.findall(r"[а-яё]+", text.lower().replace("ё", "ё")))
+    if not words:
+        return ""
+    for index, word in enumerate(words):
+        month = _SPOKEN_MONTH.get(word)
+        if month is None:
+            continue
+        day = 0
+        for width in (2, 1):
+            if index >= width and " ".join(words[index - width:index]) in _SPOKEN_DAY:
+                day = _SPOKEN_DAY[" ".join(words[index - width:index])]
+                break
+        if not day:
+            return ""
+        tail = tuple(word for word in words[index + 1:] if word != "года")
+        for width in (2, 1):
+            year = _SPOKEN_YEAR.get(" ".join(tail[:width]))
+            if year is not None:
+                return f"{year:04d}-{month:02d}-{day:02d}"
+        return ""
+    return ""
+
+
+def _self_test_spoken_date() -> None:
+    for day, month, year in ((14, 12, 1974), (9, 9, 1974), (1, 1, 2001), (31, 8, 1995),
+                             (22, 11, 1995), (3, 7, 1988), (30, 6, 1992)):
+        spoken = " ".join((MONTH_ORDINALS[day], MONTHS[month - 1], spell_year(year), "года"))
+        got = parse_spoken_date(spoken)
+        want = f"{year:04d}-{month:02d}-{day:02d}"
+        if got != want:
+            raise ValueError(f"{spoken!r} -> {got!r}, wanted {want!r}")
+    if parse_spoken_date("девятого сентября семьдесят четвёртого года") != "1974-09-09":
+        raise ValueError("the engine's genitive day form is not read")
+    for text in ("улица девятого мая", "заказ семь восемь девять", ""):
+        if parse_spoken_date(text):
+            raise ValueError(f"{text!r} was read as a date")
 
 
 if __name__ == "__main__":

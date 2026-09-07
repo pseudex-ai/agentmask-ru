@@ -52,6 +52,51 @@ MUST_DETECT: list[tuple[str, set[str], str]] = [
     ("телефон 8 916 214 88 03", {"PHONE"}, "восьмёрка и пробелы"),
     ("моб: +79162148803, доб. 214", {"PHONE"}, "слитно, рядом добавочный"),
 
+    # --- the 46 values the live v4 re-run leaked to the model (03.09.2026) ---
+    ("курьера на вишёнвая 28 это в крсанодар на имя марину телефон +79601068867", {"LOC", "NAME", "PHONE"},
+     "улица с опечаткой, без слова-типа, за словом намерения — 15 из 46 утечек"),
+    ("курьера на нидняя 59 это в соравала на имя кирилла", {"LOC", "NAME"}, "опечатка в голой улице"),
+    ("курьера на пушкна шестьдесят пять корпус один это в самара", {"LOC"}, "опечатка в голой улице, дом словами"),
+    ("теперь базисная 152кв7", {"LOC"}, "квартира приклеена к дому после голой улицы"),
+    ("правильно химзаводская 3кв170 это в колпино", {"LOC"}, "однозначный дом и приклеенная квартира"),
+    ("запишите миллера валерия леонидовича родился двадцать первое сентября восьмидесятого года", {"NAME", "DOB"},
+     "дата рождения словами: порядковое число, месяц, год без века"),
+    ("запишите миллера валерия леонидовича родилсяя двадцать первое сентября", {"NAME", "DOB"},
+     "опечатка в «родился» — не четвёртое слово имени и не публичная фигура"),
+    ("г Самара, ул Пушкина, д 65 к 1", {"LOC"}, "запись справочника с корпусом через пробел"),
+    ('{"RQ_IDENT_DOC_SER": "4509", "RQ_IDENT_DOC_NUM": "123456", "RQ_INN": "500100732259"}',
+     {"PASSPORT", "INN"}, "реквизиты Bitrix24: паспорт двумя полями, ИНН физлица"),
+    # --- the five leaks a corpus on a FRESH seed found on 04.09 (none of ours had seen them) ---
+    ("новый адрес челюскинцев 159 квартира 183", {"LOC"}, "родительный множественного за цифрой, с дверью после номера"),
+    ("курьера на ленна дом сорок три а это в воткинск", {"LOC"}, "опечатка улицы перед «дом», слово известно словарю как краткое прилагательное"),
+    ("курьера на воткинск проезд лермонтого дом двадцать пяять четвёртый подъезд квартира сто тридцать семь", {"LOC"},
+     "опечатка в окончании улицы (две правки) и удвоенная буква в числительном"),
+    ("курьера на сортавала добролюбого четырнадцать третий подъезд квартира двадцать один", {"LOC"},
+     "город, опечатка в окончании голой улицы, дом словами, дверь"),
+    ("запишите букина сергея ивановича он 19 12 1992 телефон 8-951-103-04-38", {"NAME", "DOB", "PHONE"}, "дата сразу после местоимения — дата рождения"),
+    ("курьера на чапаева 17 на имя ирину телефн 89505973171", {"LOC", "NAME", "PHONE"}, "повреждённое слово-подсказка не приклеивается к имени"),
+    ("ул. Кирова 12 к 3 кв 300", {"LOC"}, "корпус через «к» с пробелом перед квартирой"),
+    ("сверьте мои данные силс 20304105882 паспорт 1812759266", {"SNILS", "PASSPORT"},
+     "СНИЛС с подсказкой и битой контрольной суммой — опечатка клиента, а не чужое число"),
+    ("снилс 655-971-771 57 паспорт 9414 887065", {"SNILS", "PASSPORT"}, "то же, с разделителями"),
+    ("телефон восемь девятьсот пятьдесят два двести шеесят пейсят два семьдесят", {"PHONE"},
+     "сокращённые -десят в продиктованном номере"),
+    ("сверьте паспрот 0312943300 выдан гу мвд", {"PASSPORT"}, "подсказка с опечаткой перед паспортом"),
+    ("сннилс 40621994460 паспоот 4119424336", {"SNILS", "PASSPORT"}, "две подсказки с повреждением"),
+    ("паспоорт сорок пять ноль восемь девяносто четыре десять шестьдесят восемь сергеев кирилл", {"PASSPORT", "NAME"},
+     "устный паспорт за растянутой подсказкой"),
+    ("паспорт ноль три четырнадцать пятьдесят восемь семьдесят пять восемьдесят громова марина борисовна", {"PASSPORT", "NAME"},
+     "устный паспорт, случайно проходящий веса ИНН — подсказка главнее суммы"),
+    ("дата рожжения 28.04.1975 телефон", {"DOB"}, "подсказка рождения с опечаткой"),
+    ("дата рождения второго 05 06 1988", {"DOB"}, "дата через пробелы в родильном контексте"),
+    ("адрес глазов проспект маяковского 163 кв 180", {"LOC"}, "строчный город перед словом-типом — не человек"),
+    ("курьера на Ижевск, Маяковского, 141 подъезд 5 кв. 175", {"LOC"}, "письменная форма «Город, Улица, дом» с запятыми"),
+    ("Москва, Ленина, 14", {"LOC"}, "самая частая письменная форма адреса"),
+    ("курьераа на коммунаров дом сто девяносто шесть", {"LOC"}, "родительный множественного с маркером «дом»"),
+    ("я в ижевск переулок коммнаров дом сто восемьдесят семь б телефон", {"LOC"}, "опечатка улицы за словом-типом, дом словами"),
+    ("привет курьеа на мончегорсуая 195 корпус 1", {"LOC"}, "опечатка и в слове намерения, и в улице"),
+    ("восемьдесят семь сорок восемсь кукушкин валерий михайлович", {"NAME"}, "числительное не приклеивается к имени"),
+
     # --- what the live v4 pilot and its hard negatives taught (02.09.2026) ---
     ("Адрес офиса для встречи — Розы Люксембург бульвар, дом 200.", {"LOC"},
      "двухсловное название улицы ПЕРЕД словом-типом: «Розы» не человек"),
@@ -120,6 +165,14 @@ MUST_DETECT: list[tuple[str, set[str], str]] = [
 # model useless for the task: an agent that cannot see the order number cannot
 # look up the order.
 MUST_NOT_DETECT: list[tuple[str, str]] = [
+    ("заказ на складе 5 готов", "известное слово с числом за словом намерения — не улица"),
+    ("привезите на дачу 12 коробок", "число считает коробки"),
+    ("курьера на завтра 10 утра", "время, не дом"),
+    ("курьера на объект 7", "известное слово — не опечатка улицы"),
+    ("договор 9455 480555 оплачен", "документ — не паспорт"),
+    ('{"RQ_KPP": "773601001", "RQ_OGRN": "1027700132195"}',
+     "КПП и ОГРН определяют ЮРЛИЦО — 152-ФЗ их не покрывает, маскировать нельзя"),
+    ("Тверь, Советская, 5 км от центра", "мера после числа"),
     ("заказ WA-4471 доставлен", "номер заказа"),
     ("артикул 7705123456 на складе", "артикул из цифр, длиной как ИНН"),
     ("трек-номер RB123456789CN", "почтовый трек"),
@@ -334,6 +387,240 @@ def test_addresses(vault: Vault, detector: Detector) -> None:
           not nominative_in_oblique, f"{nominative_in_oblique}")
 
 
+def test_preposition_is_not_a_litera(vault: Vault, detector: Detector) -> None:
+    """«двадцать семь в третий подъезд» is house 27 IN the third entrance, not
+    house 27в. The letter is a preposition when what follows is what a
+    preposition governs — an ordinal, a marker in an oblique case — and a
+    litera when a nominative marker follows («семнадцать в квартира двести
+    двадцать девять» is a real call). The building went to the courier as
+    «27в» on the 05.09 medium run (decompose-001, voice register)."""
+    import json
+    from pseudex.redact import unmask_arguments
+    for said, house in (
+        ("здравствуйте курьера на воткинск бульвар комиссарого двадцать семь в третий подъезд квартира сто шестьдесят два", "двадцать семь"),
+        ("адрес улица ленина двадцать семь в квартиру пять", "двадцать семь"),
+        ("адрес улица ленина двадцать семь к пятому подъезду", "двадцать семь"),
+        ("бибиревская дом семнадцать в квартира двести двадцать девять", "семнадцать в"),
+        ("так двадцать пять а корпус два квартира двадцать семь", "двадцать пять а"),
+    ):
+        spans = [s for s in detector.detect(said) if s.entity_type == "LOC"]
+        check(f"one address span: {said[:40]}…", len(spans) == 1, f"{[s.value for s in spans]}")
+        if len(spans) != 1:
+            continue
+        roles = morph_places.split_roles(spans[0].value)
+        check(f"house role is «{house}»", roles.get("house") == house, f"roles={roles}")
+    said = "здравствуйте курьера на воткинск бульвар комиссарого двадцать семь в третий подъезд квартира сто шестьдесят два"
+    talk = Vault(":memory:", "acme").for_conversation("litera")
+    masked = mask_text(said, talk, detector.detect(said))
+    token = talk._conn.execute("SELECT token FROM tokens WHERE entity_type='LOC'").fetchone()[0]  # noqa: SLF001
+    fake = morph_places.split_roles(token)
+    back = json.loads(unmask_arguments(json.dumps({"address": {"building": fake["house"], "porch": fake["entrance"], "sflat": fake["flat"]}}), talk))
+    check("building 27, porch 3, flat 162 reach the courier", back == {"address": {"building": "27", "porch": "3", "sflat": "162"}},
+          f"token={token!r} back={back}")
+
+
+def test_corrected_address_shares_its_street(vault: Vault, detector: Detector) -> None:
+    """A customer who corrects the HOUSE keeps the STREET, and so must the
+    substitutes: «заречная пятьдесят семь … ой нет, правильно заречная двадцать
+    девять» was «Черёмуховая 15 … Грушевая 107» — a correction between two
+    unrelated places (32 of 36 two-address `correction` cases on the seed-6060
+    run). One real street in a dialogue is one fake street; the numbers differ,
+    the `street` field the agent fills from the fake resolves to the corrected
+    real spelling, and the house to the corrected house."""
+    import json
+    from pseudex.redact import unmask_arguments
+    for said, street, house in (
+        ("курьера на адрес заречная пятьдесят семь квартира сто восемьдесят семь ой нет правильно заречная двадцать девять квартира сто восемьдесят семь это в воткинск", "заречная", "29"),
+        ("курьера на адрес калашнкова 61кв134 стоп правильно калашникова 33 квартира 134 это в абакан", "калашникова", "33"),
+        ("привет курьера на энгельса 134 кв 92 нет не так правильно энгельса 106 квартира 92 это в воткинск", "энгельса", "106"),
+    ):
+        talk = Vault(":memory:", "acme").for_conversation("fix")
+        masked = mask_text(said, talk, detector.detect(said))
+        tokens = [row[0] for row in talk._conn.execute("SELECT token FROM tokens WHERE entity_type='LOC' ORDER BY rowid").fetchall()]  # noqa: SLF001
+        heads = {morph_places.split_roles(token).get("street", "") for token in tokens}
+        check(f"one fake street for one real street: {said[:30]}…", len(tokens) == 2 and len(heads) == 1,
+              f"tokens={tokens}")
+        houses = {morph_places.split_roles(token).get("house", "") for token in tokens}
+        check("two different fake houses", len(houses) == 2, f"tokens={tokens}")
+        last = morph_places.split_roles(tokens[-1])
+        # the agent writes the street bare, as the live model does («Речная», not «улица Речная»)
+        bare = last["street"].split()[-1]
+        back = json.loads(unmask_arguments(json.dumps({"address": {"street": bare, "building": last["house"]}}, ensure_ascii=False), talk))
+        check("street and house restore to the CORRECTED real address",
+              back == {"address": {"street": street, "building": house}}, f"masked={masked!r} back={back}")
+        # …and the street ALONE, with two owners on one street, still resolves
+        back = json.loads(unmask_arguments(json.dumps({"address": {"street": bare}}, ensure_ascii=False), talk))
+        check("the street alone resolves when every owner agrees on it",
+              back == {"address": {"street": street}}, f"back={back}")
+    # two DIFFERENT streets in one dialogue still get two different fake streets
+    said = "курьера на заречная 57 квартира 187 а потом на энгельса 106 квартира 92 это в воткинск"
+    talk = Vault(":memory:", "acme").for_conversation("two")
+    mask_text(said, talk, detector.detect(said))
+    tokens = [row[0] for row in talk._conn.execute("SELECT token FROM tokens WHERE entity_type='LOC' ORDER BY rowid").fetchall()]  # noqa: SLF001
+    heads = {morph_places.split_roles(token).get("street", "") for token in tokens}
+    check("two real streets keep two fake streets", len(tokens) == 2 and len(heads) == 2, f"tokens={tokens}")
+
+
+def test_spoken_birth_date_keeps_its_register(vault: Vault, detector: Detector) -> None:
+    """A date of birth SAID is replaced by a date SAID: «родился одиннадцатого
+    сентября пятьдесят пятого» was masked as «родился 28.03.1972 пятьдесят
+    пятого» (9 of 9 spoken dates on the seed-6060 run) — digits in a spoken
+    sentence and the real year left standing outside the span. Now the span
+    reaches the year with or without «года», the substitute is in words, in
+    the customer's own century style, keeps the year and the side of today
+    (so the age the agent derives agrees), the ISO the agent writes resolves,
+    and the prose paraphrase comes back as the real date."""
+    import json
+    import time
+    from pseudex.redact import unmask_arguments
+    from pseudex.vault import _date_canonical
+    today = (time.localtime().tm_mon, time.localtime().tm_mday)
+    for said, real_iso, year_words in (
+        ("запишите кузнецова дмитрия андреевича родился одиннадцатого сентября пятьдесят пятого", "1955-09-11", "пятьдесят"),
+        ("пациент родилась двадцать третьего марта тысяча девятьсот восемьдесят второго", "1982-03-23", "тысяча девятьсот"),
+        ("дата рождения двадцать первого сентября восьмидесятого года", "1980-09-21", "года"),
+    ):
+        talk = Vault(":memory:", "acme").for_conversation("dob")
+        spans = [s for s in detector.detect(said) if s.entity_type == "DOB"]
+        check(f"the spoken year is inside the DOB span: {said[-40:]}", len(spans) == 1 and said.endswith(spans[0].value.rstrip()),
+              f"spans={[s.value for s in spans]}")
+        masked = mask_text(said, talk, detector.detect(said))
+        check("no digit in the substitute of a spoken date", not any(ch.isdigit() for ch in masked), masked)
+        token = talk._conn.execute("SELECT token FROM tokens WHERE entity_type='DOB'").fetchone()[0]  # noqa: SLF001
+        fake = _date_canonical(token)
+        real_d, real_m, real_y = int(real_iso[8:]), int(real_iso[5:7]), int(real_iso[:4])
+        check("the year is kept", fake.endswith(str(real_y)), f"token={token!r}")
+        check("the century style of the customer is mirrored", year_words in token, f"token={token!r}")
+        fake_md = (int(fake[3:5]), int(fake[:2]))
+        check("the same side of today, so the derived age agrees",
+              (fake_md < today) == ((real_m, real_d) < today) and fake_md != (real_m, real_d), f"fake={fake} real={real_iso}")
+        iso = f"{fake[6:]}-{fake[3:5]}-{fake[:2]}"
+        back = json.loads(unmask_arguments(json.dumps({"patient": {"birth_date": iso}}), talk))
+        check("the ISO the agent writes resolves to the real ISO", back == {"patient": {"birth_date": real_iso}}, f"{iso} -> {back}")
+        check("the prose paraphrase comes back as the real date",
+              unmask_text(f"Пациент родился {token}, записал.", talk) == f"Пациент родился {said.split('родил', 1)[-1].split(' ', 1)[-1] if 'родил' in said else said.split('рождения ', 1)[-1]}, записал.",
+              unmask_text(f"Пациент родился {token}, записал.", talk))
+        check("the spoken substitute is recognised as ours when echoed", talk.is_minted_token(token), token)
+
+
+def test_tool_result_with_a_future_date_masks(vault: Vault, detector: Detector) -> None:
+    """A tool RESULT carries a booking in the future beside a date of birth —
+    «slot: 2026-09-10T09:00» next to «birth_date: 1955-09-11» — and the result
+    leg must mask it without a sound. `_fake_date` read a variable set only on
+    the past-date branch, raised on the future one, the SDK turned the
+    exception into a tool error the model read as «техническая ошибка», and
+    304 gateway-arm replies on the r2 run of 06.09 said so while every record
+    read `done`. The future date keeps its future, the birth date its year."""
+    import time
+    from pseudex.vault import _date_canonical
+    year_now = time.localtime().tm_year
+    for text in (
+        '{"appointment_id": "apt-1", "slot": "2026-09-10T09:00:00+03:00", "status": "booked", "patient": {"birth_date": "1955-09-11"}}',
+        '{"id": "clm-1", "interval": {"from": "2026-09-10T14:00:00+04:00", "to": "2026-09-10T18:00:00+04:00"}, "address": {"street": "Заречная", "building": "29"}}',
+        "доставка 30.09.2026 получатель родился 11.09.1955",
+    ):
+        talk = Vault(":memory:", "acme").for_conversation("future")
+        try:
+            masked = mask_text(text, talk, detector.detect(text))
+        except Exception as broken:  # noqa: BLE001 — the whole point of the test
+            check(f"the result leg does not raise: {text[:40]}…", False, f"{type(broken).__name__}: {broken}")
+            continue
+        check(f"the result leg does not raise: {text[:40]}…", True)
+        for token, original in talk._conn.execute("SELECT token, original FROM tokens WHERE entity_type IN ('DOB','DATE')").fetchall():  # noqa: SLF001
+            fake, real = _date_canonical(token), _date_canonical(original)
+            if real and int(real[-4:]) > year_now:
+                check(f"a future date stays in the future: {original} → {token}", int(fake[-4:]) > year_now, token)
+            elif real:
+                check(f"a birth date keeps its year: {original} → {token}", fake[-4:] == real[-4:], token)
+
+
+def test_a_mistyped_street_reaches_the_tool_as_the_register_spells_it(
+        vault: Vault, detector: Detector) -> None:
+    """The agent repairs a typo; the gateway used to take that away.
+
+    «курьера на мончгорская 195» — without the gateway the model silently
+    sends «Мончегорская» to the CRM and the address is found. With it the
+    model is shown a CLEAN substitute, has nothing to repair, and the
+    customer's literal words reach the tool: a street that does not exist.
+    42 of the 103 street/address value conflicts on the 06.09 live run, and
+    in every one of them BOTH control arms had repaired it — so the register
+    spelling is the reference behaviour, not a policy of ours.
+
+    THE OTHER HALF MATTERS MORE. A correct street in an oblique case is not in
+    the register as written either, and asked only as written the rule rewrote
+    «мончегорской» to «мончегорское» and «вишнёвой» to «вишневый» — corrupting
+    an address that was right. The register is asked in all three forms
+    `_gar_reaches` asks."""
+    import json
+    from pseudex.address import register_spelling
+    from pseudex.redact import unmask_arguments
+
+    # SEVERAL NEIGHBOURS, BROKEN BY THE REGISTER'S OWN COUNT. «садвая» reaches
+    # садовая and садвал, «полвая» reaches полевая and полная: the rule refused
+    # every such word and so fired on ONE mistyped street in six on the 06.09
+    # live run. Only one candidate may be in the frequent set, and the margins
+    # measured are 17 325 to 1, 12 087 to 1 and — at the narrowest — 1 565 to 24.
+    for word, want in (("мончгорская", "мончегорская"), ("калашнкова", "калашникова"),
+                       ("грибоеодва", "грибоедова"), ("пушшкина", "пушкина"),
+                       ("садвая", "садовая"), ("полвая", "полевая"),
+                       ("неркасова", "некрасова"), ("чапева", "чапаева"),
+                       ("вишёнвая", "вишневая"),
+                       # «вишневая» и «вишнёвая» — ОДНО имя в реестре, а не
+                       # две возможности: сгруппированы по ё-фолду, иначе
+                       # плоская опечатка отвергалась как неоднозначность.
+                       ("вишнвая", "вишневая"), ("зелный", "зеленый")):
+        check(f"опечатка чинится по реестру: {word}", register_spelling(word) == want,
+              f"{word} -> {register_spelling(word)!r}")
+    for word in ("мончегорская", "мончегорской", "вишнёвой", "садовой", "чапаевской",
+                 "ленина", "улица", "проспект", "лениа", "ленна", "шумайова",
+                 # …и те, где запас в реестре 3-10×, а не тысячи: «барышникова»
+                 # 6 против «баранникова» 2. Отказ здесь — правильный ответ, а
+                 # не предел: курьер, уехавший на Баранникова, хуже ненайденного
+                 # адреса.
+                 "смльный", "барашникова", "комиссарва",
+                 # …and the two the frequency tie-break must NOT touch: a real
+                 # rare street spelt correctly is in the register, so the first
+                 # signal refuses it before the count is ever consulted.
+                 "полная", "садвал"):
+        # correct as written, correct but inflected, a type word, a numeral-ish
+        # name, and the ambiguous ones — a word one edit from SEVERAL register
+        # entries is Fellegi–Sunter's middle outcome and a gateway has no human
+        # to refer it to, so it refuses.
+        check(f"правильное или неоднозначное не трогается: {word}",
+              register_spelling(word) == "", f"{word} -> {register_spelling(word)!r}")
+    check("короткое слово не чинится", register_spelling("лена") == "")
+
+    said = "курьера на мончгорская 195 квартира 12 это в мурманск"
+    talk = Vault(":memory:", "acme").for_conversation("typo")
+    mask_text(said, talk, detector.detect(said))
+    token = talk._conn.execute("SELECT token FROM tokens WHERE entity_type='LOC'").fetchone()[0]  # noqa: SLF001
+    fake = morph_places.split_roles(token)
+    back = json.loads(unmask_arguments(json.dumps(
+        {"address": {"street": fake["street"].split()[-1], "building": fake["house"],
+                     "sflat": fake.get("flat", "")}}, ensure_ascii=False), talk))
+    # Заглавная — АГЕНТСКАЯ: он написал подмену с заглавной, значит и
+    # исправленное реестром название уходит с заглавной. Содержимое наше,
+    # форма его — те же две половины, что и в самом правиле починки.
+    check("в инструмент уходит написание реестра, дом и квартира — клиента",
+          back["address"]["street"] == "Мончегорская" and back["address"]["building"] == "195"
+          and back["address"]["sflat"] == "12", f"{back}")
+    # …AND IN PROSE THE CUSTOMER KEEPS HIS OWN WORDS. Repeating his address
+    # back corrected is a different act from filling a form with it.
+    check("в прозе — слова клиента", unmask_text(f"Записал: {token}.", talk)
+          == "Записал: мончгорская 195 квартира 12.",
+          unmask_text(f"Записал: {token}.", talk))
+
+    said = "курьера на мончегорской 195 квартира 12 это в мурманск"
+    talk = Vault(":memory:", "acme").for_conversation("ok")
+    mask_text(said, talk, detector.detect(said))
+    token = talk._conn.execute("SELECT token FROM tokens WHERE entity_type='LOC'").fetchone()[0]  # noqa: SLF001
+    fake = morph_places.split_roles(token)
+    back = json.loads(unmask_arguments(json.dumps(
+        {"address": {"street": fake["street"].split()[-1]}}, ensure_ascii=False), talk))
+    check("склонённая правильная улица доходит как написана",
+          back["address"]["street"] == "Мончегорской", f"{back}")
+
+
 def test_address_signature_is_inflection_proof() -> None:
     """Every pool entry must key the same in every case, or restoration misses.
 
@@ -378,6 +665,84 @@ def test_street_stays_a_street(vault: Vault, detector: Detector) -> None:
           not wrong, f"wrong={wrong}" if wrong else "")
 
 
+def test_a_card_address_comes_back_from_free_text(vault: Vault, detector: Detector) -> None:
+    """A CRM card stores its address LOWER CASE, and we hand the substitute back
+    the same way — then could not read our own output.
+
+    The card comes in as a tool result, so the fields are masked field by field
+    and the model is shown «{"street": "ивовая", "house": "125"}». Written back
+    into a field of the same name it resolves (`_join_address_fields`). Written
+    into a FREE-TEXT address argument — «краснодар, улица ивовая 125, кв. 53»,
+    exactly the string the model composes from what it read — it did not, and
+    the customer's real address never reached the tool. Found by `long_order`
+    on its first run: 18 of 60 cases, every one on `pickup_points_near`.
+
+    THE KEY WAS NEVER THE PROBLEM. `place_key` casefolds, so «улица Ивовая 125»
+    and «улица ивовая 125» produce the same key; the SCANNER that proposes the
+    window demanded a capital, so for lower case no window was ever offered and
+    the key was never asked. The capital is load-bearing in DETECTION, where the
+    alternative is the whole language; in RESTORATION the candidate must equal
+    one of our own minted tokens, so a window that is not ours costs one indexed
+    query that returns nothing."""
+    import json
+    from pseudex.redact import unmask_arguments
+
+    card = json.dumps({"contacts": [{"id": "c-1", "address": {
+        "city": "омск", "street": "солнечная", "house": "104", "flat": "203"}}]}, ensure_ascii=False)
+    scoped = vault.for_conversation("conv-card-address")
+    spans = detector.detect(card)
+    masked = mask_text(card, scoped, spans)
+    address = json.loads(masked)["contacts"][0]["address"]
+    check("подмена улицы в карточке — строчная, как поле",
+          address["street"] == address["street"].lower(), address["street"])
+    written = (f"{address['city']}, улица {address['street']} {address['house']}, "
+               f"кв. {address['flat']}")
+    restored = unmask_arguments(json.dumps({"address": written}, ensure_ascii=False), scoped)
+    got = json.loads(restored)["address"]
+    check("адрес из карточки, склеенный моделью в строку, восстановлен",
+          "солнечная" in got and address["street"] not in got, got)
+    # THE LIMIT, NAMED RATHER THAN TESTED. Lower case buys back every form that
+    # carries a TYPE WORD, because that is what `LOC_TOKEN_PATTERN` keys on.
+    # Without one — «каштановая 98», «омск, каштановая 98» — there is still no
+    # window: those reach the vault through `_name_windows`, which proposes only
+    # capitalised runs, and widening THAT to any word would offer every
+    # one-to-three-word window of a long reply to the vault. It is also the one
+    # form `residual_tokens` cannot warn about, for the same reason;
+    # `bench/agentpii4/gateway.py::_pieces` carries the matching note. Written
+    # down here so the next reader does not rediscover it from a customer.
+
+
+def test_a_dictated_phone_survives_a_deny_word(vault: Vault, detector: Detector) -> None:
+    """«телефон для чека восемь девятьсот шестнадцать…» — a real leak, closed.
+
+    The deny list holds «чек», so a number directly after it is a receipt
+    number and not a phone; that rule is right and stays. The rescue beside it
+    — a phone cue ANYWHERE in the sentence beats a denying word — was gated on
+    the value LOOKING like a phone, and a phone said aloud has no digits to
+    look like one. So the cue two words away could not save it and the number
+    reached the model in the clear: 15 of 2444 values on `long_bank`'s first
+    run, in the one place 54-ФЗ makes a phone mandatory.
+
+    The gate is safe because the span is already typed: only the spoken
+    detector produces a digit-free PHONE, and only after the words decode to
+    eleven digits opening 7 or 8 followed by 9. Both directions are checked —
+    a dictated number behind «чек», «трек» or «заказ» with no phone cue stays
+    suppressed, which is what the deny list is for."""
+    found = ("телефон для чека восемь девятьсот шестнадцать четыреста два "
+             "одиннадцать восемьдесят семь",
+             "телефон для связи восемь девятьсот шестнадцать четыреста два "
+             "одиннадцать восемьдесят семь")
+    for text in found:
+        kinds = [span.entity_type for span in detector.detect(text)]
+        check(f"продиктованный телефон найден: {text[:26]}…", "PHONE" in kinds, str(kinds))
+    quiet = ("чек восемь девятьсот шестнадцать четыреста два одиннадцать восемьдесят семь",
+             "трек восемь девятьсот шестнадцать четыреста два одиннадцать восемьдесят семь",
+             "заказ восемь девятьсот шестнадцать четыреста два одиннадцать восемьдесят семь")
+    for text in quiet:
+        kinds = [span.entity_type for span in detector.detect(text)]
+        check(f"без подсказки слово-отрицание держит: {text[:18]}…", not kinds, str(kinds))
+
+
 def main() -> int:
     testkit.load_dev_bundle()
     detector = Detector()
@@ -394,7 +759,16 @@ def main() -> int:
     test_addresses(vault, detector)
     test_address_signature_is_inflection_proof()
     test_street_stays_a_street(vault, detector)
+    test_preposition_is_not_a_litera(vault, detector)
+    test_corrected_address_shares_its_street(vault, detector)
+    test_a_mistyped_street_reaches_the_tool_as_the_register_spells_it(vault, detector)
+    test_a_card_address_comes_back_from_free_text(vault, detector)
+    test_a_dictated_phone_survives_a_deny_word(vault, detector)
+    test_spoken_birth_date_keeps_its_register(vault, detector)
+    test_tool_result_with_a_future_date_masks(vault, detector)
     test_chat_register(detector)
+    test_the_form_belongs_to_the_agent(detector)
+    test_the_substitute_keeps_the_house_magnitude(detector)
 
     print()
     if _FAILURES:
@@ -403,6 +777,100 @@ def main() -> int:
     print("hard cases OK — detected, restored, and nothing over-masked")
     return 0
 
+
+
+def test_the_substitute_keeps_the_house_magnitude(detector: Detector) -> None:
+    """Фальшивый дом стоит В ТОМ ЖЕ РАЗРЯДЕ, что настоящий.
+
+    «В дома больше ста не возим» — обычное правило курьерской службы, оно
+    живёт в системном промпте заказчика, и настоящий дом 33 под фальшивым 157
+    его переворачивает: агент отказывается оформлять заказ, которого никто не
+    отменял, и восстановленный ответ противоречит сам себе — «Дом 33 — номер
+    больше 100». 12 троек семьи `prompt_rule` на живом прогоне 07.09, в каждой
+    плечо шлюза не сделало НИ ОДНОГО вызова.
+
+    ПОВТОРАМИ: номер тянется через `secrets`, и одна чеканка ничего не
+    доказывает — разряд может совпасть случайно с вероятностью около трети.
+    """
+    def band(number: str) -> str:
+        value = int(number)
+        return "1-9" if value <= 9 else ("10-99" if value <= 99 else "100+")
+
+    for said, want in (("улица мира 4", "1-9"), ("улица солнечная 33", "10-99"),
+                       ("улица солнечная 157", "100+"),
+                       ("школьная пятьдесят девять", "10-99")):
+        bad = []
+        for draw in range(30):
+            vault = Vault(":memory:", "acme").for_conversation(f"band-{draw}")
+            token = vault.tokenize(said, "LOC")
+            house = morph_places.house_digits(morph_places.split_roles(token).get("house", ""))
+            if not house or band(house) != want:
+                bad.append(token)
+        check(f"разряд дома сохранён: {said}", not bad, f"{len(bad)} из 30: {bad[:3]}")
+
+    # НАСЕЛЁННЫЙ ПУНКТ ВНУТРИ АДРЕСА И ТАК НАСТОЯЩИЙ, и это уже правило движка
+    # (`_settlement_of`), а не то, что надо чинить: почтовый индекс, который
+    # агент выводит из города, поэтому совпадает у обоих плеч. Проверяется
+    # здесь, чтобы правило нельзя было снять молча.
+    vault = Vault(":memory:", "acme").for_conversation("city")
+    token = vault.tokenize("Краснодар, улица солнечная 104", "LOC")
+    check("город внутри адреса остаётся настоящим",
+          token.lower().startswith("краснодар"), token)
+    print()
+
+
+def test_the_form_belongs_to_the_agent(detector: Detector) -> None:
+    """Настоящее значение уходит в инструмент В ФОРМЕ, КОТОРОЙ ПОЛЬЗУЕТСЯ АГЕНТ.
+
+    НИ ОДИН КОРПУС ЭТОГО НЕ ВИДИТ, И ЭТО НЕ ФИГУРА РЕЧИ. Скриптовый агент
+    копирует подмену дословно, поэтому подмена и настоящее значение приходят в
+    одном регистре и расхождения не возникает; а `taxonomy._typed_equal`
+    сравнивает значения без учёта регистра, так что даже на живом прогоне ось
+    ЗНАЧЕНИЙ этот класс прощает. Он виден только на оси ДОСЛОВНОСТИ и в поле
+    заказчика: контроль пишет в CRM «Ким Виктор», плечо шлюза писало «ким
+    виктор» — 262 расхождения на прогоне 07.09, задето 217 троек из 834.
+    Поэтому правило закреплено ЗДЕСЬ, а не в бенчмарке.
+    """
+    import json
+    from pseudex.redact import unmask_arguments
+
+    said = "запишите ким виктор телефон 89601068867 на ул мичурина 14"
+
+    # ПОВТОРАМИ, А НЕ ОДНОЙ ЧЕКАНКОЙ. Волт тянет подмену через `secrets`, и
+    # дефект живёт в НЕКОТОРЫХ парах: строчное «осипов юрий» разваливалось на
+    # «ким юрий» (фамилия настоящая, имя — подмена), а «беляев платон» на
+    # «ким викторатон» — химера из двух людей. Один прогон это пропускает.
+    seen: dict[str, list[str]] = {"title": [], "lower": [], "upper": [], "street": []}
+    for draw in range(40):
+        talk = Vault(":memory:", "acme").for_conversation(f"form-{draw}")
+        mask_text(said, talk, detector.detect(said))
+        rows = dict(talk._conn.execute(  # noqa: SLF001
+            "SELECT entity_type, token FROM tokens WHERE entity_type IN ('NAME','LOC')").fetchall())
+        name, place = rows.get("NAME", ""), rows.get("LOC", "")
+
+        def through(value: str, vault: Vault = talk) -> str:
+            return json.loads(unmask_arguments(json.dumps({"x": value}, ensure_ascii=False), vault))["x"]
+
+        if name:
+            seen["title"].append(through(name.title()))
+            seen["lower"].append(through(name.lower()))
+            seen["upper"].append(through(name.upper()))
+        if place:
+            street = morph_places.split_roles(place).get("street", "").split()[-1]
+            seen["street"].append(through(f"ул. {street.title()}, 14"))
+
+    def all_are(key: str, want: str) -> tuple[bool, str]:
+        bad = [one for one in seen[key] if one != want]
+        return (bool(seen[key]) and not bad), f"{len(bad)} из {len(seen[key])}: {bad[:3]}"
+
+    check("имя с заглавной уходит с заглавной", *all_are("title", "Ким Виктор"))
+    check("имя строчными уходит строчными и ЦЕЛИКОМ", *all_are("lower", "ким виктор"))
+    # D3: заглавная кириллица не давала НИ ОДНОГО окна, и фамилия уезжала
+    # подменой молча — `residual_tokens` строится на тех же окнах.
+    check("имя КАПСОМ уходит КАПСОМ, а не подменой", *all_are("upper", "КИМ ВИКТОР"))
+    check("родовое слово агента остаётся, название и регистр — тоже",
+          *all_are("street", "ул. Мичурина, 14"))
+    print()
 
 
 def test_chat_register(detector: Detector) -> None:

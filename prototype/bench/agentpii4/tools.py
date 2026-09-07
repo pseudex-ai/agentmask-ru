@@ -543,6 +543,14 @@ def _payment_parse(args: dict[str, object]) -> Parsed | Refusal:
             if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[a-z]{2,}", str(customer["email"]).lower()):
                 return Refusal(tool, "receipt.customer.email", "email_format", str(customer["email"]))
             parsed_customer["email"] = str(customer["email"]).lower()
+        # 54-ФЗ MAKES A CONTACT MANDATORY, and both acquirers say so in the same
+        # words: ЮKassa requires `customer.email` or `customer.phone` in a
+        # receipt, T-Bank requires exactly one of `Receipt.Email` /
+        # `Receipt.Phone`. A receipt without either is not an imperfect receipt,
+        # it is a refused fiscalisation — so a substitute that fails to restore
+        # here does not merely look wrong, it stops the sale.
+        if not parsed_customer.get("email") and not parsed_customer.get("phone"):
+            return Refusal(tool, "receipt.customer", "receipt_contact_required", str(customer))
         out["receipt"] = {"customer": parsed_customer}
     return out
 
@@ -741,6 +749,58 @@ CLINIC = ToolSpec(
     parse=_clinic_parse, mutating=True)
 
 
+def _segment_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "crm_segment_report"
+    miss = _required(args, tool, "", ("group_by", "members"))
+    if miss:
+        return miss
+    group_by = parse_enum(args["group_by"], tool, "group_by", ("city", "birth_year"))
+    if isinstance(group_by, Refusal):
+        return group_by
+    members = args.get("members")
+    if not isinstance(members, list) or not members:
+        return Refusal(tool, "members", "array_required", str(members))
+    rows: list[dict[str, object]] = []
+    for index, member in enumerate(members):
+        if not isinstance(member, dict):
+            return Refusal(tool, f"members[{index}]", "object_required", str(member))
+        base = f"members[{index}]"
+        miss = _required(member, tool, base, ("name", "bucket"))
+        if miss:
+            return miss
+        name = parse_name_word(str(member["name"]).split()[0], tool, f"{base}.name")
+        if isinstance(name, Refusal):
+            return name
+        bucket = parse_text(member["bucket"], tool, f"{base}.bucket", 40)
+        if isinstance(bucket, Refusal):
+            return bucket
+        rows.append({"name": str(member["name"]).strip(), "bucket": bucket})
+    return {"group_by": group_by, "members": rows}
+
+
+SEGMENT = ToolSpec(
+    name="crm_segment_report",
+    source="amoCRM/Bitrix24 segment report: several contacts grouped by one attribute",
+    schema=_schema(
+        "crm_segment_report",
+        "Построить сводку по нескольким клиентам: у каждого имя и значение признака, по которому группируем.",
+        {"group_by": {"type": "string", "enum": ["city", "birth_year"]},
+         "members": {"type": "array",
+                     "description": "По одному объекту на клиента",
+                     "items": {"type": "object",
+                               "properties": {"name": {"type": "string"},
+                                              "bucket": {"type": "string",
+                                                         "description": "Город или год рождения"}}}}},
+        ("group_by", "members")),
+    # SEVERAL PEOPLE IN ONE CALL, one row each. `members[].name` is an ARRAY
+    # path — `spec_for` erases the index — so every row is scored against the
+    # identity it belongs to, and two people merged into one row are visible.
+    fields=(FieldSpec("group_by", "enum", required=True),
+            FieldSpec("members[].name", "identity", "NAME", "", required=True),
+            FieldSpec("members[].bucket", "plain", required=True)),
+    parse=_segment_parse, mutating=False)
+
+
 def _find_parse(args: dict[str, object]) -> Parsed | Refusal:
     tool = "crm_find_contact"
     query = _obj(args.get("query"), tool, "query")
@@ -920,6 +980,115 @@ SMS = ToolSpec(
     parse=_sms_parse, mutating=True)
 
 
+def _note_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "crm_add_note"
+    miss = _required(args, tool, "", ("entity_id", "note_type", "text"))
+    if miss:
+        return miss
+    entity = parse_text(args["entity_id"], tool, "entity_id", 40)
+    note_type = parse_enum(args["note_type"], tool, "note_type",
+                           ("common", "call_in", "call_out", "service_message"))
+    text = parse_text(args["text"], tool, "text", 800)
+    bad = _first(entity, note_type, text)
+    if bad:
+        return bad
+    return {"entity_id": entity, "note_type": note_type, "text": text}
+
+
+NOTE = ToolSpec(
+    name="crm_add_note",
+    source="amoCRM POST /api/v4/contacts/{id}/notes (note_type common|call_in|call_out, params.text free)",
+    schema=_schema(
+        "crm_add_note",
+        "Записать в карточку клиента заметку — итог разговора своими словами.",
+        {"entity_id": {"type": "string", "description": "id карточки"},
+         "note_type": {"type": "string", "enum": ["common", "call_in", "call_out", "service_message"]},
+         "text": {"type": "string", "description": "Текст заметки, до 800 символов"}},
+        ("entity_id", "note_type", "text")),
+    # THE MODEL WRITES THIS FIELD ITSELF, in its own words, and the words it has
+    # are SUBSTITUTES. `free` is never equality-compared — it is read for leaks —
+    # which is exactly the question a summary written into a CRM asks.
+    fields=(FieldSpec("entity_id", "plain", required=True),
+            FieldSpec("note_type", "enum", required=True),
+            FieldSpec("text", "free", required=True)),
+    parse=_note_parse, mutating=True)
+
+
+_TEMPLATE_RE = re.compile(r"\{\{([a-z_]{2,20})\}\}")
+TEMPLATES: dict[str, str] = {
+    "delivery_eta": "Здравствуйте, {{name}}! Заказ приедет по адресу {{address}} {{when}}.",
+    "callback": "{{name}}, перезвоним вам на {{phone}} {{when}}.",
+    "code": "{{name}}, код подтверждения: {{code}}.",
+}
+
+
+def _template_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "send_template"
+    miss = _required(args, tool, "", ("template_id", "number", "variables"))
+    if miss:
+        return miss
+    template_id = parse_enum(args["template_id"], tool, "template_id", tuple(TEMPLATES))
+    number = parse_e164(args["number"], tool, "number")
+    variables = _obj(args.get("variables"), tool, "variables")
+    bad = _first(template_id, number, variables)
+    if bad:
+        return bad
+    body = TEMPLATES[str(template_id)]
+    wanted = sorted(set(_TEMPLATE_RE.findall(body)))
+    values: dict[str, object] = {}
+    for key in wanted:
+        # EVERY PLACEHOLDER MUST BE FILLED. Exolve, Unisender and SMS Aero all
+        # document named substitution, and all of them send the message with
+        # «{{name}}» in it when the variable is missing — the customer reads the
+        # markup. Refusing is the documented-rule equivalent of that failure.
+        if not str(variables.get(key, "")).strip():  # type: ignore[union-attr]
+            return Refusal(tool, f"variables.{key}", "missing_variable", str(variables))
+        value = parse_text(variables[key], tool, f"variables.{key}", 120)  # type: ignore[index]
+        if isinstance(value, Refusal):
+            return value
+        values[key] = value
+    extra = sorted(set(map(str, variables)) - set(wanted))  # type: ignore[arg-type]
+    if extra:
+        return Refusal(tool, "variables", "unknown_variable", ", ".join(extra))
+    rendered = body
+    for key, value in values.items():
+        rendered = rendered.replace("{{" + key + "}}", str(value))
+    return {"template_id": template_id, "number": number, "variables": values, "text": rendered}
+
+
+TEMPLATE = ToolSpec(
+    name="send_template",
+    source="МТС Exolve SendSMS / Unisender sendSms with named variables ({{name}} substitution)",
+    schema=_schema(
+        "send_template",
+        "Отправить клиенту сообщение по готовому шаблону. Подставляются только именованные переменные шаблона.",
+        {"template_id": {"type": "string", "enum": sorted(TEMPLATES)},
+         "number": {"type": "string", "description": "E.164"},
+         "variables": {"type": "object",
+                       "description": "Значения переменных шаблона: name, address, phone, when, code"}},
+        ("template_id", "number", "variables")),
+    # THE PLACEHOLDER IS NOT A VALUE and the variable IS: `{{name}}` must reach
+    # the sender untouched while the string put into it is personal data.
+    fields=(FieldSpec("template_id", "enum", required=True),
+            FieldSpec("number", "identity", "PHONE", "digits", required=True),
+            FieldSpec("variables.name", "identity", "NAME", ""),
+            FieldSpec("variables.address", "identity", "LOC", ""),
+            FieldSpec("variables.phone", "identity", "PHONE", "digits"),
+            FieldSpec("variables.when", "plain"),
+            FieldSpec("variables.code", "plain"),
+            # THE RENDERED TEXT IS PROSE, AND PROSE IS JUDGED FOR LEAKS, NEVER
+            # COMPARED. The mock stores it (`mock.py`, `send_template`), and
+            # with no spec here `state_spec_for` found none and the state level
+            # fell back to raw string equality — so every variation in `name`,
+            # `address` or `when` was counted TWICE, once in the variable and
+            # once inside the sentence built from it. 21 of the 25 value
+            # conflicts this family showed on the 06.09 run were that double
+            # count. `notify_sms.text` and `crm_add_note.text` are already
+            # `free` for the same reason; this one was simply missed.
+            FieldSpec("text", "free", container="url")),
+    parse=_template_parse, mutating=True)
+
+
 RU_TIMEZONES = ("Europe/Kaliningrad", "Europe/Moscow", "Europe/Samara", "Europe/Volgograd",
                 "Asia/Yekaterinburg", "Asia/Omsk", "Asia/Novosibirsk", "Asia/Tomsk",
                 "Asia/Krasnoyarsk", "Asia/Irkutsk", "Asia/Yakutsk", "Asia/Vladivostok")
@@ -1005,8 +1174,502 @@ CSV_IMPORT = ToolSpec(
     parse=_csv_parse, mutating=True)
 
 
+
+# --- reading back, cancelling, rescheduling -----------------------------------
+#
+# THE FIRST FOURTEEN TOOLS WERE ALL WRITE-ONLY OR ONE-SHOT, and a conversation
+# of eight turns cannot be built from them: nothing could be read back on turn
+# six that was written on turn two, nothing could be undone when the customer
+# changed their mind, and the model never met a DOMAIN error — only a format
+# refusal — so it never had to re-plan. All three are what a long dialogue is
+# made of.
+#
+# A DOMAIN ERROR IS A RESULT, NOT A REFUSAL. `Refusal` is the documented
+# rejection of a malformed argument and is recorded as `validated_refused`;
+# «this order does not exist» is a well-formed call about a state that is not
+# there, and a real API answers it with a body. The mock returns it as data,
+# and both arms meet it identically unless the gateway made them ask about
+# different orders — which is exactly the question.
+
+def _order_id_parse(tool: str, args: dict[str, object], extra: tuple[str, ...] = ()) -> Parsed | Refusal:
+    miss = _required(args, tool, "", ("order_id", *extra))
+    if miss:
+        return miss
+    raw = str(args["order_id"]).strip()
+    if not re.fullmatch(r"[A-Za-z]{2,4}-\d{1,6}", raw):
+        return Refusal(tool, "order_id", "order_id_format", raw)
+    return {"order_id": raw}
+
+
+def _order_status_parse(args: dict[str, object]) -> Parsed | Refusal:
+    return _order_id_parse("order_status", args)
+
+
+ORDER_STATUS = ToolSpec(
+    name="order_status",
+    source="CDEK GET /v2/orders/{uuid} (returns the order as stored, personal data included)",
+    schema=_schema(
+        "order_status",
+        "Узнать статус заказа по его номеру. Возвращает заказ целиком, включая получателя и адрес.",
+        {"order_id": {"type": "string", "description": "номер заказа, как его вернул delivery_create_order"}},
+        ("order_id",)),
+    fields=(FieldSpec("order_id", "plain", required=True),),
+    parse=_order_status_parse, mutating=False,
+    result_pii=("recipient.name", "recipient.phone", "to_location.address"))
+
+
+def _order_cancel_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "order_cancel"
+    parsed = _order_id_parse(tool, args)
+    if isinstance(parsed, Refusal):
+        return parsed
+    reason = parse_text(args.get("reason", ""), tool, "reason", 200)
+    if isinstance(reason, Refusal):
+        return reason
+    parsed["reason"] = reason
+    return parsed
+
+
+ORDER_CANCEL = ToolSpec(
+    name="order_cancel",
+    source="CDEK DELETE /v2/orders/{uuid} (idempotent; a cancelled order answers ALREADY_CANCELLED)",
+    schema=_schema(
+        "order_cancel",
+        "Отменить заказ. Причину напиши своими словами.",
+        {"order_id": {"type": "string"},
+         "reason": {"type": "string", "description": "причина отмены"}},
+        ("order_id",)),
+    fields=(FieldSpec("order_id", "plain", required=True),
+            FieldSpec("reason", "free")),
+    parse=_order_cancel_parse, mutating=True)
+
+
+def _order_reschedule_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "order_reschedule"
+    parsed = _order_id_parse(tool, args, ("date",))
+    if isinstance(parsed, Refusal):
+        return parsed
+    date = parse_iso_date(args["date"], tool, "date")
+    if isinstance(date, Refusal):
+        return date
+    parsed["date"] = date
+    return parsed
+
+
+ORDER_RESCHEDULE = ToolSpec(
+    name="order_reschedule",
+    source="CDEK POST /v2/orders/{uuid}/reschedule (date ISO 8601, future only)",
+    schema=_schema(
+        "order_reschedule",
+        "Перенести доставку заказа на другую дату.",
+        {"order_id": {"type": "string"},
+         "date": {"type": "string", "description": "ГГГГ-ММ-ДД"}},
+        ("order_id", "date")),
+    fields=(FieldSpec("order_id", "plain", required=True),
+            FieldSpec("date", "plain", required=True)),
+    parse=_order_reschedule_parse, mutating=True)
+
+
+def _quote_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "delivery_quote"
+    miss = _required(args, tool, "", ("weight", "city"))
+    if miss:
+        return miss
+    weight = parse_int(args["weight"], tool, "weight", 1, 50000)
+    if isinstance(weight, Refusal):
+        return weight
+    city = str(args["city"]).strip().lower()
+    if not re.fullmatch(r"[а-яё\- ]{2,40}", city):
+        return Refusal(tool, "city", "city_format", str(args["city"]))
+    return {"weight": weight, "city": city}
+
+
+DELIVERY_QUOTE = ToolSpec(
+    name="delivery_quote",
+    source="CDEK POST /v2/calculator/tariff (weight in grams, city name)",
+    schema=_schema(
+        "delivery_quote",
+        "Рассчитать стоимость и срок доставки. Вес в граммах, город — куда везём.",
+        {"weight": {"type": "integer", "description": "граммы"},
+         "city": {"type": "string", "description": "город получателя"}},
+        ("weight", "city")),
+    # THE CITY IS NOT PERSONAL DATA AND MUST REACH THE TOOL UNMASKED — a city
+    # identifies nobody (152-ФЗ ст. 3 п. 1) and a quote for the wrong town is a
+    # wrong price. It is typed `plain` for exactly that reason, not `identity`.
+    fields=(FieldSpec("weight", "plain", required=True),
+            FieldSpec("city", "plain", required=True)),
+    parse=_quote_parse, mutating=False)
+
+
+def _pickup_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "pickup_points_near"
+    miss = _required(args, tool, "", ("address",))
+    if miss:
+        return miss
+    address = parse_text(args["address"], tool, "address", 200)
+    if isinstance(address, Refusal):
+        return address
+    limit = parse_int(args.get("limit", 3), tool, "limit", 1, 10)
+    if isinstance(limit, Refusal):
+        return limit
+    return {"address": address, "limit": limit}
+
+
+PICKUP = ToolSpec(
+    name="pickup_points_near",
+    source="CDEK GET /v2/deliverypoints?address= (ranked by distance, each point a real address)",
+    schema=_schema(
+        "pickup_points_near",
+        "Найти пункты выдачи рядом с адресом. Возвращает список с расстоянием в метрах.",
+        {"address": {"type": "string", "description": "адрес, рядом с которым искать"},
+         "limit": {"type": "integer", "description": "сколько пунктов вернуть, 1-10"}},
+        ("address",)),
+    fields=(FieldSpec("address", "identity", "LOC", "", required=True),
+            FieldSpec("limit", "plain")),
+    parse=_pickup_parse, mutating=False,
+    result_pii=("points[].address",))
+
+
+
+def _normalize_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "normalize_contact"
+    out: Parsed = {}
+    for key in ("name", "phone", "address"):
+        if args.get(key) in (None, ""):
+            continue
+        value = parse_text(args[key], tool, key, 300)
+        if isinstance(value, Refusal):
+            return value
+        out[key] = value
+    if not out:
+        return Refusal(tool, "", "nothing_to_normalize", "")
+    return out
+
+
+NORMALIZE = ToolSpec(
+    name="normalize_contact",
+    source="DaData clean/name + clean/phone + clean/address (raw string in, structured out, quality code)",
+    schema=_schema(
+        "normalize_contact",
+        "Привести ФИО, телефон и адрес к стандартному виду. Принимает то, как сказал клиент, "
+        "возвращает разобранные поля и код качества.",
+        {"name": {"type": "string", "description": "ФИО одной строкой, как назвал клиент"},
+         "phone": {"type": "string", "description": "телефон в любом виде"},
+         "address": {"type": "string", "description": "адрес одной строкой"}},
+        ()),
+    # FREE TEXT GOING IN, because that is the point: the tool takes what the
+    # customer SAID. The comparator never equality-checks a `free` field; what
+    # the family measures is what the agent does with the ANSWER.
+    fields=(FieldSpec("name", "free"), FieldSpec("phone", "free"), FieldSpec("address", "free")),
+    parse=_normalize_parse, mutating=False,
+    result_pii=("name.surname", "name.given", "name.patronymic", "phone.e164",
+                "address.street", "address.house"))
+
+
+
+# --- clinic, bank, call centre: reading back, cancelling, escalating ----------
+#
+# Three domains that had exactly one tool each — book, pay, schedule — and so
+# could carry a request but never a CONVERSATION. What follows is what the rest
+# of a dialogue is made of: a list to choose a slot from, a cancellation, a
+# reschedule, a status, a refund, a receipt, a ticket and a handover to a human.
+
+def _id_parse(tool: str, args: dict[str, object], field: str, prefix: str,
+              extra: tuple[str, ...] = ()) -> Parsed | Refusal:
+    miss = _required(args, tool, "", (field, *extra))
+    if miss:
+        return miss
+    raw = str(args[field]).strip()
+    if not re.fullmatch(rf"{prefix}-\d{{1,6}}", raw):
+        return Refusal(tool, field, f"{field}_format", raw)
+    return {field: raw}
+
+
+def _clinic_slots_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "clinic_slots"
+    miss = _required(args, tool, "", ("speciality", "date"))
+    if miss:
+        return miss
+    speciality = parse_enum(str(args["speciality"]).lower(), tool, "speciality",
+                            ("терапевт", "невролог", "хирург", "кардиолог", "офтальмолог"))
+    if isinstance(speciality, Refusal):
+        return speciality
+    date = parse_iso_date(args["date"], tool, "date")
+    if isinstance(date, Refusal):
+        return date
+    return {"speciality": speciality, "date": date}
+
+
+CLINIC_SLOTS = ToolSpec(
+    name="clinic_slots",
+    source="МИС «Инфоклиника» GET /schedule (specialty + date, returns free slots)",
+    schema=_schema(
+        "clinic_slots",
+        "Показать свободные окна врача на дату. Возвращает список слотов.",
+        {"speciality": {"type": "string", "description": "терапевт | невролог | хирург | кардиолог | офтальмолог"},
+         "date": {"type": "string", "description": "ГГГГ-ММ-ДД"}},
+        ("speciality", "date")),
+    # NO PERSONAL DATA AT ALL, and that is the point of having it: a step whose
+    # answer the customer reacts to without the gateway being involved.
+    fields=(FieldSpec("speciality", "enum", required=True),
+            FieldSpec("date", "plain", required=True)),
+    parse=_clinic_slots_parse, mutating=False)
+
+
+def _appointment_cancel_parse(args: dict[str, object]) -> Parsed | Refusal:
+    return _id_parse("appointment_cancel", args, "appointment_id", "apt")
+
+
+APPOINTMENT_CANCEL = ToolSpec(
+    name="appointment_cancel",
+    source="МИС «Инфоклиника» DELETE /appointments/{id}",
+    schema=_schema("appointment_cancel", "Отменить запись пациента.",
+                   {"appointment_id": {"type": "string"}}, ("appointment_id",)),
+    fields=(FieldSpec("appointment_id", "plain", required=True),),
+    parse=_appointment_cancel_parse, mutating=True)
+
+
+def _appointment_reschedule_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "appointment_reschedule"
+    parsed = _id_parse(tool, args, "appointment_id", "apt", ("slot",))
+    if isinstance(parsed, Refusal):
+        return parsed
+    slot = parse_iso_datetime(args["slot"], tool, "slot")
+    if isinstance(slot, Refusal):
+        return slot
+    parsed["slot"] = slot
+    return parsed
+
+
+APPOINTMENT_RESCHEDULE = ToolSpec(
+    name="appointment_reschedule",
+    source="МИС «Инфоклиника» POST /appointments/{id}/move (slot ISO 8601 with offset)",
+    schema=_schema("appointment_reschedule", "Перенести запись на другое окно.",
+                   {"appointment_id": {"type": "string"},
+                    "slot": {"type": "string", "description": "ISO 8601 с часовым поясом"}},
+                   ("appointment_id", "slot")),
+    fields=(FieldSpec("appointment_id", "plain", required=True),
+            FieldSpec("slot", "plain", required=True)),
+    parse=_appointment_reschedule_parse, mutating=True)
+
+
+def _referral_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "referral_create"
+    miss = _required(args, tool, "", ("patient", "speciality"))
+    if miss:
+        return miss
+    patient = _obj(args["patient"], tool, "patient")
+    if isinstance(patient, Refusal):
+        return patient
+    miss = _required(patient, tool, "patient", ("last_name", "first_name", "birth_date"))
+    if miss:
+        return miss
+    last = parse_name_word(patient["last_name"], tool, "patient.last_name")
+    first = parse_name_word(patient["first_name"], tool, "patient.first_name")
+    birth = parse_iso_date(patient["birth_date"], tool, "patient.birth_date")
+    speciality = parse_enum(str(args["speciality"]).lower(), tool, "speciality",
+                            ("терапевт", "невролог", "хирург", "кардиолог", "офтальмолог"))
+    bad = _first(last, first, birth, speciality)
+    if bad:
+        return bad
+    return {"patient": {"last_name": last, "first_name": first, "birth_date": birth},
+            "speciality": speciality}
+
+
+REFERRAL = ToolSpec(
+    name="referral_create",
+    source="ЕГИСЗ направление (ФИО + дата рождения + профиль)",
+    schema=_schema("referral_create", "Выписать направление к специалисту.",
+                   {"patient": {"type": "object",
+                                "properties": {"last_name": {"type": "string"},
+                                               "first_name": {"type": "string"},
+                                               "birth_date": {"type": "string", "description": "ГГГГ-ММ-ДД"}}},
+                    "speciality": {"type": "string"}},
+                   ("patient", "speciality")),
+    fields=(FieldSpec("patient.last_name", "identity", "NAME", "surname", required=True),
+            FieldSpec("patient.first_name", "identity", "NAME", "given", required=True),
+            FieldSpec("patient.birth_date", "identity", "DOB", "iso", required=True),
+            FieldSpec("speciality", "enum", required=True)),
+    parse=_referral_parse, mutating=True)
+
+
+def _payment_status_parse(args: dict[str, object]) -> Parsed | Refusal:
+    return _id_parse("payment_status", args, "payment_id", "pay")
+
+
+PAYMENT_STATUS = ToolSpec(
+    name="payment_status",
+    source="ЮKassa GET /payments/{id} (returns the payment as stored, receipt included)",
+    schema=_schema("payment_status", "Узнать статус платежа по его идентификатору.",
+                   {"payment_id": {"type": "string"}}, ("payment_id",)),
+    fields=(FieldSpec("payment_id", "plain", required=True),),
+    parse=_payment_status_parse, mutating=False,
+    result_pii=("receipt.customer.full_name", "receipt.customer.phone"))
+
+
+def _refund_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "payment_refund"
+    parsed = _id_parse(tool, args, "payment_id", "pay", ("amount",))
+    if isinstance(parsed, Refusal):
+        return parsed
+    amount = _obj(args["amount"], tool, "amount")
+    if isinstance(amount, Refusal):
+        return amount
+    miss = _required(amount, tool, "amount", ("value", "currency"))
+    if miss:
+        return miss
+    if not re.fullmatch(r"\d{1,8}\.\d{2}", str(amount["value"])):
+        return Refusal(tool, "amount.value", "amount_format", str(amount["value"]))
+    currency = parse_enum(str(amount["currency"]).upper(), tool, "amount.currency", ("RUB",))
+    if isinstance(currency, Refusal):
+        return currency
+    parsed["amount"] = {"value": str(amount["value"]), "currency": currency}
+    return parsed
+
+
+PAYMENT_REFUND = ToolSpec(
+    name="payment_refund",
+    source="ЮKassa POST /refunds (payment_id + amount, RUB only)",
+    schema=_schema("payment_refund", "Вернуть деньги по платежу целиком или частично.",
+                   {"payment_id": {"type": "string"},
+                    "amount": {"type": "object",
+                               "properties": {"value": {"type": "string", "description": "0.00"},
+                                              "currency": {"type": "string"}}}},
+                   ("payment_id", "amount")),
+    fields=(FieldSpec("payment_id", "plain", required=True),
+            FieldSpec("amount.value", "plain", required=True),
+            FieldSpec("amount.currency", "enum", required=True)),
+    parse=_refund_parse, mutating=True)
+
+
+def _receipt_parse(args: dict[str, object]) -> Parsed | Refusal:
+    return _id_parse("receipt_fetch", args, "payment_id", "pay")
+
+
+RECEIPT = ToolSpec(
+    name="receipt_fetch",
+    source="ЮKassa GET /receipts?payment_id= (54-ФЗ receipt, carries the customer's contact)",
+    schema=_schema("receipt_fetch", "Получить фискальный чек по платежу.",
+                   {"payment_id": {"type": "string"}}, ("payment_id",)),
+    fields=(FieldSpec("payment_id", "plain", required=True),),
+    parse=_receipt_parse, mutating=False,
+    result_pii=("customer.full_name", "customer.phone", "customer.email"))
+
+
+def _ticket_create_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "ticket_create"
+    miss = _required(args, tool, "", ("subject", "text"))
+    if miss:
+        return miss
+    subject = parse_text(args["subject"], tool, "subject", 120)
+    text = parse_text(args["text"], tool, "text", 2000)
+    bad = _first(subject, text)
+    if bad:
+        return bad
+    out: Parsed = {"subject": subject, "text": text}
+    if args.get("phone"):
+        phone = parse_e164(args["phone"], tool, "phone")
+        if isinstance(phone, Refusal):
+            return phone
+        out["phone"] = phone
+    return out
+
+
+TICKET_CREATE = ToolSpec(
+    name="ticket_create",
+    source="Okdesk POST /issues (subject, description, optional contact phone in E.164)",
+    schema=_schema("ticket_create", "Завести обращение. Текст напиши своими словами.",
+                   {"subject": {"type": "string"}, "text": {"type": "string"},
+                    "phone": {"type": "string", "description": "E.164"}},
+                   ("subject", "text")),
+    fields=(FieldSpec("subject", "free", required=True),
+            FieldSpec("text", "free", required=True),
+            FieldSpec("phone", "identity", "PHONE", "digits")),
+    parse=_ticket_create_parse, mutating=True)
+
+
+def _ticket_find_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "ticket_find"
+    miss = _required(args, tool, "", ("phone",))
+    if miss:
+        return miss
+    phone = parse_e164(args["phone"], tool, "phone")
+    if isinstance(phone, Refusal):
+        return phone
+    return {"phone": phone}
+
+
+TICKET_FIND = ToolSpec(
+    name="ticket_find",
+    source="Okdesk GET /issues?contact_phone= (returns the customer's open issues)",
+    schema=_schema("ticket_find", "Найти обращения клиента по телефону.",
+                   {"phone": {"type": "string", "description": "E.164"}}, ("phone",)),
+    fields=(FieldSpec("phone", "identity", "PHONE", "digits", required=True),),
+    parse=_ticket_find_parse, mutating=False,
+    result_pii=("issues[].subject",))
+
+
+def _escalate_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "escalate_to_human"
+    miss = _required(args, tool, "", ("summary",))
+    if miss:
+        return miss
+    summary = parse_text(args["summary"], tool, "summary", 1500)
+    if isinstance(summary, Refusal):
+        return summary
+    queue = parse_enum(str(args.get("queue", "general")).lower(), tool, "queue",
+                       ("general", "billing", "technical"))
+    if isinstance(queue, Refusal):
+        return queue
+    return {"summary": summary, "queue": queue}
+
+
+ESCALATE = ToolSpec(
+    name="escalate_to_human",
+    source="Okdesk POST /issues/{id}/escalate (free-text handover summary + queue)",
+    schema=_schema(
+        "escalate_to_human",
+        "Передать разговор живому оператору. Напиши сводку своими словами: кто клиент, "
+        "что случилось, что уже сделано.",
+        {"summary": {"type": "string"}, "queue": {"type": "string", "description": "general | billing | technical"}},
+        ("summary",)),
+    # PERSONAL DATA IN PROSE, WRITTEN BY THE MODEL, GOING TO A PERSON. Every
+    # other tool takes it in a typed field; here the substitute has to survive
+    # a sentence, and a human reads what comes out.
+    fields=(FieldSpec("summary", "free", required=True),
+            FieldSpec("queue", "enum")),
+    parse=_escalate_parse, mutating=True)
+
+
+def _merge_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "crm_merge_contacts"
+    miss = _required(args, tool, "", ("primary_id", "duplicate_id"))
+    if miss:
+        return miss
+    primary, duplicate = str(args["primary_id"]).strip(), str(args["duplicate_id"]).strip()
+    if primary == duplicate:
+        return Refusal(tool, "duplicate_id", "same_record", duplicate)
+    return {"primary_id": primary, "duplicate_id": duplicate}
+
+
+MERGE = ToolSpec(
+    name="crm_merge_contacts",
+    source="amoCRM POST /contacts/merge (survivor + duplicate)",
+    schema=_schema("crm_merge_contacts", "Склеить дубликат карточки с основной.",
+                   {"primary_id": {"type": "string"}, "duplicate_id": {"type": "string"}},
+                   ("primary_id", "duplicate_id")),
+    fields=(FieldSpec("primary_id", "plain", required=True),
+            FieldSpec("duplicate_id", "plain", required=True)),
+    parse=_merge_parse, mutating=True)
+
+
 REGISTRY: dict[str, ToolSpec] = {spec.name: spec for spec in (
-    DELIVERY, COURIER, SUGGEST, PAYMENT, PASSPORT, CLINIC, FIND, UPSERT, SMS, CALLBACK, CSV_IMPORT)}
+    DELIVERY, COURIER, SUGGEST, PAYMENT, PASSPORT, CLINIC, FIND, UPSERT, SMS, CALLBACK, CSV_IMPORT,
+    NOTE, TEMPLATE, SEGMENT,
+    ORDER_STATUS, ORDER_CANCEL, ORDER_RESCHEDULE, DELIVERY_QUOTE, PICKUP, NORMALIZE,
+    CLINIC_SLOTS, APPOINTMENT_CANCEL, APPOINTMENT_RESCHEDULE, REFERRAL,
+    PAYMENT_STATUS, PAYMENT_REFUND, RECEIPT,
+    TICKET_CREATE, TICKET_FIND, ESCALATE, MERGE)}
 
 
 def spec_for(tool: str, path: str) -> FieldSpec | None:
@@ -1016,6 +1679,23 @@ def spec_for(tool: str, path: str) -> FieldSpec | None:
         if spec.path == generic:
             return spec
     return None
+
+
+# THE MOCK STORES A RECORD, NOT AN ARGUMENT OBJECT. `crm_upsert_contact` takes
+# `{"id", "contact": {...}}` and the CRM row IS the contact, so the stored path
+# is `address.house` where the argument path is `contact.address.house`. Read
+# through `spec_for`, no spec resolved and the state level fell back to raw
+# string equality — «20а» vs «20 а» and «проспект Чапаева» vs «Чапаева проспект»
+# were state divergences while the field level, one screen up, called both
+# `agree`. 186 of 437 diverging triples on the 05.09 medium run consisted of
+# such lines ONLY. The ladder L1 → L2 → L3 is a ladder of strictness, not of
+# equality rules: one typed comparison per value, at every level.
+STATE_PATH_PREFIX: dict[str, str] = {"crm_upsert_contact": "contact."}
+
+
+def state_spec_for(tool: str, path: str) -> FieldSpec | None:
+    """`spec_for` for a path read off a stored RECORD rather than off the call."""
+    return spec_for(tool, STATE_PATH_PREFIX.get(tool, "") + path)
 
 
 def flatten(value: object, prefix: str = "") -> dict[str, object]:
@@ -1055,6 +1735,18 @@ def main() -> int:
         (SMS, {"number": "+79164021187", "text": "Заказ 4471823: https://t.example.ru/o?order=4471823&phone=79164021187"}),
         (CALLBACK, {"phone": "+79164021187", "at": "2026-09-03T18:00:00+04:00", "timezone": "Europe/Samara"}),
         (CSV_IMPORT, {"csv": f"{CSV_HEADER}\nГромова;Марина;+79164021187;;1987-03-14\nБукин;Сергей;+79261234567;bukin@mail.ru;"}),
+        (NOTE, {"entity_id": "c-1", "note_type": "call_in",
+                "text": "Клиент Громова Марина просит перенести доставку на пятницу; телефон +79164021187."}),
+        (TEMPLATE, {"template_id": "callback", "number": "+79164021187",
+                    "variables": {"name": "Марина", "phone": "+79164021187", "when": "завтра"}}),
+        (SEGMENT, {"group_by": "city",
+                   "members": [{"name": "Громова Марина", "bucket": "Ижевск"},
+                               {"name": "Букин Сергей", "bucket": "Самара"}]}),
+        (PAYMENT, {"amount": {"value": "1500.00", "currency": "RUB"},
+                   "payment_method_data": {"type": "bank_card",
+                                           "card": {"number": card, "expiry_month": "09",
+                                                    "expiry_year": "2028", "cardholder": "TAMARA PAVLOVA"}},
+                   "receipt": {"customer": {"full_name": "Павлова Тамара", "phone": "+79164021187"}}}),
         (PAYMENT, {"amount": {"value": "1500.00", "currency": "RUB"},
                    "payment_method_data": {"type": "bank_card",
                                            "card": {"number": card, "expiry_month": "09",
@@ -1072,6 +1764,21 @@ def main() -> int:
         (DELIVERY, {"recipient": {"name": "x", "phones": [{"number": "+79164021187"}]},
                     "to_location": {"postal_code": "42603", "city": "Ижевск", "address": "a"},
                     "packages": [{"weight": 1}]}, "postal_code_format"),
+        (NOTE, {"entity_id": "c-1", "note_type": "voicemail", "text": "…"}, "enum_mismatch"),
+        (TEMPLATE, {"template_id": "callback", "number": "+79164021187",
+                    "variables": {"name": "Марина", "when": "завтра"}}, "missing_variable"),
+        (SEGMENT, {"group_by": "city", "members": []}, "array_required"),
+        (SEGMENT, {"group_by": "region",
+                   "members": [{"name": "Громова", "bucket": "Ижевск"}]}, "enum_mismatch"),
+        (PAYMENT, {"amount": {"value": "1500.00", "currency": "RUB"},
+                   "payment_method_data": {"type": "bank_card",
+                                           "card": {"number": card, "expiry_month": "09",
+                                                    "expiry_year": "2028", "cardholder": "TAMARA PAVLOVA"}},
+                   "receipt": {"customer": {"full_name": "Павлова Тамара"}}}, "receipt_contact_required"),
+        (TEMPLATE, {"template_id": "callback", "number": "+79164021187",
+                    "variables": {"name": "Марина", "phone": "+79164021187", "when": "завтра",
+                                  "surname": "Громова"}}, "unknown_variable"),
+        (NOTE, {"entity_id": "c-1", "note_type": "common", "text": "x" * 801}, "too_long"),
         (PASSPORT, {"passport": {"series": "45 09", "number": "123456"}, "person": {"last_name": "а", "first_name": "б"}}, "series_format"),
         (PASSPORT, {"passport": {"series": "4509", "number": "123456"}, "snils": "112-233-445 96",
                     "person": {"last_name": "Иванов", "first_name": "Пётр"}}, "snils_checksum"),
@@ -1095,6 +1802,13 @@ def main() -> int:
     if spec_for("delivery_create_order", "recipient.phones[0].number") is None:
         failures += 1
         print("FAIL spec_for array path")
+    if state_spec_for("crm_upsert_contact", "address.house") is None or \
+            state_spec_for("crm_upsert_contact", "address.house").role != "house":
+        failures += 1
+        print("FAIL state_spec_for record path")
+    if state_spec_for("courier_book", "address.building") is not spec_for("courier_book", "address.building"):
+        failures += 1
+        print("FAIL state_spec_for identity for a tool that stores its arguments")
     print("tools: PASS" if not failures else f"tools: FAIL ({failures})")
     return 1 if failures else 0
 

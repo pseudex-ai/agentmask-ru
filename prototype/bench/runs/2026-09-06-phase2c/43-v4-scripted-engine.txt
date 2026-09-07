@@ -1,0 +1,63 @@
+$ python3 bench/agentpii4/smoke.py --engine
+
+СКРИПТОВЫЙ АГЕНТ «decomposer» — не живой прогон; три плеча через настоящий шлюз
+
+троек: 699 · случаев: 699 · исключено: 0
+
+0. УТЕЧКИ В МОДЕЛЬ — значения из сообщений, для которых плечо шлюза НЕ показало подмену: 0 из 2039 (0.0%)
+
+1. ПРОВОКАЦИЯ — что модель делает с НАСТОЯЩИМИ значениями (плечо C против C′)
+   verbatim 4819 (95.2%) · absent 242 (4.8%)
+
+2–3. ШУМОВОЙ ПОЛ И ЭФФЕКТ ШЛЮЗА — по уровням, никогда одним числом
+   уровень          I≈C      C′≈C     эффект   95% ДИ (кластерный бутстрап)   McNemar p (b,c)  ICC(случай) ICC(значение) DEFF
+   L1 инструменты    98.4% 100.0%   -1.6pp [ -2.5,  -0.8]           0.001 (11,0)    0.00        0.05      1.01
+   L2 ключи          98.4% 100.0%   -1.6pp [ -2.5,  -0.8]           0.001 (11,0)    0.00        0.05      1.01
+   L3 состояние      85.1% 100.0%  -14.9pp [-17.7, -12.2]           0.000 (104,0)    0.00        0.08      1.02
+   L3 ЗНАЧЕНИЯ       85.4% 100.0%  -14.6pp [-17.2, -12.0]           0.000 (102,0)    0.00        0.00      1.00
+   L3 дословно       83.5% 100.0%  -16.5pp [-19.2, -13.7]           0.000 (115,0)    0.00        0.03      1.01
+   для ±2pp на L3 при согласии 85% нужно n ≈ 1217 случаев (iid)
+
+4. ТАКСОНОМИЯ ПО ПОЛЯМ — I−C рядом с C′−C; разница и есть шлюз
+   класс               I−C   C′−C   разн   примечание
+   agree               4744   5061   -317   
+   absent                24      0    +24   
+   extra                 42      0    +42   
+   residual               3      0     +3   ДЕФЕКТ ПРОДУКТА — подмена дошла до инструмента
+   validated_refused     40      0    +40   движок не чинит — фейк отвергнут валидацией
+   control_erred         20      0    +20   КОНТРОЛЬ ошибся — шлюз восстановил эталон корпуса
+   derived                1      0     +1   движок не чинит — производная от подмены
+   same_person_variant    70      0    +70   
+   reformatted           86      0    +86   
+   composed               2      0     +2   
+   other                 71      0    +71   
+   по типам (I−C): CARD: agree 32/32 · DOB: agree 99/100 · EMAIL: agree 7/7 · LOC: agree 1868/2126 · NAME: agree 1507/1545 · PASSPORT: agree 100/100 · PHONE: agree 1081/1143 · SNILS: agree 50/50
+
+5. ПРОИЗВОДНЫЕ ПОЛЯ (I−C)
+   contact.initials:other/misderived 20
+   patient.age:derived/from_substitute 1
+
+6. ВАЛИДАЦИЯ — семейство validate
+   троек 36 · агент не вызвал (I−C) 0 · (C′−C) 0 · мок отверг в I 0
+
+7. ПРОСТЫЕ ЗНАЧЕНИЯ (не ПД, обязаны уцелеть) — I−C / C′−C
+   intact: 1840 / 1844 · changed: 7 / 0 · absent: 4 / 0
+
+8. РАЗРЕЗЫ — согласие I≈C на L3 по регистру и по виду
+   регистр: chat 180/208 · clean 6/6 · sloppy 76/101 · voice_itn 130/153 · voice_raw 203/231
+   вид: analytics 18/18 · chain 44/48 · compare 42/42 · container 30/30 · correction 36/36 · crm_note 24/24 · decompose 40/42 · derive 54/54 · long_order 54/60 · lookup_list 29/30 · normalize 10/40 · prompt_rule 21/35 · receipt 18/18 · result_feed 33/36 · search_rank 45/45 · send_template 23/24 · summary 35/36 · tool_chain 3/45 · validate 36/36
+
+10. ПРИМЕРЫ РАСХОЖДЕНИЙ (I−C, до 12)
+   chain-002|0 crm_upsert_contact.contact.address.street [other/typo_repaired] C='челюскинццев' I='челюскинцев' (verbatim)
+   chain-009|0 crm_upsert_contact.contact.address.street [composed/] C='вишнёвая' I='глазов вишнёвая' (verbatim)
+   chain-010|0 crm_upsert_contact.contact.address.street [composed/] C='пушкина' I='глазов пушкина' (verbatim)
+   chain-047|0 crm_upsert_contact.contact.address.street [other/typo_repaired] C='тельмна' I='тельмана' (verbatim)
+   compare-000|0 address_suggest.query [same_person_variant/i2] C='дзержнского сорок четыре' I='дзержинского 44' (verbatim)
+   compare-006|0 address_suggest.query [other/renumbered] C='подлесная тридц один корпус четыре' I='подлесная 31, корп. 4' (verbatim)
+   compare-012|0 address_suggest.query [same_person_variant/i4] C='пушкиан 113' I='пушкина 113' (composed)
+   compare-015|0 address_suggest.query [other/typo_repaired] C='мончегорсуая 195 корпус 1' I='мончегорская 195 корпус 1' (verbatim)
+   compare-021|0 address_suggest.query [same_person_variant/i4] C='нидняя 59' I='нижняя 59' (composed)
+   compare-034|0 address_suggest.query [other/renumbered] C='пушкна шестьдесят пять корпус один' I='пушкина 65, корп. 1' (verbatim)
+   decompose-019|0 courier_book.address.street [other/typo_repaired] C='луогвая' I='луговая' (verbatim)
+   decompose-037|0 courier_book.address.street [other/typo_repaired] C='смольеый' I='смольный' (verbatim)
+

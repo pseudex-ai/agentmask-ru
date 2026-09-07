@@ -20,9 +20,9 @@ from bench.agentpii4.schema import PiiItem
 from bench.agentpii4.tools import FieldSpec
 
 DIVERGENCE_KINDS: tuple[str, ...] = (
-    "agree", "absent", "extra", "residual", "validated_refused", "ref_refused",
-    "control_erred", "derived", "other_person", "stale_value", "container_embedded",
-    "reformatted", "fragment", "composed", "other")
+    "agree", "absent", "absent_required", "extra", "residual", "validated_refused", "ref_refused",
+    "control_erred", "derived", "same_person_variant", "other_person", "stale_value",
+    "container_embedded", "reformatted", "fragment", "composed", "other")
 TRANSFORM_KINDS: tuple[str, ...] = (
     "verbatim", "reformatted", "fragment", "composed", "derived",
     "container_embedded", "invented", "absent")
@@ -197,7 +197,12 @@ def classify_field(spec: FieldSpec, ref: FieldObs, obs: FieldObs, real: PiiItem 
     if not ref.present and not obs.present:
         return verdict("agree", "both_absent")
     if ref.present and not obs.present:
-        return verdict("absent")
+        # AN OPTIONAL FIELD ONE ARM OMITTED IS A COIN TOSS; A REQUIRED ONE IS
+        # NOT. `FieldSpec.required` stood on 69 specifications and was read by
+        # no scorer, so «the control filled the field the tool demands and the
+        # gateway arm did not» scored as agreement. Two kinds, because the
+        # optional half of that argument still holds.
+        return verdict("absent_required" if spec.required else "absent")
     if not ref.present and obs.present:
         return verdict("extra")
     if obs.residual and not _typed_equal(obs.parsed or obs.restored, ref.parsed or ref.restored, spec):
@@ -226,6 +231,29 @@ def classify_field(spec: FieldSpec, ref: FieldObs, obs: FieldObs, real: PiiItem 
             from_real = _derived_ok(spec, obs.restored, dict(real.parts), now)
             if from_real:
                 return verdict("agree", "derived_from_real")
+        # СВЯЗЫВАНИЕ ПО РАВЕНСТВУ НЕ РАБОТАЕТ ДЛЯ ПРОИЗВОДНОГО, И ЭТО ДЕФЕКТ
+        # ПРИБОРА, А НЕ ШЛЮЗА. `bind_item` ищет запись, чьё ЗНАЧЕНИЕ равно
+        # написанному, а «BUKIN SERGEY» не равно ни «букин», ни «сергей» — оно
+        # из них ВЫВЕДЕНО; вдобавок у производного поля `pii_type` пуст, и
+        # `bind_item` выходит на первой строке. Поэтому `real` был None, и обе
+        # ветки ниже давали `unverifiable` или `misderived` там, где оба плеча
+        # написали корректный транслит ОДНОГО человека. Сам контроль пишет и
+        # «SERGEI», и «SERGEY» — на живом прогоне 07.09 окончание «-ей» стоит
+        # как EY 12 раз и как EI 7, — так что это шум модели, названный
+        # дефектом шлюза.
+        #
+        # ЭТО НЕ ПОСЛАБЛЕНИЕ. Проверка строже равенства: ОБА плеча должны
+        # выводиться из частей ОДНОЙ И ТОЙ ЖЕ настоящей записи, и запись должна
+        # быть единственной. Транслит чужого человека, инициалы чужого
+        # человека, возраст от чужой даты — всё это по-прежнему расхождение.
+        if real is None and (spec.source_type or spec.pii_type):
+            wanted = spec.source_type or spec.pii_type
+            shared = [item for item in others
+                      if item.type == wanted and not item.stale
+                      and _derived_ok(spec, obs.restored, dict(item.parts), now)
+                      and _derived_ok(spec, ref.restored, dict(item.parts), now)]
+            if len(shared) == 1:
+                return verdict("agree", "derived_from_real")
         unverifiable = False
         for _seen_one, parts_one in candidates:
             from_fake = _derived_ok(spec, obs.restored, parts_one, now)
@@ -241,6 +269,18 @@ def classify_field(spec: FieldSpec, ref: FieldObs, obs: FieldObs, real: PiiItem 
         if other.type == spec.pii_type:
             try:
                 if same_value(obs.restored, other.canonical, other.type) or is_part_of(obs.restored, other.parts):
+                    # THE SAME PERSON, ANOTHER SPELLING. The customer wrote
+                    # «каллашникова 10»; the control, reading the typo, sent the
+                    # directory's «Калашникова, 10» and bound to the directory
+                    # item; the gateway returned the customer's own words, which
+                    # are ALSO an item of this case — the message one. Ten fields
+                    # on the 05.09 medium run were filed as `other_person` this
+                    # way, and every one was one person, one place, two spellings.
+                    # The identity's first segment names the person («p18.sugg0»,
+                    # «p18.addr»); a different person has a different one.
+                    if real is not None and _person_of(other.identity) == _person_of(real.identity):
+                        return verdict("same_person_variant", other.id,
+                                       "то же лицо и место в другом написании: контроль нормализовал, шлюз вернул как написано")
                     return verdict("other_person", other.identity)
             except Exception:  # noqa: BLE001
                 continue
@@ -268,6 +308,10 @@ def classify_field(spec: FieldSpec, ref: FieldObs, obs: FieldObs, real: PiiItem 
                              [(one.type, one.canonical) for one in others])
         return verdict("other", sub)
     return verdict("other", "unbound")
+
+
+def _person_of(identity: str) -> str:
+    return identity.split(".", 1)[0]
 
 
 def substitute_parts(pii_type: str, surface: str) -> dict[str, str]:

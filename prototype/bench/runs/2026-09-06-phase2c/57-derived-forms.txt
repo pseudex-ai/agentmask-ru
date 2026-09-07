@@ -1,0 +1,15 @@
+$ python3 test_derived_forms.py
+
+PASS  транслит целого имени в конвенции модели
+PASS  инициалы настоящего человека
+PASS  ю, которого в подмене не было → «yu» (модель писала по ICAO)
+PASS  ю, которого в подмене не было → «yu» (модель писала по ГОСТ)
+PASS  окончание -ий→y, подсмотренное у подмены, переносится на Юрий
+
+Traceback (most recent call last):
+  File "/Users/igor/Projects/Obscura/prototype/test_derived_forms.py", line 186, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/Users/igor/Projects/Obscura/prototype/test_derived_forms.py", line 133, in main
+    raise RuntimeError("no colliding initials in 1500 draws")
+RuntimeError: no colliding initials in 1500 draws

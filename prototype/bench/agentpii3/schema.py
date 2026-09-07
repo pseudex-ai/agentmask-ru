@@ -337,6 +337,7 @@ BREAK_KINDS: tuple[str, ...] = (
     "residual",            # a minted token still stands in the argument
     "other_person",        # resolved to a REAL value belonging to someone else
     "renumbered",          # went in spelled out, came back in digits (or back)
+    "typo_repaired",       # the customer's mistyped street, in the register's spelling
     "inflected",           # resolved, but declined or otherwise re-formed
     "head_junk",           # the value came back with words glued to its FRONT
     "tail_junk",           # ... or to its END. Both are our span, not the model
@@ -1324,6 +1325,28 @@ def same_value(produced: str | None, expected: str, kind: str) -> bool:
     return produced.strip().casefold() == expected.strip().casefold()
 
 
+def _street_repaired(expected: str, restored: str) -> bool:
+    """Whether `restored` is `expected` with a mistyped street word replaced by
+    the ГАР spelling the engine vouches for. Asks the engine's own rule rather
+    than re-deriving one: two answers to one question is how a scorer starts
+    disagreeing with the thing it scores."""
+    try:
+        from pseudex.address import register_spelling
+    except Exception:  # noqa: BLE001 — no bundle leased: the class is simply unreachable
+        return False
+    left, right = expected.split(), restored.split()
+    if len(left) != len(right):
+        return False
+    fixed = 0
+    for a, b in zip(left, right):
+        if a == b:
+            continue
+        if register_spelling(a) != b.lower():
+            return False
+        fixed += 1
+    return fixed > 0
+
+
 def classify_break(item: PiiItem, expected: str, restored: str | None,
                    other_values: Sequence[tuple[str, str]]) -> str:
     """Name a broken round trip. One of BREAK_KINDS.
@@ -1354,6 +1377,18 @@ def classify_break(item: PiiItem, expected: str, restored: str | None,
     if (restored.lower().translate(_LOOKALIKE)
             == expected.lower().translate(_LOOKALIKE)):
         return "lookalike_repaired"
+    # THE CUSTOMER'S TYPO, PUT RIGHT BY THE REGISTER — named, not forgiven.
+    # A tool argument now carries the ГАР spelling of a street the customer
+    # mistyped, because that is what an agent WITHOUT the gateway sends: on
+    # the v4 live run both control arms repaired it every time. This scorer
+    # has no control arm and its ground truth is the customer's own words, so
+    # it counts the repair as a divergence — correctly, since it cannot know.
+    # The class exists so the number is legible rather than silently folded
+    # into `inflected`, where the next reader would chase a case ending that
+    # is not there. Never merged into `ok`: a scorer that forgives what it
+    # cannot verify is the fallback this repository has already paid for once.
+    if item.type == "LOC" and _street_repaired(expected, restored):
+        return "typo_repaired"
     # ЧТО ИМЕННО ЛИШНЕЕ И С КАКОЙ СТОРОНЫ. Прежде «пришло больше, чем ждали» и
     # «пришло меньше» лежали в одном `truncated`, а всё, что не было префиксом,
     # падало в `inflected` — и 358 «склонений» офлайнового прогона оказались

@@ -27,9 +27,14 @@ def build(seed: int, count: int) -> list[Case]:
 
 
 def _one(ctx: c.Ctx) -> Case:
-    city = ctx.rng.choice(list(pools.CITIES)[:10])
+    city = ctx.rng.choice(list(pools.CORPUS_CITIES))
     drawn = c.draw(ctx, city=city, with_flat=True)
-    new_address = pools.draw_address(ctx.rng, "", True, False, ctx.rng.random() < 0.3)
+    # THE CITY IS IN THE NEW ADDRESS, because `crm_upsert_contact` refuses an
+    # address without one (`tools._upsert_parse`) and the customer never said
+    # it: the agent had to lift the town out of a masked lookup result or
+    # invent it, and two arms of one case invented differently. The same patch
+    # `correction` already carries for `courier_book.locality`.
+    new_address = pools.draw_address(ctx.rng, city, True, False, ctx.rng.random() < 0.3)
     identity = f"p{ctx.index}"
     builder = c.CaseBuilder(
         ctx=ctx, role="crm", tools=TOOLS,

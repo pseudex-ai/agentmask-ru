@@ -262,7 +262,7 @@ async def _async_tests() -> None:
         #    detokenized, and the carry must be caller-owned (stateless).
         org7 = "stream_org"
         masked7 = await _mask(client, org7, [{"role": "user", "content": "мой телефон +7 999 123-45-67"}])
-        token = re.search(r"\+79\d{9}", masked7[0]["content"]).group()
+        token = re.search(r"\+?\d[\d\s()\-]{8,}\d", masked7[0]["content"]).group().strip()
         carry, out = "", ""
         for delta in ["Перезвоню на ", token[:5], token[5:], " завтра, всё в силе, до связи."]:
             chunk = await _post(client, "/unmask_chunk",

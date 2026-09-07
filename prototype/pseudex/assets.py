@@ -46,6 +46,7 @@ class NameAssets:
     ambiguous: frozenset[str]
     cues: tuple[str, ...]
     bio_cues: tuple[str, ...]
+    never_cues: tuple[str, ...]
     stopwords: frozenset[str]
     surname_suffixes: tuple[str, ...]
     patronymic_suffixes: tuple[str, ...]
@@ -64,6 +65,11 @@ class AddressAssets:
     # «Новая», «Мира», «Свободы», «Труда» — so it is only ever read by the arm
     # that also demands a street-type word and address intent.
     street_names: frozenset[str]
+    # The names of that vocabulary that occur in a HUNDRED or more places. Read
+    # by one caller for one decision — which register entry a mistyped street
+    # meant, when several are one edit away. See `assets_source.
+    # STREET_FREQUENT_MIN` for the measurement and the residual risk.
+    street_frequent: frozenset[str]
     # Multi-word ГАР names, matched as WHOLE phrases. Fifty-five per cent of
     # the register, and kept apart from `street_names` because that set is
     # looked up token by token — «карла» alone must not claim a street.
@@ -236,6 +242,7 @@ def _build_names(raw: dict[str, object]) -> NameAssets:
         ambiguous=ambiguous,
         cues=tuple(raw["cues"]),
         bio_cues=tuple(raw["bio_cues"]),
+        never_cues=tuple(raw["never_cues"]),
         stopwords=frozenset(raw["stopwords"]),
         surname_suffixes=tuple(raw["surname_suffixes"]),
         patronymic_suffixes=tuple(raw["patronymic_suffixes"]),
@@ -255,6 +262,7 @@ def _build_address(raw: dict[str, object], months: list[str]) -> AddressAssets:
     return AddressAssets(
         street_gaz=frozenset(raw["street_gaz"]),
         street_names=frozenset(raw["street_names"]),
+        street_frequent=frozenset(raw["street_frequent"]),
         street_phrases=frozenset(raw["street_phrases"]),
         street_type_nohouse=frozenset(raw["street_type_nohouse"]),
         # ORDERED, and longest-first, because `_exact_type` returns the FIRST
@@ -272,8 +280,37 @@ def _build_address(raw: dict[str, object], months: list[str]) -> AddressAssets:
 def _build_quasi(raw: dict[str, object]) -> QuasiAssets:
     months = "|".join(raw["months"])
     # A written-out day+month, optionally with the year: `12 марта`, `3 мая 1985`.
+    # AND THE SPOKEN DATE. A birth date said aloud has no digit anywhere —
+    # «двадцать первое сентября восьмидесятого года» — and every arm here
+    # waited for one, so it reached the model in the clear (live v4,
+    # derive-020, three of three repeats). The day is an ordinal, the year an
+    # ordinal before «года», with or without the century said out loud. Both
+    # still sit behind the birth-context gate below.
+    day = (r"(?:(?:двадцать|тридцать)\s+)?(?:перв|втор|трет|четвёрт|четверт|пят|шест|седьм|восьм|девят"
+           r"|десят|одиннадцат|двенадцат|тринадцат|четырнадцат|пятнадцат|шестнадцат|семнадцат"
+           r"|восемнадцат|девятнадцат|двадцат|тридцат)(?:ое|ого|ый|ым|ой|ий|его|ье|ья|ьего)")
+    # …AND «ГОДА» IS OPTIONAL WHEN THE YEAR CANNOT BE MISTAKEN FOR ANYTHING ELSE.
+    # «одиннадцатого сентября пятьдесят пятого» and «двадцать третьего марта
+    # тысяча девятьсот восемьдесят второго» are how the corpus's voice register
+    # says a birth date, and both ended at the month: the year stayed outside
+    # the span, next to a substitute carrying another year (seed-6060 run, 9 of
+    # 9 spoken dates of birth). A spoken century, or a tens word followed by an
+    # ordinal, or a decade ordinal («восьмидесятого») is a year on its own; a
+    # bare ordinal («пятого») still needs «года», or «родился третьего марта
+    # первого ребёнка» would end at the child.
+    century = r"(?:тысяча\s+девятьсот|две\s+тысячи|тысяча|двухтысячн\w+|тысяча\s+девятисот\w+)"
+    tens_card = r"(?:двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто)"
+    tens_ord = r"(?:двадцат|тридцат|сороков|пятидесят|шестидесят|семидесят|восьмидесят|девяност)(?:ого|его)"
+    unit_ord = r"[а-яё]{3,}(?:ого|его)"
+    spoken_year = (r"(?:"
+                   rf"\s+{century}(?:\s+{tens_card})?(?:\s+{unit_ord})?"
+                   rf"|\s+{tens_card}\s+{unit_ord}"
+                   rf"|\s+{tens_ord}"
+                   rf"|\s+{unit_ord}\s+года?"
+                   r")(?:\s+года?)?")
     text_date = re.compile(
-        r"\b(\d{1,2})\s+(?:" + months + r")(?:\s+(?:19|20)\d{2}(?:\s*г\w*)?)?",
+        r"\b(\d{1,2})\s+(?:" + months + r")(?:\s+(?:19|20)\d{2}(?:\s*г\w*)?)?"
+        r"|\b" + day + r"\s+(?:" + months + r")(?:" + spoken_year + r"|\s+(?:19|20)\d{2}(?:\s*г\w*)?)?",
         re.IGNORECASE,
     )
     return QuasiAssets(

@@ -15,6 +15,7 @@ TWO DIRECTIONS, AND THEY ARE NOT SYMMETRIC.
 import re
 
 from bench.agentpii3.schema import _address_parts, digits_of
+from bench.agentpii4 import pools
 
 Parts = dict[str, str]
 
@@ -49,14 +50,52 @@ def name_parts(surface: str) -> Parts:
         else:
             rest.append(word)
     if len(rest) == 1:
-        out["surname" if _surname_shaped(rest[0]) else "given"] = rest[0]
+        out["surname" if _surname_shaped(rest[0]) and not _given_name(rest[0]) else "given"] = rest[0]
     elif len(rest) >= 2:
         first, second = rest[0], rest[1]
-        if _surname_shaped(second) and not _surname_shaped(first):
+        # A GIVEN NAME MAY WEAR A SURNAME'S SUFFIX — «Ирина», «Марина», «Яков»,
+        # «Ян» — and by shape alone both words of «Ирина Лебедева» are surnames,
+        # so document order made «Ирина» the surname. The scripted agent then
+        # wrote the cardholder as «LEBEDEVA IRINA» for the substitute while
+        # writing «NATALIA NOVIKOVA» for the real name: seven divergences on
+        # 474 cases that were the instrument's, not the engine's. A model knows
+        # which of two words is a name; so does this list, which is the
+        # instrument's own and never the engine's pool. Shape still decides
+        # whenever it is unambiguous.
+        first_given, second_given = _given_name(first), _given_name(second)
+        if first_given and not second_given:
+            out["given"], out["surname"] = first, second
+        elif second_given and not first_given:
+            out["surname"], out["given"] = first, second
+        elif _surname_shaped(second) and not _surname_shaped(first):
             out["given"], out["surname"] = first, second
         else:
             out["surname"], out["given"] = first, second
     return out
+
+
+# Common Russian given names — the tie-breaker above. Generic, both genders,
+# the everyday top of the frequency lists; NOT the engine's substitute pool.
+_GIVEN_NAMES: frozenset[str] = frozenset(name.lower() for name in (
+    "Александр Алексей Анатолий Андрей Антон Аркадий Арсений Артём Артем Борис Вадим Валентин "
+    "Валерий Василий Вениамин Виктор Виталий Владимир Владислав Всеволод Вячеслав Геннадий "
+    "Георгий Герман Глеб Григорий Даниил Данила Демьян Денис Дмитрий Евгений Егор Захар Иван "
+    "Игнат Игорь Илья Кирилл Константин Лев Леонид Макар Максим Марк Матвей Михаил Никита "
+    "Николай Олег Павел Пётр Петр Платон Радислав Роман Руслан Савва Семён Семен Сергей Станислав "
+    "Степан Тарас Тимофей Тимур Фёдор Федор Филипп Харитон Эдуард Юлиан Юрий Яков Ян Ярослав "
+    "Остап Родион Трофим Игнатий Гавриил Елисей Мирон Прохор Савелий Тихон Лука Назар "
+    "Александра Алевтина Алина Алиса Алла Альбина Анастасия Ангелина Анна Антонина Арина "
+    "Белла Валентина Валерия Варвара Вера Вероника Виктория Галина Гелена Дарья Диана Дина Ева "
+    "Евгения Екатерина Елена Елизавета Жанна Зинаида Зоя Иванна Инна Ирина Капитолина Карина "
+    "Кира Клавдия Кристина Ксения Лариса Лидия Лилия Любовь Людмила Маргарита Марина Мария "
+    "Марта Милана Надежда Наталия Наталья Нина Оксана Олеся Ольга Полина Раиса Регина Римма "
+    "Сабина София Софья Стелла Таисия Тамара Татьяна Ульяна Фаина Христина Эвелина Эмилия Юлия "
+    "Яна Ярослава Николь Агата Аглая Злата Мирослава Пелагея Серафима Устинья"
+).split())
+
+
+def _given_name(word: str) -> bool:
+    return word.lower().replace("ё", "е") in _GIVEN_NAMES or word.lower() in _GIVEN_NAMES
 
 
 def _surname_shaped(word: str) -> bool:
@@ -121,7 +160,11 @@ def dob_parts(surface: str) -> Parts:
     ru = _DATE_RU.search(surface)
     if ru:
         return {"iso": f"{int(ru.group(3)):04d}-{int(ru.group(2)):02d}-{int(ru.group(1)):02d}"}
-    return {}
+    # A DATE SAID ALOUD IS STILL A DATE, and the agent reads it. Returning
+    # nothing here made the scripted agent fall back to the REAL item's parts
+    # and write the customer's true date of birth into the tool.
+    spoken = pools.parse_spoken_date(surface)
+    return {"iso": spoken} if spoken else {}
 
 
 def email_parts(surface: str) -> Parts:
@@ -181,6 +224,11 @@ def main() -> int:
         (name_parts("Иванов Пётр Сергеевич"), {"surname": "Иванов", "given": "Пётр", "patronymic": "Сергеевич"}),
         (name_parts("Тамара Владимировна Павлова"), {"given": "Тамара", "patronymic": "Владимировна", "surname": "Павлова"}),
         (name_parts("ким виктор"), {"surname": "ким", "given": "виктор"}),
+        (name_parts("Ирина Лебедева"), {"given": "Ирина", "surname": "Лебедева"}),
+        (name_parts("Лебедева Ирина"), {"surname": "Лебедева", "given": "Ирина"}),
+        (name_parts("Яков Осипов"), {"given": "Яков", "surname": "Осипов"}),
+        (name_parts("Марина Кузнецова"), {"given": "Марина", "surname": "Кузнецова"}),
+        (name_parts("Ян Рыбаков"), {"given": "Ян", "surname": "Рыбаков"}),
         (address_parts("ул. Ленина, д. 14, кв. 5"), {"street": "ленина", "house": "14", "flat": "5"}),
         (address_parts("Ижевск, улица Клубная, 85, кв. 12")["city"], "ижевск"),
         (passport_parts("4509 123456"), {"series": "4509", "number": "123456"}),

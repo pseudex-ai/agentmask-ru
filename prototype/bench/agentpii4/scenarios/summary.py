@@ -25,7 +25,7 @@ def build(seed: int, count: int) -> list[Case]:
 
 
 def _one(ctx: c.Ctx) -> Case:
-    city = ctx.rng.choice(list(pools.CITIES)[:10])
+    city = ctx.rng.choice(list(pools.CORPUS_CITIES))
     drawn = c.draw(ctx, city=city, with_flat=True, with_type=True)
     identity = f"p{ctx.index}"
     name = c.name(ctx, drawn.person, ("surname", "given", "patronymic"))

@@ -22,7 +22,7 @@ def build(seed: int, count: int) -> list[Case]:
 
 
 def _one(ctx: c.Ctx) -> Case:
-    cities = list(pools.CITIES)[:10]
+    cities = list(pools.CORPUS_CITIES)
     city = ctx.rng.choice(cities)
     other_city = ctx.rng.choice([one for one in cities if one != city])
     drawn = c.draw(ctx, city="", with_flat=False, with_type=False)
@@ -48,7 +48,15 @@ def _one(ctx: c.Ctx) -> Case:
                                      "region": pools.CITIES[row_city][0], "city": row_city,
                                      "street": street, "house": row_house, "flat": "",
                                      "fias_id": _FIAS[index]}
+        # THE STREET IS REGISTERED SEPARATELY FROM THE DISPLAY STRING, because
+        # the RESULT exposes it separately (`mock._apply` makes `data.street` a
+        # Slot of its own) and an agent reads the structured field, not the
+        # human one. Registering only `value` left `data.street` unmarked, so
+        # the level-A fake never masked it and the scripted agent wrote the
+        # customer's REAL street into the booking.
         builder.seed(f"a-{index}", "addresses", fields, {
+            "street": ("LOC", f"{identity}.sugg{index}",
+                       pools.Rendered(street, street, False, {"street": street})),
             "value": ("LOC", f"{identity}.sugg{index}",
                       pools.Rendered(value, value, False, {"city": row_city, "street": street, "house": row_house})),
         })

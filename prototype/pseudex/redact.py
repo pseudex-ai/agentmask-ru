@@ -8,14 +8,17 @@ lighter one. Reverse uses longest-token-first to avoid prefix collisions.
 import json
 import re
 
-from pseudex.detect import Span
-from pseudex import morph_names, morph_places, translit
+from pseudex.detect import NameSpan, PartSpan, Span
+from pseudex import agent_form, morph_names, morph_places, translit
+from pseudex.assets import ASSETS
 from pseudex.profiling import stage
-from pseudex.vault import LOC_TOKEN_PATTERN, TOKEN_RE, Vault, name_key, place_key
+from pseudex.vault import LOC_TOKEN_PATTERN, TOKEN_RE, Vault, name_key, place_key, _date_canonical
 
 # A number-like run (digits + phone separators), >=7 digits — a candidate for
 # digit-core detokenization when the model reformatted a numeric token.
-_NUM_RUN = re.compile(r"(?<![\d])[+(]?\d[\d\s().\-]{5,}\d(?!\d)")
+# «/» joins the halves of a passport the model laid out as «0022 / 385996»
+# (live v4: nine replies showed the customer a fake passport in a table).
+_NUM_RUN = re.compile(r"(?<![\d])[+(]?\d[\d\s()./\-]{5,}\d(?!\d)")
 # Значение поля целиком: только цифры и разделители, не меньше трёх цифр.
 _WHOLE_NUMBER = re.compile(r"[+(]?\d[\d\s().\-]*\d(?:\D*)?")
 
@@ -70,8 +73,67 @@ def mask_text(text: str, vault: Vault, spans: list[Span]) -> str:
     return _splice(text, [
         (span.start, span.end, _token_for_text(span, vault))
         for span in spans
-        if not vault.is_minted_token(span.value)
+        if not is_own_substitute(span, vault)
     ])
+
+
+def is_own_substitute(span: Span, vault: Vault) -> bool:
+    """A detected span that is OURS coming back: the exact token, or an
+    address the model composed around one. THE ONE RULE FOR THREE CALLERS —
+    `mask_text`, the envelope's audit loop and the benchmark's scorer each
+    filtered echoes on their own, and the second rule reached only one of
+    them, so production and the instrument disagreed about the same text."""
+    if vault.is_minted_token(span.value):
+        return True
+    # THE MODEL'S OWN DERIVATION OF OUR SUBSTITUTE IS OURS TOO. It wrote
+    # «LEBEDEVA ALINA» into `name_latin` from the token it was given; that call
+    # rides in the transcript, the Latin name detector found a person in it,
+    # and the vault minted «Герман Тимур» for a string that was never anybody
+    # (scripted v4, chain-028). The restorer already knows how to tell a
+    # derivation of a token from a real Latin name — the same test decides here.
+    if span.entity_type == "NAME" and _is_derived_surface(span.value):
+        return _derived_owner(span.value, vault) is not None
+    if span.entity_type != "LOC":
+        return False
+    # A FIELD OF AN ADDRESS OBJECT IS JUDGED BY THE WHOLE OBJECT. The model's
+    # own tool call — {"locality": "можга", "street": "кленовую", "building":
+    # "112"} around the token it was given — rides in the transcript and is
+    # re-masked with it; leaf by leaf nothing is a token, and the object was
+    # minted a THIRD address (scripted v4: compare 14/42 -> 1/42 the day
+    # address objects were introduced).
+    whole = vault_value(span)
+    return vault.holds_minted_place(whole) or (whole != span.value and vault.is_minted_token(whole))
+
+
+def vault_value(span: Span) -> str:
+    """What the vault keys for this span: the whole address for a field of
+    one, the span's own text otherwise."""
+    return span.whole if isinstance(span, PartSpan) else span.value
+
+
+def tokenize_span(span: Span, vault: Vault) -> str:
+    """The substitute the vault holds for this span — ONE entry for the
+    masking, the audit and the benchmark's scorer, so a span that carries
+    evidence (an address field, a governed name) is minted the same way
+    wherever it is asked about."""
+    if isinstance(span, NameSpan) and span.cases:
+        return vault.tokenize_person(span.value, span.cases)
+    return vault.tokenize(vault_value(span), span.entity_type)
+
+
+def _agree_settlement(token: str, original: str) -> str:
+    """The token's settlement in the case the original's settlement stands in.
+
+    The settlement is real now, so the sentence reads it as a word: «Живу на
+    Валдае, улица Мира 4» keeps a nominative street after an oblique city, and
+    `detect_case` of the whole phrase says nominative. Only the city is bent."""
+    case = morph_places.city_case(original)
+    if case is None or case == "nomn":
+        return token
+    city = morph_places.split_roles(token).get("city", "")
+    if not city:
+        return token
+    return token.replace(city, morph_places.inflect_place(city, case), 1)
 
 
 def _token_for_text(span: Span, vault: Vault) -> str:
@@ -86,27 +148,47 @@ def _token_for_text(span: Span, vault: Vault) -> str:
     Only NAME is inflected. Numbers and documents have no case, and LOC is
     generated as a whole phrase whose internal agreement is the generator's job.
     """
-    token = vault.tokenize(span.value, span.entity_type)
+    if isinstance(span, PartSpan):
+        # ONE substitute for the record, this leaf's part of it, in the leaf's
+        # own form — lower case where the record wrote lower case, no type
+        # word where it wrote none. A role the substitute cannot show (it
+        # mirrors the whole's shape, so this is a defence, not a path) gets
+        # the whole substitute rather than the real part.
+        whole = vault.tokenize(span.whole, "LOC")
+        part = morph_places.split_roles(whole).get(span.role, "")
+        if not part:
+            # A CITY LEAF THE SUBSTITUTE CANNOT SHOW STAYS AS WRITTEN — a
+            # settlement alone is not personal data (the same line the bare
+            # city and `_settlement_of` draw), and the whole token in a field
+            # called «city» told the model the record was another address
+            # (live v4, chain-009). Any other missing role still gets the
+            # whole substitute: fail closed on the street and the house.
+            return span.value if span.role == "city" else whole
+        part = morph_places.part_in_form_of(span.value, part, span.role)
+        if span.value.islower():
+            return part.lower()
+        if span.value.isupper():
+            return part.upper()
+        return part
+    token = tokenize_span(span, vault)
     if span.entity_type == "LOC":
         # Same reason as NAME: a nominative phrase dropped into an oblique slot
         # reads as broken Russian, and broken Russian is what makes a model
         # rewrite the token instead of using it.
         case = morph_places.detect_case(span.value)
         if case is None or case == "nomn":
-            return token
+            return _agree_settlement(token, span.value)
         return morph_places.inflect_place(token, case)
     if span.entity_type != "NAME":
         return token
-    case = morph_names.detect_case(span.value)
+    # ONE reading for the key, the gender and the case (`read_person`): the
+    # token was minted for this gender, and it is bent into the case the
+    # sentence — not a vote over the words — says the person stands in.
+    gender, case = morph_names.read_person(
+        span.value, span.cases if isinstance(span, NameSpan) else ())
     if case is None or case == "nomn":
         return token
-    # Gender comes from the REAL person, not from re-reading the token. The two
-    # agree by construction — the token was minted for this gender — and asking
-    # the token again can only lose: a fake first name the dictionary happens
-    # not to know (София) makes the whole span read as the wrong gender, and
-    # then the surname is inflected as a man's.
-    return morph_names.inflect_person(
-        token, case, morph_names.detect_gender(span.value))
+    return morph_names.inflect_person(token, case, gender)
 
 
 def unmask_text(text: str, vault: Vault, inflect: bool = True,
@@ -120,11 +202,23 @@ def unmask_text(text: str, vault: Vault, inflect: bool = True,
     minted and substring-scanned the text once per token, which made an org with
     100k tokens pay 100k scans on every single response."""
     with stage("unmask.total"):
-        restored = _restore_reformatted(
-            _restore_tokens(text, vault, for_tool), vault, for_tool)
+        # EVERY PASS READS THE SAME MASKED TEXT, AND THE EXACT TOKENS WIN. The
+        # passes used to run one after another on the text the previous pass
+        # had restored, so the name windows ran over REAL values already put
+        # back — and a real «Иван» that happened to equal another customer's
+        # substitute «Иван» was resolved a second time into that other
+        # person («Иван Петров» → «валерий Петров», hard cases, one vault).
+        # A restored range is closed to every later pass.
+        taken: list[tuple[int, int, str]] = _restore_tokens_spans(text, vault, for_tool)
+        passes = [_restore_reformatted_spans(text, vault, for_tool)]
         if not for_tool:
-            restored = _restore_cued_numbers(restored, vault)
-        return _restore_inflected(restored, vault, inflect, for_tool)
+            passes.append(_restore_cued_numbers_spans(text, vault))
+        passes.append(_restore_inflected_spans(text, vault, inflect, for_tool))
+        for spans in passes:
+            for span in sorted(spans, key=lambda item: (item[0], -item[1])):
+                if not any(span[0] < end and start < span[1] for start, end, _ in taken):
+                    taken.append(span)
+        return _splice(text, taken)
 
 
 # A SHORT NUMBER IN PROSE IS A QUANTITY — unless the word before it says what
@@ -136,7 +230,7 @@ def unmask_text(text: str, vault: Vault, inflect: bool = True,
 _CUE_NUMBER = re.compile(
     r"(?i)(?<![\wа-яё])(?P<cue>(?:\*{4}\s?){2,3}|дом\w*|д\.|кв\.|кв(?=\s)|квартир\w*|подъезд\w*|корпус\w*|"
     r"серия|серии|номер\w*|последн\w+\s+(?:[а-яё]+\s+){0,2}?цифр\w*(?:\s+[а-яё]+){0,2}|"
-    r"контрольн\w+\s+числ\w*|заканчива\w+\s+на)\s*[:—–-]?\s*(?:\*\*)?(?P<num>\d(?:[\d\s]{0,10}\d)?)(?![\d:])")
+    r"контрольн\w+\s+числ\w*|заканчива\w+\s+на)\s*[:—–|-]?\s*(?:\*\*|`|«|\")?(?P<num>\d(?:[\d\s]{0,10}\d)?)(?![\d:])")
 _HOUSE_CUES = ("дом", "д.", "кв", "квартир", "подъезд", "корпус")
 
 
@@ -157,7 +251,7 @@ def _cue_kind(cue: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def _restore_cued_numbers(text: str, vault: Vault) -> str:
+def _restore_cued_numbers_spans(text: str, vault: Vault) -> list[tuple[int, int, str]]:
     # A NUMBER INSIDE A WHOLE ADDRESS OR TOKEN IS NOT A FRAGMENT. «кв. 83» in
     # «Кинешму, ул. Озёрную 96, кв. 83» belongs to the token the inflected
     # window restores as one piece; replacing its flat here first broke the
@@ -203,7 +297,7 @@ def _restore_cued_numbers(text: str, vault: Vault) -> str:
                 replacement = _same_shape(number, owner[0])
         if replacement is not None and replacement != number:
             spans.append((match.start("num"), match.end("num"), replacement))
-    return _splice(text, spans)
+    return spans
 
 
 # The ГОСТ plate alphabet was chosen precisely because every letter in it has a
@@ -215,6 +309,12 @@ def _restore_cued_numbers(text: str, vault: Vault) -> str:
 # Seen in a persona run, once in four round trips, on a real tool call. Phones
 # have had a second line of defence since the digit-signature reindex — a plate
 # is the same failure with a different alphabet, and this is its equivalent.
+
+
+def _restore_cued_numbers(text: str, vault: Vault) -> str:
+    return _splice(text, _restore_cued_numbers_spans(text, vault))
+
+
 _PLATE_FOLD = str.maketrans("ABEKMHOPCTYXabekmhopctyx", "АВЕКМНОРСТУХавекмнорстух")
 
 # THE MODEL TRANSLITERATES BY SOUND, WE FOLDED BY SHAPE. The ГОСТ alphabet was
@@ -250,10 +350,20 @@ def _date_readings(value: str) -> list[str]:
     return []
 
 
-def _restore_tokens(text: str, vault: Vault, for_tool: bool = False) -> str:
-    matches = list(TOKEN_RE.finditer(text))
+def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> list[tuple[int, int, str]]:
+    matches: list[re.Match[str]] = list(TOKEN_RE.finditer(text))
+    # A DATE SAID IN WORDS is a token too, since a spoken date of birth is
+    # replaced by a spoken substitute; `TOKEN_RE` knows the digit shapes only,
+    # so the spoken-date arm of the detector supplies the candidates. A miss
+    # costs one indexed lookup, as every other candidate does.
+    if ASSETS.is_loaded:
+        taken = [(m.start(), m.end()) for m in matches]
+        for spoken_date in ASSETS.get().quasi.text_date.finditer(text):
+            if not any(a < spoken_date.end() and spoken_date.start() < b for a, b in taken):
+                matches.append(spoken_date)
+        matches.sort(key=lambda m: m.start())
     if not matches:
-        return text
+        return []
     candidates = {match.group() for match in matches}
     # Every way the model might have rewritten a token, offered alongside the
     # token itself. A miss costs one indexed point query; a hit is the difference
@@ -266,6 +376,16 @@ def _restore_tokens(text: str, vault: Vault, for_tool: bool = False) -> str:
 
     asked = candidates | {alt for group in readings.values() for alt in group}
     values = vault.detokenize_many(asked, for_tool)
+    # A DATE THE VAULT HOLDS IN WORDS. The agent writes «1955-08-17» for the
+    # substitute «семнадцатого августа пятьдесят пятого года»; the reading
+    # «17.08.1955» is no token, but it is the canonical the vault indexed the
+    # spoken substitute under.
+    for value in candidates:
+        for alternate in (value, *readings.get(value, ())):
+            if alternate not in values and _DATE_ANY.match(alternate):
+                owner = vault.date_owner(alternate, for_tool)
+                if owner is not None:
+                    values[alternate] = owner
 
     def resolved(written: str) -> str | None:
         if written in values:
@@ -282,11 +402,15 @@ def _restore_tokens(text: str, vault: Vault, for_tool: bool = False) -> str:
             if for_tool:
                 value = _digits_in_form_of(match.group(), value)
             spans.append((match.start(), match.end(), value))
-    return _splice(text, spans)
+    return spans
 
 
-def _restore_reformatted(text: str, vault: Vault,
-                         for_tool: bool = False) -> str:
+def _restore_tokens(text: str, vault: Vault, for_tool: bool = False) -> str:
+    return _splice(text, _restore_tokens_spans(text, vault, for_tool))
+
+
+def _restore_reformatted_spans(text: str, vault: Vault,
+                         for_tool: bool = False) -> list[tuple[int, int, str]]:
     """Numeric tokens the model rewrote (+7… -> 8…, separators stripped) no longer
     match their minted shape, so they are resolved by digit signature instead."""
     runs = [(match, re.sub(r"\D", "", match.group())) for match in _NUM_RUN.finditer(text)]
@@ -303,7 +427,7 @@ def _restore_reformatted(text: str, vault: Vault,
         runs = [(_Whole(offset, offset + len(stripped), stripped),
                  re.sub(r"\D", "", stripped))]
     if not runs:
-        return text
+        return []
     candidates: set[str] = set()
     for _, digits in runs:
         candidates.add(digits)
@@ -343,7 +467,12 @@ def _restore_reformatted(text: str, vault: Vault,
         if owner is not None:
             spans.append((match.start(), match.end(),
                           _same_shape(match.group(), owner[0])))
-    return _splice(text, spans)
+    return spans
+
+
+def _restore_reformatted(text: str, vault: Vault,
+                         for_tool: bool = False) -> str:
+    return _splice(text, _restore_reformatted_spans(text, vault, for_tool))
 
 
 def _same_shape(model: str, digits: str) -> str:
@@ -389,12 +518,22 @@ def _digits_in_form_of(written: str, real: str) -> str:
     """
     if not _NUMERIC_FORM.fullmatch(written.strip()):
         return real
-    real_digits = re.sub(r"\D", "", real)
-    written_digits = re.sub(r"\D", "", written)
-    if len(written_digits) < 3 or not real_digits:
-        return real
     date_written = _DATE_ANY.match(written.strip())
     date_real = _DATE_ANY.match(real.strip())
+    # A DATE OF BIRTH SAID IN WORDS has no digits to splice, and the agent
+    # wrote ISO: «четырнадцатое марта восемьдесят седьмого года» behind
+    # «1987-01-25» came back as «1403-19-87» — the real digits laid by
+    # position into the agent's layout (fresh-seed v4, derive-000/004). The
+    # spoken date is read into its parts first, the same reading the vault
+    # keys it by, and then rebuilt component-wise like any other.
+    if date_written and not date_real:
+        canonical = _date_canonical(real)
+        if canonical:
+            date_real = _DATE_ANY.match(canonical)
+    real_digits = re.sub(r"\D", "", real)
+    written_digits = re.sub(r"\D", "", written)
+    if len(written_digits) < 3 or (not real_digits and not date_real):
+        return real
     if date_written and date_real:
         real_first, real_middle, real_last = date_real.groups()
         if len(real_first) == 4:
@@ -429,7 +568,16 @@ def _digits_in_form_of(written: str, real: str) -> str:
 # running text. Deliberately permissive: a false positive costs one indexed
 # lookup that finds nothing, a false negative costs a fake value delivered to a
 # tool as if it were real.
-_NAME_WORD = re.compile(r"[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?")
+# ЗАГЛАВНАЯ ВЕТКА — НЕ ПОСЛАБЛЕНИЕ, А ПАРИТЕТ С ДВУМЯ ДРУГИМИ СКАНЕРАМИ.
+# «КУДРЯВЦЕВ» не давал НИ ОДНОГО окна: `[а-яё]+` требует строчной буквы после
+# заглавной. Ключ бы нашёлся — `name_key` и так приводит к нижнему регистру, —
+# но спросить его было некому, и фамилия уходила в инструмент подменой МОЛЧА:
+# `residual_tokens` строится на тех же окнах, поэтому и предупреждения не было.
+# Латинский сканер эту форму знает (`_LATIN_WORD`, `[A-Z]{3,}` — ради «YAN
+# RYBAKOV»), адресный тоже (`_PLACE_RUN_ANY_CASE`); кириллическое имя было
+# единственным, кто её не знал. Три буквы — тот же порог, что у латинского, и
+# по той же причине: две заглавные это инициалы или сокращение.
+_NAME_WORD = re.compile(r"[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?|[А-ЯЁ]{3,}(?:-[А-ЯЁ]{3,})?")
 
 # A place phrase in any case: the generic word inflects (улица/улице/улицу), the
 # adjectival name agrees with it, the house number never moves. A bare settlement
@@ -442,6 +590,24 @@ _NAME_WORD = re.compile(r"[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?")
 # restoration window never covered the token, the lookup never ran, and a fake
 # address went to the tool. Deriving it removes the possibility.
 _PLACE_RUN = re.compile(LOC_TOKEN_PATTERN)
+# THE SAME PATTERN, ASKED WITHOUT REGARD TO CASE, AND ONLY WHEN RESTORING.
+#
+# A CRM card stores «солнечная» in lower case, so the substitute agrees with it
+# and the model is shown «улица ивовая 125». `place_key` casefolds and produces
+# the SAME key as «улица Ивовая 125» — the key was never the problem. The
+# scanner that proposes the window demanded a capital, so for lower case no
+# window was ever offered and the key was never asked: the customer's real
+# address never reached the tool, on the leg where personal data comes back
+# from their own systems. 18 of 60 `long_order` cases on its first run.
+#
+# THE CAPITAL IS LOAD-BEARING IN DETECTION AND NOT HERE, and the difference is
+# what the alternative is. A detector that drops it is choosing between an
+# address and the whole Russian language, which is the mistake this file and
+# `address.py` both carry a comment about. A RESTORER that drops it is choosing
+# between an address and OUR OWN MINTED TOKENS: a window whose key is not in the
+# vault resolves to nothing and costs one indexed point query, the same trade
+# `_place_windows` already makes four times over for its framings.
+_PLACE_RUN_ANY_CASE = re.compile(f"(?i:{LOC_TOKEN_PATTERN})")
 
 
 def _place_windows(text: str, start: int, end: int) -> list[tuple[int, int]]:
@@ -487,6 +653,15 @@ def _place_windows(text: str, start: int, end: int) -> list[tuple[int, int]]:
     if head is not None and head.end() == start:
         for stop in ends:
             candidates.add((head.start(), stop))
+    # …AND WITHOUT THE CITY THE RUN ITSELF BEGINS WITH. `_PLACE_RUN` matches
+    # any settlement in front now (the token's city is real), so the model's
+    # «Самара, улица Осиновая 79» — a public city composed around a city-less
+    # token — arrives as one run, and the only framing that has a key is the
+    # one that starts at the street.
+    lead = _CITY_LEAD.match(text, start)
+    if lead is not None and lead.end() < end:
+        for stop in ends:
+            candidates.add((lead.end(), stop))
     return sorted(candidates, key=lambda pair: pair[1] - pair[0], reverse=True)
 
 
@@ -500,12 +675,14 @@ _BUILDING_TAIL = re.compile(r",?\s*(?:корп\w*|кор|стр|строен\w*|
 # order number that happens to follow the address.
 _HOUSE_TAIL = re.compile(r",?\s*(?:(?:д|дом|вл|влад|владение)\.?\s*)?\d{1,4}"
                          r"(?:/\d{1,3})?[а-яё]?(?![\w])")
-_CITY_HEAD = re.compile(r"(?-i:[А-ЯЁ])[а-яё-]+,\s*$")
+# Two words as well: the settlement is real now, and «Нижний Новгород, » is one.
+_CITY_HEAD = re.compile(r"(?-i:[А-ЯЁ])[а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?,\s*$")
+_CITY_LEAD = re.compile(r"(?-i:[А-ЯЁ])[а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?,\s*")
 # Город в начале самой ПОДМЕНЫ — чтобы понять, назвала его модель или нет.
 _STREET_TYPE_WORD = re.compile(
     r"(?i)^(?:ул\.?|улиц\w*|пр-т|пр\.?|просп\w*|пер\.?|переул\w*|б-р|бульвар\w*|ш\.?|шоссе|пл\.?|площад\w*|"
     r"наб\.?|набережн\w*|проезд\w*|тупик\w*|алле\w*|дорог\w*|тракт\w*|линия|линии)$")
-_CITY_OF_TOKEN = re.compile(r"^([А-ЯЁ][а-яё-]+),\s")
+_CITY_OF_TOKEN = re.compile(r"^([А-ЯЁ][а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?),\s")
 
 
 def _name_windows(text: str) -> list[tuple[int, int, str]]:
@@ -542,17 +719,64 @@ def _name_windows(text: str) -> list[tuple[int, int, str]]:
             if re.fullmatch(r"[A-Za-z\s]+", text[start:end]) is None:
                 continue
             windows.append((start, end, text[start:end]))
+    # ПРОГОН ЗАГЛАВНЫХ — ОДНО ИМЯ, И КОРОТКОЕ СЛОВО В НЁМ ТОЖЕ НАШЕ. Порог в
+    # три буквы защищает ОДИНОЧНОЕ слово, где ошибка стоит ложной замены в
+    # прозе; внутри прогона из двух-трёх слов «ЯН», «ИЯ», «ЯР» — настоящие
+    # русские имена, и без них «ОСИПОВ ЯН» восстанавливалось наполовину:
+    # «КИМ ЯН», настоящая фамилия рядом с ПОДМЕНОЙ имени. Та же правка, что и
+    # для строчного прогона на плече аргумента, и по той же причине.
+    # ДВЕ ПОДМЕНЫ, СКЛЕЕННЫЕ МОДЕЛЬЮ ЧЕРЕЗ ДЕФИС, — ЭТО ДВЕ ПОДМЕНЫ. Одному
+    # человеку чеканятся два токена, когда сообщение зовёт его «Мухина», а
+    # карточка — «Бирюкова»; модель пишет «Мухина-Бирюкова», целое не находится
+    # ни по одному ключу, и В ИНСТРУМЕНТ УХОДЯТ ОБЕ ФАЛЬШИВЫЕ ФАМИЛИИ
+    # (`residual` живого прогона 07.09, correction-019).
+    #
+    # ПОЛОВИНКИ ПРЕДЛАГАЮТСЯ, НО РЕШАЕТ ВОЛТ. Правило «дефис склеивает один
+    # токен, и половина его не имя» — про МАСКИРОВАНИЕ, где половина
+    # «Лос-Анджелеса» становилась человеком; здесь вопрос обратный, и ответ
+    # даёт не морфология, а наличие строки в волте. У настоящего топонима
+    # половинок в волте нет, поэтому окно просто не разрешится и ничего не
+    # изменит — цена промаха ровно один индексный запрос.
+    for match in re.finditer(r"(?<![А-ЯЁа-яё])([А-ЯЁ][а-яё]+)-([А-ЯЁ][а-яё]+)(?![А-ЯЁа-яё])", text):
+        windows.append((match.start(1), match.end(1), match.group(1)))
+        windows.append((match.start(2), match.end(2), match.group(2)))
+    for run in _CAPS_RUN.finditer(text):
+        words = [(m.start(), m.end()) for m in re.finditer(r"[А-ЯЁ]{2,}", run.group())]
+        for i in range(len(words)):
+            for size in (3, 2):
+                if i + size > len(words):
+                    continue
+                start = run.start() + words[i][0]
+                end = run.start() + words[i + size - 1][1]
+                windows.append((start, end, text[start:end]))
     for m in _INITIALS_PAIR.finditer(text):
         windows.append((m.start(), m.end(), m.group()))
     return windows
 
 
+# Five letters is the same floor `names._LOWER_DICT_MIN` uses, and for the same
+# reason: below it an ordinary short word is as likely as a street name, and the
+# query is wasted more often than not.
+_LOWER_WORD = re.compile(r"(?<![А-ЯЁа-яё-])[а-яё]{5,}(?![А-ЯЁа-яё-])")
+# ПРОГОН СТРОЧНЫХ СЛОВ — ОДНО ИМЯ, А НЕ НЕСКОЛЬКО. Одиночное окно выше знает
+# только слово, и «осипов юрий» восстанавливалось пословно: «осипов» находил
+# владельца и разворачивался в ПОЛНОЕ настоящее имя, а «юрий» не доставал до
+# порога в пять букв и оставался ПОДМЕНОЙ — в инструмент уходило «ким юрий»,
+# половина настоящего человека и половина выдуманного. «Беляев Платон» давало
+# «ким викторатон». Порог в пять букв защищает ОДИНОЧНОЕ слово, где ошибка
+# стоит ложной замены; прогон из двух-трёх слов на порядки специфичнее, и
+# промах стоит одного индексного запроса, который ничего не находит.
+# Две буквы, а не три: «Ян», «Ия», «Яр» — настоящие русские имена, и подмена
+# с таким именем оставляла его фейком («ким ян»). В прогоне из двух-трёх слов
+# короткое слово ничем не рискует — ключ строится по ВСЕМУ окну.
+_LOWER_RUN = re.compile(r"(?<![А-ЯЁа-яё-])[а-яё]{2,}(?:[ -][а-яё]{2,}){1,2}(?![А-ЯЁа-яё-])")
 _LATIN_WORD = re.compile(r"(?<![A-Za-z])(?:[A-Z][a-z]{2,}|[A-Z]{3,})(?![A-Za-z])")
+_CAPS_RUN = re.compile(r"(?<![А-ЯЁа-яё-])[А-ЯЁ]{2,}(?:[ -][А-ЯЁ]{2,}){1,2}(?![А-ЯЁа-яё-])")
 _INITIALS_PAIR = re.compile(r"(?<![А-ЯЁа-яё])([А-ЯЁ])\.\s?([А-ЯЁ])\.(?![А-ЯЁа-яё])")
 
 
-def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
-                       for_tool: bool = False) -> str:
+def _restore_inflected_spans(text: str, vault: Vault, inflect: bool = True,
+                       for_tool: bool = False) -> list[tuple[int, int, str]]:
     """NAME tokens the model put into another case no longer match their minted
     shape, so they are resolved by case-invariant key instead.
 
@@ -566,6 +790,35 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
     # first, and the address was then never restored — a fake address delivered
     # to a tool, which is the failure this whole path exists to prevent.
     windows = _name_windows(text)
+    if for_tool:
+        # A LOWER-CASE STREET STANDING ALONE IS STILL OURS, and only a tool
+        # argument is short enough to ask.
+        #
+        # A CRM card stores «солнечная» in lower case, the substitute agrees
+        # with the field, and the model writes it straight into an `address`
+        # argument. `_name_windows` proposes capitalised runs only, so no
+        # window was ever offered, no key was ever asked, and the fake street
+        # reached the customer's tool. Seventeen of sixty `long_order` cases
+        # on the family's first run.
+        #
+        # BOUNDED TO THE ARGUMENT LEG ON PURPOSE. Offering every long word of
+        # a REPLY would put a paragraph's worth of candidates in front of the
+        # vault; an argument is a field, and the same reasoning `_place_windows`
+        # already uses four times over applies — a word that is not ours costs
+        # one indexed point query that returns nothing, and a word that IS ours
+        # is the failure this path exists to prevent.
+        windows.extend((m.start(), m.end(), m.group()) for m in _LOWER_WORD.finditer(text))
+        # Каждое подокно прогона, как `_name_windows` делает для заглавных:
+        # начало фразы может быть чужим словом, и целиком она не найдётся.
+        for run in _LOWER_RUN.finditer(text):
+            words = [(m.start(), m.end()) for m in re.finditer(r"[а-яё]{2,}", run.group())]
+            for i in range(len(words)):
+                for size in (3, 2):
+                    if i + size > len(words):
+                        continue
+                    start = run.start() + words[i][0]
+                    end = run.start() + words[i + size - 1][1]
+                    windows.append((start, end, text[start:end]))
     # Each window carries BOTH signatures, because a single capitalised word can
     # be either kind and the two normalisers disagree: `Еловцке` is a settlement,
     # and asking the PERSON normaliser about it returns it unchanged, so the row
@@ -608,7 +861,12 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
                 continue
             windows.append((low, high, text[low:high]))
 
-    for match in _PLACE_RUN.finditer(text):
+    place_framings: set[tuple[int, int]] = set()
+    seen_runs: set[tuple[int, int]] = set()
+    for match in (*_PLACE_RUN.finditer(text), *_PLACE_RUN_ANY_CASE.finditer(text)):
+        if (match.start(), match.end()) in seen_runs:
+            continue
+        seen_runs.add((match.start(), match.end()))
         for start, end in _place_windows(text, match.start(), match.end()):
             surface = text[start:end]
             try:
@@ -616,8 +874,9 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
             except Exception:  # noqa: BLE001
                 continue
             windows.append((start, end, surface))
+            place_framings.add((start, end))
     if not windows:
-        return text
+        return []
     resolved = vault.resolve_name_keys_typed(
         {k for group in keys.values() for k in group}, for_tool)
     # NO EARLY RETURN ON AN EMPTY KEY LOOKUP. The fragment fallback below is the
@@ -626,7 +885,19 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
     # run for text that had already resolved by some other window.
     spans: list[tuple[int, int, str]] = []
     taken: list[tuple[int, int]] = []
-    for start, end, surface in sorted(windows, key=lambda w: w[1] - w[0], reverse=True):
+    # AN EXACT ADDRESS HIT OUTRANKS A WIDER FRAMING RESOLVED BY INFERENCE. The
+    # settlement in a token is real now, so «Самара, улица Барбарисовая 170»
+    # is one `_PLACE_RUN` match: its widest framing has no key of its own and
+    # falls to the fragment fallback, which rebuilt the address from parts and
+    # kept the type word the customer never wrote; the framing one step
+    # shorter resolves exactly to «луговая 10». Address framings only — a
+    # reordered NAME is one identity and its words resolve one by one, so for
+    # names the widest window must keep winning.
+    hit = {(start, end) for start, end, _ in windows
+           if (start, end) in place_framings
+           and any(k in resolved for k in keys.get((start, end), []))}
+    for start, end, surface in sorted(windows, key=lambda w: ((w[0], w[1]) in hit, w[1] - w[0]),
+                                      reverse=True):
         found = next((resolved[k] for k in keys.get((start, end), [])
                       if k in resolved), None)
         derived = _derived_owner(surface, vault) if found is None and _is_derived_surface(surface) else None
@@ -689,7 +960,12 @@ def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
         entity_type, value = found
         spans.append((start, end,
                       _in_case_of(value, surface, entity_type, inflect)))
-    return _splice(text, spans)
+    return spans
+
+
+def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
+                       for_tool: bool = False) -> str:
+    return _splice(text, _restore_inflected_spans(text, vault, inflect, for_tool))
 
 
 def _stem_of(word: str) -> str:
@@ -742,15 +1018,30 @@ def _derived_owner(surface: str, vault: Vault) -> str | None:
     fake_parts, real_parts = token.split(), value.split()
     if len(fake_parts) != len(real_parts):
         return None
-    out: list[str] = []
+    # ONE CONVENTION FOR THE WHOLE NAME, READ OFF THE MODEL'S OWN WORDS. Each
+    # Latin word is aligned to the fake part it spells and every letter choice
+    # that alignment reveals is kept; the real parts are then rendered with
+    # those choices and, for a letter the fake never contained, with the
+    # measured default. Per-word table lookup stood here and wrote ICAO's
+    # «iu» into «BITIUKOVA» because the fake «Шилова» could not say which
+    # table the model meant — the answer was in the control arm all along.
+    learned: dict[str, str] = {}
+    taken: list[int] = []
     for word in words:
-        index = next((i for i, fake in enumerate(fake_parts) if translit.table_for(fake, word) is not None), None)
-        if index is None:
+        found = None
+        for index, fake in enumerate(fake_parts):
+            if index in taken:
+                continue
+            mapping = translit.align(fake, word)
+            if mapping is not None:
+                found = index
+                learned.update(mapping)
+                break
+        if found is None:
             return None
-        table = translit.table_for(fake_parts[index], word)
-        assert table is not None
-        out.append(translit.match_case(word, translit.apply(table, real_parts[index])))
-    return " ".join(out)
+        taken.append(found)
+    return " ".join(translit.match_case(word, translit.render(real_parts[index], learned))
+                    for word, index in zip(words, taken))
 
 
 def _place_fragment(surface: str, vault: Vault,
@@ -910,7 +1201,17 @@ def _in_case_of(value: str, surface: str, entity_type: str = "NAME",
         # «часть подмены».
         if entity_type in ("LOC", "ADDR"):
             return morph_places.in_form_of(value, surface)
-        return value
+        # РЕГИСТР ИМЕНИ — ТОЖЕ ФОРМА, И ОНА АГЕНТСКАЯ. Волт хранит имя
+        # каноническим, то есть строчным, и `_pick_value` отдавал канон прямо
+        # в аргумент: контроль писал в CRM «Ким Виктор», плечо шлюза — «ким
+        # виктор». 262 расхождения полей на живом прогоне 07.09, задето 217
+        # троек из 834. Регистр не меняет того, ЧТО написано, и ни один
+        # справочник не ищет с его учётом, поэтому цены падежа у него нет.
+        return agent_form.cased_like(value, surface)
+    # ПРОЗА НИЖЕ НЕ ТРОНУТА, И ЭТО ГРАНИЦА ПРАВИЛА. Решение владельца — «никак
+    # не влиять на то, как агент передаёт ПАРАМЕТРЫ»; пересказать клиенту его
+    # же адрес — другой акт, и там действует уже записанное правило «клиент
+    # остаётся при своих словах».
     if entity_type in ("LOC", "ADDR"):
         case = morph_places.detect_case(surface)
         if case is None or case == "nomn":
@@ -931,6 +1232,7 @@ _STREAM_KEEP = 64
 # a stream must never cut inside one.
 _STREAM_RUN_RE = re.compile(
     r"[А-ЯЁA-Z][а-яёa-z]+(?:[\s,]+[А-ЯЁA-Z][а-яёa-z]+)*"
+    r"|[А-ЯЁA-Z]{3,}(?:[\s,]+[А-ЯЁA-Z]{3,})*"
     r"|[\d+()][\d\s+()\-]*\d")
 
 
@@ -985,6 +1287,15 @@ def unmask_stream_chunk(delta: str, carry: str, vault: Vault, flush: bool) -> tu
     return unmask_text(raw[:cut], vault), raw[cut:]
 
 
+_BARE_NUMBER_LEAF = re.compile(r"\s*\d{1,4}\s*[а-яёА-ЯЁ]?\s*")
+
+
+def _bare_address_leaf(key: str, value: object) -> bool:
+    """A house / flat / building / entrance / floor field holding a bare number."""
+    return (isinstance(value, str) and bool(_BARE_NUMBER_LEAF.fullmatch(value))
+            and morph_places.role_of_field(key) in ("house", "flat", "building", "entrance", "floor"))
+
+
 def unmask_arguments(raw: str, vault: Vault) -> str:
     """Detokenise a tool call's `arguments` AS JSON, not as flat text.
 
@@ -1026,11 +1337,112 @@ def unmask_arguments(raw: str, vault: Vault) -> str:
             # Keys are the tool's own schema, not customer text — but a token
             # can only ever appear in a value, so rewriting keys would be a way
             # to break the schema and never a way to restore a value.
-            return {key: walk(value) for key, value in node.items()}
+            # A BARE NUMBER UNDER AN ADDRESS KEY IS AN ADDRESS PART, and it is
+            # answered by the join below against LOC tokens only. Restored on
+            # its own first, «139» in `sflat` was found INSIDE the fake phone's
+            # digits by the cross-type fragment owner and came back as the
+            # customer's phone fragment «230» — a flat that is nobody's, with
+            # a 200 (fresh-seed v4: 3 of 300 two-address draws).
+            return {key: (value if _bare_address_leaf(key, value) else walk(value))
+                    for key, value in node.items()}
         return node
 
-    return json.dumps(_join_addresses_deep(walk(parsed), parsed, vault),
+    return json.dumps(_join_initials_deep(_join_addresses_deep(walk(parsed), parsed, vault), parsed),
                       ensure_ascii=False)
+
+
+_INITIALS_LEAF = re.compile(r"^\s*([А-ЯЁ])\.?(?:\s?([А-ЯЁ])\.?)?\s*$")
+_NAME_LEAF = re.compile(r"^[А-ЯЁа-яё][А-ЯЁа-яё\- ]{1,60}$")
+
+
+def _join_initials_deep(restored: object, original: object) -> object:
+    """`_join_initials` at every level of the object; see there."""
+    if isinstance(restored, dict) and isinstance(original, dict):
+        joined = _join_initials(restored, original)
+        return {key: _join_initials_deep(value, original.get(key)) for key, value in joined.items()}
+    if isinstance(restored, list) and isinstance(original, list):
+        return [_join_initials_deep(value, original[index] if index < len(original) else None)
+                for index, value in enumerate(restored)]
+    return restored
+
+
+def _join_initials(restored: dict, original: dict) -> dict:
+    """AN INITIAL IN A TOOL CALL ABBREVIATES THE NAME WRITTEN BESIDE IT.
+
+    A CRM schema asks for `first_name`, `middle_name` AND `initials`; the model
+    fills the third from the first two. A pair («Т.О.») is a two-letter key
+    the vault indexes and resolves; a SINGLE initial («С.») is one letter, which
+    is nobody's key — every given name in the vault starting with С owns it —
+    and it stayed the substitute's: 50 of the 56 initials the gateway arm wrote
+    differently on the 05.09 medium run were single, and every one of the 55
+    calls that carried initials carried `first_name` beside them. The evidence
+    is not the letter, it is the OBJECT: the name the initial abbreviates was
+    restored one key over in the same call, positionally, from the same fake.
+    A leaf is touched only when an earlier pass left it exactly as written,
+    and only when the letters match the fake name's initials — an initial that
+    is not the substitute's is the customer's, and stays.
+    """
+    pairs: list[tuple[str, str, str]] = []   # (role hint from the key, fake word, real word)
+    for key, before in original.items():
+        after = restored.get(key)
+        if not isinstance(before, str) or not isinstance(after, str) or before == after:
+            continue
+        if not _NAME_LEAF.match(before.strip()) or not _NAME_LEAF.match(after.strip()):
+            continue
+        fake_words, real_words = before.split(), after.split()
+        if len(fake_words) != len(real_words):
+            continue
+        low = key.lower()
+        hint = ("given" if any(mark in low for mark in ("first", "given", "имя")) else
+                "patr" if any(mark in low for mark in ("middle", "patronym", "отчеств")) else
+                "surn" if any(mark in low for mark in ("last", "surname", "family", "фамил")) else "")
+        if len(fake_words) == 1:
+            pairs.append((hint, fake_words[0], real_words[0]))
+            continue
+        shape = morph_names.name_shape(before.strip())
+        if len(shape) != len(fake_words):
+            continue
+        for kind, fake, real in zip(shape, fake_words, real_words):
+            pairs.append(({"name": "given", "patr": "patr", "surn": "surn"}.get(kind, ""), fake, real))
+    if not pairs:
+        return restored
+
+    def letter_of(letter: str, roles: tuple[str, ...], used: set[str]) -> str | None:
+        for role in roles:
+            for hint, fake, real in pairs:
+                if hint == role and fake not in used and fake[:1].upper() == letter:
+                    used.add(fake)
+                    return real[:1].upper()
+        for hint, fake, real in pairs:
+            if fake not in used and fake[:1].upper() == letter:
+                used.add(fake)
+                return real[:1].upper()
+        return None
+
+    out = dict(restored)
+    for key, before in original.items():
+        after = restored.get(key)
+        if not isinstance(before, str) or after != before:
+            continue
+        found = _INITIALS_LEAF.match(before)
+        if found is None:
+            continue
+        used: set[str] = set()
+        first = letter_of(found.group(1), ("given", "patr", "surn"), used)
+        if first is None:
+            continue
+        second = None
+        if found.group(2):
+            second = letter_of(found.group(2), ("patr", "surn", "given"), used)
+            if second is None:
+                continue
+        # the same punctuation the model used, letters swapped in place
+        text = before.replace(found.group(1), first, 1)
+        if second is not None:
+            head = text.index(first) + 1
+            text = text[:head] + text[head:].replace(found.group(2), second, 1)
+        out[key] = text
+    return out
 
 
 def _join_addresses_deep(restored: object, original: object, vault: Vault) -> object:
@@ -1059,23 +1471,7 @@ def _join_addresses_deep(restored: object, original: object, vault: Vault) -> ob
 # Имена полей, которыми схемы инструментов называют части адреса. Роль читается
 # из имени, а не из формы значения: имя — это единственное, что видит и модель,
 # когда решает, что куда положить.
-_FIELD_ROLES: tuple[tuple[str, str], ...] = (
-    ("street", "street"), ("house", "house"), ("building", "house"),
-    ("flat", "flat"), ("apartment", "flat"), ("apt", "flat"), ("sflat", "flat"),
-    ("entrance", "entrance"), ("porch", "entrance"), ("floor", "floor"),
-    # The settlement is a field of its own in every delivery schema (CDEK
-    # `city`, Yandex `locality`); without a role here a bare fake city in it
-    # was never asked about and reached the tool as «Сортавала».
-    ("city", "city"), ("locality", "city"), ("town", "city"), ("settlement", "city"),
-)
-
-
-def _role_of_field(name: str) -> str:
-    parts = name.lower().split("_")
-    for word, role in _FIELD_ROLES:
-        if word in parts:
-            return role
-    return ""
+_role_of_field = morph_places.role_of_field
 
 
 def _join_address_fields(restored: object, original: object, vault: Vault) -> object:
@@ -1120,10 +1516,16 @@ def _join_address_fields(restored: object, original: object, vault: Vault) -> ob
     # спрошенные скопом, они дают ДВУХ владельцев — правило единственного
     # отказывало, и ни один из адресов не разрешался. Группа читается из
     # приставки имени поля: она и есть то, чем схема их различает.
+    # THE PREFIX IS WHAT IS LEFT WHEN THE SCHEMA'S OWN WORD COMES OFF, not the
+    # role's name. `locality` holds the city and `building` the house, and
+    # cutting the ROLE out of them cut nothing — each became a group of its
+    # own, asked alone, and the city with two owners in the conversation was
+    # never resolved (live v4: `courier_book.address.locality` reached the
+    # tool as our fake town).
     groups: dict[str, dict[str, str]] = {}
     for key, value in addressed.items():
-        role = _role_of_field(key)
-        prefix = key.lower().rsplit(role, 1)[0].strip("_")
+        word, _ = morph_places.field_role(key)
+        prefix = key.lower().rsplit(word, 1)[0].strip("_")
         groups.setdefault(prefix, {})[key] = value
     out = dict(restored)
     for group in groups.values():
@@ -1146,6 +1548,13 @@ def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
     # обязаны сойтись на ОДНОЙ подмене.
     owners = {vault.place_owner(value) for value in evidence.values()}
     owners.discard(None)
+    if not owners:
+        # NO LEAF WITH A NUMBER NAMED AN OWNER — a `street` field alone, on a
+        # street this conversation faked twice (a corrected house). The street
+        # is one answer whichever row is asked; the vault says so only when
+        # every owner agrees on the real street.
+        owners = {vault.place_owner_by_street(value) for value in evidence.values()}
+        owners.discard(None)
     if len(owners) != 1:
         return restored
     owner = owners.pop()
@@ -1210,6 +1619,10 @@ def residual_tokens(text: str, vault: Vault) -> list[str]:
     string is ours, and it should not have survived.
     """
     candidates = {match.group() for match in TOKEN_RE.finditer(text)}
+    # A PHONE TOKEN IS WRITTEN THE CUSTOMER'S WAY (vault `_digits_in_customer_
+    # form`), so `TOKEN_RE`'s «+79…» shape no longer names it; every digit run
+    # is offered and the vault answers by signature.
+    candidates |= {match.group().strip() for match in _NUM_RUN.finditer(text)}
     # A NAME the model REWROTE no longer matches any token, so `TOKEN_RE` alone
     # would miss exactly the case this exists for. Capitalised runs are offered
     # too, and the vault decides which of them are made of its own words.

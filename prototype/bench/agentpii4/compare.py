@@ -16,7 +16,8 @@ from bench.agentpii4 import taxonomy
 from bench.agentpii4.parts import parts_of
 from bench.agentpii4.schema import Case, PiiItem
 from bench.agentpii4.taxonomy import FieldObs, FieldVerdict
-from bench.agentpii4.tools import REGISTRY, flatten, spec_for
+from bench.agentpii4.tools import FieldSpec as _FieldSpec
+from bench.agentpii4.tools import REGISTRY, flatten, spec_for, state_spec_for
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,11 @@ class ArmRun:
     cost_usd: float
     substitutes: dict[str, tuple[str, dict[str, str]]] = field(default_factory=dict)
     # I only: item id -> (substitute surface the model read, its split parts)
+    masked_spans: dict[int, tuple[tuple[int, int], ...]] = field(default_factory=dict)
+    # I only: message index -> the offsets the engine replaced. The negatives
+    # axis needs the spans, not the substitutes: a value that must NOT be
+    # masked has no substitute by definition, so its evidence is a span that
+    # covers it.
 
 
 @dataclass(frozen=True)
@@ -63,6 +69,35 @@ class LevelVerdict:
     state: bool
     state_verbatim: bool
     state_diff: tuple[str, ...]
+    # THE ONLY LEVEL THAT ASKS WHETHER THE TOOL GOT A DIFFERENT VALUE. `state`
+    # counts a field one arm wrote and the other did not, and on an OPTIONAL
+    # field that is the model tossing a coin, not the gateway: `contact.gender`
+    # diverged in 195 fields on the 06.09 run and was NEVER wrong — only
+    # present or absent — and the omission rate is the same on real values
+    # (42.3%) as on substitutes (46.9%). `records 2 vs 1` is likewise a
+    # different NUMBER of writes, already counted at L1. What is left when
+    # both are removed is the product's own promise: the customer's tool
+    # received another value because of us.
+    #
+    # `control_erred` is removed from the other side for the same reason: the
+    # taxonomy gives it only when the CONTROL is the arm that departed from the
+    # corpus, so counting it scored the gateway down for being right.
+    state_values: bool = True
+    # DID THE ARM ACT AT ALL. `state` compares the records that exist; when the
+    # gateway arm wrote NONE it compares nothing and the level says «equal».
+    # Measured on the 07.09 max run: exactly one arm was left out of a mutation
+    # the other two performed 78 times for I against 48 for C and 41 for C′ —
+    # a floor of 44.5, so about thirty of those are the gateway, not the
+    # weather. Named so it can be read instead of inferred.
+    action: bool = True
+    action_sub: str = ""
+    # THE LEVELS THIS PAIR HAD ANYTHING TO COMPARE ON. A triple where neither
+    # arm called a tool used to pass all five levels — `values_ok` is
+    # `not any(...)` over an EMPTY list — so `receipt 18/18` was printed for a
+    # family whose tool was never reached in 12 of its 18 triples. A level not
+    # in this set is `None`, never `True`, and drops out of both the numerator
+    # and the denominator.
+    comparable: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -77,9 +112,18 @@ def _names(run: ArmRun) -> tuple[str, ...]:
     return tuple(call.name for call in run.calls)
 
 
+def _accepted_names(run: ArmRun) -> tuple[str, ...]:
+    """The calls the mock ACCEPTED. A control that fumbled the house format
+    twice and got it right on the third attempt used the same tools as an arm
+    that got it right first; counting the fumbles as tools made the cleaner
+    arm «missing_call» (live v4 04.09: compare-011, two triples). Refusals
+    stay visible where they belong — per field, as `validated_refused`."""
+    return tuple(call.name for call in run.calls if not call.refusal_rule)
+
+
 def level_tools(ref: ArmRun, obs: ArmRun) -> tuple[bool, str]:
     left, right = _names(ref), _names(obs)
-    if left == right:
+    if left == right or _accepted_names(ref) == _accepted_names(obs):
         return True, ""
     if left and not right:
         return False, "no_call"
@@ -94,22 +138,97 @@ def level_tools(ref: ArmRun, obs: ArmRun) -> tuple[bool, str]:
     return False, "different_tool"
 
 
-def _align(ref: ArmRun, obs: ArmRun) -> list[tuple[ObservedCall | None, ObservedCall | None]]:
-    """Calls matched by (name, occurrence index)."""
+def _acts(run: ArmRun) -> frozenset[tuple[str, str]]:
+    """The MUTATIONS an arm performed, as (table, tool): the act, not its count.
+
+    The count is already a question L1 answers; what is asked here is whether
+    the arm did the thing at all."""
+    return frozenset((str(row["table"]), str(row["tool"])) for row in run.state)
+
+
+def level_action(ref: ArmRun, obs: ArmRun) -> tuple[bool, str]:
+    """Did `obs` perform every mutation `ref` performed?"""
+    missing = _acts(ref) - _acts(obs)
+    if not missing:
+        return True, ""
+    return False, ",".join(f"{table}/{tool}" for table, tool in sorted(missing))
+
+
+def _numbered(calls: tuple[ObservedCall, ...]) -> dict[tuple[str, int], ObservedCall]:
     seen: dict[str, int] = {}
-    left: dict[tuple[str, int], ObservedCall] = {}
-    for call in ref.calls:
+    out: dict[tuple[str, int], ObservedCall] = {}
+    for call in calls:
         seen[call.name] = seen.get(call.name, 0)
-        left[(call.name, seen[call.name])] = call
+        out[(call.name, seen[call.name])] = call
         seen[call.name] += 1
-    seen = {}
-    right: dict[tuple[str, int], ObservedCall] = {}
-    for call in obs.calls:
-        seen[call.name] = seen.get(call.name, 0)
-        right[(call.name, seen[call.name])] = call
-        seen[call.name] += 1
-    keys = sorted(set(left) | set(right), key=lambda k: (left.get(k) or right[k]).seq)
-    return [(left.get(key), right.get(key)) for key in keys]
+    return out
+
+
+def _shape(call: ObservedCall) -> frozenset[str]:
+    """The values a call carries, folded — its identity as an ACT.
+
+    Only used to pair repeated calls of one tool when the two arms made
+    different numbers of them; the values themselves differ between the arms by
+    construction, so what is compared is the SHAPE: which argument paths carry
+    a value at all, and which of them are equal because they are not personal
+    data (an order id, a city, a weight)."""
+    out: set[str] = set()
+    for path, value in flatten(call.restored).items():
+        if isinstance(value, str) and value.strip():
+            out.add(_generic(path))
+            out.add(f"{_generic(path)}={_norm(value)}")
+    return frozenset(out)
+
+
+def _pair_repeats(left: list[ObservedCall], right: list[ObservedCall],
+                  ) -> list[tuple[ObservedCall | None, ObservedCall | None]]:
+    """Repeated calls of ONE tool, paired by what they are ABOUT.
+
+    OCCURRENCE ORDER IS NOT AN ANSWER WHEN THE COUNTS DIFFER. In `long_order`
+    the customer names a second recipient on the fifth turn, so one arm books
+    for the buyer and re-books for the recipient while the other waits and
+    books once — both correct. Pairing by index then compared the buyer's order
+    against the recipient's and called it `other_person`: SEVEN of the seven
+    wrong-person verdicts on the 06.09 max run, and every one of them an
+    artefact of this function.
+
+    Greedy by shared shape, most in common first; what is left over stays
+    unmatched and is scored as an extra or a missing call, which is what a
+    different number of calls IS. Equal counts keep the old pairing exactly, so
+    no family that was aligned before is re-aligned now."""
+    if len(left) == len(right):
+        return list(zip(left, right))
+    scored = sorted(
+        ((len(_shape(a) & _shape(b)), -abs(a.seq - b.seq), i, j)
+         for i, a in enumerate(left) for j, b in enumerate(right)),
+        reverse=True)
+    taken_left: set[int] = set()
+    taken_right: set[int] = set()
+    pairs: list[tuple[int | None, int | None]] = []
+    for common, _closeness, i, j in scored:
+        if common <= 0 or i in taken_left or j in taken_right:
+            continue
+        taken_left.add(i)
+        taken_right.add(j)
+        pairs.append((i, j))
+    pairs += [(i, None) for i in range(len(left)) if i not in taken_left]
+    pairs += [(None, j) for j in range(len(right)) if j not in taken_right]
+    pairs.sort(key=lambda pair: left[pair[0]].seq if pair[0] is not None else right[pair[1]].seq)  # type: ignore[index]
+    return [(left[i] if i is not None else None, right[j] if j is not None else None)
+            for i, j in pairs]
+
+
+def _align(ref: ArmRun, obs: ArmRun) -> list[tuple[ObservedCall | None, ObservedCall | None]]:
+    """Calls matched by (name, occurrence index) — and, when the two arms made
+    a different number of calls of one tool, by what those calls are about."""
+    left, right = _numbered(ref.calls), _numbered(obs.calls)
+    out: list[tuple[ObservedCall | None, ObservedCall | None]] = []
+    for name in sorted({key[0] for key in left} | {key[0] for key in right}):
+        mine = [call for key, call in sorted(left.items()) if key[0] == name]
+        theirs = [call for key, call in sorted(right.items()) if key[0] == name]
+        out.extend(_pair_repeats(mine, theirs))
+    out.sort(key=lambda pair: (pair[0] or pair[1]).seq)  # type: ignore[union-attr]
+    return out
 
 
 def level_keys(ref: ArmRun, obs: ArmRun) -> tuple[bool, str]:
@@ -123,6 +242,9 @@ def level_keys(ref: ArmRun, obs: ArmRun) -> tuple[bool, str]:
             extra = sorted(rk - lk)
             return False, ("key_missing:" + ",".join(missing)) if missing else ("key_extra:" + ",".join(extra))
     return True, ""
+
+
+_NO_SPEC = _FieldSpec("", "free")
 
 
 def _generic(path: str) -> str:
@@ -144,7 +266,7 @@ def level_state(ref: ArmRun, obs: ArmRun) -> tuple[bool, bool, tuple[str, ...]]:
         lf = flatten(left["fields"])
         rf = flatten(right["fields"])
         for path in sorted(set(lf) | set(rf)):
-            field_spec = spec_for(str(left["tool"]), path)
+            field_spec = state_spec_for(str(left["tool"]), path)
             if field_spec is not None and field_spec.kind == "free":
                 continue
             lv, rv = lf.get(path), rf.get(path)
@@ -175,7 +297,7 @@ def compare_pair(case: Case, ref: ArmRun, obs: ArmRun, pair: str) -> PairVerdict
     tools_ok, tools_sub = level_tools(ref, obs)
     keys_ok, keys_sub = level_keys(ref, obs)
     state_ok, verbatim_ok, diff = level_state(ref, obs)
-    levels = LevelVerdict(tools_ok, tools_sub, keys_ok, keys_sub, state_ok, verbatim_ok, diff)
+    action_ok, action_sub = level_action(ref, obs)
 
     items = [item for item in case.pii]
     fields: list[FieldVerdict] = []
@@ -219,6 +341,47 @@ def compare_pair(case: Case, ref: ArmRun, obs: ArmRun, pair: str) -> PairVerdict
                 and obs.substitutes[item.id] != substitute)
             fields.append(taxonomy.classify_field(field_spec, ref_obs, obs_obs, real, others, stale,
                                                   substitute, case.now, name, path, alternates))
+    # Built here rather than above: the value level is read off the field
+    # verdicts, which are only known once the loop has run.
+    # A DERIVATION OF A VALUE THE CONTROL READ WRONG IS WRONG FOR THE SAME
+    # REASON. «запишите вольнова евгения александровича» is a MAN in the
+    # accusative; the control read a woman, wrote «Вольнова Евгения
+    # Александровна» and derived `gender: F`, while the gateway restored the
+    # corpus's man and derived `M`. Three of the four fields were already
+    # `control_erred` — the fourth is derived, so it fell to `misderived` and
+    # was scored against the gateway for deriving correctly from a value the
+    # control had got wrong.
+    erred = {one.pii_type for one in fields
+             if one.kind == "control_erred" and one.pii_type}
+    fields = [
+        FieldVerdict(**{**one.__dict__, "kind": "control_erred",
+                        "why": "производное от значения, которое контроль прочитал неверно"})
+        if (one.kind == "derived" or (one.kind == "other" and one.sub == "misderived"))
+        and (spec_for(one.tool, one.path) or _NO_SPEC).source_type in erred
+        else one
+        for one in fields
+    ]
+    # `control_erred` IS NOT GATEWAY HARM, BY ITS OWN DEFINITION. The taxonomy
+    # awards it only when the CONTROL wrote a value the corpus does not have and
+    # the intervention wrote the one it does — «шлюз восстановил эталон
+    # корпуса». Counting it here scored the gateway down for being right: 15 of
+    # the 60 triples where the noise floor held on the 06.09 max run had no
+    # other divergence at all.
+    # `absent_required` is deliberately NOT in the whitelist: the tool demanded
+    # the field, the control supplied it and this arm did not.
+    values_ok = not any(one.kind not in ("agree", "absent", "extra", "control_erred")
+                        for one in fields)
+    comparable: set[str] = set()
+    if ref.calls or obs.calls:
+        comparable.update(("tools", "keys"))
+    if ref.state or obs.state:
+        comparable.update(("state", "verbatim"))
+    if ref.state:
+        comparable.add("action")
+    if fields:
+        comparable.add("values")
+    levels = LevelVerdict(tools_ok, tools_sub, keys_ok, keys_sub, state_ok, verbatim_ok,
+                          diff, values_ok, action_ok, action_sub, frozenset(comparable))
     return PairVerdict(pair, levels, tuple(fields), tuple(plain))
 
 
@@ -301,6 +464,24 @@ def main() -> int:
     if ic3.fields[0].kind != "validated_refused":
         failures += 1
         print("FAIL refused", ic3.fields)
+    # A TRIPLE THAT DID NOTHING MUST NOT PASS. Every level used to say True on
+    # an empty comparison — `values_ok` is `not any(...)` over an empty list —
+    # and `receipt 18/18` was printed for a family whose tool 12 of those 18
+    # triples never reached.
+    silent = ArmRun("t-0", "C", 0, (), (), "", "done", 0.01)
+    ic4, _ = compare_triple(case, Triple("t-0", 0, silent, silent, silent))
+    if ic4.levels.comparable:
+        failures += 1
+        print("FAIL vacuous triple claims a comparable level", ic4.levels.comparable)
+    # AND A REQUIRED FIELD THE ARM DID NOT FILL IS NOT AGREEMENT.
+    I_absent = ArmRun("t-0", "I", 0, (ObservedCall("notify_sms", {"text": "hi"}, {"text": "hi"},
+                                                   {}, "", "", {"text": "hi"}, 1),), state("+79164021187"),
+                      "ok", "done", 0.01, {"i1": ("+79990001122", {"digits": "9990001122"})})
+    ic5, _ = compare_triple(case, Triple("t-0", 0, C, I_absent, C2))
+    kinds = {one.kind for one in ic5.fields}
+    if "absent_required" not in kinds or ic5.levels.state_values:
+        failures += 1
+        print("FAIL absent on a required field passed the value level", kinds, ic5.levels.state_values)
     print("compare: PASS" if not failures else f"compare: FAIL ({failures})")
     return 1 if failures else 0
 

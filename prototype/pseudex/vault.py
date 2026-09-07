@@ -24,7 +24,8 @@ from pseudex.normalize import normalize
 import threading
 import time
 
-from pseudex import morph_names, morph_places, translit
+from pseudex.fuzzy import within_one_typo
+from pseudex import morph_names, morph_places, spoken, translit
 from pseudex.spoken import (email_from_words, numeral_runs,
                             plate_from_words, run_to_digits)
 from pseudex.profiling import stage
@@ -97,6 +98,8 @@ _FAKE_LAST = [
     "Ершов", "Зимин", "Карпов", "Лужин", "Мещеряков", "Наумов", "Осипов",
     "Панов", "Рыбаков", "Сазонов", "Тарасов", "Устинов", "Фомин", "Хвостов",
     "Цветков", "Чижов", "Шилов", "Щукин", "Юдин", "Яровой", "Бирюков",
+    # Added 04.09: the entries that also pass `survives_round_trip` alone.
+    "Бобров", "Кудрявцев", "Мухин", "Титов", "Уваров", "Якушев", "Крылов", "Фролов",
 ]
 # A WOMAN MENTIONED BY SURNAME ALONE CANNOT BE GIVEN ANY NAME ABOVE. Every one
 # ends in -ов/-ин, whose feminine form is syncretic: «Лебедева» is the woman's
@@ -255,6 +258,46 @@ def _digits_of(value: str) -> str:
     return ""
 
 
+# A SPACE IS A SEPARATOR TOO: «дата рождения 14 03 1987» is how the voice
+# register writes a date, and unread it drew a random year for the substitute
+# (the agent's `age` off by decades) and spliced «1403-19-87» into the ISO
+# field on the way back (fresh-seed v4, derive-000/004).
+_NUMERIC_DATE_RE = re.compile(r"(\d{1,4})[./ -](\d{1,2})[./ -](\d{1,4})")
+_MONTH_WORD_DATE_RE = re.compile(r"(?i)(\d{1,2})\s+([а-яё]+)(?:\s+(\d{4}))?")
+
+
+def _date_canonical(value: str) -> str:
+    """«dd.mm.yyyy» from any way a date of birth is written or said."""
+    text = re.sub(r"(?i)\s*(?:г\.?|года|год)\s*$", "", value.strip())
+    numeric = _NUMERIC_DATE_RE.search(text)
+    if numeric:
+        first, middle, last = numeric.groups()
+        if len(first) == 4:
+            year, month, day = first, middle, last
+        else:
+            day, month, year = first, middle, last
+        if len(year) == 2:
+            year = ("20" if int(year) <= time.localtime().tm_year % 100 else "19") + year
+        return f"{int(day):02d}.{int(month):02d}.{year}" if len(year) == 4 else ""
+    worded = _MONTH_WORD_DATE_RE.fullmatch(text)
+    if worded:
+        month = spoken._month_value(worded.group(2).lower().replace("ё", "е"))
+        if month is not None:
+            return (f"{int(worded.group(1)):02d}.{month:02d}.{worded.group(3)}" if worded.group(3)
+                    else f"{int(worded.group(1)):02d}.{month:02d}")
+    return spoken.date_from_words(text)
+
+
+def canonicalize_person(value: str, cases: tuple[str, ...]) -> str:
+    """`canonicalize("NAME", …)` with the cases the sentence allows the name to
+    stand in. With a governor the joint reading decides even a lone word: «у
+    Иванова» is a man, whatever a lone «Иванова» would be."""
+    if not cases:
+        return canonicalize("NAME", value)
+    surface = _INTERNAL_CAPITAL_RE.sub(r"\1 \2", value.strip())
+    return morph_names.to_nominative_governed(surface, cases)
+
+
 def canonicalize(entity_type: str, value: str) -> str:
     """Normalize a value so equivalent forms collapse to one key.
 
@@ -275,6 +318,18 @@ def canonicalize(entity_type: str, value: str) -> str:
         # failure this product treats as unacceptable. Measured, not imagined:
         # two distinct spoken СНИЛС came back as the same token.
         return _digits_of(value) or value
+    if entity_type == "DOB":
+        # ONE DATE OF BIRTH IS ONE KEY, however it was said: «21.09.1980»,
+        # «21 сентября 1980» and «двадцать первое сентября восьмидесятого
+        # года» were three rows, and the spoken one restored to the tool as
+        # the words the customer said — the agent's schema asks for a date,
+        # the control writes 21.09.1980, and the axis counted every spoken date
+        # as lost (v3 DOB 48% -> 32% the day the engine learned to hear them).
+        # The digits form is what a CRM stores and what the substitute mirrors.
+        canonical = _date_canonical(value)
+        if canonical:
+            return canonical
+        return value.strip().lower()
     if entity_type == "EMAIL":
         # ПРОДИКТОВАННАЯ ПОЧТА — РУССКАЯ ФРАЗА, А НЕ АДРЕС. `lower()` над
         # «ситникова собака мэйл точка ру» возвращает ту же фразу, и она уезжала
@@ -349,12 +404,35 @@ def canonicalize(entity_type: str, value: str) -> str:
 
 
 def _fake_snils() -> str:
+    """A СНИЛС that PASSES the ПФР check.
+
+    It was minted invalid on purpose — «a substitute must never be somebody's
+    real number» — and an agent told to verify identifiers refused it and
+    never called the tool: 12 of 24 `validate` triples on the 04.09 live run,
+    the whole class that remained. The fear behind the invalid sum is answered
+    elsewhere now, the way it is for every other type: a fake NAME is a real
+    name and a fake street a real street, and what keeps a real bearer from
+    being read as our token is the CONVERSATION SCOPE (`tokens.minted_in`),
+    not the number's impossibility; the other direction — a substitute equal
+    to a value this customer already holds — is refused by `_unique_token`
+    against the vault. A random valid СНИЛС is somebody's in about one case
+    in seven across Russia, and in the one dialogue it was minted for the
+    chance that that person walks in is nil. Numbers at or below 001-001-998
+    are the earliest real registrations, exempt from the check, and are not
+    drawn (research/2026-09-03-checksum-valid-substitutes.md, revised).
+    """
     for _ in range(50):
         body = _rand_digits(9)
-        candidate = f"{body[:3]}-{body[3:6]}-{body[6:9]} {_rand_digits(2)}"
-        if not validate_snils(candidate):
+        if int(body) <= 1001998:
+            continue
+        total = sum(int(digit) * (9 - index) for index, digit in enumerate(body))
+        control = total if total < 100 else (0 if total in (100, 101) else total % 101)
+        if control in (100, 101):
+            control = 0
+        candidate = f"{body[:3]}-{body[3:6]}-{body[6:9]} {control:02d}"
+        if validate_snils(candidate):
             return candidate
-    raise RuntimeError("could not generate a checksum-INVALID СНИЛС")
+    raise RuntimeError("could not generate a checksum-valid СНИЛС")
 
 
 # VALID TO EVERY ALGORITHM, IMPOSSIBLE FOR A PERSON. A model told to check
@@ -365,10 +443,9 @@ def _fake_snils() -> str:
 # the tax region in its first two digits and «00» is no region; a passport
 # series carries the ОКАТО region and «00» is no region; a card's first digit
 # is the industry, and «0» is reserved for ISO/TC 68, no bank issues under it.
-# A СНИЛС has no such field — numbers below 001-001-998 are the EARLIEST real
-# registrations, exempt from the check, not free — so it stays invalid and the
-# refusal it causes is a measured, accepted price. Sources and arithmetic in
-# research/2026-09-03-checksum-valid-substitutes.md.
+# A СНИЛС has no such field, so its substitute is valid and NOT impossible —
+# guarded by the conversation scope instead, like a name (see `_fake_snils`).
+# Sources and arithmetic in research/2026-09-03-checksum-valid-substitutes.md.
 _INN_WEIGHTS_10 = (2, 4, 10, 3, 5, 9, 4, 6, 8)
 _INN_WEIGHTS_11 = (7, 2, 4, 10, 3, 5, 9, 4, 6, 8)
 _INN_WEIGHTS_12 = (3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8)
@@ -465,7 +542,9 @@ _VALUE_SQL_BOTH = "entity_type, canonical, original"
 _SPOKEN_WORD = re.compile(r"[А-Яа-яЁё]{2,}")
 # Типы, у которых канонизация даёт САМО ЗНАЧЕНИЕ в нормальной форме, а не ключ
 # для поиска. Для них и только для них аргументу отдаётся канон.
-_CANONICAL_IS_THE_VALUE = frozenset(_NUMERIC_TYPES) | {"EMAIL", "PLATE"}
+# DOB is here for the same reason as a phone: a birth date said aloud is a
+# phrase the tool cannot store, and the agent's schema asks for a date.
+_CANONICAL_IS_THE_VALUE = frozenset(_NUMERIC_TYPES) | {"EMAIL", "PLATE", "DOB"}
 
 
 def looks_dictated(original: str, canonical: str) -> bool:
@@ -503,6 +582,22 @@ def _pick_value(entity_type: str, canonical: str, original: str,
     if (for_tool and entity_type in _CANONICAL_IS_THE_VALUE
             and looks_dictated(original or "", canonical or "")):
         return canonical
+    # A STREET THE CUSTOMER MISTYPED REACHES THE TOOL AS THE REGISTER SPELLS
+    # IT, AND ONLY THE TOOL. Without the gateway the agent silently repairs
+    # «мончгорская» to «Мончегорская» and the CRM finds the address; with the
+    # gateway it is shown a clean substitute, has nothing to repair, and the
+    # customer's literal words reach the tool — a street that does not exist.
+    # 42 of the 103 street/address conflicts on the 06.09 live run, and in
+    # every one of them BOTH control arms had repaired it, so this is the
+    # reference behaviour rather than a policy of ours.
+    #
+    # IN PROSE THE CUSTOMER KEEPS HIS OWN WORDS. Repeating his address back
+    # corrected is a different act from filling a form with it: one is the
+    # agent talking to him, the other is the agent acting for him. The three
+    # signals that make the repair safe are in `address.register_spelling`.
+    if for_tool and entity_type == "LOC" and original:
+        from pseudex.address import repair_street
+        return repair_street(original)
     return original
 
 
@@ -547,6 +642,48 @@ def place_key(token: str) -> str:
     return morph_places.match_signature(token) if token else ""
 
 
+def _place_numbers_collide(token: str, original: str) -> bool:
+    numbers = re.findall(r"\d+", token)
+    if any(a != b and a in b for a in numbers for b in numbers) or len(numbers) != len(set(numbers)):
+        return True
+    if not original:
+        return False
+    folded = " ".join(morph_places._fold_cardinals(morph_places.address_key(original).split()))
+    return bool(set(numbers) & set(re.findall(r"\d+", folded)))
+
+
+def _digits_in_customer_form(original: str, canonical_token: str) -> str:
+    """The fake's digits laid into the original's separators and prefix.
+    «89896866953» -> «89077509228», «8-999-106-11-83» -> «8-964-510-18-44»,
+    «+7 (912) 257-90-12» -> «+7 (935) 179-44-08»; a form the splice cannot
+    line up with (a dictated phone, a different digit count) keeps the
+    canonical «+7…»."""
+    fake = re.sub(r"\D", "", canonical_token)
+    real = re.sub(r"\D", "", original)
+    # Ten or eleven digits is a phone; anything longer carries an extension
+    # («+79162148803, доб. 214») or a second number, and laying the fake's
+    # tail across those positions would spread the phone into the extension.
+    if len(real) not in (10, 11) or not fake:
+        return canonical_token
+    # Keep the customer's prefix convention: whatever stands before the last
+    # ten digits is theirs («8», «+7», «7», nothing), the last ten are ours.
+    out: list[str] = []
+    tail = fake[-10:]
+    taken = 0
+    kept_prefix = len(real) - 10
+    for ch in original:
+        if ch.isdigit():
+            if taken < kept_prefix:
+                out.append(ch)
+            else:
+                out.append(tail[taken - kept_prefix])
+            taken += 1
+        else:
+            out.append(ch)
+    rendered = "".join(out)
+    return rendered if re.sub(r"\D", "", rendered)[-10:] == tail else canonical_token
+
+
 def _digit_signatures(token: str, entity_type: str) -> tuple[str | None, str | None]:
     """Digit signature of a NUMERIC token, so a token the model reformatted
     (separators stripped, +7 rewritten as 8) still resolves. Phones also key on
@@ -564,7 +701,7 @@ def _digit_signatures(token: str, entity_type: str) -> tuple[str | None, str | N
 # The WHOLE date, not just its year. Comparing years alone puts «30.09.2026»
 # in the past for all of 2026 — which is most of the traffic that matters, since
 # a booking is usually made for later this year.
-_DATE_PARTS = re.compile(r"(?:^|\D)(\d{1,4})[.\-/](\d{1,2})[.\-/](\d{1,4})(?:\D|$)")
+_DATE_PARTS = re.compile(r"(?:^|\D)(\d{1,4})[.\-/ ](\d{1,2})[.\-/ ](\d{1,4})(?:\D|$)")
 
 
 def _is_future(original: str) -> bool:
@@ -596,15 +733,55 @@ def _fake_date(original: str) -> str:
     the lookup was widened separately for the reformatting it cannot prevent.
     """
     year_now = time.localtime().tm_year
+    # READ BEFORE THE BRANCH. It stood inside the past-date branch only, and the
+    # same-side-of-today block below read it for a FUTURE date too — a courier
+    # interval or a clinic slot in a tool RESULT — and raised UnboundLocalError
+    # on the result leg of the r2 run (06.09): the SDK turned it into a tool
+    # error, the model saw «техническая ошибка», retried or gave up, and 304
+    # gateway-arm replies said so while every record read `done`.
+    known = _date_canonical(original)
     if _is_future(original):
         # Future: near enough to read as a real booking, never today itself, so
         # the substitute cannot be mistaken for «сегодня» by a model reasoning
         # about relative dates.
         year = year_now + secrets.randbelow(3) + 1
     else:
-        year = 1960 + secrets.randbelow(max(1, year_now - 1960))
-    return (f"{secrets.randbelow(28) + 1:02d}."
-            f"{secrets.randbelow(12) + 1:02d}.{year}")
+        # A PAST DATE KEEPS ITS YEAR. The agent derives the AGE from a date of
+        # birth — a clinic's `patient.age`, an insurer's tariff — and from a
+        # random year the derivation is wrong by construction (live v4: every
+        # `age` field in the `derive` family). The year alone identifies
+        # nobody (≈1.5 million people a year in Russia); the day and the month,
+        # which do, stay fake — the same line the settlement of an address
+        # draws (`_settlement_of`).
+        year = int(known[-4:]) if len(known) == 10 else 1960 + secrets.randbelow(max(1, year_now - 1960))
+    # …AND THE SAME SIDE OF TODAY. The year alone left the AGE off by one:
+    # real 11.09, fake 17.08, today 05.09 — the real birthday is still to come
+    # this year and the fake one has passed, so `patient.age` read 70 in the
+    # control and 71 through the gateway (37 triples on the 05.09 medium run,
+    # every `age` divergence there was). The day and the month stay fake; only
+    # which side of today they fall on is kept, which is one bit.
+    today = time.localtime()
+    real_month_day = ((int(known[3:5]), int(known[:2])) if len(known) >= 5 and known[2] == "." else None)
+    month, day = secrets.randbelow(12) + 1, secrets.randbelow(28) + 1
+    if real_month_day is not None and not _is_future(original):
+        today_month_day = (today.tm_mon, today.tm_mday)
+        for _ in range(64):
+            if (month, day) != today_month_day and ((month, day) < today_month_day) == (real_month_day < today_month_day):
+                break
+            month, day = secrets.randbelow(12) + 1, secrets.randbelow(28) + 1
+    rendered = f"{day:02d}.{month:02d}.{year}"
+    # A DATE THE CUSTOMER SAID IS REPLACED BY A DATE IN WORDS. «родился
+    # одиннадцатого сентября пятьдесят пятого» was masked as «родился
+    # 28.03.1972 пятьдесят пятого» — digits in a spoken sentence, with the real
+    # year left standing beside them (9 of 9 spoken dates of birth on the 05.09
+    # medium run). The substitute mirrors the customer's own register, century
+    # and «года» included (`spoken.date_to_words`); it is indexed by its
+    # canonical so the ISO the agent writes for it still resolves.
+    if original and not _is_future(original) and not any(ch.isdigit() for ch in original):
+        words = spoken.date_to_words(rendered if len(known) == 10 else rendered[:5], original)
+        if words:
+            return words
+    return rendered
 
 
 def _fake_phone() -> str:
@@ -652,6 +829,143 @@ def _first_names_by_gender() -> dict[str, tuple[str, ...]]:
         gender = morph_names.given_name_gender(name)
         buckets[gender or ("femn" if name.endswith(("а", "я")) else "masc")].append(name)
     return {"masc": tuple(buckets["masc"]), "femn": tuple(buckets["femn"])}
+
+
+def _place_identity(canonical: str) -> tuple[str, ...]:
+    """An address canonical without its street-type words, the spoken numbers
+    folded to digits («сто» and «100» are one house, as in `street_house_key`)."""
+    return tuple(morph_places._fold_cardinals(
+        [part for part in canonical.split() if part not in morph_places._GENERIC]))
+
+
+def _street_stem(short_key: str) -> str:
+    """The street words of a `street_house_key` («заречный 57» → «заречный»)."""
+    return " ".join(token for token in short_key.split() if not token[:1].isdigit())
+
+
+def _street_stems_match(left: str, right: str) -> bool:
+    """One street: equal, or one typo apart on a word of five letters or more —
+    the same tolerance `_keys_match` gives the whole key."""
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    if len(left) < 5 or len(right) < 5:
+        return False
+    return within_one_typo(left, right) or within_one_typo(_stem_of_word(left), _stem_of_word(right))
+
+
+def _keys_match(left: str, right: str) -> bool:
+    """Two `street_house_key`s name one place: equal, or the same numbers with
+    street stems one typo apart. The customer's «дзержнского сорок четыре»
+    and the register's «ул Дзержинского, д 44» keyed as two streets and got
+    two substitutes — the typo is the customer's, the place is one."""
+    if left == right:
+        return True
+    a, b = left.split(), right.split()
+    if len(a) != len(b):
+        return False
+    for x, y in zip(a, b):
+        if x == y:
+            continue
+        if x.isdigit() or y.isdigit() or len(x) < 5 or len(y) < 5:
+            return False
+        # The register's word is LEMMATISED («пушкина» -> «пушкин») and the
+        # customer's mistyped one is not (it is unknown to morphology, so its
+        # spelling is kept), so «пушкна» stood two edits from the key of its
+        # own street. Compared as STEMS — the inflectional ending off both
+        # sides — they are one typo apart.
+        if not (within_one_typo(x, y) or within_one_typo(_stem_of_word(x), _stem_of_word(y))):
+            return False
+    return True
+
+
+_ENDING_RE = re.compile(r"(?:ого|ему|ому|ыми|ими|ая|яя|ый|ий|ой|ые|ие|ым|им|ом|ем|ах|ях|ов|ев|а|я|ы|и|е|у|ю|о)$")
+
+
+def _stems_related(left: str, right: str) -> bool:
+    """One stem is the other or begins with it (both at least four letters)."""
+    if left == right:
+        return True
+    shorter, longer = sorted((left, right), key=len)
+    return len(shorter) >= 4 and longer.startswith(shorter)
+
+
+def _stem_of_word(word: str) -> str:
+    stem = _ENDING_RE.sub("", word)
+    return stem if len(stem) >= 4 else word
+
+
+def _same_house(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
+    """Two house identities name one house — exactly, or with the street one
+    typo apart (`_keys_match`); the litera and every number must agree."""
+    return _keys_match(" ".join(left), " ".join(right))
+
+
+def _house_identity(canonical: str, has_city: bool) -> tuple[str, ...]:
+    """The street and the house AS WRITTEN — litera included — of a canonical,
+    without the city and without anything finer than the house.
+
+    `street_house_key` is deliberately tolerant (it drops the litera, so a
+    short mention may omit it) and is only ever used to FIND candidates; the
+    decision to link is taken on this. The register answers three neighbours
+    on one street — «д 10», «д 10А», the same house in the next town — and a
+    tolerant decision joined them into one substitute."""
+    parts = _place_identity(canonical)
+    if has_city and parts:
+        parts = parts[1:]
+    out: list[str] = []
+    for part in parts:
+        if part in morph_places._SHORT_KEY_STOP:
+            break
+        out.append(part)
+    return tuple(out)
+
+
+def _street_stem(phrase: str) -> str:
+    """The street's last word, folded and lemmatised, or "" when there is none."""
+    street = morph_places.split_roles(phrase).get("street", "") if phrase else ""
+    if not street:
+        return ""
+    words = [word for word in re.split(r"[\s,.]+", street.casefold().replace("ё", "е"))
+             if word and word not in morph_places._GENERIC and not morph_places._GENERIC_STEMS.match(word)]
+    if not words:
+        return ""
+    parses = morph_places.MORPH.parse(words[-1])
+    return parses[0].normal_form if parses else words[-1]
+
+
+_SETTLEMENT_MARKER_RE = morph_places.SETTLEMENT_MARKER_RE
+
+
+def _capitalised(phrase: str) -> str:
+    """«нижний новгород» -> «Нижний Новгород», «санкт-петербург» -> «Санкт-Петербург»."""
+    return " ".join("-".join(part[:1].upper() + part[1:] for part in word.split("-"))
+                    for word in phrase.split())
+
+
+def _settlement_of(original: str) -> str:
+    """The settlement the original names, in the nominative — KEPT REAL.
+
+    THE CITY IS NOT PERSONAL DATA, AND HIDING IT BROKE THE AGENT. 152-ФЗ
+    (ст. 3 п. 1) makes a person identifiable by a combination; a city alone
+    identifies nobody, which is why the engine has always let a bare «это в
+    самара» through in the clear. The same city INSIDE an address was replaced
+    by a fake town, so the model held two cities for one place — its own
+    «Самара, улица Мятная 151» composed from what it was shown, and «Чернь,
+    улица Мятная 151» from the directory — and answered «адрес не найден»
+    (live v4, `compare`: 29 of 42 triples). Every derivation the agent makes
+    from the city (postcode, delivery zone, time zone) was wrong too, by
+    construction. What identifies the household — the street and the house —
+    stays fake; what the law does not protect stays true. A settlement that
+    stands alone (no street) still draws a fake in `_fake_place`, because
+    there the whole span IS the settlement.
+    """
+    city = morph_places.split_roles(original).get("city", "") if original else ""
+    city = _SETTLEMENT_MARKER_RE.sub("", city.strip(" ,."))
+    if not city or not re.fullmatch(r"[А-Яа-яЁё][А-Яа-яЁё -]*", city):
+        return ""
+    return _capitalised(morph_places.phrase_to_nominative(city).replace("ё", "ё"))
 
 
 def _fake_city(original: str) -> str:
@@ -715,8 +1029,46 @@ def _usable_streets() -> tuple[str, ...]:
     return tuple(usable)
 
 
-def _fake_place(original: str) -> str:
+# РАЗРЯД НОМЕРА ДОМА — СВОЙСТВО, ПО КОТОРОМУ АГЕНТ ПРИНИМАЕТ РЕШЕНИЯ, и
+# подмена, которая его меняет, меняет решение. «в дома больше ста не возим» —
+# обычное правило курьерской службы, оно живёт в системном промпте заказчика, и
+# настоящий дом 33 под фальшивым 157 переворачивает его: агент ОТКАЗЫВАЕТСЯ
+# оформлять заказ, которого никто не отменял. На живом прогоне 07.09 это 12
+# троек семьи `prompt_rule`, и в каждой плечо шлюза не сделало НИ ОДНОГО
+# вызова, а восстановленный ответ противоречил сам себе — «Дом 33 — номер
+# больше 100».
+#
+# ЦЕНА НАЗВАНА И ОНА ЗАПЛАЧЕНА СОЗНАТЕЛЬНО: разряд сообщает наблюдателю, в
+# каком из трёх ведёр стоит настоящий дом, — меньше полутора бит, и меньше
+# того, что уже отдаёт сохранённый год в фальшивой дате рождения. Решение
+# владельца от 07.09; полный разбор в
+# research/2026-09-07-property-preserving-substitutes.md.
+#
+# ИСЧЕРПАТЬ ЭТО НЕЛЬЗЯ. Узкий разряд — это девять номеров, но улица тянется из
+# большого словаря, и уникальность даёт она; там, где улица зафиксирована
+# (`_same_street_in_conversation`), `_unique_token` на середине попыток и так
+# отпускает её. Пул, который заказчик может исчерпать, — это вечный 5xx, и
+# этот путь такого пула не создаёт.
+_HOUSE_BANDS: tuple[tuple[int, int], ...] = ((1, 9), (10, 99), (100, _FAKE_HOUSE_MAX))
+
+
+def _house_like(original: str) -> int:
+    """Фальшивый номер дома ТОГО ЖЕ РАЗРЯДА, что настоящий."""
+    spoken_house = morph_places.split_roles(original).get("house", "") if original else ""
+    digits = re.sub(r"\D", "", morph_places.house_digits(spoken_house))
+    if not digits:
+        return secrets.randbelow(_FAKE_HOUSE_MAX) + 1
+    real = min(int(digits[:6]), _FAKE_HOUSE_MAX)
+    low, high = next(band for band in _HOUSE_BANDS if real <= band[1])
+    return low + secrets.randbelow(high - low + 1)
+
+
+def _fake_place(original: str, head: str = "") -> str:
     """A place of the SAME KIND as the one it replaces, in the nominative.
+
+    `head` is the street phrase («улица Черёмуховая») of a substitute this
+    conversation already holds for the SAME real street; given, no street is
+    drawn and only the numbers are — see `Vault._same_street_in_conversation`.
 
     Two things were wrong before, and both reached the model. The phrase was
     hardcoded dative — `улице Тополиной, 21` wherever it landed — and the kind
@@ -747,30 +1099,38 @@ def _fake_place(original: str) -> str:
     # that notices a mismatch is a model that edits it. That is how gender and
     # case disagreement broke names, and it is the same failure here.
     shape = morph_places.place_shape(original) if original else {}
-    generic = str(shape.get("generic") or "улица")
-    gender = str(shape.get("gender") or "femn")
-    street = morph_places.to_nominative(secrets.choice(_usable_streets()))
-    # The pool is written feminine because most generics are; reusing the
-    # original's generic word means the name has to follow it.
-    street = morph_places.agree_with_generic(street, gender)
-    # Marker order follows the generic: a full word leads («улица Тополиная»),
-    # an abbreviation leads with a dot («ул. Тополиная»), and «проспект» reads
-    # naturally after the name («Тополиный проспект»).
-    full = morph_places.generic_full(generic)
-    abbreviated = generic.lower() != full
-    if abbreviated:
-        # An abbreviation always leads, and keeps the exact form written: «пр-т»
-        # stays «пр-т», never «проспект» and never «пр-т.» — the hyphenated forms
-        # take no trailing dot.
-        head = f"{generic}{'' if '-' in generic else '.'} {street}"
-    elif full in ("проспект", "бульвар"):
-        head = f"{street} {generic}"
-    else:
-        head = f"{generic} {street}"
+    if not head:
+        generic = str(shape.get("generic") or "улица")
+        gender = str(shape.get("gender") or "femn")
+        street = morph_places.to_nominative(secrets.choice(_usable_streets()))
+        # The pool is written feminine because most generics are; reusing the
+        # original's generic word means the name has to follow it.
+        street = morph_places.agree_with_generic(street, gender)
+        # Marker order follows the generic: a full word leads («улица Тополиная»),
+        # an abbreviation leads with a dot («ул. Тополиная»), and «проспект» reads
+        # naturally after the name («Тополиный проспект»).
+        full = morph_places.generic_full(generic)
+        abbreviated = generic.lower() != full
+        if abbreviated:
+            # An abbreviation always leads, and keeps the exact form written: «пр-т»
+            # stays «пр-т», never «проспект» and never «пр-т.» — the hyphenated forms
+            # take no trailing dot.
+            head = f"{generic}{'' if '-' in generic else '.'} {street}"
+        elif full in ("проспект", "бульвар"):
+            head = f"{street} {generic}"
+        else:
+            head = f"{generic} {street}"
 
     out = head
+    # NEVER A FAKE TOWN INSIDE AN ADDRESS. The shape may say «has a city» on a
+    # predicted reading — «лугвая сто шестнадцать», a mistyped street pymorphy3
+    # guesses to be a place — and the fake town drawn for it reached the
+    # courier's `locality` as «Торжка» (fresh-seed v4, compare-014,
+    # correction-018). The settlement is the real one or none at all.
     if shape.get("has_city"):
-        out = f"{_fake_city(original)}, {out}"
+        settlement = _settlement_of(original)
+        if settlement:
+            out = f"{settlement}, {out}"
     if shape.get("has_house", True):
         # NO COMMA before the house number. With one, `_merge_places` stops at
         # the house and the flat is left outside the span — so the token we mint
@@ -778,7 +1138,7 @@ def _fake_place(original: str) -> str:
         # recognise it, and our own substitute gets masked a second time.
         # «улица Рябиновая 83, кв. 203» is detected whole; the comma version is
         # not, and it is also how people actually write it.
-        out = f"{out} {secrets.randbelow(_FAKE_HOUSE_MAX) + 1}"
+        out = f"{out} {_house_like(original)}"
     # ПОДЪЕЗД ЧЕКАНИТСЯ, ПОТОМУ ЧТО ИНАЧЕ ЕГО НЕЛЬЗЯ ВЕРНУТЬ. Подмена его просто
     # теряла — «улица клубная дом 160 второй подъезд» становилось «улица
     # Сиреневая 166», — и дальше ломалось не восстановление, а сам разговор:
@@ -824,7 +1184,7 @@ def _extend_place(short_token: str, original: str, shape: dict[str, object]) -> 
     base = short_token[: spans["house"][1]]
     if not base.strip():
         return None
-    out = f"{_fake_city(original)}, {base}"
+    out = f"{_settlement_of(original) or _fake_city(original)}, {base}"
     reuse = {role: part for role, part in morph_places.split_roles(short_token).items()
              if role in ("building", "entrance", "flat")}
     return _decorate_place(out, shape, reuse)
@@ -854,6 +1214,20 @@ def _invariant_last_names() -> tuple[str, ...]:
             f"only {len(usable)} surname(s) in the fake pool have a resolvable "
             "feminine form; a customer naming more women by surname alone than "
             "that would get a fail-closed 5xx — widen _FAKE_LAST_INVARIANT")
+    return usable
+
+
+@functools.lru_cache(maxsize=2)
+def _round_trip_last_names(gender: str) -> tuple[str, ...]:
+    """The surnames whose form in this gender resolves back from every case
+    when it stands ALONE — the feminine invariant list, and the masculine
+    entries of the pool that pass the same check."""
+    if gender == "femn":
+        return _invariant_last_names()
+    usable = tuple(s for s in _FAKE_LAST + _FAKE_LAST_INVARIANT
+                   if morph_names.survives_round_trip(s, "masc"))
+    if len(usable) < 12:
+        raise RuntimeError(f"only {len(usable)} masculine surname(s) survive a lone round trip — widen _FAKE_LAST")
     return usable
 
 
@@ -893,8 +1267,12 @@ def _fake_name(gender: str | None, shape: tuple[str, ...] = ()) -> str:
         # and sometimes silently produce a two-word name instead. The subset is
         # DERIVED, not a second list, so it cannot drift out of step with the
         # first (the same reason `feminine_surname` derives rather than stores).
-        surnames = (_invariant_last_names()
-                    if plan == ("surn",) and resolved == "femn" else _FAKE_LAST)
+        # …AND THE MASCULINE HALF NEEDS THE SAME CHECK. A masculine surname
+        # that failed its lone round trip twelve times fell through to «Имя
+        # Фамилия», and the CRM card's `last_name` leaf was shown a two-word
+        # person (live v4, chain-014).
+        surnames = (_round_trip_last_names(resolved)
+                    if plan == ("surn",) else _FAKE_LAST)
         parts: list[str] = []
         for slot in plan:
             if slot == "surn":
@@ -999,26 +1377,28 @@ def _corresponding_part(mention: str, full_canonical: str, full_token: str) -> s
     person written in two orders — so the slot is found by KIND (surname, given
     name, patronymic) and looked up by kind on the substitute side.
     """
-    real_shape = morph_names.name_shape(full_canonical)
-    fake_shape = morph_names.name_shape(full_token)
+    # POSITION, BY CONSTRUCTION. The substitute is minted slot by slot in the
+    # ORDER of the real name (`_fake_name(gender, shape)` mirrors it), so the
+    # word standing where the mention stands is the answer, whatever the two
+    # orders of «Иванов Пётр» / «Пётр Иванов» — the mention is found in the
+    # CANONICAL, not in the sentence. Reading the fake's kinds with morphology
+    # was the defect: «Мещерякова» has no dictionary reading and came back as
+    # a given name, so the CRM card's «Ирина» was linked to «Мещерякова», its
+    # «Лебедева» found no surname slot and minted «Белых», and the agent's
+    # `last_name` then restored to «Ирина» (fresh-seed v4, chain-001).
     real_parts = full_canonical.split()
     fake_parts = full_token.split()
-    if len(real_shape) != len(real_parts) or len(fake_shape) != len(fake_parts):
+    if len(real_parts) != len(fake_parts):
         return None
     lowered = mention.casefold()
     for index, part in enumerate(real_parts):
-        if part.casefold() != lowered:
-            continue
-        kind = real_shape[index]
-        for fake_index, fake_kind in enumerate(fake_shape):
-            if fake_kind == kind:
-                return fake_parts[fake_index]
-        return None
+        if part.casefold() == lowered:
+            return fake_parts[index]
     return None
 
 
 def _render_token(entity_type: str, gender: str | None = None,
-                  original: str = "") -> str:
+                  original: str = "", head: str = "") -> str:
     # Format-preserving substitutes for the document types. Without these they
     # fall through to REDACTED… — which is NOT the shape the customer's own
     # validator expects, so a masked account number would fail their form check
@@ -1064,6 +1444,11 @@ def _render_token(entity_type: str, gender: str | None = None,
         # (blanks of 1997–2026), the format check passes, and no person can
         # hold it. See the note above `_fake_inn`.
         year = 1997 + secrets.randbelow(30)
+        # …but never the blank year 2000: a series «00 00» is the placeholder
+        # shape the credential rules refuse, and the agent's `series` field
+        # then came back as the fake (fresh-seed v4, decompose-006).
+        if year == 2000:
+            year = 2001
         return f"00 {year % 100:02d} {_rand_digits(6)}"
     if entity_type in ("DATE", "DOB"):
         # DOB WAS FALLING THROUGH TO REDACTED…, and it only started to matter
@@ -1090,7 +1475,7 @@ def _render_token(entity_type: str, gender: str | None = None,
     if entity_type == "SECRET":
         return _fake_secret(original)
     if entity_type == "LOC":
-        return _fake_place(original)
+        return _fake_place(original, head)
     return f"REDACTED{secrets.token_hex(3)}"
 
 
@@ -1153,7 +1538,11 @@ def _loc_token_pattern() -> str:
     # (with city). Same stem treatment as the generics; the mandatory «, » that
     # follows a city in a minted token is what keeps a short stem from running
     # into an unrelated word.
-    city = "|".join(_city_stem(value) + r"\w{0,2}" for value in _FAKE_CITIES)
+    # ANY settlement, not the fake pool: the city in a minted token is the
+    # customer's own (`_settlement_of`), one or two capitalised words, and it
+    # inflects with the sentence — «в Самаре, на улице …». The mandatory «, »
+    # after it is what keeps an unrelated capitalised word out.
+    city = r"[А-ЯЁ][а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?"
     # The house number is written without a comma now, but tokens minted
     # BEFORE that change are in customers' vaults and still have to be
     # recognised in a reply — so both separators are accepted.
@@ -1167,6 +1556,10 @@ def _loc_token_pattern() -> str:
 
 
 LOC_TOKEN_PATTERN = _loc_token_pattern()
+
+# Where the question «is this string our own substitute?» is asked. Named here
+# so the two entry points, the vault and the docs use ONE spelling of each.
+PSEUDONYM_SCOPES = ("conversation", "customer")
 
 TOKEN_RE = re.compile("|".join([
     r"[a-z]{8}@example\.ru",                      # EMAIL
@@ -1236,6 +1629,19 @@ TOKEN_RE = re.compile("|".join([
 ]))
 
 
+def _street_stem(value: str) -> str:
+    """Основа названия улицы — то, что остаётся, когда убрали тип и падеж."""
+    street = morph_places.split_roles(value).get("street", "")
+    if not street:
+        return ""
+    words = [word for word in street.split()
+             if not morph_places.is_generic_word(word)]
+    if not words:
+        return ""
+    return " ".join(morph_places.to_nominative(word).casefold().replace("ё", "е")
+                    for word in words)
+
+
 class Vault:
     """Persistent per-customer token store (external state -> class)."""
 
@@ -1246,6 +1652,10 @@ class Vault:
         # while a conversation lives for one request. `for_conversation` hands
         # out a view instead — see there for why the scope has to exist at all.
         self._conversation = ""
+        # WHOSE SUBSTITUTE THIS IS, asked at conversation scope by default. See
+        # `with_pseudonym_scope` for the one reason a host widens it (agent
+        # memory) and for the price of widening.
+        self._pseudonym_scope = "conversation"
         self._lock = threading.Lock()
         self._conn = sqlite_connect(db_path, VAULT_STORE)
         self._conn.execute(
@@ -1393,7 +1803,7 @@ class Vault:
             )
 
     def _unique_token(self, entity_type: str, gender: str | None = None,
-                      original: str = "", canonical: str = "") -> str:
+                      original: str = "", canonical: str = "", head: str = "") -> str:
         """Mint a token not already used for this customer.
 
         BOUNDED on purpose. This used to loop until it found a free token, which
@@ -1403,7 +1813,11 @@ class Vault:
         loud failure is recoverable, a hung request is not, and in a fail-closed
         gateway the 5xx is the correct outcome."""
         for attempt in range(_TOKEN_MINT_ATTEMPTS):
-            token = _render_token(entity_type, gender, original)
+            # THE STREET THIS CONVERSATION ALREADY FAKED FOR THE SAME REAL STREET
+            # is kept for the first half of the attempts; if no free numbers are
+            # found beside it, the place is minted on its own as before.
+            token = _render_token(entity_type, gender, original,
+                                  head if attempt < _TOKEN_MINT_ATTEMPTS // 2 else "")
             # The settlement pool is a flat 25 names with no combinatorial
             # dimension, so a customer past 25 distinct cities would exhaust it
             # and get a fail-closed 5xx on every message with a new one. Falling
@@ -1423,13 +1837,105 @@ class Vault:
             # candidate and the pool "exhausted" after 200 tries on the first
             # address. The rule is about a substitute repeating the PERSON it
             # replaces, which is where the collision actually leaks something.
-            if self._is_free_token(token, entity_type, original, canonical):
-                return token
+            if not self._is_free_token(token, entity_type, original, canonical):
+                continue
+            # A NAME NEVER REPEATS A WORD. A foreign «тагиев рустам» reads as
+            # two given names, and the two slots drew the same one — «Кирилл
+            # Кирилл» — so the CSV's two cells each resolved to the whole
+            # person: «тагиев рустам;тагиев рустам». One draw in a hundred.
+            if entity_type == "NAME" and len(set(token.split())) != len(token.split()):
+                continue
+            # THE NUMBERS OF A FRESH PLACE DRAW MUST NOT CONTAIN EACH OTHER, AND
+            # NONE MAY BE A NUMBER OF THE REAL VALUE. «улица Барбарисовая 1,
+            # корп. 11» for «мончегорсуая 195 корпус 1» came back from prose as
+            # «… корпус 195» (the house «1» found inside the building «11»),
+            # and «улица Вишнёвая 1, корп. 8» for the same value wrote the real
+            # house into the building (the fake house IS the real building).
+            # Here and not in `_is_free_token`: a token GROWN from a short one
+            # shares its numbers by construction. The real value's numbers are
+            # read off its key, where a spoken «один» is already «1».
+            if entity_type == "LOC" and _place_numbers_collide(token, original):
+                continue
+            # TWO PEOPLE IN ONE DIALOGUE MAY NOT SHARE A FAKE SURNAME. With 28
+            # surnames in the pool, a message naming two people drew the same
+            # one for both once in 28 times — «Шилов Семён» and «Шилова Иванна»
+            # — and the CSV the agent then built carried «Шилова», which is the
+            # woman's nominative AND the man's genitive: two owners, refused,
+            # and the fake reached the customer's CRM. Any shared word stem is
+            # refused for the first half of the attempts, and only for the first
+            # half: a dialogue naming more people than the pool has surnames
+            # must still be served rather than 5xx'd.
+            if (entity_type == "NAME" and self._conversation
+                    and attempt < _TOKEN_MINT_ATTEMPTS // 2
+                    and self._shares_a_stem_in_conversation(token)):
+                continue
+            # …AND TWO PLACES IN ONE DIALOGUE MAY NOT SHARE A HOUSE NUMBER. A
+            # corrected address («сто сорок семь … ой нет, сто девятнадцать»)
+            # is two tokens, and the agent fills `building` with the house
+            # alone; a house both fakes carry has two owners, is refused, and
+            # the fake number reaches the courier. 2 of 300 draws.
+            if (entity_type == "LOC" and self._conversation
+                    and attempt < _TOKEN_MINT_ATTEMPTS // 2
+                    and self._shares_a_house_in_conversation(token)):
+                continue
+            # …AND TWO DIFFERENT REAL STREETS MAY NOT SHARE A FAKE ONE. The
+            # inverse rule — one real street, one fake street — is deliberate
+            # (`_same_street_in_conversation`) and is what `head` carries; this
+            # is the direction nothing guarded. «заречная 57 … энгельса 106»
+            # drew «Вишнёвая» twice about one draw in six, and then a bare
+            # street written by the agent has two owners, is refused, and OUR
+            # street reaches the customer's system. Skipped when `head` asked
+            # for the reuse, and only for the first half of the attempts, so a
+            # dialogue naming more streets than the pool holds is still served.
+            if (entity_type == "LOC" and self._conversation
+                    and attempt < _TOKEN_MINT_ATTEMPTS // 2
+                    and not (head and _street_stem(token) == _street_stem(head))
+                    and self._shares_a_street_in_conversation(token)):
+                continue
+            return token
         raise RuntimeError(
             f"exhausted the {entity_type} token pool for customer "
             f"{self._customer!r} after {_TOKEN_MINT_ATTEMPTS} attempts — widen "
             f"the pool in _render_token"
         )
+
+    def _shares_a_stem_in_conversation(self, token: str) -> bool:
+        """Whether any word of the candidate shares its stem with a NAME token
+        already minted in this conversation. Called under the lock."""
+        # `_stem_of_word` strips ONE ending, so «Сазонов» gives «сазон» and
+        # «Сазонова» gives «сазонов»; the man's and the woman's form of one
+        # surname are related by prefix, not by equality.
+        stems = {_stem_of_word(word.casefold()) for word in token.split()}
+        rows = self._conn.execute(
+            "SELECT token FROM tokens WHERE customer=? AND entity_type='NAME' AND minted_in=?",
+            (self._customer, self._conversation),
+        ).fetchall()
+        return any(_stems_related(_stem_of_word(word.casefold()), stem)
+                   for (other,) in rows for word in other.split() for stem in stems)
+
+    def _shares_a_house_in_conversation(self, token: str) -> bool:
+        """Whether a LOC token of this conversation carries the same house
+        number as the candidate. Called under the lock."""
+        house = morph_places.split_roles(token).get("house", "")
+        if not house:
+            return False
+        rows = self._conn.execute(
+            "SELECT token FROM tokens WHERE customer=? AND entity_type='LOC' AND minted_in=?",
+            (self._customer, self._conversation),
+        ).fetchall()
+        return any(morph_places.split_roles(other).get("house", "") == house for (other,) in rows)
+
+    def _shares_a_street_in_conversation(self, token: str) -> bool:
+        """Whether a LOC token of this conversation already carries the
+        candidate's street. Called under the lock."""
+        stem = _street_stem(token)
+        if not stem:
+            return False
+        rows = self._conn.execute(
+            "SELECT token FROM tokens WHERE customer=? AND entity_type='LOC' AND minted_in=?",
+            (self._customer, self._conversation),
+        ).fetchall()
+        return any(_street_stem(other) == stem for (other,) in rows)
 
     def _is_free_token(self, token: str, entity_type: str, original: str = "",
                        canonical: str = "") -> bool:
@@ -1437,31 +1943,19 @@ class Vault:
         random or composed from parts already minted. Called under the lock."""
         if entity_type == "NAME" and original and _shares_a_word(token, original):
             return False
-        # A FAKE CITY IS A REAL TOWN, and the customer may name that town. Our
-        # pool is «Валдай», «Суздаль», «Елец» — real places on purpose, so a
-        # substitute reads as one — and a customer living in Валдай then met a
-        # substitute «Валдай, улица Осиновая 174» minted for somebody else: the
-        # restore leg resolved their real «Валдае» to that stranger's address.
-        # The city of a candidate may not be the city of any real address this
-        # customer already has (the other direction is `real_place_with_stem`
-        # on the restore leg).
-        if entity_type == "LOC" and "," in token:
-            # Only a token that CARRIES a city («Валдай, улица …»): for a
-            # city-less one the first word is the generic, «улиц…» prefixes
-            # every real address, and every candidate was refused until the
-            # 200 attempts ran out — measured as a ten-minute test run.
-            city = token.split(",", 1)[0].strip()
-            stem = _city_stem(city).replace("\\", "")   # `_city_stem` escapes for a regex; LIKE wants the letters
-            # …nor the ORIGINAL's own city: «Валдай» drawn for an address in
-            # Валдай restored the whole token and then re-read the real city as
-            # our fake — «Живу на улице Мира 4, улица Мира 4».
-            own = morph_places.split_roles(original).get("city", "") if original else ""
-            if not own and original:
-                own = original.split(",", 1)[0].strip() if "," in original else original.split()[0]
-            if stem and own and _city_stem(own).replace("\\", "").lower() == stem.lower():
+        # THE SAME RULE FOR A STREET. «Луговая» is in the fake pool because it
+        # is a common street, and a common street is what the customer lives
+        # on: drawn for «ул Луговая, д 10» it put the real street name into
+        # the model's view labelled as ours (the register's neighbour record
+        # did exactly that on the live run).
+        if entity_type == "LOC" and original:
+            fake_stem = _street_stem(token)
+            if fake_stem and fake_stem == _street_stem(original):
                 return False
-            if stem and self._real_place_with_stem_locked(stem):
-                return False
+        # The settlement of a city-bearing token is the ORIGINAL's own (see
+        # `_settlement_of`), so no guard against a real town applies here any
+        # more; the fake town is drawn only for a span that is a bare settlement,
+        # which carries no comma and never reached the guard that stood here.
         if True:
             # THE ROW BEING MINTED IS NOT IN THE TABLE YET, so the lookup below
             # cannot see it and a substitute is free to come out equal to the
@@ -1532,12 +2026,52 @@ class Vault:
         view._conversation = conversation
         return view
 
+    def with_pseudonym_scope(self, scope: str) -> "Vault":
+        """A view whose question «is this string OUR substitute?» is asked at
+        `scope`: `conversation` (the default) or `customer`.
+
+        THE HOST'S MEMORY IS WHY THIS SETTING EXISTS. An agent with long-term
+        memory recalls a fact from an earlier dialogue — and every framework in
+        the field keys that store by USER, not by conversation (LangGraph Store,
+        Mem0, Google ADK, Anthropic's memory tool; a `fork` and a per-agent
+        handoff session do the same by other means). The recalled text carries
+        the substitute the model was shown then. Judged at conversation scope
+        that string is a stranger: it is masked a SECOND time, and the tool
+        receives the first dialogue's fake — 200 OK, empty residual list, and
+        nobody the wiser. Measured here, not argued.
+
+        THE PRICE OF WIDENING IS A REAL PERSON. `is_minted_token` is what stops
+        us re-masking our own substitute; widened to the customer it also stops
+        us masking a REAL person who happens to bear a name minted for somebody
+        else, and they reach the model in the clear for ever — 2-3 per run on
+        2979 people from NEREL. So the default does not move: a host without
+        memory must not pay for a problem it does not have, and 152-ФЗ counts
+        the leak, not the broken tool call.
+
+        A HOST THAT TURNS MEMORY ON DECLARES IT and trades that residual risk
+        for consistency across dialogues; a host that can pass a customer-level
+        conversation id instead pays nothing but the short-mention linking
+        inside one dialogue.
+        """
+        if scope not in PSEUDONYM_SCOPES:
+            raise ValueError(f"unknown pseudonym scope {scope!r}; expected one of {sorted(PSEUDONYM_SCOPES)}")
+        view = copy.copy(self)
+        view._pseudonym_scope = scope
+        return view
+
     def tokenize(self, value: str, entity_type: str) -> str:
         with stage("vault.tokenize"):
             return self._tokenize(value, entity_type)
 
-    def _tokenize(self, value: str, entity_type: str) -> str:
-        canonical = canonicalize(entity_type, value)
+    def tokenize_person(self, value: str, cases: tuple[str, ...]) -> str:
+        """`tokenize` for a NAME whose sentence says which cases it may be in
+        (`detect.NameSpan`); the key and the substitute's gender follow one
+        reading of the phrase instead of two votes."""
+        return self._tokenize(value, "NAME", cases)
+
+    def _tokenize(self, value: str, entity_type: str, cases: tuple[str, ...] = ()) -> str:
+        canonical = (canonicalize_person(value, cases) if entity_type == "NAME" and cases
+                     else canonicalize(entity_type, value))
         with self._lock:
             row = self._conn.execute(
                 "SELECT token FROM tokens WHERE customer=? AND canonical=?",
@@ -1566,7 +2100,7 @@ class Vault:
                     return row[0]
             # The REAL person's gender decides the fake's, so the substitute
             # agrees with the sentence around it and the model leaves it alone.
-            gender = (morph_names.detect_gender(value)
+            gender = (morph_names.read_person(value, cases)[0]
                       if entity_type == "NAME" else None)
             if entity_type == "NAME":
                 # The FOLD first: it is one indexed point query and it catches
@@ -1594,15 +2128,37 @@ class Vault:
                     if grown is not None:
                         token, extends = grown
             elif entity_type == "LOC":
-                linked_place = self._linked_place(canonical, value, shape)
-                if linked_place is not None:
+                same = self._same_place_written_differently(canonical, value, shape)
+                if same is not None:
+                    # Not a guess, so the PLAIN canonical keeps it: one place,
+                    # one substitute, and `linked_place` set so the second
+                    # writing is not indexed as a second owner.
+                    token, extends = same
+                    linked_place = same
+                else:
+                    linked_place = self._linked_place(canonical, value, shape)
+                if linked_place is not None and same is None:
                     (token, extends), canonical = linked_place, scoped
-                elif self._conversation:
+                elif token is None and self._conversation:
                     grown_place = self._extends_linked_place(canonical, value, shape)
                     if grown_place is not None:
                         token, extends = grown_place
             if token is None:
-                token = self._unique_token(entity_type, gender, value, canonical)
+                head = (self._same_street_in_conversation(value, shape)
+                        if entity_type == "LOC" else "")
+                token = self._unique_token(entity_type, gender, value, canonical, head)
+            if entity_type == "PHONE" and any(ch.isdigit() for ch in value):
+                # THE SUBSTITUTE IS WRITTEN THE WAY THE CUSTOMER WROTE THE REAL
+                # ONE. The vault minted «+79782727764» and the text showed
+                # exactly that where the customer had typed «89896866953» or
+                # «8-999-106-11-83» — a number in a machine's form inside a
+                # human's sentence; in the correction family the gateway arm
+                # then treated the contact as already on file and did not save
+                # the card (six triples, 04.09). Rendered ONCE, at the mint, so
+                # one person stays one string across the dialogue — the same
+                # digits under whatever form the customer used first — and the
+                # digit-signature index resolves every rewriting of it.
+                token = _digits_in_customer_form(value, token)
             digits, digits10 = _digit_signatures(token, entity_type)
             # `value` (not `canonical`) — the surface form the user actually
             # typed, which is what the tool must receive. First writer wins: the
@@ -1706,10 +2262,14 @@ class Vault:
                     # THE DERIVED FORMS THE MODEL WRITES. A cardholder field, a
                     # `name_latin`, a summary «| Латиница | Tsvetkov Vsevolod |»
                     # — the model transliterates the substitute it read, and
-                    # none of those strings is the token. Indexed here, a few
-                    # rows per person, so the prose leg finds them by exact
-                    # match and answers with the same derivation of the real.
-                    fake_parts.update(translit.variants(word))
+                    # none of those strings is the token. ONE row per word, the
+                    # FOLDED default rendering: the four standards' spellings
+                    # were indexed here and the model wrote a fifth
+                    # («Meshcheryakova»), which reached the tool unresolved.
+                    # Every rendering folds to this key (`translit.fold`), and
+                    # the lookup folds what the model wrote.
+                    if translit.is_cyrillic_word(word):
+                        fake_parts.add(translit.folded(word))
                 fake_shape = morph_names.name_shape(token)
                 fake_words = token.split()
                 if len(fake_shape) == len(fake_words):
@@ -1717,9 +2277,21 @@ class Vault:
                     patronymic = next((w for w, k in zip(fake_words, fake_shape) if k == "patr"), "")
                     if given and patronymic:
                         fake_parts.add(translit.squeezed_initials((given, patronymic)))
+            elif entity_type in ("DOB", "DATE"):
+                # THE CANONICAL DATE, so a substitute said in words is found by
+                # the «1955-08-17» the agent writes for it: the exact-token pass
+                # reads the ISO back into «17.08.1955» and asks `date_owner`.
+                date_key = _date_canonical(token)
+                fake_parts = {date_key} if date_key else set()
             elif entity_type == "LOC":
                 stems, numbers = morph_places.signature_parts(token)
                 fake_parts = set(stems) | set(numbers)
+                # The settlement is REAL, so it is not a piece of the fake: a
+                # bare «Самара» in a tool argument is the customer's word, not
+                # a residual of ours, and must not be resolved or reported.
+                city = morph_places.split_roles(token).get("city", "")
+                if city:
+                    fake_parts -= set(morph_places.signature_parts(city)[0])
             if fake_parts:
                 self._conn.executemany(
                     "INSERT OR IGNORE INTO token_parts (customer, part, token) "
@@ -1811,10 +2383,77 @@ class Vault:
         common = set.intersection(*owners)
         if len(common) == 1:
             return next(iter(common))
+        if not common:
+            return None
         # Two owners that are ONE place — the short mention and the full one
         # grown from it — answer with the fullest; two real places refuse.
         with self._lock:
-            return self._one_identity(common) if common else None
+            return self._one_identity(common)
+
+    def place_owner_by_street(self, candidate: str) -> str | None:
+        """TWO PLACES ON ONE STREET, ASKED ABOUT THE STREET ALONE. A corrected
+        address is two tokens on one fake street by construction, and a
+        `street` field holding that street has two owners whose answer is THE
+        SAME street. The latest mention wins — the correction is the later one
+        and its spelling is what the customer settled on.
+
+        A SEPARATE QUESTION FROM `place_owner`, AND THE CALLER ASKS IT LAST.
+        Folded into `place_owner` it broke the address join: the join asks
+        every leaf for its owner and demands ONE, so a street leaf answering
+        with the latest row while the house leaf answered with the row that
+        carries that house made two owners of one address — and the fake
+        house went to the courier (r2 run, compare-002/012). The join asks
+        this only when no leaf with a number found an owner.
+        """
+        stems, numbers = morph_places.signature_parts(candidate)
+        if numbers or not stems:
+            return None
+        scope = " AND (k.minted_in=? OR k.minted_in IS NULL OR k.minted_in='')"
+        with self._lock:
+            owners: list[set[str]] = []
+            for part in stems:
+                rows = self._conn.execute(
+                    "SELECT t.token FROM token_parts AS t "
+                    "JOIN tokens AS k ON k.customer=t.customer AND k.token=t.token "
+                    "WHERE t.customer=? AND t.part=? AND k.entity_type='LOC'"
+                    + (scope if self._conversation else ""),
+                    (self._customer, part, self._conversation) if self._conversation else (self._customer, part),
+                ).fetchall()
+                if not rows:
+                    return None
+                owners.append({row[0] for row in rows})
+            common = set.intersection(*owners)
+            if len(common) < 2:
+                return next(iter(common)) if common else None
+            rows = self._conn.execute(
+                "SELECT rowid, token, canonical FROM tokens WHERE customer=? AND entity_type='LOC' "
+                f"AND token IN ({','.join('?' * len(common))}) ORDER BY rowid",
+                (self._customer, *sorted(common)),
+            ).fetchall()
+            street_stems = [_street_stem(morph_places.street_house_key(canonical)) for _, _, canonical in rows]
+            if len(rows) >= 2 and all(_street_stems_match(street_stems[0], other) for other in street_stems[1:]):
+                return rows[-1][1]
+            return None
+
+    def date_owner(self, reading: str, for_tool: bool = False) -> str | None:
+        """The real value behind a DATE/DOB substitute whose canonical «dd.mm.yyyy»
+        is `reading` — the way a substitute SAID IN WORDS is found once the
+        agent has rewritten it as ISO. Conversation-scoped like every fragment
+        lookup: two dialogues may well hold substitutes on one date."""
+        if not reading:
+            return None
+        scope = " AND (k.minted_in=? OR k.minted_in IS NULL OR k.minted_in='')"
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT k.entity_type, k.canonical, k.original FROM token_parts AS t "
+                "JOIN tokens AS k ON k.customer=t.customer AND k.token=t.token "
+                "WHERE t.customer=? AND t.part=? AND k.entity_type IN ('DOB','DATE')"
+                + (scope if self._conversation else "") + " LIMIT 3",
+                (self._customer, reading, self._conversation) if self._conversation
+                else (self._customer, reading),
+            ).fetchall()
+        values = {_pick_value(row[0], row[1], row[2], for_tool) for row in rows}
+        return next(iter(values)) if len(values) == 1 else None
 
     def digit_fragment_owner(self, fragment: str, entity_type: str | None = None,
                              position: str | None = None) -> tuple[str, str] | None:
@@ -1896,17 +2535,24 @@ class Vault:
         with self._lock:
             owners: list[set[str]] = []
             for word in words:
-                # BOTH GENDERS' NOMINATIVES. The token is minted in the nominative
-                # («Наумов Лев Евгеньевич») and shown to the model inflected («Наумова
-                # Льва Евгеньевича»); the model copies the surname as it read it into
-                # `last_name`, and «Наумова» is a woman's nominative as well as a man's
-                # genitive, so `to_nominative` — rightly — leaves it alone while the index
-                # holds «наумов». Measured on the scripted agent: every oblique surname
-                # argument went to the tool as the fake.
-                forms = {word.casefold(), morph_names.to_nominative(word).casefold()}
-                for gender in ("masc", "femn"):
-                    forms.add(morph_names._part_to_nominative(word, gender).casefold())
-                forms = sorted(forms)
+                if word.isascii():
+                    # A LATIN WORD IS LOOKED UP FOLDED, never by its letters:
+                    # the index holds one canonical spelling per fake word and
+                    # the model may have chosen any rendering of it. Morphology
+                    # has nothing to say about a Latin string.
+                    forms = [translit.fold(word)]
+                else:
+                    # BOTH GENDERS' NOMINATIVES. The token is minted in the nominative
+                    # («Наумов Лев Евгеньевич») and shown to the model inflected («Наумова
+                    # Льва Евгеньевича»); the model copies the surname as it read it into
+                    # `last_name`, and «Наумова» is a woman's nominative as well as a man's
+                    # genitive, so `to_nominative` — rightly — leaves it alone while the index
+                    # holds «наумов». Measured on the scripted agent: every oblique surname
+                    # argument went to the tool as the fake.
+                    variants = {word.casefold(), morph_names.to_nominative(word).casefold()}
+                    for gender in ("masc", "femn"):
+                        variants.add(morph_names._part_to_nominative(word, gender).casefold())
+                    forms = sorted(variants)
                 # ТОЛЬКО ИМЕНА. Таблица частей общая с адресами с тех пор, как
                 # адресный фрагмент стал разрешаться, и без фильтра одиночное
                 # слово адресной подмены находило владельца ЗДЕСЬ — мимо области
@@ -1928,7 +2574,30 @@ class Vault:
         shared = set.intersection(*owners)
         if len(shared) == 1:
             return next(iter(shared))
-        return self._one_identity(shared) if shared else None
+        if not shared:
+            return None
+        one = self._one_identity(shared)
+        if one is not None:
+            return one
+        # THE CONVERSATION BREAKS THE TIE. A pair of initials is two letters,
+        # a given name in Latin is «Anna»: across a customer's whole vault
+        # such a piece belongs to many substitutes, and «no single owner»
+        # returned None — the fake went to the CRM with a 200 («Т.О.» for a
+        # woman whose initials are А.И., on the 05.09 medium run, where the
+        # same vault had served a thousand dialogues). The model writes the
+        # piece INSIDE the dialogue that handed it the substitute, which is
+        # exactly what `minted_in` records; a piece shared by two substitutes
+        # of ONE conversation stays unresolved, because then the dialogue
+        # itself cannot say which person it means.
+        if not self._conversation:
+            return None
+        rows = self._conn.execute(
+            "SELECT token FROM tokens WHERE customer=? AND minted_in=? "
+            f"AND token IN ({','.join('?' * len(shared))})",
+            (self._customer, self._conversation, *sorted(shared)),
+        ).fetchall()
+        here = {row[0] for row in rows}
+        return next(iter(here)) if len(here) == 1 else None
 
     def _same_person_reordered(self, canonical: str) -> str | None:
         """The token of a person already on file, written in another word order.
@@ -1977,6 +2646,155 @@ class Vault:
         self._conn.execute("DELETE FROM place_parts WHERE created < ?",
                            (now - _PLACE_PART_TTL,))
 
+    def _place_rows(self, part: str, has_city: int | None) -> list:
+        """This conversation's indexed places whose short key names the same
+        street and house as `part` — exactly, or one typo apart in the street
+        (`_keys_match`). A conversation holds a handful of places, so the
+        rows are read once and compared in Python rather than by `=`. Returns
+        (canonical, token) pairs, or (has_city, canonical, token) triples when
+        `has_city` is None."""
+        rows = self._conn.execute(
+            "SELECT p.has_city, p.canonical, p.part, t.token FROM place_parts p "
+            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
+            "WHERE p.customer=? AND p.conversation=? AND t.entity_type='LOC' LIMIT 64",
+            (self._customer, self._conversation),
+        ).fetchall()
+        matched = [(city_flag, owner, token) for city_flag, owner, stored, token in rows
+                   if _keys_match(stored, part) and (has_city is None or city_flag == has_city)]
+        if has_city is None:
+            return matched
+        return [(owner, token) for _, owner, token in matched]
+
+    def _same_street_in_conversation(self, value: str, shape: dict[str, object]) -> str:
+        """The fake street phrase this conversation already uses for the REAL
+        street this mention names — at another house — or "".
+
+        «заречная пятьдесят семь … ой нет, правильно заречная двадцать девять»
+        minted «Черёмуховая 15» and «Грушевая 107»: two streets where the
+        customer corrected a house number, and the model read a correction
+        between two unrelated places (32 of the 36 `correction` cases with two
+        addresses on the seed-6060 run name one street). One real street in a
+        dialogue is one fake street; only the numbers differ, exactly as they
+        do in the customer's own words. The street stems are compared the way
+        `_keys_match` compares them — equal, or one typo apart — because the
+        correction is often OF the typo («ленна» → «ленина»). Two different
+        fake streets already standing for the same stem (minted before this
+        rule, or through the second-half fallback) mean no head: guessing
+        between them would be the very thing this avoids.
+        """
+        if not self._conversation or not shape.get("has_house"):
+            return ""
+        part = morph_places.street_house_key(value)
+        stem = _street_stem(part)
+        if not stem:
+            return ""
+        # THE SAME SETTLEMENT, OR NONE ON EITHER SIDE. «Луговая» in Колпино and
+        # «Луговая» in Ижевск are two streets: a directory that answers the
+        # customer's «луговая 9» with a record from another city shared the
+        # fake street with it, and the model — asked to compare — could no
+        # longer see they differ (r2 run, compare-012). The same rule
+        # `_same_place_written_differently` applies to the whole place.
+        settlement = _settlement_of(value).casefold() if shape.get("has_city") else ""
+        rows = self._conn.execute(
+            "SELECT p.part, p.has_city, p.canonical, t.token FROM place_parts p "
+            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
+            "WHERE p.customer=? AND p.conversation=? AND t.entity_type='LOC' LIMIT 64",
+            (self._customer, self._conversation),
+        ).fetchall()
+        heads: set[str] = set()
+        for stored, city_flag, canonical, token in rows:
+            if stored == part or not _street_stems_match(_street_stem(stored), stem):
+                continue
+            other_settlement = canonical.split()[0].casefold() if city_flag else ""
+            if settlement != other_settlement:
+                continue
+            fake_head = morph_places.split_roles(token).get("street", "")
+            if fake_head:
+                heads.add(fake_head)
+        return next(iter(heads)) if len(heads) == 1 else ""
+
+    def _same_place_written_differently(self, canonical: str, value: str,
+                                        shape: dict[str, object]) -> tuple[str, str] | None:
+        """The substitute for a CITY-BEARING address this conversation already
+        holds with the same city, street and house — written another way.
+
+        «Самара, Луговая 10» from the customer and «Самарская область, г
+        Самара, ул Луговая, д 10» back from the directory are one place, and
+        the canonical keeps them apart on purpose: the type word is part of the
+        identity («Ленинский проспект» is not «Ленинская улица»), so a key
+        that dropped it would merge two streets. What it may not do is mint a
+        second substitute for one place — the model then compares the address
+        it asked about with a different fake and answers «не найден» (live v4,
+        `compare`: 29 of 42 triples).
+
+        Same discipline as every link here: exactly one owner on that street
+        and house in this conversation, AND the same settlement — a different
+        city on the same street and house is a different place and gets its own
+        substitute.
+        """
+        if not self._conversation or not shape.get("has_city"):
+            return None
+        part = morph_places.street_house_key(value)
+        if not part:
+            return None
+        rows = self._place_rows(part, has_city=1)
+        # THE WHOLE IDENTITY MINUS THE TYPE WORD: settlement, street stem and
+        # every number as written. The short key drops the house litera on
+        # purpose (a short mention may omit it), and read alone it linked the
+        # register's NEIGHBOUR — «д 10А» to «д 10» — into one substitute.
+        wanted = _place_identity(canonical)
+        same = [token for owner_canonical, token in rows
+                if _same_house(_place_identity(owner_canonical), wanted)]
+        if len(same) != 1:
+            return None
+        return same[0], same[0]
+
+    def holds_minted_place(self, value: str) -> bool:
+        """A LOC mention that CONTAINS a substitute of this conversation.
+
+        The model was handed «улица Мятная 151» and, told the city in the
+        clear, wrote «Самара, улица Мятная 151» into its tool call. That call
+        rides in the transcript and is re-masked with it on the next request —
+        production behaviour, the role of a message is not evidence — and the
+        composition is a well-formed address that `is_minted_token` cannot
+        recognise because it is not exactly the token. It was minted AGAIN, so
+        the model saw its own query rewritten into a third address a turn
+        later. Nothing in the composition is new to the model: the city is one
+        it was already shown, the rest is ours. So it is left as written.
+
+        Scoped to the conversation that minted the token, like the guard it
+        extends; a caller that named none gets nothing here, because outside a
+        conversation the composition cannot be told from a real address.
+        """
+        if not self._conversation:
+            return False
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT token FROM tokens WHERE customer=? AND entity_type='LOC' "
+                "AND minted_in=?",
+                (self._customer, self._conversation),
+            ).fetchall()
+        key = morph_places.street_house_key(value)
+        if key:
+            return any(morph_places.street_house_key(token) == key for (token,) in rows)
+        # УЛИЦА БЕЗ ДОМА — ЭТО НАША ПОДМЕНА, РАЗОБРАННАЯ ЧУЖИМ ИНСТРУМЕНТОМ.
+        # `normalize_contact` (и любой DaData-подобный нормализатор в стеке
+        # заказчика) отдаёт адрес ПО ЧАСТЯМ: «Сортавала, переулок Кедровый» в
+        # одном поле, «160» в другом. Ключ выше требует дома, поэтому у части
+        # его нет; точечная защита не срабатывает, потому что это не токен
+        # дословно, — и подмена маскируется ВТОРОЙ раз, новым фальшивым
+        # адресом, у которого нет владельца. Дальше в инструмент заказчика
+        # уезжает фейк: 198 из 328 расхождений скриптового прогона и −78pp у
+        # семьи `normalize`.
+        #
+        # ЦЕНА — ТА ЖЕ, ЧТО У КЛЮЧА ВЫШЕ, И ОГРАНИЧЕНА ТЕМ ЖЕ РАЗГОВОРОМ:
+        # настоящая улица, совпавшая с нашей фальшивой, ушла бы к модели
+        # открытой. `_unique_token` уже отказывает кандидату, равному любому
+        # `canonical` заказчика, поэтому совпасть может только улица, названная
+        # ПОЗЖЕ, и только внутри одной беседы.
+        stem = _street_stem(value)
+        return bool(stem) and any(_street_stem(token) == stem for (token,) in rows)
+
     def _linked_place(self, canonical: str, value: str,
                       shape: dict[str, object]) -> tuple[str, str] | None:
         """The substitute for an address we already met, named more briefly.
@@ -2019,16 +2837,16 @@ class Vault:
         # ONLY A CITY-BEARING ROW OWNS A SHORT MENTION. City-less mentions are
         # indexed too now (so a later fuller form can grow them), and without
         # this filter the short form would be its own owner.
-        rows = self._conn.execute(
-            "SELECT t.token FROM place_parts p "
-            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
-            "WHERE p.customer=? AND p.conversation=? AND p.part=? AND p.has_city=1 "
-            "AND t.entity_type='LOC' LIMIT 2",
-            (self._customer, self._conversation, part),
-        ).fetchall()
-        if len(rows) != 1:
+        rows = self._place_rows(part, has_city=1)
+        # Candidates by the tolerant key, the decision by the exact house
+        # (see `_house_identity`): the register's «д 10» and «д 10А» are two
+        # owners of one key and one owner of «луговая 10».
+        wanted = _house_identity(canonical, False)
+        owners = [token for owner_canonical, token in rows
+                  if _same_house(_house_identity(owner_canonical, True), wanted)]
+        if len(owners) != 1:
             return None
-        full = rows[0][0]
+        full = owners[0]
         derived = morph_places.strip_leading_city(full)
         if not shape.get("has_flat"):
             derived = morph_places.strip_flat(derived)
@@ -2061,16 +2879,19 @@ class Vault:
         part = morph_places.street_house_key(value)
         if not part:
             return None
-        rows = self._conn.execute(
-            "SELECT p.has_city, t.token FROM place_parts p "
-            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
-            "WHERE p.customer=? AND p.conversation=? AND p.part=? "
-            "AND t.entity_type='LOC' LIMIT 3",
-            (self._customer, self._conversation, part),
-        ).fetchall()
-        if len(rows) != 1 or rows[0][0] != 0:
+        rows = [(has_city, owner, token) for has_city, owner, token in self._place_rows(part, has_city=None)]
+        wanted = _house_identity(canonical, True)
+        # A city-bearing row on this EXACT street and house is another town's
+        # (the same town would have been found by `_same_place_written_
+        # differently`), and then the short mention is a guess between the two.
+        if any(has_city == 1 and _same_house(_house_identity(owner, True), wanted)
+               for has_city, owner, _ in rows):
             return None
-        short = rows[0][1]
+        shorts = [token for has_city, owner, token in rows
+                  if has_city == 0 and _same_house(_house_identity(owner, False), wanted)]
+        if len(shorts) != 1:
+            return None
+        short = shorts[0]
         if morph_places.strip_leading_city(short) != short:
             return None
         grown = _extend_place(short, value, shape)
@@ -2448,6 +3269,18 @@ class Vault:
                 "SELECT minted_in FROM tokens WHERE customer=? AND token=? LIMIT 1",
                 (self._customer, value),
             ).fetchone()
+            if row is None and value.strip() and any(ch.isdigit() for ch in value):
+                # A NUMERIC TOKEN IS OURS IN ANY WRITING: it is shown to the
+                # model in the customer's form («8-978-272-77-64») and echoed
+                # in that form or another; the digit signature is what the
+                # vault indexes it by, the same way the restore leg finds it.
+                digits = re.sub(r"\D", "", value)
+                tail = digits[-10:] if len(digits) >= 10 else digits
+                row = self._conn.execute(
+                    "SELECT minted_in FROM tokens WHERE customer=? AND (digits=? OR digits10=?) "
+                    "AND entity_type IN ('PHONE','SNILS','INN','CARD','PASSPORT','DOB') LIMIT 1",
+                    (self._customer, digits, tail),
+                ).fetchone()
         if row is None:
             return False
         # SCOPED TO THE DIALOGUE THAT MINTED IT. A substitute comes back to us
@@ -2463,6 +3296,12 @@ class Vault:
         # compare, so the guard behaves as it always did rather than inventing a
         # mismatch and re-masking somebody's echo.
         minted_in = row[0]
+        # THE HOST MAY HAVE DECLARED MEMORY. At customer scope the row alone
+        # settles it: our substitute is ours wherever it comes back from —
+        # a memory store keyed by user, a fork, another agent's session.
+        # `with_pseudonym_scope` states what that costs.
+        if self._pseudonym_scope == "customer":
+            return True
         if not minted_in or not self._conversation:
             return True
         return minted_in == self._conversation

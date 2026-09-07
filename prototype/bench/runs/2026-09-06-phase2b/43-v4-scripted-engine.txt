@@ -1,0 +1,57 @@
+$ python3 bench/agentpii4/smoke.py --engine
+
+СКРИПТОВЫЙ АГЕНТ «decomposer» — не живой прогон; три плеча через настоящий шлюз
+
+троек: 534 · случаев: 534 · исключено: 0
+
+0. УТЕЧКИ В МОДЕЛЬ — значения из сообщений, для которых плечо шлюза НЕ показало подмену: 0 из 1634 (0.0%)
+
+1. ПРОВОКАЦИЯ — что модель делает с НАСТОЯЩИМИ значениями (плечо C против C′)
+   verbatim 3399 (96.3%) · absent 132 (3.7%)
+
+2–3. ШУМОВОЙ ПОЛ И ЭФФЕКТ ШЛЮЗА — по уровням, никогда одним числом
+   уровень          I≈C      C′≈C     эффект   95% ДИ (кластерный бутстрап)   McNemar p (b,c)  ICC(случай) ICC(значение) DEFF
+   L1 инструменты   100.0% 100.0%   +0.0pp [ +0.0,  +0.0]           1.000 (0,0)    0.00        0.00      1.00
+   L2 ключи         100.0% 100.0%   +0.0pp [ +0.0,  +0.0]           1.000 (0,0)    0.00        0.00      1.00
+   L3 состояние      95.7% 100.0%   -4.3pp [ -6.1,  -2.6]           0.000 (23,0)    0.00        0.00      1.00
+   L3 ЗНАЧЕНИЯ       95.5% 100.0%   -4.5pp [ -6.4,  -2.7]           0.000 (24,0)    0.00        0.00      1.00
+   L3 дословно       93.1% 100.0%   -6.9pp [ -9.1,  -4.7]           0.000 (37,0)    0.00        0.00      1.00
+   для ±2pp на L3 при согласии 96% нужно n ≈ 396 случаев (iid)
+
+4. ТАКСОНОМИЯ ПО ПОЛЯМ — I−C рядом с C′−C; разница и есть шлюз
+   класс               I−C   C′−C   разн   примечание
+   agree               3498   3531    -33   
+   derived                2      0     +2   движок не чинит — производная от подмены
+   same_person_variant     8      0     +8   
+   container_embedded     1      0     +1   
+   composed               2      0     +2   
+   other                 20      0    +20   
+   по типам (I−C): CARD: agree 32/32 · DOB: agree 98/100 · EMAIL: agree 7/7 · LOC: agree 1251/1281 · NAME: agree 1164/1165 · PASSPORT: agree 100/100 · PHONE: agree 796/796 · SNILS: agree 50/50
+
+5. ПРОИЗВОДНЫЕ ПОЛЯ (I−C)
+   patient.age:derived/from_substitute 2
+
+6. ВАЛИДАЦИЯ — семейство validate
+   троек 36 · агент не вызвал (I−C) 0 · (C′−C) 0 · мок отверг в I 0
+
+7. ПРОСТЫЕ ЗНАЧЕНИЯ (не ПД, обязаны уцелеть) — I−C / C′−C
+   intact: 1378 / 1378 · changed: 0 / 0 · absent: 0 / 0
+
+8. РАЗРЕЗЫ — согласие I≈C на L3 по регистру и по виду
+   регистр: chat 158/158 · clean 6/6 · sloppy 63/78 · voice_itn 115/116 · voice_raw 169/176
+   вид: analytics 18/18 · chain 44/48 · compare 37/42 · container 29/30 · correction 36/36 · crm_note 24/24 · decompose 40/42 · derive 54/54 · long_order 54/60 · lookup_list 29/30 · receipt 18/18 · result_feed 34/36 · send_template 23/24 · summary 35/36 · validate 36/36
+
+10. ПРИМЕРЫ РАСХОЖДЕНИЙ (I−C, до 12)
+   chain-002|0 crm_upsert_contact.contact.address.street [other/typo_repaired] C='челюскинццев' I='челюскинцев' (verbatim)
+   chain-009|0 crm_upsert_contact.contact.address.street [composed/] C='вишнёвая' I='вишнёвая глазов' (verbatim)
+   chain-010|0 crm_upsert_contact.contact.address.street [composed/] C='пушкина' I='глазов пушкина' (verbatim)
+   chain-047|0 crm_upsert_contact.contact.address.street [other/typo_repaired] C='тельмна' I='тельмана' (verbatim)
+   compare-000|0 courier_book.address.street [same_person_variant/i1] C='дзержнского' I='дзержинского' (verbatim)
+   compare-000|0 address_suggest.query [same_person_variant/i1] C='дзержнского сорок четыре' I='дзержинского 44' (verbatim)
+   compare-006|0 address_suggest.query [other/renumbered] C='подлесная тридц один корпус четыре' I='подлесная 31, корп. 4' (verbatim)
+   compare-012|0 courier_book.address.street [same_person_variant/i1] C='пушкиан' I='пушкина' (verbatim)
+   compare-012|0 address_suggest.query [same_person_variant/i2] C='пушкиан 113' I='пушкина 113' (invented)
+   compare-015|0 courier_book.address.street [same_person_variant/i1] C='мончегорсуая' I='мончегорская' (verbatim)
+   compare-015|0 address_suggest.query [other/typo_repaired] C='мончегорсуая 195 корпус 1' I='мончегорская 195 корпус 1' (verbatim)
+   compare-021|0 courier_book.address.street [same_person_variant/i1] C='нидняя' I='нижняя' (verbatim)
+

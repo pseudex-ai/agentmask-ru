@@ -15,11 +15,17 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from bench.agentpii4 import schema, validate
-from bench.agentpii4.scenarios import (chain, compare, container, correction, decompose,
-                                       derive, result_feed, summary)
+from bench.agentpii4 import schema, stats, validate
+from bench.agentpii4.scenarios import (analytics, chain, compare, container, correction, crm_note,
+                                       long_bank, long_clinic, long_support,
+                                       normalize,
+                                       decompose, derive, long_order, lookup_list, receipt,
+                                       prompt_rule, search_rank, tool_chain,
+                                       result_feed, send_template, summary)
 from bench.agentpii4.scenarios import validate as validate_kind
 from bench.agentpii4.schema import Case, Ladder
+
+REGISTER_ORDER: tuple[str, ...] = ("voice_raw", "voice_itn", "chat", "sloppy", "clean")
 
 _HERE = Path(__file__).resolve().parent
 SEED = 4
@@ -28,6 +34,13 @@ PLAN: tuple[tuple[object, int, int], ...] = (
     (chain, 16, 48), (result_feed, 12, 36), (correction, 12, 36),
     (validate_kind, 12, 36), (compare, 14, 42), (summary, 12, 36),
     (container, 10, 30), (derive, 18, 54), (decompose, 14, 42),
+    # 05.09: the flow axis (research/2026-09-05-agent-scenario-coverage.md).
+    (lookup_list, 10, 30), (crm_note, 8, 24), (send_template, 8, 24), (receipt, 6, 18),
+    (analytics, 6, 18),
+    # 06.09, Фаза 2 — длинные разговоры с полным набором инструментов.
+    (long_order, 8, 60), (search_rank, 6, 45), (prompt_rule, 5, 35),
+    (tool_chain, 6, 45), (normalize, 5, 40),
+    (long_clinic, 6, 45), (long_bank, 6, 45), (long_support, 6, 45),
 )
 
 
@@ -38,32 +51,140 @@ def build_corpus(seed: int = SEED) -> list[Case]:
     return cases
 
 
+def _register_round_robin(pool: list[Case], want: int, rng: random.Random) -> list[Case]:
+    """`want` cases keeping the register mix, taken round-robin.
+
+    Not `rng.sample`: `clean` is capped at 5% of the corpus, so a proportional
+    draw of thirty rounds it to zero and the tier stops covering a register the
+    full corpus has. Perlitz's rule for the same problem — cut examples, never
+    cut a stratum."""
+    by_register: dict[str, list[Case]] = {}
+    for case in pool:
+        by_register.setdefault(case.register, []).append(case)
+    for bucket in by_register.values():
+        rng.shuffle(bucket)
+    chosen: list[Case] = []
+    while len(chosen) < want and any(by_register.values()):
+        for register in REGISTER_ORDER:
+            if by_register.get(register) and len(chosen) < want:
+                chosen.append(by_register[register].pop())
+    return chosen
+
+
 def build_ladder(cases: list[Case], seed: int) -> Ladder:
-    """Stratified by kind × register; nested (nano ⊂ small ⊂ medium)."""
+    """Frozen tiers: proportional by family, register mix kept, strictly nested,
+    with a holdout no debug tier may touch.
+
+    THE FAMILIES ARE NOT SAMPLED. There are fourteen of them and they are the
+    CLUSTERS; sampling clusters is what makes the design effect bite, while
+    taking all of them and sampling WITHIN is stratification, which reduces
+    variance instead. Every tier therefore carries every family, with a floor
+    of one case each — a tier that has dropped a family cannot answer for it,
+    and a per-family verdict from such a tier is a verdict about nothing.
+    """
     rng = random.Random(f"v4-ladder:{seed}")
     by_kind: dict[str, list[Case]] = {}
     for case in cases:
         by_kind.setdefault(case.kind, []).append(case)
-    small: list[str] = []
-    for module, pilot, _total in PLAN:
-        kind = module.__name__.rsplit(".", 1)[-1]  # type: ignore[attr-defined]
-        kind = "validate" if kind == "validate" else kind
+
+    # The holdout comes off the top, per family, before any debug tier exists.
+    holdout: list[Case] = []
+    debug: list[Case] = []
+    for kind in sorted(by_kind):
         pool = list(by_kind[kind])
-        rng.shuffle(pool)
-        # Keep the register mix: take round-robin over registers.
-        by_register: dict[str, list[Case]] = {}
-        for case in pool:
-            by_register.setdefault(case.register, []).append(case)
-        chosen: list[Case] = []
-        while len(chosen) < pilot:
-            for register in ("voice_raw", "voice_itn", "chat", "sloppy", "clean"):
-                if by_register.get(register) and len(chosen) < pilot:
-                    chosen.append(by_register[register].pop())
-        small.extend(case.id for case in chosen)
-    nano = small[::4][:30]
-    return Ladder(version=1, seed=seed, corpus_sha256=schema.corpus_digest(cases),
-                  tiers={"nano": tuple(nano), "small": tuple(small),
-                         "medium": tuple(case.id for case in cases)})
+        want = max(1, round(len(pool) * schema.HOLDOUT_SHARE))
+        kept = _register_round_robin(pool, want, rng)
+        kept_ids = {case.id for case in kept}
+        holdout.extend(kept)
+        debug.extend(case for case in pool if case.id not in kept_ids)
+
+    debug_by_kind: dict[str, list[Case]] = {}
+    for case in debug:
+        debug_by_kind.setdefault(case.kind, []).append(case)
+
+    tiers: dict[str, tuple[str, ...]] = {}
+    previous: list[Case] = []
+    for name in ("nano", "small", "medium", "large"):
+        target = min(schema.TIER_SIZES[name], len(debug))
+        chosen = list(previous)
+        taken = {case.id for case in chosen}
+        remaining = target - len(chosen)
+        # Proportional to family size, floor one, largest remainder to the
+        # biggest families — the allocation rule, not a shuffle.
+        quota: dict[str, int] = {}
+        for kind in sorted(debug_by_kind):
+            already = sum(1 for case in chosen if case.kind == kind)
+            share = target * len(debug_by_kind[kind]) / len(debug)
+            quota[kind] = max(1, round(share)) - already
+        while remaining > 0 and any(value > 0 for value in quota.values()):
+            for kind in sorted(quota, key=lambda one: -quota[one]):
+                if quota[kind] <= 0 or remaining <= 0:
+                    continue
+                free = [case for case in debug_by_kind[kind] if case.id not in taken]
+                if not free:
+                    quota[kind] = 0
+                    continue
+                pick = _register_round_robin(free, 1, rng)[0]
+                chosen.append(pick)
+                taken.add(pick.id)
+                quota[kind] -= 1
+                remaining -= 1
+        # Rounding down leaves a tier one or two short of the size it is named
+        # for. Topped up from the largest families, which is where the rounding
+        # lost them.
+        while remaining > 0:
+            free_by_kind = {kind: [case for case in pool if case.id not in taken]
+                            for kind, pool in debug_by_kind.items()}
+            biggest = max(free_by_kind, key=lambda kind: len(free_by_kind[kind]))
+            if not free_by_kind[biggest]:
+                break
+            pick = _register_round_robin(free_by_kind[biggest], 1, rng)[0]
+            chosen.append(pick)
+            taken.add(pick.id)
+            remaining -= 1
+        chosen.sort(key=lambda case: case.id)
+        tiers[name] = tuple(case.id for case in chosen)
+        previous = chosen
+    tiers["holdout"] = tuple(sorted(case.id for case in holdout))
+    tiers["max"] = tuple(sorted(case.id for case in cases))
+    return Ladder(version=2, seed=seed, corpus_sha256=schema.corpus_digest(cases), tiers=tiers)
+
+
+def ladder_problems(cases: list[Case], ladder: Ladder) -> list[str]:
+    """Nesting, coverage and disjointness — checked, never assumed."""
+    problems: list[str] = []
+    by_id = {case.id: case for case in cases}
+    order = ("nano", "small", "medium", "large")
+    for smaller, bigger in zip(order, order[1:]):
+        missing = set(ladder.tiers[smaller]) - set(ladder.tiers[bigger])
+        if missing:
+            problems.append(f"ярус {smaller} не вложен в {bigger}: {len(missing)} случаев")
+    held = set(ladder.tiers["holdout"])
+    for name in order:
+        overlap = held & set(ladder.tiers[name])
+        if overlap:
+            problems.append(f"удержание протекло в {name}: {len(overlap)} случаев")
+    if set(ladder.tiers["max"]) != set(by_id):
+        problems.append("ярус max не равен корпусу")
+    if held | set(ladder.tiers["large"]) != set(by_id) and len(ladder.tiers["large"]) == len(cases) - len(held):
+        problems.append("large плюс удержание не покрывают корпус")
+    kinds = {case.kind for case in cases}
+    for name in (*order, "holdout"):
+        covered = {by_id[case_id].kind for case_id in ladder.tiers[name]}
+        if covered != kinds:
+            problems.append(f"ярус {name} потерял семьи: {sorted(kinds - covered)}")
+    return problems
+
+
+def ladder_table(cases: list[Case], ladder: Ladder) -> list[str]:
+    """What each tier can and cannot claim. A size alone says nothing."""
+    lines = ["ярусы (K=3; MDE при доле расхождений 0.10 и DEFF 2.1, мощность 80%):"]
+    for name in ("nano", "small", "medium", "large", "holdout", "max"):
+        size = len(ladder.tiers[name])
+        mde = stats.mde_paired(size, 0.10, 2.1)
+        lines.append(f"  {name:<8} {size:>4} случаев · {size * 3:>5} плеч · "
+                     f"MDE {mde * 100:.1f}pp")
+    return lines
 
 
 def coverage_table(cases: list[Case]) -> list[str]:
@@ -98,10 +219,32 @@ def main() -> int:
     if hits or problems:
         print(f"ОТКАЗ: {len(hits)} поисков в генераторе, {len(problems)} проблем", file=sys.stderr)
         return 1
+    ladder = build_ladder(cases, args.seed)
+    broken = ladder_problems(cases, ladder)
+    for line in broken:
+        print(f"ЛЕСТНИЦА: {line}")
+    for line in ladder_table(cases, ladder):
+        print(line)
+    if broken:
+        print(f"ОТКАЗ: лестница неверна ({len(broken)})", file=sys.stderr)
+        return 1
     if args.check:
+        # THE CORPUS ON DISK IS WHAT EVERY OTHER SCRIPT READS, and it is not
+        # rebuilt by changing the generator. Found on 06.09: the committed
+        # `corpus.json` carried digest 617c7b58 while the generator produced
+        # 18bea411 — four commits of generator changes that `--check` had
+        # validated and `smoke.py` had never seen. A stale corpus does not
+        # fail, it MEASURES SOMETHING ELSE, which is worse.
+        on_disk = Path(args.out) / "corpus.json"
+        if on_disk.exists():
+            stored = str(json.loads(on_disk.read_text(encoding="utf-8")).get("digest", ""))
+            if stored != ladder.corpus_sha256:
+                print(f"ОТКАЗ: на диске корпус {stored[:12]}, генератор даёт "
+                      f"{ladder.corpus_sha256[:12]} — пересобери: "
+                      f"python3 bench/agentpii4/build.py", file=sys.stderr)
+                return 1
         print("корпус собран и проверен, не записан (--check)")
         return 0
-    ladder = build_ladder(cases, args.seed)
     out = Path(args.out)
     (out / "corpus.json").write_text(json.dumps({
         "version": 4, "seed": args.seed, "cases": len(cases),
@@ -113,7 +256,7 @@ def main() -> int:
         "tiers": {name: list(ids) for name, ids in ladder.tiers.items()}},
         ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"записан {out / 'corpus.json'} · digest {ladder.corpus_sha256[:12]} · "
-          f"nano {len(ladder.tiers['nano'])} / small {len(ladder.tiers['small'])} / medium {len(cases)}")
+          + " / ".join(f"{name} {len(ids)}" for name, ids in ladder.tiers.items()))
     return 0
 
 

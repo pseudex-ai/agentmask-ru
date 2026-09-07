@@ -1,0 +1,14 @@
+$ python3 bench/eval_piibench.py
+
+
+Traceback (most recent call last):
+  File "/Users/igor/Projects/Obscura/prototype/bench/eval_piibench.py", line 194, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/Users/igor/Projects/Obscura/prototype/bench/eval_piibench.py", line 112, in main
+    load_dev_bundle()
+  File "/Users/igor/Projects/Obscura/prototype/testkit.py", line 66, in load_dev_bundle
+    ASSETS.load(build_plaintext())
+  File "/Users/igor/Projects/Obscura/prototype/pseudex/assets.py", line 393, in load
+    raise BundleNotLeased(
+pseudex.assets.BundleNotLeased: leased bulk stamped for tuning 'c93d5ec94f059992' but the engine carries 'f3e3061c0471e05e' — the lease and the binary are from different builds; refusing to detect with a mismatched pair

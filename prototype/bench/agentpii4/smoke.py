@@ -13,6 +13,14 @@ a class the live run could never report.
 `--engine` is the same scripted policies through `RealGateway`, which is the
 production path with the real vault. Its report is headed «СКРИПТОВЫЙ АГЕНТ»
 and is never merged with a live number: it proves the plumbing, not the model.
+
+IT IS A SAMPLE, NOT A FIXED NUMBER, AND THE AGENT IS NOT WHAT VARIES. The vault
+mints substitutes with `secrets`, so every process draws a different fake and
+the same corpus scores differently — measured over ten runs of the 474-case
+corpus, L1 100.0 always, L2 99.8-100.0, L3 state 98.7-99.4, L3 VALUES
+97.7-98.3. A move under about 0.7pp is the draw, not a change; `--repeats N`
+averages it down. Read a movement of a WHOLE FAMILY (30 of 30 to 0 of 30) as
+signal and a tenth of a point as weather.
 """
 import argparse
 import sys
@@ -111,6 +119,47 @@ def level_a(cases: list[Case]) -> int:
     ic, _ = compare_triple(correction, _triple(correction, POLICIES["decomposer"], POLICIES["decomposer"], FakeGateway(correction)))
     check("correction: decomposer uses the CURRENT address (agree)", ic.levels.state, str(ic.levels.state_diff[:2]))
 
+    # THE AGENT MAY NEVER WRITE A REAL VALUE IT WAS SHOWN A SUBSTITUTE FOR.
+    # Not a property of the gateway — a property of the INSTRUMENT, and one it
+    # lost twice while the turn structure was being built: once by reading a
+    # seed card's sibling fields off the real item, once by falling back to the
+    # real item's parts when it could not parse a spoken date. Both times every
+    # level reported agreement, because both arms then held the same value. A
+    # leak the rig itself commits is invisible to every other number here.
+    # КАЖДЫЙ ДОСТИЖИМЫЙ ИНСТРУМЕНТ ОБЯЗАН БЫТЬ ВЫЗЫВАЕМ ИЗ САМОГО СЛУЧАЯ.
+    # `payment_create` требует срок действия карты, и ни одно сообщение семьи
+    # `receipt` его не несло: 12 троек из 18 не делали ни одного принятого
+    # вызова, а семья печаталась как 18/18. Дыру закрывал эталонный агент,
+    # подставляя «09/2028» из головы — одинаково в обоих плечах, поэтому в
+    # парной разности она сокращалась и была невидима каждому числу отчёта.
+    # Корпусный инвариант её поймать не мог: `schema.validate` проверяет только
+    # `derived`-поля, а срок и сумма — `plain`. Проверяется исполнением: агент
+    # с политикой `decomposer` проходит случай и не должен получить ни одного
+    # отказа `missing_required`.
+    starved: list[str] = []
+    for case in cases:
+        run = scripted_run(case, "C", 0, PassThrough(case), seed_backend(case),
+                           POLICIES["decomposer"])
+        for call in run.calls:
+            if call.refusal_rule == "missing_required":
+                starved.append(f"{case.id} {call.name}.{call.refusal_path}")
+                break
+    check("каждый достижимый инструмент вызываем из случая", not starved,
+          f"{len(starved)}: {starved[:4]}")
+
+    written_real = _real_values_written(cases)
+    check("scripted agent: no real value written in arm I", not written_real,
+          "; ".join(f"{cid} {kind} {probe!r} (shown {shown!r})"
+                    for cid, kind, probe, shown in written_real[:4]))
+
+    # A MUTATING CALL WAITS FOR THE CUSTOMER TO STOP DICTATING. Without it the
+    # turn-by-turn planner booked on the first turn with half the request and
+    # again on the second; through the real gateway the two arms did not agree
+    # on how many calls that was.
+    late = _late_write_cases(cases)
+    check("turn structure: a write is deferred while a later message adds to it",
+          bool(late), f"no case defers a write ({len(cases)} scanned)")
+
     # Noise floor: a noisy C′ produces disagreement with C.
     noisy = Policy("noisy", noise=0.6, seed=3)
     disagreements = 0
@@ -124,6 +173,63 @@ def level_a(cases: list[Case]) -> int:
     print()
     print("ИТОГО:", "PASS" if not failures else f"FAIL ({failures})")
     return failures
+
+
+def _probes(item: object) -> tuple[str, ...]:
+    """Every rendering of ONE real value the agent could write.
+
+    Not `item.parts` wholesale: `street_type` is «улица» and `gender` is «m» —
+    structure, not the value, and a seeded card legitimately carries them past
+    the substitute."""
+    roles = {"DOB": ("iso",), "NAME": ("surname", "given", "patronymic"),
+             "LOC": ("street",), "PHONE": ("digits",), "SNILS": ("digits",),
+             "INN": ("digits",), "CARD": ("digits",),
+             "PASSPORT": ("series", "number", "digits")}
+    out = {item.value, item.canonical}                     # type: ignore[attr-defined]
+    out.update(item.parts.get(role, "") for role in roles.get(item.type, ()))  # type: ignore[attr-defined]
+    return tuple(one for one in out if len(one) >= 4)
+
+
+def _real_values_written(cases: list[Case]) -> list[tuple[str, str, str, str]]:
+    import re as _re
+    from bench.agentpii4.tools import flatten
+    found: list[tuple[str, str, str, str]] = []
+    for case in cases:
+        gateway = FakeGateway(case)
+        run = scripted_run(case, "I", 0, gateway, seed_backend(case), POLICIES["decomposer"])
+        shown = gateway.substitutes_seen()
+        text = " ".join(str(value) for call in run.calls
+                        for value in flatten(call.written).values() if isinstance(value, str))
+        for item in case.pii:
+            substitute = shown.get(item.id)
+            if not substitute:
+                continue
+            for probe in _probes(item):
+                if probe.casefold() in substitute.casefold():
+                    continue
+                if _re.search(rf"(?<![\w\u0400-\u04ff]){_re.escape(probe)}(?![\w\u0400-\u04ff])",
+                              text, _re.IGNORECASE):
+                    found.append((case.id, item.type, probe, substitute))
+    return found
+
+
+def _late_write_cases(cases: list[Case]) -> list[str]:
+    """Cases where a mutating call is held back past the first user message."""
+    from bench.agentpii4.fake_agent import plan_calls
+    from bench.agentpii4.tools import REGISTRY
+    late: list[str] = []
+    for case in cases:
+        turns = [index for index, message in enumerate(case.messages) if message.role == "user"]
+        if len(turns) < 2:
+            continue
+        gateway = FakeGateway(case)
+        first = plan_calls(case, gateway, POLICIES["decomposer"], turns[0], frozenset(), ())
+        whole = plan_calls(case, gateway, POLICIES["decomposer"], turns[-1], frozenset(), ())
+        early = {name for name, _ in first if REGISTRY[name].mutating}
+        eventual = {name for name, _ in whole if REGISTRY[name].mutating}
+        if eventual - early:
+            late.append(case.id)
+    return late
 
 
 def engine_run(cases: list[Case], policy_name: str, repeats: int) -> int:
