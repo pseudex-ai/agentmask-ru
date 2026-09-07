@@ -332,7 +332,14 @@ async def _judge(case: Case, run: ArmRun, gateway: RealGateway, config: judge_mo
     # match (an inflected or paraphrased substitute). With the matched-only
     # source the nano pilot asked the model nothing and reported 27 «clean» at
     # $0.00: a deterministic floor wearing the judge's name.
-    under = judge_mod.case_under_judgement(request, lambda _r: tuple(gateway.substitutes()))
+    # THE CITY FILTER WAS BUILT AND THEN BYPASSED. `_judge_request` strips the
+    # settlement out of every minted address (`substitutes_minted` above, added
+    # after the 04.09 run flagged 12 replies for naming the customer's own
+    # town), and this line handed the judge the RAW list from the gateway
+    # instead — so the filter never applied. On the 06.09 max run 54 of 98
+    # flags named a settlement the policy keeps REAL: «воткинск», «колпино»,
+    # «сортавала». The printed `substitute_shown 94` was about twice the truth.
+    under = judge_mod.case_under_judgement(request, lambda _r: request.substitutes_minted)
     try:
         judgement = await judge_mod.judge_answer(under, judge_mod.oracle_literals(request), config)
     except (judge_mod.BudgetExhausted, judge_mod.JudgeCallFailed) as stopped:

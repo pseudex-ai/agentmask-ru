@@ -32,6 +32,7 @@ from pseudex.assets import ASSETS, AddressAssets
 from pseudex.detect import Span
 from pseudex.fuzzy import build_index, deletion_keys, lookup, within_one_typo
 from pseudex.names import _typo_of_an_ordinary_word as _names_typo_of_ordinary
+from pseudex.names import is_known_name, is_surname_shaped
 from pseudex import morph_places, spoken
 from pseudex.morph import MORPH
 
@@ -110,7 +111,24 @@ def _word_is_street(word: str, address: AddressAssets) -> bool:
     # ONLY reading is a place is refused.
     if "Geox" in tag and "Surn" not in tag and "ADJF" not in tag:
         return False
-    return "Surn" in tag or "ADJF" in tag or "Geox" in tag
+    if "ADJF" in tag or "Geox" in tag:
+        return True
+    # A SURNAME NAMES A STREET ONLY IN THE GENITIVE SINGULAR — the rule
+    # `_street_shape` states and applies, and that this function did not.
+    # «Букин Сергей 14.03.1987» came out as ONE LOC span «Букин Сергей 14»:
+    # the person was masked as a STREET, «.03.1987» went to the model in the
+    # clear, and the tool received «улица Кедровая 6.03.1987». Reproduced on
+    # every name tried — «Иванов Пётр 05.05.1990», «Соколова Анна 21.09.1980»
+    # — and it is the commonest shape in which an agent is given a patient or
+    # a passenger: name plus date of birth, no comma. Lower case was already
+    # right, because the lower-case arms ask the vocabulary instead.
+    #
+    # The same lesson was learned once for `_street_shape` («морозов 10»,
+    # «кузнецов 12», «Артём Громов 8») and applied there only. One rule, one
+    # function: the genitive PLURAL does not count either, which is what let
+    # «Букин» through — pymorphy reads it as the genitive plural of an
+    # invented «Букины».
+    return _street_shape(word)
 
 
 def _lower_is_street(phrase: str, address: AddressAssets) -> bool:
@@ -643,8 +661,31 @@ def _bare_street_candidates(text: str, address: AddressAssets
     return out
 
 
+def _person_not_street(phrase: str) -> bool:
+    """«Фамилия Имя» is a person, and no Russian street is named that way.
+
+    «Соколова Анна 21.09.1980» came out as the street «Соколова Анна» at house
+    21, because «Соколова» IS a genitive singular surname and улица Соколова
+    exists — the shape rule cannot separate them, and the SECOND word can.
+    Streets named after people carry the surname alone («Ленина», «Гагарина»,
+    «Барышникова») or put the given name FIRST and in the genitive («Максима
+    Горького»), which is a multi-word register entry and never reaches here.
+
+    The given name must be NOMINATIVE: that is what makes it an address to a
+    person rather than a part of «улицы Максима Горького»."""
+    words = [word for word in _WORD_SPLIT_RE.split(phrase) if word]
+    if len(words) != 2 or not is_surname_shaped(words[0]):
+        return False
+    if not is_known_name(words[1]):
+        return False
+    return any("Name" in parse.tag and parse.tag.case == "nomn"
+               for parse in MORPH.parse(words[1]))
+
+
 def _is_street_name(phrase: str, address: AddressAssets) -> bool:
     """Street-name if ANY word (or hyphen part) looks like a toponym/surname/adj."""
+    if _person_not_street(phrase):
+        return False
     for word in _WORD_SPLIT_RE.split(phrase):
         if word and _word_is_street(word, address):
             return True
