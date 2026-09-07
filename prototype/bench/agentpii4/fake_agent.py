@@ -36,6 +36,7 @@ class Policy:
     validates_checksum: bool = False # refuse to call when a checksum fails
     drops_optional: bool = False     # leave optional fields empty
     swaps_person: bool = False       # use another identity's value where two exist
+    tidies: bool = False             # capitalise names and streets, the way a model does
     noise: float = 0.0               # probability of skipping a call (C′ floor)
     seed: int = 0
 
@@ -50,8 +51,26 @@ POLICIES: dict[str, Policy] = {
     "deriver": Policy("deriver", derives=True),
     "validator": Policy("validator", validates_checksum=True),
     "sloppy": Policy("sloppy", drops_optional=True, swaps_person=True),
+    # A MODEL TIDIES AFTER THE CUSTOMER, AND NO SCRIPTED AGENT OF OURS DID.
+    # The customer dictates «ким виктор» in lower case; a real model writes
+    # «Ким Виктор» into the CRM field. Every scripted policy copied the
+    # substitute verbatim, so the substitute and the real value came back in
+    # ONE case and no divergence could arise — the offline instrument was
+    # structurally blind to the largest single class of the 07.09 live run
+    # (262 field divergences, 217 triples of 834). Both arms tidy, so a
+    # gateway that carries the agent's form scores zero here; one that
+    # imposes its own canonical scores every name and every street.
+    "tidy": Policy("tidy", tidies=True),
     "noisy": Policy("noisy", noise=0.3),
 }
+
+
+def _tidied(value: str, policy: Policy) -> str:
+    """`value` as a model writes a proper noun into a field: each word capitalised."""
+    if not policy.tidies or not value:
+        return value
+    return " ".join("-".join(bit[:1].upper() + bit[1:] for bit in word.split("-"))
+                    for word in value.split())
 
 
 class FakeGateway:
@@ -581,17 +600,19 @@ def _as_digits(part: str) -> str:
 
 def _address_args(surface: str, parts: dict[str, str], policy: Policy) -> dict[str, str]:
     if not policy.decomposes:
-        return {"street": surface, "house": "", "flat": ""}
-    return {"street": parts.get("street", surface), "house": _as_digits(parts.get("house", "")),
+        return {"street": _tidied(surface, policy), "house": "", "flat": ""}
+    return {"street": _tidied(parts.get("street", surface), policy),
+            "house": _as_digits(parts.get("house", "")),
             "flat": _as_digits(parts.get("flat", "")), "entrance": _as_digits(parts.get("entrance", "")),
-            "city": parts.get("city", "")}
+            "city": _tidied(parts.get("city", ""), policy)}
 
 
 def _name_args(surface: str, parts: dict[str, str], policy: Policy) -> dict[str, str]:
     if not policy.decomposes:
-        return {"last": surface, "first": "", "middle": ""}
-    return {"last": parts.get("surname", surface.split()[0] if surface else ""),
-            "first": parts.get("given", ""), "middle": parts.get("patronymic", "")}
+        return {"last": _tidied(surface, policy), "first": "", "middle": ""}
+    return {"last": _tidied(parts.get("surname", surface.split()[0] if surface else ""), policy),
+            "first": _tidied(parts.get("given", ""), policy),
+            "middle": _tidied(parts.get("patronymic", ""), policy)}
 
 
 # Which tool shows which table. A seeded row is not knowledge the agent has —

@@ -21,7 +21,7 @@ person's name in the genitive and does not agree with anything. Adjectival names
 import functools
 import re
 
-from pseudex import spoken
+from pseudex import agent_form, spoken
 from pseudex.morph import MORPH
 
 # Generic words that head a Russian address, with the gender each one imposes on
@@ -791,7 +791,7 @@ def strip_leading_city(phrase: str) -> str:
     return tail.strip(" ,")
 
 def place_shape(phrase: str) -> dict[str, object]:
-    """What the written address is MADE OF, so a substitute can be made of the
+    r"""What the written address is MADE OF, so a substitute can be made of the
     same things.
 
     «Новосибирск, Красный проспект, 25» replaced by «улица Лавандовая, 46» loses
@@ -1315,6 +1315,16 @@ _ORDINAL_TO_INT: dict[str, int] = {
 _TRAILING_LITERA = re.compile(r"\s+([а-яё])$")
 
 
+def house_digits(part: str) -> str:
+    """Номер дома цифрами, как бы он ни был написан — «пятьдесят девять» -> «59».
+
+    Публичная обёртка над `_part_to_digits`: разряд номера дома нужен чеканке
+    (`vault._house_like`), а вторая читалка тех же форм разошлась бы с этой
+    ровно так, как расходятся все вторые читалки в этом файле.
+    """
+    return _part_to_digits(part)
+
+
 def _part_to_digits(part: str) -> str:
     """Часть адреса, сказанная словами, — цифрами. Литера дома остаётся буквой.
 
@@ -1389,7 +1399,10 @@ def _like(part: str, model: str) -> str:
         litera = part[len(re.sub(r"\D", "", part)):].strip()
         if spelled:
             return f"{spelled} {litera}".strip()
-    return part
+    # И РЕГИСТР ТОЖЕ АГЕНТСКИЙ. Город хранится в волте строчным, потому что
+    # ключ ищется без учёта регистра; агент пишет «Краснодар», а в CRM
+    # уезжало «краснодар».
+    return agent_form.cased_like(part, model)
 
 
 def _street_like(street: str, model: str) -> str:
@@ -1408,14 +1421,22 @@ def _street_like(street: str, model: str) -> str:
         return street
     theirs = [word for word in model.split()
               if _GENERIC_STEMS.match(word) or word.lower().strip(".") in _SIGNATURE_NOISE]
+    model_named = [word for word in model.split() if word not in theirs]
+    body = agent_form.cased_like(" ".join(named), " ".join(model_named))
     if not theirs:
-        return " ".join(named)
-    if not generic:
-        return street
+        return body
+    # РОДОВОЕ СЛОВО, КОТОРОЕ НАПИСАЛ АГЕНТ, ОСТАЁТСЯ — ДАЖЕ ЕСЛИ У НАС ЕГО НЕТ.
+    # Ветка «у нас нет типа — вернуть своё название целиком» роняла агентское
+    # «ул.» на пол: агент писал «ул. Ольховая, 80», инструмент получал
+    # «солнечная, 104», а контроль — «ул. Солнечная, 104». 55 расхождений на
+    # живом прогоне 07.09. Тип улицы у настоящего адреса тот же самый (он
+    # просто не попал в значение, которое отдал волт), и слово это агентское:
+    # он выбрал и сокращение, и место.
+    #
     # Порядок и написание родового слова — агентские: «ул. Ленина» и «Ленина
     # улица» это его выбор, а не наш.
     lead = model.split()[0] in theirs
-    return f"{theirs[0]} {' '.join(named)}" if lead else f"{' '.join(named)} {theirs[0]}"
+    return f"{theirs[0]} {body}" if lead else f"{body} {theirs[0]}"
 
 
 def in_form_of(value: str, surface: str) -> str:

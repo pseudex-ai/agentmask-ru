@@ -491,7 +491,12 @@ def test_fuller_mention_reuses_the_substitute() -> None:
         restored = json.loads(unmask_arguments(json.dumps(
             {"address": {"locality": full.split(",")[0], "street": street_word, "building": house}},
             ensure_ascii=False), talk))["address"]
-        assert restored == {"locality": "Краснодар", "street": "центральная", "building": "100"}, restored
+        # РЕГИСТР — АГЕНТСКИЙ: он написал «Ивовая» с заглавной, значит и
+        # настоящая улица уходит в инструмент с заглавной. Здесь стояло
+        # «центральная», и это было закреплённым дефектом: волт хранит адрес
+        # каноническим (строчным), контроль писал в CRM «Центральная», а плечо
+        # шлюза — «центральная».
+        assert restored == {"locality": "Краснодар", "street": "Центральная", "building": "100"}, restored
 
         flats = Vault(path, "acme").for_conversation("d-2")
         brief = flats.tokenize("садовая три квартира пять", "LOC")
@@ -578,8 +583,16 @@ def test_directory_record_is_the_customers_address() -> None:
 
         composed = f"Самара, {short}"
         assert mask(composed, talk) == composed, "the model's own composition is not re-minted"
+        # РОДОВОЕ СЛОВО И РЕГИСТР — АГЕНТСКИЕ. Здесь стояло «Самара, луговая
+        # 10»: наше значение без типа улицы и строчными, хотя агент написал
+        # «улица Буковая 106». Тип улицы — маркер того же класса, что «д.» и
+        # «кв.», которые `in_form_of` и так берёт у агента дословно, и движок
+        # уже предпочитал агентское «ул.» нашему «переулок», когда были оба.
+        # Ветка «у нас типа нет — вернуть своё» роняла его на пол: 55
+        # расхождений на живом прогоне 07.09, и в каждом контроль писал ровно
+        # то, что теперь пишем мы.
         assert json.loads(unmask_arguments(json.dumps({"query": composed}, ensure_ascii=False), talk))["query"] \
-            == "Самара, луговая 10"
+            == "Самара, улица Луговая 10"
 
         answer = json.dumps({"suggestions": [
             {"value": register, "data": {"postal_code": "443000", "region": "Самарская область",
@@ -606,7 +619,13 @@ def test_directory_record_is_the_customers_address() -> None:
         booked = json.loads(unmask_arguments(json.dumps({"address": {
             "locality": exact["data"]["city"], "street": exact["data"]["street"],
             "building": exact["data"]["house"]}}, ensure_ascii=False), talk))["address"]
-        assert booked == {"locality": "Самара", "street": "Луговая", "building": "10"}, booked
+        # …И В ДРУГУЮ СТОРОНУ ТОЖЕ. Агент взял улицу из поля карточки, где она
+        # записана строчными, и написал её строчными — значит строчными она и
+        # уезжает. Здесь стояло «Луговая»: это наша канонизация мест
+        # (`_capitalised`) протекала в аргумент. Правило симметрично или его
+        # нет: «регистр агентский» не может означать «агентский, когда он
+        # заглавный».
+        assert booked == {"locality": "Самара", "street": "луговая", "building": "10"}, booked
 
         alone = Vault(path, "acme").for_conversation("d-2")
         assert mask('{"city": "Самара", "temp": "25"}', alone) == '{"city": "Самара", "temp": "25"}'
@@ -892,7 +911,11 @@ def test_name_is_read_with_its_sentence() -> None:
             # gender, and the tool receives the nominative the model writes.
             assert token not in masked or masked.count(token) == 0 or True
             restored = json.loads(unmask_arguments(json.dumps({"name": token}, ensure_ascii=False), vault))["name"]
-            assert restored == expect, (text, restored)
+            # РЕГИСТР ЗДЕСЬ НЕ ПРЕДМЕТ. Подмена чеканится с заглавной, агент
+            # пишет её как есть, и настоящее имя уходит в его регистре —
+            # правило живёт в `agent_form` и закреплено там же. Этот тест про
+            # то, КОГО прочитала фраза, и сравнивать он должен личность.
+            assert restored.casefold() == expect.casefold(), (text, restored)
     print("names OK — one reading of the phrase, the sentence breaks the tie")
 
 

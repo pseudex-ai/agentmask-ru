@@ -9,7 +9,7 @@ import json
 import re
 
 from pseudex.detect import NameSpan, PartSpan, Span
-from pseudex import morph_names, morph_places, translit
+from pseudex import agent_form, morph_names, morph_places, translit
 from pseudex.assets import ASSETS
 from pseudex.profiling import stage
 from pseudex.vault import LOC_TOKEN_PATTERN, TOKEN_RE, Vault, name_key, place_key, _date_canonical
@@ -568,7 +568,16 @@ def _digits_in_form_of(written: str, real: str) -> str:
 # running text. Deliberately permissive: a false positive costs one indexed
 # lookup that finds nothing, a false negative costs a fake value delivered to a
 # tool as if it were real.
-_NAME_WORD = re.compile(r"[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?")
+# ЗАГЛАВНАЯ ВЕТКА — НЕ ПОСЛАБЛЕНИЕ, А ПАРИТЕТ С ДВУМЯ ДРУГИМИ СКАНЕРАМИ.
+# «КУДРЯВЦЕВ» не давал НИ ОДНОГО окна: `[а-яё]+` требует строчной буквы после
+# заглавной. Ключ бы нашёлся — `name_key` и так приводит к нижнему регистру, —
+# но спросить его было некому, и фамилия уходила в инструмент подменой МОЛЧА:
+# `residual_tokens` строится на тех же окнах, поэтому и предупреждения не было.
+# Латинский сканер эту форму знает (`_LATIN_WORD`, `[A-Z]{3,}` — ради «YAN
+# RYBAKOV»), адресный тоже (`_PLACE_RUN_ANY_CASE`); кириллическое имя было
+# единственным, кто её не знал. Три буквы — тот же порог, что у латинского, и
+# по той же причине: две заглавные это инициалы или сокращение.
+_NAME_WORD = re.compile(r"[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?|[А-ЯЁ]{3,}(?:-[А-ЯЁ]{3,})?")
 
 # A place phrase in any case: the generic word inflects (улица/улице/улицу), the
 # adjectival name agrees with it, the house number never moves. A bare settlement
@@ -719,6 +728,18 @@ def _name_windows(text: str) -> list[tuple[int, int, str]]:
 # reason: below it an ordinary short word is as likely as a street name, and the
 # query is wasted more often than not.
 _LOWER_WORD = re.compile(r"(?<![А-ЯЁа-яё-])[а-яё]{5,}(?![А-ЯЁа-яё-])")
+# ПРОГОН СТРОЧНЫХ СЛОВ — ОДНО ИМЯ, А НЕ НЕСКОЛЬКО. Одиночное окно выше знает
+# только слово, и «осипов юрий» восстанавливалось пословно: «осипов» находил
+# владельца и разворачивался в ПОЛНОЕ настоящее имя, а «юрий» не доставал до
+# порога в пять букв и оставался ПОДМЕНОЙ — в инструмент уходило «ким юрий»,
+# половина настоящего человека и половина выдуманного. «Беляев Платон» давало
+# «ким викторатон». Порог в пять букв защищает ОДИНОЧНОЕ слово, где ошибка
+# стоит ложной замены; прогон из двух-трёх слов на порядки специфичнее, и
+# промах стоит одного индексного запроса, который ничего не находит.
+# Две буквы, а не три: «Ян», «Ия», «Яр» — настоящие русские имена, и подмена
+# с таким именем оставляла его фейком («ким ян»). В прогоне из двух-трёх слов
+# короткое слово ничем не рискует — ключ строится по ВСЕМУ окну.
+_LOWER_RUN = re.compile(r"(?<![А-ЯЁа-яё-])[а-яё]{2,}(?:[ -][а-яё]{2,}){1,2}(?![А-ЯЁа-яё-])")
 _LATIN_WORD = re.compile(r"(?<![A-Za-z])(?:[A-Z][a-z]{2,}|[A-Z]{3,})(?![A-Za-z])")
 _INITIALS_PAIR = re.compile(r"(?<![А-ЯЁа-яё])([А-ЯЁ])\.\s?([А-ЯЁ])\.(?![А-ЯЁа-яё])")
 
@@ -756,6 +777,17 @@ def _restore_inflected_spans(text: str, vault: Vault, inflect: bool = True,
         # one indexed point query that returns nothing, and a word that IS ours
         # is the failure this path exists to prevent.
         windows.extend((m.start(), m.end(), m.group()) for m in _LOWER_WORD.finditer(text))
+        # Каждое подокно прогона, как `_name_windows` делает для заглавных:
+        # начало фразы может быть чужим словом, и целиком она не найдётся.
+        for run in _LOWER_RUN.finditer(text):
+            words = [(m.start(), m.end()) for m in re.finditer(r"[а-яё]{2,}", run.group())]
+            for i in range(len(words)):
+                for size in (3, 2):
+                    if i + size > len(words):
+                        continue
+                    start = run.start() + words[i][0]
+                    end = run.start() + words[i + size - 1][1]
+                    windows.append((start, end, text[start:end]))
     # Each window carries BOTH signatures, because a single capitalised word can
     # be either kind and the two normalisers disagree: `Еловцке` is a settlement,
     # and asking the PERSON normaliser about it returns it unchanged, so the row
@@ -1138,7 +1170,17 @@ def _in_case_of(value: str, surface: str, entity_type: str = "NAME",
         # «часть подмены».
         if entity_type in ("LOC", "ADDR"):
             return morph_places.in_form_of(value, surface)
-        return value
+        # РЕГИСТР ИМЕНИ — ТОЖЕ ФОРМА, И ОНА АГЕНТСКАЯ. Волт хранит имя
+        # каноническим, то есть строчным, и `_pick_value` отдавал канон прямо
+        # в аргумент: контроль писал в CRM «Ким Виктор», плечо шлюза — «ким
+        # виктор». 262 расхождения полей на живом прогоне 07.09, задето 217
+        # троек из 834. Регистр не меняет того, ЧТО написано, и ни один
+        # справочник не ищет с его учётом, поэтому цены падежа у него нет.
+        return agent_form.cased_like(value, surface)
+    # ПРОЗА НИЖЕ НЕ ТРОНУТА, И ЭТО ГРАНИЦА ПРАВИЛА. Решение владельца — «никак
+    # не влиять на то, как агент передаёт ПАРАМЕТРЫ»; пересказать клиенту его
+    # же адрес — другой акт, и там действует уже записанное правило «клиент
+    # остаётся при своих словах».
     if entity_type in ("LOC", "ADDR"):
         case = morph_places.detect_case(surface)
         if case is None or case == "nomn":
@@ -1159,6 +1201,7 @@ _STREAM_KEEP = 64
 # a stream must never cut inside one.
 _STREAM_RUN_RE = re.compile(
     r"[А-ЯЁA-Z][а-яёa-z]+(?:[\s,]+[А-ЯЁA-Z][а-яёa-z]+)*"
+    r"|[А-ЯЁA-Z]{3,}(?:[\s,]+[А-ЯЁA-Z]{3,})*"
     r"|[\d+()][\d\s+()\-]*\d")
 
 

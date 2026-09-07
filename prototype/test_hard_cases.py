@@ -598,8 +598,11 @@ def test_a_mistyped_street_reaches_the_tool_as_the_register_spells_it(
     back = json.loads(unmask_arguments(json.dumps(
         {"address": {"street": fake["street"].split()[-1], "building": fake["house"],
                      "sflat": fake.get("flat", "")}}, ensure_ascii=False), talk))
+    # Заглавная — АГЕНТСКАЯ: он написал подмену с заглавной, значит и
+    # исправленное реестром название уходит с заглавной. Содержимое наше,
+    # форма его — те же две половины, что и в самом правиле починки.
     check("в инструмент уходит написание реестра, дом и квартира — клиента",
-          back["address"]["street"] == "мончегорская" and back["address"]["building"] == "195"
+          back["address"]["street"] == "Мончегорская" and back["address"]["building"] == "195"
           and back["address"]["sflat"] == "12", f"{back}")
     # …AND IN PROSE THE CUSTOMER KEEPS HIS OWN WORDS. Repeating his address
     # back corrected is a different act from filling a form with it.
@@ -615,7 +618,7 @@ def test_a_mistyped_street_reaches_the_tool_as_the_register_spells_it(
     back = json.loads(unmask_arguments(json.dumps(
         {"address": {"street": fake["street"].split()[-1]}}, ensure_ascii=False), talk))
     check("склонённая правильная улица доходит как написана",
-          back["address"]["street"] == "мончегорской", f"{back}")
+          back["address"]["street"] == "Мончегорской", f"{back}")
 
 
 def test_address_signature_is_inflection_proof() -> None:
@@ -764,6 +767,8 @@ def main() -> int:
     test_spoken_birth_date_keeps_its_register(vault, detector)
     test_tool_result_with_a_future_date_masks(vault, detector)
     test_chat_register(detector)
+    test_the_form_belongs_to_the_agent(detector)
+    test_the_substitute_keeps_the_house_magnitude(detector)
 
     print()
     if _FAILURES:
@@ -772,6 +777,100 @@ def main() -> int:
     print("hard cases OK — detected, restored, and nothing over-masked")
     return 0
 
+
+
+def test_the_substitute_keeps_the_house_magnitude(detector: Detector) -> None:
+    """Фальшивый дом стоит В ТОМ ЖЕ РАЗРЯДЕ, что настоящий.
+
+    «В дома больше ста не возим» — обычное правило курьерской службы, оно
+    живёт в системном промпте заказчика, и настоящий дом 33 под фальшивым 157
+    его переворачивает: агент отказывается оформлять заказ, которого никто не
+    отменял, и восстановленный ответ противоречит сам себе — «Дом 33 — номер
+    больше 100». 12 троек семьи `prompt_rule` на живом прогоне 07.09, в каждой
+    плечо шлюза не сделало НИ ОДНОГО вызова.
+
+    ПОВТОРАМИ: номер тянется через `secrets`, и одна чеканка ничего не
+    доказывает — разряд может совпасть случайно с вероятностью около трети.
+    """
+    def band(number: str) -> str:
+        value = int(number)
+        return "1-9" if value <= 9 else ("10-99" if value <= 99 else "100+")
+
+    for said, want in (("улица мира 4", "1-9"), ("улица солнечная 33", "10-99"),
+                       ("улица солнечная 157", "100+"),
+                       ("школьная пятьдесят девять", "10-99")):
+        bad = []
+        for draw in range(30):
+            vault = Vault(":memory:", "acme").for_conversation(f"band-{draw}")
+            token = vault.tokenize(said, "LOC")
+            house = morph_places.house_digits(morph_places.split_roles(token).get("house", ""))
+            if not house or band(house) != want:
+                bad.append(token)
+        check(f"разряд дома сохранён: {said}", not bad, f"{len(bad)} из 30: {bad[:3]}")
+
+    # НАСЕЛЁННЫЙ ПУНКТ ВНУТРИ АДРЕСА И ТАК НАСТОЯЩИЙ, и это уже правило движка
+    # (`_settlement_of`), а не то, что надо чинить: почтовый индекс, который
+    # агент выводит из города, поэтому совпадает у обоих плеч. Проверяется
+    # здесь, чтобы правило нельзя было снять молча.
+    vault = Vault(":memory:", "acme").for_conversation("city")
+    token = vault.tokenize("Краснодар, улица солнечная 104", "LOC")
+    check("город внутри адреса остаётся настоящим",
+          token.lower().startswith("краснодар"), token)
+    print()
+
+
+def test_the_form_belongs_to_the_agent(detector: Detector) -> None:
+    """Настоящее значение уходит в инструмент В ФОРМЕ, КОТОРОЙ ПОЛЬЗУЕТСЯ АГЕНТ.
+
+    НИ ОДИН КОРПУС ЭТОГО НЕ ВИДИТ, И ЭТО НЕ ФИГУРА РЕЧИ. Скриптовый агент
+    копирует подмену дословно, поэтому подмена и настоящее значение приходят в
+    одном регистре и расхождения не возникает; а `taxonomy._typed_equal`
+    сравнивает значения без учёта регистра, так что даже на живом прогоне ось
+    ЗНАЧЕНИЙ этот класс прощает. Он виден только на оси ДОСЛОВНОСТИ и в поле
+    заказчика: контроль пишет в CRM «Ким Виктор», плечо шлюза писало «ким
+    виктор» — 262 расхождения на прогоне 07.09, задето 217 троек из 834.
+    Поэтому правило закреплено ЗДЕСЬ, а не в бенчмарке.
+    """
+    import json
+    from pseudex.redact import unmask_arguments
+
+    said = "запишите ким виктор телефон 89601068867 на ул мичурина 14"
+
+    # ПОВТОРАМИ, А НЕ ОДНОЙ ЧЕКАНКОЙ. Волт тянет подмену через `secrets`, и
+    # дефект живёт в НЕКОТОРЫХ парах: строчное «осипов юрий» разваливалось на
+    # «ким юрий» (фамилия настоящая, имя — подмена), а «беляев платон» на
+    # «ким викторатон» — химера из двух людей. Один прогон это пропускает.
+    seen: dict[str, list[str]] = {"title": [], "lower": [], "upper": [], "street": []}
+    for draw in range(40):
+        talk = Vault(":memory:", "acme").for_conversation(f"form-{draw}")
+        mask_text(said, talk, detector.detect(said))
+        rows = dict(talk._conn.execute(  # noqa: SLF001
+            "SELECT entity_type, token FROM tokens WHERE entity_type IN ('NAME','LOC')").fetchall())
+        name, place = rows.get("NAME", ""), rows.get("LOC", "")
+
+        def through(value: str, vault: Vault = talk) -> str:
+            return json.loads(unmask_arguments(json.dumps({"x": value}, ensure_ascii=False), vault))["x"]
+
+        if name:
+            seen["title"].append(through(name.title()))
+            seen["lower"].append(through(name.lower()))
+            seen["upper"].append(through(name.upper()))
+        if place:
+            street = morph_places.split_roles(place).get("street", "").split()[-1]
+            seen["street"].append(through(f"ул. {street.title()}, 14"))
+
+    def all_are(key: str, want: str) -> tuple[bool, str]:
+        bad = [one for one in seen[key] if one != want]
+        return (bool(seen[key]) and not bad), f"{len(bad)} из {len(seen[key])}: {bad[:3]}"
+
+    check("имя с заглавной уходит с заглавной", *all_are("title", "Ким Виктор"))
+    check("имя строчными уходит строчными и ЦЕЛИКОМ", *all_are("lower", "ким виктор"))
+    # D3: заглавная кириллица не давала НИ ОДНОГО окна, и фамилия уезжала
+    # подменой молча — `residual_tokens` строится на тех же окнах.
+    check("имя КАПСОМ уходит КАПСОМ, а не подменой", *all_are("upper", "КИМ ВИКТОР"))
+    check("родовое слово агента остаётся, название и регистр — тоже",
+          *all_are("street", "ул. Мичурина, 14"))
+    print()
 
 
 def test_chat_register(detector: Detector) -> None:

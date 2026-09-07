@@ -1029,6 +1029,40 @@ def _usable_streets() -> tuple[str, ...]:
     return tuple(usable)
 
 
+# РАЗРЯД НОМЕРА ДОМА — СВОЙСТВО, ПО КОТОРОМУ АГЕНТ ПРИНИМАЕТ РЕШЕНИЯ, и
+# подмена, которая его меняет, меняет решение. «в дома больше ста не возим» —
+# обычное правило курьерской службы, оно живёт в системном промпте заказчика, и
+# настоящий дом 33 под фальшивым 157 переворачивает его: агент ОТКАЗЫВАЕТСЯ
+# оформлять заказ, которого никто не отменял. На живом прогоне 07.09 это 12
+# троек семьи `prompt_rule`, и в каждой плечо шлюза не сделало НИ ОДНОГО
+# вызова, а восстановленный ответ противоречил сам себе — «Дом 33 — номер
+# больше 100».
+#
+# ЦЕНА НАЗВАНА И ОНА ЗАПЛАЧЕНА СОЗНАТЕЛЬНО: разряд сообщает наблюдателю, в
+# каком из трёх ведёр стоит настоящий дом, — меньше полутора бит, и меньше
+# того, что уже отдаёт сохранённый год в фальшивой дате рождения. Решение
+# владельца от 07.09; полный разбор в
+# research/2026-09-07-property-preserving-substitutes.md.
+#
+# ИСЧЕРПАТЬ ЭТО НЕЛЬЗЯ. Узкий разряд — это девять номеров, но улица тянется из
+# большого словаря, и уникальность даёт она; там, где улица зафиксирована
+# (`_same_street_in_conversation`), `_unique_token` на середине попыток и так
+# отпускает её. Пул, который заказчик может исчерпать, — это вечный 5xx, и
+# этот путь такого пула не создаёт.
+_HOUSE_BANDS: tuple[tuple[int, int], ...] = ((1, 9), (10, 99), (100, _FAKE_HOUSE_MAX))
+
+
+def _house_like(original: str) -> int:
+    """Фальшивый номер дома ТОГО ЖЕ РАЗРЯДА, что настоящий."""
+    spoken_house = morph_places.split_roles(original).get("house", "") if original else ""
+    digits = re.sub(r"\D", "", morph_places.house_digits(spoken_house))
+    if not digits:
+        return secrets.randbelow(_FAKE_HOUSE_MAX) + 1
+    real = min(int(digits[:6]), _FAKE_HOUSE_MAX)
+    low, high = next(band for band in _HOUSE_BANDS if real <= band[1])
+    return low + secrets.randbelow(high - low + 1)
+
+
 def _fake_place(original: str, head: str = "") -> str:
     """A place of the SAME KIND as the one it replaces, in the nominative.
 
@@ -1104,7 +1138,7 @@ def _fake_place(original: str, head: str = "") -> str:
         # recognise it, and our own substitute gets masked a second time.
         # «улица Рябиновая 83, кв. 203» is detected whole; the comma version is
         # not, and it is also how people actually write it.
-        out = f"{out} {secrets.randbelow(_FAKE_HOUSE_MAX) + 1}"
+        out = f"{out} {_house_like(original)}"
     # ПОДЪЕЗД ЧЕКАНИТСЯ, ПОТОМУ ЧТО ИНАЧЕ ЕГО НЕЛЬЗЯ ВЕРНУТЬ. Подмена его просто
     # теряла — «улица клубная дом 160 второй подъезд» становилось «улица
     # Сиреневая 166», — и дальше ломалось не восстановление, а сам разговор:
