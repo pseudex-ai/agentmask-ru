@@ -48,6 +48,20 @@ def _one(ctx: c.Ctx) -> Case:
     first.plain_value("s1", _amount(ctx), "quantity", "сумма — не ПД, обязана уцелеть")
     first.say("рублей карта")
     first.value("c1", c.card(ctx, pools.card_digits(ctx.rng)))
+    # СРОК ДЕЙСТВИЯ ТРЕБУЕТ ПАРСЕР, И НИ ОДНО СООБЩЕНИЕ СЕМЬИ ЕГО НЕ НЕСЛО.
+    # `payment_create` отвергает вызов без `expiry_month`/`expiry_year`, поэтому
+    # 12 троек из 18 не делали НИ ОДНОГО принятого вызова, а семья печаталась
+    # как 18/18 — ради чего она написана (контакт как условие фискализации по
+    # 54-ФЗ) не проверялось ни разу. Дыру закрывал эталонный агент, подставляя
+    # «09/2028» из головы; теперь её закрывает клиент, как в жизни.
+    month, year = pools.card_expiry(ctx.rng)
+    if ctx.spoken:
+        first.say("срок").plain_value(
+            "exp", f"{pools.spell_cardinal(int(month))} {pools.spell_year(int(year))}",
+            "time_of_day", "срок действия карты — не ПД, обязан уцелеть")
+    else:
+        first.say("срок").plain_value("exp", f"{month}/{year[2:]}", "time_of_day",
+                                      "срок действия карты — не ПД, обязан уцелеть")
     first.say("держатель")
     first.value("n1", c.name(ctx, drawn.person, ("given", "surname")))
     if to_email:

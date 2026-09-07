@@ -44,7 +44,7 @@ def _reachable(index: int) -> tuple[str, ...]:
 
 
 def _one(ctx: c.Ctx) -> Case:
-    city = ctx.rng.choice(list(pools.CITIES)[:10])
+    city = ctx.rng.choice(list(pools.CORPUS_CITIES))
     drawn = c.draw(ctx, city=city, with_flat=False)
     card = pools.card_digits(ctx.rng)
     identity = f"p{ctx.index}"
@@ -58,6 +58,26 @@ def _one(ctx: c.Ctx) -> Case:
     first = c.MessageDraft(ctx)
     first.say(c.opener(ctx)).say("оплатите заказ картой")
     first.value("c1", c.card(ctx, card))
+    # СУММА И СРОК — ТО, ЧЕГО ПАРСЕР ТРЕБУЕТ, А СЕМЬЯ НЕ НЕСЛА. `payment_create`
+    # отвергает вызов без `amount.value` и без срока карты, поэтому эталонный
+    # агент подставлял «780.00» и «09/2028» из головы: значения одинаковые в
+    # обоих плечах, поэтому в парной разности они сокращались — и семья
+    # проверяла всё, кроме того, что клиент вообще назвал сумму.
+    month, year = pools.card_expiry(ctx.rng)
+    rubles = ctx.rng.randrange(1200, 9800)
+    if ctx.spoken:
+        first.say("срок").plain_value(
+            "exp", f"{pools.spell_cardinal(int(month))} {pools.spell_year(int(year))}",
+            "time_of_day", "срок действия карты — не ПД")
+        # Числительное разбивается по группам: устная таблица знает сотни, не
+        # тысячи — «шесть тысяч девятьсот двадцать один» это две группы.
+        first.say("сумма").plain_value(
+            "amt", " ".join(pools.spell_groups(str(rubles), (1, 3))) + " тысяч рублей",
+            "quantity", "сумма — не ПД")
+    else:
+        first.say("срок").plain_value("exp", f"{month}/{year[2:]}", "time_of_day",
+                                      "срок действия карты — не ПД")
+        first.say("сумма").plain_value("amt", f"{rubles} рублей", "quantity", "сумма — не ПД")
     builder.user(first, {"c1": ("CARD", identity, "required", False)})
 
     second = c.MessageDraft(ctx)

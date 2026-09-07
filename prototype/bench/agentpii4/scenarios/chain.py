@@ -27,7 +27,7 @@ def build(seed: int, count: int) -> list[Case]:
 
 
 def _one(ctx: c.Ctx) -> Case:
-    city = ctx.rng.choice(list(pools.CITIES)[:10])
+    city = ctx.rng.choice(list(pools.CORPUS_CITIES))
     drawn = c.draw(ctx, city=city, with_flat=True)
     # THE CITY IS IN THE NEW ADDRESS, because `crm_upsert_contact` refuses an
     # address without one (`tools._upsert_parse`) and the customer never said

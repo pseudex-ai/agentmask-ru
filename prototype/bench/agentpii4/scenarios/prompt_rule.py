@@ -52,7 +52,7 @@ def _rule(ctx: c.Ctx, city: str) -> str:
 
 
 def _one(ctx: c.Ctx) -> Case:
-    city = ctx.rng.choice(list(pools.CITIES)[:10])
+    city = ctx.rng.choice(list(pools.CORPUS_CITIES))
     drawn = c.draw(ctx, city=city, with_flat=True)
     # THE REAL HOUSE OBEYS THE RULE. `draw_address` numbers houses across the
     # whole range, so a case whose real address is already outside the boundary

@@ -126,6 +126,27 @@ def level_a(cases: list[Case]) -> int:
     # real item's parts when it could not parse a spoken date. Both times every
     # level reported agreement, because both arms then held the same value. A
     # leak the rig itself commits is invisible to every other number here.
+    # КАЖДЫЙ ДОСТИЖИМЫЙ ИНСТРУМЕНТ ОБЯЗАН БЫТЬ ВЫЗЫВАЕМ ИЗ САМОГО СЛУЧАЯ.
+    # `payment_create` требует срок действия карты, и ни одно сообщение семьи
+    # `receipt` его не несло: 12 троек из 18 не делали ни одного принятого
+    # вызова, а семья печаталась как 18/18. Дыру закрывал эталонный агент,
+    # подставляя «09/2028» из головы — одинаково в обоих плечах, поэтому в
+    # парной разности она сокращалась и была невидима каждому числу отчёта.
+    # Корпусный инвариант её поймать не мог: `schema.validate` проверяет только
+    # `derived`-поля, а срок и сумма — `plain`. Проверяется исполнением: агент
+    # с политикой `decomposer` проходит случай и не должен получить ни одного
+    # отказа `missing_required`.
+    starved: list[str] = []
+    for case in cases:
+        run = scripted_run(case, "C", 0, PassThrough(case), seed_backend(case),
+                           POLICIES["decomposer"])
+        for call in run.calls:
+            if call.refusal_rule == "missing_required":
+                starved.append(f"{case.id} {call.name}.{call.refusal_path}")
+                break
+    check("каждый достижимый инструмент вызываем из случая", not starved,
+          f"{len(starved)}: {starved[:4]}")
+
     written_real = _real_values_written(cases)
     check("scripted agent: no real value written in arm I", not written_real,
           "; ".join(f"{cid} {kind} {probe!r} (shown {shown!r})"

@@ -28,7 +28,7 @@ def build(seed: int, count: int) -> list[Case]:
 
 
 def _one(ctx: c.Ctx) -> Case:
-    cities = list(pools.CITIES)[:10]
+    cities = list(pools.CORPUS_CITIES)
     first_city = ctx.rng.choice(cities)
     second_city = ctx.rng.choice([one for one in cities if one != first_city])
     first_person = c.draw(ctx, city=first_city)

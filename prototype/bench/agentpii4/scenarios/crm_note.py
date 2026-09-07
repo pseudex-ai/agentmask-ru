@@ -41,7 +41,7 @@ def _one(ctx: c.Ctx) -> Case:
 
 def _call_summary(ctx: c.Ctx) -> Case:
     """Итог звонка в заметку: кто звонил, о чём и куда везти."""
-    city = ctx.rng.choice(list(pools.CITIES)[:10])
+    city = ctx.rng.choice(list(pools.CORPUS_CITIES))
     drawn = c.draw(ctx, city=city, with_flat=True)
     identity = f"p{ctx.index}"
     builder = c.CaseBuilder(
@@ -74,7 +74,7 @@ def _call_summary(ctx: c.Ctx) -> Case:
 
 def _complaint(ctx: c.Ctx) -> Case:
     """Жалоба на ДРУГОГО человека: в заметке двое, и подмены не должны слиться."""
-    city = ctx.rng.choice(list(pools.CITIES)[:10])
+    city = ctx.rng.choice(list(pools.CORPUS_CITIES))
     drawn = c.draw(ctx, city=city, with_flat=True)
     courier = c.draw(c.ctx_for("crm_note", ctx.seed, ctx.index * 100 + 1, ctx.register), foreign=True)
     identity = f"p{ctx.index}"

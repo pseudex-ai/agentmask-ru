@@ -54,7 +54,7 @@ def _fias(ctx: c.Ctx) -> str:
 
 
 def _one(ctx: c.Ctx) -> Case:
-    city = ctx.rng.choice(list(pools.CITIES)[:10])
+    city = ctx.rng.choice(list(pools.CORPUS_CITIES))
     drawn = c.draw(ctx, city=city, with_flat=True)
     identity = f"p{ctx.index}"
     reachable = ["crm_find_contact", "address_suggest", "delivery_create_order", "order_status"]

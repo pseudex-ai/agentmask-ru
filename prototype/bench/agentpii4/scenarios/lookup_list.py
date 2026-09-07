@@ -41,7 +41,7 @@ def _one(ctx: c.Ctx) -> Case:
 
 def _namesakes(ctx: c.Ctx) -> Case:
     """Три разных человека с одной фамилией; различает дата рождения."""
-    city = ctx.rng.choice(list(pools.CITIES)[:10])
+    city = ctx.rng.choice(list(pools.CORPUS_CITIES))
     target = c.draw(ctx, city=city, with_flat=True)
     # THE NAMESAKES MUST DIFFER FROM THE TARGET AND FROM EACH OTHER. Two cards
     # holding the same full name are one value to the vault and get ONE
@@ -111,7 +111,7 @@ def _namesakes(ctx: c.Ctx) -> Case:
 
 def _duplicates(ctx: c.Ctx) -> Case:
     """ОДИН человек в двух карточках: разные телефоны, одно ФИО."""
-    city = ctx.rng.choice(list(pools.CITIES)[:10])
+    city = ctx.rng.choice(list(pools.CORPUS_CITIES))
     drawn = c.draw(ctx, city=city, with_flat=True)
     # The same person, entered twice with different contact details — the shape
     # `crm.duplicate.findbycomm` exists for. One identity, so the benchmark

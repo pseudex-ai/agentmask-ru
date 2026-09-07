@@ -45,7 +45,7 @@ def build(seed: int, count: int) -> list[Case]:
 
 
 def _one(ctx: c.Ctx) -> Case:
-    cities = list(pools.CITIES)[:10]
+    cities = list(pools.CORPUS_CITIES)
     city = ctx.rng.choice(cities)
     other_city = ctx.rng.choice([one for one in cities if one != city])
     drawn = c.draw(ctx, city="", with_flat=False, with_type=False)

@@ -84,7 +84,7 @@ def _crm(ctx: c.Ctx) -> Case:
 
 
 def _delivery(ctx: c.Ctx) -> Case:
-    city = ctx.rng.choice(list(pools.CITIES)[:10])
+    city = ctx.rng.choice(list(pools.CORPUS_CITIES))
     drawn = c.draw(ctx, city=city, with_flat=True, with_type=True)
     identity = f"p{ctx.index}"
     builder = c.CaseBuilder(
@@ -107,7 +107,7 @@ def _delivery(ctx: c.Ctx) -> Case:
 
 
 def _callback(ctx: c.Ctx) -> Case:
-    city = ctx.rng.choice(list(pools.CITIES)[:10])
+    city = ctx.rng.choice(list(pools.CORPUS_CITIES))
     drawn = c.draw(ctx, city=city, with_flat=False, with_type=True)
     identity = f"p{ctx.index}"
     builder = c.CaseBuilder(

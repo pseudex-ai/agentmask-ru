@@ -602,6 +602,72 @@ def _as_digits(part: str) -> str:
         return part
 
 
+# РОЛЬ ПРОСТОГО ЗНАЧЕНИЯ ОБЪЯВЛЕНА В КОРПУСЕ, А НЕ УГАДЫВАЕТСЯ ПО ТЕКСТУ.
+# `PlainValue.why` пишет сценарий, и он же единственный, кто знает, что это за
+# число: сумма пишется то с «рублей», то без («780» плюс отдельным словом
+# «рублей карта»), то словами. Регулярка по поверхности угадывала три формы из
+# пяти и молча пропускала остальные.
+_AMOUNT_WHY = "сумма"
+_EXPIRY_WHY = "срок действия"
+_EXPIRY_RE = re.compile(r"\b(0?[1-9]|1[0-2])\s*/\s*(\d{2,4})\b")
+_DIGITS_RE = re.compile(r"\d[\d\s]*")
+
+
+def _plain_for(case: Case, why_prefix: str) -> str:
+    for plain in case.plain:
+        if plain.why.startswith(why_prefix):
+            return plain.value
+    return ""
+
+
+def _card_expiry(case: Case) -> tuple[str, str]:
+    """Срок действия карты — из простого значения случая, «» когда его нет.
+
+    УСТНАЯ ФОРМА ЧИТАЕТСЯ СВЕРКОЙ, А НЕ ВТОРЫМ ДЕКОДЕРОМ. `spell_year` даёт
+    порядковое («двадцать восьмого»), которого `parse_numerals` не знает — он
+    для количественных. Писать под это отдельную читалку значит завести вторую
+    пару правил на ту же фразу, и она разойдётся с первой, как расходятся все
+    вторые читалки. Кандидатов десять лет и двенадцать месяцев: сверка с самим
+    генератором точна по построению и не может устареть.
+    """
+    value = _plain_for(case, _EXPIRY_WHY)
+    if not value:
+        return "", ""
+    hit = _EXPIRY_RE.search(value)
+    if hit is not None:
+        year = hit.group(2)
+        return f"{int(hit.group(1)):02d}", year if len(year) == 4 else f"20{year}"
+    words = value.lower().split()
+    for month in range(1, 13):
+        spoken_month = pools.spell_cardinal(month).split()
+        if words[:len(spoken_month)] != spoken_month:
+            continue
+        tail = " ".join(words[len(spoken_month):])
+        for year in range(2026, 2036):
+            if pools.spell_year(year) == tail:
+                return f"{month:02d}", str(year)
+    return "", ""
+
+
+def _amount_value(case: Case) -> str:
+    """Сумма — из простого значения случая, «» когда клиент её не называл."""
+    value = _plain_for(case, _AMOUNT_WHY)
+    if not value:
+        return ""
+    hit = _DIGITS_RE.search(value)
+    if hit is not None:
+        return f"{int(re.sub(r'\D', '', hit.group(0)))}.00"
+    words = tuple(word for word in re.findall(r"[а-яё]+", value.lower())
+                  if not word.startswith(("рубл", "тысяч")))
+    try:
+        digits = pools.parse_numerals(words)
+    except Exception:  # noqa: BLE001 — не числительное, значит не сумма
+        return ""
+    if not digits:
+        return ""
+    return f"{int(digits) * (1000 if 'тысяч' in value.lower() else 1)}.00"
+
+
 def _address_args(surface: str, parts: dict[str, str], policy: Policy) -> dict[str, str]:
     if not policy.decomposes:
         return {"street": _tidied(surface, policy), "house": "", "flat": ""}
@@ -1045,10 +1111,19 @@ def plan_calls(case: Case, gateway: object, policy: Policy, upto_msg: int,
             # THE RECEIPT IS NOT OPTIONAL WHEN A CONTACT IS KNOWN. 54-ФЗ makes
             # one of email/phone mandatory, and both acquirers refuse without
             # it — an agent holding a phone fills it, or the sale stops.
+            # СУММА И СРОК БЕРУТСЯ ИЗ САМОГО СЛУЧАЯ, А НЕ ИЗ ГОЛОВЫ. Здесь
+            # стояли «780.00» и «09/2028» — константы, одинаковые в обоих
+            # плечах, поэтому в парной разности они сокращались и ни одно
+            # число отчёта не могло заметить, что семья `receipt` вообще не
+            # несла срока действия карты. Эталон, закрывающий дыру корпуса,
+            # делает дыру невидимой: 12 троек из 18 не делали ни одного
+            # принятого вызова, а семья печаталась как 18/18.
+            month, year = _card_expiry(case)
             call: dict[str, object] = {
-                "amount": {"value": "780.00", "currency": "RUB"},
+                "amount": {"value": _amount_value(case), "currency": "RUB"},
                 "payment_method_data": {"type": "bank_card",
-                                        "card": {"number": digits, "expiry_month": "09", "expiry_year": "2028",
+                                        "card": {"number": digits, "expiry_month": month,
+                                                 "expiry_year": year,
                                                  "cardholder": holder or "CARD HOLDER"}}}
             email_surface, _email_parts = _pick(items, "EMAIL", view, policy)
             if phone or email_surface:

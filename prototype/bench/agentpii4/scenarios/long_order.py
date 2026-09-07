@@ -60,7 +60,7 @@ def _reachable(index: int) -> tuple[str, ...]:
 
 
 def _one(ctx: c.Ctx) -> Case:
-    city = ctx.rng.choice(list(pools.CITIES)[:10])
+    city = ctx.rng.choice(list(pools.CORPUS_CITIES))
     buyer = c.draw(ctx, city=city, with_flat=True)
     # THE RECIPIENT IS DRAWN FROM `FOREIGN` FOR THE SAME REASON `container`
     # DOES IT: the shared-people pool recurs across the corpus by design, and

@@ -37,7 +37,7 @@ def _one(ctx: c.Ctx) -> Case:
 
 def _delivery_eta(ctx: c.Ctx) -> Case:
     """Шаблон с именем И адресом: две переменные, два типа ПД."""
-    city = ctx.rng.choice(list(pools.CITIES)[:10])
+    city = ctx.rng.choice(list(pools.CORPUS_CITIES))
     drawn = c.draw(ctx, city=city, with_flat=True)
     identity = f"p{ctx.index}"
     builder = c.CaseBuilder(

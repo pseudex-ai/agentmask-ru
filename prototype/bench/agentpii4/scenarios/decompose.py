@@ -68,7 +68,7 @@ def _passport(ctx: c.Ctx) -> Case:
 
 
 def _courier(ctx: c.Ctx) -> Case:
-    city = ctx.rng.choice(list(pools.CITIES)[:10])
+    city = ctx.rng.choice(list(pools.CORPUS_CITIES))
     drawn = c.draw(ctx, city=city, with_flat=True, with_entrance=True, with_type=ctx.rng.random() < 0.4)
     identity = f"p{ctx.index}"
     builder = c.CaseBuilder(

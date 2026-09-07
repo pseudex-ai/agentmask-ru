@@ -149,6 +149,23 @@ def render(cases: dict[str, Case], scored: Sequence[Scored], excluded: Sequence[
                 leaked_items.append(f"{one.triple.case_id}|{one.triple.repeat} {item.type} «{item.value[:48]}»")
     lines += ["", f"0. УТЕЧКИ В МОДЕЛЬ — значения из сообщений, для которых плечо шлюза НЕ показало подмену: "
                   f"{sum(leaks.values())} из {seen_values} ({_pct(sum(leaks.values()), seen_values).strip()})"]
+    # ДВЕ СТРАТЫ, НИКОГДА ОДНИМ ЧИСЛОМ. Пулы корпуса лежат ВНУТРИ лизованных
+    # словарей, поэтому общий процент описывает прежде всего то, насколько
+    # корпус похож на словарь. Случаи со `selection == "rare"` берут имя и улицу
+    # снаружи — по внешнему критерию, а не по «движок их не находит», — и
+    # сложенные с остальными они прячут обе половины сразу.
+    strata: dict[str, list[int]] = defaultdict(list)
+    for one in scored:
+        case = cases[one.triple.case_id]
+        for item in case.pii:
+            if item.where.kind != "message":
+                continue
+            strata[case.provenance.selection].append(int(item.id not in one.triple.I.substitutes))
+    if len(strata) > 1:
+        lines.append("   по страте: " + " · ".join(
+            f"{'вне словарей' if name == 'rare' else 'в словарях'} {sum(rows)}/{len(rows)}"
+            f" ({_pct(sum(rows), len(rows)).strip()})"
+            for name, rows in sorted(strata.items())))
     if leaks:
         lines.append("   " + " · ".join(f"{key} {count}" for key, count in leaks.most_common()))
         lines += [f"   {row}" for row in leaked_items[:dump]]
