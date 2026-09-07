@@ -71,7 +71,14 @@ def _one(ctx: c.Ctx) -> Case:
         rule=_rule(ctx, city),
         note="правило доставки в системном промпте; подмена может его нарушить "
              "и агент откажет там, где отказывать не следовало")
-    c.contact_seed("c-1", drawn, city, ctx, builder, identity)
+    # THE CARD HOLDS THE SAME ADDRESS THE CUSTOMER SAYS. Seeded with
+    # `drawn.address` it held the same STREET at a different house, so the two
+    # arms had two real addresses of one person to choose between: one read the
+    # message, the other read the card it had just looked up, and the
+    # comparator scored a correct restoration as a changed house number. A case
+    # that offers the model two right answers measures which one it picked.
+    import dataclasses as _dc
+    c.contact_seed("c-1", _dc.replace(drawn, address=address), city, ctx, builder, identity)
 
     first = c.MessageDraft(ctx)
     first.say(c.opener(ctx)).say("оформите доставку на")

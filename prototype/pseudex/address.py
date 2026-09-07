@@ -943,7 +943,18 @@ def register_spelling(word: str) -> str:
     # may be in the frequent set — two common neighbours is a genuine ambiguity
     # and is still refused, as «лениа» was.
     frequent = found & ASSETS.get().address.street_frequent
-    return next(iter(frequent)) if len(frequent) == 1 else ""
+    # «ЗЕЛЕНЫЙ» И «ЗЕЛЁНЫЙ» — ОДНО ИМЯ, И РЕЕСТР ХРАНИТ ОБА. Two spellings of
+    # one word are not an ambiguity: refusing them refused «зелный», a plain
+    # typo of the commonest adjective in the register. Grouped by the ё-fold,
+    # and the form returned is the one the register spells more often — which,
+    # for a name that reached this set at all, is the one people write.
+    by_fold: dict[str, list[str]] = {}
+    for candidate in frequent:
+        by_fold.setdefault(candidate.replace("ё", "е"), []).append(candidate)
+    if len(by_fold) != 1:
+        return ""
+    same = sorted(next(iter(by_fold.values())))
+    return same[0] if len(same) == 1 else min(same, key=lambda one: ("ё" in one, one))
 
 
 def repair_street(value: str) -> str:
