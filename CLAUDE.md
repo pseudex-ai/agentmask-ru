@@ -486,6 +486,53 @@ Recital 14 выводит его из-под регламента, 152-ФЗ пр
 четыре валидных), их `TOKEN` — любая энтропия против наших опубликованных
 префиксов, а своего типа CVC у нас нет.
 
+**AN INSTRUMENT THAT CANNOT FAIL IS NOT AN INSTRUMENT, AND v4 COULD NOT FAIL IN
+FOUR PLACES AT ONCE.** All four were found by reading the code, not by a number
+moving, and each one worked in the gateway's favour:
+
+- **A triple with nothing to compare passed all five levels.** `values_ok` is
+  `not any(...)` over an EMPTY list of fields, `level_state` compares zero records
+  and says «equal», `level_keys` never enters its loop. `receipt` printed 18/18
+  while 12 of those 18 triples made no accepted call at all. `LevelVerdict.comparable`
+  names the levels a pair had anything to say about; the rest are `None`, and BOTH
+  pairs must be comparable or the effect would move without any arm acting.
+- **`FieldSpec.required` stood on 69 specifications and was read by no scorer**, so
+  «the control filled the field the tool demands and the gateway arm did not» scored
+  as agreement. `absent_required` is outside the whitelist; the optional half of the
+  argument still holds.
+- **There was no level for «did the arm act at all».** `state` compares the records
+  that exist, and when the gateway arm wrote none it compares nothing. Exactly one
+  arm was left out of a mutation the other two performed 78 times for I against 48
+  for C and 41 for C′ — a floor of 44.5.
+- **Over-masking was not measured by anything.** `Case.negatives` was declared, the
+  API written, and no family ever called it. Recall without precision is bought by
+  one line that masks everything.
+
+**NEITHER McNEMAR NOR A CONFIDENCE INTERVAL CAN PROVE «NO EFFECT».** They answer a
+question about a DIFFERENCE, and failing to find one is equally consistent with a
+corpus too small to see it. The product's promise is the other claim, so the report
+publishes a TOST verdict at δ=3pp — one margin for every level, so none can be
+granted a looser promise by a decision made after the numbers were seen. The
+interval form is exact rather than approximate and reuses the same cluster
+bootstrap, so two lines of one report cannot disagree about the data. Plus a
+resolution floor of 1/n: a percentile bootstrap over identical cases returns a
+zero-width interval, and zero width certifies ANY margin.
+
+**A CALL THE OTHER ARM NEVER MADE PRODUCES TEN FIELD VERDICTS, AND THE TAXONOMY
+TABLE DROWNS IN THEM.** `extra +131` and `absent_required +55` read as «the gateway
+writes 131 extra fields»; the truth was thirteen net extra CALLS, counted once per
+field of each. Read the call level first, and the field level only for calls both
+arms made.
+
+**A BENCHMARK'S OWN CONVENTION IS A FOURTH CONVENTION.** The instrument accepted
+three transliteration standards plus one «common» table and scored everything else
+against the gateway — while the CONTROL arm wrote «Kuznetsov Dmitry» and «Kuznetsov
+Dmitriy» in one run, «Yulia» and «Yuliya», «Maxim» and «Maksim». Widening the
+accepted set by SYLLABLE (never by distance — another person's name still matches
+nothing) took the value axis from −1.7pp to −0.3pp with McNemar (21,20), p=1.000.
+The instrument's habit must be a MODEL's habit, and the same lesson is already
+written into the engine's own `translit.align`.
+
 `bench/gate/` is the ceiling of the dictionary gate, and it is the instrument that
 found four of the defects above. 600 occurrences of real speech labelled BY HAND
 in context, two strata that never add up: of what the gate masks 78.0% must be
@@ -1081,6 +1128,61 @@ direction when done the obvious way:
   acts. v3's tool axis drops 1.1pp because its ground truth is the customer's
   words verbatim and it has no control arm; the class is named `typo_repaired`
   rather than folded into `ok`.
+
+- **THE FORM BELONGS TO THE AGENT, THE CONTENT TO THE VAULT.** The vault stores a
+  name canonically — lower case — and `_pick_value` handed that canonical straight
+  into a tool argument: the control wrote «Ким Виктор» into the CRM and the gateway
+  arm wrote «ким виктор». 262 field divergences on the 07.09 live run, 217 triples
+  of 834, the largest single class in it. `agent_form.cased_like` carries the case
+  word by word and positionally, and the rule is SYMMETRIC or it is nothing: an
+  agent that wrote lower case gets lower case back. PROSE IS UNTOUCHED — repeating
+  the customer's own address back to him is a different act from filling a form
+  with it, and there the older rule holds. The case has none of the price the CASE
+  (падеж) has: it changes nothing about WHAT is written, and no register looks up
+  with regard to it.
+- **THE AGENT'S GENERIC WORD SURVIVES EVEN WHEN OURS IS ABSENT.** `_street_like` had
+  a branch «we have no street type — return our name», and the agent's «ул.» fell
+  on the floor: he wrote «ул. Ольховая, 80» and the tool received «солнечная, 104»
+  while the control received «ул. Солнечная, 104». The type word is a marker of the
+  same class as «д.» and «кв.», which `in_form_of` already takes from the agent
+  verbatim, and the engine already preferred the agent's «ул.» over our «переулок»
+  when both existed.
+- **A SUBSTITUTE HOUSE NUMBER KEEPS THE MAGNITUDE OF THE REAL ONE.** «we do not
+  deliver above house 100» lives in the customer's system prompt, and a real house
+  33 under a fake 157 inverts it: the agent REFUSES an order nobody cancelled, and
+  the restored answer contradicts itself — «Дом 33 — номер больше 100». 12 triples
+  of `prompt_rule`, every one of them with zero calls on the gateway leg. The price
+  is named and paid deliberately: the band is under one and a half bits, less than
+  the year already given away by a fake date of birth. Owner's decision, 07.09.
+- **ONE ADDRESS IS ONE KEY, AND THE CITY MAY NOT BE IN IT.** The customer says
+  «центральная сто», the directory answers «Тульская область, г Одоев, ул
+  Центральная, д 100». `street_house_key` dropped the city by the `Geox` grammeme
+  and the dictionary knows Краснодар but not Одоев, so the keys missed each other,
+  ONE address was minted TWICE, the model asked about «Жасминовую 142», got
+  «Тополиную 161» and told the customer the address was not found. Four of the six
+  cases where the gateway leg did nothing at all, and −91pp for `tool_chain`. The
+  city is named by `split_roles` — the reader that already parses the address;
+  morphology stays as a fallback. A second reader of one phrase drifts from the
+  first, which is exactly what happened.
+- **A TWO-WORD CITY WITHOUT A COMMA IS STILL A CITY.** «нижний новгород проезд
+  калашникова 12» parsed as the street «нижний новгород проезд калашникова», so the
+  city went into the `street` field of the customer's CRM. With a comma it worked,
+  without it did not — the same gap that cost the full name beside a date of birth.
+  An adjective before a toponym, and only that: «Нижний Новгород», «Великий
+  Новгород», «Старый Оскол», «Сергиев Посад» are one class, and it cannot eat a
+  street, because a street's first word is followed by a GENERIC word, not a
+  toponym.
+- **TWO SUBSTITUTES THE MODEL GLUED WITH A HYPHEN ARE TWO SUBSTITUTES.** One person
+  is minted twice when the message calls him «Мухина» and the card «Бирюкова»; the
+  model writes «Мухина-Бирюкова», the whole resolves by no key, and BOTH fake
+  surnames reach the CRM. The rule «a hyphen glues one token, and half of one is not
+  a name» is about MASKING, where half of «Лос-Анджелес» became a person; here the
+  question is the reverse and the vault answers it, not morphology — a real toponym
+  has no halves in the vault, so the window resolves to nothing.
+- **AN IDENTIFIER LEFT WITHOUT A DICTIONARY IS THE ONLY THING THAT LEAKS.** Measured
+  on a corpus whose names and streets are drawn from OUTSIDE the leased lists:
+  0 of 2172 values inside them, 8 of 272 outside (2.9%). The number the corpus used
+  to print — zero — described how much the corpus resembled the dictionary.
 
 ## Conventions
 
