@@ -202,11 +202,53 @@ def translit_common(word: str) -> str:
     return "".join(ch for ch in "".join(out) if ch.isalpha())
 
 
+# ЧЕТЫРЁХ СТАНДАРТОВ МАЛО, И ЭТО ИЗМЕРЕНО НА СОБСТВЕННОМ КОНТРОЛЕ. Прибор
+# принимал только побуквенные таблицы, а модель пишет СЛОГАМИ: «Dmitry», а не
+# «Dmitriy»; «Yulia», а не «Yuliya»; «Maxim», а не «Maksim»; «Vasiliev», а не
+# «Vasilev». Все четыре написания взяты не из головы — так писало КОНТРОЛЬНОЕ
+# плечо живого прогона 07.09, то есть та же модель, которую прибор судит.
+# Отвергая их, прибор объявлял дефектом шлюза разницу между двумя правильными
+# написаниями одного имени, причём обе стороны писал сам контроль: «Kuznetsov
+# Dmitry» и «Kuznetsov Dmitriy» встречаются в одном прогоне.
+#
+# ЭТО НЕ ПОСЛАБЛЕНИЕ. Множество расширяется на СЛОГИ, а не на расстояние: имя
+# другого человека по-прежнему не совпадёт ни с одним вариантом, и `derived`
+# от чужой записи остаётся расхождением.
+_ALT_ENDINGS: tuple[tuple[tuple[str, str], ...], ...] = (
+    _COMMON_ENDINGS,
+    (("ий", "y"), ("ый", "y"), ("ия", "ya"), ("ья", "ya")),
+    (("ий", "ii"), ("ый", "yi"), ("ия", "iya"), ("ья", "ia")),
+)
+# Слоги, которые ни одна из четырёх таблиц не даёт, а модель пишет: «кс» одной
+# буквой и «ье» перед гласной.
+_ALT_UNITS: tuple[tuple[str, str], ...] = (("кс", "x"), ("ье", "ie"))
+
+
+def _syllabic(word: str, endings: tuple[tuple[str, str], ...],
+              units: tuple[tuple[str, str], ...]) -> str:
+    low = word.lower()
+    out: list[str] = []
+    i = 0
+    while i < len(low):
+        for source, latin in (*endings, *units):
+            if low.startswith(source, i):
+                out.append(latin)
+                i += len(source)
+                break
+        else:
+            out.append(_COMMON_LETTERS.get(low[i], low[i]))
+            i += 1
+    return "".join(ch for ch in "".join(out) if ch.isalpha())
+
+
 def translit_variants(word: str) -> Accepted:
     """Every accepted Latin spelling of one Cyrillic word, lowercased."""
     if not word:
         return frozenset()
     out = {_apply(table, word) for table in (_ICAO, _GOST_B, _MVD_2010, _COMMON)}
+    for endings in _ALT_ENDINGS:
+        out.add(_syllabic(word, endings, ()))
+        out.add(_syllabic(word, endings, _ALT_UNITS))
     # Case-insensitive and apostrophe-free: cardholder fields are uppercase and
     # the ГОСТ soft-sign marks are dropped on every real card.
     return frozenset("".join(ch for ch in one if ch.isalpha()) for one in out)
@@ -256,7 +298,20 @@ def main() -> int:
         (translit_matches("PAVLOVA TAMARA", ("павлова", "тамара")), True),
         (translit_matches("Tamara Pavlova", ("павлова", "тамара")), True),
         (translit_matches("IUliia Fedorova", ("фёдорова", "юлия")), True),
-        (translit_matches("Yulia Fyodorova", ("фёдорова", "юлия")), False),
+        # СМЕШАННАЯ КОНВЕНЦИЯ ПРИНИМАЕТСЯ, и это не послабление. Здесь стояло
+        # False — «Yulia» из обиходной таблицы рядом с «Fyodorova» из ГОСТ, —
+        # но модель транслитерирует ПО СЛОГАМ, а не по стандарту: это
+        # измеренное свойство, на котором стоит `translit.align` в самом
+        # движке. Требовать одну таблицу на всё имя значило объявлять дефектом
+        # шлюза то, что контроль пишет сам: на прогоне 07.09 он написал и
+        # «Kuznetsov Dmitry», и «Kuznetsov Dmitriy».
+        (translit_matches("Yulia Fyodorova", ("фёдорова", "юлия")), True),
+        # А ЧУЖОЕ ИМЯ ПО-ПРЕЖНЕМУ НЕ ПРИНИМАЕТСЯ — расширение по слогам, а не
+        # по расстоянию.
+        (translit_matches("Ivanov Petr", ("кузнецов", "дмитрий")), False),
+        (translit_matches("Kuznetsov Dmitry", ("кузнецов", "дмитрий")), True),
+        (translit_matches("Lebedev Maxim", ("лебедев", "максим")), True),
+        (translit_matches("IVAN VASILIEV", ("васильев", "иван")), True),
         (translit_matches("BUKIN", ("букин", "сергей")), False),
         (translit_common("Сергей") == "sergey" and translit_common("Заболотный") == "zabolotny"
          and translit_common("Юлия") == "yulia" and translit_common("Наталья") == "natalia"

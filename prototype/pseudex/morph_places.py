@@ -497,11 +497,29 @@ def address_key(phrase: str) -> str:
                      if len(tail) == 2 and " " not in tail[1].strip() else "")
     if trailing_city and not _is_settlement_word(trailing_city):
         trailing_city = ""
-    for index, raw in enumerate(_KEY_SPLIT_RE.split((stripped or phrase.strip())
-                                                    .casefold().replace("ё", "е"))):
+    tokens = _KEY_SPLIT_RE.split((stripped or phrase.strip()).casefold().replace("ё", "е"))
+    # ДВУСЛОВНЫЙ ГОРОД БЕЗ ЗАПЯТОЙ. Городом считался только ПЕРВЫЙ токен, и
+    # «нижний новгород проезд калашникова 12» разбиралось как улица «нижний
+    # новгород проезд калашникова»: город уезжал в поле `street` карточки
+    # заказчика (живой прогон 07.09, long_support-021). С запятой всё работало,
+    # без — нет; это тот же зазор, что стоил ФИО с датой рождения.
+    #
+    # ПРИЛАГАТЕЛЬНОЕ ПЕРЕД ТОПОНИМОМ, И ТОЛЬКО ОНО. «Нижний Новгород»,
+    # «Великий Новгород», «Старый Оскол», «Нижний Тагил», «Сергиев Посад» —
+    # весь класс устроен одинаково. Улицу это съесть не может: у улицы после
+    # первого слова стоит РОДОВОЕ слово («проезд»), а не топоним, и
+    # `_is_settlement_word` родовые слова отвергает первой же строкой.
+    compound_city = -1
+    if len(tokens) > 1 and tokens[0] and tokens[1] and _is_settlement_word(tokens[1]):
+        parses = MORPH.parse(tokens[0])
+        if (parses and all(parse.tag.POS == "ADJF" for parse in parses[:3])
+                and not _is_settlement_word(tokens[0])):
+            compound_city = 1
+    for index, raw in enumerate(tokens):
         if not raw or raw in _PREPOSITIONS:
             continue
         names_city = (previous in _CITY_MARKERS or (index == 0 and _is_settlement_word(raw))
+                      or (compound_city == 1 and index in (0, 1))
                       or (raw == trailing_city))
         previous = raw
         alias = _SLOT_ALIASES.get(raw)
@@ -653,6 +671,25 @@ def street_house_key(phrase: str) -> str:
     named one.
     """
     kept: list[str] = []
+    # ГОРОД НАЗЫВАЕТ `split_roles`, А МОРФОЛОГИЯ — ТОЛЬКО ПОДСТРАХОВКА. Ветка
+    # ниже узнаёт город по грамматеме `Geox`, и словарь знает Краснодар, но не
+    # знает Одоев: ключ справочной формы «Тульская область, г Одоев, ул
+    # Центральная, д 100» получался «одоев центральный 100» и не встречался с
+    # «центральный 100» от клиента. Тогда одному адресу чеканились ДВЕ подмены,
+    # модель спрашивала справочник про «Жасминовую 142», получала «Тополиную
+    # 161» и отвечала клиенту, что адрес не найден: на живом прогоне 07.09 это
+    # четыре из шести случаев, где плечо шлюза вообще не оформило заявку, и
+    # −91pp у семьи `tool_chain`.
+    #
+    # `split_roles` разбирает ту же фразу и уже знает, где город: он берёт и
+    # маркер («г Одоев»), и позицию («Краснодар, центральная, 100»). Вторая
+    # читалка той же фразы разошлась бы с первой, как расходятся все вторые
+    # читалки в этом файле, — что здесь и произошло.
+    city = split_roles(phrase).get("city", "")
+    # Двусловный город («Нижний Новгород») снимается целиком: ключ обязан быть
+    # улицей и домом, иначе две записи одного адреса не встретятся.
+    city_lemmas = [to_nominative(word).lower().replace("ё", "е")
+                   for word in city.split()] if city else []
     city_skipped = False
     tokens = address_key(phrase).split()
     for index, token in enumerate(tokens):
@@ -685,6 +722,12 @@ def street_house_key(phrase: str) -> str:
         # came back as a second substitute and the model reported the address
         # as not found (live v4 04.09, the Б8-echo residue). A leading place
         # word followed directly by a number is the street.
+        if (not kept and city_lemmas and following
+                and not following[:1].isdigit() and not spoken.is_numeral_word(following)
+                and token == city_lemmas[0]):
+            city_lemmas.pop(0)
+            city_skipped = not city_lemmas
+            continue
         if (not kept and not city_skipped and following
                 and not following[:1].isdigit() and not spoken.is_numeral_word(following)
                 and any("Geox" in parse.tag for parse in MORPH.parse(token))):
@@ -1185,6 +1228,25 @@ def _leading_settlement(phrase: str) -> re.Match[str] | None:
     word = match.group(1)
     low = word.lower()
     if low in _GENERIC or _GENERIC_STEMS.match(low):
+        return None
+    # ДВУСЛОВНЫЙ ГОРОД БЕЗ ЗАПЯТОЙ. Настоящим было только ПЕРВОЕ слово, и
+    # «нижний новгород проезд калашникова 12» разбиралось как улица «нижний
+    # новгород проезд калашникова»: город уезжал в поле `street` карточки
+    # заказчика (живой прогон 07.09, long_support-021). С запятой работало,
+    # без — нет; тот же зазор, что стоил ФИО с датой рождения.
+    #
+    # ПРИЛАГАТЕЛЬНОЕ ПЕРЕД ТОПОНИМОМ, И ТОЛЬКО ОНО: «Нижний Новгород»,
+    # «Великий Новгород», «Старый Оскол», «Нижний Тагил», «Сергиев Посад» —
+    # весь класс устроен одинаково. Улицу это съесть не может: после первого
+    # слова улицы стоит РОДОВОЕ слово, а не топоним, и вторым словом здесь
+    # обязан быть топоним по той же строгой мерке, что и первым.
+    if all(parse.tag.POS == "ADJF" for parse in MORPH.parse(word)):
+        second = _LEADING_WORD.match(phrase[match.end():].lstrip())
+        if second is not None and _is_settlement_word(second.group(1).lower()):
+            shift = len(phrase[match.end():]) - len(phrase[match.end():].lstrip())
+            return re.compile(
+                r"(?s)(" + re.escape(word + phrase[match.end():match.end() + shift]
+                                     + second.group(1)) + r")").match(phrase)
         return None
     parses = MORPH.parse(word)
     if not any("Geox" in parse.tag.grammemes for parse in parses):
