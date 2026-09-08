@@ -37,6 +37,25 @@ print(base64.b64encode(os.urandom(32)).decode())
 fi
 PSEUDEX_TUNING_KEY="$(head -1 "$TUNINGFILE")"
 export PSEUDEX_TUNING_KEY
+# ДВА ТОКЕНА АДМИНКИ ЛИЦЕНЗИОННОГО СЕРВЕРА, и их отсутствие роняло этот скрипт
+# на `compose up`: `compose.local.yml` объявляет
+# `${PSEUDEX_LICENSE_STOREFRONT_TOKEN:?...}`, а генерировал его здесь никто —
+# стенд «поднимается одной командой» не поднимался ни разу без ручного экспорта.
+# Кэшируются, как и ключи: витрина держит выданный токен в своём окружении, и
+# новый на каждом запуске означал бы, что после перезапуска стенда витрина
+# ходит в лицензионный сервер со старым и получает 401.
+TOKENFILE="$HERE/.local-tokens"
+if [ ! -f "$TOKENFILE" ]; then
+    printf '%s\n%s\n' \
+        "$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)" \
+        "$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)" > "$TOKENFILE"
+    chmod 600 "$TOKENFILE"
+    echo "generated local licensing tokens -> $TOKENFILE"
+fi
+PSEUDEX_LICENSE_ADMIN_TOKEN="$(sed -n 1p "$TOKENFILE")"
+PSEUDEX_LICENSE_STOREFRONT_TOKEN="$(sed -n 2p "$TOKENFILE")"
+export PSEUDEX_LICENSE_ADMIN_TOKEN PSEUDEX_LICENSE_STOREFRONT_TOKEN
+
 PUBKEY="$(cd "$ROOT/prototype" && ./.venv/bin/python -c "
 import base64
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -93,6 +112,34 @@ user.set_password(password)
 user.save()
 print("админ создан" if created else "админ обновлён")
 ' >/dev/null 2>&1 && echo "  админ: $ADMIN_EMAIL" || echo "  админа создать не удалось — см. логи витрины"
+
+# СНАЧАЛА ПРОВЕРИТЬ, ПОТОМ ОБЪЯВЛЯТЬ. Скрипт печатал «Стенд поднят» и всю
+# инструкцию, ни разу не спросив, жив ли лицензионный сервер: он падал на старте
+# (`no such column: pubkey` на томе прошлой версии), а человек шёл по шагам и
+# упирался в контейнер, который не берёт аренду. Тот же класс, что зелёный гейт
+# над пустым свидетельством, — вывод об успехе без доказательства.
+FAILED=""
+for _ in $(seq 1 30); do
+    curl -fsS -o /dev/null "http://localhost:8080/healthz" 2>/dev/null && break
+    sleep 1
+done
+curl -fsS -o /dev/null "http://localhost:8080/healthz" 2>/dev/null || FAILED="витрина"
+# Админка лицензионного сервера отвечает 401 без токена и 200 с ним — оба
+# случая доказывают, что процесс жив; отказ соединения не доказывает ничего.
+for _ in $(seq 1 30); do
+    curl -fsS -o /dev/null -H "Authorization: Bearer $PSEUDEX_LICENSE_ADMIN_TOKEN" \
+        "http://localhost:9443/admin/list" 2>/dev/null && break
+    sleep 1
+done
+curl -fsS -o /dev/null -H "Authorization: Bearer $PSEUDEX_LICENSE_ADMIN_TOKEN" \
+    "http://localhost:9443/admin/list" 2>/dev/null || FAILED="${FAILED:+$FAILED и }лицензионный сервер"
+
+if [ -n "$FAILED" ]; then
+    echo
+    echo "СТЕНД НЕ ПОДНЯЛСЯ: не отвечает $FAILED."
+    echo "  docker compose -f $HERE/compose.local.yml logs --tail=40"
+    exit 1
+fi
 
 cat <<TEXT
 

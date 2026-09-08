@@ -127,6 +127,44 @@ class LicenseStore:
             "reports_missing INTEGER DEFAULT 0, "
             "PRIMARY KEY (org_id, instance_id))"
         )
+        # МИГРАЦИЯ КОЛОНОК ИДЁТ ДО ЛЮБОГО ИНДЕКСА, И ЭТО НЕ СТИЛЬ.
+        #
+        # Она стояла ПОСЛЕ, а `leases_org_pubkey` строится по `pubkey` — то
+        # есть на томе, пережившем релиз без этой колонки, процесс умирал на
+        # старте с `no such column: pubkey` и до миграции не доходил никогда.
+        # Апгрейд лицензионного сервера на существующих данных не поднимался
+        # вовсе, а это единственный сервер, и его простой останавливает КАЖДОГО
+        # клиента, у которого кончилась аренда.
+        #
+        # Порядок теперь такой, каким он обязан быть у любой схемы: таблицы,
+        # потом колонки, потом всё, что на колонки ссылается.
+        # Существующие тома пережили релизы без этой колонки.
+        columns = {row[1] for row in
+                   self._conn.execute("PRAGMA table_info(leases)")}
+        if "pubkey" not in columns:
+            self._conn.execute("ALTER TABLE leases ADD COLUMN pubkey TEXT")
+        for column, ddl in (("released_at", "released_at REAL"),
+                            ("released_by", "released_by TEXT")):
+            if column not in columns:
+                self._conn.execute(f"ALTER TABLE leases ADD COLUMN {ddl}")
+        usage_columns = {row[1] for row in
+                         self._conn.execute("PRAGMA table_info(usage)")}
+        for column, ddl in (("seq", "seq INTEGER DEFAULT 0"),
+                            ("prev", "prev TEXT DEFAULT ''"),
+                            ("signature", "signature TEXT DEFAULT ''"),
+                            ("trust", "trust TEXT DEFAULT 'unsigned'"),
+                            ("chain_breaks", "chain_breaks INTEGER DEFAULT 0"),
+                            ("unverified_reports",
+                             "unverified_reports INTEGER DEFAULT 0"),
+                            ("unverified_requests",
+                             "unverified_requests INTEGER DEFAULT 0"),
+                            ("malformed_reports",
+                             "malformed_reports INTEGER DEFAULT 0"),
+                            ("reports_missing",
+                             "reports_missing INTEGER DEFAULT 0")):
+            if column not in usage_columns:
+                self._conn.execute(f"ALTER TABLE usage ADD COLUMN {ddl}")
+
         # НИ ОДНОГО ИНДЕКСА ЗДЕСЬ НЕ БЫЛО. `leases` растёт примерно на три
         # строки в сутки на воркера и никогда не чистится (`lease_id` свежий на
         # каждое продление, поэтому `INSERT OR REPLACE` ничего не заменяет), а
@@ -203,32 +241,6 @@ class LicenseStore:
         )
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS usage_daily_org ON usage_daily(org_id, day)")
-        # Существующие тома пережили релизы без этой колонки.
-        columns = {row[1] for row in
-                   self._conn.execute("PRAGMA table_info(leases)")}
-        if "pubkey" not in columns:
-            self._conn.execute("ALTER TABLE leases ADD COLUMN pubkey TEXT")
-        for column, ddl in (("released_at", "released_at REAL"),
-                            ("released_by", "released_by TEXT")):
-            if column not in columns:
-                self._conn.execute(f"ALTER TABLE leases ADD COLUMN {ddl}")
-        usage_columns = {row[1] for row in
-                         self._conn.execute("PRAGMA table_info(usage)")}
-        for column, ddl in (("seq", "seq INTEGER DEFAULT 0"),
-                            ("prev", "prev TEXT DEFAULT ''"),
-                            ("signature", "signature TEXT DEFAULT ''"),
-                            ("trust", "trust TEXT DEFAULT 'unsigned'"),
-                            ("chain_breaks", "chain_breaks INTEGER DEFAULT 0"),
-                            ("unverified_reports",
-                             "unverified_reports INTEGER DEFAULT 0"),
-                            ("unverified_requests",
-                             "unverified_requests INTEGER DEFAULT 0"),
-                            ("malformed_reports",
-                             "malformed_reports INTEGER DEFAULT 0"),
-                            ("reports_missing",
-                             "reports_missing INTEGER DEFAULT 0")):
-            if column not in usage_columns:
-                self._conn.execute(f"ALTER TABLE usage ADD COLUMN {ddl}")
         self._conn.commit()
         self._seed_plans()
 

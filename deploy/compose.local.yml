@@ -33,6 +33,10 @@ services:
       # Seals the compiled tuning blob; delivered in every lease so the engine can
       # open its own tuning. Same value the image was built with (build-arg).
       PSEUDEX_TUNING_KEY: ${PSEUDEX_TUNING_KEY:?run deploy/local.sh, which generates one}
+      # БЕЗ ЭТОГО `/admin/*` ОТКАЗЫВАЕТ ВСЕМ, включая нас самих: сервер это
+      # логирует и продолжает работать, поэтому стенд выглядел поднятым, а
+      # каждая операторская ручка отвечала 401.
+      PSEUDEX_LICENSE_ADMIN_TOKEN: ${PSEUDEX_LICENSE_ADMIN_TOKEN:?run deploy/local.sh, which generates one}
       PSEUDEX_LICENSE_DB: /data/license.db
       # Short, so the degradation ladder is walkable in a coffee break rather
       # than over two days: lease 5 min, grace 10 min.
