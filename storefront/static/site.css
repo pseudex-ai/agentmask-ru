@@ -81,6 +81,15 @@ header.top nav a { color: var(--dim); }
 header.top nav a:hover { color: var(--text); }
 .head-cta { display: flex; align-items: center; gap: 10px; }
 
+/* `[hidden]` ПРОИГРЫВАЕТ ЛЮБОМУ СВОЕМУ `display`, и это ловушка, а не тонкость:
+   браузерное правило `[hidden]{display:none}` идёт из UA-стилей, поэтому
+   `.btn{display:inline-block}` его перебивает — кнопка, которой в JS выставлен
+   `hidden`, остаётся ВИДНОЙ. Поймано браузерной проверкой конфигуратора: там
+   кнопка «отправить как заявку» не должна показываться, когда всё отмеченное мы
+   находим, и она показывалась. Правило стоит ДО `.btn`, но с `!important`,
+   потому что специфичность здесь ни при чём. */
+[hidden] { display: none !important; }
+
 .btn {
   display: inline-block; font-family: var(--mono); font-size: 12px; letter-spacing: .12em;
   padding: 11px 16px; border: 1px solid var(--line-2); color: var(--dim);
@@ -251,3 +260,34 @@ table.list td.mono { font-family: var(--mono); font-size: 12.5px; }
 .legal-list li { margin-bottom: 8px; }
 .legal-note { border-left: 2px solid var(--accent); background: var(--accent-bg); padding: 18px 22px; margin: 28px 0; font-size: 15.5px; line-height: 1.65; color: var(--text-3); }
 .legal-doc .missing { color: var(--pink); }
+
+/* ---- конфигуратор ---- */
+/* Ни одной новой переменной: те же токены, что у остальных секций. Экран,
+   нарисованный своим словарём, расходится с соседними при первой правке темы. */
+.cfg { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1px;
+  background: var(--line-2); border: 1px solid var(--line-2); }
+.cfg-item { display: flex; align-items: center; gap: 12px; padding: 15px 18px;
+  background: var(--panel); cursor: pointer; min-width: 0; }
+.cfg-item:hover { background: var(--panel-2); }
+.cfg-item input { flex: none; width: 15px; height: 15px; accent-color: var(--accent); }
+.cfg-label { flex: 1; font-size: 14.5px; color: var(--text-2); min-width: 0; }
+.cfg-tag { flex: none; font-family: var(--mono); font-size: 10px; letter-spacing: .14em;
+  text-transform: uppercase; }
+.cfg-tag.yes { color: var(--green); }
+.cfg-tag.no { color: var(--amber); }
+
+.cfg-out { margin-top: 22px; border: 1px solid var(--line-2); background: var(--panel); }
+.cfg-verdict { display: grid; grid-template-columns: 92px minmax(0, 200px) minmax(0, 1fr);
+  gap: 14px; align-items: baseline; padding: 14px 18px; border-bottom: 1px solid var(--line-3);
+  font-size: 14px; line-height: 1.6; }
+.cfg-verdict b { color: var(--text-2); }
+.cfg-verdict span:last-child { color: var(--dim); }
+.cfg-mark { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; }
+.cfg-mark.yes { color: var(--green); }
+.cfg-mark.no { color: var(--amber); }
+.cfg-foot { display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  flex-wrap: wrap; padding: 16px 18px; }
+.cfg-note { font-size: 14px; line-height: 1.6; color: var(--dim); max-width: 620px; }
+@media (max-width: 700px) {
+  .cfg-verdict { grid-template-columns: 1fr; gap: 6px; }
+}

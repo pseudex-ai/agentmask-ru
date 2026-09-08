@@ -8,6 +8,7 @@ gateway are managed, and it must be demonstrably free of third-party beacons.
 no origin the page could talk to even if something were injected into it.
 """
 
+from django.conf import settings
 from django.utils.deprecation import MiddlewareMixin
 
 _POLICY = "; ".join([
@@ -34,6 +35,15 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
         response.setdefault("Content-Security-Policy", _POLICY)
         # Pages behind the login show a key prefix and billing detail. A shared
         # proxy holding a rendered copy is a copy nobody accounted for.
-        if request.path.startswith("/app/") or request.path.startswith("/admin/"):
+        #
+        # ПУТЬ АДМИНКИ БЕРЁТСЯ ИЗ НАСТРОЙКИ, А НЕ ЛИТЕРАЛОМ. Здесь стояло
+        # `/admin/`, тогда как путь вынесен в `PSEUDEX_ADMIN_PATH` намеренно —
+        # «фиксированный `/admin/` первым пробует любой сканер, и перенести его
+        # ничего не стоит». Стоило: перенесённая админка переставала получать
+        # `no-store`, то есть ровно та настройка, которую включают ради
+        # безопасности, тихо снимала заголовок со всего бэк-офиса. Операторская
+        # консоль живёт там же и получает заголовок по той же строке.
+        guarded = ("/app/", f"/{settings.ADMIN_PATH}/")
+        if any(request.path.startswith(prefix) for prefix in guarded):
             response["Cache-Control"] = "no-store"
         return response

@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}{{ organization.display_name }} — операции pseudex{% endblock %}
+{% block nav %}
+<nav>
+  <a href="{% url 'ops_fleet' %}">ФЛОТ</a>
+  <a href="{% url 'ops_chains' %}">ЦЕПИ</a>
+  <a href="{% url 'ops_plans' %}">ТАРИФЫ</a>
+  <a href="{% url 'ops_demand' %}">СПРОС</a>
+</nav>
+{% endblock %}
+{% block content %}
+<section>
+  <div class="sec-head">
+    <div>
+      <h2>{{ organization.display_name }}</h2>
+      <div class="sec-meta" style="margin-top:8px">org_id <span class="mono" style="color:var(--text-3)">{{ organization.id }}</span> · {{ organization.get_kind_display }}</div>
+    </div>
+    <div>
+      <a class="btn" href="{% url 'ops_reconcile' organization.id %}">СВЕРИТЬ СЧЁТ</a>
+      {% if subscription %}
+        {% if subscription.state == 'trial' %}<span class="pill warn">ПРОБНЫЙ ДО {{ subscription.trial_ends_at|date:"d.m.Y" }}</span>
+        {% elif subscription.state == 'active' %}<span class="pill ok">АКТИВНА</span>
+        {% elif subscription.state == 'past_due' %}<span class="pill bad">НЕ ОПЛАЧЕНА</span>
+        {% else %}<span class="pill">ОТМЕНЕНА</span>{% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="msg error">Лицензионный сервер не отвечает — ёмкость, инстансы и
+    цепь ниже пусты. Подписка, счета и ключи наши и показаны верно.
+    <div class="mono" style="margin-top:10px;font-size:12px;color:var(--dim-2)">{{ error }}</div></div>
+  {% endif %}
+
+  <div class="app">
+    <div>
+      <div class="label" style="margin-bottom:14px">ПОДПИСКА</div>
+      {% if subscription %}
+        <div class="kv"><span class="k">тариф</span><span class="v">{{ subscription.plan.title }}</span></div>
+        <div class="kv"><span class="k">в месяц</span><span class="v">{{ subscription.plan.monthly_price|floatformat:0 }} ₽</span></div>
+        <div class="kv"><span class="k">контейнеров по тарифу</span><span class="v">{{ subscription.plan.max_instances }}</span></div>
+        <div class="kv"><span class="k">занято сейчас</span><span class="v">{{ instances|length }}</span></div>
+        <div class="kv"><span class="k">период до</span><span class="v">{{ subscription.current_period_end|date:"d.m.Y" }}</span></div>
+        <div class="kv"><span class="k">живых ключей</span><span class="v">{{ keys|length }}</span></div>
+      {% else %}
+        <div style="font-size:14px;color:var(--dim-2)">Подписки нет — организация заведена, но регистрация не завершена.</div>
+      {% endif %}
+    </div>
+
+    <div>
+      <div class="label" style="margin-bottom:14px">ЁМКОСТЬ</div>
+      <div class="kv"><span class="k">к начислению</span><span class="v">{{ usage.capacity_billable|default:0 }}</span></div>
+      <div class="kv"><span class="k">выдано</span><span class="v">{{ usage.capacity_granted|default:0 }}</span></div>
+      <div class="kv"><span class="k">подтверждено</span><span class="v">{{ usage.capacity_acked|default:0 }}</span></div>
+      <div class="kv"><span class="k">процессов</span><span class="v">{{ usage.capacity_processes|default:0 }}</span></div>
+      <div class="kv"><span class="k">запросов всего</span><span class="v">{{ usage.requests|default:0 }}</span></div>
+      <div class="kv"><span class="k">значений защищено</span><span class="v">{{ usage.values|default:0 }}</span></div>
+    </div>
+
+    <div>
+      <div class="label" style="margin-bottom:14px">ЧЕМ ПОДПЁРТ СЧЁТ</div>
+      <div class="kv"><span class="k">разрывов цепи</span><span class="v">{{ usage.chain_breaks|default:0 }}</span></div>
+      <div class="kv"><span class="k">отчётов без подписи</span><span class="v">{{ usage.unverified_reports|default:0 }}</span></div>
+      <div class="kv"><span class="k">неразобранных</span><span class="v">{{ usage.malformed_reports|default:0 }}</span></div>
+      <div class="kv"><span class="k">продлений без отчёта</span><span class="v">{{ usage.reports_missing|default:0 }}</span></div>
+      <div class="kv"><span class="k">квантов без подтверждения</span><span class="v">{{ usage.capacity_unacked_quanta|default:0 }}</span></div>
+      <div class="kv"><span class="k">откатов счётчика</span><span class="v">{{ usage.resets|default:0 }}</span></div>
+      <p class="hint" style="font-size:12.5px;color:var(--dim-2);line-height:1.6;margin-top:12px">Ничто из этого не останавливает клиента. Это доказуемость, а не принуждение: расстояние между «выдано» и «к начислению» — скидка, которую он получает за подтверждённые отчёты.</p>
+    </div>
+  </div>
+
+  <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Запросы по суткам</h3>
+  {% if history %}
+  <table class="list">
+    <tr><th>СУТКИ (UTC)</th><th>ПРИРОСТ</th><th>НАКОПЛЕНО</th><th>ИНСТАНСОВ</th><th style="width:40%"></th></tr>
+    {% for point in history %}
+    <tr>
+      <td class="mono">{{ point.day }}</td>
+      {# Первая точка окна: предыдущих суток в выборке нет, прирост неизвестен. #}
+      <td class="mono">{% if point.delta is None %}—{% else %}{{ point.delta }}{% endif %}</td>
+      <td class="mono">{{ point.requests }}</td>
+      <td class="mono">{{ point.instances }}</td>
+      <td><div class="meter" style="margin-top:0"><i style="width:{{ point.width }}%"></i></div></td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="hint" style="font-size:12.5px;color:var(--dim-2);line-height:1.6;margin-top:12px">Срез хранит накопительный итог на конец суток, как и счётчики; прирост — разность соседних строк. Инстанс, промолчавший в эти сутки, переносится вперёд со своим итогом, а не исчезает.</p>
+  {% else %}
+  <p style="color:var(--dim-2);font-size:14px">Отчётов ещё не было — график появится после первого продления аренды.</p>
+  {% endif %}
+
+  <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Контейнеры</h3>
+  <table class="list">
+    <tr><th>ИНСТАНС</th><th>ПОСЛЕДНЯЯ АРЕНДА</th><th>СОСТОЯНИЕ</th></tr>
+    {% for slot in instances %}
+    <tr>
+      <td class="mono">{{ slot.instance_id }}</td>
+      <td class="mono">{{ slot.last_lease|floatformat:0 }}</td>
+      <td>{% if slot.state == 'cooling' %}<span class="pill warn">ОСТЫВАЕТ</span>{% else %}<span class="pill ok">ДЕРЖИТ СЛОТ</span>{% endif %}</td>
+    </tr>
+    {% empty %}<tr><td colspan="3" style="color:var(--dim-2)">Ни один контейнер не держит слот.</td></tr>{% endfor %}
+  </table>
+
+  <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Процессы и цепь отчётов</h3>
+  <table class="list">
+    <tr><th>КЛЮЧ ПРОЦЕССА</th><th>SEQ</th><th>PREV</th><th>РАЗРЫВОВ</th><th>СМЕН СБОРКИ</th></tr>
+    {% for process in processes %}
+    <tr>
+      <td class="mono">{{ process.pubkey }}…</td>
+      <td class="mono">{{ process.seq }}</td>
+      <td class="mono">{{ process.prev|default:"—" }}</td>
+      <td>{% if process.chain_breaks %}<span class="pill bad">{{ process.chain_breaks }}</span>{% else %}<span class="pill ok">0</span>{% endif %}</td>
+      <td class="mono">{{ process.build_changes }}</td>
+    </tr>
+    {% empty %}<tr><td colspan="5" style="color:var(--dim-2)">Отчётов от процессов ещё не было.</td></tr>{% endfor %}
+  </table>
+
+  <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Счета</h3>
+  <table class="list">
+    <tr><th>НОМЕР</th><th>ПЕРИОД</th><th>СУММА</th><th>СТАТУС</th></tr>
+    {% for invoice in invoices %}
+    <tr>
+      <td class="mono">{{ invoice.number }}</td>
+      <td class="mono">{{ invoice.period_start|date:"d.m.Y" }} — {{ invoice.period_end|date:"d.m.Y" }}</td>
+      <td class="mono">{{ invoice.total }} ₽</td>
+      <td>{% if invoice.state == 'paid' %}<span class="pill ok">ОПЛАЧЕН</span>{% elif invoice.state == 'issued' %}<span class="pill warn">ВЫСТАВЛЕН</span>{% else %}<span class="pill">{{ invoice.get_state_display|upper }}</span>{% endif %}</td>
+    </tr>
+    {% empty %}<tr><td colspan="4" style="color:var(--dim-2)">Счетов нет.</td></tr>{% endfor %}
+  </table>
+</section>
+{% endblock %}

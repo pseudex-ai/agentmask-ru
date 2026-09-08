@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Спрос — операции pseudex{% endblock %}
+{% block nav %}
+<nav>
+  <a href="{% url 'ops_fleet' %}">ФЛОТ</a>
+  <a href="{% url 'ops_chains' %}">ЦЕПИ</a>
+  <a href="{% url 'ops_plans' %}">ТАРИФЫ</a>
+  <a href="{% url 'ops_demand' %}">СПРОС</a>
+</nav>
+{% endblock %}
+{% block content %}
+<section>
+  <div class="sec-head">
+    <div>
+      <h2>Спрос на типы данных</h2>
+      <div class="sec-meta" style="margin-top:8px">за {{ days }} дн · отметок {{ asked }}</div>
+    </div>
+    {# ПЕРЕКЛЮЧАТЕЛЬ ОБЯЗАТЕЛЕН. Окно было прибито к 30 суткам, и код, выведенный
+       из реестра в прошлом квартале, исчезал с экрана совсем — ровно то, что
+       раздел «кодов больше нет» ниже обещает не допускать. #}
+    <div class="row" style="gap:14px">
+      {% for option in periods %}
+      <a href="?days={{ option }}" class="mono" style="font-size:12px;{% if option == days %}color:var(--accent){% else %}color:var(--dim-2){% endif %}">{{ option }} дн</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <p style="color:var(--dim-2);font-size:14px;line-height:1.65;max-width:760px">
+  Отметки конфигуратора на лендинге. Читается не популярность, а <b style="color:var(--text)">дефицит</b>:
+  «имена спросили сто раз» — это не задача, «телеком спросили двадцать» — задача.
+  О посетителях здесь нет ничего: только счётчик на сутки и группу, ни адреса, ни
+  сессии, ни текста.</p>
+
+  <div class="sec-meta" style="margin-top:30px">ЧЕГО НЕ НАХОДИМ — ОЧЕРЕДЬ РАБОТ</div>
+  <table class="list" style="margin-top:12px">
+    <tr><th>ГРУППА</th><th style="text-align:right">СПРОСИЛИ</th></tr>
+    {% for row in gaps %}
+    <tr>
+      <td>{{ row.label }}<span class="mono" style="color:var(--dim-2);margin-left:10px;font-size:12px">{{ row.code }}</span></td>
+      <td style="text-align:right"><b>{{ row.total }}</b></td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <div class="sec-meta" style="margin-top:34px">ЧТО НАХОДИМ — ДЛЯ СРАВНЕНИЯ</div>
+  <table class="list" style="margin-top:12px">
+    {% for row in covered %}
+    <tr>
+      <td>{{ row.label }}<span class="pill ok" style="margin-left:10px">находим</span></td>
+      <td style="text-align:right">{{ row.total }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  {% if retired %}
+  <div class="sec-meta" style="margin-top:34px">КОДОВ БОЛЬШЕ НЕТ В РЕЕСТРЕ</div>
+  <p style="color:var(--dim-2);font-size:13.5px;line-height:1.6;max-width:760px;margin-top:8px">
+  Формулировки групп меняются, а числа за прошлые месяцы остаются. Молча их не
+  показывать значило бы тихо переписать историю спроса.</p>
+  <table class="list" style="margin-top:12px">
+    {% for row in retired %}
+    <tr><td class="mono">{{ row.code }}</td><td style="text-align:right">{{ row.total }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if not asked %}
+  <div class="msg" style="margin-top:26px">Отметок пока нет. Это не поломка: счётчик
+  наполняется с лендинга, и до первых посетителей здесь пусто.</div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Цепи отчётов — операции pseudex{% endblock %}
+{% block nav %}
+<nav>
+  <a href="{% url 'ops_fleet' %}">ФЛОТ</a>
+  <a href="{% url 'ops_chains' %}">ЦЕПИ</a>
+  <a href="{% url 'ops_plans' %}">ТАРИФЫ</a>
+  <a href="{% url 'ops_demand' %}">СПРОС</a>
+</nav>
+{% endblock %}
+{% block content %}
+<section>
+  <div class="sec-head">
+    <div>
+      <h2>Цепи отчётов</h2>
+      <div class="sec-meta" style="margin-top:8px">проверено организаций: {{ checked }} из {{ page.paginator.count }} · страница {{ page.number }} из {{ page.paginator.num_pages }}</div>
+    </div>
+    <div>
+      {% if error %}<span class="pill warn">НЕИЗВЕСТНО</span>
+      {% elif broken %}<span class="pill bad">{{ broken|length }} С ЗАМЕЧАНИЯМИ</span>
+      {% else %}<span class="pill ok">ЧИСТО</span>{% endif %}
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="msg error">Лицензионный сервер не отвечает — сказать про цепи нечего.
+    Пустой список ниже сейчас означает «неизвестно», а не «всё хорошо».
+    <div class="mono" style="margin-top:10px;font-size:12px;color:var(--dim-2)">{{ error }}</div></div>
+  {% endif %}
+
+  {% if broken %}
+  <table class="list">
+    <tr><th>ОРГАНИЗАЦИЯ</th><th>РАЗРЫВОВ</th><th>БЕЗ ПОДПИСИ</th><th>НЕРАЗОБРАННЫХ</th><th>ПРОДЛЕНИЙ БЕЗ ОТЧЁТА</th></tr>
+    {% for row in broken %}
+    <tr>
+      <td>
+        <a href="{% url 'ops_customer' row.organization.id %}">{{ row.organization.display_name }}</a>
+        <div class="mono" style="font-size:11.5px;color:var(--dim-3)">{{ row.organization.id }}</div>
+      </td>
+      <td>{% if row.chain_breaks %}<span class="pill bad">{{ row.chain_breaks }}</span>{% else %}<span class="pill ok">0</span>{% endif %}</td>
+      <td class="mono">{{ row.unverified }}</td>
+      <td class="mono">{{ row.malformed }}</td>
+      <td class="mono">{{ row.missing }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="hint" style="font-size:13px;color:var(--dim-2);line-height:1.65;margin-top:16px">
+  Разрыв цепи — это повтор отчёта, пропуск в нумерации или снятая подпись. Ничто из
+  этого не останавливает клиента и не должно: спор о биллинге не имеет права ронять
+  чей-то шлюз. Счёт при этом не занижается — он идёт по выданной ёмкости, а
+  подтверждённый отчёт только уменьшает его до фактического расхода. Так что строка
+  здесь означает «клиент отказался от скидки за неиспользованное», а не «клиент нас
+  обманул».</p>
+  {% elif not error %}
+  <p style="color:var(--dim-2);font-size:14px">Ни у кого нет ни разрывов, ни отчётов
+  без подписи. Этот экран и должен быть пустым — он заведён, чтобы непустым его
+  увидели сразу, а не через месяц в счёте.</p>
+  {% endif %}
+  {% if page.has_other_pages %}
+  <div style="display:flex;gap:10px;margin-top:24px">
+    {% if page.has_previous %}<a class="btn" href="?page={{ page.previous_page_number }}">НАЗАД</a>{% endif %}
+    {% if page.has_next %}<a class="btn" href="?page={{ page.next_page_number }}">ДАЛЬШЕ</a>{% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

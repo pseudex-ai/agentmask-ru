@@ -1,0 +1,382 @@
+{
+  "title": "Pseudex — лицензии, флот, деньги",
+  "uid": "pseudex-ops",
+  "description": "Что действительно ведёт к отказу, и ничего кроме. Панель, которую никто не читает, обучает не читать соседнюю. Источник данных прибит к uid pseudex-prometheus — тому же, что в provisioning: экспорт «для шаринга» носит вместо uid подстановку из блока __inputs, которую провижининг из файла не разрешает, и все восемь панелей пишут «datasource was not found».",
+  "tags": [
+    "pseudex"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Лестница лицензии",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pseudex-prometheus"
+      },
+      "description": "Четыре ряда по нулю-единице, а не один enum. Отображение 0/1/2/3 на состояния пришлось бы носить в каждой панели и в каждой тревоге — а меняется именно оно: STATE_LEASED это строка \"active\", и на этом уже один раз сгорел /license.",
+      "targets": [
+        {
+          "expr": "pseudex_license_state{state=\"active\"}",
+          "legendFormat": "работает",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        },
+        {
+          "expr": "pseudex_license_state{state=\"stale\"}",
+          "legendFormat": "grace",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        },
+        {
+          "expr": "pseudex_license_state{state=\"expired\"}",
+          "legendFormat": "истекла",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        },
+        {
+          "expr": "pseudex_license_state{state=\"boot\"}",
+          "legendFormat": "старт",
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "До остановки, если аренда не продлится",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pseudex-prometheus"
+      },
+      "description": "Пусто, пока аренда здорова: отсутствующий ряд честнее нуля.",
+      "targets": [
+        {
+          "expr": "pseudex_license_grace_seconds_left",
+          "legendFormat": "grace, с",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        },
+        {
+          "expr": "pseudex_license_seconds_since_lease",
+          "legendFormat": "с последней аренды, с",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Аренды по исходам",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pseudex-prometheus"
+      },
+      "description": "402 и 403 обходят grace целиком — клиент встаёт немедленно. Рост у ОДНОЙ организации это биллинг, у всех сразу — мы.",
+      "targets": [
+        {
+          "expr": "sum by (code) (rate(pseudex_license_responses_total{path=\"/v1/lease\"}[5m]))",
+          "legendFormat": "{{code}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Доля отказов 402/403",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pseudex-prometheus"
+      },
+      "description": "Та самая метрика из operations.md §5. Тревога — на 20%.",
+      "targets": [
+        {
+          "expr": "sum(rate(pseudex_license_responses_total{path=\"/v1/lease\", code=~\"40[23]\"}[30m])) / clamp_min(sum(rate(pseudex_license_responses_total{path=\"/v1/lease\"}[30m])), 0.001)",
+          "legendFormat": "доля",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Разрывы цепи отчётов, поимённо",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pseudex-prometheus"
+      },
+      "description": "В метку попадают только организации, у которых разрыв ЕСТЬ: множество ограничено бедой, а не продажами, и схлопывается, когда беда починена.",
+      "targets": [
+        {
+          "expr": "sum by (org) (pseudex_chain_breaks_by_org)",
+          "legendFormat": "{{org}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "Флот",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pseudex-prometheus"
+      },
+      "description": "Держат живую аренду прямо сейчас.",
+      "targets": [
+        {
+          "expr": "pseudex_orgs_serving",
+          "legendFormat": "организаций",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        },
+        {
+          "expr": "pseudex_instances_serving",
+          "legendFormat": "контейнеров",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        },
+        {
+          "expr": "pseudex_processes_serving",
+          "legendFormat": "воркеров",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "Отчёты, которым нельзя верить",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pseudex-prometheus"
+      },
+      "description": "«Не разобрали» — это НЕ «расхода не было». Счёт, который не видит разницы, выставляется вслепую.",
+      "targets": [
+        {
+          "expr": "increase(pseudex_unverified_reports_total[24h])",
+          "legendFormat": "без годной подписи",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        },
+        {
+          "expr": "increase(pseudex_malformed_reports_total[24h])",
+          "legendFormat": "не разобрали",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        },
+        {
+          "expr": "increase(pseudex_reports_missing_total[24h])",
+          "legendFormat": "не пришли вовсе",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        },
+        {
+          "expr": "increase(pseudex_counter_resets_total[24h])",
+          "legendFormat": "счётчик пошёл назад",
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "Память клиентского контейнера",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pseudex-prometheus"
+      },
+      "description": "Интересна строчка, где крупнейший процесс перерос бюджет: это контейнер, который остановит OOM-killer сегодня к вечеру. Ряды есть только если Prometheus клиента скрейпит его движок — наш туда не ходит и не должен.",
+      "targets": [
+        {
+          "expr": "pseudex_memory_used_bytes",
+          "legendFormat": "занято",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        },
+        {
+          "expr": "pseudex_memory_limit_bytes",
+          "legendFormat": "лимит",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        },
+        {
+          "expr": "pseudex_memory_largest_process_bytes",
+          "legendFormat": "крупнейший процесс",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        },
+        {
+          "expr": "pseudex_memory_worker_budget_bytes",
+          "legendFormat": "бюджет воркера",
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pseudex-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

@@ -280,14 +280,34 @@ def gate_p3(source_report: Path, compiled_report: Path) -> bool:
     left = json.loads(source_report.read_text())
     right = json.loads(compiled_report.read_text())
     differences = [key for key in set(left) | set(right) if left.get(key) != right.get(key)]
+
+    # ПРОПУЩЕННОЕ СРАВНЕНИЕ — НЕ СОВПАДЕНИЕ, и без этой строки P3 зеленел,
+    # сравнив половину.
+    #
+    # `parity.py` при отсутствии `dirty.json` тихо пишет `{"skipped": True}` —
+    # разумно для разработчика без сгенерированного датасета. Но отчёты обеих
+    # рук получают ОДИНАКОВОЕ «пропущено», список разниц оказывается пуст, и
+    # гейт, который обязан доказать «скомпилированный образ детектирует ровно
+    # то же», проходит, не сравнив ни одного значения грязного набора. Наружу
+    # это видно только тем, что из `detail` пропадают recall и precision.
+    #
+    # Датасеты гитигнорятся, а `release.yml` их не генерирует, поэтому в CI
+    # ветка «пропущено» была не краем, а НОРМОЙ. Ровно тот ложный зелёный, про
+    # который скилл гейтов говорит, что он хуже красного.
+    skipped = [name for name, report in (("source", left), ("compiled", right))
+               if report.get("dirty", {}).get("skipped")]
+
     detail = f"coverage_missed={right['coverage']['missed']} "
     if "dirty" in right and "recall" in right["dirty"]:
         detail += (f"recall={right['dirty']['recall']:.0%} "
                    f"precision={right['dirty']['precision']:.0%} "
                    f"leaks={right['dirty']['true_leaks']} ")
+    if skipped:
+        detail += (f"ГРЯЗНЫЙ НАБОР НЕ СРАВНИВАЛСЯ ({', '.join(skipped)}): "
+                   f"нет dirty.json — сначала `python3 make_dirty.py` ")
     detail += f"differs={differences or 'nothing'}"
     return gate("P3 compiled image detects exactly what the source does",
-                not differences, detail)
+                not differences and not skipped, detail)
 
 
 _LATENCY_COUNTER = 0
@@ -598,6 +618,19 @@ def main() -> None:
     def wanted(name: str) -> bool:
         return not selected or name in selected
 
+    # ПРЕДУСЛОВИЕ ПРОВЕРЯЕТСЯ ДО СБОРКИ, А НЕ ВНУТРИ ГЕЙТА.
+    #
+    # P3 краснеет, если грязный набор не сравнивался, — но `gate_p3` вызывается
+    # ПОСЛЕ сборки Nuitka и двух стендов, то есть отсутствие одного
+    # гитигнорящегося файла стоило бы получаса и только потом сказало бы, чего
+    # не хватает. Тот же класс, что и сам ложный зелёный: цену платит человек,
+    # а сообщение приходит последним.
+    if wanted("P3") and not (_ROOT / "dirty.json").exists():
+        raise SystemExit(
+            f"P3 сравнивает образы на грязном наборе, а {_ROOT / 'dirty.json'} нет.\n"
+            f"Сначала:  cd {_ROOT} && python3 make_dirty.py\n"
+            f"Либо запускайте без P3:  python3 e2e/pack_gates.py --only P1,P2,P4")
+
     started = time.monotonic()
     build_images(args.skip_build)
     reports = _HERE / "reports"
@@ -649,8 +682,20 @@ def main() -> None:
             # that has already had real traffic through it.
             if wanted("P9"):
                 gate_p9()
-            if wanted("P10"):
-                gate_p10()
+        # P10 STANDS OUT HERE, WITH P6, BECAUSE IT NEEDS NO STAND — one
+        # `docker run --rm` against the compiled image and a `sha256sum` of the
+        # file inside it. Its call sat inside the block above while its name was
+        # absent from `needs_stand`, so `--only P10` skipped the block, never ran
+        # the gate, and printed `0/0 packaging gates passed` — exiting ZERO. A
+        # selector that silently measures nothing is worse than one that errors:
+        # the operator reads a green line and believes the release binary's
+        # self-measurement was checked.
+        #
+        # Adding the name to the tuple would have fixed the exit code and bought
+        # two stands and two full parity runs — about twenty minutes — for a gate
+        # that wants neither. The call moves instead.
+        if wanted("P10"):
+            gate_p10()
         if wanted("P6"):
             gate_p6()
     finally:
@@ -668,8 +713,15 @@ def _report(started: float) -> int:
     print("=" * 64)
     print(f"{len(RESULTS) - len(failed)}/{len(RESULTS)} packaging gates passed "
           f"in {(time.monotonic() - started) / 60:.1f} min")
-    print("P7 (the whole L1-L21 suite on the compiled image) runs separately:\n"
+    print("P7 (the whole L1-L22 suite on the compiled image) runs separately:\n"
           f"    python3 e2e/gates.py --image {COMPILED_IMAGE}")
+    # Same guard as `gates.py::_report`, and this file is where the class was
+    # found: `--only P10` printed `0/0` and exited zero for as long as P10 has
+    # existed, because its name was absent from the `needs_stand` tuple while its
+    # call site sat inside the block that tuple guards.
+    if not RESULTS:
+        print("NO GATE RAN. Check the --only names against the roster above.")
+        return 1
     return 1 if failed else 0
 
 

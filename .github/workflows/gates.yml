@@ -1,0 +1,186 @@
+# Гейты против НАСТОЯЩИХ контейнеров.
+#
+# ПОЧЕМУ ОТДЕЛЬНЫЙ ФАЙЛ, А НЕ СТРОКИ В `checks.yml`. Там записано решение,
+# которое остаётся верным: «container gates живут в release.yml, потому что
+# 40-минутное ожидание на каждом коммите — это ожидание, которое люди учатся
+# пропускать». Отменять его нельзя, но и гонять гейты только на тег — значит
+# узнавать о поломке волта через недели. Разрешается это не компромиссом по
+# времени, а ВЫБОРОМ СРЕЗА: полный прогон идёт ночью и по требованию, а на пуш
+# бежит волтовое семейство плюс предполёт памяти — и только когда менялось то,
+# что они стерегут.
+#
+# АРИФМЕТИКА, НА КОТОРОЙ СТОИТ ЭТОТ ВЫБОР. В `e2e/gates.py`: TTL 60 с, grace
+# 120 с, `EXPIRY_WAIT = 225 с`, и ожидание истечения платится ДВАЖДЫ (L8 и L11)
+# плюс L14b; L7 ждёт сто секунд, L10 — до двухсот сорока. Тринадцать минут сидят
+# целиком в семействе деградации. Волтовые L19/L20/L21 не ждут ничего и сами
+# гонят свой трафик — проверено чтением, поэтому срез из них самодостаточен и не
+# даёт ложного зелёного «гейт прошёл, не дойдя до нужного состояния».
+
+name: gates
+
+on:
+  # Ночью — полностью. 01:00 UTC, то есть 04:00 MSK: отказ читается утром, а не
+  # будит.
+  schedule:
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "подмножество, например L4,L16,L17 (пусто — все)"
+        default: ""
+  # По метке на PR — полный прогон. `labeled` в типах обязателен: без него
+  # навешивание метки на уже открытый PR ничего не запустит.
+  #
+  # ФИЛЬТРА `paths` ЗДЕСЬ НЕТ НАМЕРЕННО. С ним метка становится мёртвой ровно
+  # там, где она нужнее всего: PR, правящий `service.py` или `detect_all.py`,
+  # под фильтр не попадает, воркфлоу не запускается вовсе, и человек вешает
+  # метку в пустоту. Полный прогон и так стоит денег только по явной просьбе.
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  # На пуш — только когда менялось то, что эти гейты и стерегут. Правка
+  # документации не должна стоить ни одной минуты раннера.
+  #
+  # Список продублирован, а не вынесен якорем: GitHub Actions YAML-якорей НЕ
+  # понимает и отвергает такой файл целиком — то есть ни один гейт бы не побежал.
+  push:
+    paths:
+      - "prototype/pseudex/vault*.py"
+      - "prototype/pseudex/sqlite_setup.py"
+      - "prototype/pseudex/preflight.py"
+      - "prototype/serve_main.py"
+      - "prototype/entrypoint.sh"
+      - "prototype/Dockerfile*"
+      - "prototype/licensing/**"
+      - "prototype/e2e/**"
+      - ".github/workflows/gates.yml"
+
+jobs:
+  # ── ВОЛТОВЫЙ СРЕЗ ─────────────────────────────────────────────────────────
+  # Ради чего всё это и заводилось: у волта прибавляются колонки, и миграцию на
+  # живом томе надо проверять регулярно, а не однажды.
+  vault:
+    name: волт и предполёт на живом контейнере (L19-L22)
+    # ТОЛЬКО НА ПУШ. `pull_request: synchronize` и `push` срабатывают на одном
+    # и том же коммите ветки в своём репозитории — срез бежал бы дважды за
+    # коммит, против собственного же обоснования про минуты раннера.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run: { working-directory: prototype }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: prototype/requirements.txt }
+      - run: pip install -r requirements.txt
+
+      # Ключи фиксируются на весь job. Здесь собирается ИСХОДНЫЙ образ, Nuitka
+      # не участвует и генерация на прогон ничего не стоит, — но ключ тюнинга
+      # обязан совпасть у образа и у сервера, которого поднимет стенд, иначе
+      # движок не откроет собственный тюнинг.
+      - name: зафиксировать ключи на прогон
+        run: |
+          echo "PSEUDEX_SIGNING_KEY=$(python -c 'from licensing.keys import encode_private; from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey; print(encode_private(Ed25519PrivateKey.generate()))')" >> $GITHUB_ENV
+          echo "PSEUDEX_TUNING_KEY=$(python -c 'import os, base64; print(base64.b64encode(os.urandom(32)).decode())')" >> $GITHUB_ENV
+
+      # КОД ВОЗВРАТА НЕ ПРОПУСКАЕТСЯ ЧЕРЕЗ КОНВЕЙЕР. `gates.py | tee` отдал бы
+      # код `tee`, то есть ноль всегда: правило записано в скилле гейтов, и это
+      # ровно тот способ, каким проверка перестаёт уметь падать.
+      - name: L19-L22 — том, миграция, чужой ключ, память
+        run: python -u e2e/gates.py --only L19,L20,L21,L22
+
+  # ── ПОЛНЫЙ ПРОГОН ─────────────────────────────────────────────────────────
+  # ПОЛНЫЙ ПРОГОН — ночью, руками и по метке `run-gates` на PR. Метка, а не
+  # каждый PR: сорок минут на каждое обновление ветки — то самое ожидание,
+  # которое учатся пропускать.
+  full:
+    name: L1-L22 + P1-P10 против контейнеров
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'run-gates'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run: { working-directory: prototype }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: prototype/requirements.txt }
+      - run: pip install -r requirements.txt
+
+      - name: зафиксировать ключи на прогон
+        run: |
+          echo "PSEUDEX_SIGNING_KEY=$(python -c 'from licensing.keys import encode_private; from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey; print(encode_private(Ed25519PrivateKey.generate()))')" >> $GITHUB_ENV
+          echo "PSEUDEX_TUNING_KEY=$(python -c 'import os, base64; print(base64.b64encode(os.urandom(32)).decode())')" >> $GITHUB_ENV
+
+      # ДАТАСЕТЫ ГЕНЕРИРУЮТСЯ ЗДЕСЬ ЖЕ, И БЕЗ ЭТОГО P3 ПРОВЕРЯЕТ ПОЛОВИНУ.
+      #
+      # `*.json` гитигнорятся, а `parity.py` при отсутствии `dirty.json` тихо
+      # пишет `{"skipped": True}`. Оба отчёта получают одинаковое «пропущено»,
+      # разниц нет — и гейт, который обязан доказать «скомпилированный образ
+      # детектирует ровно то же», зеленеет, не сравнив ни одного значения
+      # грязного набора. В `release.yml` датасеты не генерируются, а
+      # `needs: [engine]` — другой раннер: файл туда не доезжает, значит ветка
+      # «пропущено» была там не краем, а нормой. Теперь P3 на неё краснеет, но
+      # краснеть он должен на настоящую разницу — поэтому файл кладётся сюда.
+      - name: сгенерировать наборы, которые P3 сравнивает
+        run: python make_dirty.py
+
+      # ПУСТОЙ `only` — ПОЛНЫЙ ПРОГОН; НЕПУСТОЙ — БЫСТРАЯ ИТЕРАЦИЯ.
+      #
+      # Сборка Nuitka занимает больше, чем любое подмножество гейтов, поэтому
+      # прогонять её ради `--only L4` бессмысленно: с названным подмножеством
+      # берётся ИСХОДНЫЙ образ и упаковочное семейство пропускается целиком.
+      - name: P1-P10 — упаковка (собирает ОБА образа)
+        if: inputs.only == ''
+        run: python -u e2e/pack_gates.py
+
+      # P7 — те же L-гейты, но против СКОМПИЛИРОВАННОГО образа. `--skip-build`
+      # переиспользует то, что собрал шаг выше: ключи те же, поэтому Nuitka не
+      # пересобирается.
+      - name: P7 — L1-L22 на релизном образе
+        if: inputs.only == ''
+        run: python -u e2e/gates.py --image pseudex:compiled --skip-build
+
+      # ВВОД ИДЁТ ЧЕРЕЗ ОКРУЖЕНИЕ, А НЕ ПОДСТАВЛЯЕТСЯ В КОМАНДУ. `${{ }}` прямо
+      # в `run:` — это склейка строки: `L4"; curl … | sh; "` исполнится на
+      # раннере, который держит ключ подписи и ключ тюнинга.
+      - name: подмножество на исходном образе
+        if: inputs.only != ''
+        env:
+          ONLY: ${{ inputs.only }}
+        run: python -u e2e/gates.py --only "$ONLY"
+
+      - name: тревога, если ночной прогон красный
+        if: failure() && github.event_name == 'schedule'
+        env:
+          TG_TOKEN: ${{ secrets.PSEUDEX_TG_TOKEN }}
+          TG_CHAT: ${{ secrets.PSEUDEX_TG_CHAT }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -u
+          if [ -z "${TG_TOKEN:-}" ] || [ -z "${TG_CHAT:-}" ]; then
+            echo "тревога НЕ ДОСТАВЛЕНА: не заданы PSEUDEX_TG_TOKEN/PSEUDEX_TG_CHAT"
+            exit 0
+          fi
+          # ПЕРВЫЙ ВОПРОС — НЕ ВРЁТ ЛИ САМ ГЕЙТ. Дважды за историю красным был
+          # именно он: L16/L17 искали в логе деталь реализации и протухли при её
+          # переименовании, а `parity.py` имел импорт выше собственной вставки в
+          # sys.path и четыре P-гейта не могли запуститься вообще. Тревога,
+          # которая сразу обвиняет продукт, учит чинить не то.
+          TEXT="$(printf '%s\n\n%s\n%s\n\n%s' \
+            '🔴 <b>Ночные гейты красные</b>' \
+            "Лог: ${RUN}" \
+            'Прод это НЕ роняет — гейты бегут против своих контейнеров.' \
+            'Сначала спросите, не врёт ли сам гейт: дважды за историю красным был он, а не продукт. Потом — не сеть ли (L11 тянет зеркала Debian, L14 — python:3.12-slim).')"
+          # ОТВЕРГНУТАЯ ТРЕВОГА — НЕ ДОСТАВЛЕННАЯ, и молчать об этом нельзя.
+          # `curl` без `--fail` считает HTTP 400 успешной передачей и выходит
+          # нулём: ровно так однажды потерялась настоящая тревога, и с тех пор
+          # `deploy/notify.sh` это проверяет, а `checks.yml` проверяет его.
+          code="$(curl -sS -o /dev/null -w '%{http_code}' \
+            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d "chat_id=${TG_CHAT}" -d "parse_mode=HTML" \
+            --data-urlencode "text=${TEXT}" || echo 000)"
+          [ "$code" = "200" ] || echo "тревога НЕ ДОСТАВЛЕНА: телеграм ответил ${code}"

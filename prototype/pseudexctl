@@ -1,0 +1,643 @@
+#!/usr/bin/env python3
+"""Один вход вместо шести `docker run -e PSEUDEX_ROLE=…`.
+
+ПОЧЕМУ ЭТО ОТДЕЛЬНЫЙ ФАЙЛ, А НЕ РОЛЬ В ОБРАЗЕ. Всё, что здесь есть, оператор
+может сделать руками — команды напечатаны в `docs/operations.md`, и это честные
+команды. Но они длинные, их шесть, и половина ошибок в них не видна: том
+монтируется не туда, ключ передаётся не той переменной, роль пишется с опечаткой
+и контейнер молча стартует движком вместо диагностики. Инструмент не добавляет
+возможностей — он убирает способы промахнуться.
+
+СТОРОННИХ ЗАВИСИМОСТЕЙ НЕТ И БЫТЬ НЕ МОЖЕТ. У клиента есть docker и python3;
+нашего venv у него нет и не будет, потому что мы отдаём образ, а не исходники.
+Отсюда `urllib` вместо `httpx` и `subprocess` вместо SDK.
+
+ЧЕГО ЗДЕСЬ НЕТ НАМЕРЕННО: ничего, что писало бы в том без явной команды.
+`doctor` только читает — диагностика, которая меняет то, что диагностирует, уже
+однажды сгенерировала ключ рядом с чужими данными и объявила весь том
+неоткрываемым.
+"""
+
+import argparse
+import json
+import os
+import shlex
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+
+DEFAULT_CONTAINER = "pseudex"
+DEFAULT_IMAGE = "cr.yandex/pseudex/pseudex:latest"
+DEFAULT_VOLUME = "pseudex-data"
+DEFAULT_URL = "http://127.0.0.1:8000"
+
+# Имена, значения которых не печатаются НИКОГДА. Список поимённый по той же
+# причине, по которой поимённый список в `_passthrough_env`: шаблон однажды
+# промахнётся мимо нового имени, и это будет заметно только по чужому логу.
+_SECRET_NAMES = ("PSEUDEX_VAULT_KEY", "PSEUDEX_VAULT_KEY_NEW",
+                 "PSEUDEX_ADMIN_TOKEN", "PSEUDEX_GATEWAY_TOKEN",
+                 "PSEUDEX_LICENSE_KEY")
+
+
+def _safe(args: list[str]) -> list[str]:
+    """То, что печатается, — не то, что выполняется, и разница только в секретах.
+
+    `--dry-run` и `-v` печатали argv целиком, а в нём стояло
+    `-e PSEUDEX_VAULT_KEY=<ключ>`: инструмент, который просят показать команду
+    ПЕРЕД выполнением, показывал ключ от волта — в терминал, в историю, в тикет
+    поддержки, куда вывод и вставляют.
+    """
+    out = []
+    for arg in args:
+        name = arg.split("=", 1)[0]
+        if "=" in arg and name in _SECRET_NAMES:
+            out.append(f"{name}=***")
+        else:
+            # ЦИТИРУЕТСЯ, ПОТОМУ ЧТО ЭТУ СТРОКУ КОПИРУЮТ. Аргумент с пробелом или
+            # точкой с запятой выполняется как ОДИН элемент argv, но напечатанный
+            # без кавычек выглядит как две команды — и вставленный в терминал
+            # ими же и станет.
+            out.append(shlex.quote(arg))
+    return out
+
+
+OK, WARN, BAD = "ok", "warn", "bad"
+_MARK = {OK: "  ok  ", WARN: " ВНИМ ", BAD: " ОТКАЗ"}
+
+
+class Runner:
+    """Всё, что уходит наружу, проходит через один объект.
+
+    Не ради абстракции: так `--dry-run` печатает РОВНО ту команду, которая
+    выполнилась бы, а проверки гоняют логику вердиктов без docker вообще. Тул,
+    который нельзя проверить без боевого контейнера, не проверяется никогда.
+    """
+
+    def __init__(self, dry_run: bool = False, verbose: bool = False) -> None:
+        self.dry_run = dry_run
+        self.verbose = verbose
+
+    def docker(self, args: list[str], timeout: int = 600) -> tuple[int, str]:
+        if self.dry_run or self.verbose:
+            print("+ docker " + " ".join(_safe(args)), file=sys.stderr)
+        if self.dry_run:
+            return 0, ""
+        try:
+            done = subprocess.run(["docker", *args], capture_output=True,
+                                  text=True, timeout=timeout)
+        except FileNotFoundError:
+            return 127, "docker не найден в PATH"
+        except PermissionError:
+            return 126, "docker есть, но не запускается — права на сокет?"
+        except subprocess.TimeoutExpired:
+            return 124, f"docker не ответил за {timeout} с"
+        return done.returncode, done.stdout + done.stderr
+
+    def http(self, url: str, token: str, method: str = "GET",
+             timeout: int = 30) -> tuple[int, str]:
+        if self.dry_run or self.verbose:
+            print(f"+ {method} {url}", file=sys.stderr)
+        if self.dry_run:
+            return 0, ""
+        request = urllib.request.Request(url, method=method)
+        if token:
+            request.add_header("Authorization", f"Bearer {token}")
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.status, response.read().decode("utf-8", "replace")
+        except urllib.error.HTTPError as error:
+            return error.code, error.read().decode("utf-8", "replace")
+        except OSError as error:
+            return 0, str(error)
+
+
+def _role(runner: Runner, role: str, image: str, volume: str,
+          env: dict[str, str], extra: list[str] | None = None,
+          read_only: bool = False) -> tuple[int, str]:
+    """Одноразовая роль против ТОМА.
+
+    СЕКРЕТ ПЕРЕДАЁТСЯ ИМЕНЕМ, А НЕ ЗНАЧЕНИЕМ. `-e ИМЯ` без `=` docker берёт из
+    окружения ВЫЗЫВАЮЩЕГО, поэтому значение не появляется ни в argv, ни в `ps`
+    на хосте, ни в истории команд. `-e ИМЯ=значение` кладёт ключ от волта во все
+    три места сразу.
+
+    СЕТЬ ОТКЛЮЧАЕТСЯ ТОЛЬКО КОГДА МОЖНО. `--network none` — правильная броня для
+    ролей, которым ходить некуда, но `PSEUDEX_VAULT_KEY_CMD` — это команда,
+    исполняемая ВНУТРИ контейнера, и у клиента это вызов менеджера секретов.
+    Безусловная изоляция превращала здоровый том в «НЕ ОТКРЫВАЕТСЯ» после
+    полутора минут ожидания — самый пугающий вердикт инструмента, выданный
+    по причине, которую этот же инструмент и создал.
+    """
+    mount = f"{volume}:/data:ro" if read_only else f"{volume}:/data"
+    args = ["run", "--rm", "-e", f"PSEUDEX_ROLE={role}",
+            "-v", mount, "-e", "PSEUDEX_DB_DIR=/data"]
+    if not env.get("PSEUDEX_VAULT_KEY_CMD"):
+        args[1:1] = ["--network", "none"]
+    for name, value in env.items():
+        if not value:
+            continue
+        args += ["-e", name] if name in _SECRET_NAMES else ["-e", f"{name}={value}"]
+    args += list(extra or [])
+    args.append(image)
+    return runner.docker(args)
+
+
+def _passthrough_env() -> dict[str, str]:
+    """Ключи волта берутся из окружения оператора и НЕ печатаются.
+
+    Именно поэтому они перечислены поимённо: список пропускаемого — это
+    решение, а `-e` по шаблону однажды увезёт в контейнер что-нибудь ещё.
+    """
+    return {name: os.environ.get(name, "") for name in (
+        "PSEUDEX_VAULT_KEY", "PSEUDEX_VAULT_KEY_FILE", "PSEUDEX_VAULT_KEY_CMD",
+        "PSEUDEX_VAULT_KEY_NEW", "PSEUDEX_VAULT_ENCRYPTION")}
+
+
+# --- команды -------------------------------------------------------------
+
+def cmd_probe(args, runner: Runner) -> int:
+    code, output = _role(runner, "probe", args.image, args.volume, _passthrough_env())
+    print(output, end="")
+    return code
+
+
+def cmd_preflight(args, runner: Runner) -> int:
+    # ВСЯ СЕМЬЯ РУЧЕК, А НЕ ОДНА. С одним PSEUDEX_WORKERS предполёт считал бюджет
+    # по УМОЛЧАНИЯМ и отвечал про контейнер, которого у клиента нет: тот, кто
+    # поднял PSEUDEX_WORKER_MB под свой трафик, получил бы чужую арифметику с
+    # нашей интонацией уверенности.
+    env = dict(_passthrough_env())
+    for name in ("PSEUDEX_WORKERS", "PSEUDEX_WORKER_MB", "PSEUDEX_HEADROOM_MB",
+                 "PSEUDEX_UI", "PSEUDEX_MEMORY_LIMIT_MB"):
+        env[name] = os.environ.get(name, "")
+    code, output = _role(runner, "preflight", args.image, args.volume, env,
+                         extra=([f"--memory={args.memory}"] if args.memory else []))
+    print(output, end="")
+    return code
+
+
+def cmd_decrypt(args, runner: Runner) -> int:
+    code, output = _role(runner, "decrypt", args.image, args.volume, _passthrough_env())
+    print(output, end="")
+    return code
+
+
+def _running(runner: Runner, container: str) -> bool:
+    code, output = runner.docker(
+        ["inspect", "--format", "{{.State.Running}}", container], timeout=60)
+    return code == 0 and output.strip() == "true"
+
+
+def _archive_mount(path: str, mode: str) -> tuple[list[str], str]:
+    """Каталог монтируется, ИМЯ ФАЙЛА уезжает отдельным аргументом.
+
+    Первая версия склеивала имя в строку `sh -c`, и это не теоретическая
+    придирка: `restore "/tmp/vault backup.tgz"` выполнял `rm -rf /data/*`
+    успешно, а распаковку — уже нет. Том стёрт, восстанавливать нечем. Форма с
+    точкой с запятой в имени — та же дыра, только нарочно.
+
+    Здесь нет ни одной подстановки в шелл: каталог идёт в `-v`, имя — отдельным
+    элементом argv у `tar`, а всё, что должен сделать шелл, записано
+    неизменяемой строкой.
+    """
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    name = os.path.basename(path)
+    # ПУСТОЕ ИМЯ — ЭТО ТОТ ЖЕ СТЁРТЫЙ ТОМ, ДРУГИМ ПУТЁМ. Путь, кончающийся на
+    # слэш, даёт `basename == ""`; проверка на дефис и слэш его пропускала, а
+    # `tar xzf "/archive/"` падает — уже ПОСЛЕ `rm -rf`. Найдено собственной
+    # проверкой на инъекцию: `/tmp/x.tgz; rm -rf /` кончается слэшем.
+    if not name or name.startswith("-") or "/" in name:
+        raise ValueError(f"недопустимое имя файла: {path!r}")
+    return ["-v", f"{directory}:/archive:{mode}"], name
+
+
+def cmd_backup(args, runner: Runner) -> int:
+    """Копия ТОМА, снятая отдельным контейнером.
+
+    Не `docker cp` из работающего: SQLite пишет через WAL, и копия живого файла
+    — это торн-пейдж, который ОТКРЫВАЕТСЯ и содержит не то. Поэтому движок
+    проверяется ДО копирования, а не упоминается после: предупреждение,
+    напечатанное под уже снятым архивом, — это описание испорченного файла,
+    и восстанавливаться из него будут именно тогда, когда всё уже плохо.
+    """
+    try:
+        mount, name = _archive_mount(args.file, "rw")
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    if _running(runner, args.container) and not args.force:
+        print(f"контейнер {args.container} работает. SQLite пишет через WAL, и "
+              f"копия живой базы откроется, но будет содержать не то — а "
+              f"восстанавливаться из неё будут в худший день.\n"
+              f"Остановите движок (docker stop {args.container}) или повторите с "
+              f"--force, если знаете, что трафика нет.", file=sys.stderr)
+        return 2
+    code, output = runner.docker([
+        "run", "--rm", "--network", "none", "-v", f"{args.volume}:/data:ro",
+        *mount, "--entrypoint", "tar", args.image,
+        "czf", f"/archive/{name}", "-C", "/data", "."])
+    print(output, end="")
+    if code == 0 and not runner.dry_run:
+        print(f"копия тома: {args.file}")
+    return code
+
+
+def cmd_restore(args, runner: Runner) -> int:
+    if not args.yes:
+        print("restore ПЕРЕЗАПИШЕТ том целиком. Повторите с --yes.", file=sys.stderr)
+        return 2
+    # ФАЙЛ ПРОВЕРЯЕТСЯ ДО СТИРАНИЯ, а не распаковкой после него. Порядок здесь
+    # и есть вся разница: `rm -rf /data/*` выполняется первым и успешно, а
+    # ошибка приходит от `tar` — том пуст, восстанавливать нечем, и всё это по
+    # опечатке в имени.
+    if not os.path.isfile(args.file):
+        print(f"нет такого файла: {args.file}\nТом не тронут.", file=sys.stderr)
+        return 2
+    try:
+        mount, name = _archive_mount(args.file, "ro")
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    # ЖИВОЙ ДВИЖОК ПЕРЕЖИВЁТ ВОССТАНОВЛЕНИЕ И ОТМЕНИТ ЕГО. Воркеры продолжают
+    # писать в отвязанные inode и затирают только что восстановленные файлы —
+    # причём `rekey`, который делает МЕНЬШЕ, движок останавливает.
+    if _running(runner, args.container):
+        print(f"контейнер {args.container} работает. Восстановление сотрёт том, а "
+              f"живые воркеры продолжат писать в отвязанные inode и затрут "
+              f"восстановленное.\nСначала: docker stop {args.container}",
+              file=sys.stderr)
+        return 2
+    code, output = runner.docker([
+        "run", "--rm", "--network", "none", "-v", f"{args.volume}:/data",
+        *mount, "-e", f"ARCHIVE={name}", "--entrypoint", "sh", args.image, "-c",
+        # НИ ОДНОЙ ПОДСТАНОВКИ В КОМАНДУ: строка неизменяема, имя файла приходит
+        # переменной окружения и раскрывается шеллом уже внутри контейнера, в
+        # кавычках. Пробел в имени остаётся пробелом, точка с запятой — точкой с
+        # запятой, а не второй командой, которая выполнится после `rm -rf`.
+        'set -e; rm -rf /data/..?* /data/.[!.]* /data/*; '
+        'tar xzf "/archive/$ARCHIVE" -C /data'],
+        timeout=1800)
+    print(output, end="")
+    return code
+
+
+def cmd_diag(args, runner: Runner) -> int:
+    status, body = runner.http(f"{args.url}/diagnostics", args.token)
+    print(body)
+    return 0 if status == 200 else 1
+
+
+def cmd_metrics(args, runner: Runner) -> int:
+    status, body = runner.http(f"{args.url}/metrics", args.token)
+    print(body, end="")
+    return 0 if status == 200 else 1
+
+
+def _wait_healthy(runner: Runner, url: str, seconds: int = 180) -> bool:
+    """Дождаться, пока движок отвечает. Каждый стенд в этом репозитории так и
+    делает, и не от вежливости: контейнер строит модель и берёт аренду, а запрос
+    в эту секунду получает connection refused. Проверка, спрашивающая слишком
+    рано, объявляет отказом собственное нетерпение."""
+    if runner.dry_run:
+        return True
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        status, _body = runner.http(f"{url}/health", "", timeout=5)
+        if status == 200:
+            return True
+        time.sleep(3)
+    return False
+
+
+def _restart_plan(args) -> tuple[bool, str]:
+    """Можно ли поднять ТОТ ЖЕ контейнер, или его надо пересоздать.
+
+    `docker start` ВОСПРОИЗВОДИТ ОКРУЖЕНИЕ, С КОТОРЫМ КОНТЕЙНЕР СОЗДАВАЛИ. Если
+    ключ задан литералом в `PSEUDEX_VAULT_KEY`, то после ротации этот контейнер
+    поднимется со СТАРЫМ ключом и не откроет собственный том — а инструмент,
+    запустивший его и напечатавший «движок запущен», соврал бы в самый
+    неподходящий момент.
+
+    Если ключ приходит из `_FILE` или `_CMD`, он разрешается ПРИ СТАРТЕ и вне
+    окружения контейнера — тогда `docker start` верен, и это самый частый случай
+    у тех, кто вообще вращает ключи.
+    """
+    if args.start_cmd:
+        return True, args.start_cmd
+    if os.environ.get("PSEUDEX_VAULT_KEY"):
+        return False, ""
+    return True, f"docker start {args.container}"
+
+
+def cmd_rekey(args, runner: Runner) -> int:
+    """Ротация ключа, и — по просьбе — ДОКАЗАТЕЛЬСТВО, что она ничего не сломала.
+
+    ЭТОГО НЕ ПРОВЕРЯЛ НИКТО. `vault_migrate.rekey_store` доказывает ровно одно:
+    файл открывается новым ключом. Что подстановки, уже лежащие в CRM клиента,
+    по-прежнему разворачиваются в настоящие значения, не проверял ни один гейт и
+    ни один тест — а это и есть единственное, ради чего волт существует.
+
+    Проверка устроена так, чтобы ничего не выдумывать: `/selfcheck` гоняет
+    НАСТОЯЩИЕ /mask и /unmask на канонической фразе под своей организацией,
+    которую биллинг исключает, и возвращает подстановки. Те же значения после
+    ротации обязаны дать ТЕ ЖЕ подстановки — если строки пережили смену ключа.
+    Разошлись — значит вместо старых строк отчеканены новые, и у половины людей
+    в чужой системе теперь по два псевдонима.
+    """
+    can_restart, start_cmd = _restart_plan(args)
+    before: dict[str, str] = {}
+    if args.verify:
+        if not can_restart:
+            print("ключ задан литералом в PSEUDEX_VAULT_KEY, поэтому `docker start` "
+                  "поднимет контейнер со СТАРЫМ ключом и он не откроет том.\n"
+                  "Скажите, чем поднимать после ротации:\n"
+                  "  pseudexctl rekey --verify --start-cmd 'docker compose up -d pseudex'\n"
+                  "(в окружении этой команды PSEUDEX_VAULT_KEY должен быть уже НОВЫМ)",
+                  file=sys.stderr)
+            return 2
+        status, body = runner.http(f"{args.url}/selfcheck", args.token, "POST", timeout=180)
+        if status != 200 and not runner.dry_run:
+            print(f"проверка невозможна: /selfcheck ответил {status}. Движок должен "
+                  f"работать ДО ротации, иначе сравнивать не с чем.", file=sys.stderr)
+            return 1
+        before = _tokens(body)
+        if not before and not runner.dry_run:
+            print("проверка невозможна: /selfcheck не вернул ни одной подстановки",
+                  file=sys.stderr)
+            return 1
+        print(f"до ротации: {len(before)} подстановок запомнено")
+
+    # КОД ВОЗВРАТА `stop` НЕ ВЫБРАСЫВАЕТСЯ. Опечатка в `--container` означала бы
+    # ротацию под живым движком — ровно то, чего `serve_main._rekey` не может
+    # проконтролировать сам и о чём честно пишет в своём докстринге.
+    code, output = runner.docker(["stop", args.container], timeout=180)
+    if code != 0 and not runner.dry_run:
+        print(f"не удалось остановить {args.container}: {output.strip()}\n"
+              f"Ротация под живым движком подменяет файлы из-под работающих "
+              f"воркеров — не начинаем.", file=sys.stderr)
+        return 1
+
+    code, output = _role(runner, "rekey", args.image, args.volume, _passthrough_env())
+    print(output, end="")
+    if code != 0:
+        print("ротация НЕ ЗАВЕРШЕНА. Старый ключ НЕ выключайте — строки выше "
+              "называют, какие файлы остались на нём.", file=sys.stderr)
+        runner.docker(["start", args.container], timeout=180)
+        return code
+
+    started, start_output = runner.docker(shlex.split(start_cmd)[1:], timeout=180) \
+        if start_cmd.startswith("docker ") else _shell(runner, start_cmd)
+    if started != 0 and not runner.dry_run:
+        print(f"ключ сменён, но поднять движок не удалось: {start_output.strip()}\n"
+              f"Том уже на НОВОМ ключе — поднимайте с ним.", file=sys.stderr)
+        return 1
+
+    if not args.verify:
+        print("движок запущен. Проверить, что детокенизация выжила: "
+              "pseudexctl rekey --verify (или selfcheck)")
+        return 0
+
+    if not _wait_healthy(runner, args.url):
+        print("ОТКАЗ: после ротации движок не поднялся за три минуты. Это не "
+              "обязательно волт — смотрите docker logs.", file=sys.stderr)
+        return 1
+    status, body = runner.http(f"{args.url}/selfcheck", args.token, "POST", timeout=180)
+    after = _tokens(body)
+    if runner.dry_run:
+        return 0
+    return _verdict_after_rekey(before, after, status)
+
+
+def _shell(runner: Runner, command: str) -> tuple[int, str]:
+    """Команда подъёма, названная оператором, выполняется КАК ЕСТЬ.
+
+    Это не дыра: строка приходит из его собственной командной строки, где он и
+    так может выполнить что угодно. Зато `docker compose up -d pseudex` —
+    единственный способ пересоздать контейнер с новым ключом, и не уметь его
+    значило бы отправлять человека доделывать ротацию руками ровно в тот
+    момент, когда важнее всего довести её до конца.
+    """
+    if runner.dry_run or runner.verbose:
+        print(f"+ {command}", file=sys.stderr)
+    if runner.dry_run:
+        return 0, ""
+    done = subprocess.run(command, shell=True, capture_output=True, text=True,
+                          timeout=600)
+    return done.returncode, done.stdout + done.stderr
+
+
+def _tokens(body: str) -> dict[str, str]:
+    """Подстановки из ответа /selfcheck, ключом — ЗНАЧЕНИЕ.
+
+    Значения тут наши собственные, синтетические и захардкоженные в движке
+    (`_SELFCHECK_TEXT`), так что держать их в памяти инструмента — не то же
+    самое, что держать клиентские: у оператора на экране они и так есть.
+    """
+    try:
+        data = json.loads(body or "{}")
+    except ValueError:
+        return {}
+    return {str(span.get("value")): str(span.get("token"))
+            for span in data.get("spans", []) if span.get("token")}
+
+
+def _verdict_after_rekey(before: dict[str, str], after: dict[str, str],
+                         status: int) -> int:
+    if status != 200:
+        print(f"ОТКАЗ: после ротации /selfcheck ответил {status}", file=sys.stderr)
+        return 1
+    moved = {value: (was, after.get(value)) for value, was in before.items()
+             if after.get(value) != was}
+    if moved:
+        print("ОТКАЗ: после ротации подстановки СМЕНИЛИСЬ — значит строки не "
+              "пережили смену ключа и отчеканены заново.", file=sys.stderr)
+        for value, (was, now) in sorted(moved.items()):
+            print(f"  было {was} -> стало {now}", file=sys.stderr)
+        print("У людей, уже записанных в вашу систему под старыми подстановками, "
+              "теперь по два псевдонима. Восстановите том из копии.", file=sys.stderr)
+        return 1
+    print(f"ротация завершена, детокенизация проверена: {len(before)} подстановок "
+          f"разворачиваются в те же значения")
+    return 0
+
+
+def cmd_doctor(args, runner: Runner) -> int:
+    """Собрать всё и сказать, ЧТО СЛОМАНО И ЧТО ДЕЛАТЬ.
+
+    Не «показать состояние»: состояние уже показывают `/status`, `/diagnostics`
+    и `probe`, каждый со своей стороны и своими словами. Здесь три источника
+    сведены в один вердикт, и у каждой строки есть следующее действие — иначе
+    инструмент отвечает на вопрос, которого никто не задавал, вместо того,
+    который задают всегда.
+
+    НИ ОДНА ПРОВЕРКА НЕ ПРЕРЫВАЕТ ОСТАЛЬНЫЕ. Врач, замолчавший на первом
+    симптоме, хуже отсутствующего: чаще всего сломано именно то, что не
+    проверили.
+    """
+    lines: list[tuple[str, str, str]] = []
+
+    code, output = runner.docker(["inspect", "--format",
+                                  "{{.State.Status}} {{.Config.Image}}",
+                                  args.container], timeout=60)
+    if code != 0:
+        lines.append((BAD, f"контейнер {args.container} не найден",
+                      "проверьте имя: pseudexctl --container ИМЯ doctor"))
+    else:
+        state = output.split()[0] if output.split() else "?"
+        image = output.split()[1] if len(output.split()) > 1 else "?"
+        lines.append((OK if state == "running" else BAD,
+                      f"контейнер {state}, образ {image}",
+                      "" if state == "running" else "docker logs "
+                      f"{args.container} --tail 200 — первая строка скажет почему"))
+
+    status, body = runner.http(f"{args.url}/license", "")
+    if status == 200:
+        lines.append((OK, "лицензия в порядке", ""))
+    elif status == 503:
+        lines.append((BAD, "лицензия деградировала — /license отвечает 503",
+                      "смотрите grace_left_s в теле; если ноль — оплата или связь"))
+    else:
+        lines.append((BAD, f"движок не отвечает на {args.url}/license ({status})",
+                      "порт опубликован? контейнер запущен?"))
+
+    if not args.token:
+        lines.append((WARN, "операторский токен не задан — глубже смотреть нечем",
+                      "PSEUDEX_ADMIN_TOKEN=… pseudexctl doctor, или --token"))
+    else:
+        status, body = runner.http(f"{args.url}/status", args.token)
+        if status != 200:
+            lines.append((BAD, f"/status ответил {status}",
+                          "токен тот? он задаётся контейнеру один раз на все воркеры"))
+        else:
+            lines += _read_status(body)
+
+    # ТОМ МОНТИРУЕТСЯ ТОЛЬКО НА ЧТЕНИЕ. Докстринг `probe` обещает, что роль
+    # ничего не создаёт, но обещание — не механизм: ключ-парольная форма доходит
+    # до `vault_key._salt()`, и тот пишет файл соли в чужой том. Диагностика,
+    # меняющая то, что диагностирует, уже однажды сгенерировала ключ рядом с
+    # данными и объявила весь том неоткрываемым.
+    code, output = _role(runner, "probe", args.image, args.volume,
+                         _passthrough_env(), read_only=True)
+    # ОТКАЗ DOCKER'А — ЭТО НЕ ОТКАЗ ТОМА. 127 — нет docker, 125 — нет образа,
+    # 124 — не дождались: любой из них печатался как «том НЕ открывается», самый
+    # пугающий вердикт инструмента, про том, который никто не открывал.
+    if code == 0:
+        lines.append((OK, "том открывается текущим ключом", ""))
+    elif code in (124, 125, 126, 127):
+        lines.append((WARN, f"проверить том не удалось: {output.strip()[:80]}",
+                      "docker в PATH? образ скачан? "
+                      "pseudexctl --image ОБРАЗ doctor"))
+    else:
+        lines.append((BAD, "том НЕ открывается текущим ключом",
+                      "pseudexctl probe — он скажет, какой файл и почему"))
+    if "ключ лежит рядом с данными" in output:
+        lines.append((WARN, "ключ волта лежит в том же томе, что и данные",
+                      "кража тома забирает и ключ: PSEUDEX_VAULT_KEY_CMD переносит "
+                      "его в ваш менеджер секретов"))
+
+    for mark, what, todo in lines:
+        print(f"{_MARK[mark]}  {what}")
+        if todo:
+            print(f"          -> {todo}")
+    broken = [line for line in lines if line[0] == BAD]
+    print()
+    print("всё в порядке" if not broken else f"проблем: {len(broken)}")
+    return 1 if broken else 0
+
+
+def _read_status(body: str) -> list[tuple[str, str, str]]:
+    """Вердикты по телу /status. Отдельно от `cmd_doctor`, потому что это
+    единственная часть, которую можно проверить без docker и без движка."""
+    try:
+        data = json.loads(body or "{}")
+    except ValueError:
+        return [(BAD, "/status вернул не JSON", "версия образа старше инструмента?")]
+    out: list[tuple[str, str, str]] = []
+
+    engine = data.get("engine") or {}
+    if not engine.get("assets_loaded", True):
+        out.append((BAD, "словари детекции не загружены — /mask отвечает 503",
+                    "нет бандла: это не «детекция похуже», это остановка"))
+
+    memory = engine.get("memory") or {}
+    budget = memory.get("worker_mb_budget") or 0
+    largest = memory.get("largest_process_mb") or 0
+    if budget and largest > budget:
+        out.append((WARN, f"крупнейший процесс {largest} МБ при бюджете {budget} МБ",
+                    "поднимите лимит памяти или уменьшите PSEUDEX_WORKERS — иначе "
+                    "решать будет OOM-killer, а его вердикт это статус 137"))
+    if memory.get("limit_mb") is None:
+        out.append((WARN, "у контейнера нет лимита памяти",
+                    "предполёт в этом случае ничего не проверяет: docker run "
+                    "--memory=…"))
+
+    vault = data.get("vault") or {}
+    if vault.get("on_disk") == "plaintext":
+        out.append((BAD, "настоящие значения лежат в томе ОТКРЫТЫМ ТЕКСТОМ",
+                    "кто получил том, снимок диска или бэкап — прочитал всё"))
+    elif vault.get("on_disk") == "mixed":
+        out.append((WARN, "часть хранилищ ещё открыта — миграция оборвалась",
+                    "перезапуск с тем же ключом дошифрует остальные"))
+
+    licence = data.get("license") or {}
+    grace = licence.get("grace_left_s")
+    if licence.get("state") == "stale" and grace is not None:
+        out.append((WARN, f"аренда не продлевается, до остановки {grace} с",
+                    "связь до лицензионного сервера или оплата"))
+    return out
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="pseudexctl", description=__doc__.splitlines()[0],
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--container", default=os.environ.get("PSEUDEX_CONTAINER", DEFAULT_CONTAINER))
+    parser.add_argument("--image", default=os.environ.get("PSEUDEX_IMAGE", DEFAULT_IMAGE))
+    parser.add_argument("--volume", default=os.environ.get("PSEUDEX_VOLUME", DEFAULT_VOLUME))
+    parser.add_argument("--url", default=os.environ.get("PSEUDEX_URL", DEFAULT_URL))
+    parser.add_argument("--token", default=os.environ.get("PSEUDEX_ADMIN_TOKEN", ""),
+                        help="операторский токен; по умолчанию из PSEUDEX_ADMIN_TOKEN")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="напечатать команды, ничего не выполняя")
+    parser.add_argument("-v", "--verbose", action="store_true")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("doctor", help="что сломано и что делать").set_defaults(run=cmd_doctor)
+    sub.add_parser("probe", help="открывается ли том текущим ключом").set_defaults(run=cmd_probe)
+    preflight = sub.add_parser("preflight", help="сколько воркеров влезает в память")
+    preflight.add_argument("--memory", default="", help="проверить против другого лимита, например 2g")
+    preflight.set_defaults(run=cmd_preflight)
+    sub.add_parser("decrypt", help="выгрузить хранилища открытым текстом").set_defaults(run=cmd_decrypt)
+    sub.add_parser("diag", help="/diagnostics работающего движка").set_defaults(run=cmd_diag)
+    sub.add_parser("metrics", help="/metrics работающего движка").set_defaults(run=cmd_metrics)
+
+    rekey = sub.add_parser("rekey", help="сменить ключ волта")
+    rekey.add_argument("--verify", action="store_true",
+                       help="доказать, что детокенизация выжила ротацию")
+    rekey.add_argument("--start-cmd", default="",
+                       help="чем поднимать движок после ротации, например "
+                            "'docker compose up -d pseudex'. Обязателен, когда "
+                            "ключ задан литералом: docker start воспроизведёт "
+                            "СТАРЫЙ ключ")
+    rekey.set_defaults(run=cmd_rekey)
+
+    backup = sub.add_parser("backup", help="копия тома в файл")
+    backup.add_argument("file")
+    backup.add_argument("--force", action="store_true",
+                        help="снять копию при работающем движке: копия живой "
+                             "базы ОТКРЫВАЕТСЯ и содержит не то")
+    backup.set_defaults(run=cmd_backup)
+
+    restore = sub.add_parser("restore", help="восстановить том из файла")
+    restore.add_argument("file")
+    restore.add_argument("--yes", action="store_true", help="да, перезаписать том")
+    restore.set_defaults(run=cmd_restore)
+
+    args = parser.parse_args(argv)
+    return args.run(args, Runner(args.dry_run, args.verbose))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

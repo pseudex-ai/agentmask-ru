@@ -209,8 +209,112 @@ services:
         apk add --no-cache curl python3 openssl >/dev/null
         while :; do sh /deploy/watch.sh || true; sleep 60; done
 
+  # ── НАБЛЮДАЕМОСТЬ, ПО ЯВНОМУ ЖЕЛАНИЮ ─────────────────────────────────────
+  #
+  # `profiles:` — то есть по умолчанию НЕ ПОДНИМАЕТСЯ. Сторож (`watch.sh`) уже
+  # шлёт тревоги в телеграм и переживает падение чего угодно; эти два
+  # контейнера дают историю и графики, а не сигнал, и платить за них памятью
+  # на маленькой машине никто не обязан. Включается одной строкой:
+  #
+  #     docker compose --profile observability up -d
+  #
+  # ПОЛНЫЙ ТОКЕН ПРИЕЗЖАЕТ ФАЙЛОМ, И ТОЛЬКО ФАЙЛОМ.
+  #
+  # Первая версия писала его в контейнере из `${PSEUDEX_LICENSE_ADMIN_TOKEN}`
+  # внутри `command:` — и это ровно та утечка, которую комментарий рядом
+  # объявлял предотвращённой: подстановку `${...}` в `command` делает САМ
+  # Compose, до контейнера, поэтому токен ложится открытым текстом в `Cmd`
+  # образа и виден в `docker compose config`, `docker inspect`,
+  # `docker ps --no-trunc` и `/proc/1/cmdline`.
+  #
+  # Поэтому файл. Его создаёт оператор рядом с сертификатами — тем же способом,
+  # каким уже лежит `./certs`:
+  #
+  #     mkdir -p secrets && printf %s "$PSEUDEX_LICENSE_ADMIN_TOKEN" \
+  #       > secrets/license-admin-token && chmod 600 secrets/license-admin-token
+  #
+  # Если файла нет, Prometheus не поднимет цель и это видно как down — отказ
+  # громкий, а не молчаливый.
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    profiles: ["observability"]
+    restart: unless-stopped
+    logging: *logging
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=90d
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./secrets/license-admin-token:/etc/prometheus/license-admin-token:ro
+      - prometheus-data:/prometheus
+    # Не публикуется. Смотрят через Grafana, а сюда ходить незачем — и
+    # опубликованный Prometheus это ещё один способ прочитать сводку по флоту.
+    expose: ["9090"]
+    depends_on:
+      license: { condition: service_started }
+
+  grafana:
+    image: grafana/grafana:11.5.1
+    profiles: ["observability"]
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      # `:-`, А НЕ `:?`: Compose подставляет переменные ДО отбора профилей,
+      # поэтому обязательная переменная у сервиса под
+      # `profiles: ["observability"]` требовалась даже при обычном
+      # `docker compose up -d` — опциональный сервис, который по умолчанию не
+      # поднимается, блокировал основной путь.
+      #
+      # НО ПУСТОЙ ПАРОЛЬ САМА GRAFANA НЕ ЛОВИТ, и здесь стояло обратное.
+      # Переопределения из окружения она применяет только при непустом значении
+      # (`if len(envValue) > 0`), а `defaults.ini` держит `admin_password =
+      # admin` — то есть «послабление» отдало бы дашборд с именами клиентов и их
+      # разрывами цепи под admin/admin. Поэтому отказ переехал в entrypoint
+      # ниже: он срабатывает ТОЛЬКО когда профиль реально поднимают.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-}
+      # Аноним не смотрит на график, где названы организации с порванной цепью.
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    # ОТКАЗ ЗДЕСЬ, А НЕ В ИНТЕРПОЛЯЦИИ. `${...:?}` сработал бы на всех, включая
+    # тех, кто профиль не включает; эта проверка исполняется внутри контейнера,
+    # то есть ровно тогда, когда сервис действительно запускают. `$$` — чтобы
+    # переменную раскрыл шелл контейнера, а не Compose.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ -z "$$GF_SECURITY_ADMIN_PASSWORD" ]; then
+          echo "GRAFANA_PASSWORD не задан. Без него Grafana поднимется с" >&2
+          echo "паролем admin/admin из defaults.ini, а на дашборде видны" >&2
+          echo "клиенты и их разрывы цепи. Задайте его в .env и повторите." >&2
+          exit 1
+        fi
+        exec /run.sh
+    volumes:
+      - grafana-data:/var/lib/grafana
+      # Дашборд лежит рядом с правилами и версионируется вместе с ними: панель,
+      # нарисованная руками в UI, живёт в базе одной машины и исчезает с ней.
+      - ./grafana-dashboard.json:/var/lib/grafana/dashboards/pseudex.json:ro
+      # БЕЗ ПРОВИЖИНИНГА СМОНТИРОВАННЫЙ JSON — ПРОСТО ФАЙЛ В КАТАЛОГЕ. Grafana
+      # читает дашборды только через провайдера, а источник данных — только из
+      # своего файла; без этих двух профиль поднимал пустую Grafana, и увидеть
+      # это можно было единственным способом — открыв её.
+      - ./grafana-provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana-provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+    # ТОЛЬКО ЛОКАЛЬНО. Смотреть — через ssh-туннель: `-p 3000:3000` опубликовал
+    # бы на каждом интерфейсе облачной машины панель, которая показывает, кто
+    # наши клиенты и у кого из них проблемы.
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      prometheus: { condition: service_started }
+
 volumes:
   watch-state:
+  prometheus-data:
+  grafana-data:
   postgres-data:
   license-data:
   caddy-data:

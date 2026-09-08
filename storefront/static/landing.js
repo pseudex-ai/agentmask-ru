@@ -172,3 +172,109 @@ if (tabs) {
   });
   showProvider(0);
 }
+
+/* ---------- конфигуратор ---------- */
+/*
+   ВЕРДИКТ СЧИТАЕТСЯ ЗДЕСЬ, БЕЗ ОБРАЩЕНИЯ К СЕРВЕРУ. Ответ — функция от реестра,
+   который уже отрендерен в страницу: `data-covered` на каждом чекбоксе и текст
+   вердикта в `data-verdict`. Круговой заход на сервер добавил бы задержку и
+   точку отказа ради арифметики, которую браузер делает мгновенно.
+
+   НА СЕРВЕР УХОДИТ ТОЛЬКО НАБОР КОДОВ, и только по нажатию кнопки: пока человек
+   щёлкает галочками, ничего никуда не отправляется. Ни текста, ни почты — см.
+   докстринг `views.demand`.
+*/
+
+const cfg = document.getElementById("cfg");
+
+function cfgSelected() {
+  return Array.from(cfg.querySelectorAll("input[type=checkbox]"))
+    .filter((box) => box.checked);
+}
+
+function cfgRender() {
+  const chosen = cfgSelected();
+  const out = document.getElementById("cfg-out");
+  if (!chosen.length) {
+    out.hidden = true;
+    return;
+  }
+  out.hidden = false;
+
+  const verdicts = document.getElementById("cfg-verdicts");
+  verdicts.textContent = "";
+  chosen.forEach((box) => {
+    const row = document.createElement("div");
+    row.className = "cfg-verdict";
+    const mark = document.createElement("span");
+    mark.className = box.dataset.covered === "1" ? "cfg-mark yes" : "cfg-mark no";
+    mark.textContent = box.dataset.covered === "1" ? "НАХОДИМ" : "ПОКА НЕТ";
+    const label = document.createElement("b");
+    label.textContent = box.closest("label").querySelector(".cfg-label").textContent;
+    const text = document.createElement("span");
+    /* textContent, не innerHTML: строка приезжает из шаблона, но правило одно на
+       всю страницу — склейка разметки из данных однажды получит данные, которых
+       мы не писали. */
+    text.textContent = box.dataset.verdict || "";
+    row.append(mark, label, text);
+    verdicts.appendChild(row);
+  });
+
+  const gaps = chosen.filter((box) => box.dataset.covered !== "1");
+  const note = document.getElementById("cfg-note");
+  const send = document.getElementById("cfg-send");
+  if (!gaps.length) {
+    /* ТЗ вертикалей §2: ритейл мы покрываем ПОЛНОСТЬЮ, и это надо показать как
+       выполненную работу, а не спрятать. */
+    note.textContent = "Всё отмеченное мы находим сегодня — докупать ничего не нужно.";
+    send.hidden = true;
+  } else {
+    note.textContent = gaps.length === 1
+      ? "Одну группу мы пока не находим. Отправьте как заявку — по этим отметкам строится очередь работ."
+      : `Этих групп мы пока не находим: ${gaps.length}. Отправьте как заявку — по этим отметкам строится очередь работ.`;
+    send.hidden = false;
+  }
+}
+
+function cfgCookie(name) {
+  const found = document.cookie.split("; ").find((part) => part.startsWith(`${name}=`));
+  return found ? decodeURIComponent(found.slice(name.length + 1)) : "";
+}
+
+async function cfgSend() {
+  const send = document.getElementById("cfg-send");
+  const note = document.getElementById("cfg-note");
+  const groups = cfgSelected()
+    .filter((box) => box.dataset.covered !== "1")
+    .map((box) => box.dataset.group);
+  if (!groups.length) return;
+  send.disabled = true;
+  try {
+    const response = await fetch("/demand", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": cfgCookie("csrftoken") },
+      body: JSON.stringify({ groups }),
+    });
+    /* ОТКАЗ НАЗЫВАЕТСЯ ОТКАЗОМ. Кнопка, говорящая «спасибо» на 429, учит не
+       верить кнопкам — тот же промах, что уже был на «СКОПИРОВАНО» в локальном
+       интерфейсе, когда буфер обмена недоступен. */
+    note.textContent = response.ok
+      ? "Записали. Это меняет очередь работ — спасибо."
+      : "Не отправилось. Попробуйте позже.";
+    send.hidden = response.ok;
+  } catch {
+    note.textContent = "Не отправилось: нет связи.";
+  } finally {
+    send.disabled = false;
+  }
+}
+
+if (cfg) {
+  cfg.addEventListener("change", cfgRender);
+  document.getElementById("cfg-send").addEventListener("click", cfgSend);
+  /* ВЕРДИКТ РИСУЕТСЯ И НА ЗАГРУЗКЕ. Браузер восстанавливает отмеченные галочки
+     при перезагрузке и при возврате «назад», а `#cfg-out` при этом оставался
+     спрятанным: отмечено три группы, вердикта нет. Оба соседних блока в этом
+     файле тоже задают начальное состояние — `showDemo(0)`, `showProvider(0)`. */
+  cfgRender();
+}

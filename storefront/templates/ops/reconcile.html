@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Сверка счёта — {{ organization.display_name }}{% endblock %}
+{% block nav %}
+<nav>
+  <a href="{% url 'ops_fleet' %}">ФЛОТ</a>
+  <a href="{% url 'ops_chains' %}">ЦЕПИ</a>
+  <a href="{% url 'ops_plans' %}">ТАРИФЫ</a>
+  <a href="{% url 'ops_demand' %}">СПРОС</a>
+</nav>
+{% endblock %}
+{% block content %}
+<section>
+  <div class="sec-head">
+    <div>
+      <h2>Сверка счёта</h2>
+      <div class="sec-meta" style="margin-top:8px"><a href="{% url 'ops_customer' organization.id %}">{{ organization.display_name }}</a> · <span class="mono">{{ organization.id }}</span></div>
+    </div>
+    {% if result %}
+      <div>
+        {% if result.verdict == 'match' %}<span class="pill ok">СОШЛОСЬ ТОЧНО</span>
+        {% elif result.verdict == 'within_band' %}<span class="pill ok">В ПРЕДЕЛАХ ПОГРЕШНОСТИ</span>
+        {% elif result.verdict == 'they_counted_more' %}<span class="pill warn">У КЛИЕНТА БОЛЬШЕ</span>
+        {% elif result.verdict == 'unknown_band' %}<span class="pill warn">ПОГРЕШНОСТЬ НЕИЗВЕСТНА</span>
+        {% else %}<span class="pill bad">МЫ ВЫСТАВИЛИ БОЛЬШЕ</span>{% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  {% if error %}
+    <div class="msg error">Лицензионный сервер не отвечает — сверять не с чем.
+    <div class="mono" style="margin-top:10px;font-size:12px;color:var(--dim-2)">{{ error }}</div></div>
+  {% endif %}
+
+  <p style="color:var(--dim-2);font-size:14px;line-height:1.65;max-width:820px">
+  Единица тарификации — запрос именно потому, что <b style="color:var(--text)">он виден
+  в логе шлюза самого клиента</b>: спор о деньгах превращается в сравнение двух
+  независимых источников. Клиент считает свои строки у себя и называет одно число.
+  <b style="color:var(--text)">Лог сюда не загружается и не должен:</b> в нём тела
+  запросов, то есть персональные данные, а витрина не имеет права их видеть. Наружу
+  уходит только выгрузка наших счётчиков.</p>
+
+  <div class="app" style="margin-top:24px">
+    <div>
+      <div class="label" style="margin-bottom:14px">НАШЕ ЧИСЛО</div>
+      <div style="font-size:30px;font-weight:900;letter-spacing:-.02em">{{ ours }}</div>
+      <div style="font-size:12.5px;color:var(--dim-2);margin-top:6px">запросов к начислению за период</div>
+      <div class="kv" style="margin-top:14px"><span class="k">как получено</span><span class="v">{{ ours_explained }}</span></div>
+      <div class="kv"><span class="k">погрешность</span><span class="v">{% if band %}{{ band }}{% else %}неизвестна{% endif %}</span></div>
+      {% if plan_row %}
+        <div class="kv"><span class="k">квант / резерв на процесс</span><span class="v">{{ plan_row.quantum_max }} / {{ plan_row.reserve_max }}</span></div>
+        <div class="kv"><span class="k">процессов</span><span class="v">{{ processes }}</span></div>
+      {% endif %}
+      {% if invoices %}
+      <div class="label" style="margin:20px 0 10px">КАКОЙ СЧЁТ СВЕРЯЕМ</div>
+      <form method="get" style="display:flex;gap:10px;flex-wrap:wrap">
+        <input type="hidden" name="theirs" value="{{ theirs_raw }}">
+        <select class="field" name="invoice" style="min-width:220px" aria-label="счёт">
+          {% for item in invoices %}
+          <option value="{{ item.number }}"{% if invoice and item.number == invoice.number %} selected{% endif %}>{{ item.number }} · {{ item.period_start|date:"d.m.Y" }}—{{ item.period_end|date:"d.m.Y" }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn" type="submit">ВЫБРАТЬ</button>
+      </form>
+      {% endif %}
+    </div>
+
+    <div>
+      <div class="label" style="margin-bottom:14px">ЧИСЛО КЛИЕНТА</div>
+      <form method="get" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input class="field" type="text" inputmode="numeric" name="theirs"
+               value="{{ theirs_raw }}" placeholder="сколько насчитал шлюз"
+               style="width:220px" aria-label="запросов по логу клиента">
+        <button class="btn accent" type="submit">СВЕСТИ</button>
+      </form>
+      {% if result %}
+        <div style="font-size:30px;font-weight:900;letter-spacing:-.02em;margin-top:16px">{{ result.theirs }}</div>
+        <div class="kv" style="margin-top:14px"><span class="k">разница</span><span class="v">{{ result.difference }}</span></div>
+        <div class="kv"><span class="k">цепь отчётов</span><span class="v">{% if result.chain_clean %}целая{% else %}с замечаниями{% endif %}</span></div>
+      {% else %}
+        <p style="font-size:13px;color:var(--dim-2);line-height:1.6;margin-top:14px">Число берётся из лога шлюза клиента за тот же период. Считать надо только успешно замаскированные запросы — что в счёт не входит, перечислено ниже.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if result %}
+  <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Чем объясняется</h3>
+  {% for reason in result.reasons %}
+    <p style="font-size:14px;line-height:1.7;color:var(--text-2);max-width:820px;margin:0 0 14px">{{ reason }}</p>
+  {% empty %}
+    <p style="font-size:14px;color:var(--dim-2)">Числа совпали ровно. Объяснять нечего.</p>
+  {% endfor %}
+  {% endif %}
+
+  <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Что запросом не считается</h3>
+  <p style="color:var(--dim-2);font-size:13.5px;line-height:1.6;max-width:820px">Самая
+  частая причина расхождения: клиент грепает лог по всем обращениям к сайдкару, а
+  платит только за успешно замаскированные.</p>
+  <ul class="list" style="color:var(--text-2);font-size:14px;line-height:1.9;margin-top:12px">
+    {% for item in not_billable %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+
+  <div class="sec-head" style="margin:40px 0 16px">
+    <h3 style="margin:0;font-size:22px;font-weight:700;letter-spacing:-.02em">По суткам</h3>
+    <a class="btn" href="{% url 'ops_usage_csv' organization.id %}">ВЫГРУЗИТЬ CSV</a>
+  </div>
+  <p style="color:var(--dim-2);font-size:13.5px;line-height:1.6;max-width:820px">Итог за
+  период говорит, что разошлось; ряд по суткам говорит, <b style="color:var(--text)">когда</b>.
+  Выгрузку клиент раскладывает по своим суткам сам — это наши числа наружу, а не его
+  внутрь. <b style="color:var(--text)">Сутки здесь UTC</b>, а не московские: срез режет
+  их лицензионный сервер, клиентского пояса он не знает и знать не должен. Вечерний
+  московский трафик поэтому лежит в предыдущей строке — при раскладке по своим суткам
+  это надо учесть, иначе расхождение ищется там, где его нет.</p>
+  <table class="list" style="margin-top:16px">
+    <tr><th>СУТКИ (UTC)</th><th>ПРИРОСТ</th><th>НАКОПЛЕНО</th><th>ЗНАЧЕНИЙ</th><th>ОТЧЁТОВ</th><th>ИНСТАНСОВ</th></tr>
+    {% for row in rows %}
+    <tr>
+      <td class="mono">{{ row.day }}</td>
+      <td class="mono">{% if row.requests_delta == '' %}—{% else %}{{ row.requests_delta }}{% endif %}</td>
+      <td class="mono">{{ row.requests_total }}</td>
+      <td class="mono">{{ row.values_total }}</td>
+      <td class="mono">{{ row.reports }}</td>
+      <td class="mono">{{ row.instances }}</td>
+    </tr>
+    {% empty %}<tr><td colspan="6" style="color:var(--dim-2)">Отчётов ещё не было — сверять нечего.</td></tr>{% endfor %}
+  </table>
+</section>
+{% endblock %}

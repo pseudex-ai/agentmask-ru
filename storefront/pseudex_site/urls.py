@@ -24,6 +24,10 @@ urlpatterns = [
     path("welcome", views.welcome, name="welcome"),
     path("healthz", views.healthz, name="healthz"),
 
+    # Отметки конфигуратора. Вторая (и последняя) анонимная запись на сайте —
+    # см. докстринг `views.demand`: ни текста, ни почты, счётчик на сутки.
+    path("demand", views.demand, name="demand"),
+
     # The three documents the footer has always linked to. They pointed at an
     # anchor on the landing page, so a customer who came for a document to
     # forward to their own client's security officer found a section of a
@@ -51,5 +55,9 @@ urlpatterns = [
     # the form on the landing, which issues the key.
     path("accounts/signup/", RedirectView.as_view(url="/#start", permanent=False)),
     path("accounts/", include("allauth.urls")),
+    # ОПЕРАТОРСКАЯ КОНСОЛЬ — СОСЕД АДМИНКИ, а не отдельный угадываемый путь.
+    # Она показывает всех клиентов разом, поэтому обязана наследовать то же
+    # свойство: путь настраивается, и на угадывании его не найти.
+    path(f"{settings.ADMIN_PATH}/ops/", include("ops.urls")),
     path(f"{settings.ADMIN_PATH}/", admin.site.urls),
 ]

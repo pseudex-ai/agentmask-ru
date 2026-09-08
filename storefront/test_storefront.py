@@ -18,8 +18,10 @@ No pytest, matching the engine repo: run it, read the lines, non-zero is broken.
     python3 test_storefront.py
 """
 
+import base64
 import os
 import pathlib
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -73,22 +75,58 @@ def start_licensing() -> tuple[subprocess.Popen, str, str]:
         # окружение, поэтому задавать их ниже было поздно.
         "PSEUDEX_LICENSE_ADMIN_TOKEN": _ADMIN_TOKEN,
         "PSEUDEX_LICENSE_STOREFRONT_TOKEN": _SHOP_TOKEN,
+        # БЕЗ НЕГО СЕРВЕР НЕ ВСТАЁТ, И ЭТОТ НАБОР НЕ БЕЖАЛ В CI НИ РАЗУ С ТЕХ
+        # ПОР, КАК ТЮНИНГ СТАЛ ЗАПЕЧАТАННЫМ. `build_plaintext` кладёт ключ
+        # тюнинга в бандл на импорте, поэтому пустая переменная роняет процесс
+        # ещё до первого порта. Проверено на нетронутом main: тот же отказ.
+        #
+        # Ключ эфемерный, и это правильно именно здесь: набор проверяет
+        # ЛИЦЕНЗИОННЫЙ СЕРВЕР и витрину, а движка, который открывал бы блоб
+        # тюнинга, в нём нет вовсе — он ходит на `/v1/lease` напрямую и смотрит
+        # на коды. `setdefault`-семантика через `os.environ.get` оставляет
+        # победу настоящему ключу, если прогон задал его снаружи.
+        "PSEUDEX_TUNING_KEY": os.environ.get("PSEUDEX_TUNING_KEY")
+        or base64.b64encode(secrets.token_bytes(32)).decode("ascii"),
     }
+    # ПРИЧИНА ОТКАЗА НЕ ВЫБРАСЫВАЕТСЯ В DEVNULL.
+    #
+    # Оба потока шли в никуда, поэтому «the licensing server never came up» было
+    # всем, что оставалось от любого отказа старта, — и настоящая причина
+    # (отсутствующий ключ тюнинга) не называлась ни в CI, ни на машине. Тридцать
+    # секунд ожидания и одна строка без диагноза: ровно тот случай, ради
+    # которого в репозитории есть `e2e/lint_tests.py`.
+    # ФАЙЛ, А НЕ PIPE. Сервер живёт весь прогон и логирует КАЖДЫЙ запрос; никто
+    # не читает его stderr, пока идут проверки, поэтому труба на 64 КБ
+    # заполняется, дочерний процесс блокируется в `write()` и перестаёт
+    # обслуживать — а `process.wait(timeout=10)` в `finally` затем маскирует
+    # настоящий результат прогона таймаутом и оставляет процесс сиротой.
+    # Временный файл даёт ту же диагностику и не имеет предела.
+    stderr = tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace")
+
+    def _stderr_tail(limit: int = 2000) -> str:
+        stderr.flush()
+        stderr.seek(0)
+        return stderr.read()[-limit:]
+
     process = subprocess.Popen(
         [str(_PROTOTYPE / ".venv/bin/python"), "-m", "licensing.devserver"],
         cwd=str(_PROTOTYPE), env=env,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL, stderr=stderr, text=True,
     )
     admin_url = f"http://127.0.0.1:{admin}"
     public_url = f"http://127.0.0.1:{public}"
     for _ in range(120):
+        if process.poll() is not None:
+            # Умер — читать можно сразу и целиком, ждать оставшиеся секунды незачем.
+            raise RuntimeError("the licensing server exited "
+                               f"({process.returncode}):\n{_stderr_tail()}")
         try:
             httpx.get(f"{admin_url}/admin/list", timeout=2)
             return process, admin_url, public_url
         except httpx.HTTPError:
             time.sleep(0.25)
     process.kill()
-    raise RuntimeError("the licensing server never came up")
+    raise RuntimeError(f"the licensing server never came up:\n{_stderr_tail()}")
 
 
 def main() -> int:
@@ -479,10 +517,14 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     # на лицензионном сервере активную запись, не привязанную ни к какому
     # кабинету: она лизует вечно и не видна ни в одной сверке.
     def keys_on_server() -> int:
+        # СЧИТАЮТСЯ КЛЮЧИ, А НЕ СТРОКИ КАТАЛОГА. `/admin/list` отдаёт одну
+        # строку на ОРГАНИЗАЦИЮ (раньше — на каждый ключ), поэтому сумма по
+        # строкам стала бы сравнением единицы с единицей: проверка перестала бы
+        # уметь падать, оставаясь зелёной. Число живых ключей организация теперь
+        # называет сама.
         rows = httpx.get(f"{admin_url}/admin/list", timeout=5,
                          headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}).json()["orgs"]
-        return sum(1 for row in rows if row["org_id"] == org.id
-                   and row["status"] != "revoked")
+        return sum(int(row["active_keys"]) for row in rows if row["org_id"] == org.id)
 
     allowed = org.subscription.plan.max_keys
     while org.keys.filter(revoked_at__isnull=True).count() < allowed:
@@ -577,21 +619,42 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     # two places: the storefront's plans and the licensing server's own table.
     # They must agree, or a customer buys four instances and is refused the
     # second — or buys one and runs twelve.
-    import subprocess, json as _json
-    proto = str(_HERE.parent / "prototype")
-    limits = _json.loads(subprocess.run(
-        [proto + "/.venv/bin/python", "-c",
-         "import json; from licensing.store import LicenseStore as S; "
-         "print(json.dumps(S.PLAN_INSTANCES))"],
-        cwd=proto, capture_output=True, text=True).stdout or "{}")
+    # ЧЕРЕЗ РУЧКУ, А НЕ ЧЕРЕЗ SUBPROCESS В ЧУЖОЙ VENV. Здесь стояло `python -c
+    # "print(S.PLAN_INSTANCES)"` в интерпретаторе движка — сверка АТРИБУТА
+    # КЛАССА, а не того, по чему сервер на самом деле принимает решения. Тариф
+    # теперь строка в его базе, и константа осталась только сидом: правка,
+    # сделанная оператором, не изменила бы прочитанный так словарь ни на йоту, и
+    # сверка продолжала бы говорить «сходится» про числа, которых больше нет.
+    #
+    # Заодно уходит хрупкость: путь `../prototype/.venv/bin/python` был зашит, и
+    # его отсутствие давало пустой stdout, то есть `{}` — сверку, которая
+    # проходит, ничего не сверив.
+    plans = httpx.get(f"{admin_url}/admin/plans", timeout=5,
+                      headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}).json()["plans"]
+    limits = {row["code"]: row["max_instances"] for row in plans}
     from billing.models import Plan as PlanModel
+    shop_plans = list(PlanModel.objects.all())
     mismatched = [
-        p.code for p in PlanModel.objects.all()
+        p.code for p in shop_plans
         if limits.get(p.code) is not None and limits[p.code] != p.max_instances
     ]
+    # ТАРИФ, КОТОРОГО ЛИЦЕНЗИОННЫЙ СЕРВЕР НЕ ЗНАЕТ, — ТОЖЕ РАСХОЖДЕНИЕ, и до
+    # сих пор эта проверка пропускала ровно его: `limits.get(p.code) is not
+    # None` отсеивал именно те коды, которых на той стороне нет.
+    #
+    # Раньше это было почти безобидно — незнакомый тариф молча получал лимиты
+    # «старта». Теперь `/admin/issue` отвечает на него 400, потому что тихое
+    # понижение и есть тот дефект, ради которого всё это чинится: клиент упирался
+    # в потолок чужого тарифа, и ни одна строка об этом не говорила. Но громкий
+    # отказ означает, что клиент на таком тарифе НЕ ПОЛУЧИТ КЛЮЧ ВОВСЕ, а
+    # `seed_plans` выводит тарифы из продажи, НЕ удаляя их (подписка помнит
+    # условия, на которых куплена). Значит расхождение обязано падать здесь, до
+    # выката, а не у клиента при выпуске ключа.
+    unknown_to_licensing = sorted(p.code for p in shop_plans if p.code not in limits)
     check("the licensing server and the storefront agree on instance limits",
-          bool(limits) and not mismatched,
-          f"licensing={limits} mismatched={mismatched or 'none'}")
+          bool(limits) and not mismatched and not unknown_to_licensing,
+          f"licensing={limits} mismatched={mismatched or 'none'} "
+          f"unknown_to_licensing={unknown_to_licensing or 'none'}")
 
     # A second organisation must not be able to read the first one's invoices.
     other_user = User.objects.create_user(email="stranger@example.com")
@@ -615,6 +678,507 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     check("one organisation cannot open another's invoice",
           leaked.status_code == 404, f"status={leaked.status_code}")
 
+    _check_ops_console(client, admin_url, public_url, org, raw_key)
+
+
+def _check_ops_console(client, admin_url: str, public_url: str,
+                       org, raw_key: str) -> None:
+    """Операторская консоль: все клиенты, один клиент, цепи, тарифы.
+
+    ПЕРВЫЙ СОТРУДНИК В ЭТИХ ТЕСТАХ. До сих пор `create_user` заводил только
+    клиентов — `is_staff` по умолчанию `False`, — поэтому доступ к консоли не с
+    чем было сравнивать: проверка «клиент не войдёт» без проверки «сотрудник
+    войдёт» проходит и на сломанной странице.
+    """
+    from unittest import mock
+
+    from django.conf import settings
+    from django.test import Client as _FreshClient
+
+    from accounts.models import User
+    from billing import licensing
+    from billing.models import Plan
+
+    base = f"/{settings.ADMIN_PATH}/ops/"
+    screens = (base, f"{base}chains/", f"{base}plans/", f"{base}{org.id}/")
+
+    # ЗАКРЫТО ДЛЯ КЛИЕНТА И ДЛЯ АНОНИМА. `client` вошёл как покупатель ещё выше и
+    # остаётся им — это и есть нужный случай: обычный клиент витрины не должен
+    # видеть ни своих соседей, ни их счётчиков.
+    customer_saw = [path for path in screens if client.get(path).status_code == 200]
+    check("консоль закрыта для обычного клиента", not customer_saw,
+          f"открылось={customer_saw or 'ничего'}")
+    anonymous = _FreshClient()
+    anonymous_saw = [path for path in screens if anonymous.get(path).status_code == 200]
+    check("консоль закрыта для анонима", not anonymous_saw,
+          f"открылось={anonymous_saw or 'ничего'}")
+
+    staff_client = _FreshClient()
+    staff = User.objects.create_user(email="ops@pseudex.ru", is_staff=True)
+    staff_client.force_login(staff)
+
+    rendered = {path: staff_client.get(path) for path in screens}
+    broken = [f"{path}={response.status_code}"
+              for path, response in rendered.items() if response.status_code != 200]
+    check("сотрудник открывает все четыре экрана", not broken,
+          f"не открылось={broken or 'ничего'}")
+
+    fleet_body = rendered[base].content.decode()
+    check("флот показывает организацию и её тариф",
+          org.id in fleet_body and org.subscription.plan.title in fleet_body,
+          f"org={org.id in fleet_body} plan={org.subscription.plan.title in fleet_body}")
+
+    # ДВА ПОЛЯ С ОДНИМ ИМЕНЕМ `instances`, И ЭТО ЛОВУШКА.
+    #
+    # У `/admin/usage` это СЫРЫЕ СТРОКИ АРЕНД — по строке на каждую выдачу,
+    # вместе с освобождёнными, с потолком в сотню. Их количество не считает
+    # контейнеры: у клиента с одним контейнером колонка «занято по тарифу»
+    # показала бы «100 / 1» через сутки работы. У `/admin/fleet` и
+    # `/admin/instances` это ДЕРЖАЩИЕ СЛОТ, сгруппированные по `instance_id`, и
+    # только у них есть `state` и `last_lease`, которые рисует экран клиента.
+    # НАСТОЯЩАЯ АРЕНДА, иначе оба списка пусты и обе проверки ниже проходят
+    # впустую: `all(...)` по пустому списку истинно, то есть проверка,
+    # неспособная упасть. Ключ процесса генерируется в venv движка — витрина
+    # такой зависимости не имеет и иметь не должна.
+    process_key = subprocess.run(
+        [str(_PROTOTYPE / ".venv/bin/python"), "-c",
+         "from pseudex.bundle import generate_process_key; "
+         "print(generate_process_key().public)"],
+        cwd=str(_PROTOTYPE), capture_output=True, text=True).stdout.strip()
+    leased = httpx.post(f"{public_url}/v1/lease", timeout=10,
+                        json={"key": raw_key, "instance_id": "ops-console-probe",
+                              "process_id": "p1", "pubkey": process_key,
+                              "engine_version": "1.0.0"})
+    check("стенд смог взять настоящую аренду для проверки формы ответов",
+          leased.status_code == 200, f"код={leased.status_code} {leased.text[:120]}")
+
+    fleet_rows = httpx.get(f"{admin_url}/admin/fleet",
+                           params={"org_ids": org.id}, timeout=5,
+                           headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}).json()["orgs"]
+    fleet_slots = fleet_rows[0]["instances"]
+    raw_leases = httpx.get(f"{admin_url}/admin/usage", params={"org_id": org.id},
+                           timeout=5,
+                           headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}
+                           ).json()["instances"]
+    check("флот считает контейнеры, а не строки аренд",
+          bool(fleet_slots) and all("state" in slot for slot in fleet_slots),
+          f"поля={sorted(fleet_slots[0]) if fleet_slots else 'СЛОТОВ НЕТ — проверка пуста'}")
+    check("а сырые строки аренд остались там, где и были",
+          bool(raw_leases) and all("state" not in row for row in raw_leases),
+          f"поля={sorted(raw_leases[0]) if raw_leases else 'АРЕНД НЕТ — проверка пуста'}")
+
+    # НИ ОДНОГО ЗНАЧЕНИЯ ИЗ ТРАФИКА. Та же граница, что у кабинета
+    # (`docs/tz-site.md` §1): витрина не имеет права нарисовать экран, где виден
+    # диалог, сообщение, токен или значение. Консоль показывает счётчики и
+    # идентификаторы — и полный ключ тоже никогда, у неё его и нет.
+    leaked_key = [path for path, response in rendered.items()
+                  if "ps_live_" in response.content.decode()]
+    check("консоль не рисует ни одного полного ключа", not leaked_key,
+          f"утекло на={leaked_key or 'нигде'}")
+
+    # Страницы бэк-офиса не кэшируются. Заголовок ставит middleware, и он берёт
+    # префикс из настройки: раньше там стоял литерал `/admin/`, поэтому
+    # перенесённая админка молча оставалась без `no-store`.
+    uncached = [path for path, response in rendered.items()
+                if "no-store" not in response.headers.get("Cache-Control", "")]
+    check("страницы консоли не кэшируются", not uncached,
+          f"без no-store={uncached or 'нигде'}")
+
+    # ...И ЗАГОЛОВОК ДЕРЖИТСЯ НА НАСТРОЙКЕ, А НЕ НА ЛИТЕРАЛЕ `/admin/`.
+    #
+    # Этот прогон идёт с путём по умолчанию, поэтому подмена литерала настройкой
+    # в нём не видна вообще — а именно ею и был дефект: `PSEUDEX_ADMIN_PATH`
+    # существует, чтобы админку можно было перенести, и перенесённая переставала
+    # получать `no-store`. То есть настройка, которую включают ради
+    # безопасности, тихо снимала заголовок со всего бэк-офиса. Проверяется
+    # вызовом middleware напрямую: маршруты собраны на импорте и переезжать по
+    # ходу теста не умеют.
+    from django.http import HttpResponse
+    from storefront_web.middleware import SecurityHeadersMiddleware
+
+    def _header_for(path: str, admin_path: str) -> str:
+        with mock.patch.object(settings, "ADMIN_PATH", admin_path):
+            request = _FreshClient().request(PATH_INFO=path).wsgi_request
+            middleware = SecurityHeadersMiddleware(lambda _request: HttpResponse("ok"))
+            return middleware(request).headers.get("Cache-Control", "")
+
+    check("перенесённая админка не теряет no-store",
+          "no-store" in _header_for("/g7x2q/anything", "g7x2q"),
+          f"заголовок={_header_for('/g7x2q/anything', 'g7x2q')!r}")
+    check("посторонний путь заголовка не получает",
+          "no-store" not in _header_for("/landing", "g7x2q"),
+          "иначе проверка выше проходила бы на чём угодно")
+
+    # ПРАВКА ТАРИФА ДОЕЗЖАЕТ ДО СЕРВЕРА И НАЗЫВАЕТ АВТОРА.
+    edited = staff_client.post(f"{base}plans/start/", {"max_instances": "3"},
+                               follow=True)
+    remote = {row["code"]: row for row in
+              httpx.get(f"{admin_url}/admin/plans", timeout=5,
+                        headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}
+                        ).json()["plans"]}
+    check("правка тарифа из консоли доезжает до лицензионного сервера",
+          edited.status_code == 200 and remote["start"]["max_instances"] == 3,
+          f"на сервере={remote['start']['max_instances']}")
+    check("автор правки записан почтой сотрудника",
+          remote["start"]["updated_by"] == "ops@pseudex.ru"
+          and remote["start"]["source"] == "edited",
+          f"автор={remote['start']['updated_by']!r} источник={remote['start']['source']}")
+
+    # Мусор в форме — сообщение, а не пятисотка и не тихое ничего.
+    junk = staff_client.post(f"{base}plans/start/", {"max_instances": "много"},
+                             follow=True)
+    check("мусор в форме тарифа не роняет страницу",
+          junk.status_code == 200 and "нужно целое число" in junk.content.decode(),
+          f"код={junk.status_code}")
+
+    # РАСХОЖДЕНИЕ ДВУХ ИСТОЧНИКОВ ВИДНО ГЛАЗОМ. Мы только что подвинули потолок на
+    # сервере до 3, а витрина продаёт 1 — экран обязан это показать, иначе он не
+    # нужен: расхождение и так уже ловит красный тест, ценность консоли в том,
+    # что человек видит его до того, как оно станет отказом клиенту.
+    plans_body = staff_client.get(f"{base}plans/").content.decode()
+    plan_start = Plan.objects.get(code="start")
+    check("консоль показывает расхождение витрины и сервера",
+          plan_start.max_instances != 3 and "pill bad" in plans_body,
+          f"витрина={plan_start.max_instances} сервер=3")
+
+    _check_reconciliation(staff_client, base, org)
+    _check_configurator(client, staff_client, base)
+
+    _screens_with_reconcile = screens + (f"{base}{org.id}/reconcile/",)
+
+    # И ГЛАВНОЕ: КОНСОЛЬ ОТКРЫВАЕТСЯ, КОГДА ЛИЦЕНЗИОННЫЙ СЕРВЕР ЛЕЖИТ. Это ровно
+    # та минута, ради которой её открывают, и пятисотка здесь — худшее из
+    # возможных поведений.
+    #
+    # `raise_request_exception=False` ОБЯЗАТЕЛЕН, и не ради удобства. Под
+    # `DEBUG=1` тестовый клиент пробрасывает исключение вью наружу вместо того,
+    # чтобы вернуть 500, — то есть регрессия здесь роняла бы весь прогон
+    # трейсбеком вместо строки «упало=/admin/ops/=500». Проверено снятием
+    # `except` во вью: набор падал, но не говорил, что именно сломалось.
+    down_client = _FreshClient(raise_request_exception=False)
+    down_client.force_login(staff)
+    with mock.patch("billing.licensing._get",
+                    side_effect=licensing.LicensingError("сервер не отвечает")):
+        down = {path: down_client.get(path) for path in _screens_with_reconcile}
+    fell = [f"{path}={response.status_code}"
+            for path, response in down.items() if response.status_code != 200]
+    check("консоль открывается при лежащем лицензионном сервере", not fell,
+          f"упало={fell or 'ничего'}")
+    check("и честно говорит, что цифр сейчас нет",
+          "не отвечает" in down[base].content.decode(),
+          "плашка вместо молча пустых колонок")
+
+
+
+def _check_configurator(client, staff_client, base: str) -> None:
+    """Конфигуратор, спрос и то, что оба списка типов — ОДИН список.
+
+    Проверка существует потому, что до неё страница `/detection` дважды обещала
+    «напишите — это меняет очередь работ», а адреса для связи нет ни на одной
+    странице сайта, и кнопка под этим обещанием вела в блок тарифов с подписью
+    «ПРОВЕРИТЬ НА СВОЁМ ТЕКСТЕ» — при том что своего текста лендинг не принимает
+    намеренно.
+    """
+    import json as _json
+
+    from django.test import Client as _FreshClient
+
+    from ops.models import DemandDay
+    from storefront_web import detection_types
+
+    body = client.get("/").content.decode()
+    check("на лендинге есть блок конфигуратора", 'id="configurator"' in body)
+    missing_groups = [group["code"] for group in detection_types.GROUPS
+                      if f'data-group="{group["code"]}"' not in body]
+    check("все группы реестра отрисованы", not missing_groups, str(missing_groups))
+    # НИ ОДНОГО ПОЛЯ ДЛЯ ЧУЖОГО ТЕКСТА — В САМОМ БЛОКЕ. Утверждать это про всю
+    # страницу нельзя: ниже стоит форма регистрации, и поле названия компании в
+    # ней законно. Проверка по целой странице падала именно на нём, то есть
+    # говорила не о том, о чём написана.
+    section = body[body.index('id="configurator"'):body.index('id="start"')]
+    check("конфигуратор не просит чужой текст",
+          "<textarea" not in section and 'type="text"' not in section
+          and 'type="email"' not in section, section[:0] or "проверен сам блок")
+
+    # ОДИН РЕЕСТР НА ДВЕ СТРАНИЦЫ. Сверяется не двумя списками в тесте, а тем,
+    # что подписи типов со страницы /detection приезжают из того же модуля.
+    detection = client.get("/detection").content.decode()
+    absent = [label for label, _example, _holds in detection_types.FOUND
+              if label not in detection]
+    check("страница /detection перечисляет реестр целиком", not absent, str(absent))
+    check("и обещание «напишите» ведёт туда, где это можно сделать",
+          "#configurator" in detection and "СВОЁМ ТЕКСТЕ" not in detection)
+
+    gap = next(group["code"] for group in detection_types.GROUPS
+               if not group.get("found"))
+    other = next(group["code"] for group in detection_types.GROUPS
+                 if not group.get("found") and group["code"] != gap)
+
+    def send(sender, codes):
+        return sender.post("/demand", data=_json.dumps({"groups": codes}),
+                           content_type="application/json")
+
+    visitor = _FreshClient()
+    first = send(visitor, [gap])
+    check("отметка записывается", first.status_code == 204,
+          f"status={first.status_code}")
+    check("и появляется ровно одна строка",
+          DemandDay.objects.filter(group=gap).count() == 1
+          and DemandDay.objects.get(group=gap).count == 1)
+
+    # ПОВТОР ИЗ ТОЙ ЖЕ СЕССИИ НЕ СЧИТАЕТСЯ. Это и есть настоящая граница: троттл
+    # по IP слаб по устройству (CACHES не задан, значит LocMemCache на процесс,
+    # и при N воркерах лимит делится на N), а этот предел живёт в сессии.
+    send(visitor, [gap])
+    send(visitor, [gap])
+    check("повтор из той же сессии счётчик не двигает",
+          DemandDay.objects.get(group=gap).count == 1,
+          f"стало {DemandDay.objects.get(group=gap).count}")
+    # А ДРУГАЯ ГРУППА ИЗ ТОЙ ЖЕ СЕССИИ — СЧИТАЕТСЯ: предел на группу, не на
+    # человека, иначе первая отметка глушила бы остальные.
+    send(visitor, [other])
+    check("другая группа из той же сессии считается",
+          DemandDay.objects.get(group=other).count == 1)
+
+    send(_FreshClient(), [gap])
+    check("новая сессия считается", DemandDay.objects.get(group=gap).count == 2)
+
+    before = DemandDay.objects.count()
+    unknown = send(_FreshClient(), ["не-такой-код"])
+    check("неизвестный код отвергается и не пишет строку",
+          unknown.status_code == 400 and DemandDay.objects.count() == before,
+          f"status={unknown.status_code}")
+    mixed = send(_FreshClient(), [gap, "не-такой-код"])
+    check("известный вместе с неизвестным — отказ целиком, а не половина",
+          mixed.status_code == 400 and DemandDay.objects.count() == before,
+          f"status={mixed.status_code}")
+    check("GET на ручку спроса отвергается",
+          _FreshClient().get("/demand").status_code == 405)
+    check("пустой список отвергается",
+          send(_FreshClient(), []).status_code == 400)
+
+    # ВАЛИДНЫЙ JSON, У КОТОРОГО НЕТ `.get`. `[]`, `5`, `"x"` и `null` роняли
+    # обработчик в 500 — анонимная ручка, падающая от тела из одного символа.
+    #
+    # `raise_request_exception=False` ОБЯЗАТЕЛЕН. Под `DEBUG=1` тестовый клиент
+    # пробрасывает исключение вью наружу вместо 500 — то есть регрессия здесь
+    # роняла бы ВЕСЬ прогон трейсбеком вместо строки «FAIL мусорное тело».
+    # Проверено откатом: без него снятие проверки не давало ни одной строки
+    # FAIL, только обрыв.
+    broken = []
+    for body_text in ("[]", "5", '"x"', "null", "{"):
+        answer = _FreshClient(raise_request_exception=False).post(
+            "/demand", data=body_text, content_type="application/json")
+        if answer.status_code != 400:
+            broken.append(f"{body_text}={answer.status_code}")
+    check("мусорное тело — 400, а не 500", not broken, str(broken))
+
+    # СТРОКИ О ПОСЕТИТЕЛЕ НЕ ПОЯВЛЯЕТСЯ, И ЭТО ПРОВЕРЯЕТСЯ, А НЕ ОБЕЩАЕТСЯ.
+    # Дедуп жил в `request.session`, то есть в СТРОКЕ БАЗЫ на каждого анонима —
+    # при том, что докстринг рядом обещал «ни отпечатка, ни идентификатора
+    # сессии». Обещание было неправдой на соседней строке.
+    from django.contrib.sessions.models import Session
+    sessions_before = Session.objects.count()
+    for _ in range(5):
+        send(_FreshClient(), [gap])
+    check("отметки не заводят строк сессий",
+          Session.objects.count() == sessions_before,
+          f"{sessions_before} -> {Session.objects.count()}")
+
+    # РЕЕСТР СОГЛАСОВАН В ОБЕ СТОРОНЫ. Проверка ловила только «группа ссылается
+    # на несуществующий тип»; обратная сторона — тип, не попавший ни в одну
+    # группу, — молча выкидывала его с конфигуратора, что и случилось с
+    # ОГРН/ОГРНИП.
+    grouped = {label for group in detection_types.GROUPS
+               for label in group.get("found", ())}
+    check("каждый найденный тип попал в группу конфигуратора",
+          grouped == {label for label, _e, _h in detection_types.FOUND},
+          str({label for label, _e, _h in detection_types.FOUND} - grouped))
+    # ПРОВЕРЯЕТСЯ ИСХОДНИК ШАБЛОНА, А НЕ ОТРЕНДЕРЕННАЯ СТРАНИЦА: в выводе
+    # литерал «18 типов» и вычисленный `{{ found_count }}` неотличимы по
+    # построению, пока в реестре ровно восемнадцать. Первая версия этой строки
+    # смотрела на вывод и утверждала бессмыслицу.
+    from pathlib import Path as _Path
+    templates = _Path(__file__).resolve().parent / "templates"
+    hardcoded = [str(f.relative_to(templates))
+                 for f in (templates / "landing.html",
+                           templates / "legal" / "detection.html")
+                 if f"{len(detection_types.FOUND)} типов" in f.read_text(encoding="utf-8")]
+    check("число типов в шаблонах не литерал, а длина реестра",
+          not hardcoded, str(hardcoded))
+    check("и страница его действительно печатает",
+          f"{len(detection_types.FOUND)} типов" in detection)
+
+    # ЭКРАН, РАДИ КОТОРОГО ВСЁ ЭТО ПИШЕТСЯ: очередь работ должна читаться
+    # глазами, иначе счётчик существует для себя.
+    screen = staff_client.get(f"{base}demand/")
+    text = screen.content.decode()
+    check("сотрудник видит экран спроса", screen.status_code == 200)
+    check("и на нём непокрытая группа с числом",
+          gap in text or dict(
+              (group["code"], group["label"]) for group in detection_types.GROUPS
+          )[gap] in text)
+    check("аноним экран спроса не видит",
+          _FreshClient().get(f"{base}demand/").status_code in (302, 404),
+          f"status={_FreshClient().get(f'{base}demand/').status_code}")
+
+
+def _check_reconciliation(staff_client, base: str, org) -> None:
+    """Сверка счёта с логом шлюза клиента — арифметика и экран.
+
+    `docs/billing-integrity.md` объявляет запрос единицей тарификации ИМЕННО
+    потому, что «запрос виден в логе шлюза самого клиента» и спор о деньгах
+    превращается в сравнение двух независимых источников. Сравнивать до сих пор
+    было нечем.
+    """
+    from billing import reconcile as R
+
+    # ТРИ МАСШТАБА ИЗ `docs/billing-integrity.md`, ЧЕСТНАЯ ЦЕПЬ: там измерено
+    # 0.00% на всех трёх, значит числа обязаны совпадать РОВНО, а не «примерно».
+    exact = [R.reconcile(ours=volume, theirs=volume,
+                         quantum_max=q, reserve_max=r)
+             for volume, q, r in ((10_000, 2_000, 20_000),
+                                  (100_000, 10_000, 100_000),
+                                  (1_000_000, 40_000, 400_000))]
+    check("на трёх масштабах при целой цепи счёт сходится точно",
+          all(item.verdict == R.MATCH and item.difference == 0 for item in exact),
+          f"вердикты={[item.verdict for item in exact]}")
+
+    # Полоса — это `Q + R` из строки тарифа, и она объявлена несущей.
+    band = R.band_width(quantum_max=2_000, reserve_max=20_000)
+    check("полоса погрешности равна Q + R из тарифа", band == 22_000, f"полоса={band}")
+
+    # И ОНА СКЛАДЫВАЕТСЯ ПО ПРОЦЕССАМ. `LicenseStore.billable` зажимает
+    # `clamp(acked, granted − Q − R, granted)` НА КАЖДЫЙ процесс и складывает —
+    # леджер ёмкости ключуется на ключ процесса. Восьмиворкерный контейнер на
+    # «Старте» законно расходится на 8 × 22 000, и полоса в одну штуку объявила
+    # бы это «мы выставили больше, смотреть надо у нас».
+    check("полоса складывается по процессам, а не берётся за один",
+          R.band_width(2_000, 20_000, processes=8) == 8 * 22_000,
+          f"на восьми процессах={R.band_width(2_000, 20_000, processes=8)}")
+    eight = R.reconcile(ours=10_000, theirs=10_000 + 8 * 22_000 - 1,
+                        quantum_max=2_000, reserve_max=20_000, processes=8)
+    check("законное расхождение восьми воркеров не зовётся нашим дефектом",
+          eight.agrees, f"вердикт={eight.verdict}")
+
+    # ПОЛОСА НЕИЗВЕСТНА — ВЕРДИКТА НЕТ. Нет подписки, нет тарифа на сервере, ни
+    # один процесс не брал ёмкость: ноль здесь значит «не знаем, на сколько
+    # можно», а не «расходиться нельзя».
+    blind = R.reconcile(ours=10_000, theirs=10_001, quantum_max=0, reserve_max=0)
+    check("без известной полосы вердикт не выносится",
+          blind.verdict == R.UNKNOWN_BAND and not blind.agrees
+          and "по какому тарифу" in blind.reasons[0],
+          f"вердикт={blind.verdict}")
+
+    inside = R.reconcile(ours=10_000, theirs=10_000 + band,
+                         quantum_max=2_000, reserve_max=20_000)
+    outside = R.reconcile(ours=10_000, theirs=10_000 + band + 1,
+                          quantum_max=2_000, reserve_max=20_000)
+    check("на самой границе полосы расхождение ещё объяснимо",
+          inside.verdict == R.WITHIN_BAND and inside.agrees,
+          f"вердикт={inside.verdict}")
+    check("на шаг за границей — уже нет",
+          outside.verdict == R.THEY_COUNTED_MORE and not outside.agrees,
+          f"вердикт={outside.verdict}")
+
+    # САМАЯ ЧАСТАЯ ПРИЧИНА НАЗЫВАЕТСЯ ПЕРВОЙ. У клиента больше нашего — почти
+    # всегда он посчитал то, что запросом не считается; проверяется за минуту, в
+    # отличие от разбора цепи.
+    check("когда у клиента больше, первым назван его собственный подсчёт",
+          outside.reasons and "/spans" in outside.reasons[0],
+          f"первая причина={outside.reasons[0][:70] if outside.reasons else 'нет'}")
+
+    # ОБРАТНЫЙ СЛУЧАЙ — ЕДИНСТВЕННЫЙ, ГДЕ ВИНОВАТЫ СКОРЕЕ МЫ, и текст обязан это
+    # говорить: при доходящих отчётах счёт равен расходу, значит расхождение в
+    # эту сторону при целой цепи — наша сторона.
+    ours_more = R.reconcile(ours=50_000, theirs=10_000,
+                            quantum_max=2_000, reserve_max=20_000)
+    check("перевыставление при целой цепи названо нашей стороной",
+          ours_more.verdict == R.WE_BILLED_MORE
+          and any("наша сторона" in reason for reason in ours_more.reasons),
+          f"вердикт={ours_more.verdict}")
+
+    # ПОРВАННАЯ ЦЕПЬ — НЕ ОБВИНЕНИЕ. Счёт идёт по выданной ёмкости, а отчёт
+    # только уменьшил бы его: это отказ от скидки, а не приписка. Формулировка
+    # тут и есть продукт — с неё начинается разговор с клиентом.
+    dirty = R.reconcile(ours=50_000, theirs=10_000, quantum_max=2_000,
+                        reserve_max=20_000, reports_missing=3, chain_breaks=1)
+    check("порванная цепь объясняется скидкой, а не припиской",
+          not dirty.chain_clean
+          and any("не приписка" in reason for reason in dirty.reasons)
+          and not any("наша сторона" in reason for reason in dirty.reasons),
+          f"причин={len(dirty.reasons)}")
+
+    # Первая точка ряда прироста не имеет — предшественника в окне нет.
+    rows = R.daily_rows([{"day": "2026-09-01", "requests": 100},
+                         {"day": "2026-09-02", "requests": 250}])
+    check("в выгрузке первая точка не выдаёт накопленное за прирост",
+          rows[0]["requests_delta"] == "" and rows[1]["requests_delta"] == 150,
+          f"ряд={[row['requests_delta'] for row in rows]}")
+
+    # СВЕРЯЕТСЯ КОНКРЕТНЫЙ СЧЁТ, А НЕ «ТО, ЧТО НАКАПАЛО ПОСЛЕ НЕГО».
+    #
+    # Спор начинается со счёта в руках, поэтому число обязано быть тем самым,
+    # что на нём напечатано. Здесь считалось «накопленное минус ватермарка
+    # последнего счёта» — то есть объём ЕЩЁ НЕ ВЫСТАВЛЕННОГО периода, — и
+    # подписывалось именем того самого счёта: клиент, пришедший спорить про
+    # INV-N, получал разницу с чужим числом, тем большую, чем дольше работает.
+    from datetime import date, timedelta
+
+    from billing.models import Invoice
+
+    disputed = Invoice.objects.create(
+        organization=org, number=Invoice.next_number(), state=Invoice.ISSUED,
+        period_start=date.today() - timedelta(days=30), period_end=date.today(),
+        requests_billable_in_period=4_242,
+        requests_billable_at_period_end=9_999)
+    with_invoice = staff_client.get(
+        f"{base}{org.id}/reconcile/?invoice={disputed.number}").content.decode()
+    # Разделитель разрядов у Django — НЕРАЗРЫВНЫЙ пробел (`USE_THOUSAND_SEPARATOR`),
+    # поэтому «4242» на странице не встречается буквально ни при каком раскладе.
+    flat = with_invoice.replace("\u00a0", "").replace(" ", "")
+    check("сверяется число С САМОГО СЧЁТА, а не остаток после него",
+          "4242" in flat and disputed.number in with_invoice,
+          f"счёт {disputed.number} несёт 4242 за период")
+
+    # ЭКРАН И ВЫГРУЗКА.
+    page = staff_client.get(f"{base}{org.id}/reconcile/")
+    check("экран сверки открывается", page.status_code == 200,
+          f"код={page.status_code}")
+    body = page.content.decode()
+    check("экран говорит, что лог сюда не загружается",
+          "не загружается" in body,
+          "иначе кто-нибудь однажды приделает загрузку файла")
+    check("экран перечисляет, что запросом не считается",
+          "/spans" in body and "fail-closed" in body)
+
+    # ПРОВЕРЯЕТСЯ ВЕРДИКТ, А НЕ ЭХО. Число уезжает обратно в `value` формы,
+    # поэтому «999999 есть на странице» истинно и тогда, когда сверка не
+    # считалась вовсе, — то есть проверка не могла упасть.
+    swept = staff_client.get(f"{base}{org.id}/reconcile/?theirs=999999").content.decode()
+    check("экран выносит вердикт по названному числу",
+          "Чем объясняется" in swept and "запросом не считается" in swept,
+          "вердикта на странице нет — сверка не посчиталась")
+    junk = staff_client.get(f"{base}{org.id}/reconcile/?theirs=много", follow=True)
+    check("мусор вместо числа не роняет сверку",
+          junk.status_code == 200 and "нужно целое число" in junk.content.decode(),
+          f"код={junk.status_code}")
+
+    csv_response = staff_client.get(f"{base}{org.id}/usage.csv")
+    # Колонка называет ЧАСОВОЙ ПОЯС. Срез режет UTC (`time.gmtime` на
+    # лицензионном сервере), а витрина рисует в Europe/Moscow: без пометки
+    # вечерний московский трафик молча ложится в предыдущую строку, и клиент
+    # ищет расхождение там, где его нет.
+    check("выгрузка отдаётся файлом и называет часовой пояс суток",
+          csv_response.status_code == 200
+          and "attachment" in csv_response.headers.get("Content-Disposition", "")
+          and b"day_utc,requests_total" in csv_response.content,
+          f"код={csv_response.status_code}")
+    # Имя файла строится из идентификатора, а не из названия организации:
+    # название — свободная строка, и она уехала бы в заголовок ответа.
+    check("имя файла выгрузки не несёт свободной строки",
+          org.display_name not in csv_response.headers.get("Content-Disposition", ""),
+          csv_response.headers.get("Content-Disposition", ""))
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -207,6 +207,62 @@ def check_usage_needs_a_real_key() -> list[str]:
 
 
 
+def check_license_alarm_agrees_on_both_legs() -> list[str]:
+    """`/license` is the alarm, and the TWO LEGS OWE THE SAME CONTRACT.
+
+    `/health` is liveness and answers 200 while serving; `/license` is what the
+    docstrings tell customers to alert on and answers 503 the moment the state is
+    anything but LEASED. Each leg broke that contract in the opposite direction,
+    which is why neither leg's monitoring worked and why one check covers both:
+
+      * the sidecar compared `status.state != "leased"` while the wire value of
+        `STATE_LEASED` is `"active"`, so it answered 503 on a healthy container —
+        an alarm that could not switch off;
+      * the proxy returned 200 unconditionally, with no status-code branch at
+        all — an alarm that could not fire.
+
+    Asserted as AGREEMENT rather than as a fixed code, so the check needs no
+    lease and no licensing server: whatever state this process happens to be in,
+    both legs must describe it the same way. A leg that hardcodes either answer
+    disagrees with the other as soon as the state is not the one it hardcoded.
+    """
+    import asyncio
+    import os
+    import tempfile
+
+    import httpx
+
+    os.environ["PSEUDEX_DB_DIR"] = tempfile.mkdtemp(prefix="persona-license-")
+    os.environ.setdefault("PSEUDEX_UPSTREAM_BASE_URL", "https://api.openai.com/v1")
+    os.environ.setdefault("PSEUDEX_UPSTREAM_KEY", "sk-test")
+    from pseudex import license as license_module
+    from pseudex import proxy, service
+
+    async def probe(app) -> tuple[int, object]:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+            response = await client.get("/license")
+            return response.status_code, response.json().get("state")
+
+    sidecar_code, sidecar_state = asyncio.run(probe(service.app))
+    proxy_code, proxy_state = asyncio.run(probe(proxy.app))
+
+    problems: list[str] = []
+    if sidecar_state != proxy_state:
+        problems.append(f"леги называют разное состояние: сайдкар {sidecar_state!r}, "
+                        f"прокси {proxy_state!r}")
+    if sidecar_code != proxy_code:
+        problems.append(f"леги отвечают разными кодами на одно состояние "
+                        f"{sidecar_state!r}: сайдкар {sidecar_code}, прокси {proxy_code}")
+    # И код обязан соответствовать состоянию, а не просто совпадать: два лега,
+    # одинаково сломанные, согласны между собой.
+    expected = 200 if sidecar_state == license_module.STATE_LEASED else 503
+    if sidecar_code != expected:
+        problems.append(f"состояние {sidecar_state!r} должно давать {expected}, "
+                        f"а даёт {sidecar_code}")
+    return problems
+
+
 def check_colloquial_names(detector: Detector) -> list[str]:
     """The familiar register, which is the one an agent actually receives.
 
@@ -314,6 +370,8 @@ CHECKS = (
     ("счёт держится на формате, не на слове", check_account_is_not_one_word),
     ("двусмысленные слова не ключи", check_ambiguous_keys_stay_out),
     ("/usage требует известный ключ", lambda _detector: check_usage_needs_a_real_key()),
+    ("тревога по лицензии одинакова на обоих легах",
+     lambda _detector: check_license_alarm_agrees_on_both_legs()),
     ("просторечные имена не утекают", check_colloquial_names),
     ("слипшиеся написания не прячут ПД", check_glued_spellings),
     ("регистр и ё не расщепляют человека", check_one_person_one_token),

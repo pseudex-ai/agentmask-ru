@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Флот — операции pseudex{% endblock %}
+{% block nav %}
+<nav>
+  <a href="{% url 'ops_fleet' %}">ФЛОТ</a>
+  <a href="{% url 'ops_chains' %}">ЦЕПИ</a>
+  <a href="{% url 'ops_plans' %}">ТАРИФЫ</a>
+  <a href="{% url 'ops_demand' %}">СПРОС</a>
+</nav>
+{% endblock %}
+{% block content %}
+<section>
+  <div class="sec-head">
+    <div>
+      <h2>Флот</h2>
+      <div class="sec-meta" style="margin-top:8px">{{ page.paginator.count }} организаций · страница {{ page.number }} из {{ page.paginator.num_pages }}</div>
+    </div>
+    <div>
+      {# При лежащем сервере все счётчики нули, поэтому зелёная плашка «цепи
+         целы» встала бы рядом с плашкой «сервер не отвечает». Молчание — это
+         неизвестно, а не хорошо. #}
+      {% if error %}<span class="pill warn">СОСТОЯНИЕ ЦЕПЕЙ НЕИЗВЕСТНО</span>
+      {% elif flagged %}<span class="pill bad">ЦЕПЬ ПОРВАНА У {{ flagged }}</span>
+      {% else %}<span class="pill ok">ЦЕПИ ЦЕЛЫ</span>{% endif %}
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="msg error">Лицензионный сервер не отвечает, поэтому колонки лизы,
+    ёмкости и цепей пусты. Всё остальное на этой странице — наше и верно.
+    Клиенты при этом работают: у них выданная аренда и предоплаченный резерв.
+    <div class="mono" style="margin-top:10px;font-size:12px;color:var(--dim-2)">{{ error }}</div></div>
+  {% endif %}
+
+  <table class="list">
+    <tr>
+      <th>ОРГАНИЗАЦИЯ</th><th>ТАРИФ</th><th>ПОДПИСКА</th><th>КОНТЕЙНЕРЫ</th>
+      <th>ЗАПРОСОВ</th><th>К НАЧИСЛЕНИЮ</th><th>НЕОПЛАЧЕНО</th><th>ЦЕПЬ</th>
+    </tr>
+    {% for row in rows %}
+    <tr>
+      <td>
+        <a href="{% url 'ops_customer' row.organization.id %}">{{ row.organization.display_name }}</a>
+        <div class="mono" style="font-size:11.5px;color:var(--dim-3)">{{ row.organization.id }}</div>
+      </td>
+      <td>{% if row.plan %}{{ row.plan.title }}{% else %}<span style="color:var(--dim-2)">—</span>{% endif %}</td>
+      <td>
+        {% if row.subscription %}
+          {% if row.subscription.state == 'trial' %}<span class="pill warn">ПРОБНЫЙ</span>
+          {% elif row.subscription.state == 'active' %}<span class="pill ok">АКТИВНА</span>
+          {% elif row.subscription.state == 'past_due' %}<span class="pill bad">НЕ ОПЛАЧЕНА</span>
+          {% else %}<span class="pill">ОТМЕНЕНА</span>{% endif %}
+        {% else %}<span class="pill">НЕТ</span>{% endif %}
+      </td>
+      <td class="mono">{{ row.instances }} / {{ row.allowed }}</td>
+      <td class="mono">{{ row.requests }}</td>
+      <td class="mono">{{ row.billable }}</td>
+      <td class="mono">{% if row.unpaid %}{{ row.unpaid }} ₽{% else %}—{% endif %}</td>
+      <td>
+        {% if row.chain_breaks %}<span class="pill bad">{{ row.chain_breaks }}</span>
+        {% elif row.unverified or row.missing %}<span class="pill warn">БЕЗ ОТЧЁТА</span>
+        {% else %}<span class="pill ok">ЦЕЛА</span>{% endif %}
+      </td>
+    </tr>
+    {% empty %}<tr><td colspan="8" style="color:var(--dim-2)">Клиентов пока нет.</td></tr>{% endfor %}
+  </table>
+
+  {% if page.has_other_pages %}
+  <div style="display:flex;gap:10px;margin-top:24px">
+    {% if page.has_previous %}<a class="btn" href="?page={{ page.previous_page_number }}">НАЗАД</a>{% endif %}
+    {% if page.has_next %}<a class="btn" href="?page={{ page.next_page_number }}">ДАЛЬШЕ</a>{% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

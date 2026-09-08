@@ -43,7 +43,8 @@ from pseudex.envelope import (
     mask_tools,
     unmask_response,
 )
-from pseudex.license import ENGINE_VERSION, LicenseClient, LicenseError, explain
+from pseudex.license import (
+    ENGINE_VERSION, STATE_LEASED, LicenseClient, LicenseError, explain)
 from pseudex import metering
 from pseudex.maskcache import MaskCache
 from pseudex.operator import build_router
@@ -461,10 +462,19 @@ async def license_status() -> JSONResponse:
     reading it keeps working.
     """
     status = LICENSE.status()
-    # `leased` is the only healthy state. `stale` is serving on grace and
+    # `LEASED` is the only healthy state. `stale` is serving on grace and
     # `expired` is not serving at all — both are things somebody must be told
     # about, and the difference between them is in the body.
-    degraded = status.state != "leased"
+    #
+    # COMPARED AGAINST THE CONSTANT, NEVER AGAINST A LITERAL. The wire value of
+    # `STATE_LEASED` is `"active"`, not `"leased"` — so `state != "leased"` was
+    # true on a perfectly healthy container and this endpoint, the one the
+    # docstring above designates for monitoring and alerting, answered 503 for
+    # its whole life. Every customer who wired an alert to it as documented got
+    # a page that never cleared, and the natural remedy is to stop trusting the
+    # alert. Nothing caught it: `e2e/gates.py::license_state` read `.json()` and
+    # never looked at the status code, and L7/L8 assert on the body's `state`.
+    degraded = status.state != STATE_LEASED
     return JSONResponse(status_code=503 if degraded else 200, content={
         "state": status.state,
         "code": status.code,

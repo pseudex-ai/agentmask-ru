@@ -50,6 +50,28 @@ jobs:
         run: python test_credentials.py
       - name: the defects a persona run found
         run: python test_persona_defects.py
+      # ДЕШЁВЫЙ И ЗДЕСЬ, А НЕ В ГЕЙТАХ: он не поднимает контейнер, а гоняет
+      # арифметику предполёта, чтение cgroup и контракт потоков между
+      # `serve_main.py` и `entrypoint.sh`. Живой отказ по памяти проверяет L22
+      # против настоящего контейнера — но регрессию в контракте надо ловить
+      # раньше, чем через ночной прогон.
+      - name: preflight — сколько воркеров влезает и что будет, если не влезают
+        run: python test_preflight.py
+      # Тоже без контейнера: проверяются форма собираемых команд (ошибка в ней
+      # невидима — docker выполнит неправильное молча), вердикты doctor и
+      # доказательство ротации.
+      - name: pseudexctl — вердикты и доказательство ротации
+        run: python test_pseudexctl.py
+
+      # ЗАГОЛОВОК — НЕ ДОКАЗАТЕЛЬСТВО ТОГО, ЧТО СТРАНИЦА РАБОТАЕТ. Однажды
+      # интерфейс отдавал 200 на страницу и на все ассеты, заголовок CSP
+      # совпадал с ожидаемым в тесте — и не исполнялся ни один скрипт, потому
+      # что `script-src 'self'` резал import map. Единственный способ это
+      # увидеть — открыть браузером.
+      - name: браузер для проверки интерфейса
+        run: pip install playwright && python -m playwright install --with-deps chromium
+      - name: интерфейс исполняется, а не просто отдаёт 200
+        run: python test_localui_renders.py
 
       # ДЕНЕЖНЫЙ ТРАКТ БЕГАЕТ НА КАЖДОМ ПУШЕ. Оба этих набора не запускались в
       # CI вообще: первый лежал в дереве и вызывался руками, второго не
@@ -71,7 +93,11 @@ jobs:
       # строка в файле, чей докстринг обещает, что одна строка всегда красная.
       - name: no tautological checks in our own tests
         run: |
-          if grep -rnE "or True[,)]|assert True\b" --include="test_*.py" . ; then
+          # --exclude-dir=.venv: CI installs into the system interpreter and has
+          # no virtualenv, but a developer running this same line locally hits
+          # numpy's own test suite and gets a failure that has nothing to do with
+          # their change. A guard people cannot run is a guard people ignore.
+          if grep -rnE "or True[,)]|assert True\b" --include="test_*.py" --exclude-dir=.venv . ; then
             echo "проверка, которая не может упасть, — это удалённая проверка"
             exit 1
           fi
@@ -111,6 +137,17 @@ jobs:
       - name: storefront end to end
         run: .venv/bin/python test_storefront.py
 
+      # ВЕРДИКТ КОНФИГУРАТОРА СЧИТАЕТСЯ В БРАУЗЕРЕ, и «страница отдала 200» его
+      # не проверяет: блок остался бы отрендеренным, даже если `landing.js`
+      # падает на первой строке. Эта проверка нашла в своём же диффе две вещи —
+      # многострочный `{# #}`, отрендеренный как видимый текст, и кнопку,
+      # которой `hidden` не помогал, потому что `.btn{display:inline-block}`
+      # перебивает браузерное `[hidden]{display:none}`.
+      - name: браузер для проверки конфигуратора
+        run: .venv/bin/pip install -q playwright && .venv/bin/python -m playwright install --with-deps chromium
+      - name: конфигуратор исполняется, а не просто отдаёт 200
+        run: .venv/bin/python test_configurator_renders.py
+
   deploy:
     name: deploy scripts and compose
     runs-on: ubuntu-latest
@@ -128,11 +165,97 @@ jobs:
           # SC2029/SC1090 are about sourcing and remote expansion, neither of
           # which these scripts do; everything else is a real finding.
           shellcheck -e SC1090,SC1091 -S warning deploy/*.sh
+      # СПИСОК ОБЯЗАТЕЛЬНЫХ ПЕРЕМЕННЫХ БЕРЁТСЯ ИЗ САМОГО COMPOSE, А НЕ ИЗ ПАМЯТИ,
+      # И СЧИТАЕТСЯ ОДИН РАЗ НА ВСЕ ШАГИ.
+      #
+      # Раньше три имени были вписаны руками, а `${VAR:?}` в compose уже восемь —
+      # и `.env.example` держит секреты ПУСТЫМИ, что `:?` считает отсутствием.
+      # Каждая обязательная переменная, добавленная после написания шага, его
+      # ломала: на `main` он падал на PSEUDEX_LICENSE_ADMIN_TOKEN и был красным,
+      # хотя называется «compose is valid with the documented variables» и не мог
+      # стать зелёным ни при каких документированных переменных.
+      #
+      # ДВЕ ФОРМЫ, А НЕ ОДНА: у Compose обязательны и `${VAR:?msg}`, и
+      # `${VAR?msg}`. Ловилась только первая, и вторая давала ложный зелёный.
+      # Комментарии выброшены до поиска — иначе строка комментария, называющая
+      # переменную, требовала бы её существования.
+      - name: collect the variables compose declares mandatory
+        run: |
+          required=$(grep -v '^[[:space:]]*#' deploy/compose.yml \
+            | grep -oE '\$\{[A-Za-z_][A-Za-z0-9_]*:?\?' \
+            | sed -E 's/^\$\{//; s/:?\?$//' | sort -u)
+          count=$(printf '%s\n' "$required" | grep -c . || true)
+          echo "обязательных переменных в compose: $count"
+          # ПУСТОЙ СПИСОК — ЭТО ПОЛОМКА ПОИСКА, А НЕ ОТСУТСТВИЕ ТРЕБОВАНИЙ.
+          # Без этой строки правка grep'а делала бы оба шага ниже вечнозелёными.
+          if [ "$count" -lt 5 ]; then
+            echo "поиск обязательных переменных сломан: нашёл $count" >&2
+            exit 1
+          fi
+          echo "REQUIRED_VARS=$(printf '%s' "$required" | tr '\n' ' ')" >> "$GITHUB_ENV"
+
+      # Проверяется то, что и обещано: файл СОБИРАЕТСЯ. Значения заведомо
+      # фиктивные — настоящие лежат в `.env` на хосте, и проверять их нечем.
       - name: compose is valid with the documented variables
         run: |
           set -a; . deploy/.env.example; set +a
-          POSTGRES_PASSWORD=x PSEUDEX_SECRET_KEY=x PSEUDEX_SIGNING_KEY=x \
-            docker compose -f deploy/compose.yml config >/dev/null
+          for name in $REQUIRED_VARS; do
+            eval "value=\${$name:-}"
+            [ -n "$value" ] || export "$name=placeholder"
+          done
+          docker compose -f deploy/compose.yml config >/dev/null
+
+      # СЕРВИС ПОД ПРОФИЛЕМ НЕ ИМЕЕТ ПРАВА ТРЕБОВАТЬ ПЕРЕМЕННУЮ.
+      #
+      # Это НЕ то же самое, что шаг выше, и заведено потому, что шаг выше сам по
+      # себе перестал ловить эту беду: он подставляет заглушки ВСЕМ обязательным
+      # переменным, поэтому `:?` у выключенного по умолчанию сервиса оставил бы
+      # CI зелёным, а `docker compose up -d` на боевой машине — сломанным.
+      # Compose подставляет значения ДО отбора профилей. Ровно это и случилось
+      # с Grafana.
+      - name: a profiled service must not require a variable
+        run: |
+          awk '
+            # Верхнеуровневый ключ: входим в services или выходим из него.
+            /^[A-Za-z]/ { in_services = ($0 ~ /^services:/); cur = ""; next }
+            !in_services { next }
+            # Комментарий — не код. Без этого строка, ОБЪЯСНЯЮЩАЯ убранное
+            # требование, роняла бы проверку на верном файле.
+            /^[[:space:]]*#/ { next }
+            # Имя сервиса. Хвостовой комментарий допустим: `  grafana:  # …`
+            # раньше сбрасывал разбор и делал проверку слепой на своём же случае.
+            /^  [A-Za-z0-9_-]+:[[:space:]]*(#.*)?$/ { cur = $1; sub(":", "", cur); seen[cur] = 1; next }
+            cur == "" { next }
+            /^    profiles:/ { profiled[cur] = 1 }
+            /\$\{[A-Za-z_][A-Za-z0-9_]*:?\?/ { requires[cur] = 1 }
+            END {
+              if (length(seen) == 0) { print "разбор compose не нашёл ни одного сервиса"; exit 1 }
+              bad = ""
+              for (s in seen) if (profiled[s] && requires[s]) bad = bad " " s
+              if (bad != "") {
+                print "профильные сервисы с обязательными переменными:" bad
+                print "compose подставляет значения ДО отбора профилей — такой сервис ломает обычный up -d"
+                exit 1
+              }
+              printf "сервисов: %d, из них профильных без требований: ok\n", length(seen)
+            }
+          ' deploy/compose.yml
+
+      # И ОТДЕЛЬНО: КАЖДАЯ ОБЯЗАТЕЛЬНАЯ ПЕРЕМЕННАЯ ДОЛЖНА БЫТЬ НАЗВАНА В
+      # `.env.example`. Шаг с заглушками сам по себе её больше не заметит, а
+      # узнать о переменной на боевой машине посреди выката — худший вариант.
+      - name: every required variable is documented in .env.example
+        run: |
+          missing=""
+          for name in $REQUIRED_VARS; do
+            grep -qE "^${name}=" deploy/.env.example || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "нет в deploy/.env.example:$missing"
+            exit 1
+          fi
+          echo "все обязательные переменные документированы"
+
       # A FAILED ALARM MUST NOT BE A SILENT ONE. `if ! curl` stood here and never
       # fired: without --fail curl calls HTTP 400 a successful transfer and exits
       # 0, so Telegram rejecting a malformed or over-long body lost the alarm with
@@ -177,6 +300,16 @@ jobs:
       - name: systemd units parse
         run: |
           sudo apt-get install -y --no-install-recommends systemd >/dev/null
+          # Юниты называют БОЕВОЙ путь, а раннер держит репозиторий в другом
+          # месте, поэтому `systemd-analyze` докладывал «Command ... is not
+          # executable: No such file or directory» про оба ExecStart. Шаг не мог
+          # пройти ни при каком состоянии файлов, и это стало видно только
+          # сейчас: до Э11 джоба падала раньше, на проверке compose, и сюда не
+          # доходила. Ссылка делает утверждение НАСТОЯЩИМ, а не глушит его
+          # фильтром: снятый бит исполнения или переименованный скрипт теперь
+          # красят шаг, а именно это он и должен ловить.
+          sudo ln -sfn "$GITHUB_WORKSPACE" /opt/pseudex
+          test -x /opt/pseudex/deploy/agent.sh
           systemd-analyze verify deploy/systemd/*.service deploy/systemd/*.timer 2>&1 \
             | grep -v "Unit .* not found" | grep . && exit 1 || true
 

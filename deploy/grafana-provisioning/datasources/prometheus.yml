@@ -1,0 +1,16 @@
+# Источник данных ФАЙЛОМ, а не руками в UI.
+#
+# `uid` фиксирован и на него ссылается каждая панель дашборда. Дашборд,
+# экспортированный «для шаринга», носит вместо него `${DS_PROMETHEUS}` и блок
+# `__inputs` — Grafana подставляет их только в диалоге импорта, а провижининг из
+# файла этого диалога не проходит: все панели пишут «Datasource
+# ${DS_PROMETHEUS} was not found». Поэтому uid здесь и uid в дашборде — одна
+# строка, и менять её надо в двух местах сразу.
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: pseudex-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true

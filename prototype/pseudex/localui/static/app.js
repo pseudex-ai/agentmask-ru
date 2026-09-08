@@ -122,7 +122,12 @@ function SignIn({ onDone }) {
   const fromUrl = new URLSearchParams(location.search).get('secret')
     // `token` is still accepted: a link an operator bookmarked before
     // this rename must keep working, and both name the same secret.
-    || URLSearchParams(location.search).get('token') || '';
+    // `new` ЗДЕСЬ ОБЯЗАТЕЛЕН, и его не было: `URLSearchParams(...)` без него
+    // бросает TypeError, а ветка вычисляется всегда, когда в адресе НЕТ
+    // `?secret`, — то есть при обычном заходе на корень. Компонент падал, и
+    // человек видел пустую страницу вместо формы входа. Проверка рендера этого
+    // не видела: она всегда приходит со ссылкой с секретом.
+    || new URLSearchParams(location.search).get('token') || '';
   const [secret, setSecret] = useState(fromUrl);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -287,6 +292,7 @@ function Status({ status, engineDown, org, goSandbox, onBlocked }) {
 
   const license = status?.license || {};
   const engine = status?.engine || {};
+  const memory = engine.memory;
   const today = status?.today || {};
   const vault = status?.vault || {};
   const big = engineDown
@@ -400,6 +406,12 @@ function Status({ status, engineDown, org, goSandbox, onBlocked }) {
                   <span class="up">${duration(process.uptime_s)}</span>
                 </div>`)
             : html`<div class="foot-note">${engineDown ? 'нет ответа' : 'список процессов доступен только внутри контейнера Linux'}</div>`}
+          ${memory && memory.limit_mb ? html`
+            <div class="foot-note">Память: ${memory.used_mb} из ${memory.limit_mb} МБ, крупнейший процесс ${memory.largest_process_mb} МБ при бюджете воркера ${memory.worker_mb_budget} МБ.</div>
+            ${memory.largest_process_mb > memory.worker_mb_budget && html`
+              <div class="foot-note">Воркер вырос выше бюджета, на котором посчитан запуск. Это и есть тот контейнер, который однажды остановит OOM-killer: поднимите лимит памяти или уменьшите PSEUDEX_WORKERS.</div>`}`
+            : !engineDown && html`
+            <div class="foot-note">Лимита памяти не видно — контейнер запущен без него, и предполётная проверка ничего не проверяла.</div>`}
         </div>
         <div class="cell">
           <div class="label mb">ЕСЛИ ЧТО-ТО НЕ ТАК</div>
@@ -928,6 +940,300 @@ function Subscription({ org }) {
     </div>`;
 }
 
+/* ---------- integration ---------- */
+
+/* ЕДИНСТВЕННЫЙ ЭКРАН ИЗ СПЕЦИФИКАЦИИ, КОТОРОГО НЕ БЫЛО (tz-local-ui §4.6), и
+   спецификация называет причину: «важнейшее место интеграции» — поведение шлюза
+   при 503. Продукт fail-closed, и если чужой шлюз при ошибке маскирования
+   пропустит запрос дальше, ВСЯ ЗАЩИТА ОБНУЛЯЕТСЯ — молча, потому что ответ
+   модели придёт как обычно. Сказать это на экране дешевле, чем узнать по
+   инциденту.
+
+   ТОКЕН ШЛЮЗА ЗДЕСЬ НЕ ПОКАЗЫВАЕТСЯ, И ЭТО РЕШЕНИЕ. Показать было бы удобнее и
+   быстрее — но интерфейс держит ДРУГОЙ токен, операторский, и разделение этих
+   двух ровно для того и сделано, чтобы скомпрометированная конфигурация шлюза
+   не открывала раскрытие значений. Экран, который печатает второй секрет из-под
+   первого, сводит разделение к оформлению. Вместо значения — место, где оно
+   лежит: одна строка в логе контейнера. */
+
+function snippets(base, org) {
+  const url = JSON.stringify(base);
+  const orgLiteral = JSON.stringify(org);
+  return [
+    ['LiteLLM callback', 'python', `# pseudex_hook.py — регистрируется как callback в LiteLLM
+#
+# ХУК ОБЯЗАН БЫТЬ МЕТОДОМ CustomLogger. Модульная функция с тем же именем не
+# вызывается никогда: LiteLLM зовёт хуки на ЗАРЕГИСТРИРОВАННОМ экземпляре — ни
+# ошибки, ни маскирования, сырые данные просто уходят провайдеру.
+import os
+
+import httpx
+from litellm.integrations.custom_logger import CustomLogger
+
+PSEUDEX = ${url}
+TOKEN = os.environ["PSEUDEX_GATEWAY_TOKEN"]   # строка «ключ шлюза» в логе контейнера
+
+
+class Pseudex(CustomLogger):
+    def __init__(self):
+        # ОДИН КЛИЕНТ НА ПРОЦЕСС: новый AsyncClient на каждый запрос — это новый
+        # пул соединений на хопе перед КАЖДЫМ вызовом модели, и он не закрывается.
+        self.http = httpx.AsyncClient(timeout=30)
+
+    def _headers(self):
+        return {"Authorization": f"Bearer {TOKEN}"}
+
+    async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):
+        r = await self.http.post(f"{PSEUDEX}/mask", headers=self._headers(),
+            json={"org_id": ${orgLiteral}, "messages": data["messages"],
+                  "tools": data.get("tools"),
+                  # ЛИЧНОСТЬ ДИАЛОГА, А НЕ ЗАПРОСА. litellm_call_id свой у
+                  # каждого обращения: с ним каждый ход — новый диалог, человек
+                  # получает второй псевдоним на середине разговора, сущность
+                  # оплачивается заново, а правило «частичное упоминание
+                  # разрешается по полному» умирает — сопоставлять не с чем.
+                  # Подставьте СВОЙ идентификатор беседы.
+                  "conversation_id": (data.get("metadata") or {}).get("session_id")})
+        r.raise_for_status()             # 503 обязан ОСТАНОВИТЬ запрос, см. выше
+        data["messages"] = r.json()["messages"]
+        return data
+
+    async def async_post_call_success_hook(self, data, user_api_key_dict, response):
+        # ОБРАТНОЕ ПЛЕЧО ОБЯЗАТЕЛЬНО. Без него подстановки уезжают в ваши
+        # инструменты вместо настоящих значений — то есть инструмент вызывается
+        # на выдуманном человеке, и снаружи это выглядит как успешный вызов.
+        r = await self.http.post(f"{PSEUDEX}/unmask", headers=self._headers(),
+            json={"org_id": ${orgLiteral}, "response": response.model_dump()})
+        r.raise_for_status()
+        body = r.json()
+        # ЧТО НЕ РАЗВЕРНУЛОСЬ: модель могла склонить или обрезать подстановку, и
+        # тогда в аргумент инструмента уедет ФЕЙК — при статусе 200 и целом JSON.
+        # Другого способа это увидеть нет.
+        if body.get("residual_tokens"):
+            raise ValueError(f"не развернулось: {body['residual_tokens']}")
+        return body["response"]
+
+
+pseudex_hook = Pseudex()     # в config.yaml: callbacks: [pseudex_hook.pseudex_hook]`],
+    ['Сырой HTTP', 'bash', `# 1. Маскируем
+curl -sS ${base}/mask \\
+  -H "Authorization: Bearer $PSEUDEX_GATEWAY_TOKEN" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"org_id": ${orgLiteral}, "conversation_id": "dialog-42",
+       "messages": [{"role": "user", "content": "Иванов Пётр, +7 916 214-88-03"}]}'
+
+# 2. Свою модель зовёте сами — она видит только подстановки.
+
+# 3. Возвращаем настоящие значения. Поле называется RESPONSE, и это ОБЪЕКТ
+#    ответа целиком, а не строка: детокенизируется и текст, и аргументы вызовов
+#    инструментов внутри него.
+curl -sS ${base}/unmask \\
+  -H "Authorization: Bearer $PSEUDEX_GATEWAY_TOKEN" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"org_id": ${orgLiteral}, "response": {"choices": [{"message":
+       {"role": "assistant", "content": "…ответ модели…"}}]}}'
+
+# В ответе смотрите residual_tokens: непустой список значит, что подстановка не
+# развернулась и в инструмент уедет фейк — при статусе 200 и целом JSON.`],
+    ['Стриминг', 'bash', `# ДВА РАЗНЫХ ЭНДПОЙНТА, И ПЕРЕПУТАТЬ ИХ НЕЛЬЗЯ.
+#
+# delta.content — по мере поступления:
+curl -sS ${base}/unmask_chunk \\
+  -H "Authorization: Bearer $PSEUDEX_GATEWAY_TOKEN" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"org_id": ${orgLiteral}, "delta": "…кусок текста…", "carry": "", "flush": false}'
+
+# Возвращает {text, carry}: carry держите У СЕБЯ и отдавайте обратно, ОДИН на
+# каждый choice.index — при n > 1 дельты идут вперемешку по одному соединению, и
+# общий carry пришьёт хвост одного ответа к голове другого.
+
+# arguments вызова инструмента — НАКОПИТЬ ЦЕЛИКОМ и отправить один раз:
+curl -sS ${base}/unmask_arguments \\
+  -H "Authorization: Bearer $PSEUDEX_GATEWAY_TOKEN" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"org_id": ${orgLiteral}, "arguments": ["{\\"phone\\": \\"+7 916 000-00-00\\"}"]}'
+
+# Через /unmask_chunk их пропускать НЕЛЬЗЯ: он подставляет плоский текст, а
+# настоящее значение — произвольная строка. «ООО "Заря"», вставленное плоской
+# заменой, вносит две голых кавычки, и вызов перестаёт разбираться. На русском
+# деловом трафике это обычный случай, а не краевой.`],
+  ];
+}
+
+/* ВТОРАЯ ФОРМА РАЗВЁРТЫВАНИЯ, И АДРЕС У НЕЁ ДРУГОЙ, поэтому поле «адрес
+   сайдкара» сюда НЕ подставляется: подставленный адрес выглядел бы рабочим и не
+   работал. На сайдкаре нет `/v1/chat/completions`, у прокси нет `/mask`. */
+function proxySnippet() {
+  return `# Здесь Pseudex сам ходит к провайдеру, а вы меняете base_url клиента.
+# Адрес — тот, на котором поднят ПРОКСИ (по умолчанию порт 4000), и ручек
+# /mask и /unmask на нём нет.
+import os
+
+from openai import OpenAI
+
+client = OpenAI(base_url="http://<адрес-прокси>:4000/v1",
+                api_key=os.environ["PSEUDEX_TENANT_KEY"])   # sk-ps-…
+
+answer = client.chat.completions.create(
+    model="anthropic/claude-sonnet-4.5",
+    messages=[{"role": "user", "content": "Клиент Иванов Пётр, +7 916 214-88-03"}],
+    tools=tools)
+# Инструменты вызываются на НАСТОЯЩИХ значениях: детокенизация происходит на
+# нашей стороне, до того как аргументы уедут в ваш код.`;
+}
+
+const FAIL_CLOSED = `# ЕДИНСТВЕННОЕ МЕСТО, ГДЕ ОШИБКА ИНТЕГРАЦИИ НЕ ВИДНА НИКАК.
+#
+# 503 от /mask означает «маскирование сейчас не работает». Если ваш шлюз в этот
+# момент пропустит запрос к модели, ответ придёт как обычно, метрики не
+# дрогнут, и НИЧЕГО НЕ СЛУЧИТСЯ ВИДИМОГО — кроме того, что персональные данные
+# ушли в модель открытым текстом. Обнаружится это не логом, а проверкой.
+
+try:
+    masked = await mask(messages)
+except (httpx.HTTPStatusError, httpx.TransportError):
+    # ТАК ПРАВИЛЬНО: отказать вызывающему.
+    raise HTTPException(503, "маскирование недоступно, запрос не выполнен")
+
+# ТАК НЕЛЬЗЯ, и это самая естественная строка на свете:
+# except Exception:
+#     masked = messages          # <- вся защита обнулилась, молча`;
+
+/* ДОСЛОВНО ИЗ `docs/integration.md`, И ЭТО НЕ ФОРМАЛЬНОСТЬ.
+   Здесь стоял мой пересказ той же мысли другими словами — то есть клиент
+   получал ДВЕ РЕДАКЦИИ одной инструкции: одну со страницы документации, другую
+   с этого экрана, и должен был сам решать, какая правильная. Каноническая — та,
+   что в документации: она подпёрта живым замером v4 (`docs/tz-agentpii4.md` §7),
+   а эта строка её цитирует. Правится в одном месте, оттуда переносится сюда. */
+const AGENT_PROMPT = `Персональные данные клиента передавай в инструменты так, как они названы в
+разговоре или пришли из инструмента, не пересчитывая и не проверяя
+контрольные суммы. Поля, которых в разговоре не было (почтовый индекс,
+возраст, инициалы, написание латиницей), не выводи сам — спроси клиента или
+оставь пустыми, если схема это позволяет.`;
+
+const TOKEN_GREP = 'docker logs pseudex 2>&1 | grep -A2 "ключ шлюза"';
+
+function Integration({ org }) {
+  const [copied, setCopied] = useState('');
+  const [copyFailed, setCopyFailed] = useState(false);
+  const [base, setBase] = useState(
+    `${window.location.protocol}//${window.location.hostname}:8000`);
+
+  /* КНОПКА НЕ ИМЕЕТ ПРАВА ГОВОРИТЬ «СКОПИРОВАНО», КОГДА НЕ СКОПИРОВАЛА.
+     `navigator.clipboard` отсутствует на простом HTTP вне localhost — а это
+     ровно то, как этот интерфейс и открывают, — и человек уходит вставлять
+     пустоту, уверенный, что всё взял. */
+  const copy = useCallback((label, text) => {
+    const done = navigator.clipboard?.writeText(text);
+    if (!done) { setCopyFailed(true); setTimeout(() => setCopyFailed(false), 2000); return; }
+    done.then(() => {
+      setCopied(label);
+      setTimeout(() => setCopied(''), 1400);
+    }).catch(() => {
+      setCopyFailed(true);
+      setTimeout(() => setCopyFailed(false), 2000);
+    });
+  }, []);
+
+  const blocks = snippets(base, org);
+  const label = (name) => (copied === name ? 'СКОПИРОВАНО'
+    : copyFailed ? 'ВЫДЕЛИТЕ И СКОПИРУЙТЕ САМИ' : 'КОПИРОВАТЬ');
+
+  return html`
+    <div class="page">
+      <div class="grid">
+        <div class="cell lit pad-lg">
+          <div class="label mb">АДРЕС САЙДКАРА</div>
+          <div class="foot-note">Подставляется во все фрагменты ниже. Угадан по
+            адресу, по которому открыт этот интерфейс, и порту 8000 — если ваш
+            шлюз ходит к контейнеру иначе (имя сервиса в docker-сети, другой
+            порт), впишите то, что видит он.</div>
+          <input class="addr" value=${base} spellcheck="false"
+                 onInput=${(event) => setBase(event.target.value)} />
+          <div class="kv"><span class="k">org_id</span><span class="v mono">${org}</span></div>
+          <div class="kv"><span class="k">ключ шлюза</span>
+            <span class="v">печатается при старте контейнера</span></div>
+          <div class="foot-note">Интерфейс его не показывает намеренно: он держит
+            ДРУГОЙ токен, операторский, и разделение этих двух сделано ровно для
+            того, чтобы скомпрометированная конфигурация шлюза не открывала
+            раскрытие значений.</div>
+          <div class="copybar">
+            <code>${TOKEN_GREP}</code>
+            <button onClick=${() => copy('token', TOKEN_GREP)}>${label('token')}</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid attach">
+        <div class="cell">
+          <div class="label mb" style="color:var(--amber)">ПРИ ОШИБКЕ МАСКИРОВАНИЯ — БЛОКИРОВАТЬ ЗАПРОС</div>
+          <div class="foot-note">Важнейшее место интеграции. Продукт fail-closed:
+            любая ошибка маскирования обязана дойти до вызывающего как отказ.
+            Шлюз, который в этот момент пропустит запрос дальше, обнулит защиту —
+            и не оставит следа, по которому это можно заметить.</div>
+          <${Snippet} name="fail-closed" lang="python" text=${FAIL_CLOSED}
+                      label=${label} onCopy=${copy} />
+        </div>
+      </div>
+
+      ${blocks.map(([name, lang, text]) => html`
+        <div class="grid attach">
+          <div class="cell">
+            <div class="label mb">${name.toUpperCase()}</div>
+            <${Snippet} name=${name} lang=${lang} text=${text}
+                        label=${label} onCopy=${copy} />
+          </div>
+        </div>`)}
+
+      <div class="grid attach">
+        <div class="cell">
+          <div class="label mb">OPENAI SDK — ЕСЛИ У ВАС РАЗВЁРНУТ ПРОКСИ</div>
+          <div class="foot-note">Это ДРУГАЯ форма развёртывания и другой адрес:
+            там Pseudex сам ходит к провайдеру, и ручек <span class="mono">/mask</span>
+            и <span class="mono">/unmask</span> на том порту нет. Поле выше сюда
+            не подставляется намеренно — подставленный адрес сайдкара выглядел бы
+            рабочим и не работал.</div>
+          <${Snippet} name="proxy" lang="python" text=${proxySnippet()}
+                      label=${label} onCopy=${copy} />
+        </div>
+      </div>
+
+      <div class="grid attach">
+        <div class="cell">
+          <div class="label mb">ФРАГМЕНТ СИСТЕМНОГО ПРОМПТА АГЕНТУ — ПО ЖЕЛАНИЮ</div>
+          <div class="foot-note">
+            <b>Это не требуется для работы</b>, и по умолчанию мы ваши промпты не
+            трогаем — так написано в документации по интеграции, и так и есть.
+            Фрагмент решает одну измеренную проблему: подстановки для СНИЛС, ИНН
+            и карты намеренно НЕ проходят собственную контрольную сумму, чтобы
+            подстановка никогда не совпала с чужим настоящим документом. Модель,
+            которую попросили «проверь данные перед вызовом», видит невалидную
+            сумму и отказывается вызывать инструмент. На нашем замере это
+            16 троек из 36 — и это цена решения, а не дефект: движок такое не
+            чинит и чинить не должен.
+          </div>
+          <${Snippet} name="prompt" lang="text" text=${AGENT_PROMPT}
+                      label=${label} onCopy=${copy} />
+        </div>
+      </div>
+    </div>`;
+}
+
+function Snippet({ name, lang, text, label, onCopy }) {
+  return html`
+    <div class="snip">
+      <div class="snip-head">
+        <span class="lang">${lang}</span>
+        <button onClick=${() => onCopy(name, text)}>${label(name)}</button>
+      </div>
+      ${/* textContent, НЕ innerHTML: здесь этого достаточно, потому что htm
+            подставляет значение как текстовый узел. Правило то же, что и на
+            остальных экранах — они рендерят значения из ЧУЖОГО трафика, и
+            склейка строк исполнила бы разметку, приехавшую внутри имени. */ ''}
+      <pre>${text}</pre>
+    </div>`;
+}
+
 /* ---------- diagnostics ---------- */
 
 function Diagnostics({ org }) {
@@ -1048,6 +1354,7 @@ function Reveals({ org }) {
 const TABS = [
   ['СТАТУС', 'status'], ['ПЕСОЧНИЦА', 'sandbox'], ['ЖУРНАЛ', 'log'],
   ['СТАТИСТИКА', 'stats'], ['РАСКРЫТИЯ', 'reveals'],
+  ['ИНТЕГРАЦИЯ', 'integration'],
   ['ПОДПИСКА', 'sub'], ['ДИАГНОСТИКА', 'diag'],
 ];
 
@@ -1167,6 +1474,7 @@ function App() {
           ${tab === 'log' && html`<${Log} org=${org} onReveal=${setReveal} />`}
           ${tab === 'stats' && html`<${Stats} org=${org} />`}
           ${tab === 'reveals' && html`<${Reveals} org=${org} />`}
+          ${tab === 'integration' && html`<${Integration} org=${org} />`}
           ${tab === 'sub' && html`<${Subscription} org=${org} />`}
           ${tab === 'diag' && html`<${Diagnostics} org=${org} />`}
         </main>

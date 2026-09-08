@@ -114,7 +114,13 @@ def start_local_license() -> str:
     else:
         raise RuntimeError("local licensing server did not start")
 
-    issued = httpx.post(f"{admin}/admin/issue", json={"org_id": "testkit"},
+    # ТАРИФ НАЗЫВАЕТСЯ ЯВНО. Раньше он опускался, и сервер подставлял
+    # `"standard"` — строку, которой нет ни в одной из его тарифных таблиц, так
+    # что стенд молча работал на лимитах «старта» независимо от того, что
+    # проверял. Сервер такой тариф больше не принимает; называть его здесь всё
+    # равно правильнее, чем полагаться на чужой умолчательный выбор.
+    issued = httpx.post(f"{admin}/admin/issue",
+                        json={"org_id": "testkit", "plan": "start"},
                         timeout=10, headers=ADMIN_AUTH)
     if issued.status_code != 200 or "key" not in issued.json():
         # Своими словами, а не `KeyError: 'key'` двадцатью строками ниже.

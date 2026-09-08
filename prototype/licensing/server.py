@@ -25,7 +25,7 @@ from typing import Annotated
 from dataclasses import dataclass
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from licensing.keys import encode_public, load_signing_key
 from licensing.pack import build_plaintext
@@ -36,6 +36,7 @@ from licensing.store import (
     STATUS_UNPAID,
     LicenseStore,
 )
+from pseudex import metrics as metrics_format
 from pseudex.bundle import (BundleError, is_recipient, nonce_wrap,
                             plaintext_hash, seal, sign_lease, verify_report)
 
@@ -141,6 +142,55 @@ _STATUS_RESPONSE = {
 
 
 app = FastAPI(title="Pseudex licensing", lifespan=_lifespan)
+
+# ИСХОДЫ СЧИТАЮТСЯ В ОДНОМ МЕСТЕ, А НЕ В ВЕТКАХ. `/v1/lease` возвращает из
+# двенадцати мест, и счётчик на каждом возврате — это счётчик, который однажды
+# забудут в тринадцатом; middleware видит ещё и 500, которых в тексте
+# обработчика вообще нет. Именно доля 402/403 названа в `docs/operations.md` §5
+# метрикой, которая отличает волну неоплат от НАШЕЙ ошибки в статусах, — и была
+# там же честно помечена как нереализованная.
+#
+# Мощность меток ограничена ТАБЛИЦЕЙ МАРШРУТОВ, а не тем, что прислали: см.
+# `_route_label`. Ни org_id, ни ключ в метку не попадают, и это не
+# забывчивость — метка со значением из клиентской базы даёт Prometheus по
+# временному ряду на клиента навсегда.
+_OUTCOMES = metrics_format.Counter()
+
+
+@app.middleware("http")
+async def _count_outcomes(request: Request, call_next):
+    # ПЯТИСОТКА НЕ ПРИХОДИТ СЮДА ОТВЕТОМ — ОНА ПРИХОДИТ ИСКЛЮЧЕНИЕМ. В тексте
+    # обработчиков нет ни одного явного 5xx: их делает `ServerErrorMiddleware`,
+    # который стоит ВЫШЕ пользовательских, поэтому `await call_next(...)` не
+    # возвращается, а бросает. Первая версия просто считала возвращённый ответ —
+    # то есть счётчик 5xx был бы вечным нулём, а тревога `PseudexLeaseServerErrors`
+    # никогда бы не сработала. И это худший из нулей: клиент трактует 5xx как НАШ
+    # сбой и берёт полные сорок восемь часов работы в долг, так что пятисотки на
+    # аренде — это молчаливая раздача grace.
+    try:
+        response = await call_next(request)
+    except Exception:
+        _OUTCOMES.add((_route_label(request), "500"))
+        raise
+    _OUTCOMES.add((_route_label(request), str(response.status_code)))
+    return response
+
+
+def _route_label(request: Request) -> str:
+    """МАРШРУТ, А НЕ ПУТЬ ИЗ ЗАПРОСА, и разница здесь безгранична.
+
+    Публичное приложение смотрит в интернет (`ports: 443:8443`), а
+    `request.url.path` — это то, что прислал вызывающий: один сканер за ночь
+    заводит десятки тысяч НАВСЕГДА живущих временных рядов в Prometheus и
+    столько же ключей в этом словаре. «Путей четыре» верно для маршрутов и
+    неверно для того, что приходит.
+
+    Всё, что не попало ни в один маршрут, сливается в одну метку: сам факт
+    сканирования видеть полезно, перечислять его выдумки — нет.
+    """
+    route = request.scope.get("route")
+    path = getattr(route, "path", "") if route is not None else ""
+    return path or "<no route>"
 # ВТОРОЙ ЗАМОК НА АДМИНКЕ, ПОТОМУ ЧТО ПЕРВЫЙ — ЭТО СЕТЬ. Порт 9443 не
 # публикуется наружу (`deploy/compose.yml` даёт ему `expose`, не `ports`), и
 # это верно, но единственный контроль. В той же docker-сети стоит витрина на
@@ -216,8 +266,29 @@ ADMIN_ACTIONS: tuple[AdminAction, ...] = (
     AdminAction("/admin/release", "POST", True),
     AdminAction("/admin/instances", "GET", True),
     AdminAction("/admin/usage", "GET", True),
+    # ЧТЕНИЕ И ПРАВКА ПРАЙС-ЛИСТА — ВИТРИНЕ, и решение стоит записать, раз
+    # аудитория обязана быть решена. Белый список защищает КАТАЛОГ АБОНЕНТОВ, а
+    # не цены: держатель витринного токена уже умеет выпускать, отзывать,
+    # приостанавливать и возобновлять ключи ЛЮБОЙ организации, и строка прайса
+    # слабее любого из этих рычагов. Запрет не купил бы ничего и создал бы ровно
+    # тот класс расхождения, которым этот файл уже дважды заплатил.
+    AdminAction("/admin/plans", "GET", True),
+    AdminAction("/admin/plans", "POST", True),
+    # ПАКЕТ ПО НАЗВАННЫМ ИДЕНТИФИКАТОРАМ — НЕ ПЕРЕЧИСЛЕНИЕ. Витрина сама создала
+    # все организации и знает их список; перечислять ей незачем, ей нужно быстро
+    # спросить про тех, кого она уже назвала. Поэтому ручка не отдаёт ничего, что
+    # вызывающий не мог бы получить, позвав `/admin/usage` по одному, — она лишь
+    # схлопывает N обращений в одно, и свойство «ни одна не массовая» цело.
+    AdminAction("/admin/fleet", "GET", True),
+    # Детализация за суммой `chain_breaks`, по ОДНОЙ организации.
+    AdminAction("/admin/chains", "GET", True),
     # Каталог абонентов. Единственная ручка, которой у витрины быть не должно.
     AdminAction("/admin/list", "GET", False),
+    # СКРЕЙП — ОПЕРАТОРУ, и по той же причине, по которой каталог не витрине:
+    # это сводка по ВСЕМУ флоту в одной строке, и организации с порванной цепью
+    # названы в ней поимённо. Витрине она не нужна — её консоль спрашивает про
+    # тех, кого назвала сама, — а Prometheus и так наш.
+    AdminAction("/admin/metrics", "GET", False),
 )
 
 _STOREFRONT_PATHS = frozenset(a.path for a in ADMIN_ACTIONS if a.storefront)
@@ -342,6 +413,12 @@ class ReportRejected(ValueError):
 
 # Потолки. Не «на всякий случай»: `prev`, `signature` и `build` уходят в
 # `process_reports` как есть, а `entities` — в JSON внутри строки `usage`.
+# Потолок на пакетный запрос флота. Каждый идентификатор — два прохода по
+# счётчикам, а строка запроса приходит снаружи: без границы один URL превращается
+# в сколь угодно долгую работу под локом store, то есть в остановку выдачи аренд
+# всем остальным. Двести покрывает экран любого разумного размера с запасом, а
+# витрина всё равно листает свой собственный список.
+_MAX_FLEET_ORGS = 200
 _MAX_COUNTER = 2 ** 53
 _MAX_ENTITY_TYPES = 200
 _MAX_ENTITY_KEY = 64
@@ -793,10 +870,29 @@ async def admin_release(body: Annotated[dict, Depends(json_object)]) -> JSONResp
 
 @admin_app.post("/admin/issue")
 async def admin_issue(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
+    """Mint a key. The full key is returned ONCE and never stored in the clear.
+
+    THE PLAN IS VALIDATED HERE, and the default is a plan that exists. It was
+    `"standard"` — a string present in none of `PLAN_INSTANCES`, `PLAN_GRANT`,
+    `QUANTUM_BOUNDS` or `RESERVE_MAX` — so every key issued without an explicit
+    plan silently got the smallest tariff's limits: one container, 5 000-request
+    grants, the "start" quantum bounds. Nothing failed and nothing logged; the
+    customer simply hit an instance ceiling belonging to a tariff they had not
+    bought, and the refusal named a limit no screen could explain.
+
+    Refusing an unknown plan rather than defaulting is the point: a typo in the
+    storefront's plan code, or a plan added to the shop and not to the licensing
+    server, must be a 400 somebody reads — not a downgrade nobody sees.
+    """
     org_id = str(body.get("org_id", ""))
     if not org_id:
         return JSONResponse({"error": "org_id required"}, status_code=400)
-    key = STORE.issue_key(org_id, str(body.get("plan", "standard")))
+    plan = str(body.get("plan", "start"))
+    if not STORE.known_plan(plan):
+        return JSONResponse(
+            {"error": "unknown plan", "plan": plan, "known": STORE.known_plans()},
+            status_code=400)
+    key = STORE.issue_key(org_id, plan)
     return JSONResponse({"org_id": org_id, "key": key})
 
 
@@ -845,14 +941,206 @@ async def admin_resume(body: Annotated[dict, Depends(json_object)]) -> JSONRespo
     return await _set_status(body, STATUS_ACTIVE)
 
 
+@admin_app.get("/admin/plans")
+async def admin_plans() -> JSONResponse:
+    """Тарифы как они есть НА САМОМ ДЕЛЕ — строки, не константы в коде.
+
+    `source` отличает посеянное от правленного руками, и это не украшение: сид
+    идёт `INSERT OR IGNORE`, поэтому поправить константу и выкатить релиз больше
+    НЕ меняет работающий тариф. Единственный способ увидеть это снаружи — вот
+    это поле.
+    """
+    return JSONResponse({"plans": STORE.plans()})
+
+
+@admin_app.post("/admin/plans")
+async def admin_set_plan(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
+    """Создать или поправить тариф.
+
+    `actor` обязателен по той же причине, по которой он обязателен у `/reveal`:
+    запись без того, кто её сделал, — не запись. Она и отличает `edited` от
+    `seed`, так что пустой `actor` сделал бы правку неотличимой от посева.
+
+    Числа проверяются на неотрицательность и на потолок, потому что тело сюда
+    приходит из интерфейса: `max_instances` со знаком минус превратил бы
+    `instances_allowed` в отказ всем контейнерам организации, а нулевой
+    `quantum_max` — в процесс, которому никогда не выдадут ёмкость.
+    """
+    code = str(body.get("code", "")).strip()
+    if not code:
+        return JSONResponse({"error": "code required"}, status_code=400)
+    actor = str(body.get("actor", "")).strip()
+    if not actor:
+        return JSONResponse({"error": "actor required"}, status_code=400)
+
+    values: dict[str, object] = {}
+    for field in STORE._PLAN_FIELDS:
+        if field not in body:
+            continue
+        try:
+            number = int(body[field])
+        except (TypeError, ValueError):
+            return JSONResponse({"error": f"{field} must be a whole number"},
+                                status_code=400)
+        # Верхняя граница есть у каждого поля по одной причине: число из тела
+        # уезжает в арифметику ёмкости, а `int` в Python не переполняется — он
+        # просто становится очень большим, и `granted` вместе с ним.
+        if number < 1 or number > 10_000_000:
+            return JSONResponse(
+                {"error": f"{field} must be between 1 and 10000000", "got": number},
+                status_code=400)
+        values[field] = number
+    if not values:
+        return JSONResponse({"error": "nothing to change",
+                             "fields": list(STORE._PLAN_FIELDS)}, status_code=400)
+    try:
+        # Согласованность строки — забота store, а не этой ручки: тариф правит и
+        # интерфейс, и однажды CLI, и запись, оставляющая пол выше потолка, не
+        # должна зависеть от того, кто её позвал.
+        row = STORE.set_plan(code, values, actor)
+    except ValueError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    _log.info("plan %s changed by %s: %s", code, actor, values)
+    return JSONResponse({"plan": row})
+
+
+@admin_app.get("/admin/fleet")
+async def admin_fleet(request: Request) -> JSONResponse:
+    """Счётчики и инстансы СРАЗУ ПО НЕСКОЛЬКИМ названным организациям.
+
+    Ровно то же, что `/admin/usage` отдаёт по одной, — и намеренно ничего сверх.
+    Вызывающий обязан назвать идентификаторы, поэтому ручка не перечисляет
+    абонентов и не становится вторым `/admin/list`: она экономит round-trip, а не
+    расширяет права.
+
+    Экран «все клиенты» строится из СВОЕГО списка организаций (витрина их и
+    создала) плюс один такой запрос, а не из каталога лицензионного сервера.
+
+    ИНСТАНСЫ ЗДЕСЬ — ДЕРЖАЩИЕ СЛОТ, а не строки аренд, и это НЕ то же самое, что
+    отдаёт `/admin/usage`. Там `STORE.instances` — сырые строки таблицы аренд,
+    по строке на КАЖДУЮ выдачу, вместе с освобождёнными и с `LIMIT 100`: их
+    количество не считает контейнеры, оно упирается в сотню за сутки работы. На
+    экране флота колонка называется «занято по тарифу», поэтому здесь берётся
+    ровно то, чем этот потолок и принуждается, — `active_instances`, как в
+    `/admin/instances`.
+    """
+    raw = request.query_params.get("org_ids", "")
+    org_ids = [part.strip() for part in raw.split(",") if part.strip()]
+    if not org_ids:
+        return JSONResponse({"error": "org_ids required"}, status_code=400)
+    if len(org_ids) > _MAX_FLEET_ORGS:
+        return JSONResponse(
+            {"error": "too many org_ids", "limit": _MAX_FLEET_ORGS,
+             "got": len(org_ids)}, status_code=400)
+    # Порядок и дубликаты — вызывающего: повтор идентификатора не должен стоить
+    # двух проходов по счётчикам.
+    seen: dict[str, dict[str, object]] = {}
+    for org_id in org_ids:
+        if org_id in seen:
+            continue
+        seen[org_id] = {"org_id": org_id,
+                        "usage": STORE.usage_totals(org_id),
+                        "instances": STORE.active_instances(org_id, _TTL_SECONDS)}
+    return JSONResponse({"orgs": list(seen.values()),
+                         "window_seconds": _TTL_SECONDS})
+
+
+@admin_app.get("/admin/chains")
+async def admin_chains(request: Request) -> JSONResponse:
+    """Цепь отчётов по каждому процессу ОДНОЙ организации.
+
+    `/admin/usage` отдаёт `chain_breaks` суммой по организации — по ней видно,
+    что что-то не так, и совершенно нечего делать дальше. Здесь видно, КАКОЙ
+    процесс, на каком месте цепи и когда его слышали в последний раз.
+    """
+    org_id = request.query_params.get("org_id", "")
+    if not org_id:
+        return JSONResponse({"error": "org_id required"}, status_code=400)
+    detail = STORE.chain_detail(org_id)
+    return JSONResponse({"org_id": org_id, "history": STORE.usage_history(org_id),
+                         **detail})
+
+
 @admin_app.get("/admin/list")
 async def admin_list() -> JSONResponse:
     return JSONResponse({"orgs": STORE.list_orgs()})
 
 
+@admin_app.get("/admin/metrics")
+async def admin_metrics() -> PlainTextResponse:
+    """The fleet in one scrape: lease outcomes, capacity, and broken chains.
+
+    ЭТО ВТОРАЯ ПОЛОВИНА НАБЛЮДАЕМОСТИ, И ОНА НЕ ЗАМЕНЯЕТ ПЕРВУЮ. Движок отдаёт
+    своё собственное состояние клиенту, который его держит; здесь — то, что
+    видно только у нас: сколько аренд отказано и с каким кодом, сколько
+    контейнеров обслуживает прямо сейчас, и у кого порвана цепь отчётов.
+
+    `chain_breaks` уже писался в базу и уже был виден в консоли — но КОНСОЛЬ
+    НАДО ОТКРЫТЬ, а тревога должна прийти сама. Ровно этой разницы стоила
+    метрика 402/403: она описана в `docs/operations.md` §5 и была помечена там
+    «не реализовано», потому что честнее, чем оставлять описание метрики,
+    которой нет.
+    """
+    fleet = STORE.fleet_totals(_TTL_SECONDS)
+    out = [
+        metrics_format.series(
+            "pseudex_license_responses_total", _OUTCOMES.snapshot(),
+            "Responses on /v1/*, by path and status code. The 402/403 share "
+            "separates a wave of non-payment from our own error in statuses",
+            ("path", "code"), "counter"),
+        metrics_format.series(
+            "pseudex_keys", fleet["keys_by_status"],
+            "Issued keys by status", "status"),
+        metrics_format.render("pseudex_orgs_serving", fleet["orgs_serving"],
+                              "Organisations holding a live lease"),
+        metrics_format.render("pseudex_instances_serving", fleet["instances_serving"],
+                              "Containers holding a live lease"),
+        metrics_format.render("pseudex_processes_serving", fleet["processes_serving"],
+                              "Worker processes holding a live lease"),
+        metrics_format.render("pseudex_fleet_requests_total", fleet["requests"],
+                              "Requests reported by the whole fleet", "counter"),
+        metrics_format.render("pseudex_fleet_values_total", fleet["values"],
+                              "Personal values reported by the whole fleet", "counter"),
+        metrics_format.render("pseudex_chain_breaks_total", fleet["chain_breaks"],
+                              "Report-chain breaks across the fleet: a gap, a "
+                              "reorder, or an old report replayed", "counter"),
+        # ПОИМЁННО — ТОЛЬКО ПОРВАННЫЕ. Метка по организации обычно означает ряд
+        # на клиента навсегда; здесь множество ограничено бедой, а не продажами,
+        # и схлопывается обратно, когда беда починена.
+        metrics_format.series("pseudex_chain_breaks_by_org", fleet["breaks_by_org"],
+                              "Chain breaks, named — only organisations that have any",
+                              "org", "counter"),
+        metrics_format.render("pseudex_unverified_reports_total",
+                              fleet["unverified_reports"],
+                              "Reports accepted with a bad or missing signature", "counter"),
+        metrics_format.render("pseudex_malformed_reports_total",
+                              fleet["malformed_reports"],
+                              "Reports we could not parse — NOT the same as no usage",
+                              "counter"),
+        metrics_format.render("pseudex_reports_missing_total", fleet["reports_missing"],
+                              "Renewals that carried no usage report at all", "counter"),
+        metrics_format.render("pseudex_counter_resets_total", fleet["resets"],
+                              "Times a cumulative counter went backwards", "counter"),
+    ]
+    return PlainTextResponse("".join(out),
+                             media_type="text/plain; version=0.0.4; charset=utf-8")
+
+
 @admin_app.get("/admin/usage")
 async def admin_usage(request: Request) -> JSONResponse:
+    """Counters for ONE org, and the org must be named.
+
+    `org_id` used to be optional here while `/admin/instances` next door required
+    it. An omitted parameter therefore queried the literal empty string and
+    returned a fully-formed, all-zero structure — indistinguishable from a real
+    customer who has not started yet. The caller that drops the parameter (a
+    console with a typo in a query string, a script whose variable is unset) gets
+    a plausible answer rather than an error, and "this customer used nothing" is
+    exactly the wrong thing to be confidently wrong about on a billing screen.
+    """
     org_id = request.query_params.get("org_id", "")
+    if not org_id:
+        return JSONResponse({"error": "org_id required"}, status_code=400)
     return JSONResponse({
         "usage": STORE.usage_totals(org_id),
         "instances": STORE.instances(org_id),

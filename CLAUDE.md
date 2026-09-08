@@ -42,6 +42,10 @@ python3 vault_test.py          # canonicalization + persistence across restart
 python3 test_perf_masking.py   # cache/audit-dedup/leak-regression/loop-responsiveness vs the real FastAPI app
 python3 test_localui.py        # operator surface is closed, reveals audited, requests billed apart from entities
 python3 test_persona_defects.py  # the five defects a persona run found and no corpus of ours did
+python3 test_preflight.py      # how many workers fit, and what happens when they do not
+python3 test_pseudexctl.py     # the ops CLI: command shapes, doctor verdicts, the rekey proof
+python3 test_localui_renders.py  # the interface in a REAL browser (needs playwright + chromium):
+                                 # a 200 and a matching CSP header are not evidence it executed
 python3 test_collisions.py     # подмена, совпавшая с настоящим значением: обе половины
 python3 test_derived_forms.py  # транслит и инициалы в аргументе: в конвенции модели, разговор решает
 ```
@@ -70,9 +74,11 @@ they run against real containers, never against mocks:
 python3 -m licensing.pack --out /tmp/bundle.bin   # build the detection bundle
 python3 -m licensing.devserver                    # the real licensing server, :8443 + admin :9443
 
-python3 e2e/gates.py                              # L1-L21 (+L2b), licensing + vault, ~15 min
+python3 e2e/gates.py                              # L1-L22 (+L2b), licensing, vault, preflight, ~15 min
 python3 e2e/gates.py --only L4,L5                 # a subset while iterating
-python3 e2e/pack_gates.py                         # P1-P9, packaging (builds both images)
+python3 make_dirty.py                             # P3 compares the two images on it; without
+                                                  # it pack_gates refuses BEFORE the Nuitka build
+python3 e2e/pack_gates.py                         # P1-P10, packaging (builds both images)
 
 # TWO keys are COMPILED INTO the release binary, so a fresh either forces a full
 # Nuitka rebuild: the Ed25519 verification key AND PSEUDEX_TUNING_KEY (which seals
@@ -140,7 +146,7 @@ When you change masking semantics, decide explicitly whether both need it.
 
 | | gateway surface | operator surface (`pseudex/operator.py`) |
 |---|---|---|
-| Paths | `/mask`, `/unmask`, `/unmask_chunk`, `/spans`, `/health` | `/status`, `/events`, `/stats`, `/stats.csv`, `/reveals`, `/subscription`, `/diagnostics`, `/selfcheck`, `/reveal` |
+| Paths | `/mask`, `/unmask`, `/unmask_chunk`, `/spans`, `/health` | `/status`, `/events`, `/stats`, `/stats.csv`, `/reveals`, `/subscription`, `/diagnostics`, `/selfcheck`, `/reveal`, `/metrics` |
 | Auth | `Authorization: Bearer $PSEUDEX_GATEWAY_TOKEN` | `Authorization: Bearer $PSEUDEX_ADMIN_TOKEN` |
 | Why | a cheap credential the customer's gateway holds; it is NOT the admin one, so a compromised gateway config cannot reveal values | these disclose real values and the list of what exists to disclose |
 
@@ -418,8 +424,10 @@ makes the rule mean anything and what makes it safe, and one change buys both.**
 ## Concurrency and perf model
 
 pymorphy3 holds the GIL during morphology, so **real parallelism comes from processes, not
-threads**. `entrypoint.sh` starts N uvicorn workers (default = CPU count, ~300 MB resident each
-for the model stack). Inside a worker, `service.py` offloads detection via `anyio.to_thread` under
+threads**. `entrypoint.sh` starts N uvicorn workers (default = CPU count, ~350 MB resident each
+for the model stack — `PSEUDEX_ROLE=preflight` does that arithmetic against the cgroup
+limit BEFORE the fan-out and refuses or lowers N, rather than leaving it to the OOM
+killer, whose verdict is status 137 and names neither memory nor us). Inside a worker, `service.py` offloads detection via `anyio.to_thread` under
 a `CapacityLimiter` so `/health` stays responsive and bursts queue instead of thrashing cores.
 
 `MaskCache` is per-worker and holds only masked output; the SQLite vault + audit are shared, which
@@ -428,8 +436,9 @@ same value re-sent in a growing transcript is one protected value, not N.
 
 Env knobs: `PSEUDEX_DB_DIR`, `PSEUDEX_WORKERS`, `PSEUDEX_MASK_CONCURRENCY`, `PSEUDEX_MASK_CACHE_SIZE`,
 `PSEUDEX_PSEUDONYM_SCOPE` (`conversation` | `customer`; the sidecar also takes `pseudonym_scope` per request),
-`PSEUDEX_ADMIN_TOKEN`, `PSEUDEX_GATEWAY_TOKEN`, `PSEUDEX_UI_PORT`, `PSEUDEX_UI_TOKEN`, `PSEUDEX_UI_PASSWORD`, `PSEUDEX_UI`,
-`PSEUDEX_UI_ORG`, `PSEUDEX_UI_STATIC`, `PSEUDEX_ROLE` (`engine` | `proxy` | `ui` | `probe` | `rekey` | `decrypt`),
+`PSEUDEX_ADMIN_TOKEN`, `PSEUDEX_GATEWAY_TOKEN`,
+`PSEUDEX_WORKER_MB`, `PSEUDEX_HEADROOM_MB`, `PSEUDEX_MEMORY_LIMIT_MB`, `PSEUDEX_UI_PORT`, `PSEUDEX_UI_TOKEN`, `PSEUDEX_UI_PASSWORD`, `PSEUDEX_UI`,
+`PSEUDEX_UI_ORG`, `PSEUDEX_UI_STATIC`, `PSEUDEX_ROLE` (`engine` | `proxy` | `ui` | `preflight` | `probe` | `rekey` | `decrypt`),
 `PSEUDEX_VAULT_KEY`, `PSEUDEX_VAULT_KEY_FILE`, `PSEUDEX_VAULT_KEY_CMD`, `PSEUDEX_VAULT_KEY_NEW`,
 `PSEUDEX_VAULT_ENCRYPTION` (`auto` | `required` | `off`; empty means `auto`),
 `PSEUDEX_VAULT_MIGRATION_BACKUP`, `PSEUDEX_TUNING_KEY` (base64 of 32 bytes — seals the

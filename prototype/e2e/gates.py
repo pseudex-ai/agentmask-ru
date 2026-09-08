@@ -1,4 +1,4 @@
-"""The closing gate for the licensing layer: L1-L21 against a real local instance.
+"""The closing gate for the licensing layer: L1-L22 against a real local instance.
 
 RULES THIS FILE OBEYS (docs/tz-license-packaging.md §4.1), because a gate that
 cheats is worse than no gate:
@@ -142,6 +142,24 @@ def license_state() -> dict[str, object]:
     return httpx.get(f"{SIDECAR}/license", timeout=10).json()
 
 
+def license_probe() -> tuple[int, dict[str, object]]:
+    """The body AND the status code.
+
+    `license_state` reads only `.json()`, and that is how `/license` came to
+    answer 503 on a healthy container for its whole life: `service.py` compared
+    the state against the literal `"leased"` while the wire value of
+    `STATE_LEASED` is `"active"`. L7 and L8 both assert on the body's `state`
+    field, so the ladder looked correct from here while the one signal the
+    documentation tells customers to alert on was stuck on.
+
+    The code is the contract — `/health` is liveness and stays 200 while serving,
+    `/license` is the alarm and goes 503 the moment the state is not LEASED — so
+    it is checked at both ends of the ladder, in L4 and in L8.
+    """
+    response = httpx.get(f"{SIDECAR}/license", timeout=10)
+    return response.status_code, response.json()
+
+
 def wait_until(predicate, timeout: float, interval: float, what: str) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -155,7 +173,8 @@ def wait_until(predicate, timeout: float, interval: float, what: str) -> bool:
     return False
 
 
-def run_disposable_sidecar(image: str, env: dict[str, str], timeout: int) -> tuple[int, str]:
+def run_disposable_sidecar(image: str, env: dict[str, str], timeout: int,
+                           flags: list[str] | None = None) -> tuple[int, str]:
     """Start a one-shot sidecar and report how it died.
 
     Used by the startup gates. Returns (exit_code, logs). A container still alive
@@ -163,7 +182,7 @@ def run_disposable_sidecar(image: str, env: dict[str, str], timeout: int) -> tup
     failure — 'it kept running' is exactly what must not happen."""
     name = f"pseudex-oneshot-{int(time.monotonic() * 1000)}"
     args = ["docker", "run", "--name", name, "--network", NETWORK,
-            "-v", f"{_HERE / 'certs'}:/certs:ro"]
+            "-v", f"{_HERE / 'certs'}:/certs:ro", *(flags or [])]
     for key, value in env.items():
         args += ["-e", f"{key}={value}"]
     args.append(image)
@@ -398,11 +417,17 @@ def gate_l4() -> bool:
     }).json()["response"]["choices"][0]["message"]["content"]
     round_tripped = [value for value in fixtures.PII_PAYLOAD.values() if value in restored]
 
+    # The alarm endpoint must be SILENT while everything is fine. Checked here
+    # rather than in its own gate because "healthy" is exactly what L4 sets up,
+    # and an alarm that cannot be off is as useless as one that cannot fire.
+    licence_code, licence_body = license_probe()
+
     ok = (health.get("license") == "active" and response.status_code == 200
-          and not leaked and len(round_tripped) >= 6)
+          and licence_code == 200 and not leaked and len(round_tripped) >= 6)
     return gate("L4 happy path masks and round-trips", ok,
                 f"health={health.get('license')} leaked={leaked} "
-                f"restored={len(round_tripped)}/{len(fixtures.PII_PAYLOAD)}")
+                f"restored={len(round_tripped)}/{len(fixtures.PII_PAYLOAD)} "
+                f"license={licence_code}/{licence_body.get('state')}")
 
 
 
@@ -619,13 +644,15 @@ def gate_l8() -> bool:
     response = post_mask(90)
     body = response.json()
     health = httpx.get(f"{SIDECAR}/health", timeout=15)
-    assets = license_state()["assets_loaded"]
+    # The other end of the contract L4 checks: here the alarm MUST fire.
+    licence_code, licence_body = license_probe()
+    assets = licence_body["assets_loaded"]
     leaked = [v for v in fixtures.PII_PAYLOAD.values() if v in json.dumps(body, ensure_ascii=False)]
     ok = (reached and response.status_code == 503 and health.status_code == 503
-          and assets is False and not leaked)
+          and licence_code == 503 and assets is False and not leaked)
     return gate("L8 grace exhausted -> 503, assets unloaded", ok,
                 f"expired={reached} mask={response.status_code} health={health.status_code} "
-                f"assets_loaded={assets} error={body.get('error')}")
+                f"license={licence_code} assets_loaded={assets} error={body.get('error')}")
 
 
 def gate_l14b() -> bool:
@@ -1154,6 +1181,49 @@ def gate_l21() -> bool:
                 f"driver_sentence_alone={'file is not a database' in output and not spoke}")
 
 
+def gate_l22(image: str) -> bool:
+    """Too little memory stops the container with a sentence, not with 137.
+
+    BOTH HALVES ARE THE GATE, and the refusal alone would be the weaker one: a
+    preflight that refuses everything also passes it. So the same image is
+    started twice, and what separates the runs is only `--memory`.
+
+    The refusal is also proof of ORDER. `--memory=384m` is given with NO licence
+    key at all, so the container has two reasons to stop — and it must stop on
+    ours, before the licence layer is ever reached. A container that answers
+    `license_missing` here would be one whose workers had already been started
+    and had already asked for the memory that is not there; the OOM killer would
+    then decide the outcome, and its verdict is status 137, which names neither
+    memory nor us.
+    """
+    # ОДИН ВОРКЕР В ОБЕИХ ПОЛОВИНАХ, ЯВНО. Без этого число берётся из ядер
+    # РАННЕРА: на шестнадцати ядрах просторная половина запускает шестнадцать
+    # воркеров, каждый строит модель при импорте — то есть ДО того, как дойдёт
+    # до лицензии, — и два гигабайта кончаются раньше, чем гейт добирается до
+    # того, что проверяет. Красный, зависящий от машины, хуже отсутствующего.
+    small_code, small_output = run_disposable_sidecar(image, {
+        "PSEUDEX_LICENSE_URL": "https://license:8443",
+        "PSEUDEX_LICENSE_CA": "/certs/ca.pem",
+        "PSEUDEX_WORKERS": "1",
+    }, 120, ["--memory=384m"])
+    refused = "preflight" in small_output and "не помещается" in small_output
+    before_licence = "license_missing" not in small_output
+
+    big_code, big_output = run_disposable_sidecar(image, {
+        "PSEUDEX_LICENSE_URL": "https://license:8443",
+        "PSEUDEX_LICENSE_CA": "/certs/ca.pem",
+        "PSEUDEX_WORKERS": "1",
+    }, 120, ["--memory=2g"])
+    # It has enough memory, so it gets far enough to fail for the reason L1
+    # already pins. That is the point: the preflight let it through.
+    passed_through = "license_missing" in big_output
+
+    return gate("L22 too little memory stops it with words, enough lets it through",
+                small_code == 4 and refused and before_licence and passed_through,
+                f"exit={small_code} refused={refused} before_licence={before_licence} "
+                f"roomy_exit={big_code} roomy_reached_licence={passed_through}")
+
+
 def gate_l15() -> bool:
     combined = all_logs()
     leaked = [value for value in fixtures.leak_values() if value in combined]
@@ -1242,6 +1312,8 @@ def main() -> None:
             run_gate("L20", gate_l20)
         if wanted("L21"):
             run_gate("L21", gate_l21)
+        if wanted("L22"):
+            run_gate("L22", gate_l22, args.image)
 
         if wanted("L15"):
             run_gate("L15", gate_l15)
@@ -1260,6 +1332,14 @@ def _report(started: float) -> int:
     print("=" * 64)
     print(f"{len(RESULTS) - len(failed)}/{len(RESULTS)} gates passed "
           f"in {(time.monotonic() - started) / 60:.1f} min")
+    # A RUN THAT MEASURED NOTHING IS A FAILURE, NOT A PASS. `0/0` with exit 0
+    # reads as "everything green" to a human and to CI alike, and that is how a
+    # `--only` name nobody mounts — a typo, or a gate whose call site sits behind
+    # a condition its name was left out of — turns into a clean bill of health.
+    # Costs nothing when gates ran; catches the whole class when they did not.
+    if not RESULTS:
+        print("NO GATE RAN. Check the --only names against the roster above.")
+        return 1
     return 1 if failed else 0
 
 

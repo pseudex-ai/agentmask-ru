@@ -19,19 +19,47 @@
 импорта, потому что сервер читает их на импорте.
 """
 
+import base64
 import os
+import secrets
+import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 
 os.environ.setdefault("PSEUDEX_LICENSE_DB", tempfile.mktemp(suffix=".db"))
 os.environ["PSEUDEX_LICENSE_ADMIN_TOKEN"] = "test-admin"
 os.environ["PSEUDEX_LICENSE_STOREFRONT_TOKEN"] = "test-shop"
 sys.path.insert(0, ".")
 
+# ЭТОТ НАБОР НЕ ЗАПУСКАЛСЯ В CI НИ РАЗУ С ТЕХ ПОР, КАК ТЮНИНГ СТАЛ ЗАПЕЧАТАННЫМ.
+#
+# Он поднимает НАСТОЯЩИЙ `LicenseClient` и берёт настоящую аренду, значит ему
+# нужен и ключ тюнинга, и блоб, запечатанный ТЕМ ЖЕ ключом. `testkit` делает обе
+# вещи на импорте, но этот файл его не импортирует — он ходит по HTTP, а не через
+# стенд, — поэтому падал на импорте `licensing.server` с «PSEUDEX_TUNING_KEY is
+# not set», а с одним лишь ключом (без блоба под ним) — на `acquire()` с
+# «bundle_corrupt». Проверено на нетронутом main.
+#
+# Стоило это ровно того, ради чего шаг заводили: комментарий в `checks.yml` над
+# ним говорит «ДЕНЕЖНЫЙ ТРАКТ БЕГАЕТ НА КАЖДОМ ПУШЕ», а бежал он в красное на
+# каждом пуше. Ключ эфемерный и генерируется здесь, потому что в этом наборе оба
+# конца — мы: и тот, кто печатает блоб, и тот, кто его открывает. `setdefault`
+# оставляет победу настоящему ключу, если он задан снаружи.
+os.environ.setdefault("PSEUDEX_TUNING_KEY",
+                      base64.b64encode(secrets.token_bytes(32)).decode("ascii"))
+
 from fastapi.testclient import TestClient  # noqa: E402
 
+from licensing.pack import emit_tuning_module  # noqa: E402
+
+# ДО импорта `licensing.server`: он строит бандл на импорте, а движок ниже
+# импортирует блоб. Порядок здесь тот же, что в `testkit`, и по той же причине.
+emit_tuning_module(Path(__file__).resolve().parents[1] / "pseudex" / "_tuning_blob.py")
+
 from licensing import server  # noqa: E402
+from licensing.store import LicenseStore  # noqa: E402
 from pseudex.bundle import generate_process_key  # noqa: E402
 
 public = TestClient(server.app)
@@ -175,6 +203,267 @@ after = admin.get("/admin/usage", params={"org_id": "v"}, headers=ADMIN)
 check("отравленная строка не делает итоги недоступными навсегда",
       after.status_code == 200 and after.json()["usage"]["entities"].get("NAME") == 2,
       f"код={after.status_code}")
+
+# ПРОПУЩЕННЫЙ org_id — ОШИБКА, А НЕ ПРАВДОПОДОБНЫЙ НОЛЬ.
+#
+# `/admin/instances` рядом требует параметр, а `/admin/usage` не требовал:
+# отсутствующий org_id запрашивался буквально пустой строкой и возвращал
+# полностью оформленную структуру из нулей. Отличить её от настоящего клиента,
+# который ещё не начал работать, нельзя ничем — а «этот клиент ничего не
+# использовал» ровно то, в чём нельзя уверенно ошибаться на экране, по которому
+# выставляют счёт. Вызывающий, потерявший параметр (опечатка в строке запроса
+# консоли, незаданная переменная в скрипте), получал ответ вместо ошибки.
+no_org = admin.get("/admin/usage", headers=ADMIN)
+check("итоги без org_id отказывают, а не отдают ноль",
+      no_org.status_code == 400,
+      f"код={no_org.status_code} тело={no_org.text[:120]}")
+
+# НЕИЗВЕСТНЫЙ ТАРИФ — 400, А НЕ ТИХОЕ ПОНИЖЕНИЕ ДО «СТАРТА».
+#
+# Дефолтом стояло `"standard"` — строка, которой нет ни в `PLAN_INSTANCES`, ни в
+# `PLAN_GRANT`, ни в `QUANTUM_BOUNDS`, ни в `RESERVE_MAX`. Каждый lookup молча
+# откатывался на «старт», поэтому ключ, выпущенный без явного тарифа, получал
+# один контейнер и гранты по 5 000 запросов независимо от того, что купили. Ни
+# отказа, ни строки в логе: клиент упирался в потолок инстансов чужого тарифа, и
+# отказ называл предел, который ни один экран не мог объяснить.
+unknown = admin.post("/admin/issue", json={"org_id": "u", "plan": "standard"},
+                     headers=ADMIN)
+check("неизвестный тариф отказывает при выпуске ключа",
+      unknown.status_code == 400 and "known" in unknown.json(),
+      f"код={unknown.status_code} тело={unknown.text[:160]}")
+
+defaulted = admin.post("/admin/issue", json={"org_id": "d"}, headers=ADMIN)
+check("тариф по умолчанию существует на самом деле",
+      defaulted.status_code == 200
+      and server.STORE.known_plan(server.STORE.lookup(defaulted.json()["key"]).plan),
+      f"код={defaulted.status_code}")
+
+# Сид кладёт ровно те тарифы, что объявлены константами, — ни больше ни меньше.
+check("каждый объявленный тариф посеян в таблицу",
+      set(server.STORE.known_plans()) == set(server.STORE.PLAN_INSTANCES),
+      f"в таблице={server.STORE.known_plans()} "
+      f"объявлено={sorted(server.STORE.PLAN_INSTANCES)}")
+
+# ...и эта проверка обязана уметь падать. Сама по себе она истинна по построению
+# цикла сидирования, поэтому смысл ей даёт следующая: тариф, объявленный НЕ ВО
+# ВСЕХ таблицах, не должен доехать до базы с умолчаниями младшего тарифа.
+class _HalfDeclaredStore(LicenseStore):
+    PLAN_INSTANCES = dict(LicenseStore.PLAN_INSTANCES, gold=50)   # и больше нигде
+
+
+try:
+    _HalfDeclaredStore(tempfile.mktemp(suffix=".db"))
+    seed_refused = ""
+except ValueError as error:
+    seed_refused = str(error)
+check("неполный сид тарифов роняет старт, а не оседает умолчаниями",
+      "gold" in seed_refused and "PLAN_GRANT" in seed_refused,
+      seed_refused[:140] or "сид принял тариф, объявленный в одной таблице")
+
+
+# --- ТАРИФ — СТРОКА, А НЕ КОНСТАНТА --------------------------------------
+print("\nТАРИФ КАК ДАННЫЕ")
+
+seeded = admin.get("/admin/plans", headers=ADMIN).json()["plans"]
+check("посеянный тариф так и помечен",
+      all(p["source"] == "seed" for p in seeded),
+      f"источники={sorted({p['source'] for p in seeded})}")
+
+edited = admin.post("/admin/plans",
+                    json={"code": "work", "max_instances": 9, "actor": "ops:test"},
+                    headers=SHOP)
+check("витрина может править прайс-лист", edited.status_code == 200,
+      f"код={edited.status_code}")
+check("правка помечена и названа автором",
+      edited.json()["plan"]["source"] == "edited"
+      and edited.json()["plan"]["updated_by"] == "ops:test",
+      f"строка={edited.json().get('plan')}")
+
+# ГЛАВНОЕ СВОЙСТВО ТАБЛИЦЫ: правка переживает перезапуск процесса. Сид идёт
+# `INSERT OR IGNORE` именно ради этого — `REPLACE` возвращал бы тариф к
+# константе на каждом подъёме, и таблица была бы украшением.
+reopened = LicenseStore(os.environ["PSEUDEX_LICENSE_DB"])
+check("правка тарифа переживает переоткрытие базы",
+      reopened.plan_row("work")["max_instances"] == 9,
+      f"после переоткрытия={reopened.plan_row('work')['max_instances']}")
+check("сид не затирает правку",
+      reopened.plan_row("work")["source"] == "edited",
+      f"источник={reopened.plan_row('work')['source']}")
+
+# И тариф действительно РАБОТАЕТ по строке, а не по константе: потолок
+# инстансов читается оттуда же, откуда его правили.
+check("решение о потолке принимается по строке, а не по константе",
+      server.STORE.instances_allowed("work") == 9
+      and server.STORE.PLAN_INSTANCES["work"] == 4,
+      f"строка={server.STORE.instances_allowed('work')} "
+      f"константа={server.STORE.PLAN_INSTANCES['work']}")
+
+# Мусор в теле не должен ни падать пятисоткой, ни ложиться на диск.
+before_min = server.STORE.plan_row("work")["quantum_min"]
+bad = [
+    ({"code": "work", "max_instances": 5}, "без actor"),
+    ({"code": "", "max_instances": 5, "actor": "x"}, "без code"),
+    ({"code": "work", "max_instances": -1, "actor": "x"}, "отрицательное"),
+    ({"code": "work", "max_instances": "много", "actor": "x"}, "не число"),
+    ({"code": "work", "max_instances": 10 ** 12, "actor": "x"}, "за потолком"),
+    ({"code": "work", "actor": "x"}, "нечего менять"),
+    ({"code": "work", "quantum_min": 10 ** 6, "actor": "x"}, "пол выше потолка"),
+]
+refused = [why for body, why in bad
+           if admin.post("/admin/plans", json=body, headers=ADMIN).status_code != 400]
+check("мусор в правке тарифа отвергается, а не проходит", not refused,
+      f"прошло={refused or 'ничего'}")
+check("отвергнутая правка НЕ ложится на диск",
+      server.STORE.plan_row("work")["quantum_min"] == before_min,
+      f"было={before_min} стало={server.STORE.plan_row('work')['quantum_min']}")
+
+# НОВЫЙ ТАРИФ ОБЯЗАН НАЗВАТЬ ВСЕ ПОЛЯ. Для неизвестного кода недостающие поля
+# сливались с нулями, и `known_plan` такой тариф признавал: `may_lease` считал
+# `ceiling = allowed * 0 = 0` и отказывал клиенту в ПЕРВОЙ ЖЕ аренде, а нулевой
+# `quantum_max` делал то же с ёмкостью. На паре 0/0 проверка «пол выше потолка»
+# не срабатывает, а диапазонная проверка в ручке видит только присланные поля.
+half = admin.post("/admin/plans",
+                  json={"code": "gold", "max_instances": 4, "actor": "ops:test"},
+                  headers=ADMIN)
+check("новый тариф с половиной полей отвергается", half.status_code == 400,
+      f"код={half.status_code} тело={half.text[:120]}")
+check("отвергнутый новый тариф не появился в списке",
+      "gold" not in server.STORE.known_plans(),
+      f"известные={server.STORE.known_plans()}")
+whole = admin.post("/admin/plans",
+                   json={"code": "gold", "max_instances": 4,
+                         "processes_per_instance": 16, "grant_size": 20000,
+                         "quantum_min": 200, "quantum_max": 8000,
+                         "reserve_max": 90000, "actor": "ops:test"},
+                   headers=ADMIN)
+check("новый тариф со всеми полями заводится и сразу работает",
+      whole.status_code == 200 and server.STORE.instances_allowed("gold") == 4
+      and server.STORE.processes_allowed("gold") == 16,
+      f"код={whole.status_code} инстансов={server.STORE.instances_allowed('gold')}")
+
+
+# --- ФЛОТ: ПАКЕТ ПО НАЗВАННЫМ, НЕ ПЕРЕЧИСЛЕНИЕ ---------------------------
+# Витрина держит МЕНЬШИЙ токен и `/admin/list` ей не положен: каталог всех
+# абонентов — единственное, что белый список защищает. Пакетная ручка обязана
+# сохранять это свойство, то есть отдавать только то, что у неё спросили.
+admin.post("/admin/issue", json={"org_id": "fleet-a", "plan": "start"}, headers=ADMIN)
+admin.post("/admin/issue", json={"org_id": "fleet-b", "plan": "start"}, headers=ADMIN)
+fleet = admin.get("/admin/fleet", params={"org_ids": "fleet-a,fleet-b,fleet-a"},
+                  headers=SHOP)
+returned = [row["org_id"] for row in fleet.json().get("orgs", [])]
+check("флот отдаёт ровно названные организации, без повторов",
+      fleet.status_code == 200 and returned == ["fleet-a", "fleet-b"],
+      f"код={fleet.status_code} отдано={returned}")
+check("флот не перечисляет абонентов сам",
+      "v" not in returned and "carousel" not in returned,
+      f"отдано={returned}")
+check("флот без списка отказывает",
+      admin.get("/admin/fleet", headers=ADMIN).status_code == 400)
+check("флот с непомерным списком отказывает",
+      admin.get("/admin/fleet",
+                params={"org_ids": ",".join(str(i) for i in range(500))},
+                headers=ADMIN).status_code == 400)
+check("каталог всех абонентов витрине по-прежнему закрыт",
+      admin.get("/admin/list", headers=SHOP).status_code == 403
+      and admin.get("/admin/list", headers=ADMIN).status_code == 200)
+
+# Одна строка на ОРГАНИЗАЦИЮ, а не на ключ: сторож печатает `late[:20]`, и
+# клиент с тремя ключами занимал в этом списке три места из двадцати.
+admin.post("/admin/issue", json={"org_id": "fleet-a", "plan": "start"}, headers=ADMIN)
+admin.post("/admin/issue", json={"org_id": "fleet-a", "plan": "start"}, headers=ADMIN)
+catalogue = admin.get("/admin/list", headers=ADMIN).json()["orgs"]
+rows_for_a = [row for row in catalogue if row["org_id"] == "fleet-a"]
+check("каталог даёт одну строку на организацию, а не на ключ",
+      len(rows_for_a) == 1 and rows_for_a[0]["keys"] == 3,
+      f"строк={len(rows_for_a)} ключей={rows_for_a[0]['keys'] if rows_for_a else '?'}")
+check("сторож по-прежнему находит поля, которые читает",
+      all(field in rows_for_a[0] for field in ("org_id", "last_lease")),
+      f"поля={sorted(rows_for_a[0])}")
+
+# ОТЗЫВ ОДНОГО КЛЮЧА НЕ ДЕЛАЕТ ОРГАНИЗАЦИЮ ОТОЗВАННОЙ. `set_status` двигает все
+# ключи разом, а `revoke_key_hash` — ровно один: им и отзывают утёкший ключ, не
+# останавливая клиента. Статус свежайшего ключа показал бы организацию
+# отозванной именно потому, что отозвали последний выпущенный.
+leaked = admin.post("/admin/issue", json={"org_id": "fleet-a", "plan": "start"},
+                    headers=ADMIN).json()["key"]
+admin.post("/admin/revoke_key",
+           json={"key_hash": __import__("hashlib").sha256(leaked.encode()).hexdigest()},
+           headers=ADMIN)
+after_revoke = [row for row in admin.get("/admin/list", headers=ADMIN).json()["orgs"]
+                if row["org_id"] == "fleet-a"][0]
+check("отзыв одного ключа не отзывает организацию",
+      after_revoke["status"] == "active" and after_revoke["active_keys"] == 3,
+      f"статус={after_revoke['status']} активных={after_revoke['active_keys']}")
+check("раскладка по статусам видна, а не додумывается",
+      after_revoke["statuses"].get("revoked") == 1,
+      f"раскладка={after_revoke['statuses']}")
+
+
+# --- СУТОЧНЫЕ СРЕЗЫ ------------------------------------------------------
+# Без них график «по дням» рисовать не из чего: `usage` хранит ОДИН
+# перезаписываемый снимок на инстанс (docs/tz-site.md §6).
+server.STORE.record_usage("hist", "i1", 100, {}, 10, seq=1, prev="",
+                          signature="s1", trust="signed", report_pubkey="hk1")
+server.STORE.record_usage("hist", "i2", 40, {}, 4, seq=1, prev="",
+                          signature="s2", trust="signed", report_pubkey="hk2")
+history = server.STORE.usage_history("hist")
+check("срез суммирует инстансы организации внутри суток",
+      len(history) == 1 and history[-1]["requests"] == 140,
+      f"история={history}")
+
+# Неподтверждённое не входит в счёт — значит и в график счёта не входит,
+# иначе экран показывал бы объём, за который никто не выставит.
+server.STORE.record_usage("hist", "i1", 10 ** 6, {}, 10 ** 6, trust="unsigned",
+                          report_pubkey="hk1")
+check("неподписанный отчёт не попадает в график",
+      server.STORE.usage_history("hist")[-1]["requests"] == 140,
+      f"после неподписанного={server.STORE.usage_history('hist')[-1]['requests']}")
+
+# Повтор старого честного отчёта имеет настоящий MAC и проходит проверку
+# подписи; `record_usage` защищает от него `requests` максимумом, и срез обязан
+# вести себя так же, иначе график поедет вниз там, где счёт не поехал.
+server.STORE.record_usage("hist", "i1", 100, {}, 10, seq=1, prev="",
+                          signature="s1", trust="signed", report_pubkey="hk1")
+check("повтор старого отчёта не опускает график",
+      server.STORE.usage_history("hist")[-1]["requests"] == 140,
+      f"после повтора={server.STORE.usage_history('hist')[-1]['requests']}")
+
+# МОЛЧАВШИЙ ИНСТАНС ПЕРЕНОСИТСЯ ВПЕРЁД, А НЕ ИСЧЕЗАЕТ. Ряд обязан быть
+# монотонным: сумма только по отчитавшимся сегодня инстансам даёт падение там,
+# где ничего не упало, разность соседних суток становится отрицательной, а
+# последняя точка расходится с `usage_totals`, который суммирует все инстансы.
+# Вчерашние сутки подделываются прямо в таблице — календарь не подвинуть.
+with server.STORE._lock:
+    server.STORE._conn.execute(
+        "UPDATE usage_daily SET day='2000-01-01' WHERE org_id='hist' AND instance_id='i2'")
+    server.STORE._conn.commit()
+carried = server.STORE.usage_history("hist")
+check("молчащий инстанс переносится вперёд, а ряд остаётся монотонным",
+      len(carried) == 2 and carried[0]["requests"] == 40
+      and carried[-1]["requests"] == 140
+      and all(carried[i]["requests"] <= carried[i + 1]["requests"]
+              for i in range(len(carried) - 1)),
+      f"ряд={[(row['day'], row['requests']) for row in carried]}")
+check("последняя точка графика сходится с итогами",
+      carried[-1]["requests"] == server.STORE.usage_totals("hist")["requests"],
+      f"график={carried[-1]['requests']} "
+      f"итоги={server.STORE.usage_totals('hist')['requests']}")
+
+chains = admin.get("/admin/chains", params={"org_id": "hist"}, headers=SHOP)
+check("детализация цепи называет процессы, а не только сумму",
+      chains.status_code == 200 and len(chains.json()["processes"]) == 2,
+      f"код={chains.status_code} процессов={len(chains.json().get('processes', []))}")
+# Перечисление ограничено, как и всякое другое: `process_reports` получает
+# строку на каждый воркер на каждый перезапуск и не чистится ничем.
+capped = server.STORE.chain_detail("hist", limit=1)
+check("детализация цепи ограничена, но сумма считается по всем",
+      len(capped["processes"]) == 1 and capped["processes_total"] == 2,
+      f"показано={len(capped['processes'])} всего={capped['processes_total']}")
+check("ключ процесса в детализации урезан до префикса",
+      all(len(p["pubkey"]) <= 16 for p in chains.json()["processes"]),
+      f"длины={[len(p['pubkey']) for p in chains.json()['processes']]}")
+check("детализация цепи без org_id отказывает",
+      admin.get("/admin/chains", headers=ADMIN).status_code == 400)
 
 
 # --- ПОТОЛОК ИНСТАНСОВ: ОСВОБОЖДЁННЫЙ СЛОТ ОСТЫВАЕТ ----------------------
@@ -478,6 +767,109 @@ except BundleError as error:
 check("движок контракта 3 против сервера контракта 2 отказывается, назвав причину",
       refused and "contract 3" in reason and "deploy it FIRST" in reason,
       reason[:80])
+
+# --- СКРЕЙП: ИСХОДЫ СЧИТАЮТСЯ, И ЦЕПЬ ВИДНА НЕ ТОЛЬКО В КОНСОЛИ ----------
+#
+# Доля 402/403 на `/v1/lease` описана в `docs/operations.md` §5 и была там
+# помечена «не реализовано». Проверяется не наличие ручки, а то, что счётчик
+# ДВИГАЕТСЯ на настоящем отказе: метрика, которая всегда ноль, — это описание
+# метрики, а не метрика.
+print("\nСКРЕЙП")
+
+
+def _scrape() -> str:
+    response = admin.get("/admin/metrics", headers=ADMIN)
+    return response.text if response.status_code == 200 else f"HTTP {response.status_code}"
+
+
+def _sample(text: str, needle: str) -> float | None:
+    for line in text.splitlines():
+        if line.startswith(needle) and not line.startswith("#"):
+            return float(line.rsplit(" ", 1)[1])
+    return None
+
+
+before = _sample(_scrape(), 'pseudex_license_responses_total{path="/v1/lease",code="403"}') or 0
+refused = public.post("/v1/lease", json={"key": "ps_live_no_such_key",
+                                         "pubkey": generate_process_key().public})
+after_text = _scrape()
+after = _sample(after_text, 'pseudex_license_responses_total{path="/v1/lease",code="403"}') or 0
+check("отказ аренды считается по коду, а не теряется в ветке обработчика",
+      refused.status_code == 403 and after == before + 1,
+      f"{before} -> {after}, ответ {refused.status_code}")
+
+# Middleware считает ВСЁ /v1/*, включая успех: без знаменателя доля 402/403
+# неотличима от единицы — делить не на что.
+public.get("/v1/pubkey")
+check("успех тоже считается, иначе у доли 402/403 нет знаменателя",
+      (_sample(_scrape(), 'pseudex_license_responses_total{path="/v1/pubkey",code="200"}') or 0) >= 1)
+
+scrape = _scrape()
+# Заголовок HELP/TYPE — по ОДНОМУ на имя. Второй такой же Prometheus считает
+# дубликатом и роняет скрейп ЦЕЛИКОМ: одна кривая строка убивает не свою
+# метрику, а все.
+names = [line.split()[2] for line in scrape.splitlines() if line.startswith("# TYPE ")]
+check("ни одно имя метрики не объявлено дважды", len(names) == len(set(names)),
+      str([n for n in names if names.count(n) > 1]))
+check("в скрейпе нет ни ключей, ни токенов",
+      "ps_live_" not in scrape and "test-admin" not in scrape and "test-shop" not in scrape)
+check("сводка по флоту отвечает на вопросы, ради которых заведена",
+      all(metric in scrape for metric in
+          ("pseudex_chain_breaks_total", "pseudex_instances_serving",
+           "pseudex_unverified_reports_total", "pseudex_reports_missing_total")))
+
+# СЧИТАЮТСЯ ЛИЧНОСТИ, А НЕ СТРОКИ. `lease_id` свежий на каждом продлении, и
+# `COUNT(*)` завысил бы флот втрое: при TTL сутки и продлении через треть TTL
+# один живой воркер оставляет в окне три-четыре строки. Ошибиться здесь значит
+# рассказывать себе, что клиентов втрое больше, чем есть.
+for _renewal in range(3):
+    for _worker in ("age1metric-a", "age1metric-b"):
+        server.STORE.lease_if_allowed(
+            f"ls_metric_{_renewal}_{_worker}", "fleet-org", "start",
+            "fleet-inst", _worker, 86400, pubkey=_worker)
+fleet = server.STORE.fleet_totals(86400)
+check("шесть строк аренды — это один контейнер и два воркера",
+      fleet["instances_serving"] >= 1 and fleet["processes_serving"] >= 2,
+      f"организаций={fleet['orgs_serving']} контейнеров={fleet['instances_serving']} "
+      f"воркеров={fleet['processes_serving']}")
+_by_pubkey = server.STORE.fleet_totals(86400)["processes_serving"]
+for _renewal in range(3, 6):
+    server.STORE.lease_if_allowed(
+        f"ls_metric_{_renewal}", "fleet-org", "start", "fleet-inst",
+        "age1metric-a", 86400, pubkey="age1metric-a")
+check("ещё три продления того же воркера флот не увеличивают",
+      server.STORE.fleet_totals(86400)["processes_serving"] == _by_pubkey,
+      f"{_by_pubkey} -> {server.STORE.fleet_totals(86400)['processes_serving']}")
+
+# --- ОБРАЗ: СПИСОК COPY ПРОТИВ ТОГО, ЧТО РЕАЛЬНО ГРУЗИТСЯ ----------------
+#
+# `licensing/Dockerfile` копирует модули `pseudex/` ПОИМЁННО — намеренно, чтобы
+# движок не уехал в образ лицензий целиком. Цена в том, что новый импорт ломает
+# не тест, а ОБРАЗ: `metrics.py` приехал вместе со скрейпом, в списке его не
+# было, и боевой контейнер лицензий не стартовал бы вовсе — единственный отказ,
+# после которого весь флот начинает жечь grace. Увидеть это можно было только
+# собрав образ; теперь видно отсюда.
+print("\nОБРАЗ ЛИЦЕНЗИОННОГО СЕРВЕРА")
+_dockerfile = (Path(__file__).resolve().parent / "Dockerfile").read_text(encoding="utf-8")
+_copied = {word.split("/")[-1] for word in _dockerfile.split()
+           if word.startswith("pseudex/") and word.endswith(".py")}
+#
+# В ОТДЕЛЬНОМ ПРОЦЕССЕ, И ЭТО НЕ ПЕДАНТИЗМ: сам тест поднимает ещё и КЛИЕНТСКУЮ
+# половину (`pseudex.license`, `assets`, `morph`), которой в образе лицензий
+# делать нечего. Считать `sys.modules` здесь значило бы требовать в Dockerfile
+# половину движка — то есть ровно то, ради предотвращения чего список поимённый.
+_probe = subprocess.run(
+    [sys.executable, "-c",
+     "import sys, licensing.server; "
+     "print(' '.join(sorted(n.split('.', 1)[1] + '.py' for n in sys.modules "
+     "if n.startswith('pseudex.') and '.' not in n.split('.', 1)[1])))"],
+    capture_output=True, text=True, timeout=300,
+    cwd=str(Path(__file__).resolve().parent.parent), env=dict(os.environ))
+_loaded = set(_probe.stdout.split())
+check("всё, что грузит сервер, есть в COPY образа",
+      bool(_loaded) and _loaded <= _copied,
+      f"грузится {sorted(_loaded) or 'НИЧЕГО — проба не запустилась'}, "
+      f"не скопировано: {sorted(_loaded - _copied) or 'ничего'}")
 
 print(f"\nсломано {len(fails)}")
 raise SystemExit(1 if fails else 0)

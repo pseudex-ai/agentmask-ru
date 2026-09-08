@@ -166,6 +166,43 @@ class LicenseStore:
         )
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS meter_org ON meter(org_id)")
+        # ТАРИФ — СТРОКА, А НЕ КОНСТАНТА. Числа тарифа стояли классовыми
+        # словарями, поэтому поправить потолок инстансов одному клиенту значило
+        # выкатить релиз. Словари никуда не делись: они СИД для чистой базы и
+        # последний рубеж, если строки нет, — а источником истины стала таблица.
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS plans ("
+            "code TEXT PRIMARY KEY, max_instances INTEGER, "
+            "processes_per_instance INTEGER, grant_size INTEGER, "
+            "quantum_min INTEGER, quantum_max INTEGER, reserve_max INTEGER, "
+            # Пусто — значит строка как её посеяли; непусто — кто-то правил.
+            # Дешевле и честнее, чем сравнивать шесть чисел с сидом.
+            "updated_at REAL, updated_by TEXT DEFAULT '')"
+        )
+        # СУТОЧНЫЙ СРЕЗ ИСПОЛЬЗОВАНИЯ, и это требование записано до нас:
+        # docs/tz-site.md §6 — «таблица `usage` хранит по одному снимку на
+        # инстанс… для графика по времени нужны периодические срезы. Решить это
+        # надо до того, как будет нарисован экран».
+        #
+        # СУТКИ, А НЕ ОТЧЁТ, и это арифметика. Отчёт едет на продлении, а
+        # `renew_after = ttl // 3` — трижды в сутки на процесс; построчно это
+        # порядка полусотни строк в сутки на клиента и десятки миллионов в год на
+        # тысяче. Строка на инстанс в сутки даёт тысячи, а не миллионы.
+        #
+        # Хранится НАКОПИТЕЛЬНЫЙ снимок на конец суток, как и в `usage`, а не
+        # прирост: график — разность соседних суток, ровно та же вычитаемая
+        # ватермарка, которой уже считает `billing/services.py::build_invoice`.
+        # Прирост пришлось бы вычислять на записи, а значит доверять тому, что
+        # предыдущая запись случилась.
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS usage_daily ("
+            "org_id TEXT, instance_id TEXT, day TEXT, "
+            "requests INTEGER DEFAULT 0, values_total INTEGER DEFAULT 0, "
+            "reports INTEGER DEFAULT 0, updated_at REAL, "
+            "PRIMARY KEY (org_id, instance_id, day))"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS usage_daily_org ON usage_daily(org_id, day)")
         # Существующие тома пережили релизы без этой колонки.
         columns = {row[1] for row in
                    self._conn.execute("PRAGMA table_info(leases)")}
@@ -193,6 +230,56 @@ class LicenseStore:
             if column not in usage_columns:
                 self._conn.execute(f"ALTER TABLE usage ADD COLUMN {ddl}")
         self._conn.commit()
+        self._seed_plans()
+
+    def _seed_plans(self) -> None:
+        """Посеять тарифы из констант — `INSERT OR IGNORE`, НЕ `REPLACE`.
+
+        СТРОКА ПОБЕЖДАЕТ КОНСТАНТУ, иначе таблица бессмысленна: правка тарифа
+        обязана пережить рестарт, а `REPLACE` возвращал бы её к сиду на каждом
+        подъёме процесса.
+
+        Обратную сторону надо назвать вслух, потому что она неочевидна и укусит
+        того, кто про неё не знает: **поправить константу и выкатить релиз больше
+        НЕ меняет работающий тариф**. Поэтому расхождение видно снаружи —
+        `plans()` отдаёт `source`, и `edited` означает, что здесь правили руками.
+
+        Гонки нет: лицензионный сервер — один процесс (`devserver.py` поднимает
+        два ASGI-приложения на одном `STORE` под `RLock`).
+        """
+        # НЕПОЛНЫЙ СИД — ОШИБКА В КОДЕ, И ОНА ПАДАЕТ ЗДЕСЬ, А НЕ У КЛИЕНТА.
+        #
+        # Раньше недостающие значения добирались через `.get(code, …)` с
+        # умолчаниями «старта», и тариф, добавленный в `PLAN_INSTANCES` и
+        # забытый в `PLAN_GRANT`, тихо оседал в таблице с грантом младшего
+        # тарифа. Это ровно тот дефект, ради которого заводился `known_plan`, —
+        # он просто переехал бы на одну таблицу дальше и стал невидим, потому
+        # что строка-то теперь есть.
+        incomplete = {
+            code: [name for name, table in (("PLAN_GRANT", self.PLAN_GRANT),
+                                            ("QUANTUM_BOUNDS", self.QUANTUM_BOUNDS),
+                                            ("RESERVE_MAX", self.RESERVE_MAX))
+                   if code not in table]
+            for code in self.PLAN_INSTANCES
+        }
+        incomplete = {code: missing for code, missing in incomplete.items() if missing}
+        if incomplete:
+            raise ValueError(
+                "неполный сид тарифов, тариф объявлен не во всех таблицах: "
+                + "; ".join(f"{code} нет в {', '.join(tables)}"
+                            for code, tables in sorted(incomplete.items())))
+        with self._lock:
+            for code, instances in self.PLAN_INSTANCES.items():
+                low, high = self.QUANTUM_BOUNDS[code]
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO plans (code, max_instances, "
+                    "processes_per_instance, grant_size, quantum_min, quantum_max, "
+                    "reserve_max, updated_at, updated_by) VALUES (?,?,?,?,?,?,?,?,'')",
+                    (code, instances, self.PROCESSES_PER_INSTANCE,
+                     self.PLAN_GRANT[code], low, high, self.RESERVE_MAX[code],
+                     time.time()),
+                )
+            self._conn.commit()
 
     def _fetchall(self, sql: str, params: tuple) -> list[tuple]:
         """Every READ goes through here, under the same lock the writes take.
@@ -416,7 +503,184 @@ class LicenseStore:
                 (org_id, instance_id, time.time(), requests, json.dumps(entities),
                  values, accumulated, seq, prev, signature, trust, breaks),
             )
+            # СУТОЧНЫЙ СРЕЗ ПИШЕТСЯ ТОЛЬКО ЗДЕСЬ — на подтверждённой ветке.
+            # Неподтверждённое не входит в счёт, значит не должно входить и в
+            # график счёта: иначе экран показывал бы объём, за который никто не
+            # выставит, и расхождение с инвойсом пришлось бы объяснять словами.
+            # Отдельно оно и так видно — `unverified_reports`/`unverified_requests`.
+            self._record_daily(org_id, instance_id, requests, accumulated)
             self._conn.commit()
+
+    def _record_daily(self, org_id: str, instance_id: str,
+                      requests: int, values_total: int) -> None:
+        """Снимок накопительных счётчиков на конец суток. Зовётся ИЗ-ПОД лока.
+
+        Перезаписывает числа и увеличивает `reports`: за сутки отчётов несколько,
+        и верен последний — ровно так же, как в `usage`. График рисуется
+        разностью соседних суток, поэтому хранить надо накопительное, а не
+        прирост: прирост требовал бы верить, что предыдущая запись случилась.
+        """
+        now = time.time()
+        day = time.strftime("%Y-%m-%d", time.gmtime(now))
+        self._conn.execute(
+            "INSERT INTO usage_daily (org_id, instance_id, day, requests, "
+            "values_total, reports, updated_at) VALUES (?,?,?,?,?,1,?) "
+            "ON CONFLICT(org_id, instance_id, day) DO UPDATE SET "
+            # МАКСИМУМ, А НЕ ПРИСВОЕНИЕ. Повтор старого честного отчёта имеет
+            # настоящий MAC и проходит проверку подписи; `record_usage` уже
+            # защищает от него `requests` максимумом, и срез обязан вести себя
+            # так же, иначе график поедет вниз там, где счёт не поехал.
+            "requests=MAX(usage_daily.requests, excluded.requests), "
+            "values_total=MAX(usage_daily.values_total, excluded.values_total), "
+            "reports=usage_daily.reports+1, updated_at=excluded.updated_at",
+            (org_id, instance_id, day, requests, values_total, now),
+        )
+
+    def usage_history(self, org_id: str, days: int = 30) -> list[dict[str, object]]:
+        """Накопительные счётчики организации по суткам, старые первыми.
+
+        МОЛЧАВШИЙ ИНСТАНС ПЕРЕНОСИТСЯ ВПЕРЁД, А НЕ ИСЧЕЗАЕТ, и без этого ряд
+        получался НЕ МОНОТОННЫМ. Считать `SUM(...) GROUP BY day` — значит взять
+        сумму по тем инстансам, которые отчитались именно в эти сутки: два
+        инстанса в понедельник и один во вторник дают падение, разность соседних
+        суток становится отрицательной, и последняя точка расходится с
+        `usage_totals`, который суммирует все инстансы, какие вообще видел.
+        Инстанс молчит не когда обнулился, а когда его остановили или он не успел
+        отчитаться в эти сутки; его накопительный итог никуда не делся.
+
+        Перенос делается здесь, а не в SQL: оконная функция дала бы то же самое
+        ценой зависимости от версии SQLite внутри SQLCipher, а строк тут — сутки
+        на инстансы одной организации.
+        """
+        window = max(1, min(int(days), 365))
+        rows = self._fetchall(
+            "SELECT day, instance_id, requests, values_total, reports "
+            "FROM usage_daily WHERE org_id=? ORDER BY day", (org_id,))
+        latest: dict[str, tuple[int, int]] = {}
+        by_day: dict[str, dict[str, object]] = {}
+        for day, instance_id, requests, values_total, reports in rows:
+            latest[instance_id] = (int(requests or 0), int(values_total or 0))
+            bucket = by_day.setdefault(day, {"day": day, "reports": 0})
+            bucket["reports"] = int(bucket["reports"]) + int(reports or 0)
+            # Итог суток — состояние ВСЕХ известных инстансов на конец этих
+            # суток, включая тех, кто сегодня промолчал.
+            bucket["requests"] = sum(value[0] for value in latest.values())
+            bucket["values"] = sum(value[1] for value in latest.values())
+            bucket["instances"] = len(latest)
+        return [by_day[day] for day in sorted(by_day)][-window:]
+
+    def fleet_totals(self, window_seconds: int) -> dict[str, object]:
+        """One row of numbers about the WHOLE fleet, for the scrape.
+
+        AGGREGATED IN SQL AND NOT BY WALKING `list_orgs()`. The console reads
+        per-organisation rows because a human is going to look at one of them;
+        a scrape every fifteen seconds must not carry a cost that grows with the
+        customer base, and `/admin/list` is the operator-only catalogue anyway.
+
+        `breaks_by_org` is the ONE thing labelled by organisation, and only
+        organisations that actually have a break appear in it. Prometheus keeps
+        a series per label combination for ever, so labelling by customer
+        normally means the series count grows with sales and never shrinks —
+        here it grows with TROUBLE, which is bounded, drops back to nothing when
+        the trouble is fixed, and is exactly the list somebody needs to be handed
+        rather than to go looking for.
+        """
+        totals = self._fetchone(
+            "SELECT COUNT(DISTINCT org_id), COALESCE(SUM(requests), 0), "
+            "COALESCE(SUM(values_total), 0), 0, "
+            "COALESCE(SUM(unverified_reports), 0), COALESCE(SUM(malformed_reports), 0), "
+            "COALESCE(SUM(reports_missing), 0), COALESCE(SUM(resets), 0) FROM usage", ()
+        ) or (0, 0, 0, 0, 0, 0, 0, 0)
+        keys = self._fetchall("SELECT status, COUNT(*) FROM keys GROUP BY status", ())
+        cutoff = time.time() - window_seconds
+        # СЧИТАЮТСЯ ЛИЧНОСТИ, А НЕ СТРОКИ, и разница здесь кратная. `lease_id`
+        # свежий на КАЖДОМ продлении, а `released_at` ставится только при явном
+        # освобождении: при TTL 86400 и продлении через TTL//3 один живой воркер
+        # оставляет в окне три-четыре строки, и `COUNT(*)` завысил бы флот
+        # втрое. Считается `pubkey` — единственный идентификатор, который клиент
+        # НЕ выбирает: он рождается в памяти воркера, на него запечатывается
+        # бандл, и два процесса не могут иметь один и тот же, не будучи
+        # пропатченными.
+        #
+        # Инстанс считается ПАРОЙ с организацией: `instance_id` приходит из
+        # переменной окружения, то есть его выбирает клиент, и два разных
+        # клиента, оставивших умолчание, слились бы в один. SQLite не умеет
+        # `COUNT(DISTINCT a, b)`, отсюда подзапрос.
+        live = "FROM leases WHERE issued_at >= ? AND released_at IS NULL"
+        instances = self._fetchone(
+            f"SELECT (SELECT COUNT(DISTINCT org_id) {live}), "
+            f"(SELECT COUNT(*) FROM (SELECT DISTINCT org_id, instance_id {live})), "
+            f"(SELECT COUNT(DISTINCT pubkey) {live})",
+            (cutoff, cutoff, cutoff)) or (0, 0, 0)
+        # ЦЕПЬ БЕРЁТСЯ ИЗ `process_reports`, А НЕ ИЗ `usage`, и это не выбор
+        # источника, а исправление. `usage.chain_breaks` ПЕРЕЗАПИСЫВАЕТСЯ
+        # накопительным счётчиком того процесса, чей отчёт пришёл последним, —
+        # при нескольких воркерах на инстанс число скачет и может УМЕНЬШАТЬСЯ.
+        # Экспортированное как `counter` и опрошенное через `increase()`, оно
+        # рисовало бы призрачные сбросы и приросты. `process_reports` хранит
+        # строку на (организация, процесс) и растёт только вверх — и это же то,
+        # что суммирует `/admin/chains`, так что метрика и консоль больше не
+        # спорят.
+        broken = self._fetchall(
+            "SELECT org_id, SUM(chain_breaks) FROM process_reports GROUP BY org_id "
+            "HAVING SUM(chain_breaks) > 0", ())
+        chain_total = self._fetchone(
+            "SELECT COALESCE(SUM(chain_breaks), 0) FROM process_reports", ()) or (0,)
+        return {
+            "orgs_with_usage": int(totals[0] or 0),
+            "requests": int(totals[1] or 0),
+            "values": int(totals[2] or 0),
+            "chain_breaks": int(chain_total[0] or 0),
+            "unverified_reports": int(totals[4] or 0),
+            "malformed_reports": int(totals[5] or 0),
+            "reports_missing": int(totals[6] or 0),
+            "resets": int(totals[7] or 0),
+            "keys_by_status": {str(row[0] or "unknown"): int(row[1] or 0) for row in keys},
+            "orgs_serving": int(instances[0] or 0),
+            "instances_serving": int(instances[1] or 0),
+            "processes_serving": int(instances[2] or 0),
+            "breaks_by_org": {str(row[0]): int(row[1] or 0) for row in broken},
+        }
+
+    def chain_detail(self, org_id: str, limit: int = 200) -> dict[str, object]:
+        """Строки цепи отчётов по каждому ПРОЦЕССУ организации.
+
+        `usage_totals` отдаёт СУММУ разрывов по организации — число, по которому
+        видно, что что-то не так, и совершенно нечего делать дальше. Это
+        детализация за ним: какой процесс, на каком месте цепи, когда последний
+        раз слышали. Ключ процесса режется до префикса — целиком он нужен только
+        для сверки подписи, а на экране это шум, который вдобавок приглашает
+        куда-нибудь его скопировать.
+
+        ОГРАНИЧЕН, КАК И ВСЯКОЕ ДРУГОЕ ПЕРЕЧИСЛЕНИЕ ЗДЕСЬ. `process_reports`
+        получает строку на КАЖДЫЙ воркер на КАЖДЫЙ перезапуск — ключ процесса
+        живёт ровно столько, сколько процесс, — и не чистится ничем. У давнего
+        клиента на старшем тарифе это десятки тысяч строк, и собирать их все
+        значит держать лок store, который в этот момент нужен `may_lease`, чтобы
+        выдавать аренды всем остальным.
+        """
+        window = max(1, min(int(limit), 1000))
+        total = self._fetchone(
+            "SELECT COUNT(*), COALESCE(SUM(chain_breaks), 0) "
+            "FROM process_reports WHERE org_id=?", (org_id,))
+        rows = self._fetchall(
+            "SELECT pubkey, seq, prev, chain_breaks, build_changes, build, updated_at "
+            "FROM process_reports WHERE org_id=? "
+            # Порванные первыми: если строк больше, чем влезает, отрезать надо
+            # тишину, а не сигнал.
+            "ORDER BY chain_breaks DESC, updated_at DESC LIMIT ?",
+            (org_id, window))
+        return {
+            "processes": [{"pubkey": (r[0] or "")[:16], "seq": int(r[1] or 0),
+                           "prev": (r[2] or "")[:16], "chain_breaks": int(r[3] or 0),
+                           "build_changes": int(r[4] or 0), "build": (r[5] or "")[:24],
+                           "updated_at": r[6]}
+                          for r in rows],
+            # Сумма считается по ВСЕМ строкам, а не по показанным: иначе экран,
+            # обрезанный лимитом, показывал бы разрывов меньше, чем их есть.
+            "processes_total": int(total[0] or 0) if total else 0,
+            "chain_breaks": int(total[1] or 0) if total else 0,
+        }
 
     def record_missing_report(self, org_id: str, instance_id: str) -> None:
         """Продление без отчёта, хотя `lease_id` в теле есть.
@@ -577,8 +841,118 @@ class LicenseStore:
     PLAN_GRANT = {"start": 5_000, "work": 25_000, "industrial": 100_000,
                   "enterprise": 500_000}
 
+    _PLAN_FIELDS = ("max_instances", "processes_per_instance", "grant_size",
+                    "quantum_min", "quantum_max", "reserve_max")
+
+    def plan_row(self, plan: str) -> dict[str, object] | None:
+        """Числа тарифа, или `None`, если такого тарифа нет.
+
+        ЕДИНСТВЕННЫЙ ЧИТАТЕЛЬ ТАБЛИЦЫ, и все, кому нужен тариф, идут через него.
+        Кеша здесь нет НАМЕРЕННО: кеш вернул бы ровно ту болезнь, ради которой
+        таблица заводилась, — правка перестала бы действовать до перезапуска.
+        Цена нулевая: чтение по первичному ключу, и зовут его на аренде и раз в
+        225 секунд на процесс, а не на пути запроса.
+        """
+        row = self._fetchone(
+            "SELECT code, max_instances, processes_per_instance, grant_size, "
+            "quantum_min, quantum_max, reserve_max, updated_at, updated_by "
+            "FROM plans WHERE code=?", (plan,))
+        if row is None:
+            return None
+        return {"code": row[0], "max_instances": int(row[1] or 0),
+                "processes_per_instance": int(row[2] or 0),
+                "grant_size": int(row[3] or 0), "quantum_min": int(row[4] or 0),
+                "quantum_max": int(row[5] or 0), "reserve_max": int(row[6] or 0),
+                "updated_at": row[7],
+                # Пустой `updated_by` — строка как её посеяли. Непустой — здесь
+                # правили руками, и константа в коде больше не описывает
+                # реальность. Это единственное, что отличает одно от другого
+                # снаружи, поэтому оно и отдаётся.
+                "source": "edited" if (row[8] or "") else "seed",
+                "updated_by": row[8] or ""}
+
+    def plans(self) -> list[dict[str, object]]:
+        """Все тарифы, в порядке потолка инстансов — от младшего к старшему."""
+        rows = self._fetchall("SELECT code FROM plans ORDER BY max_instances", ())
+        return [row for row in (self.plan_row(r[0]) for r in rows) if row]
+
+    def set_plan(self, code: str, values: dict[str, object], actor: str) -> dict:
+        """Создать или поправить тариф. Возвращает строку, какой она стала.
+
+        `actor` обязателен и пишется в `updated_by`: строка, которую правили,
+        обязана отличаться от посеянной, иначе `source` — выдумка. Роль та же,
+        что у `actor` в журнале раскрытий: запись о том, кто это сделал.
+        """
+        current = self.plan_row(code) or {field: 0 for field in self._PLAN_FIELDS}
+        merged = {field: int(values.get(field, current.get(field, 0)) or 0)
+                  for field in self._PLAN_FIELDS}
+        # ПРОВЕРЯЕТСЯ ДО ЗАПИСИ И НА СЛИТОЙ СТРОКЕ, а не на теле запроса.
+        #
+        # До записи — потому что иначе несогласованная строка успевает лечь на
+        # диск и остаётся там после отказа: вызывающий видит 400 и считает, что
+        # ничего не произошло. На слитой — потому что править можно одно поле из
+        # пары, и тогда противоречие рождается сложением нового значения с тем,
+        # что уже лежало, а в теле запроса его не видно вовсе.
+        #
+        # `issue_quantum` зажимает квант между этими двумя, так что перевёрнутая
+        # пара молча делает потолок ниже пола.
+        # КАЖДОЕ ПОЛЕ ОБЯЗАНО БЫТЬ ПОЛОЖИТЕЛЬНЫМ, И ЭТО ПРО СОЗДАНИЕ НОВОГО
+        # ТАРИФА, А НЕ ПРО ПРАВКУ СУЩЕСТВУЮЩЕГО.
+        #
+        # `current` для неизвестного кода — нули, поэтому запрос вида
+        # `{"code": "gold", "max_instances": 4}` создавал строку, где всё
+        # остальное ноль. Дальше `known_plan` такой тариф признаёт, а
+        # `may_lease` считает `ceiling = allowed * 0 = 0` и отказывает клиенту в
+        # ПЕРВОЙ ЖЕ аренде; нулевой `quantum_max` делает то же с ёмкостью.
+        # Проверка на `quantum_min > quantum_max` на паре 0/0 не срабатывает, а
+        # диапазонная проверка в ручке видит только присланные поля.
+        zeroed = sorted(field for field in self._PLAN_FIELDS if merged[field] < 1)
+        if zeroed:
+            raise ValueError(
+                f"plan {code} would have non-positive {', '.join(zeroed)}; "
+                "a new plan must name every field")
+        if merged["quantum_min"] > merged["quantum_max"]:
+            raise ValueError(
+                f"quantum_min {merged['quantum_min']} above quantum_max "
+                f"{merged['quantum_max']} for plan {code}")
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO plans (code, max_instances, processes_per_instance, "
+                "grant_size, quantum_min, quantum_max, reserve_max, updated_at, "
+                "updated_by) VALUES (?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(code) DO UPDATE SET "
+                "max_instances=excluded.max_instances, "
+                "processes_per_instance=excluded.processes_per_instance, "
+                "grant_size=excluded.grant_size, quantum_min=excluded.quantum_min, "
+                "quantum_max=excluded.quantum_max, reserve_max=excluded.reserve_max, "
+                "updated_at=excluded.updated_at, updated_by=excluded.updated_by",
+                (code, merged["max_instances"], merged["processes_per_instance"],
+                 merged["grant_size"], merged["quantum_min"], merged["quantum_max"],
+                 merged["reserve_max"], time.time(), actor),
+            )
+            self._conn.commit()
+        return self.plan_row(code) or {}
+
+    def known_plan(self, plan: str) -> bool:
+        """Есть ли такой тариф вообще.
+
+        СПРАШИВАЕТСЯ ПРИ ВЫПУСКЕ КЛЮЧА, ПОТОМУ ЧТО ДАЛЬШЕ КАЖДЫЙ LOOKUP МОЛЧА
+        ПОДСТАВЛЯЕТ УМОЛЧАНИЕ. `instances_allowed` откатывался на 1, `grant_size`
+        на 5 000, границы кванта и резерва — на значения «старта»: тариф, которого
+        нет, не ломался, он тихо становился самым младшим. `/admin/issue`
+        подставлял `"standard"`, которого нет нигде, поэтому ключ без явного
+        тарифа был невидимым «стартом» независимо от того, что купили.
+        """
+        return self.plan_row(plan) is not None
+
+    def known_plans(self) -> list[str]:
+        """Тарифы, которые есть, — чтобы отказ называл допустимое, а не только
+        недопустимое."""
+        return sorted(row["code"] for row in self.plans())
+
     def grant_size(self, plan: str) -> int:
-        return self.PLAN_GRANT.get(plan, 5_000)
+        row = self.plan_row(plan)
+        return row["grant_size"] if row else 5_000
 
     def record_grant(self, org_id: str, pubkey: str, size: int) -> None:
         """ВЫДАННОЕ КОПИТСЯ У НАС И НЕ ЗАВИСИТ НИ ОТ ЧЕГО, ЧТО ПРИШЛО СНАРУЖИ.
@@ -662,7 +1036,13 @@ class LicenseStore:
             gained = max(0, consumed - row["acked"])
             rate = gained / elapsed if elapsed > 1.0 else 0.0
 
-            low, high = self.QUANTUM_BOUNDS.get(plan, self.QUANTUM_BOUNDS["start"])
+            # Границы кванта и резерва читаются ИЗ СТРОКИ ТАРИФА. Фолбэк —
+            # «старт», как и был: тариф здесь уже проверен при выпуске ключа,
+            # так что путь фолбэка означает строку, удалённую под работающим
+            # клиентом, и самый тесный тариф — правильный ответ на это.
+            plan_row = self.plan_row(plan)
+            low = plan_row["quantum_min"] if plan_row else self.QUANTUM_BOUNDS["start"][0]
+            high = plan_row["quantum_max"] if plan_row else self.QUANTUM_BOUNDS["start"][1]
             quantum = min(max(int(rate * self.METER_TARGET_SECONDS), low), high)
             # РЕЗЕРВ ВЫДАЁТСЯ СО ВТОРОГО КВАНТА. Процессу, который ещё ничего не
             # обслужил, нечего страховать от нашего простоя, а выдавая резерв
@@ -671,8 +1051,10 @@ class LicenseStore:
             if row["quantum_seq"] == 0:
                 reserve = 0
             else:
+                reserve_max = (plan_row["reserve_max"] if plan_row
+                               else self.RESERVE_MAX["start"])
                 reserve = min(max(int(rate * self.RESERVE_SECONDS), quantum),
-                              self.RESERVE_MAX.get(plan, self.RESERVE_MAX["start"]))
+                              reserve_max)
             granted = max(row["granted"], consumed + quantum + reserve)
             prefetch_at = max(1, granted - reserve
                               - max(1, int(quantum * self.PREFETCH_FRACTION)))
@@ -769,7 +1151,15 @@ class LicenseStore:
         return int(row[0] or 0)
 
     def instances_allowed(self, plan: str) -> int:
-        return self.PLAN_INSTANCES.get(plan, 1)
+        row = self.plan_row(plan)
+        return row["max_instances"] if row else 1
+
+    def processes_allowed(self, plan: str) -> int:
+        """Потолок процессов на инстанс. Тоже из строки: тариф, которому нужно
+        больше воркеров на узел, теперь настраивается, а не выкатывается."""
+        row = self.plan_row(plan)
+        return (row["processes_per_instance"] if row
+                else self.PROCESSES_PER_INSTANCE)
 
     def active_instances(self, org_id: str, window_seconds: int) -> list[dict]:
         """The instances currently holding a slot, newest lease first.
@@ -894,7 +1284,7 @@ class LicenseStore:
                 )
             return True, ""
         allowed = self.instances_allowed(plan)
-        ceiling = allowed * self.PROCESSES_PER_INSTANCE
+        ceiling = allowed * self.processes_allowed(plan)
         # СТАРАЯ ГРАНИЦА ОСТАЁТСЯ ВЕРХНЕЙ. Клиент, который честно называет свои
         # контейнеры, упирается в неё раньше и видит понятное сообщение про
         # контейнеры, а не про процессы.
@@ -1085,15 +1475,57 @@ class LicenseStore:
         return [{"instance_id": r[0], "process_id": r[1], "issued_at": r[2]} for r in rows]
 
     def list_orgs(self) -> list[dict[str, object]]:
-        # `last_lease` ОТДАЁТСЯ ЗДЕСЬ, И ЭТО НЕ УКРАШЕНИЕ. `deploy/watch.sh`
-        # читает это поле, чтобы поймать клиента, который вот-вот встанет; поля
-        # не было, поэтому проверка «не продлевают аренду больше суток» была
-        # ВСЕГДА ПУСТОЙ — а это ровно тот сигнал, который поймал бы и блэкхол, и
-        # повтор лизы: и то и другое выглядит как «клиент перестал продлеваться».
+        """Каталог абонентов — ОДНА СТРОКА НА ОРГАНИЗАЦИЮ.
+
+        Была строка на КАЖДЫЙ КЛЮЧ (`FROM keys k`), поэтому организация с тремя
+        ключами троилась. Для сторожа это не косметика: он печатает `late[:20]`,
+        и один клиент с тремя ключами занимал в этом списке три места из
+        двадцати — то есть список «кто вот-вот встанет» тем короче, чем больше у
+        клиентов ключей.
+
+        `last_lease` ОТДАЁТСЯ ЗДЕСЬ, И ЭТО НЕ УКРАШЕНИЕ. `deploy/watch.sh` читает
+        это поле, чтобы поймать клиента, который вот-вот встанет; поля не было,
+        поэтому проверка «не продлевают аренду больше суток» была ВСЕГДА ПУСТОЙ —
+        а это ровно тот сигнал, который поймал бы и блэкхол, и повтор лизы: и то
+        и другое выглядит как «клиент перестал продлеваться».
+
+        `plan` берётся с ПОСЛЕДНЕГО выпущенного ключа: тарифы ключей одной
+        организации расходятся только при смене тарифа, и тогда верен свежий.
+
+        `status` ОРГАНИЗАЦИИ — ЭТО «ОБСЛУЖИВАЕТСЯ ЛИ ОНА», А НЕ СТАТУС КАКОГО-ТО
+        ОДНОГО КЛЮЧА. `set_status` действительно двигает все ключи разом, но
+        `revoke_key_hash` отзывает РОВНО ОДИН — им и отзывают утёкший ключ, не
+        останавливая клиента. Взяв статус свежайшего, каталог показал бы
+        организацию отозванной ровно потому, что у неё отозвали последний
+        выпущенный ключ, — при живой работе на остальных. Поэтому: есть хоть один
+        активный ключ — организация активна, а полная раскладка отдаётся рядом
+        (`statuses`), чтобы «активна, но один ключ отозван» было видно, а не
+        додумывалось.
+        """
         rows = self._fetchall(
-            "SELECT k.org_id, k.plan, k.status, k.created_at, "
-            "(SELECT MAX(issued_at) FROM leases l WHERE l.org_id=k.org_id) "
-            "FROM keys k ORDER BY k.created_at", ())
-        return [{"org_id": r[0], "plan": r[1], "status": r[2], "created_at": r[3],
-                 "last_lease": r[4]}
-                for r in rows]
+            "SELECT k.org_id, MIN(k.created_at), COUNT(*), "
+            "(SELECT MAX(issued_at) FROM leases l WHERE l.org_id=k.org_id), "
+            # Тариф свежайшего ключа: коррелированный подзапрос по `created_at`,
+            # а не `MAX(k.plan)` — последнее вернуло бы лексикографический
+            # максимум, то есть тариф наугад.
+            "(SELECT plan FROM keys k2 WHERE k2.org_id=k.org_id "
+            " ORDER BY k2.created_at DESC LIMIT 1), "
+            "(SELECT status FROM keys k3 WHERE k3.org_id=k.org_id "
+            " ORDER BY k3.created_at DESC LIMIT 1), "
+            "SUM(CASE WHEN k.status='active' THEN 1 ELSE 0 END), "
+            "GROUP_CONCAT(k.status) "
+            "FROM keys k GROUP BY k.org_id ORDER BY MIN(k.created_at)", ())
+        catalogue = []
+        for row in rows:
+            active = int(row[6] or 0)
+            statuses: dict[str, int] = {}
+            for status in (row[7] or "").split(","):
+                if status:
+                    statuses[status] = statuses.get(status, 0) + 1
+            catalogue.append({
+                "org_id": row[0], "created_at": row[1], "keys": int(row[2] or 0),
+                "last_lease": row[3], "plan": row[4],
+                "status": STATUS_ACTIVE if active else row[5],
+                "active_keys": active, "statuses": statuses,
+            })
+        return catalogue

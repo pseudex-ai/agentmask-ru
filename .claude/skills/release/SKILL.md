@@ -91,7 +91,8 @@ cosign verify cr.yandex/pseudex/pseudex:1.0.1 \
 
 ```bash
 cd prototype
-python3 e2e/pack_gates.py                                  # P1-P8, собирает оба образа
+python3 make_dirty.py                                      # без него P3 отказывается стартовать
+python3 e2e/pack_gates.py                                  # P1-P10, собирает оба образа
 PSEUDEX_SIGNING_KEY=<ключ> python3 e2e/gates.py --image pseudex:compiled --skip-build
 ```
 

@@ -1,0 +1,50 @@
+# Что скрейпится и чем предъявляется токен.
+#
+# ОБЕ ЦЕЛИ ЗА ТОКЕНОМ, И ЭТО НЕ ПАРАНОЙЯ. У большинства продуктов /metrics
+# открыт, потому что «это же просто числа»; здесь числа говорят, сколько людей
+# клиент защитил сегодня и в каких категориях — то есть описывают его бизнес, а
+# на малом масштабе и его трафик. Плюс это живая опись контейнера, в котором
+# лежат персональные данные. Весь operator.py стоит за одним токеном ровно
+# поэтому, и у скрейпа нет права быть исключением.
+#
+# `admin/metrics` лицензионного сервера отдаёт СВОДКУ ПО ФЛОТУ и называет
+# поимённо организации с порванной цепью — тем более за полным токеном.
+
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []   # подставьте свой alertmanager; без него правила видны в UI
+
+scrape_configs:
+  # НАША СТОРОНА. Админское приложение живёт только во внутренней сети
+  # (`expose: ["9443"]`), наружу не опубликовано — и публиковать его нельзя:
+  # там же лежит выпуск ключей.
+  - job_name: pseudex-licensing
+    scheme: http
+    metrics_path: /admin/metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/license-admin-token
+    static_configs:
+      - targets: ["license:9443"]
+
+  # СТОРОНА КЛИЕНТА — ТОЛЬКО ЕСЛИ ОН САМ ЭТОГО ЗАХОТЕЛ. Его контейнер крутится
+  # в его периметре, и мы туда не ходим: трафик у этого продукта односторонний,
+  # от клиента к /v1/lease, и другого быть не должно. Блок оставлен
+  # закомментированным как ОБРАЗЕЦ ДЛЯ КЛИЕНТСКОГО Prometheus — он у себя
+  # подставит свой адрес и свой операторский токен.
+  #
+  # - job_name: pseudex-engine
+  #   metrics_path: /metrics
+  #   authorization:
+  #     type: Bearer
+  #     credentials_file: /etc/prometheus/engine-admin-token
+  #   static_configs:
+  #     - targets: ["pseudex:8000"]

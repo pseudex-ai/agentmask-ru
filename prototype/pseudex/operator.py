@@ -25,7 +25,8 @@ import anyio
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from pseudex import sqlite_setup
+from pseudex import metrics as metrics_format
+from pseudex import preflight, sqlite_setup
 from pseudex.audit import SELFCHECK_ORG
 from pseudex.profiling import snapshot as profiling_snapshot
 
@@ -48,6 +49,9 @@ _SHOWN_ENV = (
     "PSEUDEX_ADDR_EXTRACTOR",
     "PSEUDEX_LICENSE_URL",
     "PSEUDEX_UI_PORT",
+    "PSEUDEX_WORKER_MB",
+    "PSEUDEX_HEADROOM_MB",
+    "PSEUDEX_MEMORY_LIMIT_MB",
     "TZ",
 )
 
@@ -130,6 +134,57 @@ def processes() -> list[dict[str, object]]:
     return found
 
 
+def memory(snapshot: list[dict[str, object]] | None = None) -> dict[str, object]:
+    """What the preflight decided, re-asked against what is actually running.
+
+    THE PREFLIGHT'S ANSWER GOES STALE AND THIS ONE DOES NOT. The budget was
+    computed from a measured 350 MB per worker; a customer whose traffic holds
+    longer transcripts, or a container whose limit was raised without a restart,
+    lives at a different number. So this reports the same arithmetic beside the
+    RESIDENT sizes the processes actually have, and the interesting line is where
+    the two disagree — that is the container which will be killed later today,
+    visible before it is.
+
+    IT DOES NOT CLAIM TO KNOW WHICH PROCESS IS A WORKER, and the first version
+    did. `processes()` derives its `role` from AGE — the oldest is the master —
+    which is right for the picture it draws and wrong here twice over: the shell
+    that fans the workers out is not in the list at all, so the oldest entry is a
+    real worker labelled «master», and the interface IS in the list, so filtering
+    on `role == "worker"` dropped one worker and counted a 50 MB UI process as
+    one. With one worker and the interface on, the «largest worker» was the
+    interface and the drift warning could never fire.
+
+    Nothing distinguishes them from outside: the interface is the same binary
+    under a different role, so its cmdline is identical. So the honest report is
+    the LARGEST process — a worker whenever any worker runs, since the
+    interface is an order of magnitude smaller — and it is named that way.
+
+    Takes the snapshot so `/status` does not scan `/proc` twice for one answer:
+    two scans are two moments, and `used_mb` describing a different set of
+    processes than the count beside it is a small lie that costs nothing to
+    avoid.
+    """
+    limit = preflight.memory_limit_mb()
+    found = processes() if snapshot is None else snapshot
+    used_mb = sum(int(item.get("rss_mb", 0)) for item in found)
+    # The same arithmetic the preflight ran, asked the same way: from the
+    # environment and the affinity, never from the process list — a container
+    # whose workers are being killed one by one would otherwise report a
+    # shrinking budget as though that were the plan.
+    plan = preflight.plan(limit, preflight.cpus_available())
+    return {
+        "limit_mb": limit,
+        "used_mb": used_mb,
+        "processes_running": len(found),
+        "worker_mb_budget": plan["worker_mb"],
+        "largest_process_mb": max((int(item.get("rss_mb", 0)) for item in found),
+                                  default=0),
+        "headroom_mb": (limit - used_mb) if limit is not None else None,
+        "verdict": plan["verdict"],
+        "reason": plan["reason"],
+    }
+
+
 def _period_start(period: str) -> float:
     """Start of a named period. Unknown values collapse to 14 days rather than
     raising: this comes off a query string, and a typo should narrow nothing."""
@@ -161,6 +216,10 @@ def build_router(audit, license_client, assets, detector_version: str,
     async def status(request: Request) -> JSONResponse:
         org_id = request.query_params.get("org_id", "default")
         state = license_client.status()
+        # ONE SCAN OF /proc for both the process list and the memory report:
+        # they are drawn side by side on one screen, and two scans would be two
+        # different moments rendered as one.
+        running = processes()
         series = await anyio.to_thread.run_sync(audit.daily_series, org_id, 1, "")
         today = series[0] if series else {"requests": 0, "values": 0}
         # The breakdown beside "СЕГОДНЯ" must cover the same day the numbers
@@ -174,7 +233,15 @@ def build_router(audit, license_client, assets, detector_version: str,
                 "version": detector_version,
                 "assets_loaded": assets.is_loaded,
                 "bundle_version": state.bundle_version,
-                "processes": processes(),
+                "processes": running,
+                # HERE AND NOT ONLY IN /diagnostics. The preflight refuses at
+                # START; this is the same arithmetic asked of a container that
+                # already started and has since drifted — a raised limit nobody
+                # restarted for, or traffic heavier than the 350 MB the budget
+                # was measured on. The operator's screen is where that is worth
+                # seeing, and /diagnostics is the screen they open after the
+                # trouble rather than before it.
+                "memory": memory(running),
             },
             "license": {
                 "state": state.state,
@@ -275,6 +342,105 @@ def build_router(audit, license_client, assets, detector_version: str,
                      + f'-{days}d.csv"'},
         )
 
+    @router.get("/metrics")
+    async def prometheus(request: Request) -> PlainTextResponse:
+        """Everything /status shows, in the format a scraper reads.
+
+        WHY IT IS ON THE OPERATOR TOKEN AND NOT OPEN. Every other product puts
+        /metrics behind no auth because metrics are «just numbers»; here the
+        numbers say how many people this customer protected today and in which
+        categories, which is a description of their business and, at a small
+        enough scale, of their traffic. It is also a live inventory of a
+        container holding personal data. The whole of `operator.py` is behind
+        one token for that reason and this endpoint has no claim to be the
+        exception — Prometheus carries a bearer token (`authorization` in the
+        scrape config) and that is the whole integration.
+
+        NO VALUES AND NO TOKENS, ONLY COUNTS — the same rule the audit log
+        lives by, and here it is also a cardinality rule: a label whose values
+        come from traffic would give Prometheus a new time series per person.
+        The entity TYPE is a closed set of nine, so it is safe as a label; an
+        org id is not, and the container knows only its own anyway.
+
+        A SCRAPE MUST NOT MINT ANYTHING OR WRITE AUDIT, exactly like `/spans`
+        and `peek_token`: it runs every fifteen seconds for ever, and a
+        diagnostic that changes what it measures is not one. Everything below
+        is a read.
+        """
+        org_id = request.query_params.get("org_id", os.environ.get("PSEUDEX_UI_ORG", "default"))
+        state = license_client.status()
+        running = processes()
+        mem = memory(running)
+        today = await anyio.to_thread.run_sync(
+            audit.counts, org_id, _period_start("today"), "")
+        series = await anyio.to_thread.run_sync(audit.daily_series, org_id, 1, "")
+        volume = sqlite_setup.volume_state(os.environ.get("PSEUDEX_DB_DIR", "."))
+
+        out = [
+            # THE LADDER AS FOUR SERIES, NOT ONE NUMBER. An enum encoded as
+            # 0/1/2/3 forces every alert and every panel to carry the mapping,
+            # and the mapping is exactly what changes: `STATE_LEASED` is the
+            # string "active", which has already cost this product a /license
+            # endpoint that answered 503 for the life of every healthy
+            # container. One series per state, valued 0 or 1, needs no legend.
+            metrics_format.series(
+                "pseudex_license_state",
+                {name: int(state.state == name)
+                 for name in ("boot", "active", "stale", "expired")},
+                "1 for the state the licence is in, 0 for the others", "state"),
+            metrics_format.render(
+                "pseudex_license_seconds_since_lease",
+                None if state.seconds_since_lease is None else round(state.seconds_since_lease),
+                "Seconds since the last successful lease"),
+            metrics_format.render(
+                "pseudex_license_grace_seconds_left",
+                None if state.grace_left_seconds is None else round(state.grace_left_seconds),
+                "Seconds of grace remaining; absent while the lease is healthy"),
+            metrics_format.render(
+                "pseudex_assets_loaded", int(assets.is_loaded),
+                "1 when the detection bundle is in memory; 0 means /mask answers 503"),
+            metrics_format.render(
+                "pseudex_processes", len(running),
+                "Engine processes of this container, the interface included"),
+            metrics_format.render(
+                "pseudex_memory_used_bytes", mem["used_mb"] * 1024 * 1024,
+                "Resident memory of those processes"),
+            metrics_format.render(
+                "pseudex_memory_limit_bytes",
+                None if mem["limit_mb"] is None else mem["limit_mb"] * 1024 * 1024,
+                "The container's memory limit; absent when it has none"),
+            metrics_format.render(
+                "pseudex_memory_largest_process_bytes",
+                mem["largest_process_mb"] * 1024 * 1024,
+                "The biggest single process — the one the OOM killer would take"),
+            metrics_format.render(
+                "pseudex_memory_worker_budget_bytes",
+                mem["worker_mb_budget"] * 1024 * 1024,
+                "What the preflight budgeted per worker; compare with the largest process"),
+            metrics_format.render(
+                "pseudex_requests_today", int(series[0]["requests"]) if series else 0,
+                "Requests protected today — the BILLED quantity, not sum(values)",
+                "gauge"),
+            metrics_format.series(
+                "pseudex_values_today", {k: int(v) for k, v in today.items()},
+                "Personal values protected today, by type", "type"),
+            # FOUR STATES, NOT A BOOLEAN, for the same reason the licence
+            # ladder is four series: `== ENCRYPTED` collapsed «a correctly
+            # configured volume nobody has written to yet» (EMPTY) and «half the
+            # stores are still plain text» (MIXED) into the same zero, and those
+            # two need opposite responses — wait, versus stop and look now.
+            metrics_format.series(
+                "pseudex_vault_state",
+                {name: int(volume.get("on_disk") == name)
+                 for name in (sqlite_setup.ENCRYPTED, sqlite_setup.PLAINTEXT,
+                              sqlite_setup.MIXED, sqlite_setup.EMPTY)},
+                "1 for what is ON DISK, 0 for the others: encrypted, plaintext, "
+                "mixed (a migration stopped half way), empty (nothing written yet)",
+                "state"),
+        ]
+        return PlainTextResponse("".join(out),
+                                 media_type="text/plain; version=0.0.4; charset=utf-8")
+
     @router.get("/reveals")
     async def reveals(request: Request) -> JSONResponse:
         """The access log: who revealed which token and when. Never the value."""
@@ -325,10 +491,12 @@ def build_router(audit, license_client, assets, detector_version: str,
 
     @router.get("/diagnostics")
     async def diagnostics(request: Request) -> JSONResponse:
+        diagnostics_processes = processes()
         return JSONResponse({
             "env": {name: os.environ[name] for name in _SHOWN_ENV if name in os.environ},
             "profile": profiling_snapshot(),
-            "processes": processes(),
+            "processes": diagnostics_processes,
+            "memory": memory(diagnostics_processes),
             "lease_errors": license_client.recent_errors(),
         })
 

@@ -19,6 +19,7 @@ import os
 import sys
 import tempfile
 import time
+from pathlib import Path
 
 os.environ.setdefault("PSEUDEX_ADMIN_TOKEN", "test-admin-token")
 os.environ.setdefault("PSEUDEX_GATEWAY_TOKEN", "test-gateway-token")
@@ -39,6 +40,7 @@ import testkit  # noqa: E402
 os.environ["PSEUDEX_LICENSE_KEY"] = testkit.start_local_license()
 testkit.load_dev_bundle()
 
+from pseudex import license as license_module  # noqa: E402
 from pseudex import service  # noqa: E402
 from pseudex.localui import server as ui_server  # noqa: E402
 
@@ -78,6 +80,12 @@ def test_operator_surface_is_closed(client: TestClient) -> None:
                          # operator surface missed, and next to an open /unmask
                          # it made the whole reveal audit bypassable.
                          ("get", "/usage"),
+                         # /metrics says how many people this customer protected
+                         # today and in which categories — a description of their
+                         # business, and at a small enough scale of their traffic.
+                         # Every other product leaves /metrics open because «it is
+                         # just numbers»; this one has no claim to the exception.
+                         ("get", "/metrics"),
                          ("post", "/selfcheck")]:
         response = (client.post(path, json={}) if method == "post" else client.get(path))
         if response.status_code != 401:
@@ -110,6 +118,38 @@ def test_operator_surface_is_closed(client: TestClient) -> None:
                           "messages": [{"role": "user", "content": "привет"}]})
     check("the operator token does not open the masking path",
           crossed.status_code == 401, f"status={crossed.status_code}")
+
+
+def test_license_alarm_is_silent_while_healthy(client: TestClient) -> None:
+    """`/license` is the ALARM, and an alarm stuck ON is an alarm nobody keeps.
+
+    The docstring on `service.py::license_status` tells customers to point
+    monitoring here precisely because `/health` must stay 200 through the grace
+    window — an orchestrator that restarts a degraded container needs a fresh
+    lease, which is the thing that is unavailable, so a failing healthcheck turns
+    a survivable outage into an unrecoverable one.
+
+    That endpoint compared `status.state != "leased"` while the wire value of
+    `STATE_LEASED` is `"active"`, so it answered 503 on a perfectly healthy
+    container — for its whole life, on the leg the documentation points at. The
+    proxy leg had the mirror defect: 200 unconditionally, an alarm that could not
+    fire at all.
+
+    Checked HERE, and not only in gate L4, because the gates cost a container and
+    fifteen minutes and run nightly; this file runs on every push. A one-line
+    comparison is exactly the kind of thing that regresses between releases.
+    """
+    healthy = client.get("/license")
+    check("the licence alarm is silent while leased",
+          healthy.status_code == 200,
+          f"{healthy.status_code} state={healthy.json().get('state')}")
+    check("the licence alarm reports the leased state by its own constant",
+          healthy.json().get("state") == license_module.STATE_LEASED,
+          f"state={healthy.json().get('state')!r} "
+          f"STATE_LEASED={license_module.STATE_LEASED!r}")
+    # /health stays 200 for the reason above, and the two must not be confused.
+    check("liveness answers 200 while serving",
+          client.get("/health").status_code == 200)
 
 
 def test_reveal_requires_an_actor(client: TestClient) -> None:
@@ -319,12 +359,119 @@ def _forgery_checks(ui: TestClient, server, thread) -> None:
         thread.join(timeout=10)
 
 
+def test_metrics_carry_counts_and_never_values(client: TestClient) -> None:
+    """The scrape must be a READ, must parse, and must hold no personal value.
+
+    The last one is not a formality: this endpoint is polled every fifteen
+    seconds for ever and its output lands in a time-series database that lives
+    outside the container. A value that leaked here would be copied for ever, by
+    design, into the one place the vault exists to keep it out of.
+    """
+    headers = AUTH
+    body = {"org_id": "metrics-org", "messages": [{
+        "role": "user",
+        "content": "Иванов Пётр Сергеевич, +7 916 214-88-03, ул. Ленина 14 кв 3",
+    }]}
+    masked = client.post("/mask", json=body,
+                         headers=GATEWAY)
+    check("traffic to measure went through", masked.status_code == 200,
+          f"status={masked.status_code}")
+
+    scrape = client.get("/metrics", params={"org_id": "metrics-org"}, headers=headers)
+    text = scrape.text
+    check("the scrape answers and is Prometheus text",
+          scrape.status_code == 200 and "text/plain" in scrape.headers.get("content-type", ""),
+          scrape.headers.get("content-type", ""))
+
+    names = [line.split()[2] for line in text.splitlines() if line.startswith("# TYPE ")]
+    check("no metric name is declared twice", len(names) == len(set(names)),
+          str([n for n in names if names.count(n) > 1]))
+    # Prometheus fails a scrape WHOLE, so one unparseable line takes down every
+    # metric in the response rather than its own.
+    malformed = [line for line in text.splitlines()
+                 if line and not line.startswith("#") and len(line.rsplit(" ", 1)) != 2]
+    check("every sample line parses", not malformed, str(malformed[:3]))
+
+    leaked = [value for value in ("Иванов", "Пётр", "214-88-03", "Ленина")
+              if value in text]
+    check("no personal value reaches the scrape", not leaked, str(leaked))
+    check("the ladder is four series and not an enum",
+          'pseudex_license_state{state="active"}' in text
+          and 'pseudex_license_state{state="expired"}' in text)
+    check("what was protected is there, by TYPE — a closed set of nine",
+          "pseudex_values_today{" in text and "pseudex_requests_today" in text)
+
+    # A SCRAPE MAY NOT MINT OR BILL. It runs for ever on a timer; a diagnostic
+    # that moves the number it reports is not one — the same rule `/spans` and
+    # `peek_token` already live by.
+    before = client.get("/metrics", params={"org_id": "metrics-org"},
+                        headers=headers).text
+    for _ in range(3):
+        client.get("/metrics", params={"org_id": "metrics-org"}, headers=headers)
+    after = client.get("/metrics", params={"org_id": "metrics-org"},
+                       headers=headers).text
+
+    def requests_line(text: str) -> str:
+        return next((line for line in text.splitlines()
+                     if line.startswith("pseudex_requests_today")), "")
+    check("scraping does not bill the customer for being scraped",
+          requests_line(before) == requests_line(after),
+          f"{requests_line(before)!r} -> {requests_line(after)!r}")
+
+
+def test_agent_prompt_is_quoted_not_paraphrased() -> None:
+    """Экран «Интеграция» обязан ЦИТИРОВАТЬ инструкцию агенту, а не пересказывать.
+
+    Она живёт в `docs/integration.md` и подпёрта живым замером v4
+    (`docs/tz-agentpii4.md` §7). На экране стоял пересказ той же мысли другими
+    словами — то есть клиент получал ДВЕ РЕДАКЦИИ одной инструкции и должен был
+    сам решать, какая правильная. Расхождение вернётся при первой же правке
+    формулировки, если его ничто не держит; вот оно и держит.
+
+    Сверяются СЛОВА, а не форматирование: в документации строка обёрнута под
+    ширину markdown, на экране — под ширину блока кода, и требовать совпадения
+    переносов значило бы ломать проверку на каждой правке вёрстки.
+    """
+    root = Path(__file__).resolve().parent.parent
+    doc = (root / "docs" / "integration.md").read_text(encoding="utf-8")
+    app = (root / "prototype" / "pseudex" / "localui" / "static" / "app.js").read_text(
+        encoding="utf-8")
+
+    # ПЕРЕИМЕНОВАННЫЙ ЗАГОЛОВОК ИЛИ КОНСТАНТА — ЭТО ПРОВАЛ, А НЕ ОБРЫВ ПРОГОНА.
+    # `.index()` бросал ValueError, а эта проверка идёт не последней: падение
+    # здесь молча уносило с собой две следующие, про сессию интерфейса и про
+    # подделку actor. Тот же класс, что уже чинился в наборе предполёта.
+    try:
+        section = doc[doc.index("## Инструкция агенту"):]
+        # ДО СЛЕДУЮЩЕГО ЗАГОЛОВКА, А НЕ ДО КОНЦА ФАЙЛА: любая цитата, добавленная
+        # ниже по документу, иначе приклеилась бы к ожидаемой строке и покраснела
+        # бы при полностью синхронном промпте.
+        cut = section.find("\n## ", 1)
+        if cut != -1:
+            section = section[:cut]
+        quoted = " ".join(" ".join(line[2:].split()) for line in section.splitlines()
+                          if line.startswith("> "))
+        start = app.index("const AGENT_PROMPT = `") + len("const AGENT_PROMPT = `")
+        screen = " ".join(app[start:app.index("`;", start)].split())
+    except ValueError as error:
+        check("инструкция агенту на экране — цитата, а не пересказ", False,
+              f"не нашёл, откуда сверять: {error}")
+        return
+
+    check("инструкция агенту на экране — цитата, а не пересказ",
+          quoted == screen,
+          f"документация: {quoted[:60]!r}… экран: {screen[:60]!r}…")
+
+
 def main() -> int:
     client = _client()
     test_operator_surface_is_closed(client)
+    test_license_alarm_is_silent_while_healthy(client)
     test_reveal_requires_an_actor(client)
     test_requests_are_counted_apart_from_entities(client)
     test_selfcheck_is_not_billable(client)
+    test_metrics_carry_counts_and_never_values(client)
+    test_agent_prompt_is_quoted_not_paraphrased()
     test_ui_refuses_without_a_session()
     test_actor_cannot_be_forged_through_the_ui()
     print()

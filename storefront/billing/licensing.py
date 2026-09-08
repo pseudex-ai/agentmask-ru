@@ -38,6 +38,11 @@ REVOKE_KEY = "/admin/revoke_key"
 RELEASE = "/admin/release"
 INSTANCES = "/admin/instances"
 USAGE = "/admin/usage"
+# Операторская консоль. Те же правила: путь литералом, аудитория решена на той
+# стороне в `ADMIN_ACTIONS`, и разъезд роняет старт лицензионного сервера.
+PLANS = "/admin/plans"
+FLEET = "/admin/fleet"
+CHAINS = "/admin/chains"
 
 _STATUS_ACTION = {
     "active": "/admin/resume",
@@ -159,3 +164,56 @@ def release_instance(org_id: str, instance_id: str) -> bool:
     """
     result = _post(RELEASE, {"org_id": org_id, "instance_id": instance_id})
     return bool(result.get("released"))
+
+
+def plans() -> list[dict[str, object]]:
+    """Тарифы, как их видит ЛИЦЕНЗИОННЫЙ СЕРВЕР, — строки, а не наш `Plan`.
+
+    Два источника обязаны сходиться, и консоль — единственное место, где
+    расхождение видно глазом, а не только красным тестом. Поэтому здесь читается
+    именно та сторона, по которой сервер принимает решения: наши строки лежат в
+    базе рядом и берутся из ORM.
+    """
+    body = _get(PLANS, {})
+    rows = body.get("plans", [])
+    return rows if isinstance(rows, list) else []
+
+
+def set_plan(code: str, values: dict[str, object], actor: str) -> dict[str, object]:
+    """Поправить тариф на лицензионном сервере.
+
+    `actor` обязателен и уезжает в `updated_by`: только он отличает правленную
+    строку от посеянной, поэтому запись без него сделала бы `source` выдумкой.
+    Передаётся почта вошедшего сотрудника — та же дисциплина, что у `actor` в
+    журнале раскрытий.
+    """
+    body = _post(PLANS, {"code": code, "actor": actor, **values})
+    plan = body.get("plan", {})
+    return plan if isinstance(plan, dict) else {}
+
+
+def fleet(org_ids: list[str]) -> dict[str, dict[str, object]]:
+    """Счётчики и инстансы СРАЗУ по нескольким организациям, по `org_id`.
+
+    ПАКЕТ ПО НАЗВАННЫМ, А НЕ ПЕРЕЧИСЛЕНИЕ. Витрина держит меньший токен, и
+    каталог всех абонентов (`/admin/list`) ей не положен — это единственное, что
+    разделение токенов защищает. Здесь она и не перечисляет: список организаций у
+    неё свой, она их сама создала, и ручка отвечает ровно про названных.
+
+    Пустой список — ни одного обращения: страница без клиентов не должна ходить
+    по сети, чтобы узнать это.
+    """
+    if not org_ids:
+        return {}
+    body = _get(FLEET, {"org_ids": ",".join(org_ids)})
+    rows = body.get("orgs", [])
+    return {str(row.get("org_id", "")): row for row in rows if isinstance(row, dict)}
+
+
+def chains(org_id: str) -> dict[str, object]:
+    """Цепь отчётов по процессам одной организации плюс её история по суткам.
+
+    `usage_totals` отдаёт разрывы СУММОЙ — по ней видно, что что-то не так, и
+    нечего делать дальше. Здесь видно, какой процесс и на каком месте цепи.
+    """
+    return _get(CHAINS, {"org_id": org_id})

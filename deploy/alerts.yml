@@ -1,0 +1,146 @@
+# Тревоги, и их немного НАМЕРЕННО.
+#
+# Правило то же, по которому написан `watch.sh`: смотреть надо за тем, что
+# действительно ведёт к отказу. Сторож, который каждую минуту повторяет
+# «диск заполнен», за час обучает замьютить канал — и следующая, настоящая
+# тревога придёт в замьюченный канал.
+#
+# `for:` есть у каждого правила, и это не украшение: скрейп раз в тридцать
+# секунд ловит любое мгновенное состояние, а перезапуск контейнера — это
+# мгновенное состояние всего, что здесь перечислено.
+
+groups:
+  - name: pseudex-licensing
+    rules:
+      # ЛИЦЕНЗИОННЫЙ СЕРВЕР — ЕДИНСТВЕННЫЙ ОТКАЗ, КОТОРЫЙ ОСТАНАВЛИВАЕТ ВСЕХ,
+      # и не сразу: у клиентов сутки аренды и двое суток grace. Поэтому это
+      # warning с пятью минутами, а не critical с нулём — но и молчать нельзя,
+      # потому что тишина здесь длится ровно до того дня, когда кончится grace.
+      - alert: PseudexLicensingDown
+        expr: up{job="pseudex-licensing"} == 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Лицензионный сервер не отвечает на скрейп"
+          description: >-
+            Клиенты не встанут сразу: у них до 24 ч аренды и 48 ч grace.
+            Но отсюда до первого остановленного клиента — трое суток, и
+            обратный отсчёт уже идёт.
+
+      # ДОЛЯ 402/403 — ТА САМАЯ МЕТРИКА, которая описана в operations.md §5 и
+      # была там помечена «не реализовано». Смысл в том, что она различает две
+      # РАЗНЫЕ вещи одним числом: волну неоплат (тогда виноват биллинг) и нашу
+      # ошибку в статусах (тогда виноваты мы, и клиенты встают ни за что).
+      # Порог 20% за полчаса: одиночный отказ — это норма, каждая пятая аренда
+      # — нет.
+      - alert: PseudexLeaseRefusalsHigh
+        expr: >-
+          sum(rate(pseudex_license_responses_total{path="/v1/lease", code=~"40[23]"}[30m]))
+          /
+          clamp_min(sum(rate(pseudex_license_responses_total{path="/v1/lease"}[30m])), 0.001)
+          > 0.2
+        for: 15m
+        labels: { severity: critical }
+        annotations:
+          summary: "Больше 20% аренд отказано по 402/403"
+          description: >-
+            Либо волна неоплат, либо НАША ошибка в статусах. Второе страшнее:
+            402 и 403 обходят grace целиком, то есть клиент встаёт немедленно
+            и без предупреждения. Сначала посмотрите, у скольких РАЗНЫХ
+            организаций это происходит — у одной это биллинг, у всех это мы.
+
+      # 500 НА АРЕНДЕ — ЭТО НЕ ПРОСТО ОШИБКА, ЭТО РАЗДАЧА GRACE. Клиент
+      # считает пятисотку НАШИМ сбоем и берёт 48 часов работы в долг; ключ в
+      # сломанном состоянии так однажды и работал двое суток — рубильник,
+      # отказавший ОТКРЫТЫМ.
+      - alert: PseudexLeaseServerErrors
+        expr: sum(rate(pseudex_license_responses_total{path="/v1/lease", code=~"5.."}[15m])) > 0
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: "Аренда отвечает 5xx"
+          description: >-
+            Клиент трактует 5xx как наш сбой и берёт полный grace. Пока это
+            длится, рубильник неоплаты не работает.
+
+      # ЦЕПЬ ОТЧЁТОВ. Данные писались давно, но увидеть их можно было только
+      # открыв консоль — а тревога должна приходить сама.
+      - alert: PseudexReportChainBroken
+        expr: increase(pseudex_chain_breaks_total[6h]) > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Разрыв цепи отчётов о потреблении"
+          description: >-
+            Пропуск, перестановка или повтор старого отчёта. Против самого
+            клиента это ничего не доказывает (см. bundle.py::mac_report) —
+            но счёт этой организации выставлять вслепую уже нельзя.
+            `pseudex_chain_breaks_by_org` называет, у кого.
+
+      - alert: PseudexUnverifiedReports
+        expr: increase(pseudex_unverified_reports_total[24h]) > 10
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "Отчёты приходят без годной подписи"
+          description: >-
+            Аренда таким выдаётся намеренно — спор о биллинге не имеет права
+            останавливать конечного пользователя, — но счёт по ним неполон.
+
+  - name: pseudex-engine
+    rules:
+      # ЛЕСТНИЦА ДЕГРАДАЦИИ, СНЯТАЯ С КЛИЕНТСКОЙ СТОРОНЫ. Эти два правила
+      # осмысленны только в Prometheus САМОГО клиента — наш до его контейнера
+      # не дотягивается и не должен.
+      - alert: PseudexLicenseStale
+        expr: pseudex_license_state{state="stale"} == 1
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "Аренда не продлевается — идёт grace"
+          description: >-
+            Маскирование работает, но на исходе. `pseudex_license_grace_seconds_left`
+            показывает, сколько осталось до остановки.
+
+      - alert: PseudexLicenseExpired
+        expr: pseudex_license_state{state="expired"} == 1
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Лицензия истекла — /mask отвечает 503"
+          description: >-
+            Это fail-closed и это правильно: шлюз, потерявший лицензию, не
+            пропускает трафик мимо маскирования. Но пользователь уже стоит.
+
+      # ПАМЯТЬ: КОНТЕЙНЕР, КОТОРЫЙ ОСТАНОВИТ OOM-KILLER СЕГОДНЯ К ВЕЧЕРУ.
+      # Предполёт считает бюджет на СТАРТЕ; это то же самое, спрошенное у
+      # работающего — воркер, переросший бюджет, виден до убийства, а не после.
+      - alert: PseudexWorkerOverBudget
+        expr: >-
+          pseudex_memory_largest_process_bytes > pseudex_memory_worker_budget_bytes * 1.2
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Воркер вырос на 20% выше бюджета предполёта"
+          description: >-
+            Поднимите лимит памяти или уменьшите PSEUDEX_WORKERS. Иначе решать
+            будет OOM-killer, а его вердикт — статус 137, который не называет
+            ни память, ни нас.
+
+      - alert: PseudexMemoryNearLimit
+        expr: >-
+          pseudex_memory_used_bytes / pseudex_memory_limit_bytes > 0.9
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: "Занято больше 90% лимита памяти контейнера"
+
+      # НЕТ БАНДЛА — НЕТ ДЕТЕКЦИИ, А НЕ «ДЕТЕКЦИЯ ПОХУЖЕ». Это отдельная от
+      # лестницы вещь: ассеты выгружаются на EXPIRED, но нулём это может стать
+      # и по другой причине, и тогда /mask отвечает 503 при живой лицензии.
+      - alert: PseudexAssetsUnloaded
+        expr: pseudex_assets_loaded == 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Словари детекции не загружены — /mask отдаёт 503"
