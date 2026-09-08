@@ -58,6 +58,21 @@ _DB_DIR = os.environ.get("PSEUDEX_DB_DIR", ".")
 # per-request field for it — its wire is OpenAI's — so a tenant that turns agent
 # memory on sets it for the process. `Vault.with_pseudonym_scope` states the trade.
 _PSEUDONYM_SCOPE = os.environ.get("PSEUDEX_PSEUDONYM_SCOPE", "").strip() or "conversation"
+
+
+def _own_values_from_env() -> tuple[str, ...]:
+    """Значения хоста, объявленные процессом: имя ассистента, адрес компании.
+
+    Разделитель — перевод строки или `;`: имя и адрес сами содержат запятые
+    («Ленина 14, корп. 2»), и запятая как разделитель разрезала бы объявление
+    пополам. Пусто по умолчанию — см. `Vault.with_own_values`.
+    """
+    raw = os.environ.get("PSEUDEX_OWN_VALUES", "")
+    return tuple(part.strip() for part in raw.replace(";", "\n").split("\n") if part.strip())
+
+
+_OWN_VALUES = _own_values_from_env()
+
 if _PSEUDONYM_SCOPE not in PSEUDONYM_SCOPES:
     raise SystemExit(f"PSEUDEX_PSEUDONYM_SCOPE must be one of {list(PSEUDONYM_SCOPES)}, got {_PSEUDONYM_SCOPE!r}")
 # THE VAULT IS OPENED FIRST, before any other store is constructed, and that is
@@ -356,7 +371,7 @@ def _context(customer_id: str, agent_id: str, conversation_id: str) -> MaskConte
     return MaskContext(
         detector=DETECTOR,
         vault=(_get_vault(customer_id).for_conversation(conversation_id)
-               .with_pseudonym_scope(_PSEUDONYM_SCOPE)),
+               .with_pseudonym_scope(_PSEUDONYM_SCOPE).with_own_values(_OWN_VALUES)),
         audit=AUDIT,
         cache=_MASK_CACHE,
         org_id=customer_id,

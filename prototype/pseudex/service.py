@@ -68,6 +68,21 @@ _DB_DIR = os.environ.get("PSEUDEX_DB_DIR", ".")
 # request. Read once: a setting that changed under a running process would make
 # two halves of one dialogue disagree about whose the substitute is.
 _PSEUDONYM_SCOPE = os.environ.get("PSEUDEX_PSEUDONYM_SCOPE", "").strip() or "conversation"
+
+
+def _own_values_from_env() -> tuple[str, ...]:
+    """Значения хоста, объявленные процессом: имя ассистента, адрес компании.
+
+    Разделитель — перевод строки или `;`: имя и адрес сами содержат запятые
+    («Ленина 14, корп. 2»), и запятая как разделитель разрезала бы объявление
+    пополам. Пусто по умолчанию — см. `Vault.with_own_values`.
+    """
+    raw = os.environ.get("PSEUDEX_OWN_VALUES", "")
+    return tuple(part.strip() for part in raw.replace(";", "\n").split("\n") if part.strip())
+
+
+_OWN_VALUES = _own_values_from_env()
+
 if _PSEUDONYM_SCOPE not in PSEUDONYM_SCOPES:
     raise SystemExit(f"PSEUDEX_PSEUDONYM_SCOPE must be one of {list(PSEUDONYM_SCOPES)}, got {_PSEUDONYM_SCOPE!r}")
 # THE VAULT IS OPENED FIRST, before any other store is constructed, and that is
@@ -284,11 +299,13 @@ def _vault(org_id: str) -> Vault:
 
 
 def _context(org_id: str, agent_id: str, conversation_id: str,
-             pseudonym_scope: str = "") -> MaskContext:
+             pseudonym_scope: str = "",
+             own_values: tuple[str, ...] = ()) -> MaskContext:
     return MaskContext(
         detector=DETECTOR,
         vault=(_vault(org_id).for_conversation(conversation_id)
-               .with_pseudonym_scope(pseudonym_scope or _PSEUDONYM_SCOPE)),
+               .with_pseudonym_scope(pseudonym_scope or _PSEUDONYM_SCOPE)
+               .with_own_values(own_values or _OWN_VALUES)),
         audit=AUDIT,
         cache=_MASK_CACHE,
         org_id=org_id,
@@ -305,6 +322,7 @@ def _mask_request(
     conversation_id: str,
     skip_template: bool,
     pseudonym_scope: str = "",
+    own_values: tuple[str, ...] = (),
 ) -> tuple[list[dict[str, object]], object]:
     """One unit of CPU-heavy work, so messages and tools share a single hop onto
     the worker thread instead of paying the offload twice.
@@ -316,7 +334,7 @@ def _mask_request(
     `time.sleep` on the loop, stalling /health and every other in-flight request
     in this worker. That is the exact failure the threadpool offload exists to
     prevent."""
-    context = _context(org_id, agent_id, conversation_id, pseudonym_scope)
+    context = _context(org_id, agent_id, conversation_id, pseudonym_scope, own_values)
     result = (
         mask_messages(messages, context, skip_template),
         mask_tools(tools, context, skip_template),
@@ -505,6 +523,11 @@ async def mask(request: Request) -> JSONResponse:
     if pseudonym_scope not in PSEUDONYM_SCOPES:
         return JSONResponse(
             {"error": f"pseudonym_scope must be one of {list(PSEUDONYM_SCOPES)}"}, status_code=400)
+    # ЗНАЧЕНИЯ, КОТОРЫЕ ХОСТ ОБЪЯВЛЯЕТ СВОИМИ: имя ассистента, адрес компании.
+    # Список, а не строка: разделять их запятой нельзя — адрес сам её содержит.
+    # Пусто по умолчанию, и тогда поведение движка не меняется ни в одном байте.
+    own_values = tuple(str(one).strip() for one in body.get("own_values", ())
+                       if str(one).strip()) or _OWN_VALUES
     tools = body.get("tools")
     # CPU-heavy morphology runs in a worker thread (NOT the event loop), so
     # /health and other requests stay responsive while a large /mask is in
@@ -514,7 +537,7 @@ async def mask(request: Request) -> JSONResponse:
     # to a 5xx, which the caller treats as a block (it never sees raw PII).
     masked_messages, masked_tools = await anyio.to_thread.run_sync(
         _mask_request, messages, tools, org_id, agent_id, conversation_id,
-        skip_template, pseudonym_scope,
+        skip_template, pseudonym_scope, own_values,
         limiter=_MASK_LIMITER,
     )
     payload: dict[str, object] = {"messages": masked_messages}
