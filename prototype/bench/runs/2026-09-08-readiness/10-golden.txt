@@ -1,0 +1,18 @@
+$ python3 eval_detect.py
+
+TYPE         GT   RECALL     PREC
+NAME         52    100%     100%
+PHONE        52    100%     100%
+EMAIL        30    100%     100%
+SNILS        25    100%     100%
+INN          25    100%     100%
+CARD         23    100%     100%
+PASSPORT     12    100%     100%
+DATE         12    100%     100%
+DOB          11    100%     100%
+LOC          56    100%     100%
+---------------------------------
+OVERALL     298    100%     100%
+
+Recall is the privacy metric: 0 of 298 PII items were MISSED (would leak).
+

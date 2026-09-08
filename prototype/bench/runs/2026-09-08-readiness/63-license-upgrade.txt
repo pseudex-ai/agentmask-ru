@@ -1,0 +1,12 @@
+$ python3 -m licensing.test_store_upgrade
+
+PASS  сервер поднимается на томе прошлой версии
+PASS  колонка pubkey доехала миграцией  leases: ['expires_at', 'instance_id', 'issued_at', 'lease_id', 'org_id', 'pubkey', 'released_at', 'released_by']
+PASS  колонки цепи отчётов доехали  usage: 15 колонок
+PASS  индекс по pubkey построен, а не пропущен  ['leases_org_issued', 'leases_org_pubkey', 'meter_org', 'sqlite_autoindex_grants_1', 'sqlite_autoindex_keys_1', 'sqlite_autoindex_leases_1', 'sqlite_autoindex_meter_1', 'sqlite_autoindex_plans_1', 'sqlite_autoindex_process_reports_1', 'sqlite_autoindex_usage_1', 'sqlite_autoindex_usage_daily_1', 'usage_daily_org']
+PASS  старые счётчики на месте  [(42,)]
+PASS  повторный подъём на уже мигрированном томе
+
+апгрейд на существующем томе работает
+
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex-upgrade-zfo36072/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.

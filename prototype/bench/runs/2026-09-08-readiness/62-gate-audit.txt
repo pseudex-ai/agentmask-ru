@@ -1,0 +1,25 @@
+$ python3 e2e/audit_gates.py --quiet
+
+== analyser self-test ==
+  PASS  D decorative: NO POSITIVE CONTROL: every term passes on empty evidence | UNGUARDED NEGATIVE: `'pseudex' not in output` reads ['sidecar_exec'] which no positive term proves works | UNGUARDED NEGATIVE: `'secret' not in output` reads ['sidecar_exec'] which no positive term proves works
+  PASS  T threshold: THRESHOLD: `usage['requests'] > 0` accepts any non-zero amount — assert the count if the gate knows it
+  PASS  U unguarded: UNGUARDED NEGATIVE: `not leaked` reads ['readable_pii_in_data'] which no positive term proves works
+  PASS  G paired: clean
+  PASS  H healthy: clean
+  PASS  E exit code: clean
+  PASS  B budget: clean
+  PASS  S subset: NO POSITIVE CONTROL: every term passes on empty evidence | UNGUARDED NEGATIVE: `remote <= local` reads ['fetch_remote'] which no positive term proves works
+  PASS  L lambda: THRESHOLD: `(in lambda) fetch_usage()['requests'] > 0` accepts any non-zero amount — assert the count if the gate knows it
+  PASS  C coarse: UNGUARDED NEGATIVE: `entity_types <= local_types` reads [] which no positive term proves works
+  PASS  R ratio: clean
+  PASS  N named: clean
+  PASS  P unpacked: NO POSITIVE CONTROL: every term passes on empty evidence | UNGUARDED NEGATIVE: `'license_missing' not in output` reads ['run_disposable_sidecar'] which no positive term proves works
+
+== 34 verdicts across 2 files ==
+
+  ok   e2e/gates.py:638  L14a marker present in memory while leased
+         ?  THRESHOLD: `hits > 0` accepts any non-zero amount — assert the count if the gate knows it
+
+======================================================================
+34/34 verdicts carry a positive control over every source they read
+
