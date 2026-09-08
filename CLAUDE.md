@@ -209,8 +209,17 @@ pseudex/assets.py            in-memory registry; compiles every regex ONCE at lo
   in the engine; 28k names lease. The tuning USED to lease and was inverted: a client with root
   decrypts their own bundle in one step, so leased tuning was readable — it now rides compiled into
   the engine as an opaque `zlib+hex` blob (`licensing/pack.py::emit_tuning_module` →
-  `pseudex/_tuning_blob.py`, merged at load by `assets.py`), so reconstructing it needs REVERSING the
-  binary, not a bundle dump. Matching protection to change-rate: bulk drifts (lease + rotation), tuning
+  `pseudex/_tuning_blob.py`, merged at load by `assets.py`). **WHAT THAT SEAL ACTUALLY BUYS, STATED
+  HONESTLY: it ties detection to a LEASE, not secrecy from a leaseholder.** The key that opens the blob
+  rides INSIDE the leased bundle (`licensing/pack.py::_bulk_payload`), and §3.4 accepts that the customer
+  may read their own bundle — so a paying customer reaches the tuning by decompressing a bundle and
+  reading one JSON field, never by reversing anything. What the seal does buy is real and deliberate: an
+  engine that NEVER leased cannot open its own tuning, so the licence is load-bearing rather than a
+  boolean branch a patch removes. Moving the key into the binary would raise the bar against a
+  leaseholder and destroy that property; it has not been moved, and the claim is corrected instead of the
+  code. Note also that the SUPERSET of this knowledge — the detection regexes hardcoded in `pseudex/*.py`
+  — ships as ordinary string constants by the same split rule (algorithm lives in the binary), so
+  secrecy of the tuning subset was never the whole story. Matching protection to change-rate: bulk drifts (lease + rotation), tuning
   is stable (static barrier). The lease still gates detection — no bulk, no names/streets, no output.
 
 ### Detection pipeline (`detect_all.py` is the only place that composes it)

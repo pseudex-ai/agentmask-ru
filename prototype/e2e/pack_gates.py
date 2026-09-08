@@ -243,6 +243,49 @@ def gate_p1() -> bool:
                 f"readable_in_binary={found[:3] or 'none'}")
 
 
+def _tuning_probes(limit: int = 120) -> list[str]:
+    """Строки ЗАПЕЧАТАННОЙ настройки — из самого `_tuning_payload`, а не из
+    списка.
+
+    ШЕСТЬ ЗОНДОВ СТОЯЛИ ЗА ВЕСЬ ПРОДУКТ. Настройка — это сотни авторских строк:
+    слова-подсказки, адресный аппарат, таблица приоритетов, карта ключ→тип,
+    таблица похожих букв. Гейт брал из них шесть, причём два — первые
+    шестьдесят символов паттерна. Ни одна регулярка адресного аппарата в них не
+    входила, и «blob opaque» доказывалось на выборке, которая не росла вместе с
+    настройкой.
+
+    Берётся ровно то, что `licensing/pack.py::_tuning_payload` кладёт в блок:
+    обход рекурсивный, поэтому добавленная в настройку строка попадает в
+    проверку сама, без правки этого файла.
+    """
+    from licensing.pack import _tuning_payload
+
+    seen: list[str] = []
+
+    def walk(node: object) -> None:
+        if isinstance(node, str):
+            # Достаточно длинная, чтобы совпадение что-то значило: короткое
+            # слово находится внутри чужого словаря natasha и внутри обычной
+            # русской речи, и первая версия этого гейта на том и обожглась.
+            if len(node) >= 16 and "\n" not in node:
+                seen.append(node)
+            return
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if isinstance(key, str) and len(key) >= 16:
+                    seen.append(key)
+                walk(value)
+            return
+        if isinstance(node, (list, tuple)):
+            for value in node:
+                walk(value)
+
+    walk(_tuning_payload())
+    unique = sorted(set(seen))
+    step = max(1, len(unique) // limit)
+    return unique[::step][:limit]
+
+
 def gate_p2() -> bool:
     """The tuned vocabulary must not be sitting in the shipped image as bytes.
 
@@ -250,11 +293,11 @@ def gate_p2() -> bool:
     leased, so it is simply not in the image — `marker_surname()` probes that. The
     authored TUNING (cue words, address regex, priority table, key→type map) is
     compiled INTO the engine as an opaque zlib+hex blob (docs/tz-license-packaging
-    §2.2), so its plaintext must not appear either — the regex, cue and compound-
-    key probes check that the blob stays compressed and was not accidentally
-    shipped in the clear. This is what makes Nuitka Commercial's constant
-    encryption unnecessary: if any plaintext probe is found, the blob leaked and
-    that plugin is what the €250/year would buy.
+    §2.2), so its plaintext must not appear either.
+
+    ЗОНДЫ БЕРУТСЯ ИЗ САМОЙ НАСТРОЙКИ — см. `_tuning_probes`. Раньше их было
+    шесть, вписанных руками; добавленная в настройку строка в проверку не
+    попадала.
 
     Checked against words that are ASSETS — authored tuning or leased bulk — never
     against anything the engine legitimately contains in the clear."""
@@ -263,36 +306,32 @@ def gate_p2() -> bool:
     # /app/natasha/data/dict/first.txt — natasha's OWN name dictionary, a
     # third-party open artifact we legitimately ship — and "мира" matched as a
     # substring of ordinary Russian words. Neither says anything about whether
-    # our tuned vocabulary leaked.
-    #
-    # So the probes are long authored strings that exist nowhere but our source:
-    # a regex we wrote, a compound key we invented, a cue phrase we chose, and a
-    # dictionary entry that only lives in the bundle.
-    samples = [
-        assets_source.ADDRESS_PATTERNS["street_first"][:60],
-        assets_source.MEDICAL_PATTERN[:60],
-        "контактныйтелефон",
-        "появил на свет",
-        "оформить на",
-        fixtures.marker_surname(),
-    ]
+    # our tuned vocabulary leaked. Hence the sixteen-character floor above.
+    probes = [*_tuning_probes(), fixtures.marker_surname()]
+    # ПОЛОЖИТЕЛЬНЫЙ КОНТРОЛЬ, КАК В P1: `grep` по пустому дереву находит ноль
+    # совпадений, и ноль здесь читается как «чисто». Контрольная строка обязана
+    # найтись, иначе гейт не доказал ничего.
+    control = "pseudex-serve"
     # `grep -a`, not `strings`: debian-slim has no binutils, and more importantly
     # `strings` scans single-byte encodings while every word here is Cyrillic —
     # it would report a clean binary no matter what was inside. grep on the raw
     # bytes finds the UTF-8 runs that actually matter.
     #
     # The whole /app tree, not just the executable: Nuitka standalone spreads
-    # constants across the bundled shared objects too.
-    checks = " ; ".join(
-        f"echo \"{word}:$(grep -ral -F -- '{word}' /app 2>/dev/null | head -1)\""
-        for word in samples
-    )
-    out = sh(["docker", "run", "--rm", "--entrypoint", "sh", COMPILED_IMAGE, "-c", checks],
-             False, 900).stdout
-    found = [line for line in out.splitlines() if line.strip() and not line.rstrip().endswith(":")]
+    # constants across the bundled shared objects too. Зонды идут через stdin:
+    # адресные регулярки несут кавычки и обратные слэши, и в `sh -c` они рвали
+    # бы команду — прежняя версия могла держать ровно то, что в неё помещалось.
+    result = sh_input(
+        ["docker", "run", "--rm", "-i", "--entrypoint", "sh", COMPILED_IMAGE, "-c",
+         "grep -o -a -h -F -f - -r /app 2>/dev/null | sort -u | head -20 || true"],
+        "\n".join([*probes, control]) + "\n", 900)
+    matched = [line for line in result.stdout.splitlines() if line.strip()]
+    read_the_tree = control in matched
+    found = [line for line in matched if line != control]
     return gate("P2 tuned vocabulary not extractable: blob opaque, bulk leased",
-                not found,
-                f"found_in_image={found[:3] or 'none'} checked={len(samples)}")
+                read_the_tree and not found,
+                f"probes={len(probes)} control_seen={read_the_tree} "
+                f"found_in_image={found[:3] or 'none'}")
 
 
 def gate_p2b() -> bool:

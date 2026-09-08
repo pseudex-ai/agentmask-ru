@@ -105,20 +105,46 @@ jobs:
         with: { python-version: "3.12", cache: pip, cache-dependency-path: prototype/requirements.txt }
       - run: pip install -r requirements.txt
 
-      # One signing key for the whole job. The verification key is compiled INTO
-      # the release binary, so a fresh key between steps would force a second
-      # Nuitka build and — worse — the licensing gates would then run against an
-      # image that rejects the very server they start.
-      - name: fix a signing key for this run
-        run: echo "PSEUDEX_SIGNING_KEY=$(python -c 'from licensing.keys import encode_private; from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey; print(encode_private(Ed25519PrivateKey.generate()))')" >> $GITHUB_ENV
-
-      # One tuning key for the whole job, for the same reason: it seals the blob
-      # compiled into the release binary AND is delivered by the server the gates
-      # start, so both halves must be the SAME value across every step. It must
-      # reach production alongside the signing key — the licensing server there
-      # needs it to deliver in leases (deploy/.env.example).
-      - name: fix a tuning key for this run
-        run: echo "PSEUDEX_TUNING_KEY=$(python -c 'import os, base64; print(base64.b64encode(os.urandom(32)).decode())')" >> $GITHUB_ENV
+      # ОБА КЛЮЧА — ИЗ СЕКРЕТОВ РЕПОЗИТОРИЯ, А НЕ ИЗ СЛУЧАЙНОСТИ.
+      #
+      # ЗДЕСЬ ОНИ ГЕНЕРИРОВАЛИСЬ ЗАНОВО НА КАЖДЫЙ ПРОГОН, и релиз выпускал
+      # образ, который невозможно лицензировать: ключ проверки компилируется В
+      # БИНАРЬ, а боевой сервер подписывает лизы своим — контейнер отвечал бы
+      # «lease signature is not ours» и не стартовал. То же со вторым: блок
+      # настройки запечатан ключом, которого у боевого сервера нет, и
+      # `open_tuning` падает.
+      #
+      # И CI ЭТОГО НЕ ВИДЕЛ ПО ПОСТРОЕНИЮ. Гейты поднимают СВОЙ лицензионный
+      # сервер с теми же одноразовыми ключами, поэтому L1–L22 зелены ровно
+      # потому, что обе половины одинаково неправильные. Зелёный прогон
+      # доказывал согласованность внутри job, а не пригодность артефакта.
+      #
+      # Отказ был бы fail-closed — не утечка, а нестартующий релиз, — но
+      # обнаружился бы у заказчика.
+      #
+      # `::add-mask::` до первого использования: дальше ключи уходят в
+      # `docker build --build-arg` и видны в `ps` на раннере; маска хотя бы
+      # держит их вне логов. ОТСУТСТВИЕ СЕКРЕТА — ЭТО ОСТАНОВКА, а не пустая
+      # строка: пустой ключ собрал бы ровно тот же нелицензируемый образ, и
+      # тишина здесь стоила бы релиза.
+      - name: take the release keys from repository secrets
+        env:
+          SIGNING: ${{ secrets.PSEUDEX_SIGNING_KEY }}
+          TUNING: ${{ secrets.PSEUDEX_TUNING_KEY }}
+        run: |
+          missing=""
+          [ -n "${SIGNING}" ] || missing="${missing} PSEUDEX_SIGNING_KEY"
+          [ -n "${TUNING}" ] || missing="${missing} PSEUDEX_TUNING_KEY"
+          if [ -n "${missing}" ]; then
+            echo "::error::нет секретов репозитория:${missing}. Это те же значения," \
+                 "что стоят в deploy/.env боевого хоста; собранный без них образ" \
+                 "отвергнет каждую лизу боевого сервера."
+            exit 1
+          fi
+          echo "::add-mask::${SIGNING}"
+          echo "::add-mask::${TUNING}"
+          echo "PSEUDEX_SIGNING_KEY=${SIGNING}" >> $GITHUB_ENV
+          echo "PSEUDEX_TUNING_KEY=${TUNING}" >> $GITHUB_ENV
 
       # P3 СРАВНИВАЕТ ОБРАЗЫ НА ЭТОМ НАБОРЕ, И БЕЗ НЕГО ОНО СРАВНИВАЛО ПОЛОВИНУ.
       #
