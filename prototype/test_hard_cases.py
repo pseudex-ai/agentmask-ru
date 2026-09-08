@@ -769,6 +769,7 @@ def main() -> int:
     test_chat_register(detector)
     test_the_form_belongs_to_the_agent(detector)
     test_the_substitute_keeps_the_house_magnitude(detector)
+    test_the_host_may_declare_its_own_values(detector)
 
     print()
     if _FAILURES:
@@ -777,6 +778,47 @@ def main() -> int:
     print("hard cases OK — detected, restored, and nothing over-masked")
     return 0
 
+
+
+def test_the_host_may_declare_its_own_values(detector: Detector) -> None:
+    """Имя ассистента и адрес компании — не данные субъекта.
+
+    ДВА СЛУЧАЯ, И ОБА ЛОМАЮТ РАЗГОВОР, А НЕ ВОССТАНОВЛЕНИЕ. «Я Татьяна,
+    голосовой ассистент» стоит в системном промпте, клиент здоровается —
+    «здравствуйте, Татьяна», — и обращение маскируется: модель читает
+    приветствие постороннему. Промпт или справочник говорит «мы на Ленина 14»,
+    клиент спрашивает «а вы на Ленина 14?» — агент видит «Пушкина 10» и
+    отвечает «нет, мы на Ленина 14». Ни одна ось восстановления этого не видит:
+    значение доехало бы верно, если бы до инструмента вообще дошло.
+
+    ПУСТОЙ СПИСОК ПО УМОЛЧАНИЮ — вот почему регрессия здесь невозможна по
+    построению: пока хост ничего не объявил, ни одна проверка не срабатывает.
+
+    ЦЕНУ ПЛАТИТ ТОТ, КТО ОБЪЯВИЛ, И НЕ ЕГО КЛИЕНТЫ. Квартира, подъезд или
+    корпус в упоминании дают другой ключ, поэтому жилец того же дома
+    маскируется; ключ имени — именительный одного слова, поэтому «Татьяна
+    Смирнова» это другой человек и он маскируется тоже.
+    """
+    own = ("Татьяна", "Ленина 14")
+    keep = ("здравствуйте татьяна", "спасибо татьяне", "а вы на ленина 14?",
+            "мы на ул. Ленина, д. 14", "вы находитесь на ленина 14")
+    mask = ("запишите клиента петрова ольга телефон 89161234567",
+            "клиент татьяна смирнова", "везите на ленина 14 квартира 7",
+            "доставка ленина 14 подъезд 3", "курьера на ленина 14 корпус 2")
+    for said in keep:
+        vault = Vault(":memory:", "acme").for_conversation("own").with_own_values(own)
+        got = mask_text(said, vault, detector.detect(said))
+        check(f"объявлено хостом — не трогаем: {said[:34]}", got == said, got)
+    for said in mask:
+        vault = Vault(":memory:", "acme").for_conversation("own").with_own_values(own)
+        got = mask_text(said, vault, detector.detect(said))
+        check(f"чужое значение маскируется: {said[:34]}", got != said, got)
+    # И БЕЗ ОБЪЯВЛЕНИЯ ВСЁ КАК БЫЛО.
+    plain = Vault(":memory:", "acme").for_conversation("own")
+    said = "здравствуйте татьяна"
+    check("без объявления имя маскируется по-прежнему",
+          mask_text(said, plain, detector.detect(said)) != said, said)
+    print()
 
 
 def test_the_substitute_keeps_the_house_magnitude(detector: Detector) -> None:

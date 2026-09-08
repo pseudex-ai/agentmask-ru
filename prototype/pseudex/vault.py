@@ -610,6 +610,38 @@ def name_key(token: str) -> str:
     return morph_names.to_nominative(token).lower()
 
 
+# ТРИ ПОДПИСИ, И ТРЕТЬЯ — ЭТО ЦЕНА, КОТОРУЮ ПЛАТИТ ХОСТ. Заказчик объявляет
+# «Ленина 14», а клиент спрашивает «а вы на ул. Ленина, д. 14?»: `address_key`
+# держит родовое слово, поэтому два написания ОДНОГО адреса ключуются по-разному
+# и объявление работало бы только для той формы, которую хост угадал.
+# `street_house_key` для того и написан — это ключ, который два написания одного
+# места ВСЕГДА разделяют.
+#
+# ОН НАМЕРЕННО СТАЛКИВАЕТСЯ ПО ГОРОДАМ, и здесь это стоит денег: клиент, живущий
+# на «Ленина 14» в другом городе, уйдёт к модели открытым. Квартира, подъезд или
+# корпус в его упоминании дают другой ключ и защищают его; голое «Ленина 14»
+# защищено не будет. Хост объявляет СВОИ значения и платит за объявление сам —
+# ровно как с `pseudonym_scope`.
+def _own_street_key(text: str) -> str:
+    """`street_house_key`, но ТОЛЬКО для упоминания без частей мельче дома.
+
+    КВАРТИРА — ЭТО ТО, ЧТО ОТЛИЧАЕТ ДОМОХОЗЯЙСТВО ОТ ЗДАНИЯ, и без этой оговорки
+    объявленный адрес компании накрывает жильца того же дома: «везите на ленина
+    14 квартира 7» ушло бы к модели ОТКРЫТЫМ, потому что `street_house_key`
+    намеренно обрывается на квартире. Адрес компании такой частью не бывает, а
+    адрес клиента — сплошь и рядом, так что цена объявления остаётся на том, кто
+    его сделал, и не перекладывается на его клиентов.
+    """
+    shape = morph_places.place_shape(text)
+    if shape.get("has_flat") or shape.get("has_entrance") or shape.get("has_building"):
+        return ""
+    return morph_places.street_house_key(text)
+
+
+_OWN_SIGNATURES = (name_key, lambda text: morph_places.address_key(text),
+                   _own_street_key)
+
+
 def fold_key(canonical: str) -> str:
     """Case- and ё-insensitive signature of a name, for the LOOKUP only.
 
@@ -1656,6 +1688,9 @@ class Vault:
         # `with_pseudonym_scope` for the one reason a host widens it (agent
         # memory) and for the price of widening.
         self._pseudonym_scope = "conversation"
+        # Пусто по умолчанию: пока хост не объявил своих значений, ни одна
+        # проверка ниже ничего не меняет. См. `with_own_values`.
+        self._own_keys: frozenset[str] = frozenset()
         self._lock = threading.Lock()
         self._conn = sqlite_connect(db_path, VAULT_STORE)
         self._conn.execute(
@@ -2058,6 +2093,71 @@ class Vault:
         view = copy.copy(self)
         view._pseudonym_scope = scope
         return view
+
+    def with_own_values(self, values: tuple[str, ...]) -> "Vault":
+        """A view that knows which strings belong to the HOST ITSELF.
+
+        ДВА СЛУЧАЯ, И ОБА ЛОМАЮТ РАЗГОВОР, А НЕ ВОССТАНОВЛЕНИЕ.
+
+        У АССИСТЕНТА ЕСТЬ ИМЯ. «Я Татьяна, голосовой ассистент» стоит в
+        системном промпте, клиент здоровается — «здравствуйте, Татьяна», — и это
+        имя маскируется: модель читает обращение к постороннему человеку и
+        отвечает на него как на постороннего. Системный промпт на плече движка
+        и так не маскируется (`skip_template`) ровно по этой причине — он
+        шаблон агента, а не данные субъекта; реплика клиента, называющая то же
+        имя, до сих пор такого признания не имела.
+
+        У ЗАКАЗЧИКА ЕСТЬ АДРЕС. Промпт или справочник говорит «мы на Ленина
+        14», клиент спрашивает «а вы на Ленина 14?» — вопрос маскируется,
+        агент видит «Пушкина 10» и отвечает «нет, мы на Ленина 14». Разговор
+        сломан целиком, и ни одна ось восстановления этого не видит: значение
+        доехало бы верно, если бы до инструмента вообще дошло.
+
+        ЭТО НЕ ПЕРСОНАЛЬНЫЕ ДАННЫЕ ПО ОПРЕДЕЛЕНИЮ. Субъект по 152-ФЗ ст. 3 п. 1
+        — физическое лицо; ассистент им не является, а адрес компании
+        идентифицирует юрлицо, которое Recital 14 и определение субъекта выводят
+        из-под регламента. Тот же довод, по которому мы отказываемся маскировать
+        голый город.
+
+        ПУСТОЙ СПИСОК ПО УМОЛЧАНИЮ, И ЭТО ГЛАВНОЕ СВОЙСТВО: пока хост ничего не
+        объявил, поведение движка не меняется НИ В ОДНОМ БАЙТЕ. Регрессия здесь
+        невозможна по построению, а не по измерению.
+
+        ЦЕНА НАЗВАНА: клиент, чьё упоминание сворачивается в ТОТ ЖЕ ключ, уйдёт
+        к модели открытым. Ключ узкий — `name_key` для имени (именительный,
+        строчными) и `address_key` для адреса, — поэтому «Татьяна Смирнова»
+        сюда не попадает (это другой ключ), а «Татьяна» одним словом попадёт.
+        Хост объявляет СВОИ значения, и цену этого объявления платит он же —
+        ровно как с `pseudonym_scope`.
+        """
+        view = copy.copy(self)
+        keys: set[str] = set()
+        for value in values:
+            text = value.strip()
+            if not text:
+                continue
+            for signature in _OWN_SIGNATURES:
+                try:
+                    key = signature(text)
+                except Exception:  # noqa: BLE001 — морфология не должна ронять запрос
+                    continue
+                if key:
+                    keys.add(key)
+        view._own_keys = frozenset(keys)
+        return view
+
+    def is_own_value(self, text: str) -> bool:
+        """Строка, которую хост объявил СВОЕЙ: имя ассистента, адрес компании."""
+        if not self._own_keys or not text.strip():
+            return False
+        for signature in _OWN_SIGNATURES:
+            try:
+                key = signature(text.strip())
+            except Exception:  # noqa: BLE001
+                continue
+            if key and key in self._own_keys:
+                return True
+        return False
 
     def tokenize(self, value: str, entity_type: str) -> str:
         with stage("vault.tokenize"):

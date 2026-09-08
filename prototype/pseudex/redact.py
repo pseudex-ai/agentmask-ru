@@ -83,6 +83,14 @@ def is_own_substitute(span: Span, vault: Vault) -> bool:
     `mask_text`, the envelope's audit loop and the benchmark's scorer each
     filtered echoes on their own, and the second rule reached only one of
     them, so production and the instrument disagreed about the same text."""
+    # ЗНАЧЕНИЕ, ОБЪЯВЛЕННОЕ ХОСТОМ СВОИМ, — не данные субъекта. Имя ассистента
+    # («здравствуйте, Татьяна») и адрес компании («а вы на Ленина 14?») говорит
+    # КЛИЕНТ, но принадлежат они не ему: замаскировав их, мы показываем модели
+    # обращение к постороннему и чужой адрес, и агент отвечает «нет, мы на
+    # Ленина 14» на вопрос, который сам же и не смог прочитать. Пусто по
+    # умолчанию — см. `Vault.with_own_values`.
+    if vault.is_own_value(span.value):
+        return True
     if vault.is_minted_token(span.value):
         return True
     # THE MODEL'S OWN DERIVATION OF OUR SUBSTITUTE IS OURS TOO. It wrote
