@@ -1252,6 +1252,81 @@ direction when done the obvious way:
   principled and cost four real people (Ирина Аллегрова among them) to buy two
   fewer false masks. It was removed by measurement, not by argument.
 
+## Rules that changes must not break, part four — the business
+
+- **THE BILLING UNIT IS THE REQUEST, AND THE RATE LADDER MUST PAY TO CLIMB.**
+  Старт 990 ₽ / 10k / 79 ₽ за 1000 сверх · Рабочий 3 900 / 100k / 31 ·
+  Промышленный 11 900 / 1M / 9.50 · Enterprise по договору / 7.00. Each rate is
+  ~80% of that tier's own included price and DECLINES up the ladder, so overage
+  is never cheaper than the tier above — a single flat rate stood here once and
+  made volume through overage tens of times cheaper than the same volume inside
+  a tier, so nobody ever upgraded. `test_billing_lifecycle` asserts the
+  PROPERTY, not the numbers.
+- **METERING STARTS AT 300 000 REQUESTS OF EXCESS, ON EVERY TIER, and that is
+  metrology rather than generosity.** The error of granted capacity is
+  `(quantum + reserve) / period`, and below ~300k per process the lower quantum
+  bounds dominate. `docs/billing-integrity.md` put that threshold on the TIER; it
+  belongs on the VOLUME, which is what the accuracy actually depends on — and by
+  tier it left an inversion where a Старт customer at half a million requests was
+  the best deal on the price list. Checking the ladder AT a lower tier's included
+  volume is wrong and will read as a defect: below the floor, staying put is
+  genuinely cheaper and correct.
+- **`run_billing_cycle` IS THE ONLY CALLER OF THE BILLING PRIMITIVES.** Trial
+  ended → invoice, period ended → invoice, past due → stop, paid-but-not-resumed
+  → retry. Idempotent BY A ROW IN THE DATABASE, never by a flag: a schedule runs
+  it twice, a restart runs it again, an operator runs it by hand. It ships as its
+  own compose service, hourly, NOT as a thread inside gunicorn where N workers
+  would each run it.
+- **A SERVICE THAT LOOPS FOREVER HAS NO FAILURE MODE THE WATCHDOG CAN SEE.**
+  `while :; do …; sleep; done` stays `running` whether the command succeeds or
+  throws every hour. Health must mean «the last pass SUCCEEDED» — a stamp written
+  only on success — or the service that issues every invoice can be dead behind a
+  green dashboard.
+- **A TRANSITION THAT CHANGES SERVICE IS PROVED BY THE CONTAINER, NOT BY A ROW.**
+  `Subscription.state` is a mirror for rendering. A test that believes it passes
+  on a product that takes money and never switches a defaulter off, so
+  `test_billing_lifecycle` POSTs `/mask` into a live container after every such
+  transition.
+- **NUMBERS PRINTED TO THE CUSTOMER COME FROM THE CODE.** The landing promised
+  volume billing that did not exist and «48 hours on non-payment» that described
+  a different fact entirely (48h is the lease reserve covering OUR outage; a
+  defaulter gets invoice terms plus grace). `test_published_claims.py` compares
+  code to text and also asserts the ABSENCE of the literals it replaced — a page
+  rendering `{{ metered_floor }}` that still says «300 000» in prose has two
+  copies of one threshold.
+
+## Rules that changes must not break, part five — operations
+
+- **THE LICENSING SERVER'S SCHEMA MIGRATES BEFORE ANY INDEX IS BUILT.**
+  `CREATE INDEX … ON leases(org_id, pubkey)` ran before `ALTER TABLE leases ADD
+  COLUMN pubkey`, so on a volume predating that column the process died at
+  startup and never reached its own migration: upgrading on existing data did not
+  come up at all. Every other path we own starts from an empty database — gates
+  do `down -v`, attacks use a temp dir — which is the one starting state
+  production will never have again. `licensing/test_store_upgrade.py` pins it
+  against a VERBATIM snapshot of the old schema, never «current minus a column».
+- **`uvicorn` DOES NOT CONFIGURE THE ROOT LOGGER, so the licensing server had no
+  operational log.** Everything at INFO was discarded silently — including
+  `RAW_LEASE_BODY`, over which gate L12 certified «nothing but counters leaves
+  the perimeter» while inspecting no body at all — and WARNING/ERROR reached
+  stderr through `logging.lastResort` with no timestamp, level or logger name.
+  `basicConfig` lives in `licensing/devserver.py`; uvicorn leaves root alone and
+  sets `disable_existing_loggers: False`, so it survives.
+- **THE STAND BUILDS `pseudex:local`, THE GATES BUILD `pseudex:source`.** They
+  bake DIFFERENT verification keys, and a shared tag meant a gate run silently
+  replaced the stand's image: the next container answered `lease signature is not
+  ours`, an exact message whose cause lives in another directory.
+- **`deploy/local.sh` PROVES THE STAND IS UP BEFORE SAYING SO.** It printed the
+  whole walkthrough without asking whether the licensing server was alive. A 401
+  from the admin port counts as proof of life; a refused connection proves
+  nothing.
+- **BOTH LICENSING TOKENS GO TO THE SERVER, not just to the storefront.**
+  `compose.local.yml` declared `PSEUDEX_LICENSE_STOREFRONT_TOKEN` for the
+  storefront and never passed it to the license service, so every storefront call
+  got 401 and the console said «no figures right now» — «no figures» and «we are
+  not being let in» are different facts. Production's `compose.yml` had it; the
+  two files had drifted.
+
 ## Conventions
 
 - Comments are in English; product docs (`docs/`) are in Russian. Both are unusually dense —
