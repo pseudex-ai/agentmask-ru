@@ -49,7 +49,7 @@ set -e
 # объявленная в документации, обязана быть одноразовой на самом деле.
 # Рекурсии нет: ниже вызывается БИНАРНИК, а не этот скрипт.
 case "${PSEUDEX_ROLE:-sidecar}" in
-    preflight|probe|rekey|decrypt)
+    preflight|probe|rekey|decrypt|measure)
         exec ${PSEUDEX_SERVE_CMD:-./pseudex-serve}
         ;;
 esac

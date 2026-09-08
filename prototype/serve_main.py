@@ -271,6 +271,22 @@ def main() -> None:
         raise SystemExit(_probe())
     if role == "rekey":
         raise SystemExit(_rekey())
+    if role == "measure":
+        # МЕРА СБОРКИ, СПРОСИТЬ СНАРУЖИ. Она уже едет внутри подписанного
+        # отчёта о расходе — но проверить, что бинарь мерит СЕБЯ, а не печатает
+        # заглушку, из отчёта нельзя: там она уже наша запись, а не его.
+        #
+        # Гейт P10 пробовал спросить двумя способами и оба не существовали:
+        # `python3 -c "from pseudex.measure import …"` — питона в релизном
+        # образе нет вовсе, а `--print-build` не был написан. То есть гейт,
+        # который стережёт единственную улику против патча бинарника, не мог
+        # пройти НИКОГДА.
+        #
+        # Роль, а не флаг, — по образцу остальных: разбор аргументов у бинаря
+        # свой быть не должен, а `PSEUDEX_ROLE` уже читается.
+        from pseudex.measure import build_measurement  # noqa: PLC0415 (role-local)
+        print(build_measurement())
+        return 0
     if role == "decrypt":
         raise SystemExit(_decrypt())
     # Imported inside the role, not at module scope: the engine module builds the

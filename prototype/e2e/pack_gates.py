@@ -271,9 +271,16 @@ def _tuning_probes(limit: int = 120) -> list[str]:
                 seen.append(node)
             return
         if isinstance(node, dict):
-            for key, value in node.items():
-                if isinstance(key, str) and len(key) >= 16:
-                    seen.append(key)
+            for _key, value in node.items():
+                # ИМЯ ПОЛЯ — НЕ НАСТРОЙКА, А СХЕМА КОДА, и зондировать его
+                # нельзя. `assets.py` обязан назвать `passport_trigger`,
+                # `markerless_lower` и `patronymic_suffixes`, чтобы прочитать
+                # блок, поэтому эти литералы есть в бинарнике по построению и
+                # будут там всегда. Первая версия брала их в зонды, и гейт
+                # краснел на трёх из них — верное наблюдение, неверный вывод:
+                # секрет здесь ЗНАЧЕНИЯ, а имена полей и так строго меньше
+                # того, что §3.4 разрешает клиенту прочитать в собственном
+                # бандле, где лежат и ключи, и значения.
                 walk(value)
             return
         if isinstance(node, (list, tuple)):
@@ -541,12 +548,13 @@ def gate_p10() -> bool:
     Если бы мера считалась от чего-то другого — от версии, от даты сборки, — она
     выглядела бы так же и не значила бы ничего.
     """
-    script = (
-        "python3 -c \"import sys;sys.path.insert(0,'/app');"
-        "from pseudex.measure import build_measurement;print(build_measurement())\" "
-        "2>/dev/null || /app/pseudex-serve --print-build 2>/dev/null; "
-        "sha256sum /app/pseudex-serve 2>/dev/null | cut -d' ' -f1"
-    )
+    # ГЕЙТ СПРАШИВАЛ ДВУМЯ СПОСОБАМИ, И НИ ОДНОГО НЕ СУЩЕСТВОВАЛО: питона в
+    # релизном образе нет вовсе, а `--print-build` никогда не был написан. То
+    # есть проверка единственной улики против патча бинарника не могла пройти
+    # ни разу — «reported=none» читалось как поломка меры, а сломан был вопрос.
+    # Спрашиваем ролью, как спрашивается всё остальное у этого бинарника.
+    script = ("PSEUDEX_ROLE=measure /app/pseudex-serve 2>/dev/null; "
+              "sha256sum /app/pseudex-serve 2>/dev/null | cut -d' ' -f1")
     out = sh(["docker", "run", "--rm", "--entrypoint", "sh", COMPILED_IMAGE, "-c", script],
              False, 300).stdout.strip().splitlines()
     reported = next((l.strip() for l in out if l.strip().startswith("sha256:")), "")
