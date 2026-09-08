@@ -37,6 +37,13 @@ services:
       # логирует и продолжает работать, поэтому стенд выглядел поднятым, а
       # каждая операторская ручка отвечала 401.
       PSEUDEX_LICENSE_ADMIN_TOKEN: ${PSEUDEX_LICENSE_ADMIN_TOKEN:?run deploy/local.sh, which generates one}
+      # И МЕНЬШИЙ ТОКЕН — СЕРВЕРУ, а не только витрине. Он объявлялся ниже, у
+      # витрины, и не доезжал сюда вовсе: сервер о нём не знал, поэтому КАЖДЫЙ
+      # вызов витрины к админке лицензионного сервера получал 401. Снаружи
+      # стенд выглядел поднятым — консоль открывалась и честно писала, что
+      # цифр нет, а «нет цифр» и «нас не пускают» — это разные факты. В боевом
+      # `compose.yml` строка есть; расходились именно эти два файла.
+      PSEUDEX_LICENSE_STOREFRONT_TOKEN: ${PSEUDEX_LICENSE_STOREFRONT_TOKEN:?run deploy/local.sh, which generates one}
       PSEUDEX_LICENSE_DB: /data/license.db
       # Short, so the degradation ladder is walkable in a coffee break rather
       # than over two days: lease 5 min, grace 10 min.

@@ -1,0 +1,281 @@
+"""Операторская консоль в НАСТОЯЩЕМ браузере, на всех шести экранах.
+
+ПОЧЕМУ ЭТОГО НЕ ЗАМЕНЯЕТ `test_storefront.py`. Тот проверяет коды ответа и
+наличие подстрок в HTML — и оба утверждения остались бы верными, если бы
+страница исполнялась с ошибкой, рисовала пустую таблицу или показывала не то.
+Консоль — это место, где мы ведём бизнес: флот, разрывы цепи отчётов, правка
+тарифа без выката, сверка счёта с логом клиента. Экран, который «отдаёт 200» и
+ничего не рисует, выглядит для HTTP так же, как рабочий; в этом репозитории уже
+было ровно так с интерфейсом контейнера.
+
+И ОДНА ПРОВЕРКА ЗДЕСЬ НЕ ПРО ОТРИСОВКУ. Консоль показывает данные клиентов, и
+персональных данных на ней быть не может ни при каких условиях — они физически
+не покидают контур заказчика, но проверять это надо там, где рисуется, а не там,
+где обещано.
+
+ПРОПУСК — ПРОВАЛ, А НЕ «НЕ СМОГЛИ»: отсутствие playwright печатает команду
+установки и выходит ненулём.
+
+    cd storefront && .venv/bin/python test_ops_renders.py
+"""
+
+import os
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent
+_PORT = int(os.environ.get("PSEUDEX_OPS_PORT", "8413"))
+_DB = os.path.join(tempfile.mkdtemp(prefix="pseudex-ops-db-"), "store.sqlite3")
+_STAFF_EMAIL = "ops-render@pseudex.local"
+_STAFF_PASSWORD = "ops-render-password-not-a-secret"
+
+FAILURES: list[str] = []
+
+
+def check(name: str, condition: bool, detail: str = "") -> None:
+    print(f"{'PASS' if condition else 'FAIL'}  {name}" + (f"  {detail}" if detail else ""))
+    if not condition:
+        FAILURES.append(name)
+
+
+def _launch(pw):
+    """Штатный chromium, а если номер сборки не тот — лежащий рядом.
+
+    Тот же приём, что в `test_configurator_renders.py`: проверка, падающая на
+    несовпадении номеров playwright и браузера, перестаёт бежать — а падать она
+    должна на консоли.
+    """
+    try:
+        return pw.chromium.launch()
+    except Exception as error:  # noqa: BLE001 — любая
+        root = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "")
+        found = sorted(Path(root).glob("chromium-*/chrome-linux/chrome")) if root else []
+        if not found:
+            raise RuntimeError(
+                f"chromium не запускается ({error}); поставьте его "
+                f"`python -m playwright install chromium`") from error
+        return pw.chromium.launch(executable_path=str(found[-1]))
+
+
+_SEED = '''
+import os
+from datetime import timedelta
+from decimal import Decimal
+from django.contrib.auth import get_user_model
+from django.utils import timezone
+from accounts.models import Membership, Organization
+from billing.models import Invoice, LicenseKey, Plan, Subscription
+
+User = get_user_model()
+staff = User.objects.create_user(email=os.environ["STAFF_EMAIL"],
+                                 password=os.environ["STAFF_PASSWORD"])
+staff.is_staff = staff.is_superuser = True
+staff.save()
+
+# Клиент с полной историей: подписка, ключ, оплаченный счёт и счёт по объёму.
+# Пустая консоль отрисуется у кого угодно — экран обязан быть проверен на
+# данных, иначе «страница открылась» ничего не значит.
+customer_user = User.objects.create_user(email="client@example.test",
+                                         password="x" * 20)
+org = Organization.objects.create(display_name="ООО Ромашка", legal_name="ООО «Ромашка»",
+                                  inn="7707083893")
+Membership.objects.create(user=customer_user, organization=org)
+plan = Plan.objects.get(code="industrial")
+Subscription.objects.create(organization=org, plan=plan,
+                            trial_ends_at=timezone.now() + timedelta(days=14),
+                            current_period_end=timezone.now() + timedelta(days=30))
+LicenseKey.record(org, "ps_live_rendercheck0000000000", "прод", "live")
+Invoice.objects.create(organization=org, number="PS-2026-09-render01",
+                       state=Invoice.PAID, period_start="2026-08-01",
+                       period_end="2026-08-31", plan_amount=Decimal("11900"),
+                       metered_requests=500000, metered_amount=Decimal("4750"),
+                       total=Decimal("16650"), requests_at_period_end=1500000,
+                       values_at_period_end=900000)
+print(org.id)
+'''
+
+
+def _start_site() -> tuple[subprocess.Popen, str]:
+    env = dict(os.environ)
+    env.update({
+        "DJANGO_SETTINGS_MODULE": "pseudex_site.settings",
+        "PSEUDEX_DEBUG": "1",
+        "PSEUDEX_SECRET_KEY": "ops-render-test",
+        "PSEUDEX_ALLOWED_HOSTS": "127.0.0.1,localhost",
+        "PSEUDEX_DB_PATH": _DB,
+        "STAFF_EMAIL": _STAFF_EMAIL,
+        "STAFF_PASSWORD": _STAFF_PASSWORD,
+        # Лицензионного сервера здесь нет НАМЕРЕННО: консоль обязана открываться
+        # и говорить, что цифр сейчас нет, а не падать пятисоткой. Этот случай
+        # уже проверяется по HTTP, и в браузере он же — самый вероятный на
+        # проде.
+        # ЛИЦЕНЗИОННЫЙ СЕРВЕР ЛЕЖИТ ПО УМОЛЧАНИЮ, И ЭТО ГЛАВНЫЙ СЛУЧАЙ.
+        # Консоль обязана открываться и говорить, что цифр сейчас нет, а не
+        # падать пятисоткой: на проде это самое частое её состояние — наш
+        # сервис перезапускается, сеть моргает, а оператор в этот момент как
+        # раз и смотрит, что происходит.
+        #
+        # Прогон с ЖИВЫМ сервером — второй, и он включается переменной, потому
+        # что требует поднятого стенда. Экран тарифов строит форму по ответу
+        # `/admin/plans`, поэтому без сервера формы там нет ЗАКОННО.
+        "PSEUDEX_LICENSING_ADMIN_URL": os.environ.get(
+            "PSEUDEX_OPS_LICENSING_URL", "http://127.0.0.1:9"),
+    })
+    for command in (["migrate", "--noinput", "-v", "0"], ["seed_plans", "-v", "0"]):
+        subprocess.run([sys.executable, "manage.py", *command], cwd=str(_ROOT),
+                       env=env, check=True, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL)
+    seeded = subprocess.run([sys.executable, "manage.py", "shell", "-c", _SEED],
+                            cwd=str(_ROOT), env=env, check=True,
+                            capture_output=True, text=True)
+    org_id = seeded.stdout.strip().splitlines()[-1]
+
+    server = subprocess.Popen(
+        [sys.executable, "manage.py", "runserver", f"127.0.0.1:{_PORT}",
+         "--noreload", "--insecure"],
+        cwd=str(_ROOT), env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(80):
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{_PORT}/", timeout=2)
+            return server, org_id
+        except urllib.error.HTTPError:
+            return server, org_id
+        except OSError:
+            time.sleep(0.5)
+    server.terminate()
+    raise RuntimeError("витрина не поднялась")
+
+
+def main() -> int:
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("playwright не установлен, а без него эта проверка ничего не "
+              "проверяет:\n  pip install playwright && "
+              "python -m playwright install chromium")
+        return 1
+
+    live_licensing = bool(os.environ.get("PSEUDEX_OPS_LICENSING_URL"))
+    print(f"лицензионный сервер: {'живой' if live_licensing else 'намеренно лежит'}")
+    server, org_id = _start_site()
+    base = f"http://127.0.0.1:{_PORT}"
+    admin_path = os.environ.get("PSEUDEX_ADMIN_PATH", "admin")
+    ops = f"{base}/{admin_path}/ops"
+    try:
+        with sync_playwright() as pw:
+            browser = _launch(pw)
+            page = browser.new_page()
+            errors: list[str] = []
+            page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
+            page.on("console", lambda m: errors.append(f"console.{m.type}: {m.text}")
+                    if m.type == "error" else None)
+
+            # --- аноним не входит ---------------------------------------
+            page.goto(f"{ops}/", wait_until="networkidle")
+            check("аноним на консоль не попадает",
+                  "/login" in page.url or "войти" in page.content().lower(),
+                  page.url.replace(base, ""))
+
+            # --- вход сотрудника ----------------------------------------
+            page.goto(f"{base}/accounts/login/", wait_until="networkidle")
+            page.fill("input[name=login]", _STAFF_EMAIL)
+            page.fill("input[name=password]", _STAFF_PASSWORD)
+            page.click("button[type=submit], input[type=submit]")
+            page.wait_for_load_state("networkidle")
+
+            screens = [
+                ("флот", f"{ops}/", ["ООО Ромашка"]),
+                ("разрывы цепи", f"{ops}/chains/", []),
+                ("тарифы", f"{ops}/plans/", ["Промышленный"]),
+                ("спрос", f"{ops}/demand/", []),
+                ("карточка клиента", f"{ops}/{org_id}/", ["ООО Ромашка", "PS-2026-09-render01"]),
+                ("сверка", f"{ops}/{org_id}/reconcile/", []),
+            ]
+            for name, url, must_contain in screens:
+                errors.clear()
+                page.goto(url, wait_until="networkidle")
+                body = page.inner_text("body")
+                # НЕ ПУСТАЯ И НЕ ТРАССИРОВКА. Django с DEBUG=1 рисует стектрейс
+                # с кодом 500, и «страница отрисовалась» на нём тоже верно.
+                healthy = (len(body) > 200 and "Traceback" not in body
+                           and "Server Error" not in body)
+                missing = [needle for needle in must_contain if needle not in body]
+                check(f"экран «{name}» отрисован", healthy and not missing,
+                      f"{len(body)} симв."
+                      + (f", НЕТ: {missing}" if missing else "")
+                      + (f", ошибки: {errors[:2]}" if errors else ""))
+
+            # --- правка тарифа доезжает до базы -------------------------
+            # Форма живёт на СПИСКЕ и постит в `ops_edit_plan`; сам
+            # `/plans/<code>/` — это POST-ручка, а не страница. Первая версия
+            # проверки ходила туда и падала «формы нет» — на продукте, у
+            # которого форма есть.
+            page.goto(f"{ops}/plans/", wait_until="networkidle")
+            form = page.query_selector("form[action*='plans/industrial']")
+            body = page.inner_text("body")
+            if live_licensing:
+                check("тариф правится с экрана, а не через выкат", form is not None,
+                      "формы на странице списка нет" if form is None else "форма есть")
+            else:
+                # БЕЗ СЕРВЕРА ФОРМЫ НЕТ ЗАКОННО — но экран обязан СКАЗАТЬ об
+                # этом, а не показать пустую таблицу, из которой оператор
+                # сделает вывод «тарифов нет».
+                said = any(word in body.lower() for word in
+                           ("недоступ", "не отвеча", "нет связи", "сейчас нет"))
+                check("без лицензионного сервера экран тарифов честно молчит",
+                      form is None and said,
+                      f"форма={form is not None} объяснение={said}")
+
+            # --- сверка принимает число и выносит вердикт ---------------
+            page.goto(f"{ops}/{org_id}/reconcile/", wait_until="networkidle")
+            # ПРИЦЕЛ ВНУТРЬ НУЖНОЙ ФОРМЫ. Первая версия брала первую кнопку
+            # отправки НА СТРАНИЦЕ, попадала в чужую, уезжала на лендинг — и
+            # проверяла всё дальнейшее против него. Проверка «на консоли нет
+            # персональных значений» краснела на вымышленном телефоне из
+            # демонстрации на главной: неверный вывод из верного наблюдения,
+            # сделанного не на той странице.
+            form = page.query_selector("form:has(input[name=theirs]:not([type=hidden]))")
+            submitted = False
+            if form is not None:
+                form.query_selector("input[name=theirs]").fill("1500000")
+                form.query_selector("button[type=submit]").click()
+                page.wait_for_load_state("networkidle")
+                submitted = True
+            verdict = page.inner_text("body")
+            check("сверка отвечает на названное число, а не молчит",
+                  submitted and f"/{org_id}/reconcile" in page.url
+                  and len(verdict) > 200 and "Traceback" not in verdict,
+                  f"{page.url.replace(base, '')} — {len(verdict)} симв.")
+
+            # --- и ни одного персонального значения ---------------------
+            # Их здесь физически нет: витрина не видит трафик. Проверяется
+            # там, где рисуется, потому что обещание проверяется механизмом.
+            # Читается ТОЛЬКО экран консоли: `page.url` выше уже удостоверил,
+            # что мы всё ещё на нём.
+            leaked = [needle for needle in ("+7 9", "@example.test", "СНИЛС ", "паспорт ")
+                      if needle in verdict]
+            check("на консоли нет персональных значений", not leaked, str(leaked))
+
+            shot = os.path.join(tempfile.gettempdir(), "pseudex-ops.png")
+            page.screenshot(path=shot, full_page=True)
+            print(f"  снимок: {shot}")
+            browser.close()
+    finally:
+        server.terminate()
+        server.wait(timeout=20)
+
+    print()
+    if FAILURES:
+        print(f"{len(FAILURES)} провалено: {', '.join(FAILURES)}")
+        return 1
+    print("операторская консоль OK — шесть экранов рисуются на настоящих данных")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
