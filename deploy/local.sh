@@ -67,11 +67,11 @@ print(encode_public(Ed25519PrivateKey.from_private_bytes(base64.b64decode('$PSEU
 # licensing server signs with. Baked at build time exactly as in a release —
 # a key the customer could override in the environment would let them sign
 # their own bundles.
-echo "building pseudex:source (verification key ${PUBKEY:0:12}…)"
+echo "building pseudex:local (verification key ${PUBKEY:0:12}…)"
 docker build -q -f "$ROOT/prototype/Dockerfile" \
     --build-arg "PSEUDEX_LICENSE_PUBKEY=$PUBKEY" \
     --build-arg "PSEUDEX_TUNING_KEY=$PSEUDEX_TUNING_KEY" \
-    -t pseudex:source "$ROOT/prototype" >/dev/null
+    -t pseudex:local "$ROOT/prototype" >/dev/null
 
 docker compose -f "$HERE/compose.local.yml" up -d --build
 
@@ -157,7 +157,7 @@ cat <<TEXT
        -v pseudex-data:/data \\
        -e PSEUDEX_LICENSE_KEY=<ваш ключ> \\
        -e PSEUDEX_LICENSE_URL=http://host.docker.internal:8443 \\
-       pseudex:source
+       pseudex:local
 
   4. Ссылка на локальный интерфейс — в логе контейнера:
      docker logs pseudex 2>&1 | grep "локальный интерфейс" -A2

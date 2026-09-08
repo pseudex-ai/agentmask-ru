@@ -77,7 +77,11 @@ services:
       PSEUDEX_DB_PATH: /data/storefront.sqlite3
       # What the site tells the customer to run. Points at the image built from
       # this checkout, not at the registry.
-      PSEUDEX_DOCKER_IMAGE: pseudex:source
+      # СВОЙ ТЕГ, НЕ `pseudex:source`: тот собирают гейты, со своим ключом
+      # проверки, и общий тег означал, что прогон гейтов ломает стенд
+      # молча — контейнер отвечает «lease signature is not ours», а
+      # причина лежит в другом каталоге.
+      PSEUDEX_DOCKER_IMAGE: pseudex:local
       # And WHICH licensing server, because this stand is not production. Without
       # it the site hands out the production command, the image dials
       # license.pseudex.ru, and the customer meets a wall that exists only here.

@@ -50,6 +50,9 @@ _DEPLOY = _ROOT / "deploy"
 LICENSE_ADMIN = "http://127.0.0.1:9443"
 LICENSE_FOR_CONTAINER = "http://host.docker.internal:8443"
 CONTAINER = "pseudex-billing-lifecycle"
+# Образ СТЕНДА, а не гейтов: у них разные ключи проверки, и общий тег
+# означал бы, что прогон гейтов ломает этот тест молча.
+STAND_IMAGE = "pseudex:local"
 GATEWAY_TOKEN = "lifecycle-gateway-token"
 ADMIN_TOKEN_UI = "lifecycle-admin-token"
 
@@ -97,7 +100,7 @@ def start_container(key: str) -> bool:
         # процессу попал запрос.
         "-e", "PSEUDEX_WORKERS=1",
         "-e", "PSEUDEX_UI", "-e", "PSEUDEX_VAULT_ENCRYPTION=off",
-        "pseudex:source",
+        os.environ.get("PSEUDEX_STAND_IMAGE", "pseudex:local"),
     ], capture_output=True, text=True, timeout=120)
     for _ in range(90):
         try:
