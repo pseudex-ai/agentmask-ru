@@ -257,6 +257,32 @@ def _round(amount: Decimal) -> Decimal:
     return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+# НИЖЕ ЭТОГО ОБЪЁМА ПРЕВЫШЕНИЕ НЕ ТАРИФИЦИРУЕТСЯ, И ЭТО МЕТРОЛОГИЯ, А НЕ СКИДКА.
+#
+# Погрешность выданной ёмкости равна `(квант + резерв) / период` и не зависит ни
+# от объёма, ни от числа воркеров — но только пока квант выводится из
+# собственного трафика процесса. Ниже примерно 300 000 запросов на процесс в
+# месяц начинают доминировать НИЖНИЕ пороги кванта (`licensing/store.py
+# ::QUANTUM_BOUNDS`), и относительная ошибка растёт.
+#
+# Счёт за объём, который мы не умеем измерить с процентной точностью, — это спор
+# с клиентом, и спор мы проиграем: он сверяет нашу цифру с логом своего шлюза, и
+# расхождение будет на его стороне правдой. Поэтому порог стоит на ОБЪЁМЕ, а не
+# на тарифе: точность зависит от того, сколько прошло, а не от того, что
+# написано на коробке. `docs/billing-integrity.md` ставил его по тарифам — это
+# та же мысль, доведённая до величины, от которой она на самом деле зависит.
+METERED_FLOOR = 300_000
+
+# Срок оплаты счёта. Здесь, а не литералом в `build_invoice`: это число
+# напечатано на лендинге и в письме, и три копии одного срока разъезжаются.
+INVOICE_DUE_DAYS = 7
+
+# Запас СВЕРХ срока оплаты, после которого обслуживание останавливается.
+# Счёт, выставленный в пятницу вечером, физически не может быть оплачен
+# банковским переводом до понедельника.
+GRACE_DAYS = 3
+
+
 def build_invoice(organization: Organization, period_start, period_end) -> Invoice:
     """Draft the счёт for a period from the counters the customer's own
     containers reported.
@@ -306,16 +332,28 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     # negative as zero and re-basing is the only reading that cannot overcharge.
     used_this_period = max(0, values - watermark)
 
-    # THE INVOICE IS THE SUBSCRIPTION. Nothing is charged per value: the value
-    # count is produced inside the customer's container and cannot be verified
-    # by us, while the subscription period is counted on our side and cannot be
-    # forged by them. Billing on the number we do not control would mean
-    # policing a counter instead of running a business.
+    # НАЧИСЛЕНИЕ ПО ОБЪЁМУ СЧИТАЕТСЯ ОТ ВЫДАННОЙ ЁМКОСТИ, А НЕ ОТ ОТЧЁТА, и это
+    # то, что отличает наш счёт от «полиции счётчика». Движок не обслуживает без
+    # ёмкости, ёмкость чеканим мы по своим часам, поэтому чтобы провести V
+    # запросов непропатченный движок ОБЯЗАН довести `granted` до >= V.
+    # Подтверждённый отчёт клиента работает в ОБРАТНУЮ сторону — он уменьшает
+    # начисление до фактического расхода. Снять отчёт значит отказаться от
+    # скидки за неиспользованное, а не занизить счёт.
     #
-    # The period's values are still recorded on the invoice, as INFORMATION —
-    # the customer sees what they got for the money, and a figure far above the
-    # plan's guide is what prompts an upgrade.
+    # Ничего не начисляется на защищённые ЗНАЧЕНИЯ: это число рождается внутри
+    # контейнера клиента и проверить его нечем. Оно остаётся на счёте справкой —
+    # ответом на «что я получил за деньги».
     subscription_amount = plan.monthly_price
+    metered_requests = max(0, billable - billable_watermark)
+    # Порог применяется к ПРЕВЫШЕНИЮ, не к объёму: включённое клиент уже
+    # оплатил абонплатой, и мерить надо ровно ту часть, за которую выставляется
+    # отдельная строка.
+    over = max(0, metered_requests - _int_or_zero(plan.included_requests))
+    if over >= METERED_FLOOR and plan.metered_per_1k > 0:
+        billed_over = over
+    else:
+        billed_over = 0
+    metered_amount = _round(Decimal(billed_over) / Decimal(1000) * plan.metered_per_1k)
 
     return Invoice.objects.create(
         organization=organization,
@@ -325,8 +363,10 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
         period_end=period_end,
         plan_amount=_round(subscription_amount),
         values_in_period=used_this_period,
-        total=_round(subscription_amount),
-        due_at=(timezone.now() + timedelta(days=7)).date(),
+        metered_requests=billed_over,
+        metered_amount=metered_amount,
+        total=_round(subscription_amount + metered_amount),
+        due_at=(timezone.now() + timedelta(days=INVOICE_DUE_DAYS)).date(),
         requests_billable_in_period=max(0, billable - billable_watermark),
         requests_billable_at_period_end=max(billable_watermark, billable),
         values_at_period_end=max(watermark, values),

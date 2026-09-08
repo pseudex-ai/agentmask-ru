@@ -223,6 +223,11 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 # outbound call the storefront makes, and it carries an org id and a status —
 # never anything about a customer's traffic.
 LICENSING_ADMIN_URL = _env("PSEUDEX_LICENSING_ADMIN_URL", "http://127.0.0.1:9443")
+
+# АБСОЛЮТНЫЙ АДРЕС ВИТРИНЫ ДЛЯ ПИСЕМ, ОТПРАВЛЕННЫХ НЕ ИЗ ЗАПРОСА. Всё, что шлёт
+# почту из вьюхи, строит ссылку через `request.build_absolute_uri`; у
+# планировщика запроса нет, а ссылка в счёте обязана быть кликабельной.
+SITE_URL = _env("PSEUDEX_SITE_URL", "http://127.0.0.1:8000").rstrip("/")
 # Общий секрет с админкой лицензионного сервера. Сетевая изоляция 9443 — первый
 # замок, этот второй: витрина смотрит в интернет, и её компрометация не должна
 # сразу означать выпуск ключей.

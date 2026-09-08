@@ -30,6 +30,9 @@ stress.json
 # in git is wrong even when it only signs bundles for a developer's own image.
 deploy/.local-signing-key
 deploy/.local-tuning-key
+# Токены админки лицензионного сервера локального стенда.
+deploy/.local-tokens
+deploy/.local-tuning-key
 deploy/.local-admin
 # Полный админский токен для скрейпа Prometheus: он кладётся файлом именно
 # потому, что переменная окружения видна в `docker inspect`, — и закоммитить

@@ -30,16 +30,32 @@ class Plan(models.Model):
     title = models.CharField(max_length=100)
     monthly_price = models.DecimalField(max_digits=10, decimal_places=2)
 
-    # A GUIDE, NOT A METER. Nothing is charged per value and nothing is refused
-    # for exceeding this — it exists so a customer can tell which tier is theirs
-    # before buying. Every number describing the customer's own traffic is
-    # produced inside their container, on their hardware, under their root; a
-    # boundary built on such a number is not a boundary. There is no
-    # `overage_per_1k` for the same reason: if nothing is charged per unit,
-    # there is no unit to lie about, and the whole class of counter disputes
-    # disappears. See docs/billing-integrity.md.
-    included_values = models.BigIntegerField(default=0)
+    # ВКЛЮЧЁННЫЙ ОБЪЁМ, И ЕДИНИЦА — ЗАПРОС, а не защищённое значение. Поле
+    # называлось `included_values`, и это пережиток решения, принятого до
+    # `docs/billing-integrity.md`: счёт считается в запросах, потому что запрос
+    # виден в логе шлюза САМОГО клиента и наш счёт можно с ним сверить, а число
+    # защищённых значений рождается внутри его контура и проверить его нечем.
+    # Полоса в кабинете и так считала запросы; расходилось только имя, и с
+    # появлением строки по объёму это расхождение вышло бы к клиенту — «40%
+    # полосы» рядом с начислением сверх лимита.
+    included_requests = models.BigIntegerField(default=0)
     rpm_limit = models.PositiveIntegerField(default=60)
+
+    # СТАВКА ЗА ТЫСЯЧУ ЗАПРОСОВ СВЕРХ ВКЛЮЧЁННОГО. Ноль — тариф не
+    # тарифицируется по объёму вовсе.
+    #
+    # Строкой, а не константой, по той же причине, что и цена: ставка меняется
+    # без выката, а подписка, проданная на старых условиях, их сохраняет.
+    #
+    # ЛЕСТНИЦА ОБЯЗАНА ОКУПАТЬ ПОДЪЁМ. Ставка — около 80% от собственной
+    # «включённой» цены тарифа и УБЫВАЕТ по лестнице, поэтому перерасход всегда
+    # дороже перехода на тариф выше: Рабочий на миллионе запросов стоит
+    # 22 500 ₽ против 11 900 ₽ на Промышленном. Единая ставка для всех тарифов
+    # уже была здесь однажды и давала обратное — объём через перерасход выходил
+    # в десятки раз дешевле того же объёма внутри тарифа, никто никогда не
+    # переходил, и выручка упиралась в цену входа.
+    metered_per_1k = models.DecimalField(max_digits=8, decimal_places=2,
+                                         default=Decimal("0"))
 
     # Selling copy, as data: who this tier is for. Here rather than in the
     # template because the tiers differ only in these strings, and a template
@@ -184,6 +200,15 @@ class Invoice(models.Model):
     # prompts an upgrade conversation. It is deliberately NOT a line item —
     # a table row priced at 0 ₽ reads to an accountant like a billing error.
     values_in_period = models.BigIntegerField(default=0)
+
+    # ОТДЕЛЬНОЙ СТРОКОЙ, А НЕ СЛАГАЕМЫМ В ИТОГЕ. Бухгалтер клиента сверяет счёт
+    # с актом и с банковской выпиской; сумма, в которой абонплата и объём
+    # слиплись, превращает каждое расхождение в расследование. Количество лежит
+    # рядом с деньгами, чтобы строку можно было пересчитать глазами по ставке из
+    # тарифа.
+    metered_requests = models.BigIntegerField(default=0)
+    metered_amount = models.DecimalField(max_digits=12, decimal_places=2,
+                                         default=Decimal("0"))
     total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
 
     issued_at = models.DateTimeField(null=True, blank=True)

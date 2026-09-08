@@ -113,6 +113,52 @@ services:
       license: { condition: service_started }
     expose: ["8000"]
 
+  billing:
+    # БИЗНЕС-ЦИКЛ. Без него `build_invoice`, `mark_unpaid` и `mark_paid` —
+    # исправные механизмы, которых никто не зовёт: триал не кончается, счёт не
+    # выставляется, неплательщик работает вечно. Ровно так и было, и снаружи
+    # это выглядит как продукт, который работает.
+    #
+    # Отдельный сервис на ТОМ ЖЕ образе, а не cron на хосте и не поток внутри
+    # gunicorn: у витрины несколько воркеров, и цикл внутри неё запускался бы
+    # N раз одновременно. Команда идемпотентна (счёт за период существует
+    # строкой в базе), так что дубль безвреден — но безвреден он именно потому,
+    # что на него никто не рассчитывает.
+    #
+    # Раз в час, а не раз в сутки: просрочка меряется днями, но ОПЛАТА должна
+    # возвращать обслуживание быстро, а сторож повторного возобновления живёт
+    # в этой же команде.
+    image: ${REGISTRY:-cr.yandex/pseudex}/pseudex-storefront:${VERSION:?set VERSION}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      PSEUDEX_SECRET_KEY: ${PSEUDEX_SECRET_KEY:?set PSEUDEX_SECRET_KEY}
+      PSEUDEX_DEBUG: "0"
+      PSEUDEX_ALLOWED_HOSTS: ${SITE_HOST:?set SITE_HOST}
+      PSEUDEX_DB_HOST: postgres
+      PSEUDEX_DB_NAME: ${POSTGRES_DB:-pseudex}
+      PSEUDEX_DB_USER: ${POSTGRES_USER:-pseudex}
+      PSEUDEX_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      PSEUDEX_LICENSING_ADMIN_URL: http://license:9443
+      PSEUDEX_LICENSE_STOREFRONT_TOKEN: ${PSEUDEX_LICENSE_STOREFRONT_TOKEN:?set PSEUDEX_LICENSE_STOREFRONT_TOKEN}
+      # Ссылка на счёт уходит письмом, а у планировщика нет запроса, из
+      # которого её можно построить.
+      PSEUDEX_SITE_URL: https://${SITE_HOST}
+      PSEUDEX_SMTP_HOST: ${SMTP_HOST:-}
+      PSEUDEX_SMTP_USER: ${SMTP_USER:-}
+      PSEUDEX_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      PSEUDEX_FROM_EMAIL: ${FROM_EMAIL:-pseudex <noreply@pseudex.ru>}
+    depends_on:
+      postgres: { condition: service_healthy }
+      license: { condition: service_started }
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while :; do
+          python manage.py run_billing_cycle || echo "billing cycle failed"
+          sleep 3600
+        done
+
   caddy:
     # TLS with automatic certificates and renewal. Chosen over nginx+certbot
     # because renewal is the part that silently stops working, and here it is

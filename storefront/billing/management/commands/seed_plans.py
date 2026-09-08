@@ -18,24 +18,23 @@ from billing.models import Plan
 # afford does not select for serious customers, it just removes the bottom of
 # the funnel, and the bottom is where the word of mouth starts.
 #
-# The overage rate is unchanged: it is the number that scales with real cost,
-# and it was not the thing making the entry unaffordable.
-# code, title, ₽/мес, включено, ₽/1000 сверх, инстансов, ключей, порядок
+# ЕДИНИЦА — ЗАПРОС (docs/billing-integrity.md): он виден в логе шлюза САМОГО
+# клиента, поэтому наш счёт сверяем с его независимой записью. Число защищённых
+# значений остаётся справкой — оно рождается внутри его контура.
 #
-# THE OVERAGE RATE IS PER-TIER, and that is the fix for a real arithmetic bug.
-# It was a single 0.40 ₽ inherited from the mock while the tier prices moved
-# under it, which made buying volume through overage 50–242× cheaper than
-# buying the same volume inside a tier: a Старт customer at 3M requests paid
-# 4 088 ₽ instead of 29 900 ₽ on Масштаб. Nobody would ever upgrade and revenue
-# capped near the entry price.
+# СТАВКА СВЕРХ ВКЛЮЧЁННОГО — около 80% от собственной «включённой» цены тарифа,
+# и она УБЫВАЕТ по лестнице. Это не щедрость, а единственная форма, при которой
+# подъём окупается: единая ставка уже стояла здесь и делала объём через
+# перерасход в десятки раз дешевле того же объёма внутри тарифа — Старт на 3 млн
+# запросов платил бы 4 088 ₽ вместо 29 900 ₽ на Масштабе, никто никогда не
+# переходил, и выручка упиралась в цену входа. Так же устроен всякий счётный
+# российский продукт (Диадок: 11.80 -> 7.02 ₽/документ по лестнице).
 #
-# Each rate is ~80% of that tier's own included rate, so overage is a mild
-# discount for going over — never a cheaper route than the tier above. And it
-# DECLINES with volume, which is what every metered Russian product does
-# (Диадок: 11.80 -> 7.02 ₽/документ across its ladder): the customer who grows
-# gets a better unit price, and the ladder still pays to climb.
+# Точки перехода при этих числах: ~346k запросов Старт -> Рабочий, ~658k
+# Рабочий -> Промышленный. Выше них тариф выше ДЕШЕВЛЕ перерасхода, всегда.
 PLANS = [
-    # code, title, ₽/мес, ориентир по значениям, RPM, ИНСТАНСОВ, ключей, порядок
+    # code, title, ₽/мес, включено запросов, ₽/1000 сверх, RPM, инстансов,
+    # ключей, порядок, для кого
     #
     # THE TIER IS THE INSTANCE COUNT, and it is the only boundary decided on OUR
     # side: the licensing server counts which instance ids leased recently and
@@ -45,18 +44,20 @@ PLANS = [
     # Known and accepted: a customer can put one container behind their own
     # proxy and route everything through it. That is not fixable in software
     # running inside someone else's perimeter — no on-prem product solves it,
-    # and the ones that pretend to are enforcing by contract. We take the simple
-    # mechanism that works for the honest majority instead of building a
-    # complicated one that is bypassed the same way.
-    ("start", "Старт", Decimal("990"), 10_000, 300, 1, 2, 0,
+    # and the ones that pretend to are enforcing by contract. With volume
+    # metered the INCENTIVE disappears anyway: volume is volume, and how many
+    # containers pushed it through stops mattering.
+    ("start", "Старт", Decimal("990"), 10_000, Decimal("79.00"), 300, 1, 2, 0,
      "один бот или сервис в проде"),
-    ("work", "Рабочий", Decimal("3900"), 100_000, 1_500, 4, 4, 1,
+    ("work", "Рабочий", Decimal("3900"), 100_000, Decimal("31.00"), 1_500, 4, 4, 1,
      "прод, стенд и запас — или несколько команд"),
-    ("industrial", "Промышленный", Decimal("11900"), 1_000_000, 6_000, 12, 10, 2,
-     "несколько продуктов и отказоустойчивость"),
-    ("enterprise", "Enterprise", Decimal("0"), 100_000_000, 20_000, 100, 50, 3,
-     "по договору"),
+    ("industrial", "Промышленный", Decimal("11900"), 1_000_000, Decimal("9.50"),
+     6_000, 12, 10, 2, "несколько продуктов и отказоустойчивость"),
+    ("enterprise", "Enterprise", Decimal("0"), 100_000_000, Decimal("7.00"),
+     20_000, 100, 50, 3, "по договору"),
 ]
+
+
 class Command(BaseCommand):
     help = "Create or update the public plans"
 
@@ -71,11 +72,13 @@ class Command(BaseCommand):
         # customer who bought last year's tariff keeps the terms they bought.
         retired.update(is_public=False)
 
-        for code, title, price, included, rpm, instances, keys, order, audience in PLANS:
+        for (code, title, price, included, metered, rpm, instances, keys,
+             order, audience) in PLANS:
             Plan.objects.update_or_create(code=code, defaults={
                 "title": title,
                 "monthly_price": price,
-                "included_values": included,
+                "included_requests": included,
+                "metered_per_1k": metered,
                 "rpm_limit": rpm,
                 "max_instances": instances,
                 "max_keys": keys,

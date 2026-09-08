@@ -40,8 +40,12 @@ services:
       PSEUDEX_LICENSE_DB: /data/license.db
       # Short, so the degradation ladder is walkable in a coffee break rather
       # than over two days: lease 5 min, grace 10 min.
-      PSEUDEX_LEASE_TTL_SECONDS: "300"
-      PSEUDEX_GRACE_SECONDS: "600"
+      # Переопределяемо, потому что жизненный цикл биллинга проверяется на
+      # СОБСТВЕННОЙ аренде: остановка неплательщика видна только на следующем
+      # продлении, и ждать её пять минут в тесте незачем. Короткий TTL — это
+      # КОНФИГУРАЦИЯ, ровно как в `e2e/gates.py`, а не крючок в продукте.
+      PSEUDEX_LEASE_TTL_SECONDS: "${STAND_LEASE_TTL:-300}"
+      PSEUDEX_GRACE_SECONDS: "${STAND_GRACE:-600}"
       PSEUDEX_LICENSE_CERT: ""
       PSEUDEX_LICENSE_KEYFILE: ""
     volumes:
