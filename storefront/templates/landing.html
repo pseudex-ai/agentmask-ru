@@ -149,6 +149,69 @@
   </div>
 </section>
 
+<section id="transform">
+  <div class="sec-meta" style="margin-bottom:22px">ЧТО ПРОИСХОДИТ С ПОДМЕНОЙ ПО ДОРОГЕ</div>
+  <h2 style="margin:0 0 18px;font-size:clamp(28px,3.6vw,42px);letter-spacing:-.025em;max-width:900px">Обратная подстановка работает, пока модель копирует подмену дословно. Она этого не делает</h2>
+  <p style="margin:0 0 10px;font-size:17px;line-height:1.65;color:var(--dim);max-width:700px">Обратимая маскировка устроена просто: подставили токен, модель ответила, вернули настоящее значение поиском по строке. На тексте ответа это работает. На <b style="color:var(--text)">аргументе вызова инструмента</b> — только если модель написала подмену ровно так, как ей дали.</p>
+  <p style="margin:0 0 26px;font-size:17px;line-height:1.65;color:var(--dim);max-width:700px">Мы измерили, как она пишет на самом деле. Ниже — настоящие случаи из нашего бенчмарка на 834 диалогах: слева то, что модель положила в аргумент, справа то, что получит ваш CRM.</p>
+
+  <div class="scrollx" style="overflow-x:auto">
+  <table style="width:100%;border-collapse:collapse;font-size:14.5px;min-width:660px">
+    <thead>
+      <tr>
+        <th style="text-align:left;padding:0 14px 10px 0;font-size:11px;letter-spacing:.14em;color:var(--dim-2);font-weight:600;border-bottom:1px solid var(--line-2)">ЧТО СДЕЛАЛА МОДЕЛЬ</th>
+        <th style="text-align:left;padding:0 14px 10px 0;font-size:11px;letter-spacing:.14em;color:var(--dim-2);font-weight:600;border-bottom:1px solid var(--line-2)">В АРГУМЕНТЕ ОКАЗАЛОСЬ</th>
+        <th style="text-align:left;padding:0 0 10px;font-size:11px;letter-spacing:.14em;color:var(--dim-2);font-weight:600;border-bottom:1px solid var(--line-2)">ИНСТРУМЕНТ ПОЛУЧИТ</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td style="padding:11px 14px 11px 0;border-bottom:1px solid var(--line-2)">Просклоняла подмену</td><td class="mono" style="padding:11px 14px 11px 0;border-bottom:1px solid var(--line-2);font-size:13px">«ленина пятидесяти»</td><td style="padding:11px 0;border-bottom:1px solid var(--line-2)"><b style="color:var(--text)">Ленина 50</b> — дом в родительном падеже CRM не найдёт</td></tr>
+      <tr><td style="padding:11px 14px 11px 0;border-bottom:1px solid var(--line-2)">Написала заглавными, как принято в форме</td><td class="mono" style="padding:11px 14px 11px 0;border-bottom:1px solid var(--line-2);font-size:13px">«Ким Виктор»</td><td style="padding:11px 0;border-bottom:1px solid var(--line-2)"><b style="color:var(--text)">Ким Виктор</b>, а не «ким виктор» из волта</td></tr>
+      <tr><td style="padding:11px 14px 11px 0;border-bottom:1px solid var(--line-2)">Транслитерировала по-своему</td><td class="mono" style="padding:11px 14px 11px 0;border-bottom:1px solid var(--line-2);font-size:13px">BITYUKOVA / BITIUKOVA</td><td style="padding:11px 0;border-bottom:1px solid var(--line-2)"><b style="color:var(--text)">Битюкова</b> — по конвенции, которую выбрала она, а не по стандарту</td></tr>
+      <tr><td style="padding:11px 14px 11px 0;border-bottom:1px solid var(--line-2)">Разнесла одно имя по трём полям</td><td class="mono" style="padding:11px 14px 11px 0;border-bottom:1px solid var(--line-2);font-size:13px">last / first / middle</td><td style="padding:11px 0;border-bottom:1px solid var(--line-2)"><b style="color:var(--text)">три части одного человека</b>, а не три разных</td></tr>
+      <tr><td style="padding:11px 14px 11px 0;border-bottom:1px solid var(--line-2)">Сократила до инициалов</td><td class="mono" style="padding:11px 14px 11px 0;border-bottom:1px solid var(--line-2);font-size:13px">«Т. О.»</td><td style="padding:11px 0;border-bottom:1px solid var(--line-2)"><b style="color:var(--text)">Тарасова Ольга</b> — по тому, кого назвали рядом в этом же вызове</td></tr>
+      <tr><td style="padding:11px 14px 11px 0;border-bottom:1px solid var(--line-2)">Склеила две подмены дефисом</td><td class="mono" style="padding:11px 14px 11px 0;border-bottom:1px solid var(--line-2);font-size:13px">«Мухина-Бирюкова»</td><td style="padding:11px 0;border-bottom:1px solid var(--line-2)"><b style="color:var(--text)">обе половины настоящими</b>, а не фейк целиком</td></tr>
+      <tr><td style="padding:11px 14px 11px 0;border-bottom:1px solid var(--line-2)">Вывела производное из подмены</td><td class="mono" style="padding:11px 14px 11px 0;border-bottom:1px solid var(--line-2);font-size:13px">индекс, возраст, пол</td><td style="padding:11px 0;border-bottom:1px solid var(--line-2)"><b style="color:var(--text)">верное производное</b>: подмена сохраняет разряд дома, почтовую зону и год рождения</td></tr>
+      <tr><td style="padding:11px 14px 11px 0">Починила опечатку клиента</td><td class="mono" style="padding:11px 14px 11px 0;font-size:13px">«мончгорская» → «Мончегорская»</td><td style="padding:11px 0"><b style="color:var(--text)">как пишет реестр</b> — иначе адрес не найдётся ни в одном справочнике</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div style="margin-top:18px;font-size:13.5px;line-height:1.6;color:var(--dim-2);max-width:760px">Каждая строка — класс ошибок, который мы нашли измерением и закрыли, а не предположили. Полнота и цена каждого решения записаны в открытом журнале решений: мы публикуем и то, что не закрыли, — <b style="color:var(--text)">8 утечек на 2444 значения</b>, все на именах и улицах, которых нет ни в одном словаре.</div>
+
+  <div style="margin-top:48px;border:1px solid var(--line-2);padding:26px 28px;max-width:900px">
+    <div class="sec-meta" style="margin-bottom:16px">ЧТО НАПИСАНО В ЧУЖОЙ ДОКУМЕНТАЦИИ</div>
+    <p style="margin:0 0 20px;font-size:16px;line-height:1.65;color:var(--dim)">Обратимость — не наше изобретение, её заявляют многие. Мы прочитали документацию восьми продуктов, российских и зарубежных, и выписали <b style="color:var(--text)">дословно, где у них происходит восстановление</b>. Ссылки на источники ниже — проверьте сами, они открытые.</p>
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;min-width:560px">
+      <tbody>
+        <tr><td style="padding:9px 14px 9px 0;border-bottom:1px solid var(--line-2);white-space:nowrap"><b style="color:var(--text)">Presidio + LangChain</b></td><td class="mono" style="padding:9px 14px 9px 0;border-bottom:1px solid var(--line-2);font-size:12.5px;color:var(--dim-2)">deanonymize(text: str) → str</td><td style="padding:9px 0;border-bottom:1px solid var(--line-2);color:var(--dim)">строка на входе, строка на выходе, точное совпадение</td></tr>
+        <tr><td style="padding:9px 14px 9px 0;border-bottom:1px solid var(--line-2);white-space:nowrap"><b style="color:var(--text)">Grepture</b></td><td style="padding:9px 14px 9px 0;border-bottom:1px solid var(--line-2);color:var(--dim-2)">«the response that goes back to the user»</td><td style="padding:9px 0;border-bottom:1px solid var(--line-2);color:var(--dim)">пример — содержимое ответа ассистента</td></tr>
+        <tr><td style="padding:9px 14px 9px 0;border-bottom:1px solid var(--line-2);white-space:nowrap"><b style="color:var(--text)">Protecto</b></td><td style="padding:9px 14px 9px 0;border-bottom:1px solid var(--line-2);color:var(--dim-2)">«reinserted … in the final output»</td><td style="padding:9px 0;border-bottom:1px solid var(--line-2);color:var(--dim)">область не уточнена</td></tr>
+        <tr><td style="padding:9px 14px 9px 0;border-bottom:1px solid var(--line-2);white-space:nowrap"><b style="color:var(--text)">GPTunneL</b></td><td style="padding:9px 14px 9px 0;border-bottom:1px solid var(--line-2);color:var(--dim-2)">«при возврате ответа»</td><td style="padding:9px 0;border-bottom:1px solid var(--line-2);color:var(--dim)">70+ типов, документы РФ, ФИО в падежах</td></tr>
+        <tr><td style="padding:9px 14px 9px 0;border-bottom:1px solid var(--line-2);white-space:nowrap"><b style="color:var(--text)">KodikRouter</b></td><td style="padding:9px 14px 9px 0;border-bottom:1px solid var(--line-2);color:var(--dim-2)">«оригинальные значения в ответах»</td><td style="padding:9px 0;border-bottom:1px solid var(--line-2);color:var(--dim)">облако: трафик идёт через их серверы</td></tr>
+        <tr><td style="padding:9px 14px 9px 0;white-space:nowrap"><b style="color:var(--text)">Pseudex</b></td><td class="mono" style="padding:9px 14px 9px 0;font-size:12.5px"><b style="color:var(--text)">/unmask_arguments</b></td><td style="padding:9px 0;color:var(--dim)">отдельная ручка для аргументов вызова: настоящее значение с кавычкой ломает JSON при плоской подстановке</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p style="margin:20px 0 0;font-size:14.5px;line-height:1.65;color:var(--dim-2)">Аргументы вызова инструмента не упоминает ни одна из прочитанных документаций. <b style="color:var(--text)">Мы не утверждаем, что они этого не умеют</b> — мы их не тестировали, и молчание документа не то же самое, что отсутствие функции. Мы говорим ровно то, что прочли.</p>
+    <p style="margin:14px 0 0;font-size:14.5px;line-height:1.65;color:var(--dim-2)">Показательнее другое. HiveTrace — российская система защиты LLM — опубликовала исследование «Влияние очистки от персональных данных на работу LLM-агентов»: 102 запроса, три варианта входа, оценка судьёй-моделью. И написала там же: <b style="color:var(--text)">«Исследование не охватывает восстановление данных или их передачу во внешние инструменты»</b>. Ближайший конкурент дошёл до этой темы и назвал вторую половину вне области. Наш бенчмарк — <b style="color:var(--text)">834 диалога в трёх плечах</b>, и вторая половина в нём и есть предмет.</p>
+  </div>
+
+  <div style="margin-top:32px;border:1px solid var(--line-2);padding:26px 28px;max-width:820px">
+    <div class="sec-meta" style="margin-bottom:16px">ПЯТЬ ВОПРОСОВ ЛЮБОМУ ШЛЮЗУ, ВКЛЮЧАЯ НАС</div>
+    <p style="margin:0 0 18px;font-size:15.5px;line-height:1.6;color:var(--dim)">Ответ на каждый проверяется одним вызовом. Задайте их всем, кого рассматриваете, — и нам.</p>
+    <ol style="margin:0;padding-left:22px;font-size:15.5px;line-height:1.9;color:var(--text-3)">
+      <li>Подставляется ли настоящее значение в <b style="color:var(--text)">аргумент вызова инструмента</b> — или только в текст ответа?</li>
+      <li>Что придёт в инструмент, если модель <b style="color:var(--text)">просклоняла</b> подмену?</li>
+      <li>Один человек — <b style="color:var(--text)">один и тот же токен</b> завтра и в соседнем диалоге, или каждый раз новый?</li>
+      <li>Что происходит, если маскирование <b style="color:var(--text)">упало</b>: запрос уйдёт в модель или остановится?</li>
+      <li>Где физически лежит волт с настоящими значениями и <b style="color:var(--text)">кто может его прочитать</b>?</li>
+    </ol>
+    <div style="margin-top:20px;padding-top:18px;border-top:1px solid var(--line-2);font-size:14.5px;line-height:1.7;color:var(--dim-2)"><b style="color:var(--text)">Наши ответы:</b> в аргумент, отдельной ручкой · настоящий адрес в именительном, потому что аргумент восстанавливается дословно, а проза — в согласовании · один и тот же, волт переживает перезапуск · остановится, до модели запрос не дойдёт — маскирование fail-closed · на вашем железе, в зашифрованном томе, читаете только вы.</div>
+  </div>
+</section>
+
 <section id="video">
   <div class="sec-head">
     <h2>Посмотрите, как это ставится</h2>
