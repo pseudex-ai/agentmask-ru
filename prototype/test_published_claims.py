@@ -82,12 +82,17 @@ def main() -> int:
     # Их значения живут в `billing/services.py`, поэтому здесь проверяется не
     # число, а то, что страница его не выдумывает: литерал в прозе разъедется
     # молча, а переменная шаблона — нет.
-    for token in ("{{ due_days }}", "{{ grace_days }}", "{{ metered_floor }}"):
+    # `metered_floor` больше не одно число на всю страницу: порог свой у каждого
+    # тарифа и печатается в карточке из строки БД. Проверяем, что печатается
+    # именно поле тарифа, а не literal.
+    for token in ("{{ due_days }}", "{{ grace_days }}", "plan.metered_floor",
+                  "plan.metered_per_1k", "plan.included_requests"):
         check(f"страница берёт {token} из кода", token in landing)
 
     # --- и ни одного оставшегося литерала на месте этих чисел -----------
     # «300 000» в прозе означало бы вторую копию порога.
-    stale = [needle for needle in ("300 000 запросов", "7 дней", "3 дня")
+    stale = [needle for needle in ("300 000 запросов", "7 дней", "3 дня",
+                                  "{{ metered_floor }}")
              if needle in landing]
     check("старые литералы этих сроков со страницы убраны", not stale, str(stale))
 

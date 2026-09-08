@@ -30,11 +30,17 @@ from billing.models import Plan
 # переходил, и выручка упиралась в цену входа. Так же устроен всякий счётный
 # российский продукт (Диадок: 11.80 -> 7.02 ₽/документ по лестнице).
 #
-# Точки перехода при этих числах: ~346k запросов Старт -> Рабочий, ~658k
+# ПОРОГ ТАРИФИКАЦИИ У КАЖДОГО ТАРИФА СВОЙ И РАВЕН ЕГО РЕЗЕРВУ на лицензионном
+# сервере (`licensing/store.py::RESERVE_MAX`). Это худшая ошибка счёта при
+# порванной цепи отчётов — при живой она нулевая. Общая константа 300 000 на все
+# тарифы делала Старт бесплатным до 310 000 запросов, то есть его включённый
+# объём не значил ничего.
+#
+# Точки перехода при этих числах: ~67k запросов Старт -> Рабочий, ~458k
 # Рабочий -> Промышленный. Выше них тариф выше ДЕШЕВЛЕ перерасхода, всегда.
 PLANS = [
-    # code, title, ₽/мес, включено запросов, ₽/1000 сверх, RPM, инстансов,
-    # ключей, порядок, для кого
+    # code, title, ₽/мес, включено запросов, ₽/1000 сверх, порог тарификации,
+    # RPM, инстансов, ключей, порядок, для кого
     #
     # THE TIER IS THE INSTANCE COUNT, and it is the only boundary decided on OUR
     # side: the licensing server counts which instance ids leased recently and
@@ -47,14 +53,14 @@ PLANS = [
     # and the ones that pretend to are enforcing by contract. With volume
     # metered the INCENTIVE disappears anyway: volume is volume, and how many
     # containers pushed it through stops mattering.
-    ("start", "Старт", Decimal("990"), 10_000, Decimal("79.00"), 300, 1, 2, 0,
-     "один бот или сервис в проде"),
-    ("work", "Рабочий", Decimal("3900"), 100_000, Decimal("31.00"), 1_500, 4, 4, 1,
-     "прод, стенд и запас — или несколько команд"),
+    ("start", "Старт", Decimal("990"), 10_000, Decimal("79.00"), 20_000,
+     300, 1, 2, 0, "один бот или сервис в проде"),
+    ("work", "Рабочий", Decimal("3900"), 100_000, Decimal("31.00"), 100_000,
+     1_500, 4, 4, 1, "прод, стенд и запас — или несколько команд"),
     ("industrial", "Промышленный", Decimal("11900"), 1_000_000, Decimal("9.50"),
-     6_000, 12, 10, 2, "несколько продуктов и отказоустойчивость"),
+     400_000, 6_000, 12, 10, 2, "несколько продуктов и отказоустойчивость"),
     ("enterprise", "Enterprise", Decimal("0"), 100_000_000, Decimal("7.00"),
-     20_000, 100, 50, 3, "по договору"),
+     2_000_000, 20_000, 100, 50, 3, "по договору"),
 ]
 
 
@@ -72,13 +78,14 @@ class Command(BaseCommand):
         # customer who bought last year's tariff keeps the terms they bought.
         retired.update(is_public=False)
 
-        for (code, title, price, included, metered, rpm, instances, keys,
+        for (code, title, price, included, metered, floor, rpm, instances, keys,
              order, audience) in PLANS:
             Plan.objects.update_or_create(code=code, defaults={
                 "title": title,
                 "monthly_price": price,
                 "included_requests": included,
                 "metered_per_1k": metered,
+                "metered_floor": floor,
                 "rpm_limit": rpm,
                 "max_instances": instances,
                 "max_keys": keys,

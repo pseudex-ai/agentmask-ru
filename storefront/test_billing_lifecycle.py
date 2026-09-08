@@ -204,13 +204,17 @@ def main() -> int:
         # обязан РАСТИ быстрее, чем стоит переход. Берём точку заведомо выше
         # порога и требуем, чтобы переход был выгоднее.
         volume = max(high.included_requests,
-                     low.included_requests + services.METERED_FLOOR + 100_000)
-        over = max(0, volume - low.included_requests - services.METERED_FLOOR)
+                     low.included_requests + low.metered_floor + 100_000)
+        over = max(0, volume - low.included_requests - low.metered_floor)
         staying = low.monthly_price + Decimal(over) / 1000 * low.metered_per_1k
         if staying <= high.monthly_price:
             ladder_ok = False
             reasons.append(f"{lower}->{upper} на {volume}: остаться {staying} "
                            f"<= перейти {high.monthly_price}")
+    floors = " · ".join(f"{c}:{plans[c].metered_floor}"
+                        for c in ("start", "work", "industrial"))
+    check("порог тарификации у каждого тарифа свой", len({
+        plans[c].metered_floor for c in ("start", "work", "industrial")}) == 3, floors)
     check("лестница окупает подъём на любом объёме", ladder_ok,
           "; ".join(reasons) or "переход всегда дешевле перерасхода")
 
@@ -332,8 +336,8 @@ def main() -> int:
     # объём задаётся ЛИЦЕНЗИОННОМУ СЕРВЕРУ, а не полю счёта: иначе тест
     # проверял бы арифметику по числу, которое сам же и написал.
     plan = plans["industrial"]
-    below = plan.included_requests + services.METERED_FLOOR - 1
-    above = plan.included_requests + services.METERED_FLOOR + 200_000
+    below = plan.included_requests + plan.metered_floor - 1
+    above = plan.included_requests + plan.metered_floor + 200_000
 
     def invoice_for(capacity: int) -> Invoice:
         original_usage = services.licensing.usage

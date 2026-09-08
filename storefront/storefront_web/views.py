@@ -209,7 +209,6 @@ def landing(request):
         # собственной таблице.
         "found_count": len(detection_types.FOUND),
         "trial_days": services.TRIAL_DAYS,
-        "metered_floor": services.METERED_FLOOR,
         "due_days": services.INVOICE_DUE_DAYS,
         "grace_days": services.GRACE_DAYS,
         "image": settings.DOCKER_IMAGE,
@@ -240,7 +239,6 @@ def _legal_context() -> dict[str, object]:
     return {
         "seller": settings.SELLER,
         "trial_days": services.TRIAL_DAYS,
-        "metered_floor": services.METERED_FLOOR,
         "due_days": services.INVOICE_DUE_DAYS,
         "grace_days": services.GRACE_DAYS,
         "updated": datetime.date.fromtimestamp(max(stamps)).strftime("%d.%m.%Y"),
@@ -490,7 +488,6 @@ def welcome(request):
         "license_url_env": (f"-e PSEUDEX_LICENSE_URL={settings.LICENSE_URL} "
                             if settings.LICENSE_URL else ""),
         "trial_days": services.TRIAL_DAYS,
-        "metered_floor": services.METERED_FLOOR,
         "due_days": services.INVOICE_DUE_DAYS,
         "grace_days": services.GRACE_DAYS,
         # The key is injected into the prompt here, on the one page that is

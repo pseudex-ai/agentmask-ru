@@ -632,12 +632,26 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     plans = httpx.get(f"{admin_url}/admin/plans", timeout=5,
                       headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}).json()["plans"]
     limits = {row["code"]: row["max_instances"] for row in plans}
+    # ПОРОГ ТАРИФИКАЦИИ — ЭТО РЕЗЕРВ ЁМКОСТИ, и он живёт на ДВУХ сторонах:
+    # витрина считает по нему счёт, сервер по нему выдаёт ёмкость. Число, у
+    # которого два владельца, разъезжается молча, и разъезд здесь стоит денег в
+    # обе стороны — порог больше резерва даёт клиенту бесплатный объём, меньше
+    # резерва выставляет счёт за то, чего при обрыве связи мы не знаем.
+    reserves = {row["code"]: row["reserve_max"] for row in plans}
     from billing.models import Plan as PlanModel
     shop_plans = list(PlanModel.objects.all())
     mismatched = [
         p.code for p in shop_plans
         if limits.get(p.code) is not None and limits[p.code] != p.max_instances
     ]
+    floors_off = [
+        f"{p.code}: порог {p.metered_floor} против резерва {reserves[p.code]}"
+        for p in shop_plans
+        if reserves.get(p.code) is not None and reserves[p.code] != p.metered_floor
+    ]
+    check("порог тарификации равен резерву ёмкости на сервере",
+          not floors_off, "; ".join(floors_off) or
+          f"сверено {len(shop_plans)} тарифов")
     # ТАРИФ, КОТОРОГО ЛИЦЕНЗИОННЫЙ СЕРВЕР НЕ ЗНАЕТ, — ТОЖЕ РАСХОЖДЕНИЕ, и до
     # сих пор эта проверка пропускала ровно его: `limits.get(p.code) is not
     # None` отсеивал именно те коды, которых на той стороне нет.
