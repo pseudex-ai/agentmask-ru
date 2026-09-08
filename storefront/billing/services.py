@@ -76,13 +76,22 @@ def create_account(email: str, display_name: str, plan_code: str) -> Organizatio
                                   role=Membership.ROLE_OWNER)
         now = timezone.now()
         trial_ends = now + timedelta(days=TRIAL_DAYS)
-        Subscription.objects.create(
+        subscription = Subscription.objects.create(
             organization=organization,
             plan=plan,
             state=Subscription.TRIAL,
             trial_ends_at=trial_ends,
             current_period_start=now,
             current_period_end=trial_ends,
+            # СНИМОК СНИМАЕТСЯ СРАЗУ, а не при первой оплате: цена, показанная
+            # человеку на лендинге в момент нажатия кнопки, — это и есть цена,
+            # по которой ему придёт первый счёт. Правка тарифа во время его
+            # пробного периода не имеет права её изменить.
+            terms_monthly_price=plan.monthly_price,
+            terms_included_requests=plan.included_requests,
+            terms_metered_per_1k=plan.metered_per_1k,
+            terms_metered_floor=plan.metered_floor,
+            terms_taken_at=now,
         )
 
     return organization
@@ -153,6 +162,27 @@ class ServiceNotResumed(RuntimeError):
     """
 
 
+def adopt_current_terms(subscription: Subscription) -> None:
+    """Снять условия тарифа на подписку. Продажа и КАЖДОЕ продление.
+
+    Это единственный момент, когда правка тарифа доходит до клиента. Между
+    продлениями строка может меняться сколько угодно: счёт считается по снимку,
+    поэтому оплаченный месяц нельзя переоценить задним числом.
+
+    Идемпотентно и не требует знать, первая это продажа или сотое продление —
+    условия просто становятся текущими.
+    """
+    plan = subscription.plan
+    subscription.terms_monthly_price = plan.monthly_price
+    subscription.terms_included_requests = plan.included_requests
+    subscription.terms_metered_per_1k = plan.metered_per_1k
+    subscription.terms_metered_floor = plan.metered_floor
+    subscription.terms_taken_at = timezone.now()
+    subscription.save(update_fields=[
+        "terms_monthly_price", "terms_included_requests",
+        "terms_metered_per_1k", "terms_metered_floor", "terms_taken_at"])
+
+
 def mark_paid(invoice: Invoice, payment_ref: str = "") -> None:
     """Money arrived. RECORD IT FIRST, restore service second.
 
@@ -208,6 +238,10 @@ def mark_paid(invoice: Invoice, payment_ref: str = "") -> None:
             subscription.current_period_end = timezone.now() + timedelta(days=30)
             subscription.save(update_fields=["state", "current_period_start",
                                              "current_period_end"])
+            # ПРОДЛЕНИЕ — ЕДИНСТВЕННАЯ ТОЧКА, ГДЕ ПРАВКА ТАРИФА ДОХОДИТ ДО
+            # КЛИЕНТА. Внутри той же транзакции, что и новый период: период и
+            # условия, по которым он будет посчитан, — один факт.
+            adopt_current_terms(subscription)
         organization_id = locked.organization_id
         invoice_pk = locked.pk
 
@@ -296,7 +330,11 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     check against their own gateway's log.
     """
     subscription = organization.subscription
+    # УСЛОВИЯ — ИЗ СНИМКА НА ПОДПИСКЕ, а не из строки тарифа: строку правит
+    # конструктор в консоли, и правка не имеет права переоценить уже
+    # оплаченный период. `plan` остаётся нужен для имени в счёте.
     plan = subscription.plan
+    terms = subscription.terms
     reported = licensing.usage(organization.id).get("usage", {})
     if not isinstance(reported, dict):
         reported = {}
@@ -346,18 +384,19 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     # Ничего не начисляется на защищённые ЗНАЧЕНИЯ: это число рождается внутри
     # контейнера клиента и проверить его нечем. Оно остаётся на счёте справкой —
     # ответом на «что я получил за деньги».
-    subscription_amount = plan.monthly_price
+    subscription_amount = terms["monthly_price"]
     metered_requests = max(0, billable - billable_watermark)
     # Порог применяется к ПРЕВЫШЕНИЮ, не к объёму: включённое клиент уже
     # оплатил абонплатой, и мерить надо ровно ту часть, за которую выставляется
     # отдельная строка.
-    over = max(0, metered_requests - _int_or_zero(plan.included_requests))
-    floor = _int_or_zero(plan.metered_floor) or DEFAULT_METERED_FLOOR
-    if over >= floor and plan.metered_per_1k > 0:
+    over = max(0, metered_requests - _int_or_zero(terms["included_requests"]))
+    floor = _int_or_zero(terms["metered_floor"]) or DEFAULT_METERED_FLOOR
+    if over >= floor and terms["metered_per_1k"] > 0:
         billed_over = over
     else:
         billed_over = 0
-    metered_amount = _round(Decimal(billed_over) / Decimal(1000) * plan.metered_per_1k)
+    metered_amount = _round(Decimal(billed_over) / Decimal(1000)
+                            * terms["metered_per_1k"])
 
     return Invoice.objects.create(
         organization=organization,

@@ -373,6 +373,42 @@ def main() -> int:
           over_invoice.total == over_invoice.plan_amount + over_invoice.metered_amount,
           f"{over_invoice.plan_amount} + {over_invoice.metered_amount} = {over_invoice.total}")
 
+    # --- 8б. ПРАВКА ТАРИФА НЕ ТРОГАЕТ ДЕЙСТВУЮЩЕГО ПОДПИСЧИКА ------------
+    # Это обещание конструктора, и без проверки оно держится на одном
+    # присваивании в `build_invoice`. Строку тарифа правим НАСТОЯЩИМ путём —
+    # тем же, что и экран консоли, — и требуем, чтобы счёт клиента не сдвинулся.
+    subscription.refresh_from_db()
+    old_price = subscription.terms["monthly_price"]
+    plan_row = Plan.objects.get(code="industrial")
+    plan_row.monthly_price = old_price * 2
+    plan_row.save(update_fields=["monthly_price"])
+
+    Invoice.objects.filter(organization=organization).update(state=Invoice.VOID)
+    mid_period = invoice_for(0)
+    check("правка тарифа НЕ переоценивает действующую подписку",
+          mid_period.plan_amount == old_price,
+          f"было {old_price} ₽, тариф стал {plan_row.monthly_price} ₽, "
+          f"в счёте {mid_period.plan_amount} ₽")
+    check("и подписка видна как «на прежних условиях»",
+          subscription.on_old_terms, str(subscription.terms["source"]))
+    mid_period.state = Invoice.VOID
+    mid_period.save(update_fields=["state"])
+
+    # А ПРОДЛЕНИЕ — ЕДИНСТВЕННЫЙ МОМЕНТ, КОГДА НОВАЯ ЦЕНА ДОХОДИТ.
+    renewal = services.build_invoice(organization, date.today() + timedelta(days=90),
+                                     date.today() + timedelta(days=120))
+    renewal.state = Invoice.ISSUED
+    renewal.save(update_fields=["state"])
+    services.mark_paid(renewal, payment_ref="2f8e1c3a-3333-4000-8000-cccccccccccc")
+    subscription.refresh_from_db()
+    check("после продления условия становятся текущими",
+          subscription.terms["monthly_price"] == plan_row.monthly_price
+          and not subscription.on_old_terms,
+          f"снимок {subscription.terms['monthly_price']} ₽ против "
+          f"тарифа {plan_row.monthly_price} ₽")
+    plan_row.monthly_price = old_price
+    plan_row.save(update_fields=["monthly_price"])
+
     # --- 9. отмена по концу периода -------------------------------------
     subscription.refresh_from_db()
     subscription.cancel_at_period_end = True

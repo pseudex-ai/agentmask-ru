@@ -21,7 +21,7 @@
 
 import csv
 import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.contrib import messages
@@ -39,7 +39,7 @@ from django.views.decorators.http import require_POST
 from accounts.models import Organization
 from billing import licensing
 from billing import reconcile as billing_reconcile
-from billing.models import Invoice, Plan
+from billing.models import Invoice, Plan, PlanChange, Subscription
 
 # СТРАНИЦА БЬЁТСЯ О ПОТОЛОК ПАКЕТНОЙ РУЧКИ, А НЕ О ЧИСЛО КЛИЕНТОВ.
 # `/admin/fleet` отвечает 400 сверх двухсот идентификаторов — намеренно, чтобы
@@ -342,6 +342,127 @@ def edit_plan(request, code: str):
                               f"{', '.join(f'{k}={v}' for k, v in values.items())}. "
                               f"Автор записан как {plan.get('updated_by', '')}.")
     return redirect("ops_plans")
+
+
+# Коммерческие поля тарифа: их правит конструктор, и они живут ТОЛЬКО у нас.
+# Лицензионный сервер про деньги не знает и знать не должен — он решает, кому
+# выдавать ёмкость, а не сколько это стоит.
+_MONEY_FIELDS = (
+    ("monthly_price", "₽ в месяц", "decimal"),
+    ("included_requests", "включено запросов", "int"),
+    ("metered_per_1k", "₽ за 1000 сверх", "decimal"),
+    ("metered_floor", "порог тарификации", "int"),
+)
+
+
+@staff_member_required
+def constructor(request):
+    """Конструктор тарифов: создать, изменить, увидеть цену правки.
+
+    ГЛАВНОЕ СВОЙСТВО ЭКРАНА — ОН ПОКАЗЫВАЕТ, КОГО ПРАВКА КОСНЁТСЯ И КОГДА.
+    Действующие подписки считаются по СНИМКУ условий, снятому при продаже и
+    обновляемому в момент продления, поэтому новая цена доходит до клиента
+    только на следующем периоде. Экран называет число таких клиентов вслух:
+    правка, после которой «ничего не изменилось», — самый частый способ
+    поменять цену и не понять, что она ещё месяц не действует.
+
+    И называет ИСКЛЮЧЕНИЕ. Потолок инстансов и RPM исполняет лицензионный
+    сервер, а он знает тарифы по КОДУ, не по версии условий: эти два числа
+    меняются сразу для всех. Обещать здесь изоляцию значило бы соврать.
+    """
+    if request.method == "POST":
+        return _apply_plan_edit(request)
+
+    rows = []
+    for plan in Plan.objects.all():
+        subs = list(Subscription.objects.filter(plan=plan)
+                    .select_related("plan", "organization"))
+        rows.append({
+            "plan": plan,
+            "subscribers": len(subs),
+            # Сколько клиентов доработают период на прежних условиях. Ноль
+            # означает «правка уже у всех», а не «правки не было».
+            "on_old": sum(1 for s in subs if s.on_old_terms),
+            "next_renewal": min((s.current_period_end for s in subs), default=None),
+            "changes": list(plan.changes.all()[:6]),
+        })
+    return render(request, "ops/constructor.html", {
+        "rows": rows, "fields": _MONEY_FIELDS,
+        "admin_path": settings.ADMIN_PATH,
+    })
+
+
+def _apply_plan_edit(request):
+    """Одна правка коммерческих условий тарифа, с записью в журнал.
+
+    Пустое поле — не трогать. Ноль — это значение, а не пропуск: тариф без
+    тарификации объёма ставится именно нулевой ставкой, и путать одно с другим
+    нельзя.
+    """
+    code = (request.POST.get("code") or "").strip()
+    plan = Plan.objects.filter(code=code).first()
+    if plan is None:
+        # СОЗДАНИЕ. Новый тариф начинается невидимым: цена, включённый объём и
+        # порог у него ещё не заданы, а строка, попавшая на лендинг раньше, чем
+        # в неё вписали цену, продаётся за ноль рублей.
+        title = (request.POST.get("title") or "").strip()
+        if not code or not title:
+            messages.error(request, "Нужны код и название — по коду тариф "
+                                    "узнаёт лицензионный сервер.")
+            return redirect("ops_constructor")
+        plan = Plan.objects.create(code=code, title=title, monthly_price=0,
+                                   is_public=False, sort_order=99)
+        PlanChange.objects.create(plan=plan, field="создан", was="",
+                                  became=title, actor=request.user.email)
+        messages.success(request, f"Тариф «{title}» создан и СКРЫТ с лендинга. "
+                                  f"Впишите условия и опубликуйте.")
+        return redirect("ops_constructor")
+
+    changed: list[str] = []
+    for field, label, kind in _MONEY_FIELDS:
+        raw = (request.POST.get(field) or "").strip()
+        if raw == "":
+            continue
+        try:
+            value = Decimal(raw.replace(",", ".")) if kind == "decimal" else int(raw)
+        except (InvalidOperation, ValueError):
+            messages.error(request, f"«{label}»: нужно число, пришло «{raw}».")
+            return redirect("ops_constructor")
+        if value < 0:
+            messages.error(request, f"«{label}»: отрицательным быть не может.")
+            return redirect("ops_constructor")
+        was = getattr(plan, field)
+        if was == value:
+            continue
+        setattr(plan, field, value)
+        PlanChange.objects.create(plan=plan, field=field, was=str(was),
+                                  became=str(value), actor=request.user.email,
+                                  note=(request.POST.get("note") or "")[:200])
+        changed.append(f"{label}: {was} → {value}")
+
+    publish = request.POST.get("is_public")
+    if publish is not None:
+        wanted = publish == "1"
+        if wanted != plan.is_public:
+            PlanChange.objects.create(plan=plan, field="на лендинге",
+                                      was="да" if plan.is_public else "нет",
+                                      became="да" if wanted else "нет",
+                                      actor=request.user.email)
+            plan.is_public = wanted
+            changed.append("на лендинге: " + ("да" if wanted else "нет"))
+
+    if not changed:
+        messages.error(request, "Нечего менять — все поля пусты или совпадают.")
+        return redirect("ops_constructor")
+
+    plan.save()
+    waiting = sum(1 for s in Subscription.objects.filter(plan=plan)
+                  if s.on_old_terms)
+    tail = (f" Действующих подписок на прежних условиях: {waiting} — "
+            f"новые условия дойдут до них при продлении."
+            if waiting else " Действующих подписок на прежних условиях нет.")
+    messages.success(request, f"{plan.title}: {'; '.join(changed)}.{tail}")
+    return redirect("ops_constructor")
 
 
 def _period_totals(usage: dict, invoice) -> tuple[int, str]:

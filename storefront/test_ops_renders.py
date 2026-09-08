@@ -192,6 +192,8 @@ def main() -> int:
                 ("флот", f"{ops}/", ["ООО Ромашка"]),
                 ("разрывы цепи", f"{ops}/chains/", []),
                 ("тарифы", f"{ops}/plans/", ["Промышленный"]),
+                ("конструктор", f"{ops}/tariffs/",
+                 ["Промышленный", "прежних условиях", "Новый тариф"]),
                 ("спрос", f"{ops}/demand/", []),
                 ("карточка клиента", f"{ops}/{org_id}/", ["ООО Ромашка", "PS-2026-09-render01"]),
                 ("сверка", f"{ops}/{org_id}/reconcile/", []),
@@ -230,6 +232,27 @@ def main() -> int:
                 check("без лицензионного сервера экран тарифов честно молчит",
                       form is None and said,
                       f"форма={form is not None} объяснение={said}")
+
+            # --- конструктор правит цену и говорит, кого это коснётся ----
+            page.goto(f"{ops}/tariffs/", wait_until="networkidle")
+            form = page.query_selector("form:has(input[name='code'][value='industrial'])")
+            edited = False
+            if form is not None:
+                form.query_selector("input[name=monthly_price]").fill("13500")
+                form.query_selector("input[name=note]").fill("проверка экрана")
+                form.query_selector("button[type=submit]").click()
+                page.wait_for_load_state("networkidle")
+                edited = True
+            body = page.inner_text("body")
+            check("конструктор применяет правку и называет её последствие",
+                  edited and "13500" in body.replace(" ", "")
+                  and "прежних условиях" in body,
+                  f"{'правка ушла' if edited else 'формы нет'}")
+            # ЖУРНАЛ — ЧАСТЬ ОБЕЩАНИЯ. Правка без записи о том, кто и зачем,
+            # неотличима от посева, и первый спор о цене упирается в память.
+            page.click("details summary")
+            check("правка попала в журнал с автором",
+                  _STAFF_EMAIL in page.inner_text("body"), _STAFF_EMAIL)
 
             # --- сверка принимает число и выносит вердикт ---------------
             page.goto(f"{ops}/{org_id}/reconcile/", wait_until="networkidle")

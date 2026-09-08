@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Конструктор тарифов — операции pseudex{% endblock %}
+{% block nav %}
+<nav>
+  <a href="{% url 'ops_fleet' %}">ФЛОТ</a>
+  <a href="{% url 'ops_chains' %}">ЦЕПИ</a>
+  <a href="{% url 'ops_constructor' %}">КОНСТРУКТОР</a>
+  <a href="{% url 'ops_plans' %}">ЁМКОСТЬ</a>
+  <a href="{% url 'ops_demand' %}">СПРОС</a>
+</nav>
+{% endblock %}
+{% block content %}
+<section>
+  <div class="sec-head">
+    <div>
+      <h2>Конструктор тарифов</h2>
+      <div class="sec-meta" style="margin-top:8px">цена, включённый объём, ставка и порог — это наши числа, и правятся они здесь</div>
+    </div>
+  </div>
+
+  {% for message in messages %}
+    <div class="msg {% if message.tags == 'error' %}error{% else %}ok{% endif %}">{{ message }}</div>
+  {% endfor %}
+
+  <div class="msg" style="border-left:3px solid var(--accent);background:transparent">
+    <b>Правка не трогает действующих подписчиков.</b> Счёт каждого клиента считается по
+    снимку условий, снятому при продаже и обновляемому в момент продления, — новая цена
+    дойдёт до него на следующем периоде. Ниже у каждого тарифа написано, сколько клиентов
+    доработают на прежних условиях и когда ближайшее продление.
+    <br><br>
+    <b>Исключение — потолок инстансов и RPM.</b> Их исполняет лицензионный сервер, а он
+    знает тарифы по коду, не по версии условий: эти два числа меняются сразу для всех.
+    Они правятся на <a href="{% url 'ops_plans' %}">экране ёмкости</a>, не здесь.
+  </div>
+
+  {% for row in rows %}
+  <div style="border:1px solid var(--line-2);padding:20px;margin-top:18px">
+    <div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap;margin-bottom:14px">
+      <h3 style="margin:0;font-size:19px">{{ row.plan.title }}</h3>
+      <span class="mono" style="color:var(--dim-2);font-size:13px">{{ row.plan.code }}</span>
+      {% if row.plan.is_public %}
+        <span class="pill ok">НА ЛЕНДИНГЕ</span>
+      {% else %}
+        <span class="pill">СКРЫТ</span>
+      {% endif %}
+      <span style="margin-left:auto;font-size:13px;color:var(--dim-2)">
+        подписок {{ row.subscribers }}{% if row.on_old %} · <b style="color:var(--amber)">{{ row.on_old }} на прежних условиях</b>{% endif %}
+        {% if row.next_renewal %} · ближайшее продление {{ row.next_renewal|date:"d.m.Y" }}{% endif %}
+      </span>
+    </div>
+
+    <form method="post" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      {% csrf_token %}
+      <input type="hidden" name="code" value="{{ row.plan.code }}">
+      <label style="display:flex;flex-direction:column;gap:4px">
+        <span class="label">₽ в месяц</span>
+        <input class="field" type="text" inputmode="decimal" name="monthly_price"
+               placeholder="{{ row.plan.monthly_price|floatformat:2 }}" style="width:130px">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px">
+        <span class="label">включено запросов</span>
+        <input class="field" type="text" inputmode="numeric" name="included_requests"
+               placeholder="{{ row.plan.included_requests }}" style="width:150px">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px">
+        <span class="label">₽ за 1000 сверх</span>
+        <input class="field" type="text" inputmode="decimal" name="metered_per_1k"
+               placeholder="{{ row.plan.metered_per_1k|floatformat:2 }}" style="width:130px">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px">
+        <span class="label">порог тарификации</span>
+        <input class="field" type="text" inputmode="numeric" name="metered_floor"
+               placeholder="{{ row.plan.metered_floor }}" style="width:150px">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px">
+        <span class="label">на лендинге</span>
+        <select class="field" name="is_public" style="width:110px">
+          <option value="1"{% if row.plan.is_public %} selected{% endif %}>да</option>
+          <option value="0"{% if not row.plan.is_public %} selected{% endif %}>нет</option>
+        </select>
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:180px">
+        <span class="label">зачем меняем</span>
+        <input class="field" type="text" name="note" placeholder="попадёт в журнал">
+      </label>
+      <button class="btn accent" type="submit">ПРИМЕНИТЬ</button>
+    </form>
+    <div style="font-size:12.5px;color:var(--dim-2);margin-top:8px">
+      Пустое поле — не трогать. Ноль — это значение: тариф без тарификации объёма
+      ставится нулевой ставкой.
+    </div>
+
+    {% if row.changes %}
+    <details style="margin-top:14px">
+      <summary style="cursor:pointer;font-size:13px;color:var(--dim-2)">журнал правок ({{ row.changes|length }})</summary>
+      <table style="margin-top:10px;width:100%;border-collapse:collapse;font-size:13px">
+        <tbody>
+        {% for change in row.changes %}
+          <tr>
+            <td class="mono" style="padding:4px 10px 4px 0;color:var(--dim-2);white-space:nowrap">{{ change.at|date:"d.m.Y H:i" }}</td>
+            <td style="padding:4px 10px 4px 0">{{ change.field }}</td>
+            <td class="mono" style="padding:4px 10px 4px 0">{{ change.was }} → {{ change.became }}</td>
+            <td style="padding:4px 10px 4px 0;color:var(--dim-2)">{{ change.actor }}</td>
+            <td style="padding:4px 0;color:var(--dim-2)">{{ change.note }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <div style="border:1px dashed var(--line-2);padding:20px;margin-top:24px">
+    <h3 style="margin:0 0 6px;font-size:17px">Новый тариф</h3>
+    <div style="font-size:13px;color:var(--dim-2);margin-bottom:14px">
+      Создаётся СКРЫТЫМ с нулевой ценой: строка, попавшая на лендинг раньше, чем в неё
+      вписали цену, продаётся за ноль рублей. Впишите условия выше и опубликуйте.
+      Код должен быть известен лицензионному серверу, иначе клиент на этом тарифе
+      не получит ключ вовсе.
+    </div>
+    <form method="post" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      {% csrf_token %}
+      <label style="display:flex;flex-direction:column;gap:4px">
+        <span class="label">код</span>
+        <input class="field" type="text" name="code" placeholder="team" style="width:150px" required>
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:200px">
+        <span class="label">название</span>
+        <input class="field" type="text" name="title" placeholder="Командный" required>
+      </label>
+      <button class="btn" type="submit">СОЗДАТЬ</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

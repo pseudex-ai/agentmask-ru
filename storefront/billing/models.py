@@ -122,11 +122,69 @@ class Subscription(models.Model):
     current_period_start = models.DateTimeField(default=timezone.now)
     current_period_end = models.DateTimeField()
 
+    # УСЛОВИЯ, НА КОТОРЫХ ПРОДАНО, СНИМКОМ — А НЕ ССЫЛКОЙ НА ИЗМЕНЯЕМУЮ СТРОКУ.
+    #
+    # `plan` — это указатель, и правка тарифа меняла условия ВСЕМ немедленно, в
+    # том числе посреди оплаченного периода: клиент платил за месяц по одной
+    # цене и получал счёт по другой. Так работать нельзя, и починить это ссылкой
+    # нельзя тоже — строка одна на всех по построению.
+    #
+    # Поэтому цена и всё, из чего считается счёт, СНИМАЮТСЯ при продаже и
+    # обновляются РОВНО в момент продления (`services.adopt_current_terms`,
+    # вызывается из `mark_paid`). Между продлениями строка тарифа может меняться
+    # сколько угодно — счёт этого клиента она не тронет.
+    #
+    # Чего снимок НЕ покрывает и почему: потолок инстансов и RPM исполняет
+    # лицензионный сервер, и он знает тарифы по КОДУ, а не по версии условий.
+    # Эти два числа меняются сразу для всех, и конструктор в консоли говорит об
+    # этом прямо, вместо того чтобы обещать несуществующую изоляцию.
+    terms_monthly_price = models.DecimalField(max_digits=10, decimal_places=2,
+                                              null=True, blank=True)
+    terms_included_requests = models.BigIntegerField(null=True, blank=True)
+    terms_metered_per_1k = models.DecimalField(max_digits=8, decimal_places=2,
+                                               null=True, blank=True)
+    terms_metered_floor = models.BigIntegerField(null=True, blank=True)
+    terms_taken_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["-current_period_start"]
 
     def __str__(self) -> str:
         return f"{self.organization_id}: {self.plan_id} ({self.state})"
+
+    @property
+    def terms(self) -> dict[str, object]:
+        """Условия, по которым считается счёт ЭТОГО клиента.
+
+        Снимок, если он есть; иначе текущая строка тарифа — так подписки,
+        заведённые до появления снимка, продолжают считаться, а не падают.
+        Возврат к строке безопасен именно потому, что снимок ставится при
+        первой же продаже и при каждом продлении.
+        """
+        if self.terms_taken_at is None:
+            return {"monthly_price": self.plan.monthly_price,
+                    "included_requests": self.plan.included_requests,
+                    "metered_per_1k": self.plan.metered_per_1k,
+                    "metered_floor": self.plan.metered_floor,
+                    "source": "тариф"}
+        return {"monthly_price": self.terms_monthly_price,
+                "included_requests": self.terms_included_requests,
+                "metered_per_1k": self.terms_metered_per_1k,
+                "metered_floor": self.terms_metered_floor,
+                "source": "снимок"}
+
+    @property
+    def on_old_terms(self) -> bool:
+        """Отличаются ли условия клиента от текущих. Для экрана конструктора:
+        правка тарифа обязана быть видна как «столько-то клиентов доработают
+        период на прежних условиях»."""
+        if self.terms_taken_at is None:
+            return False
+        terms = self.terms
+        return (terms["monthly_price"] != self.plan.monthly_price
+                or terms["included_requests"] != self.plan.included_requests
+                or terms["metered_per_1k"] != self.plan.metered_per_1k
+                or terms["metered_floor"] != self.plan.metered_floor)
 
     @property
     def is_serving(self) -> bool:
@@ -139,6 +197,30 @@ class Subscription(models.Model):
         if self.state in (self.TRIAL, self.ACTIVE):
             return True
         return False
+
+
+class PlanChange(models.Model):
+    """Кто, когда и что поменял в тарифе.
+
+    ЖУРНАЛ, А НЕ ИСТОЧНИК ИСТИНЫ. Счёт считается по снимку на подписке; здесь
+    лежит история, чтобы через полгода можно было ответить «а сколько стоил
+    Рабочий в июле» и «кто поставил эту цену». Без такого журнала правка через
+    экран неотличима от посева, и первый же спор о цене упирается в память.
+    """
+
+    plan = models.ForeignKey("Plan", on_delete=models.CASCADE, related_name="changes")
+    field = models.CharField(max_length=32)
+    was = models.CharField(max_length=64, blank=True)
+    became = models.CharField(max_length=64, blank=True)
+    actor = models.CharField(max_length=200)
+    at = models.DateTimeField(default=timezone.now)
+    note = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ["-at"]
+
+    def __str__(self) -> str:
+        return f"{self.plan_id}.{self.field}: {self.was} -> {self.became}"
 
 
 class LicenseKey(models.Model):

@@ -16,6 +16,11 @@ urlpatterns = [
     path("", views.fleet, name="ops_fleet"),
     path("chains/", views.chains, name="ops_chains"),
     path("plans/", views.plans, name="ops_plans"),
+    # Конструктор — про ДЕНЬГИ и живёт только у нас; `plans/` — про ёмкость и
+    # сверку с лицензионным сервером. Два экрана, потому что это два разных
+    # вопроса и у них разные последствия: цена дойдёт до клиента при продлении,
+    # потолок инстансов — сразу.
+    path("tariffs/", views.constructor, name="ops_constructor"),
     path("demand/", views.demand, name="ops_demand"),
     path("plans/<str:code>/", views.edit_plan, name="ops_edit_plan"),
     # Последними: `org_` — свободная строка, и маршруты выше по конкретному пути
