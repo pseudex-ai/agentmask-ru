@@ -39,7 +39,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey 
 
 from e2e import certs, fixtures  # noqa: E402
 from e2e.gates import (RESULTS, ADMIN, ORG, SIDECAR, compose, gate,  # noqa: E402
-                       gateway_headers, sh, set_env, wait_until)
+                       gateway_headers, sh, sh_input, set_env, wait_until)
 from licensing import assets_source  # noqa: E402
 from licensing.keys import encode_private, encode_public  # noqa: E402
 
@@ -136,6 +136,60 @@ def start_stand(image: str, workers: int) -> float:
 
 # --- gates ---------------------------------------------------------------
 
+def _source_probes(limit: int = 180) -> list[str]:
+    """Строки НАШЕГО исходника, которых в бинаре быть не должно, — из самого
+    исходника, а не из списка.
+
+    ЧЕТЫРЕ ЗОНДА ДОКАЗЫВАЛИ ОТСУТСТВИЕ ЧЕТЫРЁХ СТРОК, А НЕ ОТСУТСТВИЕ
+    ИСХОДНИКА. Список был вписан руками, и он не рос вместе с кодом: в
+    `pseudex/` пятьсот семьдесят три docstring, и гейт смотрел на две из них.
+    Достаточно было добавить новый модуль, чтобы его рассуждения уехали
+    заказчику мимо проверки, которая называется «no source text in the release
+    image» и продолжала зеленеть.
+
+    Выборка ДЕТЕРМИНИРОВАННАЯ (сортировка плюс равномерный шаг), поэтому один и
+    тот же образ даёт один и тот же вердикт, а рост исходника автоматически
+    меняет состав зондов. Берутся и docstring, и строки кода: первые несут
+    рассуждение, вторые — синтаксис, и утекают они разными путями (Nuitka
+    кладёт литералы в блок констант, а код компилирует).
+    """
+    import ast as _ast
+    docs: list[str] = []
+    code: list[str] = []
+    for path in sorted((_ROOT / "pseudex").rglob("*.py")):
+        try:
+            text = path.read_text(encoding="utf-8")
+            tree = _ast.parse(text)
+        except (OSError, SyntaxError):
+            continue
+        for node in _ast.walk(tree):
+            body = getattr(node, "body", None)
+            if not isinstance(node, (_ast.Module, _ast.ClassDef, _ast.FunctionDef,
+                                     _ast.AsyncFunctionDef)) or not body:
+                continue
+            first = body[0]
+            if not (isinstance(first, _ast.Expr) and isinstance(first.value, _ast.Constant)
+                    and isinstance(first.value.value, str)):
+                continue
+            for line in first.value.value.splitlines():
+                line = line.strip()
+                # Достаточно длинная, чтобы не совпасть случайно, и без
+                # переводов строки, потому что зонды идут в `grep -F` построчно.
+                if len(line) >= 45:
+                    docs.append(line)
+        for line in text.splitlines():
+            line = line.strip()
+            if (len(line) >= 45 and not line.startswith("#")
+                    and ("=" in line or "(" in line) and '"""' not in line):
+                code.append(line)
+    docs = sorted(set(docs))
+    code = sorted(set(code))
+    half = max(1, limit // 2)
+    step_d = max(1, len(docs) // half)
+    step_c = max(1, len(code) // half)
+    return docs[::step_d][:half] + code[::step_c][:half]
+
+
 def gate_p1() -> bool:
     """Nothing readable of the source ships: no files, no code text, no prose.
 
@@ -150,6 +204,9 @@ def gate_p1() -> bool:
         literals in the constants blob, and in this repo the docstrings carry the
         design rationale, i.e. the part worth stealing.
 
+    ЗОНДЫ БЕРУТСЯ ИЗ ИСХОДНИКА, А НЕ ИЗ СПИСКА — см. `_source_probes`. Раньше их
+    было четыре, вписанных руками, и они не росли вместе с кодом.
+
     Symbol names and module paths DO survive, for tracebacks, and that is
     accepted: a name is not a source line, and a native binary keeping its symbol
     table is exactly where shipped software normally sits."""
@@ -160,31 +217,30 @@ def gate_p1() -> bool:
     has_pseudex_dir = sh(["docker", "run", "--rm", "--entrypoint", "sh", COMPILED_IMAGE, "-c",
                           "ls /app/pseudex 2>&1 || true"], False, 120).stdout
 
-    # Probes taken from the real tree: two docstrings and two statements that
-    # exist verbatim in our sources and nowhere else.
-    probes = [
-        "Connector to the leased asset state",
-        "The 503 that makes the subscription real",
-        "if ASSETS.is_loaded:",
-        "raise BundleNotLeased",
-    ]
-    # `grep -c` prints the count AND exits 1 when it is zero, so `|| echo 0`
-    # appends a SECOND zero on its own line — which then parsed as a finding and
-    # failed the gate on a clean binary. `|| true` keeps the single count.
-    checks = " ; ".join(
-        f"echo \"{probe}|$(grep -c -a -F -- '{probe}' /app/pseudex-serve 2>/dev/null || true)\""
-        for probe in probes
-    )
-    found = []
-    for line in sh(["docker", "run", "--rm", "--entrypoint", "sh", COMPILED_IMAGE, "-c", checks],
-                   False, 600).stdout.splitlines():
-        probe, _, count = line.rpartition("|")
-        if probe and count.strip().isdigit() and int(count) > 0:
-            found.append(probe)
+    # ЗОНДЫ ПЕРЕДАЮТСЯ ЧЕРЕЗ stdin, А НЕ В КОМАНДНОЙ СТРОКЕ. Наши строки несут
+    # кавычки, апострофы и кириллицу; вписанные в `sh -c` они рвут команду, и
+    # прежняя версия могла держать только зонды, которые в неё помещались.
+    probes = _source_probes()
+    # ПОЛОЖИТЕЛЬНЫЙ КОНТРОЛЬ — БЕЗ НЕГО ГЕЙТ ЗЕЛЕНЕЕТ, НИЧЕГО НЕ ПРОЧИТАВ.
+    # `grep` по несуществующему файлу находит ноль совпадений, и «ноль» здесь
+    # означает «чисто». Опечатка в пути к бинарю, переименованный файл, другой
+    # образ — и проверка сообщает об успехе, посмотрев в пустоту. Контрольная
+    # строка ОБЯЗАНА найтись: это имя модуля, которое в нативном бинаре
+    # остаётся по построению (символьная таблица — принятая нами видимость).
+    control = "pseudex.service"
+    result = sh_input(
+        ["docker", "run", "--rm", "-i", "--entrypoint", "sh", COMPILED_IMAGE, "-c",
+         "grep -o -a -F -f - /app/pseudex-serve 2>/dev/null | sort -u | head -20 || true"],
+        "\n".join([*probes, control]) + "\n", 900)
+    matched = [line for line in result.stdout.splitlines() if line.strip()]
+    read_the_file = control in matched
+    found = [line for line in matched if line != control]
 
-    ok = not ours and "No such file" in has_pseudex_dir and not found
+    ok = not ours and "No such file" in has_pseudex_dir and read_the_file and not found
     return gate("P1 no source text or docstrings in the release image", ok,
-                f"our_py_files={ours[:2] or 'none'} readable_in_binary={found or 'none'}")
+                f"probes={len(probes)} control_seen={read_the_file} "
+                f"our_py_files={ours[:2] or 'none'} "
+                f"readable_in_binary={found[:3] or 'none'}")
 
 
 def gate_p2() -> bool:

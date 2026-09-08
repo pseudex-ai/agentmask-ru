@@ -90,6 +90,16 @@ def sh(args: list[str], check: bool, timeout: int) -> subprocess.CompletedProces
     return subprocess.run(args, capture_output=True, text=True, check=check, timeout=timeout)
 
 
+def sh_input(args: list[str], stdin: str, timeout: int) -> subprocess.CompletedProcess:
+    """`sh`, но данные уходят через stdin, а не через командную строку.
+
+    Нужен там, где данных много или они несут кавычки и кириллицу: вписанные в
+    `sh -c` они рвут команду, и проверка молча вырождается в проверку того, что
+    в неё поместилось."""
+    return subprocess.run(args, input=stdin, capture_output=True, text=True,
+                          check=False, timeout=timeout)
+
+
 def compose(args: list[str], check: bool, timeout: int) -> subprocess.CompletedProcess:
     return sh(["docker", "compose", "-f", str(_COMPOSE), *args], check, timeout)
 
