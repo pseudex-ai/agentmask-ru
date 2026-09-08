@@ -58,8 +58,15 @@ STEPS = [
     ("03-ops-console", "test_ops_renders.py", lambda: True, ""),
     ("04-billing-lifecycle", "test_billing_lifecycle.py", _stand_up,
      "нужен поднятый стенд: bash deploy/local.sh"),
-    ("05-billing-yookassa", "test_billing_e2e.py", _has_yookassa,
-     "нужны ключи тестового магазина: source storefront/.env.dev"),
+    # НУЖНЫ ОБА, И ЭТО НЕ ПЕДАНТИЗМ. Проверка выпускает НАСТОЯЩИЙ ключ на
+    # лицензионном сервере (клиент, которому ключа не выдавали, не может быть
+    # ни остановлен, ни возобновлён), поэтому без стенда она падает сырой
+    # трассировкой на 401 — а условие, спрашивавшее только про магазин,
+    # пропускало её в такой прогон.
+    ("05-billing-yookassa", "test_billing_e2e.py",
+     lambda: _has_yookassa() and _stand_up(),
+     "нужны ключи тестового магазина (source storefront/.env.dev) И "
+     "поднятый стенд (bash deploy/local.sh)"),
 ]
 
 
