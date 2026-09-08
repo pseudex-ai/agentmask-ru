@@ -1202,6 +1202,56 @@ direction when done the obvious way:
   0 of 2172 values inside them, 8 of 272 outside (2.9%). The number the corpus used
   to print — zero — described how much the corpus resembled the dictionary.
 
+## Rules that changes must not break, part three — the instruments
+
+- **A CHECK THAT CANNOT GO RED IS NOT A CHECK, AND THE SHAPE IS DETECTABLE.**
+  Eight defects of one class were found by hand in a week and every one READS
+  correctly: `P1` proved the absence of four strings out of 573 and would have
+  passed grepping a missing file; `L12` asserted `requests > 0` after making
+  twelve calls, so an engine billing one request in twelve cleared the only gate
+  that guards the invoice; a benchmark triple with nothing to compare passed five
+  levels because `not any([])` is True. What separates them from a healthy check
+  is a property of the VERDICT EXPRESSION, so `e2e/audit_gates.py` checks it
+  mechanically over the whole roster and runs in the battery as `62-gate-audit`.
+  The rule it enforces: **every NEGATIVE atom (`x not in y`, `not rows`,
+  `count == 0`, `set <= set`, `all(...)`) needs a POSITIVE atom over THE SAME
+  SOURCE** — the same call, traced back through local assignments. "Has a
+  positive somewhere" is too coarse and cleared `L19`, whose positives read the
+  vault and the directory listing while its one negative read a grep that nothing
+  proved could run.
+- **THE ANALYSER'S OWN POSITIVE CONTROL IS NOT OPTIONAL.** `--selftest` runs the
+  classifier over thirteen fixtures of known-bad and known-good verdicts and
+  REFUSES to report on the real roster unless it separates them. Two classifier
+  defects were caught that way and both would have turned it into noise:
+  `returncode == 0` is a command that RAN (it was read as an empty count and
+  flagged four healthy terms in P6), and `p50_ratio <= bound` is arithmetic that
+  RAISES in an empty world rather than quietly passing. A tool that cries wolf
+  gets ignored, which is the same outcome as not having one.
+- **A CONDITION HANDED TO A HELPER IS STILL PART OF THE VERDICT.** `L12`'s
+  threshold sits inside `wait_until(lambda: ... > 0, ...)`, and the first version
+  of the analyser stopped at the healthy-looking name in the verdict. Missing the
+  one defect already known by hand would have made it exactly the kind of check
+  it exists to find. Lambdas are walked; so are names standing for a conjunction.
+- **A THRESHOLD IS A QUESTION, NOT A VERDICT.** `hits > 0` on a memory scan is
+  correct — presence is the whole claim — and `requests > 0` after twelve calls
+  is the billing hole. The shape is identical and only the author knows which, so
+  the analyser reports thresholds without failing on them.
+- **PROVE THE INSTRUMENT INSIDE THE HELPER, NOT BESIDE IT.**
+  `readable_pii_in_data` returns `(the search ran, what it found)`, because a
+  caller that can take the second without the first eventually will. Its command
+  ends in `|| true`, so a grep that could not run produces no output — and no
+  output is precisely the answer every caller wants to hear.
+- **MUTATE YOUR OWN FIX BEFORE CALLING IT DONE.** Each repair above was reverted
+  in place and the analyser confirmed red, then restored byte-exact. A fix nobody
+  has broken on purpose is a fix nobody has tested.
+- **`unset PSEUDEX_TUNING_KEY` BEFORE ANY OFFLINE RUN.** `testkit` generates an
+  ephemeral one with `os.environ.setdefault`, and an EMPTY variable overrides it
+  — `export PSEUDEX_TUNING_KEY=$(cat missing-file)` silently fails twelve suites.
+- **MEASURE THE PRICE OF A VETO ON MASSIVE BEFORE ACCEPTING IT.** The composite
+  «neighbour unknown to morphology and to both dictionaries» veto looked
+  principled and cost four real people (Ирина Аллегрова among them) to buy two
+  fewer false masks. It was removed by measurement, not by argument.
+
 ## Conventions
 
 - Comments are in English; product docs (`docs/`) are in Russian. Both are unusually dense —

@@ -392,6 +392,14 @@ def gate_p3(source_report: Path, compiled_report: Path) -> bool:
     skipped = [name for name, report in (("source", left), ("compiled", right))
                if report.get("dirty", {}).get("skipped")]
 
+    # ПУСТОЙ ОТЧЁТ — НЕ СОВПАДЕНИЕ, и это на шаг дальше, чем ветка `skipped`
+    # ниже. `skipped` ловит ровно одну известную форму (`{"skipped": True}`);
+    # отчёт, который не дочитался, не записался или пришёл пустым объектом,
+    # даёт пустой список разниц И пустой список пропусков — то есть проходит
+    # обе проверки, ничего не сравнив. Раньше это падало случайно, на KeyError
+    # в строке `detail` ниже: гейт краснел по причине, не имеющей отношения к
+    # тому, что он утверждает, и одна перестановка строк вернула бы дыру.
+    compared = [key for key in ("coverage", "dirty") if key in left and key in right]
     detail = f"coverage_missed={right['coverage']['missed']} "
     if "dirty" in right and "recall" in right["dirty"]:
         detail += (f"recall={right['dirty']['recall']:.0%} "
@@ -400,9 +408,9 @@ def gate_p3(source_report: Path, compiled_report: Path) -> bool:
     if skipped:
         detail += (f"ГРЯЗНЫЙ НАБОР НЕ СРАВНИВАЛСЯ ({', '.join(skipped)}): "
                    f"нет dirty.json — сначала `python3 make_dirty.py` ")
-    detail += f"differs={differences or 'nothing'}"
+    detail += f"compared={compared or 'NOTHING'} differs={differences or 'nothing'}"
     return gate("P3 compiled image detects exactly what the source does",
-                not differences and not skipped, detail)
+                bool(compared) and not differences and not skipped, detail)
 
 
 _LATENCY_COUNTER = 0

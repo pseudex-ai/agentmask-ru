@@ -334,10 +334,11 @@ def gate_l1(image: str) -> bool:
         "PSEUDEX_LICENSE_URL": "https://license:8443",
         "PSEUDEX_LICENSE_CA": "/certs/ca.pem",
     }, 90)
-    served = _port_answered()
+    could_ask, served = _port_probe()
     return gate("L1 no key -> refuses to start",
-                code != 0 and "license_missing" in output and not served,
-                f"exit={code} license_missing={'license_missing' in output}")
+                code != 0 and "license_missing" in output and could_ask and not served,
+                f"exit={code} license_missing={'license_missing' in output} "
+                f"stand_reachable={could_ask} port_answered={served}")
 
 
 def gate_l2(image: str) -> bool:
@@ -404,12 +405,28 @@ def gate_l3(image: str, key: str) -> bool:
                 f"exit={code} bundle_unavailable={'bundle_unavailable' in output}")
 
 
-def _port_answered() -> bool:
+def _port_probe() -> tuple[bool, bool]:
+    """(the stand was reachable at all, the sidecar port answered).
+
+    A bare `except HTTPError: return False` cannot separate "the container
+    refused to serve, exactly as the gate demands" from "we asked the wrong
+    address" or "the machine was too busy to answer in three seconds" — and both
+    gates that read this assert the NEGATIVE, so the second reading is a false
+    pass on the two gates that prove a container REFUSES to start. The licensing
+    admin is up throughout both, so it is asked as a control: if it does not
+    answer either, nothing was learned about the sidecar and the caller is told
+    so rather than handed a comfortable False.
+    """
     try:
         httpx.get(f"{SIDECAR}/health", timeout=3)
-        return True
+        return True, True
     except httpx.HTTPError:
-        return False
+        pass
+    try:
+        httpx.get(f"{ADMIN}/admin/list", timeout=5, headers=ADMIN_AUTH)
+    except httpx.HTTPError:
+        return False, False
+    return True, False
 
 
 # --- gates: healthy ------------------------------------------------------
@@ -517,7 +534,12 @@ def gate_l5() -> bool:
     # the process created or modified anywhere shows up here. /data is the vault
     # volume and is expected to change; the rest must not.
     container_id = compose(["ps", "-q", "sidecar"], False, 30).stdout.strip().splitlines()[0]
-    changed = sh(["docker", "diff", container_id], False, 120).stdout
+    # `check=False`, so a diff that fails returns an empty stdout — and an empty
+    # diff reads as "the container created nothing", which is the verdict this
+    # gate exists to reach. The exit code is the only thing that separates the
+    # two, so it is carried into the verdict.
+    diff_proc = sh(["docker", "diff", container_id], False, 120)
+    changed = diff_proc.stdout
     # Deliberately narrow ignore list, so this stays a real check: /data is the
     # vault volume, /certs is the stand's read-only mount, and the
     # ca-certificates entry is injected by the local Docker provider (OrbStack).
@@ -546,9 +568,11 @@ def gate_l5() -> bool:
                           f"2>/dev/null | head -5 || true"]).stdout.strip()
     data_dir = sidecar_exec(["sh", "-c", "ls /app/pseudex/data 2>&1 || true"]).stdout
 
-    ok = not found and not outside_data and "No such file" in data_dir
+    ok = (diff_proc.returncode == 0 and not found and not outside_data
+          and "No such file" in data_dir)
     return gate("L5 bundle never touches disk", ok,
-                f"marker_on_disk={found or 'none'} changed_outside_data={len(outside_data)} "
+                f"diff_ran={diff_proc.returncode == 0} marker_on_disk={found or 'none'} "
+                f"changed_outside_data={len(outside_data)} "
                 f"data_dir_absent={'No such file' in data_dir}")
 
 
@@ -1022,22 +1046,37 @@ def gate_l12() -> bool:
     # one carrying DATA. Waiting merely for "a report arrived" fires on the first
     # renewal, which legitimately reports zero because it happens before any
     # traffic; the gate then read those zeros and called it a failure.
+    # `> 0` WAS THE WHOLE ASSERTION, AND IT GUARDS THE INVOICE. Twelve calls
+    # were made and any non-zero number passed, so an engine reporting one
+    # request in twelve — the exact fraud this gate exists to make impossible —
+    # cleared it. The wait is for the counter to REACH the number we produced,
+    # and the verdict then demands equality: if the accounting is per-report
+    # rather than a running total the wait times out and the gate goes red with
+    # the real number in the detail, which is the outcome worth having.
     reported = wait_until(
         lambda: httpx.get(f"{ADMIN}/admin/usage", params={"org_id": ORG},
-                          timeout=15, headers=ADMIN_AUTH).json()["usage"]["requests"] > 0,
-        TTL_SECONDS * 4, 5, "a usage report carrying counters",
+                          timeout=15, headers=ADMIN_AUTH).json()["usage"]["requests"] >= calls,
+        TTL_SECONDS * 4, 5, "a usage report carrying every request we made",
     )
     remote = httpx.get(f"{ADMIN}/admin/usage", params={"org_id": ORG}, timeout=15, headers=ADMIN_AUTH).json()
 
     raw_bodies = "\n".join(line for line in logs("license").splitlines()
                            if "RAW_LEASE_BODY" in line)
+    # PRECONDITION: a body was actually logged. `PSEUDEX_LOG_RAW_BODY` is set
+    # from outside, and if it does not reach the server there are no such lines,
+    # nothing matches, and "no personal data on the wire" is certified over an
+    # empty string.
+    wire_seen = bool(raw_bodies.strip())
     on_wire = [value for value in fixtures.leak_values() if value in raw_bodies]
     entity_types = set(remote["usage"]["entities"]) if remote["usage"]["entities"] else set()
     local_types = set(local.get("protected_counts", {}))
-    ok = reported and not on_wire and entity_types and entity_types <= local_types
+    billed = remote["usage"]["requests"]
+    ok = (reported and billed == calls and wire_seen and not on_wire
+          and entity_types and entity_types <= local_types)
     set_env("PSEUDEX_LOG_RAW_BODY", "")
     return gate("L12 counters match and carry no PII", ok,
-                f"reports={remote['usage']['reports']} entities={len(entity_types)} "
+                f"billed={billed}/{calls} reports={remote['usage']['reports']} "
+                f"entities={len(entity_types)} raw_bodies_logged={wire_seen} "
                 f"subset_of_local={entity_types <= local_types} pii_on_wire={on_wire}")
 
 
@@ -1047,8 +1086,19 @@ def data_dir_listing() -> str:
     return sidecar_exec(["sh", "-c", "ls -la /data 2>&1 || true"]).stdout
 
 
-def readable_pii_in_data() -> list[str]:
-    """Which of the payload's real values can be read out of the WHOLE volume.
+def readable_pii_in_data() -> tuple[bool, list[str]]:
+    """(the search actually ran, which files disclose one of the real values).
+
+    THE FIRST HALF IS RETURNED RATHER THAN ASSUMED, and it belongs here rather
+    than beside each caller: the command ends in `|| true`, so a grep that could
+    not run — missing binary in a slimmed image, an unmounted volume, a pattern
+    list that failed to quote — produces no output, and no output is precisely
+    the answer every caller wants to hear. L20 happened to be safe because it
+    greps for plaintext BEFORE the migration and requires a hit; L19 had no such
+    half and would have certified an encrypted volume it never searched. A
+    helper that can answer "clean" without having looked is the defect, so it
+    now answers both questions at once and neither caller can take one without
+    the other.
 
     BY DIRECTORY, NEVER BY FILE, and that distinction is the gate. Personal data
     lives in `vault.db-wal` until a checkpoint moves it: measured on a live
@@ -1060,7 +1110,31 @@ def readable_pii_in_data() -> list[str]:
     patterns = " ".join(f"-e {shlex.quote(value)}" for value in fixtures.PII_PAYLOAD.values())
     found = sidecar_exec(["sh", "-c",
                           f"grep -rlF {patterns} /data 2>/dev/null || true"]).stdout
-    return [line for line in found.splitlines() if line.strip()]
+    return grep_instrument_works(), [line for line in found.splitlines() if line.strip()]
+
+
+_GREP_CONTROL = "pseudex-grep-control-9f3a2c"
+
+
+def grep_instrument_works() -> bool:
+    """Can the search that is about to declare the volume clean find ANYTHING?
+
+    `readable_pii_in_data` ends in `|| true`, so a grep that could not run —
+    missing binary in a slimmed image, an unmounted volume, a pattern list that
+    failed to quote — produces no output, and no output is exactly the answer
+    the gate wants to hear. L20 is safe by construction because it greps for
+    plaintext BEFORE the migration and requires a hit; L19 had no such half and
+    would have certified an encrypted volume it never actually searched.
+
+    So: write one known string into the volume, search for it with the same
+    command shape, remove it. A false green now needs the probe to fail and the
+    sweep to succeed at the same time, which is not a thing that happens.
+    """
+    sidecar_exec(["sh", "-c", f"printf '%s' {_GREP_CONTROL} > /data/.grep-control"])
+    found = sidecar_exec(["sh", "-c",
+                          f"grep -rlF {_GREP_CONTROL} /data 2>/dev/null || true"]).stdout
+    sidecar_exec(["sh", "-c", "rm -f /data/.grep-control"])
+    return bool(found.strip())
 
 
 def restart_stand() -> bool:
@@ -1124,12 +1198,13 @@ def gate_l19() -> bool:
     # The -wal has to be THERE while we grep, or "by directory" and "by file"
     # would be the same check and the gate would not be testing what it claims.
     wal_present = "vault.db-wal" in listing
-    leaked = readable_pii_in_data()
+    searchable, leaked = readable_pii_in_data()
 
     return gate("L19 the volume discloses no real value",
-                bool(held) and wal_present and not leaked,
+                bool(held) and wal_present and searchable and not leaked,
                 f"vault_holds={len(held)}/{len(fixtures.PII_PAYLOAD)} "
-                f"wal_present={wal_present} readable={leaked or 'none'}")
+                f"wal_present={wal_present} grep_works={searchable} "
+                f"readable={leaked or 'none'}")
 
 
 def gate_l20() -> bool:
@@ -1150,19 +1225,22 @@ def gate_l20() -> bool:
     before = post_unmask(masked, 60)
     # PRECONDITION: it really was plain text. If this is empty the rest of the
     # gate is measuring encryption against encryption.
-    plain_hits = readable_pii_in_data()
+    plain_searchable, plain_hits = readable_pii_in_data()
 
     set_env("PSEUDEX_VAULT_ENCRYPTION", "")
     if not recreate_sidecar():
         return gate("L20 a plaintext volume migrates without losing a token",
                     False, "sidecar did not come back with a key")
     after = post_unmask(masked, 60)
-    encrypted_hits = readable_pii_in_data()
+    # The container was RECREATED between the two sweeps, so `plain_hits` proves
+    # the search worked in the previous one and says nothing about this one.
+    searchable, encrypted_hits = readable_pii_in_data()
 
     return gate("L20 a plaintext volume migrates without losing a token",
-                bool(plain_hits) and after == before and not encrypted_hits,
+                bool(plain_hits) and plain_searchable and after == before
+                and searchable and not encrypted_hits,
                 f"was_plaintext={len(plain_hits)} same_values={after == before} "
-                f"readable_after={encrypted_hits or 'none'}")
+                f"grep_works={searchable} readable_after={encrypted_hits or 'none'}")
 
 
 def gate_l21() -> bool:
@@ -1182,12 +1260,12 @@ def gate_l21() -> bool:
     ours = "не открывает"
     spoke = wait_until(lambda: ours in logs("sidecar"), 180, 3, "our own refusal message")
     output = logs("sidecar")
-    served = _port_answered()
+    could_ask, served = _port_probe()
     set_env("PSEUDEX_VAULT_KEY", "")
 
     return gate("L21 a wrong key refuses to start, in our words",
-                spoke and not served,
-                f"our_message={spoke} still_serving={served} "
+                spoke and could_ask and not served,
+                f"our_message={spoke} stand_reachable={could_ask} still_serving={served} "
                 f"driver_sentence_alone={'file is not a database' in output and not spoke}")
 
 
@@ -1235,10 +1313,22 @@ def gate_l22(image: str) -> bool:
 
 
 def gate_l15() -> bool:
+    """No real value in any log — and the logs must be REAL logs.
+
+    `log_bytes` was already printed in the detail and read by nobody: the
+    verdict was one negative term over `all_logs()`, so an archive that came
+    back empty — a torn-down stand, a `compose logs` that errored, a service
+    name that stopped matching — certified the whole run clean. Both services
+    are named in the verdict now, because `docker compose logs` prefixes every
+    line with the service that wrote it, and their presence is the cheapest
+    available proof that the sweep had something to sweep.
+    """
     combined = all_logs()
+    both_services = "sidecar" in combined and "license" in combined
     leaked = [value for value in fixtures.leak_values() if value in combined]
-    return gate("L15 no PII in any container log", not leaked,
-                f"leaked={leaked or 'none'} log_bytes={len(combined)}")
+    return gate("L15 no PII in any container log", both_services and not leaked,
+                f"leaked={leaked or 'none'} log_bytes={len(combined)} "
+                f"both_services_logged={both_services}")
 
 
 # --- driver --------------------------------------------------------------
