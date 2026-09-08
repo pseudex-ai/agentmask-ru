@@ -146,6 +146,23 @@ class Subscription(models.Model):
     terms_metered_floor = models.BigIntegerField(null=True, blank=True)
     terms_taken_at = models.DateTimeField(null=True, blank=True)
 
+    # ДО КАКОЙ ОТМЕТКИ КЛИЕНТ УЖЕ ПРЕДУПРЕЖДЁН О РАСХОДЕ В ЭТОМ ПЕРИОДЕ.
+    #
+    # Превышение — это счёт, а не рубильник, и в этом вся идея: остановить
+    # шлюз значит остановить бизнес клиента из-за наших денег. Но у «не
+    # останавливаем» есть обратная сторона, и до сих пор она была открыта:
+    # клиент узнавал о перерасходе ИЗ ПИСЬМА СО СЧЁТОМ, когда платить уже
+    # поздно и обсуждать нечего.
+    #
+    # Ступени: `included` — «включённый объём выбран», `floor` — «дальше
+    # начинает капать». Хранится ПРОЙДЕННАЯ ступень, а не флаг: письмо уходит
+    # один раз на ступень и обнуляется при продлении, поэтому цикл может
+    # запускаться хоть каждую минуту.
+    NOTIFIED_NONE = ""
+    NOTIFIED_INCLUDED = "included"
+    NOTIFIED_METERED = "metered"
+    volume_notified = models.CharField(max_length=16, blank=True, default="")
+
     class Meta:
         ordering = ["-current_period_start"]
 

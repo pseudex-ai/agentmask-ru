@@ -45,6 +45,23 @@ from billing.models import Invoice, Subscription
 GRACE_DAYS = services.GRACE_DAYS
 
 
+def _period_volume(organization, reported: dict) -> int:
+    """Сколько запросов ЭТОТ период уже стоил, а не сколько их было за всю жизнь.
+
+    Счётчик лицензионного сервера накопительный, поэтому за период — разница с
+    ватермаркой последнего невоидного счёта. Та же арифметика, что в
+    `build_invoice`; если бы она разошлась, письмо предупреждало бы об одном
+    числе, а счёт приходил бы на другое.
+    """
+    billable = reported.get("capacity_billable")
+    billable = billable if isinstance(billable, int) and not isinstance(billable, bool) else 0
+    previous = (Invoice.objects.filter(organization=organization)
+                .exclude(state=Invoice.VOID)
+                .order_by("-period_end", "-id").first())
+    watermark = max(0, previous.requests_billable_at_period_end if previous else 0)
+    return max(0, billable - watermark)
+
+
 def _billing_email(organization) -> str:
     """Кому слать счёт. Владельцу организации.
 
@@ -72,6 +89,7 @@ class Command(BaseCommand):
         self.dry = dry
         self.done: list[str] = []
 
+        self._warn_about_volume()
         self._issue_for_ended_trials(now)
         self._issue_for_ended_periods(now)
         self._stop_overdue(now)
@@ -81,6 +99,92 @@ class Command(BaseCommand):
         for line in self.done:
             self.stdout.write(prefix + line)
         self.stdout.write(f"{len(self.done)} действий")
+
+    # --- 0: предупредить о расходе ДО того, как придёт счёт ----------------
+
+    def _warn_about_volume(self) -> None:
+        """Письмо на переходе через включённый объём и через порог.
+
+        ЗАЧЕМ. Обслуживание при перерасходе не останавливается — это решение, и
+        оно правильное: рубильник из-за наших денег останавливает бизнес
+        клиента. Но без предупреждения «не останавливаем» означало «узнаете из
+        счёта», а счёт приходит, когда обсуждать уже нечего.
+
+        Два письма за период и ни одним больше. Первое — «включённый объём
+        выбран, пока бесплатно»; второе — «дальше каждая тысяча стоит столько-
+        то». Второе и есть то, ради чего это написано: между ними лежит порог,
+        и клиент имеет право узнать о нём заранее, а не постфактум.
+
+        Ступень хранится строкой на подписке и обнуляется при продлении, так
+        что цикл идемпотентен и может идти хоть каждую минуту.
+        """
+        live = (Subscription.objects
+                .select_related("organization", "plan")
+                .filter(state__in=(Subscription.TRIAL, Subscription.ACTIVE)))
+        for subscription in live:
+            terms = subscription.terms
+            rate = terms["metered_per_1k"] or 0
+            if not rate:
+                continue
+            organization = subscription.organization
+            try:
+                reported = licensing.usage(organization.id).get("usage", {})
+            except licensing.LicensingError:
+                # Молчим: недоступный лицензионный сервер — это НАША авария,
+                # и превращать её в тревогу клиенту неправильно.
+                continue
+            if not isinstance(reported, dict):
+                continue
+            used = _period_volume(organization, reported)
+            included = int(terms["included_requests"] or 0)
+            floor = int(terms["metered_floor"] or 0)
+
+            stage = subscription.volume_notified
+            if used >= included + floor and stage != Subscription.NOTIFIED_METERED:
+                self._send_volume_notice(subscription, used, included, floor, rate,
+                                         charging=True)
+                stage = Subscription.NOTIFIED_METERED
+            elif used >= included and stage == Subscription.NOTIFIED_NONE:
+                self._send_volume_notice(subscription, used, included, floor, rate,
+                                         charging=False)
+                stage = Subscription.NOTIFIED_INCLUDED
+            if stage != subscription.volume_notified:
+                self.done.append(
+                    f"{organization.id}: предупреждение о расходе ({stage}), "
+                    f"{used} запросов при включённых {included}")
+                if not self.dry:
+                    subscription.volume_notified = stage
+                    subscription.save(update_fields=["volume_notified"])
+
+    def _send_volume_notice(self, subscription, used: int, included: int,
+                            floor: int, rate, charging: bool) -> None:
+        address = _billing_email(subscription.organization)
+        if not address or self.dry:
+            return
+        link = f"{settings.SITE_URL}/app/"
+        if charging:
+            subject = "pseudex — объём сверх включённого начинает тарифицироваться"
+            body = (f"Здравствуйте!\n\n"
+                    f"За текущий период через шлюз прошло {used} запросов. "
+                    f"Включено {included}, и ещё {floor} сверх них не "
+                    f"начислялись.\n\n"
+                    f"Дальше каждая тысяча запросов стоит {rate} ₽. "
+                    f"Ничего не остановится — превышение попадёт отдельной "
+                    f"строкой в счёт за период.\n\n"
+                    f"Текущий расход и начисление видно в кабинете:\n{link}\n\n"
+                    f"Если такой объём теперь постоянный, тариф выше почти "
+                    f"наверняка дешевле — посчитаем вместе.\n")
+        else:
+            subject = "pseudex — включённый объём тарифа выбран"
+            body = (f"Здравствуйте!\n\n"
+                    f"За текущий период через шлюз прошло {used} запросов — "
+                    f"это весь включённый в тариф объём ({included}).\n\n"
+                    f"Пока ничего не меняется: следующие {floor} запросов "
+                    f"сверх включённого не начисляются. Мы напишем ещё раз, "
+                    f"когда начнётся тарификация.\n\n"
+                    f"Расход виден в кабинете:\n{link}\n")
+        send_mail(subject=subject, message=body, from_email=None,
+                  recipient_list=[address], fail_silently=True)
 
     # --- 1 и 2: выставление ------------------------------------------------
 
@@ -133,6 +237,10 @@ class Command(BaseCommand):
         if self.dry:
             return
 
+        # СТУПЕНЬ ПРЕДУПРЕЖДЕНИЙ ОБНУЛЯЕТСЯ ВМЕСТЕ С ПЕРИОДОМ: иначе клиент,
+        # предупреждённый в январе, в феврале не услышит ничего.
+        Subscription.objects.filter(organization=organization).update(
+            volume_notified=Subscription.NOTIFIED_NONE)
         invoice = services.build_invoice(organization, period_start, period_end)
         invoice.state = Invoice.ISSUED
         invoice.issued_at = now

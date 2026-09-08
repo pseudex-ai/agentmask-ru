@@ -373,6 +373,59 @@ def main() -> int:
           over_invoice.total == over_invoice.plan_amount + over_invoice.metered_amount,
           f"{over_invoice.plan_amount} + {over_invoice.metered_amount} = {over_invoice.total}")
 
+    # --- 8а. ПРЕДУПРЕЖДЕНИЕ О РАСХОДЕ ПРИХОДИТ ДО СЧЁТА -----------------
+    # «Превышение — это счёт, а не рубильник» верно и правильно, но без
+    # предупреждения означало «узнаете из письма со счётом», когда обсуждать
+    # уже нечего.
+    subscription.refresh_from_db()
+    subscription.state = Subscription.ACTIVE
+    subscription.volume_notified = Subscription.NOTIFIED_NONE
+    subscription.save(update_fields=["state", "volume_notified"])
+    plan = plans["industrial"]
+    # НОВЫЙ ПЕРИОД НАЧИНАЕТСЯ С ВАТЕРМАРКИ ПОСЛЕДНЕГО СЧЁТА, и шаг 8 оставил
+    # её выше, чем задаваемая здесь ёмкость — расход вышел бы нулевым, и
+    # проверка провалилась бы на арифметике теста, а не на продукте.
+    Invoice.objects.filter(organization=organization).update(state=Invoice.VOID)
+
+    original_usage = services.licensing.usage
+    def usage_of(capacity):
+        return lambda org: {"usage": {"values": capacity, "requests": capacity,
+                                      "capacity_billable": capacity}}
+    try:
+        # Ступень 1: включённый объём выбран, но пока бесплатно.
+        services.licensing.usage = usage_of(plan.included_requests + 10)
+        mail.outbox.clear()
+        call_command("run_billing_cycle", verbosity=0)
+        subscription.refresh_from_db()
+        check("на включённом объёме приходит первое письмо",
+              len(mail.outbox) == 1
+              and subscription.volume_notified == Subscription.NOTIFIED_INCLUDED,
+              mail.outbox[0].subject if mail.outbox else "писем нет")
+
+        # Повтор прохода не шлёт второго — цикл идёт каждый час.
+        mail.outbox.clear()
+        call_command("run_billing_cycle", verbosity=0)
+        check("повторный проход второго письма не шлёт", not mail.outbox,
+              f"{len(mail.outbox)} писем")
+
+        # Ступень 2: пошла тарификация — и вот об ЭТОМ клиент обязан узнать
+        # заранее, а не из счёта.
+        services.licensing.usage = usage_of(
+            plan.included_requests + plan.metered_floor + 10)
+        mail.outbox.clear()
+        call_command("run_billing_cycle", verbosity=0)
+        subscription.refresh_from_db()
+        charged = mail.outbox and str(plan.metered_per_1k) in mail.outbox[0].body
+        check("на пороге тарификации приходит второе, со ставкой",
+              len(mail.outbox) == 1
+              and subscription.volume_notified == Subscription.NOTIFIED_METERED
+              and charged,
+              mail.outbox[0].subject if mail.outbox else "писем нет")
+        check("и обслуживание при этом НЕ остановлено",
+              container_masks()[0], "превышение — это счёт, а не рубильник")
+    finally:
+        services.licensing.usage = original_usage
+
     # --- 8б. ПРАВКА ТАРИФА НЕ ТРОГАЕТ ДЕЙСТВУЮЩЕГО ПОДПИСЧИКА ------------
     # Это обещание конструктора, и без проверки оно держится на одном
     # присваивании в `build_invoice`. Строку тарифа правим НАСТОЯЩИМ путём —
