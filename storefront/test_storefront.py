@@ -177,6 +177,16 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
 
     landing = client.get("/")
     body = landing.content.decode()
+    # ОДНОРАЗОВЫЙ ЯЩИК НЕ ПОЛУЧАЕТ КЛЮЧА. Единственный реальный путь
+    # злоупотребления пробным периодом: образ без ключа не стартует вовсе, а
+    # ключ выпускается только по ссылке из письма.
+    from billing.services import is_disposable
+    check("одноразовый ящик отсечён", is_disposable("x@mailinator.com"))
+    check("регистр домена не спасает", is_disposable("x@YOPMAIL.COM"))
+    check("настоящая почта проходит",
+          not is_disposable("igor@sber.ru") and not is_disposable("a@tempo-market.ru"),
+          "эвристика «в домене есть temp» отсекала бы живые компании")
+
     check("the landing renders", landing.status_code == 200)
     # An input on the landing would mean this server starts receiving other
     # people's personal data. The demo is prepared examples only.

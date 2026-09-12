@@ -332,6 +332,16 @@ def signup(request):
         messages.error(request, "Слишком много попыток. Подождите минуту.")
         return redirect("landing")
 
+    # Отказ НАЗЫВАЕТ причину и что делать: человек с одноразовым ящиком чаще
+    # всего просто осторожен, а не злоупотребляет, и «попробуйте ещё раз» без
+    # объяснения выгнало бы его насовсем.
+    if services.is_disposable(email):
+        messages.error(request, "На одноразовые почтовые ящики ключ не "
+                                "выпускается — ссылка на активацию до вас не "
+                                "дойдёт. Укажите рабочий адрес: пробный период "
+                                "всё равно бесплатный и карта не нужна.")
+        return redirect("landing")
+
     # An email that already has an organisation goes to sign-in instead of
     # getting a second one. Two reasons, and the second is what matters: a
     # person who signs up twice would end up with two orgs and see only one of

@@ -28,6 +28,41 @@ _log = logging.getLogger("billing.services")
 TRIAL_DAYS = 14
 
 
+# ОДНОРАЗОВЫЕ ПОЧТЫ — ЕДИНСТВЕННЫЙ РЕАЛЬНЫЙ ПУТЬ ЗЛОУПОТРЕБЛЕНИЯ ПРОБНЫМ
+# ПЕРИОДОМ, и важно понимать, почему именно он, а не образ.
+#
+# Образ бесполезен без ключа: без `PSEUDEX_LICENSE_KEY` контейнер не стартует,
+# с неизвестным ключом не стартует, и при недоступном лицензионном сервере на
+# холодном старте тоже не стартует (гейты L1, L2, L3). Скачать образ заново —
+# это ноль. Ключ выпускается только при открытии ссылки из письма, то есть ящик
+# уже проверен. Значит цена одной бесплатной пробы = один рабочий ящик.
+#
+# Список НЕ претендует на полноту — их тысячи, и новые заводятся быстрее, чем
+# любой список обновляется. Он поднимает цену: массовая регистрация перестаёт
+# быть делом одной минуты. Настоящий предел ставит другое: новая организация —
+# это новый `customer_id`, то есть НОВЫЙ ВОЛТ. Псевдонимы сбрасываются, и
+# человек, который так работает, каждые три недели теряет связность своих же
+# данных. Пробой можно позлоупотреблять; работать на ней нельзя.
+DISPOSABLE_DOMAINS = frozenset({
+    "mailinator.com", "guerrillamail.com", "10minutemail.com", "temp-mail.org",
+    "tempmail.com", "throwawaymail.com", "yopmail.com", "trashmail.com",
+    "getnada.com", "dispostable.com", "maildrop.cc", "fakeinbox.com",
+    "sharklasers.com", "grr.la", "spam4.me", "mohmal.com", "tempr.email",
+    "emailondeck.com", "moakt.com", "luxusmail.org", "1secmail.com",
+    "temp-mail.io", "mail-temp.com", "minuteinbox.com", "burnermail.io",
+    "tempmailo.com", "mailnesia.com", "inboxkitten.com", "vklfdz.com",
+})
+
+
+def is_disposable(email: str) -> bool:
+    """Одноразовый ли это ящик. Только точный домен, без эвристик.
+
+    Эвристика вида «в домене есть temp» отсекает настоящие компании — и это
+    ошибка в ту сторону, где мы теряем клиента и не узнаём об этом.
+    """
+    return email.rsplit("@", 1)[-1].strip().lower() in DISPOSABLE_DOMAINS
+
+
 def pending_organization(email: str):
     """The organisation of an account whose activation link has not been used.
 

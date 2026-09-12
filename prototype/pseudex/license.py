@@ -100,10 +100,18 @@ _TERMINAL_RETRY_SECONDS = 60.0
 # — the gateway refused to serve, exactly as designed, and told them nothing
 # about why or what to try. Fail-closed without a diagnosis reads as "broken",
 # and the customer's next move is to close the tab rather than open the firewall.
+# КУДА ИДТИ ЗА КЛЮЧОМ. Отдельной константой, потому что это единственный адрес,
+# который человек видит, когда у него ещё НЕТ ни ключа, ни кабинета, ни нас в
+# закладках: он запустил образ, прочитал имя продукта где-то и попробовал.
+# Переопределяется на случай собственной инсталляции у крупного заказчика.
+SITE_URL = os.environ.get("PSEUDEX_SITE_URL", "https://pseudex.ru").rstrip("/")
+
 REMEDIES: dict[str, str] = {
     "license_missing":
-        "Переменная PSEUDEX_LICENSE_KEY не задана. Ключ показывается один раз "
-        "при активации; если он потерян — выпустите новый в личном кабинете.",
+        "Переменная PSEUDEX_LICENSE_KEY не задана.\n"
+        f"    Ключ выпускается бесплатно, карта не нужна: {SITE_URL}\n"
+        "    Если ключ уже был и потерялся — он показывается один раз, "
+        f"выпустите новый в кабинете: {SITE_URL}/app/",
     "bundle_unavailable":
         "Не удалось связаться с сервером лицензий. Проверьте, что из контейнера "
         "есть исходящий доступ к нему по HTTPS:\n"
