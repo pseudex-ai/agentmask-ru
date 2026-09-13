@@ -46,31 +46,20 @@ while :; do
     # the watchdog only ever looks at file AGE, so a torn copy passes every
     # check we have. `apk add` is one line and makes the intended path the one
     # that actually happens.
-    if ! command -v sqlite3 >/dev/null 2>&1; then
-        apk add --no-cache sqlite >/dev/null 2>&1 || true
-    fi
-
     # THE MOUNT IS READ-WRITE, and `.backup` is why (compose.yml says it at the
     # mount). The licensing database is in WAL mode, SQLite needs to create the
     # `-shm` wal-index beside it to read one, and `-shm` is absent exactly when
     # the licensing container is stopped — so on `:ro` this branch failed on the
     # night the backup mattered most, and the watchdog only checks file age.
     if [ -f /license/license.db ]; then
-        if ! command -v sqlite3 >/dev/null 2>&1; then
-            # Loud EVERY night, not once. A copy taken with `cp` may be torn, and
-            # a warning that appears only the first time is a warning nobody who
-            # inherits this machine will ever see.
-            echo "backup: NO sqlite3 — license copy is a plain cp of a LIVE WAL" \
-                 "database and may be torn. It will still pass the freshness" \
-                 "check. Fix the image or the network that apk needs." >&2
-            if cp /license/license.db "/backups/license-${stamp}.db.tmp" \
-                && mv "/backups/license-${stamp}.db.tmp" "/backups/license-${stamp}.db"; then
-                echo "backup: license ${stamp} copied WITHOUT sqlite3"
-            else
-                echo "backup: LICENSE CP FAILED at ${stamp}" >&2
-                rm -f "/backups/license-${stamp}.db.tmp"
-            fi
-        elif sqlite3 /license/license.db ".backup '/backups/license-${stamp}.db.tmp'" 2>/tmp/lic.err; then
+        # `cp`-ВЕТКИ БОЛЬШЕ НЕТ, И ЭТО ГЛАВНОЕ ИЗМЕНЕНИЕ ЗДЕСЬ. Она стояла как
+        # запасной путь на случай отсутствия `sqlite3` — и была ЕДИНСТВЕННЫМ
+        # путём, потому что базовый образ его не нёс: каждая ночная копия
+        # лицензионной базы бралась `cp` с живой WAL-базы и могла быть рваной,
+        # а сторож смотрит только на возраст файла. Инструмент теперь внутри
+        # образа (Dockerfile.backup), поэтому запасной путь не нужен: его
+        # отсутствие — это отказ сборки, а не тихая порча ночной копии.
+        if sqlite3 /license/license.db ".backup '/backups/license-${stamp}.db.tmp'" 2>/tmp/lic.err; then
             if mv "/backups/license-${stamp}.db.tmp" "/backups/license-${stamp}.db"; then
                 echo "backup: license ${stamp} ok"
             else
@@ -88,6 +77,52 @@ while :; do
             echo "backup: LICENSE COPY FAILED at ${stamp}: $(cat /tmp/lic.err 2>/dev/null)" >&2
             rm -f "/backups/license-${stamp}.db.tmp"
         fi
+    fi
+
+    # ── ВЫВОЗ С ХОСТА ──────────────────────────────────────────────────────
+    #
+    # ЗАЧЕМ. `/backups` лежит на том же диске той же машины, что и базы. Это
+    # защищает от «уронили таблицу» и не защищает НИ ОТ ЧЕГО, что случается с
+    # машиной: отказ диска, инцидент у провайдера, чужой root, собственная
+    # ошибка в `docker volume rm`. Лицензионная база — единственное, чего не
+    # пересобрать из кода: в ней ключи всех клиентов, и её потеря останавливает
+    # каждую установку в поле. Копия, живущая рядом с оригиналом, резервной не
+    # является.
+    #
+    # ХОСТУ ЗАПРЕЩЁН `DeleteObject` ПОЛИТИКОЙ БАКЕТА, и это свойство, ради
+    # которого стоит терпеть неудобство. Шифровальщик первым делом стирает
+    # бэкапы, а уже потом шифрует; ключ, которым нельзя удалять, делает это
+    # невозможным. Поэтому `forget --prune` идёт НЕ ОТСЮДА, а из GitHub Actions
+    # другим ключом — тем же движением, что и `restic check`.
+    #
+    # ОТСУТСТВИЕ НАСТРОЙКИ — НЕ АВАРИЯ. Хост без вывоза работает, просто хуже
+    # защищён; цикл, делающий локальные копии, не должен падать из-за этого.
+    if [ -n "${RESTIC_REPOSITORY:-}" ] && [ -n "${RESTIC_PASSWORD:-}" ]; then
+        # `init` идемпотентен по факту существования репозитория: «уже есть» —
+        # это нормальный ответ, а не ошибка, и отличать его надо по проверке, а
+        # не по коду возврата, который одинаков для «есть» и «нет доступа».
+        if ! restic cat config >/dev/null 2>&1; then
+            restic init >/dev/null 2>&1 \
+                || echo "backup: restic init не удался — вывоз не настроен" >&2
+        fi
+        # --host фиксирован: иначе имя контейнера попадёт в снапшот, и после
+        # пересоздания стека `restic snapshots --host` перестанет находить
+        # собственную историю.
+        if restic backup /backups --host pseudex --tag nightly \
+                --exclude '*.tmp' --exclude '*.age' \
+                >/tmp/restic.out 2>&1; then
+            echo "backup: вывезено в объектное хранилище ${stamp}"
+            # ОТМЕТКА ДЛЯ СТОРОЖА — одна на всё: он отвечает на вопрос «вывоз
+            # вообще работает», а не «какой именно файл уехал».
+            date -u +%s > /backups/.last-offsite
+        else
+            # Громко и не фатально: локальные копии уже сделаны и целы.
+            # Молчание здесь заметит сторож по устаревшей отметке.
+            echo "backup: ВЫВОЗ НЕ УДАЛСЯ ${stamp}: $(tail -3 /tmp/restic.out)" >&2
+        fi
+    else
+        echo "backup: вывоз не настроен (нет RESTIC_REPOSITORY/RESTIC_PASSWORD) —" \
+             "копии остались ТОЛЬКО на этом хосте" >&2
     fi
 
     # `|| echo` for the same reason as the two `mv`s above: these are the last

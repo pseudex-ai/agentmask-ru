@@ -58,7 +58,7 @@ echo "agent: $HAVE -> $WANT"
 # означает, что мы собираемся раздать неподтверждённые байты.
 IDENTITY="${COSIGN_IDENTITY_REGEXP:-.*}"
 ISSUER="${COSIGN_ISSUER_REGEXP:-.*}"
-for name in pseudex pseudex-licensing pseudex-storefront; do
+for name in pseudex pseudex-licensing pseudex-storefront pseudex-backup; do
     REF="${REGISTRY}/${name}:${VERSION}"
     if ! cosign verify "$REF" \
             --certificate-identity-regexp "$IDENTITY" \

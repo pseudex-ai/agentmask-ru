@@ -1,0 +1,115 @@
+# ВЫКАТКА В ОДИН КЛИК — и один клик не значит «без проверок».
+#
+# ЧТО ЗДЕСЬ ПРОИСХОДИТ. Кнопка ставит ТЕГ. Всё остальное уже устроено и не
+# требует человека: тег запускает `release` (сборка обоих образов, гейты P1-P10
+# и L1-L22 на скомпилированном, публикация и подпись по дайджесту), а хост раз
+# в минуту видит новый тег, ПРОВЕРЯЕТ ПОДПИСИ ДО ТОГО, как что-либо остановит,
+# ждёт здоровья и откатывается сам, если не дождался.
+#
+# ПОЧЕМУ НЕ «ЗАДЕПЛОИТЬ ПО SSH». Это потребовало бы долгоживущего ключа с
+# root-доступом в секретах GitHub и открытого наружу SSH. Для продукта про
+# приватность плохой размен: здесь наружу не открыто ничего, машина забирает
+# сама.
+#
+# ТЕГ СТАВИТСЯ ТОЛЬКО НА ЗЕЛЁНЫЙ КОММИТ. Иначе «в один клик» означало бы «в
+# один клик выкатить непроверенное», а разница между автоматическим и
+# автономным ровно в этом: автоматическое умеет только ломать быстрее.
+
+name: ship
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Какая часть версии растёт"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      force:
+        description: "Выкатить, даже если проверки коммита не зелёные"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: проверки этого коммита зелёные
+        # НЕ «ЕСТЬ ЛИ ПРОВЕРКИ», А «ПРОШЛИ ЛИ ОНИ». Пустой список — это
+        # «проверки ещё не бежали», и трактовать его как успех значило бы
+        # выкатывать тем охотнее, чем быстрее нажали кнопку.
+        if: ${{ !inputs.force }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          sha="${{ github.sha }}"
+          gh api "repos/${{ github.repository }}/commits/${sha}/check-runs" \
+            --jq '.check_runs[] | "\(.name)\t\(.status)\t\(.conclusion)"' > /tmp/checks.tsv || true
+          total="$(wc -l < /tmp/checks.tsv)"
+          if [ "${total}" -eq 0 ]; then
+            echo "::error::для ${sha} нет НИ ОДНОЙ проверки — нечего считать зелёным"
+            exit 1
+          fi
+          bad="$(awk -F'\t' '$2 != "completed" || ($3 != "success" && $3 != "skipped" && $3 != "neutral")' /tmp/checks.tsv || true)"
+          if [ -n "${bad}" ]; then
+            echo "::error::проверки не зелёные:"
+            echo "${bad}"
+            echo "Выкатить всё равно — галочка «force», и тогда это осознанное решение."
+            exit 1
+          fi
+          echo "проверок зелёных: ${total}"
+
+      - name: следующая версия
+        run: |
+          set -eu
+          last="$(git tag -l 'v*' --sort=-v:refname | head -1)"
+          [ -n "${last}" ] || last="v0.0.0"
+          IFS=. read -r major minor patch <<EOF
+          ${last#v}
+          EOF
+          case "${{ inputs.bump }}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            *)     patch=$((patch + 1)) ;;
+          esac
+          next="v${major}.${minor}.${patch}"
+          echo "${last} -> ${next}"
+          echo "NEXT=${next}" >> "$GITHUB_ENV"
+          echo "LAST=${last}" >> "$GITHUB_ENV"
+
+      - name: поставить тег
+        run: |
+          set -eu
+          # АННОТИРОВАННЫЙ, А НЕ ЛЁГКИЙ: в нём остаётся, кто и когда выкатил, и
+          # `git describe` на хосте отвечает осмысленно, а не хешем.
+          git config user.name "ship"
+          git config user.email "ship@users.noreply.github.com"
+          # СООБЩЕНИЕ ЧЕРЕЗ ФАЙЛ, А НЕ ЧЕРЕЗ `-m` С ПЕРЕНОСАМИ. Многострочная
+          # строка внутри блока YAML разрушает его отступы: пустая строка и
+          # список коммитов оказываются за пределами блока, и весь файл
+          # перестаёт разбираться.
+          {
+            echo "релиз ${NEXT}"
+            echo
+            git log --oneline "${LAST}..HEAD" | head -30
+          } > /tmp/tagmsg
+          git tag -a "${NEXT}" -F /tmp/tagmsg
+          git push origin "${NEXT}"
+
+      - name: сказать, что поехало
+        run: |
+          set -eu
+          [ -n "${{ secrets.PSEUDEX_TG_TOKEN }}" ] || exit 0
+          curl -sS -o /dev/null \
+            "https://api.telegram.org/bot${{ secrets.PSEUDEX_TG_TOKEN }}/sendMessage" \
+            --data-urlencode "chat_id=${{ secrets.PSEUDEX_TG_CHAT }}" \
+            --data-urlencode "text=🚢 Поставлен тег ${NEXT}. Сборка и гейты пошли; хост подхватит сам, когда образы будут подписаны."

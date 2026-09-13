@@ -1,0 +1,180 @@
+# Проверка резервных копий ИЗВНЕ — и единственное место, где разрешено удалять.
+#
+# ПОЧЕМУ НЕ НА ХОСТЕ. Хост — это ровно та машина, от отказа которой копии и
+# защищают. Проверка, живущая на нём, подтверждает копию ровно до момента, когда
+# она понадобится; а ключ, которым можно удалять, на нём же превращает
+# шифровальщика в того, кто сначала сотрёт историю и только потом начнёт шифровать.
+# Поэтому ключ хоста не умеет удалять (политика бакета), а `forget --prune`
+# ходит отсюда — другим ключом, из другой зоны отказа.
+#
+# И ЭТО НЕ ЛИСТИНГ, А ВОССТАНОВЛЕНИЕ. «Бэкап, который никто не разворачивал, —
+# это отсутствующий бэкап»: файл нужного размера с нужной датой проходит любую
+# проверку свежести и может не открываться. Здесь база лицензий выкачивается,
+# открывается и у неё считаются строки — то есть проверяется ровно то, ради чего
+# копия существует.
+
+name: backup-audit
+
+on:
+  schedule:
+    # 06:20 UTC — после ночного бэкапа (он идёт в полночь по циклу контейнера) и
+    # до начала рабочего дня, чтобы отказ читали утром, а не вечером.
+    - cron: "20 6 * * *"
+  workflow_dispatch:
+    inputs:
+      deep:
+        description: "Читать КАЖДЫЙ блок репозитория (долго и дорого по трафику)"
+        type: boolean
+        default: false
+
+concurrency:
+  # Два одновременных `prune` — это повреждённый репозиторий, а не удвоенная
+  # скорость. Отменять идущий нельзя по той же причине: prune в середине хуже,
+  # чем prune, который не начался.
+  group: backup-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      RESTIC_REPOSITORY: ${{ secrets.RESTIC_REPOSITORY }}
+      RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.OFFSITE_ADMIN_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.OFFSITE_ADMIN_KEY_SECRET }}
+      AWS_DEFAULT_REGION: ru-central1
+    steps:
+      - name: секреты на месте
+        # ОТСУТСТВИЕ СЕКРЕТА — ЭТО ОСТАНОВКА, А НЕ ПУСТАЯ СТРОКА. Без этой
+        # проверки `restic snapshots` с пустым репозиторием отвечает ошибкой,
+        # которую легко прочитать как «бэкапов нет», и настоящая причина —
+        # «мы не туда смотрим» — потерялась бы.
+        run: |
+          missing=""
+          [ -n "${RESTIC_REPOSITORY}" ] || missing="${missing} RESTIC_REPOSITORY"
+          [ -n "${RESTIC_PASSWORD}" ] || missing="${missing} RESTIC_PASSWORD"
+          [ -n "${AWS_ACCESS_KEY_ID}" ] || missing="${missing} OFFSITE_ADMIN_KEY_ID"
+          [ -n "${AWS_SECRET_ACCESS_KEY}" ] || missing="${missing} OFFSITE_ADMIN_KEY_SECRET"
+          if [ -n "${missing}" ]; then
+            echo "::error::нет секретов репозитория:${missing}"
+            exit 1
+          fi
+
+      - name: restic
+        run: |
+          set -eu
+          # `sqlite3` СТАВИТСЯ ЯВНО. На раннере он есть сегодня и это не
+          # обещание: шаг восстановления без него упал бы с «command not
+          # found», то есть проверка бэкапов сломалась бы по причине, не
+          # имеющей к бэкапам никакого отношения.
+          sudo apt-get update -qq && sudo apt-get install -y -qq restic sqlite3 >/dev/null
+          restic version
+          sqlite3 --version
+
+      - name: свежесть последнего снапшота
+        # ДВА УСЛОВИЯ, И ВТОРОЕ ВАЖНЕЕ. «Снапшоты есть» — недостаточно:
+        # репозиторий, в который перестали писать полгода назад, отвечает на
+        # `snapshots` бодро и содержит копию полугодовой давности.
+        run: |
+          set -eu
+          restic snapshots --json --latest 1 > /tmp/snap.json
+          count="$(python3 -c 'import json;print(len(json.load(open("/tmp/snap.json"))))')"
+          if [ "${count}" -eq 0 ]; then
+            echo "::error::в репозитории НЕТ НИ ОДНОГО снапшота"
+            exit 1
+          fi
+          # СКРИПТ В ФАЙЛ, А НЕ heredoc ВНУТРИ ПОДСТАНОВКИ. YAML снимает общий
+          # отступ у блока, shell завершает heredoc по метке в начале строки, и
+          # закрывающая скобка подстановки идёт после — три правила про отступы
+          # в одном выражении. Оно работает и ломается от лишнего пробела.
+          cat > /tmp/age.py <<'PY'
+          import datetime, json
+          snap = json.load(open("/tmp/snap.json"))[0]
+          when = datetime.datetime.fromisoformat(snap["time"])
+          now = datetime.datetime.now(datetime.timezone.utc)
+          print(int((now - when).total_seconds() // 3600))
+          PY
+          age_h="$(python3 /tmp/age.py)"
+          echo "последний снапшот: ${age_h} ч. назад"
+          echo "SNAP_AGE_H=${age_h}" >> "$GITHUB_ENV"
+          if [ "${age_h}" -gt 30 ]; then
+            echo "::error::последняя копия старше 30 часов (${age_h} ч.) — вывоз молчит"
+            exit 1
+          fi
+
+      - name: целостность репозитория
+        # Индекс и структура каждый день; чтение КАЖДОГО блока — по запросу,
+        # потому что это выкачивание всего репозитория и стоит трафика. 5%
+        # случайной выборки ежедневно означает, что за месяц прочитано
+        # практически всё, и повреждение находится не в тот день, когда нужно
+        # восстанавливаться.
+        run: |
+          set -eu
+          if [ "${{ inputs.deep }}" = "true" ]; then
+            restic check --read-data
+          else
+            restic check --read-data-subset=5%
+          fi
+
+      - name: НАСТОЯЩЕЕ восстановление базы лицензий
+        # ЭТО И ЕСТЬ ПРОВЕРКА. Всё выше подтверждает, что байты на месте; только
+        # это подтверждает, что из них получается работающая база — та самая,
+        # которую нельзя пересобрать из кода и потеря которой останавливает
+        # каждую установку в поле.
+        run: |
+          set -eu
+          mkdir -p /tmp/restored
+          restic restore latest --target /tmp/restored \
+            --include '/backups/license-*.db'
+          db="$(ls -1t /tmp/restored/backups/license-*.db 2>/dev/null | head -1)"
+          if [ -z "${db}" ]; then
+            echo "::error::в снапшоте нет ни одной копии базы лицензий"
+            exit 1
+          fi
+          # `integrity_check` ОТЛИЧАЕТ «ОТКРЫЛАСЬ» ОТ «ЦЕЛА». Рваная копия живой
+          # WAL-базы открывается и отвечает на простые запросы — именно ради
+          # такой копии этот шаг и существует.
+          verdict="$(sqlite3 "${db}" 'PRAGMA integrity_check;')"
+          [ "${verdict}" = "ok" ] || { echo "::error::integrity_check: ${verdict}"; exit 1; }
+          keys="$(sqlite3 "${db}" 'SELECT count(*) FROM keys;')"
+          echo "восстановлено: $(basename "${db}") · ключей клиентов: ${keys}"
+          echo "RESTORED_KEYS=${keys}" >> "$GITHUB_ENV"
+          # НОЛЬ КЛЮЧЕЙ — ЭТО ОТКАЗ, А НЕ «ПОКА НЕТ КЛИЕНТОВ». Пустая база,
+          # приехавшая вместо полной, выглядит идеально по всем предыдущим
+          # проверкам. Условие снимается ровно один раз — когда первый клиент
+          # ещё не куплен; после этого оно обязано быть строгим.
+          if [ "${keys}" -eq 0 ] && [ "${{ vars.EXPECT_EMPTY_LICENSE_DB }}" != "true" ]; then
+            echo "::error::база лицензий восстановилась ПУСТОЙ"
+            exit 1
+          fi
+
+      - name: ретенция
+        # ЕДИНСТВЕННОЕ МЕСТО, ГДЕ ВООБЩЕ ЧТО-ТО УДАЛЯЕТСЯ, и оно намеренно
+        # последнее: сначала доказали, что копии целы и разворачиваются, и
+        # только потом трогаем историю. Обратный порядок однажды удалит то, что
+        # нечем было заменить.
+        run: |
+          set -eu
+          restic forget --host pseudex --tag nightly \
+            --keep-daily 14 --keep-weekly 8 --keep-monthly 12 --keep-yearly 3 \
+            --prune
+          restic stats --mode raw-data
+
+      - name: сказать, чем кончилось
+        if: always()
+        # УСПЕХ ТОЖЕ СООБЩАЕТСЯ, И РЕЖЕ. Канал, который молчит, когда всё
+        # хорошо, неотличим от канала, который сломался: раз в неделю приходит
+        # подтверждение, что проверка вообще бежит.
+        run: |
+          set -eu
+          [ -n "${{ secrets.PSEUDEX_TG_TOKEN }}" ] || exit 0
+          if [ "${{ job.status }}" = "success" ]; then
+            [ "$(date -u +%u)" = "1" ] || exit 0
+            text="🟢 Бэкапы: проверка прошла. Последняя копия ${SNAP_AGE_H} ч. назад, ключей клиентов ${RESTORED_KEYS}."
+          else
+            text="🔴 БЭКАПЫ: ПРОВЕРКА ПРОВАЛЕНА. Копии вне хоста под вопросом — это единственное, что остаётся после отказа машины. ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+          curl -sS -o /dev/null \
+            "https://api.telegram.org/bot${{ secrets.PSEUDEX_TG_TOKEN }}/sendMessage" \
+            --data-urlencode "chat_id=${{ secrets.PSEUDEX_TG_CHAT }}" \
+            --data-urlencode "text=${text}"

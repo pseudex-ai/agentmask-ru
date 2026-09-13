@@ -225,7 +225,7 @@ jobs:
       - name: build, push and sign our own images
         run: |
           set -eu
-          for pair in "licensing:prototype:licensing/Dockerfile" "storefront:storefront:Dockerfile"; do
+          for pair in "licensing:prototype:licensing/Dockerfile" "storefront:storefront:Dockerfile" "backup:deploy:Dockerfile.backup"; do
             NAME="${pair%%:*}"; REST="${pair#*:}"
             CTX="${REST%%:*}"; FILE="${REST#*:}"
             REF="${REGISTRY}/pseudex-${NAME}:${VERSION}"
@@ -245,7 +245,7 @@ jobs:
           set -eu
           {
             echo "version=${VERSION}"
-            for name in "${IMAGE}" "pseudex-licensing" "pseudex-storefront"; do
+            for name in "${IMAGE}" "pseudex-licensing" "pseudex-storefront" "pseudex-backup"; do
               echo "${name}=$(docker inspect --format='{{index .RepoDigests 0}}' "${REGISTRY}/${name}:${VERSION}")"
             done
           } > release-manifest.txt

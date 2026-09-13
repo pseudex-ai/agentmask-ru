@@ -71,6 +71,30 @@ def main() -> int:
           "; ".join(f"{s}: {t}" for s, t in unknown) or
           f"проверено {len(referenced)}: {sorted({t for _, t in referenced})}")
 
+    # --- ВТОРАЯ БАЗА, ВТОРАЯ СХЕМА, ТА ЖЕ ОШИБКА ---------------------------
+    #
+    # Лицензионная база — не Django: это SQLite лицензионного сервера, и её
+    # таблицы знает только `licensing/store.py`. К ней обращается воркфлоу
+    # `backup-audit`, который ВОССТАНАВЛИВАЕТ копию и считает в ней строки, —
+    # то есть единственное место, где проверяется, что бэкап вообще
+    # разворачивается. Опечатка в имени таблицы там означает вечно красную
+    # проверку бэкапов, а вечно красная проверка учит мьютить канал: ровно то,
+    # ради чего написан этот файл.
+    store = (_HERE.parent / "prototype" / "licensing" / "store.py").read_text(encoding="utf-8")
+    license_tables = set(re.findall(r"CREATE TABLE IF NOT EXISTS ([a-z_]+)", store))
+    check("схема лицензионной базы прочитана", len(license_tables) > 3,
+          f"{len(license_tables)} таблиц: {sorted(license_tables)}")
+
+    audit = _HERE.parent / ".github" / "workflows" / "backup-audit.yml"
+    check("воркфлоу проверки бэкапов на месте", audit.exists(), str(audit))
+    if audit.exists():
+        asked = re.findall(r"\bFROM\s+([a-z_][a-z0-9_]*)", audit.read_text(encoding="utf-8"))
+        check("воркфлоу вообще о чём-то спрашивает базу", bool(asked),
+              f"{len(asked)} шт — если ноль, восстановление ничего не проверяет")
+        strangers = [t for t in asked if t not in license_tables]
+        check("и спрашивает существующие таблицы", not strangers,
+              ", ".join(strangers) or f"проверено {sorted(set(asked))}")
+
     print()
     if FAILURES:
         print(f"{len(FAILURES)} провалено: {', '.join(FAILURES)}")

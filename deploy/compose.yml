@@ -234,11 +234,30 @@ services:
     # Both databases, nightly, kept for a month. The licensing database is the
     # one that matters: losing it means every customer's key stops leasing and
     # no amount of code fixes that.
-    image: postgres:17-alpine
+    # СВОЙ ОБРАЗ, А НЕ `postgres:17-alpine`. Базовый не несёт `sqlite3`, поэтому
+    # каждая ночная копия лицензионной базы молча бралась `cp` с живой WAL-базы
+    # — копия, которая открывается и врёт, — а сторож смотрит только на возраст
+    # файла. Строка `apk add` в скрипте это затыкала, и ровно до первой ночи без
+    # сети: инструмент, нужный для спасения, обязан лежать рядом заранее.
+    image: ${REGISTRY:-cr.yandex/pseudex}/pseudex-backup:${VERSION:?set VERSION}
     restart: unless-stopped
     logging: *logging
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD}
+      # ВЫВОЗ С ХОСТА. Пусто — вывоза нет, и цикл честно говорит об этом каждую
+      # ночь; локальные копии делаются в любом случае.
+      #
+      # КЛЮЧУ ХОСТА ЗАПРЕЩЁН `DeleteObject` ПОЛИТИКОЙ БАКЕТА. Шифровальщик
+      # первым делом стирает бэкапы и только потом шифрует, поэтому `prune`
+      # ходит НЕ ОТСЮДА, а из GitHub Actions другим ключом — тем же движением,
+      # что и `restic check`.
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:-}
+      AWS_ACCESS_KEY_ID: ${OFFSITE_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${OFFSITE_KEY_SECRET:-}
+      # Yandex Object Storage требует назвать регион; `ru-central1` — его
+      # единственный, и без него aws-подпись restic не сходится.
+      AWS_DEFAULT_REGION: ${OFFSITE_REGION:-ru-central1}
     volumes:
       - ./backups:/backups
       # READ-WRITE, and it has to be. `sqlite3 .backup` is the only copy that is
@@ -289,6 +308,10 @@ services:
       SITE_HOST: ${SITE_HOST}
       PSEUDEX_BACKUP_DIR: /deploy/backups
       PSEUDEX_WATCH_STATE: /state
+      # ТОЛЬКО ЧТОБЫ ЗНАТЬ, НАСТРОЕН ЛИ ВЫВОЗ. Ни ключей, ни пароля репозитория
+      # здесь нет и быть не должно: сторож отвечает на вопрос «вывоз работает»
+      # по отметке, которую ставит бэкап, и доступ к хранилищу ему не нужен.
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - .:/deploy:ro
@@ -298,6 +321,17 @@ services:
       - |
         apk add --no-cache curl python3 openssl >/dev/null
         while :; do sh /deploy/watch.sh || true; sleep 60; done
+    # СТОРОЖ, КОТОРЫЙ УПАЛ, ОСТАЁТСЯ `running` — ЭТО РОВНО ТА БОЛЕЗНЬ, КОТОРУЮ
+    # ОН САМ ЛЕЧИТ У ДРУГИХ. `while :; do ... || true; done` крутится вечно, чем
+    # бы ни кончался каждый обход, поэтому сломанный `watch.sh` выглядит как
+    # исправно работающий сервис. Отметка ставится только ЗАВЕРШЁННЫМ обходом,
+    # и здоровье означает «последний обход дошёл до конца», а не «процесс жив».
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /state/.last-sweep && [ $$(( $$(date -u +%s) - $$(cat /state/.last-sweep) )) -lt 300 ]"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
 
   # ── НАБЛЮДАЕМОСТЬ, ПО ЯВНОМУ ЖЕЛАНИЮ ─────────────────────────────────────
   #
@@ -325,6 +359,75 @@ services:
   #
   # Если файла нет, Prometheus не поднимет цель и это видно как down — отказ
   # громкий, а не молчаливый.
+  alertmanager-config:
+    # ОДНОРАЗОВЫЙ РЕНДЕР КОНФИГА ТРЕВОГ. Alertmanager не раскрывает переменные
+    # окружения и отвергает `chat_id: 0`, поэтому настоящий идентификатор чата
+    # обязан оказаться в файле. Вторая копия значения в гите однажды разойдётся
+    # с `.env` — и узнается это в аварии, когда тревога уйдёт в чат, из
+    # которого все вышли.
+    #
+    # `service_completed_successfully` НИЖЕ — ЭТО И ЕСТЬ ГАРАНТИЯ. Не «рендер
+    # обычно успевает», а «Alertmanager не стартует, пока рендер не завершился
+    # успешно»: пустой или недорендеренный конфиг не поднимется молча.
+    image: alpine:3.21
+    profiles: ["observability"]
+    restart: "no"
+    logging: *logging
+    volumes:
+      - ./alertmanager.yml:/in/alertmanager.yml:ro
+      - alertmanager-config:/out
+    # `$$` — ПОДСТАНОВКУ ДЕЛАЕТ ШЕЛЛ, А НЕ COMPOSE. Через `${...}` значение
+    # попало бы в `docker inspect` и, что хуже, пустая переменная превратилась
+    # бы в пустую строку внутри уже отрендеренного файла — то есть в тихо
+    # сломанный конфиг вместо громкого отказа.
+    environment:
+      PSEUDEX_TG_CHAT: ${PSEUDEX_TG_CHAT:?в deploy/.env нужен PSEUDEX_TG_CHAT — иначе тревоги некуда слать}
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        sed "s/__PSEUDEX_TG_CHAT__/$$PSEUDEX_TG_CHAT/" /in/alertmanager.yml > /out/alertmanager.yml
+        grep -q '__PSEUDEX_TG_CHAT__' /out/alertmanager.yml && { echo "рендер не заменил плейсхолдер"; exit 1; } || true
+        # ЯКОРЬ НА НАЧАЛО СТРОКИ — НЕ ПЕДАНТИЗМ. Без него `grep` находил
+        # `chat_id: 0` внутри КОММЕНТАРИЯ этого же файла и объявлял пустую
+        # подстановку успешной: проверка, удовлетворённая не тем местом.
+        grep -qE '^[[:space:]]+chat_id: -?[0-9]+$' /out/alertmanager.yml || { echo "chat_id не число"; exit 1; }
+        echo "alertmanager.yml отрендерен"
+
+  alertmanager:
+    # ДЕСЯТЬ ПРАВИЛ ТРЕВОГ СРАБАТЫВАЛИ В НИКУДА. `alerts.yml` описывает падение
+    # лицензионного сервера, разрывы цепи отчётов, истёкшие лизы и выход
+    # воркеров за бюджет памяти — а в `prometheus.yml` стояло `targets: []`, то
+    # есть увидеть тревогу можно было, только открыв Prometheus руками. Правило,
+    # которое никого не будит, — это комментарий, записанный в YAML.
+    #
+    # ТОТ ЖЕ КАНАЛ, ЧТО У СТОРОЖА, и это не лень: у оператора должно быть ОДНО
+    # место, куда смотреть в три ночи. Два канала означают, что один из них
+    # рано или поздно окажется не настроен, и узнается это в аварии.
+    image: prom/alertmanager:v0.28.0
+    profiles: ["observability"]
+    restart: unless-stopped
+    logging: *logging
+    volumes:
+      - alertmanager-config:/etc/alertmanager
+      # ТОКЕН ФАЙЛОМ, А НЕ ПЕРЕМЕННОЙ — по той же причине, по которой так лежит
+      # админский токен Prometheus: подстановку `${...}` в compose делает сам
+      # Compose, и секрет оказался бы в `docker inspect`. Alertmanager к тому же
+      # не раскрывает переменные окружения в своём конфиге вовсе, так что файл
+      # здесь — единственный путь, а не предпочтение.
+      - ./secrets/tg-bot-token:/etc/alertmanager/tg-token:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      # Ссылка в письме тревоги ведёт в Grafana, а не в неопубликованный
+      # Prometheus: человек всё равно пойдёт смотреть график.
+      - --web.external-url=https://${SITE_HOST:-pseudex.ru}/grafana
+    expose: ["9093"]
+    depends_on:
+      alertmanager-config: { condition: service_completed_successfully }
+
   prometheus:
     image: prom/prometheus:v3.1.0
     profiles: ["observability"]
@@ -344,6 +447,7 @@ services:
     expose: ["9090"]
     depends_on:
       license: { condition: service_started }
+      alertmanager: { condition: service_started }
 
   grafana:
     image: grafana/grafana:11.5.1
@@ -405,6 +509,8 @@ volumes:
   watch-state:
   billing-state:
   prometheus-data:
+  alertmanager-data:
+  alertmanager-config:
   grafana-data:
   postgres-data:
   license-data:
