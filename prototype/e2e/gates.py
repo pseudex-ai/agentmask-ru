@@ -265,6 +265,15 @@ def build_stand(image: str, workers: int, skip_build: bool) -> str:
     certs.generate(_HERE / "certs", "license")
     print("  self-signed CA + server cert written")
 
+    # THE FAKETIME MOUNT MUST EXIST BEFORE THE STAND FIRST COMES UP, owned by
+    # US. `compose.yml` binds `./faketime:/faketime` for every sidecar start,
+    # and when the source directory is missing Docker creates it AS ROOT. L11
+    # then finds a directory it cannot write into and dies on `ts` with
+    # `Permission denied` — the same shape as P6's cosign key directory, and
+    # equally invisible on macOS, where Docker Desktop remaps ownership.
+    # Creating it here, from the runner's own uid, is the whole fix.
+    (_HERE / "faketime").mkdir(exist_ok=True)
+
     sh(["docker", "build", "-f", str(_ROOT / "licensing" / "Dockerfile"),
         "-t", "pseudex-licensing:e2e", str(_ROOT)], True, 1200)
     if skip_build:
@@ -762,6 +771,17 @@ def prepare_faketime() -> bool:
     one that ships. This also models the threat honestly — someone who wants free
     grace controls the container's environment, not our Dockerfile."""
     _FAKETIME_DIR.mkdir(exist_ok=True)
+    # A DIRECTORY WE CANNOT WRITE INTO IS A FAILED GATE WITH A NAMED CAUSE,
+    # not a traceback. `build_stand` creates it first so this should not
+    # happen; if it does anyway (a stale root-owned directory from an older
+    # run), a root container can hand it back, and the gate says so.
+    if not os.access(_FAKETIME_DIR, os.W_OK):
+        print("      faketime/ is not writable (root-owned by an earlier docker run) — repairing")
+        sh(["docker", "run", "--rm", "-v", f"{_FAKETIME_DIR}:/out", "alpine:3.21",
+            "chmod", "777", "/out"], False, 120)
+    if not os.access(_FAKETIME_DIR, os.W_OK):
+        print("      faketime/ still not writable")
+        return False
     if not (_FAKETIME_DIR / "libfaketime.so.1").exists():
         result = sh(["docker", "run", "--rm", "-v", f"{_FAKETIME_DIR}:/out",
                      "debian:12-slim", "sh", "-c",
