@@ -41,7 +41,7 @@ from accounts.models import Organization
 from billing import licensing
 from billing import reconcile as billing_reconcile
 from billing.models import Invoice, Plan, PlanChange, Subscription
-from ops.analytics_models import Funnel, Visit
+from ops.analytics_models import Funnel, UsageDay, Visit
 
 # СТРАНИЦА БЬЁТСЯ О ПОТОЛОК ПАКЕТНОЙ РУЧКИ, А НЕ О ЧИСЛО КЛИЕНТОВ.
 # `/admin/fleet` отвечает 400 сверх двухсот идентификаторов — намеренно, чтобы
@@ -383,6 +383,17 @@ def analytics(request):
                  else rows.values("organization_id").distinct().count()
                  if code != Funnel.LANDING else rows.count())
         steps.append({"code": code, "title": title, "count": count})
+    # ШАГ С НУЛЁМ, ЗА КОТОРЫМ СТОИТ НЕНУЛЕВОЙ, НЕВОЗМОЖЕН ПО СМЫСЛУ, и это
+    # единственный способ увидеть с экрана, что шаг перестали ЗАПИСЫВАТЬ.
+    # Воронка упорядочена: заплатить, не замаскировав ни одного запроса,
+    # нельзя, как нельзя замаскировать, не подняв контейнера. Поэтому дыра
+    # выглядит не как «клиенты отвалились», а как арифметическая невозможность
+    # — и её надо назвать вслух, иначе ноль читается как отвал и посылает
+    # чинить продукт вместо аналитики. Так и жил `first_mask`: объявлен в
+    # модели, не записан никем, а на экране выглядел провалом конверсии.
+    from ops import collect as _collect
+    steps = _collect.flag_unwired(steps)
+
     top = steps[0]["count"] if steps and steps[0]["count"] else 0
     previous = None
     for row in steps:
@@ -422,9 +433,165 @@ def analytics(request):
     total_visits = visits.count()
     total_visitors = visits.values("visitor").distinct().count()
 
+    # --- ДЕНЬГИ. Главное число бизнеса, и его на этом экране не было вовсе.
+    #
+    # MRR СЧИТАЕТСЯ ПО СНИМКУ УСЛОВИЙ, А НЕ ПО ЦЕНЕ ТАРИФА. Действующая
+    # подписка живёт по условиям, снятым при продаже (`terms_monthly_price`), и
+    # правка тарифа доходит до неё только на продлении. Считать по прайсу
+    # значило бы показывать выручку, которой нет: конструктор поднял цену —
+    # MRR «вырос», а платят по-прежнему старую.
+    active = list(Subscription.objects.filter(state=Subscription.ACTIVE)
+                  .select_related("plan"))
+    mrr = sum((s.terms_monthly_price or s.plan.monthly_price for s in active),
+              Decimal("0"))
+    paying_orgs = {s.organization_id for s in active}
+
+    paid_invoices = Invoice.objects.filter(state=Invoice.PAID, paid_at__gte=since)
+    revenue = paid_invoices.aggregate(total=Sum("total"))["total"] or Decimal("0")
+    # ОБЪЁМ СВЕРХ ВКЛЮЧЁННОГО — ОТДЕЛЬНОЙ СТРОКОЙ, а не внутри выручки: это
+    # единственная её часть, которая растёт без единой новой продажи, и
+    # спутать её с ростом клиентской базы значит принять неверное решение.
+    metered = paid_invoices.aggregate(total=Sum("metered_amount"))["total"] or Decimal("0")
+
+    trials = Subscription.objects.filter(state=Subscription.TRIAL).count()
+    past_due = Subscription.objects.filter(state=Subscription.PAST_DUE).count()
+    cancelled = Subscription.objects.filter(
+        cancel_at_period_end=True).exclude(state=Subscription.CANCELLED).count()
+    lost = Subscription.objects.filter(state=Subscription.CANCELLED).count()
+
+    # КОНВЕРСИЯ ТРИАЛА — ПО КОГОРТЕ ЗАКОНЧИВШИХСЯ, А НЕ ПО ВСЕМ. Триалы,
+    # которые ещё идут, не провалились — они просто не решили, и, попав в
+    # знаменатель, занижали бы конверсию ровно в темпе притока новых клиентов.
+    decided = Subscription.objects.filter(trial_ends_at__lt=timezone.now())
+    decided_n = decided.count()
+    converted = decided.filter(state__in=[Subscription.ACTIVE,
+                                          Subscription.PAST_DUE]).count()
+
+    money = {
+        "mrr": mrr, "revenue": revenue, "metered": metered,
+        "paying": len(active), "trials": trials,
+        "past_due": past_due, "cancelling": cancelled, "lost": lost,
+        "invoices_paid": paid_invoices.count(),
+        "average": (revenue / paid_invoices.count()) if paid_invoices.count() else Decimal("0"),
+        "trial_conversion": (round(converted / decided_n * 100, 1)
+                             if decided_n else None),
+        "trial_decided": decided_n,
+    }
+
+    # --- ВРЕМЯ ДО ЦЕННОСТИ. Сколько проходит от ключа до первой маскировки.
+    #
+    # ЭТО ГЛАВНОЕ ЧИСЛО ОНБОРДИНГА, и оно уже лежало в базе двумя отметками
+    # воронки, которые никто не вычитал друг из друга. Конверсия говорит
+    # СКОЛЬКО дошло, медиана — НАСКОЛЬКО ТРУДНО было: те же 60% за двадцать
+    # минут и за четыре дня требуют разных действий.
+    #
+    # МЕДИАНА, А НЕ СРЕДНЕЕ: один клиент, поднявший контейнер через месяц,
+    # сдвигает среднее так, что оно перестаёт описывать кого бы то ни было.
+    def _minutes_between(first_step: str, second_step: str) -> list[int]:
+        starts = dict(Funnel.objects.filter(step=first_step)
+                      .exclude(organization_id="")
+                      .values_list("organization_id", "at"))
+        spans = []
+        for org_id, at in Funnel.objects.filter(step=second_step).exclude(
+                organization_id="").values_list("organization_id", "at"):
+            started = starts.get(org_id)
+            if started and at >= started:
+                spans.append(int((at - started).total_seconds() // 60))
+        return sorted(spans)
+
+    def _median(values: list[int]):
+        if not values:
+            return None
+        middle = len(values) // 2
+        return (values[middle] if len(values) % 2
+                else (values[middle - 1] + values[middle]) // 2)
+
+    to_lease = _minutes_between(Funnel.KEY_ISSUED, Funnel.FIRST_LEASE)
+    to_mask = _minutes_between(Funnel.KEY_ISSUED, Funnel.FIRST_MASK)
+    speed = {
+        "to_lease": _median(to_lease), "to_lease_n": len(to_lease),
+        "to_mask": _median(to_mask), "to_mask_n": len(to_mask),
+    }
+
+    # --- КТО ЗАМОЛЧАЛ. Самый сильный сигнал оттока, и он был невидим.
+    #
+    # НАКОПИТЕЛЬНЫЙ СЧЁТЧИК НЕ УМЕЕТ ПАДАТЬ. `usage.requests` монотонен — это
+    # правильно для счёта и бесполезно для вопроса «работает ли клиент ещё»:
+    # платящий, у которого трафик кончился месяц назад, на экране флота стоит
+    # с тем же большим числом, что и в лучший свой день. Разность соседних
+    # суток из нашего собственного следа (`UsageDay`) — единственное место, где
+    # это видно, и приходит оно за МЕСЯЦЫ до отказа платить.
+    #
+    # ВОПРОС ЗАДАЁТСЯ ТОЛЬКО ПРО ТЕХ, КТО КОГДА-ТО РАБОТАЛ. Клиент, не
+    # поднявший контейнер ни разу, — это провал онбординга, он уже посчитан
+    # воронкой, и в списке оттока он был бы шумом, который заслонит настоящий.
+    quiet = []
+    for org_id in paying_orgs | {s.organization_id for s in
+                                 Subscription.objects.filter(state=Subscription.TRIAL)}:
+        series = list(UsageDay.objects.filter(organization_id=org_id)
+                      .order_by("-day")[:30])
+        if len(series) < 2 or not series[0].requests:
+            continue
+        stalled_since = min(row.day for row in series
+                            if row.requests == series[0].requests)
+        silent = (today - stalled_since).days
+        if silent >= 3:
+            quiet.append({"org_id": org_id, "days": silent,
+                          "requests": series[0].requests,
+                          "paying": org_id in paying_orgs})
+    quiet.sort(key=lambda row: row["days"], reverse=True)
+
+    # --- КАМПАНИИ ДО ДЕНЕГ. Ради этого атрибуция и переехала на организацию.
+    #
+    # ВИЗИТЫ СЧИТАЮТСЯ ПО ВИЗИТАМ, А ВСЁ ОСТАЛЬНОЕ — ПО ОРГАНИЗАЦИЯМ, и это два
+    # разных источника, склеенные по имени кампании. Иначе никак: между визитом
+    # и оплатой стоят недели, а отпечаток посетителя живёт сутки.
+    campaigns: dict[str, dict] = {}
+
+    def _row(key: str) -> dict:
+        return campaigns.setdefault(key, {
+            "value": key, "visits": 0, "visitors": 0, "signups": 0,
+            "masked": 0, "paying": 0, "revenue": Decimal("0")})
+
+    for row in (visits.values("utm_campaign", "utm_source", "referrer_host")
+                .annotate(visits=Count("id"),
+                          visitors=Count("visitor", distinct=True))):
+        key = (row["utm_campaign"] or row["utm_source"]
+               or row["referrer_host"] or "прямой заход")
+        into = _row(key)
+        into["visits"] += row["visits"]
+        into["visitors"] += row["visitors"]
+
+    masked_orgs = set(Funnel.objects.filter(step=Funnel.FIRST_MASK)
+                      .values_list("organization_id", flat=True))
+    revenue_by_org = {
+        r["organization_id"]: r["total"] for r in
+        Invoice.objects.filter(state=Invoice.PAID).values("organization_id")
+        .annotate(total=Sum("total"))}
+
+    for org in Organization.objects.filter(created_at__gte=since):
+        key = (org.source_utm_campaign or org.source_utm_source
+               or org.source_referrer or "прямой заход")
+        into = _row(key)
+        into["signups"] += 1
+        if org.id in masked_orgs:
+            into["masked"] += 1
+        if org.id in paying_orgs:
+            into["paying"] += 1
+        into["revenue"] += revenue_by_org.get(org.id, Decimal("0"))
+
+    channels = sorted(campaigns.values(),
+                      key=lambda r: (r["paying"], r["signups"], r["visitors"]),
+                      reverse=True)[:15]
+    for row in channels:
+        row["to_signup"] = (round(row["signups"] / row["visitors"] * 100, 1)
+                            if row["visitors"] else None)
+
     return render(request, "ops/analytics.html", {
         "days": days, "with_bots": with_bots, "today": today,
         "steps": steps, "refusals": refusals,
+        "money": money, "speed": speed, "channels": channels,
+        "quiet": quiet,
         "by_day": by_day, "peak": peak,
         "total_visits": total_visits, "total_visitors": total_visitors,
         "bots": bots,

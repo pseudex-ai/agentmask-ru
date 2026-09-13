@@ -90,7 +90,7 @@ class Command(BaseCommand):
         self.dry = dry
         self.done: list[str] = []
 
-        self._detect_first_lease()
+        self._detect_container_steps()
         self._warn_about_volume()
         self._issue_for_ended_trials(now)
         self._issue_for_ended_periods(now)
@@ -102,27 +102,40 @@ class Command(BaseCommand):
             self.stdout.write(prefix + line)
         self.stdout.write(f"{len(self.done)} действий")
 
-    # --- 0: кто впервые поднял контейнер -----------------------------------
+    # --- 0: что происходит на ЧУЖОМ железе ---------------------------------
 
-    def _detect_first_lease(self) -> None:
-        """Отметить организации, впервые взявшие аренду.
+    def _detect_container_steps(self) -> None:
+        """Отметить, кто впервые поднял контейнер и кто впервые им воспользовался.
 
-        ЭТО ШАГ ВОРОНКИ, КОТОРЫЙ НЕ ВИДЕН ИЗ БРАУЗЕРА ВООБЩЕ. Между «получил
+        ЭТО ДВА ШАГА ВОРОНКИ, НЕ ВИДНЫЕ ИЗ БРАУЗЕРА ВООБЩЕ. Между «получил
         ключ» и «поднял контейнер» отваливается больше всего людей, и отвал
         этот происходит на ЧУЖОМ железе: человек скопировал команду, не открыл
         порт наружу, получил отказ и ушёл. Ни одна аналитика на странице этого
         не увидит — факт приезжает к нам арендой.
 
-        Спрашивается только про тех, у кого шага ещё нет: пакетная ручка
-        отвечает про названных, и список сам собой сжимается по мере того, как
-        клиенты поднимаются.
+        И РАЗНИЦА МЕЖДУ ДВУМЯ ШАГАМИ — САМОЕ СОДЕРЖАТЕЛЬНОЕ, ЧТО ЗДЕСЬ ЕСТЬ.
+        Контейнер может подняться и не получить НИ ОДНОГО запроса: человек
+        довёл установку до конца, а до включения в свой шлюз не дошёл. Это
+        совершенно другой диагноз, чем «не смог запустить», и чинится он другим
+        — не инструкцией по докеру, а примером интеграции. Шаг `first_mask`
+        был ОБЪЯВЛЕН в модели и не записывался ничем, поэтому воронка
+        обрывалась на «поднял контейнер», а следующий её шаг — «получил счёт» —
+        уже стоял ненулевым. Ровно та болезнь, которую этот репозиторий ловит
+        механически в гейтах: объявленный интерфейс без единого вызова.
+
+        Спрашивается только про тех, у кого хотя бы одного шага ещё нет:
+        пакетная ручка отвечает про названных, и список сам собой сжимается по
+        мере того, как клиенты поднимаются.
         """
         from ops.analytics_models import Funnel
 
-        seen = set(Funnel.objects.filter(step=Funnel.FIRST_LEASE)
-                   .values_list("organization_id", flat=True))
+        leased_seen = set(Funnel.objects.filter(step=Funnel.FIRST_LEASE)
+                          .values_list("organization_id", flat=True))
+        masked_seen = set(Funnel.objects.filter(step=Funnel.FIRST_MASK)
+                          .values_list("organization_id", flat=True))
         pending = [s.organization_id for s in Subscription.objects.all()
-                   if s.organization_id not in seen]
+                   if s.organization_id not in leased_seen
+                   or s.organization_id not in masked_seen]
         if not pending:
             return
         try:
@@ -144,12 +157,31 @@ class Command(BaseCommand):
             leased = (_int_or_zero(usage.get("capacity_granted"))
                       or _int_or_zero(usage.get("reports"))
                       or row.get("instances"))
-            if not leased:
-                continue
-            self.done.append(f"{org_id}: впервые поднял контейнер")
-            if not self.dry:
-                Funnel.objects.create(step=Funnel.FIRST_LEASE,
-                                      organization_id=org_id)
+            # `requests` — ТОТ ЖЕ СЧЁТЧИК, ПО КОТОРОМУ ВЫСТАВЛЯЕТСЯ СЧЁТ, и он
+            # монотонен по той же причине. Второго источника здесь быть не
+            # может: воронка и инвойс, разошедшиеся в том, работал ли клиент,
+            # — это два ответа на один вопрос.
+            masked = _int_or_zero(usage.get("requests"))
+
+            # ПОРЯДОК ШАГОВ — СВОЙСТВО ДАННЫХ, А НЕ ОФОРМЛЕНИЕ. Замаскировать,
+            # не взяв аренды, нельзя: без лиза движок не детектирует вовсе.
+            # Поэтому запрос, дошедший до нас, сам по себе доказывает аренду —
+            # и без этой строки организация, впервые увиденная уже работающей,
+            # получила бы `first_mask` при пустом `first_lease`, то есть
+            # воронку, в которой следующий шаг больше предыдущего.
+            if masked:
+                leased = leased or masked
+
+            if leased and org_id not in leased_seen:
+                self.done.append(f"{org_id}: впервые поднял контейнер")
+                if not self.dry:
+                    Funnel.objects.create(step=Funnel.FIRST_LEASE,
+                                          organization_id=org_id)
+            if masked and org_id not in masked_seen:
+                self.done.append(f"{org_id}: первый замаскированный запрос")
+                if not self.dry:
+                    Funnel.objects.create(step=Funnel.FIRST_MASK,
+                                          organization_id=org_id)
 
     # --- 0б: предупредить о расходе ДО того, как придёт счёт ---------------
 
@@ -173,10 +205,6 @@ class Command(BaseCommand):
                 .select_related("organization", "plan")
                 .filter(state__in=(Subscription.TRIAL, Subscription.ACTIVE)))
         for subscription in live:
-            terms = subscription.terms
-            rate = terms["metered_per_1k"] or 0
-            if not rate:
-                continue
             organization = subscription.organization
             try:
                 reported = licensing.usage(organization.id).get("usage", {})
@@ -185,6 +213,20 @@ class Command(BaseCommand):
                 # и превращать её в тревогу клиенту неправильно.
                 continue
             if not isinstance(reported, dict):
+                continue
+
+            # СНИМОК ПИШЕТСЯ ДО ВСЯКИХ УСЛОВИЙ, И ПРОВЕРКА СТАВКИ ПЕРЕЕХАЛА
+            # СЮДА РАДИ ЭТОГО. Раньше клиент на тарифе без ставки за объём
+            # пропускался ДО запроса расхода — то есть у него не было бы ни
+            # одной точки ряда, и «замолчал» про него сказать было бы нечем.
+            # Лишних обращений это не создаёт: ставка есть у всех наших
+            # тарифов, а `continue` там стоял на случай тарифа, собранного
+            # руками.
+            self._snapshot_usage(organization.id, reported)
+
+            terms = subscription.terms
+            rate = terms["metered_per_1k"] or 0
+            if not rate:
                 continue
             used = _period_volume(organization, reported)
             included = int(terms["included_requests"] or 0)
@@ -206,6 +248,22 @@ class Command(BaseCommand):
                 if not self.dry:
                     subscription.volume_notified = stage
                     subscription.save(update_fields=["volume_notified"])
+
+    def _snapshot_usage(self, org_id: str, reported: dict) -> None:
+        """Одна строка в сутки: накопленный расход клиента на сейчас.
+
+        ПЕРЕЗАПИСЬ, А НЕ ДОПИСЫВАНИЕ: цикл идёт каждый час, и двадцать четыре
+        строки за сутки сделали бы разность соседних суток бессмысленной.
+        Последнее значение суток и есть их итог.
+        """
+        if self.dry:
+            return
+        from ops.analytics_models import UsageDay
+
+        requests = _int_or_zero(reported.get("requests"))
+        UsageDay.objects.update_or_create(
+            organization_id=org_id, day=timezone.localdate(),
+            defaults={"requests": requests})
 
     def _send_volume_notice(self, subscription, used: int, included: int,
                             floor: int, rate, charging: bool) -> None:

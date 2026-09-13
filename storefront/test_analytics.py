@@ -129,6 +129,59 @@ def main() -> int:
           VisitDay.objects.filter(day=day).exists(),
           "свёртка живёт вечно, сырьё — нет")
 
+    # --- воронка: шаг, который не записывается ----------------------------
+    #
+    # ИМЕННО ЭТОТ ПРИБОР НАШЁЛ БЫ `first_mask` САМ. Шаг был объявлен в модели и
+    # не записан ничем, воронка обрывалась на «поднял контейнер», а следующий
+    # её шаг стоял ненулевым — то есть на экране это читалось как провал
+    # конверсии и посылало чинить продукт вместо аналитики.
+    ladder = [{"count": 10}, {"count": 6}, {"count": 0}, {"count": 3}]
+    flagged = collect.flag_unwired(ladder)
+    check("ноль, за которым стоит ненулевой шаг, назван не отвалом",
+          flagged[2]["unwired"] is True,
+          "заплатить, не замаскировав ни одного запроса, нельзя")
+    check("а честный отвал в хвосте не оболган",
+          [f["unwired"] for f in flagged] == [False, False, True, False],
+          "последний ноль — это просто никто не дошёл")
+    check("функция чистая — исходный список не тронут",
+          "unwired" not in ladder[2], str(ladder[2]))
+
+    # --- первое касание: атрибуция без куки -------------------------------
+    #
+    # МЕТКИ ПРИХОДЯТ НА ЛЕНДИНГ, А ФОРМА ОТПРАВЛЯЕТСЯ С ДРУГОЙ СТРАНИЦЫ. Обычное
+    # решение — положить первое касание в сессию, то есть поставить куку;
+    # лендинг обещает, что куки не ставит. Здесь связь берётся из визитов того
+    # же суточного отпечатка, и это работает ровно сутки — честная цена.
+    me = "attributed00001"
+    base = timezone.now() - datetime.timedelta(minutes=30)
+    Visit.objects.create(at=base, visitor=me, path="/",
+                         referrer_host="yandex.ru", utm_source="yandex",
+                         utm_medium="cpc", utm_campaign="pseudex-brand")
+    Visit.objects.create(at=base + datetime.timedelta(minutes=5), visitor=me,
+                         path="/detection", referrer_host="")
+    touch = collect.first_touch(me, since_hours=24)
+    check("источник взят из помеченного визита",
+          touch["source_utm_campaign"] == "pseudex-brand"
+          and touch["source_utm_source"] == "yandex", str(touch))
+    check("посадочная страница — та, с которой начали, а не последняя",
+          touch["source_landing"] == "/", touch["source_landing"])
+
+    # ВОЗВРАТ ЧЕРЕЗ ДОКУМЕНТАЦИЮ НЕ ДОЛЖЕН ПЕРЕПИСЫВАТЬ ИСТОЧНИК. Человек ушёл
+    # читать и вернулся — последний визит назвал бы источником нас самих, и
+    # кампания, которая за него заплатила, не получила бы ни одной регистрации.
+    Visit.objects.create(at=base + datetime.timedelta(minutes=20), visitor=me,
+                         path="/", referrer_host="habr.com")
+    again = collect.first_touch(me, since_hours=24)
+    check("поздний переход не перебивает первое касание",
+          again["source_utm_campaign"] == "pseudex-brand"
+          and again["source_referrer"] == "yandex.ru", str(again))
+
+    # ЧУЖОЙ ОТПЕЧАТОК — ЧУЖОЙ ИСТОЧНИК, и пустой ответ здесь правильный:
+    # человек, пришедший по прямой ссылке, не должен унаследовать чужую метку.
+    check("незнакомому посетителю источник не приписывается",
+          collect.first_touch("neverseen00001", since_hours=24) == {},
+          "иначе первая же кампания собрала бы все прямые заходы")
+
     # --- утренняя сводка: телеграм — ЧУЖОЙ сервис -------------------------
     #
     # «ПЕРСОНАЛЬНЫХ ДАННЫХ ЗДЕСЬ НЕТ» СТОЯЛО В ДОКСТРИНГЕ И НЕ ПРОВЕРЯЛОСЬ
@@ -211,12 +264,88 @@ def main() -> int:
           f"утекло: {', '.join(leaked)}" if leaked else
           "почта, название, ИНН и адрес лежат в базе и в канал не попали")
 
+    # --- деньги и отток: два числа, которые легко посчитать неправильно ----
+    #
+    # ЧИТАЕТСЯ КОНТЕКСТ ВЬЮ, А НЕ РАЗМЕТКА, и ради этого включается тестовая
+    # инструментовка шаблонов: без неё `response.context` — None, потому что
+    # сигнал отрисовки никто не подменял. Проверять арифметику по тексту
+    # страницы нельзя вовсе: Django локализует числа, и «3900» превращается в
+    # «3 900» с неразрывным пробелом — тест краснел бы от настройки языка.
+    from django.test.utils import setup_test_environment
+    setup_test_environment()
+
+    from django.test import Client as _Client
+
+    from accounts.models import Membership as _M, Organization as _O, User as _U
+    from billing.models import Invoice as _I, Plan as _P, Subscription as _S
+    from ops.analytics_models import UsageDay
+
+    call_command("seed_plans", verbosity=0)
+    staff = _U.objects.create_superuser(email="ops@pseudex.local", password="ops-pass-1")
+    console = _Client()
+    console.force_login(staff)
+
+    work = _P.objects.get(code="work")
+    now2 = timezone.now()
+
+    # КЛИЕНТ, КУПИВШИЙ ПО СТАРОЙ ЦЕНЕ. Снимок условий — 3900; тариф после
+    # правки конструктора стоит вдвое дороже, но этот клиент платит старое до
+    # продления. MRR по прайсу показал бы выручку, которой нет.
+    old_terms = _O.objects.create(display_name="Старые условия")
+    _S.objects.create(organization=old_terms, plan=work, state=_S.ACTIVE,
+                      terms_monthly_price=work.monthly_price,
+                      trial_ends_at=now2 - datetime.timedelta(days=1),
+                      current_period_end=now2 + datetime.timedelta(days=20))
+    was_price = work.monthly_price
+    work.monthly_price = was_price * 2
+    work.save(update_fields=["monthly_price"])
+
+    # ЧИТАЕТСЯ КОНТЕКСТ, А НЕ РАЗМЕТКА. Первая версия искала «3900» в теле
+    # страницы и краснела на ровном месте: Django локализует числа и печатает
+    # «3 900» неразрывным пробелом. Тест, ломающийся от настройки языка,
+    # проверяет верстальщика, а не арифметику.
+    money = console.get("/admin/ops/analytics/?days=30").context["money"]
+    check("MRR считается по снимку условий, а не по цене тарифа",
+          money["mrr"] == was_price,
+          f"MRR {money['mrr']} ₽ при снимке {was_price} ₽ и тарифе {was_price * 2} ₽")
+    work.monthly_price = was_price
+    work.save(update_fields=["monthly_price"])
+
+    # ЗАМОЛЧАВШИЙ. Накопленное не двигалось неделю — на экране флота он
+    # неотличим от работающего, потому что счётчик монотонен.
+    silent = _O.objects.create(display_name="Замолчавший")
+    _S.objects.create(organization=silent, plan=work, state=_S.ACTIVE,
+                      terms_monthly_price=work.monthly_price,
+                      trial_ends_at=now2 - datetime.timedelta(days=30),
+                      current_period_end=now2 + datetime.timedelta(days=10))
+    busy = _O.objects.create(display_name="Работающий")
+    _S.objects.create(organization=busy, plan=work, state=_S.ACTIVE,
+                      terms_monthly_price=work.monthly_price,
+                      trial_ends_at=now2 - datetime.timedelta(days=30),
+                      current_period_end=now2 + datetime.timedelta(days=10))
+    today2 = timezone.localdate()
+    for back in range(10):
+        day = today2 - datetime.timedelta(days=back)
+        UsageDay.objects.create(organization_id=silent.id, day=day, requests=50_000)
+        UsageDay.objects.create(organization_id=busy.id, day=day,
+                                requests=50_000 - back * 700)
+
+    quiet = console.get("/admin/ops/analytics/?days=30").context["quiet"]
+    named = {row["org_id"]: row["days"] for row in quiet}
+    check("замолчавший клиент назван, хотя счётчик у него большой",
+          named.get(silent.id) == 9,
+          f"молчит {named.get(silent.id)} дн. — монотонный итог делает его "
+          f"неотличимым от живого")
+    check("а работающий в список оттока не попал",
+          busy.id not in named, "у него расход растёт каждые сутки")
+
     print()
     if FAILURES:
         print(f"{len(FAILURES)} провалено: {', '.join(FAILURES)}")
         return 1
     print("аналитика OK — отпечаток суточный, IP не хранится, боты отделены, "
-          "свёртка идемпотентна, в телеграм не уходит ни одного ПД")
+          "свёртка идемпотентна, в телеграм не уходит ни одного ПД, MRR по снимку "
+          "условий, замолчавшие названы")
     return 0
 
 

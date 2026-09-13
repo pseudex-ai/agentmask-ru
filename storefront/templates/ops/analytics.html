@@ -25,7 +25,50 @@
     </div>
   </div>
 
-  <!-- ВОРОНКА ПЕРВОЙ. Просмотры не отвечают ни на один вопрос, который стоит
+
+  <!-- ДЕНЬГИ ПЕРВЫМИ. Воронка называет место, где чинить; эти семь чисел
+       говорят, есть ли ещё что чинить. Их на экране не было вовсе, и узнавать
+       выручку приходилось из утренней сводки в телеграме. -->
+  <h3 style="margin:8px 0 6px;font-size:20px">Деньги</h3>
+  <div style="font-size:13px;color:var(--dim-2);margin-bottom:14px;max-width:760px">
+    MRR считается по СНИМКУ условий каждой подписки, а не по цене тарифа:
+    правка в конструкторе доходит до клиента только на продлении, и счёт по
+    прайсу показывал бы выручку, которой нет.
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line-2);border:1px solid var(--line-2);margin-bottom:26px">
+    <div style="background:var(--panel);padding:16px 18px 18px">
+      <div class="label">MRR</div>
+      <div class="mono" style="font-size:26px;font-weight:700;margin-top:8px;color:var(--accent)">{{ money.mrr|floatformat:0 }} ₽</div>
+      <div style="font-size:12px;color:var(--dim-2);margin-top:6px">{{ money.paying }} платящих</div>
+    </div>
+    <div style="background:var(--panel);padding:16px 18px 18px">
+      <div class="label">ПОЛУЧЕНО ЗА {{ days }} ДН.</div>
+      <div class="mono" style="font-size:26px;font-weight:700;margin-top:8px">{{ money.revenue|floatformat:0 }} ₽</div>
+      <div style="font-size:12px;color:var(--dim-2);margin-top:6px">{{ money.invoices_paid }} счёт(ов), средний {{ money.average|floatformat:0 }} ₽</div>
+    </div>
+    <div style="background:var(--panel);padding:16px 18px 18px">
+      <div class="label">ИЗ НИХ ЗА ОБЪЁМ</div>
+      <div class="mono" style="font-size:26px;font-weight:700;margin-top:8px">{{ money.metered|floatformat:0 }} ₽</div>
+      <div style="font-size:12px;color:var(--dim-2);margin-top:6px">растёт без новых продаж</div>
+    </div>
+    <div style="background:var(--panel);padding:16px 18px 18px">
+      <div class="label">ПРОБНЫЙ ПЕРИОД</div>
+      <div class="mono" style="font-size:26px;font-weight:700;margin-top:8px">{{ money.trials }}</div>
+      <div style="font-size:12px;color:var(--dim-2);margin-top:6px">{% if money.trial_conversion is not None %}конверсия {{ money.trial_conversion }}% из {{ money.trial_decided }} решивших{% else %}ещё никто не решил{% endif %}</div>
+    </div>
+    <div style="background:var(--panel);padding:16px 18px 18px">
+      <div class="label">НЕ ОПЛАТИЛИ</div>
+      <div class="mono" style="font-size:26px;font-weight:700;margin-top:8px;color:{% if money.past_due %}var(--amber){% else %}var(--dim-2){% endif %}">{{ money.past_due }}</div>
+      <div style="font-size:12px;color:var(--dim-2);margin-top:6px">обслуживание остановлено</div>
+    </div>
+    <div style="background:var(--panel);padding:16px 18px 18px">
+      <div class="label">УХОДЯТ</div>
+      <div class="mono" style="font-size:26px;font-weight:700;margin-top:8px;color:{% if money.cancelling %}var(--amber){% else %}var(--dim-2){% endif %}">{{ money.cancelling }}</div>
+      <div style="font-size:12px;color:var(--dim-2);margin-top:6px">отменили продление · ушло {{ money.lost }}</div>
+    </div>
+  </div>
+
+  <!-- ВОРОНКА ВТОРОЙ. Просмотры не отвечают ни на один вопрос, который стоит
        денег; воронка называет место, где чинить. -->
   <h3 style="margin:8px 0 6px;font-size:20px">Воронка</h3>
   <div style="font-size:13px;color:var(--dim-2);margin-bottom:16px;max-width:760px">
@@ -45,7 +88,9 @@
     <tbody>
       {% for s in steps %}
       <tr>
-        <td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2)">{{ s.title }}</td>
+        <td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2)">{{ s.title }}{% if s.unwired %}
+          <span title="За этим шагом стоит ненулевой — значит его не записывают, а не по нему отваливаются."
+                style="margin-left:8px;font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;color:var(--amber);border:1px solid #3b3427;padding:2px 6px">НЕ ЗАПИСЫВАЕТСЯ</span>{% endif %}</td>
         <td class="mono" style="text-align:right;padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2);font-weight:700">{{ s.count }}</td>
         <td class="mono" style="text-align:right;padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2);color:{% if s.from_previous and s.from_previous < 40 %}var(--amber){% else %}var(--dim-2){% endif %}">{% if s.from_previous is not None %}{{ s.from_previous }}%{% else %}—{% endif %}</td>
         <td class="mono" style="text-align:right;padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2);color:var(--dim-2)">{% if s.lost %}−{{ s.lost }}{% else %}—{% endif %}</td>
@@ -80,7 +125,102 @@
   </div>
   {% endif %}
 
-  <!-- ТРАФИК ВТОРЫМ -->
+
+  <!-- ВРЕМЯ ДО ЦЕННОСТИ. Конверсия говорит СКОЛЬКО дошло, медиана —
+       НАСКОЛЬКО ТРУДНО было. Те же 60% за двадцать минут и за четыре дня
+       требуют разных действий, и оба числа уже лежали в базе двумя отметками
+       воронки, которые никто не вычитал друг из друга. -->
+  <h3 style="margin:34px 0 6px;font-size:20px">Время до ценности</h3>
+  <div style="font-size:13px;color:var(--dim-2);margin-bottom:14px;max-width:760px">
+    Медиана, а не среднее: один клиент, поднявший контейнер через месяц,
+    сдвигает среднее так, что оно перестаёт описывать кого бы то ни было.
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1px;background:var(--line-2);border:1px solid var(--line-2);margin-bottom:34px">
+    <div style="background:var(--panel);padding:16px 18px 18px">
+      <div class="label">КЛЮЧ → КОНТЕЙНЕР</div>
+      <div class="mono" style="font-size:26px;font-weight:700;margin-top:8px">{{ speed.to_lease|default_if_none:"—" }}{% if speed.to_lease is not None %} мин{% endif %}</div>
+      <div style="font-size:12px;color:var(--dim-2);margin-top:6px">по {{ speed.to_lease_n }} клиент(ам)</div>
+    </div>
+    <div style="background:var(--panel);padding:16px 18px 18px">
+      <div class="label">КЛЮЧ → ПЕРВАЯ МАСКИРОВКА</div>
+      <div class="mono" style="font-size:26px;font-weight:700;margin-top:8px;color:var(--accent)">{{ speed.to_mask|default_if_none:"—" }}{% if speed.to_mask is not None %} мин{% endif %}</div>
+      <div style="font-size:12px;color:var(--dim-2);margin-top:6px">по {{ speed.to_mask_n }} клиент(ам)</div>
+    </div>
+  </div>
+
+
+  <!-- ЗАМОЛЧАВШИЕ. Накопительный счётчик не умеет падать, поэтому клиент,
+       переставший работать месяц назад, на экране флота стоит с тем же
+       большим числом, что и в лучший свой день. Отток приходит сюда за
+       МЕСЯЦЫ до отказа платить. -->
+  {% if quiet %}
+  <h3 style="margin:34px 0 6px;font-size:20px">Замолчали</h3>
+  <div style="font-size:13px;color:var(--dim-2);margin-bottom:14px;max-width:760px">
+    Накопленный расход не двигался три дня и дольше. Спрашивается только про
+    тех, кто когда-то работал: не поднявший контейнер ни разу — это провал
+    онбординга, он уже посчитан воронкой.
+  </div>
+  <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:34px">
+    <thead><tr>
+      <th style="text-align:left;padding:0 12px 8px 0;font-size:11px;letter-spacing:.13em;color:var(--dim-2);border-bottom:1px solid var(--line-2)">ОРГАНИЗАЦИЯ</th>
+      <th style="text-align:right;padding:0 12px 8px 0;font-size:11px;letter-spacing:.13em;color:var(--dim-2);border-bottom:1px solid var(--line-2)">МОЛЧИТ</th>
+      <th style="text-align:right;padding:0 12px 8px 0;font-size:11px;letter-spacing:.13em;color:var(--dim-2);border-bottom:1px solid var(--line-2)">НАКОПЛЕНО ЗАПРОСОВ</th>
+      <th style="text-align:right;padding:0 12px 8px 0;font-size:11px;letter-spacing:.13em;color:var(--dim-2);border-bottom:1px solid var(--line-2)">ПЛАТИТ</th>
+    </tr></thead>
+    <tbody>
+      {% for q in quiet %}
+      <tr>
+        <td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2)"><a class="mono" href="{% url 'ops_customer' q.org_id %}">{{ q.org_id }}</a></td>
+        <td style="text-align:right;padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2)" class="mono" >{{ q.days }} дн.</td>
+        <td style="text-align:right;padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2)" class="mono">{{ q.requests }}</td>
+        <td style="text-align:right;padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2)" class="mono" >{% if q.paying %}да{% else %}пробный{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <!-- КАНАЛЫ ДО ДЕНЕГ. Визиты считаются по визитам, всё остальное — по
+       организациям, склеенным по имени кампании. Иначе никак: между визитом и
+       оплатой стоят недели, а отпечаток посетителя живёт сутки, поэтому метка
+       первого касания снимается один раз при регистрации и живёт на
+       организации. Сюда же встанет расход на рекламу, когда он появится:
+       колонка «стоимость привлечения» — это ОДНО деление на «платят». -->
+  <h3 style="margin:34px 0 6px;font-size:20px">Каналы</h3>
+  <div style="font-size:13px;color:var(--dim-2);margin-bottom:14px;max-width:760px">
+    Метка первого касания снимается при регистрации из визитов этого же
+    человека за сутки — без куки и без сквозного идентификатора. Цена решения
+    названа честно: вернувшийся через неделю по прямой ссылке припишется к
+    прямому заходу.
+  </div>
+  <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:34px">
+    <thead><tr>
+      <th style="text-align:left;padding:0 12px 8px 0;font-size:11px;letter-spacing:.13em;color:var(--dim-2);border-bottom:1px solid var(--line-2)">КАНАЛ</th>
+      <th style="text-align:right;padding:0 12px 8px 0;font-size:11px;letter-spacing:.13em;color:var(--dim-2);border-bottom:1px solid var(--line-2)">ЧЕЛОВЕК</th>
+      <th style="text-align:right;padding:0 12px 8px 0;font-size:11px;letter-spacing:.13em;color:var(--dim-2);border-bottom:1px solid var(--line-2)">РЕГИСТРАЦИЙ</th>
+      <th style="text-align:right;padding:0 12px 8px 0;font-size:11px;letter-spacing:.13em;color:var(--dim-2);border-bottom:1px solid var(--line-2)">В РЕГИСТРАЦИЮ</th>
+      <th style="text-align:right;padding:0 12px 8px 0;font-size:11px;letter-spacing:.13em;color:var(--dim-2);border-bottom:1px solid var(--line-2)">ЗАРАБОТАЛИ</th>
+      <th style="text-align:right;padding:0 12px 8px 0;font-size:11px;letter-spacing:.13em;color:var(--dim-2);border-bottom:1px solid var(--line-2)">ПЛАТЯТ</th>
+      <th style="text-align:right;padding:0 12px 8px 0;font-size:11px;letter-spacing:.13em;color:var(--dim-2);border-bottom:1px solid var(--line-2)">ВЫРУЧКА</th>
+    </tr></thead>
+    <tbody>
+      {% for c in channels %}
+      <tr>
+        <td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2)" class="mono">{{ c.value }}</td>
+        <td style="text-align:right;padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2)" class="mono">{{ c.visitors }}</td>
+        <td style="text-align:right;padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2)" class="mono" >{{ c.signups }}</td>
+        <td style="text-align:right;padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2)" class="mono" >{% if c.to_signup is not None %}{{ c.to_signup }}%{% else %}—{% endif %}</td>
+        <td style="text-align:right;padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2)" class="mono">{{ c.masked }}</td>
+        <td style="text-align:right;padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2)" class="mono" >{{ c.paying }}</td>
+        <td style="text-align:right;padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2)" class="mono" >{% if c.revenue %}{{ c.revenue|floatformat:0 }} ₽{% else %}—{% endif %}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2);color:var(--dim-2)">пока ни одного визита за период</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- ТРАФИК ПОСЛЕДНИМ -->
   <h3 style="margin:34px 0 6px;font-size:20px">Трафик</h3>
   <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:baseline;margin-bottom:14px;font-size:13.5px;color:var(--dim-2)">
     <span><b style="color:var(--text);font-size:22px">{{ total_visits }}</b> просмотров</span>

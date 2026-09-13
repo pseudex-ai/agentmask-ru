@@ -428,7 +428,27 @@ def signup(request):
     _funnel(Funnel.SIGNUP_SUBMITTED, plan_code, request, organization)
     organization.consent_at = timezone.now()
     organization.consent_revision = settings.SELLER.get("consent_revision", "")
-    organization.save(update_fields=["consent_at", "consent_revision"])
+    fields = ["consent_at", "consent_revision"]
+
+    # ПЕРВОЕ КАСАНИЕ ПЕРЕЕЗЖАЕТ НА ОРГАНИЗАЦИЮ ИМЕННО ЗДЕСЬ И БОЛЬШЕ НИКОГДА.
+    # Это единственный момент, когда обе половины существуют одновременно:
+    # суточный отпечаток посетителя ещё жив, а организация уже создана. Через
+    # сутки соль уничтожена, и вопрос «какая кампания привела этого клиента»
+    # ответа не имеет — поэтому запись не может быть отложена на потом.
+    try:
+        from ops import collect
+        touch = collect.first_touch(
+            collect.fingerprint(request.get_host(),
+                                collect.client_ip(request.META),
+                                request.META.get("HTTP_USER_AGENT", "")),
+            since_hours=24)
+        for field, value in touch.items():
+            setattr(organization, field, value)
+            fields.append(field)
+    except Exception:  # noqa: BLE001 — аналитика не ломает регистрацию
+        _log.warning("не удалось определить источник регистрации", exc_info=True)
+
+    organization.save(update_fields=fields)
     link = request.build_absolute_uri(
         "/activate?t=" + signing.dumps({"org": organization.id, "email": email})
     )

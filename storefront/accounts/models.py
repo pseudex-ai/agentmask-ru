@@ -97,6 +97,25 @@ class Organization(models.Model):
     consent_at = models.DateTimeField(null=True, blank=True)
     consent_revision = models.CharField(max_length=32, blank=True)
 
+    # ПЕРВОЕ КАСАНИЕ, СНЯТОЕ ОДИН РАЗ И НАВСЕГДА. Без этих полей вопрос
+    # «какая кампания привела ПЛАТЯЩЕГО клиента» не имеет ответа в принципе:
+    # метки живут на визите, визит опознаётся СУТОЧНЫМ отпечатком, и назавтра
+    # связь исчезает вместе с солью. Деньги же приходят через недели.
+    #
+    # ПОЧЕМУ НЕ КУКА И НЕ СЕССИЯ. Оба варианта работают и оба ломают обещание,
+    # данное прямо на лендинге: «куки не ставим». Django заводит сессию только
+    # для входа, а посетитель лендинга не вошёл, — то есть куку пришлось бы
+    # создать специально ради аналитики. Вместо этого регистрация считает ТОТ
+    # ЖЕ отпечаток и берёт самый ранний визит этого человека за сутки: путь от
+    # лендинга до ключа занимает минуты, и внутри суток связь уже существует.
+    # Ограничение названо честно — человек, вернувшийся через неделю по прямой
+    # ссылке, припишется к «прямому заходу», и это цена отказа от куки.
+    source_utm_source = models.CharField(max_length=60, blank=True)
+    source_utm_medium = models.CharField(max_length=60, blank=True)
+    source_utm_campaign = models.CharField(max_length=60, blank=True)
+    source_referrer = models.CharField(max_length=120, blank=True)
+    source_landing = models.CharField(max_length=200, blank=True)
+
     # WHO the payer is, because 54-ФЗ ст. 2 п. 9 exempts cashless settlements
     # between organisations and/or ИП from ККТ, and gives no such exemption for
     # individuals. The same 30 000 ₽ therefore needs a fiscal receipt from one

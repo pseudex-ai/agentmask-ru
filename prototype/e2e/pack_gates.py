@@ -675,6 +675,13 @@ def gate_p6() -> bool:
     keys_dir = _HERE / "cosign"
     sh(["rm", "-rf", str(keys_dir)], False, 60)
     keys_dir.mkdir(parents=True, exist_ok=True)
+    # ОБРАЗ COSIGN ХОДИТ ПОД `nonroot` (65532), А КАТАЛОГ СОЗДАЛИ МЫ. На Linux
+    # он получает права 755 от нашего uid, и контейнер не может записать в него
+    # ключ — `generate-key-pair` падает, а за ним падает всё остальное. На
+    # macOS этого не видно вовсе: Docker Desktop отдаёт смонтированные файлы
+    # всем на запись, поэтому гейт зелёный на машине разработчика и красный в
+    # CI. Ключи здесь одноразовые и живут ровно одну проверку.
+    keys_dir.chmod(0o777)
 
     cosign_image = "gcr.io/projectsigstore/cosign:v2.4.1"
     common = ["docker", "run", "--rm", "--network", "host",
@@ -689,7 +696,8 @@ def gate_p6() -> bool:
     # worse, would publish the digest of a private customer image to a public log.
     insecure = ["--allow-insecure-registry", "--allow-http-registry"]
 
-    generated = sh([*common, cosign_image, "generate-key-pair"], False, 600).returncode == 0
+    generated_run = sh([*common, cosign_image, "generate-key-pair"], False, 600)
+    generated = generated_run.returncode == 0
     signed = sh([*common, cosign_image, "sign", "--yes", "--key", "/keys/cosign.key",
                  "--tlog-upload=false", *insecure, *creds, tag], False, 900)
     verified = sh([*common, cosign_image, "verify", "--key", "/keys/cosign.pub",
@@ -702,8 +710,23 @@ def gate_p6() -> bool:
           and signed.returncode == 0 and verified.returncode == 0 and wrong.returncode != 0)
     sh(["docker", "logout", REGISTRY], False, 60)
     sh(["docker", "rm", "-f", REGISTRY_CONTAINER], False, 120)
+
+    # ПРОВАЛИВШИЙСЯ ГЕЙТ ОБЯЗАН НАЗВАТЬ ПРИЧИНУ, А НЕ ТОЛЬКО ФАКТ. `sh` глотает
+    # вывод, поэтому в CI от этой проверки оставалась одна строка
+    # `signed=False`, по которой диагноз не ставится ничем. Хуже того,
+    # `generated` в неё не попадал вовсе — а падало именно оно, и читатель
+    # искал ошибку в подписи, которой просто нечем было подписывать.
+    if not ok:
+        for name, done in (("generate-key-pair", generated_run), ("sign", signed),
+                           ("verify", verified)):
+            if done.returncode != 0:
+                tail = (done.stderr or done.stdout or "").strip().splitlines()[-4:]
+                print(f"    cosign {name} -> {done.returncode}: " + " | ".join(tail))
+                break
+
     return gate("P6 private registry and signature", ok,
-                f"anon_push_refused={anon_refused} authed_push={pushed} signed={signed.returncode == 0} "
+                f"anon_push_refused={anon_refused} authed_push={pushed} "
+                f"keypair={generated} signed={signed.returncode == 0} "
                 f"verify_ok={verified.returncode == 0} wrong_key_rejected={wrong.returncode != 0}")
 
 

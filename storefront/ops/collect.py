@@ -133,3 +133,63 @@ def client_ip(meta: dict) -> str:
     if forwarded:
         return forwarded.split(",")[0].strip()
     return meta.get("REMOTE_ADDR", "")
+
+
+def first_touch(visitor: str, since_hours: int) -> dict[str, str]:
+    """Чем этот посетитель пришёл — по его же визитам за последние сутки.
+
+    ПОЧЕМУ ЗДЕСЬ, А НЕ В КУКЕ. Метки кампании приходят на ЛЕНДИНГ, а форму
+    человек отправляет через несколько минут и уже с другой страницы, на
+    которой никаких меток нет. Обычное решение — положить первое касание в
+    сессию, то есть поставить куку; лендинг обещает, что куки не ставит, и
+    обещание это стоит дороже точности атрибуции.
+
+    Суточный отпечаток даёт ровно то, что нужно, и ровно на тот срок, на
+    который нужно: визиты одного человека за сегодня связываются между собой,
+    а завтра — уже нет. Путь от лендинга до ключа занимает минуты.
+
+    МЕТКА ПРЕДПОЧТИТЕЛЬНЕЕ РЕФЕРЕРА, И БЕРЁТСЯ САМАЯ РАННЯЯ. Человек мог
+    прийти по объявлению, уйти читать документацию и вернуться — последний
+    визит назвал бы источником нас самих. Платит за приход первое касание.
+    """
+    from ops.analytics_models import Visit
+    from django.utils import timezone
+    import datetime
+
+    if not visitor:
+        return {}
+    since = timezone.now() - datetime.timedelta(hours=since_hours)
+    mine = Visit.objects.filter(visitor=visitor, at__gte=since).order_by("at")
+
+    tagged = mine.exclude(utm_source="").first()
+    first = mine.first()
+    if first is None:
+        return {}
+    return {
+        "source_utm_source": (tagged.utm_source if tagged else ""),
+        "source_utm_medium": (tagged.utm_medium if tagged else ""),
+        "source_utm_campaign": (tagged.utm_campaign if tagged else ""),
+        # Реферер берётся у ПЕРВОГО визита, а не у помеченного: если метки нет
+        # вовсе, источником был переход, и он стоит именно там.
+        "source_referrer": first.referrer_host,
+        "source_landing": first.path,
+    }
+
+
+def flag_unwired(steps: list[dict]) -> list[dict]:
+    """Отметить шаги воронки, которые не записываются, а не отваливаются.
+
+    ШАГ С НУЛЁМ, ЗА КОТОРЫМ СТОИТ НЕНУЛЕВОЙ, НЕВОЗМОЖЕН ПО СМЫСЛУ. Воронка
+    упорядочена физически, а не оформительски: заплатить, не замаскировав ни
+    одного запроса, нельзя, как нельзя замаскировать, не подняв контейнера.
+    Поэтому такой ноль — не отвал клиентов, а отсутствующая запись.
+
+    ЭТО ЕДИНСТВЕННЫЙ СПОСОБ УВИДЕТЬ ДЫРУ С ЭКРАНА, и она уже была: `first_mask`
+    объявлен в модели и не записывался ничем, а выглядел провалом конверсии —
+    то есть посылал чинить продукт вместо аналитики. Функция чистая и вынесена
+    из вью именно затем, чтобы её можно было сломать в тесте.
+    """
+    return [dict(step, unwired=(step["count"] == 0
+                                and any(later["count"] > 0
+                                        for later in steps[i + 1:])))
+            for i, step in enumerate(steps)]
