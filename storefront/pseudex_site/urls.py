@@ -34,6 +34,8 @@ urlpatterns = [
     # marketing page and nothing to attach to an email.
     path("offer", views.offer, name="offer"),
     path("policy", views.policy, name="policy"),
+    path("consent", views.consent, name="consent"),
+    path("requisites", views.requisites, name="requisites"),
     path("architecture", views.architecture, name="architecture"),
     path("detection", views.detection, name="detection"),
     path("resend", views.resend_activation, name="resend"),

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Реквизиты — pseudex{% endblock %}
+{% block content %}
+<section class="legal-doc">
+  <div class="eyebrow"><i></i><span>СТ. 10 Ч. 2 ФЗ «ОБ ИНФОРМАЦИИ»</span></div>
+  <h1 style="font-size:clamp(28px,4vw,44px);margin:18px 0 8px">Кто владеет сайтом и кому вы платите</h1>
+
+  <div class="legal-note">
+    Владелец сайта обязан разместить наименование, место нахождения и адрес электронной почты
+    (ч. 2 ст. 10 ФЗ «Об информации»). При дистанционной продаже то же требует ст. 26.1 Закона
+    о защите прав потребителей: покупатель должен видеть, кому он платит, ДО того как заплатит.
+  </div>
+
+  {% if seller.name %}
+  <table class="legal-table">
+    <tbody>
+      <tr><th>Наименование</th><td>{{ seller.name }}</td></tr>
+      {% if seller.inn %}<tr><th>ИНН</th><td class="mono">{{ seller.inn }}</td></tr>{% endif %}
+      {% if seller.kpp %}<tr><th>КПП</th><td class="mono">{{ seller.kpp }}</td></tr>{% endif %}
+      {% if seller.ogrn %}<tr><th>ОГРН / ОГРНИП</th><td class="mono">{{ seller.ogrn }}</td></tr>{% endif %}
+      {% if seller.address %}<tr><th>Адрес</th><td>{{ seller.address }}</td></tr>{% endif %}
+      {% if seller.email %}<tr><th>Электронная почта</th><td><a href="mailto:{{ seller.email }}">{{ seller.email }}</a></td></tr>{% endif %}
+      {% if seller.phone %}<tr><th>Телефон</th><td>{{ seller.phone }}</td></tr>{% endif %}
+      {% if seller.bank %}<tr><th>Банк</th><td>{{ seller.bank }}</td></tr>{% endif %}
+      {% if seller.account %}<tr><th>Расчётный счёт</th><td class="mono">{{ seller.account }}</td></tr>{% endif %}
+      {% if seller.bik %}<tr><th>БИК</th><td class="mono">{{ seller.bik }}</td></tr>{% endif %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="legal-note missing">
+    <b>Реквизиты не заполнены.</b> Сайт не может принимать оплату в этом виде: покупатель не
+    видит, кому платит, а это нарушение ст. 26.1 ЗоЗПП и ч. 2 ст. 10 ФЗ «Об информации».
+    Заполняются переменными окружения <code>PSEUDEX_SELLER_*</code> — см.
+    <code>deploy/.env.example</code>.
+  </div>
+  {% endif %}
+
+  <h2>Где физически работает сервис</h2>
+  <p>Витрина, лицензионный сервер и их база данных размещены на территории Российской Федерации.
+  Это требование ч. 5 ст. 18 152-ФЗ: запись, систематизация, накопление, хранение, уточнение и
+  извлечение персональных данных граждан РФ должны происходить в базах данных на территории
+  России.</p>
+  <p><b>Персональные данные ваших клиентов к нам не поступают вообще</b> — программа работает
+  внутри вашего периметра, и наружу уходят только агрегатные счётчики.</p>
+</section>
+{% endblock %}

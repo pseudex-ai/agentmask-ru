@@ -180,6 +180,29 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     # ОДНОРАЗОВЫЙ ЯЩИК НЕ ПОЛУЧАЕТ КЛЮЧА. Единственный реальный путь
     # злоупотребления пробным периодом: образ без ключа не стартует вовсе, а
     # ключ выпускается только по ссылке из письма.
+    # ЮРИДИЧЕСКИ ОБЯЗАТЕЛЬНЫЕ СТРАНИЦЫ ОТКРЫВАЮТСЯ И СВЯЗАНЫ ИЗ ПОДВАЛА.
+    # Документ, который существует и никуда не ведёт, не «опубликован с
+    # обеспечением неограниченного доступа» (ст. 18.1 152-ФЗ) — а именно за это
+    # штрафует ст. 13.11 ч. 3.
+    footer = body
+    for path, name in (("/policy", "политика обработки"),
+                       ("/consent", "согласие на обработку"),
+                       ("/requisites", "реквизиты владельца"),
+                       ("/offer", "оферта")):
+        page = client.get(path)
+        check(f"{name}: страница открывается", page.status_code == 200,
+              f"{path} -> {page.status_code}")
+        check(f"{name}: есть ссылка в подвале", path in footer, path)
+
+    # СОГЛАСИЕ ПРОВЕРЯЕТСЯ НА СЕРВЕРЕ. `required` в разметке снимается
+    # инструментами разработчика за две секунды, а доказывать получение
+    # согласия придётся нам.
+    before = Organization.objects.count()
+    without = client.post("/signup", {"email": f"noconsent-{int(time.time())}@example.test",
+                                    "company": "Тест", "plan": "start"})
+    check("без галочки согласия аккаунт не создаётся",
+          Organization.objects.count() == before, f"код={without.status_code}")
+
     from billing.services import is_disposable
     check("одноразовый ящик отсечён", is_disposable("x@mailinator.com"))
     check("регистр домена не спасает", is_disposable("x@YOPMAIL.COM"))
@@ -195,7 +218,7 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     check("the landing carries a content security policy",
           "default-src 'self'" in landing.headers.get("Content-Security-Policy", ""))
 
-    signed = client.post("/signup", {"email": "buyer@acme.ru",
+    signed = client.post("/signup", {"email": "buyer@acme.ru", "consent": "1",
                                      "company": "ООО Ромашка", "plan": "start"})
     check("sign-up does not hand a key to whoever typed the address",
           signed.status_code == 200 and "Проверьте почту" in signed.content.decode()
@@ -349,12 +372,14 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     throttled = None
     for index in range(6):
         throttled = client.post("/signup", {"email": f"flood{index}@example.com",
+                                            "consent": "1",
                                             "company": "x", "plan": "start"})
     check("sign-up is throttled",
           throttled.url == "/" if throttled.status_code == 302 else False,
           f"last redirect={getattr(throttled, 'url', throttled.status_code)}")
 
     repeat = client.post("/signup", {"email": "buyer@acme.ru", "company": "x",
+                                     "consent": "1",
                                      "plan": "start"})
     check("a known email is sent to sign-in, not given a second organisation",
           Organization.objects.filter(memberships__user__email="buyer@acme.ru").count() == 1,

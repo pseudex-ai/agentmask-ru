@@ -89,6 +89,14 @@ class Organization(models.Model):
     display_name = models.CharField(max_length=200)
     created_at = models.DateTimeField(default=timezone.now)
 
+    # ФАКТ СОГЛАСИЯ, А НЕ ГАЛОЧКА НА ФОРМЕ. Галочка живёт в браузере и исчезает
+    # вместе с ним; ст. 9 152-ФЗ требует, чтобы оператор МОГ ДОКАЗАТЬ получение
+    # согласия, а доказать можно только записью. Храним момент и РЕДАКЦИЮ
+    # текста: согласие даётся на конкретную редакцию, и если текст изменился,
+    # старая запись покрывает старый текст, а не новый.
+    consent_at = models.DateTimeField(null=True, blank=True)
+    consent_revision = models.CharField(max_length=32, blank=True)
+
     # WHO the payer is, because 54-ФЗ ст. 2 п. 9 exempts cashless settlements
     # between organisations and/or ИП from ККТ, and gives no such exemption for
     # individuals. The same 30 000 ₽ therefore needs a fiscal receipt from one

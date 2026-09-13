@@ -225,6 +225,7 @@ def main() -> int:
 
     email = f"lifecycle-{int(time.time())}@example.test"
     signup = client.post("/signup", {"email": email, "name": "ООО Тест",
+                                     "consent": "1",
                                      "plan": "industrial"})
     check("регистрация принята", signup.status_code == 200, f"код={signup.status_code}")
 

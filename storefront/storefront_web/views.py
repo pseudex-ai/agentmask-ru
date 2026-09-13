@@ -245,6 +245,30 @@ def _legal_context() -> dict[str, object]:
     }
 
 
+def consent(request):
+    """Текст согласия на обработку ПД — отдельным документом.
+
+    ОТДЕЛЬНЫМ, А НЕ АБЗАЦЕМ В ОФЕРТЕ: ст. 9 152-ФЗ требует, чтобы согласие было
+    конкретным и информированным, а РКН последовательно читает это как «не
+    смешанное с другими документами». Согласие, спрятанное в п. 7.3 договора,
+    признаётся не полученным.
+    """
+    return render(request, "legal/consent.html", {
+        "seller": settings.SELLER,
+        "revision": settings.SELLER.get("consent_revision", ""),
+    })
+
+
+def requisites(request):
+    """Сведения о владельце сайта — ст. 10 ч. 2 ФЗ «Об информации».
+
+    Владелец сайта обязан разместить наименование, место нахождения и адрес
+    электронной почты. Для дистанционной продажи то же требует ст. 26.1 ЗоЗПП:
+    покупатель должен видеть, КОМУ он платит, до того как заплатит.
+    """
+    return render(request, "legal/requisites.html", {"seller": settings.SELLER})
+
+
 def offer(request):
     return render(request, "legal/offer.html", _legal_context())
 
@@ -335,6 +359,16 @@ def signup(request):
     # Отказ НАЗЫВАЕТ причину и что делать: человек с одноразовым ящиком чаще
     # всего просто осторожен, а не злоупотребляет, и «попробуйте ещё раз» без
     # объяснения выгнало бы его насовсем.
+    # СОГЛАСИЕ ПРОВЕРЯЕТСЯ НА СЕРВЕРЕ, А НЕ ТОЛЬКО АТРИБУТОМ `required`.
+    # `required` живёт в браузере и снимается через инструменты разработчика за
+    # две секунды; ст. 9 152-ФЗ требует, чтобы оператор МОГ ДОКАЗАТЬ получение
+    # согласия, а доказать можно только тем, что без него запись не создаётся.
+    if request.POST.get("consent") != "1":
+        messages.error(request, "Без согласия на обработку персональных данных "
+                                "аккаунт создать нельзя — это требование "
+                                "152-ФЗ, а не формальность с нашей стороны.")
+        return redirect("landing")
+
     if services.is_disposable(email):
         messages.error(request, "На одноразовые почтовые ящики ключ не "
                                 "выпускается — ссылка на активацию до вас не "
@@ -365,6 +399,10 @@ def signup(request):
     # The link below is the proof of the mailbox, and it carries NO key — only a
     # signed reference to the account. Nothing secret is ever put in an email.
     organization = services.create_account(email, name, plan_code)
+    # Факт, а не галочка: момент и РЕДАКЦИЯ текста, на которую согласились.
+    organization.consent_at = timezone.now()
+    organization.consent_revision = settings.SELLER.get("consent_revision", "")
+    organization.save(update_fields=["consent_at", "consent_revision"])
     link = request.build_absolute_uri(
         "/activate?t=" + signing.dumps({"org": organization.id, "email": email})
     )
