@@ -189,7 +189,22 @@ jobs:
       - uses: sigstore/cosign-installer@v3
 
       - name: log in
-        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login "${{ env.REGISTRY }}" -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+        # СЕКРЕТ — ЧЕРЕЗ ОКРУЖЕНИЕ, НЕ ЧЕРЕЗ ПОДСТАНОВКУ В СТРОКУ. Пароль
+        # реестра Яндекса — JSON авторизованного ключа, с кавычками внутри;
+        # `echo "${{ secrets.… }}"` разрывался на первой из них, docker получал
+        # ПУСТОЙ stdin и падал с «Cannot perform an interactive login from a
+        # non TTY device» — сообщение, по которому причину не найти. Первый
+        # прогон с зелёными гейтами упал ровно здесь.
+        #
+        # ХОСТ, А НЕ ПУТЬ: `docker login` принимает сервер, а REGISTRY несёт
+        # ещё и id реестра.
+        env:
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+        run: |
+          set -eu
+          [ -n "${REGISTRY_PASSWORD}" ] || { echo "::error::REGISTRY_PASSWORD пуст"; exit 1; }
+          printf '%s' "${REGISTRY_PASSWORD}" | docker login "${REGISTRY%%/*}" -u "${REGISTRY_USERNAME}" --password-stdin
 
       - name: tag and push
         run: |
