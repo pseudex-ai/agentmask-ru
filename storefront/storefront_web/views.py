@@ -111,6 +111,13 @@ def _funnel(step: str, detail: str = "", request=None, organization=None) -> Non
         Funnel.objects.create(
             step=step, detail=detail[:64], visitor=visitor,
             organization_id=(organization.id if organization is not None else ""))
+        # ОДНА СТРОКА ЗДЕСЬ — И КАЖДЫЙ ШАГ ПУТИ КЛИЕНТА В ЛОГЕ. Регистрация,
+        # отказ формы с причиной, активация, выпуск ключа проходят через эту
+        # функцию; логировать их по месту значило бы семь мест, из которых одно
+        # забудут. Почты здесь нет намеренно — только организация и шаг.
+        _log.info("funnel step", extra={
+            "step": step, "detail": detail[:64],
+            "org": organization.id if organization is not None else ""})
     except Exception:  # noqa: BLE001 — см. докстроку
         _log.warning("не удалось отметить шаг воронки %s", step, exc_info=True)
 
@@ -710,6 +717,11 @@ def revoke_key(request, key_id: int):
     with transaction.atomic():
         key.revoked_at = timezone.now()
         key.save(update_fields=["revoked_at"])
+    # ОТЗЫВ — СОБЫТИЕ БЕЗОПАСНОСТИ, И ОНО ЛОГИРУЕТСЯ ПРИ УСПЕХЕ, НЕ ТОЛЬКО ПРИ
+    # ПРОВАЛЕ: «кто и когда отозвал ключ» спрашивают, когда контейнер у
+    # клиента встал, а никто не помнит, что нажимал.
+    _log.warning("key revoked", extra={"org": organization.id, "key_prefix": key.prefix,
+                                       "by": request.user.email})
     messages.success(request, f"Ключ {key.prefix}… отозван и больше не продлит аренду.")
     return redirect("cabinet")
 

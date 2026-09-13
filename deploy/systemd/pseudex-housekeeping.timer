@@ -1,0 +1,12 @@
+[Unit]
+Description=pseudex: уборка диска раз в неделю
+
+[Timer]
+# Суббота, 05:00 — после ночного бэкапа и учений восстановления (воскресенье
+# 04:00 им не мешает: уборка не трогает ни бэкапы, ни тома).
+OnCalendar=Sat *-*-* 05:00:00
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

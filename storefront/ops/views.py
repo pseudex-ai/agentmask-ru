@@ -21,6 +21,7 @@
 
 import csv
 import datetime
+import logging
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
@@ -38,6 +39,8 @@ from storefront_web import detection_types
 from django.views.decorators.http import require_POST
 
 from accounts.models import Organization
+
+_log = logging.getLogger("ops")
 from billing import licensing
 from billing import reconcile as billing_reconcile
 from billing.models import Invoice, Plan, PlanChange, Subscription
@@ -701,6 +704,12 @@ def _apply_plan_edit(request):
                                   became=str(value), actor=request.user.email,
                                   note=(request.POST.get("note") or "")[:200])
         changed.append(f"{label}: {was} → {value}")
+        # ПРАВКА ЦЕНЫ — В ЛОГ, А НЕ ТОЛЬКО В ЖУРНАЛ ТАБЛИЦЫ. Журнал отвечает
+        # «что менялось», лог отвечает «что менялось В ТУ ЖЕ МИНУТУ, когда
+        # клиент получил счёт не на ту сумму» — рядом со строкой invoice built.
+        _log.warning("plan edited", extra={"plan": plan.code, "field": field,
+                                          "was": str(was), "became": str(value),
+                                          "by": request.user.email})
 
     publish = request.POST.get("is_public")
     if publish is not None:

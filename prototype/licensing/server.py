@@ -734,6 +734,13 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
         middle = len(sealed) // 2
         sealed = sealed[:middle] + ("A" if sealed[middle] != "A" else "B") + sealed[middle + 1:]
     payload["bundle"] = sealed
+    # УСПЕШНАЯ АРЕНДА — ОДНА СТРОКА, БЕЗ ТЕЛА. Отказы здесь логировались всегда,
+    # а успех — никогда, и «поднимался ли контейнер клиента в 03:12» отвечалось
+    # только чтением таблицы leases. Ни бандла, ни секрета отчёта, ни ключа —
+    # только кто, какой инстанс и на сколько; L15 проверяет, что в логе нет ПД,
+    # и эта строка обязана его проходить.
+    _log.info("lease issued org=%s instance=%s plan=%s ttl=%s",
+              record.org_id, instance_id, record.plan, payload.get("ttl_seconds"))
     return JSONResponse(payload)
 
 

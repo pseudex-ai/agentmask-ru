@@ -138,6 +138,9 @@ def issue_first_key(organization: Organization) -> str:
     can read the address it was requested for."""
     key = licensing.issue_key(organization.id, organization.subscription.plan.code)
     LicenseKey.record(organization, key, label="первый ключ", environment="live")
+    _log.info("first key issued", extra={"org": organization.id,
+                                         "plan": organization.subscription.plan.code,
+                                         "key_prefix": key[:12]})
     return key
 
 
@@ -266,8 +269,12 @@ def mark_paid(invoice: Invoice, payment_ref: str = "") -> None:
         locked = Invoice.objects.select_for_update().get(pk=invoice.pk)
         already_paid = locked.state == Invoice.PAID
         if already_paid and locked.service_resumed_at is not None:
+            _log.info("payment already handled", extra={"invoice": locked.number})
             return
         if not already_paid:
+            _log.info("payment recorded", extra={
+                "invoice": locked.number, "org": locked.organization_id,
+                "amount": str(locked.total), "ref": payment_ref or ""})
             locked.state = Invoice.PAID
             locked.paid_at = timezone.now()
             fields = ["state", "paid_at"]
@@ -294,9 +301,10 @@ def mark_paid(invoice: Invoice, payment_ref: str = "") -> None:
 
     try:
         licensing.set_status(organization_id, "active")
+        _log.info("service resumed", extra={"org": organization_id, "invoice": invoice.number})
     except licensing.LicensingError as error:
-        _log.error("payment recorded for %s but service was not resumed: %s",
-                   organization_id, error)
+        _log.error("payment recorded but service NOT resumed", extra={
+            "org": organization_id, "invoice": invoice.number, "error": str(error)})
         raise ServiceNotResumed(str(error)) from error
 
     with transaction.atomic():
@@ -320,6 +328,7 @@ def mark_unpaid(organization: Organization) -> None:
     поднимается наружу, а не прячется за уже изменённым зеркалом.
     """
     licensing.set_status(organization.id, "unpaid")
+    _log.warning("service stopped: past due", extra={"org": organization.id})
     with transaction.atomic():
         subscription = (Subscription.objects.select_for_update()
                         .get(organization=organization))
@@ -446,7 +455,7 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     metered_amount = _round(Decimal(billed_over) / Decimal(1000)
                             * terms["metered_per_1k"])
 
-    return Invoice.objects.create(
+    invoice = Invoice.objects.create(
         organization=organization,
         number=Invoice.next_number(),
         state=Invoice.DRAFT,
@@ -463,3 +472,12 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
         values_at_period_end=max(watermark, values),
         requests_at_period_end=requests,
     )
+    # КАЖДЫЙ СЧЁТ — СТРОКА С РАЗЛОЖЕНИЕМ. Спор «почему столько» начинается с
+    # этой строки, и без неё ответ собирается из четырёх таблиц вручную.
+    _log.info("invoice built", extra={
+        "invoice": invoice.number, "org": organization.id,
+        "period": f"{period_start}..{period_end}",
+        "plan_amount": str(invoice.plan_amount),
+        "metered_requests": billed_over, "metered_amount": str(metered_amount),
+        "total": str(invoice.total)})
+    return invoice

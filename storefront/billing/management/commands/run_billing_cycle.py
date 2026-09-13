@@ -29,6 +29,7 @@ django shell». Значит триал не кончался никогда, с
     python3 manage.py run_billing_cycle --dry-run  # только показать
 """
 
+import logging
 from datetime import timedelta
 
 from django.conf import settings
@@ -38,6 +39,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from billing import licensing, services
+
+_log = logging.getLogger("billing.cycle")
 from billing.services import _int_or_zero
 from billing.models import Invoice, Subscription
 
@@ -101,6 +104,14 @@ class Command(BaseCommand):
         for line in self.done:
             self.stdout.write(prefix + line)
         self.stdout.write(f"{len(self.done)} действий")
+        # В ЛОГ — ТОЖЕ, И ВСЕГДА. stdout команды видит тот, кто её запустил
+        # руками; часовой цикл запускает systemd, и «сколько счетов выставил
+        # цикл в 03:00» — вопрос к Loki, а не к терминалу. Ноль действий —
+        # это тоже запись: цикл, который молчит, неотличим от цикла, который
+        # не бежал.
+        _log.info("billing cycle done", extra={
+            "dry_run": dry, "actions": len(self.done),
+            "lines": self.done[:50]})
 
     # --- 0: что происходит на ЧУЖОМ железе ---------------------------------
 

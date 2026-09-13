@@ -1,0 +1,8 @@
+[Unit]
+Description=pseudex: еженедельная уборка диска (образы, кеш сборки, journald)
+After=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/opt/pseudex/deploy/.env
+ExecStart=/opt/pseudex/deploy/housekeeping.sh

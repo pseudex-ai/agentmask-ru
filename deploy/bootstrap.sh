@@ -210,8 +210,14 @@ install -m 0644 "${TARGET}/deploy/systemd/pseudex-agent.service" /etc/systemd/sy
 install -m 0644 "${TARGET}/deploy/systemd/pseudex-agent.timer" /etc/systemd/system/
 install -m 0644 "${TARGET}/deploy/systemd/pseudex-restore-drill.service" /etc/systemd/system/
 install -m 0644 "${TARGET}/deploy/systemd/pseudex-restore-drill.timer" /etc/systemd/system/
+install -m 0644 "${TARGET}/deploy/systemd/pseudex-housekeeping.service" /etc/systemd/system/
+install -m 0644 "${TARGET}/deploy/systemd/pseudex-housekeeping.timer" /etc/systemd/system/
+# journald: потолок сразу, а не когда диск кончится.
+mkdir -p /etc/systemd/journald.conf.d
+printf '[Journal]\nSystemMaxUse=500M\n' > /etc/systemd/journald.conf.d/pseudex.conf
+systemctl restart systemd-journald
 systemctl daemon-reload
-systemctl enable --now pseudex-agent.timer pseudex-restore-drill.timer >/dev/null
+systemctl enable --now pseudex-agent.timer pseudex-restore-drill.timer pseudex-housekeeping.timer >/dev/null
 systemctl list-timers --no-pager pseudex-\* | sed 's/^/    /' | head -5
 
 say "9/9 что осталось человеку"
