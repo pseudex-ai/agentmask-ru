@@ -8,6 +8,7 @@
 """
 
 import datetime
+import io
 import os
 import sys
 import tempfile
@@ -34,7 +35,7 @@ def main() -> int:
     from django.utils import timezone
 
     from ops import collect
-    from ops.analytics_models import Visit, VisitDay
+    from ops.analytics_models import Funnel, Visit, VisitDay
 
     call_command("migrate", verbosity=0, interactive=False)
 
@@ -128,12 +129,94 @@ def main() -> int:
           VisitDay.objects.filter(day=day).exists(),
           "свёртка живёт вечно, сырьё — нет")
 
+    # --- утренняя сводка: телеграм — ЧУЖОЙ сервис -------------------------
+    #
+    # «ПЕРСОНАЛЬНЫХ ДАННЫХ ЗДЕСЬ НЕТ» СТОЯЛО В ДОКСТРИНГЕ И НЕ ПРОВЕРЯЛОСЬ
+    # НИЧЕМ. Обещание несёт юридический вес: уведомление в РКН утверждает, что
+    # трансграничной передачи персональных данных нет, а телеграм —
+    # единственный иностранный канал, куда продукт вообще что-либо отправляет.
+    # Утверждение такого веса не может держаться на аккуратности автора.
+    #
+    # ДАННЫЕ ОБЯЗАНЫ ЛЕЖАТЬ В БАЗЕ, ИНАЧЕ ПРОВЕРКА ПУСТАЯ. Отсутствие почты в
+    # сводке не значит ничего, если почты нет и в базе, — поэтому клиент здесь
+    # настоящий, со всеми полями, до которых сводка теоретически могла бы
+    # дотянуться, и каждая строка, способная их вынести, обязана напечататься.
+    from accounts.models import Membership, Organization, User
+    from billing.models import Invoice, Plan, Subscription
+
+    call_command("seed_plans", verbosity=0)
+    plan = Plan.objects.get(code="industrial")
+
+    PROBE_EMAIL = "probe-utechka@example.org"
+    PROBE_ORG = "Ромашка-Проба"
+    PROBE_LEGAL = f"ООО «{PROBE_ORG}»"
+    PROBE_INN = "7712345678"
+    PROBE_ADDRESS = "ул. Пробная, д. 1"
+
+    org = Organization.objects.create(
+        display_name=PROBE_ORG, legal_name=PROBE_LEGAL, inn=PROBE_INN,
+        legal_address=f"г. Москва, {PROBE_ADDRESS}")
+    Membership.objects.create(
+        user=User.objects.create_user(email=PROBE_EMAIL), organization=org)
+
+    now = timezone.now()
+    today = timezone.localdate()
+    Subscription.objects.create(
+        organization=org, plan=plan, state=Subscription.TRIAL,
+        trial_ends_at=now + datetime.timedelta(days=2),
+        current_period_end=now + datetime.timedelta(days=30))
+
+    def probe_invoice(number: str, **fields) -> Invoice:
+        return Invoice.objects.create(
+            organization=org, number=number,
+            period_start=today - datetime.timedelta(days=30), period_end=today,
+            plan_amount=plan.monthly_price, total=plan.monthly_price, **fields)
+
+    probe_invoice("PS-PROBE-PAID", state=Invoice.PAID, paid_at=now)
+    probe_invoice("PS-PROBE-OVERDUE", state=Invoice.ISSUED,
+                  due_at=today - datetime.timedelta(days=1))
+    probe_invoice("PS-PROBE-STUCK", state=Invoice.PAID, paid_at=now,
+                  service_resumed_at=None)
+
+    for i in range(3):
+        Visit.objects.create(at=now - datetime.timedelta(hours=1),
+                             visitor=f"d{i:015d}", path="/",
+                             referrer_host="habr.com")
+    Funnel.objects.create(step=Funnel.LANDING, at=now, organization_id=org.id)
+    Funnel.objects.create(step=Funnel.SIGNUP_SUBMITTED, at=now,
+                          detail="industrial", organization_id=org.id)
+    Funnel.objects.create(step=Funnel.SIGNUP_REFUSED, at=now,
+                          detail="одноразовая почта")
+
+    digest = io.StringIO()
+    call_command("daily_digest", dry_run=True, stdout=digest)
+    text = digest.getvalue()
+
+    # СНАЧАЛА ПОЛОЖИТЕЛЬНАЯ ПОЛОВИНА, И ПО ТОМУ ЖЕ ТЕКСТУ. Пустая сводка не
+    # содержит ни одной почты и прошла бы отрицательную проверку не заметив
+    # этого; красной она станет только тогда, когда есть что выносить.
+    rendered = [mark for mark in
+                ("Посетителей:", "Воронка:", "Оплачено:", "Просрочено счетов:",
+                 "обслуживание НЕ возобновлено", "Форма отказала:",
+                 "Пробный период кончается")
+                if mark in text]
+    check("сводка напечатала все строки, способные вынести ПД",
+          len(rendered) == 7, f"{len(rendered)} из 7: {', '.join(rendered)}")
+
+    leaked = [name for name, value in (
+        ("почта", PROBE_EMAIL), ("название", PROBE_ORG),
+        ("юр. название", PROBE_LEGAL), ("ИНН", PROBE_INN),
+        ("адрес", PROBE_ADDRESS)) if value in text]
+    check("и ни одного персонального поля в ней нет", not leaked,
+          f"утекло: {', '.join(leaked)}" if leaked else
+          "почта, название, ИНН и адрес лежат в базе и в канал не попали")
+
     print()
     if FAILURES:
         print(f"{len(FAILURES)} провалено: {', '.join(FAILURES)}")
         return 1
     print("аналитика OK — отпечаток суточный, IP не хранится, боты отделены, "
-          "свёртка идемпотентна")
+          "свёртка идемпотентна, в телеграм не уходит ни одного ПД")
     return 0
 
 
