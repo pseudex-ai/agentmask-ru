@@ -234,6 +234,12 @@ PSEUDEX_LICENSE_ADMIN_TOKEN=ЗАПОЛНИТЕ
 PSEUDEX_TG_TOKEN=ЗАПОЛНИТЕ
 PSEUDEX_TG_CHAT=ЗАПОЛНИТЕ
 
+# Бот поддержки — ОТДЕЛЬНЫЙ. Группа операторов — супергруппа, id вида -100…
+PSEUDEX_SUPPORT_BOT_TOKEN=ЗАПОЛНИТЕ
+PSEUDEX_SUPPORT_CHAT=ЗАПОЛНИТЕ
+PSEUDEX_SUPPORT_OWNER=ЗАПОЛНИТЕ
+PSEUDEX_SUPPORT_BOT=pseudex_support_bot
+
 # Вывоз копий. Пусто — копии остаются ТОЛЬКО на этой машине.
 RESTIC_REPOSITORY=s3:https://storage.yandexcloud.net/ЗАПОЛНИТЕ
 RESTIC_PASSWORD=ЗАПОЛНИТЕ

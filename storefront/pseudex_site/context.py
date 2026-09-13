@@ -21,4 +21,5 @@ def analytics(request) -> dict[str, object]:
                or request.path.startswith(f"/{settings.ADMIN_PATH}")
                or request.path.startswith("/accounts/"))
     return {"analytics": settings.ANALYTICS,
-            "analytics_here": settings.ANALYTICS["mode"] != "off" and not private}
+            "analytics_here": settings.ANALYTICS["mode"] != "off" and not private,
+            "support_bot": settings.SUPPORT_BOT}

@@ -352,6 +352,12 @@ ANALYTICS = {
     "records_sessions": _ANALYTICS_MODE == "full",
 }
 
+# БОТ ПОДДЕРЖКИ НА ЛЕНДИНГЕ. Решение от 29.08.2026 (docs/decisions.md):
+# поддержка в Telegram с первого дня, почта вторым каналом. До этого на странице
+# стояло «чата поддержки нет намеренно» — фраза, снятая владельцем и оставшаяся
+# в шаблоне. Ссылка и текст выводятся отсюда: пустое имя честно говорит «почта».
+SUPPORT_BOT = _env("PSEUDEX_SUPPORT_BOT", "")
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,

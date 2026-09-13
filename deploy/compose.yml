@@ -359,6 +359,71 @@ services:
   #
   # Если файла нет, Prometheus не поднимет цель и это видно как down — отказ
   # громкий, а не молчаливый.
+  supportbot-config:
+    # РЕНДЕР КОНФИГА БОТА ПОДДЕРЖКИ. Бот читает `config/config.yaml` и переменных
+    # окружения не знает, а держать токен в гите нельзя. Тот же приём, что у
+    # Alertmanager: одноразовый сервис, и бот не стартует, пока рендер не удался.
+    image: alpine:3.21
+    profiles: ["support"]
+    restart: "no"
+    logging: *logging
+    volumes:
+      - ./supportbot/config.yaml:/in/config.yaml:ro
+      - supportbot-config:/out
+    environment:
+      PSEUDEX_SUPPORT_BOT_TOKEN: ${PSEUDEX_SUPPORT_BOT_TOKEN:?в deploy/.env нужен токен бота поддержки}
+      PSEUDEX_SUPPORT_CHAT: ${PSEUDEX_SUPPORT_CHAT:?в deploy/.env нужен id супергруппы операторов}
+      PSEUDEX_SUPPORT_OWNER: ${PSEUDEX_SUPPORT_OWNER:?в deploy/.env нужен telegram id владельца}
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        sed -e "s|__PSEUDEX_SUPPORT_BOT_TOKEN__|$$PSEUDEX_SUPPORT_BOT_TOKEN|" \
+            -e "s|__PSEUDEX_SUPPORT_CHAT__|$$PSEUDEX_SUPPORT_CHAT|" \
+            -e "s|__PSEUDEX_SUPPORT_OWNER__|$$PSEUDEX_SUPPORT_OWNER|" \
+            /in/config.yaml > /out/config.yaml
+        grep -q '__PSEUDEX_' /out/config.yaml && { echo "плейсхолдер не заменён"; exit 1; } || true
+        grep -qE "^staffchat_id: '-100[0-9]+'$" /out/config.yaml || { echo "staffchat_id — не супергруппа (нужен -100…)"; exit 1; }
+        echo "config.yaml бота отрендерен"
+
+  supportbot:
+    # БОТ ПОДДЕРЖКИ — bostrot/telegram-support-bot, ОТДЕЛЬНЫЙ от ops-бота
+    # (docs/decisions.md, 29.08.2026): требования к видимости противоположны,
+    # область компрометации разная, один токен на оба отдал бы канал тревог
+    # разговорной поверхности. Долгий опрос — исходящее соединение, порт
+    # наружу не нужен.
+    image: ${REGISTRY:-cr.yandex/pseudex}/pseudex-supportbot:${VERSION:?set VERSION}
+    profiles: ["support"]
+    restart: unless-stopped
+    logging: *logging
+    volumes:
+      - supportbot-config:/bot/config:ro
+    environment:
+      MONGO_URI: mongodb://supportbot-db:27017/support
+    depends_on:
+      supportbot-config: { condition: service_completed_successfully }
+      supportbot-db: { condition: service_healthy }
+
+  supportbot-db:
+    # MongoDB — потому что апстрим на ней, и переписывать его хранилище ради
+    # Postgres значило бы поддерживать форк. Наружу не публикуется, том свой.
+    # В БЭКАП НЕ ВХОДИТ НАМЕРЕННО: тикеты — переписка, а не запись, которую
+    # обязаны хранить; потеря истории поддержки — неприятность, а не отказ.
+    image: mongo:8.0
+    profiles: ["support"]
+    restart: unless-stopped
+    logging: *logging
+    volumes:
+      - supportbot-db:/data/db
+    expose: ["27017"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand('ping').ok"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   alertmanager-config:
     # ОДНОРАЗОВЫЙ РЕНДЕР КОНФИГА ТРЕВОГ. Alertmanager не раскрывает переменные
     # окружения и отвергает `chat_id: 0`, поэтому настоящий идентификатор чата
@@ -544,6 +609,8 @@ volumes:
   loki-data:
   promtail-positions:
   alertmanager-data:
+  supportbot-config:
+  supportbot-db:
   alertmanager-config:
   grafana-data:
   postgres-data:
