@@ -73,6 +73,31 @@ def _stand_token() -> str:
     return path.read_text().splitlines()[0]
 
 
+def stand_ttl(token: str) -> int:
+    """Сколько живёт аренда У ЗАПУЩЕННОГО СЕРВЕРА, а не в переменной окружения.
+
+    Тест брал TTL из `STAND_LEASE_TTL`, то есть из переменной ТЕКУЩЕГО шелла, а
+    контейнер работает с тем значением, которое ему дали при создании. Стоит
+    один раз поднять стенд без неё — и два числа расходятся молча: проверки,
+    ждущие закрытия окна, падают не потому, что продукт сломан, а потому что
+    ждали 33 секунды вместо пяти минут.
+
+    Ложный красный дороже ложного зелёного: его начинают игнорировать вместе с
+    настоящими. Поэтому спрашиваем сервер — он отдаёт своё окно в каждом ответе
+    `/admin/fleet`.
+    """
+    try:
+        answer = httpx.get(f"{LICENSE_ADMIN}/admin/fleet", timeout=10,
+                           params={"org_ids": "probe"},
+                           headers={"Authorization": f"Bearer {token}"})
+        window = answer.json().get("window_seconds")
+        if isinstance(window, int) and window > 0:
+            return window
+    except (httpx.HTTPError, ValueError):
+        pass
+    return 300
+
+
 def _stand_alive(token: str) -> bool:
     try:
         answer = httpx.get(f"{LICENSE_ADMIN}/admin/list", timeout=5,
@@ -263,31 +288,6 @@ def main() -> int:
           Funnel.objects.filter(step=Funnel.FIRST_LEASE,
                                 organization_id=organization.id).count() == 1)
 
-    # РАЗЛИЧАЮЩИЙ СЛУЧАЙ: КОНТЕЙНЕР ОСТАНОВЛЕН. `instances` считает аренды в
-    # текущем окне TTL и у остановленного клиента равен нулю; вопрос воронки —
-    # «поднимал ли КОГДА-НИБУДЬ». Живой контейнер обе метрики проходят
-    # одинаково, поэтому без этой проверки разница между ними невидима, и
-    # мутация исходной ошибки не краснела.
-    subprocess.run(["docker", "stop", CONTAINER], capture_output=True, timeout=60)
-    Funnel.objects.filter(step=Funnel.FIRST_LEASE,
-                          organization_id=organization.id).delete()
-    # ЖДЁМ, ПОКА ОКНО TTL ЗАКРОЕТСЯ. `instances` считает аренды, выданные за
-    # последний TTL; сразу после остановки аренда ещё внутри окна, и разница
-    # между «считать по инстансам» и «считать по выданной ёмкости» невидима —
-    # мутация не краснела именно поэтому. На стенде TTL короткий (25 с),
-    # в проде это сутки, и там окно закрывается само.
-    ttl = int(os.environ.get("STAND_LEASE_TTL", "25"))
-    time.sleep(ttl + 8)
-    check("и видит его, даже когда контейнер уже остановлен",
-          Funnel.objects.filter(step=Funnel.FIRST_LEASE,
-                                organization_id=organization.id).exists(),
-          "ёмкость выдана и назад не едет, а инстансов сейчас ноль")
-    subprocess.run(["docker", "start", CONTAINER], capture_output=True, timeout=60)
-    for _ in range(45):
-        if container_masks()[0]:
-            break
-        time.sleep(2)
-
     # --- 3. триал кончился -> счёт --------------------------------------
     subscription = organization.subscription
     subscription.trial_ends_at = timezone.now() - timedelta(minutes=1)
@@ -324,7 +324,7 @@ def main() -> int:
     check("подписка помечена неоплаченной",
           subscription.state == Subscription.PAST_DUE, subscription.state)
 
-    stopped, detail = wait_for_service(False, 90)
+    stopped, detail = wait_for_service(False, stand_ttl(token) + 40)
     check("КОНТЕЙНЕР ПЕРЕСТАЛ ОБСЛУЖИВАТЬ", stopped, detail)
 
     # --- 5. ОПЛАТА: обслуживание возвращается ---------------------------
@@ -338,7 +338,7 @@ def main() -> int:
     check("подписка снова активна",
           subscription.state == Subscription.ACTIVE, subscription.state)
 
-    resumed, detail = wait_for_service(True, 90)
+    resumed, detail = wait_for_service(True, stand_ttl(token) + 40)
     check("КОНТЕЙНЕР СНОВА ОБСЛУЖИВАЕТ", resumed, detail)
 
     # --- 6. повторная доставка уведомления ------------------------------
@@ -520,6 +520,27 @@ def main() -> int:
           f"{before_count} шт")
     check("и подписка закрыта",
           subscription.state == Subscription.CANCELLED, subscription.state)
+
+    # --- 10. ПОСЛЕДНИМ: ВОРОНКА ВИДИТ ОСТАНОВЛЕННЫЙ КОНТЕЙНЕР -----------
+    # В КОНЦЕ ПРОГОНА, А НЕ В СЕРЕДИНЕ. Здесь останавливается контейнер, и
+    # всякая проверка после неё зависела бы от того, успел ли он вернуться:
+    # две проверки уже падали не потому, что продукт сломан, а потому что порт
+    # ещё не слушал. Ложный красный хуже ложного зелёного тем, что его
+    # начинают игнорировать вместе с настоящими.
+    #
+    # Различающий случай: `instances` считает аренды в текущем окне TTL и у
+    # остановленного клиента равен нулю, а вопрос воронки — «поднимал ли
+    # КОГДА-НИБУДЬ». У живого контейнера обе метрики дают одно и то же, и
+    # разница между верным и неверным сигналом невидима.
+    subprocess.run(["docker", "stop", CONTAINER], capture_output=True, timeout=60)
+    Funnel.objects.filter(step=Funnel.FIRST_LEASE,
+                          organization_id=organization.id).delete()
+    time.sleep(stand_ttl(token) + 8)
+    call_command("run_billing_cycle", verbosity=0)
+    check("воронка видит поднятый контейнер и после его остановки",
+          Funnel.objects.filter(step=Funnel.FIRST_LEASE,
+                                organization_id=organization.id).exists(),
+          "ёмкость выдана и назад не едет, а инстансов сейчас ноль")
 
     subprocess.run(["docker", "rm", "-f", CONTAINER],
                    capture_output=True, text=True, timeout=60)

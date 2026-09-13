@@ -1295,6 +1295,43 @@ direction when done the obvious way:
   rendering `{{ metered_floor }}` that still says «300 000» in prose has two
   copies of one threshold.
 
+## Rules that changes must not break, part six — false reds
+
+Three false reds in a row on one afternoon, all from the same shape, and each
+cost more than the defect it was supposedly reporting. **A false red is worse
+than a false green**: it gets ignored, and then it gets ignored together with a
+true one.
+
+- **A CHECK MUST NOT DEPEND ON A NUMBER THE ENVIRONMENT HAPPENS TO CARRY.**
+  `test_billing_lifecycle` read the lease TTL from `STAND_LEASE_TTL` — a variable
+  of the CURRENT SHELL — while the stand runs with whatever it was created with.
+  Raise the stand once without that variable and the two disagree silently:
+  checks that wait for the window to close fail because they waited 33 seconds
+  instead of five minutes, and nothing about the product is wrong. The test now
+  ASKS THE SERVER: `/admin/fleet` returns `window_seconds` in every answer.
+- **A CHECK THAT STOPS A CONTAINER GOES LAST.** The stopped-container assertion
+  was inserted mid-flow, so every step after it depended on whether the container
+  had come back; two of them failed because the port was not listening yet. There
+  is no way to make that robust — the fix is ordering, not timing.
+- **A REPLACE-BASED EDIT CAN SILENTLY DROP A LINE.** Restructuring the same test
+  by string replacement removed the `call_command("run_billing_cycle")` between
+  the setup and the assertion, so the funnel row was deleted and never recreated.
+  The check failed correctly and the diagnosis cost an hour. After any such edit,
+  read back the region rather than trusting that the anchor matched what was
+  intended.
+- **VERIFY A RESPONSE SHAPE AGAINST THE LIVE SERVICE, NOT ITS DOCSTRING.**
+  `_detect_first_lease` read `row["instances"]` because the endpoint's docstring
+  described it that way; the real answer nests the counters under `usage`. And
+  the field that matters is `capacity_granted` (monotonic, "has it EVER leased")
+  rather than `instances` (windowed by TTL, "is it leasing right now") — a
+  customer who raised a container last month and stopped it shows zero
+  instances, and the funnel would lose them.
+- **`$VAR` INSIDE A COMPOSE `command:` IS INTERPOLATED BY COMPOSE, NOT THE
+  SHELL.** The once-a-day guard on the digest arrived empty, so the condition was
+  always true and the digest would have gone out hourly. Escape as `$$VAR`; the
+  absence of "variable is not set" warnings in `docker compose config` is the
+  check.
+
 ## Rules that changes must not break, part five — operations
 
 - **THE LICENSING SERVER'S SCHEMA MIGRATES BEFORE ANY INDEX IS BUILT.**
