@@ -22,6 +22,7 @@ urlpatterns = [
     # потолок инстансов — сразу.
     path("tariffs/", views.constructor, name="ops_constructor"),
     path("demand/", views.demand, name="ops_demand"),
+    path("analytics/", views.analytics, name="ops_analytics"),
     path("plans/<str:code>/", views.edit_plan, name="ops_edit_plan"),
     # Последними: `org_` — свободная строка, и маршруты выше по конкретному пути
     # иначе были бы съедены ими. Внутри этой пары порядок тоже значим — более

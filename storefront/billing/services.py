@@ -218,6 +218,18 @@ def adopt_current_terms(subscription: Subscription) -> None:
         "terms_metered_per_1k", "terms_metered_floor", "terms_taken_at"])
 
 
+def funnel(step: str, organization_id: str, detail: str = "") -> None:
+    """Шаг воронки из биллинга. Импорт внутри — `billing` не должен зависеть от
+    `ops` на уровне модуля: это разные приложения, и цикл импорта при загрузке
+    Django дороже одной строки здесь."""
+    try:
+        from ops.analytics_models import Funnel
+        Funnel.objects.create(step=step, organization_id=organization_id,
+                              detail=detail[:64])
+    except Exception:  # noqa: BLE001 — аналитика не ломает деньги
+        _log.warning("не удалось отметить шаг воронки %s", step, exc_info=True)
+
+
 def mark_paid(invoice: Invoice, payment_ref: str = "") -> None:
     """Money arrived. RECORD IT FIRST, restore service second.
 
@@ -290,6 +302,7 @@ def mark_paid(invoice: Invoice, payment_ref: str = "") -> None:
     with transaction.atomic():
         Invoice.objects.filter(pk=invoice_pk).update(
             service_resumed_at=timezone.now())
+    funnel("paid", organization_id, str(invoice.total))
     invoice.refresh_from_db()
 
 

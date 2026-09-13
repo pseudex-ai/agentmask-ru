@@ -27,7 +27,8 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.paginator import Paginator
-from django.db.models import Sum
+from django.db.models import Count, Sum
+from django.db.models.functions import TruncDate
 from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
@@ -40,6 +41,7 @@ from accounts.models import Organization
 from billing import licensing
 from billing import reconcile as billing_reconcile
 from billing.models import Invoice, Plan, PlanChange, Subscription
+from ops.analytics_models import Funnel, Visit
 
 # СТРАНИЦА БЬЁТСЯ О ПОТОЛОК ПАКЕТНОЙ РУЧКИ, А НЕ О ЧИСЛО КЛИЕНТОВ.
 # `/admin/fleet` отвечает 400 сверх двухсот идентификаторов — намеренно, чтобы
@@ -342,6 +344,99 @@ def edit_plan(request, code: str):
                               f"{', '.join(f'{k}={v}' for k, v in values.items())}. "
                               f"Автор записан как {plan.get('updated_by', '')}.")
     return redirect("ops_plans")
+
+
+@staff_member_required
+def analytics(request):
+    """Аналитика: воронка первой, трафик вторым. Порядок — это утверждение.
+
+    ПРОСМОТРЫ НЕ ОТВЕЧАЮТ НИ НА ОДИН ВОПРОС, КОТОРЫЙ СТОИТ ДЕНЕГ. «Пришло 400
+    человек» не говорит, что делать дальше; «из 400 форму отправили 12, ключ
+    получили 9, контейнер подняли 2» говорит, где чинить, и называет место —
+    между ключом и контейнером. Поэтому воронка наверху, а трафик под ней.
+
+    ВСЕ РАЗРЕЗЫ СЧИТАЮТСЯ БЕЗ БОТОВ ПО УМОЛЧАНИЮ и переключаются одной
+    ссылкой. Лендинг с десятью живыми посетителями и двумя сотнями обходов
+    краулеров показывает 210 и врёт в двадцать раз — а по этому числу выбирают
+    канал.
+    """
+    days = max(1, min(365, int(request.GET.get("days", "30") or 30)))
+    with_bots = request.GET.get("bots") == "1"
+    since = timezone.now() - datetime.timedelta(days=days)
+    today = timezone.localdate()
+
+    visits = Visit.objects.filter(at__gte=since)
+    if not with_bots:
+        visits = visits.filter(is_bot=False)
+
+    # --- воронка -----------------------------------------------------------
+    # Считается по РАЗНЫМ ключам на разных участках, и это не небрежность:
+    # до выпуска ключа человек опознаётся суточным отпечатком, после — своей
+    # организацией. Склеить их сквозным идентификатором было бы можно, и это
+    # ровно тот идентификатор, которого мы не заводим.
+    steps = []
+    for code, title in Funnel.STEPS:
+        if code == Funnel.SIGNUP_REFUSED:
+            continue
+        rows = Funnel.objects.filter(step=code, at__gte=since)
+        count = (rows.values("visitor").distinct().count() if code == Funnel.LANDING
+                 else rows.values("organization_id").distinct().count()
+                 if code != Funnel.LANDING else rows.count())
+        steps.append({"code": code, "title": title, "count": count})
+    top = steps[0]["count"] if steps and steps[0]["count"] else 0
+    previous = None
+    for row in steps:
+        row["share"] = round(row["count"] / top * 100, 1) if top else 0
+        # Конверсия ИЗ ПРЕДЫДУЩЕГО шага, а не из вершины: именно она называет
+        # место, где отваливаются, а доля от вершины только описывает итог.
+        row["from_previous"] = (round(row["count"] / previous * 100, 1)
+                                if previous else None)
+        row["lost"] = (previous - row["count"]) if previous is not None else 0
+        previous = row["count"] or None
+
+    # --- почему отказала форма --------------------------------------------
+    # Отдельно от воронки: это не шаг, а диагноз. «Отваливаются на форме»
+    # ничего не говорит; «восемь из десяти — уже зарегистрированы» говорит, что
+    # чинить надо ссылку на вход, а не форму.
+    refusals = list(Funnel.objects.filter(step=Funnel.SIGNUP_REFUSED, at__gte=since)
+                    .values("detail").annotate(n=Count("id")).order_by("-n"))
+
+    # --- трафик ------------------------------------------------------------
+    def cut(field, limit=12):
+        rows = (visits.exclude(**{field: ""}).values(field)
+                .annotate(visits=Count("id"), visitors=Count("visitor", distinct=True))
+                .order_by("-visitors")[:limit])
+        return [{"value": r[field], "visits": r["visits"], "visitors": r["visitors"]}
+                for r in rows]
+
+    # Ряд по суткам — для графика и для ответа «растём или нет».
+    by_day = list(visits.annotate(day=TruncDate("at")).values("day")
+                  .annotate(visits=Count("id"),
+                            visitors=Count("visitor", distinct=True))
+                  .order_by("day"))
+    peak = max((d["visits"] for d in by_day), default=0) or 1
+    for row in by_day:
+        row["height"] = round(row["visits"] / peak * 100)
+
+    bots = Visit.objects.filter(at__gte=since, is_bot=True).count()
+    total_visits = visits.count()
+    total_visitors = visits.values("visitor").distinct().count()
+
+    return render(request, "ops/analytics.html", {
+        "days": days, "with_bots": with_bots, "today": today,
+        "steps": steps, "refusals": refusals,
+        "by_day": by_day, "peak": peak,
+        "total_visits": total_visits, "total_visitors": total_visitors,
+        "bots": bots,
+        "bot_share": round(bots / (total_visits + bots) * 100, 1) if total_visits + bots else 0,
+        "pages": cut("path"), "referrers": cut("referrer_host"),
+        "sources": cut("utm_source"), "campaigns": cut("utm_campaign"),
+        "devices": cut("device", 6), "browsers": cut("browser", 8),
+        "systems": cut("os", 6),
+        "plans_chosen": list(Funnel.objects
+                             .filter(step=Funnel.SIGNUP_SUBMITTED, at__gte=since)
+                             .values("detail").annotate(n=Count("id")).order_by("-n")),
+    })
 
 
 # Коммерческие поля тарифа: их правит конструктор, и они живут ТОЛЬКО у нас.

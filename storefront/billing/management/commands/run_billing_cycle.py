@@ -89,6 +89,7 @@ class Command(BaseCommand):
         self.dry = dry
         self.done: list[str] = []
 
+        self._detect_first_lease()
         self._warn_about_volume()
         self._issue_for_ended_trials(now)
         self._issue_for_ended_periods(now)
@@ -100,7 +101,44 @@ class Command(BaseCommand):
             self.stdout.write(prefix + line)
         self.stdout.write(f"{len(self.done)} действий")
 
-    # --- 0: предупредить о расходе ДО того, как придёт счёт ----------------
+    # --- 0: кто впервые поднял контейнер -----------------------------------
+
+    def _detect_first_lease(self) -> None:
+        """Отметить организации, впервые взявшие аренду.
+
+        ЭТО ШАГ ВОРОНКИ, КОТОРЫЙ НЕ ВИДЕН ИЗ БРАУЗЕРА ВООБЩЕ. Между «получил
+        ключ» и «поднял контейнер» отваливается больше всего людей, и отвал
+        этот происходит на ЧУЖОМ железе: человек скопировал команду, не открыл
+        порт наружу, получил отказ и ушёл. Ни одна аналитика на странице этого
+        не увидит — факт приезжает к нам арендой.
+
+        Спрашивается только про тех, у кого шага ещё нет: пакетная ручка
+        отвечает про названных, и список сам собой сжимается по мере того, как
+        клиенты поднимаются.
+        """
+        from ops.analytics_models import Funnel
+
+        seen = set(Funnel.objects.filter(step=Funnel.FIRST_LEASE)
+                   .values_list("organization_id", flat=True))
+        pending = [s.organization_id for s in Subscription.objects.all()
+                   if s.organization_id not in seen]
+        if not pending:
+            return
+        try:
+            fleet = licensing.fleet(pending)
+        except licensing.LicensingError:
+            # Наша авария. Молчим и попробуем через час.
+            return
+        for org_id, row in fleet.items():
+            leased = row.get("instances") or row.get("last_lease") or row.get("requests")
+            if not leased:
+                continue
+            self.done.append(f"{org_id}: впервые поднял контейнер")
+            if not self.dry:
+                Funnel.objects.create(step=Funnel.FIRST_LEASE,
+                                      organization_id=org_id)
+
+    # --- 0б: предупредить о расходе ДО того, как придёт счёт ---------------
 
     def _warn_about_volume(self) -> None:
         """Письмо на переходе через включённый объём и через порог.
@@ -245,6 +283,7 @@ class Command(BaseCommand):
         invoice.state = Invoice.ISSUED
         invoice.issued_at = now
         invoice.save(update_fields=["state", "issued_at"])
+        services.funnel("invoice_issued", organization.id, invoice.number)
         self._send_invoice(organization, invoice)
 
     def _send_invoice(self, organization, invoice: Invoice) -> None:

@@ -43,3 +43,8 @@ class DemandDay(models.Model):
 
     def __str__(self) -> str:
         return f"{self.day} {self.group} = {self.count}"
+
+
+# Аналитика живёт в своём файле — там другая тема и другой объём объяснений,
+# а Django ищет модели именно здесь.
+from ops.analytics_models import Funnel, Visit, VisitDay  # noqa: E402,F401

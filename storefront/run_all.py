@@ -54,16 +54,17 @@ def _has_yookassa() -> bool:
 STEPS = [
     ("00-storefront", "test_storefront.py", lambda: True, ""),
     ("01-deploy-refs", "test_deploy_references.py", lambda: True, ""),
-    ("02-configurator", "test_configurator_renders.py", lambda: True, ""),
-    ("03-ops-console", "test_ops_renders.py", lambda: True, ""),
-    ("04-billing-lifecycle", "test_billing_lifecycle.py", _stand_up,
+    ("02-analytics", "test_analytics.py", lambda: True, ""),
+    ("03-configurator", "test_configurator_renders.py", lambda: True, ""),
+    ("04-ops-console", "test_ops_renders.py", lambda: True, ""),
+    ("05-billing-lifecycle", "test_billing_lifecycle.py", _stand_up,
      "нужен поднятый стенд: bash deploy/local.sh"),
     # НУЖНЫ ОБА, И ЭТО НЕ ПЕДАНТИЗМ. Проверка выпускает НАСТОЯЩИЙ ключ на
     # лицензионном сервере (клиент, которому ключа не выдавали, не может быть
     # ни остановлен, ни возобновлён), поэтому без стенда она падает сырой
     # трассировкой на 401 — а условие, спрашивавшее только про магазин,
     # пропускало её в такой прогон.
-    ("05-billing-yookassa", "test_billing_e2e.py",
+    ("06-billing-yookassa", "test_billing_e2e.py",
      lambda: _has_yookassa() and _stand_up(),
      "нужны ключи тестового магазина (source storefront/.env.dev) И "
      "поднятый стенд (bash deploy/local.sh)"),

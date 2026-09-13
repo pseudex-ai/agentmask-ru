@@ -168,11 +168,26 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
+        # Час — шаг цикла. Свёртка и сводка идут РАЗ В СУТКИ, и отметка о том,
+        # что они уже сделаны сегодня, лежит файлом: контейнер перезапускается
+        # чаще, чем раз в сутки, и без отметки сводка приходила бы на каждый
+        # рестарт.
         while :; do
           if python manage.py run_billing_cycle; then
             date +%s > /state/last-ok
           else
             echo "billing cycle failed"
+          fi
+          TODAY="$$(date +%F)"
+          if [ "$$(cat /state/last-daily 2>/dev/null)" != "$$TODAY" ]; then
+            HOUR="$$(date +%H)"
+            # После девяти утра по времени контейнера: сводка, пришедшая в три
+            # ночи, читается утром вместе со следующей и теряет половину смысла.
+            if [ "$$HOUR" -ge 9 ]; then
+              python manage.py rollup_analytics || echo "rollup failed"
+              python manage.py daily_digest || echo "digest failed"
+              echo "$$TODAY" > /state/last-daily
+            fi
           fi
           sleep 3600
         done

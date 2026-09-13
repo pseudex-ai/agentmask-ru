@@ -96,6 +96,24 @@ Invoice.objects.create(organization=org, number="PS-2026-09-render01",
                        metered_requests=500000, metered_amount=Decimal("4750"),
                        total=Decimal("16650"), requests_at_period_end=1500000,
                        values_at_period_end=900000)
+# ВИЗИТЫ И ВОРОНКА: пустой экран отрисуется у кого угодно, и проверка на нём
+# ничего не значит. Сеем оба конца воронки — начало на лендинге и хвост по
+# организации — плюс одного бота, чтобы фильтр было видно.
+from ops.analytics_models import Funnel, Visit
+for i in range(25):
+    Visit.objects.create(visitor=f"v{i % 7:014d}", path="/" if i % 3 else "/detection",
+                         referrer_host="ya.ru" if i % 4 == 0 else "",
+                         utm_source="habr" if i % 5 == 0 else "",
+                         device="десктоп", browser="Chrome", os="macOS")
+Visit.objects.create(visitor="botbotbotbotbo", path="/", is_bot=True)
+for i in range(7):
+    Funnel.objects.create(step=Funnel.LANDING, visitor=f"v{i:014d}")
+Funnel.objects.create(step=Funnel.SIGNUP_SUBMITTED, visitor="v0000000000000",
+                      organization_id=org.id, detail="industrial")
+Funnel.objects.create(step=Funnel.SIGNUP_REFUSED, detail="уже зарегистрирован")
+Funnel.objects.create(step=Funnel.ACTIVATED, organization_id=org.id)
+Funnel.objects.create(step=Funnel.KEY_ISSUED, organization_id=org.id)
+
 print(org.id)
 '''
 
@@ -195,6 +213,8 @@ def main() -> int:
                 ("конструктор", f"{ops}/tariffs/",
                  ["Промышленный", "прежних условиях", "Новый тариф"]),
                 ("спрос", f"{ops}/demand/", []),
+                ("аналитика", f"{ops}/analytics/",
+                 ["Воронка", "зашёл на лендинг", "поднял контейнер", "Трафик"]),
                 ("карточка клиента", f"{ops}/{org_id}/", ["ООО Ромашка", "PS-2026-09-render01"]),
                 ("сверка", f"{ops}/{org_id}/reconcile/", []),
             ]
@@ -232,6 +252,28 @@ def main() -> int:
                 check("без лицензионного сервера экран тарифов честно молчит",
                       form is None and said,
                       f"форма={form is not None} объяснение={said}")
+
+            # --- аналитика: боты не попадают в число посетителей --------
+            page.goto(f"{ops}/analytics/", wait_until="networkidle")
+            body = page.inner_text("body")
+            import re as _re
+            shown = _re.search(r"(\d+)\s+посетителей", body)
+            check("аналитика считает посетителей без ботов",
+                  shown is not None and int(shown.group(1)) == 7,
+                  f"на экране {shown.group(1) if shown else '?'}, посеяно 7 живых + 1 бот")
+            # НЕ РАВЕНСТВО, А НАЛИЧИЕ: сам playwright опознаётся фильтром как
+            # бот (в его user-agent есть `HeadlessChrome`), поэтому ботов
+            # больше посеянного одного — и это доказательство, что фильтр
+            # работает, а не повод ослабить проверку. Считаем ровно то, что
+            # утверждаем: их отдельная строка есть и число в ней не ноль.
+            counted = _re.search(r"ботов отфильтровано (\d+)", body)
+            check("бот посчитан отдельно и назван",
+                  counted is not None and int(counted.group(1)) >= 1,
+                  f"{counted.group(1) if counted else 'строки нет'} — "
+                  f"выброшенное нельзя пересчитать, помеченное можно")
+            check("воронка называет потерю между шагами",
+                  "ПОТЕРЯНО" in body and "из предыдущего" in body.lower(),
+                  "доля от вершины описывает итог, а конверсия из предыдущего — место")
 
             # --- конструктор правит цену и говорит, кого это коснётся ----
             page.goto(f"{ops}/tariffs/", wait_until="networkidle")

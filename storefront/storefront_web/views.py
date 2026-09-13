@@ -30,6 +30,7 @@ from accounts.models import Membership, Organization
 from billing import onboarding, licensing, payments, services
 from accounts.models import User
 from billing.models import Invoice, LicenseKey, Plan
+from ops.analytics_models import Funnel
 from ops.models import DemandDay
 from storefront_web import detection_types
 
@@ -92,6 +93,26 @@ def _too_many(request, kind: str, limit: int, window: int) -> bool:
     except ValueError:
         cache.set(bucket, 1, window)
     return False
+
+
+def _funnel(step: str, detail: str = "", request=None, organization=None) -> None:
+    """Отметить шаг воронки. НИКОГДА не ломает путь клиента.
+
+    Аналитика — не то, ради чего человек пришёл. Упавшая запись обязана стоить
+    строки в логе, а не отказа в регистрации.
+    """
+    try:
+        visitor = ""
+        if request is not None:
+            from ops import collect
+            visitor = collect.fingerprint(
+                request.get_host(), collect.client_ip(request.META),
+                request.META.get("HTTP_USER_AGENT", ""))
+        Funnel.objects.create(
+            step=step, detail=detail[:64], visitor=visitor,
+            organization_id=(organization.id if organization is not None else ""))
+    except Exception:  # noqa: BLE001 — см. докстроку
+        _log.warning("не удалось отметить шаг воронки %s", step, exc_info=True)
 
 
 def _too_many_signups(request) -> bool:
@@ -353,6 +374,7 @@ def signup(request):
     # появилась, и утверждение поправлено вместе с ней: комментарий, ставший
     # неправдой, опаснее отсутствующего — по нему принимают решения.)
     if _too_many_signups(request):
+        _funnel(Funnel.SIGNUP_REFUSED, "троттлинг", request)
         messages.error(request, "Слишком много попыток. Подождите минуту.")
         return redirect("landing")
 
@@ -364,12 +386,14 @@ def signup(request):
     # две секунды; ст. 9 152-ФЗ требует, чтобы оператор МОГ ДОКАЗАТЬ получение
     # согласия, а доказать можно только тем, что без него запись не создаётся.
     if request.POST.get("consent") != "1":
+        _funnel(Funnel.SIGNUP_REFUSED, "без согласия", request)
         messages.error(request, "Без согласия на обработку персональных данных "
                                 "аккаунт создать нельзя — это требование "
                                 "152-ФЗ, а не формальность с нашей стороны.")
         return redirect("landing")
 
     if services.is_disposable(email):
+        _funnel(Funnel.SIGNUP_REFUSED, "одноразовая почта", request)
         messages.error(request, "На одноразовые почтовые ящики ключ не "
                                 "выпускается — ссылка на активацию до вас не "
                                 "дойдёт. Укажите рабочий адрес: пробный период "
@@ -382,6 +406,7 @@ def signup(request):
     # them, and anyone could otherwise attach organisations to a stranger's
     # address by typing it into this form.
     if Membership.objects.filter(user__email=email).exists():
+        _funnel(Funnel.SIGNUP_REFUSED, "уже зарегистрирован", request)
         messages.info(request, "Такой email уже зарегистрирован — войдите по ссылке "
                                "на почту, ключи в кабинете.")
         return redirect("account_login")
@@ -400,6 +425,7 @@ def signup(request):
     # signed reference to the account. Nothing secret is ever put in an email.
     organization = services.create_account(email, name, plan_code)
     # Факт, а не галочка: момент и РЕДАКЦИЯ текста, на которую согласились.
+    _funnel(Funnel.SIGNUP_SUBMITTED, plan_code, request, organization)
     organization.consent_at = timezone.now()
     organization.consent_revision = settings.SELLER.get("consent_revision", "")
     organization.save(update_fields=["consent_at", "consent_revision"])
@@ -472,7 +498,9 @@ def activate(request):
                                "потерян — выпустите новый.")
         return redirect("cabinet")
     try:
+        _funnel(Funnel.ACTIVATED, "", request, organization)
         key = services.issue_first_key(organization)
+        _funnel(Funnel.KEY_ISSUED, "", request, organization)
     except licensing.LicensingError as error:
         _log.error("issuing a key for %s failed: %s", organization.id, error)
         messages.error(request, "Не удалось выпустить ключ — это на нашей стороне. "

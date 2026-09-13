@@ -79,6 +79,9 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
     "storefront_web.middleware.SecurityHeadersMiddleware",
+    # ПОСЛЕДНИМ: считает только то, что действительно отдано, —
+    # ответ, срезанный проверкой выше, визитом не был.
+    "storefront_web.middleware.AnalyticsMiddleware",
 ]
 
 ROOT_URLCONF = "pseudex_site.urls"
