@@ -380,7 +380,7 @@ services:
       - |
         set -eu
         sed -e "s|__PSEUDEX_SUPPORT_BOT_TOKEN__|$$PSEUDEX_SUPPORT_BOT_TOKEN|" \
-            -e "s|__PSEUDEX_SUPPORT_CHAT__|$$PSEUDEX_SUPPORT_CHAT|" \
+            -e "s|__PSEUDEX_SUPPORT_CHAT__|$$PSEUDEX_SUPPORT_CHAT|g" \
             -e "s|__PSEUDEX_SUPPORT_OWNER__|$$PSEUDEX_SUPPORT_OWNER|" \
             /in/config.yaml > /out/config.yaml
         grep -q '__PSEUDEX_' /out/config.yaml && { echo "плейсхолдер не заменён"; exit 1; } || true

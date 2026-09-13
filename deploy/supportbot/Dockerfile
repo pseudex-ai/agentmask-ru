@@ -26,6 +26,23 @@ RUN git init -q . \
  && git checkout -q FETCH_HEAD \
  && test "$(git rev-parse HEAD)" = "${UPSTREAM_COMMIT}"
 
+# ОДНОСТРОЧНЫЙ ПАТЧ, И ОН ОБЯЗАН ПОПАСТЬ РОВНО ОДИН РАЗ. В v5.0.0 ответ
+# оператора ищет тикет по `external_reply.message_id` (только форум-темы), а
+# для обычного «Ответить» — по `#T…` и по id клиента из текста, оба С ФИЛЬТРОМ
+# ПО КАТЕГОРИИ из сессии оператора. Категорию в сессию ставит только клиент
+# при выборе; у оператора она пуста всегда, и любой тикет с категорией для него
+# «не существует»: «This ticket is closed». Единственный путь без фильтра —
+# `getTicketByInternalId`, и ему просто не передавали id сообщения, на которое
+# ответили. Найдено первым же ответом на первый же тикет. Приведение типа —
+# потому что их интерфейс объявляет `reply_to_message` уже, чем объект
+# Telegram: `message_id` в рантайме есть, в типе нет.
+#
+# `grep -c … = 1` до и после — чтобы обновление апстрима, изменившее эту
+# строку, сломало СБОРКУ, а не молча вернуло баг в прод.
+RUN test "$(grep -c 'const replyMessageId = ctx.message.external_reply?.message_id;' src/staff.ts)" = 1 \
+ && sed -i 's/const replyMessageId = ctx.message.external_reply?.message_id;/const replyMessageId = ctx.message.external_reply?.message_id ?? (replyMsg as { message_id?: number }).message_id;/' src/staff.ts \
+ && test "$(grep -c '?? (replyMsg as { message_id?: number }).message_id' src/staff.ts)" = 1
+
 FROM node:22-alpine AS builder
 WORKDIR /bot
 COPY --from=source /src/package.json /src/package-lock.json /bot/
