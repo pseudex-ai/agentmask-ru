@@ -79,6 +79,17 @@ services:
 
   storefront:
     image: ${REGISTRY:-cr.yandex/pseudex}/pseudex-storefront:${VERSION:?set VERSION}
+    # РЕКВИЗИТЫ ПРОДАВЦА ОТДЕЛЬНЫМ ФАЙЛОМ, а не десятью строками здесь.
+    # Они меняются (банк, адрес, телефон) и не должны требовать правки
+    # compose; плюс файл в .gitignore, а адрес регистрации ИП — это домашний
+    # адрес, и в репозиторий он попадать не должен.
+    #
+    # `required: false` — чтобы стенд поднимался и БЕЗ реквизитов: страницы
+    # тогда честно говорят, что они не заполнены, а счёт нельзя предъявить к
+    # оплате. Это правильный исход, а не поломка.
+    env_file:
+      - path: .env.seller
+        required: false
     restart: unless-stopped
     logging: *logging
     environment:

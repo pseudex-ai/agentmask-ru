@@ -183,6 +183,7 @@ def main() -> int:
 
     from billing import payments, services
     from billing.models import Invoice, Plan, Subscription
+    from ops.analytics_models import Funnel
 
     call_command("migrate", verbosity=0, interactive=False)
     call_command("seed_plans", verbosity=0)
@@ -245,6 +246,47 @@ def main() -> int:
         return 1
     serving, detail = container_masks()
     check("и маскирует настоящий телефон", serving, detail)
+
+    # --- 2б. «ПОДНЯЛ КОНТЕЙНЕР» ЗАСЕКАЕТСЯ ПО АРЕНДЕ ЛИЦЕНЗИИ ------------
+    # Это шаг воронки, невидимый из браузера: он случается на железе клиента и
+    # доезжает к нам тем, что выданный ключ взял аренду. Проверяется настоящим
+    # контейнером, потому что первая версия читала поля не того уровня
+    # вложенности и не засекла бы его ни разу.
+    call_command("run_billing_cycle", verbosity=0)
+    raised = Funnel.objects.filter(step=Funnel.FIRST_LEASE,
+                                   organization_id=organization.id).exists()
+    check("ВОРОНКА ВИДИТ ПОДНЯТЫЙ КОНТЕЙНЕР", raised,
+          "аренда выданного ключа — единственный след этого шага")
+    # И не дублируется: цикл идёт каждый час, а поднял человек один раз.
+    call_command("run_billing_cycle", verbosity=0)
+    check("и не отмечает его второй раз",
+          Funnel.objects.filter(step=Funnel.FIRST_LEASE,
+                                organization_id=organization.id).count() == 1)
+
+    # РАЗЛИЧАЮЩИЙ СЛУЧАЙ: КОНТЕЙНЕР ОСТАНОВЛЕН. `instances` считает аренды в
+    # текущем окне TTL и у остановленного клиента равен нулю; вопрос воронки —
+    # «поднимал ли КОГДА-НИБУДЬ». Живой контейнер обе метрики проходят
+    # одинаково, поэтому без этой проверки разница между ними невидима, и
+    # мутация исходной ошибки не краснела.
+    subprocess.run(["docker", "stop", CONTAINER], capture_output=True, timeout=60)
+    Funnel.objects.filter(step=Funnel.FIRST_LEASE,
+                          organization_id=organization.id).delete()
+    # ЖДЁМ, ПОКА ОКНО TTL ЗАКРОЕТСЯ. `instances` считает аренды, выданные за
+    # последний TTL; сразу после остановки аренда ещё внутри окна, и разница
+    # между «считать по инстансам» и «считать по выданной ёмкости» невидима —
+    # мутация не краснела именно поэтому. На стенде TTL короткий (25 с),
+    # в проде это сутки, и там окно закрывается само.
+    ttl = int(os.environ.get("STAND_LEASE_TTL", "25"))
+    time.sleep(ttl + 8)
+    check("и видит его, даже когда контейнер уже остановлен",
+          Funnel.objects.filter(step=Funnel.FIRST_LEASE,
+                                organization_id=organization.id).exists(),
+          "ёмкость выдана и назад не едет, а инстансов сейчас ноль")
+    subprocess.run(["docker", "start", CONTAINER], capture_output=True, timeout=60)
+    for _ in range(45):
+        if container_masks()[0]:
+            break
+        time.sleep(2)
 
     # --- 3. триал кончился -> счёт --------------------------------------
     subscription = organization.subscription

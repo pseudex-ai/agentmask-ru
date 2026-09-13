@@ -273,6 +273,9 @@ SELLER = {
     # Where a subject of personal data sends a request under 152-ФЗ.
     # The policy is not publishable without it.
     "email": _env("PSEUDEX_SELLER_EMAIL", ""),
+    # Телефон печатается на странице реквизитов: ст. 26.1 ЗоЗПП требует, чтобы
+    # покупатель видел, с кем имеет дело, ДО оплаты, а один email этого не даёт.
+    "phone": _env("PSEUDEX_SELLER_PHONE", ""),
 }
 
 DOCKER_IMAGE = _env("PSEUDEX_DOCKER_IMAGE", "cr.yandex/pseudex/pseudex:1.0.0")

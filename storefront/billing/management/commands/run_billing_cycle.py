@@ -38,6 +38,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from billing import licensing, services
+from billing.services import _int_or_zero
 from billing.models import Invoice, Subscription
 
 # Из `services`, а не отсюда: это же число печатается на лендинге, и три копии
@@ -130,7 +131,19 @@ class Command(BaseCommand):
             # Наша авария. Молчим и попробуем через час.
             return
         for org_id, row in fleet.items():
-            leased = row.get("instances") or row.get("last_lease") or row.get("requests")
+            # ПОЛЯ ВЛОЖЕНЫ В `usage`, А НЕ ЛЕЖАТ СВЕРХУ. Первая версия читала
+            # `row.get("instances")` по докстроке ручки, а не по её ответу, —
+            # там всегда None, и шаг «поднял контейнер» не засёкся бы НИ РАЗУ.
+            # Отказ, который выглядит как «никто не поднимает контейнеры».
+            usage = row.get("usage") or {}
+            # `capacity_granted` МОНОТОННА, а `instances` считает аренды в
+            # текущем окне TTL. Вопрос здесь — «поднимал ли КОГДА-НИБУДЬ», и
+            # клиент, поднявший контейнер месяц назад и остановивший его,
+            # показывает ноль инстансов и всё равно проходил этот шаг.
+            # Ёмкость выдаётся на первой же аренде и назад не едет.
+            leased = (_int_or_zero(usage.get("capacity_granted"))
+                      or _int_or_zero(usage.get("reports"))
+                      or row.get("instances"))
             if not leased:
                 continue
             self.done.append(f"{org_id}: впервые поднял контейнер")
