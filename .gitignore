@@ -72,3 +72,4 @@ prototype/bench/agentpii2/live/runs/
 prototype/bench/agentpii2/corpus.json
 prototype/bench/agentpii3/corpus.json
 .claude/worktrees/
+deploy/.local-env.sh
