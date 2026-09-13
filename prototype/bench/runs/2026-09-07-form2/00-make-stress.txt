@@ -1,0 +1,5 @@
+$ python3 make_stress.py
+
+wrote 600 stress cases | PII: {'NAME': 268, 'PHONE': 320, 'INN': 127, 'SNILS': 142, 'CARD': 142, 'PASSPORT': 34}
+no-direct-PII cases: 213 | hard-negatives: 152 | quasi-identifiers: 183
+

@@ -1,0 +1,7 @@
+$ python3 vault_test.py
+
+same number / different format -> one token: True | +7 909 533 06 09
+tool would receive (as user typed): +7 999 111 22 33
+survives restart (detok still works): +7 999 111 22 33
+
+vault: encrypted with a key generated BESIDE THE DATA (/Users/igor/Projects/Obscura/prototype/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.

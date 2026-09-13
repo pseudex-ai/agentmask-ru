@@ -1,0 +1,10 @@
+$ python3 bench/agentpii4/build.py --check
+
+случаев: 360
+вид: chain 48 · compare 42 · container 30 · correction 36 · decompose 42 · derive 54 · result_feed 36 · summary 36 · validate 36
+регистр: chat 107 · clean 6 · sloppy 51 · voice_itn 78 · voice_raw 118
+кластеров: 305 · размера ≥3: 8
+инструменты: address_suggest 42 · callback_schedule 13 · clinic_book 50 · courier_book 92 · crm_find_contact 84 · crm_import_csv 15 · crm_upsert_contact 62 · delivery_create_order 49 · notify_sms 63 · passport_verify 50 · payment_create 14
+доказательство: `find` не нашёл бы эталон в 12 из 360 случаев
+корпус собран и проверен, не записан (--check)
+

@@ -291,3 +291,18 @@ table.list td.mono { font-family: var(--mono); font-size: 12.5px; }
 @media (max-width: 700px) {
   .cfg-verdict { grid-template-columns: 1fr; gap: 6px; }
 }
+
+/* Баннер согласия на аналитику. Показывается ТОЛЬКО в режиме `full` и только
+   пока выбор не сделан; в режиме без куки хранить нечего, значит и
+   отказываться не от чего.
+
+   ДВЕ КНОПКИ ОДНОГО РАЗМЕРА. Отказ, нарисованный мельче и бледнее согласия, —
+   это имитация выбора, и по 152-ФЗ ст. 9 согласие должно быть свободным. */
+.consent-bar { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 50;
+  display: flex; gap: 20px; align-items: center; flex-wrap: wrap;
+  border: 1px solid var(--line-2); background: var(--panel-2);
+  padding: 16px 18px; box-shadow: 0 8px 28px rgba(0,0,0,.45); }
+.consent-text { flex: 1; min-width: 260px; font-size: 13.5px; line-height: 1.6; color: var(--dim); }
+.consent-text a { color: var(--accent); }
+.consent-buttons { display: flex; gap: 10px; }
+.consent-buttons .btn { min-width: 120px; text-align: center; }

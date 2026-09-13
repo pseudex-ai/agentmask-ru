@@ -1,0 +1,4 @@
+$ python3 make_dataset.py
+
+wrote 100 cases. entity coverage: {'NAME': 52, 'LOC': 56, 'PHONE': 52, 'EMAIL': 30, 'SNILS': 25, 'INN': 25, 'PASSPORT': 12, 'CARD': 23, 'DOB': 11, 'DATE': 12}
+

@@ -1,0 +1,20 @@
+$ python3 bench/agentpii4/smoke.py
+
+
+Traceback (most recent call last):
+  File "/Users/igor/Projects/Obscura/prototype/bench/agentpii4/smoke.py", line 258, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/Users/igor/Projects/Obscura/prototype/bench/agentpii4/smoke.py", line 254, in main
+    return 1 if level_a(cases) else 0
+                ^^^^^^^^^^^^^^
+  File "/Users/igor/Projects/Obscura/prototype/bench/agentpii4/smoke.py", line 73, in level_a
+    kinds = _kinds(delivery, _triple(delivery, POLICIES["deriver"], POLICIES["deriver"], FakeGateway(delivery)))
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/igor/Projects/Obscura/prototype/bench/agentpii4/smoke.py", line 47, in _triple
+    i = scripted_run(case, "I", repeat, gateway_i, seed_backend(case), policy_i)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/igor/Projects/Obscura/prototype/bench/agentpii4/fake_agent.py", line 1248, in scripted_run
+    masked_spans=gateway.masked_spans() if arm == "I" else {})  # type: ignore[attr-defined]
+                 ^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'FakeGateway' object has no attribute 'masked_spans'

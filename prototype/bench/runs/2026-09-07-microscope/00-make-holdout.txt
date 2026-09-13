@@ -1,0 +1,5 @@
+$ python3 make_holdout.py
+
+wrote 320 cases | PII coverage: {'NAME': 63, 'PHONE': 89, 'DATE': 52, 'LOC': 24, 'INN': 25, 'EMAIL': 13, 'PASSPORT': 16, 'SNILS': 22, 'CARD': 34}
+non-PII (no entities) cases: 97 | hard-negative items: 108
+

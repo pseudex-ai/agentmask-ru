@@ -1,0 +1,32 @@
+{
+  "run_id": "1368834e-b937-4bf6-8b37-16a1ce918e1d",
+  "benchmark": "agentpii4",
+  "model": "claude-sonnet-4-6",
+  "judge_model": "claude-sonnet-5",
+  "tier": "ids",
+  "repeats": 1,
+  "sample": 0,
+  "seed": -1,
+  "case_ids": [
+    "long_bank-000",
+    "tool_chain-000",
+    "long_support-000"
+  ],
+  "digest": "bf5e7a746729814373d9c1ff86570508b775a75520cf5f0da463210b4d80d509",
+  "ceiling_usd": 3.0,
+  "arms": [
+    "C",
+    "I",
+    "C2"
+  ],
+  "cap_base_usd": 0.12,
+  "started": "2026-09-06T19:24:12.801025+00:00",
+  "ids": [
+    "long_bank-000",
+    "tool_chain-000",
+    "long_support-000"
+  ],
+  "spent_usd": 0.327634,
+  "finished": "2026-09-06T19:25:50.286233+00:00",
+  "wall_s": 97.5
+}

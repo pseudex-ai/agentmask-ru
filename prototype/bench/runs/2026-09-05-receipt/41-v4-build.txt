@@ -1,0 +1,14 @@
+$ python3 bench/agentpii4/build.py --check
+
+analytics-000: voice_itn is defined by inverse text normalisation being ON; with no digit it is a voice_raw case in disguise
+analytics-004: voice_itn is defined by inverse text normalisation being ON; with no digit it is a voice_raw case in disguise
+analytics-005: voice_itn is defined by inverse text normalisation being ON; with no digit it is a voice_raw case in disguise
+analytics-017: voice_itn is defined by inverse text normalisation being ON; with no digit it is a voice_raw case in disguise
+случаев: 474
+вид: analytics 18 · chain 48 · compare 42 · container 30 · correction 36 · crm_note 24 · decompose 42 · derive 54 · lookup_list 30 · receipt 18 · result_feed 36 · send_template 24 · summary 36 · validate 36
+регистр: chat 140 · clean 6 · sloppy 69 · voice_itn 103 · voice_raw 156
+кластеров: 390 · размера ≥3: 12
+инструменты: address_suggest 42 · callback_schedule 13 · clinic_book 50 · courier_book 92 · crm_add_note 24 · crm_find_contact 138 · crm_import_csv 15 · crm_segment_report 18 · crm_upsert_contact 92 · delivery_create_order 49 · notify_sms 63 · passport_verify 50 · payment_create 32 · send_template 24
+доказательство: `find` не нашёл бы эталон в 12 из 474 случаев
+
+ОТКАЗ: 0 поисков в генераторе, 4 проблем

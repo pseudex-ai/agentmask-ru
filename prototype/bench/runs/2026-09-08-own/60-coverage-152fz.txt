@@ -1,0 +1,4 @@
+$ python3 test_coverage_152fz.py
+
+152-ФЗ coverage OK — 22 types caught and typed correctly, 8 look-alikes left untouched
+

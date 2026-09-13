@@ -14,6 +14,31 @@ from django.utils import timezone
 from django.conf import settings
 from django.utils.deprecation import MiddlewareMixin
 
+def _policy_for(request) -> str:
+    """CSP, РАЗНЫЙ ДЛЯ ПУБЛИЧНОЙ СТРАНИЦЫ И ДЛЯ КАБИНЕТА.
+
+    Здесь стояла одна строка на весь сайт и комментарий, объясняющий, почему в
+    ней нет третьих сторон: «маячок со страницы, на которую смотрит залогиненный
+    клиент, — ровно та форма потока данных, которую продукт предотвращает».
+    Довод верен и остаётся в силе — но он про КАБИНЕТ, а не про лендинг.
+
+    Продуктовая аналитика живёт на НАШЕМ домене и нужна ровно там, где решается
+    «почему не зарегистрировались»: на публичных страницах. В кабинете её нет и
+    не будет: там на экране префиксы ключей и суммы счетов, и запись сессии
+    сделала бы их копию, которую никто не заказывал. Что делают КЛИЕНТЫ, мы
+    знаем из своих же серверных событий — каждое действие в кабинете это POST.
+    """
+    analytics = settings.ANALYTICS
+    if analytics["mode"] == "off" or request.path.startswith("/app/") \
+            or request.path.startswith(f"/{settings.ADMIN_PATH}"):
+        return _POLICY
+    origin = analytics["host"].rstrip("/")
+    return "; ".join([
+        part + (f" {origin}" if part.startswith(("script-src ", "connect-src ")) else "")
+        for part in _POLICY.split("; ")
+    ])
+
+
 _POLICY = "; ".join([
     "default-src 'self'",
     "script-src 'self'",
@@ -38,7 +63,7 @@ _log = logging.getLogger("storefront.analytics")
 
 class SecurityHeadersMiddleware(MiddlewareMixin):
     def process_response(self, request, response):
-        response.setdefault("Content-Security-Policy", _POLICY)
+        response.setdefault("Content-Security-Policy", _policy_for(request))
         # Pages behind the login show a key prefix and billing detail. A shared
         # proxy holding a rendered copy is a copy nobody accounted for.
         #

@@ -1,0 +1,21 @@
+$ python3 test_hard_cases.py
+
+PASS  every hard case is detected  60 cases
+PASS  nothing that is not personal data is masked  18 negatives
+FAIL  every detected value round-trips back intact  broken=[('слитно, рядом добавочный', 'PHONE', '+79162148803, доб. 214')]
+PASS  no detected value reaches the model  60 messages
+PASS  one phone written four ways is ONE token  tokens={'+7 955 060-95-26'}
+PASS  a JSON tool payload survives masking and still parses
+PASS  the order number is untouched inside JSON  order=WA-4471
+PASS  the phone comes back exactly  phone=+7 916 214-88-03
+PASS  masking the same text twice gives the same tokens  first=Клиент Панов Трофим Александрович, +7 955 060-95-26 second=Клиент Панов Трофим Александрович, +7 955 060-95-26
+PASS  a masked message is not masked a second time  once=Клиент Панов Трофим Александрович, +7 955 060-95-26 twice=Клиент Панов Трофим Александрович, +7 955 060-95-26
+PASS  every address round-trips back intact  12 addresses
+PASS  no address substitute sits in the nominative inside an oblique slot  []
+PASS  the address signature survives every case of every pool entry  275 combinations
+PASS  a street is replaced by a street, never by a town
+chat register OK — lower-case streets and glued dates, without the prose
+
+FAILED: 1 — ['every detected value round-trips back intact']
+
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/tmp97iygsgl/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.

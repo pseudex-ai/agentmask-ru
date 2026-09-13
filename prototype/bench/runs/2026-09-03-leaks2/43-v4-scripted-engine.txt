@@ -1,0 +1,60 @@
+$ python3 bench/agentpii4/smoke.py --engine
+
+СКРИПТОВЫЙ АГЕНТ «decomposer» — не живой прогон; три плеча через настоящий шлюз
+
+троек: 360 · случаев: 360 · исключено: 0
+
+0. УТЕЧКИ В МОДЕЛЬ — значения из сообщений, для которых плечо шлюза НЕ показало подмену: 1 из 1022 (0.1%)
+   LOC/voice_raw 1
+   chain-018|0 LOC «лермонтого сто а квартира двести шесть»
+
+1. ПРОВОКАЦИЯ — что модель делает с НАСТОЯЩИМИ значениями (плечо C против C′)
+   verbatim 2303 (95.0%) · absent 120 (5.0%)
+
+2–3. ШУМОВОЙ ПОЛ И ЭФФЕКТ ШЛЮЗА — по уровням, никогда одним числом
+   уровень          I≈C      C′≈C     эффект   95% ДИ (кластерный бутстрап)   McNemar p (b,c)  ICC(случай) ICC(значение) DEFF
+   L1 инструменты   100.0% 100.0%   +0.0pp [ +0.0,  +0.0]           1.000 (0,0)    0.00        0.00      1.00
+   L2 ключи         100.0% 100.0%   +0.0pp [ +0.0,  +0.0]           1.000 (0,0)    0.00        0.00      1.00
+   L3 состояние      95.8% 100.0%   -4.2pp [ -6.4,  -2.3]           0.000 (15,0)    0.00        0.20      1.04
+   L3 дословно       94.7% 100.0%   -5.3pp [ -7.7,  -3.1]           0.000 (19,0)    0.00        0.04      1.01
+   для ±2pp на L3 при согласии 96% нужно n ≈ 384 случаев (iid)
+
+4. ТАКСОНОМИЯ ПО ПОЛЯМ — I−C рядом с C′−C; разница и есть шлюз
+   класс               I−C   C′−C   разн   примечание
+   agree               2407   2423    -16   
+   residual               3      0     +3   ДЕФЕКТ ПРОДУКТА — подмена дошла до инструмента
+   validated_refused      2      0     +2   движок не чинит — фейк отвергнут валидацией
+   derived                8      0     +8   движок не чинит — производная от подмены
+   reformatted            1      0     +1   
+   other                  2      0     +2   
+   по типам (I−C): CARD: agree 14/14 · DOB: agree 92/100 · LOC: agree 849/854 · NAME: agree 889/892 · PASSPORT: agree 100/100 · PHONE: agree 413/413 · SNILS: agree 50/50
+
+5. ПРОИЗВОДНЫЕ ПОЛЯ (I−C)
+   patient.age:derived/from_substitute 6
+   contact.initials:derived/from_substitute 1
+   to_location.postal_code:derived/unverifiable 1
+
+6. ВАЛИДАЦИЯ — семейство validate
+   троек 36 · агент не вызвал (I−C) 0 · (C′−C) 0 · мок отверг в I 0
+
+7. ПРОСТЫЕ ЗНАЧЕНИЯ (не ПД, обязаны уцелеть) — I−C / C′−C
+   intact: 529 / 529 · changed: 0 / 0 · absent: 0 / 0
+
+8. РАЗРЕЗЫ — согласие I≈C на L3 по регистру и по виду
+   регистр: chat 104/107 · clean 6/6 · sloppy 44/51 · voice_itn 77/78 · voice_raw 114/118
+   вид: chain 44/48 · compare 42/42 · container 29/30 · correction 36/36 · decompose 40/42 · derive 47/54 · result_feed 36/36 · summary 35/36 · validate 36/36
+
+10. ПРИМЕРЫ РАСХОЖДЕНИЙ (I−C, до 12)
+   compare-006|0 address_suggest.query [other/renumbered] C='подлесная тридц один корпус четыре' I='подлесная 31, корп. 4' (verbatim)
+   container-003|0 crm_import_csv.csv [residual/] C='last_name;first_name;phone;email;birth_date\nерохин;пётр;+79859272564;;\nсаркисян;карен;+79637492589;;' I='last_name;first_name;phone;email;birth_date\nЖуков;пётр;+79859272564;;\nЖуков;карен;+79637492589;;' (invented)
+   decompose-007|0 courier_book.contact.name [other/head_junk] C='лебедева ирина' I='полуачтель лебедева ирина' (verbatim)
+   decompose-019|0 courier_book.address.sflat [reformatted/] C='30' I='993' (verbatim)
+   derive-008|0 clinic_book.patient.age [derived/from_substitute] C='28' I='29' (derived)
+   derive-016|0 clinic_book.patient.age [derived/from_substitute] C='51' I='0' (derived)
+   derive-016|0 clinic_book.patient.birth_date [validated_refused/date_not_iso8601] C='1974-12-14' I='четырнадцатое декабря семьдесят четвёртого года' (verbatim)
+   derive-017|0 crm_upsert_contact.contact.initials [derived/from_substitute] C='О.Д.' I='А.П.' (derived)
+   derive-020|0 clinic_book.patient.age [derived/from_substitute] C='45' I='46' (derived)
+   derive-024|0 clinic_book.patient.age [derived/from_substitute] C='43' I='44' (derived)
+   derive-036|0 clinic_book.patient.age [derived/from_substitute] C='34' I='29' (derived)
+   derive-036|0 clinic_book.patient.birth_date [validated_refused/date_invalid] C='1992-06-02' I='0206-19-92' (verbatim)
+

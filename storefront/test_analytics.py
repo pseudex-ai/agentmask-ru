@@ -339,6 +339,67 @@ def main() -> int:
     check("а работающий в список оттока не попал",
           busy.id not in named, "у него расход растёт каждые сутки")
 
+    # --- аналитика: текст на странице выведен из настройки ------------------
+    #
+    # НА ЛЕНДИНГЕ СТОЯЛО СИЛЬНОЕ ОБЕЩАНИЕ — «аналитики и счётчиков на сайте нет
+    # вообще… поэтому нет и баннера», — и охраняло его ничто. Включение
+    # счётчика сделало бы фразу ложной, а заметил бы это первый внимательный
+    # читатель: то есть ровно тот клиент, ради которого продукт и покупают.
+    # Теперь абзац выводится из `PSEUDEX_ANALYTICS_MODE`, и проверка ниже
+    # краснеет, если вывод перестанет следовать за режимом.
+    from django.test import override_settings
+
+    def page(mode: str, path: str, client=None):
+        settings_analytics = {
+            "mode": mode, "host": "https://a.pseudex.ru", "key": "phc_probe",
+            "sets_cookies": mode == "full", "records_sessions": mode == "full"}
+        with override_settings(ANALYTICS=settings_analytics):
+            answer = (client or _Client()).get(path)
+        return answer
+
+    claims = {
+        "off": "Аналитики и счётчиков на сайте нет вообще",
+        "cookieless": "не ставит куки",
+        "full": "спрашиваем согласия баннером",
+    }
+    wrong = []
+    for mode, phrase in claims.items():
+        html = page(mode, "/").content.decode()
+        loaded = "analytics.js" in html
+        if (mode == "off") == loaded:
+            wrong.append(f"{mode}: скрипт={loaded}")
+        if phrase not in html:
+            wrong.append(f"{mode}: нет фразы «{phrase}»")
+        # И НАОБОРОТ: текст ДРУГОГО режима не должен стоять на странице.
+        for other, alien in claims.items():
+            if other != mode and alien in html:
+                wrong.append(f"{mode}: на странице фраза режима {other}")
+    check("текст про куки следует за режимом аналитики, в обе стороны",
+          not wrong, "; ".join(wrong) or "off / cookieless / full — каждый свой абзац")
+
+    # ЗАКРЫТЫЕ СТРАНИЦЫ НЕ ПОЛУЧАЮТ НИ СКРИПТА, НИ РАЗРЕШЕНИЯ В CSP. На экране
+    # кабинета префиксы ключей и суммы счетов; запись сессии сделала бы их
+    # копию, которую никто не заказывал. Свойство держится ДВУМЯ механизмами —
+    # шаблоном и заголовком, — и проверяются оба: одного без другого мало.
+    cabinet_user = _U.objects.create_user(email="analytics-probe@example.org")
+    cabinet_org = _O.objects.create(display_name="Кабинет пробы")
+    _M.objects.create(user=cabinet_user, organization=cabinet_org)
+    signed = _Client()
+    signed.force_login(cabinet_user)
+
+    public = page("full", "/")
+    private = page("full", "/app/", signed)
+    csp_of = lambda answer: next(
+        (part for part in answer.get("Content-Security-Policy", "").split("; ")
+         if part.startswith("script-src ")), "")
+    check("на публичной странице скрипт есть и CSP его пускает",
+          "analytics.js" in public.content.decode()
+          and "a.pseudex.ru" in csp_of(public), csp_of(public))
+    check("в кабинете нет ни скрипта, ни разрешения в CSP",
+          "analytics.js" not in private.content.decode()
+          and "a.pseudex.ru" not in csp_of(private),
+          f"код={private.status_code} csp={csp_of(private)}")
+
     print()
     if FAILURES:
         print(f"{len(FAILURES)} провалено: {', '.join(FAILURES)}")

@@ -1,0 +1,40 @@
+$ python3 test_product.py
+
+tenants OK — issued sk-ps-g4mMhV_-…, resolves to acme; bad key -> None
+STREAM -> 'Перезвоню вам на +7 999 123-45-67 завтра'
+stream detok OK — split token restored to real value
+audit OK — org counts {'EMAIL': 1, 'NAME': 1, 'PHONE': 1}; ag1 counts {'NAME': 1, 'PHONE': 1}; preview '+79991234567' -> '+7••••••••67'
+token shapes OK — 22 types x200 samples all matched by TOKEN_RE
+unmask OK on a 2001-token vault — 'Ваш номер +7 999 123-45-67, перезвоним.'
+surface form OK — user wrote '+7 999 123-45-67', tool receives '+7 999 123-45-67'
+fake-name pool OK — 176x36=6336 combinations, all gazetteer-visible
+token pool OK — NAME/LOC/IP each mint 300 distinct tokens, no exhaustion
+token stability OK — 'Клиент Александр Юдин просит перезвонить, телефон +7 918 258-84-09, адрес улица Вязовая 56, кв. 200' survives re-masking and round-trips
+reformatted-token detok OK — 8 919 897-87-09 -> 'Звоню на +7 999 123-45-67'
+reformatted document tokens OK — 5 types survive separator stripping
+person-span offsets OK — trimmed value is always a slice of the source
+echoed-token accounting OK — re-detecting our own token bills nothing
+token/document collisions OK — 5000 PHONE samples, none a valid СНИЛС
+lookalike table OK — Greek small omicron folds to a digit
+conversation scope OK — isolated in the cache, shared in the vault
+short-address linking OK — same place, own shape, one conversation
+fuller-mention reuse OK — one place and one person, in either order
+real settlement OK — the city stays true, the street and house are fake
+directory record OK — the register's form, its leaves and the model's composition are one place
+directory link OK — a surname-street keys with its street, the record reads nominative, the корпус stays
+card leaves OK — linked by position across 60 draws, the surname the dictionary does not know included
+
+vault: encrypted with a key generated BESIDE THE DATA (/Users/igor/Projects/Obscura/prototype/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex_echo_1kzb_hb2/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/tmp6ykle8ju/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/tmpox6dxu3k/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/tmp7zew094k/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/tmpmzkg1kn5/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/tmpe2c01bhe/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+Traceback (most recent call last):
+  File "/Users/igor/Projects/Obscura/prototype/test_product.py", line 951, in <module>
+    test_spoken_birth_date_in_the_agents_form()
+  File "/Users/igor/Projects/Obscura/prototype/test_product.py", line 712, in test_spoken_birth_date_in_the_agents_form
+    day, month, year = token.split(".")
+    ^^^^^^^^^^^^^^^^
+ValueError: not enough values to unpack (expected 3, got 1)

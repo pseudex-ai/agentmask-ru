@@ -1,0 +1,8 @@
+$ python3 test_loop.py
+
+SENT TO MODEL: Найди заказ по телефону +7 947 985-66-07 и почте jilswrws@example.ru
+MODEL TOOL CALL (tokens): {"phone": "+7 947 985-66-07", "email": "jilswrws@example.ru"}
+TOOL EXECUTES WITH: {"phone": "+7 999 123-45-67", "email": "ivan@mail.ru"}
+
+PASS — model saw only tokens; tool received real values.
+

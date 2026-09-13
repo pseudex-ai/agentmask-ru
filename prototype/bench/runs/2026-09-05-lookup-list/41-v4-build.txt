@@ -1,0 +1,11 @@
+$ python3 bench/agentpii4/build.py --check
+
+tool 'send_template' reachable in 0 cases, below 5
+случаев: 414
+вид: chain 48 · compare 42 · container 30 · correction 36 · crm_note 24 · decompose 42 · derive 54 · lookup_list 30 · result_feed 36 · summary 36 · validate 36
+регистр: chat 123 · clean 6 · sloppy 59 · voice_itn 90 · voice_raw 136
+кластеров: 350 · размера ≥3: 8
+инструменты: address_suggest 42 · callback_schedule 13 · clinic_book 50 · courier_book 92 · crm_add_note 24 · crm_find_contact 138 · crm_import_csv 15 · crm_upsert_contact 92 · delivery_create_order 49 · notify_sms 63 · passport_verify 50 · payment_create 14
+доказательство: `find` не нашёл бы эталон в 12 из 414 случаев
+
+ОТКАЗ: 0 поисков в генераторе, 1 проблем

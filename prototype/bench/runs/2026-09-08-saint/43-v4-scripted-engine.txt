@@ -1,0 +1,84 @@
+$ python3 bench/agentpii4/smoke.py --engine
+
+СКРИПТОВЫЙ АГЕНТ «decomposer» — не живой прогон; три плеча через настоящий шлюз
+
+троек: 834 · случаев: 834 · исключено: 0
+ВЕРДИКТ ЭКВИВАЛЕНТНОСТИ при δ=3pp — L0 -3.0pp ≠ · L1 +0.0pp = · L2 -0.2pp = · L3 -17.7pp ≠ · L3 -17.0pp ≠ · L3 -19.1pp ≠
+
+0. УТЕЧКИ В МОДЕЛЬ — значения из сообщений, для которых плечо шлюза НЕ показало подмену: 8 из 2444 (0.3%)
+   по страте: в словарях 0/2172 (0.0%) · вне словарей 8/272 (2.9%)
+   LOC/voice_raw 3 · NAME/voice_raw 2 · LOC/chat 1 · NAME/voice_itn 1 · NAME/chat 1
+   compare-003|0 LOC «маросейка 123»
+   compare-031|0 LOC «плющиха дом двенадцать»
+   correction-024|0 LOC «маросейка три квартира сто семьдесят один»
+   correction-024|0 LOC «маросейка сто пятьдесят пять квартира сто семьде»
+   crm_note-017|0 NAME «авченко ефим»
+   long_support-024|0 NAME «авченко ефим»
+   search_rank-024|0 NAME «милану»
+   search_rank-038|0 NAME «милану»
+0б. ЗАПИСИ БЭКЕНДА — подмена показана для 3791 из 3998 значений (94.8%). ЭТО ПОКРЫТИЕ, НЕ УТЕЧКА: запись, которую агент не запросил, модели не показывали. Со строкой 0 не складывается.
+
+0в. ПЕРЕМАСКИРОВАНИЕ — значения, которые ОБЯЗАНЫ уцелеть, но движок их накрыл: 0 из 834 (0.0%)
+
+1. ПРОВОКАЦИЯ — что модель делает с НАСТОЯЩИМИ значениями (плечо C против C′)
+   verbatim 5584 (95.1%) · absent 287 (4.9%)
+
+2–3. ШУМОВОЙ ПОЛ И ЭФФЕКТ ШЛЮЗА — по уровням, никогда одним числом
+   уровень         сравнимо   I≈C      C′≈C   эффект  95% ДИ            TOST δ=3pp  90% ДИ           McNemar p (b,c)  ICC(сл) ICC(зн) DEFF
+   L0 действие        792/834    97.0% 100.0%   -3.0pp [ -4.2,  -1.9]  НЕ эквивалентно [ -4.0,  -2.1]  0.000 (24,0)   0.00  0.34 1.07
+   L1 инструменты     834/834   100.0% 100.0%   +0.0pp [ +0.0,  +0.0]  эквивалентно    [ -0.1,  +0.1]  1.000 (0,0)   0.00  0.00 1.00
+   L2 ключи           834/834    99.8% 100.0%   -0.2pp [ -0.6,  +0.0]  эквивалентно    [ -0.6,  +0.0]  0.500 (2,0)   0.00  0.00 1.00
+   L3 состояние       792/834    82.3% 100.0%  -17.7pp [-20.7, -14.7]  НЕ эквивалентно [-20.3, -15.0]  0.000 (140,0)   0.00  0.00 1.00
+   L3 ЗНАЧЕНИЯ        834/834    83.0% 100.0%  -17.0pp [-19.4, -14.7]  НЕ эквивалентно [-19.0, -15.0]  0.000 (142,0)   0.00  0.00 1.00
+   L3 дословно        792/834    80.9% 100.0%  -19.1pp [-22.3, -16.0]  НЕ эквивалентно [-21.7, -16.4]  0.000 (151,0)   0.00  0.00 1.00
+   для ±2pp на L3 при согласии 82% нужно n ≈ 1398 случаев (iid)
+
+4. ТАКСОНОМИЯ ПО ПОЛЯМ — I−C рядом с C′−C; разница и есть шлюз
+   класс               I−C   C′−C   разн   примечание
+   agree               5540   5871   -331   
+   extra                  8      0     +8   
+   residual               2      0     +2   ДЕФЕКТ ПРОДУКТА — подмена дошла до инструмента
+   validated_refused     45      0    +45   движок не чинит — фейк отвергнут валидацией
+   control_erred         20      0    +20   КОНТРОЛЬ ошибся — шлюз восстановил эталон корпуса
+   derived                6      0     +6   движок не чинит — производная от подмены
+   same_person_variant    81      0    +81   
+   stale_value            1      0     +1   
+   reformatted           85      0    +85   
+   composed               4      0     +4   
+   other                 87      0    +87   
+   по типам (I−C): CARD: agree 77/77 · DOB: agree 209/213 · EMAIL: agree 7/7 · LOC: agree 1852/2116 · NAME: agree 1834/1862 · PASSPORT: agree 100/100 · PHONE: agree 1411/1454 · SNILS: agree 50/50
+
+5. ПРОИЗВОДНЫЕ ПОЛЯ (I−C)
+   contact.initials:agree/derived_from_real 21
+   contact.name_latin:agree/derived_from_real 8
+   payment_method_data.card.cardholder:agree/derived_from_real 5
+   patient.age:derived/from_substitute 4
+   payment_method_data.card.cardholder:other/misderived 3
+   contact.initials:derived/unverifiable 2
+
+6. ВАЛИДАЦИЯ — семейство validate
+   троек 36 · агент не вызвал (I−C) 0 · (C′−C) 0 · мок отверг в I 0
+
+7. ПРОСТЫЕ ЗНАЧЕНИЯ (не ПД, обязаны уцелеть) — I−C / C′−C
+   intact: 2602 / 2602 · changed: 0 / 0 · absent: 0 / 0
+
+8. РАЗРЕЗЫ — I≈C рядом с полом C′≈C; печатается разность
+   state/регистр: chat 204/241 пол 241/241 (-15pp) · clean 6/6 пол 6/6 (+0pp) · sloppy 80/112 пол 112/112 (-29pp) · voice_itn 146/172 пол 172/172 (-15pp) · voice_raw 216/261 пол 261/261 (-17pp)
+   state/вид: chain 38/48 пол 48/48 (-21pp) · compare 38/42 пол 42/42 (-10pp) · container 30/30 пол 30/30 (+0pp) · correction 33/36 пол 36/36 (-8pp) · crm_note 24/24 пол 24/24 (+0pp) · decompose 38/42 пол 42/42 (-10pp) · derive 51/54 пол 54/54 (-6pp) · long_bank 40/45 пол 45/45 (-11pp) · long_clinic 44/45 пол 45/45 (-2pp) · long_order 47/60 пол 60/60 (-22pp) · long_support 45/45 пол 45/45 (+0pp) · lookup_list 21/30 пол 30/30 (-30pp) · normalize 9/40 пол 40/40 (-78pp) · prompt_rule 20/23 пол 23/23 (-13pp) · receipt 16/18 пол 18/18 (-11pp) · result_feed 31/36 пол 36/36 (-14pp) · search_rank 43/45 пол 45/45 (-4pp) · send_template 23/24 пол 24/24 (-4pp) · summary 32/36 пол 36/36 (-11pp) · tool_chain 5/45 пол 45/45 (-89pp) · validate 24/24 пол 24/24 (+0pp)
+   values/регистр: chat 214/250 пол 250/250 (-14pp) · clean 6/6 пол 6/6 (+0pp) · sloppy 82/119 пол 119/119 (-31pp) · voice_itn 159/183 пол 183/183 (-13pp) · voice_raw 231/276 пол 276/276 (-16pp)
+   values/вид: analytics 18/18 пол 18/18 (+0pp) · chain 42/48 пол 48/48 (-12pp) · compare 31/42 пол 42/42 (-26pp) · container 30/30 пол 30/30 (+0pp) · correction 33/36 пол 36/36 (-8pp) · crm_note 24/24 пол 24/24 (+0pp) · decompose 39/42 пол 42/42 (-7pp) · derive 52/54 пол 54/54 (-4pp) · long_bank 43/45 пол 45/45 (-4pp) · long_clinic 44/45 пол 45/45 (-2pp) · long_order 48/60 пол 60/60 (-20pp) · long_support 45/45 пол 45/45 (+0pp) · lookup_list 22/30 пол 30/30 (-27pp) · normalize 10/40 пол 40/40 (-75pp) · prompt_rule 32/35 пол 35/35 (-9pp) · receipt 17/18 пол 18/18 (-6pp) · result_feed 31/36 пол 36/36 (-14pp) · search_rank 37/45 пол 45/45 (-18pp) · send_template 23/24 пол 24/24 (-4pp) · summary 32/36 пол 36/36 (-11pp) · tool_chain 3/45 пол 45/45 (-93pp) · validate 36/36 пол 36/36 (+0pp)
+
+10. ПРИМЕРЫ РАСХОЖДЕНИЙ (I−C, до 12)
+   chain-012|0 crm_upsert_contact.contact.address.street [composed/] C='репна' I='репна чернь' (verbatim)
+   chain-033|0 crm_upsert_contact.contact.address.street [other/typo_repaired] C='светый' I='светлый' (verbatim)
+   chain-037|0 crm_upsert_contact.contact.address.street [other/typo_repaired] C='светллый' I='светлый' (verbatim)
+   chain-039|0 crm_upsert_contact.contact.address.street [composed/] C='вишнёвая' I='вишнёвая чернь' (verbatim)
+   chain-041|0 crm_upsert_contact.contact.address.street [other/typo_repaired] C='энгльса' I='энгельса' (verbatim)
+   chain-046|0 crm_upsert_contact.contact.address.street [other/typo_repaired] C='вишнвая' I='вишневая' (verbatim)
+   compare-000|0 address_suggest.query [same_person_variant/i2] C='дзержнского сорок четыре' I='улицу Дзержинского 44' (verbatim)
+   compare-006|0 address_suggest.query [other/renumbered] C='подлесная тридц один корпус четыре' I='улицу Подлесная 31, корп. 4' (verbatim)
+   compare-012|0 address_suggest.query [same_person_variant/i4] C='пушкиан 113' I='пушкина 113' (fragment)
+   compare-014|0 address_suggest.query [same_person_variant/i4] C='вишёнвая 28' I='вишневая 28' (fragment)
+   compare-015|0 address_suggest.query [other/typo_repaired] C='мончегорсуая 195 корпус 1' I='мончегорская 195 корпус 1' (verbatim)
+   compare-019|0 address_suggest.query [other/typo_repaired] C='садвая дом семь' I='садовая дом семь' (verbatim)
+

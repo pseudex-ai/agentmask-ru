@@ -1,0 +1,58 @@
+$ python3 bench/agentpii4/smoke.py --engine
+
+СКРИПТОВЫЙ АГЕНТ «decomposer» — не живой прогон; три плеча через настоящий шлюз
+
+троек: 474 · случаев: 474 · исключено: 0
+
+0. УТЕЧКИ В МОДЕЛЬ — значения из сообщений, для которых плечо шлюза НЕ показало подмену: 0 из 1319 (0.0%)
+
+1. ПРОВОКАЦИЯ — что модель делает с НАСТОЯЩИМИ значениями (плечо C против C′)
+   verbatim 2777 (95.9%) · absent 120 (4.1%)
+
+2–3. ШУМОВОЙ ПОЛ И ЭФФЕКТ ШЛЮЗА — по уровням, никогда одним числом
+   уровень          I≈C      C′≈C     эффект   95% ДИ (кластерный бутстрап)   McNemar p (b,c)  ICC(случай) ICC(значение) DEFF
+   L1 инструменты   100.0% 100.0%   +0.0pp [ +0.0,  +0.0]           1.000 (0,0)    0.00        0.00      1.00
+   L2 ключи          99.6% 100.0%   -0.4pp [ -1.1,  +0.0]           0.500 (2,0)    0.00        0.00      1.00
+   L3 состояние      87.1% 100.0%  -12.9pp [-16.2,  -9.7]           0.000 (61,0)    0.00        0.15      1.03
+   L3 дословно       85.0% 100.0%  -15.0pp [-18.6, -11.6]           0.000 (71,0)    0.00        0.23      1.05
+   для ±2pp на L3 при согласии 87% нужно n ≈ 1077 случаев (iid)
+
+4. ТАКСОНОМИЯ ПО ПОЛЯМ — I−C рядом с C′−C; разница и есть шлюз
+   класс               I−C   C′−C   разн   примечание
+   agree               2833   2897    -64   
+   extra                  8      0     +8   
+   derived               42      0    +42   движок не чинит — производная от подмены
+   other                 22      0    +22   
+   по типам (I−C): CARD: agree 32/32 · DOB: agree 96/100 · EMAIL: agree 7/7 · LOC: agree 985/986 · NAME: agree 1034/1101 · PASSPORT: agree 100/100 · PHONE: agree 529/529 · SNILS: agree 50/50
+
+5. ПРОИЗВОДНЫЕ ПОЛЯ (I−C)
+   contact.name_latin:derived/unverifiable 23
+   payment_method_data.card.cardholder:other/misderived 16
+   contact.initials:derived/from_substitute 15
+   contact.name_latin:other/misderived 5
+   patient.age:derived/from_substitute 4
+
+6. ВАЛИДАЦИЯ — семейство validate
+   троек 36 · агент не вызвал (I−C) 0 · (C′−C) 0 · мок отверг в I 0
+
+7. ПРОСТЫЕ ЗНАЧЕНИЯ (не ПД, обязаны уцелеть) — I−C / C′−C
+   intact: 779 / 781 · changed: 2 / 0 · absent: 0 / 0
+
+8. РАЗРЕЗЫ — согласие I≈C на L3 по регистру и по виду
+   регистр: chat 122/140 · clean 4/6 · sloppy 62/69 · voice_itn 90/103 · voice_raw 135/156
+   вид: analytics 18/18 · chain 30/48 · compare 42/42 · container 30/30 · correction 36/36 · crm_note 24/24 · decompose 35/42 · derive 45/54 · lookup_list 13/30 · receipt 9/18 · result_feed 35/36 · send_template 24/24 · summary 36/36 · validate 36/36
+
+10. ПРИМЕРЫ РАСХОЖДЕНИЙ (I−C, до 12)
+   chain-000|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='BUKIN SERGEI' I='BUKIN SERGEY' (derived)
+   chain-002|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='ZABOLOTNYI RUSLAN' I='ZABOLOTNY RUSLAN' (derived)
+   chain-003|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='POLIAKOVA VALENTINA' I='POLYAKOVA VALENTINA' (derived)
+   chain-005|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='BITIUKOVA ZINAIDA' I='BITYUKOVA ZINAIDA' (derived)
+   chain-007|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='POLIAKOVA VALENTINA' I='POLYAKOVA VALENTINA' (derived)
+   chain-012|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='FOMIN VIACHESLAV' I='FOMIN VYACHESLAV' (derived)
+   chain-017|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='BITIUKOVA ZINAIDA' I='BITYUKOVA ZINAIDA' (derived)
+   chain-020|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='MILLER VALERII' I='MILLER VALERIY' (derived)
+   chain-022|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='KUKUSHKIN VALERII' I='KUKUSHKIN VALERIY' (derived)
+   chain-023|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='POLIAKOVA VALENTINA' I='POLYAKOVA VALENTINA' (derived)
+   chain-026|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='ZABOLOTNYI RUSLAN' I='ZABOLOTNY RUSLAN' (derived)
+   chain-027|0 crm_upsert_contact.contact.name_latin [derived/unverifiable] C='KUKUSHKIN VALERII' I='KUKUSHKIN VALERIY' (derived)
+

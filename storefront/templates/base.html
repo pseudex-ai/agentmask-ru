@@ -67,5 +67,15 @@
   </footer>
 </div>
 {% block script %}{% endblock %}
+{% if analytics_here %}{% load static %}
+<!-- ПРОДУКТОВАЯ АНАЛИТИКА — ТОЛЬКО ЗДЕСЬ И ТОЛЬКО НА ПУБЛИЧНЫХ СТРАНИЦАХ.
+     `analytics_here` ложно для /app/, /accounts/ и админки: там на экране
+     префиксы ключей и суммы счетов, и запись сессии сделала бы их копию,
+     которую никто не заказывал. То же решение продублировано в CSP. -->
+<script src="{% static 'analytics.js' %}"
+        data-host="{{ analytics.host }}"
+        data-key="{{ analytics.key }}"
+        data-mode="{{ analytics.mode }}"></script>
+{% endif %}
 </body>
 </html>

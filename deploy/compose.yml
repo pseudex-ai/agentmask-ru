@@ -449,6 +449,38 @@ services:
       license: { condition: service_started }
       alertmanager: { condition: service_started }
 
+  loki:
+    # ЛОГИ ИЩУТСЯ ПО МЕТКАМ, СОДЕРЖИМОЕ НЕ ИНДЕКСИРУЕТСЯ. Это и есть разница с
+    # ELK: Elasticsearch индексирует каждое слово и один съедает больше памяти,
+    # чем весь остальной стек, а на объёме одной машины выигрыш в удобстве
+    # нулевой.
+    image: grafana/loki:3.3.2
+    profiles: ["observability"]
+    restart: unless-stopped
+    logging: *logging
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    expose: ["3100"]
+
+  promtail:
+    # ЧИТАЕТ ТЕ ЖЕ json-ФАЙЛЫ, ЧТО И `docker logs`, и ничего не отнимает.
+    # Лог-драйвер Loki отобрал бы `docker logs` — а это то, чем чинят упавший
+    # Loki и чем пользуется сторож.
+    image: grafana/promtail:3.3.2
+    profiles: ["observability"]
+    restart: unless-stopped
+    logging: *logging
+    command: ["-config.file=/etc/promtail/promtail.yml"]
+    volumes:
+      - ./promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - promtail-positions:/positions
+    depends_on:
+      loki: { condition: service_started }
+
   grafana:
     image: grafana/grafana:11.5.1
     profiles: ["observability"]
@@ -509,6 +541,8 @@ volumes:
   watch-state:
   billing-state:
   prometheus-data:
+  loki-data:
+  promtail-positions:
   alertmanager-data:
   alertmanager-config:
   grafana-data:

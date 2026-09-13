@@ -1,0 +1,66 @@
+$ python3 test_hard_cases.py
+
+PASS  every hard case is detected  70 cases
+PASS  nothing that is not personal data is masked  19 negatives
+PASS  every detected value round-trips back intact
+PASS  no detected value reaches the model  70 messages
+PASS  one phone written four ways is ONE token  tokens={'+7 930 226-67-00'}
+PASS  a JSON tool payload survives masking and still parses
+PASS  the order number is untouched inside JSON  order=WA-4471
+PASS  the phone comes back exactly  phone=+7 916 214-88-03
+PASS  masking the same text twice gives the same tokens  first=Клиент Сазонов Олег Степанович, +7 930 226-67-00 second=Клиент Сазонов Олег Степанович, +7 930 226-67-00
+PASS  a masked message is not masked a second time  once=Клиент Сазонов Олег Степанович, +7 930 226-67-00 twice=Клиент Сазонов Олег Степанович, +7 930 226-67-00
+PASS  every address round-trips back intact  12 addresses
+PASS  no address substitute sits in the nominative inside an oblique slot  []
+PASS  the address signature survives every case of every pool entry  275 combinations
+PASS  a street is replaced by a street, never by a town
+PASS  one address span: здравствуйте курьера на воткинск бульвар…  ['воткинск бульвар комиссарого двадцать семь в третий подъезд квартира сто шестьдесят два']
+PASS  house role is «двадцать семь»  roles={'flat': 'сто шестьдесят два', 'entrance': 'третий', 'house': 'двадцать семь', 'street': 'бульвар комиссарого', 'city': 'воткинск'}
+PASS  one address span: адрес улица ленина двадцать семь в кварт…  ['улица ленина двадцать семь в квартиру пять']
+PASS  house role is «двадцать семь»  roles={'flat': 'пять', 'house': 'двадцать семь', 'street': 'улица ленина'}
+PASS  one address span: адрес улица ленина двадцать семь к пятом…  ['улица ленина двадцать семь к пятому подъезду']
+PASS  house role is «двадцать семь»  roles={'entrance': 'пятому', 'house': 'двадцать семь', 'street': 'улица ленина'}
+PASS  one address span: бибиревская дом семнадцать в квартира дв…  ['бибиревская дом семнадцать в квартира двести двадцать девять']
+PASS  house role is «семнадцать в»  roles={'flat': 'двести двадцать девять', 'house': 'семнадцать в', 'street': 'бибиревская'}
+PASS  one address span: так двадцать пять а корпус два квартира …  ['двадцать пять а корпус два квартира двадцать семь']
+PASS  house role is «двадцать пять а»  roles={'flat': 'двадцать семь', 'building': 'два', 'house': 'двадцать пять а'}
+PASS  building 27, porch 3, flat 162 reach the courier  token='Воткинск, Берёзовый бульвар 109, подъезд 13, кв. 153' back={'address': {'building': '27', 'porch': '3', 'sflat': '162'}}
+PASS  one fake street for one real street: курьера на адрес заречная пять…  tokens=['улица Жасминовая 105, кв. 12', 'улица Жасминовая 180, кв. 103']
+PASS  two different fake houses  tokens=['улица Жасминовая 105, кв. 12', 'улица Жасминовая 180, кв. 103']
+PASS  street and house restore to the CORRECTED real address  masked='курьера на адрес улица Жасминовая 105, кв. 12 ой нет правильно улица Жасминовая 180, кв. 103 это в воткинск' back={'address': {'street': 'заречная', 'building': '29'}}
+PASS  one fake street for one real street: курьера на адрес калашнкова 61…  tokens=['улица Черёмуховая 65, кв. 44', 'улица Черёмуховая 74, кв. 229']
+PASS  two different fake houses  tokens=['улица Черёмуховая 65, кв. 44', 'улица Черёмуховая 74, кв. 229']
+PASS  street and house restore to the CORRECTED real address  masked='курьера на адрес улицы Черёмуховой 65, кв. 44 стоп правильно улица Черёмуховая 74, кв. 229 это в абакан' back={'address': {'street': 'калашникова', 'building': '33'}}
+PASS  one fake street for one real street: привет курьера на энгельса 134…  tokens=['улица Каштановая 174, кв. 185', 'улица Каштановая 182, кв. 192']
+PASS  two different fake houses  tokens=['улица Каштановая 174, кв. 185', 'улица Каштановая 182, кв. 192']
+PASS  street and house restore to the CORRECTED real address  masked='привет курьера на улицы Каштановой 174, кв. 185 нет не так правильно улица Каштановая 182, кв. 192 это в воткинск' back={'address': {'street': 'энгельса', 'building': '106'}}
+PASS  two real streets keep two fake streets  tokens=['улица Кленовая 176, кв. 103', 'улица Буковая 64, кв. 136']
+PASS  the spoken year is inside the DOB span:  одиннадцатого сентября пятьдесят пятого  spans=['одиннадцатого сентября пятьдесят пятого']
+PASS  no digit in the substitute of a spoken date  запишите Жукова Глеба Кирилловича родился второго ноября пятьдесят пятого
+PASS  the year is kept  token='второго ноября пятьдесят пятого'
+PASS  the century style of the customer is mirrored  token='второго ноября пятьдесят пятого'
+PASS  the same side of today, so the derived age agrees  fake=02.11.1955 real=1955-09-11
+PASS  the ISO the agent writes resolves to the real ISO  1955-11-02 -> {'patient': {'birth_date': '1955-09-11'}}
+PASS  the prose paraphrase comes back as the real date  Пациент родился одиннадцатого сентября пятьдесят пятого, записал.
+PASS  the spoken substitute is recognised as ours when echoed  второго ноября пятьдесят пятого
+PASS  the spoken year is inside the DOB span: рта тысяча девятьсот восемьдесят второго  spans=['двадцать третьего марта тысяча девятьсот восемьдесят второго']
+PASS  no digit in the substitute of a spoken date  пациент родилась восемнадцатого июля тысяча девятьсот восемьдесят второго
+PASS  the year is kept  token='восемнадцатого июля тысяча девятьсот восемьдесят второго'
+PASS  the century style of the customer is mirrored  token='восемнадцатого июля тысяча девятьсот восемьдесят второго'
+PASS  the same side of today, so the derived age agrees  fake=18.07.1982 real=1982-03-23
+PASS  the ISO the agent writes resolves to the real ISO  1982-07-18 -> {'patient': {'birth_date': '1982-03-23'}}
+PASS  the prose paraphrase comes back as the real date  Пациент родился двадцать третьего марта тысяча девятьсот восемьдесят второго, записал.
+PASS  the spoken substitute is recognised as ours when echoed  восемнадцатого июля тысяча девятьсот восемьдесят второго
+PASS  the spoken year is inside the DOB span: ать первого сентября восьмидесятого года  spans=['двадцать первого сентября восьмидесятого года']
+PASS  no digit in the substitute of a spoken date  дата рождения девятого декабря восьмидесятого года
+PASS  the year is kept  token='девятого декабря восьмидесятого года'
+PASS  the century style of the customer is mirrored  token='девятого декабря восьмидесятого года'
+PASS  the same side of today, so the derived age agrees  fake=09.12.1980 real=1980-09-21
+PASS  the ISO the agent writes resolves to the real ISO  1980-12-09 -> {'patient': {'birth_date': '1980-09-21'}}
+PASS  the prose paraphrase comes back as the real date  Пациент родился двадцать первого сентября восьмидесятого года, записал.
+PASS  the spoken substitute is recognised as ours when echoed  девятого декабря восьмидесятого года
+chat register OK — lower-case streets and glued dates, without the prose
+
+hard cases OK — detected, restored, and nothing over-masked
+
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/tmpum0rt0pj/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.

@@ -18,6 +18,8 @@ their own local interface, on port 8081, inside their contour.
 """
 
 import os
+
+from django.core.exceptions import ImproperlyConfigured
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -69,6 +71,10 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # ПЕРВЫМ В СПИСКЕ, И ЭТО СУЩЕСТВЕННО. Всё, что логируется в middleware
+    # выше по списку, идентификатора запроса уже не получит — а именно там
+    # живут отказы безопасности, которые интереснее всего связать с запросом.
+    "pseudex_site.logfmt.RequestIdMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -96,6 +102,7 @@ TEMPLATES = [{
         "django.template.context_processors.request",
         "django.contrib.auth.context_processors.auth",
         "django.contrib.messages.context_processors.messages",
+        "pseudex_site.context.analytics",
     ]},
 }]
 
@@ -295,10 +302,68 @@ LICENSE_URL = _env("PSEUDEX_LICENSE_URL", "")
 # that hides a real attempt in the logs.
 ADMIN_PATH = _env("PSEUDEX_ADMIN_PATH", "admin").strip("/")
 
+# JSON В КОНТЕЙНЕРЕ, ЧИТАЕМЫЙ ТЕКСТ ЛОКАЛЬНО. Loki ищет по ПОЛЯМ; строка, из
+# которой смысл надо выковыривать регуляркой, превращает его в grep с
+# веб-интерфейсом. Но JSON в терминале при разработке мешает, и заставлять себя
+# читать его — верный способ перестать читать логи вовсе.
+_LOG_JSON = _env("PSEUDEX_LOG_JSON", "") == "1"
+
+# ── ПРОДУКТОВАЯ АНАЛИТИКА (PostHog) ─────────────────────────────────────────
+#
+# ТРИ РЕЖИМА, И ВЫБОР МЕЖДУ НИМИ — ЭТО ВЫБОР ТЕКСТА НА ЛЕНДИНГЕ, а не только
+# настройка. На странице стоит сильное обещание: «аналитики и счётчиков на
+# сайте нет вообще… поэтому нет и баннера». Включить счётчик и оставить эту
+# фразу значило бы опубликовать утверждение, не совпадающее с кодом, — ровно
+# то, ради чего в этом репозитории живёт `test_published_claims`.
+#
+# ПОЭТОМУ ТЕКСТ ГЕНЕРИРУЕТСЯ ИЗ РЕЖИМА, А НЕ ПИШЕТСЯ РЯДОМ С НИМ. Тест,
+# сравнивающий две копии, ловит расхождение; одна копия, выведенная из другой,
+# не может разойтись вовсе.
+#
+#   off        ничего не грузится. Остаётся только серверный счёт визитов.
+#   cookieless PostHog без куки и без записи сессий: клики и события видны,
+#              человек между визитами — нет. Баннер не нужен, потому что
+#              отказываться не от чего.
+#   full       куки, воронки между визитами, запись сессий. ТРЕБУЕТ баннера
+#              согласия, и шаблон его показывает — не по доброй воле, а
+#              потому что режим его включает.
+_ANALYTICS_MODE = _env("PSEUDEX_ANALYTICS_MODE", "off")
+if _ANALYTICS_MODE not in ("off", "cookieless", "full"):
+    raise ImproperlyConfigured(
+        f"PSEUDEX_ANALYTICS_MODE={_ANALYTICS_MODE!r}: допустимы off, cookieless, full. "
+        "Неизвестное значение молча выключило бы аналитику, и обнаружилось бы "
+        "это через месяц пустых графиков."
+    )
+
+_ANALYTICS_HOST = _env("PSEUDEX_ANALYTICS_HOST", "")
+_ANALYTICS_KEY = _env("PSEUDEX_ANALYTICS_KEY", "")
+if _ANALYTICS_MODE != "off" and not (_ANALYTICS_HOST and _ANALYTICS_KEY):
+    raise ImproperlyConfigured(
+        f"PSEUDEX_ANALYTICS_MODE={_ANALYTICS_MODE}, но нет "
+        "PSEUDEX_ANALYTICS_HOST/PSEUDEX_ANALYTICS_KEY. Пустые значения дали бы "
+        "страницу, которая ОБЕЩАЕТ аналитику в тексте и не грузит её."
+    )
+
+ANALYTICS = {
+    "mode": _ANALYTICS_MODE,
+    "host": _ANALYTICS_HOST,
+    "key": _ANALYTICS_KEY,
+    "sets_cookies": _ANALYTICS_MODE == "full",
+    "records_sessions": _ANALYTICS_MODE == "full",
+}
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "formatters": {"plain": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}},
-    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "plain"}},
+    "filters": {"rid": {"()": "pseudex_site.logfmt.RequestIdFilter"}},
+    "formatters": {
+        "plain": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"},
+        "json": {"()": "pseudex_site.logfmt.JsonFormatter"},
+    },
+    "handlers": {"console": {
+        "class": "logging.StreamHandler",
+        "formatter": "json" if _LOG_JSON else "plain",
+        "filters": ["rid"],
+    }},
     "root": {"handlers": ["console"], "level": _env("PSEUDEX_LOG_LEVEL", "INFO")},
 }

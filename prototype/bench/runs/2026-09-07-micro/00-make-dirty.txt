@@ -1,0 +1,4 @@
+$ python3 make_dirty.py
+
+wrote 150 dirty cases | PII coverage: {'SNILS': 13, 'PHONE': 51, 'NAME': 21, 'INN': 23, 'LOC': 14, 'CARD': 10, 'DOB': 8, 'PASSPORT': 10} | hard-negatives: 12
+

@@ -1,0 +1,61 @@
+# Promtail: забирает логи КОНТЕЙНЕРОВ и ставит им метки.
+#
+# ПОЧЕМУ НЕ ЛОГ-ДРАЙВЕР LOKI. Docker умеет писать прямо в Loki, и тогда
+# `docker logs` перестаёт работать: драйвер один на контейнер. А `docker logs`
+# — это то, чем чинят упавший Loki, и то, чем пользуется сторож. Отдавать
+# последнюю линию обороны ради удобства нельзя; promtail читает те же
+# json-файлы, ничего не отнимая.
+
+server:
+  http_listen_port: 9080
+  log_level: warn
+
+positions:
+  # ГДЕ ОСТАНОВИЛИСЬ — НА ТОМЕ, А НЕ В КОНТЕЙНЕРЕ. Иначе перезапуск promtail
+  # означает повторную отправку всех логов с начала файла: дубликаты в Loki и
+  # всплеск, который упрётся в ingestion_rate.
+  filename: /positions/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+    relabel_configs:
+      # ИМЯ СЕРВИСА COMPOSE, А НЕ ИМЯ КОНТЕЙНЕРА. Второе меняется при
+      # пересоздании стека, и график «ошибки витрины» разорвался бы ровно в
+      # момент выкатки — то есть тогда, когда на него смотрят.
+      - source_labels: ["__meta_docker_container_label_com_docker_compose_service"]
+        target_label: service
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/(.*)"
+        target_label: container
+      - source_labels: ["__meta_docker_container_log_stream"]
+        target_label: stream
+    pipeline_stages:
+      # JSON РАЗБИРАЕТСЯ, ЧТОБЫ УРОВЕНЬ СТАЛ МЕТКОЙ. Без этого «покажи все
+      # ошибки за час» — это регулярка по всем строкам всех сервисов, то есть
+      # ровно то, от чего уходили.
+      #
+      # `drop_malformed` НЕ СТАВИТСЯ НАМЕРЕННО: не-JSON строки пишут postgres,
+      # caddy и сам docker, и выбрасывать их значило бы потерять именно те
+      # логи, которые читают, когда витрина не поднялась и своих строк не
+      # написала вовсе.
+      - json:
+          expressions:
+            level: level
+            logger: logger
+            rid: rid
+      - labels:
+          level:
+      # `rid` В МЕТКИ НЕ ИДЁТ, И ЭТО ВАЖНО. Метка с высокой кардинальностью
+      # (идентификатор на каждый запрос) порождает поток на каждое значение и
+      # убивает Loki на первой же тысяче запросов. Он остаётся в СОДЕРЖИМОМ, и
+      # поиск по нему — это фильтр внутри уже отобранного сервиса, что быстро.
+      - timestamp:
+          source: ts
+          format: RFC3339Nano
+          action_on_failure: skip

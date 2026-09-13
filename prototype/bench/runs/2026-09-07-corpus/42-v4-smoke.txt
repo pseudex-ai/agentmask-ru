@@ -1,0 +1,19 @@
+$ python3 bench/agentpii4/smoke.py
+
+PASS  deriver: postal_code from a fake city -> derived
+PASS  deriver: age from a fake birth date -> derived
+PASS  deriver: gender from a gender-preserving fake -> agree
+PASS  validator: I refuses to call (no_call) while C′≈C
+PASS  validator: a REALLY invalid value -> both arms refuse, L1 agrees
+PASS  decomposer + piece resolution: street -> agree
+PASS  decomposer without piece resolution: street -> residual
+PASS  copier: L1/L2 agree
+PASS  sloppy vs decomposer: dropped flat/porch -> absent or keys differ
+PASS  correction: decomposer uses the CURRENT address (agree)
+PASS  каждый достижимый инструмент вызываем из случая
+PASS  scripted agent: no real value written in arm I
+PASS  turn structure: a write is deferred while a later message adds to it
+PASS  noisy C′: the floor is non-zero
+
+ИТОГО: PASS
+

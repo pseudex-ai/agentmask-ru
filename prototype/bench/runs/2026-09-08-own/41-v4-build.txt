@@ -1,0 +1,17 @@
+$ python3 bench/agentpii4/build.py --check
+
+случаев: 834
+вид: analytics 18 · chain 48 · compare 42 · container 30 · correction 36 · crm_note 24 · decompose 42 · derive 54 · long_bank 45 · long_clinic 45 · long_order 60 · long_support 45 · lookup_list 30 · normalize 40 · prompt_rule 35 · receipt 18 · result_feed 36 · search_rank 45 · send_template 24 · summary 36 · tool_chain 45 · validate 36
+регистр: chat 250 · clean 6 · sloppy 119 · voice_itn 183 · voice_raw 276
+кластеров: 678 · размера ≥3: 13
+инструменты: address_suggest 132 · appointment_cancel 15 · appointment_reschedule 30 · callback_schedule 39 · clinic_book 95 · clinic_slots 45 · courier_book 169 · crm_add_note 105 · crm_find_contact 377 · crm_import_csv 15 · crm_merge_contacts 23 · crm_segment_report 18 · crm_upsert_contact 132 · delivery_create_order 189 · delivery_quote 95 · escalate_to_human 45 · normalize_contact 40 · notify_sms 250 · order_cancel 20 · order_reschedule 20 · order_status 105 · passport_verify 50 · payment_create 77 · payment_refund 22 · payment_status 45 · pickup_points_near 20 · receipt_fetch 23 · referral_create 23 · send_template 24 · ticket_create 45 · ticket_find 45
+доказательство: `find` не нашёл бы эталон в 12 из 834 случаев
+ярусы (K=3; MDE при доле расхождений 0.10 и DEFF 2.1, мощность 80%):
+  nano       30 случаев ·    90 плеч · MDE 23.4pp
+  small     120 случаев ·   360 плеч · MDE 11.7pp
+  medium    300 случаев ·   900 плеч · MDE 7.4pp
+  large     600 случаев ·  1800 плеч · MDE 5.2pp
+  holdout   167 случаев ·   501 плеч · MDE 9.9pp
+  max       834 случаев ·  2502 плеч · MDE 4.4pp
+корпус собран и проверен, не записан (--check)
+

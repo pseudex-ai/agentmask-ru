@@ -1,0 +1,54 @@
+$ python3 bench/agentpii4/smoke.py --engine
+
+СКРИПТОВЫЙ АГЕНТ «decomposer» — не живой прогон; три плеча через настоящий шлюз
+
+троек: 360 · случаев: 360 · исключено: 0
+
+0. УТЕЧКИ В МОДЕЛЬ — значения из сообщений, для которых плечо шлюза НЕ показало подмену: 0 из 1022 (0.0%)
+
+1. ПРОВОКАЦИЯ — что модель делает с НАСТОЯЩИМИ значениями (плечо C против C′)
+   verbatim 2303 (95.0%) · absent 120 (5.0%)
+
+2–3. ШУМОВОЙ ПОЛ И ЭФФЕКТ ШЛЮЗА — по уровням, никогда одним числом
+   уровень          I≈C      C′≈C     эффект   95% ДИ (кластерный бутстрап)   McNemar p (b,c)  ICC(случай) ICC(значение) DEFF
+   L1 инструменты   100.0% 100.0%   +0.0pp [ +0.0,  +0.0]           1.000 (0,0)    0.00        0.00      1.00
+   L2 ключи         100.0% 100.0%   +0.0pp [ +0.0,  +0.0]           1.000 (0,0)    0.00        0.00      1.00
+   L3 состояние      96.4% 100.0%   -3.6pp [ -5.7,  -1.8]           0.000 (13,0)    0.00        0.53      1.10
+   L3 дословно       95.3% 100.0%   -4.7pp [ -7.2,  -2.7]           0.000 (17,0)    0.00        0.28      1.05
+   для ±2pp на L3 при согласии 96% нужно n ≈ 335 случаев (iid)
+
+4. ТАКСОНОМИЯ ПО ПОЛЯМ — I−C рядом с C′−C; разница и есть шлюз
+   класс               I−C   C′−C   разн   примечание
+   agree               2412   2423    -11   
+   validated_refused      1      0     +1   движок не чинит — фейк отвергнут валидацией
+   derived                8      0     +8   движок не чинит — производная от подмены
+   other                  2      0     +2   
+   по типам (I−C): CARD: agree 14/14 · DOB: agree 91/100 · LOC: agree 853/854 · NAME: agree 891/892 · PASSPORT: agree 100/100 · PHONE: agree 413/413 · SNILS: agree 50/50
+
+5. ПРОИЗВОДНЫЕ ПОЛЯ (I−C)
+   patient.age:derived/from_substitute 8
+   payment_method_data.card.cardholder:other/misderived 1
+
+6. ВАЛИДАЦИЯ — семейство validate
+   троек 36 · агент не вызвал (I−C) 0 · (C′−C) 0 · мок отверг в I 0
+
+7. ПРОСТЫЕ ЗНАЧЕНИЯ (не ПД, обязаны уцелеть) — I−C / C′−C
+   intact: 529 / 529 · changed: 0 / 0 · absent: 0 / 0
+
+8. РАЗРЕЗЫ — согласие I≈C на L3 по регистру и по виду
+   регистр: chat 102/107 · clean 6/6 · sloppy 46/51 · voice_itn 78/78 · voice_raw 115/118
+   вид: chain 44/48 · compare 42/42 · container 30/30 · correction 36/36 · decompose 41/42 · derive 46/54 · result_feed 36/36 · summary 36/36 · validate 36/36
+
+10. ПРИМЕРЫ РАСХОЖДЕНИЙ (I−C, до 12)
+   compare-006|0 address_suggest.query [other/renumbered] C='подлесная тридц один корпус четыре' I='подлесная 31, корп. 4' (verbatim)
+   decompose-038|0 payment_create.payment_method_data.card.cardholder [other/misderived] C='VALERII MILLER' I='MILLER VALERII' (derived)
+   derive-000|0 clinic_book.patient.age [derived/from_substitute] C='39' I='38' (derived)
+   derive-008|0 clinic_book.patient.age [derived/from_substitute] C='28' I='29' (derived)
+   derive-012|0 clinic_book.patient.age [derived/from_substitute] C='51' I='50' (derived)
+   derive-016|0 clinic_book.patient.age [derived/from_substitute] C='51' I='49' (derived)
+   derive-016|0 clinic_book.patient.birth_date [validated_refused/date_not_iso8601] C='1974-12-14' I='четырнадцатое декабря семьдесят четвёртого года' (verbatim)
+   derive-024|0 clinic_book.patient.age [derived/from_substitute] C='43' I='44' (derived)
+   derive-032|0 clinic_book.patient.age [derived/from_substitute] C='32' I='31' (derived)
+   derive-048|0 clinic_book.patient.age [derived/from_substitute] C='29' I='28' (derived)
+   derive-052|0 clinic_book.patient.age [derived/from_substitute] C='32' I='31' (derived)
+
