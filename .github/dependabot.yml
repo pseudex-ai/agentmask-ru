@@ -20,3 +20,12 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+    # MAJORS ARE A DECISION, NOT A BUMP. The first Dependabot PR proposed
+    # checkout 4→7, artifacts 4→7/8 and cosign-installer 3→4 in one go; the
+    # last one moves cosign to 3.x, whose default signature bundle the host's
+    # cosign 2.4.1 does not verify — a release that signs fine and an agent
+    # that refuses every tag. Minor and patch keep moving weekly; a major is
+    # bumped by hand together with whatever it changes on the host.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
