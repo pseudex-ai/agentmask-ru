@@ -56,6 +56,14 @@ from pseudex.sqlite_setup import (
 # the surname — which is not a minted token, so it was masked a second time and
 # the identity drifted. test_product.py::test_fake_names_are_self_recognised
 # pins this.
+# NO INDECLINABLE GIVEN NAMES IN THE POOL. «Николь» and «Нелли» carry
+# pymorphy3's `Fixd`: every case looks like the nominative. A substitute that
+# cannot show its case cannot carry the ORIGINAL'S case through the model —
+# «Курьер выехал к Анне Черных» was masked as «к Николь Бобровой» and restored
+# as «к Анна Черных», and the check for a nominative substitute in an oblique
+# slot fired on the same sentence. It surfaced as a flaky CI red, because the
+# pool is drawn at random. The real person's case is evidence the substitute
+# must be able to hold.
 _FAKE_FIRST = [
     "Александр", "Алексей", "Андрей", "Антон", "Артур", "Борис", "Вадим",
     "Валерий", "Василий", "Виктор", "Владимир", "Глеб", "Григорий", "Даниил",
@@ -88,8 +96,8 @@ _FAKE_FIRST = [
     "Вероника", "Влада", "Власта", "Гелена", "Диана", "Дина", "Ева", "Евгения",
     "Елизавета", "Жанна", "Зинаида", "Злата", "Зоя", "Иванна", "Инга", "Инна",
     "Иоланта", "Капитолина", "Клавдия", "Лада", "Лидия", "Лилия", "Любовь",
-    "Людмила", "Майя", "Милана", "Милена", "Мирослава", "Наталья", "Нелли",
-    "Николь", "Олеся", "Прасковья", "Раиса", "Регина", "Римма", "Роза", "Руслана",
+    "Людмила", "Майя", "Милана", "Милена", "Мирослава", "Наталья",
+    "Олеся", "Прасковья", "Раиса", "Регина", "Римма", "Роза", "Руслана",
     "Сабина", "Серафима", "Снежана", "Стелла", "Таисия", "Тамара", "Ульяна",
     "Фаина", "Христина", "Эвелина", "Эльвира", "Эмилия", "Ярослава",
 ]
