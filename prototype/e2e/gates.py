@@ -679,15 +679,44 @@ def _memscan() -> tuple[int, int]:
 # --- gates: degradation --------------------------------------------------
 
 def gate_l7() -> bool:
+    """Our outage: every worker goes STALE, and stale still serves.
+
+    TWO READS, TWO WORKERS. The stand runs four workers on one SO_REUSEPORT
+    port, and each holds its own lease with its own clock: they were leased a
+    few seconds apart at start-up, so they go stale a few seconds apart too.
+    `wait_until` on `/license` returns the moment the FIRST worker says stale;
+    a single `/health` read a second later may land on a worker still inside
+    its TTL and say `active` — which is what one release run printed
+    (`stale=True health=active`) after three green ones. Neither answer was
+    wrong; the gate compared two workers and called the difference a defect.
+
+    So the gate waits until EVERY worker has answered `/health` with stale —
+    `/health` names its pid, and the set of workers is what `worker_pids`
+    already collects — with its own budget: the spread between workers is
+    bounded by one renewal period (< TTL), and the stale window is
+    GRACE_SECONDS, so waiting up to TTL_SECONDS here cannot run into EXPIRED.
+    The mask call comes AFTER that — «stale still serves» is the claim, and it
+    must be made against a worker that is stale."""
     compose(["stop", "license"], True, 120)
+    workers = worker_pids(24)
     reached_stale = wait_until(lambda: license_state()["state"] == "stale",
                                TTL_SECONDS + 40, 3, "state=stale")
+    stale_pids: set[int] = set()
+
+    def every_worker_stale() -> bool:
+        body = httpx.get(f"{SIDECAR}/health", timeout=15).json()
+        if body.get("license") == "stale":
+            stale_pids.add(int(body["pid"]))
+        return workers <= stale_pids
+
+    all_stale = wait_until(every_worker_stale, TTL_SECONDS, 0.5,
+                           f"/health license=stale from all {len(workers)} workers")
     status = post_mask(90).status_code
-    health = httpx.get(f"{SIDECAR}/health", timeout=15).json()
     warned = "license STALE" in logs("sidecar")
-    ok = reached_stale and status == 200 and health.get("license") == "stale" and warned
+    ok = reached_stale and bool(workers) and all_stale and status == 200 and warned
     return gate("L7 our outage -> grace, still serving", ok,
-                f"stale={reached_stale} mask={status} health={health.get('license')} warned={warned}")
+                f"stale={reached_stale} workers={len(workers)} stale_workers={len(stale_pids)} "
+                f"mask={status} warned={warned}")
 
 
 def gate_l8() -> bool:
