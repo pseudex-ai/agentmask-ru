@@ -54,6 +54,22 @@ HAVE="$(cat "$STATE" 2>/dev/null || echo "")"
 VERSION="${WANT#v}"
 echo "agent: $HAVE -> $WANT"
 
+# ОТКАТ НАЗАД — ВЕКТОР АТАКИ, НЕ ОБНОВЛЕНИЕ. Кто может пушить в реестр, способен
+# пере-тегнуть СТАРЫЙ, законно подписанный образ под новым тегом: cosign проверит
+# его подпись (она настоящая) и агент выкатил бы уязвимую прошлую версию. Авто-
+# путь берёт ВЫСШИЙ git-тег, поэтому назад он идёт только если нас обманули;
+# отказываемся. Намеренный откат — только явным PSEUDEX_PIN (оператор решил).
+if [ -z "${PSEUDEX_PIN:-}" ] && [ -n "$HAVE" ]; then
+    older="$(printf '%s\n%s\n' "$WANT" "$HAVE" | sort -V | head -1)"
+    if [ "$older" = "$WANT" ] && [ "$WANT" != "$HAVE" ]; then
+        notify crit "Выкатка ОТМЕНЕНА: откат назад" \
+            "$WANT старше развёрнутой $HAVE. Авто-агент не откатывается на более
+старую версию — подписанный откат через пере-тегирование в реестре так и
+выглядел бы. Работает $HAVE. Намеренный откат — задайте PSEUDEX_PIN=$WANT."
+        exit 1
+    fi
+fi
+
 # ── подпись, ДО остановки чего бы то ни было ────────────────────────────────
 # Проверяется каждый образ, включая клиентский: он не крутится у нас, но его
 # дайджест — то, что мы показываем клиенту в инструкции, и расхождение здесь
@@ -105,9 +121,16 @@ for name in pseudex pseudex-licensing pseudex-storefront pseudex-backup pseudex-
         echo "agent: $REF ещё не опубликован — жду"
         exit 0
     fi
-    if ! cosign verify "$REF" \
+    # ПРОВЕРЯЕМ И ТЯНЕМ ОДИН ДАЙДЖЕСТ. cosign проверяет ТЕГ, но тег мутабельный:
+    # между verify и pull его могли пере-указать (TOCTOU — подтверждено пентестом
+    # 2026-09-14: verify видел один дайджест, `compose pull` тянул другой). Берём
+    # дайджест, который cosign ТОЛЬКО ЧТО проверил, тянем ровно его и метим локально
+    # тегом; `up` внизу поднимает проверенные байты, а не то, что тег покажет позже.
+    verify_json="$(cosign verify "$REF" \
             --certificate-identity-regexp "$IDENTITY" \
-            --certificate-oidc-issuer-regexp "$ISSUER" >/dev/null 2>&1; then
+            --certificate-oidc-issuer-regexp "$ISSUER" \
+            --output json 2>/dev/null)" || verify_json=""
+    if [ -z "$verify_json" ]; then
         notify crit "Выкатка ОТМЕНЕНА: подпись не сошлась" \
             "$REF
 Ничего не остановлено, работает $HAVE.
@@ -115,6 +138,21 @@ for name in pseudex pseudex-licensing pseudex-storefront pseudex-backup pseudex-
 этот образ, прежде чем снимать проверку."
         exit 1
     fi
+    digest="$(printf '%s' "$verify_json" | jq -r '.[0].critical.image."docker-manifest-digest" // empty')"
+    case "$digest" in
+        sha256:*) : ;;
+        *)  notify crit "Выкатка ОТМЕНЕНА: нет проверенного дайджеста" \
+                "$REF — cosign подтвердил подпись, но дайджест из ответа не
+извлёкся. Работает $HAVE."
+            exit 1 ;;
+    esac
+    if ! docker pull --quiet "${REGISTRY}/${name}@${digest}" >/dev/null 2>&1; then
+        notify crit "Выкатка ОТМЕНЕНА: проверенный дайджест не скачался" \
+            "${REGISTRY}/${name}@${digest}. Работает $HAVE."
+        exit 1
+    fi
+    # Локальный тег -> проверенный дайджест. `up` (без pull) поднимет именно его.
+    docker tag "${REGISTRY}/${name}@${digest}" "$REF"
 done
 
 notify info "Выкатка $HAVE → $WANT" "Подписи проверены, поднимаю."
@@ -176,8 +214,12 @@ remember_version() {
 }
 deploy() {
     conf_rev="$(git rev-parse "${1}:deploy")" || return 1
-    VERSION="${1#v}" PSEUDEX_CONF_REV="$conf_rev" \
-        docker compose -f "$HERE/compose.yml" pull --quiet
+    # НЕТ `compose pull`: наши образы уже локально по ПРОВЕРЕННОМУ дайджесту
+    # (верификация выше), а `compose pull` заново резолвил бы мутабельный тег и
+    # вернул бы гонку verify→pull. `up` с политикой по умолчанию (`missing`)
+    # берёт локальные наши образы и дотягивает только сторонние (postgres, caddy…).
+    # Откат `deploy "$PREV"` использует ещё локальные образы прошлой версии
+    # (prune держит 168ч, а PREV только что работал).
     VERSION="${1#v}" PSEUDEX_CONF_REV="$conf_rev" \
         docker compose -f "$HERE/compose.yml" up -d --remove-orphans \
         --wait --wait-timeout "$WAIT_TIMEOUT"

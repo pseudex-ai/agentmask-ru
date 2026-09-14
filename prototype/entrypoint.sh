@@ -113,6 +113,10 @@ fi
 if [ -z "$PSEUDEX_GATEWAY_TOKEN" ]; then
     PSEUDEX_GATEWAY_TOKEN="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
     export PSEUDEX_GATEWAY_TOKEN
+    # Auto-generated is ephemeral (a new value every restart) and thus a DEV
+    # convenience; a STABLE operator-set token is the one that must never reach an
+    # aggregated log. The print below distinguishes the two.
+    _GATEWAY_GENERATED=1
 fi
 # Sign-in token for the interface. Generated here rather than in the UI process
 # so it survives a UI restart: an operator who followed the link from the log
@@ -156,7 +160,14 @@ if [ "${PSEUDEX_ROLE:-sidecar}" = "proxy" ]; then
 else
     echo "    ключ шлюза (Authorization: Bearer …) для /mask, /unmask, /spans:"
 fi
-echo "    ${PSEUDEX_GATEWAY_TOKEN}"
+if [ "${_GATEWAY_GENERATED:-}" = 1 ]; then
+    echo "    ${PSEUDEX_GATEWAY_TOKEN}"
+    echo "    ⚠ сгенерирован автоматически: меняется при каждом рестарте. Для прода"
+    echo "      задайте PSEUDEX_GATEWAY_TOKEN явно — стабильно и НЕ печатается в лог."
+else
+    echo "    (задан через окружение — значение НЕ печатается в лог; полное —"
+    echo "     в вашем .env / секретах)"
+fi
 echo ""
 
 pids=""
