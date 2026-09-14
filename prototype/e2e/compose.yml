@@ -16,8 +16,6 @@ services:
       PSEUDEX_SIGNING_KEY: "${PSEUDEX_SIGNING_KEY}"
       # Ключ, которым запечатан вкомпилированный блоб тюнинга. Сервер кладёт его в
       # каждую аренду, чтобы движок мог открыть свой тюнинг; ДОЛЖЕН совпадать с
-      # тем, которым собран образ (build-arg PSEUDEX_TUNING_KEY). См. §2.2.
-      PSEUDEX_TUNING_KEY: "${PSEUDEX_TUNING_KEY}"
       # Админка стенда под токеном, как и в проде. Гейты ходят им же.
       PSEUDEX_LICENSE_ADMIN_TOKEN: "${PSEUDEX_LICENSE_ADMIN_TOKEN:-e2e-admin-token}"
       PSEUDEX_LICENSE_CERT: /certs/server.pem

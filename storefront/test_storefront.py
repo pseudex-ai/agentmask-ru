@@ -85,7 +85,6 @@ def start_licensing() -> tuple[subprocess.Popen, str, str]:
         # тюнинга, в нём нет вовсе — он ходит на `/v1/lease` напрямую и смотрит
         # на коды. `setdefault`-семантика через `os.environ.get` оставляет
         # победу настоящему ключу, если прогон задал его снаружи.
-        "PSEUDEX_TUNING_KEY": os.environ.get("PSEUDEX_TUNING_KEY")
         or base64.b64encode(secrets.token_bytes(32)).decode("ascii"),
     }
     # ПРИЧИНА ОТКАЗА НЕ ВЫБРАСЫВАЕТСЯ В DEVNULL.

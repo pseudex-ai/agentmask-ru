@@ -68,11 +68,6 @@ services:
       # Injected, never baked, and rotating it invalidates every deployed
       # binary — so it is the one secret with no automated rotation.
       PSEUDEX_SIGNING_KEY: ${PSEUDEX_SIGNING_KEY:?set PSEUDEX_SIGNING_KEY}
-      # Seals the compiled tuning blob and is delivered in every lease so the
-      # engine can open its own tuning. THE SAME value the image was built with
-      # (build-arg PSEUDEX_TUNING_KEY); rotating it invalidates every deployed
-      # binary exactly like the signing key. See docs/tz-license-packaging §2.2.
-      PSEUDEX_TUNING_KEY: ${PSEUDEX_TUNING_KEY:?set PSEUDEX_TUNING_KEY}
       PSEUDEX_LICENSE_DB: /data/license.db
       PSEUDEX_LEASE_TTL_SECONDS: ${LEASE_TTL:-86400}
       PSEUDEX_GRACE_SECONDS: ${GRACE:-172800}

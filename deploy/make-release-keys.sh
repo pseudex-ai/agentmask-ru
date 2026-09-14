@@ -45,8 +45,6 @@ cat <<TEXT
   PSEUDEX_SIGNING_KEY
   $SIGNING
 
-  PSEUDEX_TUNING_KEY
-  $TUNING
 
   Публичная половина (в секреты НЕ нужна, вкомпилируется сама):
   $PUBLIC
@@ -55,7 +53,6 @@ cat <<TEXT
   Положить в секреты репозитория:
 
     gh secret set PSEUDEX_SIGNING_KEY --body '$SIGNING'
-    gh secret set PSEUDEX_TUNING_KEY  --body '$TUNING'
 
   И в deploy/.env на сервере — ТЕ ЖЕ значения: лицензионный сервер
   подписывает лизы первым и отдаёт ключ настройки в каждой лизе.

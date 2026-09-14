@@ -16,7 +16,6 @@ deployed binary's compiled-in public key at once.
 """
 
 import base64
-import hashlib
 import logging
 import os
 
@@ -55,20 +54,6 @@ def encode_private(key: Ed25519PrivateKey) -> str:
 def encode_public(key: Ed25519PublicKey) -> str:
     raw = key.public_bytes(Encoding.Raw, PublicFormat.Raw)
     return base64.b64encode(raw).decode("ascii")
-
-
-def tuning_key_id(tuning_b64: str) -> str:
-    """The cache-busting fingerprint of the tuning key: `PSEUDEX_TUNING_KEY_ID`.
-
-    The key itself reaches the image build as a SECRET MOUNT, and BuildKit keeps
-    secret contents out of the layer cache on purpose — so a rotated key alone
-    hits the cache and ships a blob sealed to the previous key (measured: two
-    keys, one blob). This value enters as an ordinary build-arg and busts the
-    cache exactly when the key changes; the Dockerfile recomputes it from the
-    mounted secret and refuses a mismatch, so a caller cannot pass a stale one.
-    Sixteen hex characters of the SHA-256 of a 256-bit random key are not the
-    key."""
-    return hashlib.sha256(tuning_b64.encode("ascii")).hexdigest()[:16]
 
 
 def load_signing_key() -> Ed25519PrivateKey:

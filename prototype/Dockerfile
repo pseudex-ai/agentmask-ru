@@ -39,38 +39,6 @@ COPY pseudex/ ./pseudex/
 COPY serve_main.py entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 
-# Compile the authored TUNING into the engine (docs/tz-license-packaging §2.2).
-# The cue words, address regex, priority table and look-alike folds no longer
-# travel in the lease — a client used to read them by decrypting their own
-# bundle — so they are baked in here as an opaque blob. Needs ONLY assets_source
-# (no bulk dictionaries, no ГАР dump), so three files go to a temporary path, get
-# used, and are removed: `licensing/` itself must never ship. The generated
-# module holds only `BLOB`/`VERSION`, so the "no import licensing" check below
-# still passes.
-# PSEUDEX_TUNING_KEY seals the blob (docs/tz-license-packaging §2.2, anti-patch
-# tie). The SAME key must reach the licensing server, which delivers it in every
-# lease so the engine can open its own tuning.
-#
-# A SECRET MOUNT, NOT A BUILD-ARG — and this single-stage image is the reason
-# (Dockerfile.nuitka has the long version). An `ARG` lands in the metadata of
-# every later layer, and `docker history pseudex:source` printed the production
-# key seven times. `required=true` replaces the old `test -n` guard.
-COPY licensing/__init__.py licensing/assets_source.py licensing/pack.py /tmp/lic/licensing/
-#
-# THE FINGERPRINT IS THE CACHE KEY. BuildKit leaves secret contents out of the
-# layer cache on purpose, so a rotated key alone would hit the cache and ship
-# a blob sealed to the PREVIOUS key (measured: two keys, one blob). Sixteen hex
-# characters of the key's SHA-256 enter as an ordinary ARG — not the key — and
-# the RUN recomputes them from the mounted secret: a stale or invented id
-# stops the build instead of quietly reusing the cache.
-ARG PSEUDEX_TUNING_KEY_ID
-RUN --mount=type=secret,id=pseudex_tuning_key,required=true \
-       test -n "$PSEUDEX_TUNING_KEY_ID" || (echo "PSEUDEX_TUNING_KEY_ID build-arg is required" && exit 1) \
-    && [ "$(sha256sum /run/secrets/pseudex_tuning_key | cut -c1-16)" = "$PSEUDEX_TUNING_KEY_ID" ] \
-       || (echo "PSEUDEX_TUNING_KEY_ID does not match the mounted key" && exit 1) \
-    && PSEUDEX_TUNING_KEY="$(cat /run/secrets/pseudex_tuning_key)" PYTHONPATH=/tmp/lic \
-       python -m licensing.pack --emit-tuning ./pseudex/_tuning_blob.py \
-    && rm -rf /tmp/lic
 
 # The verification key is BAKED IN at build time, not read from the environment.
 # If the customer could point it at a key of their own, they could sign their own

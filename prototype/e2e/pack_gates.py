@@ -41,7 +41,7 @@ from e2e import certs, fixtures  # noqa: E402
 from e2e.gates import (RESULTS, ADMIN, ORG, SIDECAR, compose, gate,  # noqa: E402
                        gateway_headers, sh, sh_input, set_env, wait_until)
 from licensing import assets_source  # noqa: E402
-from licensing.keys import encode_private, encode_public, tuning_key_id  # noqa: E402
+from licensing.keys import encode_private, encode_public  # noqa: E402
 
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent
@@ -78,15 +78,8 @@ def build_images(skip_build: bool) -> str:
                    if existing else Ed25519PrivateKey.generate())
     private_b64 = encode_private(signing_key)
     public_b64 = encode_public(signing_key.public_key())
-    # The tuning key seals the compiled blob and is delivered in the lease. Like
-    # the signing key it is baked into the image, so a fresh one forces a rebuild —
-    # persist it across runs for `--skip-build`, and pin the SAME value into both
-    # the build secret (seals) and the server env (delivers). Into the
-    # environment, because that is where `--secret …,env=` reads it — see
-    # `gates.py::build_images` for why not a build-arg.
-    tuning_b64 = os.environ.get("PSEUDEX_TUNING_KEY", "") \
-        or base64.b64encode(os.urandom(32)).decode("ascii")
-    os.environ["PSEUDEX_TUNING_KEY"] = tuning_b64
+    # Tuning travels in the lease now, not the image — no tuning key to seal or
+    # deliver (docs/tz-tuning-in-lease.md).
     certs.generate(_HERE / "certs", "license")
 
     # The licensing image is always rebuilt, even with --skip-build: it takes
@@ -100,14 +93,11 @@ def build_images(skip_build: bool) -> str:
             started = time.monotonic()
             sh(["docker", "build", "-f", str(dockerfile),
                 "--build-arg", f"PSEUDEX_LICENSE_PUBKEY={public_b64}",
-                "--secret", "id=pseudex_tuning_key,env=PSEUDEX_TUNING_KEY",
-                "--build-arg", f"PSEUDEX_TUNING_KEY_ID={tuning_key_id(tuning_b64)}",
                 "-t", tag, str(_ROOT)], True, 5400)
             print(f"  {tag} built in {(time.monotonic() - started) / 60:.1f} min")
 
     _ENV_FILE.write_text(
         f"PSEUDEX_SIGNING_KEY={private_b64}\n"
-        f"PSEUDEX_TUNING_KEY={tuning_b64}\n"
         f"PSEUDEX_IMAGE={COMPILED_IMAGE}\n"
         f"PSEUDEX_KEY=\n"
         f"PSEUDEX_WORKERS=4\n"
@@ -339,7 +329,7 @@ def gate_p2() -> bool:
     matched = [line for line in result.stdout.splitlines() if line.strip()]
     read_the_tree = control in matched
     found = [line for line in matched if line != control]
-    return gate("P2 tuned vocabulary not extractable: blob opaque, bulk leased",
+    return gate("P2 tuned vocabulary not in the image: tuning is leased, not compiled in",
                 read_the_tree and not found,
                 f"probes={len(probes)} control_seen={read_the_tree} "
                 f"found_in_image={found[:3] or 'none'}")
@@ -563,51 +553,40 @@ def _image_carries(image: str, probe: str) -> dict[str, int]:
 
 
 def gate_p11(public_b64: str) -> bool:
-    """The tuning key is in NEITHER image — not in the config, not in the layer
-    metadata, not in any file — and the probes that say so are proved able to see.
+    """NO COMPILED TUNING SHIPS — the A2 regression (docs/tz-tuning-in-lease.md).
 
-    The key used to arrive as `ARG PSEUDEX_TUNING_KEY`, and an ARG is written
-    into the metadata of every layer built after it: `docker history
-    pseudex:source` printed the key seven times. The multi-stage release image
-    did not carry it only because the ARG lived in the discarded build stage —
-    an accident of layout, not a property anyone had asserted. It now enters as
-    a secret mount, and this gate is the assertion.
+    The tuning used to be compiled into the engine as a static-key-sealed blob
+    (`pseudex/_tuning_blob.py`), and the key rode in every lease. A memory dump
+    recovered the key in ~1 second and decrypted that blob OFFLINE, forever, past
+    revocation. The fix moves the tuning into the ephemeral lease, so the shipped
+    image must carry NEITHER the blob module NOR a static tuning key. This gate is
+    the assertion; if anyone reintroduces the compiled blob, `_tuning_blob`
+    reappears in the image and this goes red.
 
-    THREE PROBES, EACH WITH ITS OWN POSITIVE CONTROL OVER THE SAME STREAM. A
-    `grep -c` over an image that was not there, a format string that printed
-    nothing, a `docker save` that failed — all of them count zero, and zero is
-    the answer this gate wants to hear. So before the key is looked for, each
-    stream must show a value known to be in it: `PSEUDEX_DB_DIR` is an `ENV` of
-    the final stage (config and history), and `pseudex.service` is a module
-    name that survives in the binary by construction (layers — the control P1
-    already stands on). On the SOURCE image the layers control is the
-    verification key itself, baked into `_release.py` as plain text.
-
-    What the layer probe can and cannot say on the compiled image: Nuitka keeps
-    string constants in a compressed blob, so a key sitting in a constant would
-    not be greppable there. The key never becomes a constant — `pack.py` emits
-    only the sealed BLOB and its VERSION — and that half is checked on the
-    source image, where the same generated module is a plain `.py` file.
-    """
-    tuning_b64 = os.environ.get("PSEUDEX_TUNING_KEY", "")
-    if not tuning_b64:
-        return gate("P11 the tuning key is in neither image", False,
-                    "PSEUDEX_TUNING_KEY is not in the environment — build_images sets it")
+    Two probes per image, each with its own positive control over the same stream:
+    a `grep -c` over an image that was not there also counts zero, so before
+    looking for what must be ABSENT we confirm the stream shows what must be
+    PRESENT. `pseudex.service` (a module name that survives by construction, the
+    control P1 stands on) and `PSEUDEX_DB_DIR` (a final-stage ENV) are the
+    positives; `_tuning_blob` (the module) and the tuning probes are the negatives.
+    Also a hard filesystem check: no file named `_tuning_blob*` under /app."""
+    del public_b64  # no tuning key exists anymore; the control is a module name
     details: list[str] = []
     ok = True
-    for image, layers_control in ((SOURCE_IMAGE, public_b64), (COMPILED_IMAGE, "pseudex.service")):
+    for image in (SOURCE_IMAGE, COMPILED_IMAGE):
         env_control = _image_carries(image, "PSEUDEX_DB_DIR")
-        seen_layers = _image_carries(image, layers_control)["layers"]
-        key = _image_carries(image, tuning_b64)
-        # Every negative below stands on a positive over the same stream.
-        controls_ok = env_control["inspect"] > 0 and env_control["history"] > 0 and seen_layers > 0
-        clean = key["inspect"] == 0 and key["history"] == 0 and key["layers"] == 0
+        seen_service = _image_carries(image, "pseudex.service")["layers"]
+        blob = _image_carries(image, "_tuning_blob")
+        listing = sh(["docker", "run", "--rm", "--entrypoint", "sh", image, "-c",
+                      "find /app -name '_tuning_blob*' 2>/dev/null | head"], False, 120).stdout.strip()
+        controls_ok = env_control["inspect"] > 0 and env_control["history"] > 0 and seen_service > 0
+        clean = blob["inspect"] == 0 and blob["history"] == 0 and blob["layers"] == 0 and not listing
         ok = ok and controls_ok and clean
         details.append(f"{image}: controls(inspect={env_control['inspect']} "
-                       f"history={env_control['history']} layers={seen_layers}) "
-                       f"key(inspect={key['inspect']} history={key['history']} layers={key['layers']})")
-    return gate("P11 the tuning key is in neither image", ok, "; ".join(details))
-
+                       f"history={env_control['history']} layers={seen_service}) "
+                       f"blob(inspect={blob['inspect']} history={blob['history']} "
+                       f"layers={blob['layers']} files={listing or 'none'})")
+    return gate("P11 no compiled tuning ships (A2 regression)", ok, "; ".join(details))
 
 def gate_p10() -> bool:
     """Релизный бинарник меряет СЕБЯ, и мера совпадает с файлом на диске.

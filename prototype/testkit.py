@@ -12,7 +12,6 @@ against a real licensing server, which is the only thing that proves the lease
 works (docs/tz-license-packaging.md §4.1).
 """
 
-import base64
 import os
 import secrets
 import socket
@@ -24,21 +23,13 @@ import httpx
 
 from pathlib import Path
 
-from licensing.pack import build_plaintext, emit_tuning_module
+from licensing.pack import build_plaintext
 from pseudex.assets import ASSETS
 
-# The engine now carries the authored tuning compiled in, not leased, and SEALED
-# under a key the lease delivers. In a real build the Dockerfile emits it and the
-# server env holds the key; in-process both ends are us, so a single ephemeral key
-# is generated here and put in the env BEFORE emit (which seals with it) and before
-# any server start (build_plaintext delivers it). `setdefault` lets a real key win.
-# The blob must exist before ANY engine load — the dev-bundle path AND the real-
-# licence path both import it — so it is generated here at import, once. A
-# generated artifact (gitignored), like the datasets.
-os.environ.setdefault("PSEUDEX_TUNING_KEY",
-                      base64.b64encode(secrets.token_bytes(32)).decode("ascii"))
-_TUNING_BLOB = Path(__file__).resolve().parent / "pseudex" / "_tuning_blob.py"
-emit_tuning_module(_TUNING_BLOB)
+# The authored tuning now travels in the lease (docs/tz-tuning-in-lease.md), not
+# compiled into the engine — so there is no blob to emit and no PSEUDEX_TUNING_KEY
+# to share. `build_plaintext()` delivers bulk AND tuning; `load_dev_bundle` just
+# loads it. Nothing about the tuning is set up here anymore.
 
 
 

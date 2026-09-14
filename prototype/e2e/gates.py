@@ -48,7 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
 
 from e2e import certs, fixtures  # noqa: E402
-from licensing.keys import encode_private, encode_public, tuning_key_id  # noqa: E402
+from licensing.keys import encode_private, encode_public  # noqa: E402
 
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent
@@ -255,19 +255,8 @@ def build_stand(image: str, workers: int, skip_build: bool) -> str:
     private_b64 = encode_private(signing_key)
     public_b64 = encode_public(signing_key.public_key())
     print(f"  signing key {'reused' if existing else 'generated'}, public {public_b64[:16]}...")
-    # The tuning key seals the compiled blob and rides in the lease. Baked into the
-    # image like the signing key, so a fresh one forces a rebuild — persist it for
-    # --skip-build, and pin the SAME value into the build secret (seals) and the
-    # server env (delivers, so the engine can open its own tuning).
-    #
-    # INTO THE ENVIRONMENT, NOT ONTO THE COMMAND LINE. The build reads it as
-    # `--secret id=…,env=PSEUDEX_TUNING_KEY` from the docker CLI's own
-    # environment — a value generated here and passed as a build-arg would be
-    # visible in `ps` on the runner and, for the single-stage image, printed by
-    # `docker history` for every later layer.
-    tuning_b64 = os.environ.get("PSEUDEX_TUNING_KEY", "") \
-        or base64.b64encode(os.urandom(32)).decode("ascii")
-    os.environ["PSEUDEX_TUNING_KEY"] = tuning_b64
+    # The tuning now travels in the lease, not the image — no tuning key to
+    # seal or deliver (docs/tz-tuning-in-lease.md).
 
     certs.generate(_HERE / "certs", "license")
     print("  self-signed CA + server cert written")
@@ -291,21 +280,16 @@ def build_stand(image: str, workers: int, skip_build: bool) -> str:
         # sign their own bundles.
         sh(["docker", "build", "-f", str(_ROOT / "Dockerfile"),
             "--build-arg", f"PSEUDEX_LICENSE_PUBKEY={public_b64}",
-            "--secret", "id=pseudex_tuning_key,env=PSEUDEX_TUNING_KEY",
-            "--build-arg", f"PSEUDEX_TUNING_KEY_ID={tuning_key_id(tuning_b64)}",
             "-t", image, str(_ROOT)], True, 1800)
         print(f"  images built ({image})")
     else:
         sh(["docker", "build", "-f", str(_ROOT / "Dockerfile.nuitka"),
             "--build-arg", f"PSEUDEX_LICENSE_PUBKEY={public_b64}",
-            "--secret", "id=pseudex_tuning_key,env=PSEUDEX_TUNING_KEY",
-            "--build-arg", f"PSEUDEX_TUNING_KEY_ID={tuning_key_id(tuning_b64)}",
             "-t", image, str(_ROOT)], True, 3600)
         print(f"  images built ({image})")
 
     _ENV_FILE.write_text(
         f"PSEUDEX_SIGNING_KEY={private_b64}\n"
-        f"PSEUDEX_TUNING_KEY={tuning_b64}\n"
         f"PSEUDEX_IMAGE={image}\n"
         f"PSEUDEX_KEY=\n"
         f"PSEUDEX_WORKERS={workers}\n"

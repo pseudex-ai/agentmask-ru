@@ -1,8 +1,6 @@
 # Pseudex sidecar — RELEASE image. The engine as a native binary.
 #
 #   docker build -f Dockerfile.nuitka --build-arg PSEUDEX_LICENSE_PUBKEY=... \
-#                --secret id=pseudex_tuning_key,env=PSEUDEX_TUNING_KEY \
-#                --build-arg PSEUDEX_TUNING_KEY_ID=$(printf %s "$PSEUDEX_TUNING_KEY" | sha256sum | cut -c1-16) \
 #                -t pseudex:compiled .
 #
 # Nuitka translates Python to C and compiles it, so there is no bytecode to
@@ -46,43 +44,6 @@ RUN pip install --no-cache-dir --upgrade pip setuptools \
 COPY pseudex/ ./pseudex/
 COPY serve_main.py build_strip_docstrings.py build_harden_strings.py ./
 
-# Compile the authored TUNING into the engine (docs/tz-license-packaging §2.2),
-# BEFORE the checks below and before strip/harden/Nuitka, so it is validated and
-# then baked into the constants blob as one opaque hex string. The cue words,
-# address regex, priority table and look-alike folds no longer travel in the
-# lease — a client used to read them by decrypting their own bundle. Needs ONLY
-# assets_source (no bulk dictionaries, no ГАР dump), so three files go to a temp
-# path, get used, and are removed: `licensing/` itself must never ship. The
-# generated module holds only `BLOB`/`VERSION`, so the "no import licensing" guard
-# still passes.
-# PSEUDEX_TUNING_KEY seals the blob (docs/tz-license-packaging §2.2, anti-patch
-# tie). The SAME key must reach the licensing server, which delivers it in every
-# lease so the engine can open its own tuning — like the Ed25519 key, it is a
-# build-time secret shared with the server, and a fresh one forces a rebuild.
-#
-# A SECRET MOUNT, NOT A BUILD-ARG. An `ARG` is written into the metadata of
-# every layer built after it — `docker history` prints it — so the single-stage
-# source image carried the production key in seven layers (measured), and any
-# cache export of this stage would carry it too. A secret mount exists only for
-# the duration of this one RUN, in a tmpfs, and leaves nothing in the layer or
-# its history. `required=true` keeps the old build-arg guard: a build without
-# the key stops here rather than sealing the tuning to an empty string.
-COPY licensing/__init__.py licensing/assets_source.py licensing/pack.py /tmp/lic/licensing/
-#
-# THE FINGERPRINT IS THE CACHE KEY. BuildKit leaves secret contents out of the
-# layer cache on purpose, so a rotated key alone would hit the cache and ship
-# a blob sealed to the PREVIOUS key (measured: two keys, one blob). Sixteen hex
-# characters of the key's SHA-256 enter as an ordinary ARG — not the key — and
-# the RUN recomputes them from the mounted secret: a stale or invented id
-# stops the build instead of quietly reusing the cache.
-ARG PSEUDEX_TUNING_KEY_ID
-RUN --mount=type=secret,id=pseudex_tuning_key,required=true \
-       test -n "$PSEUDEX_TUNING_KEY_ID" || (echo "PSEUDEX_TUNING_KEY_ID build-arg is required" && exit 1) \
-    && [ "$(sha256sum /run/secrets/pseudex_tuning_key | cut -c1-16)" = "$PSEUDEX_TUNING_KEY_ID" ] \
-       || (echo "PSEUDEX_TUNING_KEY_ID does not match the mounted key" && exit 1) \
-    && PSEUDEX_TUNING_KEY="$(cat /run/secrets/pseudex_tuning_key)" PYTHONPATH=/tmp/lic \
-       python -m licensing.pack --emit-tuning ./pseudex/_tuning_blob.py \
-    && rm -rf /tmp/lic
 
 # Same guard as the source image, before anything is compiled: the engine must
 # not be able to reach the package that holds the assets.

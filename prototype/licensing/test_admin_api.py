@@ -19,9 +19,7 @@
 импорта, потому что сервер читает их на импорте.
 """
 
-import base64
 import os
-import secrets
 import subprocess
 import sys
 import tempfile
@@ -35,28 +33,10 @@ sys.path.insert(0, ".")
 
 # ЭТОТ НАБОР НЕ ЗАПУСКАЛСЯ В CI НИ РАЗУ С ТЕХ ПОР, КАК ТЮНИНГ СТАЛ ЗАПЕЧАТАННЫМ.
 #
-# Он поднимает НАСТОЯЩИЙ `LicenseClient` и берёт настоящую аренду, значит ему
-# нужен и ключ тюнинга, и блоб, запечатанный ТЕМ ЖЕ ключом. `testkit` делает обе
-# вещи на импорте, но этот файл его не импортирует — он ходит по HTTP, а не через
-# стенд, — поэтому падал на импорте `licensing.server` с «PSEUDEX_TUNING_KEY is
-# not set», а с одним лишь ключом (без блоба под ним) — на `acquire()` с
-# «bundle_corrupt». Проверено на нетронутом main.
-#
-# Стоило это ровно того, ради чего шаг заводили: комментарий в `checks.yml` над
-# ним говорит «ДЕНЕЖНЫЙ ТРАКТ БЕГАЕТ НА КАЖДОМ ПУШЕ», а бежал он в красное на
-# каждом пуше. Ключ эфемерный и генерируется здесь, потому что в этом наборе оба
-# конца — мы: и тот, кто печатает блоб, и тот, кто его открывает. `setdefault`
-# оставляет победу настоящему ключу, если он задан снаружи.
-os.environ.setdefault("PSEUDEX_TUNING_KEY",
-                      base64.b64encode(secrets.token_bytes(32)).decode("ascii"))
+# Он поднимает НАСТОЯЩИЙ `LicenseClient` и берёт настоящую аренду; тюнинг едет
+# в лизе (docs/tz-tuning-in-lease.md), никакого ключа настраивать не нужно.
 
 from fastapi.testclient import TestClient  # noqa: E402
-
-from licensing.pack import emit_tuning_module  # noqa: E402
-
-# ДО импорта `licensing.server`: он строит бандл на импорте, а движок ниже
-# импортирует блоб. Порядок здесь тот же, что в `testkit`, и по той же причине.
-emit_tuning_module(Path(__file__).resolve().parents[1] / "pseudex" / "_tuning_blob.py")
 
 from licensing import server  # noqa: E402
 from licensing.store import LicenseStore  # noqa: E402
