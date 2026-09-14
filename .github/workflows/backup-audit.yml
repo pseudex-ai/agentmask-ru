@@ -123,11 +123,18 @@ jobs:
         # восстанавливаться.
         run: |
           set -eu
-          if [ "${{ inputs.deep }}" = "true" ]; then
-            restic check --read-data
-          else
-            restic check --read-data-subset=5%
-          fi
+          # ЧИТАТЬ ЦЕЛИКОМ, ПОКА РЕПОЗИТОРИЙ МАЛ. Здесь стояло --read-data-subset=5%
+          # с комментарием «за месяц прочитано практически всё» — и это было
+          # арифметически неверно: 5% выбираются СЛУЧАЙНО с новым сидом каждый
+          # раз (cmd_check.go, selectRandomPacksByPercentage), при <40 pack это
+          # ровно один pack в день, а 30 дней дают 1-0.95^30 = 78%, не «всё».
+          # Репозиторий сегодня — мегабайты, выкачать его целиком стоит копейки.
+          # Порог, за которым переходить на детерминированную форму n/t: ~5 ГБ
+          # по `restic stats --mode raw-data`.
+          #
+          # --retry-lock: хост пишет ночью, и его цикл дрейфует от времени
+          # старта контейнера; check в 06:20 с живым замком падал бы ложно.
+          restic check --read-data --retry-lock 15m
 
       - name: НАСТОЯЩЕЕ восстановление базы лицензий
         # ЭТО И ЕСТЬ ПРОВЕРКА. Всё выше подтверждает, что байты на месте; только
@@ -168,9 +175,20 @@ jobs:
         # нечем было заменить.
         run: |
           set -eu
+          # --keep-within — НЕ ОПЦИЯ, А ЗАЩИТА, И ОНА НАЗВАНА В DESIGN DOC RESTIC.
+          # Хост пишет и не удаляет — но взломанный хост может ДОБАВИТЬ снапшоты
+          # с подложными датами (`backup --time`) по одному в каждое окно
+          # --keep-daily/weekly/monthly, и тогда этот самый forget, запущенный
+          # НАМИ из CI, выкинет все настоящие копии как «лишние». Threat model:
+          # «manipulate the use of the forget command into deleting all
+          # legitimate snapshots»; docs 060_forget: «With append-only
+          # repositories, you should specifically use the --keep-within
+          # option». Окно в 30 дней означает: что бы ни подложили, всё
+          # настоящее за месяц остаётся.
           restic forget --host pseudex --tag nightly \
+            --keep-within 30d \
             --keep-daily 14 --keep-weekly 8 --keep-monthly 12 --keep-yearly 3 \
-            --prune
+            --prune --retry-lock 15m
           restic stats --mode raw-data
 
       - name: сказать, чем кончилось
