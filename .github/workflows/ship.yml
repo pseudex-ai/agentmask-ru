@@ -32,6 +32,10 @@ on:
 
 permissions:
   contents: write
+  # ЗАПУСКАТЬ release — ЯВНО. Тег, запушенный GITHUB_TOKEN, НЕ запускает
+  # воркфлоу по триггеру `tags:` — правило GitHub против петель. Первый
+  # настоящий ship поставил тег, и release не шелохнулся.
+  actions: write
   # ЧИТАТЬ ПРОВЕРКИ — ОТДЕЛЬНОЕ ПРАВО. Без него `gh api …/check-runs` отвечает
   # 403, и «нет ни одной проверки» было не гонкой, а отказом в доступе — два
   # запуска подряд. Диагноз по сообщению об ошибке, а не по догадке.
@@ -132,6 +136,18 @@ jobs:
           } > /tmp/tagmsg
           git tag -a "${NEXT}" -F /tmp/tagmsg
           git push origin "${NEXT}"
+
+      - name: запустить сборку и публикацию по тегу
+        # НЕ ЧЕРЕЗ ТРИГГЕР `tags:`. Push токеном GITHUB_TOKEN другие воркфлоу
+        # не запускает — так GitHub защищается от петель, — и тег, поставленный
+        # отсюда, лежал бы без сборки. Явный dispatch на ref тега: release
+        # читает GITHUB_REF_NAME и получает ту же версию.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          gh workflow run release.yml --ref "${NEXT}" -f publish=true
+          echo "release запущен на ${NEXT}"
 
       - name: сказать, что поехало
         run: |
