@@ -388,12 +388,21 @@ git tag v1.0.1 && git push --tags
 не «этот коммит собрался». Подписывается **дайджест, не тег** — тег изменяем, и
 подпись над ним ничего не говорит о байтах, которые клиент в итоге скачает.
 
-Клиент проверяет:
+Клиент проверяет — **с нашей личностью, не с `.*`**. Регексп `.*` принимает
+подпись любого аккаунта GitHub и не доказывает о нас ничего (по коду cosign
+проверка личности при `.*` — тавтология; см. `research/2026-09-14-devops-audit.md`).
+Личность публикуется здесь, и менять её могут только мы:
 
 ```bash
-cosign verify cr.yandex/pseudex/pseudex:1.0.1 \
-  --certificate-identity-regexp '.*' --certificate-oidc-issuer-regexp '.*'
+cosign verify cr.yandex/crpkutn2el1knpsbrs2d/pseudex:0.1.0 \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  --certificate-identity-regexp '^https://github\.com/Isk4R1oT/Obscura/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'
 ```
+
+Проверено на `v0.1.0`: этот шаблон проходит, а `@refs/heads/main`, чужой
+репозиторий и чужой issuer — отказ. Сертификат несёт
+`…/release.yml@refs/tags/v0.1.0` даже при ручном `workflow_dispatch` на тег:
+Fulcio кладёт в SAN `job_workflow_ref`, а он равен ref запуска.
 
 ---
 

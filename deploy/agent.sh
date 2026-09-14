@@ -58,10 +58,53 @@ echo "agent: $HAVE -> $WANT"
 # Проверяется каждый образ, включая клиентский: он не крутится у нас, но его
 # дайджест — то, что мы показываем клиенту в инструкции, и расхождение здесь
 # означает, что мы собираемся раздать неподтверждённые байты.
-IDENTITY="${COSIGN_IDENTITY_REGEXP:-.*}"
-ISSUER="${COSIGN_ISSUER_REGEXP:-.*}"
+# ЛИЧНОСТЬ ПОДПИСАНТА ОБЯЗАТЕЛЬНА, И БЕЗ НЕЁ АГЕНТ НЕ РАБОТАЕТ. Здесь стояло
+# `${COSIGN_IDENTITY_REGEXP:-.*}` — и по коду cosign (`pkg/cosign/verify.go`,
+# CheckCertificatePolicy) регексп `.*` делает проверку личности тавтологией:
+# остаются цепочка до Fulcio, SCT и Rekor, но публичный Fulcio выдаёт
+# сертификат ЛЮБОМУ workflow ЛЮБОГО репозитория GitHub, и любая такая подпись
+# проходила. То есть агент доверял реестру ровно так, как заявлял, что не
+# доверяет, — единственной границей была учётка реестра. Это Watchtower с
+# лишним шагом.
+#
+# ТЕГ В IDENTITY — НЕ ПЕДАНТИЗМ. `publish` запускается и вручную:
+# `gh workflow run release.yml --ref main -f publish=true` любым write-аккаунтом
+# подпишет образ личностью `…/release.yml@refs/heads/main`. Только якорь
+# `@refs/tags/v<число>.<число>.<число>$` отсекает это на хосте.
+#
+# ПУСТАЯ ПЕРЕМЕННАЯ — ОТКАЗ, А НЕ УМОЛЧАНИЕ. Умолчание здесь может быть только
+# слабее заданного, а слабее «любой» не бывает.
+IDENTITY="${COSIGN_IDENTITY_REGEXP:-}"
+ISSUER="${COSIGN_ISSUER_REGEXP:-}"
+if [ -z "$IDENTITY" ] || [ -z "$ISSUER" ]; then
+    notify crit "Выкатка ОТМЕНЕНА: не задано, кому верить" \
+        "В deploy/.env нет COSIGN_IDENTITY_REGEXP или COSIGN_ISSUER_REGEXP.
+Без них проверка подписи пропускает ЛЮБУЮ keyless-подпись — чужой аккаунт
+GitHub подписал бы образ, и агент его выкатил бы. Ничего не остановлено,
+работает $HAVE. Образец значений — в deploy/.env.example."
+    exit 1
+fi
+case "$IDENTITY" in
+    *'@refs/tags/'*) : ;;
+    *)
+        notify crit "Выкатка ОТМЕНЕНА: identity не привязана к тегу" \
+            "COSIGN_IDENTITY_REGEXP=$IDENTITY
+Без '@refs/tags/' в якоре подпись из ветки main через ручной dispatch
+прошла бы как релизная. Ничего не остановлено, работает $HAVE."
+        exit 1 ;;
+esac
+
 for name in pseudex pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot; do
     REF="${REGISTRY}/${name}:${VERSION}"
+    # ОБРАЗА ЕЩЁ НЕТ — ЭТО НЕ «ПОДПИСЬ НЕ СОШЛАСЬ». Тег появляется сразу, образы
+    # — через ~50 минут сборки, и всё это время агент раз в минуту приходил
+    # сюда и слал crit-тревогу «подпись не сошлась». Час ложных тревог на
+    # каждый релиз, и настоящая среди них потерялась бы. Отсутствие манифеста
+    # — тихий выход: следующий обход через минуту.
+    if ! docker manifest inspect "$REF" >/dev/null 2>&1; then
+        echo "agent: $REF ещё не опубликован — жду"
+        exit 0
+    fi
     if ! cosign verify "$REF" \
             --certificate-identity-regexp "$IDENTITY" \
             --certificate-oidc-issuer-regexp "$ISSUER" >/dev/null 2>&1; then
