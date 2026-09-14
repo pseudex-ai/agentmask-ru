@@ -78,23 +78,55 @@ services:
       PSEUDEX_GRACE_SECONDS: ${GRACE:-172800}
       PSEUDEX_LICENSE_ADMIN_TOKEN: ${PSEUDEX_LICENSE_ADMIN_TOKEN:?set PSEUDEX_LICENSE_ADMIN_TOKEN}
       PSEUDEX_LICENSE_STOREFRONT_TOKEN: ${PSEUDEX_LICENSE_STOREFRONT_TOKEN:?set PSEUDEX_LICENSE_STOREFRONT_TOKEN}
-      PSEUDEX_LICENSE_CERT: /certs/server.crt
-      PSEUDEX_LICENSE_KEYFILE: /certs/server.key
     volumes:
       - license-data:/data
-      - ./certs:/certs:ro
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import httpx,sys; sys.exit(0 if httpx.get('http://127.0.0.1:8443/v1/pubkey',timeout=5).status_code==200 else 1)\""]
+      # STDLIB ONLY. The image has no `httpx` — the previous probe raised
+      # ModuleNotFoundError on every tick and the server was «unhealthy» for
+      # as long as this file has existed. A healthcheck is code that runs in
+      # the image, not in the developer's virtualenv.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8443/v1/pubkey',timeout=5).status==200 else 1)\""]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
-    ports:
-      # Public: this is what every customer container calls.
-      - "443:8443"
+    # PLAIN HTTP, BEHIND CADDY, NO HOST PORT. This used to publish `443:8443`
+    # with its own certificate from `./certs` — and Caddy, which owns the
+    # storefront's TLS, was pushed to `8443:443`, so `https://pseudex.ru` would
+    # have answered with the LICENSING server and the website lived on a port
+    # no browser types. Both names resolve to one machine; one process must
+    # terminate TLS for both, and Caddy is the one that renews certificates by
+    # itself. The client verifies against the system CA store (`license.py`:
+    # `verify=True` unless a CA is pinned), so Let's Encrypt is what it expects.
+    # The healthcheck above was also only ever right for plain HTTP.
+    #
     # The admin app stays on the internal network only. Publishing it would put
     # key issuance on the internet.
-    expose: ["9443"]
+    expose: ["8443", "9443"]
+
+  storefront-migrate:
+    # SCHEMA AND TARIFFS BEFORE THE FIRST REQUEST. The local stand ran
+    # `migrate` + `seed_plans` in the storefront's own `command:`; this file
+    # never did, so a fresh host answered the landing page with «relation
+    # billing_plan does not exist» — found by raising the production compose
+    # file. A one-shot service, like the two config renders: the storefront
+    # and the billing cycle start only after it has completed, and `--wait`
+    # accepts a completed init. Both commands are idempotent (`seed_plans` is a
+    # management command for exactly that reason), so every `up -d` re-runs it.
+    image: ${REGISTRY:-cr.yandex/pseudex}/pseudex-storefront:${VERSION:?set VERSION}
+    restart: "no"
+    logging: *logging
+    environment:
+      PSEUDEX_SECRET_KEY: ${PSEUDEX_SECRET_KEY:?set PSEUDEX_SECRET_KEY}
+      PSEUDEX_DEBUG: "0"
+      PSEUDEX_ALLOWED_HOSTS: ${SITE_HOST:?set SITE_HOST}
+      PSEUDEX_DB_HOST: postgres
+      PSEUDEX_DB_NAME: ${POSTGRES_DB:-pseudex}
+      PSEUDEX_DB_USER: ${POSTGRES_USER:-pseudex}
+      PSEUDEX_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    command: ["sh", "-c", "python manage.py migrate --noinput && python manage.py seed_plans"]
+    depends_on:
+      postgres: { condition: service_healthy }
 
   storefront:
     image: ${REGISTRY:-cr.yandex/pseudex}/pseudex-storefront:${VERSION:?set VERSION}
@@ -133,12 +165,22 @@ services:
       # Витрина была единственным сервисом на пути клиента без проверки: Django,
       # уронивший себя миграцией, отвечал бы `running` бесконечно, а агент
       # выкатки счёл бы это успехом.
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5).status==200 else 1)\""]
+      # THE REQUEST AS CADDY SENDS IT: the site's Host and X-Forwarded-Proto.
+      # `ALLOWED_HOSTS` is exactly SITE_HOST, so a probe arriving as
+      # `127.0.0.1:8000` got Django's 400 DisallowedHost; with the Host fixed
+      # it got the 301 to https that SECURE_SSL_REDIRECT issues for anything
+      # not marked as forwarded from TLS. Either way the container could never
+      # become healthy and the agent's `--wait` would have rolled back every
+      # release. Found by raising the production compose file, which no test
+      # had done. The Host comes from the same variable the setting reads, so
+      # the two cannot disagree.
+      test: ["CMD-SHELL", "python -c \"import os,urllib.request,sys; r=urllib.request.Request('http://127.0.0.1:8000/healthz', headers={'Host': os.environ['PSEUDEX_ALLOWED_HOSTS'].split(',')[0], 'X-Forwarded-Proto': 'https'}); sys.exit(0 if urllib.request.urlopen(r, timeout=5).status==200 else 1)\""]
       interval: 15s
       timeout: 10s
       retries: 4
       start_period: 40s
     depends_on:
+      storefront-migrate: { condition: service_completed_successfully }
       postgres: { condition: service_healthy }
       license: { condition: service_started }
     expose: ["8000"]
@@ -178,17 +220,32 @@ services:
       PSEUDEX_SMTP_USER: ${SMTP_USER:-}
       PSEUDEX_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       PSEUDEX_FROM_EMAIL: ${FROM_EMAIL:-pseudex <noreply@pseudex.ru>}
+      # THE DAILY DIGEST GOES THROUGH `notify.sh`, THE WATCHER'S CHANNEL — and
+      # the script plus its two variables were mounted for the watcher only.
+      # `daily_digest` then printed the digest to the log with «сводка
+      # напечатана, а не отправлена», every morning, to nobody. Found by
+      # raising the production compose file.
+      PSEUDEX_TG_TOKEN: ${PSEUDEX_TG_TOKEN:-}
+      PSEUDEX_TG_CHAT: ${PSEUDEX_TG_CHAT:-}
     depends_on:
+      storefront-migrate: { condition: service_completed_successfully }
       postgres: { condition: service_healthy }
       license: { condition: service_started }
     volumes:
-      - billing-state:/state
+      # AT `/data`, NOT `/state`: the image runs as uid 10001 and owns `/data`
+      # (Dockerfile), and Docker copies a mount point's ownership from the
+      # image into a fresh named volume. `/state` did not exist in the image,
+      # so the volume was created root-owned, `date > /state/last-ok` answered
+      # «Permission denied», and the service — whose health IS that stamp —
+      # could never be healthy. Found by raising the production compose file.
+      - billing-state:/data
+      - ./notify.sh:/deploy/notify.sh:ro
     # ЗДОРОВЬЕ = «ПОСЛЕДНИЙ ПРОХОД УДАЛСЯ», а не «процесс существует». Отметка
     # ставится ТОЛЬКО на успешном проходе, поэтому падающая каждый час команда
     # делает контейнер нездоровым за два часа, и сторож это видит своей
     # проверкой контейнеров, ничего про биллинг не зная.
     healthcheck:
-      test: ["CMD-SHELL", "test -f /state/last-ok && [ $(( $(date +%s) - $(cat /state/last-ok) )) -lt 7500 ]"]
+      test: ["CMD-SHELL", "test -f /data/last-ok && [ $(( $(date +%s) - $(cat /data/last-ok) )) -lt 7500 ]"]
       interval: 300s
       timeout: 10s
       retries: 2
@@ -204,19 +261,19 @@ services:
         # рестарт.
         while :; do
           if python manage.py run_billing_cycle; then
-            date +%s > /state/last-ok
+            date +%s > /data/last-ok
           else
             echo "billing cycle failed"
           fi
           TODAY="$$(date +%F)"
-          if [ "$$(cat /state/last-daily 2>/dev/null)" != "$$TODAY" ]; then
+          if [ "$$(cat /data/last-daily 2>/dev/null)" != "$$TODAY" ]; then
             HOUR="$$(date +%H)"
             # После девяти утра по времени контейнера: сводка, пришедшая в три
             # ночи, читается утром вместе со следующей и теряет половину смысла.
             if [ "$$HOUR" -ge 9 ]; then
               python manage.py rollup_analytics || echo "rollup failed"
               python manage.py daily_digest || echo "digest failed"
-              echo "$$TODAY" > /state/last-daily
+              echo "$$TODAY" > /data/last-daily
             fi
           fi
           sleep 3600
@@ -231,24 +288,40 @@ services:
     logging: *logging
     environment:
       SITE_HOST: ${SITE_HOST}
+      LICENSE_HOST: ${LICENSE_HOST:?set LICENSE_HOST}
       PSEUDEX_CONF_REV: *conf-rev   # Caddyfile is mounted from the checkout
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    # THE SITE'S OWN NAMES POINT BACK AT THIS CONTAINER, so the healthcheck can
+    # ask for `https://pseudex.ru/healthz` from inside: the SNI is the real
+    # name, Caddy answers with the real certificate, busybox wget verifies it
+    # against the system store, and the request goes on to the storefront.
+    # The previous probe hit `http://127.0.0.1/`, was 308-redirected to
+    # `https://127.0.0.1/`, and died on a TLS alert — Caddy has no certificate
+    # for an IP — so Caddy was «unhealthy» on every tick, forever.
+    extra_hosts:
+      - "${SITE_HOST}:127.0.0.1"
+      - "${LICENSE_HOST:-license.invalid}:127.0.0.1"
     healthcheck:
-      # Не «процесс жив», а «отдаёт страницу». Caddy, потерявший конфиг или
-      # сертификат, продолжает работать и отвечать ошибкой — именно этот случай
-      # проверка и ловит.
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:80/ || exit 1"]
+      # Не «процесс жив», а «отдаёт ОБА сайта по TLS»: конфиг загружен,
+      # сертификаты выданы, апстримы отвечают. Caddy, потерявший конфиг или
+      # сертификат, продолжает работать и отвечать ошибкой — именно это и
+      # ловится. `$$` — переменную читает shell контейнера, не compose.
+      test: ["CMD-SHELL", "wget -q --spider \"https://$$SITE_HOST/healthz\" && wget -q --spider \"https://$$LICENSE_HOST/v1/pubkey\" || exit 1"]
       interval: 30s
-      timeout: 10s
+      timeout: 15s
       retries: 3
+      # Let's Encrypt needs the DNS record and a round trip; the first minute
+      # after a fresh start is issuance, not failure.
+      start_period: 90s
     ports:
       - "80:80"
-      - "8443:443"
+      - "443:443"
     depends_on:
       - storefront
+      - license
 
   backup:
     # Both databases, nightly, kept for a month. The licensing database is the
@@ -375,8 +448,7 @@ services:
   # образа и виден в `docker compose config`, `docker inspect`,
   # `docker ps --no-trunc` и `/proc/1/cmdline`.
   #
-  # Поэтому файл. Его создаёт оператор рядом с сертификатами — тем же способом,
-  # каким уже лежит `./certs`:
+  # Поэтому файл. Его создаёт оператор на хосте, рядом с `.env`:
   #
   #     mkdir -p secrets && printf %s "$PSEUDEX_LICENSE_ADMIN_TOKEN" \
   #       > secrets/license-admin-token && chmod 600 secrets/license-admin-token
@@ -436,8 +508,12 @@ services:
     logging: *logging
     volumes:
       - supportbot-config:/bot/config:ro
-    environment:
-      MONGO_URI: mongodb://supportbot-db:27017/support
+    # NO `MONGO_URI` HERE: the bot reads `mongodb_uri` from its config, and
+    # its built-in default for that key (`mongodb://mongodb:27017/support`)
+    # wins over the environment variable — `db.js: config?.mongodb_uri ||
+    # process.env.MONGO_URI`. With the env set and the config silent the bot
+    # looked for a host called `mongodb` and restarted forever. The URI is in
+    # `supportbot/config.yaml`, next to everything else it reads.
     depends_on:
       # `restart: true` — WITHOUT IT A RE-RENDER IS WRITTEN AND NEVER READ. The
       # init is recreated when `.env` or the template changes, renders into the

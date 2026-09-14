@@ -20,3 +20,19 @@
 		header_up X-Real-IP {remote_host}
 	}
 }
+
+# The licensing server, on the same machine and the same port 443. Caddy
+# terminates TLS for this name too (one Let's Encrypt account, one renewal
+# loop) and hands plain HTTP to the container. No HSTS preload here: the
+# client is a container with an explicit URL, not a browser.
+{$LICENSE_HOST} {
+	encode zstd gzip
+	header {
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+	reverse_proxy license:8443 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Real-IP {remote_host}
+	}
+}

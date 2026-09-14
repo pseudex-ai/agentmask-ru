@@ -14,6 +14,10 @@
 # в переписке появится вторая копия того, ради ограничения чего построено всё
 # остальное. Текст ниже — единственная защита, и она должна быть первой.
 
+# The compose service is `supportbot-db`; the bot's own default says `mongodb`
+# and ignores MONGO_URI in the environment (db.js reads the config first).
+mongodb_uri: mongodb://supportbot-db:27017/support
+
 bot_token: '__PSEUDEX_SUPPORT_BOT_TOKEN__'
 staffchat_id: '__PSEUDEX_SUPPORT_CHAT__'
 staffchat_type: 'telegram'
