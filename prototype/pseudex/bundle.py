@@ -25,6 +25,7 @@ and would still say nothing about what is inside.
 import base64
 import hashlib
 import hmac
+import binascii
 import json
 from dataclasses import dataclass
 
@@ -286,7 +287,17 @@ def verify_lease(lease: dict[str, object], public_key: Ed25519PublicKey) -> None
     if not isinstance(signature, str):
         raise BundleError("lease carries no signature")
     try:
-        public_key.verify(base64.b64decode(signature), signing_payload(lease))
+        raw = base64.b64decode(signature, validate=True)
+    except (ValueError, binascii.Error) as error:
+        # A non-base64 signature must fail CLOSED with our own error, like
+        # `decode_public_key` already does — not a raw binascii.Error that flies
+        # past `except BundleError` in `license._apply` and crashes cold start
+        # with a traceback (red team, ФОРЖЕР R1, 2026-09-14).
+        raise BundleError(
+            "lease signature is not valid base64 — refusing to load the bundle"
+        ) from error
+    try:
+        public_key.verify(raw, signing_payload(lease))
     except InvalidSignature as error:
         raise BundleError(
             "lease signature is not ours — refusing to load the bundle"
