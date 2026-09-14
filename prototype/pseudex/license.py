@@ -282,6 +282,10 @@ class LicenseClient:
 
         self._lock = threading.Lock()
         self._last_ok_monotonic: float | None = None
+        # Wall time of the last good lease — an anti-freeze ceiling on the
+        # monotonic timer below (see `state`). Monotonic stays primary; this is
+        # only consulted to catch a frozen CLOCK_MONOTONIC.
+        self._last_ok_wall: float | None = None
         # When we last TRIED, as opposed to when we last succeeded. Retry pacing
         # has to key off the attempt: pacing off the last success would retry on
         # every tick once a lease has gone stale.
@@ -324,6 +328,21 @@ class LicenseClient:
         if last_ok is None:
             return STATE_BOOT
         elapsed = time.monotonic() - last_ok
+        # ANTI-FREEZE. The wall clock is an upper-bound sanity check on the
+        # monotonic timer. A root customer who LD_PRELOADs a frozen
+        # CLOCK_MONOTONIC keeps `elapsed` pinned below the TTL and serves past
+        # revocation (pentest W2-PATCH); but that attack leaves the wall clock
+        # moving, so if the wall says this lease is already past ttl+grace while
+        # monotonic pretends it is fresh, we trust the wall and fail closed.
+        # Monotonic stays PRIMARY (it cannot be rolled back, which the wall can),
+        # so the wall is only ever a ceiling: an NTP step is seconds and never
+        # trips it, and a suspend longer than the whole grace window would have
+        # expired the lease anyway. Freezing BOTH clocks consistently evades this
+        # — a far higher bar than the one-line monotonic freeze it closes.
+        if self._last_ok_wall is not None:
+            wall_elapsed = time.time() - self._last_ok_wall
+            if wall_elapsed > self._ttl_seconds + self._grace_seconds + _CLOCK_SKEW_SECONDS:
+                return STATE_EXPIRED
         if elapsed <= self._ttl_seconds:
             return STATE_LEASED
         if elapsed <= self._ttl_seconds + self._grace_seconds:
@@ -664,6 +683,7 @@ class LicenseClient:
         ASSETS.load(plaintext)
         with self._lock:
             self._last_ok_monotonic = time.monotonic()
+            self._last_ok_wall = time.time()
             self._ttl_seconds = int(lease["ttl_seconds"])
             self._grace_seconds = int(lease["grace_seconds"])
             self._renew_after_seconds = int(lease["renew_after_seconds"])
