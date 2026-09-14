@@ -25,6 +25,7 @@ import os
 import sys
 import secrets
 import threading
+import time
 import uuid
 from contextlib import asynccontextmanager
 
@@ -285,6 +286,68 @@ _MASK_LIMITER = anyio.CapacityLimiter(_MASK_CONCURRENCY)
 # separate locks). With it, one Vault (one connection, one lock) per org.
 _VAULTS_LOCK = threading.Lock()
 
+# ONE CONTAINER, ONE TENANT (pentest B2). `org_id` arrives in the request body and
+# selects which vault to read; with a shared gateway credential, a caller can read
+# ANY org's vault by changing it. When `PSEUDEX_ORG` is set the container is bound
+# to a single tenant and every request must name it — a compromised credential can
+# then reach only that tenant's own data. Unset keeps the multi-tenant shape (the
+# caller asserts org_id), which is only safe when one org owns the whole container.
+_BOUND_ORG = os.environ.get("PSEUDEX_ORG", "").strip()
+
+# Detok rate limit (pentest B1): /unmask* discloses real values, so a compromised
+# credential can trawl the vault. Legitimate detok tracks model throughput; a sweep
+# runs orders of magnitude faster. The cap is per-org, per-minute, generous by
+# default (a real agent stays well under it), and the durable trace is the `detoks`
+# audit table — the limiter only blunts an egregious sweep.
+_DETOK_WINDOW = 60.0
+_DETOK_MAX_PER_MIN = int(os.environ.get("PSEUDEX_DETOK_MAX_PER_MIN", "6000"))
+_DETOK_HITS: dict[str, list[float]] = {}
+_DETOK_LOCK = threading.Lock()
+
+
+def _check_org(org_id: str) -> "JSONResponse | None":
+    """403 when the container is bound to one tenant and the request names another."""
+    if _BOUND_ORG and org_id != _BOUND_ORG:
+        return JSONResponse(
+            {"error": "org_id not permitted on this instance",
+             "detail": "this container serves a single bound tenant"},
+            status_code=403,
+        )
+    return None
+
+
+def _detok_rate_ok(org_id: str) -> bool:
+    """False when this org has exceeded the per-minute detok cap."""
+    now = time.monotonic()
+    cutoff = now - _DETOK_WINDOW
+    with _DETOK_LOCK:
+        hits = _DETOK_HITS.setdefault(org_id, [])
+        hits[:] = [t for t in hits if t >= cutoff]
+        if len(hits) >= _DETOK_MAX_PER_MIN:
+            return False
+        hits.append(now)
+        return True
+
+
+def _audit_detok(org_id: str, actor: str, before: dict, after: dict,
+                 residual: list) -> None:
+    """Record that a detok call disclosed real values — counts only, never values
+    (pentest B1). `resolved` = texts where detok actually substituted something;
+    `misses` = substitutes that failed to resolve (a sweep of guessed tokens shows
+    as high misses and high call volume)."""
+    in_texts = _response_texts(before)
+    out_texts = _response_texts(after)
+    resolved = sum(1 for a, b in zip(in_texts, out_texts) if a != b)
+    AUDIT.record_detok(org_id, actor, resolved, len(residual))
+
+
+def _detok_actor(body: dict) -> str:
+    """Who is detokenizing. The gateway is automated, so it defaults to a marker
+    rather than being required (unlike /reveal, a human act) — but a caller MAY
+    name itself, and a named actor lands in the trace."""
+    actor = body.get("actor")
+    return actor.strip() if isinstance(actor, str) and actor.strip() else "gateway"
+
 
 def _vault(org_id: str) -> Vault:
     vault = _VAULTS.get(org_id)
@@ -498,6 +561,9 @@ async def mask(request: Request) -> JSONResponse:
         return blocked
     body = await request.json()
     org_id = str(body.get("org_id", "")) or "default"
+    blocked_org = _check_org(org_id)
+    if blocked_org:
+        return blocked_org
     agent_id = str(body.get("agent_id", ""))
     messages = body.get("messages")
     if not isinstance(messages, list):
@@ -550,6 +616,11 @@ async def mask(request: Request) -> JSONResponse:
 async def unmask(request: Request) -> JSONResponse:
     body = await request.json()
     org_id = str(body.get("org_id", "")) or "default"
+    blocked = _check_org(org_id)
+    if blocked:
+        return blocked
+    if not _detok_rate_ok(org_id):
+        return JSONResponse({"error": "detok rate limit exceeded"}, status_code=429)
     response = body.get("response")
     if not isinstance(response, dict):
         return JSONResponse({"error": "response must be an object"}, status_code=400)
@@ -568,6 +639,9 @@ async def unmask(request: Request) -> JSONResponse:
     # discloses nothing about the customer's data, and the caller needs them to
     # decide what to do — refuse the tool call, retry, or ask the model again.
     residual = _residual_for(result, org_id)
+    await anyio.to_thread.run_sync(
+        _audit_detok, org_id, _detok_actor(body), response, result, residual
+    )
     payload: dict[str, object] = {"response": result}
     if residual:
         payload["residual_tokens"] = residual
@@ -610,12 +684,21 @@ async def unmask_arguments_endpoint(request: Request) -> JSONResponse:
     """
     body = await request.json()
     org_id = str(body.get("org_id", "")) or "default"
+    blocked = _check_org(org_id)
+    if blocked:
+        return blocked
+    if not _detok_rate_ok(org_id):
+        return JSONResponse({"error": "detok rate limit exceeded"}, status_code=429)
     arguments = body.get("arguments")
     if not isinstance(arguments, list) or not all(isinstance(a, str) for a in arguments):
         return JSONResponse({"error": "arguments must be a list of strings"},
                             status_code=400)
     restored, residual = await anyio.to_thread.run_sync(
         _unmask_arguments_for, arguments, org_id, limiter=_MASK_LIMITER
+    )
+    resolved = sum(1 for a, b in zip(arguments, restored) if a != b)
+    await anyio.to_thread.run_sync(
+        AUDIT.record_detok, org_id, _detok_actor(body), resolved, len(residual)
     )
     # The same signal `/unmask` carries, and it matters MORE here: a substitute
     # that fails to resolve inside a tool call is a fake reaching the tool, which
@@ -658,6 +741,16 @@ async def unmask_chunk(request: Request) -> JSONResponse:
     Body: {org_id, delta, carry, flush} -> {text, carry}."""
     body = await request.json()
     org_id = str(body.get("org_id", "")) or "default"
+    blocked = _check_org(org_id)
+    if blocked:
+        return blocked
+    # No per-chunk rate limit or audit row here: this is the streaming flat-text
+    # leg (one SSE delta at a time), so a real stream is many chunks and the carry
+    # makes text differ from delta on almost every one — a per-chunk trace would be
+    # noise, not signal. It is also the weakest sweep vector (a value at a time via
+    # flat substitution, vs /unmask returning a whole detokenized response). The
+    # org bind above still stops cross-tenant reads; the audited+limited vectors are
+    # /unmask and /unmask_arguments.
     delta = body.get("delta", "")
     carry = body.get("carry", "")
     if not isinstance(delta, str) or not isinstance(carry, str):
@@ -740,6 +833,9 @@ async def spans(request: Request) -> JSONResponse:
         return blocked
     body = await request.json()
     org_id = str(body.get("org_id", "")) or "default"
+    blocked_org = _check_org(org_id)
+    if blocked_org:
+        return blocked_org
     texts = body.get("texts")
     if not isinstance(texts, list):
         return JSONResponse({"error": "texts must be a list"}, status_code=400)
