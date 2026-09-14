@@ -70,7 +70,8 @@ print(encode_public(Ed25519PrivateKey.from_private_bytes(base64.b64decode('$PSEU
 echo "building pseudex:local (verification key ${PUBKEY:0:12}…)"
 docker build -q -f "$ROOT/prototype/Dockerfile" \
     --build-arg "PSEUDEX_LICENSE_PUBKEY=$PUBKEY" \
-    --build-arg "PSEUDEX_TUNING_KEY=$PSEUDEX_TUNING_KEY" \
+    --secret "id=pseudex_tuning_key,env=PSEUDEX_TUNING_KEY" \
+    --build-arg "PSEUDEX_TUNING_KEY_ID=$(printf %s "$PSEUDEX_TUNING_KEY" | sha256sum | cut -c1-16)" \
     -t pseudex:local "$ROOT/prototype" >/dev/null
 
 docker compose -f "$HERE/compose.local.yml" up -d --build

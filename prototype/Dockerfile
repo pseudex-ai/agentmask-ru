@@ -50,10 +50,25 @@ RUN chmod +x entrypoint.sh
 # PSEUDEX_TUNING_KEY seals the blob (docs/tz-license-packaging §2.2, anti-patch
 # tie). The SAME key must reach the licensing server, which delivers it in every
 # lease so the engine can open its own tuning.
-ARG PSEUDEX_TUNING_KEY
+#
+# A SECRET MOUNT, NOT A BUILD-ARG — and this single-stage image is the reason
+# (Dockerfile.nuitka has the long version). An `ARG` lands in the metadata of
+# every later layer, and `docker history pseudex:source` printed the production
+# key seven times. `required=true` replaces the old `test -n` guard.
 COPY licensing/__init__.py licensing/assets_source.py licensing/pack.py /tmp/lic/licensing/
-RUN test -n "$PSEUDEX_TUNING_KEY" || (echo "PSEUDEX_TUNING_KEY build-arg is required" && exit 1) \
-    && PSEUDEX_TUNING_KEY="$PSEUDEX_TUNING_KEY" PYTHONPATH=/tmp/lic \
+#
+# THE FINGERPRINT IS THE CACHE KEY. BuildKit leaves secret contents out of the
+# layer cache on purpose, so a rotated key alone would hit the cache and ship
+# a blob sealed to the PREVIOUS key (measured: two keys, one blob). Sixteen hex
+# characters of the key's SHA-256 enter as an ordinary ARG — not the key — and
+# the RUN recomputes them from the mounted secret: a stale or invented id
+# stops the build instead of quietly reusing the cache.
+ARG PSEUDEX_TUNING_KEY_ID
+RUN --mount=type=secret,id=pseudex_tuning_key,required=true \
+       test -n "$PSEUDEX_TUNING_KEY_ID" || (echo "PSEUDEX_TUNING_KEY_ID build-arg is required" && exit 1) \
+    && [ "$(sha256sum /run/secrets/pseudex_tuning_key | cut -c1-16)" = "$PSEUDEX_TUNING_KEY_ID" ] \
+       || (echo "PSEUDEX_TUNING_KEY_ID does not match the mounted key" && exit 1) \
+    && PSEUDEX_TUNING_KEY="$(cat /run/secrets/pseudex_tuning_key)" PYTHONPATH=/tmp/lic \
        python -m licensing.pack --emit-tuning ./pseudex/_tuning_blob.py \
     && rm -rf /tmp/lic
 

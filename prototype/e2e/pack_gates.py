@@ -1,4 +1,4 @@
-"""The closing gate for packaging: P1-P9 against the compiled image.
+"""The closing gate for packaging: P1-P11 against the compiled image.
 
 Same rules as `gates.py`: every check runs against a real container, nothing is
 mocked, and each gate proves its precondition before checking its consequence.
@@ -41,7 +41,7 @@ from e2e import certs, fixtures  # noqa: E402
 from e2e.gates import (RESULTS, ADMIN, ORG, SIDECAR, compose, gate,  # noqa: E402
                        gateway_headers, sh, sh_input, set_env, wait_until)
 from licensing import assets_source  # noqa: E402
-from licensing.keys import encode_private, encode_public  # noqa: E402
+from licensing.keys import encode_private, encode_public, tuning_key_id  # noqa: E402
 
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent
@@ -81,9 +81,12 @@ def build_images(skip_build: bool) -> str:
     # The tuning key seals the compiled blob and is delivered in the lease. Like
     # the signing key it is baked into the image, so a fresh one forces a rebuild —
     # persist it across runs for `--skip-build`, and pin the SAME value into both
-    # the build-arg (seals) and the server env (delivers).
+    # the build secret (seals) and the server env (delivers). Into the
+    # environment, because that is where `--secret …,env=` reads it — see
+    # `gates.py::build_images` for why not a build-arg.
     tuning_b64 = os.environ.get("PSEUDEX_TUNING_KEY", "") \
         or base64.b64encode(os.urandom(32)).decode("ascii")
+    os.environ["PSEUDEX_TUNING_KEY"] = tuning_b64
     certs.generate(_HERE / "certs", "license")
 
     # The licensing image is always rebuilt, even with --skip-build: it takes
@@ -97,7 +100,8 @@ def build_images(skip_build: bool) -> str:
             started = time.monotonic()
             sh(["docker", "build", "-f", str(dockerfile),
                 "--build-arg", f"PSEUDEX_LICENSE_PUBKEY={public_b64}",
-                "--build-arg", f"PSEUDEX_TUNING_KEY={tuning_b64}",
+                "--secret", "id=pseudex_tuning_key,env=PSEUDEX_TUNING_KEY",
+                "--build-arg", f"PSEUDEX_TUNING_KEY_ID={tuning_key_id(tuning_b64)}",
                 "-t", tag, str(_ROOT)], True, 5400)
             print(f"  {tag} built in {(time.monotonic() - started) / 60:.1f} min")
 
@@ -535,6 +539,76 @@ def gate_p5(workers: int) -> bool:
                 + (f" reasons={distinct} first={reasons[0][:90]!r}" if reasons else ""))
 
 
+def _image_carries(image: str, probe: str) -> dict[str, int]:
+    """How many times `probe` occurs in the three places a build-time value can
+    survive: the config (`docker image inspect`), the layer metadata (`docker
+    history`, where every `ARG` used by a later `RUN` is printed) and the
+    layer CONTENTS (`docker save`: every file of every layer, plus the image
+    config with its history — so a hit here without one in `history` is a file).
+
+    The probe travels in the environment of the shell, never in its argument
+    list: `ps` on the runner would show it, and P11's probe is a key."""
+    counts: dict[str, int] = {}
+    for name, pipeline in (
+        ("inspect", f"docker image inspect {image} | grep -c -F -e \"$PROBE\""),
+        ("history", f"docker history --no-trunc --format '{{{{.CreatedBy}}}}' {image} | grep -c -F -e \"$PROBE\""),
+        ("layers", f"docker save {image} | tar -xO 2>/dev/null | grep -c -a -F -e \"$PROBE\""),
+    ):
+        proc = subprocess.run(["sh", "-c", pipeline], capture_output=True, text=True,
+                              timeout=600, env={**os.environ, "PROBE": probe})
+        # `grep -c` prints the count and exits 1 on zero matches: the count is the
+        # answer either way, and an empty stdout is a probe that did not run.
+        counts[name] = int(proc.stdout.strip() or "-1")
+    return counts
+
+
+def gate_p11(public_b64: str) -> bool:
+    """The tuning key is in NEITHER image — not in the config, not in the layer
+    metadata, not in any file — and the probes that say so are proved able to see.
+
+    The key used to arrive as `ARG PSEUDEX_TUNING_KEY`, and an ARG is written
+    into the metadata of every layer built after it: `docker history
+    pseudex:source` printed the key seven times. The multi-stage release image
+    did not carry it only because the ARG lived in the discarded build stage —
+    an accident of layout, not a property anyone had asserted. It now enters as
+    a secret mount, and this gate is the assertion.
+
+    THREE PROBES, EACH WITH ITS OWN POSITIVE CONTROL OVER THE SAME STREAM. A
+    `grep -c` over an image that was not there, a format string that printed
+    nothing, a `docker save` that failed — all of them count zero, and zero is
+    the answer this gate wants to hear. So before the key is looked for, each
+    stream must show a value known to be in it: `PSEUDEX_DB_DIR` is an `ENV` of
+    the final stage (config and history), and `pseudex.service` is a module
+    name that survives in the binary by construction (layers — the control P1
+    already stands on). On the SOURCE image the layers control is the
+    verification key itself, baked into `_release.py` as plain text.
+
+    What the layer probe can and cannot say on the compiled image: Nuitka keeps
+    string constants in a compressed blob, so a key sitting in a constant would
+    not be greppable there. The key never becomes a constant — `pack.py` emits
+    only the sealed BLOB and its VERSION — and that half is checked on the
+    source image, where the same generated module is a plain `.py` file.
+    """
+    tuning_b64 = os.environ.get("PSEUDEX_TUNING_KEY", "")
+    if not tuning_b64:
+        return gate("P11 the tuning key is in neither image", False,
+                    "PSEUDEX_TUNING_KEY is not in the environment — build_images sets it")
+    details: list[str] = []
+    ok = True
+    for image, layers_control in ((SOURCE_IMAGE, public_b64), (COMPILED_IMAGE, "pseudex.service")):
+        env_control = _image_carries(image, "PSEUDEX_DB_DIR")
+        seen_layers = _image_carries(image, layers_control)["layers"]
+        key = _image_carries(image, tuning_b64)
+        # Every negative below stands on a positive over the same stream.
+        controls_ok = env_control["inspect"] > 0 and env_control["history"] > 0 and seen_layers > 0
+        clean = key["inspect"] == 0 and key["history"] == 0 and key["layers"] == 0
+        ok = ok and controls_ok and clean
+        details.append(f"{image}: controls(inspect={env_control['inspect']} "
+                       f"history={env_control['history']} layers={seen_layers}) "
+                       f"key(inspect={key['inspect']} history={key['history']} layers={key['layers']})")
+    return gate("P11 the tuning key is in neither image", ok, "; ".join(details))
+
+
 def gate_p10() -> bool:
     """Релизный бинарник меряет СЕБЯ, и мера совпадает с файлом на диске.
 
@@ -766,7 +840,7 @@ def main() -> None:
             f"Либо запускайте без P3:  python3 e2e/pack_gates.py --only P1,P2,P4")
 
     started = time.monotonic()
-    build_images(args.skip_build)
+    public_b64 = build_images(args.skip_build)
     reports = _HERE / "reports"
     reports.mkdir(exist_ok=True)
 
@@ -830,6 +904,8 @@ def main() -> None:
         # that wants neither. The call moves instead.
         if wanted("P10"):
             gate_p10()
+        if wanted("P11"):
+            gate_p11(public_b64)
         if wanted("P6"):
             gate_p6()
     finally:
