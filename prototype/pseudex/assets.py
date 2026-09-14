@@ -386,10 +386,25 @@ class Assets:
         Called on the renewal path too, so it must be atomic from a reader's
         point of view: the new struct is built fully before it is published, and
         publishing is a single attribute assignment."""
-        payload = json.loads(zlib.decompress(plaintext).decode("utf-8"))
-        built = _build(payload)
+        # Decompress into a MUTABLE buffer and zero it after parsing. The clean,
+        # contiguous ~8 MB JSON of the whole payload is exactly what a RAM carve
+        # `json.loads`'d in one step (pentest W2-CLONE). `_build` copies out what
+        # it needs into frozensets and compiled patterns, so once it has run this
+        # buffer is dead weight — and one we CAN scrub, unlike an immutable
+        # `bytes`/`str`. This does not make the dump clean (the frozenset members
+        # are still individual str objects in RAM, and Python cannot zero a str —
+        # see `unload`), but it removes the single biggest, easiest-to-carve
+        # artifact: the contiguous JSON blob.
+        raw = bytearray(zlib.decompress(plaintext))
+        try:
+            payload = json.loads(raw)
+            built = _build(payload)
+        finally:
+            raw[:] = b"\x00" * len(raw)
         with self._lock:
             self._current = built
+        del payload
+        gc.collect()
 
     def unload(self) -> None:
         """Drop the assets so the objects are actually collected.
