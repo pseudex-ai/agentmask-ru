@@ -30,6 +30,7 @@ import sys
 import uvicorn
 
 from pseudex import preflight, sqlite_setup, vault_key, vault_migrate
+from pseudex.hardening import harden_process
 
 # What the volume looks like, in one word, for the header line of the roles
 # below. The per-file verdicts follow it — this is the sentence an operator reads
@@ -262,6 +263,13 @@ def main() -> None:
     # lowercase. One variable, two consumers, so normalize at each of them.
     log_level = os.environ.get("PSEUDEX_LOG_LEVEL", "info").lower()
     role = os.environ.get("PSEUDEX_ROLE", "engine")
+    # HARDEN BEFORE ANY ROLE TOUCHES THE TUNING OR THE VAULT. Closes the
+    # disk-persistence vectors (core dump, swap) and raises the co-tenant bar
+    # (non-dumpable); best-effort, never fatal. See pseudex/hardening.py and
+    # docs/tz-tuning-in-lease.md for the honest scope (root-in-live-RAM remains).
+    _h = harden_process()
+    print(f"pseudex hardening: core={_h['core']} dumpable={_h['dumpable']} "
+          f"mlock={_h['mlock']}", file=sys.stderr)
     if role == "ui":
         _serve_ui(log_level)
         return

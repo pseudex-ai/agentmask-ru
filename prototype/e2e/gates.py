@@ -1354,6 +1354,47 @@ def gate_l22(image: str) -> bool:
                 f"roomy_exit={big_code} roomy_reached_licence={passed_through}")
 
 
+def gate_l23() -> bool:
+    """The worker hardens its own memory: no core file, non-dumpable, swap-locked.
+
+    The tuning lives decrypted in RAM while the engine serves — root with
+    CAP_SYS_PTRACE can read it (a theorem, and the POSITIVE CONTROL here: the
+    privileged `_memscan` still finds the marker, so the memory IS scannable and
+    this gate is not one that cannot go red). What this gate asserts is the bar
+    that was raised (pseudex/hardening.py, docs/tz-tuning-in-lease.md):
+
+      * VmLck > 0     — mlockall took, the tuning is never swapped to disk;
+      * non-dumpable  — an UNPRIVILEGED sibling (no SYS_PTRACE) is refused at OPEN
+                        of /proc/<pid>/mem where the privileged one succeeds. That
+                        gap is the whole point of PR_SET_DUMPABLE=0;
+      * core off      — the startup line reports RLIMIT_CORE=0 (no crash-time dump).
+    """
+    privileged_hits, _ = _memscan()   # positive control: root CAN read the RAM
+    cid = compose(["ps", "-q", "sidecar"], False, 30).stdout.strip().splitlines()[0]
+    pid = sorted(worker_pids(24))[0]
+
+    status = sh(["docker", "run", "--rm", f"--pid=container:{cid}",
+                 "python:3.12-slim", "sh", "-c",
+                 f"grep VmLck /proc/{pid}/status 2>/dev/null || echo 'VmLck: -1 kB'"],
+                False, 60).stdout
+    match = re.search(r"VmLck:\s*(-?\d+)", status)
+    vmlck = int(match.group(1)) if match else -1
+
+    # UNPRIVILEGED open must be refused; python's PermissionError is the clean
+    # signal (dd's offset-0 read can fail for unrelated reasons).
+    unpriv = sh(["docker", "run", "--rm", f"--pid=container:{cid}",
+                 "python:3.12-slim", "python3", "-c",
+                 f"open('/proc/{pid}/mem','rb')"], False, 60)
+    unpriv_refused = unpriv.returncode != 0 and "PermissionError" in unpriv.stderr
+
+    hardening_logged = "hardening:" in logs("sidecar") and "core=ok" in logs("sidecar")
+
+    ok = privileged_hits > 0 and vmlck > 0 and unpriv_refused and hardening_logged
+    return gate("L23 the worker hardens its memory (no core, non-dumpable, mlock)",
+                ok, f"root_can_read={privileged_hits > 0} VmLck={vmlck}kB "
+                    f"unpriv_open_refused={unpriv_refused} core_off_logged={hardening_logged}")
+
+
 def gate_l15() -> bool:
     """No real value in any log — and the logs must be REAL logs.
 
