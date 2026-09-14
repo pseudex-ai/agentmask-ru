@@ -16,6 +16,25 @@ x-logging: &logging
   driver: json-file
   options: { max-size: "50m", max-file: "5" }
 
+# A CONFIG FILE FROM THE CHECKOUT IS NOT PART OF THE CONTAINER'S IDENTITY.
+# Compose decides whether to recreate a container by hashing the service
+# definition (pkg/compose/hash.go: the ServiceConfig struct, JSON-marshalled)
+# — the image, the environment, the mount PATHS. The CONTENT behind a bind
+# mount is not in it, so a tag that changes only `Caddyfile`, `alerts.yml` or
+# the bot's `config.yaml` leaves every container running on the old file, and
+# `up -d` reports nothing to do. The rendered ones are worse: the init
+# re-renders into the volume and the consumer never re-reads it.
+#
+# The agent therefore hands compose the tree hash of `deploy/` at the tag it
+# is deploying (`git rev-parse <tag>:deploy`), and every service that mounts a
+# file from the checkout carries it in its environment. A tag that touches
+# `deploy/` recreates those containers; one that does not, leaves them. The
+# two rendered configs propagate through `depends_on: … restart: true`: the
+# consumer is stopped, the init re-renders, the consumer starts on the new
+# file. Empty on a stand raised by hand — there is no tag to name, and the
+# stand is rebuilt from scratch anyway.
+x-conf-rev: &conf-rev ${PSEUDEX_CONF_REV:-}
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -212,6 +231,7 @@ services:
     logging: *logging
     environment:
       SITE_HOST: ${SITE_HOST}
+      PSEUDEX_CONF_REV: *conf-rev   # Caddyfile is mounted from the checkout
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -338,9 +358,13 @@ services:
   # `profiles:` — то есть по умолчанию НЕ ПОДНИМАЕТСЯ. Сторож (`watch.sh`) уже
   # шлёт тревоги в телеграм и переживает падение чего угодно; эти два
   # контейнера дают историю и графики, а не сигнал, и платить за них памятью
-  # на маленькой машине никто не обязан. Включается одной строкой:
+  # на маленькой машине никто не обязан. Включается одной строкой в `.env`:
   #
-  #     docker compose --profile observability up -d
+  #     COMPOSE_PROFILES=observability,support
+  #
+  # В `.env`, А НЕ ФЛАГОМ `--profile`: агент выкатывает `up -d` без флагов, и
+  # сервис, включённый флагом однажды, он не обновляет и не сносит как лишний
+  # (compose не считает отключённые профилем сервисы orphan-ами).
   #
   # ПОЛНЫЙ ТОКЕН ПРИЕЗЖАЕТ ФАЙЛОМ, И ТОЛЬКО ФАЙЛОМ.
   #
@@ -376,13 +400,21 @@ services:
       PSEUDEX_SUPPORT_BOT_TOKEN: ${PSEUDEX_SUPPORT_BOT_TOKEN:-}
       PSEUDEX_SUPPORT_CHAT: ${PSEUDEX_SUPPORT_CHAT:-}
       PSEUDEX_SUPPORT_OWNER: ${PSEUDEX_SUPPORT_OWNER:-}
+      PSEUDEX_CONF_REV: *conf-rev   # config.yaml template from the checkout
+    # FOUR DOLLARS IN `eval "val=\$$$$v"`, NOT THREE. Compose turns `$$` into
+    # `$` and interpolates a lone `$v` itself — `\$$$v` reached the shell as
+    # `val=\$`, the guard read a literal "$" as "set", and an empty token went
+    # straight into the render. `docker compose config` said so («"v" variable
+    # is not set») and nobody was listening; checks.yml now refuses that
+    # warning. A YAML comment, not a shell one: inside the block scalar a
+    # comment is still interpolated.
     command:
       - sh
       - -c
       - |
         set -eu
         for v in PSEUDEX_SUPPORT_BOT_TOKEN PSEUDEX_SUPPORT_CHAT PSEUDEX_SUPPORT_OWNER; do
-          eval "val=\$$$v"; [ -n "$$val" ] || { echo "в deploy/.env пуст $$v — бот поддержки не поднимется"; exit 1; }
+          eval "val=\$$$$v"; [ -n "$$val" ] || { echo "в deploy/.env пуст $$v — бот поддержки не поднимется"; exit 1; }
         done
         sed -e "s|__PSEUDEX_SUPPORT_BOT_TOKEN__|$$PSEUDEX_SUPPORT_BOT_TOKEN|" \
             -e "s|__PSEUDEX_SUPPORT_CHAT__|$$PSEUDEX_SUPPORT_CHAT|g" \
@@ -407,7 +439,10 @@ services:
     environment:
       MONGO_URI: mongodb://supportbot-db:27017/support
     depends_on:
-      supportbot-config: { condition: service_completed_successfully }
+      # `restart: true` — WITHOUT IT A RE-RENDER IS WRITTEN AND NEVER READ. The
+      # init is recreated when `.env` or the template changes, renders into the
+      # volume, and the bot would keep the config it started with.
+      supportbot-config: { condition: service_completed_successfully, restart: true }
       supportbot-db: { condition: service_healthy }
 
   supportbot-db:
@@ -455,6 +490,7 @@ services:
       # значения ДО отбора профилей, и `:?` здесь ломал бы обычный `up -d`.
       # Пустоту ловит скрипт рендера ниже — громко и с причиной.
       PSEUDEX_TG_CHAT: ${PSEUDEX_TG_CHAT:-}
+      PSEUDEX_CONF_REV: *conf-rev   # alertmanager.yml template from the checkout
     command:
       - sh
       - -c
@@ -499,13 +535,18 @@ services:
       - --web.external-url=https://${SITE_HOST:-pseudex.ru}/grafana
     expose: ["9093"]
     depends_on:
-      alertmanager-config: { condition: service_completed_successfully }
+      # `restart: true` — see supportbot: a changed chat id or template is
+      # rendered into the volume, and Alertmanager re-reads it only if
+      # restarted. Compose restarts it after the init, not before.
+      alertmanager-config: { condition: service_completed_successfully, restart: true }
 
   prometheus:
     image: prom/prometheus:v3.1.0
     profiles: ["observability"]
     restart: unless-stopped
     logging: *logging
+    environment:
+      PSEUDEX_CONF_REV: *conf-rev   # prometheus.yml, alerts.yml from the checkout
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
@@ -531,6 +572,8 @@ services:
     profiles: ["observability"]
     restart: unless-stopped
     logging: *logging
+    environment:
+      PSEUDEX_CONF_REV: *conf-rev   # loki.yml from the checkout
     command: ["-config.file=/etc/loki/loki.yml"]
     volumes:
       - ./loki.yml:/etc/loki/loki.yml:ro
@@ -545,6 +588,8 @@ services:
     profiles: ["observability"]
     restart: unless-stopped
     logging: *logging
+    environment:
+      PSEUDEX_CONF_REV: *conf-rev   # promtail.yml from the checkout
     command: ["-config.file=/etc/promtail/promtail.yml"]
     volumes:
       - ./promtail.yml:/etc/promtail/promtail.yml:ro
@@ -560,6 +605,7 @@ services:
     restart: unless-stopped
     logging: *logging
     environment:
+      PSEUDEX_CONF_REV: *conf-rev   # dashboards and provisioning from the checkout
       # `:-`, А НЕ `:?`: Compose подставляет переменные ДО отбора профилей,
       # поэтому обязательная переменная у сервиса под
       # `profiles: ["observability"]` требовалась даже при обычном

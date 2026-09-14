@@ -153,9 +153,19 @@ if [ "${LONGEST_START:-0}" -ge "$WAIT_TIMEOUT" ]; then
 Выкатка откатывалась бы ложно. Поднимите WAIT_TIMEOUT в agent.sh."
     exit 1
 fi
+# PSEUDEX_CONF_REV — ДЕРЕВО `deploy/` ТОГО ТЕГА, ЧТО ВЫКАТЫВАЕТСЯ. Compose
+# решает «пересоздавать ли контейнер» по хешу описания сервиса, и содержимое
+# файла за bind-mount в этот хеш не входит: тег, поменявший только Caddyfile
+# или alerts.yml, оставлял контейнеры на старом файле, а `up -d` отвечал
+# «нечего делать». Сервисы, монтирующие файлы из чекаута, несут эту
+# переменную в environment (compose.yml, `x-conf-rev`), и смена дерева их
+# пересоздаёт. Откат передаёт дерево ПРЕЖНЕГО тега тем же путём.
 deploy() {
-    VERSION="${1#v}" docker compose -f "$HERE/compose.yml" pull --quiet
-    VERSION="${1#v}" docker compose -f "$HERE/compose.yml" up -d --remove-orphans \
+    conf_rev="$(git rev-parse "${1}:deploy")" || return 1
+    VERSION="${1#v}" PSEUDEX_CONF_REV="$conf_rev" \
+        docker compose -f "$HERE/compose.yml" pull --quiet
+    VERSION="${1#v}" PSEUDEX_CONF_REV="$conf_rev" \
+        docker compose -f "$HERE/compose.yml" up -d --remove-orphans \
         --wait --wait-timeout "$WAIT_TIMEOUT"
 }
 

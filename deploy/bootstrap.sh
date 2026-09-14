@@ -230,6 +230,9 @@ SITE_HOST=pseudex.ru
 LICENSE_HOST=license.pseudex.ru
 REGISTRY=cr.yandex/ЗАПОЛНИТЕ
 PSEUDEX_ENV_NAME=prod
+# Профили — здесь, не в командной строке: агент делает `up -d` без флагов и
+# обновляет только то, что compose видит через эту переменную.
+COMPOSE_PROFILES=observability,support
 
 POSTGRES_PASSWORD=ЗАПОЛНИТЕ
 PSEUDEX_SECRET_KEY=ЗАПОЛНИТЕ

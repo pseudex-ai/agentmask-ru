@@ -90,7 +90,7 @@
 | 4 ✅ | **`--read-data` целиком**, комментарий исправить | 5% = один pack `[A]` | 15 мин |
 | 5 ✅ | **actionlint + zizmor pedantic** в checks.yml; `${{ }}` из `run:` — все 16 | 3/7 дефектов статически `[A]` | 1 ч |
 | 6 ✅ | **`concurrency`** на ship/release/checks/gates; агенту — ветка «образа ещё нет» | гонка тегов, 50 мин crit `[A]` | 1 ч |
-| 7 | `restart: true` на `depends_on` init-сервисов; `COMPOSE_PROFILES` в `.env` | рендер без потребителя; профили не обновляются `[A]` | 20 мин |
+| 7 ✅ | `restart: true` на `depends_on` init-сервисов; `COMPOSE_PROFILES` в `.env`; `PSEUDEX_CONF_REV` (дерево `deploy/` тега) в environment всех сервисов с bind-mount конфигов — содержимое файла не входит в хеш сервиса (`hash.go`) | рендер без потребителя; профили не обновляются; конфиг-only тег не применяется `[A]` | 20 мин |
 | 8 | `--mount=type=secret` для tuning key; гейт P11 с положительным контролем | `pseudex:source` + `ps` + кеш `[A]` | 2,5 ч |
 | 9 | Nuitka ccache: cache-mount + actions/cache + cache-dance; `NUITKA_JOBS=nproc` | 33 → 10–14 мин `[C]` | 1 день |
 | 10 | Deny `DeleteObjectVersion`+`PutLifecycleConfiguration` аудиту; версии 30 дн; `--retry-lock 15m` | второй ключ стирает навсегда `[A]` | 45 мин |

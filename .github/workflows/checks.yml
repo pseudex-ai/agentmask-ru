@@ -220,6 +220,20 @@ jobs:
             [ -n "$value" ] || export "$name=placeholder"
           done
           docker compose -f deploy/compose.yml config >/dev/null
+          # A «variable is not set» WARNING IS A DEFECT, NOT NOISE. Compose
+          # interpolates `$name` inside `command:` before the shell ever runs,
+          # so a warning here names a shell variable compose just blanked —
+          # `eval "val=\$$$v"` in the bot's render became `val=\$`, and its
+          # empty-token guard passed on a literal "$". Both profiles on, so
+          # the profiled services are interpolated too.
+          warnings="$(COMPOSE_PROFILES=observability,support \
+                      docker compose -f deploy/compose.yml config 2>&1 >/dev/null \
+                      | grep 'variable is not set' || true)"
+          if [ -n "$warnings" ]; then
+            echo "$warnings"
+            echo "::error::compose interpolated a variable that should have been \$\$-escaped"
+            exit 1
+          fi
 
       # СЕРВИС ПОД ПРОФИЛЕМ НЕ ИМЕЕТ ПРАВА ТРЕБОВАТЬ ПЕРЕМЕННУЮ.
       #

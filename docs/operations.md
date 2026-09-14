@@ -319,7 +319,8 @@ SQLCipher и молча свалится в `cp` живой WAL-базы) и е�
 # в compose делает сам Compose, и токен оказался бы в `docker inspect`.
 mkdir -p secrets && printf %s "$PSEUDEX_LICENSE_ADMIN_TOKEN" > secrets/license-admin-token
 chmod 600 secrets/license-admin-token
-docker compose --profile observability up -d      # prometheus + grafana
+echo 'COMPOSE_PROFILES=observability,support' >> .env   # не флагом: агент делает up -d без флагов
+docker compose up -d                              # prometheus + grafana + alertmanager + бот
 ssh -L 3000:127.0.0.1:3000 <хост>                 # Grafana смотрят через туннель
 ```
 
