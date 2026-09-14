@@ -1,0 +1,10 @@
+# zizmor runs in checks.yml under --persona=pedantic, and this file is the
+# whole list of what it is told to accept. Every entry names its reason; an
+# entry without one is a finding somebody silenced.
+rules:
+  # The ship job pushes a tag with the checkout's own token, so
+  # `persist-credentials: false` there would break the one thing it does.
+  # Every other checkout in the repository sets it.
+  artipacked:
+    ignore:
+      - ship.yml

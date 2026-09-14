@@ -1,0 +1,22 @@
+# Actions are pinned by commit SHA (tj-actions/changed-files, March 2025: a
+# moving tag re-pointed at a malicious commit reached every `@v45` user). A
+# pin that nobody moves rots instead, so this is the half that moves them: a
+# PR per bump, the `# vX.Y.Z` comment kept in step, and checks.yml's zizmor
+# refusing any hand edit that lands unpinned.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    # A release younger than a week is not bumped: the compromised
+    # changed-files tag lived for about a day before it was reported, and a
+    # pin that follows a tag the hour it moves has re-created the moving tag.
+    cooldown:
+      default-days: 7
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Moscow
+    groups:
+      actions:
+        patterns: ["*"]

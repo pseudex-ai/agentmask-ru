@@ -15,6 +15,9 @@
 
 name: backup-audit
 
+# No checkout, nothing touches the repository: the token holds nothing.
+permissions: {}
+
 on:
   schedule:
     # 06:20 UTC — после ночного бэкапа (он идёт в полночь по циклу контейнера) и
@@ -36,6 +39,7 @@ concurrency:
 
 jobs:
   audit:
+    name: restore-verify the offsite repository
     runs-on: ubuntu-latest
     env:
       RESTIC_REPOSITORY: ${{ secrets.RESTIC_REPOSITORY }}
@@ -137,6 +141,8 @@ jobs:
           restic check --read-data --retry-lock 15m
 
       - name: НАСТОЯЩЕЕ восстановление базы лицензий
+        env:
+          EXPECT_EMPTY: ${{ vars.EXPECT_EMPTY_LICENSE_DB }}
         # ЭТО И ЕСТЬ ПРОВЕРКА. Всё выше подтверждает, что байты на месте; только
         # это подтверждает, что из них получается работающая база — та самая,
         # которую нельзя пересобрать из кода и потеря которой останавливает
@@ -146,7 +152,7 @@ jobs:
           mkdir -p /tmp/restored
           restic restore latest --target /tmp/restored \
             --include '/backups/license-*.db'
-          db="$(ls -1t /tmp/restored/backups/license-*.db 2>/dev/null | head -1)"
+          db="$(find /tmp/restored/backups -name 'license-*.db' -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)"
           if [ -z "${db}" ]; then
             echo "::error::в снапшоте нет ни одной копии базы лицензий"
             exit 1
@@ -163,7 +169,7 @@ jobs:
           # приехавшая вместо полной, выглядит идеально по всем предыдущим
           # проверкам. Условие снимается ровно один раз — когда первый клиент
           # ещё не куплен; после этого оно обязано быть строгим.
-          if [ "${keys}" -eq 0 ] && [ "${{ vars.EXPECT_EMPTY_LICENSE_DB }}" != "true" ]; then
+          if [ "${keys}" -eq 0 ] && [ "${EXPECT_EMPTY}" != "true" ]; then
             echo "::error::база лицензий восстановилась ПУСТОЙ"
             exit 1
           fi
@@ -193,19 +199,24 @@ jobs:
 
       - name: сказать, чем кончилось
         if: always()
+        env:
+          TG_TOKEN: ${{ secrets.PSEUDEX_TG_TOKEN }}
+          TG_CHAT: ${{ secrets.PSEUDEX_TG_CHAT }}
+          JOB_STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         # УСПЕХ ТОЖЕ СООБЩАЕТСЯ, И РЕЖЕ. Канал, который молчит, когда всё
         # хорошо, неотличим от канала, который сломался: раз в неделю приходит
         # подтверждение, что проверка вообще бежит.
         run: |
           set -eu
-          [ -n "${{ secrets.PSEUDEX_TG_TOKEN }}" ] || exit 0
-          if [ "${{ job.status }}" = "success" ]; then
+          [ -n "$TG_TOKEN" ] || exit 0
+          if [ "$JOB_STATUS" = "success" ]; then
             [ "$(date -u +%u)" = "1" ] || exit 0
             text="🟢 Бэкапы: проверка прошла. Последняя копия ${SNAP_AGE_H} ч. назад, ключей клиентов ${RESTORED_KEYS}."
           else
-            text="🔴 БЭКАПЫ: ПРОВЕРКА ПРОВАЛЕНА. Копии вне хоста под вопросом — это единственное, что остаётся после отказа машины. ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            text="🔴 БЭКАПЫ: ПРОВЕРКА ПРОВАЛЕНА. Копии вне хоста под вопросом — это единственное, что остаётся после отказа машины. ${RUN_URL}"
           fi
           curl -sS -o /dev/null \
-            "https://api.telegram.org/bot${{ secrets.PSEUDEX_TG_TOKEN }}/sendMessage" \
-            --data-urlencode "chat_id=${{ secrets.PSEUDEX_TG_CHAT }}" \
+            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TG_CHAT}" \
             --data-urlencode "text=${text}"
