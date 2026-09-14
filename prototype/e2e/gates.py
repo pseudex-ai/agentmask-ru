@@ -1457,6 +1457,9 @@ def main() -> None:
         if wanted("L22"):
             run_gate("L22", gate_l22, args.image)
 
+        if wanted("L23"):
+            run_gate("L23", gate_l23)
+
         if wanted("L15"):
             run_gate("L15", gate_l15)
     finally:

@@ -32,6 +32,12 @@ services:
 
   sidecar:
     image: "${PSEUDEX_IMAGE:-pseudex:source}"
+    # mlockall needs RLIMIT_MEMLOCK above the resident set (~350 MB/worker) or it
+    # fails and the tuning could be swapped to disk. The customer's runtime must
+    # raise it too (docs/integration.md); the stand raises it so gate L23 can
+    # prove mlock actually took (VmLck>0).
+    ulimits:
+      memlock: -1
     environment:
       PSEUDEX_LICENSE_URL: https://license:8443
       PSEUDEX_LICENSE_KEY: "${PSEUDEX_KEY}"
