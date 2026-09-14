@@ -12,8 +12,6 @@ carries no tuning material at all) lives in `e2e/pack_gates.py` P2/P11/P12.
 
 Run:  python3 test_tuning_lease_security.py
 """
-import inspect
-import re
 import sys
 import zlib
 from pathlib import Path
@@ -80,7 +78,6 @@ def test_a2_offline_attack_is_dead() -> None:
     engine's DEPENDENCE on it (tested above) and the shipping of it (pack_gates
     P2/P11). Here we assert the source tree tracks no such module and testkit
     does not regenerate one."""
-    tracked = (_HERE / "pseudex" / "_tuning_blob.py")
     testkit_src = (_HERE / "testkit.py").read_text()
     regenerated = "emit_tuning_module" in testkit_src
     pack_src = (_HERE / "licensing" / "pack.py").read_text()

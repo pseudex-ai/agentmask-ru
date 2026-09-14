@@ -14,8 +14,7 @@ services:
       PSEUDEX_LEASE_TTL_SECONDS: "${PSEUDEX_LEASE_TTL_SECONDS:-60}"
       PSEUDEX_GRACE_SECONDS: "${PSEUDEX_GRACE_SECONDS:-120}"
       PSEUDEX_SIGNING_KEY: "${PSEUDEX_SIGNING_KEY}"
-      # Ключ, которым запечатан вкомпилированный блоб тюнинга. Сервер кладёт его в
-      # каждую аренду, чтобы движок мог открыть свой тюнинг; ДОЛЖЕН совпадать с
+      # Тюнинг едет в лизе (docs/tz-tuning-in-lease.md) — отдельного ключа нет.
       # Админка стенда под токеном, как и в проде. Гейты ходят им же.
       PSEUDEX_LICENSE_ADMIN_TOKEN: "${PSEUDEX_LICENSE_ADMIN_TOKEN:-e2e-admin-token}"
       PSEUDEX_LICENSE_CERT: /certs/server.pem

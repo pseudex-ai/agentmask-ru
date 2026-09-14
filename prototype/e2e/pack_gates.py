@@ -552,7 +552,7 @@ def _image_carries(image: str, probe: str) -> dict[str, int]:
     return counts
 
 
-def gate_p11(public_b64: str) -> bool:
+def gate_p11() -> bool:
     """NO COMPILED TUNING SHIPS — the A2 regression (docs/tz-tuning-in-lease.md).
 
     The tuning used to be compiled into the engine as a static-key-sealed blob
@@ -570,16 +570,26 @@ def gate_p11(public_b64: str) -> bool:
     control P1 stands on) and `PSEUDEX_DB_DIR` (a final-stage ENV) are the
     positives; `_tuning_blob` (the module) and the tuning probes are the negatives.
     Also a hard filesystem check: no file named `_tuning_blob*` under /app."""
-    del public_b64  # no tuning key exists anymore; the control is a module name
     details: list[str] = []
     ok = True
     for image in (SOURCE_IMAGE, COMPILED_IMAGE):
         env_control = _image_carries(image, "PSEUDEX_DB_DIR")
         seen_service = _image_carries(image, "pseudex.service")["layers"]
         blob = _image_carries(image, "_tuning_blob")
+        # THE `find` NEGATIVE NEEDS ITS OWN POSITIVE over the same stream
+        # (CLAUDE.md part three): a `find` that could not run also prints nothing,
+        # and "nothing" is the answer this check wants to hear. `entrypoint.sh`
+        # is COPY-ed into both images, so the control find MUST return it — if it
+        # comes back empty the `find` stream is broken and the gate refuses to
+        # certify rather than pass on an unread filesystem.
+        finder = ("find /app -name %s 2>/dev/null | head")
+        control_find = sh(["docker", "run", "--rm", "--entrypoint", "sh", image, "-c",
+                           finder % "'entrypoint*'"], False, 120).stdout.strip()
         listing = sh(["docker", "run", "--rm", "--entrypoint", "sh", image, "-c",
-                      "find /app -name '_tuning_blob*' 2>/dev/null | head"], False, 120).stdout.strip()
-        controls_ok = env_control["inspect"] > 0 and env_control["history"] > 0 and seen_service > 0
+                      finder % "'_tuning_blob*'"], False, 120).stdout.strip()
+        find_works = bool(control_find)
+        controls_ok = (env_control["inspect"] > 0 and env_control["history"] > 0
+                       and seen_service > 0 and find_works)
         clean = blob["inspect"] == 0 and blob["history"] == 0 and blob["layers"] == 0 and not listing
         ok = ok and controls_ok and clean
         details.append(f"{image}: controls(inspect={env_control['inspect']} "
@@ -819,7 +829,7 @@ def main() -> None:
             f"Либо запускайте без P3:  python3 e2e/pack_gates.py --only P1,P2,P4")
 
     started = time.monotonic()
-    public_b64 = build_images(args.skip_build)
+    build_images(args.skip_build)  # builds images; return (pubkey) no longer needed by gates
     reports = _HERE / "reports"
     reports.mkdir(exist_ok=True)
 
@@ -884,7 +894,7 @@ def main() -> None:
         if wanted("P10"):
             gate_p10()
         if wanted("P11"):
-            gate_p11(public_b64)
+            gate_p11()
         if wanted("P6"):
             gate_p6()
     finally:
