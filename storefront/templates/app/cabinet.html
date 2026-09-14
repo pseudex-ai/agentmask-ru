@@ -94,6 +94,29 @@
       восстановить прежний не может никто, включая нас.</span>
   </form>
 
+  <h3 id="payer" style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Плательщик</h3>
+  {% comment %}
+    СПРАШИВАЕТСЯ ЗДЕСЬ, А НЕ ПРИ РЕГИСТРАЦИИ: до покупки реквизиты не нужны, а
+    форма перед ключом убивает обещание «пятнадцать минут». Но спрашивать
+    надо где-то, куда клиент дотянется сам: раньше единственный способ
+    сказать «я ИП» или «я физлицо» был написать нам, и каждый аккаунт
+    оставался юрлицом по умолчанию.
+  {% endcomment %}
+  <form method="post" action="{% url 'update_payer' %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;align-items:start">
+    {% csrf_token %}
+    <select class="field" name="kind">
+      {% for code, title in organization.KINDS %}<option value="{{ code }}"{% if organization.kind == code %} selected{% endif %}>{{ title }}</option>{% endfor %}
+    </select>
+    <input class="field" type="text" name="legal_name" value="{{ organization.legal_name }}" placeholder="наименование — как в ЕГРЮЛ / ЕГРИП, или ФИО" autocomplete="organization">
+    <input class="field" type="text" name="inn" value="{{ organization.inn }}" placeholder="ИНН" inputmode="numeric">
+    <input class="field" type="text" name="kpp" value="{{ organization.kpp }}" placeholder="КПП (только юрлицо)" inputmode="numeric">
+    <input class="field" type="text" name="legal_address" value="{{ organization.legal_address }}" placeholder="юридический адрес" style="grid-column:1 / -1">
+    <div style="grid-column:1 / -1;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <button class="btn accent" type="submit">СОХРАНИТЬ</button>
+      <span style="font-size:13px;color:var(--dim-2)">Юрлицу и ИП это попадает в счёт и в акт. Физлицу реквизиты не нужны — только чек на почту при оплате картой.</span>
+    </div>
+  </form>
+
   <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Счета и закрывающие</h3>
   <table class="list">
     <tr><th>НОМЕР</th><th>ПЕРИОД</th><th>СУММА</th><th>СТАТУС</th><th></th></tr>

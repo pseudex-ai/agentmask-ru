@@ -116,10 +116,13 @@ class Organization(models.Model):
     source_referrer = models.CharField(max_length=120, blank=True)
     source_landing = models.CharField(max_length=200, blank=True)
 
-    # WHO the payer is, because 54-ФЗ ст. 2 п. 9 exempts cashless settlements
-    # between organisations and/or ИП from ККТ, and gives no such exemption for
-    # individuals. The same 30 000 ₽ therefore needs a fiscal receipt from one
-    # payer and none from another, and only this field distinguishes them.
+    # WHO the customer is. It decides three things and none of them is the
+    # fiscal receipt any more (every card payment carries one — see
+    # `billing.payments._receipt`): whether a счёт and an акт can be issued at
+    # all (an individual has no реквизиты to print), whether the party is a
+    # consumer under ЗоЗПП (an individual is — ст. 32 gives them a pro-rata
+    # refund the offer must honour), and what the closing document says.
+    # The customer sets it in the cabinet; nobody else can know it.
     KIND_COMPANY = "company"
     KIND_ENTREPRENEUR = "entrepreneur"
     KIND_PERSON = "person"
@@ -163,22 +166,6 @@ class Organization(models.Model):
         route, and it brings the fiscal receipt with it.
         """
         return self.kind in (self.KIND_COMPANY, self.KIND_ENTREPRENEUR)
-
-    @property
-    def needs_receipt(self) -> bool:
-        """Whether paying us obliges a фискальный чек.
-
-        54-ФЗ ст. 2 п. 9: «Контрольно-кассовая техника не применяется при
-        осуществлении расчетов в безналичном порядке между организациями и (или)
-        индивидуальными предпринимателями, за исключением осуществляемых ими
-        расчетов с использованием электронного средства платежа с его
-        предъявлением.»
-
-        So a payment order from an organisation or an ИП needs none, and a
-        payment from an individual always does — by any method. Card payments
-        are routed through the provider's cloud till for exactly this case.
-        """
-        return self.kind == self.KIND_PERSON
 
 
 class Membership(models.Model):

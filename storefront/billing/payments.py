@@ -63,13 +63,25 @@ def _client():
 
 
 def _receipt(invoice, email: str) -> dict[str, object]:
-    """The фискальный чек, for payers who need one.
+    """The фискальный чек that rides with EVERY card payment.
 
-    54-ФЗ ст. 2 п. 9 exempts cashless settlements between organisations and/or
-    ИП from ККТ. It gives no such exemption for individuals, so the same amount
-    needs a receipt from one payer and none from another — and sending one where
-    it is not required is not harmless either: it fiscalises a transaction that
-    should not be, and (with ЮKassa's "Чеки" service) costs 1% of it.
+    It used to ride only with an individual's, on the strength of 54-ФЗ ст. 2
+    п. 9: cashless settlements between organisations and/or ИП need no ККТ. That
+    exemption is real and it is the wrong test here, for two reasons that were
+    both measured rather than argued:
+
+    * The exemption is about WHO PAYS, and a card payment is made by whoever
+      holds the card. A company's accountant paying with a personal card is a
+      settlement with an individual, receipt obligatory, and nothing in the
+      provider's answer tells the two cards apart. The payer kind we store is
+      the company's — it says nothing about the card.
+    * ЮKassa's own receipt scheme sends the receipt data in the payment request
+      «при проведении каждого платежа». A payment sent without it under that
+      scheme is not a payment without a receipt, it is a payment the provider
+      may refuse — and a refused first payment is how a paying customer leaves.
+
+    The paper счёт path never comes here, so an organisation that pays by
+    transfer still gets no receipt — that is where п. 9 actually applies.
 
     `vat_code: 1` is "без НДС", which is what an ИП on УСН charges. A company on
     ОСНО would need a different code, and guessing it wrong misstates tax on a
@@ -109,8 +121,7 @@ def create_payment(invoice, return_url: str, email: str) -> tuple[str, str]:
         # invoice number and an org id and nothing that describes a person.
         "metadata": {"invoice": invoice.number, "org": invoice.organization_id},
     }
-    if invoice.organization.needs_receipt:
-        body["receipt"] = _receipt(invoice, email)
+    body["receipt"] = _receipt(invoice, email)
     try:
         payment = Payment.create(body, f"pseudex-{invoice.number}")
     except Exception as error:  # the SDK raises provider-specific types

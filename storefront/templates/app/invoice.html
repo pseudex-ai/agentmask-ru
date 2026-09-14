@@ -7,7 +7,7 @@
     <div><h2>Счёт {{ invoice.number }}</h2>
       <div class="sec-meta" style="margin-top:8px">{{ invoice.period_start|date:"d.m.Y" }} — {{ invoice.period_end|date:"d.m.Y" }}</div></div>
     <div class="row">
-      <a class="btn" href="{% url 'invoice_print' invoice.number %}">ПЕЧАТНАЯ ФОРМА</a>
+      <a class="btn" href="{% url 'invoice_print' invoice.number %}">{% if invoice.state == "paid" %}СЧЁТ И АКТ{% else %}ПЕЧАТНАЯ ФОРМА{% endif %}</a>
       {% if invoice.state != "paid" and card_available %}
         <form method="post" action="{% url 'pay_invoice' invoice.number %}" style="display:inline">{% csrf_token %}
           <button class="btn accent" type="submit">ОПЛАТИТЬ КАРТОЙ</button>
@@ -20,6 +20,7 @@
     <div>
       <div class="label" style="margin-bottom:14px">ПОЗИЦИИ</div>
       <div class="kv"><span class="k">{{ invoice.organization.subscription.plan.title }}, месяц</span><span class="v">{{ invoice.plan_amount }} ₽</span></div>
+      {% if invoice.metered_amount %}<div class="kv"><span class="k">сверх включённого объёма, {{ invoice.metered_requests }} запросов</span><span class="v">{{ invoice.metered_amount }} ₽</span></div>{% endif %}
       <div class="kv" style="border-bottom:0;padding-top:16px"><span class="k" style="color:var(--text)">итого</span><span class="v" style="font-size:18px;color:var(--text)">{{ invoice.total }} ₽</span></div>
       {% if invoice.values_in_period %}
       <div style="margin-top:16px;font-size:13.5px;color:var(--dim);line-height:1.6">За период защищено <b style="color:var(--text-3)">{{ invoice.values_in_period }}</b> значений. Это справка, а не позиция счёта: подписка не зависит от объёма.</div>
@@ -32,7 +33,7 @@
         <div class="kv"><span class="k">ИНН</span><span class="v">{{ organization.inn }}</span></div>
         {% if organization.kpp %}<div class="kv"><span class="k">КПП</span><span class="v">{{ organization.kpp }}</span></div>{% endif %}
       {% else %}
-        <div style="font-size:14px;color:var(--amber);line-height:1.6">Чтобы выставить счёт, нужны наименование и ИНН. Мы не спрашивали их при регистрации специально — до покупки они не нужны. Напишите нам, и мы добавим.</div>
+        <div style="font-size:14px;color:var(--amber);line-height:1.6">Чтобы выставить счёт, нужны наименование и ИНН. Мы не спрашивали их при регистрации специально — до покупки они не нужны. <a href="{% url 'cabinet' %}#payer">Заполните реквизиты плательщика в кабинете</a> — счёт обновится сам.</div>
       {% endif %}
     </div>
   </div>

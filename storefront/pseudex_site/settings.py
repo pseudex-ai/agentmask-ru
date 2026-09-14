@@ -263,7 +263,7 @@ SELLER = {
     # РЕДАКЦИЯ СОГЛАСИЯ. Меняется вместе с текстом на /consent и записывается в
     # каждую организацию: согласие даётся на конкретную редакцию, и без её
     # номера нельзя ответить, на что именно человек соглашался.
-    "consent_revision": _env("PSEUDEX_CONSENT_REVISION", "2026-09-13"),
+    "consent_revision": _env("PSEUDEX_CONSENT_REVISION", "2026-09-14"),
     "name": _env("PSEUDEX_SELLER_NAME", ""),
     "inn": _env("PSEUDEX_SELLER_INN", ""),
     "kpp": _env("PSEUDEX_SELLER_KPP", ""),

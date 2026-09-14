@@ -26,6 +26,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
+from accounts import payer
 from accounts.models import Membership, Organization
 from billing import onboarding, licensing, payments, services
 from accounts.models import User
@@ -398,6 +399,18 @@ def signup(request):
                                 "аккаунт создать нельзя — это требование "
                                 "152-ФЗ, а не формальность с нашей стороны.")
         return redirect("landing")
+    # ДОГОВОР — ВТОРАЯ ГАЛОЧКА, И ОНА НЕ СОГЛАСИЕ. С 01.09.2025 согласие на
+    # обработку ПД оформляется отдельно от любого другого документа (ч. 1 ст. 9
+    # 152-ФЗ в ред. 156-ФЗ), поэтому «даю согласие и принимаю оферту» одной
+    # галочкой — совмещённое согласие, то есть отсутствие согласия. Акцепт
+    # оферты проверяется тем же способом и по той же причине: доказывать его
+    # придётся нам.
+    if request.POST.get("terms") != "1":
+        _funnel(Funnel.SIGNUP_REFUSED, "без акцепта оферты", request)
+        messages.error(request, "Чтобы выпустить ключ, нужно принять оферту — "
+                                "это договор, по которому вы получаете право "
+                                "использовать программу.")
+        return redirect("landing")
 
     if services.is_disposable(email):
         _funnel(Funnel.SIGNUP_REFUSED, "одноразовая почта", request)
@@ -723,6 +736,36 @@ def revoke_key(request, key_id: int):
     _log.warning("key revoked", extra={"org": organization.id, "key_prefix": key.prefix,
                                        "by": request.user.email})
     messages.success(request, f"Ключ {key.prefix}… отозван и больше не продлит аренду.")
+    return redirect("cabinet")
+
+
+@login_required
+@require_POST
+def update_payer(request):
+    """The customer states who pays: юрлицо, ИП or физлицо, with реквизиты.
+
+    Asked HERE and never at sign-up — the fifteen-minute promise on the landing
+    dies the moment a form asks a company for its ИНН before it has decided to
+    buy. But it must be askable somewhere the customer can reach: the счёт page
+    used to say «напишите нам, и мы добавим», which made every invoice a
+    support ticket and left every account a «юрлицо» by default.
+    """
+    organization = _organization(request)
+    try:
+        fields = payer.payer_fields(
+            kind=request.POST.get("kind", ""),
+            legal_name=request.POST.get("legal_name", ""),
+            inn=request.POST.get("inn", ""),
+            kpp=request.POST.get("kpp", ""),
+            legal_address=request.POST.get("legal_address", ""),
+        )
+    except payer.PayerError as error:
+        messages.error(request, str(error))
+        return redirect("cabinet")
+    for name, value in fields.items():
+        setattr(organization, name, value)
+    organization.save(update_fields=list(fields))
+    messages.success(request, "Реквизиты плательщика сохранены.")
     return redirect("cabinet")
 
 
