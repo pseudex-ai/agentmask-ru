@@ -80,12 +80,12 @@ python3 make_dirty.py                             # P3 compares the two images o
                                                   # it pack_gates refuses BEFORE the Nuitka build
 python3 e2e/pack_gates.py                         # P1-P10, packaging (builds both images)
 
-# TWO keys are COMPILED INTO the release binary, so a fresh either forces a full
-# Nuitka rebuild: the Ed25519 verification key AND PSEUDEX_TUNING_KEY (which seals
-# the tuning blob and must match the server, which delivers it in the lease). Pass
-# BOTH values an image was built with to reuse it with --skip-build:
-PSEUDEX_SIGNING_KEY=<base64> PSEUDEX_TUNING_KEY=<base64> python3 e2e/gates.py --image pseudex:compiled --skip-build
-PSEUDEX_SIGNING_KEY=<base64> PSEUDEX_TUNING_KEY=<base64> python3 e2e/pack_gates.py --skip-build
+# ONE key is compiled into the release binary: the Ed25519 verification key. A
+# fresh one forces a full Nuitka rebuild. The tuning is NOT compiled in — it
+# travels in the lease (docs/tz-tuning-in-lease.md), so there is no tuning key to
+# match. Pass the signing value an image was built with to reuse it with --skip-build:
+PSEUDEX_SIGNING_KEY=<base64> python3 e2e/gates.py --image pseudex:compiled --skip-build
+PSEUDEX_SIGNING_KEY=<base64> python3 e2e/pack_gates.py --skip-build
 ```
 
 Two images, and the difference is only HOW the engine is built — `Dockerfile`
@@ -203,24 +203,21 @@ pseudex/assets.py            in-memory registry; compiles every regex ONCE at lo
   counted with `time.monotonic()`, so winding the clock back does nothing, and a restart needs a
   fresh lease anyway — there is no persisted expiry to edit.
 - **Grace covers OUR outage only.** 402/403 (unpaid, revoked) bypass it entirely.
-- Split rule for what is an asset: **in the LEASED bundle, only the semi-public BULK that rotates
-  (name lists, ГАР streets — open data); in the BINARY, every algorithm AND all the authored TUNING**
-  (cue words, address regex, priority table, look-alike folds, key→type map). СНИЛС checksums stay
-  in the engine; 28k names lease. The tuning USED to lease and was inverted: a client with root
-  decrypts their own bundle in one step, so leased tuning was readable — it now rides compiled into
-  the engine as an opaque `zlib+hex` blob (`licensing/pack.py::emit_tuning_module` →
-  `pseudex/_tuning_blob.py`, merged at load by `assets.py`). **WHAT THAT SEAL ACTUALLY BUYS, STATED
-  HONESTLY: it ties detection to a LEASE, not secrecy from a leaseholder.** The key that opens the blob
-  rides INSIDE the leased bundle (`licensing/pack.py::_bulk_payload`), and §3.4 accepts that the customer
-  may read their own bundle — so a paying customer reaches the tuning by decompressing a bundle and
-  reading one JSON field, never by reversing anything. What the seal does buy is real and deliberate: an
-  engine that NEVER leased cannot open its own tuning, so the licence is load-bearing rather than a
-  boolean branch a patch removes. Moving the key into the binary would raise the bar against a
-  leaseholder and destroy that property; it has not been moved, and the claim is corrected instead of the
-  code. Note also that the SUPERSET of this knowledge — the detection regexes hardcoded in `pseudex/*.py`
-  — ships as ordinary string constants by the same split rule (algorithm lives in the binary), so
-  secrecy of the tuning subset was never the whole story. Matching protection to change-rate: bulk drifts (lease + rotation), tuning
-  is stable (static barrier). The lease still gates detection — no bulk, no names/streets, no output.
+- Split rule for what is an asset: **EVERYTHING authored travels in the LEASED bundle — the
+  semi-public BULK (name lists, ГАР streets — open data) AND the authored TUNING** (cue words, address
+  regex, priority table, look-alike folds, key→type map). The engine ships with NEITHER; СНИЛС
+  checksums and the detection regexes stay in the binary as ordinary code, because those are the
+  algorithm, not the tuned data. The tuning USED to be compiled into the binary as a static-key-sealed
+  blob (`_tuning_blob`), and the key rode in every lease — which the red team showed was strictly worse
+  (`docs/tz-tuning-in-lease.md`, A2): a memory dump recovered the static key in ~1 s and decrypted the
+  blob OFFLINE, forever, past revocation, while a leaseholder read the tuning either way. It now rides
+  whole in the lease (`licensing/pack.py::build_plaintext` → `assets.py::load`), inside the bundle the
+  server age-seals to the ephemeral process key and nonce-wraps. **WHAT THIS BUYS, STATED HONESTLY:** a
+  root leaseholder still sees their ACTIVE lease's tuning in RAM (a theorem — no software closes that on
+  any hardware), but there is no compiled blob and no static key, so extraction is one lease window, not
+  forever, and revocation works. The licence stays load-bearing and STRONGER: an engine that never
+  leased has no tuning at all (nothing to decrypt), not a sealed blob it merely cannot open. Sharpening
+  the window further (short TTL, per-customer watermark) is the next step, not this one.
 
 ### Detection pipeline (`detect_all.py` is the only place that composes it)
 
@@ -450,9 +447,8 @@ Env knobs: `PSEUDEX_DB_DIR`, `PSEUDEX_WORKERS`, `PSEUDEX_MASK_CONCURRENCY`, `PSE
 `PSEUDEX_UI_ORG`, `PSEUDEX_UI_STATIC`, `PSEUDEX_ROLE` (`engine` | `proxy` | `ui` | `preflight` | `probe` | `rekey` | `decrypt`),
 `PSEUDEX_VAULT_KEY`, `PSEUDEX_VAULT_KEY_FILE`, `PSEUDEX_VAULT_KEY_CMD`, `PSEUDEX_VAULT_KEY_NEW`,
 `PSEUDEX_VAULT_ENCRYPTION` (`auto` | `required` | `off`; empty means `auto`),
-`PSEUDEX_VAULT_MIGRATION_BACKUP`, `PSEUDEX_TUNING_KEY` (base64 of 32 bytes — seals the
-compiled tuning blob at engine build AND is set on the LICENSING SERVER, which delivers it in
-each lease so the engine can open its own tuning; the two must match, like the signing key).
+`PSEUDEX_VAULT_MIGRATION_BACKUP`. (There is no `PSEUDEX_TUNING_KEY` anymore — the
+tuning travels in the lease, not a compiled blob; see docs/tz-tuning-in-lease.md.)
 
 ## Eval discipline
 
@@ -1244,9 +1240,6 @@ direction when done the obvious way:
 - **MUTATE YOUR OWN FIX BEFORE CALLING IT DONE.** Each repair above was reverted
   in place and the analyser confirmed red, then restored byte-exact. A fix nobody
   has broken on purpose is a fix nobody has tested.
-- **`unset PSEUDEX_TUNING_KEY` BEFORE ANY OFFLINE RUN.** `testkit` generates an
-  ephemeral one with `os.environ.setdefault`, and an EMPTY variable overrides it
-  — `export PSEUDEX_TUNING_KEY=$(cat missing-file)` silently fails twelve suites.
 - **MEASURE THE PRICE OF A VETO ON MASSIVE BEFORE ACCEPTING IT.** The composite
   «neighbour unknown to morphology and to both dictionaries» veto looked
   principled and cost four real people (Ирина Аллегрова among them) to buy two
