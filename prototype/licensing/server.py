@@ -28,7 +28,10 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from licensing.keys import encode_public, load_signing_key
+from functools import lru_cache
+
 from licensing.pack import build_plaintext
+from licensing.watermark import watermark_for
 from licensing.store import (
     STATUS_ACTIVE,
     STATUS_REVOKED,
@@ -101,8 +104,23 @@ PUBLIC_KEY = encode_public(SIGNING_KEY.public_key())
 
 # Built once: the bundle is the same for every customer, and the per-process part
 # is the sealing, not the contents.
+# The base bundle (no watermark) — its hash is the bundle IDENTITY for /status
+# and audit. The lease itself carries a PER-ORG watermarked copy so a tuning dump
+# names whose lease delivered it (licensing/watermark.py). Memoized per org:
+# distinct orgs compress once (~tens of ms) and reuse across renewals; the mark
+# is deterministic so a renewal never churns it. Empty secret → watermark "" →
+# the per-org bundle is byte-identical to the base, so this is free when off.
 _PLAINTEXT = build_plaintext()
 _PLAINTEXT_HASH = plaintext_hash(_PLAINTEXT)
+
+
+@lru_cache(maxsize=256)
+def _leased_bundle(org_id: str) -> tuple[bytes, str]:
+    wm = watermark_for(org_id)
+    if not wm:
+        return _PLAINTEXT, _PLAINTEXT_HASH
+    plaintext = build_plaintext(watermark=wm)
+    return plaintext, plaintext_hash(plaintext)
 
 
 @asynccontextmanager
@@ -673,6 +691,8 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     # клиента отсюда не следует ничего: получателя называет он сам, и владелец
     # ключа подписывает что угодно (`pseudex/bundle.py::mac_report`). Поэтому
     # счёт строится на выданной ёмкости, а не на отчёте.
+    # Per-org watermarked bundle (attribution for a RAM-lifted tuning dump).
+    _leased_plaintext, _leased_hash = _leased_bundle(record.org_id)
     report_secret = secrets.token_bytes(32)
     STORE.record_report_secret(record.org_id, recipient, report_secret.hex())
 
@@ -700,8 +720,8 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
         # A third of the TTL: two consecutive renewals may fail before the lease
         # is even stale, so a brief outage on our side is invisible to the client.
         "renew_after_seconds": max(1, _TTL_SECONDS // 3),
-        "bundle_version": _PLAINTEXT_HASH[:16],
-        "bundle_sha256": _PLAINTEXT_HASH,
+        "bundle_version": _leased_hash[:16],
+        "bundle_sha256": _leased_hash,
         # ГРАНТ ЁМКОСТИ. Счёт строится на ЭТОМ числе, а не на том, что контейнер
         # о себе сообщит: скрыть расход можно, скрыть собственную просьбу о
         # ёмкости — нет, потому что без неё движок перестаёт обслуживать.
@@ -726,7 +746,7 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     # КОНТРАКТ 3: внутренний слой, чей ключ выведен из СВЕЖЕГО нонса клиента.
     # Повтор старой аренды у пропатченного клиента даёт нерасшифровываемый
     # бандл (`pseudex/bundle.py::nonce_wrap`). Контракт 2 получает голый бандл.
-    inner = nonce_wrap(_PLAINTEXT, nonce) if contract_3 else _PLAINTEXT
+    inner = nonce_wrap(_leased_plaintext, nonce) if contract_3 else _leased_plaintext
     sealed = seal(inner, recipient)
     if _FAULT == "corrupt_bundle":
         # Flip one byte in the middle of the ciphertext. age is authenticated, so

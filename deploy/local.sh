@@ -24,19 +24,6 @@ fi
 PSEUDEX_SIGNING_KEY="$(head -1 "$KEYFILE")"
 export PSEUDEX_SIGNING_KEY
 
-# The tuning key seals the compiled tuning blob and is delivered in the lease.
-# Cached like the signing key and for the same reason: it is baked into the
-# customer image, so a fresh one would force a rebuild every run.
-TUNINGFILE="$HERE/.local-tuning-key"
-if [ ! -f "$TUNINGFILE" ]; then
-    (cd "$ROOT/prototype" && ./.venv/bin/python -c "
-import os, base64
-print(base64.b64encode(os.urandom(32)).decode())
-") > "$TUNINGFILE"
-    echo "generated a local tuning key -> $TUNINGFILE"
-fi
-PSEUDEX_TUNING_KEY="$(head -1 "$TUNINGFILE")"
-export PSEUDEX_TUNING_KEY
 # ДВА ТОКЕНА АДМИНКИ ЛИЦЕНЗИОННОГО СЕРВЕРА, и их отсутствие роняло этот скрипт
 # на `compose up`: `compose.local.yml` объявляет
 # `${PSEUDEX_LICENSE_STOREFRONT_TOKEN:?...}`, а генерировал его здесь никто —
@@ -70,8 +57,6 @@ print(encode_public(Ed25519PrivateKey.from_private_bytes(base64.b64decode('$PSEU
 echo "building pseudex:local (verification key ${PUBKEY:0:12}…)"
 docker build -q -f "$ROOT/prototype/Dockerfile" \
     --build-arg "PSEUDEX_LICENSE_PUBKEY=$PUBKEY" \
-    --secret "id=pseudex_tuning_key,env=PSEUDEX_TUNING_KEY" \
-    --build-arg "PSEUDEX_TUNING_KEY_ID=$(printf %s "$PSEUDEX_TUNING_KEY" | sha256sum | cut -c1-16)" \
     -t pseudex:local "$ROOT/prototype" >/dev/null
 
 docker compose -f "$HERE/compose.local.yml" up -d --build

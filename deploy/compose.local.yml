@@ -32,7 +32,6 @@ services:
       PSEUDEX_SIGNING_KEY: ${PSEUDEX_SIGNING_KEY:?run deploy/local.sh, which generates one}
       # Seals the compiled tuning blob; delivered in every lease so the engine can
       # open its own tuning. Same value the image was built with (build-arg).
-      PSEUDEX_TUNING_KEY: ${PSEUDEX_TUNING_KEY:?run deploy/local.sh, which generates one}
       # БЕЗ ЭТОГО `/admin/*` ОТКАЗЫВАЕТ ВСЕМ, включая нас самих: сервер это
       # логирует и продолжает работать, поэтому стенд выглядел поднятым, а
       # каждая операторская ручка отвечала 401.

@@ -25,13 +25,11 @@ and would still say nothing about what is inside.
 import base64
 import hashlib
 import hmac
+import binascii
 import json
-import os
 from dataclasses import dataclass
 
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.serialization import (Encoding,
-                                                          PublicFormat)
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
@@ -147,44 +145,6 @@ def nonce_unwrap(wrapped: bytes, nonce: str) -> bytes:
             "foreign lease, or a tampered nonce source"
         ) from error
 
-
-_TUNING_AAD = b"pseudex-tuning-blob-v1"
-
-
-def seal_tuning(plaintext: bytes, key: bytes) -> bytes:
-    """AEAD-seal the compiled tuning blob under a lease-delivered key.
-
-    This is the load-bearing tie against a patched binary. The tuning is compiled
-    into the engine, but SEALED: the 32-byte key that opens it travels ONLY inside
-    a valid (paid) leased bundle. So an engine that skips the licence — a patch, or
-    a non-payer who rebuilt the semi-public bulk from open ГАР/name data — never
-    obtains the key, and its own compiled tuning stays ciphertext. Removing the
-    licence check does not free the tuning; it starves it. Random 12-byte nonce
-    prepended; ChaCha20-Poly1305, the same primitive `nonce_wrap` uses."""
-    if len(key) != 32:
-        raise BundleError(f"tuning key must be 32 bytes, got {len(key)}")
-    nonce = os.urandom(12)
-    ct = ChaCha20Poly1305(key).encrypt(nonce, plaintext, _TUNING_AAD)
-    return nonce + ct
-
-
-def open_tuning(sealed: bytes, key: bytes) -> bytes:
-    """Open the sealed tuning blob with the key the lease delivered.
-
-    No boolean branch to NOP: a wrong or absent key fails AEAD authentication and
-    raises, exactly as a replayed lease does in `nonce_unwrap`."""
-    if len(key) != 32:
-        raise BundleError(f"tuning key must be 32 bytes, got {len(key)}")
-    if len(sealed) < 12:
-        raise BundleError("sealed tuning blob is too short")
-    nonce, ct = sealed[:12], sealed[12:]
-    try:
-        return ChaCha20Poly1305(key).decrypt(nonce, ct, _TUNING_AAD)
-    except Exception as error:
-        raise BundleError(
-            "tuning blob does not open under the leased key — no valid lease "
-            "delivered it, or the engine and the lease are from different builds"
-        ) from error
 
 
 def merge_payload(bulk: dict[str, object],
@@ -327,7 +287,17 @@ def verify_lease(lease: dict[str, object], public_key: Ed25519PublicKey) -> None
     if not isinstance(signature, str):
         raise BundleError("lease carries no signature")
     try:
-        public_key.verify(base64.b64decode(signature), signing_payload(lease))
+        raw = base64.b64decode(signature, validate=True)
+    except (ValueError, binascii.Error) as error:
+        # A non-base64 signature must fail CLOSED with our own error, like
+        # `decode_public_key` already does — not a raw binascii.Error that flies
+        # past `except BundleError` in `license._apply` and crashes cold start
+        # with a traceback (red team, ФОРЖЕР R1, 2026-09-14).
+        raise BundleError(
+            "lease signature is not valid base64 — refusing to load the bundle"
+        ) from error
+    try:
+        public_key.verify(raw, signing_payload(lease))
     except InvalidSignature as error:
         raise BundleError(
             "lease signature is not ours — refusing to load the bundle"

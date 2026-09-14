@@ -48,7 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
 
 from e2e import certs, fixtures  # noqa: E402
-from licensing.keys import encode_private, encode_public, tuning_key_id  # noqa: E402
+from licensing.keys import encode_private, encode_public  # noqa: E402
 
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent
@@ -255,19 +255,8 @@ def build_stand(image: str, workers: int, skip_build: bool) -> str:
     private_b64 = encode_private(signing_key)
     public_b64 = encode_public(signing_key.public_key())
     print(f"  signing key {'reused' if existing else 'generated'}, public {public_b64[:16]}...")
-    # The tuning key seals the compiled blob and rides in the lease. Baked into the
-    # image like the signing key, so a fresh one forces a rebuild — persist it for
-    # --skip-build, and pin the SAME value into the build secret (seals) and the
-    # server env (delivers, so the engine can open its own tuning).
-    #
-    # INTO THE ENVIRONMENT, NOT ONTO THE COMMAND LINE. The build reads it as
-    # `--secret id=…,env=PSEUDEX_TUNING_KEY` from the docker CLI's own
-    # environment — a value generated here and passed as a build-arg would be
-    # visible in `ps` on the runner and, for the single-stage image, printed by
-    # `docker history` for every later layer.
-    tuning_b64 = os.environ.get("PSEUDEX_TUNING_KEY", "") \
-        or base64.b64encode(os.urandom(32)).decode("ascii")
-    os.environ["PSEUDEX_TUNING_KEY"] = tuning_b64
+    # The tuning now travels in the lease, not the image — no tuning key to
+    # seal or deliver (docs/tz-tuning-in-lease.md).
 
     certs.generate(_HERE / "certs", "license")
     print("  self-signed CA + server cert written")
@@ -291,21 +280,16 @@ def build_stand(image: str, workers: int, skip_build: bool) -> str:
         # sign their own bundles.
         sh(["docker", "build", "-f", str(_ROOT / "Dockerfile"),
             "--build-arg", f"PSEUDEX_LICENSE_PUBKEY={public_b64}",
-            "--secret", "id=pseudex_tuning_key,env=PSEUDEX_TUNING_KEY",
-            "--build-arg", f"PSEUDEX_TUNING_KEY_ID={tuning_key_id(tuning_b64)}",
             "-t", image, str(_ROOT)], True, 1800)
         print(f"  images built ({image})")
     else:
         sh(["docker", "build", "-f", str(_ROOT / "Dockerfile.nuitka"),
             "--build-arg", f"PSEUDEX_LICENSE_PUBKEY={public_b64}",
-            "--secret", "id=pseudex_tuning_key,env=PSEUDEX_TUNING_KEY",
-            "--build-arg", f"PSEUDEX_TUNING_KEY_ID={tuning_key_id(tuning_b64)}",
             "-t", image, str(_ROOT)], True, 3600)
         print(f"  images built ({image})")
 
     _ENV_FILE.write_text(
         f"PSEUDEX_SIGNING_KEY={private_b64}\n"
-        f"PSEUDEX_TUNING_KEY={tuning_b64}\n"
         f"PSEUDEX_IMAGE={image}\n"
         f"PSEUDEX_KEY=\n"
         f"PSEUDEX_WORKERS={workers}\n"
@@ -1370,6 +1354,47 @@ def gate_l22(image: str) -> bool:
                 f"roomy_exit={big_code} roomy_reached_licence={passed_through}")
 
 
+def gate_l23() -> bool:
+    """The worker hardens its own memory: no core file, non-dumpable, swap-locked.
+
+    The tuning lives decrypted in RAM while the engine serves — root with
+    CAP_SYS_PTRACE can read it (a theorem, and the POSITIVE CONTROL here: the
+    privileged `_memscan` still finds the marker, so the memory IS scannable and
+    this gate is not one that cannot go red). What this gate asserts is the bar
+    that was raised (pseudex/hardening.py, docs/tz-tuning-in-lease.md):
+
+      * VmLck > 0     — mlockall took, the tuning is never swapped to disk;
+      * non-dumpable  — an UNPRIVILEGED sibling (no SYS_PTRACE) is refused at OPEN
+                        of /proc/<pid>/mem where the privileged one succeeds. That
+                        gap is the whole point of PR_SET_DUMPABLE=0;
+      * core off      — the startup line reports RLIMIT_CORE=0 (no crash-time dump).
+    """
+    privileged_hits, _ = _memscan()   # positive control: root CAN read the RAM
+    cid = compose(["ps", "-q", "sidecar"], False, 30).stdout.strip().splitlines()[0]
+    pid = sorted(worker_pids(24))[0]
+
+    status = sh(["docker", "run", "--rm", f"--pid=container:{cid}",
+                 "python:3.12-slim", "sh", "-c",
+                 f"grep VmLck /proc/{pid}/status 2>/dev/null || echo 'VmLck: -1 kB'"],
+                False, 60).stdout
+    match = re.search(r"VmLck:\s*(-?\d+)", status)
+    vmlck = int(match.group(1)) if match else -1
+
+    # UNPRIVILEGED open must be refused; python's PermissionError is the clean
+    # signal (dd's offset-0 read can fail for unrelated reasons).
+    unpriv = sh(["docker", "run", "--rm", f"--pid=container:{cid}",
+                 "python:3.12-slim", "python3", "-c",
+                 f"open('/proc/{pid}/mem','rb')"], False, 60)
+    unpriv_refused = unpriv.returncode != 0 and "PermissionError" in unpriv.stderr
+
+    hardening_logged = "hardening:" in logs("sidecar") and "core=ok" in logs("sidecar")
+
+    ok = privileged_hits > 0 and vmlck > 0 and unpriv_refused and hardening_logged
+    return gate("L23 the worker hardens its memory (no core, non-dumpable, mlock)",
+                ok, f"root_can_read={privileged_hits > 0} VmLck={vmlck}kB "
+                    f"unpriv_open_refused={unpriv_refused} core_off_logged={hardening_logged}")
+
+
 def gate_l15() -> bool:
     """No real value in any log — and the logs must be REAL logs.
 
@@ -1472,6 +1497,9 @@ def main() -> None:
             run_gate("L21", gate_l21)
         if wanted("L22"):
             run_gate("L22", gate_l22, args.image)
+
+        if wanted("L23"):
+            run_gate("L23", gate_l23)
 
         if wanted("L15"):
             run_gate("L15", gate_l15)

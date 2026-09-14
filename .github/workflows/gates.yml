@@ -87,14 +87,11 @@ jobs:
         with: { python-version: "3.12", cache: pip, cache-dependency-path: prototype/requirements.txt }
       - run: pip install -r requirements.txt
 
-      # Ключи фиксируются на весь job. Здесь собирается ИСХОДНЫЙ образ, Nuitka
-      # не участвует и генерация на прогон ничего не стоит, — но ключ тюнинга
-      # обязан совпасть у образа и у сервера, которого поднимет стенд, иначе
-      # движок не откроет собственный тюнинг.
+      # Ключ подписи фиксируется на весь job: образ собирается с ним, стенд
+      # поднимает сервер с ним же. Тюнинг едет в лизе, отдельного ключа нет.
       - name: зафиксировать ключи на прогон
         run: |
           echo "PSEUDEX_SIGNING_KEY=$(python -c 'from licensing.keys import encode_private; from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey; print(encode_private(Ed25519PrivateKey.generate()))')" >> "$GITHUB_ENV"
-          echo "PSEUDEX_TUNING_KEY=$(python -c 'import os, base64; print(base64.b64encode(os.urandom(32)).decode())')" >> "$GITHUB_ENV"
 
       # КОД ВОЗВРАТА НЕ ПРОПУСКАЕТСЯ ЧЕРЕЗ КОНВЕЙЕР. `gates.py | tee` отдал бы
       # код `tee`, то есть ноль всегда: правило записано в скилле гейтов, и это
@@ -127,7 +124,6 @@ jobs:
       - name: зафиксировать ключи на прогон
         run: |
           echo "PSEUDEX_SIGNING_KEY=$(python -c 'from licensing.keys import encode_private; from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey; print(encode_private(Ed25519PrivateKey.generate()))')" >> "$GITHUB_ENV"
-          echo "PSEUDEX_TUNING_KEY=$(python -c 'import os, base64; print(base64.b64encode(os.urandom(32)).decode())')" >> "$GITHUB_ENV"
 
       # ДАТАСЕТЫ ГЕНЕРИРУЮТСЯ ЗДЕСЬ ЖЕ, И БЕЗ ЭТОГО P3 ПРОВЕРЯЕТ ПОЛОВИНУ.
       #

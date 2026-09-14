@@ -74,3 +74,4 @@ prototype/bench/agentpii3/corpus.json
 .claude/worktrees/
 deploy/.local-env.sh
 deploy/.env.seller
+.DS_Store

@@ -18,10 +18,8 @@ No pytest, matching the engine repo: run it, read the lines, non-zero is broken.
     python3 test_storefront.py
 """
 
-import base64
 import os
 import pathlib
-import secrets
 import subprocess
 import sys
 import tempfile
@@ -75,18 +73,8 @@ def start_licensing() -> tuple[subprocess.Popen, str, str]:
         # окружение, поэтому задавать их ниже было поздно.
         "PSEUDEX_LICENSE_ADMIN_TOKEN": _ADMIN_TOKEN,
         "PSEUDEX_LICENSE_STOREFRONT_TOKEN": _SHOP_TOKEN,
-        # БЕЗ НЕГО СЕРВЕР НЕ ВСТАЁТ, И ЭТОТ НАБОР НЕ БЕЖАЛ В CI НИ РАЗУ С ТЕХ
-        # ПОР, КАК ТЮНИНГ СТАЛ ЗАПЕЧАТАННЫМ. `build_plaintext` кладёт ключ
-        # тюнинга в бандл на импорте, поэтому пустая переменная роняет процесс
-        # ещё до первого порта. Проверено на нетронутом main: тот же отказ.
-        #
-        # Ключ эфемерный, и это правильно именно здесь: набор проверяет
-        # ЛИЦЕНЗИОННЫЙ СЕРВЕР и витрину, а движка, который открывал бы блоб
-        # тюнинга, в нём нет вовсе — он ходит на `/v1/lease` напрямую и смотрит
-        # на коды. `setdefault`-семантика через `os.environ.get` оставляет
-        # победу настоящему ключу, если прогон задал его снаружи.
-        "PSEUDEX_TUNING_KEY": os.environ.get("PSEUDEX_TUNING_KEY")
-        or base64.b64encode(secrets.token_bytes(32)).decode("ascii"),
+        # Тюнинг едет в лизе (docs/tz-tuning-in-lease.md), не в вкомпилированном
+        # блобе — PSEUDEX_TUNING_KEY больше не нужен ни серверу, ни этому набору.
     }
     # ПРИЧИНА ОТКАЗА НЕ ВЫБРАСЫВАЕТСЯ В DEVNULL.
     #

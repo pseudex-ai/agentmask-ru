@@ -1,7 +1,7 @@
 # Keep the build context small and, more importantly, keep things OUT of images.
 .venv/
-__pycache__/
-*.pyc
+**/__pycache__/
+**/*.pyc
 *.db
 *.db-shm
 *.db-wal

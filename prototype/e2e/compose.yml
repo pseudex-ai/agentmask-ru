@@ -14,10 +14,7 @@ services:
       PSEUDEX_LEASE_TTL_SECONDS: "${PSEUDEX_LEASE_TTL_SECONDS:-60}"
       PSEUDEX_GRACE_SECONDS: "${PSEUDEX_GRACE_SECONDS:-120}"
       PSEUDEX_SIGNING_KEY: "${PSEUDEX_SIGNING_KEY}"
-      # Ключ, которым запечатан вкомпилированный блоб тюнинга. Сервер кладёт его в
-      # каждую аренду, чтобы движок мог открыть свой тюнинг; ДОЛЖЕН совпадать с
-      # тем, которым собран образ (build-arg PSEUDEX_TUNING_KEY). См. §2.2.
-      PSEUDEX_TUNING_KEY: "${PSEUDEX_TUNING_KEY}"
+      # Тюнинг едет в лизе (docs/tz-tuning-in-lease.md) — отдельного ключа нет.
       # Админка стенда под токеном, как и в проде. Гейты ходят им же.
       PSEUDEX_LICENSE_ADMIN_TOKEN: "${PSEUDEX_LICENSE_ADMIN_TOKEN:-e2e-admin-token}"
       PSEUDEX_LICENSE_CERT: /certs/server.pem
@@ -35,6 +32,12 @@ services:
 
   sidecar:
     image: "${PSEUDEX_IMAGE:-pseudex:source}"
+    # mlockall needs RLIMIT_MEMLOCK above the resident set (~350 MB/worker) or it
+    # fails and the tuning could be swapped to disk. The customer's runtime must
+    # raise it too (docs/integration.md); the stand raises it so gate L23 can
+    # prove mlock actually took (VmLck>0).
+    ulimits:
+      memlock: -1
     environment:
       PSEUDEX_LICENSE_URL: https://license:8443
       PSEUDEX_LICENSE_KEY: "${PSEUDEX_KEY}"

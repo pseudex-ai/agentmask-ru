@@ -22,7 +22,6 @@ THREE PROPERTIES THIS MODULE HAS TO GUARANTEE:
      absent data is not patchable.
 """
 
-import base64
 import gc
 import json
 import re
@@ -30,7 +29,6 @@ import threading
 import zlib
 from dataclasses import dataclass
 
-from pseudex.bundle import merge_payload
 from pseudex.morph import MORPH
 
 
@@ -207,6 +205,10 @@ class DetectionAssets:
     ru_pii: RuPiiAssets
     priority: dict[str, int]
     lookalike: dict[str, str]
+    # Per-customer watermark (licensing/watermark.py). Inert for detection; it
+    # exists so a tuning dump lifted from RAM names whose lease delivered it.
+    # Empty when the server ran without PSEUDEX_WATERMARK_SECRET.
+    watermark: str = ""
 
 
 def _translit(text: str, table: dict[str, str]) -> str:
@@ -358,29 +360,8 @@ def _build(payload: dict[str, object]) -> DetectionAssets:
         ru_pii=_build_ru_pii(payload["ru_pii"]),
         priority=dict(payload["priority"]),
         lookalike=dict(payload["lookalike"]),
+        watermark=str(payload.get("_wm", "")),
     )
-
-
-def _load_embedded_tuning(key: bytes) -> tuple[dict[str, object], str]:
-    """Open the SEALED authored tuning compiled into the engine, with its stamp.
-
-    The lease carries only bulk; the tuning — cue words, address regex, priority
-    table, look-alike folds — is compiled into the binary by
-    `licensing/pack.py --emit-tuning`, but AEAD-sealed: the constant is ciphertext,
-    and `key` (delivered inside the leased bundle) is what opens it. So a client
-    reads it out of neither the bundle nor the binary, and a patched engine that
-    never leased has no key and cannot open its own tuning — the licence is
-    load-bearing, not a boolean branch.
-
-    Imported by name and lazily: the module is present in every real build and in
-    dev after testkit generates it, and its absence is a BUILD error, not a runtime
-    state — the import may fail loudly, which is fail-closed (no tuning, no
-    detection)."""
-    from pseudex import _tuning_blob
-    from pseudex.bundle import open_tuning
-    plain = open_tuning(bytes.fromhex(_tuning_blob.BLOB), key)
-    tuning = json.loads(zlib.decompress(plain).decode("utf-8"))
-    return tuning, _tuning_blob.VERSION
 
 
 class Assets:
@@ -393,32 +374,19 @@ class Assets:
     def load(self, plaintext: bytes) -> None:
         """Compile a decrypted bundle into the runtime structures.
 
-        The lease carries only the semi-public BULK (names, ГАР streets); the
-        authored TUNING is compiled into the engine and merged in here, so a
-        client decrypting their own bundle finds no cue words, no address regex,
-        no priority table — those require reversing the binary, not a bundle dump.
-        See `licensing/pack.py` (_bulk_payload / _tuning_payload) and
-        docs/tz-license-packaging §2.2.
+        The lease now carries the FULL payload — bulk AND authored tuning (cue
+        words, address regex, priority table, look-alike folds). Nothing is
+        compiled into the engine, so a process that never leased has no tuning at
+        all (load-bearing, fail-closed via `get`), and a memory dump yields only
+        the current lease's tuning, not a blob decryptable offline forever (A2,
+        docs/tz-tuning-in-lease.md). The bundle itself is age-sealed to the
+        process key + nonce-wrapped by the caller, so this plaintext never
+        touched disk.
 
         Called on the renewal path too, so it must be atomic from a reader's
         point of view: the new struct is built fully before it is published, and
         publishing is a single attribute assignment."""
-        bulk = json.loads(zlib.decompress(plaintext).decode("utf-8"))
-        # The key that opens the compiled-in tuning rides in the lease, so only a
-        # process that obtained a valid bundle can decrypt its own detection tuning.
-        key = base64.b64decode(str(bulk.pop("tuning_key", "")))
-        tuning, blob_version = _load_embedded_tuning(key)
-        # The stamp binds this leased bulk to the tuning compiled into THIS engine.
-        # A mismatch means the lease and the binary are from different builds — a
-        # misdeploy that would detect with one release's tuning against another's
-        # dictionaries. Fail closed, never warn-and-continue.
-        stamp = bulk.pop("tuning_version", None)
-        if stamp != blob_version:
-            raise BundleNotLeased(
-                f"leased bulk stamped for tuning {stamp!r} but the engine carries "
-                f"{blob_version!r} — the lease and the binary are from different "
-                f"builds; refusing to detect with a mismatched pair")
-        payload = merge_payload(bulk, tuning)
+        payload = json.loads(zlib.decompress(plaintext).decode("utf-8"))
         built = _build(payload)
         with self._lock:
             self._current = built
