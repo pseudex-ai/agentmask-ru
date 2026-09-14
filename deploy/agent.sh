@@ -125,24 +125,40 @@ notify info "Выкатка $HAVE → $WANT" "Подписи проверены,
 PREV="${HAVE:-$(git describe --tags --abbrev=0 HEAD 2>/dev/null || echo "")}"
 git checkout --quiet "$WANT"
 
+# ЗДОРОВЬЕ ЖДЁТ САМ COMPOSE, И ЭТО НЕ ЗАМЕНА НАШЕГО ЦИКЛА, А ЕГО ПОЧИНКА. Ниже
+# стояла своя `healthy()`: `docker compose ps` + awk на `unhealthy`, и она
+# возвращала успех на ПЕРВОМ тике, где `unhealthy` нет. А у пересозданного
+# сервиса первые секунды здоровье равно `starting` — awk его чистым и считал.
+# Измерено: сервис, который НИКОГДА не становится здоровым, старая проверка
+# объявляла здоровым через 2 секунды со статусом «starting running»;
+# `--wait` дождался конца start_period и упал на 24-й: «is unhealthy». Откат,
+# который срабатывает только на отказ в первые две секунды, — это откат,
+# которого нет.
+#
+# `--wait` (docker/compose start.go) ждёт `healthy` у сервисов с healthcheck и
+# `running` у сервисов без него; `exited` и `unhealthy` — ошибка; по таймауту
+# — ошибка. Код возврата — это и есть вердикт, и он берётся напрямую.
+#
+# 240 СЕКУНД — БОЛЬШЕ САМОГО ДЛИННОГО start_period, И ЭТО ПРОВЕРЯЕТСЯ НИЖЕ.
+# Самый долгий — `billing`, 180 с: его здоровье означает «первый цикл прошёл»,
+# а циклу надо дождаться Postgres и лицензионного сервера. Таймаут короче
+# start_period — это ложный откат на каждой выкатке, и первая версия этой
+# строки (120) была ровно такой. Больше — лишние минуты простоя на настоящем
+# отказе, поэтому не 600.
+WAIT_TIMEOUT=240
+LONGEST_START="$(grep -oE 'start_period: *[0-9]+' "$HERE/compose.yml" | grep -oE '[0-9]+' | sort -n | tail -1)"
+if [ "${LONGEST_START:-0}" -ge "$WAIT_TIMEOUT" ]; then
+    notify crit "Агент: таймаут ожидания короче start_period" \
+        "WAIT_TIMEOUT=$WAIT_TIMEOUT, а в compose есть start_period ${LONGEST_START}s.
+Выкатка откатывалась бы ложно. Поднимите WAIT_TIMEOUT в agent.sh."
+    exit 1
+fi
 deploy() {
     VERSION="${1#v}" docker compose -f "$HERE/compose.yml" pull --quiet
-    VERSION="${1#v}" docker compose -f "$HERE/compose.yml" up -d --remove-orphans
+    VERSION="${1#v}" docker compose -f "$HERE/compose.yml" up -d --remove-orphans \
+        --wait --wait-timeout "$WAIT_TIMEOUT"
 }
 
-healthy() {
-    # Здоровье СЕРВИСА, а не факт запуска контейнера. `docker compose ps`
-    # покажет `running` у процесса, который упал в цикл рестарта секунду назад,
-    # и выкатка, проверяющая это, всегда «успешна».
-    for _ in $(seq 1 30); do
-        sleep 2
-        bad="$(docker compose -f "$HERE/compose.yml" ps --format '{{.Service}} {{.Health}} {{.State}}' \
-               | awk '$2 == "unhealthy" || ($2 == "" && $3 != "running") { print $1 }')"
-        [ -z "$bad" ] && return 0
-    done
-    echo "$bad"
-    return 1
-}
 
 # КОД ВОЗВРАТА БЕРЁТСЯ У `deploy`, А НЕ У КОНВЕЙЕРА. Здесь стояло
 # `if ! deploy … | tail -20`, и оно не срабатывало никогда: в конвейере код
@@ -162,28 +178,33 @@ healthy() {
 DEPLOY_LOG="${TMPDIR:-/tmp}/pseudex-deploy.$$"
 if ! deploy "$WANT" >"$DEPLOY_LOG" 2>&1; then
     tail -20 "$DEPLOY_LOG" >&2
+    # ПРИЧИНА — ОДНОЙ СТРОКОЙ В ТРЕВОГУ, остальное в журнале. `--wait` называет
+    # нездоровый сервис сам («container X is unhealthy», «not healthy after»);
+    # без этой строки человек в три ночи открывал бы journalctl, чтобы узнать
+    # ЧТО именно не поднялось, а не только ЧТО откатились.
+    WHY="$(grep -oE 'container [^ ]+ (is unhealthy|exited)|not healthy after [0-9]+s|timeout' "$DEPLOY_LOG" | head -1)"
     rm -f "$DEPLOY_LOG"
-    notify crit "Выкатка $WANT не собралась" \
-        "Откатываюсь на $PREV.
-Причина — в журнале агента: journalctl -u pseudex-agent -n 50"
-    [ -n "$PREV" ] && { git checkout --quiet "$PREV"; deploy "$PREV" >/dev/null 2>&1 || true; }
-    exit 1
-fi
-rm -f "$DEPLOY_LOG"
-
-if ! BAD="$(healthy)"; then
-    notify crit "После $WANT сервисы не поднялись" \
-        "Нездоровы: ${BAD:-неизвестно}
-Откатываюсь на $PREV. Логи посмотрите сами — я их не пересылаю, там могут быть
-данные клиента."
+    notify crit "Выкатка $WANT не удалась" \
+        "${WHY:-причина в журнале агента}
+Откатываюсь на $PREV. Логи контейнеров не пересылаю — там могут быть данные
+клиента. journalctl -u pseudex-agent -n 50"
     if [ -n "$PREV" ]; then
         git checkout --quiet "$PREV"
-        deploy "$PREV" >/dev/null 2>&1 || true
-        printf '%s' "$PREV" > "$STATE"
-        notify warn "Откат на $PREV выполнен" "Продакшен работает на прежней версии."
+        # ОТКАТ ТОЖЕ ЖДЁТ ЗДОРОВЬЯ, и его исход называется вслух. Молчаливый
+        # откат, который сам не поднялся, — худший из вариантов: тревога
+        # сказала «откатился», а прод стоит.
+        if deploy "$PREV" >/dev/null 2>&1; then
+            printf '%s' "$PREV" > "$STATE"
+            notify warn "Откат на $PREV выполнен" "Продакшен работает на прежней версии."
+        else
+            notify crit "ОТКАТ НА $PREV НЕ ПОДНЯЛСЯ" \
+                "Ни новая, ни прежняя версия не здоровы. Нужен человек:
+docker compose -f $HERE/compose.yml ps"
+        fi
     fi
     exit 1
 fi
+rm -f "$DEPLOY_LOG"
 
 printf '%s' "$WANT" > "$STATE"
 notify info "Выкатка $WANT готова" "Все сервисы здоровы."
