@@ -371,14 +371,19 @@ services:
       - ./supportbot/config.yaml:/in/config.yaml:ro
       - supportbot-config:/out
     environment:
-      PSEUDEX_SUPPORT_BOT_TOKEN: ${PSEUDEX_SUPPORT_BOT_TOKEN:?в deploy/.env нужен токен бота поддержки}
-      PSEUDEX_SUPPORT_CHAT: ${PSEUDEX_SUPPORT_CHAT:?в deploy/.env нужен id супергруппы операторов}
-      PSEUDEX_SUPPORT_OWNER: ${PSEUDEX_SUPPORT_OWNER:?в deploy/.env нужен telegram id владельца}
+      # `:-`, НЕ `:?` — то же правило, что у alertmanager-config: профильный сервис
+      # не имеет права требовать переменную. Пустоту ловит рендер ниже.
+      PSEUDEX_SUPPORT_BOT_TOKEN: ${PSEUDEX_SUPPORT_BOT_TOKEN:-}
+      PSEUDEX_SUPPORT_CHAT: ${PSEUDEX_SUPPORT_CHAT:-}
+      PSEUDEX_SUPPORT_OWNER: ${PSEUDEX_SUPPORT_OWNER:-}
     command:
       - sh
       - -c
       - |
         set -eu
+        for v in PSEUDEX_SUPPORT_BOT_TOKEN PSEUDEX_SUPPORT_CHAT PSEUDEX_SUPPORT_OWNER; do
+          eval "val=\$$$v"; [ -n "$$val" ] || { echo "в deploy/.env пуст $$v — бот поддержки не поднимется"; exit 1; }
+        done
         sed -e "s|__PSEUDEX_SUPPORT_BOT_TOKEN__|$$PSEUDEX_SUPPORT_BOT_TOKEN|" \
             -e "s|__PSEUDEX_SUPPORT_CHAT__|$$PSEUDEX_SUPPORT_CHAT|g" \
             -e "s|__PSEUDEX_SUPPORT_OWNER__|$$PSEUDEX_SUPPORT_OWNER|" \
@@ -393,7 +398,7 @@ services:
     # область компрометации разная, один токен на оба отдал бы канал тревог
     # разговорной поверхности. Долгий опрос — исходящее соединение, порт
     # наружу не нужен.
-    image: ${REGISTRY:-cr.yandex/pseudex}/pseudex-supportbot:${VERSION:?set VERSION}
+    image: ${REGISTRY:-cr.yandex/pseudex}/pseudex-supportbot:${VERSION:-}
     profiles: ["support"]
     restart: unless-stopped
     logging: *logging
@@ -446,7 +451,10 @@ services:
     # бы в пустую строку внутри уже отрендеренного файла — то есть в тихо
     # сломанный конфиг вместо громкого отказа.
     environment:
-      PSEUDEX_TG_CHAT: ${PSEUDEX_TG_CHAT:?в deploy/.env нужен PSEUDEX_TG_CHAT — иначе тревоги некуда слать}
+      # `:-`, НЕ `:?` — правило этого файла (см. grafana): compose подставляет
+      # значения ДО отбора профилей, и `:?` здесь ломал бы обычный `up -d`.
+      # Пустоту ловит скрипт рендера ниже — громко и с причиной.
+      PSEUDEX_TG_CHAT: ${PSEUDEX_TG_CHAT:-}
     command:
       - sh
       - -c
