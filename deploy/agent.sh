@@ -43,7 +43,9 @@ git fetch --tags --quiet --force
 # PSEUDEX_PIN закрепляет версию и выключает автовыкатку. Нужен ровно в тот
 # момент, когда что-то пошло не так и нужно время подумать, не воюя с агентом,
 # который упорно возвращает «правильную» версию.
-WANT="${PSEUDEX_PIN:-$(git tag -l 'v*' --sort=-v:refname | head -1)}"
+# `v[0-9]*`, НЕ `v*`: старый тег `veilgate-final` начинается с v и сортировался
+# выше любой версии — агент выкатил бы его первым же обходом.
+WANT="${PSEUDEX_PIN:-$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)}"
 [ -n "$WANT" ] || { echo "agent: тегов вида v* нет"; exit 0; }
 
 HAVE="$(cat "$STATE" 2>/dev/null || echo "")"

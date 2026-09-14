@@ -96,7 +96,10 @@ jobs:
       - name: следующая версия
         run: |
           set -eu
-          last="$(git tag -l 'v*' --sort=-v:refname | head -1)"
+          # `v[0-9]*`, НЕ `v*`: старый тег `veilgate-final` начинается с v, и
+          # первый запуск поставил `veilgate-final.1.0`. Та же строка живёт в
+          # deploy/agent.sh — хост выкатил бы этот тег.
+          last="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)"
           [ -n "${last}" ] || last="v0.0.0"
           IFS=. read -r major minor patch <<EOF
           ${last#v}
