@@ -95,8 +95,14 @@ KEYS_FOUND=0
 for f in /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys; do
     [ -s "$f" ] && KEYS_FOUND=$((KEYS_FOUND + 1))
 done
+# `00-`, NOT `99-`: sshd takes the FIRST value it reads for a keyword, and
+# `Include sshd_config.d/*.conf` reads the directory in name order. Timeweb's
+# image ships `50-cloud-init.conf` with `PasswordAuthentication yes`, and a
+# `99-pseudex.conf` behind it changed nothing — `sshd -T` still said `yes`
+# after the first run. `sshd -T` is the check, not the file.
 if [ "$KEYS_FOUND" -gt 0 ]; then
-    cat > /etc/ssh/sshd_config.d/99-pseudex.conf <<EOF
+    rm -f /etc/ssh/sshd_config.d/99-pseudex.conf
+    cat > /etc/ssh/sshd_config.d/00-pseudex.conf <<EOF
 Port ${SSH_PORT}
 PasswordAuthentication no
 KbdInteractiveAuthentication no
@@ -105,7 +111,12 @@ X11Forwarding no
 MaxAuthTries 3
 EOF
     sshd -t && systemctl reload ssh 2>/dev/null || systemctl reload sshd
-    echo "    парольный вход выключен (найдено файлов с ключами: ${KEYS_FOUND})"
+    if sshd -T 2>/dev/null | grep -qx 'passwordauthentication no'; then
+        echo "    парольный вход выключен (найдено файлов с ключами: ${KEYS_FOUND})"
+    else
+        warn "sshd -T всё ещё показывает passwordauthentication yes — другой файл в sshd_config.d стоит раньше 00-pseudex.conf"
+        exit 1
+    fi
 else
     warn "ключей SSH не найдено — парольный вход ОСТАВЛЕН включённым."
     warn "положите ключ и перезапустите скрипт, иначе машина открыта для перебора."
