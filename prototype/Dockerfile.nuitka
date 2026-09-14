@@ -174,4 +174,15 @@ ENV LANG=C.UTF-8 \
 # distinction is one firewall rule rather than a path prefix nobody enforces.
 EXPOSE 8000 8081
 
+# Run as a NON-ROOT user — the release image that actually ships. The tuning is
+# decrypted in worker RAM; a non-root process's memory is unreadable to a
+# co-located non-root or default-caps process, raising the RAM-extraction bar
+# kernel-independently (pentest 2026-09-14). `mlockall` still takes as non-root
+# given the container's memlock ulimit (`ulimits: { memlock: -1 }`). A fresh
+# named volume at /data inherits this ownership; a pre-existing root-owned volume
+# must be chowned once.
+RUN groupadd -r pseudex && useradd -r -g pseudex -u 10001 -d /app pseudex \
+    && chown -R pseudex:pseudex /data
+USER pseudex
+
 CMD ["./entrypoint.sh"]
