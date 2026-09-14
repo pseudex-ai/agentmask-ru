@@ -26,6 +26,7 @@ import zlib
 from pathlib import Path
 
 from licensing import assets_source
+from licensing import canary
 # Allowed direction: shared crypto lives in pseudex.bundle and is imported BY the
 # licensing side, never the other way (CLAUDE.md). The server already imports it.
 from pseudex.bundle import merge_payload
@@ -326,7 +327,7 @@ def _compress(payload: dict[str, object]) -> bytes:
     return zlib.compress(_canonical(payload), 6)
 
 
-def build_plaintext(watermark: str = "") -> bytes:
+def build_plaintext(watermark: str = "", org_id: str = "") -> bytes:
     """The LEASED bundle: the FULL payload — bulk AND authored tuning.
 
     The tuning used to be compiled into the engine (a static-key-sealed blob) and
@@ -340,10 +341,24 @@ def build_plaintext(watermark: str = "") -> bytes:
     so a tuning dump names WHOSE lease carried it — inert for detection, carried
     into the engine's assets. Empty → no mark (watermarking off)."""
     payload = build_payload()
+    if org_id:
+        # Per-org canaries woven into the gazetteers (licensing.canary): a clone
+        # built from a dump of THIS lease masks names/streets that exist in no real
+        # dictionary and in no other org's bundle, so a leak is attributable. Novel
+        # by construction; inert for real PII (test_canary.py).
+        surnames = canary.canary_surnames(org_id)
+        if surnames:
+            names = payload["names"]
+            names["dict_surnames"] = sorted(set(names["dict_surnames"]) | set(surnames))
+        streets = canary.canary_streets(org_id)
+        if streets:
+            address = payload["address"]
+            address["street_names"] = sorted(set(address["street_names"]) | set(streets))
     if watermark:
         payload["_wm"] = watermark
-        # Re-hash: the watermark is part of what the signature will cover, so two
-        # orgs' bundles differ by their mark and neither can be swapped for the
+    if watermark or org_id:
+        # Re-hash: the mark and the canaries are part of what the signature will
+        # cover, so two orgs' bundles differ and neither can be swapped for the
         # other without breaking the signature.
         payload["version"] = hashlib.sha256(_canonical(payload)).hexdigest()[:16]
     return _compress(payload)

@@ -71,7 +71,8 @@ services:
       # Водяной знак: сервер штампует в каждую лизу метку по org, чтобы утёкший
       # из RAM тюнинг называл, ЧЕЙ (docs/tz-tuning-in-lease.md). Пусто — знак
       # выключен, сервер всё равно работает. Секрет только у сервера, не в образе.
-      PSEUDEX_WATERMARK_SECRET: ${PSEUDEX_WATERMARK_SECRET:-}
+      PSEUDEX_WATERMARK_SECRET: ${PSEUDEX_WATERMARK_SECRET:?set PSEUDEX_WATERMARK_SECRET}
+      PSEUDEX_CANARY_SECRET: ${PSEUDEX_CANARY_SECRET:?set PSEUDEX_CANARY_SECRET}
       PSEUDEX_LICENSE_DB: /data/license.db
       PSEUDEX_LEASE_TTL_SECONDS: ${LEASE_TTL:-86400}
       PSEUDEX_GRACE_SECONDS: ${GRACE:-172800}

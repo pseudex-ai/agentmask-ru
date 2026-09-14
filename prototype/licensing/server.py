@@ -32,6 +32,7 @@ from functools import lru_cache
 
 from licensing.pack import build_plaintext
 from licensing.watermark import watermark_for
+from licensing.canary import canary_surnames
 from licensing.store import (
     STATUS_ACTIVE,
     STATUS_REVOKED,
@@ -117,9 +118,11 @@ _PLAINTEXT_HASH = plaintext_hash(_PLAINTEXT)
 @lru_cache(maxsize=256)
 def _leased_bundle(org_id: str) -> tuple[bytes, str]:
     wm = watermark_for(org_id)
-    if not wm:
+    # Canaries are a separate attribution lever from the watermark: either being
+    # active means this org needs its own bundle, not the shared unmarked one.
+    if not wm and not canary_surnames(org_id):
         return _PLAINTEXT, _PLAINTEXT_HASH
-    plaintext = build_plaintext(watermark=wm)
+    plaintext = build_plaintext(watermark=wm, org_id=org_id)
     return plaintext, plaintext_hash(plaintext)
 
 
