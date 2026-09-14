@@ -160,6 +160,20 @@ fi
 # «нечего делать». Сервисы, монтирующие файлы из чекаута, несут эту
 # переменную в environment (compose.yml, `x-conf-rev`), и смена дерева их
 # пересоздаёт. Откат передаёт дерево ПРЕЖНЕГО тега тем же путём.
+# VERSION ТАКЖЕ ЗАПИСЫВАЕТСЯ В .env. Compose требует её (`${VERSION:?}`), и
+# агент передаёт её в окружении на каждой выкатке — но `docker compose ps`
+# из рук оператора, restore-drill и housekeeping читают .env, и без строки там
+# они отказывают с «required variable VERSION is missing». Строка обновляется
+# после КАЖДОЙ удачной выкатки и отката, так что .env всегда называет то, что
+# крутится.
+remember_version() {
+    env_file="$HERE/.env"
+    if grep -q '^VERSION=' "$env_file"; then
+        sed -i "s/^VERSION=.*/VERSION=${1#v}/" "$env_file"
+    else
+        printf 'VERSION=%s\n' "${1#v}" >> "$env_file"
+    fi
+}
 deploy() {
     conf_rev="$(git rev-parse "${1}:deploy")" || return 1
     VERSION="${1#v}" PSEUDEX_CONF_REV="$conf_rev" \
@@ -205,6 +219,7 @@ if ! deploy "$WANT" >"$DEPLOY_LOG" 2>&1; then
         # сказала «откатился», а прод стоит.
         if deploy "$PREV" >/dev/null 2>&1; then
             printf '%s' "$PREV" > "$STATE"
+            remember_version "$PREV"
             notify warn "Откат на $PREV выполнен" "Продакшен работает на прежней версии."
         else
             notify crit "ОТКАТ НА $PREV НЕ ПОДНЯЛСЯ" \
@@ -217,6 +232,7 @@ fi
 rm -f "$DEPLOY_LOG"
 
 printf '%s' "$WANT" > "$STATE"
+remember_version "$WANT"
 notify info "Выкатка $WANT готова" "Все сервисы здоровы."
 
 # Старые образы копятся быстрее, чем кончается диск, но кончается именно диск —
