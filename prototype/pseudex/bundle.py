@@ -26,12 +26,9 @@ import base64
 import hashlib
 import hmac
 import json
-import os
 from dataclasses import dataclass
 
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.serialization import (Encoding,
-                                                          PublicFormat)
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,

@@ -20,7 +20,6 @@ usage: python3 -m licensing.pack [--out bundle.bin]
 import argparse
 import hashlib
 import json
-import os
 import re
 import sys
 import zlib

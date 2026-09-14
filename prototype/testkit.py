@@ -21,7 +21,6 @@ import time
 
 import httpx
 
-from pathlib import Path
 
 from licensing.pack import build_plaintext
 from pseudex.assets import ASSETS
