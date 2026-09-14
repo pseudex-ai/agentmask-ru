@@ -48,6 +48,12 @@ jobs:
 
       - name: core round trip
         run: python test_loop.py
+      - name: A2 closed — tuning in the lease, no offline path
+        run: python test_tuning_lease_security.py
+      - name: watermark — every lease stamped, dump names the org
+        run: PSEUDEX_WATERMARK_SECRET=ci-watermark-secret python test_watermark.py
+      - name: memory hardening — no core, non-dumpable, swap-locked
+        run: python test_memory_hardening.py
       - name: vault canonicalisation and persistence
         run: python vault_test.py
       - name: 152-ФЗ type coverage

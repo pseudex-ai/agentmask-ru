@@ -205,6 +205,10 @@ class DetectionAssets:
     ru_pii: RuPiiAssets
     priority: dict[str, int]
     lookalike: dict[str, str]
+    # Per-customer watermark (licensing/watermark.py). Inert for detection; it
+    # exists so a tuning dump lifted from RAM names whose lease delivered it.
+    # Empty when the server ran without PSEUDEX_WATERMARK_SECRET.
+    watermark: str = ""
 
 
 def _translit(text: str, table: dict[str, str]) -> str:
@@ -356,6 +360,7 @@ def _build(payload: dict[str, object]) -> DetectionAssets:
         ru_pii=_build_ru_pii(payload["ru_pii"]),
         priority=dict(payload["priority"]),
         lookalike=dict(payload["lookalike"]),
+        watermark=str(payload.get("_wm", "")),
     )
 
 

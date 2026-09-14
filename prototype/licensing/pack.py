@@ -326,7 +326,7 @@ def _compress(payload: dict[str, object]) -> bytes:
     return zlib.compress(_canonical(payload), 6)
 
 
-def build_plaintext() -> bytes:
+def build_plaintext(watermark: str = "") -> bytes:
     """The LEASED bundle: the FULL payload — bulk AND authored tuning.
 
     The tuning used to be compiled into the engine (a static-key-sealed blob) and
@@ -334,8 +334,18 @@ def build_plaintext() -> bytes:
     here whole, inside the bundle the server age-seals to the ephemeral process
     key and nonce-wraps — so it never touches disk, a captured lease is useless on
     another machine, and there is no compiled blob to decrypt offline. `version`
-    is the payload's identity (audit, gate L6). See docs/tz-tuning-in-lease.md."""
+    is the payload's identity (audit, gate L6). See docs/tz-tuning-in-lease.md.
+
+    `watermark` (per-org, from `licensing.watermark`) is stamped into the payload
+    so a tuning dump names WHOSE lease carried it — inert for detection, carried
+    into the engine's assets. Empty → no mark (watermarking off)."""
     payload = build_payload()
+    if watermark:
+        payload["_wm"] = watermark
+        # Re-hash: the watermark is part of what the signature will cover, so two
+        # orgs' bundles differ by their mark and neither can be swapped for the
+        # other without breaking the signature.
+        payload["version"] = hashlib.sha256(_canonical(payload)).hexdigest()[:16]
     return _compress(payload)
 
 

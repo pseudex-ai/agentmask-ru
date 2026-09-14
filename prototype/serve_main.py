@@ -269,7 +269,7 @@ def main() -> None:
     # docs/tz-tuning-in-lease.md for the honest scope (root-in-live-RAM remains).
     _h = harden_process()
     print(f"pseudex hardening: core={_h['core']} dumpable={_h['dumpable']} "
-          f"mlock={_h['mlock']}", file=sys.stderr)
+          f"mlock={_h['mlock']} tracer={_h['tracer']}", file=sys.stderr)
     if role == "ui":
         _serve_ui(log_level)
         return

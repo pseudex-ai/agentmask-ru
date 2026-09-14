@@ -85,14 +85,30 @@ def get_dumpable() -> int:
     return libc.prctl(_PR_GET_DUMPABLE, 0, 0, 0, 0)
 
 
+def tracer_pid() -> int:
+    """The PID of a process tracing us (gdb/gcore/strace attached), or 0 if none.
+    Root can hide this, so it is a DETECTION signal logged for the operator, not
+    a wall — a non-zero value on a production worker means someone attached a
+    debugger to a process holding the tuning."""
+    try:
+        for line in open("/proc/self/status", encoding="ascii"):
+            if line.startswith("TracerPid:"):
+                return int(line.split()[1])
+    except (OSError, ValueError):
+        pass
+    return 0
+
+
 def harden_process() -> dict[str, str]:
     """Apply every hardening measure best-effort; return {measure: verdict}.
 
     Idempotent and non-raising by contract: called once per worker at the top of
     `serve_main.main`, before any role touches the tuning or the vault."""
     libc = _libc()
+    tp = tracer_pid()
     return {
         "core": _disable_core_dumps(),
         "dumpable": _set_non_dumpable(libc),
         "mlock": _lock_memory(libc),
+        "tracer": "none" if tp == 0 else f"ATTACHED pid {tp}",
     }
