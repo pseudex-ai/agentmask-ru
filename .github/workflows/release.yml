@@ -184,7 +184,9 @@ jobs:
         with:
           name: pseudex-compiled
           path: /tmp/pseudex-compiled.tar.gz
-          retention-days: 7
+          # Consumed by `publish` in this same run; 430 MB kept for a week per
+          # release is quota spent on nothing.
+          retention-days: 1
 
   publish:
     name: sign and push

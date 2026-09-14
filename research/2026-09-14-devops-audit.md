@@ -79,21 +79,24 @@
 
 ## 6. План правок — в порядке ценности
 
+✅ — сделано и проверено запуском (коммиты 72f5af4…cc6a825 и далее); линтеры
+стоят в `checks.yml` (джоба `workflows`) и красят PR сами.
+
 | # | правка | почему | усилие |
 |---|---|---|---|
-| 1 | **identity/issuer точные, агент отказывает без них** | `.*` = Watchtower `[A]` | 30 мин |
-| 2 | **`up -d --wait --wait-timeout 120`** вместо `healthy()` | откат работает только 2 с `[A]` | 30 мин |
-| 3 | **`--keep-within 30d`** в `forget` | атака из design doc `[A]` | 5 мин |
-| 4 | **`--read-data` целиком**, комментарий исправить | 5% = один pack `[A]` | 15 мин |
-| 5 | **actionlint + zizmor pedantic** в checks.yml; `${{ }}` из `run:` — все 16 | 3/7 дефектов статически `[A]` | 1 ч |
-| 6 | **`concurrency`** на ship/release/checks/gates; агенту — ветка «образа ещё нет» | гонка тегов, 50 мин crit `[A]` | 1 ч |
+| 1 ✅ | **identity/issuer точные, агент отказывает без них** | `.*` = Watchtower `[A]` | 30 мин |
+| 2 ✅ | **`up -d --wait --wait-timeout 120`** вместо `healthy()` | откат работает только 2 с `[A]` | 30 мин |
+| 3 ✅ | **`--keep-within 30d`** в `forget` | атака из design doc `[A]` | 5 мин |
+| 4 ✅ | **`--read-data` целиком**, комментарий исправить | 5% = один pack `[A]` | 15 мин |
+| 5 ✅ | **actionlint + zizmor pedantic** в checks.yml; `${{ }}` из `run:` — все 16 | 3/7 дефектов статически `[A]` | 1 ч |
+| 6 ✅ | **`concurrency`** на ship/release/checks/gates; агенту — ветка «образа ещё нет» | гонка тегов, 50 мин crit `[A]` | 1 ч |
 | 7 | `restart: true` на `depends_on` init-сервисов; `COMPOSE_PROFILES` в `.env` | рендер без потребителя; профили не обновляются `[A]` | 20 мин |
 | 8 | `--mount=type=secret` для tuning key; гейт P11 с положительным контролем | `pseudex:source` + `ps` + кеш `[A]` | 2,5 ч |
 | 9 | Nuitka ccache: cache-mount + actions/cache + cache-dance; `NUITKA_JOBS=nproc` | 33 → 10–14 мин `[C]` | 1 день |
 | 10 | Deny `DeleteObjectVersion`+`PutLifecycleConfiguration` аудиту; версии 30 дн; `--retry-lock 15m` | второй ключ стирает навсегда `[A]` | 45 мин |
 | 11 | Дайджест из `cosign verify -o json` в compose (`image@sha256:`) | двойной резолв тега `[A]` | 1 ч |
 | 12 | `USER 10001` + `HEALTHCHECK` (bash `/dev/tcp`) в клиентском образе; P8 проверяет | CIS 4.1/4.6 `[A]` | полдня + L19–L22 |
-| 13 | `permissions` во всех 6 файлах; `persist-credentials: false`; `retention-days: 1` | квота, least-privilege `[A]` | 30 мин |
+| 13 ✅ | `permissions` во всех 6 файлах; `persist-credentials: false`; `retention-days: 1` | квота, least-privilege `[A]` | 30 мин |
 | 14 | Сторож → systemd-таймер; promtail через socket-proxy | root на хосте `[A]` | 2 ч |
 | 15 | WLIF вместо JSON-ключа реестра; `environment: release` с reviewer | статический ключ не нужен `[B]` | 2 ч |
 | 16 | Ruleset на `v*`: кто может создавать теги | якорь доверия `[A]` | 15 мин |
@@ -103,7 +106,7 @@
 | 20 | Секреты файлами (`_FILE`) через compose `secrets:` | inspect/exec/наследование `[A]` | 5 ч |
 | 21 | Ротация ключа подписи: конвейер с двумя ключами | движок готов, конвейер нет `[B]` | 3 ч |
 | 22 | Litestream для лицензионной SQLite | RPO 24 ч → секунды `[B]` | 1 день |
-| 23 | Пин `FROM` дайджестами + Renovate; `next-version`/`checks-green`/compose-проверки → `ci/*.sh` + bats | glibc-инцидент; дефекты №3–4 фикстурами `[A]` | полдня |
+| 23 | Пин `FROM` дайджестами + Renovate (действия GHA уже по SHA + Dependabot, мажоры руками — ✅); `next-version`/`checks-green`/compose-проверки → `ci/*.sh` + bats | glibc-инцидент; дефекты №3–4 фикстурами `[A]` | полдня |
 
 Первые шесть — один рабочий день, и они закрывают все три «пустые политики».
 
