@@ -294,6 +294,9 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+      # Access log for fail2ban on the host (see Caddyfile). A bind mount, not
+      # a volume: the reader is a host process.
+      - ./logs/caddy:/var/log/caddy
     # THE SITE'S OWN NAMES POINT BACK AT THIS CONTAINER, so the healthcheck can
     # ask for `https://pseudex.ru/healthz` from inside: the SNI is the real
     # name, Caddy answers with the real certificate, busybox wget verifies it

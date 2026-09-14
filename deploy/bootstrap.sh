@@ -74,6 +74,16 @@ ufw default allow outgoing >/dev/null
 ufw allow "${SSH_PORT}/tcp" comment 'ssh' >/dev/null
 ufw allow 80/tcp comment 'http -> редирект и ACME' >/dev/null
 ufw allow 443/tcp comment 'https' >/dev/null
+# THE HOSTER'S MONITORING AGENT, FROM THE HOSTER'S SERVERS ONLY. Timeweb ships
+# zabbix-agentd listening on 0.0.0.0:10050 — the panel's CPU/traffic graphs
+# come from it. With the firewall closed those graphs go blank; open to the
+# whole internet it is a service we do not run answering strangers. The agent's
+# own config names the servers allowed to poll it, so those, and nothing else.
+if [ -f /etc/zabbix/zabbix_agentd.conf ]; then
+    for ip in $(sed -n 's/^Server=//p' /etc/zabbix/zabbix_agentd.conf | tr ',' ' '); do
+        ufw allow from "$ip" to any port 10050 proto tcp comment 'zabbix (hoster monitoring)' >/dev/null
+    done
+fi
 ufw --force enable >/dev/null
 ufw status numbered | sed 's/^/    /'
 
@@ -212,6 +222,28 @@ install -m 0644 "${TARGET}/deploy/systemd/pseudex-restore-drill.service" /etc/sy
 install -m 0644 "${TARGET}/deploy/systemd/pseudex-restore-drill.timer" /etc/systemd/system/
 install -m 0644 "${TARGET}/deploy/systemd/pseudex-housekeeping.service" /etc/systemd/system/
 install -m 0644 "${TARGET}/deploy/systemd/pseudex-housekeeping.timer" /etc/systemd/system/
+
+# FAIL2BAN FOR THE WEB, HERE AND NOT IN STEP 4: it needs the repository (the
+# filters live in deploy/fail2ban/) and it needs docker (the web jails insert
+# into DOCKER-USER, which exists only while docker runs). The Debian default
+# enables the sshd jail alone; this adds recidive and two jails over Caddy's
+# access log — scanners (error-status floods) and login bruteforce (POST rate
+# to any /login/, because Django answers a wrong password with 200). Packets
+# to a published port never traverse INPUT, hence the chain.
+#
+# The log file exists before the jail starts, or fail2ban refuses the jail;
+# fail2ban starts after docker, or the chain is missing at boot; and it is
+# RESTARTED, not `enable --now`-ed, so a re-run picks up the jails.
+install -m 0644 "${TARGET}/deploy/fail2ban/pseudex-web-scan.conf" /etc/fail2ban/filter.d/
+install -m 0644 "${TARGET}/deploy/fail2ban/pseudex-web-login.conf" /etc/fail2ban/filter.d/
+install -m 0644 "${TARGET}/deploy/fail2ban/jail.conf" /etc/fail2ban/jail.d/pseudex.conf
+mkdir -p "${TARGET}/deploy/logs/caddy" && touch "${TARGET}/deploy/logs/caddy/access.log"
+mkdir -p /etc/systemd/system/fail2ban.service.d
+printf '[Unit]\nAfter=docker.service\n' > /etc/systemd/system/fail2ban.service.d/after-docker.conf
+systemctl daemon-reload
+systemctl restart fail2ban
+sleep 2
+fail2ban-client status | sed 's/^/    /'
 # journald: потолок сразу, а не когда диск кончится.
 mkdir -p /etc/systemd/journald.conf.d
 printf '[Journal]\nSystemMaxUse=500M\n' > /etc/systemd/journald.conf.d/pseudex.conf

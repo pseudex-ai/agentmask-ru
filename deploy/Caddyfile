@@ -3,6 +3,18 @@
 # whose silent failure would expire the site.
 
 {$SITE_HOST} {
+	# ACCESS LOG TO A FILE AS WELL AS STDOUT. stdout is what promtail ships to
+	# Loki; the file is what fail2ban on the host reads (`bootstrap.sh`, jail
+	# `pseudex-web`): scanners and login bruteforce get banned at the packet
+	# level, in Docker's DOCKER-USER chain, before Caddy sees the next request.
+	# A named logger, so the default stdout one stays.
+	log file {
+		output file /var/log/caddy/access.log {
+			roll_size 50mb
+			roll_keep 5
+		}
+		format json
+	}
 	encode zstd gzip
 
 	header {
@@ -26,6 +38,13 @@
 # loop) and hands plain HTTP to the container. No HSTS preload here: the
 # client is a container with an explicit URL, not a browser.
 {$LICENSE_HOST} {
+	log file {
+		output file /var/log/caddy/access.log {
+			roll_size 50mb
+			roll_keep 5
+		}
+		format json
+	}
 	encode zstd gzip
 	header {
 		X-Content-Type-Options "nosniff"

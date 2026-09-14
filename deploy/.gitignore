@@ -1,3 +1,5 @@
 
 # The backup container writes here on the host; never a repository object.
 backups/
+# Caddy access log for fail2ban; host-local.
+logs/
