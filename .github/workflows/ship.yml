@@ -52,13 +52,33 @@ jobs:
         run: |
           set -eu
           sha="${{ github.sha }}"
-          gh api "repos/${{ github.repository }}/commits/${sha}/check-runs" \
-            --jq '.check_runs[] | "\(.name)\t\(.status)\t\(.conclusion)"' > /tmp/checks.tsv || true
+          # ТОЛЬКО ПРОВЕРКИ КОДА: checks.yml и gates.yml. Первая версия брала ВСЕ
+          # check-runs коммита — и находила среди них саму себя (`tag`, красный,
+          # потому что отказала) и `probe` из uptime.yml, красный, пока сайта нет.
+          # Кнопка, которую нельзя нажать до запуска сайта, — это не защита.
+          #
+          # И ЖДЁТ, ПОКА ОНИ ХОТЯ БЫ НАЧНУТСЯ: в первую минуту после push
+          # check-runs ещё не зарегистрированы, и «нет ни одной проверки» —
+          # гонка, а не диагноз.
+          for _ in $(seq 1 12); do
+            gh api "repos/${{ github.repository }}/commits/${sha}/check-runs?per_page=100" \
+              --jq '.check_runs[] | select(.name != "tag" and .name != "probe") | "\(.name)\t\(.status)\t\(.conclusion)"' > /tmp/checks.tsv || true
+            [ -s /tmp/checks.tsv ] && break
+            sleep 10
+          done
           total="$(wc -l < /tmp/checks.tsv)"
           if [ "${total}" -eq 0 ]; then
             echo "::error::для ${sha} нет НИ ОДНОЙ проверки — нечего считать зелёным"
             exit 1
           fi
+          # НЕЗАВЕРШЁННЫЕ — ЖДЁМ, а не считаем красными: гейты идут 40 минут,
+          # и кнопка, нажатая через пять, должна дождаться, а не отказать.
+          for _ in $(seq 1 60); do
+            grep -qP '\t(queued|in_progress)\t' /tmp/checks.tsv || break
+            sleep 60
+            gh api "repos/${{ github.repository }}/commits/${sha}/check-runs?per_page=100" \
+              --jq '.check_runs[] | select(.name != "tag" and .name != "probe") | "\(.name)\t\(.status)\t\(.conclusion)"' > /tmp/checks.tsv || true
+          done
           bad="$(awk -F'\t' '$2 != "completed" || ($3 != "success" && $3 != "skipped" && $3 != "neutral")' /tmp/checks.tsv || true)"
           if [ -n "${bad}" ]; then
             echo "::error::проверки не зелёные:"
