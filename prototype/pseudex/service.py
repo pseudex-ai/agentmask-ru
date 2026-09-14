@@ -301,8 +301,6 @@ _BOUND_ORG = os.environ.get("PSEUDEX_ORG", "").strip()
 # audit table — the limiter only blunts an egregious sweep.
 _DETOK_WINDOW = 60.0
 _DETOK_MAX_PER_MIN = int(os.environ.get("PSEUDEX_DETOK_MAX_PER_MIN", "6000"))
-_DETOK_HITS: dict[str, list[float]] = {}
-_DETOK_LOCK = threading.Lock()
 
 
 def _check_org(org_id: str) -> "JSONResponse | None":
@@ -317,16 +315,12 @@ def _check_org(org_id: str) -> "JSONResponse | None":
 
 
 def _detok_rate_ok(org_id: str) -> bool:
-    """False when this org has exceeded the per-minute detok cap."""
-    now = time.monotonic()
-    cutoff = now - _DETOK_WINDOW
-    with _DETOK_LOCK:
-        hits = _DETOK_HITS.setdefault(org_id, [])
-        hits[:] = [t for t in hits if t >= cutoff]
-        if len(hits) >= _DETOK_MAX_PER_MIN:
-            return False
-        hits.append(now)
-        return True
+    """False when this org has exceeded the per-minute detok cap. Counts the SHARED
+    SQLite audit (`detoks`), so all N SO_REUSEPORT workers enforce ONE cap — not N×
+    — and there is no per-worker in-memory table to grow unbounded per org. The
+    audited row each detok writes is the cross-worker signal this reads. A blocking
+    SQLite COUNT, so callers offload it to a worker thread."""
+    return AUDIT.detok_calls_since(org_id, time.time() - _DETOK_WINDOW) < _DETOK_MAX_PER_MIN
 
 
 def _audit_detok(org_id: str, actor: str, before: dict, after: dict,
@@ -619,7 +613,7 @@ async def unmask(request: Request) -> JSONResponse:
     blocked = _check_org(org_id)
     if blocked:
         return blocked
-    if not _detok_rate_ok(org_id):
+    if not await anyio.to_thread.run_sync(_detok_rate_ok, org_id):
         return JSONResponse({"error": "detok rate limit exceeded"}, status_code=429)
     response = body.get("response")
     if not isinstance(response, dict):
@@ -687,7 +681,7 @@ async def unmask_arguments_endpoint(request: Request) -> JSONResponse:
     blocked = _check_org(org_id)
     if blocked:
         return blocked
-    if not _detok_rate_ok(org_id):
+    if not await anyio.to_thread.run_sync(_detok_rate_ok, org_id):
         return JSONResponse({"error": "detok rate limit exceeded"}, status_code=429)
     arguments = body.get("arguments")
     if not isinstance(arguments, list) or not all(isinstance(a, str) for a in arguments):

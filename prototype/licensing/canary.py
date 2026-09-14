@@ -43,11 +43,23 @@ def _secret() -> bytes:
 
 @lru_cache(maxsize=1)
 def _real_surnames() -> frozenset:
-    """The real surname dictionary, to guarantee every canary is genuinely novel."""
+    """The real surname dictionary (lowercased), to guarantee every canary is
+    genuinely novel — a canary equal to a real name would prove nothing."""
     path = _DATA / "surnames.txt"
     if not path.exists():
         return frozenset()
-    return frozenset(path.read_text(encoding="utf-8").split())
+    return frozenset(w.lower() for w in path.read_text(encoding="utf-8").split())
+
+
+@lru_cache(maxsize=1)
+def _real_streets() -> frozenset:
+    """The real ГАР street vocabulary (lowercased), so a street canary is novel
+    too. Lazy import to avoid a top-level cycle (pack imports canary)."""
+    try:
+        from licensing.pack import load_street_vocabulary
+        return frozenset(s.lower() for s in load_street_vocabulary())
+    except Exception:
+        return frozenset()
 
 
 def _stream(org_id: str, kind: str) -> Iterator[int]:
@@ -78,7 +90,9 @@ def _generate(org_id: str, kind: str, endings: tuple, avoid: frozenset) -> list:
     seen: set = set()
     while len(out) < _N:
         word = _synth(stream, endings)
-        if word in seen or word in avoid:
+        # `avoid` is lowercased; compare case-insensitively so a canary never
+        # coincides with a real name/street regardless of case.
+        if word in seen or word.lower() in avoid:
             continue
         seen.add(word)
         out.append(word)
@@ -95,8 +109,10 @@ def canary_surnames(org_id: str) -> list:
 
 
 def canary_streets(org_id: str) -> list:
-    """`_N` plausible-but-invented street names unique to this org, or []."""
-    return _generate(org_id, "street", _STREET_END, frozenset())
+    """`_N` plausible-but-invented street names unique to this org, or []. Filtered
+    against the real ГАР vocabulary so each is novel — a canary equal to a real
+    street proves nothing (every engine masks real streets)."""
+    return _generate(org_id, "street", _STREET_END, _real_streets())
 
 
 def identify(observed: Iterable, orgs: Iterable) -> Optional[str]:
@@ -109,7 +125,11 @@ def identify(observed: Iterable, orgs: Iterable) -> Optional[str]:
     best: Optional[str] = None
     best_hits = 0
     for org in orgs:
-        hits = len(set(canary_surnames(org)) & seen)
+        # Both canary sets count: a recovered gazetteer (surnames and/or streets)
+        # is matched against this org's whole canary set, so street canaries carry
+        # attribution weight too (they are injected into every marked bundle).
+        marks = set(canary_surnames(org)) | set(canary_streets(org))
+        hits = len(marks & seen)
         if hits > best_hits:
             best, best_hits = org, hits
     return best if best_hits >= max(3, _N // 2) else None

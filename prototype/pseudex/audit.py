@@ -194,12 +194,28 @@ class AuditLog:
 
     def detok_calls_since(self, customer: str, since: float) -> int:
         """How many /unmask* calls this customer made since `since` — the window
-        a rate limiter and an anomaly check read."""
+        the cross-worker rate limiter reads."""
         row = self._fetchone(
             "SELECT COUNT(*) FROM detoks WHERE customer=? AND ts>=?",
             (customer, since),
         )
         return int(row[0]) if row else 0
+
+    def detok_summary(self, customer: str, since: float) -> dict:
+        """Detok activity since `since` — the OPERATOR-visible half of the B1 trace.
+        A compromised-credential vault sweep shows as a spike in `calls` and a high
+        `miss_rate` (guessed tokens don't resolve). Counts only, never values."""
+        row = self._fetchone(
+            "SELECT COUNT(*), COALESCE(SUM(resolved),0), COALESCE(SUM(misses),0) "
+            "FROM detoks WHERE customer=? AND ts>=?",
+            (customer, since),
+        )
+        calls = int(row[0]) if row else 0
+        resolved = int(row[1]) if row else 0
+        misses = int(row[2]) if row else 0
+        total = resolved + misses
+        return {"calls": calls, "resolved": resolved, "misses": misses,
+                "miss_rate": round(misses / total, 3) if total else 0.0}
 
     def _fetchall(self, sql: str, params: tuple) -> list[tuple]:
         """Every READ goes through here, under the same lock the writes take.

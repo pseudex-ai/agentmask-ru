@@ -138,7 +138,11 @@ for name in pseudex pseudex-licensing pseudex-storefront pseudex-backup pseudex-
 этот образ, прежде чем снимать проверку."
         exit 1
     fi
-    digest="$(printf '%s' "$verify_json" | jq -r '.[0].critical.image."docker-manifest-digest" // empty')"
+    # `|| digest=""` — под `set -e` голая подстановка с падающим jq (напр. будущий
+    # cosign печатает баннер на stdout) убила бы агента БЕЗ crit-тревоги, ровно тот
+    # тихий отказ, против которого этот файл написан. Пустой/кривой дайджест ловит
+    # case ниже и шлёт тревогу.
+    digest="$(printf '%s' "$verify_json" | jq -r '.[0].critical.image."docker-manifest-digest" // empty')" || digest=""
     case "$digest" in
         sha256:*) : ;;
         *)  notify crit "Выкатка ОТМЕНЕНА: нет проверенного дайджеста" \
@@ -146,13 +150,26 @@ for name in pseudex pseudex-licensing pseudex-storefront pseudex-backup pseudex-
 извлёкся. Работает $HAVE."
             exit 1 ;;
     esac
+    # КЛИЕНТСКИЙ ОБРАЗ ДВИЖКА КРУТИТСЯ У КЛИЕНТА, НЕ ЗДЕСЬ. На лицензионном хосте
+    # его нет в compose — нам нужна только его ПОДПИСЬ+дайджест (что и сделано выше,
+    # это мы публикуем клиенту). Тянуть+метить его — качать ~350МБ неиспользуемого
+    # модельного стека на хост каждый релиз И дать транзиентному сбою НЕиспользуемого
+    # образа уронить выкатку четырёх здоровых. Поэтому для `pseudex` — только verify.
+    case "$name" in
+        pseudex) continue ;;
+    esac
     if ! docker pull --quiet "${REGISTRY}/${name}@${digest}" >/dev/null 2>&1; then
         notify crit "Выкатка ОТМЕНЕНА: проверенный дайджест не скачался" \
             "${REGISTRY}/${name}@${digest}. Работает $HAVE."
         exit 1
     fi
     # Локальный тег -> проверенный дайджест. `up` (без pull) поднимет именно его.
-    docker tag "${REGISTRY}/${name}@${digest}" "$REF"
+    # Под `set -e` неудача tag тоже должна кричать, а не молча ронять агента.
+    docker tag "${REGISTRY}/${name}@${digest}" "$REF" || {
+        notify crit "Выкатка ОТМЕНЕНА: локальный тег не проставился" \
+            "${REF}. Работает $HAVE."
+        exit 1
+    }
 done
 
 notify info "Выкатка $HAVE → $WANT" "Подписи проверены, поднимаю."

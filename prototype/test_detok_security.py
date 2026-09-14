@@ -66,17 +66,21 @@ def test_record_detok_counts_only() -> None:
 
 
 def test_rate_limit() -> None:
-    """B1: over the per-org cap → refused."""
+    """B1: over the per-org cap → refused. The cap is counted from the SHARED audit
+    (cross-worker), so recording rows is what trips it — not a per-worker counter."""
     saved = service._DETOK_MAX_PER_MIN
     service._DETOK_MAX_PER_MIN = 3
-    service._DETOK_HITS.clear()
     try:
-        oks = [service._detok_rate_ok("acme") for _ in range(5)]
-        check(oks == [True, True, True, False, False],
-              "B1 detok rate limit trips over the cap", f"{oks}")
+        org = "ratelimit-test-org"
+        fresh = service._detok_rate_ok(org)                 # 0 rows -> allowed
+        for _ in range(3):
+            service.AUDIT.record_detok(org, "gateway", 1, 0)
+        over = service._detok_rate_ok(org)                  # 3 >= 3 -> refused
+        check(fresh and not over,
+              "B1 detok rate limit trips over the cap (cross-worker, from audit)",
+              f"fresh={fresh} over={over}")
     finally:
         service._DETOK_MAX_PER_MIN = saved
-        service._DETOK_HITS.clear()
 
 
 async def _app_calls() -> None:

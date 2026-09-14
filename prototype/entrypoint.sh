@@ -140,6 +140,22 @@ fi
 # pseudex.service:app` is a supported launch shape that never runs this script
 # (CLAUDE.md, deployment shape B).
 #
+# NON-ROOT + ПРЕДсуществующий root-owned том. Движок работает как uid 10001;
+# СВЕЖИЙ том /data наследует это владение, но том, созданный старым root-образом,
+# остаётся root:root — и проба/первый воркер ниже упрутся в непрозрачный
+# «Permission denied» на три слоя вглубь. Скажем прямо и назовём починку, а не
+# уроним контейнер загадочной ошибкой.
+DATA_DIR="${PSEUDEX_DB_DIR:-/data}"
+if [ -d "$DATA_DIR" ] && ! { : > "$DATA_DIR/.pseudex-write-test"; } 2>/dev/null; then
+    echo ""
+    echo "pseudex: $DATA_DIR не записывается (uid $(id -u)). Том от старого root-образа"
+    echo "         остался во владении root. Выполните ОДИН раз, затем перезапустите:"
+    echo "           docker run --rm -v <volume>:/data alpine chown -R 10001:10001 /data"
+    echo "         Свежий том этого не требует."
+    exit 4
+fi
+rm -f "$DATA_DIR/.pseudex-write-test" 2>/dev/null || true
+
 # The plaintext-to-encrypted conversion stays inside the connection factory under
 # its own flock for the same reason: a migration that only happened here would be
 # a migration half the deployments never get.
