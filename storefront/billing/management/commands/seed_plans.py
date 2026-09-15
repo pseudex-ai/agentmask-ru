@@ -80,6 +80,16 @@ class Command(BaseCommand):
 
         for (code, title, price, included, metered, floor, rpm, instances, keys,
              order, audience) in PLANS:
+            # Глобальный потолок объёма: докупать можно до 3× включённого, затем
+            # буфер 10% с оффером апгрейда, дальше жёсткая остановка. Enterprise
+            # (по договору) — без потолка. Множители здесь, чтобы правились в одном
+            # месте; поля тарифа остаются настраиваемыми поштучно при желании.
+            if code == "enterprise":
+                cap = buffer = discount = 0
+            else:
+                cap = included * 3
+                buffer = cap // 10
+                discount = 50
             Plan.objects.update_or_create(code=code, defaults={
                 "title": title,
                 "monthly_price": price,
@@ -95,5 +105,8 @@ class Command(BaseCommand):
                 "is_public": code != "enterprise",
                 "sort_order": order,
                 "audience": audience,
+                "overage_cap_requests": cap,
+                "buffer_requests": buffer,
+                "upgrade_first_month_discount_pct": discount,
             })
         self.stdout.write(f"{len(PLANS)} plans seeded")

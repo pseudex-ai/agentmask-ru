@@ -370,6 +370,42 @@ def _round(amount: Decimal) -> Decimal:
 # Поле `metered_floor` оставлено настраиваемым: не 0 на тарифе → вернётся полоса.
 DEFAULT_METERED_FLOOR = 0
 
+
+def classify_zone(used: int, plan) -> dict:
+    """Which VOLUME ZONE the org is in — for the cabinet display AND enforcement.
+    Pure function of the period's request count and the plan. Four zones:
+
+      included  0..included_requests            — covered by the subscription
+      metered   included..overage_cap           — top-up (overage) at the tier rate
+      buffer    overage_cap..overage_cap+buffer  — still served, cabinet offers the
+                                                   upgrade (favourable first month)
+      stopped   beyond the buffer                — hard stop, like an unpaid licence
+
+    `overage_cap_requests == 0` means NO ceiling (Enterprise/по договору): only
+    included vs metered, never buffer/stopped."""
+    included = int(plan.included_requests or 0)
+    cap = int(plan.overage_cap_requests or 0)
+    buffer = int(plan.buffer_requests or 0)
+    used = max(0, int(used))
+    if cap <= 0:
+        zone = "included" if used <= included else "metered"
+        return {"zone": zone, "used": used, "included": included, "cap": 0,
+                "buffer_end": 0, "capped": False, "in_buffer": False,
+                "pct_of_cap": 0}
+    buffer_end = cap + buffer
+    if used <= included:
+        zone = "included"
+    elif used <= cap:
+        zone = "metered"
+    elif used <= buffer_end:
+        zone = "buffer"
+    else:
+        zone = "stopped"
+    return {"zone": zone, "used": used, "included": included, "cap": cap,
+            "buffer_end": buffer_end, "capped": zone == "stopped",
+            "in_buffer": zone == "buffer",
+            "pct_of_cap": min(100, round(used / cap * 100)) if cap else 0}
+
 # Срок оплаты счёта. Здесь, а не литералом в `build_invoice`: это число
 # напечатано на лендинге и в письме, и три копии одного срока разъезжаются.
 INVOICE_DUE_DAYS = 7

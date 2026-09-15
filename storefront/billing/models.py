@@ -89,6 +89,21 @@ class Plan(models.Model):
     is_public = models.BooleanField(default=True)
     sort_order = models.PositiveIntegerField(default=0)
 
+    # ГЛОБАЛЬНЫЙ ПОТОЛОК ОБЪЁМА — докупать (перерасход) можно ТОЛЬКО ДО ЭТОГО ЧИСЛА,
+    # дальше буфер и остановка. Овердрафт не уходит вверх бесконечно: клиент не
+    # получает сюрприз-счёт, а мы подталкиваем к переходу на старший тариф.
+    #   зоны: [0..included] абонплата · (included..overage_cap] докуп по ставке ·
+    #         (overage_cap..overage_cap+buffer] буфер с оффером апгрейда ·
+    #         дальше — жёсткая остановка (как неоплата).
+    # 0 = потолка нет (Enterprise / по договору).
+    overage_cap_requests = models.BigIntegerField(default=0)
+    # Небольшой запас сверх потолка: сервис ещё работает, но кабинет показывает
+    # оффер «перейди на старший тариф, первый месяц выгодно — ты уже пользуешься».
+    buffer_requests = models.BigIntegerField(default=0)
+    # Скидка на ПЕРВЫЙ месяц старшего тарифа, когда предлагаем апгрейд на потолке
+    # (в процентах). 0 = без скидки.
+    upgrade_first_month_discount_pct = models.PositiveSmallIntegerField(default=0)
+
     class Meta:
         ordering = ["sort_order"]
 
@@ -103,11 +118,13 @@ class Subscription(models.Model):
     ACTIVE = "active"
     PAST_DUE = "past_due"
     CANCELLED = "cancelled"
+    CAPPED = "capped"          # объём достиг глобального потолка (буфер исчерпан) → стоп
     STATES = [
         (TRIAL, "пробный период"),
         (ACTIVE, "активна"),
         (PAST_DUE, "не оплачена"),
         (CANCELLED, "отменена"),
+        (CAPPED, "лимит запросов исчерпан"),
     ]
 
     organization = models.OneToOneField(Organization, on_delete=models.CASCADE,
@@ -161,6 +178,7 @@ class Subscription(models.Model):
     NOTIFIED_NONE = ""
     NOTIFIED_INCLUDED = "included"
     NOTIFIED_METERED = "metered"
+    NOTIFIED_BUFFER = "buffer"      # вошёл в буфер за потолком — послан оффер апгрейда
     volume_notified = models.CharField(max_length=16, blank=True, default="")
 
     class Meta:

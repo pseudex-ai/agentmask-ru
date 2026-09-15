@@ -214,7 +214,8 @@ class Command(BaseCommand):
         """
         live = (Subscription.objects
                 .select_related("organization", "plan")
-                .filter(state__in=(Subscription.TRIAL, Subscription.ACTIVE)))
+                .filter(state__in=(Subscription.TRIAL, Subscription.ACTIVE,
+                                   Subscription.CAPPED)))
         for subscription in live:
             organization = subscription.organization
             try:
@@ -243,8 +244,42 @@ class Command(BaseCommand):
             included = int(terms["included_requests"] or 0)
             floor = int(terms["metered_floor"] or 0)
 
+            # ГЛОБАЛЬНЫЙ ПОТОЛОК (решение владельца): докуп только до потолка, дальше
+            # буфер с оффером апгрейда, за буфером — ЖЁСТКИЙ СТОП (как неоплата, но
+            # обратимо апгрейдом/новым периодом). Обслуживание при перерасходе БОЛЬШЕ
+            # НЕ безгранично: клиент не получает бесконечный сюрприз-счёт.
+            zone = services.classify_zone(used, subscription.plan)
+            if zone["zone"] == "stopped":
+                if subscription.state != Subscription.CAPPED:
+                    self.done.append(
+                        f"{organization.id}: ЛИМИТ ИСЧЕРПАН — стоп "
+                        f"({used} при потолке {zone['cap']} + буфер)")
+                    if not self.dry:
+                        licensing.set_status(organization.id, "suspended")
+                        subscription.state = Subscription.CAPPED
+                        subscription.save(update_fields=["state"])
+                        services.funnel("capped", organization.id,
+                                        f"{used} запросов, потолок {zone['cap']}")
+                continue
+            if subscription.state == Subscription.CAPPED:
+                # Вернулись под потолок (новый период / подняли лимит) — снять стоп.
+                self.done.append(f"{organization.id}: снова под потолком — возобновление")
+                if not self.dry:
+                    licensing.set_status(organization.id, "active")
+                    subscription.state = Subscription.ACTIVE
+                    subscription.volume_notified = Subscription.NOTIFIED_NONE
+                    subscription.save(update_fields=["state", "volume_notified"])
+                continue
+
             stage = subscription.volume_notified
-            if used >= included + floor and stage != Subscription.NOTIFIED_METERED:
+            if zone["in_buffer"] and stage != Subscription.NOTIFIED_BUFFER:
+                # В буфере за потолком: ещё служим, шлём оффер апгрейда (кабинет
+                # показывает «перейди на старший тариф, первый месяц выгодно»).
+                self._send_volume_notice(subscription, used, included, floor, rate,
+                                         charging=True)
+                stage = Subscription.NOTIFIED_BUFFER
+            elif used >= included + floor and stage not in (
+                    Subscription.NOTIFIED_METERED, Subscription.NOTIFIED_BUFFER):
                 self._send_volume_notice(subscription, used, included, floor, rate,
                                          charging=True)
                 stage = Subscription.NOTIFIED_METERED
