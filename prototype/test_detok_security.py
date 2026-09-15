@@ -204,6 +204,26 @@ def test_unmask_chunk_audited_and_limited() -> None:
         service._BOUND_ORG = ""
 
 
+def test_name_trawl_visible() -> None:
+    """WS-7 exfiltrator #2: a NAME/VALUE-guess sweep resolves nothing AND leaves no
+    residual, so `miss_rate` stays 0.0 and the trawl used to hide. It now shows as
+    `unproductive` calls (resolved nothing) — the sweep signal that catches BOTH a
+    token-guess (high miss_rate) and a name-guess (miss_rate 0) trawl."""
+    legit_org, trawl_org = "trawl-legit", "trawl-sweep"
+    for _ in range(10):
+        service.AUDIT.record_detok(legit_org, "gateway", resolved=3, misses=0)
+    for _ in range(200):
+        service.AUDIT.record_detok(trawl_org, "gateway", resolved=0, misses=0)  # guessed non-tokens
+    legit = service.AUDIT.detok_summary(legit_org, 0)
+    trawl = service.AUDIT.detok_summary(trawl_org, 0)
+    check(legit["unproductive"] == 0
+          and trawl["unproductive"] == 200 and trawl["unproductive_rate"] == 1.0
+          and trawl["miss_rate"] == 0.0,
+          "name-trawl (miss_rate=0) is visible as unproductive calls",
+          f"legit_unprod={legit['unproductive']} trawl_unprod={trawl['unproductive']} "
+          f"trawl_miss_rate={trawl['miss_rate']}")
+
+
 def main() -> None:
     test_preview_narrowed()
     test_record_detok_counts_only()
@@ -212,6 +232,7 @@ def main() -> None:
     test_detok_counts_values_not_calls()
     test_app_org_bind_and_audit()
     test_unmask_chunk_audited_and_limited()
+    test_name_trawl_visible()
     failed = [n for ok, n, _ in RESULTS if not ok]
     print("=" * 60)
     print(f"{len(RESULTS) - len(failed)}/{len(RESULTS)} passed")

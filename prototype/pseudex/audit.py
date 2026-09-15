@@ -218,19 +218,32 @@ class AuditLog:
 
     def detok_summary(self, customer: str, since: float) -> dict:
         """Detok activity since `since` — the OPERATOR-visible half of the B1 trace.
-        A compromised-credential vault sweep shows as a spike in `calls` and a high
-        `miss_rate` (guessed tokens don't resolve). Counts only, never values."""
+        Counts only, never values.
+
+        A vault sweep shows in TWO shapes, and `miss_rate` alone hid the second
+        (pentest WS-7 exfiltrator #2): a TOKEN-guess sweep (guessing our-format
+        tokens) fails to resolve and drives `misses`/`miss_rate` up; but a
+        NAME/VALUE-guess sweep (feeding words that were never our tokens) resolves
+        nothing AND leaves no residual, so `misses`=0 and `miss_rate`=0 while the
+        trawl runs. The shape that catches BOTH is UNPRODUCTIVE calls — a call that
+        disclosed nothing (`resolved`=0). Legitimate detok resolves values; a sweep
+        does not. `unproductive`/`unproductive_rate` is the sweep signal that does
+        not hide, whatever the attacker guesses."""
         row = self._fetchone(
-            "SELECT COUNT(*), COALESCE(SUM(resolved),0), COALESCE(SUM(misses),0) "
+            "SELECT COUNT(*), COALESCE(SUM(resolved),0), COALESCE(SUM(misses),0), "
+            "COALESCE(SUM(CASE WHEN resolved=0 THEN 1 ELSE 0 END),0) "
             "FROM detoks WHERE customer=? AND ts>=?",
             (customer, since),
         )
         calls = int(row[0]) if row else 0
         resolved = int(row[1]) if row else 0
         misses = int(row[2]) if row else 0
+        unproductive = int(row[3]) if row else 0
         total = resolved + misses
         return {"calls": calls, "resolved": resolved, "misses": misses,
-                "miss_rate": round(misses / total, 3) if total else 0.0}
+                "miss_rate": round(misses / total, 3) if total else 0.0,
+                "unproductive": unproductive,
+                "unproductive_rate": round(unproductive / calls, 3) if calls else 0.0}
 
     def _fetchall(self, sql: str, params: tuple) -> list[tuple]:
         """Every READ goes through here, under the same lock the writes take.
