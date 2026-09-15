@@ -23,6 +23,19 @@
 # trixie, glibc 2.41) over `debian:12-slim` (bookworm, glibc 2.36) — the floating
 # tag silently changed underneath a pinned one. Change these two together or not
 # at all.
+
+# ── optional obfuscating toolchain (Arkari clang) ───────────────────────────
+# Built ONCE by `deploy/build-arkari-clang.sh` into `pseudex-arkari-clang:llvm20`;
+# the release build then just consumes it, so there is no per-release LLVM compile
+# (no maintenance treadmill — rebuild only to bump the pinned Arkari/LLVM version).
+# DEFAULT is plain debian (no clang) → the `PSEUDEX_OBFUSCATE`-off path is a normal
+# gcc build, byte-for-byte as before. To obfuscate:
+#   docker build -f Dockerfile.nuitka \
+#     --build-arg ARKARI_IMAGE=pseudex-arkari-clang:llvm20 \
+#     --build-arg PSEUDEX_OBFUSCATE=1 ...
+ARG ARKARI_IMAGE=debian:trixie-slim
+FROM ${ARKARI_IMAGE} AS arkari
+
 FROM python:3.12-slim-trixie AS build
 
 # patchelf is required by Nuitka standalone to fix up the RPATHs of the bundled
@@ -30,6 +43,11 @@ FROM python:3.12-slim-trixie AS build
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential patchelf ccache \
     && rm -rf /var/lib/apt/lists/*
+
+# Bring in the Arkari clang if provided. For the default debian ARKARI_IMAGE this
+# copies /usr/local's (empty) dirs — harmless; when ARKARI_IMAGE is the built
+# clang image, /opt/arkari/bin/clang exists and the nuitka step below uses it.
+COPY --from=arkari /usr/local /opt/arkari
 
 WORKDIR /src
 COPY requirements.txt .
@@ -105,7 +123,39 @@ ARG NUITKA_JOBS=6
 # directory called `pseudex`. Gate P1 asserts /app/pseudex does not exist in
 # the release image and uses that as evidence the Python package did not ship;
 # --include-package-data=pseudex would recreate that tree for a few CSS files.
-RUN python -m nuitka \
+ARG PSEUDEX_OBFUSCATE=
+# When obfuscation is on, a `clang` wrapper (first on PATH) appends Arkari's IR
+# obfuscation flags to every compile Nuitka drives, so we do not depend on Nuitka
+# honouring CCFLAGS. Conservative set for the release: STRING + CONSTANT encryption
+# (--irobf-cse/cie/cfe) — it hides the beacon strings and every leased-regex-shaped
+# literal from `strings`/grep triage, with no control-flow runtime cost (unlike
+# --irobf-cff/indbr on the whole binary, which would balloon build time and latency
+# across natasha/uvicorn/pymorphy). Off → a normal gcc build, unchanged.
+ARG PSEUDEX_OBF_FLAGS="-mllvm -irobf -mllvm --irobf-cse -mllvm --irobf-cie -mllvm --irobf-cfe"
+RUN if [ -n "$PSEUDEX_OBFUSCATE" ]; then \
+        mkdir -p /opt/wrap; \
+        { \
+          echo '#!/bin/sh'; \
+          echo '# Obfuscate ONLY our own translation units — pseudex modules and the'; \
+          echo '# entrypoint. The deps (natasha/pymorphy/uvicorn) compile plainly, so'; \
+          echo '# the memory footprint stays at the normal build (the obfuscation passes'; \
+          echo '# add per-compile RAM, and applying them to the whole binary OOMs a'; \
+          echo '# loaded host); the leased tuning is not in the binary anyway, so only'; \
+          echo "# our algorithm code and beacon strings need hiding."; \
+          echo 'case "$*" in'; \
+          echo "  *pseudex*|*serve_main*) exec /opt/arkari/bin/clang $PSEUDEX_OBF_FLAGS \"\$@\" ;;"; \
+          echo '  *) exec /opt/arkari/bin/clang "$@" ;;'; \
+          echo 'esac'; \
+        } > /opt/wrap/clang; \
+        chmod +x /opt/wrap/clang; \
+        export PATH="/opt/wrap:$PATH"; \
+        OBF="--clang"; \
+        echo "== OBFUSCATED build (Arkari string+const enc, scoped to pseudex) =="; \
+    else \
+        OBF=""; \
+        echo "== normal build (no obfuscation) =="; \
+    fi; \
+    python -m nuitka $OBF \
         --standalone \
         --assume-yes-for-downloads \
         --jobs=${NUITKA_JOBS} \
