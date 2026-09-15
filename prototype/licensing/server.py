@@ -287,6 +287,7 @@ ADMIN_ACTIONS: tuple[AdminAction, ...] = (
     AdminAction("/admin/release", "POST", True),
     AdminAction("/admin/instances", "GET", True),
     AdminAction("/admin/usage", "GET", True),
+    AdminAction("/admin/anomalies", "GET", True),
     # ЧТЕНИЕ И ПРАВКА ПРАЙС-ЛИСТА — ВИТРИНЕ, и решение стоит записать, раз
     # аудитория обязана быть решена. Белый список защищает КАТАЛОГ АБОНЕНТОВ, а
     # не цены: держатель витринного токена уже умеет выпускать, отзывать,
@@ -884,6 +885,26 @@ async def admin_instances(request: Request) -> JSONResponse:
                          "cooldown_seconds": STORE.RELEASE_COOLDOWN_SECONDS,
                          "releases_last_hour": STORE.releases_last_hour(org_id),
                          "instances": STORE.active_instances(org_id, _TTL_SECONDS)})
+
+
+@admin_app.get("/admin/anomalies")
+async def admin_anomalies(request: Request) -> JSONResponse:
+    """Fleet metering anomalies (WS-6/M2): orgs whose engine looks SILENT — served
+    quanta with no verified report, the signature of a root-patched meter — or is
+    sharing a process key (usage regressions). Detection for operator review, not
+    enforcement: the underpay residual is bounded by the billing band (it is already
+    billed the floor), and this makes the pattern VISIBLE across the fleet. Optional
+    query: min_unacked, min_regressions, active_within_seconds."""
+    def _int(name: str, default: int) -> int:
+        try:
+            return int(request.query_params.get(name, default))
+        except (TypeError, ValueError):
+            return default
+    anomalies = await asyncio.to_thread(
+        STORE.metering_anomalies,
+        _int("min_unacked", 10), _int("min_regressions", 1),
+        float(_int("active_within_seconds", 3600)))
+    return JSONResponse({"anomalies": anomalies, "count": len(anomalies)})
 
 
 @admin_app.post("/admin/release")

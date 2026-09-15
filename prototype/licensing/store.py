@@ -998,6 +998,41 @@ class LicenseStore:
                 "ack_regressions": int(row[7] or 0),
                 "prefetch_at": int(row[8] or 0)}
 
+    def metering_anomalies(self, min_unacked: int = 10, min_regressions: int = 1,
+                           active_within_seconds: float = 3600.0) -> list[dict]:
+        """Orgs whose meter looks like a SILENT or key-sharing engine, for operator
+        review — the fleet-wide surface the per-org signals never had (WS-6/M2).
+
+        `unacked_quanta`: quanta served with no verified report. A root-patched engine
+        that stopped calling /v1/meter shows here — it is already billed the floor
+        (billing clamps acked into [granted-Q-R, granted]), so this DETECTS the pattern
+        for review, it does not enforce. `ack_regressions`: reported usage went BACKWARDS
+        under one process key — two engines on one key, or a replay. Aggregated per org
+        over processes seen within the window. Attribution/deterrence, like the canary —
+        the residual against a root client is bounded (the band) and now visible."""
+        cutoff = time.time() - active_within_seconds
+        rows = self._fetchall(
+            "SELECT org_id, COALESCE(SUM(unacked_quanta),0), COALESCE(SUM(ack_regressions),0), "
+            "COALESCE(SUM(granted),0), COALESCE(SUM(acked),0), COUNT(*) "
+            "FROM meter WHERE updated_at >= ? GROUP BY org_id",
+            (cutoff,))
+        out: list[dict] = []
+        for org_id, unacked, regressions, granted, acked, procs in rows:
+            unacked, regressions = int(unacked or 0), int(regressions or 0)
+            if unacked < min_unacked and regressions < min_regressions:
+                continue
+            reasons = []
+            if unacked >= min_unacked:
+                reasons.append(f"silent: {unacked} quanta served with no verified report")
+            if regressions >= min_regressions:
+                reasons.append(f"{regressions} usage regression(s) — one key, two engines or replay")
+            out.append({"org_id": org_id, "unacked_quanta": unacked,
+                        "ack_regressions": regressions, "granted": int(granted or 0),
+                        "acked": int(acked or 0), "processes": int(procs or 0),
+                        "reasons": reasons})
+        out.sort(key=lambda a: a["unacked_quanta"] + a["ack_regressions"], reverse=True)
+        return out
+
     MIN_METER_INTERVAL_SECONDS = 1.0
 
     def metered_too_recently(self, org_id: str, pubkey: str, now: float) -> bool:
