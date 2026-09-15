@@ -54,7 +54,20 @@ def main() -> int:
         # Только то, что реально исполняется как SQL по нашей базе. Слова из
         # комментариев берутся тоже — и это НАМЕРЕННО: комментарий, называющий
         # несуществующую таблицу, врёт следующему читателю ровно так же.
+        #
+        # НО НЕ DOCKERFILE `FROM`. Скрипт сборки образа несёт в heredoc
+        # `FROM debian:trixie-slim` — это базовый образ, не таблица, и regex
+        # `FROM слово` ловил его как несуществующую таблицу «debian» (ложный
+        # красный). Два признака Docker-директивы, любой исключает: за именем
+        # идёт `:` (тег образа) или `FROM` стоит в начале строки (директива, а
+        # не `SELECT … FROM`). SQL-имя таблицы не бывает ни тем, ни другим —
+        # `SELECT count(*) FROM accounts_organization` остаётся пойманным.
         for match in re.finditer(r"\bFROM\s+([a-z_][a-z0-9_]*)", text):
+            if text[match.end():match.end() + 1] == ":":
+                continue
+            line_start = text.rfind("\n", 0, match.start()) + 1
+            if text[line_start:match.start()].strip() == "":
+                continue
             referenced.append((script.name, match.group(1)))
 
     check("в скриптах вообще нашлись обращения к таблицам", bool(referenced),
