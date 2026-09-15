@@ -357,15 +357,18 @@ def _round(amount: Decimal) -> Decimal:
 # `included_requests` на нём переставал значить что-либо: 990 ₽ действовали до
 # 310 000 запросов.
 #
-# Порог страхует ОБРЫВ ЦЕПИ ОТЧЁТОВ, а не общую неточность: при живой цепи
-# ошибка нулевая (`acked` точен, измерено на трёх масштабах в
-# `docs/billing-integrity.md`), и только когда отчёты не доходят, счёт идёт по
-# выданной ёмкости с полосой шириной в резерв.
+# РЕШЕНИЕ ВЛАДЕЛЬЦА: порог тарификации = 0 на всех тарифах. Считаем ПРОСТО и ЯВНО —
+# «включено N, каждая 1000 сверх N по ставке», с ПЕРВОГО запроса сверх включённого.
+# Без «полосы бесплатных запросов» поверх включённого: она путала (клиент видел
+# «купил 10k, а биллится с 30k?!») и раздавала объём даром.
 #
-# Значение по умолчанию для тарифа, у которого порог не задан: ноль означал бы
-# «тарифицировать с первого запроса сверх включённого», то есть выставлять счёт
-# по числу, которого при обрыве связи мы не знаем.
-DEFAULT_METERED_FLOOR = 100_000
+# Что порог страховал: ОБРЫВ ЦЕПИ ОТЧЁТОВ, не общую неточность. При ЖИВЫХ отчётах
+# `acked` точен, ошибка НОЛЬ (измерено на трёх масштабах, docs/billing-integrity.md) —
+# и floor=0 биллит ровно, честно. Только если отчёты не доходят, счёт идёт по ВЫДАННОЙ
+# ёмкости и может завысить на ширину резерва — редкий край, в нашу пользу, и он
+# само-корректируется следующим отчётом (`acked` кумулятивен). Владелец это принял.
+# Поле `metered_floor` оставлено настраиваемым: не 0 на тарифе → вернётся полоса.
+DEFAULT_METERED_FLOOR = 0
 
 # Срок оплаты счёта. Здесь, а не литералом в `build_invoice`: это число
 # напечатано на лендинге и в письме, и три копии одного срока разъезжаются.
@@ -447,7 +450,9 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     # оплатил абонплатой, и мерить надо ровно ту часть, за которую выставляется
     # отдельная строка.
     over = max(0, metered_requests - _int_or_zero(terms["included_requests"]))
-    floor = _int_or_zero(terms["metered_floor"]) or DEFAULT_METERED_FLOOR
+    # Respect an EXPLICIT 0 (the policy: no free band, bill from the first over-request).
+    # `or` would rewrite 0 back to the default — 0 is a valid floor, not "unset".
+    floor = _int_or_zero(terms.get("metered_floor")) if terms.get("metered_floor") is not None else DEFAULT_METERED_FLOOR
     # Bill only the part ABOVE the floor, never the floor itself. The floor is the
     # measurement-noise band — a fixed count of requests (the quantum granularity)
     # we cannot bill accurately — so it stays ALWAYS free, and the charge ramps from

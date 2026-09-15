@@ -53,14 +53,14 @@ PLANS = [
     # and the ones that pretend to are enforcing by contract. With volume
     # metered the INCENTIVE disappears anyway: volume is volume, and how many
     # containers pushed it through stops mattering.
-    ("start", "Старт", Decimal("990"), 10_000, Decimal("79.00"), 20_000,
+    ("start", "Старт", Decimal("990"), 10_000, Decimal("79.00"), 0,
      300, 1, 2, 0, "один бот или сервис в проде"),
-    ("work", "Рабочий", Decimal("3900"), 100_000, Decimal("31.00"), 100_000,
+    ("work", "Рабочий", Decimal("3900"), 100_000, Decimal("31.00"), 0,
      1_500, 4, 4, 1, "прод, стенд и запас — или несколько команд"),
     ("industrial", "Промышленный", Decimal("11900"), 1_000_000, Decimal("9.50"),
-     400_000, 6_000, 12, 10, 2, "несколько продуктов и отказоустойчивость"),
+     0, 6_000, 12, 10, 2, "несколько продуктов и отказоустойчивость"),
     ("enterprise", "Enterprise", Decimal("0"), 100_000_000, Decimal("7.00"),
-     2_000_000, 20_000, 100, 50, 3, "по договору"),
+     0, 20_000, 100, 50, 3, "по договору"),
 ]
 
 
