@@ -27,6 +27,7 @@ from pathlib import Path
 
 from licensing import assets_source
 from licensing import canary
+from licensing import fingerprint
 # Allowed direction: shared crypto lives in pseudex.bundle and is imported BY the
 # licensing side, never the other way (CLAUDE.md). The server already imports it.
 from pseudex.bundle import merge_payload
@@ -376,6 +377,18 @@ def build_plaintext(watermark: str = "", org_id: str = "") -> bytes:
         if streets:
             address = payload["address"]
             address["street_names"] = sorted(set(address["street_names"]) | set(streets))
+        # PLUS the collusion-resistant fingerprint (licensing.fingerprint): a Tardos
+        # codeword over a SHARED universe, so a bundle fused from several orgs (union
+        # OR intersection) still traces to a contributor — the intersection attack
+        # that strips per-org-unique canaries. Same secret, same novelty guarantee.
+        fp_surnames = fingerprint.fingerprint_entries(org_id, "surname")
+        if fp_surnames:
+            payload["names"]["dict_surnames"] = sorted(
+                set(payload["names"]["dict_surnames"]) | set(fp_surnames))
+        fp_streets = fingerprint.fingerprint_entries(org_id, "street")
+        if fp_streets:
+            payload["address"]["street_names"] = sorted(
+                set(payload["address"]["street_names"]) | set(fp_streets))
     if watermark:
         payload["_wm"] = watermark
     if watermark or org_id:
