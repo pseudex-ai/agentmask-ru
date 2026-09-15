@@ -52,13 +52,23 @@ def test_canaries_are_per_org_and_deterministic() -> None:
 
 
 def test_canaries_look_like_real_surnames() -> None:
-    """A canary must be indistinguishable from a real surname at a glance:
-    Cyrillic, capitalised, plausible length — or an attacker filters them out."""
-    from licensing.canary import canary_surnames
+    """A canary must be INDISTINGUISHABLE from a real gazetteer entry: Cyrillic,
+    plausible length, and in the SAME CASE as the leased gazetteer — which is
+    LOWERCASE (`_load_dictionary`/load_street_vocabulary lowercase it). WS-7
+    IP-thief2 showed a Capitalised mark both stood out as an anomaly in an
+    all-lowercase dictionary AND was stripped by a one-line `.lower()` of the
+    stolen gazetteer, setting attribution to None at zero cost. A lowercase mark
+    blends in and survives case normalization."""
+    from licensing.canary import canary_surnames, identify
     cs = canary_surnames("acme")
-    ok = all(4 <= len(c) <= 16 and c[0].isupper() and all("а" <= ch.lower() <= "я" or ch.lower() == "ё" for ch in c)
-             for c in cs)
-    check(ok, "canaries are plausible Cyrillic surname shapes", f"e.g. {cs[:4]}")
+    lowercased = all(4 <= len(c) <= 16 and c == c.lower()
+                     and all("а" <= ch <= "я" or ch == "ё" for ch in c) for c in cs)
+    # The strip attack: attribution must survive the attacker normalizing case.
+    survives = all(identify({fn(c) for c in cs}, ["acme", "globex", "initech"]) == "acme"
+                   for fn in (str.lower, str.upper, str.capitalize))
+    check(lowercased and survives,
+          "canaries match the gazetteer case (lowercase) and survive a case-strip",
+          f"lowercased={lowercased} survives_case_strip={survives} e.g. {cs[:4]}")
 
 
 def test_canaries_not_in_real_dictionary() -> None:

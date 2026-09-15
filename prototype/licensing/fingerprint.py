@@ -118,8 +118,11 @@ def accuse(observed: Iterable, orgs: Iterable, kind: str) -> Optional[str]:
     universe = _universe(kind)
     if not universe:
         return None
-    present = set(observed)
-    y = [1 if universe[j] in present else 0 for j in range(len(universe))]
+    # Casefold both sides: the marks are lowercase like the leased gazetteer, and an
+    # attacker normalizing a stolen gazetteer to any case cannot shift a mark out of
+    # `present` (WS-7 IP-thief2 — a one-line `.lower()` used to strip attribution).
+    present = {o.casefold() for o in observed}
+    y = [1 if universe[j].casefold() in present else 0 for j in range(len(universe))]
     p = [_prob(kind, j) for j in range(len(universe))]
     threshold = 4.0 * math.sqrt(len(universe))
     best: Optional[str] = None

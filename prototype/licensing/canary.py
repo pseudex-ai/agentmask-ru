@@ -93,12 +93,20 @@ def _stream(org_id: str, kind: str) -> Iterator[int]:
 
 
 def _synth(stream: Iterator[int], endings: tuple) -> str:
+    # LOWERCASE, to match the leased gazetteers (`_load_dictionary` /
+    # load_street_vocabulary store surnames and streets lowercased). A Capitalised
+    # mark stood out as an anomaly in an all-lowercase dictionary AND was stripped by
+    # a one-line `.lower()` of the stolen gazetteer — a normal rebuild step — which
+    # set accuse/identify to None at zero product cost (pentest WS-7 IP-thief2). A
+    # lowercase mark is indistinguishable from a real entry and survives case
+    # normalization; accuse/identify also casefold, so `.upper()`/`.capitalize()`
+    # cannot strip it either. Removing a mark now requires KNOWING it — the secret.
     syllables = 2 + next(stream) % 2  # 2-3 syllables
     word = ""
     for _ in range(syllables):
         word += _CONS[next(stream) % len(_CONS)] + _VOW[next(stream) % len(_VOW)]
     word += endings[next(stream) % len(endings)]
-    return word.capitalize()
+    return word
 
 
 def _generate(org_id: str, kind: str, endings: tuple, avoid: frozenset) -> list:
@@ -140,14 +148,17 @@ def identify(observed: Iterable, orgs: Iterable) -> Optional[str]:
     misattribute; else None."""
     if not _secret():
         return None
-    seen = set(observed)
+    # Casefold both sides so a stolen gazetteer normalized to any case still matches
+    # its marks (WS-7 IP-thief2): the marks are lowercase like the gazetteer, and an
+    # attacker's `.lower()`/`.upper()`/`.capitalize()` cannot shift them out of the set.
+    seen = {o.casefold() for o in observed}
     best: Optional[str] = None
     best_hits = 0
     for org in orgs:
         # Both canary sets count: a recovered gazetteer (surnames and/or streets)
         # is matched against this org's whole canary set, so street canaries carry
         # attribution weight too (they are injected into every marked bundle).
-        marks = set(canary_surnames(org)) | set(canary_streets(org))
+        marks = {m.casefold() for m in set(canary_surnames(org)) | set(canary_streets(org))}
         hits = len(marks & seen)
         if hits > best_hits:
             best, best_hits = org, hits
