@@ -15,7 +15,7 @@ from django.contrib import admin, messages
 from django.utils import timezone
 
 from billing import licensing, services
-from billing.models import Invoice, LicenseKey, Plan, Subscription
+from billing.models import Invoice, LicenseKey, Offer, Plan, Subscription
 
 
 @admin.register(Plan)
@@ -23,6 +23,7 @@ class PlanAdmin(admin.ModelAdmin):
     list_display = ("code", "title", "monthly_price", "max_instances",
                     "included_requests", "rpm_limit", "max_keys", "is_public")
     list_editable = ("monthly_price", "included_requests", "is_public")
+    search_fields = ("code", "title")   # для autocomplete из OfferAdmin
 
 
 @admin.register(Subscription)
@@ -118,3 +119,27 @@ class InvoiceAdmin(admin.ModelAdmin):
                                   level=messages.ERROR)
                 continue
             self.message_user(request, f"{invoice.number}: оплачен, сервис возобновлён")
+
+
+@admin.register(Offer)
+class OfferAdmin(admin.ModelAdmin):
+    """Спец-предложения: скидки, адресные (конкретному клиенту) или публичные
+    (по промокоду). Оператор создаёт/настраивает здесь; применяются при оплате."""
+    list_display = ("title", "organization", "code", "discount_pct",
+                    "discount_amount", "applies_to", "target_plan",
+                    "valid_until", "max_uses", "uses", "is_active")
+    list_filter = ("applies_to", "is_active", "target_plan")
+    search_fields = ("title", "code", "organization__id",
+                     "organization__display_name")
+    autocomplete_fields = ("organization", "target_plan")
+    readonly_fields = ("uses", "created_at")
+    fieldsets = (
+        (None, {"fields": ("title", "is_active")}),
+        ("Кому", {"fields": ("organization", "code"),
+                  "description": "Организация — адресное. Промокод — публичное "
+                                 "(клиент вводит в кабинете). Можно одно из двух."}),
+        ("Скидка", {"fields": ("discount_pct", "discount_amount", "applies_to",
+                               "target_plan")}),
+        ("Ограничения", {"fields": ("valid_from", "valid_until", "max_uses",
+                                    "uses", "created_at")}),
+    )

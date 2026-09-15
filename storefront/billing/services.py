@@ -371,6 +371,39 @@ def _round(amount: Decimal) -> Decimal:
 DEFAULT_METERED_FLOOR = 0
 
 
+def resolve_offer(organization, code: str = "", applies_to: str = "any", plan=None,
+                  amount=None):
+    """Лучшее применимое предложение для этой оплаты, или None. Ищет среди АДРЕСНЫХ
+    (offer.organization == organization) и ПУБЛИЧНЫХ по промокоду (offer.code == code,
+    если код введён). Фильтрует по сроку/лимиту (`is_available`), по типу (`applies_to`:
+    'any' подходит всегда) и по тарифу (`target_plan`). Выбирает ВЫГОДНЕЙШЕЕ клиенту:
+    при заданной `amount` — по наименьшей итоговой цене (честно для смеси % и ₽), иначе
+    по величине скидки. Оператор не думает о порядке. Применение — у вызывающего."""
+    from billing.models import Offer
+    from django.db.models import Q
+    who = Q(organization=organization)
+    if code:
+        who |= Q(code=code, organization__isnull=True)
+    candidates = Offer.objects.filter(who).select_related("target_plan", "organization")
+    plan_code = getattr(plan, "code", None) or getattr(plan, "pk", None)
+    applicable = []
+    for offer in candidates:
+        if not offer.is_available():
+            continue
+        if offer.applies_to != Offer.APPLIES_ANY and offer.applies_to != applies_to:
+            continue
+        if offer.target_plan_id and plan_code and offer.target_plan_id != plan_code:
+            continue
+        applicable.append(offer)
+    if not applicable:
+        return None
+    if amount is not None:
+        from decimal import Decimal
+        amount = Decimal(amount)
+        return min(applicable, key=lambda o: o.apply_to(amount))
+    return max(applicable, key=lambda o: (o.discount_pct, o.discount_amount))
+
+
 def classify_zone(used: int, plan) -> dict:
     """Which VOLUME ZONE the org is in — for the cabinet display AND enforcement.
     Pure function of the period's request count and the plan. Four zones:

@@ -434,3 +434,71 @@ class Invoice(models.Model):
         # PS, not VG: the prefix outlived the rename to pseudex, and it is the
         # one identifier a customer quotes back in a payment reference.
         return f"PS-{when:%Y-%m}-{secrets.token_hex(4)}"
+
+
+class Offer(models.Model):
+    """Спец-предложение оператора: скидка, настраиваемая в админке. АДРЕСНАЯ
+    (конкретной организации) или ПУБЛИЧНАЯ (по промокоду). Применяется при оплате.
+
+    Три оси: КОМУ (organization или code-промокод), СКОЛЬКО (% или ₽), НА ЧТО
+    (любой счёт / первый месяц / переход на тариф / годовая оплата)."""
+
+    APPLIES_ANY = "any"
+    APPLIES_FIRST_MONTH = "first_month"
+    APPLIES_PLAN = "plan"
+    APPLIES_ANNUAL = "annual"
+    APPLIES = [
+        (APPLIES_ANY, "любой счёт"),
+        (APPLIES_FIRST_MONTH, "первый месяц"),
+        (APPLIES_PLAN, "переход на тариф"),
+        (APPLIES_ANNUAL, "годовая оплата"),
+    ]
+
+    title = models.CharField(max_length=120)
+    # Промокод для ПУБЛИЧНЫХ (клиент вводит в кабинете). Пусто — адресное.
+    code = models.SlugField(max_length=40, blank=True, db_index=True)
+    # Адресное: только этой организации. Null — по промокоду / всем.
+    organization = models.ForeignKey(Organization, null=True, blank=True,
+                                     on_delete=models.CASCADE, related_name="offers")
+    # Скидка: процент И/ИЛИ фикс. Процент применяется первым, затем фикс.
+    discount_pct = models.PositiveSmallIntegerField(default=0)
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2,
+                                          default=Decimal("0"))
+    applies_to = models.CharField(max_length=16, choices=APPLIES, default=APPLIES_ANY)
+    # На какой тариф (для applies_to plan/annual). Null — любой.
+    target_plan = models.ForeignKey(Plan, null=True, blank=True,
+                                    on_delete=models.CASCADE, related_name="offers")
+    valid_from = models.DateTimeField(default=timezone.now)
+    valid_until = models.DateTimeField(null=True, blank=True)
+    max_uses = models.PositiveIntegerField(default=0)      # 0 = без лимита
+    uses = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        who = self.organization_id or (self.code or "публичное")
+        return f"{self.title} ({who})"
+
+    def is_available(self, now=None) -> bool:
+        """Действует ли сейчас: активно, в сроке, не исчерпан лимит."""
+        now = now or timezone.now()
+        if not self.is_active:
+            return False
+        if self.valid_from and now < self.valid_from:
+            return False
+        if self.valid_until and now > self.valid_until:
+            return False
+        if self.max_uses and self.uses >= self.max_uses:
+            return False
+        return True
+
+    def apply_to(self, amount: Decimal) -> Decimal:
+        """Цена после скидки (процент, затем фикс), не ниже нуля."""
+        amount = Decimal(amount)
+        if self.discount_pct:
+            amount = amount * (Decimal(100 - int(self.discount_pct)) / Decimal(100))
+        amount = amount - (self.discount_amount or Decimal("0"))
+        return max(Decimal("0"), amount.quantize(Decimal("0.01")))
