@@ -1060,6 +1060,15 @@ PLACE_REF: tuple[str, ...] = (
 VERSION_CTX: tuple[str, ...] = (
     "верси", "version", "сборк", "build", "релиз", "release", "v.",
 )
+# The word DIRECTLY before a one-word name that says it is a KIND OF COMPANY, not
+# a person. Authored from measured false positives (a curated business register),
+# with no public-standard backing — so it is tuning that rides in the lease, unlike
+# the published `_DENY_AS_NAME` abbreviations that stay in the engine.
+ORG_CUE: tuple[str, ...] = (
+    "ооо", "оао", "зао", "пао", "ао", "нко", "ано", "фгуп", "мбу", "гбу",
+    "компания", "компании", "фирма", "фирмы", "организация", "организации",
+    "поставщик", "поставщика", "магазин", "магазина", "бренд", "бренда",
+)
 
 # --- structured key->type ------------------------------------------------
 

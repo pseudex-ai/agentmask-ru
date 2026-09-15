@@ -34,12 +34,6 @@ _REGION_SUFFIXES = ("область", "край", "округ")
 #
 # «ИП» is deliberately ABSENT: behind it stands a person's own ФИО, and the
 # whole point of the type is that it names one.
-_ORG_CUE = frozenset({
-    "ооо", "оао", "зао", "пао", "ао", "нко", "ано", "фгуп", "мбу", "гбу",
-    "компания", "компании", "фирма", "фирмы", "организация", "организации",
-    "поставщик", "поставщика", "магазин", "магазина", "бренд", "бренда",
-})
-
 # A one-word name written directly after a SMALL number is a UNIT, not a person.
 # «(СИНЯЯ) -3 Бут» and «2 ЭТАЖ - 1 БУТ» are quantities of bottles; pymorphy3
 # knows «Бут» as a genuine Russian surname, so morphology is right and only the
@@ -65,7 +59,7 @@ def _is_quantity(text: str, span: Span) -> bool:
 def _is_organisation(text: str, span: Span) -> bool:
     """The word DIRECTLY before names a kind of company, not a person."""
     match = _LAST_WORD.search(text[:span.start].lower())
-    return bool(match) and match.group(1) in _ORG_CUE
+    return bool(match) and match.group(1) in ASSETS.get().context.org_cue
 
 
 # A street type word beside the toponym. Kept here rather than in the leased
