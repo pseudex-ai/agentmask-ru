@@ -68,6 +68,33 @@
     </div>
   </div>
 
+  {% if pricing %}
+  <div style="margin-top:34px;border:1px solid var(--line-2);padding:22px">
+    <div class="label" style="margin-bottom:14px">ТАРИФ И ОБЪЁМ ЗА ПЕРИОД</div>
+    <div class="kv"><span class="k">включено в тариф</span><span class="v">{{ pricing.included }} запросов за {{ pricing.monthly_price|floatformat:0 }} ₽</span></div>
+    {% if pricing.rate %}<div class="kv"><span class="k">сверх включённого</span><span class="v">{{ pricing.rate|floatformat:2 }} ₽ за 1000</span></div>{% endif %}
+    {% if pricing.cap %}
+      <div class="kv"><span class="k">докупать можно до</span><span class="v">{{ pricing.cap }} запросов</span></div>
+      <div class="kv"><span class="k">буфер, за ним остановка</span><span class="v">{{ pricing.buffer_end }} запросов</span></div>
+      <div class="meter" style="margin-top:14px"><i class="{% if pricing.zone == 'buffer' or pricing.zone == 'stopped' %}over{% endif %}" style="width:{{ pricing.pct_of_cap }}%"></i></div>
+      <div style="font-size:12.5px;color:var(--dim-2);margin-top:8px">{{ pricing.pct_of_cap }}% до глобального потолка ({{ pricing.used }} из {{ pricing.cap }})</div>
+    {% endif %}
+    {% if pricing.overage_amount %}
+      <div class="kv" style="margin-top:10px"><span class="k">начислено сверх на сейчас</span><span class="v">{{ pricing.overage_requests }} запросов — {{ pricing.overage_amount }} ₽</span></div>
+    {% endif %}
+
+    {% if pricing.zone == 'stopped' %}
+      <div style="margin-top:14px"><span class="pill bad">ЛИМИТ ОБЪЁМА ИСЧЕРПАН — СЕРВИС ОСТАНОВЛЕН</span></div>
+      <p class="hint">Снимается переходом на старший тариф{% if pricing.upgrade_discount_pct %} (первый месяц −{{ pricing.upgrade_discount_pct }}%){% endif %} или новым периодом — не оплатой и не перевыпуском ключа.</p>
+    {% elif pricing.zone == 'buffer' %}
+      <div style="margin-top:14px"><span class="pill warn">ОБЪЁМ В БУФЕРЕ ЗА ПОТОЛКОМ — ДАЛЬШЕ ОСТАНОВКА</span></div>
+      <p class="hint">{% if pricing.upgrade_offer %}Спец-предложение для вас: <b style="color:var(--text-3)">{{ pricing.upgrade_offer.title }}</b>. {% endif %}Перейдите на старший тариф{% if pricing.upgrade_discount_pct %} — первый месяц со скидкой {{ pricing.upgrade_discount_pct }}%{% endif %}: он и дешевле этого перерасхода, и снимает потолок.</p>
+    {% elif pricing.zone == 'metered' %}
+      <p class="hint">Объём сверх включённого тарифицируется и попадёт отдельной строкой в счёт. Сервис работает — превышение это счёт, а не рубильник.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Ключи</h3>
   <table class="list">
     <tr><th>ПРЕФИКС</th><th>НАЗВАНИЕ</th><th>СРЕДА</th><th>ВЫПУЩЕН</th><th></th></tr>

@@ -50,20 +50,8 @@ GRACE_DAYS = services.GRACE_DAYS
 
 
 def _period_volume(organization, reported: dict) -> int:
-    """Сколько запросов ЭТОТ период уже стоил, а не сколько их было за всю жизнь.
-
-    Счётчик лицензионного сервера накопительный, поэтому за период — разница с
-    ватермаркой последнего невоидного счёта. Та же арифметика, что в
-    `build_invoice`; если бы она разошлась, письмо предупреждало бы об одном
-    числе, а счёт приходил бы на другое.
-    """
-    billable = reported.get("capacity_billable")
-    billable = billable if isinstance(billable, int) and not isinstance(billable, bool) else 0
-    previous = (Invoice.objects.filter(organization=organization)
-                .exclude(state=Invoice.VOID)
-                .order_by("-period_end", "-id").first())
-    watermark = max(0, previous.requests_billable_at_period_end if previous else 0)
-    return max(0, billable - watermark)
+    """Расход периода. Одна арифметика с кабинетом и счётом — в `services`."""
+    return services.period_billable(organization, reported)
 
 
 def _billing_email(organization) -> str:

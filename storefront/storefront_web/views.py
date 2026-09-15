@@ -664,6 +664,14 @@ def cabinet(request):
     ceiling = int(reported.get("capacity_granted", 0) or 0)
     acknowledged = int(reported.get("capacity_acked", 0) or 0)
     unacked = int(reported.get("capacity_unacked_quanta", 0) or 0)
+    # ЗОНА И ЦЕНА ЗА ПЕРИОД: «вот сколько включено, вот цена сверх, вот докуда
+    # можно, вот что за буфером». Считается той же арифметикой, что и счёт
+    # (`services.period_pricing`), чтобы полоса не расходилась с начислением.
+    # Недоступный сервер — нет отчёта — нет зоны: показываем честное молчание,
+    # а не ноль, который выглядит как «всё включено».
+    pricing = None
+    if subscription and not unreachable:
+        pricing = services.period_pricing(organization, subscription.plan, reported)
     return render(request, "app/cabinet.html", {
         "instances": slots,
         "organization": organization,
@@ -681,6 +689,7 @@ def cabinet(request):
         "capacity_discount": max(0, ceiling - billable),
         "included": included,
         "percent": min(100, round(billable / included * 100)) if included else 0,
+        "pricing": pricing,
         "unreachable": unreachable,
         "image": settings.DOCKER_IMAGE,
         "license_url_env": (f"-e PSEUDEX_LICENSE_URL={settings.LICENSE_URL} "

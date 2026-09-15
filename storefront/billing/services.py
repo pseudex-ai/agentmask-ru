@@ -429,6 +429,60 @@ def derive_cap_and_buffer(included: int) -> tuple[int, int]:
     return cap, cap // BUFFER_FRACTION
 
 
+def period_billable(organization: Organization, reported: dict) -> int:
+    """Сколько запросов к начислению стоит ТЕКУЩИЙ период, а не вся жизнь.
+
+    Счётчик сервера накопительный, поэтому за период — разница с ватермаркой
+    последнего невоидного счёта. ОДНА арифметика для цикла (порог/письма/стоп)
+    и кабинета (зона/цена): два ответа на «сколько за период» разошлись бы —
+    полоса показывала бы одно, счёт приходил бы на другое.
+    """
+    billable = _int_or_zero(reported.get("capacity_billable"))
+    previous = (Invoice.objects.filter(organization=organization)
+                .exclude(state=Invoice.VOID)
+                .order_by("-period_end", "-id").first())
+    watermark = max(0, previous.requests_billable_at_period_end if previous else 0)
+    return max(0, billable - watermark)
+
+
+def period_pricing(organization: Organization, plan, reported: dict) -> dict:
+    """Всё, что кабинет показывает про объём и цену за период, В ОДНОМ месте.
+
+    Зона (включено/докуп/буфер/стоп), % до потолка, ставка, НАЧИСЛЕНО СВЕРХ на
+    сейчас, и — в буфере — адресный оффер апгрейда. Чистая функция от отчёта и
+    условий подписки (снимок), чтобы цифры кабинета совпадали со счётом.
+    """
+    used = period_billable(organization, reported)
+    zone = classify_zone(used, plan)
+    terms = organization.subscription.terms
+    rate = terms["metered_per_1k"] or Decimal("0")
+    included = _int_or_zero(terms["included_requests"])
+    floor = _int_or_zero(terms["metered_floor"]) if terms.get("metered_floor") is not None else DEFAULT_METERED_FLOOR
+    over = max(0, used - included)
+    billed_over = max(0, over - floor) if rate > 0 else 0
+    overage_amount = _round(Decimal(billed_over) / Decimal(1000) * Decimal(rate))
+    # Оффер апгрейда показываем только когда он к месту — в буфере за потолком.
+    upgrade_offer = None
+    if zone["in_buffer"]:
+        upgrade_offer = resolve_offer(organization, applies_to=Offer.APPLIES_ANY,
+                                      plan=plan)
+    return {
+        "zone": zone["zone"],
+        "used": used,
+        "included": included,
+        "cap": zone["cap"],
+        "buffer_end": zone["buffer_end"],
+        "pct_of_cap": zone["pct_of_cap"],
+        "rate": rate,
+        "floor": floor,
+        "overage_requests": billed_over,
+        "overage_amount": overage_amount,
+        "monthly_price": terms["monthly_price"],
+        "upgrade_discount_pct": plan.upgrade_first_month_discount_pct,
+        "upgrade_offer": upgrade_offer,
+    }
+
+
 def classify_zone(used: int, plan) -> dict:
     """Which VOLUME ZONE the org is in — for the cabinet display AND enforcement.
     Pure function of the period's request count and the plan. Four zones:
