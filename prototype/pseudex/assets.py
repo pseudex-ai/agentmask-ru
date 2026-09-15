@@ -29,6 +29,7 @@ import threading
 import zlib
 from dataclasses import dataclass
 
+from pseudex import bundle
 from pseudex.morph import MORPH
 
 
@@ -441,29 +442,40 @@ class Assets:
         Called on the renewal path too, so it must be atomic from a reader's
         point of view: the new struct is built fully before it is published, and
         publishing is a single attribute assignment."""
-        # Decompress into a MUTABLE buffer and zero it after parsing. The clean,
-        # contiguous ~8 MB JSON of the whole payload is exactly what a RAM carve
-        # `json.loads`'d in one step (pentest W2-CLONE). `_build` copies out what
-        # it needs into frozensets and compiled patterns, so once it has run this
-        # buffer is dead weight — and one we CAN scrub, unlike an immutable
-        # `bytes`/`str`. This does not make the dump clean (the frozenset members
-        # are still individual str objects in RAM, and Python cannot zero a str —
-        # see `unload`), but it removes the single biggest, easiest-to-carve
-        # artifact: the contiguous JSON blob.
-        raw = bytearray(zlib.decompress(plaintext))
-        try:
-            payload = json.loads(raw)
+        # SECTIONED framing (pseudex.bundle): the plaintext is a set of separately
+        # compressed sections, decompressed → parsed → ZEROED one at a time, so the
+        # whole ~8 MB payload never coexists as one contiguous region. A RAM carve
+        # of one region yields at most one section, and the authored tuning is split
+        # off from the semi-public bulk gazetteers (WS-7 RAM-carve hardening).
+        #
+        # HONEST LIMIT: this closes the single contiguous artifact and raises the
+        # casual/non-root carve from `dd | json.loads` to "find and reassemble N
+        # fragments", but it does NOT stop a determined LOCAL ROOT. Each section's
+        # decoded JSON `str` still lingers unscrubbably after parse (CPython cannot
+        # zero a `str`; only the mutable decompressed `bytearray` is zeroed here),
+        # so root that instruments this load path or dumps at the right moment reads
+        # a section's plaintext. That residual is the accepted theorem (root reads
+        # its own RAM); the compensating controls are attribution + short TTL.
+        if bundle.is_framed(plaintext):
+            payload = bundle.unframe_payload(plaintext)  # parses + zeros each section
             built = _build(payload)
-        finally:
-            raw[:] = b"\x00" * len(raw)
+            del payload
+        else:
+            # Legacy whole-blob bundle (pre-WS-7 server). Zero the one buffer we can.
+            raw = bytearray(zlib.decompress(plaintext))
+            try:
+                payload = json.loads(raw)
+                built = _build(payload)
+            finally:
+                raw[:] = b"\x00" * len(raw)
+            del payload
         with self._lock:
             self._current = built
         # No gc.collect() here: load() runs on every RENEWAL (~ttl/3), and a full-heap
         # collect over the ~350 MB model stack, on N workers sharing one cadence, is a
-        # recurring pause. `del payload` unreferences the parsed dict and the raw JSON blob
-        # is already zeroed above; natural GC reclaims them. The forced collect stays in
-        # unload() only (rare, terminal).
-        del payload
+        # recurring pause. Each branch above already unreferenced `payload` and zeroed
+        # the section/blob buffers; natural GC reclaims them. The forced collect stays
+        # in unload() only (rare, terminal).
 
     def unload(self) -> None:
         """Drop the assets so the objects are actually collected.

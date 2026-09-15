@@ -30,7 +30,7 @@ from licensing import canary
 from licensing import fingerprint
 # Allowed direction: shared crypto lives in pseudex.bundle and is imported BY the
 # licensing side, never the other way (CLAUDE.md). The server already imports it.
-from pseudex.bundle import merge_payload
+from pseudex.bundle import merge_payload, frame_payload
 
 _DATA = Path(__file__).resolve().parent / "data"
 
@@ -396,7 +396,11 @@ def build_plaintext(watermark: str = "", org_id: str = "") -> bytes:
         # cover, so two orgs' bundles differ and neither can be swapped for the
         # other without breaking the signature.
         payload["version"] = hashlib.sha256(_canonical(payload)).hexdigest()[:16]
-    return _compress(payload)
+    # Framed (sectioned) rather than one zlib(JSON) blob: the engine parses and
+    # zeroes each section in turn, so a RAM carve no longer recovers the whole moat
+    # in one `json.loads`, and the authored tuning is split off from the semi-public
+    # bulk gazetteers (pseudex.bundle.frame_payload — RAM-carve hardening, WS-7).
+    return frame_payload(payload)
 
 
 def main() -> None:

@@ -27,6 +27,8 @@ import hashlib
 import hmac
 import binascii
 import json
+import struct
+import zlib
 from dataclasses import dataclass
 
 from cryptography.exceptions import InvalidSignature
@@ -165,6 +167,113 @@ def merge_payload(bulk: dict[str, object],
         else:
             merged[key] = left if left is not None else right
     return merged
+
+
+# --- sectioned framing (RAM-carve hardening) --------------------------------
+# The lease plaintext used to be one zlib(JSON) of the whole ~8 MB payload, which
+# a RAM carve `json.loads`'d in ONE step to recover the entire moat at once
+# (pentest WS-7 IP-thief). This frames the payload into SEPARATELY-compressed
+# sections that the engine decompresses, parses and ZEROES one at a time, so the
+# whole payload never coexists as one contiguous plaintext region. It also splits
+# the big semi-public bulk gazetteers (`dict_first`/`dict_surnames`/`street_*`)
+# into their own frames, apart from the small AUTHORED tuning (cues, priority,
+# look-alike, translit, fakes, address regex) — so a carve of one region yields at
+# most one section, and the authored moat is no longer glued to the open-data bulk.
+#
+# HONEST LIMIT (deep-dive research/2026-09-15-ram-extraction-hardening.md): this
+# raises the bar from a 3-command `dd | json.loads` against a casual/non-root
+# carver to "find and reassemble N fragments", and closes the single contiguous
+# artifact. It does NOT stop a determined LOCAL ROOT — the per-section decoded
+# `str` still lingers unscrubbably (CPython cannot zero a `str`), so root that
+# instruments the load path or dumps at the right moment still reads a section.
+# That residual is the accepted theorem (root reads its own RAM); the compensating
+# controls are attribution (Tardos/canary) + short TTL, not this framing.
+_FRAME_MAGIC = b"PSX1"
+_BULK_NAMES = ("dict_first", "dict_surnames")
+_BULK_ADDRESS = ("street_names", "street_frequent", "street_phrases")
+
+
+def _section_plan(payload: dict[str, object]) -> list[tuple[str, dict]]:
+    """Deterministic split of the payload into sections. Each big bulk dictionary
+    gets its own frame; the authored tuning (names/address minus bulk, and every
+    other top-level key) gets small per-key frames. Order is fixed so the framed
+    plaintext — which the signature covers — is reproducible."""
+    names = dict(payload.get("names", {})) if isinstance(payload.get("names"), dict) else {}
+    address = dict(payload.get("address", {})) if isinstance(payload.get("address"), dict) else {}
+    bulk_names = {k: names.pop(k) for k in _BULK_NAMES if k in names}
+    bulk_address = {k: address.pop(k) for k in _BULK_ADDRESS if k in address}
+    sections: list[tuple[str, dict]] = []
+    for k in _BULK_NAMES:
+        if k in bulk_names:
+            sections.append((f"b.names.{k}", {"names": {k: bulk_names[k]}}))
+    for k in _BULK_ADDRESS:
+        if k in bulk_address:
+            sections.append((f"b.address.{k}", {"address": {k: bulk_address[k]}}))
+    if names:
+        sections.append(("t.names", {"names": names}))
+    if address:
+        sections.append(("t.address", {"address": address}))
+    for k in sorted(payload):
+        if k in ("names", "address"):
+            continue
+        sections.append((f"t.{k}", {k: payload[k]}))
+    return sections
+
+
+def is_framed(plaintext: bytes) -> bool:
+    """True if this plaintext uses the sectioned frame format (vs legacy zlib)."""
+    return plaintext[:4] == _FRAME_MAGIC
+
+
+def frame_payload(payload: dict[str, object]) -> bytes:
+    """Serialize the payload as MAGIC | n | [name_len | name | blob_len | zlib(json(section))].
+    Each section is separately compressed so the engine can parse and scrub them
+    one at a time (see `unframe_payload` and the module note above)."""
+    sections = _section_plan(payload)
+    out = bytearray(_FRAME_MAGIC)
+    out += struct.pack(">I", len(sections))
+    for name, part in sections:
+        name_bytes = name.encode("utf-8")
+        blob = zlib.compress(
+            json.dumps(part, ensure_ascii=False, sort_keys=True).encode("utf-8"), 6)
+        out += struct.pack(">H", len(name_bytes)) + name_bytes
+        out += struct.pack(">I", len(blob)) + blob
+    return bytes(out)
+
+
+def unframe_payload(plaintext: bytes) -> dict[str, object]:
+    """Inverse of `frame_payload`: decompress, parse and ZERO each section in turn,
+    deep-merging (depth 2, so a split `names`/`address` recombines) into the full
+    payload. No contiguous whole-payload plaintext is ever materialized — only one
+    section's decompressed buffer exists at a time, and it is zeroed before the
+    next. Raises on a truncated/garbled frame (fail-closed)."""
+    if not is_framed(plaintext):
+        raise BundleError("plaintext is not in the sectioned frame format")
+    count = struct.unpack(">I", plaintext[4:8])[0]
+    offset = 8
+    payload: dict[str, object] = {}
+    for _ in range(count):
+        (name_len,) = struct.unpack(">H", plaintext[offset:offset + 2])
+        offset += 2
+        offset += name_len  # the section name is framing, not needed to reassemble
+        (blob_len,) = struct.unpack(">I", plaintext[offset:offset + 4])
+        offset += 4
+        blob = plaintext[offset:offset + blob_len]
+        offset += blob_len
+        raw = bytearray(zlib.decompress(blob))
+        try:
+            part = json.loads(raw)
+            for key, value in part.items():
+                existing = payload.get(key)
+                if isinstance(existing, dict) and isinstance(value, dict):
+                    existing.update(value)
+                else:
+                    payload[key] = value
+        finally:
+            raw[:] = b"\x00" * len(raw)
+    if offset != len(plaintext):
+        raise BundleError("framed plaintext has trailing bytes — truncated or tampered")
+    return payload
 
 
 def plaintext_hash(plaintext: bytes) -> str:

@@ -86,9 +86,9 @@ def test_three_way_union() -> None:
 
 
 def _payload(blob: bytes) -> dict:
-    import json
-    import zlib
-    return json.loads(zlib.decompress(blob).decode("utf-8"))
+    # The lease is now sectioned-framed (pseudex.bundle), not one zlib(JSON) blob.
+    from pseudex import bundle
+    return bundle.unframe_payload(blob)
 
 
 def test_woven_into_bundle() -> None:

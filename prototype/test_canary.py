@@ -34,8 +34,9 @@ def check(ok: bool, name: str, detail: str = "") -> None:
 
 
 def _payload(blob: bytes) -> dict:
-    import json
-    return json.loads(zlib.decompress(blob).decode("utf-8"))
+    # The lease is now sectioned-framed (pseudex.bundle), not one zlib(JSON) blob.
+    from pseudex import bundle
+    return bundle.unframe_payload(blob)
 
 
 def test_canaries_are_per_org_and_deterministic() -> None:

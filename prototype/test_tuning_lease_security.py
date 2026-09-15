@@ -159,8 +159,9 @@ def test_unload_returns_to_refusing() -> None:
 
 
 def _decompress_bundle(blob: bytes) -> dict:
-    import json
-    return json.loads(zlib.decompress(blob).decode("utf-8"))
+    # The lease is now sectioned-framed (pseudex.bundle), not one zlib(JSON) blob.
+    from pseudex import bundle
+    return bundle.unframe_payload(blob)
 
 
 def main() -> None:
