@@ -235,7 +235,12 @@ class Command(BaseCommand):
             # буфер с оффером апгрейда, за буфером — ЖЁСТКИЙ СТОП (как неоплата, но
             # обратимо апгрейдом/новым периодом). Обслуживание при перерасходе БОЛЬШЕ
             # НЕ безгранично: клиент не получает бесконечный сюрприз-счёт.
-            zone = services.classify_zone(used, subscription.plan)
+            # Зона на ВКЛЮЧЁННОМ ИЗ СНИМКА (как биллит счёт и как считает
+            # порог письма выше), потолок/буфер — с живого тарифа (enforcement).
+            zone = services.classify_zone(
+                used, included,
+                int(subscription.plan.overage_cap_requests or 0),
+                int(subscription.plan.buffer_requests or 0))
             if zone["zone"] == "stopped":
                 if not subscription.volume_capped:
                     self.done.append(

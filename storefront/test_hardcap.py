@@ -67,9 +67,8 @@ def main() -> int:
     cap, buffer = services.derive_cap_and_buffer(10_000)
     check(cap == 30_000 and buffer == 3_000, "derive_cap_and_buffer(10k) = (30k, 3k)",
           f"{cap}/{buffer}")
-    stale = Plan(included_requests=50_000, overage_cap_requests=30_000,
-                 buffer_requests=3_000)   # потолок ОТСТАЛ от включённого
-    z = services.classify_zone(20_000, stale)
+    # потолок ОТСТАЛ от включённого (30k < 50k)
+    z = services.classify_zone(20_000, 50_000, 30_000, 3_000)
     check(z["zone"] == "included",
           "включённое выше устаревшего потолка НЕ даёт мгновенный стоп",
           f"zone={z['zone']}")

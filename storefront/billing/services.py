@@ -288,23 +288,35 @@ def mark_paid(invoice: Invoice, payment_ref: str = "") -> None:
                 fields.append("payment_ref")
             locked.save(update_fields=fields)
             subscription = locked.organization.subscription
+            now = timezone.now()
+            # Был ли месячный период живым ДО оплаты — до того, как трогаем state.
+            period_live = (subscription.state != Subscription.TRIAL
+                           and subscription.current_period_end is not None
+                           and subscription.current_period_end > now)
             subscription.state = Subscription.ACTIVE
             # Новый период = свежий включённый объём: остановка по объёму снята
             # ПРЯМО ЗДЕСЬ, а не только на следующем тике цикла, чтобы оплативший
             # клиент не видел «лимит исчерпан» ещё час.
             subscription.volume_capped = False
-            now = timezone.now()
-            fields_sub = ["state", "volume_capped", "current_period_start",
-                          "current_period_end"]
-            # ГОДОВОЙ ПЛАТЁЖ НЕ ДЕЛАЕТ ПЕРИОД ГОДОВЫМ (вариант A): он оплачивает
-            # БАЗУ на 12 мес вперёд (`base_paid_through`), а месячный цикл идёт
-            # своим чередом — перерасход помесячно, включённый объём помесячно.
+            fields_sub = ["state", "volume_capped"]
             if locked.is_annual:
+                # ГОДОВОЙ ПЛАТЁЖ НЕ ДЕЛАЕТ ПЕРИОД ГОДОВЫМ (вариант A): оплачивает
+                # БАЗУ на 12 мес вперёд, месячный цикл идёт своим чередом. И НЕ
+                # перезапускает ЖИВОЙ месячный период — иначе сдвигает каденс и
+                # дарит лишний частичный месяц. Месячный период стартуем только
+                # если его нет (триал или истёкший).
                 subscription.base_paid_through = now + timedelta(
                     days=ANNUAL_PERIOD_DAYS)
                 fields_sub.append("base_paid_through")
-            subscription.current_period_start = now
-            subscription.current_period_end = now + timedelta(days=30)
+                if not period_live:
+                    subscription.current_period_start = now
+                    subscription.current_period_end = now + timedelta(days=30)
+                    fields_sub += ["current_period_start", "current_period_end"]
+            else:
+                # Месячное продление всегда открывает новый 30-дневный период.
+                subscription.current_period_start = now
+                subscription.current_period_end = now + timedelta(days=30)
+                fields_sub += ["current_period_start", "current_period_end"]
             subscription.save(update_fields=fields_sub)
             # ПРОДЛЕНИЕ — ЕДИНСТВЕННАЯ ТОЧКА, ГДЕ ПРАВКА ТАРИФА ДОХОДИТ ДО
             # КЛИЕНТА. Внутри той же транзакции, что и новый период: период и
@@ -494,6 +506,17 @@ def annual_price(organization: Organization, plan) -> dict:
             "offer": offer, "label": label, "monthly": monthly}
 
 
+def annual_available(organization: Organization, plan) -> bool:
+    """Предлагать ли годовую оплату: тариф даёт годовую скидку ИЛИ есть
+    доступный адресный/промо annual-оффер. Иначе адресный annual-оффер на
+    тарифе с нулевой годовой скидкой был бы инертен — тот же баг «оффер создан,
+    но до денег не доходит», что этот эпик и чинит для месячных."""
+    if plan.annual_discount_pct:
+        return True
+    return resolve_offer(organization, applies_to=Offer.APPLIES_ANNUAL,
+                         plan=plan) is not None
+
+
 def build_annual_invoice(organization: Organization) -> Invoice:
     """Счёт на 12 месяцев базы вперёд, со скидкой. Идемпотентно: если уже есть
     невоидный НЕоплаченный годовой счёт — вернуть его, а не плодить второй."""
@@ -550,6 +573,11 @@ def settle_zero_invoice(invoice: Invoice) -> None:
         subscription.current_period_end = now + timedelta(days=30)
         subscription.save(update_fields=["current_period_start",
                                          "current_period_end"])
+        # ПРОДЛЕНИЕ ДОВОДИТ ПРАВКУ ТАРИФА ДО КЛИЕНТА — и нулевой счёт это тоже
+        # продление. Без этого клиент на годовой предоплате (или на нулевом
+        # тарифе) НИКОГДА не получал бы новую цену/включённое: adopt был только
+        # в `mark_paid`, а сюда путь шёл мимо него.
+        adopt_current_terms(subscription)
     _log.info("zero invoice settled", extra={
         "invoice": invoice.number, "org": invoice.organization_id})
 
@@ -562,11 +590,15 @@ def period_pricing(organization: Organization, plan, reported: dict) -> dict:
     условий подписки (снимок), чтобы цифры кабинета совпадали со счётом.
     """
     used = period_billable(organization, reported)
-    zone = classify_zone(used, plan)
     terms = organization.subscription.terms
     rate = terms["metered_per_1k"] or Decimal("0")
     included = _int_or_zero(terms["included_requests"])
     floor = _int_or_zero(terms["metered_floor"]) if terms.get("metered_floor") is not None else DEFAULT_METERED_FLOOR
+    # Зона — на ВКЛЮЧЁННОМ ИЗ СНИМКА (тот же, что биллит счёт), потолок/буфер —
+    # с живого тарифа (это enforcement, меняется сразу для всех, как RPM/лимит
+    # инстансов). Так число «включено», зона и начисление в кабинете сходятся.
+    zone = classify_zone(used, included, int(plan.overage_cap_requests or 0),
+                         int(plan.buffer_requests or 0))
     over = max(0, used - included)
     billed_over = max(0, over - floor) if rate > 0 else 0
     overage_amount = _round(Decimal(billed_over) / Decimal(1000) * Decimal(rate))
@@ -592,9 +624,9 @@ def period_pricing(organization: Organization, plan, reported: dict) -> dict:
     }
 
 
-def classify_zone(used: int, plan) -> dict:
+def classify_zone(used: int, included: int, cap: int, buffer: int) -> dict:
     """Which VOLUME ZONE the org is in — for the cabinet display AND enforcement.
-    Pure function of the period's request count and the plan. Four zones:
+    Pure function of the period's request count and explicit boundaries. Four zones:
 
       included  0..included_requests            — covered by the subscription
       metered   included..overage_cap           — top-up (overage) at the tier rate
@@ -602,11 +634,16 @@ def classify_zone(used: int, plan) -> dict:
                                                    upgrade (favourable first month)
       stopped   beyond the buffer                — hard stop, like an unpaid licence
 
-    `overage_cap_requests == 0` means NO ceiling (Enterprise/по договору): only
-    included vs metered, never buffer/stopped."""
-    included = int(plan.included_requests or 0)
-    cap = int(plan.overage_cap_requests or 0)
-    buffer = int(plan.buffer_requests or 0)
+    `cap == 0` means NO ceiling (Enterprise/по договору): only included vs metered.
+
+    ГРАНИЦЫ ПЕРЕДАЮТСЯ ЯВНО, А НЕ ЧИТАЮТСЯ С ЖИВОГО ТАРИФА. `included` обязан
+    прийти ИЗ СНИМКА подписки — тогда зона (и стоп-решение) считается на том же
+    числе, что и счёт (`build_invoice` по снимку). Раньше функция брала
+    `plan.included_requests` (живой), и после правки тарифа зона в кабинете
+    расходилась с включённым, показанным рядом, и с тем, за что реально биллят."""
+    included = max(0, int(included))
+    cap = int(cap or 0)
+    buffer = int(buffer or 0)
     used = max(0, int(used))
     # ПОТОЛОК НИКОГДА НЕ НИЖЕ ВКЛЮЧЁННОГО. Иначе пересечение включённого падает
     # мимо зоны «metered» прямо в «stopped» — мгновенная остановка без докупа.
@@ -736,7 +773,14 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     # Тип 'first_month' действует лишь на ПЕРВОМ счёте клиента; 'any' — всегда.
     # Скидка бьёт по абонплате (повторяющийся платёж), не по объёму. Лучший для
     # клиента выбирает `resolve_offer` по итоговой цене.
-    is_first = not (previous and previous.state != Invoice.VOID)
+    # ПЕРВЫЙ СЧЁТ — ПО ЛЮБОМУ невоидному счёту, ВКЛЮЧАЯ годовой и нулевой
+    # погашенный. `previous` (ватермарка) исключает годовой, поэтому по нему
+    # `is_first` был бы True у клиента, у которого ЕСТЬ годовой счёт, — и скидку
+    # «первый месяц» он получил бы на первом ненулевом месяце ПОСЛЕ годового
+    # окна, спустя год после регистрации. Здесь вопрос другой: выставлялся ли
+    # клиент вообще хоть раз.
+    is_first = not Invoice.objects.filter(organization=organization).exclude(
+        state=Invoice.VOID).exists()
     applies = Offer.APPLIES_FIRST_MONTH if is_first else Offer.APPLIES_ANY
     offer = resolve_offer(organization, applies_to=applies, plan=plan,
                           amount=subscription_amount)
@@ -764,12 +808,11 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
         values_at_period_end=max(watermark, values),
         requests_at_period_end=requests,
     )
-    # СЧЁТЧИК ИСПОЛЬЗОВАНИЙ — ПОСЛЕ создания счёта и атомарно (F), чтобы лимит
-    # `max_uses` считался по фактически выставленным, а параллельный проход не
-    # затёр инкремент. Оффер без лимита (max_uses=0) считается тоже — оператору
-    # видно, сколько раз предложение сработало.
-    if offer is not None:
-
+    # СЧЁТЧИК ИСПОЛЬЗОВАНИЙ — ТОЛЬКО КОГДА СКИДКА РЕАЛЬНО ПРИМЕНИЛАСЬ (discount
+    # > 0), после создания счёта и атомарно (F). Иначе в годовом окне, где база
+    # = 0, оффер резолвился каждый месяц со скидкой 0 и СЖИГАЛ `max_uses` даром —
+    # лимитный оффер исчерпывался до того, как хоть раз дал реальную скидку.
+    if offer is not None and discount > 0:
         Offer.objects.filter(pk=offer.pk).update(uses=F("uses") + 1)
     # КАЖДЫЙ СЧЁТ — СТРОКА С РАЗЛОЖЕНИЕМ. Спор «почему столько» начинается с
     # этой строки, и без неё ответ собирается из четырёх таблиц вручную.

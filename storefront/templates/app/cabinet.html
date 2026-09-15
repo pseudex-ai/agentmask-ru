@@ -95,10 +95,10 @@
   </div>
   {% endif %}
 
-  {% if subscription.base_paid_through %}
+  {% if annual_prepaid_until %}
   <div style="margin-top:20px;border:1px solid var(--line-2);padding:22px">
     <div class="label" style="margin-bottom:10px">ГОДОВАЯ ОПЛАТА</div>
-    <p style="font-size:14px;color:var(--dim);line-height:1.6;margin:0">База оплачена вперёд до <b style="color:var(--text-3)">{{ subscription.base_paid_through|date:"d.m.Y" }}</b>. Ежемесячная абонплата в этот период не начисляется; перерасход, если он есть, приходит отдельным помесячным счётом.</p>
+    <p style="font-size:14px;color:var(--dim);line-height:1.6;margin:0">База оплачена вперёд до <b style="color:var(--text-3)">{{ annual_prepaid_until|date:"d.m.Y" }}</b>. Ежемесячная абонплата в этот период не начисляется; перерасход, если он есть, приходит отдельным помесячным счётом.</p>
   </div>
   {% elif annual %}
   <div style="margin-top:20px;border:1px solid var(--line-2);padding:22px">

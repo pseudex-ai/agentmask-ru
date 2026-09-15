@@ -672,12 +672,18 @@ def cabinet(request):
     pricing = None
     if subscription and not unreachable:
         pricing = services.period_pricing(organization, subscription.plan, reported)
-    # ГОДОВАЯ ПРЕДОПЛАТА: цена и «что получишь». Показываем, только если тариф
-    # её предлагает (annual_discount_pct) или есть адресный annual-оффер, и пока
-    # база НЕ оплачена вперёд (иначе показываем «оплачено до …»).
+    # ГОДОВАЯ ПРЕДОПЛАТА: цена и «что получишь». Показываем, если тариф её даёт
+    # ИЛИ есть адресный annual-оффер, и пока база НЕ оплачена вперёд. Срок
+    # сверяется С СЕЙЧАС, а не по правдивости даты: истёкшая дата иначе вечно
+    # показывала бы «оплачено вперёд» и прятала кнопку продления.
     annual = None
-    if subscription and subscription.plan.annual_discount_pct:
-        annual = services.annual_price(organization, subscription.plan)
+    annual_prepaid_until = None
+    if subscription:
+        if (subscription.base_paid_through
+                and timezone.now() < subscription.base_paid_through):
+            annual_prepaid_until = subscription.base_paid_through
+        elif services.annual_available(organization, subscription.plan):
+            annual = services.annual_price(organization, subscription.plan)
     return render(request, "app/cabinet.html", {
         "instances": slots,
         "organization": organization,
@@ -697,6 +703,7 @@ def cabinet(request):
         "percent": min(100, round(billable / included * 100)) if included else 0,
         "pricing": pricing,
         "annual": annual,
+        "annual_prepaid_until": annual_prepaid_until,
         "card_available": payments.is_available(),
         "unreachable": unreachable,
         "image": settings.DOCKER_IMAGE,
@@ -840,7 +847,8 @@ def pay_annual(request):
     """
     organization = _organization(request)
     subscription = getattr(organization, "subscription", None)
-    if subscription is None or not subscription.plan.annual_discount_pct:
+    if subscription is None or not services.annual_available(
+            organization, subscription.plan):
         messages.info(request, "Для этого тарифа годовая оплата не предлагается.")
         return redirect("cabinet")
     if not payments.is_available():

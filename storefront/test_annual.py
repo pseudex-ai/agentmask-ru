@@ -146,11 +146,126 @@ def main() -> int:
           "просроченная попытка годовой оплаты НЕ останавливает клиента",
           f"state={sub.state}")
 
+    # ====== РЕГРЕССИИ ИЗ КОД-РЕВЬЮ ======================================
+    from datetime import date
+
+    # #5: годовой платёж НЕ перезапускает ЖИВОЙ месячный период ------------
+    o5 = Organization.objects.create(id="ann5", display_name="Ann5")
+    live_end = now + timedelta(days=20)
+    s5 = Subscription.objects.create(
+        organization=o5, plan=start, state=Subscription.ACTIVE,
+        trial_ends_at=now - timedelta(days=1),
+        current_period_start=now - timedelta(days=10), current_period_end=live_end,
+        terms_monthly_price=start.monthly_price,
+        terms_included_requests=start.included_requests,
+        terms_metered_per_1k=start.metered_per_1k,
+        terms_metered_floor=start.metered_floor, terms_taken_at=now)
+    services.mark_paid(services.build_annual_invoice(o5))
+    s5.refresh_from_db()
+    check(abs((s5.current_period_end - live_end).total_seconds()) < 2
+          and s5.base_paid_through is not None,
+          "#5 годовой платёж не сдвигает живой месячный период",
+          f"period_end {s5.current_period_end} vs {live_end}")
+
+    # #2: в годовом окне (база=0) лимитный оффер НЕ сжигает use --------------
+    o2 = Organization.objects.create(id="ann2", display_name="Ann2")
+    Subscription.objects.create(
+        organization=o2, plan=start, state=Subscription.ACTIVE,
+        trial_ends_at=now, current_period_start=now,
+        current_period_end=now + timedelta(days=30),
+        base_paid_through=now + timedelta(days=300),
+        terms_monthly_price=start.monthly_price,
+        terms_included_requests=start.included_requests,
+        terms_metered_per_1k=start.metered_per_1k,
+        terms_metered_floor=start.metered_floor, terms_taken_at=now)
+    lim = Offer.objects.create(title="Лимит1 -20%", organization=o2,
+                               discount_pct=20, max_uses=1)
+    usage_of(0)
+    z = services.build_invoice(o2, date.today(), date.today() + timedelta(days=30))
+    lim.refresh_from_db()
+    check(z.total == 0 and z.discount_amount == 0 and lim.uses == 0,
+          "#2 нулевой месяц не сжигает use лимитного оффера",
+          f"total={z.total} uses={lim.uses}")
+
+    # #3: annual_available видит адресный annual-оффер на тарифе без скидки --
+    ent = Plan.objects.get(code="enterprise")   # annual_discount_pct = 0
+    o3 = Organization.objects.create(id="ann3", display_name="Ann3")
+    Subscription.objects.create(
+        organization=o3, plan=ent, state=Subscription.ACTIVE, trial_ends_at=now,
+        current_period_start=now, current_period_end=now + timedelta(days=30))
+    check(not services.annual_available(o3, ent),
+          "#3 без оффера годовая на enterprise не предлагается")
+    Offer.objects.create(title="Год адресно -25%", organization=o3,
+                         discount_pct=25, applies_to=Offer.APPLIES_ANNUAL)
+    check(services.annual_available(o3, ent),
+          "#3 адресный annual-оффер включает годовую даже при annual_discount_pct=0")
+
+    # #7: годовой счёт в истории НЕ делает первый месячный «первым месяцем» --
+    o7 = Organization.objects.create(id="ann7", display_name="Ann7")
+    Subscription.objects.create(
+        organization=o7, plan=start, state=Subscription.ACTIVE, trial_ends_at=now,
+        current_period_start=now, current_period_end=now + timedelta(days=30),
+        terms_monthly_price=start.monthly_price,
+        terms_included_requests=start.included_requests,
+        terms_metered_per_1k=start.metered_per_1k,
+        terms_metered_floor=start.metered_floor, terms_taken_at=now)
+    a7 = services.build_annual_invoice(o7)   # годовой счёт в истории (ISSUED)
+    Offer.objects.create(title="Первый -50%", organization=o7, discount_pct=50,
+                         applies_to=Offer.APPLIES_FIRST_MONTH)
+    usage_of(0)
+    m7 = services.build_invoice(o7, date.today(), date.today() + timedelta(days=30))
+    check(a7.is_annual and m7.discount_amount == 0,
+          "#7 first_month не применяется, если у клиента уже есть годовой счёт",
+          f"скидка {m7.discount_amount}")
+
+    # #1: нулевой счёт ДОВОДИТ правку тарифа (adopt_current_terms) -----------
+    o1 = Organization.objects.create(id="ann1", display_name="Ann1")
+    s1 = Subscription.objects.create(
+        organization=o1, plan=start, state=Subscription.ACTIVE,
+        trial_ends_at=now - timedelta(days=1),
+        current_period_start=now - timedelta(days=40),
+        current_period_end=now - timedelta(seconds=1),
+        base_paid_through=now + timedelta(days=300),
+        terms_monthly_price=start.monthly_price,
+        terms_included_requests=start.included_requests,
+        terms_metered_per_1k=start.metered_per_1k,
+        terms_metered_floor=start.metered_floor, terms_taken_at=now)
+    start.monthly_price = Decimal("1234")     # правка тарифа
+    start.save(update_fields=["monthly_price"])
+    usage_of(0)
+    call_command("run_billing_cycle", verbosity=0)
+    s1.refresh_from_db()
+    check(s1.terms_monthly_price == Decimal("1234"),
+          "#1 нулевой счёт продлевает и доводит новую цену тарифа до снимка",
+          f"снимок {s1.terms_monthly_price}")
+    start.monthly_price = Decimal("990")      # вернуть
+    start.save(update_fields=["monthly_price"])
+
+    # #6: зона кабинета считается на ВКЛЮЧЁННОМ ИЗ СНИМКА, не с живого тарифа --
+    o6 = Organization.objects.create(id="ann6", display_name="Ann6")
+    Subscription.objects.create(
+        organization=o6, plan=start, state=Subscription.ACTIVE, trial_ends_at=now,
+        current_period_start=now, current_period_end=now + timedelta(days=30),
+        terms_monthly_price=start.monthly_price,
+        terms_included_requests=10_000,        # снимок = 10k
+        terms_metered_per_1k=start.metered_per_1k,
+        terms_metered_floor=start.metered_floor, terms_taken_at=now)
+    start.included_requests = 50_000           # живой тариф подняли до 50k
+    start.save(update_fields=["included_requests"])
+    usage_of(20_000)
+    pr = services.period_pricing(o6, start,
+                                 {"capacity_billable": 20_000})
+    check(pr["included"] == 10_000 and pr["zone"] == "metered",
+          "#6 зона на снимке (10k) → metered, а не на живом (50k) → included",
+          f"included={pr['included']} zone={pr['zone']}")
+    start.included_requests = 10_000           # вернуть
+    start.save(update_fields=["included_requests"])
+
     print("=" * 60)
     if not ok:
         raise SystemExit("annual flow not correct")
     print("annual OK — цена+оффер, is_annual, base_paid_through, база=0 в окне, "
-          "нулевой самогашение, годовой не стопает")
+          "нулевой самогашение, годовой не стопает, + 5 регрессий из ревью")
     return 0
 
 
