@@ -251,6 +251,19 @@ async def _lifespan(_app: "FastAPI"):
     # Warm the models AFTER the bundle is loaded: warmup runs a real detection
     # pass, which needs the leased assets.
     await anyio.to_thread.run_sync(_warmup)
+    # Cross-tenant posture is a DELIBERATE, LOGGED choice (pentest WS-7 exfiltrator
+    # #1). Unbound, the container trusts the body's `org_id`, so a compromised
+    # gateway credential can read ANY org's vault by changing it — safe only when
+    # ONE org owns the whole container. A single-tenant deploy should set
+    # PSEUDEX_ORG so a stolen credential reaches only that tenant.
+    if _BOUND_ORG:
+        _log.info("org-bound: this container serves only tenant %r (cross-tenant refused)",
+                  _BOUND_ORG)
+    else:
+        _log.warning("PSEUDEX_ORG is not set — MULTI-TENANT mode: the container trusts the "
+                     "request body's org_id, so a compromised gateway credential can read "
+                     "any org's vault. Set PSEUDEX_ORG to bind this container to one tenant "
+                     "(fail-safe) unless it deliberately serves many.")
     yield
     LICENSE.stop()
 
