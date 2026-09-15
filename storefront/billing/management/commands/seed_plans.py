@@ -9,6 +9,7 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 
+from billing import services
 from billing.models import Plan
 
 # Lowered from the mock's 19 000 / 49 000. Those were placed before anyone had
@@ -30,11 +31,14 @@ from billing.models import Plan
 # переходил, и выручка упиралась в цену входа. Так же устроен всякий счётный
 # российский продукт (Диадок: 11.80 -> 7.02 ₽/документ по лестнице).
 #
-# ПОРОГ ТАРИФИКАЦИИ У КАЖДОГО ТАРИФА СВОЙ И РАВЕН ЕГО РЕЗЕРВУ на лицензионном
-# сервере (`licensing/store.py::RESERVE_MAX`). Это худшая ошибка счёта при
-# порванной цепи отчётов — при живой она нулевая. Общая константа 300 000 на все
-# тарифы делала Старт бесплатным до 310 000 запросов, то есть его включённый
-# объём не значил ничего.
+# ПОРОГ ТАРИФИКАЦИИ = 0 НА ВСЕХ ТАРИФАХ (решение владельца): биллим с первого
+# запроса сверх включённого, без «бесплатной полосы» поверх. Раньше порог был
+# привязан к резерву ёмкости сервера (`licensing/store.py::RESERVE_MAX`) — это
+# худшая ошибка счёта при ПОРВАННОЙ цепи отчётов, при живой она нулевая. Полоса
+# путала («купил 10k — биллится с 30k?!») и раздавала объём даром, поэтому её
+# убрали; поле `metered_floor` осталось настраиваемым (не 0 → полоса вернётся),
+# но с резервом больше НЕ сверяется. Редкий край при обрыве отчётов —
+# завышение на ширину резерва — принят, он само-корректируется отчётом.
 #
 # Точки перехода при этих числах: ~67k запросов Старт -> Рабочий, ~458k
 # Рабочий -> Промышленный. Выше них тариф выше ДЕШЕВЛЕ перерасхода, всегда.
@@ -87,9 +91,8 @@ class Command(BaseCommand):
             if code == "enterprise":
                 cap = buffer = discount = 0
             else:
-                cap = included * 3
-                buffer = cap // 10
-                discount = 50
+                cap, buffer = services.derive_cap_and_buffer(included)
+                discount = services.UPGRADE_DISCOUNT_PCT
             Plan.objects.update_or_create(code=code, defaults={
                 "title": title,
                 "monthly_price": price,

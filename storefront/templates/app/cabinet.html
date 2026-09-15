@@ -10,7 +10,8 @@
     </div>
     {% if subscription %}
       <div>
-        {% if subscription.state == 'trial' %}<span class="pill warn">ПРОБНЫЙ ПЕРИОД ДО {{ subscription.trial_ends_at|date:"d.m.Y" }}</span>
+        {% if subscription.volume_capped %}<span class="pill bad">ЛИМИТ ОБЪЁМА ИСЧЕРПАН — СЕРВИС ОСТАНОВЛЕН</span>
+        {% elif subscription.state == 'trial' %}<span class="pill warn">ПРОБНЫЙ ПЕРИОД ДО {{ subscription.trial_ends_at|date:"d.m.Y" }}</span>
         {% elif subscription.state == 'active' %}<span class="pill ok">АКТИВНА</span>
         {% elif subscription.state == 'past_due' %}<span class="pill bad">НЕ ОПЛАЧЕНА — СЕРВИС ОСТАНОВЛЕН</span>
         {% else %}<span class="pill">ОТМЕНЕНА</span>{% endif %}

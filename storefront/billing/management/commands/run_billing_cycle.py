@@ -214,8 +214,7 @@ class Command(BaseCommand):
         """
         live = (Subscription.objects
                 .select_related("organization", "plan")
-                .filter(state__in=(Subscription.TRIAL, Subscription.ACTIVE,
-                                   Subscription.CAPPED)))
+                .filter(state__in=(Subscription.TRIAL, Subscription.ACTIVE)))
         for subscription in live:
             organization = subscription.organization
             try:
@@ -250,42 +249,57 @@ class Command(BaseCommand):
             # НЕ безгранично: клиент не получает бесконечный сюрприз-счёт.
             zone = services.classify_zone(used, subscription.plan)
             if zone["zone"] == "stopped":
-                if subscription.state != Subscription.CAPPED:
+                if not subscription.volume_capped:
                     self.done.append(
                         f"{organization.id}: ЛИМИТ ИСЧЕРПАН — стоп "
                         f"({used} при потолке {zone['cap']} + буфер)")
-                    if not self.dry:
-                        licensing.set_status(organization.id, "suspended")
-                        subscription.state = Subscription.CAPPED
-                        subscription.save(update_fields=["state"])
+                    # РУБИЛЬНИК В TRY, КАК В `_stop_overdue`. Отказ лицензионного
+                    # сервера по ОДНОЙ организации не имеет права уронить весь
+                    # часовой цикл: иначе не выставятся счета, не остановятся
+                    # просрочки, команда выйдет ненулём — и по стампу здоровья
+                    # это «биллинг мёртв».
+                    if not self.dry and self._set_status(organization.id, "suspended"):
+                        # Флаг ПОВЕРХ состояния: клиент остаётся TRIAL/ACTIVE, и
+                        # его счёт выставится сам на своём переходе. Ставится
+                        # только после успешного рубильника — иначе кабинет
+                        # покажет «остановлен», а движок продолжит работать.
+                        subscription.volume_capped = True
+                        subscription.save(update_fields=["volume_capped"])
                         services.funnel("capped", organization.id,
                                         f"{used} запросов, потолок {zone['cap']}")
                 continue
-            if subscription.state == Subscription.CAPPED:
-                # Вернулись под потолок (новый период / подняли лимит) — снять стоп.
+            if subscription.volume_capped:
+                # Вернулись под потолок (новый период сдвинул ватермарку /
+                # подняли лимит) — снять стоп. Состояние (TRIAL/ACTIVE) не
+                # трогаем: оно не терялось.
                 self.done.append(f"{organization.id}: снова под потолком — возобновление")
-                if not self.dry:
-                    licensing.set_status(organization.id, "active")
-                    subscription.state = Subscription.ACTIVE
+                if not self.dry and self._set_status(organization.id, "active"):
+                    subscription.volume_capped = False
                     subscription.volume_notified = Subscription.NOTIFIED_NONE
-                    subscription.save(update_fields=["state", "volume_notified"])
+                    subscription.save(update_fields=["volume_capped", "volume_notified"])
                 continue
 
             stage = subscription.volume_notified
             if zone["in_buffer"] and stage != Subscription.NOTIFIED_BUFFER:
-                # В буфере за потолком: ещё служим, шлём оффер апгрейда (кабинет
-                # показывает «перейди на старший тариф, первый месяц выгодно»).
-                self._send_volume_notice(subscription, used, included, floor, rate,
-                                         charging=True)
+                # В буфере за потолком: ещё служим, но следующая зона — ЖЁСТКИЙ
+                # СТОП, и письмо обязано это сказать, а не обещать «ничего не
+                # остановится». Шлём оффер апгрейда (первый месяц выгодно).
+                self._send_volume_notice(subscription, used, included, floor,
+                                         rate, kind="buffer", zone=zone)
                 stage = Subscription.NOTIFIED_BUFFER
             elif used >= included + floor and stage not in (
                     Subscription.NOTIFIED_METERED, Subscription.NOTIFIED_BUFFER):
-                self._send_volume_notice(subscription, used, included, floor, rate,
-                                         charging=True)
+                self._send_volume_notice(subscription, used, included, floor,
+                                         rate, kind="metered", zone=zone)
                 stage = Subscription.NOTIFIED_METERED
             elif used >= included and stage == Subscription.NOTIFIED_NONE:
-                self._send_volume_notice(subscription, used, included, floor, rate,
-                                         charging=False)
+                # Ступень «включённое выбрано, но полоса ещё бесплатна» СУЩЕСТВУЕТ
+                # только при floor > 0. При floor = 0 (наша политика) её нет:
+                # пересечение включённого сразу означает тарификацию, и ветка
+                # выше (metered) срабатывает на том же пороге. Условие оставлено
+                # ради тарифа, которому руками вернули полосу.
+                self._send_volume_notice(subscription, used, included, floor,
+                                         rate, kind="included", zone=zone)
                 stage = Subscription.NOTIFIED_INCLUDED
             if stage != subscription.volume_notified:
                 self.done.append(
@@ -294,6 +308,22 @@ class Command(BaseCommand):
                 if not self.dry:
                     subscription.volume_notified = stage
                     subscription.save(update_fields=["volume_notified"])
+
+    def _set_status(self, org_id: str, status: str) -> bool:
+        """Рубильник на лицензионном сервере, чей отказ НЕ роняет цикл.
+
+        Возвращает True при успехе — вызывающий пишет локальное зеркало только
+        тогда, чтобы кабинет не разошёлся с реальным обслуживанием. Отказ по
+        одной организации логируется в stderr, как в `_stop_overdue`, и цикл
+        идёт дальше.
+        """
+        try:
+            licensing.set_status(org_id, status)
+            return True
+        except licensing.LicensingError as error:
+            self.stderr.write(f"{org_id}: не удалось выставить статус "
+                              f"{status}: {error}")
+            return False
 
     def _snapshot_usage(self, org_id: str, reported: dict) -> None:
         """Одна строка в сутки: накопленный расход клиента на сейчас.
@@ -312,30 +342,54 @@ class Command(BaseCommand):
             defaults={"requests": requests})
 
     def _send_volume_notice(self, subscription, used: int, included: int,
-                            floor: int, rate, charging: bool) -> None:
+                            floor: int, rate, kind: str, zone: dict) -> None:
+        """Письмо о расходе, ТРИ разных по смыслу. Не один флаг `charging`:
+        буфер шлёт «дальше СТОП», и обещать в нём «ничего не остановится» —
+        ровно та ложь, которую этот метод чинит."""
         address = _billing_email(subscription.organization)
         if not address or self.dry:
             return
         link = f"{settings.SITE_URL}/app/"
-        if charging:
+        # Полоса упоминается ТОЛЬКО когда она есть: при floor = 0 фраза «и ещё 0
+        # сверх них не начислялись» — мусор, который путает.
+        free_band = (f" Следующие {floor} запросов сверх включённого пока не "
+                     f"начислялись.") if floor > 0 else ""
+        if kind == "buffer":
+            cap = zone.get("cap", 0)
+            buffer_end = zone.get("buffer_end", 0)
+            discount = subscription.plan.upgrade_first_month_discount_pct
+            deal = (f" Первый месяц старшего тарифа — со скидкой {discount}%."
+                    if discount else "")
+            subject = "pseudex — объём почти на глобальном потолке, дальше остановка"
+            body = (f"Здравствуйте!\n\n"
+                    f"За текущий период через шлюз прошло {used} запросов — это "
+                    f"уже за глобальным потолком тарифа ({cap}). Сейчас работает "
+                    f"буфер, но он конечный ({buffer_end}), и за ним обслуживание "
+                    f"ОСТАНОВИТСЯ — как при неоплате, только снимается это "
+                    f"переходом на старший тариф или новым периодом, а не "
+                    f"платежом.\n\n"
+                    f"Если такой объём теперь постоянный — перейдите на тариф "
+                    f"выше: он и дешевле этого перерасхода, и снимает потолок."
+                    f"{deal} Посчитаем вместе, ответьте на это письмо.\n\n"
+                    f"Текущий расход и до потолка видно в кабинете:\n{link}\n")
+        elif kind == "metered":
             subject = "pseudex — объём сверх включённого начинает тарифицироваться"
             body = (f"Здравствуйте!\n\n"
-                    f"За текущий период через шлюз прошло {used} запросов. "
-                    f"Включено {included}, и ещё {floor} сверх них не "
-                    f"начислялись.\n\n"
-                    f"Дальше каждая тысяча запросов стоит {rate} ₽. "
-                    f"Ничего не остановится — превышение попадёт отдельной "
-                    f"строкой в счёт за период.\n\n"
+                    f"За текущий период через шлюз прошло {used} запросов, "
+                    f"включено {included}.{free_band}\n\n"
+                    f"Дальше каждая тысяча запросов сверх включённого стоит "
+                    f"{rate} ₽. Ничего не остановится — превышение попадёт "
+                    f"отдельной строкой в счёт за период (до глобального "
+                    f"потолка тарифа).\n\n"
                     f"Текущий расход и начисление видно в кабинете:\n{link}\n\n"
                     f"Если такой объём теперь постоянный, тариф выше почти "
                     f"наверняка дешевле — посчитаем вместе.\n")
-        else:
+        else:  # included — только при floor > 0
             subject = "pseudex — включённый объём тарифа выбран"
             body = (f"Здравствуйте!\n\n"
                     f"За текущий период через шлюз прошло {used} запросов — "
                     f"это весь включённый в тариф объём ({included}).\n\n"
-                    f"Пока ничего не меняется: следующие {floor} запросов "
-                    f"сверх включённого не начисляются. Мы напишем ещё раз, "
+                    f"Пока ничего не меняется:{free_band} Мы напишем ещё раз, "
                     f"когда начнётся тарификация.\n\n"
                     f"Расход виден в кабинете:\n{link}\n")
         send_mail(subject=subject, message=body, from_email=None,

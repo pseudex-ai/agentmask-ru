@@ -161,7 +161,13 @@ async def _lifespan(_app: FastAPI):
 _STATUS_RESPONSE = {
     STATUS_UNPAID: (402, "license_unpaid", "subscription is not paid"),
     STATUS_REVOKED: (403, "license_revoked", "key has been revoked"),
-    STATUS_SUSPENDED: (403, "license_revoked", "key is suspended"),
+    # SUSPENDED — ЭТО ПОТОЛОК ОБЪЁМА, НЕ ОТЗЫВ КЛЮЧА, и код обязан их различать.
+    # Стоял `license_revoked`, и капнутому по объёму клиенту движок говорил
+    # «ключ отозван, перевыпустите» — он зря плодил ключи, а обслуживание
+    # вернулось бы само в новом периоде. Свой код ведёт к своей подсказке
+    # (`pseudex/license.py::REMEDIES`), а старый движок падает на безопасный
+    # generic-fallback `explain()`, а не на неверный совет.
+    STATUS_SUSPENDED: (403, "license_capped", "volume cap reached"),
 }
 
 

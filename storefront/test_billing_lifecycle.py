@@ -435,35 +435,28 @@ def main() -> int:
         return lambda org: {"usage": {"values": capacity, "requests": capacity,
                                       "capacity_billable": capacity}}
     try:
-        # Ступень 1: включённый объём выбран, но пока бесплатно.
+        # ПРИ floor = 0 (наша политика) СТУПЕНИ «included» И «metered» СХЛОПНУТЫ
+        # в одну точку: пересечение включённого сразу означает тарификацию,
+        # отдельного «пока бесплатно» письма нет. Ступень NOTIFIED_INCLUDED
+        # достижима только при floor > 0 — раньше тест ждал именно её и на
+        # floor=0 краснел на стенде.
         services.licensing.usage = usage_of(plan.included_requests + 10)
         mail.outbox.clear()
         call_command("run_billing_cycle", verbosity=0)
         subscription.refresh_from_db()
-        check("на включённом объёме приходит первое письмо",
-              len(mail.outbox) == 1
-              and subscription.volume_notified == Subscription.NOTIFIED_INCLUDED,
-              mail.outbox[0].subject if mail.outbox else "писем нет")
-
-        # Повтор прохода не шлёт второго — цикл идёт каждый час.
-        mail.outbox.clear()
-        call_command("run_billing_cycle", verbosity=0)
-        check("повторный проход второго письма не шлёт", not mail.outbox,
-              f"{len(mail.outbox)} писем")
-
-        # Ступень 2: пошла тарификация — и вот об ЭТОМ клиент обязан узнать
-        # заранее, а не из счёта.
-        services.licensing.usage = usage_of(
-            plan.included_requests + plan.metered_floor + 10)
-        mail.outbox.clear()
-        call_command("run_billing_cycle", verbosity=0)
-        subscription.refresh_from_db()
         charged = mail.outbox and str(plan.metered_per_1k) in mail.outbox[0].body
-        check("на пороге тарификации приходит второе, со ставкой",
+        check("на пересечении включённого сразу приходит письмо о тарификации",
               len(mail.outbox) == 1
               and subscription.volume_notified == Subscription.NOTIFIED_METERED
               and charged,
               mail.outbox[0].subject if mail.outbox else "писем нет")
+
+        # Повтор прохода второго письма не шлёт — цикл идёт каждый час.
+        mail.outbox.clear()
+        call_command("run_billing_cycle", verbosity=0)
+        check("повторный проход письма не повторяет", not mail.outbox,
+              f"{len(mail.outbox)} писем")
+
         check("и обслуживание при этом НЕ остановлено",
               container_masks()[0], "превышение — это счёт, а не рубильник")
     finally:

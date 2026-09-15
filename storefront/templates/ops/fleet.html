@@ -48,7 +48,8 @@
       <td>{% if row.plan %}{{ row.plan.title }}{% else %}<span style="color:var(--dim-2)">—</span>{% endif %}</td>
       <td>
         {% if row.subscription %}
-          {% if row.subscription.state == 'trial' %}<span class="pill warn">ПРОБНЫЙ</span>
+          {% if row.subscription.volume_capped %}<span class="pill bad">ЛИМИТ — СТОП</span>
+          {% elif row.subscription.state == 'trial' %}<span class="pill warn">ПРОБНЫЙ</span>
           {% elif row.subscription.state == 'active' %}<span class="pill ok">АКТИВНА</span>
           {% elif row.subscription.state == 'past_due' %}<span class="pill bad">НЕ ОПЛАЧЕНА</span>
           {% else %}<span class="pill">ОТМЕНЕНА</span>{% endif %}

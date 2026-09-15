@@ -43,6 +43,7 @@ from accounts.models import Organization
 _log = logging.getLogger("ops")
 from billing import licensing
 from billing import reconcile as billing_reconcile
+from billing import services
 from billing.models import Invoice, Plan, PlanChange, Subscription
 from ops.analytics_models import Funnel, UsageDay, Visit
 
@@ -684,6 +685,7 @@ def _apply_plan_edit(request):
         return redirect("ops_constructor")
 
     changed: list[str] = []
+    included_changed = False
     for field, label, kind in _MONEY_FIELDS:
         raw = (request.POST.get(field) or "").strip()
         if raw == "":
@@ -700,6 +702,8 @@ def _apply_plan_edit(request):
         if was == value:
             continue
         setattr(plan, field, value)
+        if field == "included_requests":
+            included_changed = True
         PlanChange.objects.create(plan=plan, field=field, was=str(was),
                                   became=str(value), actor=request.user.email,
                                   note=(request.POST.get("note") or "")[:200])
@@ -721,6 +725,18 @@ def _apply_plan_edit(request):
                                       actor=request.user.email)
             plan.is_public = wanted
             changed.append("на лендинге: " + ("да" if wanted else "нет"))
+
+    # ПОТОЛОК ПЕРЕ-ВЫВОДИТСЯ ВМЕСТЕ С ВКЛЮЧЁННЫМ. Правка `included_requests` без
+    # этого оставляла абсолютный потолок ниже нового включённого — и клиент,
+    # пересёкший включённое, останавливался без докупа и без предупреждения.
+    # Плана без потолка (0 = Enterprise / по договору) это не касается: он таким
+    # и остаётся.
+    if included_changed and plan.overage_cap_requests > 0:
+        cap, buffer = services.derive_cap_and_buffer(plan.included_requests)
+        if cap != plan.overage_cap_requests or buffer != plan.buffer_requests:
+            plan.overage_cap_requests = cap
+            plan.buffer_requests = buffer
+            changed.append(f"потолок объёма: → {cap} (буфер {buffer})")
 
     if not changed:
         messages.error(request, "Нечего менять — все поля пусты или совпадают.")

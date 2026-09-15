@@ -118,19 +118,33 @@ class Subscription(models.Model):
     ACTIVE = "active"
     PAST_DUE = "past_due"
     CANCELLED = "cancelled"
-    CAPPED = "capped"          # объём достиг глобального потолка (буфер исчерпан) → стоп
     STATES = [
         (TRIAL, "пробный период"),
         (ACTIVE, "активна"),
         (PAST_DUE, "не оплачена"),
         (CANCELLED, "отменена"),
-        (CAPPED, "лимит запросов исчерпан"),
     ]
 
     organization = models.OneToOneField(Organization, on_delete=models.CASCADE,
                                         related_name="subscription")
     plan = models.ForeignKey(Plan, on_delete=models.PROTECT, related_name="subscriptions")
     state = models.CharField(max_length=16, choices=STATES, default=TRIAL)
+
+    # ПОТОЛОК ОБЪЁМА — ОРТОГОНАЛЬНЫЙ ФАКТ, А НЕ СОСТОЯНИЕ ЖИЗНЕННОГО ЦИКЛА.
+    #
+    # Было отдельным состоянием `capped`, и это ломалось трижды: оно СТИРАЛО
+    # `trial`/`active`, поэтому (1) выставление счетов, отбирающее TRIAL/ACTIVE,
+    # никогда не касалось остановленного по объёму — новый период не наступал,
+    # ватермарка не двигалась, перерасход не выставлялся, клиент стоял ВЕЧНО;
+    # (2) возобновление не знало, куда вернуть — жёстко ставило ACTIVE, и триал,
+    # упёршийся в потолок, «оживал» оплаченным без оплаты; (3) кабинет и консоль
+    # рисовали его как «ОТМЕНЕНА», а MRR его терял. Всё это исчезает, когда
+    # остановка по объёму — булев флаг ПОВЕРХ настоящего состояния: капнутый
+    # клиент остаётся TRIAL/ACTIVE (счёт выставится сам на своём переходе), а
+    # `is_serving` и рендер отдельно учитывают флаг. Ставится/снимается в
+    # `run_billing_cycle` вместе с рубильником на лицензионном сервере.
+    volume_capped = models.BooleanField(default=False)
+
     trial_ends_at = models.DateTimeField()
     # Set when the customer turns off renewal. Service continues to the end of
     # the paid period: stopping at the moment of cancellation would be charging
@@ -228,9 +242,13 @@ class Subscription(models.Model):
         A rendering helper. The authority is the licensing server, and the two
         agreeing is a consequence of every state change going through
         `billing.services`, never of this property being consulted.
+
+        `volume_capped` gates it separately: a customer who hit the volume
+        ceiling is stopped on the licensing server while their lifecycle state
+        stays TRIAL/ACTIVE, so serving is state AND not capped.
         """
         if self.state in (self.TRIAL, self.ACTIVE):
-            return True
+            return not self.volume_capped
         return False
 
 

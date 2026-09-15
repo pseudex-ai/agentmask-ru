@@ -288,9 +288,14 @@ def mark_paid(invoice: Invoice, payment_ref: str = "") -> None:
             locked.save(update_fields=fields)
             subscription = locked.organization.subscription
             subscription.state = Subscription.ACTIVE
+            # Новый период = свежий включённый объём: остановка по объёму снята
+            # ПРЯМО ЗДЕСЬ, а не только на следующем тике цикла, чтобы оплативший
+            # клиент не видел «лимит исчерпан» ещё час.
+            subscription.volume_capped = False
             subscription.current_period_start = timezone.now()
             subscription.current_period_end = timezone.now() + timedelta(days=30)
-            subscription.save(update_fields=["state", "current_period_start",
+            subscription.save(update_fields=["state", "volume_capped",
+                                             "current_period_start",
                                              "current_period_end"])
             # ПРОДЛЕНИЕ — ЕДИНСТВЕННАЯ ТОЧКА, ГДЕ ПРАВКА ТАРИФА ДОХОДИТ ДО
             # КЛИЕНТА. Внутри той же транзакции, что и новый период: период и
@@ -404,6 +409,26 @@ def resolve_offer(organization, code: str = "", applies_to: str = "any", plan=No
     return max(applicable, key=lambda o: (o.discount_pct, o.discount_amount))
 
 
+# ГЛОБАЛЬНЫЙ ПОТОЛОК ВЫВОДИТСЯ ИЗ ВКЛЮЧЁННОГО ОБЪЁМА, В ОДНОМ МЕСТЕ.
+#
+# `overage_cap_requests` — не независимое абсолютное число: оно ОТНОСИТЕЛЬНО
+# включённого (докуп до 3× включённого, буфер 10% потолка). Хранить его
+# абсолютом и править `included_requests` в конструкторе, не тронув потолок, —
+# это молчаливый рассинхрон: подняли включённое выше старого потолка, и клиент,
+# пересёкший включённое, попадал СРАЗУ в «stopped» без единого предупреждения.
+# Поэтому потолок/буфер выводятся здесь и пере-выводятся везде, где меняется
+# включённое (`seed_plans`, конструктор).
+CAP_MULTIPLIER = 3
+BUFFER_FRACTION = 10          # буфер = потолок // 10 (10%)
+UPGRADE_DISCOUNT_PCT = 50     # скидка на первый месяц старшего тарифа при апгрейде
+
+
+def derive_cap_and_buffer(included: int) -> tuple[int, int]:
+    """Потолок и буфер из включённого объёма. Возврат (cap, buffer)."""
+    cap = max(0, int(included)) * CAP_MULTIPLIER
+    return cap, cap // BUFFER_FRACTION
+
+
 def classify_zone(used: int, plan) -> dict:
     """Which VOLUME ZONE the org is in — for the cabinet display AND enforcement.
     Pure function of the period's request count and the plan. Four zones:
@@ -420,6 +445,12 @@ def classify_zone(used: int, plan) -> dict:
     cap = int(plan.overage_cap_requests or 0)
     buffer = int(plan.buffer_requests or 0)
     used = max(0, int(used))
+    # ПОТОЛОК НИКОГДА НЕ НИЖЕ ВКЛЮЧЁННОГО. Иначе пересечение включённого падает
+    # мимо зоны «metered» прямо в «stopped» — мгновенная остановка без докупа.
+    # Конструктор пере-выводит потолок при правке включённого, но эта страховка
+    # стоит ноль и закрывает ещё и старые/руками правленые строки.
+    if 0 < cap < included:
+        cap = included
     if cap <= 0:
         zone = "included" if used <= included else "metered"
         return {"zone": zone, "used": used, "included": included, "cap": 0,
