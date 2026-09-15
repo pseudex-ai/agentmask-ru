@@ -161,6 +161,12 @@ services:
       PSEUDEX_SMTP_USER: ${SMTP_USER:-}
       PSEUDEX_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       PSEUDEX_FROM_EMAIL: ${FROM_EMAIL:-pseudex <noreply@pseudex.ru>}
+      # Режим аналитики и её адрес/ключ — из `.env`; текст лендинга и политики
+      # выводится из режима, так что «включили счётчик, а страница обещает
+      # его отсутствие» здесь невозможно.
+      PSEUDEX_ANALYTICS_MODE: ${PSEUDEX_ANALYTICS_MODE:-off}
+      PSEUDEX_ANALYTICS_HOST: ${PSEUDEX_ANALYTICS_HOST:-}
+      PSEUDEX_ANALYTICS_KEY: ${PSEUDEX_ANALYTICS_KEY:-}
     healthcheck:
       # Витрина была единственным сервисом на пути клиента без проверки: Django,
       # уронивший себя миграцией, отвечал бы `running` бесконечно, а агент
@@ -735,6 +741,169 @@ services:
     depends_on:
       prometheus: { condition: service_started }
 
+  # ── ПРОДУКТОВАЯ АНАЛИТИКА (профиль analytics) — Rybbit, на этой же машине ──
+  #
+  # ПОЧЕМУ НЕ POSTHOG. Его self-hosted сборка 2026 года — 35 контейнеров
+  # (ClickHouse, Kafka, ZooKeeper, Elasticsearch, Temporal ×3, headless
+  # Chromium…) и 10–14 ГБ памяти: больше, чем вся эта машина. Rybbit даёт то,
+  # ради чего аналитика включается, — записи сессий, автозахват кликов и форм,
+  # воронки, пути, удержание, источники, Web Vitals — в пяти контейнерах и
+  # ~2 ГБ. AGPL, свой ClickHouse, данные не покидают хост.
+  #
+  # ПРЕДЕЛЫ ПАМЯТИ СТОЯТ НА КАЖДОМ. Аналитика делит машину с лицензионным
+  # сервером; без предела ClickHouse по умолчанию считает, что может взять 80%
+  # ОЗУ ХОСТА, и первым под OOM-killer попадёт не он, а кто-нибудь ценнее.
+  # Пределы ниже — потолок для ЭТОГО сервиса, а не обещание, что ему хватит:
+  # если аналитика упрётся в него, она перезапустится сама, а продажи — нет.
+  #
+  # ПОРТЫ НЕ ПУБЛИКУЮТСЯ. Всё ходит через наш Caddy по имени сервиса в сети
+  # проекта (`analytics.{$SITE_HOST}` в Caddyfile); ClickHouse и Postgres
+  # аналитики наружу не смотрят вовсе.
+  rybbit-clickhouse:
+    image: clickhouse/clickhouse-server:26.3.17.4
+    profiles: ["analytics"]
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 2g
+    volumes:
+      - rybbit-clickhouse:/var/lib/clickhouse
+    # Установщик Rybbit кладёт ещё network.xml с `listen_host 0.0.0.0`; официальный
+    # образ и так слушает `::` и `0.0.0.0` (docker_related_config.xml), и второй
+    # такой файл давал четыре предупреждения «Address already in use» на старте.
+    configs:
+      - source: rybbit_ch_logging
+        target: /etc/clickhouse-server/config.d/logging_rules.xml
+      - source: rybbit_ch_limits
+        target: /etc/clickhouse-server/config.d/resource_limits.xml
+      - source: rybbit_ch_user
+        target: /etc/clickhouse-server/users.d/user_settings.xml
+    environment:
+      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ${RYBBIT_DB_PASSWORD:-}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  rybbit-postgres:
+    image: postgres:17.4
+    profiles: ["analytics"]
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 384m
+    environment:
+      POSTGRES_USER: rybbit
+      POSTGRES_PASSWORD: ${RYBBIT_DB_PASSWORD:-}
+      POSTGRES_DB: analytics
+    volumes:
+      - rybbit-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rybbit -d analytics"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  rybbit-redis:
+    image: redis:8.6.4-alpine
+    profiles: ["analytics"]
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 256m
+    volumes:
+      - rybbit-redis:/data
+    command:
+      - redis-server
+      - --requirepass
+      - ${RYBBIT_DB_PASSWORD:-}
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory
+      - 192mb
+      - --maxmemory-policy
+      - noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${RYBBIT_DB_PASSWORD:-}", "--no-auth-warning", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  rybbit-backend:
+    image: ghcr.io/rybbit-io/rybbit-backend:v2.9.0
+    profiles: ["analytics"]
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 768m
+    environment:
+      NODE_ENV: production
+      CLICKHOUSE_HOST: http://rybbit-clickhouse:8123
+      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_PASSWORD: ${RYBBIT_DB_PASSWORD:-}
+      CLICKHOUSE_QUERY_PASSWORD: ${RYBBIT_DB_PASSWORD:-}
+      POSTGRES_HOST: rybbit-postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: analytics
+      POSTGRES_USER: rybbit
+      POSTGRES_PASSWORD: ${RYBBIT_DB_PASSWORD:-}
+      REDIS_HOST: rybbit-redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${RYBBIT_DB_PASSWORD:-}
+      BETTER_AUTH_SECRET: ${RYBBIT_AUTH_SECRET:-}
+      BASE_URL: https://analytics.${SITE_HOST}
+      # После создания первого (нашего) аккаунта — true: иначе форма
+      # регистрации в аналитику открыта всему интернету.
+      DISABLE_SIGNUP: ${RYBBIT_DISABLE_SIGNUP:-false}
+      # Продукт продаёт «данные не покидают контур»; своя аналитика, звонящая
+      # домой, — не мелочь.
+      DISABLE_TELEMETRY: "true"
+      # Один воркер: четыре ядра делятся с движком продаж, а трафик витрины
+      # измеряется сотнями визитов в день, не тысячами в секунду.
+      CLUSTER_WORKERS: "1"
+    # ОТКАЗ ВНУТРИ КОНТЕЙНЕРА, как у Grafana: `${...:?}` сработал бы и на тех,
+    # кто профиль не включает.
+    # Образ: ENTRYPOINT /docker-entrypoint.sh, CMD node dist/cluster.js — оба
+    # повторены здесь дословно, потому что своя обёртка их замещает.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ -z "$$BETTER_AUTH_SECRET" ] || [ -z "$$POSTGRES_PASSWORD" ]; then
+          echo "RYBBIT_AUTH_SECRET / RYBBIT_DB_PASSWORD не заданы в .env." >&2
+          echo "Без них аналитика поднялась бы с пустыми паролями баз." >&2
+          exit 1
+        fi
+        exec /docker-entrypoint.sh node dist/cluster.js
+    depends_on:
+      rybbit-clickhouse: { condition: service_healthy }
+      rybbit-postgres: { condition: service_healthy }
+      rybbit-redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3001/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  rybbit-client:
+    image: ghcr.io/rybbit-io/rybbit-client:v2.9.0
+    profiles: ["analytics"]
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 512m
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_BACKEND_URL: https://analytics.${SITE_HOST}
+      NEXT_PUBLIC_DISABLE_SIGNUP: ${RYBBIT_DISABLE_SIGNUP:-false}
+    depends_on:
+      rybbit-backend: { condition: service_healthy }
+
 volumes:
   watch-state:
   billing-state:
@@ -750,3 +919,65 @@ volumes:
   license-data:
   caddy-data:
   caddy-config:
+  rybbit-clickhouse:
+  rybbit-postgres:
+  rybbit-redis:
+
+configs:
+  # Те же файлы, что кладёт установщик Rybbit, с одной правкой: пределы
+  # ClickHouse АБСОЛЮТНЫЕ, а не долей ОЗУ хоста. `..._to_ram_ratio 0.80` на
+  # машине с 8 ГБ означало бы «6,4 ГБ мне», и mem_limit контейнера в 2 ГБ
+  # встречал бы этот аппетит OOM-убийством, а не мягким троттлингом.
+  rybbit_ch_logging:
+    content: |
+      <clickhouse>
+        <logger>
+            <level>warning</level>
+            <console>true</console>
+        </logger>
+        <query_thread_log remove="remove"/>
+        <query_log remove="remove"/>
+        <query_views_log remove="remove"/>
+        <query_metric_log remove="remove"/>
+        <error_log remove="remove"/>
+        <opentelemetry_span_log remove="remove"/>
+        <text_log remove="remove"/>
+        <trace_log remove="remove"/>
+        <metric_log remove="remove"/>
+        <asynchronous_metric_log remove="remove"/>
+        <session_log remove="remove"/>
+        <part_log remove="remove"/>
+        <latency_log remove="remove"/>
+        <processors_profile_log remove="remove"/>
+      </clickhouse>
+  rybbit_ch_limits:
+    content: |
+      <clickhouse>
+        <!-- ClickHouse считает «ОЗУ» по cgroup, то есть по mem_limit контейнера
+             (2 ГиБ), и ОБРЕЗАЕТ явный max_server_memory_usage до ratio×ОЗУ:
+             с ratio=0 явные полтора гигабайта молча превращались в 0 —
+             «без предела» — и запрос упирался в OOM контейнера, а не в
+             мягкий отказ сервера. Проверено запросом на 3 млрд строк. -->
+        <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
+        <max_server_memory_usage>1500000000</max_server_memory_usage>
+        <concurrent_threads_soft_limit_ratio_to_cores>1</concurrent_threads_soft_limit_ratio_to_cores>
+        <merges_mutations_memory_usage_soft_limit>400000000</merges_mutations_memory_usage_soft_limit>
+        <mark_cache_size>268435456</mark_cache_size>
+        <uncompressed_cache_size>0</uncompressed_cache_size>
+      </clickhouse>
+  rybbit_ch_user:
+    content: |
+      <clickhouse>
+        <profiles>
+          <default>
+            <enable_json_type>1</enable_json_type>
+            <async_insert>1</async_insert>
+            <wait_for_async_insert>1</wait_for_async_insert>
+            <log_queries>0</log_queries>
+            <log_query_threads>0</log_query_threads>
+            <log_processors_profiles>0</log_processors_profiles>
+            <max_memory_usage>1000000000</max_memory_usage>
+            <max_threads>4</max_threads>
+          </default>
+        </profiles>
+      </clickhouse>
