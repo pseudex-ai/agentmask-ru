@@ -352,14 +352,13 @@ def main() -> int:
     def page(mode: str, path: str, client=None):
         settings_analytics = {
             "mode": mode, "host": "https://a.pseudex.ru", "key": "phc_probe",
-            "sets_cookies": mode == "full", "records_sessions": mode == "full"}
+            "stores_id": mode == "full", "records_sessions": mode == "full"}
         with override_settings(ANALYTICS=settings_analytics):
             answer = (client or _Client()).get(path)
         return answer
 
     claims = {
         "off": "Аналитики и счётчиков на сайте нет вообще",
-        "cookieless": "не ставит куки",
         "full": "спрашиваем согласия баннером",
     }
     wrong = []
@@ -375,7 +374,7 @@ def main() -> int:
             if other != mode and alien in html:
                 wrong.append(f"{mode}: на странице фраза режима {other}")
     check("текст про куки следует за режимом аналитики, в обе стороны",
-          not wrong, "; ".join(wrong) or "off / cookieless / full — каждый свой абзац")
+          not wrong, "; ".join(wrong) or "off / full — каждый свой абзац")
 
     # ЗАКРЫТЫЕ СТРАНИЦЫ НЕ ПОЛУЧАЮТ НИ СКРИПТА, НИ РАЗРЕШЕНИЯ В CSP. На экране
     # кабинета префиксы ключей и суммы счетов; запись сессии сделала бы их

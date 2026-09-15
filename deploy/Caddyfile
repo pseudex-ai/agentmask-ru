@@ -55,3 +55,40 @@
 		header_up X-Real-IP {remote_host}
 	}
 }
+
+# Продуктовая аналитика (Rybbit, профиль `analytics`). Тот же Caddy, тот же
+# аккаунт Let's Encrypt. Маршруты — как в Caddyfile самого Rybbit: /api/* —
+# бэкенд, остальное — интерфейс. Пока профиль выключен, имя отвечает 502 —
+# это честнее, чем молчащий счётчик.
+#
+# ФОРМА ВХОДА ЗДЕСЬ ПОКА СМОТРИТ НАРУЖУ. Следующий шаг — WireGuard на хосте и
+# `not remote_ip` на всё, кроме приёма событий (/api/track, /api/script.js,
+# /api/replay/*): у приёма событий не может быть закрытого адреса, у формы
+# входа — может и должен.
+analytics.{$SITE_HOST} {
+	log file {
+		output file /var/log/caddy/access.log {
+			roll_size 50mb
+			roll_keep 5
+		}
+		format json
+	}
+	encode zstd gzip
+	request_body max_size 10MB
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+	handle /api/* {
+		reverse_proxy rybbit-backend:3001 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+	handle {
+		reverse_proxy rybbit-client:3002 {
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+}
