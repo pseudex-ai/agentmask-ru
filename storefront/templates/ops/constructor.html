@@ -74,6 +74,26 @@
                placeholder="{{ row.plan.metered_floor }}" style="width:150px">
       </label>
       <label style="display:flex;flex-direction:column;gap:4px">
+        <span class="label">потолок объёма</span>
+        <input class="field" type="text" inputmode="numeric" name="overage_cap_requests"
+               placeholder="{{ row.plan.overage_cap_requests }}" style="width:150px">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px">
+        <span class="label">буфер за потолком</span>
+        <input class="field" type="text" inputmode="numeric" name="buffer_requests"
+               placeholder="{{ row.plan.buffer_requests }}" style="width:130px">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px">
+        <span class="label">скидка апгрейда, %</span>
+        <input class="field" type="text" inputmode="numeric" name="upgrade_first_month_discount_pct"
+               placeholder="{{ row.plan.upgrade_first_month_discount_pct }}" style="width:120px">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px">
+        <span class="label">годовая скидка, %</span>
+        <input class="field" type="text" inputmode="numeric" name="annual_discount_pct"
+               placeholder="{{ row.plan.annual_discount_pct }}" style="width:120px">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px">
         <span class="label">на лендинге</span>
         <select class="field" name="is_public" style="width:110px">
           <option value="1"{% if row.plan.is_public %} selected{% endif %}>да</option>

@@ -425,9 +425,12 @@ class Command(BaseCommand):
         # цикл запустили дважды, или прошлый проход упал после создания счёта и
         # до отправки письма. Проверяется НЕ состояние подписки (оно меняется
         # только после оплаты), а наличие невоидного счёта на этот период.
+        # Годовой счёт исключён: его период начинается в тот же день, но это
+        # предоплата базы, а не месячный счёт периода — иначе он блокировал бы
+        # выставление месячного счёта за тот же день.
         if Invoice.objects.filter(organization=organization,
-                                  period_start=period_start).exclude(
-                                      state=Invoice.VOID).exists():
+                                  period_start=period_start, is_annual=False
+                                  ).exclude(state=Invoice.VOID).exists():
             return
 
         self.done.append(f"{organization.id}: счёт за {period_start}..{period_end} ({why})")
@@ -439,6 +442,14 @@ class Command(BaseCommand):
         Subscription.objects.filter(organization=organization).update(
             volume_notified=Subscription.NOTIFIED_NONE)
         invoice = services.build_invoice(organization, period_start, period_end)
+        # НУЛЕВОЙ СЧЁТ ГАСИТСЯ САМ, БЕЗ ПЛАТЕЖА И БЕЗ ПИСЬМА. В годовом окне
+        # база = 0, и месяц без перерасхода даёт счёт на 0 ₽ (то же у тарифа с
+        # нулевой абонплатой). Оставить его ВЫСТАВЛЕННЫМ — значит через grace
+        # остановить клиента за «неоплату» нуля. Гасим и двигаем период.
+        if invoice.total == 0:
+            services.settle_zero_invoice(invoice)
+            self.done[-1] += " — нулевой, погашен автоматически"
+            return
         invoice.state = Invoice.ISSUED
         invoice.issued_at = now
         invoice.save(update_fields=["state", "issued_at"])
@@ -476,9 +487,14 @@ class Command(BaseCommand):
 
     def _stop_overdue(self, now) -> None:
         deadline = (now - timedelta(days=GRACE_DAYS)).date()
+        # ГОДОВОЙ СЧЁТ ИСКЛЮЧЁН: годовая предоплата ОПЦИОНАЛЬНА, обязателен
+        # месячный цикл. Брошенная попытка оплатить год (счёт выставлен, платёж
+        # не завершён) не должна останавливать клиента — за обслуживание
+        # отвечают месячные счета.
         overdue = (Invoice.objects
                    .select_related("organization")
-                   .filter(state=Invoice.ISSUED, due_at__lt=deadline))
+                   .filter(state=Invoice.ISSUED, due_at__lt=deadline,
+                           is_annual=False))
         for invoice in overdue:
             subscription = getattr(invoice.organization, "subscription", None)
             if subscription is None or subscription.state == Subscription.PAST_DUE:

@@ -672,6 +672,12 @@ def cabinet(request):
     pricing = None
     if subscription and not unreachable:
         pricing = services.period_pricing(organization, subscription.plan, reported)
+    # ГОДОВАЯ ПРЕДОПЛАТА: цена и «что получишь». Показываем, только если тариф
+    # её предлагает (annual_discount_pct) или есть адресный annual-оффер, и пока
+    # база НЕ оплачена вперёд (иначе показываем «оплачено до …»).
+    annual = None
+    if subscription and subscription.plan.annual_discount_pct:
+        annual = services.annual_price(organization, subscription.plan)
     return render(request, "app/cabinet.html", {
         "instances": slots,
         "organization": organization,
@@ -690,6 +696,8 @@ def cabinet(request):
         "included": included,
         "percent": min(100, round(billable / included * 100)) if included else 0,
         "pricing": pricing,
+        "annual": annual,
+        "card_available": payments.is_available(),
         "unreachable": unreachable,
         "image": settings.DOCKER_IMAGE,
         "license_url_env": (f"-e PSEUDEX_LICENSE_URL={settings.LICENSE_URL} "
@@ -816,6 +824,41 @@ def pay_invoice(request, number: str):
         messages.error(request, "Не удалось начать оплату картой. Счёт можно "
                                 "оплатить по реквизитам — форма ниже.")
         return redirect("invoice_detail", number=number)
+    invoice.payment_ref = payment_id
+    invoice.save(update_fields=["payment_ref"])
+    return redirect(confirmation)
+
+
+@login_required
+@require_POST
+def pay_annual(request):
+    """Годовая предоплата базы: собрать годовой счёт и увести в ЮKassa.
+
+    Идемпотентно на уровне `build_annual_invoice` (не плодит второй незакрытый
+    годовой счёт). Оплата обрабатывается тем же вебхуком и `mark_paid`, что и
+    месячная — `mark_paid` ветвится по `is_annual`.
+    """
+    organization = _organization(request)
+    subscription = getattr(organization, "subscription", None)
+    if subscription is None or not subscription.plan.annual_discount_pct:
+        messages.info(request, "Для этого тарифа годовая оплата не предлагается.")
+        return redirect("cabinet")
+    if not payments.is_available():
+        messages.info(request, "Оплата картой сейчас недоступна — напишите нам, "
+                               "выставим годовой счёт по реквизитам.")
+        return redirect("cabinet")
+    invoice = services.build_annual_invoice(organization)
+    try:
+        payment_id, confirmation = payments.create_payment(
+            invoice,
+            request.build_absolute_uri(f"/app/invoices/{invoice.number}"),
+            request.user.email,
+        )
+    except payments.PaymentError as error:
+        _log.error("annual payment for %s failed: %s", organization.id, error)
+        messages.error(request, "Не удалось начать оплату картой. Годовой счёт "
+                                f"{invoice.number} можно оплатить по реквизитам.")
+        return redirect("invoice_detail", number=invoice.number)
     invoice.payment_ref = payment_id
     invoice.save(update_fields=["payment_ref"])
     return redirect(confirmation)

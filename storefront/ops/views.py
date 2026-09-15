@@ -618,7 +618,18 @@ _MONEY_FIELDS = (
     ("included_requests", "включено запросов", "int"),
     ("metered_per_1k", "₽ за 1000 сверх", "decimal"),
     ("metered_floor", "порог тарификации", "int"),
+    # Настраиваемые владельцем коммерческие ручки: потолок объёма, буфер, скидка
+    # апгрейда и ГОДОВАЯ скидка. Пусто — не трогать; потолок/буфер, если их не
+    # задавать руками, авто-выводятся из включённого (`derive_cap_and_buffer`).
+    ("overage_cap_requests", "потолок объёма (докуп до)", "int"),
+    ("buffer_requests", "буфер за потолком", "int"),
+    ("upgrade_first_month_discount_pct", "скидка апгрейда, %", "int"),
+    ("annual_discount_pct", "годовая скидка, %", "int"),
 )
+# Ручной ввод этих полей ОТМЕНЯЕТ авто-вывод потолка/буфера из включённого.
+_CAP_FIELDS = frozenset({"overage_cap_requests", "buffer_requests"})
+# Проценты: 0..100. Больше 100 инвертировало бы цену (скидка > стоимости).
+_PCT_FIELDS = frozenset({"upgrade_first_month_discount_pct", "annual_discount_pct"})
 
 
 @staff_member_required
@@ -686,6 +697,7 @@ def _apply_plan_edit(request):
 
     changed: list[str] = []
     included_changed = False
+    cap_set_by_hand = False
     for field, label, kind in _MONEY_FIELDS:
         raw = (request.POST.get(field) or "").strip()
         if raw == "":
@@ -698,12 +710,17 @@ def _apply_plan_edit(request):
         if value < 0:
             messages.error(request, f"«{label}»: отрицательным быть не может.")
             return redirect("ops_constructor")
+        if field in _PCT_FIELDS and value > 100:
+            messages.error(request, f"«{label}»: процент не может быть больше 100.")
+            return redirect("ops_constructor")
         was = getattr(plan, field)
         if was == value:
             continue
         setattr(plan, field, value)
         if field == "included_requests":
             included_changed = True
+        if field in _CAP_FIELDS:
+            cap_set_by_hand = True
         PlanChange.objects.create(plan=plan, field=field, was=str(was),
                                   became=str(value), actor=request.user.email,
                                   note=(request.POST.get("note") or "")[:200])
@@ -726,12 +743,12 @@ def _apply_plan_edit(request):
             plan.is_public = wanted
             changed.append("на лендинге: " + ("да" if wanted else "нет"))
 
-    # ПОТОЛОК ПЕРЕ-ВЫВОДИТСЯ ВМЕСТЕ С ВКЛЮЧЁННЫМ. Правка `included_requests` без
-    # этого оставляла абсолютный потолок ниже нового включённого — и клиент,
-    # пересёкший включённое, останавливался без докупа и без предупреждения.
-    # Плана без потолка (0 = Enterprise / по договору) это не касается: он таким
-    # и остаётся.
-    if included_changed and plan.overage_cap_requests > 0:
+    # ПОТОЛОК ПЕРЕ-ВЫВОДИТСЯ ВМЕСТЕ С ВКЛЮЧЁННЫМ — но только если оператор НЕ
+    # задал потолок/буфер руками в этой же правке (тогда уважаем его число).
+    # Правка `included_requests` без этого оставляла абсолютный потолок ниже
+    # нового включённого — и клиент, пересёкший включённое, останавливался без
+    # докупа. Плана без потолка (0 = Enterprise) это не касается.
+    if included_changed and not cap_set_by_hand and plan.overage_cap_requests > 0:
         cap, buffer = services.derive_cap_and_buffer(plan.included_requests)
         if cap != plan.overage_cap_requests or buffer != plan.buffer_requests:
             plan.overage_cap_requests = cap

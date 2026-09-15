@@ -89,10 +89,11 @@ class Command(BaseCommand):
             # (по договору) — без потолка. Множители здесь, чтобы правились в одном
             # месте; поля тарифа остаются настраиваемыми поштучно при желании.
             if code == "enterprise":
-                cap = buffer = discount = 0
+                cap = buffer = discount = annual = 0
             else:
                 cap, buffer = services.derive_cap_and_buffer(included)
                 discount = services.UPGRADE_DISCOUNT_PCT
+                annual = services.ANNUAL_DISCOUNT_PCT
             Plan.objects.update_or_create(code=code, defaults={
                 "title": title,
                 "monthly_price": price,
@@ -111,5 +112,6 @@ class Command(BaseCommand):
                 "overage_cap_requests": cap,
                 "buffer_requests": buffer,
                 "upgrade_first_month_discount_pct": discount,
+                "annual_discount_pct": annual,
             })
         self.stdout.write(f"{len(PLANS)} plans seeded")

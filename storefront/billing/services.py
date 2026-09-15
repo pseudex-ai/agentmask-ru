@@ -293,11 +293,19 @@ def mark_paid(invoice: Invoice, payment_ref: str = "") -> None:
             # ПРЯМО ЗДЕСЬ, а не только на следующем тике цикла, чтобы оплативший
             # клиент не видел «лимит исчерпан» ещё час.
             subscription.volume_capped = False
-            subscription.current_period_start = timezone.now()
-            subscription.current_period_end = timezone.now() + timedelta(days=30)
-            subscription.save(update_fields=["state", "volume_capped",
-                                             "current_period_start",
-                                             "current_period_end"])
+            now = timezone.now()
+            fields_sub = ["state", "volume_capped", "current_period_start",
+                          "current_period_end"]
+            # ГОДОВОЙ ПЛАТЁЖ НЕ ДЕЛАЕТ ПЕРИОД ГОДОВЫМ (вариант A): он оплачивает
+            # БАЗУ на 12 мес вперёд (`base_paid_through`), а месячный цикл идёт
+            # своим чередом — перерасход помесячно, включённый объём помесячно.
+            if locked.is_annual:
+                subscription.base_paid_through = now + timedelta(
+                    days=ANNUAL_PERIOD_DAYS)
+                fields_sub.append("base_paid_through")
+            subscription.current_period_start = now
+            subscription.current_period_end = now + timedelta(days=30)
+            subscription.save(update_fields=fields_sub)
             # ПРОДЛЕНИЕ — ЕДИНСТВЕННАЯ ТОЧКА, ГДЕ ПРАВКА ТАРИФА ДОХОДИТ ДО
             # КЛИЕНТА. Внутри той же транзакции, что и новый период: период и
             # условия, по которым он будет посчитан, — один факт.
@@ -421,6 +429,7 @@ def resolve_offer(organization, code: str = "", applies_to: str = "any", plan=No
 CAP_MULTIPLIER = 3
 BUFFER_FRACTION = 10          # буфер = потолок // 10 (10%)
 UPGRADE_DISCOUNT_PCT = 50     # скидка на первый месяц старшего тарифа при апгрейде
+ANNUAL_DISCOUNT_PCT = 15      # годовая предоплата: ≈2 месяца в подарок (сид-дефолт)
 
 
 def derive_cap_and_buffer(included: int) -> tuple[int, int]:
@@ -429,20 +438,120 @@ def derive_cap_and_buffer(included: int) -> tuple[int, int]:
     return cap, cap // BUFFER_FRACTION
 
 
+MONTHS_IN_YEAR = 12
+ANNUAL_PERIOD_DAYS = 365
+
+
+def _last_metered_invoice(organization: Organization):
+    """Последний МЕСЯЧНЫЙ невоидный счёт — носитель ватермарки перерасхода.
+
+    Годовой счёт (`is_annual`) исключён: это предоплата БАЗЫ, к объёму
+    отношения не имеет, а его период на год вперёд иначе всегда выигрывал бы
+    сортировку по `period_end` и подменял месячную ватермарку своей.
+    """
+    return (Invoice.objects.filter(organization=organization, is_annual=False)
+            .exclude(state=Invoice.VOID)
+            .order_by("-period_end", "-id").first())
+
+
 def period_billable(organization: Organization, reported: dict) -> int:
     """Сколько запросов к начислению стоит ТЕКУЩИЙ период, а не вся жизнь.
 
     Счётчик сервера накопительный, поэтому за период — разница с ватермаркой
-    последнего невоидного счёта. ОДНА арифметика для цикла (порог/письма/стоп)
-    и кабинета (зона/цена): два ответа на «сколько за период» разошлись бы —
-    полоса показывала бы одно, счёт приходил бы на другое.
+    последнего невоидного МЕСЯЧНОГО счёта. ОДНА арифметика для цикла
+    (порог/письма/стоп) и кабинета (зона/цена): два ответа на «сколько за
+    период» разошлись бы — полоса показывала бы одно, счёт приходил бы на другое.
     """
     billable = _int_or_zero(reported.get("capacity_billable"))
-    previous = (Invoice.objects.filter(organization=organization)
-                .exclude(state=Invoice.VOID)
-                .order_by("-period_end", "-id").first())
+    previous = _last_metered_invoice(organization)
     watermark = max(0, previous.requests_billable_at_period_end if previous else 0)
     return max(0, billable - watermark)
+
+
+def annual_price(organization: Organization, plan) -> dict:
+    """Цена годовой предоплаты базы: 12×абонплата минус ЛУЧШАЯ из двух скидок —
+    стандартной годовой (`plan.annual_discount_pct`) или адресного/промо
+    annual-оффера, если он выгоднее клиенту. НЕ складывает: берёт минимум цены.
+
+    Возврат: gross, discount, total, offer (если победил оффер), label."""
+    terms = organization.subscription.terms
+    monthly = Decimal(terms["monthly_price"] or 0)
+    gross = _round(monthly * MONTHS_IN_YEAR)
+    # Базовая годовая скидка тарифа.
+    plan_pct = int(plan.annual_discount_pct or 0)
+    plan_total = _round(gross * (Decimal(100 - plan_pct) / Decimal(100)))
+    plan_label = f"Годовая скидка {plan_pct}%" if plan_pct else "Годовая оплата"
+    best_total, offer, label = plan_total, None, plan_label
+    # Annual-оффер: перебивает базовую скидку, только если дешевле клиенту.
+    annual_offer = resolve_offer(organization, applies_to=Offer.APPLIES_ANNUAL,
+                                 plan=plan, amount=gross)
+    if annual_offer is not None:
+        offer_total = annual_offer.apply_to(gross)
+        if offer_total < best_total:
+            best_total, offer, label = offer_total, annual_offer, annual_offer.title
+    return {"gross": gross, "total": best_total,
+            "discount": _round(gross - best_total),
+            "offer": offer, "label": label, "monthly": monthly}
+
+
+def build_annual_invoice(organization: Organization) -> Invoice:
+    """Счёт на 12 месяцев базы вперёд, со скидкой. Идемпотентно: если уже есть
+    невоидный НЕоплаченный годовой счёт — вернуть его, а не плодить второй."""
+    existing = (Invoice.objects.filter(organization=organization, is_annual=True)
+                .exclude(state__in=(Invoice.VOID, Invoice.PAID))
+                .order_by("-id").first())
+    if existing is not None:
+        return existing
+    plan = organization.subscription.plan
+    priced = annual_price(organization, plan)
+    now = timezone.now()
+    period_start = now.date()
+    period_end = (now + timedelta(days=ANNUAL_PERIOD_DAYS)).date()
+    invoice = Invoice.objects.create(
+        organization=organization,
+        number=Invoice.next_number(),
+        state=Invoice.ISSUED,
+        is_annual=True,
+        period_start=period_start,
+        period_end=period_end,
+        plan_amount=priced["gross"],
+        discount_amount=priced["discount"],
+        discount_offer=priced["offer"],
+        metered_requests=0,
+        metered_amount=Decimal("0"),
+        total=priced["total"],
+        issued_at=now,
+        due_at=(now + timedelta(days=INVOICE_DUE_DAYS)).date(),
+    )
+    if priced["offer"] is not None:
+        Offer.objects.filter(pk=priced["offer"].pk).update(uses=F("uses") + 1)
+    _log.info("annual invoice built", extra={
+        "invoice": invoice.number, "org": organization.id,
+        "gross": str(priced["gross"]), "total": str(priced["total"])})
+    return invoice
+
+
+def settle_zero_invoice(invoice: Invoice) -> None:
+    """Погасить НУЛЕВОЙ месячный счёт без похода в платёжку и лицензионный
+    сервер: клиент уже активен (база оплачена вперёд или тариф нулевой), платить
+    нечего, но период обязан сдвинуться — иначе следующий проход упрётся в
+    идемпотентность и месячный период встанет навсегда."""
+    now = timezone.now()
+    with transaction.atomic():
+        locked = Invoice.objects.select_for_update().get(pk=invoice.pk)
+        if locked.state == Invoice.PAID:
+            return
+        locked.state = Invoice.PAID
+        locked.paid_at = now
+        locked.service_resumed_at = now
+        locked.save(update_fields=["state", "paid_at", "service_resumed_at"])
+        subscription = locked.organization.subscription
+        subscription.current_period_start = now
+        subscription.current_period_end = now + timedelta(days=30)
+        subscription.save(update_fields=["current_period_start",
+                                         "current_period_end"])
+    _log.info("zero invoice settled", extra={
+        "invoice": invoice.number, "org": invoice.organization_id})
 
 
 def period_pricing(organization: Organization, plan, reported: dict) -> dict:
@@ -570,12 +679,9 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     billable = max(0, _int_or_zero(reported.get("capacity_billable")))
 
     # The counter is CUMULATIVE since the installation's first report. What this
-    # period used is the difference from the previous invoice's watermark.
-    previous = (Invoice.objects
-                .filter(organization=organization)
-                .exclude(state=Invoice.VOID)
-                .order_by("-period_end", "-id")
-                .first())
+    # period used is the difference from the previous MONTHLY invoice's
+    # watermark (годовой счёт исключён — это база, не объём).
+    previous = _last_metered_invoice(organization)
     # И сама ватермарка не может уехать вниз: отрицательная строка могла
     # быть записана до клампов выше и тогда обнуляла бы каждый следующий
     # период навсегда.
@@ -598,7 +704,13 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     # Ничего не начисляется на защищённые ЗНАЧЕНИЯ: это число рождается внутри
     # контейнера клиента и проверить его нечем. Оно остаётся на счёте справкой —
     # ответом на «что я получил за деньги».
-    subscription_amount = terms["monthly_price"]
+    #
+    # БАЗА = 0, ПОКА ОПЛАЧЕНА ВПЕРЁД ГОДОВЫМ ПЛАТЕЖОМ (вариант A): месячный счёт
+    # в годовом окне несёт только строку перерасхода. Часто перерасхода нет —
+    # тогда счёт нулевой и гасится сам (`settle_zero_invoice` в цикле).
+    base_prepaid = (subscription.base_paid_through is not None
+                    and timezone.now() < subscription.base_paid_through)
+    subscription_amount = Decimal("0") if base_prepaid else terms["monthly_price"]
     metered_requests = max(0, billable - billable_watermark)
     # Порог применяется к ПРЕВЫШЕНИЮ, не к объёму: включённое клиент уже
     # оплатил абонплатой, и мерить надо ровно ту часть, за которую выставляется

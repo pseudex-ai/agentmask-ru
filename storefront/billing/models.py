@@ -104,6 +104,12 @@ class Plan(models.Model):
     # (в процентах). 0 = без скидки.
     upgrade_first_month_discount_pct = models.PositiveSmallIntegerField(default=0)
 
+    # ГОДОВАЯ ПРЕДОПЛАТА: скидка за оплату 12 месяцев вперёд (в процентах).
+    # Стандартная «плати год — N месяцев в подарок». 0 = годовая оплата не
+    # предлагается. Адресный/промо annual-оффер может её ПЕРЕБИТЬ, если выгоднее
+    # клиенту (services.annual_price берёт лучшее из двух, не складывает).
+    annual_discount_pct = models.PositiveSmallIntegerField(default=0)
+
     class Meta:
         ordering = ["sort_order"]
 
@@ -152,6 +158,17 @@ class Subscription(models.Model):
     cancel_at_period_end = models.BooleanField(default=False)
     current_period_start = models.DateTimeField(default=timezone.now)
     current_period_end = models.DateTimeField()
+
+    # БАЗА (АБОНПЛАТА) ОПЛАЧЕНА ВПЕРЁД ДО ЭТОЙ ДАТЫ — годовая предоплата.
+    #
+    # Годовая оплата (решение владельца, вариант A) НЕ делает период годовым:
+    # период остаётся МЕСЯЧНЫМ, включённый объём и потолок — помесячные, и
+    # перерасход биллится помесячно как обычно. Годовой платёж только оплачивает
+    # БАЗУ на 12 месяцев вперёд, поэтому пока `now < base_paid_through`
+    # ежемесячный счёт несёт `plan_amount = 0` и только строку перерасхода (её
+    # часто нет — тогда счёт нулевой и гасится сам). Так нет сюрприз-счёта в
+    # конце года и включённый объём считается помесячно.
+    base_paid_through = models.DateTimeField(null=True, blank=True)
 
     # УСЛОВИЯ, НА КОТОРЫХ ПРОДАНО, СНИМКОМ — А НЕ ССЫЛКОЙ НА ИЗМЕНЯЕМУЮ СТРОКУ.
     #
@@ -346,6 +363,13 @@ class Invoice(models.Model):
     state = models.CharField(max_length=16, choices=STATES, default=DRAFT)
     period_start = models.DateField()
     period_end = models.DateField()
+
+    # ГОДОВАЯ ПРЕДОПЛАТА (вариант A): счёт на 12 мес базы вперёд, а не месячный
+    # платёж. Помечается, потому что ведёт себя иначе: НЕ участвует в
+    # помесячной ватермарке перерасхода (это база, не объём), НЕ останавливает
+    # за неоплату (годовая оплата опциональна — обязателен месячный цикл), а на
+    # оплате ставит `base_paid_through`, а не двигает месячный период.
+    is_annual = models.BooleanField(default=False)
 
     plan_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
 

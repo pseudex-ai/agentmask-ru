@@ -44,6 +44,7 @@ urlpatterns = [
     path("app/keys/new", views.new_key, name="new_key"),
     path("app/keys/<int:key_id>/revoke", views.revoke_key, name="revoke_key"),
     path("app/payer", views.update_payer, name="update_payer"),
+    path("app/pay-annual", views.pay_annual, name="pay_annual"),
     path("app/invoices/<str:number>", views.invoice_detail, name="invoice_detail"),
     path("app/invoices/<str:number>/print", views.invoice_print, name="invoice_print"),
     path("app/invoices/<str:number>/pay", views.pay_invoice, name="pay_invoice"),

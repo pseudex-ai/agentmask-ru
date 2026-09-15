@@ -281,6 +281,9 @@ def main() -> int:
             edited = False
             if form is not None:
                 form.query_selector("input[name=monthly_price]").fill("13500")
+                # НАСТРАИВАЕМЫЕ ВЛАДЕЛЬЦЕМ КОММЕРЧЕСКИЕ РУЧКИ: годовая скидка
+                # правится тем же экраном, а не только сидом/кодом.
+                form.query_selector("input[name=annual_discount_pct]").fill("20")
                 form.query_selector("input[name=note]").fill("проверка экрана")
                 form.query_selector("button[type=submit]").click()
                 page.wait_for_load_state("networkidle")
@@ -290,6 +293,15 @@ def main() -> int:
                   edited and "13500" in body.replace(" ", "")
                   and "прежних условиях" in body,
                   f"{'правка ушла' if edited else 'формы нет'}")
+            # ПРОВЕРЯЕМ ЧЕРЕЗ DOM, А НЕ ORM: тест-процесс правит сервер браузером
+            # и своего Django не поднимает. После правки экран перерисован, и
+            # плейсхолдер годовой скидки у «Промышленного» показывает новое 20.
+            after = page.query_selector(
+                "form:has(input[name='code'][value='industrial']) "
+                "input[name=annual_discount_pct]")
+            check("годовая скидка правится из конструктора (настраивается)",
+                  after is not None and after.get_attribute("placeholder") == "20",
+                  after.get_attribute("placeholder") if after else "поля нет")
             # ЖУРНАЛ — ЧАСТЬ ОБЕЩАНИЯ. Правка без записи о том, кто и зачем,
             # неотличима от посева, и первый спор о цене упирается в память.
             page.click("details summary")
