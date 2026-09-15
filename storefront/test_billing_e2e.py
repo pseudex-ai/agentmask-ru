@@ -14,10 +14,10 @@ What it walks:
       -> счёт помечен оплаченным, обслуживание возобновлено
       -> акт печатается
 
-And the thing 54-ФЗ actually turns on: a receipt is attached for an individual
-and NOT for a company, because ст. 2 п. 9 exempts transfers between
-organisations and ИП. Sending one anyway fiscalises a transaction that should
-not be and costs 1% of it.
+And the receipt: EVERY card payment carries one, an individual's and a
+company's alike. Ст. 2 п. 9 54-ФЗ exempts transfers between organisations and
+ИП — the paper счёт, which never comes here — and says nothing about a card,
+which is held by a person the provider cannot tell from the company.
 
     cd storefront && set -a && . ./.env.dev && set +a && .venv/bin/python test_billing_e2e.py
 """
@@ -149,9 +149,17 @@ def main() -> int:
           "receipt" in person_body
           and person_body["receipt"]["customer"]["email"] == person_user.email,
           "54-ФЗ: физлицу чек обязателен по любому способу оплаты")
-    check("a company's payment carries NO receipt",
-          "receipt" not in company_body,
-          "ст. 2 п. 9 освобождает безнал между организациями и ИП")
+    # A COMPANY'S CARD PAYMENT CARRIES ONE TOO. It did not, on the strength of
+    # 54-ФЗ ст. 2 п. 9 — but that exemption is about who pays, and a card
+    # payment is made by whoever holds the card: an accountant paying with a
+    # personal one is a settlement with an individual, and nothing in the
+    # provider's answer tells the cards apart. ЮKassa's receipt scheme wants
+    # the receipt «при проведении каждого платежа». The paper счёт path never
+    # reaches this code, and that is where п. 9 actually applies.
+    check("a company's card payment carries a receipt as well",
+          "receipt" in company_body
+          and company_body["receipt"]["customer"]["email"] == "buh@romashka.ru",
+          "карта — расчёт с держателем карты, а не с юрлицом")
     check("the receipt states без НДС, as an ИП on УСН charges",
           person_body["receipt"]["items"][0]["vat_code"] == 1,
           f'vat_code={person_body["receipt"]["items"][0]["vat_code"]}')
@@ -227,7 +235,7 @@ def main() -> int:
         printed = client.get(f"/app/invoices/{company_invoice.number}/print")
         body = printed.content.decode()
         check("a paid invoice prints as an акт",
-              printed.status_code == 200 and "акт выполненных работ" in body.lower(),
+              printed.status_code == 200 and "и акт о предоставлении права" in body.lower(),
               "работы приняты только после оплаты")
 
     print()
@@ -239,7 +247,7 @@ def main() -> int:
     if FAILURES:
         print(f"FAILED: {len(FAILURES)} — {', '.join(FAILURES)}")
         return 1
-    print("billing OK — real test shop, receipt only where 54-ФЗ requires one, "
+    print("billing OK — real test shop, receipt on every card payment, "
           "notifications not trusted, duplicates harmless")
     return 0
 

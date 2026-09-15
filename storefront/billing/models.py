@@ -390,6 +390,16 @@ class Invoice(models.Model):
     def __str__(self) -> str:
         return f"{self.number} — {self.organization_id} — {self.total} ₽"
 
+    @property
+    def metered_per_1k(self) -> Decimal:
+        """The overage rate THIS invoice was cut at, back-derived from its own
+        figures. Not read off the plan: a plan changes, an issued document
+        does not, and a rate printed from the live plan would misstate a
+        line the customer already reconciled."""
+        if not self.metered_requests:
+            return Decimal("0")
+        return (self.metered_amount * 1000 / self.metered_requests).quantize(Decimal("0.01"))
+
     @staticmethod
     def next_number(when=None) -> str:
         """`PS-2026-08-4f3a`. Sequential-looking but not sequential.

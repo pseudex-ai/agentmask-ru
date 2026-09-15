@@ -187,9 +187,22 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     # согласия придётся нам.
     before = Organization.objects.count()
     without = client.post("/signup", {"email": f"noconsent-{int(time.time())}@example.test",
-                                    "company": "Тест", "plan": "start"})
+                                    "company": "Тест", "plan": "start", "terms": "1"})
     check("без галочки согласия аккаунт не создаётся",
           Organization.objects.count() == before, f"код={without.status_code}")
+    # ДВЕ ГАЛОЧКИ, И КАЖДАЯ ОБЯЗАТЕЛЬНА ПОРОЗНЬ. С 01.09.2025 согласие на
+    # обработку ПД оформляется отдельно от иных документов (ч. 1 ст. 9 152-ФЗ
+    # в ред. 156-ФЗ): одна галочка «даю согласие и принимаю оферту» — это
+    # совмещённое согласие, то есть его отсутствие. Согласие без акцепта
+    # оферты — тоже не регистрация: договора нет.
+    no_terms = client.post("/signup", {"email": f"noterms-{int(time.time())}@example.test",
+                                     "company": "Тест", "plan": "start", "consent": "1"})
+    check("без акцепта оферты аккаунт не создаётся",
+          Organization.objects.count() == before, f"код={no_terms.status_code}")
+    check("согласие и оферта — две разные галочки на форме",
+          'name="consent"' in body and 'name="terms"' in body
+          and "и принимаю" not in body.split('name="consent"')[1].split("</label>")[0],
+          "одна галочка на согласие и договор — совмещённое согласие")
 
     from billing.services import is_disposable
     check("одноразовый ящик отсечён", is_disposable("x@mailinator.com"))
@@ -206,7 +219,7 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     check("the landing carries a content security policy",
           "default-src 'self'" in landing.headers.get("Content-Security-Policy", ""))
 
-    signed = client.post("/signup", {"email": "buyer@acme.ru", "consent": "1",
+    signed = client.post("/signup", {"email": "buyer@acme.ru", "consent": "1", "terms": "1",
                                      "company": "ООО Ромашка", "plan": "start"})
     check("sign-up does not hand a key to whoever typed the address",
           signed.status_code == 200 and "Проверьте почту" in signed.content.decode()
@@ -360,14 +373,14 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     throttled = None
     for index in range(6):
         throttled = client.post("/signup", {"email": f"flood{index}@example.com",
-                                            "consent": "1",
+                                            "consent": "1", "terms": "1",
                                             "company": "x", "plan": "start"})
     check("sign-up is throttled",
           throttled.url == "/" if throttled.status_code == 302 else False,
           f"last redirect={getattr(throttled, 'url', throttled.status_code)}")
 
     repeat = client.post("/signup", {"email": "buyer@acme.ru", "company": "x",
-                                     "consent": "1",
+                                     "consent": "1", "terms": "1",
                                      "plan": "start"})
     check("a known email is sent to sign-in, not given a second organisation",
           Organization.objects.filter(memberships__user__email="buyer@acme.ru").count() == 1,
@@ -405,7 +418,7 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
            if not seller_name else seller_name in printed_body),
           f"seller={seller_name!r}")
     check("an unpaid invoice is not also an act",
-          "акт выполненных работ" not in printed_body.lower())
+          "и акт" not in printed_body.lower())
 
     # Another organisation must not reach it. Checked as a DIFFERENT user: the
     # first version of this line re-fetched as the owner and asserted 200, which
@@ -523,6 +536,71 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
           invoice.service_resumed_at is not None and licence_status() == "active",
           f"resumed={invoice.service_resumed_at is not None} licence={licence_status()}")
 
+    # THE CUSTOMER SAYS WHO PAYS, IN THE CABINET. There was no form: every
+    # organisation stayed «юрлицо» by default and the счёт page said «напишите
+    # нам», so each invoice was a support ticket. The form is validated where
+    # the documents are: a wrong ИНН goes onto an акт the buyer files.
+    from decimal import Decimal
+    bad_inn = client.post("/app/payer", {"kind": "company", "legal_name": "ООО Ромашка",
+                                         "inn": "7701234561", "kpp": "", "legal_address": ""})
+    org.refresh_from_db()
+    check("an ИНН that fails its checksum is refused",
+          bad_inn.status_code == 302 and org.inn == "", f"inn={org.inn!r}")
+    wrong_len = client.post("/app/payer", {"kind": "entrepreneur", "legal_name": "ИП Ромашкин",
+                                           "inn": "7701234567", "kpp": "", "legal_address": ""})
+    org.refresh_from_db()
+    check("an ИП with a 10-digit ИНН is refused — an ИП's has twelve",
+          wrong_len.status_code == 302 and org.inn == "", f"inn={org.inn!r}")
+    saved = client.post("/app/payer", {"kind": "company", "legal_name": "ООО  Ромашка ",
+                                       "inn": "7701 234560", "kpp": "770101001",
+                                       "legal_address": "Москва, ул. Тверская, 1"})
+    org.refresh_from_db()
+    check("valid requisites are stored normalised",
+          saved.status_code == 302 and org.kind == "company"
+          and org.legal_name == "ООО Ромашка" and org.inn == "7701234560"
+          and org.kpp == "770101001" and org.is_billable,
+          f"kind={org.kind} name={org.legal_name!r} inn={org.inn!r} kpp={org.kpp!r}")
+    as_person = client.post("/app/payer", {"kind": "person", "legal_name": "", "inn": "",
+                                           "kpp": "", "legal_address": ""})
+    org.refresh_from_db()
+    check("an individual needs nothing but the kind",
+          as_person.status_code == 302 and org.kind == "person" and org.is_billable)
+    client.post("/app/payer", {"kind": "company", "legal_name": "ООО Ромашка",
+                               "inn": "7701234560", "kpp": "770101001", "legal_address": ""})
+    org.refresh_from_db()
+
+    # THE PAID FORM IS THE ACT, AND ITS LINES ADD UP TO ITS TOTAL. The print
+    # form showed one row of абонплата under a total that already included
+    # the metered overage — a document whose rows do not sum to its total is
+    # one an accountant sends back. The overage is written onto this paid
+    # invoice directly: `build_invoice` computes it from counters this test
+    # does not drive, and the document must be right whatever fed it.
+    invoice.metered_requests = 40000
+    invoice.metered_amount = Decimal("1240.00")
+    invoice.total = invoice.plan_amount + invoice.metered_amount
+    invoice.save(update_fields=["metered_requests", "metered_amount", "total"])
+    act = client.get(f"/app/invoices/{invoice.number}/print").content.decode()
+
+    # Figures are read back the way the page prints them — «1 240,00», with the
+    # locale's thousands space and decimal comma — so the check is on the
+    # NUMBERS, not on one formatting the template does not control.
+    def figures(page: str) -> str:
+        return page.replace("\u00a0", "").replace(" ", "").replace(",", ".")
+
+    check("a paid invoice prints as счёт и акт о предоставлении права",
+          "и акт о предоставлении права использования" in act
+          and "Право использования программы предоставлено" in act)
+    check("the act names the customer's requisites",
+          "ООО Ромашка" in act and "7701234560" in act and "770101001" in act)
+    check("the metered overage is its own line with its own rate",
+          "сверх включённого объёма" in act and "40000" in figures(act)
+          and "1240.00" in figures(act) and "31.00" in figures(act),
+          "rate back-derived from the invoice: 1240 / 40 = 31.00 за 1000")
+    on_screen = client.get(f"/app/invoices/{invoice.number}").content.decode()
+    check("the on-screen invoice shows the same overage line",
+          "сверх включённого объёма" in on_screen and "1240.00" in figures(on_screen))
+    check("a paid invoice offers the act by name", "СЧЁТ И АКТ" in on_screen)
+
     # ВСЕ ЧЕТЫРЕ СТАТУСА ДОЕЗЖАЮТ. Два из них строили несуществующий путь и
     # отвечали 404 под любым токеном, а вызывающих у них не было — то есть
     # дыра ждала первого, кто нажмёт «отозвать» в поддержке.
@@ -622,21 +700,25 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
           f"watermark {before_poison} -> {poisoned.values_at_period_end}, "
           f"next period={after_poison.values_in_period}")
 
-    # 54-ФЗ splits our customers in two, and only the payer kind tells them
-    # apart. A receipt sent where none is required fiscalises a transaction that
-    # should not be — and with ЮKassa's "Чеки" it costs 1% of it.
+    # THE PAYER KIND DECIDES THE DOCUMENTS, NOT THE RECEIPT. A receipt used to
+    # ride only with an individual's payment on the strength of 54-ФЗ ст. 2
+    # п. 9 — but a card payment is made by whoever holds the card, a company's
+    # accountant paying with a personal one is a settlement with an individual,
+    # and nothing tells the two cards apart. ЮKassa's own scheme wants the
+    # receipt «при проведении каждого платежа». So every card payment carries
+    # one (`billing.payments`), and the kind is left with what only it can say.
     from accounts.models import Organization as Org
-    company = Org(kind=Org.KIND_COMPANY, legal_name="ООО Тест", inn="7701234567")
-    entrepreneur = Org(kind=Org.KIND_ENTREPRENEUR, legal_name="ИП Тест", inn="770123456789")
+    company = Org(kind=Org.KIND_COMPANY, legal_name="ООО Тест", inn="7701234560")
+    entrepreneur = Org(kind=Org.KIND_ENTREPRENEUR, legal_name="ИП Тест", inn="770123456703")
     person = Org(kind=Org.KIND_PERSON)
-    check("a company pays by invoice and needs no fiscal receipt",
-          company.pays_by_invoice and not company.needs_receipt)
-    check("an ИП pays by invoice and needs no fiscal receipt",
-          entrepreneur.pays_by_invoice and not entrepreneur.needs_receipt)
-    check("an individual cannot pay by invoice and always needs a receipt",
-          not person.pays_by_invoice and person.needs_receipt)
+    check("a company and an ИП pay by invoice, an individual cannot",
+          company.pays_by_invoice and entrepreneur.pays_by_invoice
+          and not person.pays_by_invoice)
     check("an individual needs no ИНН to be billable",
           person.is_billable and not company.__class__(kind="company").is_billable)
+    check("the receipt decision no longer lives on the organisation",
+          not hasattr(Org, "needs_receipt"),
+          "a kind-gated receipt let every default «юрлицо» pay with no чек")
 
     # The instance limit is the ONE plan boundary we enforce, and it lives in
     # two places: the storefront's plans and the licensing server's own table.
