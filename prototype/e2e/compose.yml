@@ -14,6 +14,11 @@ services:
       PSEUDEX_LEASE_TTL_SECONDS: "${PSEUDEX_LEASE_TTL_SECONDS:-60}"
       PSEUDEX_GRACE_SECONDS: "${PSEUDEX_GRACE_SECONDS:-120}"
       PSEUDEX_SIGNING_KEY: "${PSEUDEX_SIGNING_KEY}"
+      # Атрибуция ВКЛ на стенде (как в проде, где оба обязательны): сервер вплетает
+      # per-org канарейки + Tardos-фингерпринт в каждую лизу, чтобы утёкший из RAM
+      # тюнинг называл вора. WS-7 red-team проверяет, что метки реально в карве.
+      PSEUDEX_CANARY_SECRET: "${PSEUDEX_CANARY_SECRET}"
+      PSEUDEX_WATERMARK_SECRET: "${PSEUDEX_WATERMARK_SECRET}"
       # Тюнинг едет в лизе (docs/tz-tuning-in-lease.md) — отдельного ключа нет.
       # Админка стенда под токеном, как и в проде. Гейты ходят им же.
       PSEUDEX_LICENSE_ADMIN_TOKEN: "${PSEUDEX_LICENSE_ADMIN_TOKEN:-e2e-admin-token}"

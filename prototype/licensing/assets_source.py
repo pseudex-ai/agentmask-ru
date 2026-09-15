@@ -1060,6 +1060,159 @@ PLACE_REF: tuple[str, ...] = (
 VERSION_CTX: tuple[str, ...] = (
     "верси", "version", "сборк", "build", "релиз", "release", "v.",
 )
+# The word DIRECTLY before a one-word name that says it is a KIND OF COMPANY, not
+# a person. Authored from measured false positives (a curated business register),
+# with no public-standard backing — so it is tuning that rides in the lease, unlike
+# the published `_DENY_AS_NAME` abbreviations that stay in the engine.
+ORG_CUE: tuple[str, ...] = (
+    "ооо", "оао", "зао", "пао", "ао", "нко", "ано", "фгуп", "мбу", "гбу",
+    "компания", "компании", "фирма", "фирмы", "организация", "организации",
+    "поставщик", "поставщика", "магазин", "магазина", "бренд", "бренда",
+)
+
+# --- transliteration machinery (align/render/fold) ------------------------
+# TUNING-DATA mined from 1 812 aligned control-arm words (counts in the inline
+# notes): the per-unit renderings the round-trip learns from and defaults to.
+# NOT a standard → rides in the lease, not the binary. The align/render/fold
+# ALGORITHM stays in pseudex.translit. Order within a UNITS tuple is the order
+# `align` tries them, the first is what DEFAULT writes; the four TABLES order and
+# the FOLD sequence are load-bearing (see pseudex.translit for why).
+TRANSLIT_UNITS: dict[str, tuple[str, ...]] = {
+    # endings: «-ий» iy 77:y 51, «-ый» y 24:yy 2, «-ия» ia 36:0, «ья» ia 22:ya 2,
+    # «кс» ks 25:x 10, «ей» ei 22:ey 12, «йя» one ya (Майя→Maya, not Mayya).
+    "ий": ("iy", "y", "ii", "ij", "yi"),
+    "ый": ("y", "yy", "yi", "yj", "iy"),
+    "ия": ("ia", "iya", "iia", "ija"),
+    "ья": ("ia", "ya", "ja"),
+    "кс": ("ks", "x"),
+    "ей": ("ei", "ey", "ej"),
+    "йя": ("ya", "iya", "ja"),
+    "а": ("a",), "б": ("b",), "в": ("v",), "г": ("g",), "д": ("d",),
+    "е": ("e", "ye", "ie", "je"), "ё": ("e", "yo", "io", "jo"),
+    "ж": ("zh", "j"), "з": ("z",), "и": ("i",), "й": ("y", "i", "j"),
+    "к": ("k",), "л": ("l",), "м": ("m",), "н": ("n",), "о": ("o",),
+    "п": ("p",), "р": ("r",), "с": ("s",), "т": ("t",), "у": ("u",),
+    "ф": ("f",), "х": ("kh", "h", "x"), "ц": ("ts", "tc", "c", "cz"),
+    "ч": ("ch",), "ш": ("sh",), "щ": ("shch", "sch", "shh"),
+    "ъ": ("", "ie"), "ы": ("y",), "ь": ("",), "э": ("e",),
+    "ю": ("yu", "iu", "ju"), "я": ("ya", "ia", "ja"),
+}
+TRANSLIT_ENDINGS: tuple[str, ...] = ("ий", "ый", "ия", "ья", "кс", "йя", "ей")
+# The four standards, in the order `table_for`/`variants` try them.
+TRANSLIT_ICAO: dict[str, str] = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
+    "ж": "zh", "з": "z", "и": "i", "й": "i", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch",
+    "ъ": "ie", "ы": "y", "ь": "", "э": "e", "ю": "iu", "я": "ia",
+}
+TRANSLIT_GOST_B: dict[str, str] = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "yo",
+    "ж": "zh", "з": "z", "и": "i", "й": "j", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "x", "ц": "cz", "ч": "ch", "ш": "sh", "щ": "shh",
+    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+}
+TRANSLIT_MVD_2010: dict[str, str] = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
+    "ж": "zh", "з": "z", "и": "i", "й": "i", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "kh", "ц": "tc", "ч": "ch", "ш": "sh", "щ": "shch",
+    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "iu", "я": "ia",
+}
+TRANSLIT_COMMON: dict[str, str] = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
+    "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sch",
+    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+}
+# The canonical-collision fold. ORDER CRITICAL: «shch» before «sch»/«sh», «ch»
+# before bare «c» (ц), digraph vowels before their single letters.
+TRANSLIT_FOLD: tuple[tuple[str, str], ...] = (
+    ("shch", "S"), ("shh", "S"), ("sch", "S"),
+    ("zh", "Z"), ("ch", "C"), ("sh", "H"),
+    ("kh", "X"), ("ks", "X"), ("x", "X"),
+    ("ts", "T"), ("tc", "T"), ("cz", "T"), ("c", "T"),
+    ("yu", "U"), ("iu", "U"), ("ju", "U"),
+    ("iya", "A"), ("iia", "A"), ("ija", "A"), ("ya", "A"), ("ia", "A"), ("ja", "A"),
+    ("yo", "E"), ("jo", "E"), ("ye", "E"), ("ie", "E"), ("e", "E"),
+    ("y", "I"), ("j", "I"), ("i", "I"),
+)
+
+# --- fake substitute pools (vault mint) -----------------------------------
+# TUNING-DATA: the substitute values a competitor would copy. Leased, not
+# compiled — they used to sit as Python constants in the binary and leaked from
+# the constants blob. vault.TOKEN_RE anchors NAME recognition on FAKE_FIRST and
+# LOC(city) on FAKE_CITIES, so both must be literal pools (not the 28k dict), and
+# the regex rebuilds per bundle version (pseudex.vault._token_re).
+FAKE_FIRST: tuple[str, ...] = (
+    "Александр", "Алексей", "Андрей", "Антон", "Артур", "Борис", "Вадим",
+    "Валерий", "Василий", "Виктор", "Владимир", "Глеб", "Григорий", "Даниил",
+    "Денис", "Дмитрий", "Евгений", "Егор", "Иван", "Игорь", "Илья", "Кирилл",
+    "Константин", "Леонид", "Максим", "Марк", "Михаил", "Никита", "Николай",
+    "Олег", "Павел", "Роман", "Руслан", "Сергей", "Степан", "Тимофей", "Юрий",
+    "Александра", "Алина", "Анастасия", "Анна", "Валентина", "Вера", "Виктория",
+    "Галина", "Дарья", "Екатерина", "Елена", "Ирина", "Карина", "Кристина",
+    "Ксения", "Лариса", "Маргарита", "Марина", "Мария", "Надежда", "Нина",
+    "Оксана", "Ольга", "Полина", "Светлана", "София", "Татьяна", "Юлия",
+    # Widened: the substitute mirrors the original's SHAPE, so a one-word name is
+    # replaced by one word and single-name-contact customers draw from this pool
+    # alone (at 65 entries `_unique_token` exhausted → 5xx).
+    "Аркадий", "Артём", "Богдан", "Валентин", "Вениамин", "Виталий", "Владислав",
+    "Всеволод", "Вячеслав", "Геннадий", "Георгий", "Герман", "Гордей", "Демьян",
+    "Захар", "Игнат", "Кузьма", "Лев", "Макар", "Матвей", "Мирон", "Мирослав",
+    "Назар", "Остап", "Пётр", "Платон", "Прохор", "Радислав", "Ратмир", "Родион",
+    "Савва", "Савелий", "Святослав", "Семён", "Тарас", "Тимур", "Трофим", "Фёдор",
+    "Филипп", "Харитон", "Эдуард", "Эмиль", "Яков", "Ян", "Ярослав",
+    "Агата", "Аглая", "Алевтина", "Алиса", "Алла", "Альбина", "Амелия", "Ангелина",
+    "Антонина", "Арина", "Белла", "Богдана", "Валерия", "Варвара", "Василиса",
+    "Вероника", "Влада", "Власта", "Гелена", "Диана", "Дина", "Ева", "Евгения",
+    "Елизавета", "Жанна", "Зинаида", "Злата", "Зоя", "Иванна", "Инга", "Инна",
+    "Иоланта", "Капитолина", "Клавдия", "Лада", "Лидия", "Лилия", "Любовь",
+    "Людмила", "Майя", "Милана", "Милена", "Мирослава", "Наталья",
+    "Олеся", "Прасковья", "Раиса", "Регина", "Римма", "Роза", "Руслана",
+    "Сабина", "Серафима", "Снежана", "Стелла", "Таисия", "Тамара", "Ульяна",
+    "Фаина", "Христина", "Эвелина", "Эльвира", "Эмилия", "Ярослава",
+)
+FAKE_LAST: tuple[str, ...] = (
+    "Лебедев", "Жуков", "Тихонов", "Котов", "Сорокин", "Беляев", "Гущин",
+    "Ершов", "Зимин", "Карпов", "Лужин", "Мещеряков", "Наумов", "Осипов",
+    "Панов", "Рыбаков", "Сазонов", "Тарасов", "Устинов", "Фомин", "Хвостов",
+    "Цветков", "Чижов", "Шилов", "Щукин", "Юдин", "Яровой", "Бирюков",
+    "Бобров", "Кудрявцев", "Мухин", "Титов", "Уваров", "Якушев", "Крылов", "Фролов",
+)
+# A woman named by surname ALONE: -ов/-ин feminines are syncretic and fail
+# `survives_round_trip`, so these gender-invariant surnames are the only pool for
+# her. A separate list (folded in they would be half of every customer's fakes),
+# and its SIZE is load-bearing (six meant the seventh such woman → fail-closed 5xx).
+FAKE_LAST_INVARIANT: tuple[str, ...] = (
+    "Шевчук", "Ткачук", "Бондарчук", "Кравчук", "Гончарук", "Ковальчук",
+    "Павлюк", "Савчук", "Марчук", "Данилюк",
+    "Саркисян", "Аванесян", "Петросян", "Акопян", "Григорян", "Арутюнян",
+    "Бабаян", "Казарян", "Хачатрян", "Мкртчян",
+    "Петренко", "Коваленко", "Савченко", "Бондаренко", "Кравченко", "Ткаченко",
+    "Черных", "Белых", "Седых", "Долгих", "Рыжих",
+    "Гвелесиани", "Церетели", "Бойко", "Головко",
+)
+# Cities stay BARE and in the NOMINATIVE (oblique derived by inflect_place); the
+# size is combinatorial with streets×houses. TOKEN_RE matches these literally.
+FAKE_CITIES: tuple[str, ...] = (
+    "Зеленоград", "Светлогорск", "Приозерск", "Гатчина", "Кинешма",
+    "Торжок", "Валдай", "Бологое", "Кимры", "Сортавала", "Луга", "Тихвин",
+    "Мышкин", "Углич", "Плёс", "Суздаль", "Елец", "Задонск", "Данков",
+    "Венёв", "Алексин", "Белёв", "Крапивна", "Одоев", "Чернь",
+)
+FAKE_STREETS: tuple[str, ...] = (
+    "Берёзовой", "Кленовой", "Ольховой", "Рябиновой", "Вязовой", "Тополиной",
+    "Липовой", "Ясеневой", "Сосновой", "Еловой", "Кедровой", "Пихтовой",
+    "Ивовой", "Вишнёвой", "Грушевой", "Абрикосовой", "Каштановой", "Буковой",
+    "Осиновой", "Черёмуховой", "Барбарисовой", "Жасминовой", "Сиреневой",
+    "Лавандовой", "Мятной", "Полевой", "Луговой", "Озёрной", "Речной",
+    "Родниковой",
+)
+# 30 streets × 199 numbers + 25 cities = 5995 distinct LOC tokens per customer.
+FAKE_HOUSE_MAX: int = 199
 
 # --- structured key->type ------------------------------------------------
 

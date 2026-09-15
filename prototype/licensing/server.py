@@ -32,6 +32,7 @@ from functools import lru_cache
 
 from licensing.pack import build_plaintext
 from licensing.watermark import watermark_for
+from licensing.canary import enabled as _attribution_active
 from licensing.store import (
     STATUS_ACTIVE,
     STATUS_REVOKED,
@@ -117,9 +118,14 @@ _PLAINTEXT_HASH = plaintext_hash(_PLAINTEXT)
 @lru_cache(maxsize=256)
 def _leased_bundle(org_id: str) -> tuple[bytes, str]:
     wm = watermark_for(org_id)
-    if not wm:
+    # Canaries are a separate attribution lever from the watermark: either being
+    # active means this org needs its own bundle, not the shared unmarked one.
+    # Attribution active (canaries + fingerprint share one secret) OR a watermark means
+    # this org needs its own bundle. Check the secret's presence — cheap — rather than
+    # synthesizing canaries here and again inside build_plaintext.
+    if not wm and not _attribution_active():
         return _PLAINTEXT, _PLAINTEXT_HASH
-    plaintext = build_plaintext(watermark=wm)
+    plaintext = build_plaintext(watermark=wm, org_id=org_id)
     return plaintext, plaintext_hash(plaintext)
 
 
@@ -284,6 +290,13 @@ ADMIN_ACTIONS: tuple[AdminAction, ...] = (
     AdminAction("/admin/release", "POST", True),
     AdminAction("/admin/instances", "GET", True),
     AdminAction("/admin/usage", "GET", True),
+    # АНОМАЛИИ — ОПЕРАТОРУ, не витрине: это сводка по ВСЕМУ флоту, называющая
+    # подозрительные (молчащие/делящие ключ) организации ПОИМЁННО — тот же класс,
+    # что каталог и скрейп ниже. Витрина спрашивает про тех, кого назвала сама;
+    # фрод-детект флота — операторская функция (сторож ходит админ-токеном).
+    AdminAction("/admin/anomalies", "GET", False),
+    # ТРИППВАЙР — тоже ОПЕРАТОРУ: называет org И читателя (uid/comm/cmdline) поимённо.
+    AdminAction("/admin/tripwire", "GET", False),
     # ЧТЕНИЕ И ПРАВКА ПРАЙС-ЛИСТА — ВИТРИНЕ, и решение стоит записать, раз
     # аудитория обязана быть решена. Белый список защищает КАТАЛОГ АБОНЕНТОВ, а
     # не цены: держатель витринного токена уже умеет выпускать, отзывать,
@@ -764,6 +777,33 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     return JSONResponse(payload)
 
 
+@app.post("/v1/tripwire")
+async def tripwire(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
+    """A privileged client-side watcher (pseudex/tripwire.py, PSEUDEX_ROLE=tripwire)
+    reports a detected attempt to READ an engine worker's memory. Tenant-key auth like
+    /v1/meter. Records WHO (reader uid/pid/comm/exe/cmdline) — never memory contents —
+    so the vendor sees the attempt in REAL TIME, before a root can scrub the local log.
+    Honest scope: catches ptrace/held-open-mem-fd carves; a prepared root who disables
+    the watcher first defeats it, but then the watcher's heartbeats stop (a signal)."""
+    key = body.get("key")
+    if not isinstance(key, str) or not key:
+        return JSONResponse({"error": "license_missing", "detail": "no key presented"},
+                            status_code=401)
+    record = STORE.lookup(key)
+    if record is None:
+        return JSONResponse({"error": "license_invalid", "detail": "unknown key"},
+                            status_code=403)
+    event = body.get("event")
+    if not isinstance(event, dict):
+        return JSONResponse({"error": "bad_request", "detail": "event object required"},
+                            status_code=400)
+    await asyncio.to_thread(STORE.record_tripwire, record.org_id, event)
+    _log.critical("TRIPWIRE org=%s memory-read attempt: method=%s reader_uid=%s comm=%r cmd=%r",
+                  record.org_id, event.get("method"), event.get("reader_uid"),
+                  event.get("reader_comm"), str(event.get("reader_cmdline"))[:200])
+    return JSONResponse({"recorded": True})
+
+
 @app.post("/v1/meter")
 async def meter(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     """Купить следующий квант ёмкости, назвав свой расход.
@@ -881,6 +921,46 @@ async def admin_instances(request: Request) -> JSONResponse:
                          "cooldown_seconds": STORE.RELEASE_COOLDOWN_SECONDS,
                          "releases_last_hour": STORE.releases_last_hour(org_id),
                          "instances": STORE.active_instances(org_id, _TTL_SECONDS)})
+
+
+@admin_app.get("/admin/tripwire")
+async def admin_tripwire(request: Request) -> JSONResponse:
+    """Reported memory-read attempts on customer engines (WS-7): WHO tried to read the
+    tuning from RAM — reader uid/pid/comm/exe/cmdline — reported in real time by the
+    client-side watcher (pseudex/tripwire.py). Fleet surface for 'who attempted to read
+    the engine', newest first. Optional query: org_id, since (epoch), limit. Admin-only:
+    it names orgs and readers, like /admin/list."""
+    org_id = request.query_params.get("org_id", "")
+    try:
+        since = float(request.query_params.get("since", "0"))
+    except (TypeError, ValueError):
+        since = 0.0
+    try:
+        limit = int(request.query_params.get("limit", "200"))
+    except (TypeError, ValueError):
+        limit = 200
+    events = await asyncio.to_thread(STORE.tripwire_events, org_id, since, limit)
+    return JSONResponse({"events": events, "count": len(events)})
+
+
+@admin_app.get("/admin/anomalies")
+async def admin_anomalies(request: Request) -> JSONResponse:
+    """Fleet metering anomalies (WS-6/M2): orgs whose engine looks SILENT — served
+    quanta with no verified report, the signature of a root-patched meter — or is
+    sharing a process key (usage regressions). Detection for operator review, not
+    enforcement: the underpay residual is bounded by the billing band (it is already
+    billed the floor), and this makes the pattern VISIBLE across the fleet. Optional
+    query: min_unacked, min_regressions, active_within_seconds."""
+    def _int(name: str, default: int) -> int:
+        try:
+            return int(request.query_params.get(name, default))
+        except (TypeError, ValueError):
+            return default
+    anomalies = await asyncio.to_thread(
+        STORE.metering_anomalies,
+        _int("min_unacked", 10), _int("min_regressions", 1),
+        float(_int("active_within_seconds", 3600)))
+    return JSONResponse({"anomalies": anomalies, "count": len(anomalies)})
 
 
 @admin_app.post("/admin/release")

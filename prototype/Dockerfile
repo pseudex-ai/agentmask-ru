@@ -92,4 +92,17 @@ ENV LANG=C.UTF-8 \
 
 EXPOSE 8000 8081
 
+# Run as a NON-ROOT user. The tuning lives decrypted in the worker's RAM; a
+# non-root process's memory cannot be read by a co-located non-root or
+# default-caps process, so this raises the RAM-extraction bar kernel-independently
+# (pentest 2026-09-14: a uid-1000 caller could not read the worker heap even with
+# default docker caps, while root-in-container could). `mlockall` still takes as
+# non-root PROVIDED the container's memlock ulimit is raised (compose:
+# `ulimits: { memlock: -1 }`), which the runtime already requires. A fresh named
+# volume mounted at /data inherits this ownership; a pre-existing root-owned
+# volume must be chowned once.
+RUN groupadd -r pseudex && useradd -r -g pseudex -u 10001 -d /app pseudex \
+    && chown -R pseudex:pseudex /data
+USER pseudex
+
 CMD ["./entrypoint.sh"]

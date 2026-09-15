@@ -63,6 +63,8 @@ def _same_value(produced: str, expected: str) -> bool:
     back as +7… where it went in as 8…, and both name the same subscriber. Text
     is compared case-insensitively for the same reason — case is not identity.
     """
+    if produced is None:            # unresolved token = round-trip FAILURE, not a crash
+        return False
     if _digits(expected) and len(_digits(expected)) >= 6:
         left, right = _digits(produced), _digits(expected)
         return left.endswith(right[-10:]) or right.endswith(left[-10:])

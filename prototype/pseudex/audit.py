@@ -36,10 +36,18 @@ SELFCHECK_ORG = "__pseudex_selfcheck__"
 
 
 def _preview(value: str) -> str:
-    """Masked preview: keep first 2 + last 2 chars, hide the middle."""
-    if len(value) <= 4:
-        return value[0] + "•" * (len(value) - 1)
-    return value[:2] + "•" * (len(value) - 4) + value[-2:]
+    """Masked preview: at most the first and last char, and nothing for a short
+    value. The preview rides into /events and /spans, replicated across every
+    read, so first-2+last-2 of a short field (a house number, a 4-digit code)
+    disclosed most of it — a partial second copy of the data the vault exists to
+    contain (pentest B4). Reveal only enough to recognise a row, never enough to
+    reconstruct the value."""
+    n = len(value)
+    if n <= 3:
+        return "•" * n
+    if n <= 8:
+        return value[0] + "•" * (n - 1)
+    return value[0] + "•" * (n - 2) + value[-1]
 
 
 class AuditLog:
@@ -83,6 +91,16 @@ class AuditLog:
             "CREATE TABLE IF NOT EXISTS reveals ("
             "ts REAL, customer TEXT, actor TEXT, token TEXT, entity_type TEXT, found INTEGER)"
         )
+        # Detokenization is a disclosure path too: /unmask* returns real values
+        # from the vault. Legitimate detok restores tokens just masked in the same
+        # conversation; a sweep of guessed tokens (a compromised gateway credential
+        # trawling the vault) shows here as volume plus a high MISS rate. We record
+        # only counts — never the values — so the trace itself is not a second copy
+        # (pentest B1: /unmask* had no trace at all, so a sweep left none).
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS detoks ("
+            "ts REAL, customer TEXT, actor TEXT, resolved INTEGER, misses INTEGER)"
+        )
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)"
         )
@@ -90,6 +108,8 @@ class AuditLog:
                            "ON events (customer, ts DESC)")
         self._conn.execute("CREATE INDEX IF NOT EXISTS reveals_customer_ts "
                            "ON reveals (customer, ts DESC)")
+        self._conn.execute("CREATE INDEX IF NOT EXISTS detoks_customer_ts "
+                           "ON detoks (customer, ts DESC)")
         self._migrate_agent_id()
         self._conn.commit()
 
@@ -157,6 +177,73 @@ class AuditLog:
                 (time.time(), customer, actor, token, entity_type, 1 if found else 0),
             )
             self._conn.commit()
+
+    def record_detok(self, customer: str, actor: str, resolved: int,
+                     misses: int) -> None:
+        """One /unmask* call disclosed `resolved` real values and failed to
+        resolve `misses` substitutes. Aggregate only (no tokens, no values), so
+        the trace is not a second copy of the vault — but a sweep of a compromised
+        credential still shows as call volume and a high miss rate (pentest B1)."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO detoks (ts, customer, actor, resolved, misses) "
+                "VALUES (?,?,?,?,?)",
+                (time.time(), customer, actor, int(resolved), int(misses)),
+            )
+            self._conn.commit()
+
+    def detok_calls_since(self, customer: str, since: float) -> int:
+        """How many /unmask* calls this customer made since `since` — the trace of
+        activity (a sweep shows as call volume). NOT what the rate limiter reads:
+        one call can resolve many values, so a per-call cap let a batch trawl the
+        vault under it (pentest F2). The limiter reads `detok_values_since`."""
+        row = self._fetchone(
+            "SELECT COUNT(*) FROM detoks WHERE customer=? AND ts>=?",
+            (customer, since),
+        )
+        return int(row[0]) if row else 0
+
+    def detok_values_since(self, customer: str, since: float) -> int:
+        """Real VALUES this customer's detok disclosed since `since` — SUM(resolved),
+        not COUNT(*). The disclosure bound is the number of values pulled, and a
+        single /unmask* call can resolve many (batching evaded a per-call cap,
+        pentest F2), so the cross-worker rate limiter reads this. Misses do not
+        count — a sweep of guessed tokens discloses nothing, and shows in the trace
+        (`detok_calls_since`, `detok_summary` miss_rate) instead."""
+        row = self._fetchone(
+            "SELECT COALESCE(SUM(resolved),0) FROM detoks WHERE customer=? AND ts>=?",
+            (customer, since),
+        )
+        return int(row[0]) if row else 0
+
+    def detok_summary(self, customer: str, since: float) -> dict:
+        """Detok activity since `since` — the OPERATOR-visible half of the B1 trace.
+        Counts only, never values.
+
+        A vault sweep shows in TWO shapes, and `miss_rate` alone hid the second
+        (pentest WS-7 exfiltrator #2): a TOKEN-guess sweep (guessing our-format
+        tokens) fails to resolve and drives `misses`/`miss_rate` up; but a
+        NAME/VALUE-guess sweep (feeding words that were never our tokens) resolves
+        nothing AND leaves no residual, so `misses`=0 and `miss_rate`=0 while the
+        trawl runs. The shape that catches BOTH is UNPRODUCTIVE calls — a call that
+        disclosed nothing (`resolved`=0). Legitimate detok resolves values; a sweep
+        does not. `unproductive`/`unproductive_rate` is the sweep signal that does
+        not hide, whatever the attacker guesses."""
+        row = self._fetchone(
+            "SELECT COUNT(*), COALESCE(SUM(resolved),0), COALESCE(SUM(misses),0), "
+            "COALESCE(SUM(CASE WHEN resolved=0 THEN 1 ELSE 0 END),0) "
+            "FROM detoks WHERE customer=? AND ts>=?",
+            (customer, since),
+        )
+        calls = int(row[0]) if row else 0
+        resolved = int(row[1]) if row else 0
+        misses = int(row[2]) if row else 0
+        unproductive = int(row[3]) if row else 0
+        total = resolved + misses
+        return {"calls": calls, "resolved": resolved, "misses": misses,
+                "miss_rate": round(misses / total, 3) if total else 0.0,
+                "unproductive": unproductive,
+                "unproductive_rate": round(unproductive / calls, 3) if calls else 0.0}
 
     def _fetchall(self, sql: str, params: tuple) -> list[tuple]:
         """Every READ goes through here, under the same lock the writes take.

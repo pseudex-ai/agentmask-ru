@@ -29,6 +29,7 @@ import threading
 import zlib
 from dataclasses import dataclass
 
+from pseudex import bundle
 from pseudex.morph import MORPH
 
 
@@ -173,6 +174,7 @@ class ContextAssets:
     addr_intent: tuple[str, ...]
     place_ref: tuple[str, ...]
     version_ctx: tuple[str, ...]
+    org_cue: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -185,6 +187,31 @@ class StructuredAssets:
 class RuPiiAssets:
     ctx_patterns: tuple[tuple[str, re.Pattern[str]], ...]
     inn_context: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class TranslitAssets:
+    """The measured transliteration tables (align/render/fold). Leased, not
+    compiled: TUNING mined from control-arm outputs, not a standard. The ALGORITHM
+    that uses them lives in pseudex.translit."""
+    units: dict[str, tuple[str, ...]]
+    default: dict[str, str]
+    endings: tuple[str, ...]
+    tables: tuple[dict[str, str], ...]
+    fold: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class FakeAssets:
+    """The substitute pools the vault mints from. Leased TUNING — the values a
+    competitor would copy; the mint LOGIC (uniqueness, round-trip survival,
+    shape-mirroring) stays in pseudex.vault."""
+    first: tuple[str, ...]
+    last: tuple[str, ...]
+    last_invariant: tuple[str, ...]
+    cities: tuple[str, ...]
+    streets: tuple[str, ...]
+    house_max: int
 
 
 @dataclass(frozen=True)
@@ -203,6 +230,8 @@ class DetectionAssets:
     context: ContextAssets
     structured: StructuredAssets
     ru_pii: RuPiiAssets
+    translit: TranslitAssets
+    fakes: FakeAssets
     priority: dict[str, int]
     lookalike: dict[str, str]
     # Per-customer watermark (licensing/watermark.py). Inert for detection; it
@@ -334,6 +363,30 @@ def _build_ru_pii(raw: dict[str, object]) -> RuPiiAssets:
     return RuPiiAssets(ctx_patterns=ctx_patterns, inn_context=tuple(raw["inn_context"]))
 
 
+def _build_translit(raw: dict[str, object]) -> TranslitAssets:
+    units = {str(unit): tuple(opts) for unit, opts in raw["units"].items()}
+    return TranslitAssets(
+        units=units,
+        # DEFAULT is the first rendering of each unit — derived here, not shipped,
+        # exactly as the compiled engine used to derive it from the UNITS literal.
+        default={unit: opts[0] for unit, opts in units.items()},
+        endings=tuple(raw["endings"]),
+        tables=tuple(dict(table) for table in raw["tables"]),
+        fold=tuple((str(source), str(marker)) for source, marker in raw["fold"]),
+    )
+
+
+def _build_fakes(raw: dict[str, object]) -> FakeAssets:
+    return FakeAssets(
+        first=tuple(raw["first"]),
+        last=tuple(raw["last"]),
+        last_invariant=tuple(raw["last_invariant"]),
+        cities=tuple(raw["cities"]),
+        streets=tuple(raw["streets"]),
+        house_max=int(raw["house_max"]),
+    )
+
+
 def _build(payload: dict[str, object]) -> DetectionAssets:
     # Ordered pairs on the wire, because the prefix fallback in
     # `structured._key_type` resolves ties by order — see licensing/pack.py.
@@ -355,9 +408,12 @@ def _build(payload: dict[str, object]) -> DetectionAssets:
             addr_intent=tuple(payload["context"]["addr_intent"]),
             place_ref=tuple(payload["context"]["place_ref"]),
             version_ctx=tuple(payload["context"]["version_ctx"]),
+            org_cue=frozenset(payload["context"]["org_cue"]),
         ),
         structured=StructuredAssets(key_type=key_type, key_stems=key_stems),
         ru_pii=_build_ru_pii(payload["ru_pii"]),
+        translit=_build_translit(payload["translit_machine"]),
+        fakes=_build_fakes(payload["fakes"]),
         priority=dict(payload["priority"]),
         lookalike=dict(payload["lookalike"]),
         watermark=str(payload.get("_wm", "")),
@@ -386,10 +442,40 @@ class Assets:
         Called on the renewal path too, so it must be atomic from a reader's
         point of view: the new struct is built fully before it is published, and
         publishing is a single attribute assignment."""
-        payload = json.loads(zlib.decompress(plaintext).decode("utf-8"))
-        built = _build(payload)
+        # SECTIONED framing (pseudex.bundle): the plaintext is a set of separately
+        # compressed sections, decompressed → parsed → ZEROED one at a time, so the
+        # whole ~8 MB payload never coexists as one contiguous region. A RAM carve
+        # of one region yields at most one section, and the authored tuning is split
+        # off from the semi-public bulk gazetteers (WS-7 RAM-carve hardening).
+        #
+        # HONEST LIMIT: this closes the single contiguous artifact and raises the
+        # casual/non-root carve from `dd | json.loads` to "find and reassemble N
+        # fragments", but it does NOT stop a determined LOCAL ROOT. Each section's
+        # decoded JSON `str` still lingers unscrubbably after parse (CPython cannot
+        # zero a `str`; only the mutable decompressed `bytearray` is zeroed here),
+        # so root that instruments this load path or dumps at the right moment reads
+        # a section's plaintext. That residual is the accepted theorem (root reads
+        # its own RAM); the compensating controls are attribution + short TTL.
+        if bundle.is_framed(plaintext):
+            payload = bundle.unframe_payload(plaintext)  # parses + zeros each section
+            built = _build(payload)
+            del payload
+        else:
+            # Legacy whole-blob bundle (pre-WS-7 server). Zero the one buffer we can.
+            raw = bytearray(zlib.decompress(plaintext))
+            try:
+                payload = json.loads(raw)
+                built = _build(payload)
+            finally:
+                raw[:] = b"\x00" * len(raw)
+            del payload
         with self._lock:
             self._current = built
+        # No gc.collect() here: load() runs on every RENEWAL (~ttl/3), and a full-heap
+        # collect over the ~350 MB model stack, on N workers sharing one cadence, is a
+        # recurring pause. Each branch above already unreferenced `payload` and zeroed
+        # the section/blob buffers; natural GC reclaims them. The forced collect stays
+        # in unload() only (rare, terminal).
 
     def unload(self) -> None:
         """Drop the assets so the objects are actually collected.
@@ -407,6 +493,28 @@ class Assets:
         detection refuses — not that a memory dump is clean."""
         with self._lock:
             self._current = None
+        # Leased-vocabulary caches in other modules hold a SECOND copy of the
+        # gazetteer as plain str tuples, keyed on bundle version and invisible to
+        # this method — up to `maxsize` versions survived a revocation (pentest H3:
+        # DeletionIndex._words behind address._street_index / names._misspelling_index).
+        # Clear every leased-data cache so none outlives the lease. Imported LOCALLY:
+        # this runs at unload time, when all modules are loaded, so there is no import
+        # cycle with the modules that read ASSETS. A NEW version-keyed leased cache
+        # must be added to this list.
+        from pseudex import address, names, morph_places, vault
+        for clear in (
+            address._street_index.cache_clear,
+            address._street_stems.cache_clear,
+            address._spoken_house_after_for.cache_clear,
+            names._misspelling_index.cache_clear,
+            morph_places._word_number_for.cache_clear,
+            vault._first_names_by_gender.cache_clear,
+            vault._usable_streets.cache_clear,
+            vault._invariant_last_names.cache_clear,
+            vault._round_trip_last_names.cache_clear,
+            vault._token_re.cache_clear,
+        ):
+            clear()
         gc.collect()
 
     @property

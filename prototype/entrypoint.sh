@@ -49,7 +49,10 @@ set -e
 # объявленная в документации, обязана быть одноразовой на самом деле.
 # Рекурсии нет: ниже вызывается БИНАРНИК, а не этот скрипт.
 case "${PSEUDEX_ROLE:-sidecar}" in
-    preflight|probe|rekey|decrypt|measure)
+    preflight|probe|rekey|decrypt|measure|tripwire)
+        # tripwire is a long-running PRIVILEGED watcher (deploy it in the engine's
+        # PID namespace); the rest are one-shot ops. Both exec the binary directly,
+        # bypassing the worker fan-out below.
         exec ${PSEUDEX_SERVE_CMD:-./pseudex-serve}
         ;;
 esac
@@ -113,6 +116,10 @@ fi
 if [ -z "$PSEUDEX_GATEWAY_TOKEN" ]; then
     PSEUDEX_GATEWAY_TOKEN="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
     export PSEUDEX_GATEWAY_TOKEN
+    # Auto-generated is ephemeral (a new value every restart) and thus a DEV
+    # convenience; a STABLE operator-set token is the one that must never reach an
+    # aggregated log. The print below distinguishes the two.
+    _GATEWAY_GENERATED=1
 fi
 # Sign-in token for the interface. Generated here rather than in the UI process
 # so it survives a UI restart: an operator who followed the link from the log
@@ -136,6 +143,22 @@ fi
 # pseudex.service:app` is a supported launch shape that never runs this script
 # (CLAUDE.md, deployment shape B).
 #
+# NON-ROOT + ПРЕДсуществующий root-owned том. Движок работает как uid 10001;
+# СВЕЖИЙ том /data наследует это владение, но том, созданный старым root-образом,
+# остаётся root:root — и проба/первый воркер ниже упрутся в непрозрачный
+# «Permission denied» на три слоя вглубь. Скажем прямо и назовём починку, а не
+# уроним контейнер загадочной ошибкой.
+DATA_DIR="${PSEUDEX_DB_DIR:-/data}"
+if [ -d "$DATA_DIR" ] && ! { : > "$DATA_DIR/.pseudex-write-test"; } 2>/dev/null; then
+    echo ""
+    echo "pseudex: $DATA_DIR не записывается (uid $(id -u)). Том от старого root-образа"
+    echo "         остался во владении root. Выполните ОДИН раз, затем перезапустите:"
+    echo "           docker run --rm -v <volume>:/data alpine chown -R 10001:10001 /data"
+    echo "         Свежий том этого не требует."
+    exit 4
+fi
+rm -f "$DATA_DIR/.pseudex-write-test" 2>/dev/null || true
+
 # The plaintext-to-encrypted conversion stays inside the connection factory under
 # its own flock for the same reason: a migration that only happened here would be
 # a migration half the deployments never get.
@@ -156,7 +179,14 @@ if [ "${PSEUDEX_ROLE:-sidecar}" = "proxy" ]; then
 else
     echo "    ключ шлюза (Authorization: Bearer …) для /mask, /unmask, /spans:"
 fi
-echo "    ${PSEUDEX_GATEWAY_TOKEN}"
+if [ "${_GATEWAY_GENERATED:-}" = 1 ]; then
+    echo "    ${PSEUDEX_GATEWAY_TOKEN}"
+    echo "    ⚠ сгенерирован автоматически: меняется при каждом рестарте. Для прода"
+    echo "      задайте PSEUDEX_GATEWAY_TOKEN явно — стабильно и НЕ печатается в лог."
+else
+    echo "    (задан через окружение — значение НЕ печатается в лог; полное —"
+    echo "     в вашем .env / секретах)"
+fi
 echo ""
 
 pids=""

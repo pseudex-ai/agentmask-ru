@@ -26,9 +26,11 @@ import zlib
 from pathlib import Path
 
 from licensing import assets_source
+from licensing import canary
+from licensing import fingerprint
 # Allowed direction: shared crypto lives in pseudex.bundle and is imported BY the
 # licensing side, never the other way (CLAUDE.md). The server already imports it.
-from pseudex.bundle import merge_payload
+from pseudex.bundle import merge_payload, frame_payload
 
 _DATA = Path(__file__).resolve().parent / "data"
 
@@ -269,6 +271,7 @@ def _tuning_payload() -> dict[str, object]:
             "addr_intent": list(assets_source.ADDR_INTENT),
             "place_ref": list(assets_source.PLACE_REF),
             "version_ctx": list(assets_source.VERSION_CTX),
+            "org_cue": list(assets_source.ORG_CUE),
         },
         # A LIST of pairs, not a dict. `_key_type` falls back to matching the
         # normalized key against each stem in turn, so the ORDER decides which
@@ -280,6 +283,27 @@ def _tuning_payload() -> dict[str, object]:
         "ru_pii": {
             "ctx_types": [list(entry) for entry in assets_source.CTX_TYPES],
             "inn_context": list(assets_source.INN_CONTEXT),
+        },
+        # Transliteration machinery tables (align/render/fold). Value order inside
+        # each UNITS entry, the ENDINGS order, the four-TABLES order and the FOLD
+        # sequence are load-bearing — JSON arrays preserve them (sort_keys touches
+        # only object KEYS, and no reader depends on UNITS/table key order).
+        "translit_machine": {
+            "units": {unit: list(opts) for unit, opts in assets_source.TRANSLIT_UNITS.items()},
+            "endings": list(assets_source.TRANSLIT_ENDINGS),
+            "tables": [assets_source.TRANSLIT_ICAO, assets_source.TRANSLIT_GOST_B,
+                       assets_source.TRANSLIT_MVD_2010, assets_source.TRANSLIT_COMMON],
+            "fold": [list(pair) for pair in assets_source.TRANSLIT_FOLD],
+        },
+        # Fake substitute pools (vault mint). Order is not load-bearing (drawn by
+        # secrets.choice / filtered by round-trip), but the SETS are.
+        "fakes": {
+            "first": list(assets_source.FAKE_FIRST),
+            "last": list(assets_source.FAKE_LAST),
+            "last_invariant": list(assets_source.FAKE_LAST_INVARIANT),
+            "cities": list(assets_source.FAKE_CITIES),
+            "streets": list(assets_source.FAKE_STREETS),
+            "house_max": assets_source.FAKE_HOUSE_MAX,
         },
         "priority": assets_source.PRIORITY,
         "lookalike": assets_source.LOOKALIKE,
@@ -326,7 +350,7 @@ def _compress(payload: dict[str, object]) -> bytes:
     return zlib.compress(_canonical(payload), 6)
 
 
-def build_plaintext(watermark: str = "") -> bytes:
+def build_plaintext(watermark: str = "", org_id: str = "") -> bytes:
     """The LEASED bundle: the FULL payload — bulk AND authored tuning.
 
     The tuning used to be compiled into the engine (a static-key-sealed blob) and
@@ -340,13 +364,43 @@ def build_plaintext(watermark: str = "") -> bytes:
     so a tuning dump names WHOSE lease carried it — inert for detection, carried
     into the engine's assets. Empty → no mark (watermarking off)."""
     payload = build_payload()
+    if org_id:
+        # Per-org canaries woven into the gazetteers (licensing.canary): a clone
+        # built from a dump of THIS lease masks names/streets that exist in no real
+        # dictionary and in no other org's bundle, so a leak is attributable. Novel
+        # by construction; inert for real PII (test_canary.py).
+        surnames = canary.canary_surnames(org_id)
+        if surnames:
+            names = payload["names"]
+            names["dict_surnames"] = sorted(set(names["dict_surnames"]) | set(surnames))
+        streets = canary.canary_streets(org_id)
+        if streets:
+            address = payload["address"]
+            address["street_names"] = sorted(set(address["street_names"]) | set(streets))
+        # PLUS the collusion-resistant fingerprint (licensing.fingerprint): a Tardos
+        # codeword over a SHARED universe, so a bundle fused from several orgs (union
+        # OR intersection) still traces to a contributor — the intersection attack
+        # that strips per-org-unique canaries. Same secret, same novelty guarantee.
+        fp_surnames = fingerprint.fingerprint_entries(org_id, "surname")
+        if fp_surnames:
+            payload["names"]["dict_surnames"] = sorted(
+                set(payload["names"]["dict_surnames"]) | set(fp_surnames))
+        fp_streets = fingerprint.fingerprint_entries(org_id, "street")
+        if fp_streets:
+            payload["address"]["street_names"] = sorted(
+                set(payload["address"]["street_names"]) | set(fp_streets))
     if watermark:
         payload["_wm"] = watermark
-        # Re-hash: the watermark is part of what the signature will cover, so two
-        # orgs' bundles differ by their mark and neither can be swapped for the
+    if watermark or org_id:
+        # Re-hash: the mark and the canaries are part of what the signature will
+        # cover, so two orgs' bundles differ and neither can be swapped for the
         # other without breaking the signature.
         payload["version"] = hashlib.sha256(_canonical(payload)).hexdigest()[:16]
-    return _compress(payload)
+    # Framed (sectioned) rather than one zlib(JSON) blob: the engine parses and
+    # zeroes each section in turn, so a RAM carve no longer recovers the whole moat
+    # in one `json.loads`, and the authored tuning is split off from the semi-public
+    # bulk gazetteers (pseudex.bundle.frame_payload — RAM-carve hardening, WS-7).
+    return frame_payload(payload)
 
 
 def main() -> None:

@@ -457,6 +457,21 @@ def build_router(audit, license_client, assets, detector_version: str,
                 audit.reveals, org_id, limit, offset),
         })
 
+    @router.get("/detoks")
+    async def detoks(request: Request) -> JSONResponse:
+        """Detok activity (counts only, never values): call volume and miss rate.
+        /unmask* returns real vault values, so a compromised gateway credential can
+        trawl the vault — that shows here as a spike in `calls` and a high
+        `miss_rate` (guessed tokens don't resolve). The operator-visible half of the
+        detok audit; the rate limiter reads the same table."""
+        org_id = request.query_params.get("org_id", "default")
+        now = time.time()
+        return JSONResponse({
+            "last_minute": await anyio.to_thread.run_sync(audit.detok_summary, org_id, now - 60),
+            "last_hour": await anyio.to_thread.run_sync(audit.detok_summary, org_id, now - 3600),
+            "last_day": await anyio.to_thread.run_sync(audit.detok_summary, org_id, now - 86400),
+        })
+
     @router.get("/subscription")
     async def subscription(request: Request) -> JSONResponse:
         """The licence, mirrored locally, so "почему встало" is answerable inside

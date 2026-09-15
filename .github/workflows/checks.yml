@@ -52,6 +52,14 @@ jobs:
         run: python test_tuning_lease_security.py
       - name: watermark — every lease stamped, dump names the org
         run: PSEUDEX_WATERMARK_SECRET=ci-watermark-secret python test_watermark.py
+      - name: canaries — per-org marks, a clone names its org
+        run: PSEUDEX_CANARY_SECRET=ci-canary-secret python test_canary.py
+      - name: clock-freeze liveness — wall-clock ceiling on the monotonic timer
+        run: python test_clock_freeze.py
+      - name: detok surface — audit + rate-limit + org-bind, narrowed preview
+        run: python test_detok_security.py
+      - name: memory-read tripwire — reader attributed + reported to the vendor
+        run: python test_tripwire.py
       - name: memory hardening — no core, non-dumpable, swap-locked
         run: python test_memory_hardening.py
       - name: vault canonicalisation and persistence

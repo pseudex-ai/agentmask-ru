@@ -41,78 +41,11 @@ from __future__ import annotations
 
 import re
 
-# Every rendering in daily use for one Cyrillic UNIT — a letter, or one of the
-# four endings a model spells as a whole. Order within a tuple is the order
-# `align` tries them; the first is what `DEFAULT` writes. A rendering is here
-# because a standard lists it or the control arm wrote it, never because it
-# would be convenient to match.
-UNITS: dict[str, tuple[str, ...]] = {
-    # The endings, with the control arm's count for the first rendering against
-    # the runner-up: «-ий» iy 77 : y 51, «-ый» y 24 : yy 2, «-ия» ia 36 : 0,
-    # «ья» ia 22 : ya 2, «кс» ks 25 : x 10.
-    "ий": ("iy", "y", "ii", "ij", "yi"),     # Дмитрий → Dmitriy, Dmitry
-    "ый": ("y", "yy", "yi", "yj", "iy"),     # Заболотный → Zabolotny
-    "ия": ("ia", "iya", "iia", "ija"),        # Юлия → Yulia, Наталия → Natalia
-    "ья": ("ia", "ya", "ja"),                 # Наталья → Natalia, Дарья → Daria
-    "кс": ("ks", "x"),                        # Максим → Maxim
-    # «ей» IS «ei», MEASURED ON THIS MODEL: Sergei 22 : Sergey 12 across the
-    # control arms of the 06.09 run. Rendered letter by letter it came out
-    # «Sergey» and the tool received a spelling the same model would not have
-    # written — «Сергей», «Андрей», «Алексей» all take «ei» in English by
-    # convention. The fold already collides the two, so this changes what we
-    # WRITE, never what we can find.
-    "ей": ("ei", "ey", "ej"),                 # Сергей → Sergei
-    # «йя» IS ONE `ya`, NOT TWO. Rendered letter by letter it comes out «yya»
-    # and nobody writes «Mayya»; the model wrote «Maya», the fold of the two
-    # differed by the orphaned «y», the vault lookup missed, and «Майя» reached
-    # the tool as the FAKE given name beside the real surname — a chimera, on
-    # three cases of the 06.09 live run.
-    "йя": ("ya", "iya", "ja"),                # Майя → Maya, Аглая → Aglaya
-    "а": ("a",), "б": ("b",), "в": ("v",), "г": ("g",), "д": ("d",),
-    "е": ("e", "ye", "ie", "je"), "ё": ("e", "yo", "io", "jo"),
-    "ж": ("zh", "j"), "з": ("z",), "и": ("i",), "й": ("y", "i", "j"),
-    "к": ("k",), "л": ("l",), "м": ("m",), "н": ("n",), "о": ("o",),
-    "п": ("p",), "р": ("r",), "с": ("s",), "т": ("t",), "у": ("u",),
-    "ф": ("f",), "х": ("kh", "h", "x"), "ц": ("ts", "tc", "c", "cz"),
-    "ч": ("ch",), "ш": ("sh",), "щ": ("shch", "sch", "shh"),
-    "ъ": ("", "ie"), "ы": ("y",), "ь": ("",), "э": ("e",),
-    "ю": ("yu", "iu", "ju"), "я": ("ya", "ia", "ja"),
-}
-DEFAULT: dict[str, str] = {unit: options[0] for unit, options in UNITS.items()}
-_ENDINGS: tuple[str, ...] = ("ий", "ый", "ия", "ья", "кс", "йя", "ей")
+from pseudex.assets import ASSETS
 
-# The four standards, kept for the callers that name one — a test that wants
-# «the ICAO spelling», the benchmark's scripted agent — and as the source the
-# alternatives above were checked against.
-ICAO: dict[str, str] = {
-    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
-    "ж": "zh", "з": "z", "и": "i", "й": "i", "к": "k", "л": "l", "м": "m",
-    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
-    "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch",
-    "ъ": "ie", "ы": "y", "ь": "", "э": "e", "ю": "iu", "я": "ia",
-}
-GOST_B: dict[str, str] = {
-    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "yo",
-    "ж": "zh", "з": "z", "и": "i", "й": "j", "к": "k", "л": "l", "м": "m",
-    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
-    "ф": "f", "х": "x", "ц": "cz", "ч": "ch", "ш": "sh", "щ": "shh",
-    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
-}
-MVD_2010: dict[str, str] = {
-    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
-    "ж": "zh", "з": "z", "и": "i", "й": "i", "к": "k", "л": "l", "м": "m",
-    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
-    "ф": "f", "х": "kh", "ц": "tc", "ч": "ch", "ш": "sh", "щ": "shch",
-    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "iu", "я": "ia",
-}
-COMMON: dict[str, str] = {
-    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
-    "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
-    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
-    "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sch",
-    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
-}
-TABLES: tuple[dict[str, str], ...] = (ICAO, GOST_B, MVD_2010, COMMON)
+# The measured tables (UNITS/DEFAULT/ENDINGS/TABLES/FOLD) are LEASED, not compiled
+# — read from ASSETS.get().translit at call time. Only the align/render/fold
+# ALGORITHM and the `_C_AS_K` rule (which is algorithm, not tuning) live here.
 
 
 def apply(table: dict[str, str], word: str) -> str:
@@ -133,10 +66,11 @@ def units_of(word: str) -> tuple[str, ...]:
     because «Ксения» carries «кс» at the front and «Ильясов» carries «ья» in
     the middle, where the model spells them the same way."""
     low = word.lower()
+    endings = ASSETS.get().translit.endings
     out: list[str] = []
     i = 0
     while i < len(low):
-        for ending in _ENDINGS:
+        for ending in endings:
             if low.startswith(ending, i):
                 out.append(ending)
                 i += len(ending)
@@ -160,6 +94,7 @@ def align(cyrillic: str, latin: str) -> dict[str, str] | None:
     units = units_of(cyrillic)
     if not units or not wanted:
         return None
+    units_map = ASSETS.get().translit.units
     seen: set[tuple[int, int]] = set()
 
     def go(index: int, at: int) -> dict[str, str] | None:
@@ -168,7 +103,7 @@ def align(cyrillic: str, latin: str) -> dict[str, str] | None:
         if (index, at) in seen:
             return None
         unit = units[index]
-        options = UNITS.get(unit)
+        options = units_map.get(unit)
         if options is None:
             options = (unit,) if unit.isalpha() else ("",)
         for option in sorted(options, key=len, reverse=True):
@@ -187,12 +122,13 @@ def render(cyrillic: str, learned: dict[str, str]) -> str:
     """`cyrillic` in Latin letters, each unit as `learned` saw the model write
     it and, for a unit the model's own words never contained, as `DEFAULT`
     says. Lowercase; the caller sets the case with `match_case`."""
+    default = ASSETS.get().translit.default
     out: list[str] = []
     for unit in units_of(cyrillic):
         if unit in learned:
             out.append(learned[unit])
-        elif unit in DEFAULT:
-            out.append(DEFAULT[unit])
+        elif unit in default:
+            out.append(default[unit])
         elif unit.isalpha():
             out.append(unit)
     return "".join(out)
@@ -202,39 +138,17 @@ def variants(word: str) -> frozenset[str]:
     """Every Latin spelling of one Cyrillic word under the four tables."""
     if not is_cyrillic_word(word):
         return frozenset()
-    return frozenset(apply(table, word) for table in TABLES)
+    return frozenset(apply(table, word) for table in ASSETS.get().translit.tables)
 
 
 def table_for(cyrillic: str, latin: str) -> dict[str, str] | None:
     """The table that spells `cyrillic` as `latin`, or None."""
     wanted = "".join(ch for ch in latin.lower() if ch.isalpha())
-    for table in TABLES:
+    for table in ASSETS.get().translit.tables:
         if apply(table, cyrillic) == wanted:
             return table
     return None
 
-
-# ONE SPELLING UNDER WHICH EVERY RENDERING OF A WORD COLLIDES. Applied to the
-# Latin side only — to the default rendering of the substitute at mint, and
-# to whatever the model wrote at lookup — so the vault stores one row and the
-# lookup is one indexed equality, whichever of the renderings above the model
-# chose. Order matters: the three-letter «shch» must go before «sch» and «sh»,
-# «ch» before the bare «c» that is left for ц, the digraph vowels before the
-# single letters they contain. The markers are capitals so a folded string
-# can never equal a casefolded Cyrillic or Latin part in the same table.
-# «kh», «x» and «ks» fold to one marker on purpose — «Maxim» and «Maksim» must
-# meet, and «Eroxin» (ГОСТ) then meets «Erokhin» too; the collision is
-# confirmed or refused by `align` before anything is restored.
-_FOLD: tuple[tuple[str, str], ...] = (
-    ("shch", "S"), ("shh", "S"), ("sch", "S"),
-    ("zh", "Z"), ("ch", "C"), ("sh", "H"),
-    ("kh", "X"), ("ks", "X"), ("x", "X"),
-    ("ts", "T"), ("tc", "T"), ("cz", "T"), ("c", "T"),
-    ("yu", "U"), ("iu", "U"), ("ju", "U"),
-    ("iya", "A"), ("iia", "A"), ("ija", "A"), ("ya", "A"), ("ia", "A"), ("ja", "A"),
-    ("yo", "E"), ("jo", "E"), ("ye", "E"), ("ie", "E"), ("e", "E"),
-    ("y", "I"), ("j", "I"), ("i", "I"),
-)
 
 
 # A `c` AFTER A VOWEL IS «к», NOT «ц». The table folds a bare `c` to the «ц»
@@ -253,7 +167,7 @@ def fold(latin: str) -> str:
     """The canonical spelling of a Latin rendering; see `_FOLD`."""
     text = "".join(ch for ch in latin.lower() if ch.isalpha())
     text = _C_AS_K.sub("k", text)
-    for source, marker in _FOLD:
+    for source, marker in ASSETS.get().translit.fold:
         text = text.replace(source, marker)
     return re.sub(r"I+", "I", text)
 
@@ -282,6 +196,11 @@ def main() -> int:
     """Self-test: the fold invariant over the standards and the everyday
     forms, and the alignment on the words that broke the table design."""
     failures = 0
+    # The tables are leased now, so the self-test loads a dev bundle first. Via
+    # testkit (not `import licensing`, which the release build forbids in pseudex/).
+    from testkit import load_dev_bundle
+    load_dev_bundle()
+    tables = ASSETS.get().translit.tables
 
     def check(label: str, ok: bool) -> None:
         nonlocal failures
@@ -299,9 +218,9 @@ def main() -> int:
     # with ъ («Подъячев») under ICAO alone misses — none of the 1 812 control
     # words carried one.
     for word in names:
-        keys = {fold(apply(table, word)) for table in TABLES} | {folded(word)}
+        keys = {fold(apply(table, word)) for table in tables} | {folded(word)}
         check(f"fold invariant {word}: {sorted(keys)}", len(keys) == 1)
-        for table in TABLES:
+        for table in tables:
             check(f"align {word} under a standard", align(word, apply(table, word)) is not None)
     for cyrillic, spellings in (
         ("Дмитрий", ("Dmitry", "Dmitriy", "Dmitrii", "Dmitrij")),

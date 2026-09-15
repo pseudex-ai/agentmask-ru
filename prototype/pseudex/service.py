@@ -25,6 +25,7 @@ import os
 import sys
 import secrets
 import threading
+import time
 import uuid
 from contextlib import asynccontextmanager
 
@@ -250,6 +251,19 @@ async def _lifespan(_app: "FastAPI"):
     # Warm the models AFTER the bundle is loaded: warmup runs a real detection
     # pass, which needs the leased assets.
     await anyio.to_thread.run_sync(_warmup)
+    # Cross-tenant posture is a DELIBERATE, LOGGED choice (pentest WS-7 exfiltrator
+    # #1). Unbound, the container trusts the body's `org_id`, so a compromised
+    # gateway credential can read ANY org's vault by changing it — safe only when
+    # ONE org owns the whole container. A single-tenant deploy should set
+    # PSEUDEX_ORG so a stolen credential reaches only that tenant.
+    if _BOUND_ORG:
+        _log.info("org-bound: this container serves only tenant %r (cross-tenant refused)",
+                  _BOUND_ORG)
+    else:
+        _log.warning("PSEUDEX_ORG is not set — MULTI-TENANT mode: the container trusts the "
+                     "request body's org_id, so a compromised gateway credential can read "
+                     "any org's vault. Set PSEUDEX_ORG to bind this container to one tenant "
+                     "(fail-safe) unless it deliberately serves many.")
     yield
     LICENSE.stop()
 
@@ -284,6 +298,75 @@ _MASK_LIMITER = anyio.CapacityLimiter(_MASK_CONCURRENCY)
 # threads could open two SQLite connections for the same org (wasteful + two
 # separate locks). With it, one Vault (one connection, one lock) per org.
 _VAULTS_LOCK = threading.Lock()
+
+# ONE CONTAINER, ONE TENANT (pentest B2). `org_id` arrives in the request body and
+# selects which vault to read; with a shared gateway credential, a caller can read
+# ANY org's vault by changing it. When `PSEUDEX_ORG` is set the container is bound
+# to a single tenant and every request must name it — a compromised credential can
+# then reach only that tenant's own data. Unset keeps the multi-tenant shape (the
+# caller asserts org_id), which is only safe when one org owns the whole container.
+_BOUND_ORG = os.environ.get("PSEUDEX_ORG", "").strip()
+
+# Detok rate limit (pentest B1/F2): /unmask* discloses real values, so a compromised
+# credential can trawl the vault. The cap is on VALUES disclosed per org per minute
+# (SUM of resolved), NOT calls — one call can resolve many values, so a per-call cap
+# let a batch evade it (pentest F2). Legitimate detok tracks model throughput and
+# stays well under; a sweep runs orders of magnitude faster. The durable trace is the
+# `detoks` audit table; the limiter only blunts an egregious sweep. Tunable per deploy.
+_DETOK_WINDOW = 60.0
+_DETOK_MAX_PER_MIN = int(os.environ.get("PSEUDEX_DETOK_MAX_PER_MIN", "6000"))
+
+
+def _check_org(org_id: str) -> "JSONResponse | None":
+    """403 when the container is bound to one tenant and the request names another."""
+    if _BOUND_ORG and org_id != _BOUND_ORG:
+        return JSONResponse(
+            {"error": "org_id not permitted on this instance",
+             "detail": "this container serves a single bound tenant"},
+            status_code=403,
+        )
+    return None
+
+
+def _detok_rate_ok(org_id: str) -> bool:
+    """False when this org has exceeded the per-minute detok VALUE cap. Reads the
+    SHARED SQLite audit (`detoks`), so all N SO_REUSEPORT workers enforce ONE cap —
+    not N× — and there is no per-worker in-memory table to grow unbounded per org.
+    Counts VALUES disclosed (SUM of resolved), not calls: one call can resolve many
+    values, so a per-call cap let a batch trawl the vault under it (pentest F2). A
+    blocking SQLite SUM, so callers offload it to a worker thread."""
+    return AUDIT.detok_values_since(org_id, time.time() - _DETOK_WINDOW) < _DETOK_MAX_PER_MIN
+
+
+def _minted_in(texts: list, vault: Vault) -> set:
+    """The minted tokens standing in these texts, by the SAME recognizer as the
+    residual signal — so 'disclosed' is symmetric with 'residual': a token present
+    in the INPUT and gone from the OUTPUT is a real value the call resolved."""
+    found: set = set()
+    for text in texts:
+        if isinstance(text, str):
+            found.update(residual_tokens(text, vault))
+    return found
+
+
+def _audit_detok(org_id: str, actor: str, before: dict, residual: list) -> None:
+    """Record that a detok call disclosed real values — counts only, never values
+    (pentest B1). `resolved` = the number of minted tokens the call actually resolved
+    (present in the input response, gone from the residual), so a call carrying many
+    values in one text counts as many, not one (pentest F2); `misses` = substitutes
+    that failed to resolve (a sweep of guessed tokens shows as high misses and high
+    call volume)."""
+    before_tokens = _minted_in(_response_texts(before), _vault(org_id))
+    disclosed = len(before_tokens - set(residual))
+    AUDIT.record_detok(org_id, actor, disclosed, len(residual))
+
+
+def _detok_actor(body: dict) -> str:
+    """Who is detokenizing. The gateway is automated, so it defaults to a marker
+    rather than being required (unlike /reveal, a human act) — but a caller MAY
+    name itself, and a named actor lands in the trace."""
+    actor = body.get("actor")
+    return actor.strip() if isinstance(actor, str) and actor.strip() else "gateway"
 
 
 def _vault(org_id: str) -> Vault:
@@ -498,6 +581,9 @@ async def mask(request: Request) -> JSONResponse:
         return blocked
     body = await request.json()
     org_id = str(body.get("org_id", "")) or "default"
+    blocked_org = _check_org(org_id)
+    if blocked_org:
+        return blocked_org
     agent_id = str(body.get("agent_id", ""))
     messages = body.get("messages")
     if not isinstance(messages, list):
@@ -550,6 +636,11 @@ async def mask(request: Request) -> JSONResponse:
 async def unmask(request: Request) -> JSONResponse:
     body = await request.json()
     org_id = str(body.get("org_id", "")) or "default"
+    blocked = _check_org(org_id)
+    if blocked:
+        return blocked
+    if not await anyio.to_thread.run_sync(_detok_rate_ok, org_id):
+        return JSONResponse({"error": "detok rate limit exceeded"}, status_code=429)
     response = body.get("response")
     if not isinstance(response, dict):
         return JSONResponse({"error": "response must be an object"}, status_code=400)
@@ -568,6 +659,9 @@ async def unmask(request: Request) -> JSONResponse:
     # discloses nothing about the customer's data, and the caller needs them to
     # decide what to do — refuse the tool call, retry, or ask the model again.
     residual = _residual_for(result, org_id)
+    await anyio.to_thread.run_sync(
+        _audit_detok, org_id, _detok_actor(body), response, residual
+    )
     payload: dict[str, object] = {"response": result}
     if residual:
         payload["residual_tokens"] = residual
@@ -610,12 +704,20 @@ async def unmask_arguments_endpoint(request: Request) -> JSONResponse:
     """
     body = await request.json()
     org_id = str(body.get("org_id", "")) or "default"
+    blocked = _check_org(org_id)
+    if blocked:
+        return blocked
+    if not await anyio.to_thread.run_sync(_detok_rate_ok, org_id):
+        return JSONResponse({"error": "detok rate limit exceeded"}, status_code=429)
     arguments = body.get("arguments")
     if not isinstance(arguments, list) or not all(isinstance(a, str) for a in arguments):
         return JSONResponse({"error": "arguments must be a list of strings"},
                             status_code=400)
-    restored, residual = await anyio.to_thread.run_sync(
+    restored, residual, disclosed = await anyio.to_thread.run_sync(
         _unmask_arguments_for, arguments, org_id, limiter=_MASK_LIMITER
+    )
+    await anyio.to_thread.run_sync(
+        AUDIT.record_detok, org_id, _detok_actor(body), disclosed, len(residual)
     )
     # The same signal `/unmask` carries, and it matters MORE here: a substitute
     # that fails to resolve inside a tool call is a fake reaching the tool, which
@@ -658,14 +760,26 @@ async def unmask_chunk(request: Request) -> JSONResponse:
     Body: {org_id, delta, carry, flush} -> {text, carry}."""
     body = await request.json()
     org_id = str(body.get("org_id", "")) or "default"
+    blocked = _check_org(org_id)
+    if blocked:
+        return blocked
+    # /unmask_chunk resolves real values too, so it is under the SAME value-based cap and
+    # audit as /unmask (pentest F1: many value types packed into one delta recovered full
+    # PII off an untraced /detoks). Both live in `_unmask_chunk_leg` behind a minted-token
+    # gate: a chunk whose (carry+delta) holds no minted token discloses
+    # nothing, so it pays neither the shared-audit rate SUM nor the per-chunk audit — an
+    # ordinary stream is mostly such chunks. One worker-thread hop, not three.
     delta = body.get("delta", "")
     carry = body.get("carry", "")
     if not isinstance(delta, str) or not isinstance(carry, str):
         return JSONResponse({"error": "delta and carry must be strings"}, status_code=400)
-    text, new_carry = await anyio.to_thread.run_sync(
-        _unmask_chunk_for, delta, carry, org_id, bool(body.get("flush", False)),
-        limiter=_MASK_LIMITER,
+    result = await anyio.to_thread.run_sync(
+        _unmask_chunk_leg, delta, carry, org_id, bool(body.get("flush", False)),
+        _detok_actor(body), limiter=_MASK_LIMITER,
     )
+    if result is _RATE_LIMITED:
+        return JSONResponse({"error": "detok rate limit exceeded"}, status_code=429)
+    text, new_carry = result
     return JSONResponse({"text": text, "carry": new_carry})
 
 
@@ -675,14 +789,20 @@ def _spans_for_texts(texts: list[object], org_id: str) -> list[list[dict[str, ob
 
 
 def _unmask_arguments_for(arguments: list[str],
-                          org_id: str) -> tuple[list[str], list[str]]:
-    """Vault resolved inside the worker thread — see _mask_request."""
+                          org_id: str) -> tuple[list[str], list[str], int]:
+    """Vault resolved inside the worker thread — see _mask_request. Returns the
+    restored arguments, the residual (substitutes that failed to resolve — a fake
+    reaching the tool), and the count of real values DISCLOSED (minted tokens in the
+    input arguments, gone from the output), which is what the F2 value-based rate
+    limit and audit count — many values in one argument count as many, not one."""
     vault = _vault(org_id)
     restored = [unmask_arguments(raw, vault) for raw in arguments]
     residual: list[str] = []
     for text in restored:
         residual.extend(residual_tokens(text, vault))
-    return restored, sorted(set(residual))
+    residual = sorted(set(residual))
+    disclosed = len(_minted_in(arguments, vault) - set(residual))
+    return restored, residual, disclosed
 
 
 def _unmask_for(response: dict[str, object], org_id: str) -> dict[str, object]:
@@ -725,10 +845,33 @@ def _response_texts(response: dict[str, object]) -> list[str]:
     return out
 
 
-def _unmask_chunk_for(delta: str, carry: str, org_id: str,
-                      flush: bool) -> tuple[str, str]:
-    """Vault resolved inside the worker thread — see _mask_request."""
-    return unmask_stream_chunk(delta, carry, _vault(org_id), flush)
+_RATE_LIMITED = object()  # sentinel: this org is over its per-minute detok VALUE cap
+
+
+def _unmask_chunk_leg(delta: str, carry: str, org_id: str, flush: bool, actor: str):
+    """Streaming detok on the worker thread, behind a minted-token gate (pentest F1). The
+    minted tokens in the input (`before`) are computed ONCE — if there are none, the chunk
+    cannot disclose a value, so it skips the shared-audit rate SUM and the audit; an
+    ordinary stream is mostly such chunks. `_minted_in` (residual_tokens) is COMPLETE — it
+    catches reformatted numbers (a spaced phone token a bare token_re would miss). A chunk
+    that carries a minted token pays the value-based cap (over → the _RATE_LIMITED
+    sentinel) and, after resolving, records a counts-only row reusing `before`: a token
+    gone from the EMITTED text was disclosed; a token still standing there is a fake that
+    reached the caller; one carried to new_carry is split across the boundary, not yet
+    emitted, so it is neither."""
+    vault = _vault(org_id)
+    before = _minted_in([carry, delta], vault)
+    if not before:
+        return unmask_stream_chunk(delta, carry, vault, flush)
+    if not _detok_rate_ok(org_id):
+        return _RATE_LIMITED
+    text, new_carry = unmask_stream_chunk(delta, carry, vault, flush)
+    emitted = _minted_in([text], vault)
+    pending = _minted_in([new_carry], vault)
+    disclosed = len(before - emitted - pending)
+    if disclosed or emitted:
+        AUDIT.record_detok(org_id, actor, disclosed, len(emitted))
+    return text, new_carry
 
 
 @app.post("/spans", dependencies=[Depends(_require_gateway)])
@@ -740,6 +883,9 @@ async def spans(request: Request) -> JSONResponse:
         return blocked
     body = await request.json()
     org_id = str(body.get("org_id", "")) or "default"
+    blocked_org = _check_org(org_id)
+    if blocked_org:
+        return blocked_org
     texts = body.get("texts")
     if not isinstance(texts, list):
         return JSONResponse({"error": "texts must be a list"}, status_code=400)

@@ -43,143 +43,6 @@ from pseudex.sqlite_setup import (
     IntegrityError,
 )
 
-# Tokens must be UNIQUE per customer, so these pools bound how many distinct
-# people and places one org can ever have. They used to be flat lists of five,
-# which meant the sixth distinct person spun `tokenize` forever looking for a
-# free token — an unbounded hang on the request path, hit by any real customer
-# on day one. Names are now COMBINATORIAL (first x last), which is what makes the
-# space large enough to stop being a limit.
-#
-# INVARIANT: every fake first name must be one our OWN detector recognises.
-# Unusual names (Аглая, Ясна) were tried and broke the re-masking guard: the
-# gazetteer did not know them, so detection split `Аглая Котов` and only found
-# the surname — which is not a minted token, so it was masked a second time and
-# the identity drifted. test_product.py::test_fake_names_are_self_recognised
-# pins this.
-# NO INDECLINABLE GIVEN NAMES IN THE POOL. «Николь» and «Нелли» carry
-# pymorphy3's `Fixd`: every case looks like the nominative. A substitute that
-# cannot show its case cannot carry the ORIGINAL'S case through the model —
-# «Курьер выехал к Анне Черных» was masked as «к Николь Бобровой» and restored
-# as «к Анна Черных», and the check for a nominative substitute in an oblique
-# slot fired on the same sentence. It surfaced as a flaky CI red, because the
-# pool is drawn at random. The real person's case is evidence the substitute
-# must be able to hold.
-_FAKE_FIRST = [
-    "Александр", "Алексей", "Андрей", "Антон", "Артур", "Борис", "Вадим",
-    "Валерий", "Василий", "Виктор", "Владимир", "Глеб", "Григорий", "Даниил",
-    "Денис", "Дмитрий", "Евгений", "Егор", "Иван", "Игорь", "Илья", "Кирилл",
-    "Константин", "Леонид", "Максим", "Марк", "Михаил", "Никита", "Николай",
-    "Олег", "Павел", "Роман", "Руслан", "Сергей", "Степан", "Тимофей", "Юрий",
-    "Александра", "Алина", "Анастасия", "Анна", "Валентина", "Вера", "Виктория",
-    "Галина", "Дарья", "Екатерина", "Елена", "Ирина", "Карина", "Кристина",
-    "Ксения", "Лариса", "Маргарита", "Марина", "Мария", "Надежда", "Нина",
-    "Оксана", "Ольга", "Полина", "Светлана", "София", "Татьяна", "Юлия",
-    # WIDENED because the substitute now mirrors the original's SHAPE. A name
-    # written as one word is replaced by one word, so a customer with many
-    # single-name contacts — «меня зовут Аня» is how a chat says it — draws from
-    # this pool alone. At 65 entries `_unique_token` exhausted and the gateway
-    # started returning 5xx; the two-part shape it used to force had 1820
-    # combinations and hid the limit.
-    #
-    # Still a literal list rather than the leased 28k dictionary, because
-    # TOKEN_RE anchors NAME on exactly these words: a token has to be findable
-    # in the model's reply, and "any capitalised word" is not a pattern that can
-    # do that safely.
-    "Аркадий", "Артём", "Богдан", "Валентин", "Вениамин", "Виталий", "Владислав",
-    "Всеволод", "Вячеслав", "Геннадий", "Георгий", "Герман", "Гордей", "Демьян",
-    "Захар", "Игнат", "Кузьма", "Лев", "Макар", "Матвей", "Мирон", "Мирослав",
-    "Назар", "Остап", "Пётр", "Платон", "Прохор", "Радислав", "Ратмир", "Родион",
-    "Савва", "Савелий", "Святослав", "Семён", "Тарас", "Тимур", "Трофим", "Фёдор",
-    "Филипп", "Харитон", "Эдуард", "Эмиль", "Яков", "Ян", "Ярослав",
-    "Агата", "Аглая", "Алевтина", "Алиса", "Алла", "Альбина", "Амелия", "Ангелина",
-    "Антонина", "Арина", "Белла", "Богдана", "Валерия", "Варвара", "Василиса",
-    "Вероника", "Влада", "Власта", "Гелена", "Диана", "Дина", "Ева", "Евгения",
-    "Елизавета", "Жанна", "Зинаида", "Злата", "Зоя", "Иванна", "Инга", "Инна",
-    "Иоланта", "Капитолина", "Клавдия", "Лада", "Лидия", "Лилия", "Любовь",
-    "Людмила", "Майя", "Милана", "Милена", "Мирослава", "Наталья",
-    "Олеся", "Прасковья", "Раиса", "Регина", "Римма", "Роза", "Руслана",
-    "Сабина", "Серафима", "Снежана", "Стелла", "Таисия", "Тамара", "Ульяна",
-    "Фаина", "Христина", "Эвелина", "Эльвира", "Эмилия", "Ярослава",
-]
-_FAKE_LAST = [
-    "Лебедев", "Жуков", "Тихонов", "Котов", "Сорокин", "Беляев", "Гущин",
-    "Ершов", "Зимин", "Карпов", "Лужин", "Мещеряков", "Наумов", "Осипов",
-    "Панов", "Рыбаков", "Сазонов", "Тарасов", "Устинов", "Фомин", "Хвостов",
-    "Цветков", "Чижов", "Шилов", "Щукин", "Юдин", "Яровой", "Бирюков",
-    # Added 04.09: the entries that also pass `survives_round_trip` alone.
-    "Бобров", "Кудрявцев", "Мухин", "Титов", "Уваров", "Якушев", "Крылов", "Фролов",
-]
-# A WOMAN MENTIONED BY SURNAME ALONE CANNOT BE GIVEN ANY NAME ABOVE. Every one
-# ends in -ов/-ин, whose feminine form is syncretic: «Лебедева» is the woman's
-# nominative and the man's genitive, so its cases do not reduce to one key and
-# `survives_round_trip` rejects it — correctly, because a token that stops
-# resolving hands the fake to the customer's tool.
-#
-# Not one of the 28 passed, which is a category and not a near miss: there was
-# NO one-word substitute for a lone feminine surname, so «фамилия Иванова» fell
-# back to the two-word shape and the model was handed «фамилия Диана Сорокина»
-# — a construction it repairs, and a repaired token is the failure the fallback
-# exists to avoid.
-#
-# These do not inflect for gender at all, so the feminine form IS the masculine
-# one and has one key in every case. All are ordinary surnames carried by
-# Russian citizens — Ukrainian, Armenian, Georgian, and the native -ых/-их.
-#
-# A SEPARATE LIST, not more entries above, because they answer a different
-# question. Folded into the general pool they would be half of every customer's
-# fake population, and a Russian company reading its own masked traffic would
-# see a product that does not know the country it is sold in.
-#
-# THE SIZE IS THE POINT. Six of them meant the SEVENTH woman a customer ever
-# named by surname alone could not be minted at all — a permanent fail-closed
-# 5xx for that customer, the same defect the address pool had at 33.
-_FAKE_LAST_INVARIANT = [
-    "Шевчук", "Ткачук", "Бондарчук", "Кравчук", "Гончарук", "Ковальчук",
-    "Павлюк", "Савчук", "Марчук", "Данилюк",
-    "Саркисян", "Аванесян", "Петросян", "Акопян", "Григорян", "Арутюнян",
-    "Бабаян", "Казарян", "Хачатрян", "Мкртчян",
-    "Петренко", "Коваленко", "Савченко", "Бондаренко", "Кравченко", "Ткаченко",
-    "Черных", "Белых", "Седых", "Долгих", "Рыжих",
-    "Гвелесиани", "Церетели", "Бойко", "Головко",
-]
-# LOC IS COMBINATORIAL, and it has to be. A flat list of 33 places meant the
-# 34th distinct address an organisation ever sent could not be minted:
-# `_unique_token` burned its attempts on collisions and raised, so a fail-closed
-# 5xx on every message containing a new address, permanently, for that customer.
-# Any delivery or logistics client crosses 33 addresses on day one — this was the
-# same defect as the old five-name pool, still live on the type most exposed to
-# it.
-#
-# Streets carry a house number, which is what makes the space large; cities stay
-# bare because "Суздале, 47" is not a city. Both remain literal enough for
-# TOKEN_RE to match precisely — a generic "capitalised Cyrillic word" there would
-# make every ordinary word in a reply a detokenization candidate.
-# STORED IN THE NOMINATIVE, which is a reversal. They used to be prepositional
-# («Зеленограде») because they were written to slot into «в …», and every use
-# derived the nominative back — which is guesswork for a place name: pymorphy3
-# reads «Белёва» as nominative with a higher score than genitive, so the derived
-# form came out «Белёва» and the customer saw a city that does not exist.
-#
-# Deriving the OBLIQUE from the nominative is the safe direction — that is what
-# `morph_places.inflect_place` is for — and it also fixes a quieter problem:
-# TOKEN_RE matches these literally for detokenization, and it was matching forms
-# we had already stopped emitting.
-_FAKE_CITIES = [
-    "Зеленоград", "Светлогорск", "Приозерск", "Гатчина", "Кинешма",
-    "Торжок", "Валдай", "Бологое", "Кимры", "Сортавала", "Луга", "Тихвин",
-    "Мышкин", "Углич", "Плёс", "Суздаль", "Елец", "Задонск", "Данков",
-    "Венёв", "Алексин", "Белёв", "Крапивна", "Одоев", "Чернь",
-]
-_FAKE_STREETS = [
-    "Берёзовой", "Кленовой", "Ольховой", "Рябиновой", "Вязовой", "Тополиной",
-    "Липовой", "Ясеневой", "Сосновой", "Еловой", "Кедровой", "Пихтовой",
-    "Ивовой", "Вишнёвой", "Грушевой", "Абрикосовой", "Каштановой", "Буковой",
-    "Осиновой", "Черёмуховой", "Барбарисовой", "Жасминовой", "Сиреневой",
-    "Лавандовой", "Мятной", "Полевой", "Луговой", "Озёрной", "Речной",
-    "Родниковой",
-]
-# 30 streets x 199 numbers + 25 cities = 5995 distinct LOC tokens per customer.
-_FAKE_HOUSE_MAX = 199
 _PLACE_CASES = ("nomn", "gent", "datv", "accs", "ablt", "loct")
 
 
@@ -854,18 +717,19 @@ def _fake_ogrn(length: int) -> str:
     raise RuntimeError("could not generate a checksum-INVALID ОГРН")
 
 
-@functools.lru_cache(maxsize=1)
-def _first_names_by_gender() -> dict[str, tuple[str, ...]]:
+@functools.lru_cache(maxsize=4)
+def _first_names_by_gender(version: str) -> dict[str, tuple[str, ...]]:
     """Split the leased first-name pool by gender, ONCE, using morphology.
 
     Derived rather than shipped as two lists: the pool is leased data and the
     split is an algorithm, so this keeps the bundle unchanged. Names morphology
     cannot classify fall back to the -а/-я ending, which is reliable for Russian
     GIVEN names (the masculine exceptions — Никита, Илья, Фома, Кузьма — are all
-    in the dictionary and never reach the fallback).
+    in the dictionary and never reach the fallback). Keyed on the bundle version
+    so a fresh lease with a different pool rebuilds it (and unload clears it).
     """
     buckets: dict[str, list[str]] = {"masc": [], "femn": []}
-    for name in _FAKE_FIRST:
+    for name in ASSETS.get().fakes.first:
         gender = morph_names.given_name_gender(name)
         buckets[gender or ("femn" if name.endswith(("а", "я")) else "masc")].append(name)
     return {"masc": tuple(buckets["masc"]), "femn": tuple(buckets["femn"])}
@@ -1018,14 +882,15 @@ def _fake_city(original: str) -> str:
     «Санкт-Петербурга». The same rule that makes a fake NAME agree with the real
     person's gender applies to places, for the same reason.
     """
+    cities = ASSETS.get().fakes.cities
     wanted = morph_places.place_gender(original) if original else None
-    pool = [city for city in _FAKE_CITIES
+    pool = [city for city in cities
             if morph_places.place_gender(city) == wanted] if wanted else []
-    return secrets.choice(pool or _FAKE_CITIES)
+    return secrets.choice(pool or cities)
 
 
-@functools.lru_cache(maxsize=1)
-def _usable_streets() -> tuple[str, ...]:
+@functools.lru_cache(maxsize=4)
+def _usable_streets(version: str) -> tuple[str, ...]:
     """Fake streets whose every case reduces to the SAME key.
 
     «Ясеневый» does not: in the prepositional it is «Ясеневом», and pymorphy3
@@ -1046,7 +911,7 @@ def _usable_streets() -> tuple[str, ...]:
     # prepositional «Ясеневом» collides with the district, so a check written
     # against «улица» alone declares the whole pool healthy.
     usable: list[str] = []
-    for raw in _FAKE_STREETS:
+    for raw in ASSETS.get().fakes.streets:
         nominative = morph_places.to_nominative(raw)
         masculine = morph_places.to_nominative(morph_places.masculine_street(raw)) \
             if hasattr(morph_places, "masculine_street") else nominative
@@ -1065,7 +930,7 @@ def _usable_streets() -> tuple[str, ...]:
         raise RuntimeError(
             f"only {len(usable)} fake street(s) survive their own inflection; "
             "a customer with more distinct addresses than that would get a "
-            "fail-closed 5xx — widen _FAKE_STREETS")
+            "fail-closed 5xx — widen FAKE_STREETS")
     return tuple(usable)
 
 
@@ -1089,17 +954,16 @@ def _usable_streets() -> tuple[str, ...]:
 # (`_same_street_in_conversation`), `_unique_token` на середине попыток и так
 # отпускает её. Пул, который заказчик может исчерпать, — это вечный 5xx, и
 # этот путь такого пула не создаёт.
-_HOUSE_BANDS: tuple[tuple[int, int], ...] = ((1, 9), (10, 99), (100, _FAKE_HOUSE_MAX))
-
-
 def _house_like(original: str) -> int:
     """Фальшивый номер дома ТОГО ЖЕ РАЗРЯДА, что настоящий."""
+    house_max = ASSETS.get().fakes.house_max
+    bands = ((1, 9), (10, 99), (100, house_max))
     spoken_house = morph_places.split_roles(original).get("house", "") if original else ""
     digits = re.sub(r"\D", "", morph_places.house_digits(spoken_house))
     if not digits:
-        return secrets.randbelow(_FAKE_HOUSE_MAX) + 1
-    real = min(int(digits[:6]), _FAKE_HOUSE_MAX)
-    low, high = next(band for band in _HOUSE_BANDS if real <= band[1])
+        return secrets.randbelow(house_max) + 1
+    real = min(int(digits[:6]), house_max)
+    low, high = next(band for band in bands if real <= band[1])
     return low + secrets.randbelow(high - low + 1)
 
 
@@ -1142,7 +1006,7 @@ def _fake_place(original: str, head: str = "") -> str:
     if not head:
         generic = str(shape.get("generic") or "улица")
         gender = str(shape.get("gender") or "femn")
-        street = morph_places.to_nominative(secrets.choice(_usable_streets()))
+        street = morph_places.to_nominative(secrets.choice(_usable_streets(ASSETS.version)))
         # The pool is written feminine because most generics are; reusing the
         # original's generic word means the name has to follow it.
         street = morph_places.agree_with_generic(street, gender)
@@ -1233,16 +1097,18 @@ def _extend_place(short_token: str, original: str, shape: dict[str, object]) -> 
 _INITIAL_LETTERS = "АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЭЮЯ"
 
 
-@functools.lru_cache(maxsize=1)
-def _invariant_last_names() -> tuple[str, ...]:
+@functools.lru_cache(maxsize=4)
+def _invariant_last_names(version: str) -> tuple[str, ...]:
     """The surnames whose feminine form resolves in every case.
 
-    Asked of morphology rather than listed, so adding a name to `_FAKE_LAST`
-    cannot leave a stale second list behind. Empty would mean the pool has
-    drifted to nothing usable, and a caller silently falling back to two words
-    is how that stayed invisible before — so it is stated here instead.
+    Asked of morphology rather than listed, so adding a name to the leased
+    `FAKE_LAST` cannot leave a stale second list behind. Empty would mean the pool
+    has drifted to nothing usable, and a caller silently falling back to two words
+    is how that stayed invisible before — so it is stated here instead. Keyed on
+    the bundle version (a fresh lease can carry a different pool).
     """
-    usable = tuple(surname for surname in _FAKE_LAST + _FAKE_LAST_INVARIANT
+    fakes = ASSETS.get().fakes
+    usable = tuple(surname for surname in fakes.last + fakes.last_invariant
                    if morph_names.survives_round_trip(
                        morph_names.feminine_surname(surname), "femn"))
     # A FLOOR, not just non-empty. One usable name would pass a non-empty check
@@ -1253,21 +1119,22 @@ def _invariant_last_names() -> tuple[str, ...]:
         raise RuntimeError(
             f"only {len(usable)} surname(s) in the fake pool have a resolvable "
             "feminine form; a customer naming more women by surname alone than "
-            "that would get a fail-closed 5xx — widen _FAKE_LAST_INVARIANT")
+            "that would get a fail-closed 5xx — widen FAKE_LAST_INVARIANT")
     return usable
 
 
-@functools.lru_cache(maxsize=2)
-def _round_trip_last_names(gender: str) -> tuple[str, ...]:
+@functools.lru_cache(maxsize=4)
+def _round_trip_last_names(version: str, gender: str) -> tuple[str, ...]:
     """The surnames whose form in this gender resolves back from every case
     when it stands ALONE — the feminine invariant list, and the masculine
     entries of the pool that pass the same check."""
     if gender == "femn":
-        return _invariant_last_names()
-    usable = tuple(s for s in _FAKE_LAST + _FAKE_LAST_INVARIANT
+        return _invariant_last_names(version)
+    fakes = ASSETS.get().fakes
+    usable = tuple(s for s in fakes.last + fakes.last_invariant
                    if morph_names.survives_round_trip(s, "masc"))
     if len(usable) < 12:
-        raise RuntimeError(f"only {len(usable)} masculine surname(s) survive a lone round trip — widen _FAKE_LAST")
+        raise RuntimeError(f"only {len(usable)} masculine surname(s) survive a lone round trip — widen FAKE_LAST")
     return usable
 
 
@@ -1300,7 +1167,7 @@ def _fake_name(gender: str | None, shape: tuple[str, ...] = ()) -> str:
         # its own inflection check, so the generator ran out of attempts and the
         # request failed closed. Shapes with a repeated kind are not exotic: a
         # keyboard slip inside «Екатерина» makes morphology read it as a surname.
-        pool = _first_names_by_gender()[resolved]
+        pool = _first_names_by_gender(ASSETS.version)[resolved]
         # A LONE FEMININE SURNAME HAS ONLY ONE WORKABLE POOL. Any -ова/-ина form
         # is syncretic and fails its own round trip, so drawing from the whole
         # list and hoping is not a strategy — it is 12 retries that usually work
@@ -1311,8 +1178,8 @@ def _fake_name(gender: str | None, shape: tuple[str, ...] = ()) -> str:
         # that failed its lone round trip twelve times fell through to «Имя
         # Фамилия», and the CRM card's `last_name` leaf was shown a two-word
         # person (live v4, chain-014).
-        surnames = (_round_trip_last_names(resolved)
-                    if plan == ("surn",) else _FAKE_LAST)
+        surnames = (_round_trip_last_names(ASSETS.version, resolved)
+                    if plan == ("surn",) else ASSETS.get().fakes.last)
         parts: list[str] = []
         for slot in plan:
             if slot == "surn":
@@ -1601,72 +1468,85 @@ LOC_TOKEN_PATTERN = _loc_token_pattern()
 # so the two entry points, the vault and the docs use ONE spelling of each.
 PSEUDONYM_SCOPES = ("conversation", "customer")
 
-TOKEN_RE = re.compile("|".join([
-    r"[a-z]{8}@example\.ru",                      # EMAIL
-    # NAME is combinatorial, so it is anchored on the FIRST-NAME pool rather than
-    # listed exhaustively or matched as "two capitalised words". The generic
-    # shape was tried and is wrong: scanning left to right, `Клиент Мирослава
-    # Фомин` matches `Клиент Мирослава` first and the real token is never seen —
-    # an unresolvable token reaching a tool, the exact failure this pattern
-    # exists to prevent. Anchoring on a distinctive given name cannot drift that
-    # way, and over-matching a real person with the same given name is harmless:
-    # the candidate simply fails the vault lookup.
-    r"\b(?:" + "|".join(_FAKE_FIRST) + r") [А-ЯЁ][а-яё]+",   # NAME
-    # LOC, both families. The street form carries its house number so the
-    # numbered token is matched whole; without the number the vault lookup would
-    # be handed a prefix that is not a key.
-    # LOC. Assembled from `morph_places.generic_forms()` so it cannot fall
-    # behind the generator: the substitute now MIRRORS the original's shape, so
-    # there is no single street form left to hardcode — «улица Тополиная, 7»,
-    # «Тополиный проспект, 7», «ул. Тополиная, 7» and any of them behind a city
-    # and in front of a flat are all shapes we mint.
-    #
-    # The full address alternative must come FIRST: alternation is leftmost, and
-    # a bare city listed earlier would match the city and stop, handing the vault
-    # a prefix that is not a key.
-    LOC_TOKEN_PATTERN,                                             # LOC (street)
-    # \b on both sides. Without the trailing one «Одоев» matched inside the
-    # inflected «Одоеве», the city was replaced and the leftover «е» stuck to the
-    # restored value: «Санкт-Петербургее». It never showed while the pool was
-    # stored oblique — the stored form WAS the inflected one — so moving the pool
-    # to the nominative is what exposed a boundary that was always missing.
-    # An inflected city now falls through to the signature path, which resolves it.
-    *(rf"\b{re.escape(value)}\b" for value in _FAKE_CITIES),       # LOC (city)
-    r"\d{2} \d{2} \d{6}",                        # DRIVER_LICENSE / VEHICLE_DOC / PASSPORT
-    r"198\.1[89]\.\d{1,3}\.\d{1,3}",              # IP (RFC 2544 benchmarking)
-    r"[IVX]{1,4}-[А-ЯЁ]{2} №\d{6}",               # BIRTH_CERT
-    # BOTH ALPHABETS. A plate token has to be recognised in the model's reply
-    # even when the model rewrote it in Latin — the ГОСТ alphabet exists so the
-    # two readings are the same plate, and a model treats them as one string.
-    # Matching only Cyrillic meant the rewritten form was never even a candidate,
-    # so the fold that resolves it never got the chance to run.
-    # BOTH LATIN READINGS, not just the look-alike one. The class listed the
-    # letters a plate LOOKS like in Latin; a model that spells it out uses others
-    # — V for «В», N for «Н», S for «С», U for «У», R for «Р». Those forms never
-    # became candidates, so the fold that resolves them never ran.
-    r"[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]\d{3}[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]{2}\d{2,3}",  # PLATE
-    r"\d{4} \d{4} \d{4} \d{4}",                   # CARD
-    # Bare digit runs, LONGEST FIRST: leftmost-first alternation would otherwise
-    # let \d{10} consume the head of a 20-digit account.
-    r"\b\d{20}\b",                                # ACCOUNT
-    r"\b\d{16}\b",                                # OMS
-    r"\b\d{15}\b|\b\d{13}\b",                    # OGRN / ОГРНИП
-    r"\b\d{9}\b",                                 # INTL_PASSPORT
-    r"\d{3}-\d{3}-\d{3} \d{2}",                   # SNILS
-    r"\d{2} \d{2} \d{6}",                         # PASSPORT
-    r"\d{2}\.\d{2}\.\d{4}",                       # DATE, как минтится
-    # DATE, КАК ЕЁ ПЕРЕПИШЕТ МОДЕЛЬ. A tool argument named `date` invites ISO,
-    # and a model obliges: the token «02.12.1973» came back as «1973-12-02» and
-    # was never even a candidate here, so the lookup that would have resolved it
-    # never ran and the FAKE reached the customer's tool. Two personas hit this
-    # independently on live traffic — one moved a delivery to 1973, the other
-    # booked a patient into 1977.
-    r"\d{4}-\d{2}-\d{2}",                           # ISO
-    r"\d{2}[/-]\d{2}[/-]\d{4}",                     # 12/04/1961, 12-04-1961
-    r"\+79\d{9}",                                 # PHONE
-    r"REDACTED[0-9a-f]{6}",                       # fallback
-    r"\b\d{10}\b",                                # INN — least specific, last
-]))
+@functools.lru_cache(maxsize=4)
+def _token_re(version: str) -> re.Pattern[str]:
+    """The token-recognition alternation, keyed on the bundle version: NAME is
+    anchored on the leased FAKE_FIRST pool and LOC(city) on FAKE_CITIES, so the
+    regex rebuilds when a fresh lease carries a different pool (and unload clears
+    it). Everything else is fixed shape."""
+    fakes = ASSETS.get().fakes
+    return re.compile("|".join([
+        r"[a-z]{8}@example\.ru",                      # EMAIL
+        # NAME is combinatorial, so it is anchored on the FIRST-NAME pool rather than
+        # listed exhaustively or matched as "two capitalised words". The generic
+        # shape was tried and is wrong: scanning left to right, `Клиент Мирослава
+        # Фомин` matches `Клиент Мирослава` first and the real token is never seen —
+        # an unresolvable token reaching a tool, the exact failure this pattern
+        # exists to prevent. Anchoring on a distinctive given name cannot drift that
+        # way, and over-matching a real person with the same given name is harmless:
+        # the candidate simply fails the vault lookup.
+        r"\b(?:" + "|".join(fakes.first) + r") [А-ЯЁ][а-яё]+",   # NAME
+        # LOC, both families. The street form carries its house number so the
+        # numbered token is matched whole; without the number the vault lookup would
+        # be handed a prefix that is not a key.
+        # LOC. Assembled from `morph_places.generic_forms()` so it cannot fall
+        # behind the generator: the substitute now MIRRORS the original's shape, so
+        # there is no single street form left to hardcode — «улица Тополиная, 7»,
+        # «Тополиный проспект, 7», «ул. Тополиная, 7» and any of them behind a city
+        # and in front of a flat are all shapes we mint.
+        #
+        # The full address alternative must come FIRST: alternation is leftmost, and
+        # a bare city listed earlier would match the city and stop, handing the vault
+        # a prefix that is not a key.
+        LOC_TOKEN_PATTERN,                                             # LOC (street)
+        # \b on both sides. Without the trailing one «Одоев» matched inside the
+        # inflected «Одоеве», the city was replaced and the leftover «е» stuck to the
+        # restored value: «Санкт-Петербургее». It never showed while the pool was
+        # stored oblique — the stored form WAS the inflected one — so moving the pool
+        # to the nominative is what exposed a boundary that was always missing.
+        # An inflected city now falls through to the signature path, which resolves it.
+        *(rf"\b{re.escape(value)}\b" for value in fakes.cities),       # LOC (city)
+        r"\d{2} \d{2} \d{6}",                        # DRIVER_LICENSE / VEHICLE_DOC / PASSPORT
+        r"198\.1[89]\.\d{1,3}\.\d{1,3}",              # IP (RFC 2544 benchmarking)
+        r"[IVX]{1,4}-[А-ЯЁ]{2} №\d{6}",               # BIRTH_CERT
+        # BOTH ALPHABETS. A plate token has to be recognised in the model's reply
+        # even when the model rewrote it in Latin — the ГОСТ alphabet exists so the
+        # two readings are the same plate, and a model treats them as one string.
+        # Matching only Cyrillic meant the rewritten form was never even a candidate,
+        # so the fold that resolves it never got the chance to run.
+        # BOTH LATIN READINGS, not just the look-alike one. The class listed the
+        # letters a plate LOOKS like in Latin; a model that spells it out uses others
+        # — V for «В», N for «Н», S for «С», U for «У», R for «Р». Those forms never
+        # became candidates, so the fold that resolves them never ran.
+        r"[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]\d{3}[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]{2}\d{2,3}",  # PLATE
+        r"\d{4} \d{4} \d{4} \d{4}",                   # CARD
+        # Bare digit runs, LONGEST FIRST: leftmost-first alternation would otherwise
+        # let \d{10} consume the head of a 20-digit account.
+        r"\b\d{20}\b",                                # ACCOUNT
+        r"\b\d{16}\b",                                # OMS
+        r"\b\d{15}\b|\b\d{13}\b",                    # OGRN / ОГРНИП
+        r"\b\d{9}\b",                                 # INTL_PASSPORT
+        r"\d{3}-\d{3}-\d{3} \d{2}",                   # SNILS
+        r"\d{2} \d{2} \d{6}",                         # PASSPORT
+        r"\d{2}\.\d{2}\.\d{4}",                       # DATE, как минтится
+        # DATE, КАК ЕЁ ПЕРЕПИШЕТ МОДЕЛЬ. A tool argument named `date` invites ISO,
+        # and a model obliges: the token «02.12.1973» came back as «1973-12-02» and
+        # was never even a candidate here, so the lookup that would have resolved it
+        # never ran and the FAKE reached the customer's tool. Two personas hit this
+        # independently on live traffic — one moved a delivery to 1973, the other
+        # booked a patient into 1977.
+        r"\d{4}-\d{2}-\d{2}",                           # ISO
+        r"\d{2}[/-]\d{2}[/-]\d{4}",                     # 12/04/1961, 12-04-1961
+        r"\+79\d{9}",                                 # PHONE
+        r"REDACTED[0-9a-f]{6}",                       # fallback
+        r"\b\d{10}\b",                                # INN — least specific, last
+    ]))
+
+
+def token_re() -> re.Pattern[str]:
+    """The token recognizer for the CURRENT bundle. Was a module-level TOKEN_RE;
+    now per-version because the fake pools that feed it are leased, not compiled."""
+    return _token_re(ASSETS.version)
 
 
 def _street_stem(value: str) -> str:
@@ -1867,8 +1747,8 @@ class Vault:
             # back to the street shape is a mismatch in a rare case; a permanent
             # 5xx is an outage. Attempts are bounded either way.
             if entity_type == "LOC" and attempt >= _TOKEN_MINT_ATTEMPTS // 2:
-                street = morph_places.to_nominative(secrets.choice(_usable_streets()))
-                token = f"улица {street}, {secrets.randbelow(_FAKE_HOUSE_MAX) + 1}"
+                street = morph_places.to_nominative(secrets.choice(_usable_streets(ASSETS.version)))
+                token = f"улица {street}, {secrets.randbelow(ASSETS.get().fakes.house_max) + 1}"
             # A substitute that shares a WORD with the value it replaces hides
             # nothing about that word. Comparing whole strings is not enough:
             # for `Мария` the token is `Мария Лебедева`, the surname differs,
@@ -3138,12 +3018,12 @@ class Vault:
                 elif kind == "patr":
                     built.append(secrets.choice(patronymics))
                 elif kind == "surn":
-                    surname = secrets.choice(_FAKE_LAST)
+                    surname = secrets.choice(ASSETS.get().fakes.last)
                     built.append(morph_names.feminine_surname(surname) if resolved == "femn" else surname)
                 elif kind == "init":
                     built.append(secrets.choice(_INITIAL_LETTERS) + ".")
                 else:
-                    built.append(secrets.choice(_first_names_by_gender()[resolved]))
+                    built.append(secrets.choice(_first_names_by_gender(ASSETS.version)[resolved]))
             candidate = " ".join(built)
             if len(set(w.casefold() for w in built)) != len(built):
                 continue

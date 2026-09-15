@@ -12,7 +12,7 @@ from pseudex.detect import NameSpan, PartSpan, Span
 from pseudex import agent_form, morph_names, morph_places, translit
 from pseudex.assets import ASSETS
 from pseudex.profiling import stage
-from pseudex.vault import LOC_TOKEN_PATTERN, TOKEN_RE, Vault, name_key, place_key, _date_canonical
+from pseudex.vault import LOC_TOKEN_PATTERN, token_re, Vault, name_key, place_key, _date_canonical
 
 # A number-like run (digits + phone separators), >=7 digits — a candidate for
 # digit-core detokenization when the model reformatted a numeric token.
@@ -272,7 +272,7 @@ def _restore_cued_numbers_spans(text: str, vault: Vault) -> list[tuple[int, int,
     for m in _PLACE_RUN.finditer(text):
         framings = _place_windows(text, m.start(), m.end())
         protected.append((min(s for s, _ in framings), max(e for _, e in framings)))
-    protected += [m.span() for m in TOKEN_RE.finditer(text)]
+    protected += [m.span() for m in token_re().finditer(text)]
     spans: list[tuple[int, int, str]] = []
     for match in _CUE_NUMBER.finditer(text):
         number = match.group("num")
@@ -359,7 +359,7 @@ def _date_readings(value: str) -> list[str]:
 
 
 def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> list[tuple[int, int, str]]:
-    matches: list[re.Match[str]] = list(TOKEN_RE.finditer(text))
+    matches: list[re.Match[str]] = list(token_re().finditer(text))
     # A DATE SAID IN WORDS is a token too, since a spoken date of birth is
     # replaced by a spoken substitute; `TOKEN_RE` knows the digit shapes only,
     # so the spoken-date arm of the detector supplies the candidates. A miss
@@ -1626,7 +1626,7 @@ def residual_tokens(text: str, vault: Vault) -> list[str]:
     HITS for a substitute we minted. A hit here means one thing only — this
     string is ours, and it should not have survived.
     """
-    candidates = {match.group() for match in TOKEN_RE.finditer(text)}
+    candidates = {match.group() for match in token_re().finditer(text)}
     # A PHONE TOKEN IS WRITTEN THE CUSTOMER'S WAY (vault `_digits_in_customer_
     # form`), so `TOKEN_RE`'s «+79…» shape no longer names it; every digit run
     # is offered and the vault answers by signature.
