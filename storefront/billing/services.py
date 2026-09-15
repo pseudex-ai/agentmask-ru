@@ -448,10 +448,14 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     # отдельная строка.
     over = max(0, metered_requests - _int_or_zero(terms["included_requests"]))
     floor = _int_or_zero(terms["metered_floor"]) or DEFAULT_METERED_FLOOR
-    if over >= floor and terms["metered_per_1k"] > 0:
-        billed_over = over
-    else:
-        billed_over = 0
+    # Bill only the part ABOVE the floor, never the floor itself. The floor is the
+    # measurement-noise band — a fixed count of requests (the quantum granularity)
+    # we cannot bill accurately — so it stays ALWAYS free, and the charge ramps from
+    # zero at the threshold instead of jumping to the whole excess. The old
+    # `billed_over = over` created a CLIFF: crossing the floor by one request billed
+    # the entire excess at once (e.g. Старт 29 999→30 000 req = 0→+1 580 ₽), a
+    # billing shock and a dispute magnet.
+    billed_over = max(0, over - floor) if terms["metered_per_1k"] > 0 else 0
     metered_amount = _round(Decimal(billed_over) / Decimal(1000)
                             * terms["metered_per_1k"])
 

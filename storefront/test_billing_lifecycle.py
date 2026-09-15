@@ -404,7 +404,9 @@ def main() -> int:
     under.save(update_fields=["state"])
 
     over_invoice = invoice_for(above)
-    expected_metered = (Decimal(above - plan.included_requests) / 1000
+    # Bills the excess ABOVE the floor (the floor is the always-free measurement-noise
+    # band), not the whole excess — no cliff at the threshold.
+    expected_metered = (Decimal(above - plan.included_requests - plan.metered_floor) / 1000
                         * plan.metered_per_1k)
     check("над порогом появляется отдельная строка объёма",
           over_invoice.metered_amount > 0,
