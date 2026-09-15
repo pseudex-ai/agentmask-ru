@@ -109,13 +109,14 @@ def main() -> int:
         volume_capped=False, current_period_end=now + timedelta(days=30))
     licensing.set_status = Mock(side_effect=licensing.LicensingError("boom"))
     usage_of(40_000)
-    crashed = False
     try:
         run("run_billing_cycle", verbosity=0)
-    except Exception:  # noqa: BLE001 — именно это не должно случаться
-        crashed = True
+        check(True, "отказ лицензионного сервера НЕ роняет часовой цикл")
+    except Exception as error:  # noqa: BLE001 — именно это не должно случаться
+        # Провал ЗАПИСЫВАЕТСЯ через check прямо здесь (а не флагом), чтобы падение
+        # цикла было видно как красный тест, а не проглочено.
+        check(False, "отказ лицензионного сервера НЕ роняет часовой цикл", str(error))
     sub.refresh_from_db()
-    check(not crashed, "отказ лицензионного сервера НЕ роняет часовой цикл")
     check(not sub.volume_capped,
           "при отказе рубильника локальное зеркало НЕ ставится (не врём кабинету)",
           f"capped={sub.volume_capped}")
