@@ -201,6 +201,19 @@ class TranslitAssets:
 
 
 @dataclass(frozen=True)
+class FakeAssets:
+    """The substitute pools the vault mints from. Leased TUNING — the values a
+    competitor would copy; the mint LOGIC (uniqueness, round-trip survival,
+    shape-mirroring) stays in pseudex.vault."""
+    first: tuple[str, ...]
+    last: tuple[str, ...]
+    last_invariant: tuple[str, ...]
+    cities: tuple[str, ...]
+    streets: tuple[str, ...]
+    house_max: int
+
+
+@dataclass(frozen=True)
 class DetectionAssets:
     version: str
     # Source lines the upstream licences oblige a running process to carry.
@@ -217,6 +230,7 @@ class DetectionAssets:
     structured: StructuredAssets
     ru_pii: RuPiiAssets
     translit: TranslitAssets
+    fakes: FakeAssets
     priority: dict[str, int]
     lookalike: dict[str, str]
     # Per-customer watermark (licensing/watermark.py). Inert for detection; it
@@ -361,6 +375,17 @@ def _build_translit(raw: dict[str, object]) -> TranslitAssets:
     )
 
 
+def _build_fakes(raw: dict[str, object]) -> FakeAssets:
+    return FakeAssets(
+        first=tuple(raw["first"]),
+        last=tuple(raw["last"]),
+        last_invariant=tuple(raw["last_invariant"]),
+        cities=tuple(raw["cities"]),
+        streets=tuple(raw["streets"]),
+        house_max=int(raw["house_max"]),
+    )
+
+
 def _build(payload: dict[str, object]) -> DetectionAssets:
     # Ordered pairs on the wire, because the prefix fallback in
     # `structured._key_type` resolves ties by order — see licensing/pack.py.
@@ -387,6 +412,7 @@ def _build(payload: dict[str, object]) -> DetectionAssets:
         structured=StructuredAssets(key_type=key_type, key_stems=key_stems),
         ru_pii=_build_ru_pii(payload["ru_pii"]),
         translit=_build_translit(payload["translit_machine"]),
+        fakes=_build_fakes(payload["fakes"]),
         priority=dict(payload["priority"]),
         lookalike=dict(payload["lookalike"]),
         watermark=str(payload.get("_wm", "")),
@@ -470,6 +496,7 @@ class Assets:
             vault._usable_streets.cache_clear,
             vault._invariant_last_names.cache_clear,
             vault._round_trip_last_names.cache_clear,
+            vault._token_re.cache_clear,
         ):
             clear()
         gc.collect()

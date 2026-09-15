@@ -34,10 +34,11 @@ def main() -> None:
     address._spoken_house_after_for(v)
     names._misspelling_index(v)
     morph_places._word_number_for(v)
-    vault._first_names_by_gender()
-    vault._usable_streets()
-    vault._invariant_last_names()
-    vault._round_trip_last_names("masc")
+    vault._first_names_by_gender(v)
+    vault._usable_streets(v)
+    vault._invariant_last_names(v)
+    vault._round_trip_last_names(v, "masc")
+    vault._token_re(v)
 
     caches = {
         "address._street_index": address._street_index,
@@ -49,6 +50,7 @@ def main() -> None:
         "vault._usable_streets": vault._usable_streets,
         "vault._invariant_last_names": vault._invariant_last_names,
         "vault._round_trip_last_names": vault._round_trip_last_names,
+        "vault._token_re": vault._token_re,
     }
     populated = [n for n, c in caches.items() if c.cache_info().currsize > 0]
     assert len(populated) == len(caches), (

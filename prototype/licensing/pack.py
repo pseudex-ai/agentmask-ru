@@ -294,6 +294,16 @@ def _tuning_payload() -> dict[str, object]:
                        assets_source.TRANSLIT_MVD_2010, assets_source.TRANSLIT_COMMON],
             "fold": [list(pair) for pair in assets_source.TRANSLIT_FOLD],
         },
+        # Fake substitute pools (vault mint). Order is not load-bearing (drawn by
+        # secrets.choice / filtered by round-trip), but the SETS are.
+        "fakes": {
+            "first": list(assets_source.FAKE_FIRST),
+            "last": list(assets_source.FAKE_LAST),
+            "last_invariant": list(assets_source.FAKE_LAST_INVARIANT),
+            "cities": list(assets_source.FAKE_CITIES),
+            "streets": list(assets_source.FAKE_STREETS),
+            "house_max": assets_source.FAKE_HOUSE_MAX,
+        },
         "priority": assets_source.PRIORITY,
         "lookalike": assets_source.LOOKALIKE,
     }

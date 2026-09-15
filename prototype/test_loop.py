@@ -9,9 +9,15 @@ Proves the two load-bearing properties:
 import json
 import re
 
+import testkit
+
 from pseudex.detect import detect_pii
 from pseudex.redact import mask_text, unmask_text
 from pseudex.vault import Vault
+
+# The fake substitute pools are LEASED now (WS-2), so minting and token recognition
+# need a bundle — the engine ships EMPTY. In-process, no network.
+testkit.load_dev_bundle()
 
 
 def main() -> None:

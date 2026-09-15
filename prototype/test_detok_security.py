@@ -30,8 +30,12 @@ os.environ["PSEUDEX_VAULT_ENCRYPTION"] = "off"
 os.environ.setdefault("PSEUDEX_GATEWAY_TOKEN", "test-gw")
 
 import httpx  # noqa: E402
+import testkit  # noqa: E402
 from pseudex import service  # noqa: E402
 from pseudex.audit import AuditLog, _preview  # noqa: E402
+
+# Fake pools are leased (WS-2), so /unmask* (token recognition) needs a bundle.
+testkit.load_dev_bundle()
 
 RESULTS: list[tuple[bool, str, str]] = []
 

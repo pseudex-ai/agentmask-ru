@@ -628,15 +628,16 @@ def test_address_signature_is_inflection_proof() -> None:
     property the round trip rests on, and a single entry that fails it is one
     address type that silently delivers a fake.
     """
-    from pseudex.vault import _FAKE_CITIES, _FAKE_STREETS
+    from pseudex.assets import ASSETS
+    fakes = ASSETS.get().fakes
     drift = []
-    for city in _FAKE_CITIES:
+    for city in fakes.cities:
         nominative = morph_places.to_nominative(city)
         for case in ("gent", "datv", "loct", "ablt", "accs"):
             inflected = morph_places.inflect_place(nominative, case)
             if morph_places.match_signature(nominative) != morph_places.match_signature(inflected):
                 drift.append((nominative, case, inflected))
-    for street in _FAKE_STREETS:
+    for street in fakes.streets:
         phrase = f"улица {morph_places.to_nominative(street)}, 42"
         for case in ("gent", "datv", "loct", "ablt", "accs"):
             inflected = morph_places.inflect_place(phrase, case)
@@ -644,7 +645,7 @@ def test_address_signature_is_inflection_proof() -> None:
                 drift.append((phrase, case, inflected))
     check("the address signature survives every case of every pool entry",
           not drift, f"drift={drift[:5]}" if drift else
-          f"{(len(_FAKE_CITIES) + len(_FAKE_STREETS)) * 5} combinations")
+          f"{(len(fakes.cities) + len(fakes.streets)) * 5} combinations")
 
 
 def test_street_stays_a_street(vault: Vault, detector: Detector) -> None:

@@ -15,7 +15,8 @@ from pseudex.normalize import normalize
 from pseudex.redact import StreamDetokenizer, mask_text, unmask_text
 from pseudex.ru_pii import validate_inn, validate_luhn, validate_ogrn, validate_snils
 from pseudex.tenants import Tenants
-from pseudex.vault import _FAKE_FIRST, _FAKE_LAST, TOKEN_RE, _render_token, Vault
+from pseudex.vault import token_re, _render_token, Vault
+from pseudex.assets import ASSETS
 from testkit import load_dev_bundle
 
 # Every type any detector can emit. quasi.py's DOB/AGE/MEDICAL and any future
@@ -81,7 +82,7 @@ def test_token_shapes() -> None:
     for entity_type in _ENTITY_TYPES:
         for _ in range(200):
             token = _render_token(entity_type)
-            assert TOKEN_RE.fullmatch(token), f"{entity_type} token {token!r} escapes TOKEN_RE"
+            assert token_re().fullmatch(token), f"{entity_type} token {token!r} escapes TOKEN_RE"
     print(f"token shapes OK — {len(_ENTITY_TYPES)} types x200 samples all matched by TOKEN_RE")
 
 
@@ -134,11 +135,12 @@ def test_fake_names_are_self_recognised() -> None:
     drifted mid-conversation. Also checks the pool is big enough that an org
     cannot exhaust it — a flat five-name list used to hang the request path on
     the sixth distinct person."""
-    unknown = [name for name in _FAKE_FIRST if not is_known_name(name)]
+    fakes = ASSETS.get().fakes
+    unknown = [name for name in fakes.first if not is_known_name(name)]
     assert not unknown, f"fake first names our own gazetteer cannot see: {unknown}"
-    combinations = len(_FAKE_FIRST) * len(_FAKE_LAST)
+    combinations = len(fakes.first) * len(fakes.last)
     assert combinations >= 1000, f"NAME pool too small ({combinations}) — exhaustion is a hang"
-    print(f"fake-name pool OK — {len(_FAKE_FIRST)}x{len(_FAKE_LAST)}={combinations} "
+    print(f"fake-name pool OK — {len(fakes.first)}x{len(fakes.last)}={combinations} "
           f"combinations, all gazetteer-visible")
 
 
