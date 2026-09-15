@@ -422,6 +422,27 @@ class Assets:
         detection refuses — not that a memory dump is clean."""
         with self._lock:
             self._current = None
+        # Leased-vocabulary caches in other modules hold a SECOND copy of the
+        # gazetteer as plain str tuples, keyed on bundle version and invisible to
+        # this method — up to `maxsize` versions survived a revocation (pentest H3:
+        # DeletionIndex._words behind address._street_index / names._misspelling_index).
+        # Clear every leased-data cache so none outlives the lease. Imported LOCALLY:
+        # this runs at unload time, when all modules are loaded, so there is no import
+        # cycle with the modules that read ASSETS. A NEW version-keyed leased cache
+        # must be added to this list.
+        from pseudex import address, names, morph_places, vault
+        for clear in (
+            address._street_index.cache_clear,
+            address._street_stems.cache_clear,
+            address._spoken_house_after_for.cache_clear,
+            names._misspelling_index.cache_clear,
+            morph_places._word_number_for.cache_clear,
+            vault._first_names_by_gender.cache_clear,
+            vault._usable_streets.cache_clear,
+            vault._invariant_last_names.cache_clear,
+            vault._round_trip_last_names.cache_clear,
+        ):
+            clear()
         gc.collect()
 
     @property
