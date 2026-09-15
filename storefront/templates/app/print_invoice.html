@@ -114,6 +114,17 @@
     {% endif %}
   </table>
 
+  {% comment %}
+    СКИДКА — ОТДЕЛЬНОЙ СТРОКОЙ ПОД ТАБЛИЦЕЙ, не растворённая в цене позиции:
+    бухгалтер должен видеть, что в Итого входит спец-предложение, иначе
+    документ не сходится с офертой. Итого уже уменьшено (`invoice.total`).
+  {% endcomment %}
+  {% if invoice.discount_amount %}
+  <div class="words" style="color:#333">
+    {% if invoice.discount_offer %}{{ invoice.discount_offer.title }}{% else %}Скидка по спец-предложению{% endif %}: −{{ invoice.discount_amount }} ₽
+  </div>
+  {% endif %}
+
   <div class="total">Итого: {{ invoice.total }} ₽</div>
   <div class="words">{{ seller.vat }}</div>
 

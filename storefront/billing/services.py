@@ -17,11 +17,12 @@ from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
+from django.db.models import F, Q
 from django.utils import timezone
 
 from accounts.models import Membership, Organization, User
 from billing import licensing
-from billing.models import Invoice, LicenseKey, Plan, Subscription
+from billing.models import Invoice, LicenseKey, Offer, Plan, Subscription
 
 _log = logging.getLogger("billing.services")
 
@@ -384,8 +385,7 @@ def resolve_offer(organization, code: str = "", applies_to: str = "any", plan=No
     'any' подходит всегда) и по тарифу (`target_plan`). Выбирает ВЫГОДНЕЙШЕЕ клиенту:
     при заданной `amount` — по наименьшей итоговой цене (честно для смеси % и ₽), иначе
     по величине скидки. Оператор не думает о порядке. Применение — у вызывающего."""
-    from billing.models import Offer
-    from django.db.models import Q
+
     who = Q(organization=organization)
     if code:
         who |= Q(code=code, organization__isnull=True)
@@ -564,6 +564,21 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     metered_amount = _round(Decimal(billed_over) / Decimal(1000)
                             * terms["metered_per_1k"])
 
+    # СПЕЦ-ПРЕДЛОЖЕНИЕ ПРИМЕНЯЕТСЯ ЗДЕСЬ — иначе Offer можно создать в админке,
+    # но он НИКОГДА не доходит до денег (инертен). Только АДРЕСНЫЕ (на эту org):
+    # промокод вводится клиентом при оплате, а не сервером при выставлении.
+    # Тип 'first_month' действует лишь на ПЕРВОМ счёте клиента; 'any' — всегда.
+    # Скидка бьёт по абонплате (повторяющийся платёж), не по объёму. Лучший для
+    # клиента выбирает `resolve_offer` по итоговой цене.
+    is_first = not (previous and previous.state != Invoice.VOID)
+    applies = Offer.APPLIES_FIRST_MONTH if is_first else Offer.APPLIES_ANY
+    offer = resolve_offer(organization, applies_to=applies, plan=plan,
+                          amount=subscription_amount)
+    discount = Decimal("0")
+    if offer is not None:
+        discount = _round(Decimal(subscription_amount) - offer.apply_to(subscription_amount))
+    total = _round(subscription_amount - discount + metered_amount)
+
     invoice = Invoice.objects.create(
         organization=organization,
         number=Invoice.next_number(),
@@ -571,16 +586,25 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
         period_start=period_start,
         period_end=period_end,
         plan_amount=_round(subscription_amount),
+        discount_amount=discount,
+        discount_offer=offer,
         values_in_period=used_this_period,
         metered_requests=billed_over,
         metered_amount=metered_amount,
-        total=_round(subscription_amount + metered_amount),
+        total=total,
         due_at=(timezone.now() + timedelta(days=INVOICE_DUE_DAYS)).date(),
         requests_billable_in_period=max(0, billable - billable_watermark),
         requests_billable_at_period_end=max(billable_watermark, billable),
         values_at_period_end=max(watermark, values),
         requests_at_period_end=requests,
     )
+    # СЧЁТЧИК ИСПОЛЬЗОВАНИЙ — ПОСЛЕ создания счёта и атомарно (F), чтобы лимит
+    # `max_uses` считался по фактически выставленным, а параллельный проход не
+    # затёр инкремент. Оффер без лимита (max_uses=0) считается тоже — оператору
+    # видно, сколько раз предложение сработало.
+    if offer is not None:
+
+        Offer.objects.filter(pk=offer.pk).update(uses=F("uses") + 1)
     # КАЖДЫЙ СЧЁТ — СТРОКА С РАЗЛОЖЕНИЕМ. Спор «почему столько» начинается с
     # этой строки, и без неё ответ собирается из четырёх таблиц вручную.
     _log.info("invoice built", extra={

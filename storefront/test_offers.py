@@ -61,10 +61,59 @@ def main() -> int:
     check(best is not None and best.title == "VIP -30%",
           "при сумме выбирается выгоднейшее клиенту (VIP -30% на 47000)")
 
+    # --- ВПЛЕТЕНИЕ В СЧЁТ: оффер больше НЕ инертен ---------------------
+    from datetime import date
+    from billing.models import Invoice, Subscription
+    from billing.services import build_invoice
+
+    start = Plan.objects.get(code="start")          # 990 ₽/мес
+    now = timezone.now()
+    buyer = Organization.objects.create(id="buyer", display_name="Buyer Co")
+    Subscription.objects.create(
+        organization=buyer, plan=start, state=Subscription.ACTIVE,
+        trial_ends_at=now, current_period_start=now,
+        current_period_end=now, terms_monthly_price=start.monthly_price,
+        terms_included_requests=start.included_requests,
+        terms_metered_per_1k=start.metered_per_1k,
+        terms_metered_floor=start.metered_floor, terms_taken_at=now)
+    # Без перерасхода: usage замокан пустым.
+    services.licensing.usage = lambda org_id: {"usage": {
+        "values": 0, "requests": 0, "capacity_billable": 0}}
+
+    Offer.objects.create(title="Адресный -20%", organization=buyer, discount_pct=20)
+    inv1 = build_invoice(buyer, date.today(), date.today() + timedelta(days=30))
+    check(inv1.discount_amount == Decimal("198.00")
+          and inv1.total == Decimal("792.00")
+          and inv1.discount_offer is not None,
+          "адресный оффер применён к счёту: 990 -20% = 792, скидка отдельной строкой")
+    applied = Offer.objects.get(title="Адресный -20%")
+    check(applied.uses == 1, "счётчик использований оффера инкрементнут")
+
+    # first_month действует только на первом счёте.
+    firstie = Organization.objects.create(id="firstie", display_name="First Co")
+    Subscription.objects.create(
+        organization=firstie, plan=start, state=Subscription.ACTIVE,
+        trial_ends_at=now, current_period_start=now, current_period_end=now,
+        terms_monthly_price=start.monthly_price,
+        terms_included_requests=start.included_requests,
+        terms_metered_per_1k=start.metered_per_1k,
+        terms_metered_floor=start.metered_floor, terms_taken_at=now)
+    Offer.objects.create(title="Первый месяц -50%", organization=firstie,
+                         discount_pct=50, applies_to=Offer.APPLIES_FIRST_MONTH)
+    fm1 = build_invoice(firstie, date.today(), date.today() + timedelta(days=30))
+    fm1.state = Invoice.ISSUED
+    fm1.save(update_fields=["state"])
+    check(fm1.discount_amount == Decimal("495.00"),
+          "first_month применён на ПЕРВОМ счёте (990 -50% = 495)")
+    fm2 = build_invoice(firstie, date.today() + timedelta(days=30),
+                        date.today() + timedelta(days=60))
+    check(fm2.discount_amount == Decimal("0"),
+          "first_month НЕ применяется на втором счёте")
+
     print("=" * 60)
     if not ok:
         raise SystemExit("offers not correct")
-    print("offers OK — адресные+промокод, срок/лимит, лучший-по-сумме, применение скидки")
+    print("offers OK — резолв, срок/лимит, лучший-по-сумме, ВПЛЕТЕНИЕ В СЧЁТ + инкремент")
     return 0
 
 

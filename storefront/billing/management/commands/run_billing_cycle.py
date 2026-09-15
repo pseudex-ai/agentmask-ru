@@ -465,6 +465,9 @@ class Command(BaseCommand):
         if invoice.metered_amount > 0:
             lines.append(f"объём сверх включённого: {invoice.metered_requests} "
                          f"запросов — {invoice.metered_amount} ₽")
+        if invoice.discount_amount > 0:
+            title = invoice.discount_offer.title if invoice.discount_offer else "скидка"
+            lines.append(f"{title}: −{invoice.discount_amount} ₽")
         # ПИСЬМО НЕ НЕСЁТ НИЧЕГО СЕКРЕТНОГО, как и все остальные наши письма:
         # ссылка на кабинет, а не ключ и не платёжный токен.
         link = f"{settings.SITE_URL}/app/invoices/{invoice.number}"

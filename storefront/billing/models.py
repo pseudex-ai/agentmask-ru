@@ -348,6 +348,18 @@ class Invoice(models.Model):
     period_end = models.DateField()
 
     plan_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+
+    # СКИДКА ПО СПЕЦ-ПРЕДЛОЖЕНИЮ, ОТДЕЛЬНОЙ СТРОКОЙ. Оффер (адресный или по
+    # промокоду) применяется при построении счёта: `discount_amount` — сколько
+    # ₽ снято, `discount_offer` — какой (для акта и разбора «почему столько»).
+    # Отдельной строкой по той же причине, что и объём: бухгалтер сверяет
+    # разложение, а скидка, растворённая в итоге, превращает расхождение в
+    # расследование. SET_NULL — счёт переживает удаление оффера.
+    discount_amount = models.DecimalField(max_digits=12, decimal_places=2,
+                                          default=Decimal("0"))
+    discount_offer = models.ForeignKey("Offer", null=True, blank=True,
+                                       on_delete=models.SET_NULL,
+                                       related_name="invoices")
     # INFORMATION, never a charge: what the subscription protected this period.
     # It rides on the invoice because it is the answer to "what did I get for
     # the money", and because a figure far above the plan's guide is what
