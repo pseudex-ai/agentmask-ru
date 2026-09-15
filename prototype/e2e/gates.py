@@ -723,11 +723,18 @@ def gate_l8() -> bool:
 def gate_l14b() -> bool:
     """The assets were GIVEN UP by a process that is still alive and healthy.
 
-    That is the distinction worth testing. A process that died would also stop
-    detecting, and so would a flag flip — but only a genuine unload produces all
-    of: same process still running, still answering the endpoints that read the
-    customer's own vault, registry reporting nothing loaded, and BOTH detection
-    endpoints refusing.
+    That is the distinction worth testing. A process that died would REFUSE THE
+    CONNECTION; a genuine unload produces a live process that still ANSWERS — with
+    a structured 503, not a dropped socket — while: same workers still running,
+    registry reporting nothing loaded, and every asset-backed endpoint (mask,
+    spans, AND unmask) refusing 503.
+
+    /unmask 503s here too, by decision (pentest B3): detok recognises tokens with
+    the LEASED bundle (`token_re`, version-keyed since WS-2 moved the tuning to the
+    lease), so with assets unloaded it cannot run. The reversible-PII promise holds
+    throughout LEASED + the whole grace window; EXPIRED is terminal and the engine
+    is off. Liveness is proved by the process ANSWERING (503, not a refused socket)
+    and the workers surviving — not by unmask returning 200.
 
     TWO THINGS THIS DELIBERATELY DOES NOT CLAIM, because neither is true:
 
@@ -747,8 +754,8 @@ def gate_l14b() -> bool:
     masked = post_mask(90)
     spans = httpx.post(f"{SIDECAR}/spans", timeout=60, headers=gateway_headers(),
                        json={"org_id": ORG, "texts": ["Иван Петров"]})
-    # Still alive and still useful for the customer's own data — this is what
-    # separates "gave up the assets" from "the process fell over".
+    # A live process ANSWERS (503) where a dead one refuses the socket — this is
+    # what separates "gave up the assets" from "the process fell over".
     still_alive = worker_pids(24)
     unmasked = httpx.post(f"{SIDECAR}/unmask", timeout=60, headers=gateway_headers(), json={
         "org_id": ORG, "response": {"choices": [{"message": {"content": "нет токенов"}}]},
@@ -756,9 +763,10 @@ def gate_l14b() -> bool:
     # Every worker that was serving must still be serving: none of them died to
     # produce this state, they gave the assets up and stayed.
     workers_intact = bool(_LEASED_PIDS) and _LEASED_PIDS <= still_alive
+    # unmask 503 too (B3): detok needs the leased bundle, gone with the assets.
     ok = (state["assets_loaded"] is False
           and masked.status_code == 503 and spans.status_code == 503
-          and unmasked.status_code == 200 and workers_intact)
+          and unmasked.status_code == 503 and workers_intact)
     return gate("L14b assets given up by a live process", ok,
                 f"assets_loaded={state['assets_loaded']} mask={masked.status_code} "
                 f"spans={spans.status_code} unmask={unmasked.status_code} "
@@ -1369,9 +1377,21 @@ def gate_l23() -> bool:
                         gap is the whole point of PR_SET_DUMPABLE=0;
       * core off      — the startup line reports RLIMIT_CORE=0 (no crash-time dump).
     """
+    # L22 (right before this in the run order) STOPS the sidecar to prove the
+    # low-memory refusal, and does not bring it back. Re-establish a healthy,
+    # leased sidecar before probing its memory, or `compose ps`/`worker_pids`
+    # return empty and this gate dies with an IndexError instead of a verdict.
+    if not start_sidecar():
+        return gate("L23 the worker hardens its memory (no core, non-dumpable, mlock)",
+                    False, "sidecar did not come back up after L22 — cannot probe memory")
     privileged_hits, _ = _memscan()   # positive control: root CAN read the RAM
-    cid = compose(["ps", "-q", "sidecar"], False, 30).stdout.strip().splitlines()[0]
-    pid = sorted(worker_pids(24))[0]
+    lines = compose(["ps", "-q", "sidecar"], False, 30).stdout.strip().splitlines()
+    workers = sorted(worker_pids(24))
+    if not lines or not workers:
+        return gate("L23 the worker hardens its memory (no core, non-dumpable, mlock)",
+                    False, "no running sidecar worker to probe")
+    cid = lines[0]
+    pid = workers[0]
 
     status = sh(["docker", "run", "--rm", f"--pid=container:{cid}",
                  "python:3.12-slim", "sh", "-c",

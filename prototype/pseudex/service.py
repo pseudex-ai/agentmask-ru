@@ -634,6 +634,16 @@ async def mask(request: Request) -> JSONResponse:
 
 @app.post("/unmask", dependencies=[Depends(_require_gateway)])
 async def unmask(request: Request) -> JSONResponse:
+    # DETOK NEEDS THE LEASED BUNDLE (pentest B3, decided). Token recognition
+    # (`token_re`/`residual_tokens`) is version-keyed on the lease since the tuning
+    # moved there (WS-2), so on a FULLY EXPIRED lease — assets unloaded — /unmask
+    # answers 503 like the rest of the engine, not 200. The reversible-PII promise
+    # holds throughout LEASED and the ENTIRE grace window (STALE, ~48h+): a customer
+    # has that long to reverse their own tokens even during OUR outage. EXPIRED is
+    # terminal (our outage beyond ttl+grace, or non-payment), where the engine is
+    # legitimately off — the data is not lost, it is reachable again the moment
+    # service resumes (pay, or our outage ends). Serving detok bundle-free from the
+    # vault alone is a possible future step, not this one.
     body = await request.json()
     org_id = str(body.get("org_id", "")) or "default"
     blocked = _check_org(org_id)
