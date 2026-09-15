@@ -60,7 +60,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools \
     && pip install --no-cache-dir nuitka
 
 COPY pseudex/ ./pseudex/
-COPY serve_main.py build_strip_docstrings.py build_harden_strings.py ./
+COPY serve_main.py build_strip_docstrings.py build_harden_strings.py build_mangle_names.py ./
 
 
 # Same guard as the source image, before anything is compiled: the engine must
@@ -117,6 +117,18 @@ RUN python build_strip_docstrings.py ./pseudex ./serve_main.py
 # Только на компилируемом образе: в dev-образе из .py это лишь портило бы логи.
 # P2b (греп собранного образа) проверяет, что Nuitka не свернул их обратно.
 RUN python build_harden_strings.py ./pseudex
+
+# Rename PRIVATE crown symbols to opaque names BEFORE compilation (WS-1). Nuitka puts
+# every def's co_name/qualname in the plaintext constants blob, so nuitka-static-unpacker
+# reads the whole name-skeleton with no native-code RE (measured: 31 crown names + 85
+# module qualnames). build_mangle_names renames the unique private functions/classes so
+# the blob carries `_z0007`, not `Vault._unique_token`. Whole-program, conservative
+# (private + unique + not-in-any-string + not-excluded), verified crown-safe by the
+# round-trip smokes and the e2e gates. Build-arg escape hatch, default on.
+ARG PSEUDEX_MANGLE=1
+RUN if [ -n "$PSEUDEX_MANGLE" ]; then \
+        python build_mangle_names.py ./pseudex ./serve_main.py; \
+    else echo "== name-mangling OFF (PSEUDEX_MANGLE empty) =="; fi
 
 ARG NUITKA_JOBS=6
 # --include-data-dir puts the interface's page files at /app/ui, OUTSIDE any
