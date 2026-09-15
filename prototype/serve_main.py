@@ -275,6 +275,13 @@ def main() -> None:
         return
     if role == "preflight":
         raise SystemExit(_preflight())
+    if role == "tripwire":
+        # Memory-read tripwire: a PRIVILEGED watcher in the engine's PID namespace
+        # that attributes and reports attempts to read a worker's RAM. The engine
+        # itself cannot see such a read (a theorem); this runs beside it. Imported
+        # role-local, like the others.
+        from pseudex.tripwire import main as _tripwire_main  # noqa: PLC0415
+        raise SystemExit(_tripwire_main())
     if role == "probe":
         raise SystemExit(_probe())
     if role == "rekey":

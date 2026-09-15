@@ -204,6 +204,16 @@ class LicenseStore:
         )
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS meter_org ON meter(org_id)")
+        # МЕМОРИ-ТРИППВАЙР: попытки прочитать память движка, которые засёк
+        # привилегированный наблюдатель (pseudex/tripwire.py) на стороне клиента и
+        # сообщил СРАЗУ — чтобы улика ушла с машины прежде, чем root затрёт локальный
+        # лог. Хранится КТО (reader uid/pid/comm/exe/cmdline), НИКОГДА содержимое.
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS tripwire ("
+            "org_id TEXT, ts REAL, method TEXT, reader_uid INTEGER, "
+            "reader_pid INTEGER, reader_comm TEXT, reader_exe TEXT, reader_cmdline TEXT)")
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS tripwire_org ON tripwire(org_id, ts)")
         # ТАРИФ — СТРОКА, А НЕ КОНСТАНТА. Числа тарифа стояли классовыми
         # словарями, поэтому поправить потолок инстансов одному клиенту значило
         # выкатить релиз. Словари никуда не делись: они СИД для чистой базы и
@@ -997,6 +1007,42 @@ class LicenseStore:
                 "unacked_quanta": int(row[6] or 0),
                 "ack_regressions": int(row[7] or 0),
                 "prefetch_at": int(row[8] or 0)}
+
+    def record_tripwire(self, org_id: str, event: dict) -> None:
+        """Record a reported memory-read attempt on an org's engine. Counts/attribution
+        only — the reader's identity, never the memory contents."""
+        def _int(value: object) -> int:
+            # NB: not `value or -1` — a root reader has uid 0, which is falsy, so that
+            # idiom silently rewrote the single most important attribution (uid=0) to -1.
+            try:
+                return int(value)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                return -1
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO tripwire (org_id, ts, method, reader_uid, reader_pid, "
+                "reader_comm, reader_exe, reader_cmdline) VALUES (?,?,?,?,?,?,?,?)",
+                (org_id, time.time(), str(event.get("method", ""))[:32],
+                 _int(event.get("reader_uid")), _int(event.get("reader_pid")),
+                 str(event.get("reader_comm", ""))[:128], str(event.get("reader_exe", ""))[:512],
+                 str(event.get("reader_cmdline", ""))[:1024]))
+            self._conn.commit()
+
+    def tripwire_events(self, org_id: str = "", since: float = 0.0, limit: int = 200) -> list[dict]:
+        """Reported memory-read attempts, newest first — the fleet surface for 'who tried
+        to read the engine'. Filter by org and time window."""
+        where = "ts >= ?"
+        params: tuple = (since,)
+        if org_id:
+            where += " AND org_id = ?"
+            params = (since, org_id)
+        rows = self._fetchall(
+            f"SELECT org_id, ts, method, reader_uid, reader_pid, reader_comm, reader_exe, "
+            f"reader_cmdline FROM tripwire WHERE {where} ORDER BY ts DESC LIMIT ?",
+            params + (int(limit),))
+        return [{"org_id": r[0], "ts": r[1], "method": r[2], "reader_uid": r[3],
+                 "reader_pid": r[4], "reader_comm": r[5], "reader_exe": r[6],
+                 "reader_cmdline": r[7]} for r in rows]
 
     def metering_anomalies(self, min_unacked: int = 10, min_regressions: int = 1,
                            active_within_seconds: float = 3600.0) -> list[dict]:

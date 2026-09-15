@@ -49,7 +49,10 @@ set -e
 # объявленная в документации, обязана быть одноразовой на самом деле.
 # Рекурсии нет: ниже вызывается БИНАРНИК, а не этот скрипт.
 case "${PSEUDEX_ROLE:-sidecar}" in
-    preflight|probe|rekey|decrypt|measure)
+    preflight|probe|rekey|decrypt|measure|tripwire)
+        # tripwire is a long-running PRIVILEGED watcher (deploy it in the engine's
+        # PID namespace); the rest are one-shot ops. Both exec the binary directly,
+        # bypassing the worker fan-out below.
         exec ${PSEUDEX_SERVE_CMD:-./pseudex-serve}
         ;;
 esac

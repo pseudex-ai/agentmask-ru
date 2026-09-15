@@ -1,0 +1,33 @@
+# auditd rules — memory-read tripwire, syscall-level (WS-7)
+#
+# The poller (pseudex/tripwire.py, PSEUDEX_ROLE=tripwire) catches a ptrace-attach
+# (gdb/gcore) and a held-open /proc/<pid>/mem fd (dd/a carver, while the slow multi-MB
+# read is in flight). These auditd rules close the one gap the poller cannot see: a
+# single `process_vm_readv` leaves no fd and no ptrace-attach — it is a syscall, so only
+# a syscall-level sensor catches it.
+#
+# Install (on the CUSTOMER host, which must run auditd):
+#   cp audit-pseudex.rules /etc/audit/rules.d/pseudex.rules && augenrules --load
+# Read the hits (uid/pid/comm/exe of the reader):
+#   ausearch -k pseudex_mem -i
+#
+# HONEST LIMIT: auditd runs in the host kernel the customer's root controls. A prepared
+# root can `auditctl -D` (flush rules), stop auditd, or read via /dev/mem / a kernel
+# module — bypassing this. It is a TRIPWIRE + DETERRENT: it forces the attacker to first
+# disable the auditor (an act that is itself conspicuous and stops the tripwire's
+# heartbeat, which the vendor sees), not a guarantee. Pair it with the poller (heartbeats
+# + reports to the vendor in real time) so evidence leaves the box before a local scrub.
+
+# ptrace of any kind (PTRACE_ATTACH/SEIZE/PEEKTEXT) — gdb, gcore, a debugger.
+-a always,exit -F arch=b64 -S ptrace -k pseudex_mem
+-a always,exit -F arch=b32 -S ptrace -k pseudex_mem
+
+# process_vm_readv — the fd-less, ptrace-less cross-process read (the poller's blind spot).
+-a always,exit -F arch=b64 -S process_vm_readv -k pseudex_mem
+-a always,exit -F arch=b32 -S process_vm_readv -k pseudex_mem
+
+# Direct physical-memory paths a root may reach for. Watching the device nodes catches an
+# open of them; a read of /proc/<pid>/mem is caught by the poller's fd scan.
+-w /dev/mem -p r -k pseudex_mem
+-w /dev/kmem -p r -k pseudex_mem
+-w /proc/kcore -p r -k pseudex_mem
