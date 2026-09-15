@@ -148,14 +148,17 @@ RUN if [ -n "$PSEUDEX_OBFUSCATE" ]; then \
         mkdir -p /opt/wrap; \
         { \
           echo '#!/bin/sh'; \
-          echo '# Obfuscate ONLY our own translation units — pseudex modules and the'; \
-          echo '# entrypoint. The deps (natasha/pymorphy/uvicorn) compile plainly, so'; \
-          echo '# the memory footprint stays at the normal build (the obfuscation passes'; \
-          echo '# add per-compile RAM, and applying them to the whole binary OOMs a'; \
-          echo '# loaded host); the leased tuning is not in the binary anyway, so only'; \
-          echo "# our algorithm code and beacon strings need hiding."; \
+          echo '# Obfuscate ONLY our own translation units — the pseudex module .c files'; \
+          echo '# (module.pseudex.*). The deps (natasha/pymorphy/uvicorn) compile plainly,'; \
+          echo '# so the memory footprint stays at the normal build (the passes add'; \
+          echo '# per-compile RAM, and applying them to the whole binary OOMs a loaded'; \
+          echo '# host). Match ONLY "pseudex" in the args: Nuitka names each generated file'; \
+          echo '# module.<qual.name>.c, so pseudex TUs carry "pseudex" and no dep does.'; \
+          echo '# NB: the entrypoint is NOT matched on purpose — its build dir is'; \
+          echo '# serve_main.build/, present in EVERY compile command, so a *serve_main*'; \
+          echo '# glob obfuscated the whole binary and caused the OOM this comment warns of.'; \
           echo 'case "$*" in'; \
-          echo "  *pseudex*|*serve_main*) exec /opt/arkari/bin/clang $PSEUDEX_OBF_FLAGS \"\$@\" ;;"; \
+          echo "  *pseudex*) exec /opt/arkari/bin/clang $PSEUDEX_OBF_FLAGS \"\$@\" ;;"; \
           echo '  *) exec /opt/arkari/bin/clang "$@" ;;'; \
           echo 'esac'; \
         } > /opt/wrap/clang; \

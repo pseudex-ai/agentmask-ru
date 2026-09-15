@@ -19,11 +19,14 @@ logic so removal degrades the product.
 """
 import hashlib
 import hmac
+import logging
 import os
 import struct
 from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Iterator, Optional
+
+_log = logging.getLogger(__name__)
 
 _DATA = Path(__file__).resolve().parent / "data"
 _N = 24  # canaries per gazetteer per org — statistically decisive, few enough to hide
@@ -41,6 +44,13 @@ def _secret() -> bytes:
     return os.environ.get("PSEUDEX_CANARY_SECRET", "").encode("utf-8")
 
 
+def enabled() -> bool:
+    """Whether per-org attribution (canaries + fingerprint — one shared secret) is
+    active. A cheap presence check for deciding to build a per-org bundle, without
+    synthesizing the canaries just to test them (server._leased_bundle)."""
+    return bool(_secret())
+
+
 @lru_cache(maxsize=1)
 def _real_surnames() -> frozenset:
     """The real surname dictionary (lowercased), to guarantee every canary is
@@ -56,9 +66,18 @@ def _real_streets() -> frozenset:
     """The real ГАР street vocabulary (lowercased), so a street canary is novel
     too. Lazy import to avoid a top-level cycle (pack imports canary)."""
     try:
-        from licensing.pack import load_street_vocabulary
+        from licensing.pack import load_street_vocabulary  # lazy: pack imports canary
         return frozenset(s.lower() for s in load_street_vocabulary())
-    except Exception:
+    except ImportError:
+        # The documented cycle-avoidance case only: pack half-imported. No vocabulary
+        # yet — the caller (a per-org bundle build) does not run during that window.
+        return frozenset()
+    except (OSError, ValueError) as exc:
+        # Vocabulary present but unreadable/corrupt. DEGRADE (surname canaries and the
+        # fingerprint still attribute) but do NOT hide the cause: an unfiltered street
+        # canary could coincide with a real ГАР street and then prove nothing.
+        _log.warning("canary: ГАР street vocabulary unavailable (%r) — street canaries "
+                     "not filtered against real streets this build", exc)
         return frozenset()
 
 

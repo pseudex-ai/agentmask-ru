@@ -407,7 +407,7 @@ def _build(payload: dict[str, object]) -> DetectionAssets:
             addr_intent=tuple(payload["context"]["addr_intent"]),
             place_ref=tuple(payload["context"]["place_ref"]),
             version_ctx=tuple(payload["context"]["version_ctx"]),
-            org_cue=frozenset(payload["context"].get("org_cue", ())),
+            org_cue=frozenset(payload["context"]["org_cue"]),
         ),
         structured=StructuredAssets(key_type=key_type, key_stems=key_stems),
         ru_pii=_build_ru_pii(payload["ru_pii"]),
@@ -458,8 +458,12 @@ class Assets:
             raw[:] = b"\x00" * len(raw)
         with self._lock:
             self._current = built
+        # No gc.collect() here: load() runs on every RENEWAL (~ttl/3), and a full-heap
+        # collect over the ~350 MB model stack, on N workers sharing one cadence, is a
+        # recurring pause. `del payload` unreferences the parsed dict and the raw JSON blob
+        # is already zeroed above; natural GC reclaims them. The forced collect stays in
+        # unload() only (rare, terminal).
         del payload
-        gc.collect()
 
     def unload(self) -> None:
         """Drop the assets so the objects are actually collected.

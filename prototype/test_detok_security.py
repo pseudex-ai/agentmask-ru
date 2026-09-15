@@ -179,12 +179,16 @@ async def _chunk_limit_calls() -> None:
     service._DETOK_MAX_PER_MIN = 1
     try:
         org = "chunk-cap-org"
+        tok = service._vault(org).tokenize("+7 999 500 40 30", "PHONE")   # a real minted token
         service.AUDIT.record_detok(org, "gateway", 5, 0)      # already over the cap
         gw = {"Authorization": f"Bearer {os.environ['PSEUDEX_GATEWAY_TOKEN']}"}
         transport = httpx.ASGITransport(app=service.app)
         async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+            # A delta carrying a MINTED token — a chunk that could disclose is what the cap
+            # gates; a chunk with no minted token discloses nothing and is not rate-limited
+            # (the minted-token early-out).
             r = await client.post("/unmask_chunk", headers=gw, json={
-                "org_id": org, "delta": "x", "carry": "", "flush": True})
+                "org_id": org, "delta": f"на {tok} перезвоним", "carry": "", "flush": True})
         check(r.status_code == 429, "F1 /unmask_chunk honors the detok rate limit",
               f"status={r.status_code}")
     finally:

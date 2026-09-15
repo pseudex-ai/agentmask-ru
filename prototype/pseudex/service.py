@@ -750,26 +750,23 @@ async def unmask_chunk(request: Request) -> JSONResponse:
     blocked = _check_org(org_id)
     if blocked:
         return blocked
-    # /unmask_chunk resolves real values too, so it is under the SAME value-based cap
-    # and audit as /unmask (pentest F1: it was org-bound only, and many value types
-    # packed into one delta recovered full PII off an untraced /detoks). The rate
-    # check reads the shared value counter; the audit row (below) is written only
-    # when a value was actually disclosed or a fake was emitted — a carry that merely
-    # differs from the delta is not a disclosure, so an ordinary stream leaves no
-    # per-chunk noise.
-    if not await anyio.to_thread.run_sync(_detok_rate_ok, org_id):
-        return JSONResponse({"error": "detok rate limit exceeded"}, status_code=429)
+    # /unmask_chunk resolves real values too, so it is under the SAME value-based cap and
+    # audit as /unmask (pentest F1: many value types packed into one delta recovered full
+    # PII off an untraced /detoks). Both live in `_unmask_chunk_leg` behind a minted-token
+    # gate: a chunk whose (carry+delta) holds no minted token discloses
+    # nothing, so it pays neither the shared-audit rate SUM nor the per-chunk audit — an
+    # ordinary stream is mostly such chunks. One worker-thread hop, not three.
     delta = body.get("delta", "")
     carry = body.get("carry", "")
     if not isinstance(delta, str) or not isinstance(carry, str):
         return JSONResponse({"error": "delta and carry must be strings"}, status_code=400)
-    text, new_carry = await anyio.to_thread.run_sync(
-        _unmask_chunk_for, delta, carry, org_id, bool(body.get("flush", False)),
-        limiter=_MASK_LIMITER,
+    result = await anyio.to_thread.run_sync(
+        _unmask_chunk_leg, delta, carry, org_id, bool(body.get("flush", False)),
+        _detok_actor(body), limiter=_MASK_LIMITER,
     )
-    await anyio.to_thread.run_sync(
-        _audit_chunk, org_id, _detok_actor(body), delta, carry, text, new_carry
-    )
+    if result is _RATE_LIMITED:
+        return JSONResponse({"error": "detok rate limit exceeded"}, status_code=429)
+    text, new_carry = result
     return JSONResponse({"text": text, "carry": new_carry})
 
 
@@ -835,27 +832,33 @@ def _response_texts(response: dict[str, object]) -> list[str]:
     return out
 
 
-def _unmask_chunk_for(delta: str, carry: str, org_id: str,
-                      flush: bool) -> tuple[str, str]:
-    """Vault resolved inside the worker thread — see _mask_request."""
-    return unmask_stream_chunk(delta, carry, _vault(org_id), flush)
+_RATE_LIMITED = object()  # sentinel: this org is over its per-minute detok VALUE cap
 
 
-def _audit_chunk(org_id: str, actor: str, delta: str, carry: str,
-                 text: str, new_carry: str) -> None:
-    """Record a streaming detok disclosure — counts only (pentest F1). A token
-    resolved in this chunk was a minted token in the input (carry+delta) and is gone
-    from the output (text+new_carry); a minted token still standing in the EMITTED
-    text is a fake that reached the caller (a token carried over to `new_carry` is
-    split across the boundary, not yet emitted, so it is neither). Written only when
-    something happened, so an ordinary stream leaves no per-chunk noise."""
+def _unmask_chunk_leg(delta: str, carry: str, org_id: str, flush: bool, actor: str):
+    """Streaming detok on the worker thread, behind a minted-token gate (pentest F1). The
+    minted tokens in the input (`before`) are computed ONCE — if there are none, the chunk
+    cannot disclose a value, so it skips the shared-audit rate SUM and the audit; an
+    ordinary stream is mostly such chunks. `_minted_in` (residual_tokens) is COMPLETE — it
+    catches reformatted numbers (a spaced phone token a bare token_re would miss). A chunk
+    that carries a minted token pays the value-based cap (over → the _RATE_LIMITED
+    sentinel) and, after resolving, records a counts-only row reusing `before`: a token
+    gone from the EMITTED text was disclosed; a token still standing there is a fake that
+    reached the caller; one carried to new_carry is split across the boundary, not yet
+    emitted, so it is neither."""
     vault = _vault(org_id)
     before = _minted_in([carry, delta], vault)
-    after = _minted_in([text, new_carry], vault)
+    if not before:
+        return unmask_stream_chunk(delta, carry, vault, flush)
+    if not _detok_rate_ok(org_id):
+        return _RATE_LIMITED
+    text, new_carry = unmask_stream_chunk(delta, carry, vault, flush)
     emitted = _minted_in([text], vault)
-    disclosed = len(before - after)
+    pending = _minted_in([new_carry], vault)
+    disclosed = len(before - emitted - pending)
     if disclosed or emitted:
         AUDIT.record_detok(org_id, actor, disclosed, len(emitted))
+    return text, new_carry
 
 
 @app.post("/spans", dependencies=[Depends(_require_gateway)])

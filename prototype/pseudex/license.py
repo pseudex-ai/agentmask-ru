@@ -339,6 +339,13 @@ class LicenseClient:
         # trips it, and a suspend longer than the whole grace window would have
         # expired the lease anyway. Freezing BOTH clocks consistently evades this
         # — a far higher bar than the one-line monotonic freeze it closes.
+        # KNOWN EDGE (accepted): a container that booted with a wildly-past clock,
+        # leased then, and got a LARGE forward NTP correction (> ttl+grace+skew ≈ 3
+        # days) before its next renewal would false-EXPIRE here. Rare (needs a
+        # multi-day boot-time jump inside one renewal window ≈ ttl/3), it fails
+        # CLOSED not open, and it self-heals: the next renewal re-stamps
+        # `_last_ok_wall` with the corrected clock, and a restart re-leases. Widening
+        # the skew to cover it would weaken the freeze detection it exists for.
         if self._last_ok_wall is not None:
             wall_elapsed = time.time() - self._last_ok_wall
             if wall_elapsed > self._ttl_seconds + self._grace_seconds + _CLOCK_SKEW_SECONDS:
