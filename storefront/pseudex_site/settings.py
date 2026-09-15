@@ -250,6 +250,15 @@ LICENSING_CA = _env("PSEUDEX_LICENSING_CA", "")
 YOOKASSA_SHOP_ID = _env("PSEUDEX_YOOKASSA_SHOP_ID")
 YOOKASSA_SECRET_KEY = _env("PSEUDEX_YOOKASSA_SECRET_KEY")
 
+# ЭКВАЙРИНГ (оплата картой) — ЯВНЫЙ РУБИЛЬНИК, ПО УМОЛЧАНИЮ ВЫКЛЮЧЕН.
+#
+# Пока эквайринг не одобрен провайдером, карту нельзя предлагать на проде, даже
+# если ключи ЮKassa настроены. Флаг по умолчанию OFF — «предохранитель снят
+# осознанно»: карта включается ТОЛЬКО когда `PSEUDEX_ACQUIRING_ENABLED=1` явно
+# задан в окружении. Одобрят эквайринг — ставим 1, деплой её включает. Так
+# прод не показывает карту без флага, а счёт по реквизитам работает всегда.
+ACQUIRING_ENABLED = _env("PSEUDEX_ACQUIRING_ENABLED", "0") == "1"
+
 # Our own details, printed on every счёт and акт. Configuration rather than a
 # template literal: they change (a bank, an address, an ОГРН correction) and a
 # change to a legal requisite must not require a deploy of the whole site.

@@ -53,6 +53,10 @@ def main() -> int:
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "pseudex_site.settings")
     os.environ["PSEUDEX_DEBUG"] = "1"
     os.environ["PSEUDEX_SECRET_KEY"] = "billing-e2e"
+    # Эквайринг по умолчанию OFF (прод не показывает карту до одобрения); этот
+    # тест ПРОВЕРЯЕТ карту, поэтому включает рубильник явно, а не полагается на
+    # .env.dev.
+    os.environ["PSEUDEX_ACQUIRING_ENABLED"] = "1"
     os.environ["PSEUDEX_DB_PATH"] = os.path.join(
         tempfile.mkdtemp(prefix="pseudex-billing-"), "b.sqlite3")
     # The licensing server of the local walkthrough stand (deploy/local.sh),

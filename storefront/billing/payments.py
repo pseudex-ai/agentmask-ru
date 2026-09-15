@@ -38,8 +38,13 @@ def is_available() -> bool:
     The button is hidden rather than shown-and-broken when no credentials are
     set: an invoice can always be paid by transfer, so a dead card button would
     be the only broken thing on a page that otherwise works.
+
+    И ГАСИТСЯ ЯВНЫМ РУБИЛЬНИКОМ, пока эквайринг не одобрен: даже с настроенными
+    ключами карта не предлагается, если `PSEUDEX_ACQUIRING_ENABLED` не выставлен
+    в 1. Так прод не показывает карту до одобрения, ничего не ломая — счёт по
+    реквизитам остаётся.
     """
-    return _configured()
+    return _configured() and settings.ACQUIRING_ENABLED
 
 
 def _client():
