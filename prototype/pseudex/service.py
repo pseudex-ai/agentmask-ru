@@ -294,11 +294,12 @@ _VAULTS_LOCK = threading.Lock()
 # caller asserts org_id), which is only safe when one org owns the whole container.
 _BOUND_ORG = os.environ.get("PSEUDEX_ORG", "").strip()
 
-# Detok rate limit (pentest B1): /unmask* discloses real values, so a compromised
-# credential can trawl the vault. Legitimate detok tracks model throughput; a sweep
-# runs orders of magnitude faster. The cap is per-org, per-minute, generous by
-# default (a real agent stays well under it), and the durable trace is the `detoks`
-# audit table — the limiter only blunts an egregious sweep.
+# Detok rate limit (pentest B1/F2): /unmask* discloses real values, so a compromised
+# credential can trawl the vault. The cap is on VALUES disclosed per org per minute
+# (SUM of resolved), NOT calls — one call can resolve many values, so a per-call cap
+# let a batch evade it (pentest F2). Legitimate detok tracks model throughput and
+# stays well under; a sweep runs orders of magnitude faster. The durable trace is the
+# `detoks` audit table; the limiter only blunts an egregious sweep. Tunable per deploy.
 _DETOK_WINDOW = 60.0
 _DETOK_MAX_PER_MIN = int(os.environ.get("PSEUDEX_DETOK_MAX_PER_MIN", "6000"))
 
@@ -315,24 +316,36 @@ def _check_org(org_id: str) -> "JSONResponse | None":
 
 
 def _detok_rate_ok(org_id: str) -> bool:
-    """False when this org has exceeded the per-minute detok cap. Counts the SHARED
-    SQLite audit (`detoks`), so all N SO_REUSEPORT workers enforce ONE cap — not N×
-    — and there is no per-worker in-memory table to grow unbounded per org. The
-    audited row each detok writes is the cross-worker signal this reads. A blocking
-    SQLite COUNT, so callers offload it to a worker thread."""
-    return AUDIT.detok_calls_since(org_id, time.time() - _DETOK_WINDOW) < _DETOK_MAX_PER_MIN
+    """False when this org has exceeded the per-minute detok VALUE cap. Reads the
+    SHARED SQLite audit (`detoks`), so all N SO_REUSEPORT workers enforce ONE cap —
+    not N× — and there is no per-worker in-memory table to grow unbounded per org.
+    Counts VALUES disclosed (SUM of resolved), not calls: one call can resolve many
+    values, so a per-call cap let a batch trawl the vault under it (pentest F2). A
+    blocking SQLite SUM, so callers offload it to a worker thread."""
+    return AUDIT.detok_values_since(org_id, time.time() - _DETOK_WINDOW) < _DETOK_MAX_PER_MIN
 
 
-def _audit_detok(org_id: str, actor: str, before: dict, after: dict,
-                 residual: list) -> None:
+def _minted_in(texts: list, vault: Vault) -> set:
+    """The minted tokens standing in these texts, by the SAME recognizer as the
+    residual signal — so 'disclosed' is symmetric with 'residual': a token present
+    in the INPUT and gone from the OUTPUT is a real value the call resolved."""
+    found: set = set()
+    for text in texts:
+        if isinstance(text, str):
+            found.update(residual_tokens(text, vault))
+    return found
+
+
+def _audit_detok(org_id: str, actor: str, before: dict, residual: list) -> None:
     """Record that a detok call disclosed real values — counts only, never values
-    (pentest B1). `resolved` = texts where detok actually substituted something;
-    `misses` = substitutes that failed to resolve (a sweep of guessed tokens shows
-    as high misses and high call volume)."""
-    in_texts = _response_texts(before)
-    out_texts = _response_texts(after)
-    resolved = sum(1 for a, b in zip(in_texts, out_texts) if a != b)
-    AUDIT.record_detok(org_id, actor, resolved, len(residual))
+    (pentest B1). `resolved` = the number of minted tokens the call actually resolved
+    (present in the input response, gone from the residual), so a call carrying many
+    values in one text counts as many, not one (pentest F2); `misses` = substitutes
+    that failed to resolve (a sweep of guessed tokens shows as high misses and high
+    call volume)."""
+    before_tokens = _minted_in(_response_texts(before), _vault(org_id))
+    disclosed = len(before_tokens - set(residual))
+    AUDIT.record_detok(org_id, actor, disclosed, len(residual))
 
 
 def _detok_actor(body: dict) -> str:
@@ -634,7 +647,7 @@ async def unmask(request: Request) -> JSONResponse:
     # decide what to do — refuse the tool call, retry, or ask the model again.
     residual = _residual_for(result, org_id)
     await anyio.to_thread.run_sync(
-        _audit_detok, org_id, _detok_actor(body), response, result, residual
+        _audit_detok, org_id, _detok_actor(body), response, residual
     )
     payload: dict[str, object] = {"response": result}
     if residual:
@@ -687,12 +700,11 @@ async def unmask_arguments_endpoint(request: Request) -> JSONResponse:
     if not isinstance(arguments, list) or not all(isinstance(a, str) for a in arguments):
         return JSONResponse({"error": "arguments must be a list of strings"},
                             status_code=400)
-    restored, residual = await anyio.to_thread.run_sync(
+    restored, residual, disclosed = await anyio.to_thread.run_sync(
         _unmask_arguments_for, arguments, org_id, limiter=_MASK_LIMITER
     )
-    resolved = sum(1 for a, b in zip(arguments, restored) if a != b)
     await anyio.to_thread.run_sync(
-        AUDIT.record_detok, org_id, _detok_actor(body), resolved, len(residual)
+        AUDIT.record_detok, org_id, _detok_actor(body), disclosed, len(residual)
     )
     # The same signal `/unmask` carries, and it matters MORE here: a substitute
     # that fails to resolve inside a tool call is a fake reaching the tool, which
@@ -738,13 +750,15 @@ async def unmask_chunk(request: Request) -> JSONResponse:
     blocked = _check_org(org_id)
     if blocked:
         return blocked
-    # No per-chunk rate limit or audit row here: this is the streaming flat-text
-    # leg (one SSE delta at a time), so a real stream is many chunks and the carry
-    # makes text differ from delta on almost every one — a per-chunk trace would be
-    # noise, not signal. It is also the weakest sweep vector (a value at a time via
-    # flat substitution, vs /unmask returning a whole detokenized response). The
-    # org bind above still stops cross-tenant reads; the audited+limited vectors are
-    # /unmask and /unmask_arguments.
+    # /unmask_chunk resolves real values too, so it is under the SAME value-based cap
+    # and audit as /unmask (pentest F1: it was org-bound only, and many value types
+    # packed into one delta recovered full PII off an untraced /detoks). The rate
+    # check reads the shared value counter; the audit row (below) is written only
+    # when a value was actually disclosed or a fake was emitted — a carry that merely
+    # differs from the delta is not a disclosure, so an ordinary stream leaves no
+    # per-chunk noise.
+    if not await anyio.to_thread.run_sync(_detok_rate_ok, org_id):
+        return JSONResponse({"error": "detok rate limit exceeded"}, status_code=429)
     delta = body.get("delta", "")
     carry = body.get("carry", "")
     if not isinstance(delta, str) or not isinstance(carry, str):
@@ -752,6 +766,9 @@ async def unmask_chunk(request: Request) -> JSONResponse:
     text, new_carry = await anyio.to_thread.run_sync(
         _unmask_chunk_for, delta, carry, org_id, bool(body.get("flush", False)),
         limiter=_MASK_LIMITER,
+    )
+    await anyio.to_thread.run_sync(
+        _audit_chunk, org_id, _detok_actor(body), delta, carry, text, new_carry
     )
     return JSONResponse({"text": text, "carry": new_carry})
 
@@ -762,14 +779,20 @@ def _spans_for_texts(texts: list[object], org_id: str) -> list[list[dict[str, ob
 
 
 def _unmask_arguments_for(arguments: list[str],
-                          org_id: str) -> tuple[list[str], list[str]]:
-    """Vault resolved inside the worker thread — see _mask_request."""
+                          org_id: str) -> tuple[list[str], list[str], int]:
+    """Vault resolved inside the worker thread — see _mask_request. Returns the
+    restored arguments, the residual (substitutes that failed to resolve — a fake
+    reaching the tool), and the count of real values DISCLOSED (minted tokens in the
+    input arguments, gone from the output), which is what the F2 value-based rate
+    limit and audit count — many values in one argument count as many, not one."""
     vault = _vault(org_id)
     restored = [unmask_arguments(raw, vault) for raw in arguments]
     residual: list[str] = []
     for text in restored:
         residual.extend(residual_tokens(text, vault))
-    return restored, sorted(set(residual))
+    residual = sorted(set(residual))
+    disclosed = len(_minted_in(arguments, vault) - set(residual))
+    return restored, residual, disclosed
 
 
 def _unmask_for(response: dict[str, object], org_id: str) -> dict[str, object]:
@@ -816,6 +839,23 @@ def _unmask_chunk_for(delta: str, carry: str, org_id: str,
                       flush: bool) -> tuple[str, str]:
     """Vault resolved inside the worker thread — see _mask_request."""
     return unmask_stream_chunk(delta, carry, _vault(org_id), flush)
+
+
+def _audit_chunk(org_id: str, actor: str, delta: str, carry: str,
+                 text: str, new_carry: str) -> None:
+    """Record a streaming detok disclosure — counts only (pentest F1). A token
+    resolved in this chunk was a minted token in the input (carry+delta) and is gone
+    from the output (text+new_carry); a minted token still standing in the EMITTED
+    text is a fake that reached the caller (a token carried over to `new_carry` is
+    split across the boundary, not yet emitted, so it is neither). Written only when
+    something happened, so an ordinary stream leaves no per-chunk noise."""
+    vault = _vault(org_id)
+    before = _minted_in([carry, delta], vault)
+    after = _minted_in([text, new_carry], vault)
+    emitted = _minted_in([text], vault)
+    disclosed = len(before - after)
+    if disclosed or emitted:
+        AUDIT.record_detok(org_id, actor, disclosed, len(emitted))
 
 
 @app.post("/spans", dependencies=[Depends(_require_gateway)])

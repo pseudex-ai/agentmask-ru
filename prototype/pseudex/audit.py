@@ -193,10 +193,25 @@ class AuditLog:
             self._conn.commit()
 
     def detok_calls_since(self, customer: str, since: float) -> int:
-        """How many /unmask* calls this customer made since `since` — the window
-        the cross-worker rate limiter reads."""
+        """How many /unmask* calls this customer made since `since` — the trace of
+        activity (a sweep shows as call volume). NOT what the rate limiter reads:
+        one call can resolve many values, so a per-call cap let a batch trawl the
+        vault under it (pentest F2). The limiter reads `detok_values_since`."""
         row = self._fetchone(
             "SELECT COUNT(*) FROM detoks WHERE customer=? AND ts>=?",
+            (customer, since),
+        )
+        return int(row[0]) if row else 0
+
+    def detok_values_since(self, customer: str, since: float) -> int:
+        """Real VALUES this customer's detok disclosed since `since` — SUM(resolved),
+        not COUNT(*). The disclosure bound is the number of values pulled, and a
+        single /unmask* call can resolve many (batching evaded a per-call cap,
+        pentest F2), so the cross-worker rate limiter reads this. Misses do not
+        count — a sweep of guessed tokens discloses nothing, and shows in the trace
+        (`detok_calls_since`, `detok_summary` miss_rate) instead."""
+        row = self._fetchone(
+            "SELECT COALESCE(SUM(resolved),0) FROM detoks WHERE customer=? AND ts>=?",
             (customer, since),
         )
         return int(row[0]) if row else 0

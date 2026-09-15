@@ -111,11 +111,99 @@ def test_app_org_bind_and_audit() -> None:
         service._BOUND_ORG = ""
 
 
+def test_detok_counts_values_not_calls() -> None:
+    """F2: one call resolving N values records N, not 1 — a batch of many values in
+    ONE call cannot hide under a per-CALL cap. Counts the actual minted tokens the
+    call resolved (present in input, gone from output), via the same residual_tokens
+    the residual signal already uses."""
+    org = "batch-values-org"
+    v = service._vault(org)
+    toks = [v.tokenize(f"+7 999 111 22 {i:02d}", "PHONE") for i in range(3)]
+    one_arg = "звоните " + " и ".join(toks)              # 3 values, ONE call/arg
+    _restored, _residual, disclosed = service._unmask_arguments_for([one_arg], org)
+    check(disclosed == 3,
+          "F2 one batched call counts 3 resolved VALUES (a call-counter sees 1)",
+          f"disclosed={disclosed}")
+
+
+def test_rate_limit_by_values() -> None:
+    """F2: the cap is on VALUES disclosed, not calls. One call disclosing `cap`
+    values trips it; a pure-miss sweep does not consume the disclosure budget."""
+    saved = service._DETOK_MAX_PER_MIN
+    service._DETOK_MAX_PER_MIN = 5
+    try:
+        org = "values-cap-org"
+        fresh = service._detok_rate_ok(org)                   # 0 -> allowed
+        service.AUDIT.record_detok(org, "gateway", 5, 0)      # ONE call, 5 values
+        over = not service._detok_rate_ok(org)                # 5 >= 5 -> refused
+        calls = service.AUDIT.detok_calls_since(org, 0)
+        values = service.AUDIT.detok_values_since(org, 0)
+        service.AUDIT.record_detok(org, "gateway", 0, 50)     # sweep, no values
+        after_sweep = service.AUDIT.detok_values_since(org, 0)
+        check(fresh and over and calls == 1 and values == 5 and after_sweep == 5,
+              "F2 rate limit counts VALUES not calls (one batched call trips it)",
+              f"calls={calls} values={values} after_sweep={after_sweep}")
+    finally:
+        service._DETOK_MAX_PER_MIN = saved
+
+
+async def _chunk_audit_calls() -> None:
+    """F1: /unmask_chunk writes a counts-only detok row when it discloses a value."""
+    service._BOUND_ORG = ""
+    org = "chunk-audit-org"
+    tok = service._vault(org).tokenize("+7 999 777 66 55", "PHONE")
+    gw = {"Authorization": f"Bearer {os.environ['PSEUDEX_GATEWAY_TOKEN']}"}
+    before = service.AUDIT.detok_calls_since(org, 0)
+    transport = httpx.ASGITransport(app=service.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+        r = await client.post("/unmask_chunk", headers=gw, json={
+            "org_id": org, "delta": f"на {tok} перезвоним", "carry": "", "flush": True})
+    after = service.AUDIT.detok_calls_since(org, 0)
+    summary = service.AUDIT.detok_summary(org, 0)
+    real_back = "777" in r.json().get("text", "")
+    check(r.status_code == 200 and after == before + 1
+          and summary["resolved"] >= 1 and real_back,
+          "F1 /unmask_chunk writes a detok audit row on disclosure",
+          f"status={r.status_code} rows {before}->{after} "
+          f"resolved={summary['resolved']} real={real_back}")
+
+
+async def _chunk_limit_calls() -> None:
+    """F1: /unmask_chunk is under the same value cap as /unmask."""
+    service._BOUND_ORG = ""
+    saved = service._DETOK_MAX_PER_MIN
+    service._DETOK_MAX_PER_MIN = 1
+    try:
+        org = "chunk-cap-org"
+        service.AUDIT.record_detok(org, "gateway", 5, 0)      # already over the cap
+        gw = {"Authorization": f"Bearer {os.environ['PSEUDEX_GATEWAY_TOKEN']}"}
+        transport = httpx.ASGITransport(app=service.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+            r = await client.post("/unmask_chunk", headers=gw, json={
+                "org_id": org, "delta": "x", "carry": "", "flush": True})
+        check(r.status_code == 429, "F1 /unmask_chunk honors the detok rate limit",
+              f"status={r.status_code}")
+    finally:
+        service._DETOK_MAX_PER_MIN = saved
+
+
+def test_unmask_chunk_audited_and_limited() -> None:
+    import anyio
+    try:
+        anyio.run(_chunk_audit_calls)
+        anyio.run(_chunk_limit_calls)
+    finally:
+        service._BOUND_ORG = ""
+
+
 def main() -> None:
     test_preview_narrowed()
     test_record_detok_counts_only()
     test_rate_limit()
+    test_rate_limit_by_values()
+    test_detok_counts_values_not_calls()
     test_app_org_bind_and_audit()
+    test_unmask_chunk_audited_and_limited()
     failed = [n for ok, n, _ in RESULTS if not ok]
     print("=" * 60)
     print(f"{len(RESULTS) - len(failed)}/{len(RESULTS)} passed")
