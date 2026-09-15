@@ -30,6 +30,7 @@ import testkit
 testkit.load_dev_bundle()
 
 from pseudex import morph_names, translit  # noqa: E402
+from pseudex.assets import ASSETS  # noqa: E402
 from pseudex.redact import unmask_arguments  # noqa: E402
 from pseudex.vault import Vault  # noqa: E402
 
@@ -90,7 +91,8 @@ def main() -> int:
             break
     else:
         raise RuntimeError("no fake without an ambiguous letter in 40 draws")
-    for standard, label in ((translit.ICAO, "модель писала по ICAO"), (translit.GOST_B, "модель писала по ГОСТ")):
+    _std = ASSETS.get().translit.tables  # leased now: (ICAO, GOST_B, MVD_2010, COMMON)
+    for standard, label in ((_std[0], "модель писала по ICAO"), (_std[1], "модель писала по ГОСТ")):
         latin = " ".join(translit.apply(standard, w).upper() for w in reversed(fake.split()))
         got = _restore(vault, {"contact": {"name_latin": latin}})
         failures += not _check(f"ю, которого в подмене не было → «yu» ({label})",

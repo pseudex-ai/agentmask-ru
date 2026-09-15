@@ -283,6 +283,17 @@ def _tuning_payload() -> dict[str, object]:
             "ctx_types": [list(entry) for entry in assets_source.CTX_TYPES],
             "inn_context": list(assets_source.INN_CONTEXT),
         },
+        # Transliteration machinery tables (align/render/fold). Value order inside
+        # each UNITS entry, the ENDINGS order, the four-TABLES order and the FOLD
+        # sequence are load-bearing — JSON arrays preserve them (sort_keys touches
+        # only object KEYS, and no reader depends on UNITS/table key order).
+        "translit_machine": {
+            "units": {unit: list(opts) for unit, opts in assets_source.TRANSLIT_UNITS.items()},
+            "endings": list(assets_source.TRANSLIT_ENDINGS),
+            "tables": [assets_source.TRANSLIT_ICAO, assets_source.TRANSLIT_GOST_B,
+                       assets_source.TRANSLIT_MVD_2010, assets_source.TRANSLIT_COMMON],
+            "fold": [list(pair) for pair in assets_source.TRANSLIT_FOLD],
+        },
         "priority": assets_source.PRIORITY,
         "lookalike": assets_source.LOOKALIKE,
     }

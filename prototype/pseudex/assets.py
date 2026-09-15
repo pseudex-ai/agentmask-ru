@@ -189,6 +189,18 @@ class RuPiiAssets:
 
 
 @dataclass(frozen=True)
+class TranslitAssets:
+    """The measured transliteration tables (align/render/fold). Leased, not
+    compiled: TUNING mined from control-arm outputs, not a standard. The ALGORITHM
+    that uses them lives in pseudex.translit."""
+    units: dict[str, tuple[str, ...]]
+    default: dict[str, str]
+    endings: tuple[str, ...]
+    tables: tuple[dict[str, str], ...]
+    fold: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
 class DetectionAssets:
     version: str
     # Source lines the upstream licences oblige a running process to carry.
@@ -204,6 +216,7 @@ class DetectionAssets:
     context: ContextAssets
     structured: StructuredAssets
     ru_pii: RuPiiAssets
+    translit: TranslitAssets
     priority: dict[str, int]
     lookalike: dict[str, str]
     # Per-customer watermark (licensing/watermark.py). Inert for detection; it
@@ -335,6 +348,19 @@ def _build_ru_pii(raw: dict[str, object]) -> RuPiiAssets:
     return RuPiiAssets(ctx_patterns=ctx_patterns, inn_context=tuple(raw["inn_context"]))
 
 
+def _build_translit(raw: dict[str, object]) -> TranslitAssets:
+    units = {str(unit): tuple(opts) for unit, opts in raw["units"].items()}
+    return TranslitAssets(
+        units=units,
+        # DEFAULT is the first rendering of each unit — derived here, not shipped,
+        # exactly as the compiled engine used to derive it from the UNITS literal.
+        default={unit: opts[0] for unit, opts in units.items()},
+        endings=tuple(raw["endings"]),
+        tables=tuple(dict(table) for table in raw["tables"]),
+        fold=tuple((str(source), str(marker)) for source, marker in raw["fold"]),
+    )
+
+
 def _build(payload: dict[str, object]) -> DetectionAssets:
     # Ordered pairs on the wire, because the prefix fallback in
     # `structured._key_type` resolves ties by order — see licensing/pack.py.
@@ -360,6 +386,7 @@ def _build(payload: dict[str, object]) -> DetectionAssets:
         ),
         structured=StructuredAssets(key_type=key_type, key_stems=key_stems),
         ru_pii=_build_ru_pii(payload["ru_pii"]),
+        translit=_build_translit(payload["translit_machine"]),
         priority=dict(payload["priority"]),
         lookalike=dict(payload["lookalike"]),
         watermark=str(payload.get("_wm", "")),

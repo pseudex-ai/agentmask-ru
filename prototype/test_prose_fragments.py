@@ -18,6 +18,7 @@ import testkit
 testkit.load_dev_bundle()
 
 from pseudex import translit  # noqa: E402
+from pseudex.assets import ASSETS  # noqa: E402
 from pseudex.detect_all import Detector  # noqa: E402
 from pseudex.redact import mask_text, unmask_text  # noqa: E402
 from pseudex.vault import Vault  # noqa: E402
@@ -47,7 +48,8 @@ def main() -> int:
     passport = re.search(r"паспорт (\d{2} ?\d{2} \d{6})", masked).group(1)  # type: ignore[union-attr]
     phone = re.sub(r"\D", "", re.search(r"телефон ([\d\s()+\-]+)", masked).group(1))  # type: ignore[union-attr]
     surname, given, patronymic = name.split()
-    latin = " ".join(translit.apply(translit.ICAO, w).capitalize() for w in (surname, given))
+    _icao = ASSETS.get().translit.tables[0]  # leased now: (ICAO, GOST_B, MVD_2010, COMMON)
+    latin = " ".join(translit.apply(_icao, w).capitalize() for w in (surname, given))
     snils_digits = re.sub(r"\D", "", snils)
 
     for label, text, want in (

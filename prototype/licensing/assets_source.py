@@ -1070,6 +1070,76 @@ ORG_CUE: tuple[str, ...] = (
     "поставщик", "поставщика", "магазин", "магазина", "бренд", "бренда",
 )
 
+# --- transliteration machinery (align/render/fold) ------------------------
+# TUNING-DATA mined from 1 812 aligned control-arm words (counts in the inline
+# notes): the per-unit renderings the round-trip learns from and defaults to.
+# NOT a standard → rides in the lease, not the binary. The align/render/fold
+# ALGORITHM stays in pseudex.translit. Order within a UNITS tuple is the order
+# `align` tries them, the first is what DEFAULT writes; the four TABLES order and
+# the FOLD sequence are load-bearing (see pseudex.translit for why).
+TRANSLIT_UNITS: dict[str, tuple[str, ...]] = {
+    # endings: «-ий» iy 77:y 51, «-ый» y 24:yy 2, «-ия» ia 36:0, «ья» ia 22:ya 2,
+    # «кс» ks 25:x 10, «ей» ei 22:ey 12, «йя» one ya (Майя→Maya, not Mayya).
+    "ий": ("iy", "y", "ii", "ij", "yi"),
+    "ый": ("y", "yy", "yi", "yj", "iy"),
+    "ия": ("ia", "iya", "iia", "ija"),
+    "ья": ("ia", "ya", "ja"),
+    "кс": ("ks", "x"),
+    "ей": ("ei", "ey", "ej"),
+    "йя": ("ya", "iya", "ja"),
+    "а": ("a",), "б": ("b",), "в": ("v",), "г": ("g",), "д": ("d",),
+    "е": ("e", "ye", "ie", "je"), "ё": ("e", "yo", "io", "jo"),
+    "ж": ("zh", "j"), "з": ("z",), "и": ("i",), "й": ("y", "i", "j"),
+    "к": ("k",), "л": ("l",), "м": ("m",), "н": ("n",), "о": ("o",),
+    "п": ("p",), "р": ("r",), "с": ("s",), "т": ("t",), "у": ("u",),
+    "ф": ("f",), "х": ("kh", "h", "x"), "ц": ("ts", "tc", "c", "cz"),
+    "ч": ("ch",), "ш": ("sh",), "щ": ("shch", "sch", "shh"),
+    "ъ": ("", "ie"), "ы": ("y",), "ь": ("",), "э": ("e",),
+    "ю": ("yu", "iu", "ju"), "я": ("ya", "ia", "ja"),
+}
+TRANSLIT_ENDINGS: tuple[str, ...] = ("ий", "ый", "ия", "ья", "кс", "йя", "ей")
+# The four standards, in the order `table_for`/`variants` try them.
+TRANSLIT_ICAO: dict[str, str] = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
+    "ж": "zh", "з": "z", "и": "i", "й": "i", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch",
+    "ъ": "ie", "ы": "y", "ь": "", "э": "e", "ю": "iu", "я": "ia",
+}
+TRANSLIT_GOST_B: dict[str, str] = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "yo",
+    "ж": "zh", "з": "z", "и": "i", "й": "j", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "x", "ц": "cz", "ч": "ch", "ш": "sh", "щ": "shh",
+    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+}
+TRANSLIT_MVD_2010: dict[str, str] = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
+    "ж": "zh", "з": "z", "и": "i", "й": "i", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "kh", "ц": "tc", "ч": "ch", "ш": "sh", "щ": "shch",
+    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "iu", "я": "ia",
+}
+TRANSLIT_COMMON: dict[str, str] = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
+    "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sch",
+    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+}
+# The canonical-collision fold. ORDER CRITICAL: «shch» before «sch»/«sh», «ch»
+# before bare «c» (ц), digraph vowels before their single letters.
+TRANSLIT_FOLD: tuple[tuple[str, str], ...] = (
+    ("shch", "S"), ("shh", "S"), ("sch", "S"),
+    ("zh", "Z"), ("ch", "C"), ("sh", "H"),
+    ("kh", "X"), ("ks", "X"), ("x", "X"),
+    ("ts", "T"), ("tc", "T"), ("cz", "T"), ("c", "T"),
+    ("yu", "U"), ("iu", "U"), ("ju", "U"),
+    ("iya", "A"), ("iia", "A"), ("ija", "A"), ("ya", "A"), ("ia", "A"), ("ja", "A"),
+    ("yo", "E"), ("jo", "E"), ("ye", "E"), ("ie", "E"), ("e", "E"),
+    ("y", "I"), ("j", "I"), ("i", "I"),
+)
+
 # --- structured key->type ------------------------------------------------
 
 # Биографический контекст: вопрос ПРО человека, а не запись о клиенте.
