@@ -108,11 +108,39 @@ def main() -> int:
         check("и спрашивает существующие таблицы", not strangers,
               ", ".join(strangers) or f"проверено {sorted(set(asked))}")
 
+    # ── КОНТЕЙНЕР МИГРАЦИЙ УМЕЕТ ВСЁ, ЧТО ЗАПУСКАЕТ ────────────────────────
+    #
+    # `seed_plans` отправляет бесплатный тариф на лицензионный сервер: лимиты
+    # исполняет он и знает их по коду тарифа, а незнакомый код отклоняет при
+    # выпуске ключа. Если у контейнера миграций нет адреса и токена, команда
+    # видит ненастроенный сервер, честно предупреждает и ПРОПУСКАЕТ отправку —
+    # выкат проходит зелёным, а первая же регистрация падает на выпуске ключа,
+    # и узнаём мы об этом по жалобе клиента.
+    #
+    # Тот же класс расхождения этот файл уже ловил: `compose.local.yml` объявлял
+    # токен для витрины и не передавал его лицензионному сервису, и консоль
+    # говорила «цифр сейчас нет» вместо «нас не пускают».
+    compose = (_DEPLOY / "compose.yml").read_text(encoding="utf-8")
+    start = compose.index("  storefront-migrate:")
+    end = compose.index("\n  ", compose.index("depends_on:", start))
+    block = compose[start:compose.index("\n\n", start)]
+    runs_seed = "seed_plans" in block
+    check("контейнер миграций сеет тарифы", runs_seed, block[:120])
+    if runs_seed:
+        for needed in ("PSEUDEX_LICENSING_ADMIN_URL",
+                       "PSEUDEX_LICENSE_STOREFRONT_TOKEN"):
+            check(f"и знает лицензионный сервер: {needed}", needed in block,
+                  "иначе тариф туда не уедет, а выкат будет зелёным")
+        check("и ждёт, пока сервер оживёт",
+              "license:" in block and "service_healthy" in block,
+              "иначе гонка решает, доедет тариф или нет")
+
     print()
     if FAILURES:
         print(f"{len(FAILURES)} провалено: {', '.join(FAILURES)}")
         return 1
-    print("скрипты деплоя называют существующие таблицы")
+    print("скрипты деплоя называют существующие таблицы, "
+          "а контейнер миграций умеет всё, что запускает")
     return 0
 
 
