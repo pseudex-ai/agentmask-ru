@@ -529,9 +529,28 @@ def test_fuller_mention_reuses_the_substitute() -> None:
         assert args == {"last_name": "Букин", "first_name": "Сергей"}, args
         assert unmask_text(f"{two.split()[1]} {two.split()[0]} звонил", people) == "Букин Сергей звонил"
 
-        a = Vault(path, "acme").for_conversation("p-2").tokenize("гусева марина", "NAME")
-        b = Vault(path, "acme").for_conversation("p-3").tokenize("Гусева Марина Олеговна", "NAME")
-        assert b.split()[:2] != a.split(), "a name grown in one conversation is not grown from another's"
+        # ВЫРАЩЕН ЛИ ТОКЕН — ЭТО ФАКТ В СТРОКЕ, А НЕ СОВПАДЕНИЕ СЛОВ.
+        #
+        # Здесь стояло `b.split()[:2] != a.split()`, и это проксИ, которое врёт
+        # примерно раз на тысячу прогонов: подмены берутся из конечного пула, и
+        # две НЕЗАВИСИМЫЕ выдачи изредка достают одну и ту же пару «фамилия +
+        # имя». Инвариант при этом цел — строки совпали случайно, а не потому,
+        # что вторая беседа заглянула в первую, — но проверка краснеет, и
+        # краснеет она в CI, где под рукой нет ничего, чем это отличить.
+        # Ложный красный дороже ложного зелёного: его начинают пролистывать, а
+        # потом пролистывают вместе с настоящим.
+        #
+        # `tokens.extends` отвечает на вопрос прямо: там лежит токен, из
+        # которого этот вырос, и пусто у свежевыпущенного.
+        shared = Vault(path, "acme")
+        a = shared.for_conversation("p-2").tokenize("гусева марина", "NAME")
+        b = shared.for_conversation("p-3").tokenize("Гусева Марина Олеговна", "NAME")
+        row = shared._conn.execute(  # noqa: SLF001 — соседние проверки читают так же
+            "SELECT extends FROM tokens WHERE customer=? AND token=?",
+            ("acme", b)).fetchone()
+        assert row is not None, ("токен второй беседы не записан", b)
+        assert not row[0], ("a name grown in one conversation is not grown from "
+                            "another's", a, b, row[0])
 
         twins = Vault(path, "acme").for_conversation("p-4")
         p1 = twins.tokenize("иванов пётр", "NAME")
