@@ -1,46 +1,307 @@
-/* The landing's two interactions: copy buttons and the demo tabs.
+/* Интерактив главной страницы.
  *
- * The demo examples are BUILT INTO THIS FILE and there is no input anywhere on
- * the page. That is the point rather than a simplification: an input here would
- * mean this server starts receiving other people's personal data, which is the
- * exact thing the product sells not doing. Anyone who wants to try their own
- * text does it in the local interface, inside their own contour.
+ * ПРИМЕРЫ ЖИВУТ ЗДЕСЬ, И НА СТРАНИЦЕ НЕТ НИ ОДНОГО ПОЛЯ ВВОДА ДЛЯ ТЕКСТА. Это
+ * не упрощение: поле «попробуйте на своём тексте» означало бы, что наш сервер
+ * начинает принимать чужие персональные данные — ровно то, что продукт продаёт
+ * НЕ делать. Кто хочет свой текст, делает это в локальном интерфейсе, внутри
+ * своего контура.
  *
- * Rendered with DOM nodes, never innerHTML — the strings below are ours today,
- * and a page that builds markup from data is one refactor away from being fed
- * something that isn't.
+ * Всё рисуется узлами DOM, никогда `innerHTML`. Строки ниже наши сегодня, но
+ * страница, которая собирает разметку из данных, на один рефакторинг отстоит от
+ * страницы, которую кормят данными, написанными не нами.
+ *
+ * Оформление узлов, созданных здесь, лежит классами в `landing.css`: этих узлов
+ * нет в разметке, поэтому второй копии стиля не возникает.
  */
+
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * ГЕРОЙ: ОДИН ЗАКАЗ ЦЕЛИКОМ
+ *
+ * Три разные заявки, а не одна по кругу: подмена везде своя — имя, документы,
+ * контакты. `text` — куски реплики; пара из двух строк это «настоящее» и
+ * «подмена» одного значения, одиночная строка — обычный текст.
+ * ──────────────────────────────────────────────────────────────────────────── */
+const HERO_STEPS = ["", "СООБЩЕНИЕ КЛИЕНТА", "НАХОДИМ", "ПОДМЕНЯЕМ",
+                    "МОДЕЛЬ ПОНЯЛА ЗАДАЧУ", "ВАША СИСТЕМА ПОЛУЧИЛА", "ГОТОВО"];
+
+const HERO_CASES = [
+  {
+    source: "МЕССЕНДЖЕР · КЛИЕНТ ПИШЕТ САМ",
+    text: [["здрасте! это "], ["волков дмитрий", "шилов виктор"],
+           [", заказ 4471\nможно завтра привезти? адрес "],
+           ["мончгорская 12 кв 84", "чистопольская 41 кв 57"],
+           ["\nтел "], ["89178347030", "89035571942"], [", он же в заказе"]],
+    decision: "Клиент просит перенести доставку на завтра и даёт адрес с телефоном.",
+    system: "ЗАЯВКА НА ПЕРЕНОС",
+    record: [["Клиент", "Волков Дмитрий"], ["Телефон", "+7 917 834-70-30"],
+             ["Адрес", "Мончегорская 12, кв. 84"]],
+    done: "Опечатка в улице исправлена до того, как адрес ушёл в CRM. Модель видела другую улицу.",
+  },
+  {
+    source: "ЗВОНОК · РАСШИФРОВКА ОПЕРАТОРА",
+    text: [["звонила "], ["ерёмина ольга", "соколова марина"], [", адрес записал со слов\n"],
+           ["фруктовая сто двадцать шесть", "грушевая шестьдесят три"], [", "],
+           ["тридцать четвёртая квартира", "пятьдесят седьмая квартира"],
+           ["\nдомофон не работает, звонить в дверь"]],
+    decision: "Создать обращение и предупредить курьера про домофон.",
+    system: "ОБРАЩЕНИЕ В CRM",
+    record: [["Клиент", "Ерёмина Ольга Тимуровна"], ["Адрес", "Фруктовая 126, кв. 34"],
+             ["Примечание", "домофон не работает"]],
+    done: "Числа словами легли в базу цифрами — в том виде, в каком их ждёт CRM.",
+  },
+  {
+    source: "ОПЕРАТОР · КОПИЯ ИЗ ФОРМЫ",
+    text: [["оформляем полис\n"], ["BITYUKOVA E. A.", "SOKOLOVA M. I."], [" (в паспорте "],
+           ["Битюкова Елена Андреевна", "Соколова Марина Игоревна"], [")\nснилс "],
+           ["112-233-445 95", "284-119-703 41"], [" инн "],
+           ["770512345678", "771903845206"]],
+    decision: "Заполнить черновик полиса — имя пришло в двух видах, но человек один.",
+    system: "ЧЕРНОВИК ПОЛИСА",
+    record: [["Страхователь", "Битюкова Елена Андреевна"], ["СНИЛС", "112-233-445 95"],
+             ["ИНН", "770512345678"]],
+    done: "Латиница из формы и имя из паспорта опознаны как один человек, контрольные суммы сошлись.",
+  },
+];
+
+function node(tag, className, text) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (text !== undefined) element.textContent = text;
+  return element;
+}
+
+/* Токен, который перетекает из настоящего значения в подмену. Обе версии лежат
+   в одной ячейке grid: ширина берётся по длинной, поэтому строка не дёргается
+   при разной длине настоящего и подменённого значения. */
+function heroToken(real, fake) {
+  const token = node("span", "hero-token");
+  token.append(node("span", "hero-token-real", real), node("span", "hero-token-fake", fake));
+  return token;
+}
+
+function heroBubble(label, tone, body) {
+  const bubble = node("div", `hero-bubble hero-bubble--${tone}`);
+  bubble.append(node("div", "hero-bubble-label", label));
+  const wrap = node("div", "hero-bubble-body");
+  wrap.appendChild(body);
+  bubble.appendChild(wrap);
+  return bubble;
+}
+
+function heroRecord(rows) {
+  const card = node("div", "hero-record");
+  rows.forEach(([label, value], index) => {
+    const row = node("div", "hero-record-row");
+    row.style.transitionDelay = `${index * 0.12}s`;
+    row.append(node("span", "hero-record-label", label),
+               node("span", "hero-record-value", value));
+    card.appendChild(row);
+  });
+  return card;
+}
+
+function heroBuild(index) {
+  const example = HERO_CASES[index];
+  const said = node("span", "hero-said");
+  example.text.forEach(([real, fake]) => {
+    said.appendChild(fake ? heroToken(real, fake) : document.createTextNode(real));
+  });
+  const dialog = node("div", "hero-dialog");
+  const bubbles = [
+    heroBubble(example.source, "muted", said),
+    heroBubble("МОДЕЛЬ ПОНЯЛА", "accent", node("span", "hero-prose", example.decision)),
+    heroBubble(example.system, "green", heroRecord(example.record)),
+    heroBubble("ГОТОВО", "green", node("span", "hero-prose hero-prose--dim", example.done)),
+  ];
+  bubbles.forEach((bubble) => dialog.appendChild(bubble));
+  return { dialog, bubbles, tokens: Array.from(dialog.querySelectorAll(".hero-token")) };
+}
+
+/* Фаза — единственное состояние героя, и каждый шаг ставит ровно один класс.
+   Поэтому «перемотать» историю в любую точку можно одним вызовом: это и делает
+   первый кадр, и он же показывает финал, когда движение выключено. */
+function heroApply(parts, phase) {
+  parts.bubbles.forEach((bubble, i) => {
+    const at = [1, 4, 5, 6][i];
+    bubble.classList.toggle("is-shown", phase >= at);
+    bubble.classList.toggle("is-lit", phase >= (i === 0 ? 3 : at));
+  });
+  parts.tokens.forEach((token) => {
+    token.classList.toggle("is-found", phase >= 2);
+    token.classList.toggle("is-swapped", phase >= 3);
+  });
+  parts.dialog.classList.toggle("is-filed", phase >= 5);
+}
+
+function heroStart() {
+  const stage = document.getElementById("hero-dialog");
+  const phaseLabel = document.getElementById("hero-phase");
+  if (!stage) return;
+
+  let index = 0;
+  let phase = reduceMotion ? 6 : 1;
+  let parts = heroBuild(index);
+  stage.replaceChildren(parts.dialog);
+  heroApply(parts, phase);
+  if (phaseLabel) phaseLabel.textContent = HERO_STEPS[phase];
+  /* БЕЗ ДВИЖЕНИЯ — СРАЗУ ФИНАЛ, А НЕ ПУСТАЯ ПАНЕЛЬ. Человек, который попросил
+     систему не двигать картинку, просил об этом, а не о том, чтобы остаться без
+     содержимого. */
+  if (reduceMotion) return;
+
+  setInterval(() => {
+    phase = (phase + 1) % 7;
+    /* Кадр 0 — пауза между заявками, на ней же меняется пример. */
+    if (phase === 0) {
+      index = (index + 1) % HERO_CASES.length;
+      parts = heroBuild(index);
+      stage.replaceChildren(parts.dialog);
+    }
+    heroApply(parts, phase);
+    if (phaseLabel) phaseLabel.textContent = HERO_STEPS[phase];
+  }, 1700);
+}
+
+heroStart();
+
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * ПОЛОСА ПРОЧИТАННОГО И ПОЯВЛЕНИЕ БЛОКОВ
+ * ──────────────────────────────────────────────────────────────────────────── */
+const header = document.querySelector("header.top");
+if (header) {
+  const line = node("div", "scroll-line");
+  header.appendChild(line);
+  const onScroll = () => {
+    const root = document.documentElement;
+    const max = root.scrollHeight - root.clientHeight;
+    line.style.width = `${max > 0 ? Math.min(1, root.scrollTop / max) * 100 : 0}%`;
+  };
+  window.addEventListener("scroll", onScroll, { passive: true });
+  onScroll();
+}
+
+const revealable = document.querySelectorAll("[data-reveal]");
+if (!("IntersectionObserver" in window)) {
+  /* Страховка на случай, когда наблюдателя нет: блоки начинают прозрачными, и
+     без того, кто снимет прозрачность, половина страницы просто не видна. */
+  revealable.forEach((element) => element.classList.add("is-in"));
+} else {
+  const shower = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      entry.target.classList.add("is-in");
+      shower.unobserve(entry.target);
+    });
+  }, { rootMargin: "-40px 0px -10% 0px" });
+  revealable.forEach((element) => shower.observe(element));
+}
+
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * СЧЁТЧИКИ
+ *
+ * Значение уже напечатано сервером — скрипт лишь досчитывает его на глазах,
+ * один раз, когда полоса попала в кадр. Поэтому без скриптов и до их запуска на
+ * странице стоит правильное число, а не ноль.
+ * ──────────────────────────────────────────────────────────────────────────── */
+function runCounters(cells) {
+  const started = performance.now();
+  const tick = (now) => {
+    const passed = Math.min(1, (now - started) / 1100);
+    const eased = 1 - Math.pow(1 - passed, 3);
+    cells.forEach((cell) => {
+      const target = Number(cell.dataset.countTo);
+      const digits = Number(cell.dataset.countDec || 0);
+      const shown = (target * eased).toFixed(digits).replace(".", ",");
+      cell.textContent = `${cell.dataset.countPrefix || ""}${shown}${cell.dataset.countSuffix || ""}`;
+    });
+    if (passed < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+const counters = Array.from(document.querySelectorAll("[data-count-to]"));
+if (counters.length && !reduceMotion && "IntersectionObserver" in window) {
+  const band = counters[0].closest("[data-counters]") || counters[0];
+  const watcher = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      runCounters(counters);
+      watcher.disconnect();
+    });
+  }, { rootMargin: "-80px 0px" });
+  watcher.observe(band);
+}
+
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * ДЕМО: ТРУДНЫЕ ФОРМЫ, А НЕ ПОКАЗАТЕЛЬНЫЕ
+ *
+ * Каждая — из тех, на которых детекция спотыкается: строчные без запятых, числа
+ * словами, латинская раскладка, значение, размазанное по репликам, речь после
+ * распознавания.
+ * ──────────────────────────────────────────────────────────────────────────── */
 const DEMOS = [
   {
-    orig: [["Позвоните "], ["Иванову Петру Сергеевичу", "pii"], [", заказ №A-4471,\nномер "], ["+7 916 214-88-03", "pii"], [", доставка на\n"], ["Москва, Ленинский пр-т 42, кв. 118", "pii"], ["."]],
-    masked: [["Позвоните "], ["Виктору Шилову", "fake"], [", заказ №A-4471,\nномер "], ["+7 903 557-19-42", "fake"], [", доставка на\n"], ["улицу Грушевую, 63, кв. 118", "fake"], ["."]],
+    hint: "Ни заглавных, ни запятых, ни слова «адрес». Опечатка в улице: так её пишет клиент, а не реестр.",
+    orig: [["клиент "], ["волков дмитрий", "pii"], [" адрес "], ["мончгорская 12 кв 84", "pii"],
+           ["\nтел "], ["89178347030", "pii"], [" перезвоните после шести"]],
+    masked: [["клиент "], ["шилов виктор", "fake"], [" адрес "], ["чистопольская 41 кв 57", "fake"],
+             ["\nтел "], ["89035571942", "fake"], [" перезвоните после шести"]],
   },
   {
-    orig: [['{\n  "order": "A-4471",\n  "customer": "'], ["Иванова Мария Львовна", "pii"], ['",\n  "phone": "'], ["+79162148803", "pii"], ['",\n  "email": "'], ["m.ivanova@acme.ru", "pii"], ['",\n  "total": 12400\n}']],
-    masked: [['{\n  "order": "A-4471",\n  "customer": "'], ["Ерёмина Ольга Тимуровна", "fake"], ['",\n  "phone": "'], ["+79035571942", "fake"], ['",\n  "email": "'], ["o.eremina@acme.ru", "fake"], ['",\n  "total": 12400\n}']],
+    hint: "Цифр в тексте нет вообще — адрес и квартира записаны словами, как в расшифровке звонка.",
+    orig: [["записал со слов: "], ["фруктовая сто двадцать шесть", "pii"], [", второй подъезд,\n"],
+           ["тридцать четвёртая квартира", "pii"], [", домофон не работает"]],
+    masked: [["записал со слов: "], ["грушевая шестьдесят три", "fake"], [", второй подъезд,\n"],
+             ["пятьдесят седьмая квартира", "fake"], [", домофон не работает"]],
   },
   {
-    orig: [["Курьер не нашёл вход. Адрес: "], ["г. Казань, ул. Профсоюзная, д. 17, под. 3, кв. 84", "pii"], [",\nдомофон 84К. Подъезд со стороны "], ["Петербургской", "pii"], ["."]],
-    masked: [["Курьер не нашёл вход. Адрес: "], ["г. Казань, ул. Достоевского, д. 41, под. 2, кв. 57", "fake"], [",\nдомофон 57К. Подъезд со стороны "], ["Чистопольской", "fake"], ["."]],
+    hint: "Одна и та же женщина в трёх видах: латиницей из формы, инициалами и полным именем. Все три — один человек и одна подмена.",
+    orig: [["в форме "], ["BITYUKOVA E. A.", "pii"], [", в заявке "], ["Т. О.", "pii"],
+           [",\nв письме "], ["Битюкова Елена", "pii"], [" — это один клиент?"]],
+    masked: [["в форме "], ["SOKOLOVA M. I.", "fake"], [", в заявке "], ["С. М.", "fake"],
+             [",\nв письме "], ["Соколова Марина", "fake"], [" — это один клиент?"]],
   },
   {
-    orig: [["Для оформления: паспорт "], ["4517 № 812345", "pii"], [", СНИЛС "], ["112-233-445 95", "pii"], [",\nИНН "], ["770512345678", "pii"], [". Номер договора 2024/117 — не персональные, остаётся как есть."]],
-    masked: [["Для оформления: паспорт "], ["4509 № 337201", "fake"], [", СНИЛС "], ["284-119-703 41", "fake"], [",\nИНН "], ["771903845206", "fake"], [". Номер договора 2024/117 — не персональные, остаётся как есть."]],
+    hint: "Фамилия, имя и адрес приходят в разных репликах. По одной реплике нечего искать — значение собирается из диалога.",
+    orig: [["— моя фамилия "], ["волков", "pii"], ["\n— а имя и адрес?\n— "], ["дмитрий", "pii"],
+           [", живу на "], ["ленина 5", "pii"], [", кв. 12"]],
+    masked: [["— моя фамилия "], ["шилов", "fake"], ["\n— а имя и адрес?\n— "], ["виктор", "fake"],
+             [", живу на "], ["грушевой 63", "fake"], [", кв. 57"]],
+  },
+  {
+    hint: "Самая частая в отрасли форма опознания клиента — «фамилия имя дата рождения». Рядом СНИЛС и ИНН: у обоих сходится контрольная сумма, и у подмены тоже.",
+    orig: [["Оформляем: "], ["Тарасова Ольга 14.03.1985", "pii"], ["\nСНИЛС "],
+           ["112-233-445 95", "pii"], [", ИНН "], ["770512345678", "pii"],
+           ["\nдоговор 2024/117 — не персональные, остаётся как есть"]],
+    masked: [["Оформляем: "], ["Соколова Марина 22.07.1983", "fake"], ["\nСНИЛС "],
+             ["284-119-703 41", "fake"], [", ИНН "], ["771903845206", "fake"],
+             ["\nдоговор 2024/117 — не персональные, остаётся как есть"]],
   },
 ];
 
 function paint(target, chunks) {
-  target.replaceChildren(...chunks.map(([text, kind]) => {
-    const span = document.createElement("span");
-    if (kind) span.className = kind === "pii" ? "mark-pii" : "mark-fake";
-    span.textContent = text;
-    return span;
-  }));
+  if (!target) return;
+  /* Новый узел, а не правка старого: смена примера должна читаться как смена
+     примера, а подмена текста на месте выглядит как глитч. */
+  const swap = node("div", "demo-swap");
+  chunks.forEach(([text, kind]) => {
+    const piece = node("span", kind === "pii" ? "mark-pii" : kind === "fake" ? "mark-fake" : null, text);
+    swap.appendChild(piece);
+  });
+  target.replaceChildren(swap);
 }
 
 function showDemo(index) {
-  paint(document.getElementById("demo-orig"), DEMOS[index].orig);
-  paint(document.getElementById("demo-masked"), DEMOS[index].masked);
+  const example = DEMOS[index];
+  paint(document.getElementById("demo-orig"), example.orig);
+  paint(document.getElementById("demo-masked"), example.masked);
+  const hint = document.getElementById("demo-hint");
+  if (hint) hint.textContent = example.hint;
   document.querySelectorAll("[data-demo]").forEach((button) => {
     button.setAttribute("aria-selected", String(Number(button.dataset.demo) === index));
   });
@@ -51,11 +312,14 @@ document.querySelectorAll("[data-demo]").forEach((button) => {
 });
 if (document.getElementById("demo-orig")) showDemo(0);
 
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * КОПИРОВАНИЕ
+ * ──────────────────────────────────────────────────────────────────────────── */
 document.querySelectorAll("[data-copy-btn]").forEach((button) => {
   button.addEventListener("click", () => {
-    // The copy source is usually the button's sibling, but a block can declare
-    // a wider scope — the Claude Code prompt has its button in a header row,
-    // not beside the <pre>.
+    /* Источник обычно сосед кнопки, но блок может объявить область шире —
+       у промпта для агента кнопка стоит в шапке блока, а не рядом с текстом. */
     const scope = button.closest("[data-copy-scope]") || button.parentElement;
     const source = scope.querySelector("[data-copy]");
     if (!source) return;
@@ -67,129 +331,122 @@ document.querySelectorAll("[data-copy-btn]").forEach((button) => {
 });
 
 
-/* The setup tutorial: pick a provider, get commands that are ready to paste.
+/* ────────────────────────────────────────────────────────────────────────────
+ * УСТАНОВКА: ВЫБРАЛ ПРОВАЙДЕРА — ПОЛУЧИЛ ГОТОВЫЕ КОМАНДЫ
  *
- * Built from data rather than written out six times, because the variants
- * differ in exactly one string — and a page where five of six code blocks are
- * copies is a page where five of them go stale.
- *
- * Two groups, and the split is honest rather than cosmetic. A provider is
- * "direct" only if it speaks the OpenAI REQUEST shape, because that is the
- * shape we parse to find what to mask. Anthropic and Gemini put the user's
- * text somewhere else entirely; GigaChat looks OpenAI-shaped but authenticates
- * through a two-hop OAuth exchange against a different host; YandexGPT uses
- * `messages[].text` instead of `content`. Listing any of those as "just change
- * the URL" would be a lie the customer discovers at integration time, which is
- * the worst possible moment to discover it.
- */
+ * Деление на «прямых» и остальных честное, а не косметическое. Провайдер
+ * «прямой», только если он говорит в ФОРМАТЕ ЗАПРОСА OpenAI, потому что именно
+ * эту форму мы разбираем, чтобы найти, что маскировать. Anthropic и Gemini
+ * кладут текст пользователя в другое место; GigaChat выглядит OpenAI-совместимым,
+ * но авторизуется в два шага на другом хосте; YandexGPT использует
+ * `messages[].text` вместо `content`. Назвать любого из них «просто поменяйте
+ * URL» — это ложь, которая вскроется при интеграции, то есть в худший момент.
+ * ──────────────────────────────────────────────────────────────────────────── */
 const PROVIDERS = [
-  { label: "OPENROUTER", upstream: "https://openrouter.ai/api/v1", key: "sk-or-v1-\u2026", direct: true },
-  { label: "OPENAI", upstream: "https://api.openai.com/v1", key: "sk-proj-\u2026", direct: true },
-  { label: "DEEPSEEK", upstream: "https://api.deepseek.com/v1", key: "sk-\u2026", direct: true },
-  { label: "\u0421\u0412\u041e\u0419 VLLM", upstream: "http://vllm:8000/v1", key: "\u043b\u044e\u0431\u043e\u0439", direct: true },
-  { label: "\u0414\u0420\u0423\u0413\u041e\u0419 OPENAI-\u0421\u041e\u0412\u041c\u0415\u0421\u0422\u0418\u041c\u042b\u0419", upstream: "https://\u0432\u0430\u0448-\u043f\u0440\u043e\u0432\u0430\u0439\u0434\u0435\u0440/v1", key: "\u0432\u0430\u0448 \u043a\u043b\u044e\u0447", direct: true },
-  { label: "ANTHROPIC \u00b7 GEMINI \u00b7 GIGACHAT \u00b7 YANDEXGPT", direct: false },
+  { upstream: "https://openrouter.ai/api/v1", key: "sk-or-v1-…", direct: true },
+  { upstream: "https://api.openai.com/v1", key: "sk-proj-…", direct: true },
+  { upstream: "https://api.deepseek.com/v1", key: "sk-…", direct: true },
+  { upstream: "http://vllm:8000/v1", key: "любой", direct: true },
+  { direct: false },
 ];
 
 const NOTES = {
-  direct: "\u041a\u043b\u044e\u0447 \u043f\u0440\u043e\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u043e\u0441\u0442\u0430\u0451\u0442\u0441\u044f \u0432\u0430\u0448\u0438\u043c \u2014 \u043e\u043d \u0438\u0434\u0451\u0442 \u0432 \u0437\u0430\u0433\u043e\u043b\u043e\u0432\u043a\u0435 \u0437\u0430\u043f\u0440\u043e\u0441\u0430 \u0438 \u043f\u0435\u0440\u0435\u0441\u044b\u043b\u0430\u0435\u0442\u0441\u044f \u043d\u0430\u0432\u0435\u0440\u0445 \u043d\u0435\u0442\u0440\u043e\u043d\u0443\u0442\u044b\u043c. \u041c\u044b \u0435\u0433\u043e \u043d\u0435 \u0445\u0440\u0430\u043d\u0438\u043c \u0438 \u043d\u0435 \u0432\u044b\u0434\u0430\u0451\u043c \u0441\u0432\u043e\u0439.",
-  litellm: "\u0423 \u044d\u0442\u0438\u0445 \u043f\u0440\u043e\u0432\u0430\u0439\u0434\u0435\u0440\u043e\u0432 \u0434\u0440\u0443\u0433\u043e\u0439 \u0444\u043e\u0440\u043c\u0430\u0442 \u0437\u0430\u043f\u0440\u043e\u0441\u0430: \u0442\u0435\u043a\u0441\u0442 \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044f \u043b\u0435\u0436\u0438\u0442 \u043d\u0435 \u0442\u0430\u043c, \u0433\u0434\u0435 \u0443 OpenAI, \u0430 GigaChat \u0435\u0449\u0451 \u0438 \u0430\u0432\u0442\u043e\u0440\u0438\u0437\u0443\u0435\u0442\u0441\u044f \u0432 \u0434\u0432\u0430 \u0448\u0430\u0433\u0430. \u0421\u0442\u0430\u0432\u0438\u0442\u0441\u044f LiteLLM, \u043a\u043e\u0442\u043e\u0440\u044b\u0439 \u043f\u0440\u0438\u0432\u043e\u0434\u0438\u0442 \u0438\u0445 \u043a \u043e\u0431\u0449\u0435\u043c\u0443 \u0432\u0438\u0434\u0443, \u0430 pseudex \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0430\u0435\u0442\u0441\u044f \u043a \u043d\u0435\u043c\u0443 \u0441\u0430\u0439\u0434\u043a\u0430\u0440\u043e\u043c \u2014 \u0442\u043e\u0433\u0434\u0430 \u043f\u0440\u043e\u0432\u0430\u0439\u0434\u0435\u0440\u044b \u043b\u044e\u0431\u044b\u0435.",
+  direct: "Ключ провайдера остаётся вашим: он идёт в заголовке запроса и пересылается наверх нетронутым. Мы его не храним и не выдаём свой. Сюда же подходит любой другой OpenAI-совместимый провайдер — меняется только адрес.",
+  litellm: "У этих провайдеров другой формат запроса — текст пользователя лежит не там, где у OpenAI, а GigaChat ещё и авторизуется в два шага. Ставится LiteLLM, который приводит их к общему виду, pseudex подключается к нему сайдкаром.",
 };
 
 function setBlock(id, text) {
-  const node = document.getElementById(id);
-  if (!node) return;
-  node.textContent = text;
-  node.dataset.copy = text;
+  const target = document.getElementById(id);
+  if (!target) return;
+  target.textContent = text;
+  target.dataset.copy = text;
 }
 
 function showProvider(index) {
-  const p = PROVIDERS[index];
-  const image = document.getElementById("setup").dataset.image;
-  document.getElementById("provider-note").textContent = p.direct ? NOTES.direct : NOTES.litellm;
+  const provider = PROVIDERS[index];
+  const setup = document.getElementById("setup");
+  if (!setup) return;
+  const image = setup.dataset.image;
+
   document.querySelectorAll("[data-provider]").forEach((button) => {
     button.setAttribute("aria-selected", String(Number(button.dataset.provider) === index));
   });
+  const note = document.getElementById("provider-note");
+  if (note) note.textContent = provider.direct ? NOTES.direct : NOTES.litellm;
 
-  const T = {
-    up: "\u041f\u043e\u0434\u043d\u044f\u0442\u044c \u043a\u043e\u043d\u0442\u0435\u0439\u043d\u0435\u0440",
-    upLite: "\u041f\u043e\u0434\u043d\u044f\u0442\u044c \u043a\u043e\u043d\u0442\u0435\u0439\u043d\u0435\u0440 \u0440\u044f\u0434\u043e\u043c \u0441 LiteLLM",
-    point: "\u041d\u0430\u043f\u0440\u0430\u0432\u0438\u0442\u044c \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435 \u043a \u043d\u0430\u043c",
-    cb: "\u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c callback \u0432 LiteLLM",
-    noCode: "\u043a\u043e\u0434 \u043d\u0435 \u043c\u0435\u043d\u044f\u0435\u0442\u0441\u044f",
-    both: "\u043c\u0430\u0441\u043a\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435 \u0434\u043e \u043c\u043e\u0434\u0435\u043b\u0438 \u0438 \u0432\u043e\u0437\u0432\u0440\u0430\u0442 \u043f\u043e\u0441\u043b\u0435",
-    was: "# \u0431\u044b\u043b\u043e",
-    now: "# \u0441\u0442\u0430\u043b\u043e \u2014 \u043c\u0435\u043d\u044f\u0435\u0442\u0441\u044f \u043e\u0434\u043d\u0430 \u0441\u0442\u0440\u043e\u043a\u0430",
-    yours: "   # \u0432\u0430\u0448 \u043a\u043b\u044e\u0447, \u043a\u0430\u043a \u0431\u044b\u043b",
-    ui: "# \u2192 http://localhost:8081/?token=9f3c1a\u2026",
-    uiGrep: "docker logs pseudex | grep '\u043b\u043e\u043a\u0430\u043b\u044c\u043d\u044b\u0439 \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441' -A2",
-  };
-
-  if (p.direct) {
-    document.getElementById("step2-title").textContent = T.up;
-    document.getElementById("step3-title").textContent = T.point;
-    document.getElementById("step3-note").textContent = T.noCode;
+  const title2 = document.getElementById("step2-title");
+  const title3 = document.getElementById("step3-title");
+  if (provider.direct) {
+    if (title2) title2.textContent = "Поднять контейнер";
+    if (title3) title3.textContent = "Направить приложение к нам";
+    /* `PSEUDEX_ROLE=proxy` — не украшение: без него образ поднимается сайдкаром
+       и на `/v1/chat/completions` не отвечает. Команда со страницы обязана
+       работать дословно, иначе первый же шаг установки заканчивается ошибкой. */
     setBlock("step2-code",
-      "docker run -d --name pseudex -p 8000:8000 -p 127.0.0.1:8081:8081 \\\n" +
+      "docker run -d --name pseudex \\\n" +
+      "  -p 8000:8000 -p 127.0.0.1:8081:8081 \\\n" +
       "  -v pseudex-data:/data \\\n" +
       "  -e PSEUDEX_ROLE=proxy \\\n" +
-      "  -e PSEUDEX_UPSTREAM=" + p.upstream + " \\\n" +
-      "  -e PSEUDEX_LICENSE_KEY=ps_live_\u2026 \\\n" +
-      "  " + image);
+      `  -e PSEUDEX_UPSTREAM=${provider.upstream} \\\n` +
+      "  -e PSEUDEX_LICENSE_KEY=ps_live_… \\\n" +
+      `  ${image}`);
     setBlock("step3-code",
-      T.was + "\n" +
-      "OPENAI_BASE_URL=" + p.upstream + "\n" +
-      "OPENAI_API_KEY=" + p.key + "\n\n" +
-      T.now + "\n" +
-      "OPENAI_BASE_URL=http://pseudex:8000/v1\n" +
-      "OPENAI_API_KEY=" + p.key + T.yours);
+      `# было\nOPENAI_BASE_URL=${provider.upstream}\n\n` +
+      "# стало — одна строка\nOPENAI_BASE_URL=http://pseudex:8000/v1\n" +
+      `OPENAI_API_KEY=${provider.key}  # как был`);
   } else {
-    document.getElementById("step2-title").textContent = T.upLite;
-    document.getElementById("step3-title").textContent = T.cb;
-    document.getElementById("step3-note").textContent = T.both;
+    if (title2) title2.textContent = "Поднять контейнер рядом с LiteLLM";
+    if (title3) title3.textContent = "Добавить callback в LiteLLM";
     setBlock("step2-code",
-      "docker run -d --name pseudex -p 8000:8000 -p 127.0.0.1:8081:8081 \\\n" +
+      "docker run -d --name pseudex \\\n" +
+      "  -p 8000:8000 -p 127.0.0.1:8081:8081 \\\n" +
       "  -v pseudex-data:/data \\\n" +
-      "  -e PSEUDEX_LICENSE_KEY=ps_live_\u2026 \\\n" +
-      "  " + image);
+      "  -e PSEUDEX_LICENSE_KEY=ps_live_… \\\n" +
+      `  ${image}`);
     setBlock("step3-code",
-      "masked = post(\"http://pseudex:8000/mask\",\n" +
-      "              {\"org_id\": org, \"messages\": messages})\n" +
-      "# \u2192 \u043c\u043e\u0434\u0435\u043b\u044c \u2192 \u043e\u0431\u0440\u0430\u0442\u043d\u043e \u0447\u0435\u0440\u0435\u0437 /unmask");
+      'masked = post("http://pseudex:8000/mask",\n' +
+      '  {"org_id": org, "messages": messages})\n' +
+      "# → модель → обратно через /unmask");
   }
-  setBlock("step4-code", "curl localhost:8000/health\n" + T.uiGrep + "\n" + T.ui);
 }
 
-const tabs = document.getElementById("provider-tabs");
-if (tabs) {
-  PROVIDERS.forEach((provider, index) => {
-    const button = document.createElement("button");
-    button.setAttribute("role", "tab");
-    button.dataset.provider = String(index);
-    button.textContent = provider.label;
-    button.addEventListener("click", () => showProvider(index));
-    tabs.appendChild(button);
+document.querySelectorAll("[data-provider]").forEach((button) => {
+  button.addEventListener("click", () => showProvider(Number(button.dataset.provider)));
+});
+if (document.getElementById("setup")) showProvider(0);
+
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * ВЫБОР ТАРИФА ИЗ ПРАЙСА
+ *
+ * Форма на странице ОДНА, и кнопка в карточке приводит к ней с уже выбранным
+ * тарифом. Раньше форма стояла в каждой карточке, и три из четырёх не могли
+ * отправиться — они собирали одно согласие из двух. С одной формой этот класс
+ * ошибки исчезает: сломать нечего, дублировать нечего.
+ * ──────────────────────────────────────────────────────────────────────────── */
+document.querySelectorAll("[data-plan]").forEach((link) => {
+  link.addEventListener("click", () => {
+    const select = document.querySelector('#signup-form select[name="plan"]');
+    if (select) select.value = link.dataset.plan;
+    const email = document.querySelector('#signup-form input[name="email"]');
+    /* Фокус — после прокрутки: поставленный сразу, он прокручивает страницу сам
+       и спорит с якорем. */
+    if (email) setTimeout(() => email.focus({ preventScroll: true }), 400);
   });
-  showProvider(0);
-}
+});
 
-/* ---------- конфигуратор ---------- */
-/*
-   ВЕРДИКТ СЧИТАЕТСЯ ЗДЕСЬ, БЕЗ ОБРАЩЕНИЯ К СЕРВЕРУ. Ответ — функция от реестра,
-   который уже отрендерен в страницу: `data-covered` на каждом чекбоксе и текст
-   вердикта в `data-verdict`. Круговой заход на сервер добавил бы задержку и
-   точку отказа ради арифметики, которую браузер делает мгновенно.
 
-   НА СЕРВЕР УХОДИТ ТОЛЬКО НАБОР КОДОВ, и только по нажатию кнопки: пока человек
-   щёлкает галочками, ничего никуда не отправляется. Ни текста, ни почты — см.
-   докстринг `views.demand`.
-*/
-
+/* ────────────────────────────────────────────────────────────────────────────
+ * КОНФИГУРАТОР: «ЧТО У ВАС В ПЕРЕПИСКЕ»
+ *
+ * Своего текста мы не просим и не примем — отмечаются ГРУППЫ. Наружу уходят
+ * только коды групп: ни текста, ни адреса, ни кто вы. Подробности — в докстринге
+ * `views.demand`.
+ * ──────────────────────────────────────────────────────────────────────────── */
 const cfg = document.getElementById("cfg");
 
 function cfgSelected() {
-  return Array.from(cfg.querySelectorAll("input[type=checkbox]"))
-    .filter((box) => box.checked);
+  return Array.from(cfg.querySelectorAll("input[type=checkbox]")).filter((box) => box.checked);
 }
 
 function cfgRender() {
@@ -204,19 +461,15 @@ function cfgRender() {
   const verdicts = document.getElementById("cfg-verdicts");
   verdicts.textContent = "";
   chosen.forEach((box) => {
-    const row = document.createElement("div");
-    row.className = "cfg-verdict";
-    const mark = document.createElement("span");
-    mark.className = box.dataset.covered === "1" ? "cfg-mark yes" : "cfg-mark no";
-    mark.textContent = box.dataset.covered === "1" ? "НАХОДИМ" : "ПОКА НЕТ";
-    const label = document.createElement("b");
-    label.textContent = box.closest("label").querySelector(".cfg-label").textContent;
-    const text = document.createElement("span");
-    /* textContent, не innerHTML: строка приезжает из шаблона, но правило одно на
-       всю страницу — склейка разметки из данных однажды получит данные, которых
-       мы не писали. */
-    text.textContent = box.dataset.verdict || "";
-    row.append(mark, label, text);
+    const covered = box.dataset.covered === "1";
+    const row = node("div", "cfg-verdict");
+    row.append(
+      node("span", covered ? "cfg-mark yes" : "cfg-mark no", covered ? "НАХОДИМ" : "В РАЗРАБОТКЕ"),
+      node("b", null, box.closest("label").querySelector(".cfg-label").textContent),
+      /* textContent, не innerHTML: строка приезжает из шаблона, но правило одно
+         на всю страницу — склейка разметки из данных однажды получит данные,
+         которых мы не писали. */
+      node("span", null, box.dataset.verdict || ""));
     verdicts.appendChild(row);
   });
 
@@ -230,8 +483,8 @@ function cfgRender() {
     send.hidden = true;
   } else {
     note.textContent = gaps.length === 1
-      ? "Одну группу мы пока не находим. Отправьте как заявку — по этим отметкам строится очередь работ."
-      : `Этих групп мы пока не находим: ${gaps.length}. Отправьте как заявку — по этим отметкам строится очередь работ.`;
+      ? "Одна группа в разработке. Отправьте отметку — она попадёт в счётчик спроса, по которому строится очередь работ."
+      : `Групп в разработке: ${gaps.length}. Отправьте отметки — они попадут в счётчик спроса, по которому строится очередь работ.`;
     send.hidden = false;
   }
 }
@@ -274,7 +527,7 @@ if (cfg) {
   document.getElementById("cfg-send").addEventListener("click", cfgSend);
   /* ВЕРДИКТ РИСУЕТСЯ И НА ЗАГРУЗКЕ. Браузер восстанавливает отмеченные галочки
      при перезагрузке и при возврате «назад», а `#cfg-out` при этом оставался
-     спрятанным: отмечено три группы, вердикта нет. Оба соседних блока в этом
-     файле тоже задают начальное состояние — `showDemo(0)`, `showProvider(0)`. */
+     спрятанным: отмечено три группы, вердикта нет. Соседние блоки в этом файле
+     тоже задают начальное состояние — `showDemo(0)`, `showProvider(0)`. */
   cfgRender();
 }

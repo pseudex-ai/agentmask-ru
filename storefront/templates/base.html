@@ -7,8 +7,9 @@
 <meta name="description" content="Модель не видит персональных данных, инструменты видят. Контейнер работает в вашем контуре, к нам уходят только счётчики.">
 <link rel="icon" href="{% static 'favicon.svg' %}" type="image/svg+xml">
 <link rel="stylesheet" href="{% static 'site.css' %}">
+{% block head %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
 <div class="frame">
   <header class="top">
     <a class="brand" href="/">
@@ -20,7 +21,7 @@
     </a>
     {% block nav %}
     <nav>
-      <a href="/#who">КОМУ</a>
+      <a href="/#gap">РАЗНИЦА</a>
       <a href="/#how">КАК РАБОТАЕТ</a>
       <a href="/#video">ВИДЕО</a>
       <a href="/detection">ЧТО НАХОДИМ</a>
@@ -60,6 +61,7 @@
 
   {% block content %}{% endblock %}
 
+  {% block footer %}
   <footer>
     <div>PSEUDEX · МАСКИРОВАНИЕ ПД ДЛЯ LLM-АГЕНТОВ</div>
     <div style="display:flex;gap:24px;flex-wrap:wrap">
@@ -71,6 +73,7 @@
       <span>ХОСТИНГ В РФ</span>
     </div>
   </footer>
+  {% endblock %}
 </div>
 {% block script %}{% endblock %}
 {% if analytics_here %}{% load static %}
