@@ -55,7 +55,7 @@
     </div>
   </div>
 
-  <p style="margin-top:32px;font-size:15px;color:var(--dim)">Чтобы вернуться в кабинет позже — <a href="{% url 'account_login' %}">войдите по email</a>, пароль не нужен.</p>
+  <p style="margin-top:32px;font-size:15px;color:var(--dim)">Чтобы вернуться в кабинет позже — <a href="{% url 'account_request_login_code' %}">войдите по email</a>, пароль не нужен.</p>
 </section>
 {% endblock %}
 {% block script %}{% load static %}<script src="{% static 'landing.js' %}"></script>{% endblock %}

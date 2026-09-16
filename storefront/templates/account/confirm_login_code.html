@@ -1,12 +1,18 @@
 {% extends "base.html" %}
 {% load i18n %}
-{% block title %}Введите код · pseudex{% endblock %}
+{% comment %} Второй шаг единственного входа. Ссылка ведёт на ЗАПРОС НОВОГО кода, а не «ко
+   входу»: «вход» и есть предыдущий экран, и ссылка туда была бы петлёй через
+   редирект. Код живёт 10 минут (ACCOUNT_LOGIN_BY_CODE_TIMEOUT) — срок назван
+   вслух, иначе «не работает» и «протух» для клиента одно и то же. {% endcomment %}
+{% block title %}Код из письма · pseudex{% endblock %}
 {% block nav %}{% endblock %}
+{% block head_cta %}{% endblock %}
 {% block content %}
 <section class="auth"><div class="auth-card">
-  <h1>Введите код</h1>
-  <p>Мы отправили код на почту — впишите его здесь.</p>
-  {% if form.errors %}<div class="auth-msg auth-msg--error">Проверьте введённые данные.</div>{% endif %}
+  <h1>Код из письма</h1>
+  <p>Отправили одноразовый код на вашу почту — впишите его здесь. Код действует
+     10 минут и срабатывает один раз.</p>
+  {% if form.errors %}<div class="auth-msg auth-msg--error">Код не подошёл или устарел — запросите новый.</div>{% endif %}
   <form method="post" action="">
     {% csrf_token %}
     {% for field in form %}<label>{{ field.label }}{{ field }}</label>{% endfor %}
@@ -14,6 +20,7 @@
     <button class="btn accent" type="submit">Войти</button>
   </form>
   <hr>
-  <div class="auth-alt"><a href="{% url 'account_login' %}">← Ко входу</a></div>
+  <div class="auth-alt">Письмо не пришло?
+    <a href="{% url 'account_request_login_code' %}">Запросить новый код</a></div>
 </div></section>
 {% endblock %}

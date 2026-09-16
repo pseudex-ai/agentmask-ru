@@ -9,7 +9,7 @@ scanner tries, and moving it costs nothing.
 from django.conf import settings
 from django.contrib import admin
 from django.views.generic import RedirectView
-from django.urls import include, path
+from django.urls import include, path, re_path
 from django_otp.admin import OTPAdminSite
 
 from storefront_web import views
@@ -64,6 +64,28 @@ urlpatterns = [
     # behind the most prominent button on the site. Sign-up happens in one place,
     # the form on the landing, which issues the key.
     path("accounts/signup/", RedirectView.as_view(url="/#start", permanent=False)),
+
+    # ВХОД БЕЗ ПАРОЛЯ. Регистрация («Быстрый старт») пароль не задаёт НИКОГДА,
+    # поэтому парольная форма allauth предлагала клиенту заполнить то, чего у
+    # него нет. Вход теперь ровно тот же акт, что и заведение аккаунта:
+    # доказательство владения почтой — код в письме.
+    #
+    # УВОДИМ URL, А НЕ ПРЯЧЕМ ПОЛЕ. Спрятанное поле остаётся рабочей ручкой для
+    # того, кто знает адрес: POST с паролем на `/accounts/login/` логинил бы
+    # по-прежнему. `query_string=True` — иначе теряется `?next=`, и клиент,
+    # пришедший по ссылке на счёт, после входа попадает на главную.
+    #
+    # Официального выключателя пароля у allauth 65.3.1 НЕТ (дока прямо говорит,
+    # что code-only UI делается своими переопределениями), поэтому идём через
+    # его же штатные вьюхи login-by-code, а не ломаем форму входа.
+    path("accounts/login/", RedirectView.as_view(
+        url="/accounts/login/code/", permanent=False, query_string=True)),
+    # И ЗАВЕСТИ пароль тоже нельзя, иначе passwordless держался бы на том, что
+    # клиент не найдёт ссылку сброса. Один префикс вместо шести маршрутов
+    # (password/change, /set, /reset, /reset/done, /reset/key/…, /key/done).
+    re_path(r"^accounts/password/", RedirectView.as_view(
+        url="/accounts/login/code/", permanent=False)),
+
     path("accounts/", include("allauth.urls")),
     # ОПЕРАТОРСКАЯ КОНСОЛЬ — СОСЕД АДМИНКИ, а не отдельный угадываемый путь.
     # Она показывает всех клиентов разом, поэтому обязана наследовать то же

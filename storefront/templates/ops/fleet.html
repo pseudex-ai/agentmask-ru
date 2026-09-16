@@ -18,9 +18,9 @@
       <div class="sec-meta" style="margin-top:8px">{{ page.paginator.count }} организаций · страница {{ page.number }} из {{ page.paginator.num_pages }}</div>
     </div>
     <div>
-      {# При лежащем сервере все счётчики нули, поэтому зелёная плашка «цепи
+      {% comment %} При лежащем сервере все счётчики нули, поэтому зелёная плашка «цепи
          целы» встала бы рядом с плашкой «сервер не отвечает». Молчание — это
-         неизвестно, а не хорошо. #}
+         неизвестно, а не хорошо. {% endcomment %}
       {% if error %}<span class="pill warn">СОСТОЯНИЕ ЦЕПЕЙ НЕИЗВЕСТНО</span>
       {% elif flagged %}<span class="pill bad">ЦЕПЬ ПОРВАНА У {{ flagged }}</span>
       {% else %}<span class="pill ok">ЦЕПИ ЦЕЛЫ</span>{% endif %}

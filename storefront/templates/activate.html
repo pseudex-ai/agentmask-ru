@@ -4,8 +4,8 @@
   <h1>Подтвердите вход</h1>
   <p>Ссылка пришла на <strong>{{ email }}</strong>. Нажмите кнопку, чтобы
      войти и получить ключ.</p>
-  {# ВХОД ТОЛЬКО POST-ом С CSRF-ТОКЕНОМ: по GET-ссылке чужой сайт мог бы
-     подменить сессию клиента своей. #}
+  {% comment %} ВХОД ТОЛЬКО POST-ом С CSRF-ТОКЕНОМ: по GET-ссылке чужой сайт мог бы
+     подменить сессию клиента своей. {% endcomment %}
   <form method="post" action="{% url 'activate' %}">
     {% csrf_token %}
     <input type="hidden" name="t" value="{{ token }}">

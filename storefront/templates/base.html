@@ -30,6 +30,11 @@
       <a href="/#faq">FAQ</a>
     </nav>
     {% endblock %}
+    {% comment %}ОТДЕЛЬНЫЙ БЛОК, чтобы страницы входа могли убрать кнопки:
+       на самой странице входа «ВОЙТИ» вела бы на неё же. `{# #}` здесь
+       нельзя — он ОДНОСТРОЧНЫЙ, и многострочный вариант отрендерился бы
+       видимым текстом в шапке (уже случалось).{% endcomment %}
+    {% block head_cta %}
     <div class="head-cta">
       {% if user.is_staff %}<a class="btn" href="{% url 'ops_fleet' %}">ОПЕРАЦИИ</a>{% endif %}
       {% if user.is_authenticated %}
@@ -38,10 +43,11 @@
           <button class="btn" type="submit">ВЫЙТИ</button>
         </form>
       {% else %}
-        <a class="btn" href="{% url 'account_login' %}">ВОЙТИ</a>
+        <a class="btn" href="{% url 'account_request_login_code' %}">ВОЙТИ</a>
         <a class="btn solid" href="/#start">НАЧАТЬ</a>
       {% endif %}
     </div>
+    {% endblock %}
   </header>
 
   {% if messages %}

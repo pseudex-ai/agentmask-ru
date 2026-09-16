@@ -1,22 +1,21 @@
 {% extends "base.html" %}
-{% load i18n %}
+{% comment %} СТРАХОВКА, А НЕ СТРАНИЦА. `/accounts/login/` уведён редиректом на вход по
+   коду (pseudex_site/urls.py), поэтому LoginView здесь не исполняется и этот
+   шаблон не рендерится. Файл оставлен НАМЕРЕННО: если появится путь, который
+   всё-таки отрисует форму входа allauth, клиент увидит наш единственный вход,
+   а не парольное поле, которое ему нечем заполнить, и не ссылку на сброс
+   пароля, которого не существует. Удалить файл значило бы получить в том же
+   случае TemplateDoesNotExist и 500 на входе. {% endcomment %}
 {% block title %}Вход · pseudex{% endblock %}
 {% block nav %}{% endblock %}
+{% block head_cta %}{% endblock %}
 {% block content %}
 <section class="auth"><div class="auth-card">
   <h1>Вход</h1>
-  <p>Нет аккаунта? <a href="/#start">Начните здесь</a> — ключ выдаётся сразу, карта не нужна.</p>
-  {% if form.errors %}<div class="auth-msg auth-msg--error">Проверьте почту и пароль и попробуйте снова.</div>{% endif %}
-  <form method="post" action="{% url 'account_login' %}">
-    {% csrf_token %}
-    {% for field in form %}
-      {% if field.name != "remember" %}<label>{{ field.label }}{{ field }}</label>
-      {% else %}<label class="check">{{ field }} {{ field.label }}</label>{% endif %}
-    {% endfor %}
-    {% if redirect_field_value %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">{% endif %}
-    <button class="btn accent" type="submit">Войти</button>
-  </form>
+  <p>В pseudex вход по одноразовому коду из письма — пароля у аккаунта нет.</p>
+  <a class="btn accent" href="{% url 'account_request_login_code' %}">Войти по коду</a>
   <hr>
-  <div class="auth-alt"><a href="{% url 'account_reset_password' %}">Забыли пароль?</a> · <a href="{% url 'account_request_login_code' %}">Войти по коду из письма</a></div>
+  <div class="auth-alt">Нет аккаунта? <a href="/#start">Начните здесь</a> — ключ
+    выдаётся сразу, карта не нужна.</div>
 </div></section>
 {% endblock %}

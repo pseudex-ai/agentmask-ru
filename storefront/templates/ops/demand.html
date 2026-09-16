@@ -17,9 +17,9 @@
       <h2>Спрос на типы данных</h2>
       <div class="sec-meta" style="margin-top:8px">за {{ days }} дн · отметок {{ asked }}</div>
     </div>
-    {# ПЕРЕКЛЮЧАТЕЛЬ ОБЯЗАТЕЛЕН. Окно было прибито к 30 суткам, и код, выведенный
+    {% comment %} ПЕРЕКЛЮЧАТЕЛЬ ОБЯЗАТЕЛЕН. Окно было прибито к 30 суткам, и код, выведенный
        из реестра в прошлом квартале, исчезал с экрана совсем — ровно то, что
-       раздел «кодов больше нет» ниже обещает не допускать. #}
+       раздел «кодов больше нет» ниже обещает не допускать. {% endcomment %}
     <div class="row" style="gap:14px">
       {% for option in periods %}
       <a href="?days={{ option }}" class="mono" style="font-size:12px;{% if option == days %}color:var(--accent){% else %}color:var(--dim-2){% endif %}">{{ option }} дн</a>

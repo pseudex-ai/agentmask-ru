@@ -341,7 +341,13 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     # Fresh client again: allauth redirects an ALREADY signed-in visitor away
     # from the login page, so the shared client would test the redirect rather
     # than the form that a returning customer actually sees.
-    login_page = _FreshClient().get(anonymous.url)
+    # `follow=True`, ПОТОМУ ЧТО ВХОД ТЕПЕРЬ БЕЗ ПАРОЛЯ: `/accounts/login/`
+    # уведён на вход по коду (пароля у клиента нет никогда), так что без
+    # перехода по редиректу здесь виден 302, а не та страница, которую видит
+    # вернувшийся клиент. Смысл проверки прежний и он важнее адреса: экран, на
+    # который приземляется отказ кабинета, обязан ОТРИСОВАТЬСЯ с формой, а не
+    # упасть — именно так однажды прошёл весь набор при сломанном входе.
+    login_page = _FreshClient().get(anonymous.url, follow=True)
     check("the sign-in page renders",
           login_page.status_code == 200 and b"<form" in login_page.content,
           f"status={login_page.status_code}")

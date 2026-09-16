@@ -188,6 +188,20 @@ ACCOUNT_USERNAME_REQUIRED = False
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 ACCOUNT_EMAIL_VERIFICATION = "optional"
 ACCOUNT_LOGIN_BY_CODE_ENABLED = True
+# ЕДИНСТВЕННЫЙ способ входа клиента, поэтому окно жизни кода — по реальной
+# доставке письма, а не по умолчанию в три минуты: письмо, пришедшее на четвёртой
+# (серый список у принимающей стороны — обычное дело), оставляло бы клиента за
+# дверью с валидным кодом в руках. Десять минут. Имя настройки сверено с
+# `allauth/account/app_settings.py` (LOGIN_BY_CODE_TIMEOUT), а не по памяти;
+# `LOGIN_BY_CODE_SUPPORTS_RESEND` в 65.3.1 НЕ существует — задавать нельзя,
+# молча не сработает.
+ACCOUNT_LOGIN_BY_CODE_TIMEOUT = 600
+# ПУСТОЙ ПРЕФИКС ТЕМЫ, А НЕ УМОЛЧАНИЕ. При `None` allauth подставляет в тему имя
+# объекта Site, а он в базе стоит дефолтный django — клиент получал бы письмо
+# «[example.com] Код для входа». Тему и текст письма пишем сами
+# (`templates/account/email/login_code_*`), не наследуясь от обёртки allauth,
+# которая тоже тянет site_name. Имя настройки сверено с app_settings.py:206.
+ACCOUNT_EMAIL_SUBJECT_PREFIX = ""
 ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_RATE_LIMITS = {
     # The sign-in form is the one unauthenticated write on the site.
