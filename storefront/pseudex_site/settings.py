@@ -64,6 +64,11 @@ INSTALLED_APPS = [
     "django.contrib.sites",
     "allauth",
     "allauth.account",
+    # Второй фактор для внутренних админ-точек (админка + /ops/): один пароль
+    # больше не открывает доступ к ПД клиентов. Только TOTP-плагин — статические
+    # коды и прочие устройства не заводим, чтобы поверхность была минимальной.
+    "django_otp",
+    "django_otp.plugins.otp_totp",
     "accounts",
     "billing",
     "storefront_web",
@@ -81,6 +86,10 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # СРАЗУ ПОСЛЕ AuthenticationMiddleware: читает из сессии подтверждённое
+    # OTP-устройство и выставляет request.user.is_verified(). Без него ни
+    # OTPAdminSite, ни otp_required на /ops/ не увидят второй фактор.
+    "django_otp.middleware.OTPMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
@@ -310,6 +319,10 @@ LICENSE_URL = _env("PSEUDEX_LICENSE_URL", "")
 # scanner tries; moving it is not security, but it removes the background noise
 # that hides a real attempt in the logs.
 ADMIN_PATH = _env("PSEUDEX_ADMIN_PATH", "admin").strip("/")
+
+# Имя эмитента в приложении-аутентификаторе: строка «pseudex (email)» вместо
+# голого email. Только визуал, на проверку кода не влияет.
+OTP_TOTP_ISSUER = "pseudex"
 
 # JSON В КОНТЕЙНЕРЕ, ЧИТАЕМЫЙ ТЕКСТ ЛОКАЛЬНО. Loki ищет по ПОЛЯМ; строка, из
 # которой смысл надо выковыривать регуляркой, превращает его в grep с

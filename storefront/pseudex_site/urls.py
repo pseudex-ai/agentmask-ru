@@ -10,9 +10,15 @@ from django.conf import settings
 from django.contrib import admin
 from django.views.generic import RedirectView
 from django.urls import include, path
+from django_otp.admin import OTPAdminSite
 
 from storefront_web import views
 
+# Второй фактор на входе в админку. Меняем КЛАСС уже собранного admin.site, а не
+# заводим новый сайт: все модели зарегистрированы на дефолтном сайте, и новый
+# отдал бы пустую админку. OTPAdminSite.has_permission требует is_verified(), так
+# что staff без подтверждённого TOTP видит форму входа, а не данные клиентов.
+admin.site.__class__ = OTPAdminSite
 admin.site.site_header = "pseudex"
 admin.site.site_title = "pseudex"
 admin.site.index_title = "Операции"

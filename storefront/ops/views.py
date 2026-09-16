@@ -27,6 +27,7 @@ from decimal import Decimal, InvalidOperation
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
+from django_otp.decorators import otp_required
 from django.core.paginator import Paginator
 from django.db.models import Count, Sum
 from django.db.models.functions import TruncDate
@@ -53,6 +54,24 @@ from ops.analytics_models import Funnel, UsageDay, Visit
 # страницы должен быть заведомо меньше, иначе консоль ломается ровно тогда, когда
 # клиентов становится много, то есть в самый неудачный момент.
 PAGE_SIZE = 50
+
+
+def _ops_gate(view):
+    """Staff И подтверждённый TOTP — единый гейт всех страниц консоли.
+
+    `staff_member_required` проверяет только is_staff и НЕ знает про второй
+    фактор, поэтому одного его мало: утёкшего пароля staff-аккаунта хватило бы на
+    все рычаги биллинга и раскрытие ПД. Оборачиваем в `otp_required` (по
+    умолчанию требует подтверждённое устройство ВСЕГДА, не «если настроено»), а
+    без верификации отправляем на вход В АДМИНКУ — там поле для кода, — а не на
+    клиентскую форму `/accounts/login/`. Порядок обёрток важен: otp_required
+    снаружи, чтобы не-staff с валидным кодом всё равно упирался в staff-проверку.
+    """
+    return otp_required(
+        staff_member_required(view),
+        login_url=f"/{settings.ADMIN_PATH}/login/",
+        redirect_field_name="next",
+    )
 
 
 def _fleet_rows(organizations) -> tuple[dict, str]:
@@ -89,7 +108,7 @@ def _unpaid_by_org(org_ids: list[str]) -> dict[str, Decimal]:
     return unpaid
 
 
-@staff_member_required
+@_ops_gate
 def demand(request):
     """Спрос на типы, которых мы не находим — по нему строится очередь работ.
 
@@ -133,7 +152,7 @@ def demand(request):
     })
 
 
-@staff_member_required
+@_ops_gate
 def fleet(request):
     """Все клиенты одним списком, с красным флагом там, где цепь порвана."""
     organizations = (Organization.objects
@@ -181,7 +200,7 @@ def fleet(request):
     })
 
 
-@staff_member_required
+@_ops_gate
 def customer(request, org_id: str):
     """Один клиент: подписка, счета, ёмкость, инстансы и график по суткам."""
     organization = (Organization.objects
@@ -249,7 +268,7 @@ def _with_daily_deltas(history: list[dict]) -> list[dict]:
     return rows
 
 
-@staff_member_required
+@_ops_gate
 def chains(request):
     """Только порванное. Экран, который не должен показывать ничего."""
     # СТРАНИЦАМИ, А НЕ ПЕРВЫМИ ПЯТЬЮДЕСЯТЬЮ. Здесь стоял срез `[:PAGE_SIZE]` без
@@ -278,7 +297,7 @@ def chains(request):
         "checked": len(organizations)})
 
 
-@staff_member_required
+@_ops_gate
 def plans(request):
     """Тарифы двух сторон рядом.
 
@@ -313,7 +332,7 @@ def plans(request):
     })
 
 
-@staff_member_required
+@_ops_gate
 @require_POST
 def edit_plan(request, code: str):
     """Правка тарифа уходит на лицензионный сервер, а не в нашу базу.
@@ -350,7 +369,7 @@ def edit_plan(request, code: str):
     return redirect("ops_plans")
 
 
-@staff_member_required
+@_ops_gate
 def analytics(request):
     """Аналитика: воронка первой, трафик вторым. Порядок — это утверждение.
 
@@ -632,7 +651,7 @@ _CAP_FIELDS = frozenset({"overage_cap_requests", "buffer_requests"})
 _PCT_FIELDS = frozenset({"upgrade_first_month_discount_pct", "annual_discount_pct"})
 
 
-@staff_member_required
+@_ops_gate
 def constructor(request):
     """Конструктор тарифов: создать, изменить, увидеть цену правки.
 
@@ -794,7 +813,7 @@ def _period_totals(usage: dict, invoice) -> tuple[int, str]:
                    f"накопленный с первого отчёта установки: {total}")
 
 
-@staff_member_required
+@_ops_gate
 def reconcile(request, org_id: str):
     """Свести наш счёт с числом из лога шлюза клиента.
 
@@ -869,7 +888,7 @@ def reconcile(request, org_id: str):
     })
 
 
-@staff_member_required
+@_ops_gate
 def usage_csv(request, org_id: str):
     """Посуточный ряд НАШИХ чисел — файлом, чтобы клиент разложил его по своим.
 
