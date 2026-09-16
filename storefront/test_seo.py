@@ -145,11 +145,17 @@ def main() -> int:
     cover = Path(__file__).resolve().parent / "static" / "og-cover.png"
     check(cover.exists(), "и сама картинка лежит в статике", str(cover))
     if cover.exists():
-        from PIL import Image
-        with Image.open(cover) as opened:
-            check(opened.size == (1200, 630),
-                  "размер картинки — тот, которого ждут Telegram и поиск",
-                  str(opened.size))
+        # РАЗМЕР ЧИТАЕТСЯ ИЗ ЗАГОЛОВКА PNG, БЕЗ БИБЛИОТЕКИ. Pillow нужен только
+        # чтобы эту картинку НАРИСОВАТЬ (`make_og_cover.py`, ручной инструмент),
+        # и тащить его в зависимости витрины ради одной проверки значило бы
+        # положить его в боевой образ. Ширина и высота лежат в байтах 16..24
+        # блока IHDR — это часть формата, а не догадка.
+        import struct
+        head = cover.read_bytes()[:24]
+        png = head[:8] == b"\x89PNG\r\n\x1a\n"
+        size = struct.unpack(">II", head[16:24]) if png else (0, 0)
+        check(png and size == (1200, 630),
+              "размер картинки — тот, которого ждут Telegram и поиск", str(size))
 
     # ── структурированные данные ──────────────────────────────────────────
     block = re.search(r'<script type="application/ld\+json">(.*?)</script>',

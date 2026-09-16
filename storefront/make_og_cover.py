@@ -15,6 +15,11 @@
 не может разойтись с ним; картинка — может, и заметить это будет нечем, потому
 что смотрят на неё в чужой ленте.
 
+ЗАПУСКАЕТСЯ РУКАМИ И НЕ В СОСТАВЕ ВИТРИНЫ. Pillow и fontTools нужны только
+здесь, поэтому их нет в `requirements.txt`: боевой образ не должен носить
+рисовалку ради картинки, которая меняется раз в год.
+
+    cd storefront && .venv/bin/pip install pillow fonttools
     cd storefront && .venv/bin/python make_og_cover.py
 """
 import pathlib
