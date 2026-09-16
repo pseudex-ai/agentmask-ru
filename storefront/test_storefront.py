@@ -806,6 +806,27 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     _check_ops_console(client, admin_url, public_url, org, raw_key)
 
 
+def _verify_otp(client, user) -> None:
+    """Пометить сессию клиента прошедшей второй фактор (TOTP).
+
+    Консоль и админка теперь требуют подтверждённое OTP-устройство
+    (django_otp.OTPAdminSite + otp_required на /ops/). `force_login` даёт только
+    аутентификацию, но не второй фактор, поэтому staff-сессию надо ещё
+    верифицировать — иначе все экраны консоли отвечают 302 на вход.
+    """
+    from django_otp import DEVICE_ID_SESSION_KEY
+    from django_otp.plugins.otp_totp.models import TOTPDevice
+
+    device, _created = TOTPDevice.objects.get_or_create(
+        user=user, name="ci", defaults={"confirmed": True})
+    if not device.confirmed:
+        device.confirmed = True
+        device.save(update_fields=["confirmed"])
+    session = client.session
+    session[DEVICE_ID_SESSION_KEY] = device.persistent_id
+    session.save()
+
+
 def _check_ops_console(client, admin_url: str, public_url: str,
                        org, raw_key: str) -> None:
     """Операторская консоль: все клиенты, один клиент, цепи, тарифы.
@@ -841,6 +862,7 @@ def _check_ops_console(client, admin_url: str, public_url: str,
     staff_client = _FreshClient()
     staff = User.objects.create_user(email="ops@pseudex.ru", is_staff=True)
     staff_client.force_login(staff)
+    _verify_otp(staff_client, staff)
 
     rendered = {path: staff_client.get(path) for path in screens}
     broken = [f"{path}={response.status_code}"
@@ -982,6 +1004,7 @@ def _check_ops_console(client, admin_url: str, public_url: str,
     # `except` во вью: набор падал, но не говорил, что именно сломалось.
     down_client = _FreshClient(raise_request_exception=False)
     down_client.force_login(staff)
+    _verify_otp(down_client, staff)
     with mock.patch("billing.licensing._get",
                     side_effect=licensing.LicensingError("сервер не отвечает")):
         down = {path: down_client.get(path) for path in _screens_with_reconcile}
