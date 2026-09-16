@@ -332,3 +332,10 @@ table.list td.mono { font-family: var(--mono); font-size: 12.5px; }
 .auth-msg--success { border-color: var(--accent); color: var(--accent-2); }
 /* вторичные ссылки под формой (забыли пароль / войти по коду) */
 .auth-card hr { border: 0; border-top: 1px solid var(--line-2); margin: 22px 0 16px; }
+
+/* Кнопка, которая обязана выглядеть ссылкой. Повтор кода — это POST (рейт-лимит
+   и счётчик попыток остаются на стороне allauth), но для клиента это «ссылка
+   рядом с вопросом», а не вторая крупная кнопка, спорящая с «Войти». */
+.linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--accent);
+  cursor: pointer; text-decoration: underline; }
+.linkish:hover { color: var(--text); }

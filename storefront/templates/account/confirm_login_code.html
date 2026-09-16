@@ -1,18 +1,29 @@
 {% extends "base.html" %}
 {% load i18n %}
-{% comment %} Второй шаг единственного входа. Ссылка ведёт на ЗАПРОС НОВОГО кода, а не «ко
-   входу»: «вход» и есть предыдущий экран, и ссылка туда была бы петлёй через
-   редирект. Код живёт 10 минут (ACCOUNT_LOGIN_BY_CODE_TIMEOUT) — срок назван
-   вслух, иначе «не работает» и «протух» для клиента одно и то же. {% endcomment %}
+{% comment %}Второй шаг единственного входа.
+
+«НАЧАТЬ ЗАНОВО», А НЕ «ОТПРАВИТЬ ЕЩЁ РАЗ», И ЭТО НЕ ФОРМУЛИРОВКА, А МЕХАНИКА.
+Пока код в процессе, allauth 65.3.1 ЗАПИРАЕТ клиента на этом экране: и GET, и
+POST страницы запроса кода редиректят обратно сюда, письма не отправив.
+Проверено живьём. Нативного повтора в этой версии нет —
+`LOGIN_BY_CODE_SUPPORTS_RESEND` появился позже (сверено с app_settings.py).
+Поэтому кнопка «отправить ещё раз» была бы кнопкой, которая молча ничего не
+делает, — хуже отсутствующей. Сброс ожидающего входа делает `logout`, после
+него форма почты снова доступна; `next` возвращает клиента ровно туда.
+
+Почта показана вслух: клиент с двумя ящиками иначе не знает, куда смотреть.
+
+Адрес показан вслух: клиент с двумя почтами иначе не знает, куда смотреть, а
+срок жизни кода назван, иначе «не работает» и «протух» — одно и то же.{% endcomment %}
 {% block title %}Код из письма · pseudex{% endblock %}
 {% block nav %}{% endblock %}
 {% block head_cta %}{% endblock %}
 {% block content %}
 <section class="auth"><div class="auth-card">
   <h1>Код из письма</h1>
-  <p>Отправили одноразовый код на вашу почту — впишите его здесь. Код действует
-     10 минут и срабатывает один раз.</p>
-  {% if form.errors %}<div class="auth-msg auth-msg--error">Код не подошёл или устарел — запросите новый.</div>{% endif %}
+  <p>Отправили одноразовый код на <b>{{ email }}</b> — впишите его здесь.
+     Код действует 10 минут и срабатывает один раз.</p>
+  {% if form.errors %}<div class="auth-msg auth-msg--error">Код не подошёл или устарел — отправьте новый.</div>{% endif %}
   <form method="post" action="">
     {% csrf_token %}
     {% for field in form %}<label>{{ field.label }}{{ field }}</label>{% endfor %}
@@ -20,7 +31,11 @@
     <button class="btn accent" type="submit">Войти</button>
   </form>
   <hr>
-  <div class="auth-alt">Письмо не пришло?
-    <a href="{% url 'account_request_login_code' %}">Запросить новый код</a></div>
+  <form method="post" action="{% url 'account_logout' %}" class="auth-alt">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{% url 'account_request_login_code' %}">
+    Письмо не пришло? Проверьте «Спам» —
+    <button class="linkish" type="submit">начать заново</button>
+  </form>
 </div></section>
 {% endblock %}
