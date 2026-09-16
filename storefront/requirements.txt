@@ -2,7 +2,7 @@
 # It must not import from prototype/ at all: the engine must not depend on the
 # shop, and the shop must never be a route by which personal data could reach us.
 Django==5.1.5
-django-allauth==65.3.1
+django-allauth==65.19.3
 # Второй фактор (TOTP) на внутренних админ-точках: админка + /ops/. Только
 # TOTP-плагин django-otp; qrcode печатает QR привязки в терминал (enroll_totp),
 # картинок не рендерит — ASCII, поэтому без Pillow.

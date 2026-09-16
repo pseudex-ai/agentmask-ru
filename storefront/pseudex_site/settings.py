@@ -171,20 +171,24 @@ AUTHENTICATION_BACKENDS = [
 # thing because every additional field is a place to lose someone on the way to
 # the single metric this site is measured by — fifteen minutes to the first
 # masked request. A password would also be a credential we then have to hold.
-# These four are the settings django-allauth 65.3.1 ACTUALLY READS. The block
-# here used to say `ACCOUNT_LOGIN_METHODS` / `ACCOUNT_SIGNUP_FIELDS`, which are
-# a LATER version's API: 65.3.1 has no such names, so the whole configuration
-# was silently inert and allauth ran on its defaults — authenticate by
-# username, username required — against a User model whose `username` is None.
-# The sign-in page therefore raised FieldDoesNotExist and returned 500, which
-# is the only way back into the cabinet for every customer.
+# ИМЕНА НАСТРОЕК ЗДЕСЬ — ДЕЙСТВУЮЩИЕ ДЛЯ УСТАНОВЛЕННОЙ ВЕРСИИ, И ЭТО ПРОВЕРЯЕТСЯ,
+# А НЕ ПОМНИТСЯ. На 65.3.1 тут стояли `ACCOUNT_LOGIN_METHODS`/`SIGNUP_FIELDS` —
+# API БОЛЕЕ ПОЗДНЕЙ версии: та версия таких имён не знала, конфигурация была
+# молча инертна, allauth работал на умолчаниях (вход по username) против модели,
+# где `username` нет, и страница входа отдавала 500 — единственный путь клиента
+# обратно в кабинет. Набор это пережил, потому что все тесты входят через
+# `force_login()` и ту страницу не рисуют.
 #
-# It survived the suite because every test signs in with `force_login()` and
-# never renders that page. If allauth is ever upgraded past 65.3, these become
-# deprecated aliases and the new names take over — check both then.
-ACCOUNT_AUTHENTICATION_METHOD = "email"
-ACCOUNT_EMAIL_REQUIRED = True
-ACCOUNT_USERNAME_REQUIRED = False
+# Теперь мы на 65.19.3, и имена вернулись к новым — но уже ПОСЛЕ проверки:
+# `manage.py check` на старых ругался «deprecated», а тесты подтвердили, что
+# новые действуют. При следующем апгрейде — так же: сверить по `check` и по
+# `app_settings.py`, а не по памяти.
+ACCOUNT_LOGIN_METHODS = {"email"}
+# БЕЗ ПОЛЕЙ ПАРОЛЯ, И ЭТО НЕ КОСМЕТИКА. Вход у клиента — код из письма, пароля
+# нет вовсе; устаревшая пара ACCOUNT_EMAIL_REQUIRED/USERNAME_REQUIRED выводила
+# отсюда `['email*','password1*','password2*']`, то есть описывала продукт,
+# которого нет.
+ACCOUNT_SIGNUP_FIELDS = ["email*"]
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 ACCOUNT_EMAIL_VERIFICATION = "optional"
 ACCOUNT_LOGIN_BY_CODE_ENABLED = True
@@ -196,6 +200,12 @@ ACCOUNT_LOGIN_BY_CODE_ENABLED = True
 # `LOGIN_BY_CODE_SUPPORTS_RESEND` в 65.3.1 НЕ существует — задавать нельзя,
 # молча не сработает.
 ACCOUNT_LOGIN_BY_CODE_TIMEOUT = 600
+# ПОВТОРНАЯ ОТПРАВКА КОДА — НАТИВНАЯ, А НЕ САМОДЕЛЬНАЯ. До 65.15 её в allauth не
+# было вовсе, и «письмо не пришло» приходилось лечить сбросом входа; теперь это
+# штатный переход, а счётчик держит сервер. Число — это МАКСИМУМ повторов на
+# один вход (`True` означало бы 2); поверх него продолжает работать временной
+# лимит ACCOUNT_RATE_LIMITS['request_login_code'].
+ACCOUNT_LOGIN_BY_CODE_SUPPORTS_RESEND = 3
 # ПУСТОЙ ПРЕФИКС ТЕМЫ, А НЕ УМОЛЧАНИЕ. При `None` allauth подставляет в тему имя
 # объекта Site, а он в базе стоит дефолтный django — клиент получал бы письмо
 # «[example.com] Код для входа». Тему и текст письма пишем сами

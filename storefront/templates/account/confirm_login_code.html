@@ -2,14 +2,20 @@
 {% load i18n %}
 {% comment %}Второй шаг единственного входа.
 
-«НАЧАТЬ ЗАНОВО», А НЕ «ОТПРАВИТЬ ЕЩЁ РАЗ», И ЭТО НЕ ФОРМУЛИРОВКА, А МЕХАНИКА.
-Пока код в процессе, allauth 65.3.1 ЗАПИРАЕТ клиента на этом экране: и GET, и
-POST страницы запроса кода редиректят обратно сюда, письма не отправив.
-Проверено живьём. Нативного повтора в этой версии нет —
-`LOGIN_BY_CODE_SUPPORTS_RESEND` появился позже (сверено с app_settings.py).
-Поэтому кнопка «отправить ещё раз» была бы кнопкой, которая молча ничего не
-делает, — хуже отсутствующей. Сброс ожидающего входа делает `logout`, после
-него форма почты снова доступна; `next` возвращает клиента ровно туда.
+ПОВТОР — НАТИВНЫЙ, ЧЕРЕЗ `action=resend` В ЭТУ ЖЕ ВЬЮХУ. Счётчик повторов и
+лимит держит сервер (ACCOUNT_LOGIN_BY_CODE_SUPPORTS_RESEND=3 плюс временной
+ACCOUNT_RATE_LIMITS['request_login_code']), браузер ничего не решает — так
+делают и большие продукты (Clerk, Auth0: кнопка повтора с серверным лимитом).
+
+ЭТО СТОИЛО АПГРЕЙДА, И ОН БЫЛ ПРАВИЛЬНЫМ ХОДОМ. На 65.3.1 нативного повтора не
+существовало: пока код в процессе, allauth запирал клиента на этом экране (и
+GET, и POST страницы запроса редиректили обратно, письма не отправив —
+проверено живьём), и «отправить ещё раз» пришлось бы подменять сбросом входа
+через logout. Обходной путь выбрасывал бы введённое и был ниже отраслевого
+стандарта. Вместо него подняли allauth до 65.19.3.
+
+`can_resend` приходит из вьюхи: когда повторы кончились, вместо кнопки, которая
+молча не сработает, — прямая фраза, сколько ждать.
 
 Почта показана вслух: клиент с двумя ящиками иначе не знает, куда смотреть.
 
@@ -26,16 +32,22 @@ POST страницы запроса кода редиректят обратн�
   {% if form.errors %}<div class="auth-msg auth-msg--error">Код не подошёл или устарел — отправьте новый.</div>{% endif %}
   <form method="post" action="">
     {% csrf_token %}
+    <input type="hidden" name="action" value="verify">
     {% for field in form %}<label>{{ field.label }}{{ field }}</label>{% endfor %}
     {% if redirect_field_value %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">{% endif %}
     <button class="btn accent" type="submit">Войти</button>
   </form>
   <hr>
-  <form method="post" action="{% url 'account_logout' %}" class="auth-alt">
+  {% if can_resend %}
+  <form method="post" action="" class="auth-alt">
     {% csrf_token %}
-    <input type="hidden" name="next" value="{% url 'account_request_login_code' %}">
-    Письмо не пришло? Проверьте «Спам» —
-    <button class="linkish" type="submit">начать заново</button>
+    <input type="hidden" name="action" value="resend">
+    Не пришло? Загляните в «Спам» или
+    <button class="linkish" type="submit">отправьте ещё раз</button>
   </form>
+  {% else %}
+  <div class="auth-alt">Повторы кончились — подождите несколько минут
+    и начните вход заново.</div>
+  {% endif %}
 </div></section>
 {% endblock %}
