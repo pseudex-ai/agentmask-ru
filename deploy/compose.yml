@@ -167,6 +167,23 @@ services:
       PSEUDEX_ANALYTICS_MODE: ${PSEUDEX_ANALYTICS_MODE:-off}
       PSEUDEX_ANALYTICS_HOST: ${PSEUDEX_ANALYTICS_HOST:-}
       PSEUDEX_ANALYTICS_KEY: ${PSEUDEX_ANALYTICS_KEY:-}
+      # ЭКВАЙРИНГ. Ключи ЮKassa нужны РОВНО ЭТОМУ сервису: платежи создаёт и
+      # сверяет только `storefront_web/views.py` (`create_payment`,
+      # `fetch_status`), часовой цикл биллинга их не трогает — класть их ещё и
+      # туда значило бы расширить радиус утечки боевого ключа без причины.
+      #
+      # `:-` (пусто по умолчанию), а НЕ `:?`: без ключей витрина обязана
+      # подниматься и работать — счёт по реквизитам остаётся, просто карта не
+      # предлагается (`payments.is_available()`), — иначе отсутствие эквайринга
+      # роняло бы весь сайт.
+      #
+      # РУБИЛЬНИК ОТДЕЛЬНО ОТ КЛЮЧЕЙ И ПО УМОЛЧАНИЮ ВЫКЛЮЧЕН: ключи могут быть
+      # заданы (боевые, одобренные), а карта всё ещё не показывается, пока
+      # PSEUDEX_ACQUIRING_ENABLED не выставлен в 1. Включение — одна строка в
+      # .env, без пересборки и выката.
+      PSEUDEX_YOOKASSA_SHOP_ID: ${PSEUDEX_YOOKASSA_SHOP_ID:-}
+      PSEUDEX_YOOKASSA_SECRET_KEY: ${PSEUDEX_YOOKASSA_SECRET_KEY:-}
+      PSEUDEX_ACQUIRING_ENABLED: ${PSEUDEX_ACQUIRING_ENABLED:-0}
     healthcheck:
       # Витрина была единственным сервисом на пути клиента без проверки: Django,
       # уронивший себя миграцией, отвечал бы `running` бесконечно, а агент
