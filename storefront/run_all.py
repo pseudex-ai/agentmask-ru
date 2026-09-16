@@ -60,6 +60,7 @@ STEPS = [
     ("04b-offers", "test_offers.py", lambda: True, ""),
     ("04c-hardcap", "test_hardcap.py", lambda: True, ""),
     ("04d-annual", "test_annual.py", lambda: True, ""),
+    ("04e-auth-style", "test_auth_style.py", lambda: True, ""),
     ("05-billing-lifecycle", "test_billing_lifecycle.py", _stand_up,
      "нужен поднятый стенд: bash deploy/local.sh"),
     # НУЖНЫ ОБА, И ЭТО НЕ ПЕДАНТИЗМ. Проверка выпускает НАСТОЯЩИЙ ключ на

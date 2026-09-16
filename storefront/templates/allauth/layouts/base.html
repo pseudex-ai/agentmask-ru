@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% block head_title %}{% endblock head_title %} · pseudex{% endblock %}
+{% block nav %}{% endblock %}
+{% block content %}
+<section class="auth">
+  <div class="auth-card">
+    {% if messages %}
+      <div class="auth-msgs">
+        {% for m in messages %}<div class="auth-msg auth-msg--{{ m.level_tag }}">{{ m }}</div>{% endfor %}
+      </div>
+    {% endif %}
+    {% block auth_inner %}{% endblock %}
+  </div>
+</section>
+{% endblock %}

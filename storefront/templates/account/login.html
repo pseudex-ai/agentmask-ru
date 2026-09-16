@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}Вход · pseudex{% endblock %}
+{% block nav %}{% endblock %}
+{% block content %}
+<section class="auth"><div class="auth-card">
+  <h1>Вход</h1>
+  <p>Нет аккаунта? <a href="/#start">Начните здесь</a> — ключ выдаётся сразу, карта не нужна.</p>
+  {% if form.errors %}<div class="auth-msg auth-msg--error">Проверьте почту и пароль и попробуйте снова.</div>{% endif %}
+  <form method="post" action="{% url 'account_login' %}">
+    {% csrf_token %}
+    {% for field in form %}
+      {% if field.name != "remember" %}<label>{{ field.label }}{{ field }}</label>
+      {% else %}<label class="check">{{ field }} {{ field.label }}</label>{% endif %}
+    {% endfor %}
+    {% if redirect_field_value %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">{% endif %}
+    <button class="btn accent" type="submit">Войти</button>
+  </form>
+  <hr>
+  <div class="auth-alt"><a href="{% url 'account_reset_password' %}">Забыли пароль?</a> · <a href="{% url 'account_request_login_code' %}">Войти по коду из письма</a></div>
+</div></section>
+{% endblock %}
