@@ -218,18 +218,20 @@ def main() -> int:
     # записаны и всё в порядке.
     early = services.create_account("early@fifth-corp.ru", "", "start", "198.51.100.31")
     early_invoice = services.build_switch_invoice(early, Plan.objects.get(code="start"))
+    # Имя проверки одно на обе ветки: провал записывается ТАМ, ГДЕ СЛУЧИЛСЯ,
+    # а не выносится флагом наружу — исключение, превращённое в булево,
+    # теряет собственный текст, и читать в отчёте будет нечего.
+    survives = "оплата до выпуска ключа обрабатывается, а не падает"
     try:
         services.mark_paid(early_invoice, payment_ref="test-early")
-        survived = True
-    except Exception as error:  # noqa: BLE001 — предмет проверки
-        survived = False
-        print(f"      упало: {error}")
-    early_invoice.refresh_from_db()
-    check(survived and early_invoice.state == Invoice.PAID,
-          "оплата до выпуска ключа обрабатывается, а не падает",
-          f"состояние счёта: {early_invoice.state}")
-    check(early_invoice.service_resumed_at is not None,
-          "и счёт помечен обработанным, иначе ЮKassa будет повторять вечно")
+    except Exception as error:  # noqa: BLE001 — предмет проверки именно любой отказ
+        check(False, survives, f"упало: {error}")
+    else:
+        early_invoice.refresh_from_db()
+        check(early_invoice.state == Invoice.PAID, survives,
+              f"состояние счёта: {early_invoice.state}")
+        check(early_invoice.service_resumed_at is not None,
+              "и счёт помечен обработанным, иначе ЮKassa будет повторять вечно")
 
     # ── 11. КНОПКА ДЕЙСТВИТЕЛЬНО ЕСТЬ НА ЭКРАНЕ ────────────────────────────
     #

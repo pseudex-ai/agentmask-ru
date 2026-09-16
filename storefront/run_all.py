@@ -51,7 +51,18 @@ def _has_yookassa() -> bool:
 
 
 # имя, файл, «можно ли сейчас», почему нельзя
+# Линтер наших же проверок: запрещает `except`, гасящий провал. Живёт в движке,
+# витрина входит в его область — поэтому и зовётся отсюда, его же питоном.
+_LINT = ["python3", "e2e/lint_tests.py", ".", "licensing", "pseudex", "e2e",
+         "../storefront"]
+
 STEPS = [
+    # ЛИНТЕР ТЕСТОВ ИДЁТ ПЕРВЫМ И ЖИВЁТ В ДВИЖКЕ. Он проверяет наши же проверки
+    # на проглоченные провалы, и витрина входит в его область (`../storefront`),
+    # но в этой батарее его не было — поэтому широкий `except`, гасивший провал,
+    # доехал до CI и упал там, а не здесь. Проверка, которой нет локально, —
+    # это проверка, про которую узнаёшь последним.
+    ("00a-lint-tests", _LINT, lambda: True, ""),
     ("00-storefront", "test_storefront.py", lambda: True, ""),
     ("01-deploy-refs", "test_deploy_references.py", lambda: True, ""),
     ("02-analytics", "test_analytics.py", lambda: True, ""),
@@ -99,7 +110,12 @@ def main() -> int:
             skipped.append(name)
             continue
         began = time.monotonic()
-        result = subprocess.run([_PY, script], cwd=str(_HERE))
+        # ШАГ — ЭТО ЛИБО НАШ СКРИПТ, ЛИБО ГОТОВАЯ КОМАНДА. Линтер тестов лежит в
+        # движке и запускается его питоном по другому корню, поэтому один
+        # `[_PY, script]` на все шаги ему не годится.
+        command = script if isinstance(script, list) else [_PY, script]
+        where = _HERE.parent / "prototype" if isinstance(script, list) else _HERE
+        result = subprocess.run(command, cwd=str(where))
         took = time.monotonic() - began
         if result.returncode == 0:
             print(f"OK    {name}  {took:.0f} с")
