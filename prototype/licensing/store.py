@@ -364,6 +364,26 @@ class LicenseStore:
             self._conn.commit()
         return cursor.rowcount
 
+    def set_org_plan(self, org_id: str, plan: str) -> int:
+        """Перевести ВСЕ ключи организации на другой тариф.
+
+        ТАРИФ ЖИВЁТ НА КЛЮЧЕ, а не на организации, и это делает смену тарифа
+        отдельной операцией, а не полем в одной таблице. Пересоздавать ключ
+        нельзя: он прописан в конфиге работающего контейнера клиента, и смена
+        тарифа не имеет права останавливать его шлюз — это ровно тот случай,
+        когда наши деньги останавливают чужой прод.
+
+        Возвращает число тронутых ключей. Ноль значит, что ключей у организации
+        нет вовсе, и вызывающему это надо отличать от успеха: он только что
+        пообещал клиенту лимиты, которых сервер не выдаст.
+        """
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE keys SET plan=? WHERE org_id=?", (plan, org_id)
+            )
+            self._conn.commit()
+        return cursor.rowcount
+
     def record_lease(self, lease_id: str, org_id: str, instance_id: str,
                      process_id: str, ttl_seconds: int, pubkey: str = "") -> None:
         with self._lock:

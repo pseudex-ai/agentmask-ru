@@ -41,6 +41,7 @@ USAGE = "/admin/usage"
 # Операторская консоль. Те же правила: путь литералом, аудитория решена на той
 # стороне в `ADMIN_ACTIONS`, и разъезд роняет старт лицензионного сервера.
 PLANS = "/admin/plans"
+REPLAN = "/admin/replan"
 FLEET = "/admin/fleet"
 CHAINS = "/admin/chains"
 
@@ -190,6 +191,24 @@ def set_plan(code: str, values: dict[str, object], actor: str) -> dict[str, obje
     body = _post(PLANS, {"code": code, "actor": actor, **values})
     plan = body.get("plan", {})
     return plan if isinstance(plan, dict) else {}
+
+
+def set_org_plan(org_id: str, plan: str) -> int:
+    """Перевести организацию на другой тариф на лицензионном сервере.
+
+    ЛИМИТЫ ИСПОЛНЯЕТ ОН, А НЕ МЫ. Потолок инстансов, размер кванта и резерв
+    сервер знает по коду тарифа, записанному на ключе; наша строка `Subscription`
+    решает только счёт. Поэтому оплата старшего тарифа без этого вызова — это
+    обещание, которого никто не выполнит: клиент заплатил за двенадцать
+    контейнеров и упёрся в один.
+
+    Возвращает число переведённых ключей. Ноль означает, что ключей у
+    организации нет (ещё не выпускала) — это НЕ отказ: тариф встанет на ключ в
+    момент выпуска, `issue_key` берёт его из подписки.
+    """
+    body = _post(REPLAN, {"org_id": org_id, "plan": plan})
+    changed = body.get("keys", 0)
+    return changed if isinstance(changed, int) else 0
 
 
 def fleet(org_ids: list[str]) -> dict[str, dict[str, object]]:

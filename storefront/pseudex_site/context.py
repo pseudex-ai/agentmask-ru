@@ -22,4 +22,12 @@ def analytics(request) -> dict[str, object]:
                or request.path.startswith("/accounts/"))
     return {"analytics": settings.ANALYTICS,
             "analytics_here": settings.ANALYTICS["mode"] != "off" and not private,
-            "support_bot": settings.SUPPORT_BOT}
+            "support_bot": settings.SUPPORT_BOT,
+            # ТА ЖЕ ГРАНИЦА РЕШАЕТ И ИНДЕКСАЦИЮ. Закрытые страницы не должны
+            # попадать в выдачу по той же причине, по которой на них нет записи
+            # сессии: на экране ключи, суммы счетов и чужие названия. Признак
+            # один, чтобы две половины одного решения не разъехались.
+            "indexable": not private,
+            # Абсолютный адрес нужен канонической ссылке и карточке для
+            # мессенджеров: относительный путь в `og:url` не работает нигде.
+            "site_url": settings.SITE_URL}

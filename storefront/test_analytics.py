@@ -283,7 +283,11 @@ def main() -> int:
     call_command("seed_plans", verbosity=0)
     staff = _U.objects.create_superuser(email="ops@pseudex.local", password="ops-pass-1")
     console = _Client()
-    console.force_login(staff)
+    # СО ВТОРЫМ ФАКТОРОМ: консоль закрыта `otp_required`, и один `force_login`
+    # её больше не открывает — страница отвечает редиректом, а `.context` в
+    # тесте становится None. Ровно на этом проверка и падала.
+    from testkit_otp import login_staff
+    login_staff(console, staff)
 
     work = _P.objects.get(code="work")
     now2 = timezone.now()

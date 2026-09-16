@@ -12,10 +12,12 @@ looking at a screen that says "оплачено" while their agents return 503. 
 call fails, the exception propagates and the customer sees an honest error.
 """
 
+import hashlib
 import logging
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import F, Q
 from django.utils import timezone
@@ -26,7 +28,14 @@ from billing.models import Invoice, LicenseKey, Offer, Plan, Subscription
 
 _log = logging.getLogger("billing.services")
 
-TRIAL_DAYS = 14
+# ДЛИТЕЛЬНОСТЬ ПРОБЫ ЖИВЁТ В СТРОКЕ ТАРИФА, А НЕ ЗДЕСЬ.
+#
+# Это число осталось ровно одним: значением по умолчанию, которым `seed_plans`
+# создаёт пробный тариф в первый раз. Дальше его правят в админке, и правка
+# доходит до следующей регистрации без выката. Читать его в коде вместо
+# `trial_plan().trial_days` значит вернуть ту самую константу, ради снятия
+# которой всё и делалось.
+TRIAL_DAYS_SEED = 14
 
 
 # ОДНОРАЗОВЫЕ ПОЧТЫ — ЕДИНСТВЕННЫЙ РЕАЛЬНЫЙ ПУТЬ ЗЛОУПОТРЕБЛЕНИЯ ПРОБНЫМ
@@ -84,7 +93,90 @@ def pending_organization(email: str):
     return organization
 
 
-def create_account(email: str, display_name: str, plan_code: str) -> Organization:
+def trial_plan() -> Plan | None:
+    """Строка тарифа, на которой живёт проба. Пусто — пробы в продукте нет.
+
+    Отсутствие строки это РАБОЧЕЕ состояние, а не сбой: владелец имеет право
+    выключить бесплатный период вовсе, сняв отметку в админке, и тогда новый
+    аккаунт заводится сразу платным. Поэтому здесь `None`, а не исключение.
+    """
+    return Plan.objects.filter(is_trial=True).first()
+
+
+def trial_days() -> int:
+    """Сколько дней бесплатно. Ноль — бесплатного периода нет.
+
+    Печатается на лендинге и в юридических страницах, поэтому читается отсюда, а
+    не из константы: обещание на сайте и правило, по которому заводится аккаунт,
+    обязаны быть одним числом. Раньше это была `TRIAL_DAYS = 14` в коде, и
+    поменять срок пробы значило выкатить релиз.
+    """
+    plan = trial_plan()
+    return plan.trial_days if plan is not None else 0
+
+
+def signup_ip_hash(client_ip: str) -> str:
+    """Необратимая метка адреса, с которого пришла регистрация.
+
+    Сам адрес не хранится нигде: для ответа «с этого адреса уже заводили
+    аккаунт» достаточно совпадения хешей, а хранение IP это хранение
+    персональных данных ради анти-абуза — цена, которую платить незачем.
+
+    Соль постоянная, в отличие от суточной в аналитике, и это осознанно: там
+    задача противоположная — не дать связать визиты между днями, здесь связать
+    регистрации через месяцы и есть смысл.
+    """
+    if not client_ip:
+        return ""
+    salt = getattr(settings, "SECRET_KEY", "")
+    return hashlib.sha256(f"signup|{salt}|{client_ip}".encode()).hexdigest()
+
+
+# Домены, по которым организации НЕ сопоставляются. Общий ящик не говорит о
+# компании ничего: сравнивать по нему значит выдать пробу первому пришедшему с
+# gmail и отказать всем остальным в стране.
+PUBLIC_MAIL_DOMAINS = frozenset({
+    "gmail.com", "googlemail.com", "yandex.ru", "ya.ru", "yandex.com",
+    "mail.ru", "inbox.ru", "list.ru", "bk.ru", "internet.ru",
+    "rambler.ru", "lenta.ru", "autorambler.ru",
+    "outlook.com", "hotmail.com", "live.com", "msn.com",
+    "icloud.com", "me.com", "mac.com",
+    "proton.me", "protonmail.com", "pm.me", "tutanota.com", "tuta.io",
+    "zoho.com", "aol.com", "gmx.com", "fastmail.com", "qq.com",
+})
+
+
+def email_domain(email: str) -> str:
+    _, _, domain = email.partition("@")
+    return domain.strip().lower()
+
+
+def trial_allowed(ip_hash: str, domain: str) -> bool:
+    """Первая ли это проба для этого адреса и этой компании.
+
+    ЧЕГО ЭТА ПРОВЕРКА НЕ УМЕЕТ, СКАЗАНО ПРЯМО. Отпечатка машины у нас нет:
+    контейнер работает на железе клиента, `PSEUDEX_INSTANCE_ID` заново случаен
+    при каждом старте, а запасной `installation_id` лежит в томе и исчезает
+    вместе с ним. Софт на чужой машине не может дать метку, переживающую
+    `docker rm -v`, и обещать обратное было бы враньём. Поэтому сверяется то,
+    что видно НАМ, а настоящая защита от фарма — не этот список, а узость
+    самого бесплатного тарифа: брать его пачками незачем.
+
+    Промах в обе стороны возможен и признан: один офис за NAT это один адрес, и
+    второй живой клиент оттуда пробы не получит (снимается кнопкой в админке), а
+    смена провайдера плюс новый домен её вернут. Это фильтр, а не забор.
+    """
+    from accounts.models import Organization as _Organization
+    if ip_hash and _Organization.objects.filter(signup_ip_hash=ip_hash).exists():
+        return False
+    if domain and domain not in PUBLIC_MAIL_DOMAINS and \
+            _Organization.objects.filter(signup_email_domain=domain).exists():
+        return False
+    return True
+
+
+def create_account(email: str, display_name: str, plan_code: str,
+                   client_ip: str) -> Organization:
     """Create the account and hand back a WORKING key, before any payment.
 
     This is the whole product promise on the storefront side: the single metric
@@ -94,7 +186,9 @@ def create_account(email: str, display_name: str, plan_code: str) -> Organizatio
     number and buy nothing — the key is worthless without our licensing server,
     which we can switch off at any time.
     """
-    plan = Plan.objects.get(code=plan_code)
+    intended = Plan.objects.get(code=plan_code)
+    ip_hash = signup_ip_hash(client_ip)
+    domain = email_domain(email)
 
     # The account commits FIRST, on its own. The licensing call that follows is
     # a 15 s network round trip, and it used to run inside this transaction —
@@ -111,18 +205,38 @@ def create_account(email: str, display_name: str, plan_code: str) -> Organizatio
         Membership.objects.create(user=user, organization=organization,
                                   role=Membership.ROLE_OWNER)
         now = timezone.now()
-        trial_ends = now + timedelta(days=TRIAL_DAYS)
+        # ПРОБА ИДЁТ НА СВОЁМ ТАРИФЕ, А НЕ НА ВЫБРАННОМ.
+        #
+        # Раньше выбор из формы становился тарифом подписки, и две недели на
+        # «Промышленном» означали миллион запросов бесплатно — с каждой новой
+        # почты заново. Теперь выбор это НАМЕРЕНИЕ (`intended_plan`), а
+        # обслуживание идёт на пробном тарифе с его собственными лимитами.
+        #
+        # Повторная регистрация аккаунт получает, но без бесплатных дней: проба
+        # кончается в момент создания, и чтобы начать работать, надо заплатить.
+        trial = trial_plan()
+        granted = bool(trial) and trial_allowed(ip_hash, domain)
+        plan = trial if trial is not None else intended
+        trial_ends = now + timedelta(days=trial.trial_days) if granted else now
+        organization.signup_ip_hash = ip_hash
+        organization.signup_email_domain = domain
+        organization.trial_granted = granted
+        organization.save(update_fields=["signup_ip_hash", "signup_email_domain",
+                                         "trial_granted"])
         subscription = Subscription.objects.create(
             organization=organization,
             plan=plan,
+            intended_plan=intended,
             state=Subscription.TRIAL,
             trial_ends_at=trial_ends,
             current_period_start=now,
             current_period_end=trial_ends,
-            # СНИМОК СНИМАЕТСЯ СРАЗУ, а не при первой оплате: цена, показанная
-            # человеку на лендинге в момент нажатия кнопки, — это и есть цена,
-            # по которой ему придёт первый счёт. Правка тарифа во время его
-            # пробного периода не имеет права её изменить.
+            # СНИМОК СНИМАЕТСЯ СРАЗУ, а не при первой оплате, и снимается он
+            # с тарифа ОБСЛУЖИВАНИЯ — на пробе это пробный тариф. Условия
+            # выбранного платного снимутся в момент, когда за него заплатят
+            # (`mark_paid` -> `adopt_current_terms`): обещать сегодняшнюю цену
+            # тому, кто ещё не заплатил, мы не можем, а вот не менять её посреди
+            # уже оплаченного периода — обязаны.
             terms_monthly_price=plan.monthly_price,
             terms_included_requests=plan.included_requests,
             terms_metered_per_1k=plan.metered_per_1k,
@@ -314,9 +428,31 @@ def mark_paid(invoice: Invoice, payment_ref: str = "") -> None:
                     fields_sub += ["current_period_start", "current_period_end"]
             else:
                 # Месячное продление всегда открывает новый 30-дневный период.
+                # ПОДАРОЧНЫЕ ДНИ ПРИБАВЛЯЮТСЯ К ПЕРИОДУ, а не к счёту: человек
+                # платит за месяц и получает месяц плюс подарок обслуживания.
+                # Число берётся СО СЧЁТА, а не из тарифа: обещание дано при
+                # выставлении, и правка тарифа между выставлением и платежом не
+                # имеет права его уменьшить.
                 subscription.current_period_start = now
-                subscription.current_period_end = now + timedelta(days=30)
+                subscription.current_period_end = now + timedelta(
+                    days=30 + locked.bonus_days)
                 fields_sub += ["current_period_start", "current_period_end"]
+            # СЧЁТ, КОТОРЫЙ ПЕРЕВОДИТ НА ТАРИФ, ПЕРЕВОДИТ ЕГО ЗДЕСЬ.
+            #
+            # До `adopt_current_terms` — иначе условия снялись бы со старого
+            # тарифа, и первый же счёт пришёл бы по цене, которую человек уже не
+            # покупал. Проба на этом заканчивается совсем: `trial_ends_at`
+            # уводится в прошлое, чтобы месячный цикл не пытался выставить ей
+            # закрывающий счёт вторым платежом.
+            if locked.target_plan_id and subscription.plan_id != locked.target_plan_id:
+                _log.info("plan switched by payment", extra={
+                    "org": locked.organization_id, "invoice": locked.number,
+                    "was": subscription.plan_id, "now": locked.target_plan_id})
+                subscription.plan = locked.target_plan
+                fields_sub.append("plan")
+            if locked.target_plan_id and subscription.trial_ends_at > now:
+                subscription.trial_ends_at = now
+                fields_sub.append("trial_ends_at")
             subscription.save(update_fields=fields_sub)
             # ПРОДЛЕНИЕ — ЕДИНСТВЕННАЯ ТОЧКА, ГДЕ ПРАВКА ТАРИФА ДОХОДИТ ДО
             # КЛИЕНТА. Внутри той же транзакции, что и новый период: период и
@@ -324,6 +460,49 @@ def mark_paid(invoice: Invoice, payment_ref: str = "") -> None:
             adopt_current_terms(subscription)
         organization_id = locked.organization_id
         invoice_pk = locked.pk
+        switched_to = locked.target_plan_id
+
+    # ЛИМИТЫ ИСПОЛНЯЕТ ЛИЦЕНЗИОННЫЙ СЕРВЕР, И ЕМУ НАДО СКАЗАТЬ.
+    #
+    # Тариф записан на КЛЮЧЕ, который он выдал; наша строка решает только счёт.
+    # Без этого вызова оплата «Промышленного» меняла бы цифру в кабинете, а
+    # контейнеров как было по потолку младшего тарифа, так и осталось бы. Вне
+    # транзакции и до `set_status` по тому же правилу, что и всё здесь: сеть не
+    # держит транзакцию, а деньги уже записаны.
+    if switched_to and LicenseKey.objects.filter(
+            organization_id=organization_id, revoked_at__isnull=True).exists():
+        try:
+            licensing.set_org_plan(organization_id, switched_to)
+        except licensing.LicensingError as error:
+            _log.error("payment recorded but plan NOT applied on licensing", extra={
+                "org": organization_id, "invoice": invoice.number,
+                "plan": switched_to, "error": str(error)})
+            raise ServiceNotResumed(str(error)) from error
+
+    # ОПЛАТА РАНЬШЕ КЛЮЧА — ТЕПЕРЬ ВОЗМОЖНАЯ ПОСЛЕДОВАТЕЛЬНОСТЬ, А НЕ СБОЙ.
+    #
+    # Пока заплатить можно было только по счёту, ключ существовал всегда: счёт
+    # выставлялся тому, кто уже работал. С кнопкой «оплатить сейчас» человек
+    # может заплатить в первый же день, ещё не пройдя по ссылке из письма, — и
+    # тогда возобновлять на лицензионном сервере НЕЧЕГО: организации он не
+    # знает и честно отвечает 404. Раньше это была бы `ServiceNotResumed`,
+    # вебхук вернул бы ошибку, ЮKassa начала бы повторять доставку, и каждая
+    # попытка падала бы так же — при том что деньги записаны и всё в порядке.
+    #
+    # Спрашиваем СВОЮ базу, а не ловим текст чужой ошибки: ключей нет — значит
+    # и обслуживания нет, и включать нечего. Тариф на будущий ключ возьмётся из
+    # подписки в момент выпуска.
+    has_keys = LicenseKey.objects.filter(organization_id=organization_id,
+                                         revoked_at__isnull=True).exists()
+    if not has_keys:
+        _log.info("payment recorded; no key yet, nothing to resume", extra={
+            "org": organization_id, "invoice": invoice.number})
+        with transaction.atomic():
+            Invoice.objects.filter(pk=invoice_pk).update(
+                service_resumed_at=timezone.now())
+        funnel("paid", organization_id, str(invoice.total))
+        invoice.refresh_from_db()
+        return
 
     try:
         licensing.set_status(organization_id, "active")
@@ -551,6 +730,80 @@ def build_annual_invoice(organization: Organization) -> Invoice:
     _log.info("annual invoice built", extra={
         "invoice": invoice.number, "org": organization.id,
         "gross": str(priced["gross"]), "total": str(priced["total"])})
+    return invoice
+
+
+def has_ever_paid(organization: Organization) -> bool:
+    """Платила ли организация хоть раз. Определяет право на подарочные дни."""
+    return Invoice.objects.filter(organization=organization,
+                                  state=Invoice.PAID).exists()
+
+
+def bonus_days_for(organization: Organization, plan: Plan) -> int:
+    """Сколько дней в подарок даёт немедленная оплата ЭТОГО тарифа.
+
+    Два условия, и оба обязательны. Первое: платёж действительно первый —
+    подарок существует, чтобы человек заплатил СЕГОДНЯ вместо «досижу пробу», и
+    на втором месяце он был бы просто скидкой, которую никто не просил.
+    Второе: пробу этой организации выдали — повторная регистрация с того же
+    адреса или домена аккаунт получает, но ни бесплатных дней, ни подарка: иначе
+    подарок стал бы новым способом брать продукт бесплатно пачками, ровно тем,
+    ради закрытия которого проба и стала узкой.
+    """
+    if not organization.trial_granted or has_ever_paid(organization):
+        return 0
+    return plan.first_payment_bonus_days
+
+
+def build_switch_invoice(organization: Organization, plan: Plan) -> Invoice:
+    """Счёт на месяц ТАРИФА, выставленный по требованию.
+
+    ЗАЧЕМ ОН ЕСТЬ. `pay_invoice` умеет оплатить только уже существующий счёт, а
+    счета выставлял месячный цикл — по окончании пробы или периода. Значит во
+    время пробы счёта не существовало, и человек, готовый заплатить сегодня, не
+    мог сделать этого ничем, кроме годовой предоплаты: единственная живая кнопка
+    на весь кабинет. Этот счёт закрывает дыру и он же служит сменой тарифа для
+    того, кто уже платит, — оба случая это «переведи меня на тариф X с оплатой».
+
+    ИДЕМПОТЕНТНО, И ПЕРЕДУМАТЬ РАЗРЕШЕНО. Повторный вызов на тот же тариф отдаёт
+    тот же счёт, а не плодит второй: иначе две вкладки дали бы два платежа.
+    Выбор другого тарифа АННУЛИРУЕТ прежний неоплаченный счёт — оставить его
+    живым значило бы, что человек, передумавший в пользу старшего тарифа, может
+    случайно оплатить младший и получить не то, что выбрал.
+    """
+    pending = (Invoice.objects.filter(organization=organization,
+                                      target_plan__isnull=False)
+               .exclude(state__in=(Invoice.VOID, Invoice.PAID))
+               .order_by("-id").first())
+    if pending is not None:
+        if pending.target_plan_id == plan.code:
+            return pending
+        pending.state = Invoice.VOID
+        pending.save(update_fields=["state"])
+        _log.info("switch invoice voided in favour of another plan", extra={
+            "invoice": pending.number, "org": organization.id,
+            "was": pending.target_plan_id, "now": plan.code})
+
+    now = timezone.now()
+    bonus = bonus_days_for(organization, plan)
+    invoice = Invoice.objects.create(
+        organization=organization,
+        number=Invoice.next_number(),
+        state=Invoice.ISSUED,
+        target_plan=plan,
+        bonus_days=bonus,
+        period_start=now.date(),
+        period_end=(now + timedelta(days=30 + bonus)).date(),
+        plan_amount=plan.monthly_price,
+        metered_requests=0,
+        metered_amount=Decimal("0"),
+        total=plan.monthly_price,
+        issued_at=now,
+        due_at=(now + timedelta(days=INVOICE_DUE_DAYS)).date(),
+    )
+    _log.info("switch invoice built", extra={
+        "invoice": invoice.number, "org": organization.id, "plan": plan.code,
+        "total": str(invoice.total), "bonus_days": bonus})
     return invoice
 
 

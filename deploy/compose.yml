@@ -124,9 +124,23 @@ services:
       PSEUDEX_DB_NAME: ${POSTGRES_DB:-pseudex}
       PSEUDEX_DB_USER: ${POSTGRES_USER:-pseudex}
       PSEUDEX_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      # ЛИЦЕНЗИОННЫЙ СЕРВЕР НУЖЕН УЖЕ ЗДЕСЬ, а не только витрине.
+      #
+      # `seed_plans` отправляет туда БЕСПЛАТНЫЙ тариф: лимиты исполняет он и
+      # знает их по коду тарифа, а незнакомый код отклоняет при выпуске ключа.
+      # Без этих двух переменных команда видит ненастроенный сервер, честно
+      # пишет предупреждение и пропускает отправку — то есть выкат проходит
+      # зелёным, а первая же регистрация падает на выпуске ключа. Заметно это
+      # было бы по жалобе клиента, а не по красному деплою.
+      PSEUDEX_LICENSING_ADMIN_URL: http://license:9443
+      PSEUDEX_LICENSE_STOREFRONT_TOKEN: ${PSEUDEX_LICENSE_STOREFRONT_TOKEN:?set PSEUDEX_LICENSE_STOREFRONT_TOKEN}
     command: ["sh", "-c", "python manage.py migrate --noinput && python manage.py seed_plans"]
     depends_on:
       postgres: { condition: service_healthy }
+      # И он обязан быть ЖИВЫМ: иначе гонка решает, доедет тариф или нет, а
+      # `seed_plans` при его недоступности роняет выкат намеренно — лучше
+      # откат, чем зелёный деплой со сломанной регистрацией.
+      license: { condition: service_healthy }
 
   storefront:
     image: ${REGISTRY:-cr.yandex/pseudex}/pseudex-storefront:${VERSION:?set VERSION}

@@ -116,6 +116,27 @@ class Organization(models.Model):
     source_referrer = models.CharField(max_length=120, blank=True)
     source_landing = models.CharField(max_length=200, blank=True)
 
+    # ПО ЧЕМУ УЗНАЁТСЯ ПОВТОРНАЯ РЕГИСТРАЦИЯ.
+    #
+    # Проба выдавалась каждой новой почте без единой проверки, поэтому её можно
+    # было брать бесконечно: завёл ящик — получил ещё две недели. Отпечатка
+    # машины у нас нет и быть не может (контейнер крутится у клиента, а
+    # `PSEUDEX_INSTANCE_ID` заново случаен при каждом старте), поэтому сверяем
+    # то, что видно нам: адрес, с которого пришли, и домен почты.
+    #
+    # IP НЕ ХРАНИТСЯ — только соль плюс хеш, как и в аналитике: сам адрес это
+    # персональные данные, а для ответа «это уже было» достаточно совпадения.
+    # Соль постоянная (в отличие от суточной в аналитике): сравнивать надо через
+    # месяцы, а не внутри дня.
+    signup_ip_hash = models.CharField(max_length=64, blank=True, db_index=True)
+    # Домен почты. Бесплатные ящики по домену НЕ сравниваются — иначе первый
+    # зарегистрировавшийся с gmail отрезал бы от пробы всех остальных.
+    signup_email_domain = models.CharField(max_length=100, blank=True, db_index=True)
+    # Дали ли бесплатные дни. Ложь — повтор: аккаунт есть и работает, но пробы
+    # у него нет, платить надо сразу. Снимается одной кнопкой в админке, потому
+    # что один офис за NAT это один IP, и живой второй клиент оттуда возможен.
+    trial_granted = models.BooleanField(default=True)
+
     # WHO the customer is. It decides three things and none of them is the
     # fiscal receipt any more (every card payment carries one — see
     # `billing.payments._receipt`): whether a счёт and an акт can be issued at

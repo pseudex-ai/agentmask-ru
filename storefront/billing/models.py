@@ -16,6 +16,7 @@ import hashlib
 import secrets
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -110,8 +111,49 @@ class Plan(models.Model):
     # клиенту (services.annual_price берёт лучшее из двух, не складывает).
     annual_discount_pct = models.PositiveSmallIntegerField(default=0)
 
+    # БЕСПЛАТНЫЙ ТАРИФ — СТРОКА, А НЕ КОНСТАНТА В КОДЕ.
+    #
+    # Пробный период раньше был `TRIAL_DAYS = 14` в `services.py` и шёл НА ТОМ
+    # ЖЕ тарифе, который человек выбрал в форме: выбрал «Промышленный» — получил
+    # миллион запросов бесплатно на две недели, и так с каждой новой почты.
+    # Теперь проба это подписка на ОТДЕЛЬНЫЙ тариф со своими — маленькими —
+    # лимитами, и он правится в админке как любой другой: чтобы поменять
+    # длительность пробы или её объём, выкат не нужен.
+    #
+    # Ровно одна строка может нести `is_trial`, и это проверяется в `save()`:
+    # две сделали бы «какой тариф считается пробным» вопросом порядка строк.
+    is_trial = models.BooleanField(default=False)
+    # Сколько дней длится проба. Осмысленно только на пробном тарифе.
+    trial_days = models.PositiveSmallIntegerField(default=0)
+
+    # ПОДАРОК ЗА НЕМЕДЛЕННУЮ ОПЛАТУ — НА ТАРИФЕ, КОТОРЫЙ ПОКУПАЮТ.
+    #
+    # Дни сверх оплаченного месяца, которые начисляются при ПЕРВОЙ оплате этой
+    # организации. Причина продуктовая: пока заплатить было нельзя вовсе, весь
+    # выбор человека был «ждать конца пробы», и повод заплатить сегодня не
+    # возникал никогда. Подарок его создаёт, а число живёт здесь, потому что у
+    # разных тарифов оно может быть разным и меняться без выката.
+    first_payment_bonus_days = models.PositiveSmallIntegerField(default=0)
+
     class Meta:
         ordering = ["sort_order"]
+
+    def save(self, *args, **kwargs):
+        """ПРОБНЫЙ ТАРИФ РОВНО ОДИН, И ЭТО ПРОВЕРЯЕТСЯ ЗДЕСЬ, А НЕ СОГЛАШЕНИЕМ.
+
+        Второй `is_trial` не сломал бы ничего громко: `trial_plan()` вернул бы
+        первый по `sort_order`, и половина новых организаций поехала бы на один
+        тариф, половина на другой — молча и заметно только по счетам через
+        месяц. Ошибка на сохранении дешевле.
+        """
+        if self.is_trial:
+            others = Plan.objects.filter(is_trial=True).exclude(pk=self.pk)
+            if others.exists():
+                raise ValidationError(
+                    "Пробный тариф уже есть: "
+                    + ", ".join(sorted(other.code for other in others))
+                    + ". Снимите отметку с него, прежде чем ставить сюда.")
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"{self.title} ({self.code})"
@@ -135,6 +177,15 @@ class Subscription(models.Model):
                                         related_name="subscription")
     plan = models.ForeignKey(Plan, on_delete=models.PROTECT, related_name="subscriptions")
     state = models.CharField(max_length=16, choices=STATES, default=TRIAL)
+
+    # ЧТО ЧЕЛОВЕК ВЫБРАЛ В ФОРМЕ, ПОКА ЕЩЁ НЕ ПЛАТИЛ.
+    #
+    # Подписка на время пробы стоит на ПРОБНОМ тарифе, а выбор из формы — это
+    # намерение, и его нельзя терять: он подставляется в кнопку оплаты, попадает
+    # в воронку и отвечает на вопрос «за чем человек приходил», когда он так и
+    # не заплатил. Пусто — выбора не было (например, аккаунт завели руками).
+    intended_plan = models.ForeignKey(Plan, on_delete=models.PROTECT, null=True,
+                                      blank=True, related_name="intended_by")
 
     # ПОТОЛОК ОБЪЁМА — ОРТОГОНАЛЬНЫЙ ФАКТ, А НЕ СОСТОЯНИЕ ЖИЗНЕННОГО ЦИКЛА.
     #
@@ -370,6 +421,24 @@ class Invoice(models.Model):
     # за неоплату (годовая оплата опциональна — обязателен месячный цикл), а на
     # оплате ставит `base_paid_through`, а не двигает месячный период.
     is_annual = models.BooleanField(default=False)
+
+    # СЧЁТ, КОТОРЫЙ ПЕРЕВОДИТ НА ТАРИФ, А НЕ ПРОДЛЕВАЕТ ТЕКУЩИЙ.
+    #
+    # Заплатить раньше было НЕЧЕМ: `pay_invoice` умеет оплатить только уже
+    # существующий счёт, а счета выставляет месячный цикл — по окончании пробы
+    # или периода. Во время пробы счёта не существует, поэтому человек, готовый
+    # заплатить сегодня, не мог этого сделать ничем, кроме годовой предоплаты.
+    #
+    # Такой счёт закрывает дыру: он выставляется по требованию, несёт тариф, на
+    # который переводит, и `mark_paid` по факту оплаты переставляет подписку —
+    # это же и есть смена тарифа для того, кто уже платит. Пусто — обычный
+    # счёт за текущий тариф, подписку он не трогает.
+    target_plan = models.ForeignKey(Plan, on_delete=models.PROTECT, null=True,
+                                    blank=True, related_name="switch_invoices")
+    # Подарочные дни, обещанные ЭТИМ счётом. Снимком, а не пересчётом из тарифа
+    # в момент оплаты: обещание дано при выставлении, и правка тарифа между
+    # выставлением и платежом не имеет права его уменьшить.
+    bonus_days = models.PositiveSmallIntegerField(default=0)
 
     plan_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
 

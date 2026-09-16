@@ -395,7 +395,42 @@ class Command(BaseCommand):
                    .select_related("organization", "plan")
                    .filter(state=Subscription.TRIAL, trial_ends_at__lte=now))
         for subscription in expired:
+            # КОНЧИВШАЯСЯ ПРОБА ОСТАНАВЛИВАЕТ ОБСЛУЖИВАНИЕ, А НЕ ВЫСТАВЛЯЕТ
+            # СЧЁТ НА НОЛЬ.
+            #
+            # Проба идёт на бесплатном тарифе, и его цена — ноль. Общая ветка
+            # ниже собрала бы счёт на 0 ₽, погасила бы его сама и оставила
+            # клиента обслуживаться ДАЛЬШЕ: получился бы бесплатный тариф
+            # навсегда — ровно то, от чего владелец отказался, выбирая
+            # «сервис останавливается». Счёт за пробу не выставляется ещё и
+            # потому, что счёт на ноль рублей это документ ни о чём: он придёт
+            # письмом, попадёт в список и заставит человека искать, что с ним
+            # делать.
+            #
+            # Кто хочет продолжить — платит из кабинета в любой момент
+            # (`services.build_switch_invoice`), и это отдельная кнопка, а не
+            # молчаливое продление.
+            if subscription.plan.is_trial:
+                self._stop_after_trial(subscription)
+                continue
             self._issue(subscription, now, "триал кончился")
+
+    def _stop_after_trial(self, subscription) -> None:
+        """Бесплатные дни кончились: маскирование встаёт, аккаунт остаётся.
+
+        Состояние `past_due`, а не `cancelled`: человек ничего не отменял, он
+        просто ещё не заплатил, и кабинет обязан показывать его как «ждём
+        оплату» с рабочей кнопкой, а не как ушедшего. Оплата поднимет его тем же
+        `mark_paid`, что и всех остальных.
+        """
+        organization_id = subscription.organization_id
+        self.done.append(f"{organization_id}: проба кончилась, обслуживание остановлено")
+        if self.dry:
+            return
+        licensing.set_status(organization_id, "unpaid")
+        subscription.state = Subscription.PAST_DUE
+        subscription.save(update_fields=["state"])
+        self._notify_trial_over(subscription)
 
     def _issue_for_ended_periods(self, now) -> None:
         # ОТМЕНИВШИЙ НЕ ПОЛУЧАЕТ СЧЁТА. `cancel_at_period_end` значит «доработаю
@@ -421,6 +456,35 @@ class Command(BaseCommand):
             subscription.state = Subscription.CANCELLED
             subscription.save(update_fields=["state"])
 
+    def _notify_trial_over(self, subscription) -> None:
+        """Письмо о конце пробы. Говорит, ЧТО ПРОИЗОШЛО и ЧТО ДЕЛАТЬ.
+
+        Остановка без письма выглядит как поломка продукта, а не как конец
+        бесплатного периода: у человека просто перестают проходить запросы, и
+        первое, что он подумает, — что сломались мы. Цена и кнопка называются
+        прямо, потому что теперь заплатить действительно можно в один шаг.
+        """
+        address = _billing_email(subscription.organization)
+        if not address:
+            return
+        intended = subscription.intended_plan
+        offer = (f"Выбранный при регистрации тариф «{intended.title}» — "
+                 f"{intended.monthly_price:.0f} ₽ в месяц.\n\n"
+                 if intended is not None else "")
+        send_mail(
+            subject="pseudex — бесплатный период закончился",
+            message=(f"Здравствуйте!\n\n"
+                     f"Бесплатный период закончился, и маскирование "
+                     f"остановлено: запросы через шлюз больше не проходят. "
+                     f"Данные при этом остались у вас — они и так никогда не "
+                     f"были у нас.\n\n"
+                     f"{offer}"
+                     f"Оплатить и продолжить работу можно в кабинете, в один "
+                     f"шаг:\n{settings.SITE_URL}/app/\n\n"
+                     f"Ключ и волт целы: после оплаты всё поднимется с тем же "
+                     f"ключом, и подмены останутся прежними.\n"),
+            from_email=None, recipient_list=[address], fail_silently=True)
+
     def _issue(self, subscription, now, why: str) -> None:
         organization = subscription.organization
         period_start = subscription.current_period_end.date()
@@ -433,8 +497,15 @@ class Command(BaseCommand):
         # Годовой счёт исключён: его период начинается в тот же день, но это
         # предоплата базы, а не месячный счёт периода — иначе он блокировал бы
         # выставление месячного счёта за тот же день.
+        #
+        # СЧЁТ НА ПОКУПКУ ТАРИФА — ТА ЖЕ ЛОВУШКА, ВТОРОЙ РАЗ. Он выставляется по
+        # нажатию кнопки, поэтому его `period_start` — сегодняшний день, и без
+        # этого исключения он молча блокировал бы месячный счёт клиента,
+        # купившего тариф сегодня: период кончился, счёта нет, деньги не
+        # выставлены, и заметно это только через месяц по недостающей выручке.
         if Invoice.objects.filter(organization=organization,
-                                  period_start=period_start, is_annual=False
+                                  period_start=period_start, is_annual=False,
+                                  target_plan__isnull=True
                                   ).exclude(state=Invoice.VOID).exists():
             return
 

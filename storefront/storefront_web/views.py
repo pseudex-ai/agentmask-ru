@@ -30,7 +30,7 @@ from accounts import payer
 from accounts.models import Membership, Organization
 from billing import onboarding, licensing, payments, services
 from accounts.models import User
-from billing.models import Invoice, LicenseKey, Plan
+from billing.models import Invoice, LicenseKey, Plan, Subscription
 from ops.analytics_models import Funnel
 from ops.models import DemandDay
 from storefront_web import detection_types
@@ -237,7 +237,8 @@ def landing(request):
         # следующий добавленный тип сделал бы страницу противоречащей
         # собственной таблице.
         "found_count": len(detection_types.FOUND),
-        "trial_days": services.TRIAL_DAYS,
+        **_meta("landing"),
+        "trial_days": services.trial_days(),
         "due_days": services.INVOICE_DUE_DAYS,
         "grace_days": services.GRACE_DAYS,
         "image": settings.DOCKER_IMAGE,
@@ -254,6 +255,129 @@ def landing(request):
     })
 
 
+# ЗАГОЛОВКИ И ОПИСАНИЯ ПУБЛИЧНЫХ СТРАНИЦ — ЗДЕСЬ, ОДНОЙ ТАБЛИЦЕЙ.
+#
+# Они нужны в трёх местах сразу: в `<title>`, в `og:title` и в карточке для
+# мессенджеров, — а блоком шаблона значение подставляется ровно в одно. Три
+# блока означали бы три копии одного текста, и разъехались бы они молча: в
+# выдаче это видно, а на экране нет.
+#
+# ЧТО В НИХ НАПИСАНО, ТОЖЕ НЕ СЛУЧАЙНО. Запрос нашей аудитории звучит не
+# «токенизация ПД», а «152-ФЗ и нейросети», «персональные данные в ChatGPT»,
+# «обезличивание персональных данных» — словами закона и задачи, а не названием
+# технологии. Описание — это то, что человек прочитает в выдаче ВМЕСТО страницы,
+# поэтому в нём стоит суть и цена, а не обещание «узнать больше».
+_META = {
+    "landing": (
+        "Pseudex — маскирование персональных данных для LLM-агентов по 152-ФЗ",
+        "Шлюз обезличивания персональных данных перед языковой моделью: модель "
+        "видит подмену, а ваши инструменты получают настоящие значения. "
+        "Контейнер работает в вашем контуре, наружу уходят только счётчики. "
+        "СНИЛС и ИНН — по контрольной сумме. От 990 ₽ в месяц."),
+    "detection": (
+        "Какие персональные данные находит Pseudex — и чего не находит",
+        "ФИО в падежах, телефон, email, адрес, дата рождения, СНИЛС, ИНН, "
+        "паспорт, ОМС, банковская карта и счёт, госномер, IP — с контрольными "
+        "суммами и русской морфологией. И честный список того, что пока не "
+        "находим."),
+    "architecture": (
+        "Архитектура Pseudex для службы безопасности: почему мы не обработчик ПД",
+        "Где проходит граница обработки персональных данных, что уходит за "
+        "периметр (только агрегатные счётчики), как устроены волт, аренда "
+        "словарей детекции и режим fail-closed. Документ для ИБ и комплаенса."),
+    "offer": (
+        "Публичная оферта Pseudex — лицензионный договор",
+        "Условия, на которых предоставляется право использования программы: "
+        "предмет, цена, порядок оплаты, ответственность и порядок работы "
+        "лицензии."),
+    "policy": (
+        "Политика обработки персональных данных — Pseudex",
+        "Какие персональные данные мы обрабатываем как оператор, зачем, сколько "
+        "храним и как их отозвать. Данные ваших клиентов к нам не поступают."),
+    "consent": (
+        "Согласие на обработку персональных данных — Pseudex",
+        "Текст согласия по ст. 9 152-ФЗ отдельным документом: перечень данных, "
+        "цели обработки, срок и порядок отзыва."),
+    "requisites": (
+        "Реквизиты Pseudex",
+        "Наименование, место нахождения, ИНН и адрес электронной почты "
+        "владельца сайта — ст. 10 ч. 2 ФЗ «Об информации» и ст. 26.1 ЗоЗПП."),
+}
+
+
+def _meta(page: str) -> dict[str, str]:
+    title, description = _META[page]
+    return {"page_title": title, "page_description": description}
+
+
+# ПУБЛИЧНЫЕ АДРЕСА — ОДНИМ СПИСКОМ, и карта сайта строится из него.
+#
+# Карта, написанная руками, устаревает в тот день, когда появляется страница:
+# новый адрес про неё не знает, а робот не знает про адрес. Здесь же живёт
+# ответ на «что вообще индексируется», и он совпадает с `indexable` в контексте
+# шаблона по построению — закрытых страниц в списке просто нет.
+_PUBLIC_PAGES = (
+    ("landing", 1.0, "weekly"),
+    ("detection", 0.8, "monthly"),
+    ("architecture", 0.7, "monthly"),
+    ("offer", 0.4, "yearly"),
+    ("policy", 0.4, "yearly"),
+    ("consent", 0.4, "yearly"),
+    ("requisites", 0.3, "yearly"),
+)
+
+
+def robots(request):
+    """`robots.txt`: что можно обходить, и где лежит карта.
+
+    ЗАПРЕЩАЕТСЯ РОВНО ЗАКРЫТОЕ. Кабинет, админка и экраны входа не должны
+    попадать в выдачу — там ключи, суммы счетов и чужие названия, — но запрет
+    здесь это ПРОСЬБА, а не защита: `noindex` в шапке страницы и настоящая
+    авторизация делают работу, а `robots.txt` лишь бережёт краулинговый бюджет.
+    Считать его защитой — классическая ошибка: файл публичный и сам называет
+    адреса, которые просит не смотреть.
+    """
+    admin_path = settings.ADMIN_PATH
+    lines = [
+        "User-agent: *",
+        "Disallow: /app/",
+        f"Disallow: /{admin_path}/",
+        "Disallow: /accounts/",
+        "Disallow: /signup",
+        "Disallow: /activate",
+        "Disallow: /welcome",
+        "Disallow: /demand",
+        "Allow: /",
+        "",
+        # Яндекс читает Clean-param и склеивает адреса с этими параметрами в
+        # один. Без него наша же реклама плодит дубли главной: каждая ссылка из
+        # кампании это отдельный адрес с тем же содержимым.
+        "Clean-param: utm_source&utm_medium&utm_campaign&utm_term&utm_content&yclid&gclid",
+        "",
+        f"Sitemap: {settings.SITE_URL}/sitemap.xml",
+        "",
+    ]
+    return HttpResponse("\n".join(lines), content_type="text/plain; charset=utf-8")
+
+
+def sitemap(request):
+    """Карта сайта. Строится из `_PUBLIC_PAGES`, а не пишется руками."""
+    from django.urls import reverse
+    from django.utils.html import escape
+    rows = []
+    for name, priority, freq in _PUBLIC_PAGES:
+        rows.append(
+            f"  <url>\n"
+            f"    <loc>{escape(settings.SITE_URL + reverse(name))}</loc>\n"
+            f"    <changefreq>{freq}</changefreq>\n"
+            f"    <priority>{priority}</priority>\n"
+            f"  </url>")
+    body = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+            + "\n".join(rows) + "\n</urlset>\n")
+    return HttpResponse(body, content_type="application/xml; charset=utf-8")
+
+
 def _legal_context() -> dict[str, object]:
     """Shared by all three legal pages.
 
@@ -267,7 +391,7 @@ def _legal_context() -> dict[str, object]:
     stamps = [f.stat().st_mtime for f in here.glob("*.html")] or [0]
     return {
         "seller": settings.SELLER,
-        "trial_days": services.TRIAL_DAYS,
+        "trial_days": services.trial_days(),
         "due_days": services.INVOICE_DUE_DAYS,
         "grace_days": services.GRACE_DAYS,
         "updated": datetime.date.fromtimestamp(max(stamps)).strftime("%d.%m.%Y"),
@@ -285,6 +409,7 @@ def consent(request):
     return render(request, "legal/consent.html", {
         "seller": settings.SELLER,
         "revision": settings.SELLER.get("consent_revision", ""),
+        **_meta("consent"),
     })
 
 
@@ -295,19 +420,21 @@ def requisites(request):
     электронной почты. Для дистанционной продажи то же требует ст. 26.1 ЗоЗПП:
     покупатель должен видеть, КОМУ он платит, до того как заплатит.
     """
-    return render(request, "legal/requisites.html", {"seller": settings.SELLER})
+    return render(request, "legal/requisites.html",
+                  {"seller": settings.SELLER, **_meta("requisites")})
 
 
 def offer(request):
-    return render(request, "legal/offer.html", _legal_context())
+    return render(request, "legal/offer.html", _legal_context() | _meta("offer"))
 
 
 def policy(request):
-    return render(request, "legal/policy.html", _legal_context())
+    return render(request, "legal/policy.html", _legal_context() | _meta("policy"))
 
 
 def architecture(request):
-    return render(request, "legal/architecture.html", _legal_context())
+    return render(request, "legal/architecture.html",
+                  _legal_context() | _meta("architecture"))
 
 
 def detection(request):
@@ -320,7 +447,7 @@ def detection(request):
     saying nothing."""
     # СПИСКИ ПРИЕЗЖАЮТ ИЗ РЕЕСТРА, а не лежат разметкой: те же факты нужны
     # конфигуратору на лендинге, и два экземпляра одного утверждения расходятся.
-    return render(request, "legal/detection.html", _legal_context() | {
+    return render(request, "legal/detection.html", _legal_context() | _meta("detection") | {
         "found": detection_types.found_rows(),
         "missing": detection_types.missing_numbered(),
     })
@@ -443,7 +570,8 @@ def signup(request):
     #
     # The link below is the proof of the mailbox, and it carries NO key — only a
     # signed reference to the account. Nothing secret is ever put in an email.
-    organization = services.create_account(email, name, plan_code)
+    organization = services.create_account(email, name, plan_code,
+                                           _client_ip(request))
     # Факт, а не галочка: момент и РЕДАКЦИЯ текста, на которую согласились.
     _funnel(Funnel.SIGNUP_SUBMITTED, plan_code, request, organization)
     organization.consent_at = timezone.now()
@@ -603,7 +731,7 @@ def welcome(request):
         "image": settings.DOCKER_IMAGE,
         "license_url_env": (f"-e PSEUDEX_LICENSE_URL={settings.LICENSE_URL} "
                             if settings.LICENSE_URL else ""),
-        "trial_days": services.TRIAL_DAYS,
+        "trial_days": services.trial_days(),
         "due_days": services.INVOICE_DUE_DAYS,
         "grace_days": services.GRACE_DAYS,
         # The key is injected into the prompt here, on the one page that is
@@ -705,6 +833,22 @@ def cabinet(request):
         "annual": annual,
         "annual_prepaid_until": annual_prepaid_until,
         "card_available": payments.is_available(),
+        # ЧТО МОЖНО КУПИТЬ И ЧТО ПРЕДЛОЖИТЬ ПО УМОЛЧАНИЮ.
+        #
+        # `suggested_plan` — тариф, выбранный человеком ещё на лендинге
+        # (`intended_plan`). Он сохранён ровно ради этой строки: подставить
+        # выбранное вместо того, чтобы заставлять выбирать второй раз, и не
+        # потерять намерение того, кто так и не заплатил.
+        "paid_plans": Plan.objects.filter(is_public=True),
+        "suggested_plan": (subscription.intended_plan_id
+                           if subscription and subscription.plan.is_trial
+                           else (subscription.plan_id if subscription else None)),
+        "trial_over": bool(subscription and subscription.plan.is_trial
+                           and subscription.trial_ends_at <= timezone.now()),
+        "bonus_days": (services.bonus_days_for(
+                           organization,
+                           subscription.intended_plan or subscription.plan)
+                       if subscription else 0),
         "unreachable": unreachable,
         "image": settings.DOCKER_IMAGE,
         "license_url_env": (f"-e PSEUDEX_LICENSE_URL={settings.LICENSE_URL} "
@@ -831,6 +975,60 @@ def pay_invoice(request, number: str):
         messages.error(request, "Не удалось начать оплату картой. Счёт можно "
                                 "оплатить по реквизитам — форма ниже.")
         return redirect("invoice_detail", number=number)
+    invoice.payment_ref = payment_id
+    invoice.save(update_fields=["payment_ref"])
+    return redirect(confirmation)
+
+
+@login_required
+@require_POST
+def subscribe(request):
+    """Оплатить тариф СЕЙЧАС — первый платёж или переход на другой тариф.
+
+    ЧТО ЭТО ЧИНИТ. Заплатить было нельзя вовсе: `pay_invoice` оплачивает только
+    существующий счёт, а счета выставляет месячный цикл — по окончании пробы или
+    периода. Во время пробы счёта не существует, поэтому у человека, готового
+    отдать деньги сегодня, не было ни одной кнопки, кроме годовой предоплаты.
+    Смены тарифа не было тоже — ни вьюхи, ни адреса.
+
+    Обе задачи здесь одна: «переведи меня на тариф X и возьми за него деньги».
+    Счёт несёт тариф, а подписку переставляет `mark_paid` — по факту денег, а не
+    по факту нажатия. Пока не заплачено, ничего не меняется: иначе кнопка
+    «перейти на Промышленный» выдавала бы его лимиты всем желающим.
+
+    Карта — не единственный путь. Когда эквайринг выключен или ЮKassa отказала,
+    счёт всё равно ВЫСТАВЛЕН и его видно по реквизитам: юрлица в России платят
+    по безналу чаще, чем картой, и терять их из-за отказа провайдера незачем.
+    """
+    organization = _organization(request)
+    plan = Plan.objects.filter(code=request.POST.get("plan", ""),
+                               is_public=True).first()
+    if plan is None:
+        messages.error(request, "Такого тарифа нет.")
+        return redirect("cabinet")
+    subscription = getattr(organization, "subscription", None)
+    if subscription is not None and subscription.plan_id == plan.code \
+            and subscription.state == Subscription.ACTIVE:
+        messages.info(request, f"Вы уже на тарифе «{plan.title}».")
+        return redirect("cabinet")
+
+    invoice = services.build_switch_invoice(organization, plan)
+    if not payments.is_available():
+        messages.info(request, f"Счёт {invoice.number} выставлен — оплатите по "
+                               "реквизитам, форма ниже. Картой сейчас нельзя.")
+        return redirect("invoice_detail", number=invoice.number)
+    try:
+        payment_id, confirmation = payments.create_payment(
+            invoice,
+            request.build_absolute_uri(f"/app/invoices/{invoice.number}"),
+            request.user.email,
+        )
+    except payments.PaymentError as error:
+        _log.error("subscribe payment for %s failed: %s", organization.id, error)
+        messages.error(request, f"Не удалось начать оплату картой. Счёт "
+                                f"{invoice.number} выставлен — его можно "
+                                "оплатить по реквизитам.")
+        return redirect("invoice_detail", number=invoice.number)
     invoice.payment_ref = payment_id
     invoice.save(update_fields=["payment_ref"])
     return redirect(confirmation)
