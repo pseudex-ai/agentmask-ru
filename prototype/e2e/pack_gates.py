@@ -87,31 +87,40 @@ def build_images(skip_build: bool) -> str:
     # today's client.
     sh(["docker", "build", "-f", str(_ROOT / "licensing" / "Dockerfile"),
         "-t", "pseudex-licensing:e2e", str(_ROOT)], True, 1800)
-    # BUILDX-КЭШ СЛОЁВ В CI. Эфемерный раннер не хранит локальный кэш Docker
-    # между прогонами, поэтому Nuitka-компиляция движка (~40-60 мин) шла заново
-    # даже на storefront-only релизе, где входы Dockerfile.nuitka (pseudex/,
-    # requirements, build-скрипты, signing-key) байт-в-байт те же. Когда
-    # PSEUDEX_BUILDX_CACHE=gha, слои берутся из GitHub Actions cache: попадание
-    # ровно тогда, когда движок не менялся. Гейты и подпись всё равно идут по
-    # СОБРАННОМУ образу — кэш ускоряет сборку, НЕ подменяет верификацию.
-    # `ignore-error=true`: провал экспорта кэша не роняет релиз (в худшем случае
-    # просто медленно). Пусто (локально, `--skip-build`) — обычный docker build,
-    # поведение не меняется.
-    cache = os.environ.get("PSEUDEX_BUILDX_CACHE")
+    # КЭШ СЛОЁВ NUITKA МЕЖДУ РЕЛИЗАМИ. Эфемерный раннер не хранит локальный кэш
+    # Docker, поэтому компиляция движка (~30 мин) шла заново на КАЖДОМ релизе,
+    # хотя входы Dockerfile.nuitka (pseudex/, requirements, build-скрипты,
+    # signing-key) на storefront-only правке те же.
+    #
+    # type=gha НЕ ПОДХОДИТ: GitHub изолирует кэш по git-ref, а релизы у нас идут
+    # по ТЕГАМ — кэш прогона тега v0.1.6 недостижим из прогона тега v0.1.7
+    # (docs.docker.com/build/cache/backends/gha: «only the current, base and
+    # default branch»). Проверено эмпирически: v0.1.7 не попал в кэш v0.1.6.
+    #
+    # REGISTRY-кэш лежит В РЕЕСТРЕ и от git-ref НЕ ЗАВИСИТ — переносится между
+    # любыми релизами-тегами навсегда (канонический Docker-подход для persistent
+    # CI-кэша). Гейты и подпись всё равно идут по СОБРАННОМУ образу: кэш ускоряет
+    # сборку, НЕ подменяет верификацию. Нет PSEUDEX_BUILDX_CACHE_REF (локально,
+    # checks.yml, --skip-build) — обычный docker build, поведение прежнее.
+    cache_ref = os.environ.get("PSEUDEX_BUILDX_CACHE_REF", "")
     if not skip_build:
         for dockerfile, tag in ((_ROOT / "Dockerfile", SOURCE_IMAGE),
                                 (_ROOT / "Dockerfile.nuitka", COMPILED_IMAGE)):
             started = time.monotonic()
             build_args = ["--build-arg", f"PSEUDEX_LICENSE_PUBKEY={public_b64}",
                           "-f", str(dockerfile), "-t", tag, str(_ROOT)]
-            # Кэшируем ТОЛЬКО компилированный образ: Nuitka-компиляция и есть те
-            # ~40-60 мин; исходный собирается за пару минут, кэш ему не нужен.
-            if cache == "gha" and tag == COMPILED_IMAGE:
-                scope = tag.replace(":", "-")
-                sh(["docker", "buildx", "build", "--load",
-                    "--cache-from", f"type=gha,scope={scope}",
-                    "--cache-to", f"type=gha,mode=max,scope={scope},ignore-error=true",
-                    *build_args], True, 5400)
+            # Кэшируем только компилированный образ: Nuitka-компиляция и есть те
+            # ~30 мин; исходный собирается за секунды. mode=max — слои
+            # мультистейджа (Nuitka живёт в build-стейдже). ignore-error: провал
+            # экспорта кэша не роняет релиз. progress=plain + ПРЯМОЙ subprocess
+            # (не sh, который глотает вывод) — чтобы импорт/экспорт кэша были
+            # ВИДНЫ в логе и попадание/промах можно было проверить.
+            if cache_ref and tag == COMPILED_IMAGE:
+                subprocess.run(
+                    ["docker", "buildx", "build", "--load", "--progress=plain",
+                     "--cache-from", f"type=registry,ref={cache_ref}",
+                     "--cache-to", f"type=registry,ref={cache_ref},mode=max,ignore-error=true",
+                     *build_args], check=True, timeout=5400)
             else:
                 sh(["docker", "build", *build_args], True, 5400)
             print(f"  {tag} built in {(time.monotonic() - started) / 60:.1f} min")

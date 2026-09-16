@@ -164,19 +164,26 @@ jobs:
       - name: the dirty set P3 compares the two images on
         run: python make_dirty.py
 
-      # Buildx с GitHub Actions cache: слой Nuitka переживает эфемерный раннер и
-      # не пересобирается, когда движок (prototype/) не менялся — storefront-only
-      # релиз идёт минуты вместо часа. Гейты и подпись при этом выполняются по
-      # собранному образу, как раньше: кэш ускоряет сборку, не подменяет
-      # верификацию. github-runtime экспортит ACTIONS_* токены, нужные бэкенду
-      # type=gha при ПРЯМОМ вызове buildx (pack_gates зовёт его сам, мимо
-      # build-push-action). Провал кэша не ронял бы релиз (ignore-error в
-      # pack_gates), но раннер держим — иначе кэша просто нет.
-      - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
+      # REGISTRY-КЭШ СЛОЁВ NUITKA. type=gha изолирован по git-ref, а релизы у нас
+      # идут по ТЕГАМ — кэш прогона одного тега недостижим из другого
+      # (docs.docker.com/build/cache/backends/gha: «only the current, base and
+      # default branch»), проверено: v0.1.7 не попал в кэш v0.1.6. Registry-кэш
+      # лежит в реестре и от ref НЕ зависит: слой компиляции движка переживает
+      # релизы, storefront-only идёт минуты вместо часа. Гейты и подпись при этом
+      # выполняются по собранному образу, как раньше. docker-container драйвер
+      # (setup-buildx) нужен для registry-кэша и --load; логин в реестр — чтобы
+      # кэш-образ пушить/тянуть (тот же секрет, что у publish).
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: log in to the registry for the build cache
+        env:
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+        run: |
+          [ -n "${REGISTRY_PASSWORD}" ] || { echo "::error::REGISTRY_PASSWORD пуст"; exit 1; }
+          printf '%s' "${REGISTRY_PASSWORD}" | docker login "${REGISTRY%%/*}" -u "${REGISTRY_USERNAME}" --password-stdin
       - name: packaging gates (builds both images)
         env:
-          PSEUDEX_BUILDX_CACHE: gha
+          PSEUDEX_BUILDX_CACHE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE }}:buildcache
         run: python -u e2e/pack_gates.py
       - name: licensing gates on the release image
         run: python -u e2e/gates.py --image pseudex:compiled --skip-build
