@@ -404,9 +404,23 @@
         {% csrf_token %}
         <input type="hidden" name="plan" value="{{ plan.code }}">
         <input type="email" name="email" required placeholder="email" style="margin-bottom:8px;width:100%">
-        <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:1.45;color:var(--dim-2);margin-bottom:10px;cursor:pointer">
+        {% comment %}ДВЕ ГАЛОЧКИ, КАК И В «БЫСТРОМ СТАРТЕ», И ПО ТОЙ ЖЕ ПРИЧИНЕ.
+           Здесь стояла ОДНА — «согласие + политика + оферта», — и это было сразу
+           две ошибки. Юридическая: с 01.09.2025 (156-ФЗ) согласие на обработку ПД
+           оформляется ОТДЕЛЬНО от иных документов, совмещённое согласие РКН
+           называет нарушением прямо. И техническая, более дорогая: сервер
+           требует и `consent`, и `terms` (storefront_web/views.py), поэтому форма
+           без второй галочки НЕ МОГЛА сработать никогда — каждый, кто
+           регистрировался из карточки тарифа, упирался в «нужно принять оферту»
+           и уходил. Три из четырёх форм регистрации на сайте были мертвы, и
+           именно на прайсе, где намерение купить максимальное.{% endcomment %}
+        <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:1.45;color:var(--dim-2);margin-bottom:6px;cursor:pointer">
           <input type="checkbox" name="consent" value="1" required style="margin-top:2px;flex:none">
-          <span><a href="{% url 'consent' %}" target="_blank">Согласие на обработку ПД</a>, <a href="{% url 'policy' %}" target="_blank">политика</a>, <a href="{% url 'offer' %}" target="_blank">оферта</a></span>
+          <span><a href="{% url 'consent' %}" target="_blank">Согласие на обработку ПД</a> и <a href="{% url 'policy' %}" target="_blank">политика</a></span>
+        </label>
+        <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:1.45;color:var(--dim-2);margin-bottom:10px;cursor:pointer">
+          <input type="checkbox" name="terms" value="1" required style="margin-top:2px;flex:none">
+          <span>Принимаю <a href="{% url 'offer' %}" target="_blank">оферту</a></span>
         </label>
         <button class="btn {% if plan.code == 'work' %}accent{% endif %} block" type="submit">НАЧАТЬ ПРОБУ</button>
       </form>
