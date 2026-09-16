@@ -239,7 +239,19 @@ jobs:
           [ "${VERSION}" = "${GITHUB_REF_NAME}" ] && VERSION="$(git rev-parse --short HEAD)"
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
           docker tag pseudex:compiled "${REGISTRY}/${IMAGE}:${VERSION}"
-          docker push "${REGISTRY}/${IMAGE}:${VERSION}"
+          # РЕТРАЙ НА ПУШ. Реестр дважды ронял релиз уже ПОСЛЕ зелёных гейтов —
+          # `context deadline exceeded` на манифесте и `dial tcp ... i/o timeout`
+          # на слое: падал не продукт, а сеть на последнем шаге, и выкат вставал
+          # до ручного перезапуска. Пуш идемпотентен (уже загруженные слои
+          # пропускаются), поэтому повтор дёшев и безопасен. НЕ `|| true`:
+          # исчерпав попытки, шаг обязан упасть — иначе подпишем то, чего в
+          # реестре нет.
+          for attempt in 1 2 3 4; do
+            docker push "${REGISTRY}/${IMAGE}:${VERSION}" && break
+            [ "${attempt}" = 4 ] && { echo "::error::пуш ${IMAGE}:${VERSION} не прошёл за 4 попытки"; exit 1; }
+            echo "пуш не прошёл (попытка ${attempt}), повтор через $((attempt * 15))с"
+            sleep $((attempt * 15))
+          done
 
       - name: sign the digest
         # The digest, never the tag: a tag is mutable, so a signature over one
@@ -272,7 +284,13 @@ jobs:
             CTX="${REST%%:*}"; FILE="${REST#*:}"
             REF="${REGISTRY}/pseudex-${NAME}:${VERSION}"
             docker build -f "${CTX}/${FILE}" -t "${REF}" "${CTX}"
-            docker push "${REF}"
+            # Тот же ретрай, что и выше: именно здесь релиз упал на pseudex-backup.
+            for attempt in 1 2 3 4; do
+              docker push "${REF}" && break
+              [ "${attempt}" = 4 ] && { echo "::error::пуш ${REF} не прошёл за 4 попытки"; exit 1; }
+              echo "пуш не прошёл (попытка ${attempt}), повтор через $((attempt * 15))с"
+              sleep $((attempt * 15))
+            done
             DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${REF}")"
             cosign sign --yes "${DIGEST}"
             echo "pushed and signed ${DIGEST}"
