@@ -90,7 +90,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
 </script>{% endlocalize %}{% endblock %}
 
 {% block nav %}
-<nav style="display:flex;align-items:center;gap:28px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em">
+<nav style="align-items:center;gap:28px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em">
   <a href="#gap" style="color:#8f8e99" class="hv-text">РАЗНИЦА</a>
   <a href="#how" style="color:#8f8e99" class="hv-text">КАК РАБОТАЕТ</a>
   <a href="#legal" style="color:#8f8e99" class="hv-text">152-ФЗ</a>
@@ -267,11 +267,11 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
       <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:#74737e">ПЕРЕКЛЮЧИТЕ ВКЛАДКУ</div>
     </div>
     <div role="tablist" style="display:flex;border:1px solid #2b2b31;flex-wrap:wrap">
-      <button role="tab" aria-selected="true" data-demo="0" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left;background:transparent;color:#74737e">СТРОЧНЫЕ И ОПЕЧАТКИ</button>
-      <button role="tab" aria-selected="false" data-demo="1" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left;background:transparent;color:#74737e">ЧИСЛА СЛОВАМИ</button>
-      <button role="tab" aria-selected="false" data-demo="2" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left;background:transparent;color:#74737e">ЛАТИНИЦА И ИНИЦИАЛЫ</button>
-      <button role="tab" aria-selected="false" data-demo="3" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left;background:transparent;color:#74737e">ПО РЕПЛИКАМ</button>
-      <button role="tab" aria-selected="false" data-demo="4" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left;background:transparent;color:#74737e">ФИО И ДАТА РОЖДЕНИЯ</button>
+      <button role="tab" aria-selected="true" data-demo="0" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">СТРОЧНЫЕ И ОПЕЧАТКИ</button>
+      <button role="tab" aria-selected="false" data-demo="1" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">ЧИСЛА СЛОВАМИ</button>
+      <button role="tab" aria-selected="false" data-demo="2" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">ЛАТИНИЦА И ИНИЦИАЛЫ</button>
+      <button role="tab" aria-selected="false" data-demo="3" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">ПО РЕПЛИКАМ</button>
+      <button role="tab" aria-selected="false" data-demo="4" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">ФИО И ДАТА РОЖДЕНИЯ</button>
     </div>
     <div class="demo-panes" style="display:grid;grid-template-columns:1fr 1fr;border:1px solid #2b2b31;border-top:0">
       <div style="padding:28px 26px 32px;border-right:1px solid #2b2b31">
@@ -636,11 +636,11 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
     <div id="setup" data-image="{{ image }}" style="margin-top:64px" data-reveal>
       <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:#74737e;margin-bottom:16px">ИЛИ РУКАМИ · КУДА ВЫ ХОДИТЕ ЗА МОДЕЛЬЮ</div>
       <div id="provider-tabs" role="tablist" style="display:flex;border:1px solid #2b2b31;flex-wrap:wrap">
-        <button role="tab" aria-selected="true" data-provider="0" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left;background:transparent;color:#74737e">OPENROUTER</button>
-        <button role="tab" aria-selected="false" data-provider="1" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left;background:transparent;color:#74737e">OPENAI</button>
-        <button role="tab" aria-selected="false" data-provider="2" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left;background:transparent;color:#74737e">DEEPSEEK</button>
-        <button role="tab" aria-selected="false" data-provider="3" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left;background:transparent;color:#74737e">СВОЙ VLLM</button>
-        <button role="tab" aria-selected="false" data-provider="4" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left;background:transparent;color:#74737e">ANTHROPIC · GIGACHAT · YANDEXGPT</button>
+        <button role="tab" aria-selected="true" data-provider="0" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">OPENROUTER</button>
+        <button role="tab" aria-selected="false" data-provider="1" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">OPENAI</button>
+        <button role="tab" aria-selected="false" data-provider="2" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">DEEPSEEK</button>
+        <button role="tab" aria-selected="false" data-provider="3" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">СВОЙ VLLM</button>
+        <button role="tab" aria-selected="false" data-provider="4" style="flex:1;min-width:150px;border:0;border-right:1px solid #2b2b31;padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">ANTHROPIC · GIGACHAT · YANDEXGPT</button>
       </div>
       <div style="margin-top:18px;font-size:14.5px;line-height:1.6;color:#8f8e99;max-width:78ch" id="provider-note"></div>
       <div style="display:flex;flex-wrap:wrap;gap:1px;background:transparent;border:1px solid #232329;margin-top:24px">
@@ -681,7 +681,7 @@ docker logs pseudex | grep 'интерфейс' -A2
           </div>
           <div style="display:grid;gap:11px;font-size:14.5px;line-height:1.5;color:#a9a8b3">
             <div>{{ plan.included_requests }} запросов включено</div>
-            {% if plan.metered_per_1k %}<div>дальше {{ plan.metered_per_1k|floatformat:2 }} ₽ за 1000</div>{% endif %}
+            {% if plan.metered_per_1k %}<div>дальше {{ plan.metered_per_1k|floatformat:"-2" }} ₽ за 1000</div>{% endif %}
             {% if plan.metered_floor %}<div>первые {{ plan.metered_floor }} сверх включённого не начисляются</div>{% endif %}
             <div>{{ plan.max_keys }} {{ plan.max_keys|plural:"ключ,ключа,ключей" }} доступа</div>
             {% if plan.audience %}<div>Подходит: {{ plan.audience }}</div>{% endif %}

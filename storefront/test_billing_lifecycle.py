@@ -345,9 +345,13 @@ def main() -> int:
     # ПОВТОРНЫЙ ЗАПУСК НЕ ВЫСТАВЛЯЕТ ВТОРОЙ. Расписание запустит цикл ещё раз
     # через час, systemd повторит после падения, оператор нажмёт руками.
     call_command("run_billing_cycle", verbosity=0)
-    check("повторный проход не выставил второй счёт",
-          Invoice.objects.filter(organization=organization).count() == 1,
-          f"{Invoice.objects.filter(organization=organization).count()} шт")
+    # СЧИТАЮТСЯ МЕСЯЧНЫЕ, а не все подряд: у организации есть ещё счёт на
+    # ПОКУПКУ тарифа (им она и стала платной выше), и он законный. Общий
+    # счётчик покраснел бы на верном продукте.
+    monthly = Invoice.objects.filter(organization=organization,
+                                     target_plan__isnull=True)
+    check("повторный проход не выставил второй счёт", monthly.count() == 1,
+          f"{monthly.count()} шт")
 
     # --- 4. НЕОПЛАТА: обслуживание встаёт -------------------------------
     invoice.due_at = date.today() - timedelta(days=10)
