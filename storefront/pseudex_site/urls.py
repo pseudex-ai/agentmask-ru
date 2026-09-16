@@ -29,6 +29,8 @@ urlpatterns = [
     path("activate", views.activate, name="activate"),
     path("welcome", views.welcome, name="welcome"),
     path("healthz", views.healthz, name="healthz"),
+    path("robots.txt", views.robots, name="robots"),
+    path("sitemap.xml", views.sitemap, name="sitemap"),
 
     # Отметки конфигуратора. Вторая (и последняя) анонимная запись на сайте —
     # см. докстринг `views.demand`: ни текста, ни почты, счётчик на сутки.
@@ -50,6 +52,7 @@ urlpatterns = [
     path("app/keys/new", views.new_key, name="new_key"),
     path("app/keys/<int:key_id>/revoke", views.revoke_key, name="revoke_key"),
     path("app/payer", views.update_payer, name="update_payer"),
+    path("app/subscribe", views.subscribe, name="subscribe"),
     path("app/pay-annual", views.pay_annual, name="pay_annual"),
     path("app/invoices/<str:number>", views.invoice_detail, name="invoice_detail"),
     path("app/invoices/<str:number>/print", views.invoice_print, name="invoice_print"),

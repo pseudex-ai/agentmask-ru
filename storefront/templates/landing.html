@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load ru static %}
+{% load ru static l10n %}
 {% comment %}ГЛАВНАЯ СТРАНИЦА, ПЕРЕНЕСЁННАЯ С МАКЕТА ДОСЛОВНО.
 
 ПОЧЕМУ СТИЛИ ЗДЕСЬ ИНЛАЙНОВЫЕ, А НЕ КЛАССАМИ. Это не небрежность и не спешка:
@@ -22,7 +22,72 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
 невозможной как класс. Галочки — ДВЕ ОТДЕЛЬНЫЕ: согласие на обработку ПД по
 156-ФЗ оформляется отдельно от договора.{% endcomment %}
 {% block body_class %}v2{% endblock %}
-{% block head %}<link rel="stylesheet" href="{% static 'landing.css' %}">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'landing.css' %}">
+{% comment %}СТРУКТУРИРОВАННЫЕ ДАННЫЕ. Блок `application/ld+json` — это ДАННЫЕ, а
+не исполняемый скрипт, поэтому `script-src 'self'` без `unsafe-inline` его
+пропускает: проверено опытом в Chromium с нашим боевым заголовком CSP, ноль
+нарушений в консоли. Полагаться на рассуждение здесь было нельзя — за
+`<script>` браузеры следят по-разному.
+
+ЦЕНЫ И ЧИСЛА ЗДЕСЬ ТОЖЕ ИЗ БАЗЫ. Разметка для робота, разошедшаяся с ценой на
+экране, — это не мелкая неточность: поисковик показывает её в выдаче, и человек
+приходит на страницу за той ценой, которой на ней нет.{% endcomment %}
+{% comment %}`localize off` — потому что цена здесь ЧИСЛО ДЛЯ МАШИНЫ. Русская
+локаль печатает 3 900 с неразрывным пробелом внутри, и schema.org такую цену не
+принимает: поисковик молча выбрасывает весь оффер, а заметно это только по
+отсутствию цены в выдаче, то есть никогда.{% endcomment %}
+{% localize off %}<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "{{ site_url }}/#organization",
+      "name": "{{ seller.name|default:"Pseudex" }}",
+      "url": "{{ site_url }}/",
+      "description": "Шлюз обезличивания персональных данных для LLM-агентов: соответствие 152-ФЗ без отправки данных наружу.",
+      "areaServed": "RU"{% if seller.inn %},
+      "taxID": "{{ seller.inn }}"{% endif %}{% if seller.email %},
+      "email": "{{ seller.email }}"{% endif %}
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "{{ site_url }}/#product",
+      "name": "Pseudex",
+      "applicationCategory": "SecurityApplication",
+      "applicationSubCategory": "Обезличивание персональных данных",
+      "operatingSystem": "Docker (Linux)",
+      "inLanguage": "ru",
+      "publisher": {"@id": "{{ site_url }}/#organization"},
+      "description": "Обратимая токенизация персональных данных перед языковой моделью. Модель получает подмену, инструменты агента — настоящие значения. Находит {{ found_count }} типов ПД, СНИЛС и ИНН проверяет по контрольной сумме. Контейнер работает в контуре клиента.",
+      "offers": [{% for plan in plans %}
+        {
+          "@type": "Offer",
+          "name": "{{ plan.title }}",
+          "price": "{{ plan.monthly_price|floatformat:"0u" }}",
+          "priceCurrency": "RUB",
+          "url": "{{ site_url }}/#pricing",
+          "availability": "https://schema.org/InStock",
+          "priceSpecification": {
+            "@type": "UnitPriceSpecification",
+            "price": "{{ plan.monthly_price|floatformat:"0u" }}",
+            "priceCurrency": "RUB",
+            "referenceQuantity": {"@type": "QuantitativeValue", "value": 1, "unitCode": "MON"}
+          }
+        }{% if not forloop.last %},{% endif %}{% endfor %}
+      ]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "{{ site_url }}/#website",
+      "url": "{{ site_url }}/",
+      "name": "pseudex",
+      "inLanguage": "ru",
+      "publisher": {"@id": "{{ site_url }}/#organization"}
+    }
+  ]
+}
+</script>{% endlocalize %}{% endblock %}
 
 {% block nav %}
 <nav style="display:flex;align-items:center;gap:28px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em">

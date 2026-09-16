@@ -3,8 +3,46 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}pseudex — маскирование персональных данных для LLM-агентов{% endblock %}</title>
-<meta name="description" content="Модель не видит персональных данных, инструменты видят. Контейнер работает в вашем контуре, к нам уходят только счётчики.">
+{% comment %}ЗАГОЛОВОК И ОПИСАНИЕ ПРИХОДЯТ ИЗ ВЬЮХИ, А НЕ БЛОКАМИ ШАБЛОНА.
+
+Блоком Django умеет подставить значение ровно в ОДНО место, а эта строка нужна
+в трёх: в `<title>`, в `og:title` и в карточке для мессенджеров. Три блока
+означали бы три копии одного текста и три места, где он разъедется; переменная
+во вьюхе — одно. Значения по умолчанию оставлены здесь на случай страницы,
+которая их не задала: пустой заголовок хуже общего.{% endcomment %}
+{% with page_title|default:"pseudex — маскирование персональных данных для LLM-агентов" as ttl %}
+{% with page_description|default:"Модель не видит персональных данных, инструменты видят. Контейнер работает в вашем контуре, к нам уходят только счётчики." as descr %}
+<title>{% block title %}{{ ttl }}{% endblock %}</title>
+<meta name="description" content="{{ descr }}">
+
+{% comment %}КАНОНИЧЕСКИЙ АДРЕС СТРОИТСЯ ИЗ `request.path`, А НЕ ПИШЕТСЯ РУКАМИ.
+Страница доступна и с параметрами — `?utm_source=…` живёт на каждой ссылке из
+рекламы и писем, — а поисковик считает такой адрес ОТДЕЛЬНОЙ страницей: наша
+собственная реклама плодила бы дубли главной. Домен берётся из настройки, иначе
+робот со стенда ушёл бы индексировать прод.{% endcomment %}
+<link rel="canonical" href="{{ site_url }}{{ request.path }}">
+{% comment %}ЧТО ИНДЕКСИРОВАТЬ, РЕШАЕТСЯ В ОДНОМ МЕСТЕ — рядом с тем же
+решением про аналитику. Кабинет, админка и экраны входа не должны попадать в
+выдачу: там на экране ключи, суммы счетов и чужие названия, а от страницы входа
+в поиске нет пользы никому. Тег в каждом шаблоне означал бы двадцать мест, из
+которых одно забудут — а забытое здесь видно только в чужой выдаче.{% endcomment %}
+<meta name="robots" content="{% if indexable %}index, follow, max-image-preview:large{% else %}noindex, nofollow{% endif %}">
+
+{% comment %}КАРТОЧКА ДЛЯ ССЫЛКИ. Без неё ссылка на продукт в Telegram, Slack и
+в любом посте выглядит голым адресом — а это ровно те места, где живёт наша
+аудитория и откуда приходит первый переход.{% endcomment %}
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="pseudex">
+<meta property="og:locale" content="ru_RU">
+<meta property="og:url" content="{{ site_url }}{{ request.path }}">
+<meta property="og:title" content="{{ ttl }}">
+<meta property="og:description" content="{{ descr }}">
+<meta property="og:image" content="{{ site_url }}{% static 'og-cover.png' %}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="pseudex — шлюз персональных данных для LLM-агентов">
+<meta name="twitter:card" content="summary_large_image">
+{% endwith %}{% endwith %}
 <link rel="icon" href="{% static 'favicon.svg' %}" type="image/svg+xml">
 <link rel="stylesheet" href="{% static 'site.css' %}">
 {% block head %}{% endblock %}

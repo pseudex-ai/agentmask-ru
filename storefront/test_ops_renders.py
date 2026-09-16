@@ -33,6 +33,10 @@ _PORT = int(os.environ.get("PSEUDEX_OPS_PORT", "8413"))
 _DB = os.path.join(tempfile.mkdtemp(prefix="pseudex-ops-db-"), "store.sqlite3")
 _STAFF_EMAIL = "ops-render@pseudex.local"
 _STAFF_PASSWORD = "ops-render-password-not-a-secret"
+# Шестнадцатеричный ключ TOTP, из которого считается код. Не секрет:
+# он живёт ровно столько, сколько идёт этот тест, и в стенде, который
+# поднимается на локальном порту и гасится в `finally`.
+_STAFF_TOTP_KEY = "3132333435363738393031323334353637383930"
 
 FAILURES: list[str] = []
 
@@ -76,6 +80,14 @@ staff = User.objects.create_user(email=os.environ["STAFF_EMAIL"],
                                  password=os.environ["STAFF_PASSWORD"])
 staff.is_staff = staff.is_superuser = True
 staff.save()
+
+# ВТОРОЙ ФАКТОР — ЧАСТЬ ВХОДА В КОНСОЛЬ, А НЕ ДЕТАЛЬ. Консоль закрыта
+# `otp_required`, поэтому без подтверждённого устройства сюда не войти вообще:
+# проверка отрисовки экранов сперва обязана пройти тем же входом, что и человек.
+# Ключ задан константой, чтобы тест мог посчитать код той же арифметикой.
+from django_otp.plugins.otp_totp.models import TOTPDevice
+TOTPDevice.objects.create(user=staff, name="ops-render", confirmed=True,
+                          key=os.environ["STAFF_TOTP_KEY"])
 
 # Клиент с полной историей: подписка, ключ, оплаченный счёт и счёт по объёму.
 # Пустая консоль отрисуется у кого угодно — экран обязан быть проверен на
@@ -128,6 +140,7 @@ def _start_site() -> tuple[subprocess.Popen, str]:
         "PSEUDEX_DB_PATH": _DB,
         "STAFF_EMAIL": _STAFF_EMAIL,
         "STAFF_PASSWORD": _STAFF_PASSWORD,
+        "STAFF_TOTP_KEY": _STAFF_TOTP_KEY,
         # Лицензионного сервера здесь нет НАМЕРЕННО: консоль обязана открываться
         # и говорить, что цифр сейчас нет, а не падать пятисоткой. Этот случай
         # уже проверяется по HTTP, и в браузере он же — самый вероятный на
@@ -200,11 +213,31 @@ def main() -> int:
                   page.url.replace(base, ""))
 
             # --- вход сотрудника ----------------------------------------
-            page.goto(f"{base}/accounts/login/", wait_until="networkidle")
-            page.fill("input[name=login]", _STAFF_EMAIL)
+            #
+            # ЧЕРЕЗ АДМИНКУ И С КОДОМ. Здесь стояла клиентская форма
+            # `/accounts/login/` с полями login+password, и она умерла дважды:
+            # вход клиента стал беспарольным (поля `password` там больше нет), а
+            # консоль закрылась вторым фактором. Тест падал на `input[name=login]`
+            # по таймауту — сообщение, по которому ни одной из двух причин не видно.
+            # ВХОД В ДВА ШАГА, КАК У ЧЕЛОВЕКА. `OTPAuthenticationForm` сперва
+            # проверяет пароль и только потом показывает выбор устройства: код
+            # без `otp_device` она отвергает словами «Please select a device», и
+            # одностраничная попытка возвращалась на форму входа молча.
+            from django_otp.oath import totp as _totp
+            page.goto(f"{base}/{admin_path}/login/?next=/{admin_path}/ops/",
+                      wait_until="networkidle")
+            page.fill("input[name=username]", _STAFF_EMAIL)
             page.fill("input[name=password]", _STAFF_PASSWORD)
-            page.click("button[type=submit], input[type=submit]")
+            page.click("input[type=submit], button[type=submit]")
             page.wait_for_load_state("networkidle")
+            # Код считается ЗДЕСЬ, после первого шага: он живёт 30 секунд, и
+            # посчитанный до перехода мог бы протухнуть на медленной странице.
+            page.select_option("select[name=otp_device]", index=0)
+            page.fill("input[name=otp_token]", "%06d" % _totp(bytes.fromhex(_STAFF_TOTP_KEY)))
+            page.click("input[type=submit], button[type=submit]")
+            page.wait_for_load_state("networkidle")
+            check("сотрудник вошёл паролем и кодом",
+                  "/login" not in page.url, page.url.replace(base, ""))
 
             screens = [
                 ("флот", f"{ops}/", ["ООО Ромашка"]),
