@@ -164,7 +164,19 @@ jobs:
       - name: the dirty set P3 compares the two images on
         run: python make_dirty.py
 
+      # Buildx с GitHub Actions cache: слой Nuitka переживает эфемерный раннер и
+      # не пересобирается, когда движок (prototype/) не менялся — storefront-only
+      # релиз идёт минуты вместо часа. Гейты и подпись при этом выполняются по
+      # собранному образу, как раньше: кэш ускоряет сборку, не подменяет
+      # верификацию. github-runtime экспортит ACTIONS_* токены, нужные бэкенду
+      # type=gha при ПРЯМОМ вызове buildx (pack_gates зовёт его сам, мимо
+      # build-push-action). Провал кэша не ронял бы релиз (ignore-error в
+      # pack_gates), но раннер держим — иначе кэша просто нет.
+      - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: packaging gates (builds both images)
+        env:
+          PSEUDEX_BUILDX_CACHE: gha
         run: python -u e2e/pack_gates.py
       - name: licensing gates on the release image
         run: python -u e2e/gates.py --image pseudex:compiled --skip-build

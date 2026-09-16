@@ -87,13 +87,33 @@ def build_images(skip_build: bool) -> str:
     # today's client.
     sh(["docker", "build", "-f", str(_ROOT / "licensing" / "Dockerfile"),
         "-t", "pseudex-licensing:e2e", str(_ROOT)], True, 1800)
+    # BUILDX-КЭШ СЛОЁВ В CI. Эфемерный раннер не хранит локальный кэш Docker
+    # между прогонами, поэтому Nuitka-компиляция движка (~40-60 мин) шла заново
+    # даже на storefront-only релизе, где входы Dockerfile.nuitka (pseudex/,
+    # requirements, build-скрипты, signing-key) байт-в-байт те же. Когда
+    # PSEUDEX_BUILDX_CACHE=gha, слои берутся из GitHub Actions cache: попадание
+    # ровно тогда, когда движок не менялся. Гейты и подпись всё равно идут по
+    # СОБРАННОМУ образу — кэш ускоряет сборку, НЕ подменяет верификацию.
+    # `ignore-error=true`: провал экспорта кэша не роняет релиз (в худшем случае
+    # просто медленно). Пусто (локально, `--skip-build`) — обычный docker build,
+    # поведение не меняется.
+    cache = os.environ.get("PSEUDEX_BUILDX_CACHE")
     if not skip_build:
         for dockerfile, tag in ((_ROOT / "Dockerfile", SOURCE_IMAGE),
                                 (_ROOT / "Dockerfile.nuitka", COMPILED_IMAGE)):
             started = time.monotonic()
-            sh(["docker", "build", "-f", str(dockerfile),
-                "--build-arg", f"PSEUDEX_LICENSE_PUBKEY={public_b64}",
-                "-t", tag, str(_ROOT)], True, 5400)
+            build_args = ["--build-arg", f"PSEUDEX_LICENSE_PUBKEY={public_b64}",
+                          "-f", str(dockerfile), "-t", tag, str(_ROOT)]
+            # Кэшируем ТОЛЬКО компилированный образ: Nuitka-компиляция и есть те
+            # ~40-60 мин; исходный собирается за пару минут, кэш ему не нужен.
+            if cache == "gha" and tag == COMPILED_IMAGE:
+                scope = tag.replace(":", "-")
+                sh(["docker", "buildx", "build", "--load",
+                    "--cache-from", f"type=gha,scope={scope}",
+                    "--cache-to", f"type=gha,mode=max,scope={scope},ignore-error=true",
+                    *build_args], True, 5400)
+            else:
+                sh(["docker", "build", *build_args], True, 5400)
             print(f"  {tag} built in {(time.monotonic() - started) / 60:.1f} min")
 
     _ENV_FILE.write_text(
