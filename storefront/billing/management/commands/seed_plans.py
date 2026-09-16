@@ -7,9 +7,10 @@ number. Idempotent, so it is safe on every deploy.
 
 from decimal import Decimal
 
-from django.core.management.base import BaseCommand
+from django.conf import settings
+from django.core.management.base import BaseCommand, CommandError
 
-from billing import services
+from billing import licensing, services
 from billing.models import Plan
 
 # Lowered from the mock's 19 000 / 49 000. Those were placed before anyone had
@@ -68,15 +69,80 @@ PLANS = [
 ]
 
 
+# БЕСПЛАТНЫЙ ТАРИФ — ЭТО САМА ПРОБА, А НЕ ВТОРАЯ БЕСПЛАТНАЯ ДВЕРЬ.
+#
+# Строка с этим именем здесь уже была однажды и была убрана правильно: она
+# стояла НА ЛЕНДИНГЕ рядом с четырнадцатидневной пробой, и получалось два
+# противоречащих друг другу бесплатных входа. Сейчас она возвращается в другой
+# роли — на ней живёт сама проба, и на лендинге её нет (`is_public=False`),
+# выбрать её нельзя, попадают на неё все и сразу.
+#
+# ЗАЧЕМ ВООБЩЕ. Проба шла на ВЫБРАННОМ тарифе: человек отмечал в форме
+# «Промышленный» и получал миллион запросов бесплатно на две недели, и так с
+# каждой новой почты. Теперь обслуживание на пробе идёт по этим лимитам —
+# десятая часть «Старта»: хватает подключить, прогнать свои сценарии и увидеть,
+# что агент не сломался, а работать на этом в проде нельзя.
+#
+# ВСЕ ЧИСЛА ЗДЕСЬ — ТОЛЬКО ПЕРВОНАЧАЛЬНЫЕ. Дальше они правятся в админке, и
+# правка доходит до следующей регистрации без выката; `update_or_create` их не
+# перетирает, потому что для этой строки мы задаём defaults только при создании.
+FREE_PLAN = {
+    "code": "free",
+    "title": "Бесплатный",
+    "monthly_price": Decimal("0"),
+    "included_requests": 1_000,
+    "metered_per_1k": Decimal("0"),   # сверх лимита — не счёт, а остановка
+    "metered_floor": 0,
+    "rpm_limit": 30,
+    "max_instances": 1,
+    "max_keys": 1,
+    "is_public": False,               # на лендинге его нет: это проба, а не выбор
+    "sort_order": 9,
+    "audience": "познакомиться с продуктом",
+    "overage_cap_requests": 0,
+    "buffer_requests": 0,
+    "upgrade_first_month_discount_pct": 0,
+    "annual_discount_pct": 0,
+    "is_trial": True,
+    "trial_days": services.TRIAL_DAYS_SEED,
+    "first_payment_bonus_days": 0,
+}
+
+# Лимиты той же строки НА ЛИЦЕНЗИОННОМ СЕРВЕРЕ. Он исполняет потолок инстансов и
+# выдаёт ёмкость порциями, и знает тарифы по коду — незнакомый код он отклоняет
+# при выпуске ключа, поэтому без этой отправки регистрация ломалась бы на первом
+# же новом аккаунте. Кванты мелкие под стать объёму: выдавать пробе порцию
+# размером с её месячный лимит значит отдать весь лимит одним запросом.
+FREE_PLAN_LIMITS = {
+    "max_instances": 1,
+    "processes_per_instance": 2,
+    "grant_size": 500,
+    "quantum_min": 100,
+    "quantum_max": 1_000,
+    "reserve_max": 2_000,
+}
+
+# ДНЕЙ В ПОДАРОК ЗА НЕМЕДЛЕННУЮ ОПЛАТУ. Пока заплатить было нельзя вовсе, весь
+# выбор человека был «досидеть пробу», и повода заплатить сегодня не возникало
+# никогда. Число стартовое — дальше правится в админке по каждому тарифу.
+FIRST_PAYMENT_BONUS_DAYS = 30
+
+
 class Command(BaseCommand):
     help = "Create or update the public plans"
+
+    def add_arguments(self, parser) -> None:
+        parser.add_argument(
+            "--no-licensing", action="store_true",
+            help="не отправлять бесплатный тариф на лицензионный сервер "
+                 "(локальный прогон без него)")
 
     def handle(self, *args, **options) -> None:
         # Plans removed from PLANS are retired, not left behind. A permanent
         # "Бесплатный" row survived a previous seed and would have been offered
         # on the landing beside a 14-day trial — two contradictory free entries,
         # one of them unintended.
-        keep = {code for code, *_ in PLANS}
+        keep = {code for code, *_ in PLANS} | {FREE_PLAN["code"]}
         retired = Plan.objects.exclude(code__in=keep)
         # Only hidden, never deleted: a subscription points at its plan, and a
         # customer who bought last year's tariff keeps the terms they bought.
@@ -114,4 +180,55 @@ class Command(BaseCommand):
                 "upgrade_first_month_discount_pct": discount,
                 "annual_discount_pct": annual,
             })
-        self.stdout.write(f"{len(PLANS)} plans seeded")
+            # ПОДАРОЧНЫЕ ДНИ ПРОСТАВЛЯЮТСЯ ТОЛЬКО ПРИ СОЗДАНИИ СТРОКИ.
+            #
+            # Остальные поля выше сид перетирает намеренно — цена и лимиты
+            # живут в этом файле и правятся выкатом. Это поле живёт в админке
+            # по прямому требованию: перетирать его на каждом деплое значило бы
+            # молча отменять решение владельца через неделю после того, как он
+            # его принял, и заметил бы он это по выручке, а не по экрану.
+            if code != "enterprise":
+                Plan.objects.filter(code=code, first_payment_bonus_days=0).update(
+                    first_payment_bonus_days=FIRST_PAYMENT_BONUS_DAYS)
+
+        # ── бесплатный тариф: создаём, но НЕ перетираем ─────────────────────
+        free_code = FREE_PLAN["code"]
+        free, created = Plan.objects.get_or_create(
+            code=free_code, defaults={k: v for k, v in FREE_PLAN.items() if k != "code"})
+        if not created and not free.is_trial:
+            # Строка есть, но отметку сняли: это могло быть сделано руками ради
+            # выключения пробы, и возвращать её молча нельзя — иначе админка
+            # перестаёт что-либо решать. Говорим вслух и не трогаем.
+            self.stdout.write(self.style.WARNING(
+                f"тариф {free_code} есть, но не отмечен пробным — оставлен как есть"))
+
+        self.stdout.write(f"{len(PLANS) + 1} plans seeded"
+                          + (f", {free_code} created" if created else ""))
+
+        # ── и он же на лицензионном сервере ─────────────────────────────────
+        # БЕЗ ЭТОГО РЕГИСТРАЦИЯ ЛОМАЕТСЯ НА ПЕРВОМ ЖЕ АККАУНТЕ: выпуск ключа
+        # отклоняет незнакомый код тарифа, а теперь на пробе стоит `free`.
+        # Отказ здесь — это отказ команды, а не предупреждение: деплой, молча
+        # оставивший сервер без этого тарифа, выкатит сломанную регистрацию.
+        # НЕНАСТРОЕННЫЙ СЕРВЕР — ЭТО НЕ ОТКАЗ, А ДРУГОЕ ОКРУЖЕНИЕ.
+        #
+        # Тесты и локальный прогон поднимают витрину без лицензионного сервера
+        # вовсе: падать там значило бы требовать его для каждого `migrate`. А на
+        # проде токен задан всегда, и тогда отказ — это отказ.
+        configured = bool(getattr(settings, "LICENSING_ADMIN_TOKEN", ""))
+        if options.get("no_licensing") or not configured:
+            why = "по флагу" if options.get("no_licensing") else "он не настроен"
+            self.stdout.write(self.style.WARNING(
+                f"лицензионный сервер пропущен ({why}) — тариф {free_code} там "
+                "может отсутствовать, и тогда регистрация будет падать на "
+                "выпуске ключа"))
+            return
+        try:
+            licensing.set_plan(free_code, FREE_PLAN_LIMITS, actor="seed_plans")
+        except licensing.LicensingError as error:
+            raise CommandError(
+                f"тариф {free_code} не отправлен на лицензионный сервер: {error}. "
+                "Регистрация упадёт на выпуске ключа. Поднимите сервер и "
+                "повторите, либо запустите с --no-licensing, если это локальный "
+                "прогон без него.") from error
+        self.stdout.write(f"{free_code} отправлен на лицензионный сервер")

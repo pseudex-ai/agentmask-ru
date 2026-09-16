@@ -21,16 +21,23 @@ from billing.models import Invoice, LicenseKey, Offer, Plan, Subscription
 @admin.register(Plan)
 class PlanAdmin(admin.ModelAdmin):
     list_display = ("code", "title", "monthly_price", "max_instances",
-                    "included_requests", "rpm_limit", "max_keys", "is_public")
-    list_editable = ("monthly_price", "included_requests", "is_public")
+                    "included_requests", "rpm_limit", "max_keys", "is_public",
+                    "is_trial", "trial_days", "first_payment_bonus_days")
+    # ПРАВИТСЯ ПРЯМО В СПИСКЕ, И ЭТО ТРЕБОВАНИЕ, А НЕ УДОБСТВО. Длительность
+    # пробы и подарок за первый платёж — коммерческие ручки: они меняются чаще
+    # кода и не должны ждать выката. Раньше проба была константой `TRIAL_DAYS`
+    # в `services.py`, то есть менялась релизом.
+    list_editable = ("monthly_price", "included_requests", "is_public",
+                     "is_trial", "trial_days", "first_payment_bonus_days")
+    list_filter = ("is_public", "is_trial")
     search_fields = ("code", "title")   # для autocomplete из OfferAdmin
 
 
 @admin.register(Subscription)
 class SubscriptionAdmin(admin.ModelAdmin):
-    list_display = ("organization", "plan", "state", "trial_ends_at",
-                    "current_period_end", "cancel_at_period_end")
-    list_filter = ("state", "plan")
+    list_display = ("organization", "plan", "intended_plan", "state",
+                    "trial_ends_at", "current_period_end", "cancel_at_period_end")
+    list_filter = ("state", "plan", "intended_plan")
     search_fields = ("organization__id", "organization__display_name")
     actions = ("action_resume", "action_mark_unpaid")
 
@@ -103,7 +110,8 @@ class LicenseKeyAdmin(admin.ModelAdmin):
 
 @admin.register(Invoice)
 class InvoiceAdmin(admin.ModelAdmin):
-    list_display = ("number", "organization", "state", "total",
+    list_display = ("number", "organization", "state", "total", "target_plan",
+                    "bonus_days",
                     "period_start", "period_end", "due_at", "paid_at")
     list_filter = ("state",)
     search_fields = ("number", "organization__id", "organization__display_name")

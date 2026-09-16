@@ -469,6 +469,15 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     # незамеченным, откатывая оплату целиком.
     from django.conf import settings
     from billing import licensing, services
+    from billing.models import Plan
+    # ПЛАТЯЩИЙ КЛИЕНТ, А НЕ ПРОБНЫЙ. Регистрация сажает на пробный тариф — у
+    # него один ключ и один контейнер, — а здесь проверяется путь оплаты, то
+    # есть по определению не проба. Раньше строки ниже работали случайно: проба
+    # шла на ВЫБРАННОМ тарифе и наследовала его лимиты, что и было дырой.
+    subscription = org.subscription
+    subscription.plan = Plan.objects.get(code="start")
+    subscription.save(update_fields=["plan"])
+    licensing.set_org_plan(org.id, "start")
     # Ключ для ЭТОЙ организации, выпущенный нашим же путём: дальше проверяется,
     # что контейнер с ним обслуживается и перестаёт обслуживаться.
     raw_key = services.issue_additional_key(org, "проверка оплаты", "live")

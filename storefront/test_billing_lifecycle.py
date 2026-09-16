@@ -257,8 +257,38 @@ def main() -> int:
     check("организация создана", organization is not None)
     if organization is None:
         return 1
+
     key = services.issue_first_key(organization)
     check("ключ выпущен и это настоящий ключ", key.startswith("ps_"), key[:12] + "…")
+
+
+    # ПОКУПКА В ТОТ ЖЕ ДЕНЬ, А НЕ ОЖИДАНИЕ КОНЦА ПРОБЫ.
+    #
+    # Регистрация сажает на БЕСПЛАТНЫЙ тариф — тысяча запросов, один контейнер,
+    # цена ноль, — и жизненный цикл платной подписки на нём не проверить: счёт
+    # вышел бы нулевым, погасился сам, и дальше проверять было бы нечего.
+    # Раньше проба шла на ВЫБРАННОМ тарифе и наследовала его лимиты, из-за чего
+    # эти строки работали случайно — и это была та самая дыра, через которую
+    # «Промышленный» брали бесплатно с каждой новой почты.
+    #
+    # Кнопки «оплатить сейчас» тоже не существовало: счёт выставлял только
+    # месячный цикл, то есть заплатить до конца пробы было физически нечем.
+    # Здесь проверяется в том числе она.
+    check("после регистрации клиент на пробном тарифе",
+          organization.subscription.plan.is_trial,
+          organization.subscription.plan_id)
+    check("и выбранный на лендинге тариф запомнен",
+          organization.subscription.intended_plan_id == "industrial")
+    purchase = services.build_switch_invoice(organization,
+                                             Plan.objects.get(code="industrial"))
+    check("счёт на выбранный тариф выставляется по требованию",
+          purchase.total == plans["industrial"].monthly_price, str(purchase.total))
+    services.mark_paid(purchase, payment_ref="1a2b3c4d-0000-4000-8000-000000000001")
+    organization.refresh_from_db()
+    check("оплата перевела на тариф и включила обслуживание",
+          organization.subscription.plan_id == "industrial"
+          and organization.subscription.state == Subscription.ACTIVE,
+          f"{organization.subscription.plan_id}/{organization.subscription.state}")
 
     # --- 2. контейнер клиента работает ----------------------------------
     up = start_container(key)
@@ -286,7 +316,7 @@ def main() -> int:
           Funnel.objects.filter(step=Funnel.FIRST_LEASE,
                                 organization_id=organization.id).count() == 1)
 
-    # --- 3. триал кончился -> счёт --------------------------------------
+    # --- 3. период кончился -> счёт -------------------------------------
     subscription = organization.subscription
     subscription.trial_ends_at = timezone.now() - timedelta(minutes=1)
     subscription.current_period_end = timezone.now() - timedelta(minutes=1)
@@ -294,8 +324,13 @@ def main() -> int:
 
     mail.outbox.clear()
     call_command("run_billing_cycle", verbosity=0)
-    invoice = Invoice.objects.filter(organization=organization).first()
-    check("цикл выставил счёт по концу триала", invoice is not None,
+    # СЧЁТ ЗА ПЕРИОД, А НЕ СЧЁТ НА ПОКУПКУ. Их теперь два вида, и оба лежат у
+    # одной организации с сегодняшней датой периода: `first()` по умолчанию
+    # вернул бы любой из них, и проверка «сумма равна абонплате» прошла бы на
+    # уже оплаченном счёте, ничего не проверив.
+    invoice = Invoice.objects.filter(organization=organization,
+                                     target_plan__isnull=True).first()
+    check("цикл выставил счёт по концу периода", invoice is not None,
           invoice.number if invoice else "счёта нет")
     if invoice is None:
         return 1

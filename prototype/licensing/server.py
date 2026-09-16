@@ -311,6 +311,13 @@ ADMIN_ACTIONS: tuple[AdminAction, ...] = (
     # тот класс расхождения, которым этот файл уже дважды заплатил.
     AdminAction("/admin/plans", "GET", True),
     AdminAction("/admin/plans", "POST", True),
+    # ПЕРЕВОД ОРГАНИЗАЦИИ НА ДРУГОЙ ТАРИФ — ВИТРИНЕ, и по той же логике, что и
+    # прайс выше: держатель витринного токена уже умеет выпускать, отзывать и
+    # приостанавливать ключи ЛЮБОЙ организации, а смена тарифа слабее каждого из
+    # этих рычагов. Запретить её значило бы, что оплата старшего тарифа меняет
+    # строку в базе витрины и ничего больше — клиент платит за двенадцать
+    # контейнеров и упирается в один.
+    AdminAction("/admin/replan", "POST", True),
     # ПАКЕТ ПО НАЗВАННЫМ ИДЕНТИФИКАТОРАМ — НЕ ПЕРЕЧИСЛЕНИЕ. Витрина сама создала
     # все организации и знает их список; перечислять ей незачем, ей нужно быстро
     # спросить про тех, кого она уже назвала. Поэтому ручка не отдаёт ничего, что
@@ -1052,6 +1059,32 @@ async def admin_unpaid(body: Annotated[dict, Depends(json_object)]) -> JSONRespo
 @admin_app.post("/admin/resume")
 async def admin_resume(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     return await _set_status(body, STATUS_ACTIVE)
+
+
+@admin_app.post("/admin/replan")
+async def admin_replan(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
+    """Перевести организацию на другой тариф, не трогая её ключи.
+
+    Нужно витрине: заплатить за старший тариф человек может в любой момент, а
+    лимиты — потолок инстансов, размер кванта, резерв — исполняет ЭТОТ сервер и
+    знает их по коду тарифа на ключе. Без этой ручки оплата меняла бы строку в
+    базе витрины и ничего больше: клиент платит за двенадцать контейнеров и
+    упирается в один.
+
+    Неизвестный тариф ОТКЛОНЯЕТСЯ, как и при выпуске ключа: опечатка в коде
+    иначе тихо перевела бы клиента на пустые лимиты.
+    """
+    org_id = str(body.get("org_id", "")).strip()
+    plan = str(body.get("plan", "")).strip()
+    if not org_id or not plan:
+        return JSONResponse({"error": "org_id and plan are required"}, status_code=400)
+    if plan not in STORE.known_plans():
+        return JSONResponse(
+            {"error": "unknown plan", "plan": plan, "known": STORE.known_plans()},
+            status_code=400)
+    changed = STORE.set_org_plan(org_id, plan)
+    _log.info("org replanned", extra={"org": org_id, "plan": plan, "keys": changed})
+    return JSONResponse({"org_id": org_id, "plan": plan, "keys": changed})
 
 
 @admin_app.get("/admin/plans")
