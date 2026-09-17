@@ -181,6 +181,11 @@ services:
       PSEUDEX_ANALYTICS_MODE: ${PSEUDEX_ANALYTICS_MODE:-off}
       PSEUDEX_ANALYTICS_HOST: ${PSEUDEX_ANALYTICS_HOST:-}
       PSEUDEX_ANALYTICS_KEY: ${PSEUDEX_ANALYTICS_KEY:-}
+      # МЕТРИКА — ОТДЕЛЬНАЯ НАСТРОЙКА, А НЕ ТРЕТИЙ РЕЖИМ АНАЛИТИКИ. Rybbit и
+      # Метрика включаются порознь, и из ЭТИХ ДВУХ значений выводятся три
+      # текста: ответ FAQ на лендинге, текст баннера согласия и раздел 9bis
+      # политики. Пусто — счётчика нет, и все три обещают его отсутствие.
+      PSEUDEX_METRIKA_ID: ${PSEUDEX_METRIKA_ID:-}
       # ЭКВАЙРИНГ. Ключи ЮKassa нужны РОВНО ЭТОМУ сервису: платежи создаёт и
       # сверяет только `storefront_web/views.py` (`create_payment`,
       # `fetch_status`), часовой цикл биллинга их не трогает — класть их ещё и
