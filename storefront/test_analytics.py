@@ -10,6 +10,7 @@
 import datetime
 import io
 import os
+import subprocess
 import sys
 import tempfile
 
@@ -26,8 +27,12 @@ def main() -> int:
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "pseudex_site.settings")
     os.environ["PSEUDEX_DEBUG"] = "1"
     os.environ["PSEUDEX_SECRET_KEY"] = "analytics-test"
-    os.environ["PSEUDEX_DB_PATH"] = os.path.join(
-        tempfile.mkdtemp(prefix="pseudex-analytics-"), "a.sqlite3")
+    _tmpdir = tempfile.mkdtemp(prefix="pseudex-analytics-")
+    os.environ["PSEUDEX_DB_PATH"] = os.path.join(_tmpdir, "a.sqlite3")
+    # СОЛЬ — В СВОЙ ФАЙЛ, А НЕ В ОБЩИЙ /tmp. Иначе проверки одного запуска
+    # удаляют соль другого (смена суток ниже стирает вчерашний файл), и тест
+    # начинает зависеть от порядка и от того, что успело полежать в /tmp.
+    os.environ["PSEUDEX_ANALYTICS_SALT_FILE"] = os.path.join(_tmpdir, "salt")
 
     import django
     django.setup()
@@ -48,12 +53,45 @@ def main() -> int:
     check("в отпечатке нет ни адреса, ни user-agent",
           "203.0.113" not in a and "Chrome" not in a and len(a) == 16, a)
 
+    # ОДИН ОТПЕЧАТОК НА ВСЕ ВОРКЕРЫ. Витрина поднимает gunicorn с
+    # `--workers 2`, и соль, сгенерированная в каждом процессе заново, теряла
+    # связь между визитом и регистрацией примерно в половине случаев — вместе с
+    # метками, реферером и `yclid`, на котором держатся офлайн-конверсии.
+    # ПРОВЕРЯЕМ ДРУГИМ ПРОЦЕССОМ, А НЕ ВТОРЫМ ВЫЗОВОМ: внутри одного процесса
+    # одинаковый ответ получается и у сломанной версии, поэтому такой тест не
+    # мог бы провалиться по той причине, ради которой стоит.
+    # ИДЁТ ДО СМЕНЫ СУТОК: та стирает вчерашний файл соли, а вместе с ним и
+    # предмет этой проверки.
+    probe = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; sys.path.insert(0, %r);"
+         "import django; django.setup();"
+         "from ops import collect;"
+         "print(collect.fingerprint('pseudex.ru', '203.0.113.7',"
+         " 'Mozilla/5.0 Chrome'))" % os.getcwd()],
+        capture_output=True, text=True, timeout=60,
+        env={**os.environ, "DJANGO_SETTINGS_MODULE": "pseudex_site.settings"})
+    from_worker = probe.stdout.strip()
+    check("второй воркер считает тот же отпечаток, что и первый",
+          from_worker == a,
+          f"первый {a!r}, второй {from_worker!r} — {probe.stderr.strip()[-160:]}")
+
     # ЗАВТРА СВЯЗАТЬ НЕЛЬЗЯ. Это обещание политики, и держится оно не на
     # аккуратности, а на том, что соль уничтожена вместе со сменой суток.
-    collect._salt_day = -1
-    tomorrow = collect.fingerprint("pseudex.ru", "203.0.113.7", "Mozilla/5.0 Chrome")
-    check("после смены соли тот же человек неузнаваем", a != tomorrow,
-          "соль живёт в памяти процесса и уничтожается сменой суток")
+    # СУТКИ СДВИГАЮТСЯ ЧАСАМИ, А НЕ СБРОСОМ КЭША: соль теперь одна на контейнер
+    # и лежит файлом, поэтому «забыть её» внутри тех же суток — это прочитать
+    # ту же соль, а не проверить следующую.
+    real_time = collect.time.time
+    try:
+        collect.time.time = lambda: real_time() + 86400
+        collect._salt_day = -1
+        tomorrow = collect.fingerprint("pseudex.ru", "203.0.113.7",
+                                       "Mozilla/5.0 Chrome")
+    finally:
+        collect.time.time = real_time
+        collect._salt_day = -1
+    check("после смены суток тот же человек неузнаваем", a != tomorrow,
+          "соль суток не воспроизводится на следующий день")
 
     # --- боты -------------------------------------------------------------
     html = "text/html,application/xhtml+xml"
