@@ -924,3 +924,51 @@ def usage_csv(request, org_id: str):
         writer.writerow([row["day"], row["requests_total"], row["requests_delta"],
                          row["values_total"], row["reports"], row["instances"]])
     return response
+
+
+@_ops_gate
+def yandex(request):
+    """Экран «Яндекс»: реклама и статистика с той стороны.
+
+    ЭКРАН ОБЯЗАН ОТКРЫВАТЬСЯ, КОГДА ЯНДЕКС НЕ ОТВЕЧАЕТ, и по той же причине,
+    что и остальная консоль: его открывают ровно в ту минуту, когда что-то
+    пошло не так. Отказ API ловится и становится плашкой; всё, что витрина
+    знает сама, — сколько конверсий мы отправили и когда, — остаётся на экране.
+
+    ПОЧЕМУ ОТДЕЛЬНЫЙ ЭКРАН, А НЕ БЛОК В «АНАЛИТИКЕ». Там первопартийные числа:
+    наши визиты, наша воронка, наши деньги, и они сходятся с базой. Здесь
+    чужие: Метрика считает своим счётчиком и своим определением визита, Директ
+    живёт по своим кампаниям. Две цифры «сколько пришло» рядом на одном экране
+    читаются как расхождение и заставляют искать ошибку там, где её нет.
+    """
+    from ops import yandex_api
+    from ops.analytics_models import ConversionSent
+
+    days = max(1, min(365, int(request.GET.get("days", "30") or 30)))
+    status = {"configured": yandex_api.configured(), "counter": settings.METRIKA_ID}
+    summary, campaigns, metrika_error, direct_error = None, None, "", ""
+    if status["configured"]:
+        if settings.METRIKA_ID:
+            try:
+                summary = yandex_api.metrika_summary(days)
+            except yandex_api.YandexError as error:
+                metrika_error = str(error)
+        else:
+            metrika_error = ("PSEUDEX_METRIKA_ID не задан — счётчика нет, "
+                             "статистики не будет даже с рабочим токеном.")
+        try:
+            campaigns = yandex_api.direct_campaigns()
+        except yandex_api.YandexError as error:
+            direct_error = str(error)
+
+    sent = (ConversionSent.objects.values("target")
+            .annotate(n=Count("id")).order_by("target"))
+    return render(request, "ops/yandex.html", {
+        "days": days, "status": status, "summary": summary,
+        "campaigns": campaigns, "metrika_error": metrika_error,
+        "direct_error": direct_error,
+        "direct_pending": "Incomplete registration" in direct_error
+                          or "58" in direct_error,
+        "conversions": [{"target": row["target"], "count": row["n"]} for row in sent],
+        "conversion_total": sum(row["count"] for row in sent),
+    })

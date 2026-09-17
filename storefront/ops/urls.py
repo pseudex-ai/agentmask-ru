@@ -28,6 +28,11 @@ urlpatterns = [
     # (`yandex_views._ops_api_gate`), а не сессией staff+TOTP, и живут выше
     # ловушки `<str:org_id>/` по той же причине, что и остальные конкретные
     # пути: иначе `yandex` читался бы как идентификатор организации.
+    # ЭКРАН И МАШИННЫЙ ДОСТУП — РАЗНЫЕ ДВЕРИ. `yandex/` закрыт сессией
+    # staff+TOTP, как остальная консоль; `yandex/*` ниже — Bearer-токеном.
+    # Смешать их значило бы либо пустить бота в консоль, либо открыть цифры
+    # рекламы тому, у кого есть только токен отчёта.
+    path("yandex/", views.yandex, name="ops_yandex"),
     path("yandex/status", yandex_views.status, name="ops_yandex_status"),
     path("yandex/metrika/counters", yandex_views.metrika_counters,
          name="ops_yandex_counters"),

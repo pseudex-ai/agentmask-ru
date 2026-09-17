@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Яндекс — операции pseudex{% endblock %}
+{% block nav %}
+<nav>
+  <a href="{% url 'ops_fleet' %}">ФЛОТ</a>
+  <a href="{% url 'ops_analytics' %}">АНАЛИТИКА</a>
+  <a href="{% url 'ops_yandex' %}">ЯНДЕКС</a>
+  <a href="{% url 'ops_chains' %}">ЦЕПИ</a>
+  <a href="{% url 'ops_constructor' %}">КОНСТРУКТОР</a>
+  <a href="{% url 'ops_plans' %}">ЁМКОСТЬ</a>
+  <a href="{% url 'ops_demand' %}">СПРОС</a>
+</nav>
+{% endblock %}
+{% block content %}
+<section>
+  <div class="sec-head">
+    <div>
+      <h2>Яндекс</h2>
+      <div class="sec-meta" style="margin-top:8px">чужая аналитика · данные владельца · экран отдельно от первопартийного</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <a class="btn{% if days == 7 %} accent{% endif %}" href="?days=7">7 дней</a>
+      <a class="btn{% if days == 30 %} accent{% endif %}" href="?days=30">30</a>
+      <a class="btn{% if days == 90 %} accent{% endif %}" href="?days=90">90</a>
+    </div>
+  </div>
+
+  {% if not status.configured %}
+  <div class="msg">Интеграция выключена. Нужны <span class="mono">YANDEX_OAUTH_CLIENT_ID</span>,
+    <span class="mono">YANDEX_OAUTH_CLIENT_SECRET</span> и
+    <span class="mono">YANDEX_OAUTH_REFRESH_TOKEN</span> в <span class="mono">.env</span>.
+    Refresh-токен получается один раз командой
+    <span class="mono">manage.py yandex_auth --url</span>, затем
+    <span class="mono">manage.py yandex_auth &lt;код&gt; --env-file .env</span>.
+    Это не поломка: витрина работает и без неё.</div>
+  {% endif %}
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line-2);border:1px solid var(--line-2);margin-bottom:26px">
+    <div style="background:var(--panel);padding:16px 18px 18px">
+      <div class="label">СЧЁТЧИК</div>
+      <div class="mono" style="font-size:22px;font-weight:700;margin-top:8px">{{ status.counter|default:"—" }}</div>
+      <div style="font-size:12px;color:var(--dim-2);margin-top:6px">{% if status.counter %}Метрика считает{% else %}номер не задан{% endif %}</div>
+    </div>
+    <div style="background:var(--panel);padding:16px 18px 18px">
+      <div class="label">ДОСТУП К API</div>
+      <div class="mono" style="font-size:22px;font-weight:700;margin-top:8px;color:{% if status.configured %}var(--accent){% else %}var(--amber){% endif %}">{% if status.configured %}есть{% else %}нет{% endif %}</div>
+      <div style="font-size:12px;color:var(--dim-2);margin-top:6px">refresh-токен владельца</div>
+    </div>
+    <div style="background:var(--panel);padding:16px 18px 18px">
+      <div class="label">КОНВЕРСИЙ ОТПРАВЛЕНО</div>
+      <div class="mono" style="font-size:22px;font-weight:700;margin-top:8px">{{ conversion_total }}</div>
+      <div style="font-size:12px;color:var(--dim-2);margin-top:6px">
+        {% for row in conversions %}{{ row.target }} {{ row.count }}{% if not forloop.last %} · {% endif %}{% endfor %}
+        {% if not conversions %}пока ни одной{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <h3 style="margin:8px 0 6px;font-size:20px">Метрика за {{ days }} дней</h3>
+  <div style="font-size:13px;color:var(--dim-2);margin-bottom:14px;max-width:760px">
+    Визиты и источники по определению Метрики. Числа не сходятся с «Аналитикой»
+    и не должны: там наш счёт по суточному отпечатку без куки, здесь чужой
+    счётчик. Две цифры «сколько пришло» рядом читались бы как расхождение.
+  </div>
+
+  {% if metrika_error %}
+  <div class="msg">Метрика: {{ metrika_error }}</div>
+  {% elif summary %}
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line-2);border:1px solid var(--line-2);margin-bottom:18px">
+    <div style="background:var(--panel);padding:16px 18px 18px">
+      <div class="label">ВИЗИТЫ</div>
+      <div class="mono" style="font-size:26px;font-weight:700;margin-top:8px">{{ summary.totals.0|default:0 }}</div>
+    </div>
+    <div style="background:var(--panel);padding:16px 18px 18px">
+      <div class="label">ПОСЕТИТЕЛИ</div>
+      <div class="mono" style="font-size:26px;font-weight:700;margin-top:8px">{{ summary.totals.1|default:0 }}</div>
+    </div>
+    <div style="background:var(--panel);padding:16px 18px 18px">
+      <div class="label">ПРОСМОТРЫ</div>
+      <div class="mono" style="font-size:26px;font-weight:700;margin-top:8px">{{ summary.totals.2|default:0 }}</div>
+    </div>
+  </div>
+  {% if summary.sources %}
+  <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:26px">
+    <tr style="text-align:left;color:var(--dim-2);font-size:12px">
+      <th style="padding:8px 0;font-weight:500">ИСТОЧНИК</th>
+      <th style="padding:8px 0;font-weight:500;text-align:right">ВИЗИТЫ</th>
+    </tr>
+    {% for row in summary.sources %}
+    <tr style="border-top:1px solid var(--line-2)">
+      <td style="padding:9px 0">{{ row.source|default:"прямой заход" }}</td>
+      <td class="mono" style="padding:9px 0;text-align:right">{{ row.visits }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  {% else %}
+  <div class="msg">Счётчик не задан — статистики не будет даже с рабочим токеном.</div>
+  {% endif %}
+
+  <h3 style="margin:8px 0 6px;font-size:20px">Директ</h3>
+  <div style="font-size:13px;color:var(--dim-2);margin-bottom:14px;max-width:760px">
+    Кампании. Запускать рекламу мы не начинаем — экран показывает состояние
+    аккаунта, а не управляет им: управляющих вызовов здесь нет намеренно.
+  </div>
+
+  {% if direct_pending %}
+  <div class="msg">Доступ к API Директа ещё не одобрен. Заявку рассматривают до
+    семи дней; пока её нет, Директ отвечает ошибкой 58. Метрике это не мешает —
+    она работает по тому же токену.</div>
+  {% elif direct_error %}
+  <div class="msg">Директ: {{ direct_error }}</div>
+  {% elif campaigns %}
+  <table style="width:100%;border-collapse:collapse;font-size:14px">
+    <tr style="text-align:left;color:var(--dim-2);font-size:12px">
+      <th style="padding:8px 0;font-weight:500">ID</th>
+      <th style="padding:8px 0;font-weight:500">НАЗВАНИЕ</th>
+      <th style="padding:8px 0;font-weight:500">СОСТОЯНИЕ</th>
+      <th style="padding:8px 0;font-weight:500">СТАТУС</th>
+    </tr>
+    {% for row in campaigns %}
+    <tr style="border-top:1px solid var(--line-2)">
+      <td class="mono" style="padding:9px 0">{{ row.Id }}</td>
+      <td style="padding:9px 0">{{ row.Name }}</td>
+      <td style="padding:9px 0">{{ row.State }}</td>
+      <td style="padding:9px 0">{{ row.Status }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="msg">Кампаний нет.</div>
+  {% endif %}
+</section>
+{% endblock %}
