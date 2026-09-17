@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+"""Сказать fail2ban, что этот адрес — настоящий поисковый робот.
+
+    pseudex-is-crawler <ip>      exit 0 — НЕ банить;  любой другой код — банить
+
+ЗАЧЕМ ЭТОТ ФАЙЛ. Джейлы `pseudex-web-scan` и `pseudex-web-login` банят по
+адресу на уровне пакетов (`chain = DOCKER-USER`, то есть iptables режет
+соединение до того, как его увидит Caddy). Робот поисковика ходит с небольшого
+пула адресов и на сайте, где КАЖДЫЙ адрес со слэшем на конце отдавал 404,
+набирал сорок ошибок за две минуты — и получал час блокировки, а после трёх
+банов неделю (`recidive`). Обход прерывался на середине, страницы не попадали в
+индекс, и сайта не было в выдаче даже по собственному названию. Это не
+теоретическая догадка: в `deploy/fail2ban/jail.conf` не было ни одной строки
+`ignoreip` и ни одного исключения для роботов.
+
+ПОЧЕМУ ЭТО НЕЛЬЗЯ СДЕЛАТЬ ПО USER-AGENT. Строку `User-Agent` присылает клиент, и
+подделать её стоит одной опции в сканере. Список, пропускающий по ней, был бы не
+защитой, а готовой лазейкой: любой, кто напишет `YandexBot`, перестал бы баниться
+и мог бы перебирать коды на `/accounts/login/` без ограничения. Это СТРОГО хуже,
+чем не иметь списка вовсе, — поэтому здесь нет ни одного чтения `User-Agent`.
+
+ЧТО ДЕЛАЕТСЯ ВМЕСТО ЭТОГО — ОБРАТНЫЙ DNS С ПОДТВЕРЖДЕНИЕМ. Яндекс описывает
+этот способ в своей документации («How to check that a robot belongs to
+Yandex») и сам называет его предпочтительным перед списками адресов:
+«This method is preferable to managing access by IP addresses, as it is more
+resistant to changes in the Yandex internal networks».
+
+  1. берём адрес, с которого пришло соединение. Caddy пишет его как
+     `remote_ip` — это адрес TCP-соединения, и подделать его нельзя
+     (`trusted_proxies` в Caddyfile не задан, поэтому чужие заголовки вроде
+     `X-Forwarded-For` на него не влияют);
+  2. спрашиваем PTR — имя, которое этому адресу назначил ВЛАДЕЛЕЦ адреса;
+  3. имя обязано оканчиваться на официальный домен робота;
+  4. и главное — спрашиваем A/AAAA этого имени и требуем, чтобы среди ответов
+     был ИСХОДНЫЙ адрес.
+
+Шаг 4 и есть защита. PTR вида `*.yandex.ru` может назначить только тот, кто
+владеет адресом в сети Яндекса; прямой ответ `yandex.ru` может дать только сам
+Яндекс. Совпасть они могут лишь у настоящего робота. Подделка `User-Agent` не
+даёт нападающему ничего ни на одном из четырёх шагов.
+
+СРАВНЕНИЕ ИМЁН — ПО ГРАНИЦЕ МЕТКИ, А НЕ `endswith`. `evilgooglebot.com` и
+`googlebot.com.attacker.ru` оканчиваются на «googlebot.com» КАК СТРОКИ, и
+наивная проверка пропустила бы оба — а второй из них полностью подконтролен
+нападающему. Имя принимается, только если оно РАВНО домену или оканчивается на
+«.домен». Это ровно та ошибка, которую делают чаще всего, и на ней стоит тест
+(`storefront/test_crawler_allowlist.py`).
+
+ЧЕГО ЭТО СТОИТ, СКАЗАНО ЧЕСТНО, И ЗДЕСЬ ЕСТЬ ОДНА НЕОЧЕВИДНАЯ ЦЕНА. Запрос к
+DNS идёт синхронно, у каждой ступени жёсткий таймаут (3 с). Важнее другое:
+`ignorecommand` зовётся НЕ при бане, а на КАЖДОЙ совпавшей строке лога
+(`fail2ban/server/filter.py`, `processLineAndAdd`). Не будь вердикт кэширован,
+каждый 404 от сканера означал бы запуск процесса и два запроса в DNS — то есть
+фильтр сам стал бы усилителем: тысяча запросов в секунду превратилась бы в
+тысячу процессов в секунду. Поэтому в джейлах (`deploy/fail2ban/jail.conf`)
+рядом с этой строкой ОБЯЗАТЕЛЬНО стоит
+`ignorecache = key="<ip>", …`: он держит вердикт в памяти и зовёт скрипт не чаще
+раза в пять минут на адрес.
+
+При сбое DNS, таймауте или неразбираемом аргументе скрипт отвечает «не робот», то
+есть БАН СОСТОИТСЯ. Это выбранное направление отказа: пропустить чужого сканера
+дороже, чем на час забанить робота, который всё равно придёт снова.
+"""
+
+import ipaddress
+import socket
+import sys
+import threading
+
+# Официальные домены роботов.
+#
+# ЯНДЕКС ПЕРЕЧИСЛЯЕТ СВОИ САМ, В ДОКУМЕНТАЦИИ: «All Yandex robots have names
+# ending in yandex.ru, yandex.net or yandex.com. If the host name has a
+# different ending, the robot does not belong to Yandex». Список именами роботов
+# здесь не задаётся НАМЕРЕННО: у Яндекса их три десятка (YandexBot,
+# YandexMetrika, YandexDirect, YandexFavicons, YandexMobileBot, YandexImages…),
+# и часть из них ИГНОРИРУЕТ robots.txt — в том числе те, что проверяют
+# доступность страниц для рекламы. Перечислять их поимённо значило бы завести
+# список, который отстанет от жизни молча, и обход снова упрётся в бан.
+#
+# GOOGLE — `googlebot.com` и `google.com`: первое для Googlebot, второе для
+# AdsBot и прочих краулеров, у которых PTR не в googlebot.com. Bing —
+# `search.msn.com`.
+CRAWLER_DOMAINS = (
+    "yandex.ru",
+    "yandex.net",
+    "yandex.com",
+    "googlebot.com",
+    "google.com",
+    "search.msn.com",
+)
+
+# Больше — значит бан за живого робота на медленном DNS; меньше — оборванный на
+# полуслове ответ, который тоже означает бан. Три секунды на ступень и две
+# ступени: в худшем случае скрипт держит fail2ban шесть секунд.
+DNS_TIMEOUT = 3.0
+
+
+def _with_timeout(call, timeout):
+    """Выполнить блокирующий вызов DNS и не ждать его дольше таймаута.
+
+    `socket.setdefaulttimeout` на `getaddrinfo` и `gethostbyaddr` НЕ действует:
+    это блокирующие вызовы libc, а не операции с сокетом. Поэтому поток и
+    `join(timeout)` — тот же приём, что в штатном скрипте `apache-fakegooglebot`
+    самого fail2ban. Поток объявлен демоном: если он не успел, процесс не
+    задержится из-за него, а результат мы считаем отсутствующим.
+    """
+    box = [None]
+
+    def run():
+        try:
+            box[0] = call()
+        except OSError:
+            # Нет имени, нет ответа, таймаут резолвера — всё это «не знаем».
+            # Наружу это выйдет отказом в белом списке, то есть баном: см.
+            # «чего это стоит» в докстроке модуля.
+            box[0] = None
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    return box[0]
+
+
+def reverse_name(ip, timeout=DNS_TIMEOUT):
+    """PTR адреса, или None. `gethostbyaddr` возвращает кортеж, нам нужно имя."""
+    answer = _with_timeout(lambda: socket.gethostbyaddr(ip)[0], timeout)
+    return answer or None
+
+
+def forward_ips(name, timeout=DNS_TIMEOUT):
+    """Адреса, на которые разрешается имя. Пустое множество — «не разрешилось»."""
+
+    def look():
+        return {info[4][0] for info in socket.getaddrinfo(name, None)}
+
+    return _with_timeout(look, timeout) or set()
+
+
+def matches_domain(name, domains):
+    """Принадлежит ли имя домену — ПО ГРАНИЦЕ МЕТКИ.
+
+    `evilgooglebot.com`.endswith("googlebot.com") — истина, и наивная проверка
+    пропустила бы его. Здесь имя обязано быть РАВНО домену или оканчиваться на
+    «.домен», а точка перед доменом — это и есть граница метки.
+    """
+    host = name.rstrip(".").lower()
+    return any(host == domain or host.endswith("." + domain)
+               for domain in domains)
+
+
+def is_crawler(ip, domains=CRAWLER_DOMAINS, reverse=reverse_name,
+               forward=forward_ips):
+    """Настоящий ли это робот: PTR в официальном домене И прямой ответ совпал.
+
+    Функции разрешения имён — параметры, а не жёстко вызванные: так проверка
+    (`storefront/test_crawler_allowlist.py`) подставляет поддельный DNS и
+    проверяет в том числе ГЛАВНОЕ свойство — что подделанный PTR без
+    подтверждения прямым запросом НЕ пропускается. Тест, который для этого
+    ходил бы в настоящий DNS, проверял бы сеть, а не логику.
+    """
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        # Не адрес — значит не робот. Сюда же попадает пустая строка.
+        return False
+
+    name = reverse(ip)
+    if not name or not matches_domain(name, domains):
+        return False
+
+    for candidate in forward(name):
+        try:
+            if ipaddress.ip_address(candidate) == address:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def main(argv):
+    if len(argv) != 2:
+        # Аргумент приходит от fail2ban подстановкой `<ip>`. Отсутствие
+        # аргумента — не повод что-то пропустить.
+        sys.stderr.write(f"usage: {argv[0]} <ip>\n")
+        return 1
+    return 0 if is_crawler(argv[1]) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

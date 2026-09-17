@@ -210,6 +210,18 @@ install -m 0644 "${TARGET}/deploy/systemd/pseudex-housekeeping.timer" /etc/syste
 # The log file exists before the jail starts, or fail2ban refuses the jail;
 # fail2ban starts after docker, or the chain is missing at boot; and it is
 # RESTARTED, not `enable --now`-ed, so a re-run picks up the jails.
+#
+# И БЕЛЫЙ СПИСОК РОБОТОВ — СЮДА ЖЕ, ПОТОМУ ЧТО БЕЗ НЕГО ДЖЕЙЛЫ ОТРЕЗАЮТ
+# ПОИСКОВИКАМ ДОСТУП. Джейлы банят по адресу на уровне пакетов, а робот ходит с
+# небольшого пула адресов и набирал сорок ошибок за две минуты — час бана, после
+# трёх банов неделю. Скрипт проверяет обратный DNS с подтверждением прямым
+# запросом; `ignorecommand` в jail.conf зовёт его по абсолютному пути, поэтому
+# файл обязан лежать ровно в /usr/local/bin.
+#
+# ПАКЕТОВ ОН НЕ ТРЕБУЕТ, И ЭТО НЕ СЛУЧАЙНО: скрипт написан на одной стандартной
+# библиотеке Python, а `python3` здесь уже есть — сам fail2ban написан на нём и
+# без него не ставится. Отдельного `dnsutils` ради `dig` не нужно.
+install -m 0755 "${TARGET}/deploy/fail2ban/pseudex-is-crawler" /usr/local/bin/
 install -m 0644 "${TARGET}/deploy/fail2ban/pseudex-web-scan.conf" /etc/fail2ban/filter.d/
 install -m 0644 "${TARGET}/deploy/fail2ban/pseudex-web-login.conf" /etc/fail2ban/filter.d/
 install -m 0644 "${TARGET}/deploy/fail2ban/jail.conf" /etc/fail2ban/jail.d/pseudex.conf

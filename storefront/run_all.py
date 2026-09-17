@@ -65,6 +65,10 @@ STEPS = [
     ("00a-lint-tests", _LINT, lambda: True, ""),
     ("00-storefront", "test_storefront.py", lambda: True, ""),
     ("01-deploy-refs", "test_deploy_references.py", lambda: True, ""),
+    # БЕЛЫЙ СПИСОК РОБОТОВ ЖИВЁТ В deploy/, А ПРОВЕРЯЕТСЯ ЗДЕСЬ. Ошибка в нём
+    # стоит в обе стороны и обе дорогие: строгий вариант отрезает поисковику
+    # обход (сайта нет в выдаче), мягкий отдаёт сканеру лазейку мимо бана.
+    ("01b-crawler-allowlist", "test_crawler_allowlist.py", lambda: True, ""),
     ("02-analytics", "test_analytics.py", lambda: True, ""),
     ("03-configurator", "test_configurator_renders.py", lambda: True, ""),
     ("04-ops-console", "test_ops_renders.py", lambda: True, ""),
