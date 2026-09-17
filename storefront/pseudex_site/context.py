@@ -20,8 +20,15 @@ def analytics(request) -> dict[str, object]:
     private = (request.path.startswith("/app/")
                or request.path.startswith(f"/{settings.ADMIN_PATH}")
                or request.path.startswith("/accounts/"))
+    # СЧЁТЧИК МЕТРИКИ — ПО ТОЙ ЖЕ ГРАНИЦЕ, НО НЕ ПО ТОМУ ЖЕ ФЛАГУ. `private`
+    # один и тот же, а решения разные: `analytics_here` — про наш Rybbit,
+    # `metrika_here` — про третью сторону, и включить их можно порознь.
+    # Разными их держит не аккуратность, а CSP: он пускает `mc.yandex.ru`
+    # ровно тогда, когда Метрика настроена И страница публичная.
+    metrika_here = bool(settings.METRIKA_ID) and not private
     return {"analytics": settings.ANALYTICS,
             "analytics_here": settings.ANALYTICS["mode"] != "off" and not private,
+            "metrika_id": settings.METRIKA_ID if metrika_here else "",
             "support_bot": settings.SUPPORT_BOT,
             # ТА ЖЕ ГРАНИЦА РЕШАЕТ И ИНДЕКСАЦИЮ. Закрытые страницы не должны
             # попадать в выдачу по той же причине, по которой на них нет записи

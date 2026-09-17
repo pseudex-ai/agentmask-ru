@@ -29,16 +29,42 @@ def _policy_for(request) -> str:
     не будет: там на экране префиксы ключей и суммы счетов, и запись сессии
     сделала бы их копию, которую никто не заказывал. Что делают КЛИЕНТЫ, мы
     знаем из своих же серверных событий — каждое действие в кабинете это POST.
+
+    ЯНДЕКС.МЕТРИКА — ЕДИНСТВЕННАЯ ТРЕТЬЯ СТОРОНА, КОТОРУЮ ЭТОТ ФАЙЛ ПУСКАЕТ, и
+    пускает по тому же признаку: публичная страница. В кабинете её нет даже
+    когда счётчик настроен, — и это не обещание, а заголовок, который браузер
+    исполняет. Проверяется тестом с обеих сторон: тег не отдаётся на `/app/`, и
+    CSP для `/app/` не содержит `mc.yandex.ru`.
     """
     analytics = settings.ANALYTICS
-    if analytics["mode"] == "off" or request.path.startswith("/app/") \
+    if request.path.startswith("/app/") \
             or request.path.startswith(f"/{settings.ADMIN_PATH}"):
         return _POLICY
-    origin = analytics["host"].rstrip("/")
-    return "; ".join([
-        part + (f" {origin}" if part.startswith(("script-src ", "connect-src ")) else "")
+
+    # ЧТО ИМЕННО РАЗРЕШЕНО ЭТОЙ СТРАНИЦЕ. Список СОБИРАЕТСЯ, а не выбирается:
+    # Rybbit и Метрика включаются порознь, и публичная страница может нести оба
+    # счётчика, один или ни одного. Прежняя развилка «режим off — не пускать
+    # ничего» сломала бы ровно этот случай: Метрика при выключенном Rybbit не
+    # получила бы разрешения и молча не грузилась, а страница при этом честно
+    # говорила бы, что счётчик есть.
+    origins: list[str] = []
+    if analytics["mode"] != "off":
+        origins.append(analytics["host"].rstrip("/"))
+    if settings.METRIKA_ID:
+        # `mc.yandex.ru` — и источник скрипта, и приёмник данных: тег грузится
+        # оттуда и туда же шлёт визит. В `img-src` он нужен для пикселя в
+        # `<noscript>`, который считается, когда скрипты выключены.
+        origins.append("https://mc.yandex.ru")
+    if not origins:
+        return _POLICY
+
+    allowed = " ".join(origins)
+    metrika_img = " https://mc.yandex.ru" if settings.METRIKA_ID else ""
+    return "; ".join(
+        part + (f" {allowed}" if part.startswith(("script-src ", "connect-src "))
+                else metrika_img if part.startswith("img-src ") else "")
         for part in _POLICY.split("; ")
-    ])
+    )
 
 
 _POLICY = "; ".join([

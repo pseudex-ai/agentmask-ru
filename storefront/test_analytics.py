@@ -353,11 +353,11 @@ def main() -> int:
     # краснеет, если вывод перестанет следовать за режимом.
     from django.test import override_settings
 
-    def page(mode: str, path: str, client=None):
+    def page(mode: str, path: str, client=None, metrika: str = ""):
         settings_analytics = {
             "mode": mode, "host": "https://a.pseudex.ru", "key": "phc_probe",
             "stores_id": mode == "full", "records_sessions": mode == "full"}
-        with override_settings(ANALYTICS=settings_analytics):
+        with override_settings(ANALYTICS=settings_analytics, METRIKA_ID=metrika):
             answer = (client or _Client()).get(path)
         return answer
 
@@ -402,6 +402,55 @@ def main() -> int:
           "analytics.js" not in private.content.decode()
           and "a.pseudex.ru" not in csp_of(private),
           f"код={private.status_code} csp={csp_of(private)}")
+
+    # ── ЯНДЕКС.МЕТРИКА: ТРЕТЬЯ СТОРОНА, ТЕ ЖЕ ДВА ПРАВИЛА ─────────────────
+    #
+    # ТЕКСТ ОБЕЩАЕТ ОТСУТСТВИЕ СЧЁТЧИКА ПО ИМЕНИ — «ни Метрики, ни Google
+    # Analytics». Включённый счётчик обязан менять текст, иначе сайт, продающий
+    # минимизацию данных, публикует неправду о себе ровно там, где её ищут:
+    # этот ответ читает служба безопасности клиента.
+    #
+    # ПОЭТОМУ ПРОВЕРЯЮТСЯ ОБЕ ПОЛОВИНЫ: что при включённом счётчике текст его
+    # называет — И что при выключенном обещание на месте. Одной половины мало:
+    # первая без второй пропустила бы «текст всегда говорит про Метрику».
+    KEY = "98765432"
+    off_no = page("off", "/").content.decode()
+    full_no = page("full", "/").content.decode()
+    on_off = page("off", "/", metrika=KEY).content.decode()
+    on_full = page("full", "/", metrika=KEY).content.decode()
+
+    metrika_wrong = []
+    if "Яндекс.Метрика" not in on_off:
+        metrika_wrong.append("off+счётчик: текст не назвал Метрику")
+    if "Аналитики и счётчиков на сайте нет вообще" in on_off:
+        metrika_wrong.append("off+счётчик: осталось обещание «счётчиков нет вообще»")
+    if KEY not in on_full:
+        metrika_wrong.append("full+счётчик: номер не доехал до загрузчика")
+    if f'data-metrika-id="{KEY}"' not in on_full:
+        metrika_wrong.append("full+счётчик: номер не в том атрибуте")
+    # И НАОБОРОТ: без настройки ни номера, ни упоминания.
+    if KEY in full_no or KEY in off_no:
+        metrika_wrong.append("без настройки: номер всё равно на странице")
+    if "Яндекс.Метрика" in full_no:
+        metrika_wrong.append("без настройки: текст обещает Метрику, которой нет")
+    check("текст и разметка следуют за настройкой Метрики, в обе стороны",
+          not metrika_wrong, "; ".join(metrika_wrong) or "вкл/выкл — каждое своё")
+
+    # ПРАВИЛО ЗАКРЫТЫХ СТРАНИЦ ДЕРЖИТСЯ CSP, А НЕ ШАБЛОНОМ. Шаблон можно
+    # поправить и забыть про заголовок; заголовок исполняет браузер, поэтому
+    # проверяем именно его — и обязательно с ВКЛЮЧЁННЫМ счётчиком, иначе
+    # проверка ничего не говорит о том случае, ради которого стоит.
+    check("CSP публичной страницы пускает mc.yandex.ru при счётчике",
+          "https://mc.yandex.ru" in csp_of(page("off", "/", metrika=KEY)),
+          csp_of(page("off", "/", metrika=KEY)))
+    check("а без счётчика CSP его не разрешает",
+          "mc.yandex.ru" not in csp_of(page("off", "/"))
+          and "mc.yandex.ru" not in csp_of(page("full", "/")),
+          "разрешение не должно появляться само")
+    check("в кабинете счётчика нет даже включённого",
+          KEY not in page("off", "/app/", signed, metrika=KEY).content.decode()
+          and "mc.yandex.ru" not in csp_of(page("off", "/app/", signed, metrika=KEY)),
+          "на экране кабинета префиксы ключей и суммы счетов")
 
     print()
     if FAILURES:

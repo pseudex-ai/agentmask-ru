@@ -135,15 +135,19 @@
   {% endblock %}
 </div>
 {% block script %}{% endblock %}
-{% if analytics_here %}{% load static %}
-<!-- ПРОДУКТОВАЯ АНАЛИТИКА — ТОЛЬКО ЗДЕСЬ И ТОЛЬКО НА ПУБЛИЧНЫХ СТРАНИЦАХ.
-     `analytics_here` ложно для /app/, /accounts/ и админки: там на экране
-     префиксы ключей и суммы счетов, и запись сессии сделала бы их копию,
-     которую никто не заказывал. То же решение продублировано в CSP. -->
+{% if analytics_here or metrika_id %}{% load static %}
+<!-- СЧЁТЧИКИ — ТОЛЬКО ЗДЕСЬ И ТОЛЬКО НА ПУБЛИЧНЫХ СТРАНИЦАХ.
+     Условие — «включён хотя бы один»: `analytics_here` про наш Rybbit, а
+     `metrika_id` про Метрику, и включаются они порознь. Оба ложны для /app/,
+     /accounts/ и админки: там на экране префиксы ключей и суммы счетов, и
+     запись сессии сделала бы их копию, которую никто не заказывал. То же
+     решение продублировано в CSP, поэтому лишняя правка здесь не откроет
+     закрытую страницу — её остановит заголовок. -->
 <script src="{% static 'analytics.js' %}"
         data-host="{{ analytics.host }}"
         data-key="{{ analytics.key }}"
-        data-mode="{{ analytics.mode }}"></script>
+        data-mode="{{ analytics.mode }}"
+        data-metrika-id="{{ metrika_id }}"></script>
 {% endif %}
 </body>
 </html>
