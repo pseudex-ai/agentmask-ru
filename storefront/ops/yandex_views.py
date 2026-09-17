@@ -71,10 +71,15 @@ def _days(request, default: int = 30) -> int:
 @_ops_api_gate
 @require_GET
 def metrika_counters(request):
-    """Список счётчиков. Дешёвая проверка «токен жив» для бота и для меня."""
+    """Список счётчиков. Дешёвая проверка «токен жив» для бота и для меня.
+
+    `site` у Метрики — СТРОКА С ДОМЕНОМ, а не объект. Первая версия читала
+    `site.domain`; на настоящем ответе это падало, и поймано было только живым
+    обращением — выдуманный ответ выглядел правдоподобно.
+    """
     return JsonResponse({"counters": [
         {"id": str(c.get("id", "")), "name": c.get("name", ""),
-         "site": (c.get("site") or {}).get("domain", ""),
+         "site": c.get("site", ""),
          "status": c.get("status", "")}
         for c in yandex_api.counters()
     ]})

@@ -277,11 +277,18 @@ def create_goal(name: str, identifier: str) -> dict:
     Условие обязательно «совпадает» (`exact`): этого требует документация
     офлайн-конверсий, и цель с условием «содержит» сопоставит больше событий,
     чем мы отправили.
+
+    ИДЕНТИФИКАТОР ЛЕЖИТ В ПОЛЕ `url`, А НЕ `value` — так у Метрики, и это не
+    опечатка: `url` здесь означает «строка условия», одинаково для адреса
+    страницы, имени события и номера телефона. Первая версия отправляла
+    `value`, и API отвечал `conditions[0].value must not be empty`: поле, о
+    котором он говорит, в схеме есть, но заполняется из другого имени, и
+    сообщение называет не тот ключ, который надо поправить.
     """
     response = _request(
         "POST", f"{METRIKA_API}/management/v1/counter/{settings.METRIKA_ID}/goals",
         json={"goal": {"name": name, "type": "action",
-                       "conditions": [{"type": "exact", "value": identifier}]}},
+                       "conditions": [{"type": "exact", "url": identifier}]}},
         headers={"Authorization": f"OAuth {access_token()}"},
     )
     return _check(response, f"создание цели {identifier}")

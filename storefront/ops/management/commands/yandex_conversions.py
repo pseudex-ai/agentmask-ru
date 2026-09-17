@@ -59,11 +59,27 @@ class Command(BaseCommand):
             )
         if options["setup_goals"]:
             return self._setup_goals()
-        if not yandex_api.configured():
-            raise CommandError(
-                "Яндекс API не настроен: нет refresh-токена. "
-                "Сначала `manage.py yandex_auth --url`."
-            )
+        # `--dry-run` НЕ ТРЕБУЕТ НИ ТОКЕНА, НИ ФЛАГА: он ничего не отправляет,
+        # и посмотреть, что ушло бы, нужно ровно до того, как это включено.
+        if not options["dry_run"]:
+            # ОТПРАВКА — ЯВНОЕ РЕШЕНИЕ, А НЕ СЛЕДСТВИЕ ТОКЕНА. Счётчик
+            # спрашивает согласие баннером, а конверсия уходит с сервера и на
+            # него не смотрит: без этого флага отказавшийся «Не считать» всё
+            # равно отдал бы в Яндекс факт своей регистрации. Это не
+            # осторожность, а соответствие разделу 9bis политики, который
+            # обещает, что без ответа не уходит ничего.
+            if not settings.YANDEX_CONVERSIONS:
+                raise CommandError(
+                    "PSEUDEX_YANDEX_CONVERSIONS не поднят: отправка конверсий "
+                    "выключена. Она уходит С СЕРВЕРА и не спрашивает согласия "
+                    "баннером, поэтому включается отдельным решением "
+                    "владельца (см. .env.example). Что ушло бы — --dry-run."
+                )
+            if not yandex_api.configured():
+                raise CommandError(
+                    "Яндекс API не настроен: нет refresh-токена. "
+                    "Сначала `manage.py yandex_auth --url`."
+                )
         self._send(options["dry_run"], options["limit"])
 
     def _setup_goals(self) -> None:
@@ -73,7 +89,11 @@ class Command(BaseCommand):
         владельцем вручную под другим названием — вторая такая же разделила бы
         статистику надвое, и обе выглядели бы рабочими.
         """
-        existing = {(goal.get("conditions") or [{}])[0].get("value", "")
+        # ИДЕНТИФИКАТОР ЧИТАЕТСЯ ИЗ `url`, А НЕ `value`. У Метрики строка
+        # условия лежит в `url` независимо от типа цели — так же, как при
+        # создании. Читать `value` значило бы не найти ни одной существующей
+        # цели и завести дубли, разделив статистику надвое.
+        existing = {(goal.get("conditions") or [{}])[0].get("url", "")
                     for goal in yandex_api.goals()}
         for _step, identifier, name in TARGETS:
             if identifier in existing:

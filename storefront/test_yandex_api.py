@@ -353,8 +353,9 @@ def main() -> int:  # noqa: C901 — линейный сценарий из пр
     condition = (body.get("goal", {}).get("conditions") or [{}])[0]
     check(body.get("goal", {}).get("type") == "action",
           "цель заводится типом «JavaScript-событие»", str(body))
-    check(condition.get("type") == "exact" and condition.get("value") == "signup",
-          "и условием «совпадает» — этого требует офлайн-конверсия", str(body))
+    check(condition.get("type") == "exact" and condition.get("url") == "signup",
+          "и условием «совпадает» с идентификатором в поле url — так у Метрики",
+          str(body))
 
     # ── 12. команда: отправка ровно один раз ───────────────────────────────
     clicked = Organization.objects.create(display_name="ООО Клик",
@@ -380,7 +381,8 @@ def main() -> int:  # noqa: C901 — линейный сценарий из пр
     scripted.append(_Fake(200, token_payload()))
     scripted.append(_Fake(200, {"uploading": {"id": 5, "status": "PREPARED"}}))
     scripted.append(_Fake(200, {"uploading": {"id": 6, "status": "PREPARED"}}))
-    with override_settings(METRIKA_ID="112743085", **creds):
+    with override_settings(METRIKA_ID="112743085", YANDEX_CONVERSIONS=True,
+                           **creds):
         out = _capture(call_command, "yandex_conversions")
     rows = [r for r in calls if "offline_conversions" in r[1]]
     check(len(rows) == 2, "загрузка одна на цель, а не на организацию",
@@ -403,7 +405,8 @@ def main() -> int:  # noqa: C901 — линейный сценарий из пр
     # повторный запуск: ни одного обращения в сеть
     reset_token_cache()
     calls.clear()
-    with override_settings(METRIKA_ID="112743085", **creds):
+    with override_settings(METRIKA_ID="112743085", YANDEX_CONVERSIONS=True,
+                           **creds):
         _capture(call_command, "yandex_conversions")
     check(not calls, "повторный запуск не отправляет ничего второй раз",
           f"запросов: {len(calls)}")
@@ -417,6 +420,28 @@ def main() -> int:  # noqa: C901 — линейный сценарий из пр
     check(not calls and not ConversionSent.objects.exists(),
           "dry-run не отправляет и не отмечает", f"запросов: {len(calls)}")
     check("dry-run" in out, "и говорит об этом", out)
+
+    # БЕЗ ФЛАГА ОТПРАВКА ОТКАЗЫВАЕТ, А DRY-RUN РАБОТАЕТ. Счётчик спрашивает
+    # согласие баннером, конверсия уходит с сервера и на него не смотрит;
+    # включить её наличием токена значило бы молча разойтись с разделом 9bis
+    # политики, который обещает, что без ответа не уходит ничего.
+    reset_token_cache()
+    calls.clear()
+    from django.core.management.base import CommandError as _CommandError
+    with override_settings(METRIKA_ID="112743085", YANDEX_CONVERSIONS=False,
+                           **creds):
+        try:
+            _capture(call_command, "yandex_conversions")
+            check(False, "без флага отправка обязана отказать")
+        except _CommandError as refusal:
+            check("PSEUDEX_YANDEX_CONVERSIONS" in str(refusal),
+                  "без флага отправка отказывает и называет рычаг",
+                  str(refusal))
+        # dry-run при этом обязан работать: смотреть надо ДО включения.
+        out = _capture(call_command, "yandex_conversions", "--dry-run")
+    check(not calls and "dry-run" in out,
+          "dry-run работает без флага и ничего не отправляет",
+          f"запросов: {len(calls)}")
 
     # ── 13. yclid доезжает от рекламной ссылки до организации ──────────────
     from ops.analytics_models import Visit

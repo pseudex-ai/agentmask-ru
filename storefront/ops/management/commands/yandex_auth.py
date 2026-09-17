@@ -159,8 +159,11 @@ class Command(BaseCommand):
             f"счётчиков видно: {len(found)}."
         ))
         for counter in found[:10]:
-            site = (counter.get("site") or {}).get("domain", "?")
-            self.stdout.write(f"  {counter.get('id')}  {site}  "
+            # `site` — СТРОКА, А НЕ СЛОВАРЬ. Первая версия читала
+            # `site.domain` и падала на живом ответе: у Метрики это просто
+            # домен. Поймано первым же обращением к настоящему API — на
+            # выдуманном ответе такая форма выглядела правдоподобно.
+            self.stdout.write(f"  {counter.get('id')}  {counter.get('site', '')}  "
                               f"{counter.get('name', '')}")
         # ДИРЕКТ ПРОВЕРЯЕТСЯ ОТДЕЛЬНО И НЕ РОНЯЕТ ПРОВЕРКУ. Заявка на доступ
         # рассматривается до семи дней, и всё это время Директ отвечает ошибкой

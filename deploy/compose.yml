@@ -194,6 +194,10 @@ services:
       YANDEX_OAUTH_CLIENT_ID: ${YANDEX_OAUTH_CLIENT_ID:-}
       YANDEX_OAUTH_CLIENT_SECRET: ${YANDEX_OAUTH_CLIENT_SECRET:-}
       YANDEX_OAUTH_REFRESH_TOKEN: ${YANDEX_OAUTH_REFRESH_TOKEN:-}
+      # Отправка офлайн-конверсий. Пусто — выключено, и это состояние по
+      # умолчанию: конверсия уходит с сервера и не спрашивает согласия
+      # баннером, поэтому включается отдельным решением, а не наличием токена.
+      PSEUDEX_YANDEX_CONVERSIONS: ${PSEUDEX_YANDEX_CONVERSIONS:-}
       # Машинный доступ к читающим `/ops/yandex/*`. Отдельный токен, потому что
       # у бота нет второго фактора, а staff-аккаунт выдал бы ему весь биллинг.
       PSEUDEX_OPS_API_TOKEN: ${PSEUDEX_OPS_API_TOKEN:-}
