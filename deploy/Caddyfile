@@ -33,6 +33,23 @@
 	}
 }
 
+# www → apex, ОТДЕЛЬНЫМ БЛОКОМ. Caddy выдаёт сертификат ровно на те имена, что
+# перечислены в адресе сайта: без этой строки `www` получил бы не редирект, а
+# ошибку TLS — сертификата для этого имени у него нет, и рукопожатие развалилось
+# бы раньше, чем запрос дошёл до storefront. `{uri}` сохраняет путь, поэтому
+# https://www.pseudex.ru/detection ведёт на /detection, а не на главную: ссылку
+# на документ из письма иначе теряет получатель.
+#
+# РЕДИРЕКТ, А НЕ ПРОКСИРОВАНИЕ. `PSEUDEX_ALLOWED_HOSTS` — это ровно `SITE_HOST`
+# (compose.yml, в трёх сервисах), так что запрос с `Host: www.pseudex.ru`,
+# дошедший до Django, получил бы 400 Bad Request. Здесь Caddy отвечает сам, до
+# storefront он не доходит. Сертификат на `www` выпускается тем же аккаунтом
+# Let's Encrypt и тем же циклом продления, что и для apex-имени, — отдельного
+# cron, который может тихо перестать работать, не появляется.
+www.{$SITE_HOST} {
+	redir https://{$SITE_HOST}{uri} permanent
+}
+
 # The licensing server, on the same machine and the same port 443. Caddy
 # terminates TLS for this name too (one Let's Encrypt account, one renewal
 # loop) and hands plain HTTP to the container. No HSTS preload here: the
