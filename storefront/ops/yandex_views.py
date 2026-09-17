@@ -1,0 +1,179 @@
+"""Машинный доступ к данным Яндекса: JSON под отдельным токеном.
+
+ПОЧЕМУ ОТДЕЛЬНЫЙ ТОКЕН, А НЕ СЕССИЯ ОПЕРАТОРА. Экраны консоли закрыты
+`staff` + подтверждённым TOTP — это верно для человека и неприменимо к боту: у
+бота нет ни пароля, ни второго фактора, а завести ему staff-аккаунт значило бы
+выдать весь биллинг и все персональные данные клиентов ради одной сводки.
+`PSEUDEX_OPS_API_TOKEN` открывает РОВНО то, что перечислено в `urls.py` под
+`_ops_api_gate`, — четыре читающих эндпоинта о рекламе и статистике.
+
+ЧТО ЗДЕСЬ ЧИТАЮЩЕЕ И ЧТО ЭТО ЗНАЧИТ. Ни одного метода, меняющего состояние ни у
+нас, ни в Яндексе. Токен, попавший не в те руки, показывает цифры посещаемости
+и список кампаний — это неприятно и это не «выключили продукт клиенту».
+Управляющие вызовы Директа появятся отдельно и потребуют отдельного решения.
+
+ПЕРСОНАЛЬНЫХ ДАННЫХ ЗДЕСЬ НЕТ ПО УСТРОЙСТВУ. Метрика отдаёт агрегаты, а не
+посетителей: `ym:s:visits` — число, `ym:s:lastSignTrafficSource` — название
+канала. Ни IP, ни client_id, ни `ym:s:userID` в ответы не попадают, потому что
+ни один из них не запрашивается. Это не фильтр поверх ответа — это отсутствие
+запроса, и разница между ними в том, что первое можно забыть обновить.
+"""
+
+import datetime
+import hmac
+from functools import wraps
+
+from django.conf import settings
+from django.http import JsonResponse
+from django.views.decorators.http import require_GET
+
+from ops import yandex_api
+
+# Метрики по умолчанию — три числа, которые отвечают «сколько пришло». Всё
+# остальное запрашивается явно: ответ, в котором сорок полей, читает человек,
+# а не программа, и он же скрывает, что нужного поля там нет.
+_DEFAULT_METRICS = "ym:s:visits,ym:s:users,ym:s:pageviews"
+
+
+def _ops_api_gate(view):
+    """Bearer-токен, сравнение постоянного времени, отказ по умолчанию.
+
+    ПУСТОЙ `OPS_API_TOKEN` ЗАКРЫВАЕТ ДВЕРЬ, А НЕ ОТКРЫВАЕТ ЕЁ. Сравнение с
+    пустой строкой прошло бы у запроса без заголовка, и незаданная настройка
+    превратилась бы в открытый эндпоинт — то есть «не настроено» стало бы
+    «доступно всем». Отсюда явная проверка на пустоту до сравнения.
+    """
+    @wraps(view)
+    def wrapper(request, *args, **kwargs):
+        expected = settings.OPS_API_TOKEN
+        supplied = ""
+        header = request.headers.get("Authorization", "")
+        if header.startswith("Bearer "):
+            supplied = header[len("Bearer "):].strip()
+        if not expected or not hmac.compare_digest(supplied, expected):
+            return JsonResponse(
+                {"error": "unauthorized",
+                 "hint": "Authorization: Bearer <PSEUDEX_OPS_API_TOKEN>"},
+                status=401,
+            )
+        return view(request, *args, **kwargs)
+    return wrapper
+
+
+def _days(request, default: int = 30) -> int:
+    """Окно отчёта, ограниченное сверху. Год — предел, а не вкус.
+
+    Метрика считает по дням и на большом окне отвечает заметно дольше; запрос
+    «за всё время» от бота, который ошибся в параметре, — это запрос, из-за
+    которого бот ждёт минуту и падает по таймауту.
+    """
+    try:
+        value = int(request.GET.get("days", default))
+    except (TypeError, ValueError):
+        value = default
+    return max(1, min(365, value))
+
+
+def _window(days: int) -> tuple[str, str]:
+    today = datetime.date.today()
+    return ((today - datetime.timedelta(days=days - 1)).isoformat(),
+            today.isoformat())
+
+
+@_ops_api_gate
+@require_GET
+def metrika_counters(request):
+    """Список счётчиков. Дешёвая проверка «токен жив» для бота и для меня."""
+    return JsonResponse({"counters": [
+        {"id": str(c.get("id", "")), "name": c.get("name", ""),
+         "site": (c.get("site") or {}).get("domain", ""),
+         "status": c.get("status", "")}
+        for c in yandex_api.counters()
+    ]})
+
+
+@_ops_api_gate
+@require_GET
+def metrika_summary(request):
+    """Итоги за окно плюс разрез по источникам.
+
+    ИСТОЧНИКИ ИДУТ ВМЕСТЕ С ИТОГАМИ, А НЕ ОТДЕЛЬНЫМ ЭНДПОИНТОМ. «Пришло 400»
+    без «откуда» не отвечает ни на один вопрос, ради которого сюда заходят; а
+    два запроса вместо одного — это два окна, которые могут не совпасть на
+    границе суток, и тогда цифры в отчёте не сходятся между собой.
+    """
+    days = _days(request)
+    date1, date2 = _window(days)
+    counter = settings.METRIKA_ID
+    if not counter:
+        return JsonResponse(
+            {"error": "no_counter",
+             "hint": "PSEUDEX_METRIKA_ID не задан — статистики не будет "
+                     "даже с рабочим токеном."},
+            status=409,
+        )
+
+    metrics = request.GET.get("metrics", _DEFAULT_METRICS)
+    totals = yandex_api.metrika_get("/stat/v1/data", {
+        "ids": counter, "date1": date1, "date2": date2,
+        "metrics": metrics, "accuracy": "full",
+    })
+    sources = yandex_api.metrika_get("/stat/v1/data", {
+        "ids": counter, "date1": date1, "date2": date2,
+        "dimensions": "ym:s:lastSignTrafficSource",
+        "metrics": "ym:s:visits,ym:s:users",
+        "sort": "-ym:s:visits", "limit": 50, "accuracy": "full",
+    })
+    return JsonResponse({
+        "counter": counter,
+        "period": {"days": days, "date1": date1, "date2": date2},
+        "metrics": metrics.split(","),
+        "totals": list(totals.get("totals") or []),
+        "sources": [
+            {"source": (row.get("dimensions") or [{}])[0].get("name", ""),
+             "visits": (row.get("metrics") or [0, 0])[0],
+             "users": (row.get("metrics") or [0, 0])[1]}
+            for row in (sources.get("data") or [])
+        ],
+    })
+
+
+@_ops_api_gate
+@require_GET
+def direct_campaigns(request):
+    """Кампании Директа: состояние и расход.
+
+    ОШИБКА 58 ОТДАЁТСЯ КАК 409, А НЕ КАК 500. «Заявку на доступ ещё не
+    одобрили» — это не поломка, а ожидаемое состояние первые семь дней, и
+    бот, который на 500 кричит «всё сломалось», кричит это каждое утро неделю.
+    Отдельный код даёт ему возможность промолчать.
+    """
+    try:
+        campaigns = yandex_api.direct_campaigns()
+    except yandex_api.YandexError as error:
+        not_approved = "58" in str(error) or "Incomplete registration" in str(error)
+        return JsonResponse(
+            {"error": "not_approved" if not_approved else "direct_error",
+             "detail": str(error)},
+            status=409 if not_approved else 502,
+        )
+    return JsonResponse({"campaigns": campaigns, "count": len(campaigns)})
+
+
+@_ops_api_gate
+@require_GET
+def status(request):
+    """Состояние интеграции одним ответом. Ничего не запрашивает у Яндекса.
+
+    БЕЗ ОБРАЩЕНИЯ В СЕТЬ НАРОЧНО. Этот эндпоинт дёргают, когда «ничего не
+    работает», и он обязан отвечать даже при недоступном Яндексе — иначе
+    диагностика отказывает ровно в тот момент, ради которого существует.
+    """
+    return JsonResponse({
+        "configured": yandex_api.configured(),
+        "client_id_set": bool(settings.YANDEX_OAUTH_CLIENT_ID),
+        "client_secret_set": bool(settings.YANDEX_OAUTH_CLIENT_SECRET),
+        "refresh_token_set": bool(settings.YANDEX_OAUTH_REFRESH_TOKEN),
+        "counter": settings.METRIKA_ID,
+        "counter_set": bool(settings.METRIKA_ID),
+    })

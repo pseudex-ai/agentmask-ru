@@ -186,6 +186,17 @@ services:
       # текста: ответ FAQ на лендинге, текст баннера согласия и раздел 9bis
       # политики. Пусто — счётчика нет, и все три обещают его отсутствие.
       PSEUDEX_METRIKA_ID: ${PSEUDEX_METRIKA_ID:-}
+      # ДОСТУП К API ЯНДЕКСА — ПРО ДРУГОЕ, ЧЕМ СЧЁТЧИК ВЫШЕ. Счётчик считает
+      # то, что увидел браузер посетителя; эти три читают статистику и кампании
+      # от имени владельца. Пусто — интеграция выключена, и витрина работает.
+      # Access-токен сюда НЕ передаётся: он выводится из refresh в памяти
+      # процесса (`ops/yandex_api.py`) и на диск не попадает.
+      YANDEX_OAUTH_CLIENT_ID: ${YANDEX_OAUTH_CLIENT_ID:-}
+      YANDEX_OAUTH_CLIENT_SECRET: ${YANDEX_OAUTH_CLIENT_SECRET:-}
+      YANDEX_OAUTH_REFRESH_TOKEN: ${YANDEX_OAUTH_REFRESH_TOKEN:-}
+      # Машинный доступ к читающим `/ops/yandex/*`. Отдельный токен, потому что
+      # у бота нет второго фактора, а staff-аккаунт выдал бы ему весь биллинг.
+      PSEUDEX_OPS_API_TOKEN: ${PSEUDEX_OPS_API_TOKEN:-}
       # ЭКВАЙРИНГ. Ключи ЮKassa нужны РОВНО ЭТОМУ сервису: платежи создаёт и
       # сверяет только `storefront_web/views.py` (`create_payment`,
       # `fetch_status`), часовой цикл биллинга их не трогает — класть их ещё и

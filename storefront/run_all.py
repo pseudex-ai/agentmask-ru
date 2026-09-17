@@ -81,6 +81,7 @@ STEPS = [
     ("04h-signup-forms", "test_signup_forms.py", lambda: True, ""),
     ("04i-paywall", "test_paywall.py", lambda: True, ""),
     ("04j-seo", "test_seo.py", lambda: True, ""),
+    ("04k-yandex-api", "test_yandex_api.py", lambda: True, ""),
     ("05-billing-lifecycle", "test_billing_lifecycle.py", _stand_up,
      "нужен поднятый стенд: bash deploy/local.sh"),
     # НУЖНЫ ОБА, И ЭТО НЕ ПЕДАНТИЗМ. Проверка выпускает НАСТОЯЩИЙ ключ на
