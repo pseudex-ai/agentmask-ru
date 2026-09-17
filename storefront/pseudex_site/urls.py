@@ -32,6 +32,21 @@ urlpatterns = [
     path("robots.txt", views.robots, name="robots"),
     path("sitemap.xml", views.sitemap, name="sitemap"),
 
+    # БРАУЗЕР ПРОСИТ ЭТОТ АДРЕС САМ, БЕЗ ССЫЛКИ НА НЕГО. Иконка объявлена в
+    # разметке как `/static/favicon.<хеш>.svg`, и современные браузеры берут её
+    # оттуда; `/favicon.ico` остаётся запросом по умолчанию для всего прочего —
+    # старых браузеров, закладок и роботов вроде YandexFavicons, который рисует
+    # иконку в выдаче. Без этой строки каждый такой запрос — 404, а 404 на этом
+    # сайте кормит счётчик fail2ban, который банит на уровне пакетов
+    # (`deploy/fail2ban/pseudex-web-scan.conf`).
+    #
+    # АДРЕС БЕЗ ХЕША, А НЕ ЧЕРЕЗ `static()`. `ManifestStaticFilesStorage` выдаёт
+    # имя с хешем содержимого, и оно меняется при каждой правке картинки: жёстко
+    # записанный хеш протух бы молча. `collectstatic` кладёт в `STATIC_ROOT` И
+    # исходное имя тоже, поэтому `/static/favicon.svg` — устойчивый адрес; что он
+    # открывается (`200`, `image/svg+xml`), проверено на бою.
+    path("favicon.ico", RedirectView.as_view(url="/static/favicon.svg", permanent=True)),
+
     # Отметки конфигуратора. Вторая (и последняя) анонимная запись на сайте —
     # см. докстринг `views.demand`: ни текста, ни почты, счётчик на сутки.
     path("demand", views.demand, name="demand"),

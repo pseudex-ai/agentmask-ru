@@ -94,8 +94,12 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
     "storefront_web.middleware.SecurityHeadersMiddleware",
-    # ПОСЛЕДНИМ: считает только то, что действительно отдано, —
-    # ответ, срезанный проверкой выше, визитом не был.
+    # СРАЗУ ЗА ЗАГОЛОВКАМИ, ПЕРЕД АНАЛИТИКОЙ. Соседство здесь ничего не решает:
+    # `AnalyticsMiddleware` записывает только `200`, поэтому ни 404, который сюда
+    # приходит, ни 301, который отсюда уходит, визитом не станут. А сама она
+    # остаётся последней, как и было задумано, — «считает только то, что
+    # действительно отдано».
+    "storefront_web.middleware.TrailingSlashRedirectMiddleware",
     "storefront_web.middleware.AnalyticsMiddleware",
 ]
 

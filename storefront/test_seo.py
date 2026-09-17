@@ -89,6 +89,70 @@ def main() -> int:
             broken.append(f"{path} -> {code}")
     check(not broken, "каждый адрес из карты открывается", str(broken))
 
+    # ── адрес со слэшем на конце — не тупик ───────────────────────────────
+    # Публичные страницы объявлены БЕЗ слэша, и таков же их канонический адрес.
+    # `/detection/` не совпадал ни с одним маршрутом и отдавал 404: адрес,
+    # скопированный из письма со слэшем, и внешняя ссылка со слэшем вели в
+    # никуда. Проверка идёт ПО КАРТЕ САЙТА, а не по списку внутри теста: список
+    # пришлось бы дополнять вместе с каждой новой страницей, и он бы отстал
+    # молча — то есть тест перестал бы что-либо значить ровно тогда, когда стал
+    # бы нужен.
+    slashed = []
+    for loc in locs:
+        path = loc[len(_SITE):] or "/"
+        if path == "/":
+            continue
+        r = client.get(path + "/")
+        if r.status_code != 301 or r.get("Location", "") != path:
+            slashed.append(f"{path}/ -> {r.status_code} {r.get('Location', '')}")
+    check(not slashed,
+          "у каждого адреса из карты слэш уводит на канонический постоянным редиректом",
+          str(slashed))
+
+    # Query НЕ ТЕРЯЕТСЯ. `/detection/?utm_source=…` — обычный случай, а не
+    # экзотика: ровно такую ссылку собирает рекламный кабинет, и редирект,
+    # срезающий строку запроса, обнулил бы разметку кампании.
+    tagged_slash = client.get("/detection/?utm_source=yandex")
+    check(tagged_slash.status_code == 301
+          and tagged_slash.get("Location", "") == "/detection?utm_source=yandex",
+          "редирект сохраняет строку запроса",
+          f"{tagged_slash.status_code} {tagged_slash.get('Location', '')}")
+
+    # ЗАКОННЫЙ СЛЭШ НЕ СРЕЗАЕТСЯ — и это самая опасная ошибка из возможных.
+    # Общее правило «убрать слэш у всего» превратило бы `/accounts/login/` в
+    # `/accounts/login`, `APPEND_SLASH` вернул бы слэш обратно, и браузер ходил
+    # бы по кругу. Здесь эти адреса объявлены СО слэшем, поэтому редиректа быть
+    # не должно.
+    for keep in ("/accounts/login/", "/app/"):
+        r = client.get(keep)
+        looped = (r.status_code == 301
+                  and r.get("Location", "").rstrip("/") == keep.rstrip("/"))
+        check(not looped, f"законный слэш не срезается: {keep}",
+              f"{r.status_code} -> {r.get('Location', '')}")
+
+    # ЧУЖОЙ АДРЕС НЕ ПРЕВРАЩАЕТСЯ В РЕДИРЕКТ. `/wp-admin/` не разрешается ни в
+    # каком виде, и подмена ему 404 на 301 была бы услугой сканеру.
+    scanner = client.get("/wp-admin/")
+    check(scanner.status_code == 404,
+          "неизвестный адрес со слэшем остаётся 404, а не редиректом",
+          str(scanner.status_code))
+
+    # POST НЕ ПЕРЕИГРЫВАЕТСЯ. 301 на POST клиенты переигрывают как GET, и
+    # конфигуратор (`/demand`) потерял бы тело запроса — то есть запись, ради
+    # которой он существует, не состоялась бы, а ответ был бы 301.
+    posted = client.post("/demand/", data="{}", content_type="application/json")
+    check(posted.status_code == 404,
+          "POST со слэшем не подменяется редиректом на GET", str(posted.status_code))
+
+    # ── иконка для выдачи ─────────────────────────────────────────────────
+    # Браузер и робот вроде YandexFavicons просят `/favicon.ico` сами, без
+    # ссылки на него. Без ответа это 404 — а 404 кормит счётчик fail2ban.
+    favicon = client.get("/favicon.ico")
+    check(favicon.status_code == 301
+          and favicon.get("Location", "") == "/static/favicon.svg",
+          "favicon.ico уведён на настоящую иконку",
+          f"{favicon.status_code} {favicon.get('Location', '')}")
+
     # ── публичные страницы: свой заголовок и своё описание ────────────────
     seen_titles, seen_descr = {}, {}
     for loc in locs:

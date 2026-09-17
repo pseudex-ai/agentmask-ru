@@ -10,6 +10,8 @@ no origin the page could talk to even if something were injected into it.
 
 import logging
 from datetime import timedelta
+from django.http import HttpResponsePermanentRedirect
+from django.urls import is_valid_path
 from django.utils import timezone
 from django.conf import settings
 from django.utils.deprecation import MiddlewareMixin
@@ -78,6 +80,59 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
         if any(request.path.startswith(prefix) for prefix in guarded):
             response["Cache-Control"] = "no-store"
         return response
+
+
+class TrailingSlashRedirectMiddleware(MiddlewareMixin):
+    """`/detection/` → `/detection`: слэш на конце публичного адреса — это 404.
+
+    ЗАЧЕМ. Публичные страницы объявлены БЕЗ слэша (`urls.py`: `path("detection",
+    …)`), и таков же их канонический адрес и адрес в карте сайта. Джанго умеет
+    слэш ДОБАВЛЯТЬ (`APPEND_SLASH`), но не убирать: `/detection/` не совпадает ни
+    с одним маршрутом и отдаёт 404. Человек, скопировавший адрес из письма со
+    слэшем, и внешняя ссылка со слэшем получают «страницы нет» — а на этом сайте
+    каждый 404 ещё и кормит счётчик fail2ban, который банит по 404 на уровне
+    пакетов (`deploy/fail2ban/`). То есть слэш стоил не только посетителя.
+
+    ПОЧЕМУ MIDDLEWARE, А НЕ СПИСОК ПУТЕЙ. Список пришлось бы держать в согласии с
+    `urls.py`, и он бы разошёлся молча. Общее правило «срезать слэш у всего» тоже
+    не годится: на сайте есть `app/`, `accounts/login/` и админка, объявленные СО
+    слэшем, и такое правило сломало бы их НАСМЕРТЬ — `/accounts/login/` →
+    `/accounts/login` → `APPEND_SLASH` вернул бы слэш → бесконечный редирект.
+    Здесь решение принимается по факту, а не по списку: срезаем только тогда,
+    когда адрес без слэша ДЕЙСТВИТЕЛЬНО существует.
+
+    ТРИ УСЛОВИЯ, И КАЖДОЕ ЗАКРЫВАЕТ СВОЮ ОШИБКУ:
+
+      * ТОЛЬКО 404. Счастливый путь не платит даже за разрешение URL, а петля
+        становится невозможной по построению: цель редиректа отвечает, а не
+        отдаёт 404, поэтому второй раз сюда не придёт. `APPEND_SLASH` отправил бы
+        нас в обратную сторону и столкнулся бы с этим же правилом — а ему на
+        вход приходит адрес БЕЗ слэша, который сюда не заходит вовсе.
+      * ЦЕЛЬ ОБЯЗАНА РАЗРЕШАТЬСЯ (`is_valid_path`). `/accounts/login/` и `/app/`
+        разрешаются сами — их 404 не бывает, — а `/wp-admin/` не разрешается ни в
+        каком виде и остаётся честным 404, как и было.
+      * ТОЛЬКО GET/HEAD. 301 на POST браузеры и клиенты переигрывают как GET, и
+        конфигуратор (`/demand`) потерял бы тело запроса. Метод решает, а не путь.
+
+    КАКОЙ ЦЕНОЙ. Для ЧАСТНЫХ адресов вида `/app/invoices/<номер>/` с несуществующим
+    номером получится 301 на адрес, который тоже отдаёт 404. Вреда нет — страница
+    закрыта от индексации и ссылок на неё нет, — но назвать это надо, потому что
+    «редирект в никуда» звучит как дефект, и следующий читатель имеет право знать,
+    что он измерен и признан безобидным.
+    """
+
+    def process_response(self, request, response):
+        if response.status_code != 404 or request.method not in ("GET", "HEAD"):
+            return response
+        path = request.path
+        # Корень сайта слэш не «заканчивает» — он им является.
+        if not path.endswith("/") or path == "/":
+            return response
+        target = path.rstrip("/")
+        if not target or not is_valid_path(target):
+            return response
+        query = request.META.get("QUERY_STRING", "")
+        return HttpResponsePermanentRedirect(f"{target}?{query}" if query else target)
 
 
 class AnalyticsMiddleware(MiddlewareMixin):
