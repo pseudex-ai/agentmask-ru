@@ -165,10 +165,17 @@ def first_touch(visitor: str, since_hours: int) -> dict[str, str]:
     first = mine.first()
     if first is None:
         return {}
+    # YCLID ИЩЕТСЯ ОТДЕЛЬНО ОТ МЕТОК. Обычно они приходят вместе (Директ
+    # дописывает и `utm_*`, и `yclid`), но полагаться на это нельзя: метка
+    # переживает правку объявления, а идентификатор клика — нет, и переход по
+    # ссылке, где yclid уже потеряли, оставил бы организацию без единственного
+    # ключа, по которому конверсию можно привязать.
+    clicked = mine.exclude(yclid="").first()
     return {
         "source_utm_source": (tagged.utm_source if tagged else ""),
         "source_utm_medium": (tagged.utm_medium if tagged else ""),
         "source_utm_campaign": (tagged.utm_campaign if tagged else ""),
+        "source_yclid": (clicked.yclid if clicked else ""),
         # Реферер берётся у ПЕРВОГО визита, а не у помеченного: если метки нет
         # вовсе, источником был переход, и он стоит именно там.
         "source_referrer": first.referrer_host,

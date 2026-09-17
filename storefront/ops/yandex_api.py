@@ -22,6 +22,8 @@ OAuth-токену, выданному владельцем на наше при
 написать код, который нельзя ни разу выполнить.
 """
 
+import csv
+import io
 import logging
 import threading
 import time
@@ -254,3 +256,130 @@ def direct_campaigns() -> list[dict]:
     })
     result = payload.get("result") or {}
     return result.get("Campaigns") or []
+
+
+def goals() -> list[dict]:
+    """Цели счётчика. По ним видно, заведена ли цель под нашу конверсию."""
+    payload = metrika_get(f"/management/v1/counter/{settings.METRIKA_ID}/goals")
+    return payload.get("goals") or []
+
+
+def create_goal(name: str, identifier: str) -> dict:
+    """Завести цель «JavaScript-событие» с идентификатором, который мы шлём.
+
+    ПОЧЕМУ ЦЕЛЬ СОЗДАЁТ КОД, А НЕ ВЛАДЕЛЕЦ В ПАНЕЛИ. Офлайн-конверсия
+    привязывается к цели ПО ИМЕНИ ИДЕНТИФИКАТОРА, и цель с опечаткой в нём
+    принимает загрузку без ошибки: Метрика сопоставит ноль записей и отчитается
+    статусом `LINKAGE_FAILURE` через три часа. Строка, созданная той же
+    константой, что и отправка, разойтись с ней не может; строка, набранная
+    руками в панели, — может и разойдётся.
+
+    Условие обязательно «совпадает» (`exact`): этого требует документация
+    офлайн-конверсий, и цель с условием «содержит» сопоставит больше событий,
+    чем мы отправили.
+    """
+    response = _request(
+        "POST", f"{METRIKA_API}/management/v1/counter/{settings.METRIKA_ID}/goals",
+        json={"goal": {"name": name, "type": "action",
+                       "conditions": [{"type": "exact", "value": identifier}]}},
+        headers={"Authorization": f"OAuth {access_token()}"},
+    )
+    return _check(response, f"создание цели {identifier}")
+
+
+def metrika_summary(days: int = 30) -> dict:
+    """Итоги и разрез по источникам за окно — один вызов, одно окно.
+
+    ОДНА РЕАЛИЗАЦИЯ НА ЭКРАН И НА СВОДКУ В БОТА. Два места, считающие одно и то
+    же порознь, расходятся молча — и расходятся ровно тогда, когда кто-то
+    правит запрос в одном из них. Здесь же оба запроса живут вместе ещё по
+    одной причине: «пришло 400» без «откуда» не отвечает ни на один вопрос, а
+    посчитанные в разных обращениях окна могут не совпасть на границе суток, и
+    цифры в одном отчёте перестанут сходиться между собой.
+    """
+    import datetime
+
+    if not settings.METRIKA_ID:
+        raise YandexError("PSEUDEX_METRIKA_ID не задан — статистики не будет.")
+    days = max(1, min(365, days))
+    today = datetime.date.today()
+    counter = settings.METRIKA_ID
+    date1 = (today - datetime.timedelta(days=days - 1)).isoformat()
+    date2 = today.isoformat()
+
+    totals = metrika_get("/stat/v1/data", {
+        "ids": counter, "date1": date1, "date2": date2,
+        "metrics": "ym:s:visits,ym:s:users,ym:s:pageviews", "accuracy": "full",
+    })
+    sources = metrika_get("/stat/v1/data", {
+        "ids": counter, "date1": date1, "date2": date2,
+        "dimensions": "ym:s:lastSignTrafficSource",
+        "metrics": "ym:s:visits", "sort": "-ym:s:visits", "limit": 10,
+        "accuracy": "full",
+    })
+    return {
+        "counter": counter,
+        "period": {"days": days, "date1": date1, "date2": date2},
+        "totals": list(totals.get("totals") or []),
+        "sources": [
+            {"source": (row.get("dimensions") or [{}])[0].get("name", ""),
+             "visits": (row.get("metrics") or [0])[0]}
+            for row in (sources.get("data") or [])
+        ],
+    }
+
+
+def upload_conversions(rows: list[dict], comment: str = "") -> dict:
+    """Загрузить офлайн-конверсии. `rows` — по одной на событие.
+
+    ФОРМАТ ЗАДАН ДОКУМЕНТАЦИЕЙ И ПЕРЕНОСИТ ОШИБКУ ВРЕМЕНИ, А НЕ ДАННЫХ.
+    `DateTime` — UNIX-время СТРОГО В ПРОШЛОМ: запись с будущим временем
+    отклоняет всю загрузку, а не одну строку. Поэтому отметка берётся у самого
+    события из `Funnel`, а не у момента отправки.
+
+    ИДЕНТИФИКАТОР РОВНО ОДИН. Метрика принимает `ClientId` (кука — у нас их
+    нет), `UserId` (свой идентификатор — мы его не заводим) или `Yclid`.
+    Строка без yclid не привяжется ни к какому визиту, поэтому такие строки
+    отсеиваются ДО запроса: загрузка, которая заведомо даст `LINKAGE_FAILURE`,
+    тратит квоту и прячет настоящую причину за статусом, а не за своим
+    отсутствием.
+    """
+    usable = [row for row in rows if row.get("yclid")]
+    if not usable:
+        return {"skipped": len(rows), "uploading": None}
+
+    # ЦЕНА И ВАЛЮТА — ТОЛЬКО ЕСЛИ ЦЕНА ЕСТЬ. Колонка, целиком состоящая из
+    # пустых значений, выглядит безобидно и мешает чтению файла глазами, когда
+    # загрузка не сошлась и её достают из Метрики.
+    priced = any(row.get("price") is not None for row in usable)
+    header = ["Target", "DateTime", "Yclid"]
+    if priced:
+        header += ["Price", "Currency"]
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(header)
+    for row in usable:
+        line = [row["target"], int(row["at"].timestamp()), row["yclid"]]
+        if priced:
+            price = row.get("price")
+            # ТОЧКА, А НЕ ЗАПЯТАЯ, и это не придирка: русская локаль печатает
+            # «3900,00», и такая цена не разберётся — молча, вместе со всей
+            # строкой. Ровно та же ошибка, что с ценой в разметке для робота.
+            line += [f"{price:.2f}" if price is not None else "",
+                     (row.get("currency") or "RUB") if price is not None else ""]
+        writer.writerow(line)
+
+    response = _request(
+        "POST",
+        f"{METRIKA_API}/management/v1/counter/{settings.METRIKA_ID}"
+        "/offline_conversions/upload",
+        params={"comment": comment[:255]} if comment else None,
+        files={"file": ("conversions.csv", buffer.getvalue(), "text/csv")},
+        headers={"Authorization": f"OAuth {access_token()}"},
+    )
+    payload = _check(response, "загрузка конверсий")
+    uploading = payload.get("uploading") or {}
+    return {"skipped": len(rows) - len(usable), "uploading": uploading,
+            "sent": len(usable)}
+

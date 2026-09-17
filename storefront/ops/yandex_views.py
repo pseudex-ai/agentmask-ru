@@ -19,7 +19,6 @@
 запроса, и разница между ними в том, что первое можно забыть обновить.
 """
 
-import datetime
 import hmac
 from functools import wraps
 
@@ -28,11 +27,6 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
 from ops import yandex_api
-
-# Метрики по умолчанию — три числа, которые отвечают «сколько пришло». Всё
-# остальное запрашивается явно: ответ, в котором сорок полей, читает человек,
-# а не программа, и он же скрывает, что нужного поля там нет.
-_DEFAULT_METRICS = "ym:s:visits,ym:s:users,ym:s:pageviews"
 
 
 def _ops_api_gate(view):
@@ -74,12 +68,6 @@ def _days(request, default: int = 30) -> int:
     return max(1, min(365, value))
 
 
-def _window(days: int) -> tuple[str, str]:
-    today = datetime.date.today()
-    return ((today - datetime.timedelta(days=days - 1)).isoformat(),
-            today.isoformat())
-
-
 @_ops_api_gate
 @require_GET
 def metrika_counters(request):
@@ -101,41 +89,21 @@ def metrika_summary(request):
     без «откуда» не отвечает ни на один вопрос, ради которого сюда заходят; а
     два запроса вместо одного — это два окна, которые могут не совпасть на
     границе суток, и тогда цифры в отчёте не сходятся между собой.
+
+    СЧИТАЕТ НЕ ЭТОТ ФАЙЛ, А `yandex_api.metrika_summary`, И ЭТО НЕ ЛЕНЬ. Ту же
+    сводку печатает недельный отчёт в бота; вторая реализация тех же двух
+    запросов разошлась бы с первой молча — и разошлась бы ровно тогда, когда
+    кто-то поправит запрос в одном из двух мест.
     """
     days = _days(request)
-    date1, date2 = _window(days)
-    counter = settings.METRIKA_ID
-    if not counter:
+    if not settings.METRIKA_ID:
         return JsonResponse(
             {"error": "no_counter",
              "hint": "PSEUDEX_METRIKA_ID не задан — статистики не будет "
                      "даже с рабочим токеном."},
             status=409,
         )
-
-    metrics = request.GET.get("metrics", _DEFAULT_METRICS)
-    totals = yandex_api.metrika_get("/stat/v1/data", {
-        "ids": counter, "date1": date1, "date2": date2,
-        "metrics": metrics, "accuracy": "full",
-    })
-    sources = yandex_api.metrika_get("/stat/v1/data", {
-        "ids": counter, "date1": date1, "date2": date2,
-        "dimensions": "ym:s:lastSignTrafficSource",
-        "metrics": "ym:s:visits,ym:s:users",
-        "sort": "-ym:s:visits", "limit": 50, "accuracy": "full",
-    })
-    return JsonResponse({
-        "counter": counter,
-        "period": {"days": days, "date1": date1, "date2": date2},
-        "metrics": metrics.split(","),
-        "totals": list(totals.get("totals") or []),
-        "sources": [
-            {"source": (row.get("dimensions") or [{}])[0].get("name", ""),
-             "visits": (row.get("metrics") or [0, 0])[0],
-             "users": (row.get("metrics") or [0, 0])[1]}
-            for row in (sources.get("data") or [])
-        ],
-    })
+    return JsonResponse(yandex_api.metrika_summary(days))
 
 
 @_ops_api_gate

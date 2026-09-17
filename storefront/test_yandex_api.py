@@ -30,6 +30,7 @@ import os
 import stat
 import sys
 import tempfile
+from decimal import Decimal
 
 
 class _Fake:
@@ -290,6 +291,183 @@ def main() -> int:  # noqa: C901 — линейный сценарий из пр
         check("refresh" in str(error),
               "ответ без refresh-токена назван ошибкой, а не принят",
               str(error))
+
+    # ── 10. офлайн-конверсия: формат CSV и отсев строк без yclid ───────────
+    import datetime as _dt
+
+    from django.utils import timezone as _tz
+
+    from accounts.models import Organization
+    from ops.analytics_models import ConversionSent, Funnel
+
+    reset_token_cache()
+    calls.clear()
+    scripted.append(_Fake(200, token_payload()))
+    scripted.append(_Fake(200, {"uploading": {"id": 77, "status": "UPLOADED"}}))
+    when = _tz.now() - _dt.timedelta(hours=2)
+    with override_settings(METRIKA_ID="112743085", **creds):
+        outcome = yandex_api.upload_conversions([
+            {"target": "signup", "at": when, "yclid": "123"},
+            {"target": "paid", "at": when, "yclid": "456",
+             "price": Decimal("3900.00"), "currency": "RUB"},
+            {"target": "signup", "at": when, "yclid": ""},
+        ], comment="pseudex")
+    csv_text = calls[-1][2]["files"]["file"][1]
+    lines = csv_text.splitlines()
+    check(outcome["sent"] == 2 and outcome["skipped"] == 1,
+          "строка без yclid отсеяна ДО запроса, а не отвергнута Метрикой",
+          str(outcome))
+    check(lines[0] == "Target,DateTime,Yclid,Price,Currency",
+          "заголовок CSV назван так, как требует документация", lines[0])
+    check(len(lines) == 3, "в файле две строки: без yclid третьей нет",
+          str(lines))
+    check(str(int(when.timestamp())) in csv_text,
+          "дата — UNIX-время события, а не момент отправки")
+    check("3900.00" in csv_text and "3900,00" not in csv_text,
+          "цена с точкой: «3900,00» не разберётся и утащит строку за собой")
+    check(calls[-1][1].endswith(
+              "/management/v1/counter/112743085/offline_conversions/upload"),
+          "загрузка идёт на эндпоинт конверсий с номером счётчика",
+          calls[-1][1])
+    check(calls[-1][2].get("headers", {}).get("Authorization") == "OAuth tok-1",
+          "конверсия грузится схемой OAuth, а не Bearer")
+    check(calls[-1][2].get("params", {}).get("comment") == "pseudex",
+          "комментарий загрузки назван, чтобы её нашли в панели")
+
+    reset_token_cache()
+    calls.clear()
+    with override_settings(METRIKA_ID="112743085", **creds):
+        outcome = yandex_api.upload_conversions([{"target": "signup", "at": when,
+                                                  "yclid": ""}])
+    check(outcome.get("sent", 0) == 0 and not calls,
+          "файл без единой привязки не отправляется вовсе", str(outcome))
+
+    # ── 11. цель заводится с условием «совпадает» ──────────────────────────
+    reset_token_cache()
+    calls.clear()
+    scripted.append(_Fake(200, token_payload()))
+    scripted.append(_Fake(200, {"goal": {"id": 1}}))
+    with override_settings(METRIKA_ID="112743085", **creds):
+        yandex_api.create_goal("pseudex: регистрация", "signup")
+    body = calls[-1][2].get("json", {})
+    condition = (body.get("goal", {}).get("conditions") or [{}])[0]
+    check(body.get("goal", {}).get("type") == "action",
+          "цель заводится типом «JavaScript-событие»", str(body))
+    check(condition.get("type") == "exact" and condition.get("value") == "signup",
+          "и условием «совпадает» — этого требует офлайн-конверсия", str(body))
+
+    # ── 12. команда: отправка ровно один раз ───────────────────────────────
+    clicked = Organization.objects.create(display_name="ООО Клик",
+                                          legal_name="ООО «Клик»", inn="7712345670")
+    clicked.source_yclid = "999888777"
+    clicked.save(update_fields=["source_yclid"])
+    direct = Organization.objects.create(display_name="ООО Прямой",
+                                         legal_name="ООО «Прямой»",
+                                         inn="7712345671")
+    stamp = _tz.now() - _dt.timedelta(hours=3)
+    Funnel.objects.create(step=Funnel.SIGNUP_SUBMITTED,
+                          organization_id=clicked.id, at=stamp)
+    Funnel.objects.create(step=Funnel.SIGNUP_SUBMITTED,
+                          organization_id=direct.id, at=stamp)
+    Funnel.objects.create(step=Funnel.PAID, organization_id=clicked.id,
+                          at=stamp, detail="3900.00")
+    # Второе событие той же цели: повтор учил бы Директ на завышенной цифре.
+    Funnel.objects.create(step=Funnel.PAID, organization_id=clicked.id,
+                          at=stamp + _dt.timedelta(minutes=5), detail="100.00")
+
+    reset_token_cache()
+    calls.clear()
+    scripted.append(_Fake(200, token_payload()))
+    scripted.append(_Fake(200, {"uploading": {"id": 5, "status": "PREPARED"}}))
+    scripted.append(_Fake(200, {"uploading": {"id": 6, "status": "PREPARED"}}))
+    with override_settings(METRIKA_ID="112743085", **creds):
+        out = _capture(call_command, "yandex_conversions")
+    rows = [r for r in calls if "offline_conversions" in r[1]]
+    check(len(rows) == 2, "загрузка одна на цель, а не на организацию",
+          f"загрузок: {len(rows)}")
+    check(rows[0][2]["files"]["file"][1].count("\n") == 2,
+          "в файле «регистрация» ровно одна строка — прямой заход не считается",
+          rows[0][2]["files"]["file"][1])
+    saved = set(ConversionSent.objects.values_list("organization_id", "target"))
+    check((clicked.id, "signup") in saved and (clicked.id, "paid") in saved,
+          "отметка поставлена по обеим целям", str(saved))
+    check(all(org != direct.id for org, _ in saved),
+          "организация без yclid не отмечена отправленной — её не отправляли",
+          str(saved))
+    check("3900.00" in rows[1][2]["files"]["file"][1]
+          and "100.00" not in rows[1][2]["files"]["file"][1],
+          "ценность взята у ПЕРВОЙ оплаты, а не у последней",
+          rows[1][2]["files"]["file"][1])
+    check("отправлено" in out, "команда сказала, что отправила", out)
+
+    # повторный запуск: ни одного обращения в сеть
+    reset_token_cache()
+    calls.clear()
+    with override_settings(METRIKA_ID="112743085", **creds):
+        _capture(call_command, "yandex_conversions")
+    check(not calls, "повторный запуск не отправляет ничего второй раз",
+          f"запросов: {len(calls)}")
+
+    # dry-run не ходит в сеть и не ставит отметок
+    ConversionSent.objects.all().delete()
+    reset_token_cache()
+    calls.clear()
+    with override_settings(METRIKA_ID="112743085", **creds):
+        out = _capture(call_command, "yandex_conversions", "--dry-run")
+    check(not calls and not ConversionSent.objects.exists(),
+          "dry-run не отправляет и не отмечает", f"запросов: {len(calls)}")
+    check("dry-run" in out, "и говорит об этом", out)
+
+    # ── 13. yclid доезжает от рекламной ссылки до организации ──────────────
+    from ops.analytics_models import Visit
+
+    call_command("seed_plans", verbosity=0)
+    landing = client.get("/?yclid=987654321&utm_source=yandex&utm_medium=cpc")
+    check(landing.status_code == 200, "лендинг отрисовался",
+          f"status={landing.status_code}")
+    visited = Visit.objects.order_by("-at").first()
+    check(visited is not None and visited.yclid == "987654321",
+          "yclid сохранён вместе с визитом лендинга",
+          visited.yclid if visited else "визита нет")
+    from ops import collect as _collect
+    touch = _collect.first_touch(visited.visitor, 24)
+    check(touch.get("source_yclid") == "987654321",
+          "первое касание отдаёт yclid так же, как метки", str(touch))
+    check(touch.get("source_utm_source") == "yandex",
+          "и метки при этом не потерялись", str(touch))
+
+    # ── 14. недельный блок в сводке бота ──────────────────────────────────
+    reset_token_cache()
+    calls.clear()
+    scripted.append(_Fake(200, token_payload()))
+    scripted.append(_Fake(200, {"totals": [12, 9, 40], "data": []}))
+    scripted.append(_Fake(200, {"data": [
+        {"dimensions": [{"name": "organic"}], "metrics": [7]},
+        {"dimensions": [{"name": "ad"}], "metrics": [5]}]}))
+    scripted.append(_Fake(200, {"result": {"Campaigns": [{"Id": 1}]}}))
+    with override_settings(METRIKA_ID="112743085", **creds):
+        out = _capture(call_command, "daily_digest", "--weekly", "--dry-run")
+    check("Метрика за 7 дн." in out and "визитов 12" in out,
+          "недельная сводка называет визиты Метрики", out)
+    check("organic 7" in out and "ad 5" in out,
+          "и разрез по источникам", out)
+    check("Директ: кампаний 1" in out, "и кампании Директа", out)
+
+    reset_token_cache()
+    calls.clear()
+    scripted.append(_Fake(200, token_payload()))
+    scripted.append(_Fake(200, {"totals": [1, 1, 1], "data": []}))
+    scripted.append(_Fake(200, {"result": {"Campaigns": []}}))
+    with override_settings(METRIKA_ID="112743085", **creds):
+        out = _capture(call_command, "daily_digest", "--dry-run")
+    check("Метрика" not in out and "Директ" not in out,
+          "без --weekly блока Яндекса в сводке нет", out)
+
+    out = _capture(call_command, "daily_digest", "--weekly", "--dry-run")
+    check("Метрика" not in out and "Директ" not in out
+          and not calls,
+          "ненастроенная интеграция молчит, а не пишет «не работает» каждую "
+          "неделю", out)
 
     print("=" * 60)
     if not ok:

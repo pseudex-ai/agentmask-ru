@@ -39,6 +39,13 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser) -> None:
         parser.add_argument("--dry-run", action="store_true")
+        # НЕДЕЛЬНЫЙ БЛОК ЖИВЁТ ЗДЕСЬ, А НЕ ВО ВТОРОЙ КОМАНДЕ. Сводка уже
+        # отвечает на «сколько пришло и откуда»; блок рекламы добавляет к этому
+        # «сколько это стоило». Отдельная команда означала бы вторую отправку в
+        # тот же канал, второй `notify.sh` и два письма в понедельник вместо
+        # одного.
+        parser.add_argument("--weekly", action="store_true",
+                            help="добавить блок Яндекса за 7 дней")
 
     def handle(self, *args, **options) -> None:
         now = timezone.now()
@@ -105,6 +112,9 @@ class Command(BaseCommand):
         past_due = Subscription.objects.filter(state=Subscription.PAST_DUE).count()
         lines.append(f"Подписок: {active} активных, {past_due} остановленных")
 
+        if options["weekly"]:
+            lines.extend(self._yandex(7))
+
         body = "\n".join(lines)
         title = f"Сводка за сутки · {today:%d.%m.%Y}"
 
@@ -112,6 +122,48 @@ class Command(BaseCommand):
             self.stdout.write(f"{title}\n{body}")
             return
         self._send(title, body)
+
+    def _yandex(self, days: int) -> list[str]:
+        """Блок рекламы: сколько пришло из Яндекса и что с кампаниями.
+
+        МОЛЧИТ, КОГДА ИНТЕГРАЦИЯ НЕ НАСТРОЕНА. Недельная сводка, каждую неделю
+        сообщающая «доступ не настроен», — это строка, которую перестают
+        читать, а вместе с ней и остальные. Пустой список здесь означает «нам
+        нечего сказать», а не «мы не смогли».
+
+        ОШИБКА ЖЕ НАОБОРОТ — ГОВОРИТСЯ ВСЛУХ. Отозванный токен и неодобренная
+        заявка выглядят одинаково ровно до того момента, как их назовёшь, а
+        разница между ними — «чинить у нас» и «ждать Яндекса».
+        """
+        from ops import yandex_api
+        if not yandex_api.configured():
+            return []
+        out: list[str] = []
+        try:
+            summary = yandex_api.metrika_summary(days)
+        except yandex_api.YandexError as error:
+            out.append(f"⚠️ Метрика недоступна: {error}")
+        else:
+            totals = summary["totals"]
+            visits = totals[0] if totals else 0
+            users = totals[1] if len(totals) > 1 else 0
+            out.append(f"Метрика за {days} дн.: визитов {visits}, "
+                       f"посетителей {users}")
+            top = [s for s in summary["sources"] if s.get("visits")][:3]
+            if top:
+                out.append("Метрика, источники: " + " · ".join(
+                    f"{s['source'] or 'прямой'} {s['visits']}" for s in top))
+        try:
+            campaigns = yandex_api.direct_campaigns()
+        except yandex_api.YandexError as error:
+            if "58" in str(error) or "Incomplete registration" in str(error):
+                out.append("Директ: доступ к API ещё не одобрен "
+                           "(заявку рассматривают до 7 дней)")
+            else:
+                out.append(f"⚠️ Директ недоступен: {error}")
+        else:
+            out.append(f"Директ: кампаний {len(campaigns)}")
+        return out
 
     def _send(self, title: str, body: str) -> None:
         """Через тот же `notify.sh`, что и сторож.

@@ -227,6 +227,11 @@ class AnalyticsMiddleware(MiddlewareMixin):
             utm_source=request.GET.get("utm_source", "")[:60],
             utm_medium=request.GET.get("utm_medium", "")[:60],
             utm_campaign=request.GET.get("utm_campaign", "")[:60],
+            # ИДЕНТИФИКАТОР КЛИКА ПО ОБЪЯВЛЕНИЮ. Берётся из того же места, что и
+            # метки, и по той же причине: он приходит на лендинг, а конверсия
+            # случается страницей позже — на той, где счётчика нет и быть не
+            # может. Без него офлайн-конверсию не к чему привязать.
+            yclid=request.GET.get("yclid", "")[:64],
             device=device, browser=browser, os=system, is_bot=is_bot,
         )
         # Шаг воронки ставится ОДИН РАЗ за сутки на посетителя: человек,

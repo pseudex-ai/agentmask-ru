@@ -325,7 +325,13 @@ services:
             # ночи, читается утром вместе со следующей и теряет половину смысла.
             if [ "$$HOUR" -ge 9 ]; then
               python manage.py rollup_analytics || echo "rollup failed"
-              python manage.py daily_digest || echo "digest failed"
+              # В ПОНЕДЕЛЬНИК СВОДКА ШИРЕ: к своим цифрам добавляется блок
+              # Яндекса за неделю — по нему решают, что делать с рекламой, а
+              # решение такого рода не пересматривают ежедневно. `date +%u`
+              # даёт 1 для понедельника; в контейнере время UTC, поэтому
+              # недельный отчёт приходит утром по Москве, а не в ночь.
+              WEEKLY="$$( [ "$$(date +%u)" = "1" ] && echo --weekly )"
+              python manage.py daily_digest $$WEEKLY || echo "digest failed"
               echo "$$TODAY" > /data/last-daily
             fi
           fi

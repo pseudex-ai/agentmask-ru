@@ -115,6 +115,12 @@ class Organization(models.Model):
     source_utm_campaign = models.CharField(max_length=60, blank=True)
     source_referrer = models.CharField(max_length=120, blank=True)
     source_landing = models.CharField(max_length=200, blank=True)
+    # ИДЕНТИФИКАТОР КЛИКА ПО ОБЪЯВЛЕНИЮ ДИРЕКТА — единственное, по чему
+    # офлайн-конверсия привязывается к визиту без куки. Хранится НЕ ради
+    # отчёта (там хватает меток), а потому что без него рассказать Метрике о
+    # регистрации и оплате невозможно: страницы, где эти события случаются,
+    # счётчика не несут и не могут — на них лежит ключ клиента.
+    source_yclid = models.CharField(max_length=64, blank=True)
 
     # ПО ЧЕМУ УЗНАЁТСЯ ПОВТОРНАЯ РЕГИСТРАЦИЯ.
     #
