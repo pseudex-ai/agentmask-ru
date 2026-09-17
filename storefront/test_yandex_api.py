@@ -27,6 +27,7 @@
 """
 
 import os
+import re as _re
 import stat
 import sys
 import tempfile
@@ -366,10 +367,15 @@ def main() -> int:  # noqa: C901 — линейный сценарий из пр
                                          legal_name="ООО «Прямой»",
                                          inn="7712345671")
     stamp = _tz.now() - _dt.timedelta(hours=3)
+    Funnel.objects.create(step=Funnel.ACTIVATED,
+                          organization_id=clicked.id, at=stamp)
+    Funnel.objects.create(step=Funnel.ACTIVATED,
+                          organization_id=direct.id, at=stamp)
+    # РЕГИСТРАЦИЮ ОФЛАЙН-ПУТЬ НЕ ОТПРАВЛЯЕТ: её цель считает браузер на экране
+    # «проверьте почту», под баннером согласия. Событие сеется намеренно, чтобы
+    # проверка упала, если кто-нибудь вернёт `signup` в TARGETS и удвоит цифру.
     Funnel.objects.create(step=Funnel.SIGNUP_SUBMITTED,
                           organization_id=clicked.id, at=stamp)
-    Funnel.objects.create(step=Funnel.SIGNUP_SUBMITTED,
-                          organization_id=direct.id, at=stamp)
     Funnel.objects.create(step=Funnel.PAID, organization_id=clicked.id,
                           at=stamp, detail="3900.00")
     # Второе событие той же цели: повтор учил бы Директ на завышенной цифре.
@@ -388,11 +394,14 @@ def main() -> int:  # noqa: C901 — линейный сценарий из пр
     check(len(rows) == 2, "загрузка одна на цель, а не на организацию",
           f"загрузок: {len(rows)}")
     check(rows[0][2]["files"]["file"][1].count("\n") == 2,
-          "в файле «регистрация» ровно одна строка — прямой заход не считается",
+          "в файле «активация» ровно одна строка — прямой заход не считается",
           rows[0][2]["files"]["file"][1])
     saved = set(ConversionSent.objects.values_list("organization_id", "target"))
-    check((clicked.id, "signup") in saved and (clicked.id, "paid") in saved,
+    check((clicked.id, "activated") in saved and (clicked.id, "paid") in saved,
           "отметка поставлена по обеим целям", str(saved))
+    check(not any(target == "signup" for _, target in saved),
+          "регистрация офлайн-путём НЕ отправляется: её считает браузер, "
+          "а два механизма на одно событие удвоили бы цифру", str(saved))
     check(all(org != direct.id for org, _ in saved),
           "организация без yclid не отмечена отправленной — её не отправляли",
           str(saved))
@@ -500,6 +509,35 @@ def main() -> int:  # noqa: C901 — линейный сценарий из пр
           and not calls,
           "ненастроенная интеграция молчит, а не пишет «не работает» каждую "
           "неделю", out)
+
+    # ── 15. цель «регистрация» доезжает до страницы, и только до неё ───────
+    #
+    # СЧЁТЧИК ЗДЕСЬ ВКЛЮЧАЕТСЯ НАМЕРЕННО. Без него тег скрипта не рисуется
+    # вовсе, и проверка «цели нет» проходила бы на странице, где нет и скрипта —
+    # то есть не проверяла бы ничего.
+    from django.core.cache import cache
+    cache.clear()
+    with override_settings(METRIKA_ID="112743085"):
+        landing_body = client.get("/").content.decode()
+        check('data-goal=""' in landing_body,
+              "на лендинге атрибут цели есть и он пустой — регистрация не "
+              "случилась", landing_body[:0])
+
+        plan_match = _re.search(r'name="plan"[^>]*value="([^"]+)"', landing_body)
+        payload = {"email": "goal-probe@example.test", "consent": "1", "terms": "1"}
+        if plan_match:
+            payload["plan"] = plan_match.group(1)
+        signed_up = client.post("/signup", payload, follow=True)
+        signed_body = signed_up.content.decode()
+        check(signed_up.status_code == 200 and "почт" in signed_body.lower(),
+              "регистрация прошла и показала экран «проверьте почту»",
+              f"status={signed_up.status_code}")
+        check('data-goal="signup"' in signed_body,
+              "на экране после регистрации стоит цель signup", signed_body[:0])
+        # И НИГДЕ БОЛЬШЕ. Повторная отправка письма — тот же экран, но не новая
+        # регистрация; засчитанная там цель удвоила бы цифру в отчёте.
+        check('data-goal="signup"' not in client.get("/").content.decode(),
+              "и её нет больше ни на одной странице")
 
     print("=" * 60)
     if not ok:

@@ -613,7 +613,13 @@ def signup(request):
         recipient_list=[email],
         fail_silently=False,
     )
-    return render(request, "check_email.html", {"email": email})
+    # ЦЕЛЬ «РЕГИСТРАЦИЯ» СЧИТАЕТСЯ ЗДЕСЬ, А НЕ НА ПОВТОРНОЙ ОТПРАВКЕ ПИСЬМА.
+    # Экран тот же самый, и `resent` отличает один случай от другого: человек,
+    # попросивший письмо второй раз, уже зарегистрирован, и засчитанная ему
+    # цель удвоила бы регистрацию в отчёте. Цель уходит из браузера, то есть
+    # только при согласии на счётчик — так же, как обещает раздел 9bis политики.
+    return render(request, "check_email.html",
+                  {"email": email, "metrika_goal": "signup"})
 
 
 _ACTIVATION_HOURS = 24
