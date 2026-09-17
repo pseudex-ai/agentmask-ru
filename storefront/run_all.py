@@ -64,7 +64,9 @@ STEPS = [
     # это проверка, про которую узнаёшь последним.
     ("00a-lint-tests", _LINT, lambda: True, ""),
     ("00-storefront", "test_storefront.py", lambda: True, ""),
-    ("01-deploy-refs", "test_deploy_references.py", lambda: True, ""),
+    ("01-deploy-refs", "test_deploy_references.py",
+     lambda: (_HERE.parent / "deploy").is_dir(),
+     "нужен каталог deploy/ — он в закрытом репозитории рядом"),
     # БЕЛЫЙ СПИСОК РОБОТОВ ЖИВЁТ В deploy/, А ПРОВЕРЯЕТСЯ ЗДЕСЬ. Ошибка в нём
     # стоит в обе стороны и обе дорогие: строгий вариант отрезает поисковику
     # обход (сайта нет в выдаче), мягкий отдаёт сканеру лазейку мимо бана.

@@ -35,6 +35,16 @@ def check(name: str, condition: bool, detail: str = "") -> None:
 
 
 def main() -> int:
+    # ПРОВЕРКА О КОНФИГУРАЦИИ ВЫКАТКИ, А НЕ О ВИТРИНЕ. Каталог `deploy/` лежит в
+    # закрытом репозитории рядом, и в копии витрины его нет. Падать здесь нельзя:
+    # FileNotFoundError читался бы как «витрина сломана», а витрина исправна.
+    # Но и молча вернуть ноль нельзя — это был бы зелёный прогон проверки,
+    # которой не было. Поэтому пропуск НАЗЫВАЕТСЯ, и `run_all` показывает его
+    # отдельной колонкой, которая не считается прохождением.
+    if not _DEPLOY.is_dir():
+        print(f"ПРОПУСК: каталога {_DEPLOY} нет — проверка не гонялась")
+        print("Это не «прошло»: проверять было нечего.")
+        return 0
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "pseudex_site.settings")
     os.environ.setdefault("PSEUDEX_SECRET_KEY", "deploy-refs")
     os.environ.setdefault("PSEUDEX_DB_PATH", "/tmp/pseudex-deploy-refs.sqlite3")
