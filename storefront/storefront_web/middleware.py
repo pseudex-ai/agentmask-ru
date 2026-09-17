@@ -16,6 +16,13 @@ from django.utils import timezone
 from django.conf import settings
 from django.utils.deprecation import MiddlewareMixin
 
+# ГРАНИЦА «КОМУ МОЖНО СЧИТАТЬ» СПРАШИВАЕТСЯ, А НЕ ПОВТОРЯЕТСЯ. Здесь стояла своя
+# копия условия (`/app/` и админка), и она уже разошлась с шаблоном: в шаблоне
+# исключены ещё `/accounts/`, `/activate` и `/welcome`. Расхождение молчаливое и
+# в опасную сторону — страница с секретом в адресе получала бы разрешение в
+# заголовке, даже когда счётчика на ней нет.
+from pseudex_site.context import counters_allowed
+
 def _policy_for(request) -> str:
     """CSP, РАЗНЫЙ ДЛЯ ПУБЛИЧНОЙ СТРАНИЦЫ И ДЛЯ КАБИНЕТА.
 
@@ -37,8 +44,7 @@ def _policy_for(request) -> str:
     CSP для `/app/` не содержит `mc.yandex.ru`.
     """
     analytics = settings.ANALYTICS
-    if request.path.startswith("/app/") \
-            or request.path.startswith(f"/{settings.ADMIN_PATH}"):
+    if not counters_allowed(request.path):
         return _POLICY
 
     # ЧТО ИМЕННО РАЗРЕШЕНО ЭТОЙ СТРАНИЦЕ. Список СОБИРАЕТСЯ, а не выбирается:

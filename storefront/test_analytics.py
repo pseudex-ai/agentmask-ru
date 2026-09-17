@@ -353,12 +353,12 @@ def main() -> int:
     # краснеет, если вывод перестанет следовать за режимом.
     from django.test import override_settings
 
-    def page(mode: str, path: str, client=None, metrika: str = ""):
+    def page(mode: str, path: str, client=None, metrika: str = "", follow: bool = True):
         settings_analytics = {
             "mode": mode, "host": "https://a.pseudex.ru", "key": "phc_probe",
             "stores_id": mode == "full", "records_sessions": mode == "full"}
         with override_settings(ANALYTICS=settings_analytics, METRIKA_ID=metrika):
-            answer = (client or _Client()).get(path)
+            answer = (client or _Client()).get(path, follow=follow)
         return answer
 
     claims = {
@@ -468,6 +468,34 @@ def main() -> int:
           "выключенный счётчик не должен упоминаться как работающий")
     check("политика открывается в обеих настройках",
           "9bis" in policy_on and "9bis" in policy_off)
+
+    # ── СТРАНИЦЫ С СЕКРЕТОМ: НИ ОДНОГО СЧЁТЧИКА, НИ НАШЕГО, НИ ЧУЖОГО ─────
+    #
+    # `/activate?t=…` несёт подписанный токен, названный в `views.activate`
+    # «работающий логин на 24 часа». Счётчик отправляет `location.href` — то
+    # есть токен ушёл бы третьей стороне ДАЖЕ С ВЫКЛЮЧЕННЫМ Вебвизором.
+    # `/welcome` показывает клиенту лицензионный ключ прямо в разметке.
+    #
+    # ДЫРА БЫЛА И ДО МЕТРИКИ: своя аналитика шлёт тот же `location.href`, просто
+    # на наш сервер. Поэтому проверяются ОБА счётчика, а не только новый.
+    from django.conf import settings
+    from pseudex_site.context import counters_allowed
+
+    boundary = {"/activate": False, "/welcome": False, "/": True, "/detection": True,
+                "/app/": False, "/accounts/login/": False,
+                f"/{settings.ADMIN_PATH}/": False}
+    wrong_boundary = [f"{p}={counters_allowed(p)}" for p, want in boundary.items()
+                      if counters_allowed(p) != want]
+    check("граница счётчиков исключает закрытое и страницы с секретом",
+          not wrong_boundary, "; ".join(wrong_boundary) or "список совпал")
+
+    for path in ("/activate", "/welcome"):
+        # Без `follow`: иначе редирект уводит на главную, где счётчик есть, и
+        # проверка «счётчика нет» проходила бы на СОВСЕМ ДРУГОЙ странице.
+        answer = page("full", path, metrika=KEY, follow=False)
+        csp = csp_of(answer)
+        check(f"{path}: CSP не разрешает ни Метрику, ни нашу аналитику",
+              "mc.yandex.ru" not in csp and "a.pseudex.ru" not in csp, csp)
 
     print()
     if FAILURES:
