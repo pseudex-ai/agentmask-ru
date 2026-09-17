@@ -28,6 +28,13 @@ PTR этого домена он назначает сам. Проверка о�
 `crawl-66-249-66-1.googlebot.com`, `157.55.39.1` → `msnbot-….search.msn.com`) и
 все три отвечают «робот», но гейтом это не становится намеренно.
 
+И ВТОРАЯ ПОЛОВИНА, БЕЗ КОТОРОЙ ПЕРВАЯ БЕСПОЛЕЗНА: джейл обязан ЧИТАТЬ тот файл,
+куда пишет Caddy. На бою он его не читал — Debian упаковывает fail2ban с
+бэкендом `systemd` по умолчанию, и джейл с `logpath` на файл молча читал журнал,
+куда контейнер не пишет вовсе. Поэтому здесь же проверяется, что у обоих веб-
+джейлов `backend` задан ЯВНО, что `logpath` смотрит на нужный файл и что
+`bootstrap.sh` ставит скрипт ровно по тому пути, который называет `jail.conf`.
+
 Запуск:  cd storefront && .venv/bin/python test_crawler_allowlist.py
 """
 
@@ -179,11 +186,61 @@ def main() -> int:
           "main возвращает ненулевое на негодном аргументе")
     check(crawler.main(["prog"]) != 0, "main без аргумента возвращает ненулевое")
 
+    # ── И ГЛАВНОЕ: ДЖЕЙЛ ВООБЩЕ ЧИТАЕТ ЛОГ ────────────────────────────────
+    # Всё, что выше, проверяет скрипт. Но скрипт бесполезен, если джейл не
+    # читает тот файл, куда пишет Caddy, — а именно это и было на бою: Debian
+    # упаковывает fail2ban с бэкендом `systemd` по умолчанию, джейл с `logpath`
+    # на файл МОЛЧА читал журнал systemd, и в `/var/log/fail2ban.log` стояло
+    # `uses systemd`, а `get <jail> logpath` отвечал «No file is currently
+    # monitored». `Total failed: 0` при 1369 строках 4xx в самом файле.
+    #
+    # ОТСУТСТВИЕ ЯВНОГО `backend` — ЭТО И ЕСТЬ ДЕФЕКТ, поэтому проверяется
+    # именно его наличие, а не «работает ли оно сейчас»: значение по умолчанию
+    # живёт в чужом пакете и меняется без нас.
+    jail_conf = _SCRIPT.parent / "jail.conf"
+    text = jail_conf.read_text(encoding="utf-8")
+    jails = {}
+    current = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current = stripped[1:-1]
+            jails[current] = {}
+        elif current and "=" in stripped and not stripped.startswith("#"):
+            key, _, value = stripped.partition("=")
+            jails[current][key.strip()] = value.strip()
+
+    for name in ("pseudex-web-scan", "pseudex-web-login"):
+        section = jails.get(name, {})
+        check(bool(section), f"раздел [{name}] существует", str(sorted(jails)))
+        backend = section.get("backend", "")
+        check(backend in ("polling", "pyinotify", "gamin"),
+              f"[{name}]: бэкенд задан явно и читает файл",
+              f"backend={backend!r} — без этого Debian берёт systemd, "
+              f"а Caddy в журнал не пишет")
+        check(section.get("logpath", "").endswith("caddy/access.log"),
+              f"[{name}]: logpath смотрит на файл Caddy",
+              section.get("logpath", ""))
+        check(section.get("ignorecommand", "").endswith("pseudex-is-crawler <ip>"),
+              f"[{name}]: зовёт скрипт белого списка", section.get("ignorecommand", ""))
+        check("key=" in section.get("ignorecache", ""),
+              f"[{name}]: результат кэшируется",
+              "без кэша проверка зовётся на каждой строке лога")
+
+    # ПУТЬ В КОНФИГЕ ПРОТИВ ПУТИ УСТАНОВКИ. `ignorecommand` назван абсолютным
+    # путём, и разойтись с `bootstrap.sh` он может молча: fail2ban тогда просто
+    # не найдёт команду, а это, по семантике выше, означает «банить». Дефект,
+    # который выглядит как работающая защита.
+    bootstrap = (_SCRIPT.parent.parent / "bootstrap.sh").read_text(encoding="utf-8")
+    check("/usr/local/bin/" in bootstrap and "pseudex-is-crawler" in bootstrap,
+          "bootstrap.sh ставит скрипт туда, откуда его зовёт jail.conf",
+          "иначе fail2ban не найдёт команду и будет банить всех")
+
     print("=" * 60)
     if not ok:
         raise SystemExit("crawler allowlist is not correct")
-    print("crawler OK — робот пропускается по подтверждённому имени, "
-          "подделка и чужой домен не пропускаются")
+    print("crawler OK — робот пропускается по подтверждённому имени, подделка и "
+          "чужой домен не пропускаются, джейл читает файл Caddy")
     return 0
 
 
