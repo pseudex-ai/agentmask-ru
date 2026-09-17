@@ -430,9 +430,14 @@ def main() -> int:
 
     public = page("full", "/")
     private = page("full", "/app/", signed)
+    # `csp_of` — ОДНА ДИРЕКТИВА, И ЭТО НЕ ЛЕНЬ: скрипт проверяется чаще всего.
+    # Но у заголовка есть и другие директивы, и проверка, написанная через
+    # `csp_of`, физически не может их увидеть — `child-src` в его ответе не
+    # появится никогда. Для них — `full_csp`.
     csp_of = lambda answer: next(
         (part for part in answer.get("Content-Security-Policy", "").split("; ")
          if part.startswith("script-src ")), "")
+    full_csp = lambda answer: answer.get("Content-Security-Policy", "")
     check("на публичной странице скрипт есть и CSP его пускает",
           "analytics.js" in public.content.decode()
           and "a.pseudex.ru" in csp_of(public), csp_of(public))
@@ -485,6 +490,23 @@ def main() -> int:
           "mc.yandex.ru" not in csp_of(page("off", "/"))
           and "mc.yandex.ru" not in csp_of(page("full", "/")),
           "разрешение не должно появляться само")
+    # ВЕБВИЗОР НЕ РАБОТАЕТ БЕЗ child-src И frame-src С blob:. Это не догадка:
+    # справка Метрики перечисляет их отдельным пунктом «для правильной работы
+    # Вебвизора, карт кликов, ссылок и скроллинга». Отказ при этом молчаливый —
+    # запись просто не появляется, и искать причину будут в панели Метрики.
+    page_csp = full_csp(page("off", "/", metrika=KEY))
+    check("CSP пускает blob-фрейм Вебвизора",
+          "child-src blob: https://mc.yandex.ru" in page_csp
+          and "frame-src blob: https://mc.yandex.ru" in page_csp, page_csp)
+    check("и отдаёт ресурсы счётчика с yastatic.net",
+          "https://yastatic.net" in page_csp, page_csp)
+    cabinet_csp = full_csp(page("off", "/app/", signed, metrika=KEY))
+    check("но в кабинете ни того, ни другого",
+          "child-src" not in cabinet_csp
+          and "yastatic.net" not in cabinet_csp
+          and "mc.yandex.ru" not in cabinet_csp,
+          "разрешение живёт ровно на публичных страницах")
+
     check("в кабинете счётчика нет даже включённого",
           KEY not in page("off", "/app/", signed, metrika=KEY).content.decode()
           and "mc.yandex.ru" not in csp_of(page("off", "/app/", signed, metrika=KEY)),

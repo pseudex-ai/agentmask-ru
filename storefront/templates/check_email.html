@@ -3,7 +3,23 @@
 {% block content %}
 <section>
   <div class="eyebrow"><i></i><span>ОСТАЛСЯ ОДИН ШАГ</span></div>
-  <h2>Письмо ушло на {{ email }}</h2>
+  {% comment %}
+     АДРЕС ПОСЕТИТЕЛЯ НЕ ДОЛЖЕН ПОПАСТЬ В ЗАПИСЬ ВЕБВИЗОРА. Он здесь напечатан
+     текстом и повторён в поле формы, а Вебвизор записывает содержимое страницы.
+     `ym-hide-content` заменяет элемент в записи на размытую случайную строку,
+     `ym-disable-keys` гасит поле — и то и другое действует только в записи, на
+     живой странице ничего не меняется. Это единственная публичная страница, где
+     напечатаны данные самого посетителя.
+
+     ИМЕНА ТЕГОВ ЗДЕСЬ НЕ ПИШУТСЯ, И ЭТО НЕ СТИЛИСТИКА: блокирующий комментарий
+     Django не вкладывается, поэтому закрывающий тег, набранный в тексте, closes
+     его раньше времени — остаток заметки уезжает в разметку страницы. Ровно так
+     и вышло с первой версией этой заметки; поймал тест на многострочные
+     комментарии. По той же причине однострочный тег не годится: он заканчивается
+     на первом закрывающем символе, и многострочная заметка в нём — не
+     комментарий, а текст для посетителя.
+  {% endcomment %}
+  <h2>Письмо ушло на <span class="ym-hide-content">{{ email }}</span></h2>
   <p class="sub" style="margin-top:16px">В нём ссылка, по которой ключ будет выпущен и показан один раз. Ссылка действует сутки.</p>
   <div style="max-width:640px;padding:22px;border:1px solid var(--line-2);font-size:14px;color:var(--dim);line-height:1.7">
     <b style="color:var(--text-3)">Почему не сразу.</b><br>
@@ -17,7 +33,7 @@
     <p style="font-size:14px;color:var(--dim);line-height:1.7">Не пришло за пару минут? Загляните в «Спам» — письмо приходит с адреса <span class="mono">noreply@pseudex.ru</span>. Или отправьте ещё раз:</p>
     <form method="post" action="{% url 'resend' %}" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
       {% csrf_token %}
-      <input type="email" name="email" value="{{ email }}" required style="flex:1;min-width:240px">
+      <input type="email" name="email" value="{{ email }}" required style="flex:1;min-width:240px" class="ym-disable-keys">
       <button class="btn" type="submit">ОТПРАВИТЬ ЕЩЁ РАЗ</button>
     </form>
     {% endif %}
