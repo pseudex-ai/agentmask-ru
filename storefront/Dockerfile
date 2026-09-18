@@ -12,7 +12,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# ОБНОВЛЕНИЕ ПАКЕТОВ БАЗОВОГО ОБРАЗА, А НЕ ТОЛЬКО УСТАНОВКА СВОИХ.
+# `python:3.12-slim-trixie` фиксирует срез Debian на день сборки тега,
+# поэтому perl-base в нём остаётся прежним, пока образ не пересоберут.
+# Сканер нашёл в нём три исправимых CRITICAL (5.40.1-6 → +deb13u1) —
+# правится ровно этой строкой.
+RUN apt-get update && apt-get upgrade -y \
+ && apt-get install -y --no-install-recommends \
         curl \
     && rm -rf /var/lib/apt/lists/*
 

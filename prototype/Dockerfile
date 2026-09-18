@@ -23,6 +23,16 @@
 # the engine is built — not in which libc, OpenSSL or timezone data they carry.
 FROM python:3.12-slim-trixie
 
+# ОБНОВЛЕНИЕ ПАКЕТОВ БАЗОВОГО ОБРАЗА, И ОБЯЗАТЕЛЬНО В ОБОИХ ОБРАЗАХ ДВИЖКА.
+# Тег `*-slim-trixie` фиксирует срез Debian на день публикации, поэтому
+# perl-base остаётся в нём прежним, пока образ не пересоберут: сканер нашёл
+# исправимые CRITICAL 5.40.1-6 → +deb13u1. Гейт чётности (P3/P4) сравнивает
+# собранный образ с исходным, и они не должны отличаться версиями libc,
+# OpenSSL и tzdata, — поэтому строка стоит здесь И в `Dockerfile.nuitka`.
+# Разойтись они могут только вместе.
+RUN apt-get update && apt-get upgrade -y \
+ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # setuptools is needed by pymorphy3 dict loading on 3.12+.

@@ -13,6 +13,15 @@ FROM python:3.12-slim-trixie
 
 WORKDIR /app
 
+# ОБНОВЛЕНИЕ ПАКЕТОВ БАЗОВОГО ОБРАЗА. Тег `slim-trixie` фиксирует срез Debian на
+# день своей публикации, поэтому perl-base остаётся в нём прежним, пока образ не
+# пересоберут. Сканер нашёл там три исправимых CRITICAL (5.40.1-6 → +deb13u1) —
+# правится этой строкой, и она дешевле, чем ждать нового тега базового образа.
+# `--no-install-recommends` не нужен: ничего нового не ставится, только
+# обновляется уже установленное.
+RUN apt-get update && apt-get upgrade -y \
+ && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --no-cache-dir --upgrade pip setuptools
 
 # Only what the server needs. Notably NOT natasha/pymorphy3: the licensing server
