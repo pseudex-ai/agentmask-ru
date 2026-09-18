@@ -233,27 +233,23 @@ jobs:
           [ -n "${REGISTRY_PASSWORD}" ] || { echo "::error::REGISTRY_PASSWORD пуст"; exit 1; }
           printf '%s' "${REGISTRY_PASSWORD}" | docker login "${REGISTRY%%/*}" -u "${REGISTRY_USERNAME}" --password-stdin
 
-      - name: tag and push
+      - name: tag the engine image
+        # НИЧЕГО НЕ ЗАГРУЖАЕТСЯ, ПОКА НЕ ПРОЙДЕН СКАН. Здесь стояли `tag and
+        # push` и сборка с пушем, то есть порядок «загрузить → проверить →
+        # подписать». Он оставлял в реестре НЕПОДПИСАННЫЕ образы, если скан
+        # падал: агент выкатки их видел, `cosign verify` возвращал пусто, и в
+        # телеграм уходило «подпись не сошлась. Разберитесь, откуда взялся этот
+        # образ» — тревога о подмене в реестре, которой не было. Проверено на
+        # v0.3.10. Порядок «собрать → проверить → загрузить → подписать»
+        # оставляет реестр чистым: упавший скан не оставляет в нём ничего.
         run: |
+          set -eu
           VERSION="${GITHUB_REF_NAME#v}"
           [ "${VERSION}" = "${GITHUB_REF_NAME}" ] && VERSION="$(git rev-parse --short HEAD)"
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
           docker tag pseudex:compiled "${REGISTRY}/${IMAGE}:${VERSION}"
-          # РЕТРАЙ НА ПУШ. Реестр дважды ронял релиз уже ПОСЛЕ зелёных гейтов —
-          # `context deadline exceeded` на манифесте и `dial tcp ... i/o timeout`
-          # на слое: падал не продукт, а сеть на последнем шаге, и выкат вставал
-          # до ручного перезапуска. Пуш идемпотентен (уже загруженные слои
-          # пропускаются), поэтому повтор дёшев и безопасен. НЕ `|| true`:
-          # исчерпав попытки, шаг обязан упасть — иначе подпишем то, чего в
-          # реестре нет.
-          for attempt in 1 2 3 4; do
-            docker push "${REGISTRY}/${IMAGE}:${VERSION}" && break
-            [ "${attempt}" = 4 ] && { echo "::error::пуш ${IMAGE}:${VERSION} не прошёл за 4 попытки"; exit 1; }
-            echo "пуш не прошёл (попытка ${attempt}), повтор через $((attempt * 15))с"
-            sleep $((attempt * 15))
-          done
 
-      # OUR OWN TWO IMAGES, BUILT HERE AND NOT ON THE HOST.
+      # OUR OWN IMAGES, BUILT HERE AND NOT ON THE HOST.
       #
       # They used to be `build:` entries in deploy/compose.yml, which means
       # `docker compose build` on the production machine — and then nothing
@@ -261,14 +257,7 @@ jobs:
       # host can differ from a build here for a dozen boring reasons (a stale
       # layer cache, a base image that moved, a file that is gitignored on one
       # side), and the difference surfaces as a bug nobody can reproduce.
-      #
-      # Signed for the same reason the customer image is, even though only we
-      # pull them: the deploy agent VERIFIES the signature before it restarts
-      # anything, so a registry compromise cannot become a production
-      # compromise. An unsigned image would make that check impossible and the
-      # agent would be trusting the registry — which is exactly the thing a
-      # signature exists to stop trusting.
-      - name: build and push our own images
+      - name: build our own images
         run: |
           set -eu
           for pair in "licensing:prototype:licensing/Dockerfile" "storefront:storefront:Dockerfile" "backup:deploy:Dockerfile.backup" "supportbot:deploy/supportbot:Dockerfile"; do
@@ -276,14 +265,7 @@ jobs:
             CTX="${REST%%:*}"; FILE="${REST#*:}"
             REF="${REGISTRY}/pseudex-${NAME}:${VERSION}"
             docker build -f "${CTX}/${FILE}" -t "${REF}" "${CTX}"
-            # Тот же ретрай, что и выше: именно здесь релиз упал на pseudex-backup.
-            for attempt in 1 2 3 4; do
-              docker push "${REF}" && break
-              [ "${attempt}" = 4 ] && { echo "::error::пуш ${REF} не прошёл за 4 попытки"; exit 1; }
-              echo "пуш не прошёл (попытка ${attempt}), повтор через $((attempt * 15))с"
-              sleep $((attempt * 15))
-            done
-            echo "pushed ${REF}"
+            echo "built ${REF}"
           done
 
       # БЕСПЛАТНАЯ ЗАМЕНА ПЛАТНОМУ СКАНИРОВАНИЮ РЕЕСТРА.
@@ -307,7 +289,7 @@ jobs:
       # выполнился (нет доступа к реестру, упал jq, пустой файл), обязан
       # покраснеть: зелёный шаг без отчёта — ровно тот случай, ради которого
       # сканирование и ставили.
-      - name: scan the images before signing
+      - name: scan the images before pushing
         env:
           TRIVY_CACHE_DIR: /tmp/trivy-cache
         run: |
@@ -317,15 +299,21 @@ jobs:
             | sh -s -- -b /tmp/bin >/dev/null
           /tmp/bin/trivy image --download-db-only --quiet
           rm -f /tmp/scan-failed
-          for name in ${IMAGES}; do
-            /tmp/bin/trivy image --quiet --scanners vuln --severity CRITICAL,HIGH \
-              --ignore-unfixed --format json \
-              -o "/tmp/scan-${name}.json" "${REGISTRY}/${name}:${VERSION}" &
-          done
-          wait
           printf '%-24s %9s %9s\n' ОБРАЗ CRITICAL HIGH
+          # ПОСЛЕДОВАТЕЛЬНО, А НЕ ПАРАЛЛЕЛЬНО, И ЭТО ИЗМЕРЕНО. Пять
+          # одновременных `trivy image` с общим кэшем падают с «unable to
+          # initialize cache: cache may be in use by another process: timeout» —
+          # файловый кэш Trivy не рассчитан на несколько процессов. На v0.3.10
+          # это дало пять пустых отчётов и красный гейт при ЖИВЫХ образах.
+          # База скачивается один раз (16 с), скан образа занимает секунды,
+          # поэтому последовательный прогон стоит около минуты — дешевле, чем
+          # отдельный кэш на каждый образ и объяснение этого в комментарии.
           for name in ${IMAGES}; do
             report="/tmp/scan-${name}.json"
+            rm -f "${report}"
+            /tmp/bin/trivy image --quiet --scanners vuln --severity CRITICAL,HIGH \
+              --ignore-unfixed --format json -o "${report}" \
+              "${REGISTRY}/${name}:${VERSION}" || true
             if [ ! -s "${report}" ]; then
               printf '%-24s %9s %9s\n' "${name}" "—" "—"
               echo "::error::${name}: отчёта нет, скан не выполнился"
@@ -341,6 +329,25 @@ jobs:
             echo "::error::исправимые CRITICAL в образах: $(tr '\n' ' ' < /tmp/scan-failed)"
             exit 1
           fi
+
+      - name: push the images
+        # ПУШ ПОСЛЕ СКАНА. Ретрай тот же и по той же причине: реестр дважды
+        # ронял релиз уже после зелёных гейтов — `context deadline exceeded` на
+        # манифесте и `dial tcp … i/o timeout` на слое. Пуш идемпотентен, поэтому
+        # повтор дёшев. НЕ `|| true`: исчерпав попытки, шаг обязан упасть —
+        # иначе подпишем то, чего в реестре нет.
+        run: |
+          set -eu
+          for name in ${IMAGE} pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot; do
+            REF="${REGISTRY}/${name}:${VERSION}"
+            for attempt in 1 2 3 4; do
+              docker push "${REF}" && break
+              [ "${attempt}" = 4 ] && { echo "::error::пуш ${REF} не прошёл за 4 попытки"; exit 1; }
+              echo "пуш не прошёл (попытка ${attempt}), повтор через $((attempt * 15))с"
+              sleep $((attempt * 15))
+            done
+            echo "pushed ${REF}"
+          done
 
       - name: sign the digests
         # ПОДПИСЬ ПОСЛЕ СКАНА, А НЕ ДО НЕГО. Подписанный образ агент считает
