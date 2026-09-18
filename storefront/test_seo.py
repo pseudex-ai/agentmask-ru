@@ -19,7 +19,9 @@
 """
 import json
 import os
+import pathlib
 import re
+import struct
 import sys
 
 _SITE = "https://pseudex.test"
@@ -147,11 +149,55 @@ def main() -> int:
     # ── иконка для выдачи ─────────────────────────────────────────────────
     # Браузер и робот вроде YandexFavicons просят `/favicon.ico` сами, без
     # ссылки на него. Без ответа это 404 — а 404 кормит счётчик fail2ban.
+    # ИКОНКА ОТДАЁТСЯ, А НЕ ПЕРЕАДРЕСУЕТСЯ. Здесь стоял 301 на SVG, и Вебмастер
+    # назвал это ошибкой ОТДЕЛЬНОЙ СТРОКОЙ своей таблицы — «файл перенаправляет
+    # на другой адрес»; проверка 17.09.2026 ответила «Добавьте файл favicon в
+    # формате SVG или размером 120 × 120 пикселей». То есть эта проверка
+    # стерегла ровно то поведение, на которое жаловался робот.
     favicon = client.get("/favicon.ico")
-    check(favicon.status_code == 301
-          and favicon.get("Location", "") == "/static/favicon.svg",
-          "favicon.ico уведён на настоящую иконку",
-          f"{favicon.status_code} {favicon.get('Location', '')}")
+    check(favicon.status_code == 200
+          and favicon["Content-Type"] == "image/x-icon",
+          "favicon.ico отдаётся файлом с кодом 200, а не редиректом",
+          f"{favicon.status_code} {favicon.get('Content-Type', '')}")
+    # `FileResponse` потоковый, поэтому тело собирается из `streaming_content`:
+    # у него нет `.content`, и обращение к нему падает — а падение в проверке
+    # выглядит как красный тест там, где всё в порядке.
+    icon_bytes = b"".join(favicon.streaming_content)
+    check(len(icon_bytes) > 500 and icon_bytes[:4] == b"\x00\x00\x01\x00",
+          "и это настоящая иконка ICO, а не пустышка",
+          f"{len(icon_bytes)} Б, начало {icon_bytes[:4]!r}")
+
+    # РАЗМЕР ИЗ ВЕКТОРА НЕ ВЫВОДИТСЯ РОБОТОМ. Требование — 120×120, 32×32 или
+    # 16×16; SVG только с `viewBox` размера не несёт, и в браузере он при этом
+    # выглядит совершенно правильно.
+    vector = pathlib.Path(__file__).resolve().parent / "static" / "favicon.svg"
+    svg = vector.read_text(encoding="utf-8")
+    check('width="32"' in svg and 'height="32"' in svg,
+          "у векторной иконки размер задан явно, а не только viewBox")
+    # РАЗМЕР ЧИТАЕТСЯ ИЗ ЗАГОЛОВКА PNG, А НЕ ЧЕРЕЗ Pillow. Pillow намеренно не
+    # в `requirements.txt` — он нужен только рисовалке, а боевой образ не должен
+    # носить её ради картинки, которая меняется раз в год. Первые 24 байта PNG —
+    # сигнатура и IHDR, и там ширина с высотой лежат по фиксированным смещениям.
+    for name, size in (("favicon-120.png", (120, 120)),
+                       ("favicon-180.png", (180, 180))):
+        raster = pathlib.Path(__file__).resolve().parent / "static" / name
+        raw = raster.read_bytes()
+        check(raw[:8] == b"\x89PNG\r\n\x1a\n" and raw[12:16] == b"IHDR",
+              f"{name} — настоящий PNG", raw[:16])
+        got = struct.unpack(">II", raw[16:24])
+        check(got == size, f"{name} действительно {size[0]}×{size[1]}", str(got))
+
+    # ТРИ ССЫЛКИ — ОДНА И ТА ЖЕ КАРТИНКА. Вебмастер предупреждает: при
+    # нескольких ссылках робот вправе взять любую. Дублировать форматы можно,
+    # только если все они нарисованы из одного исходника.
+    head = client.get("/").content.decode()
+    for needle, why in (
+            ('rel="icon" href="/static/favicon', "векторная"),
+            ('type="image/svg+xml"', "с правильным типом для вектора"),
+            ('type="image/png" sizes="120x120"', "растровая 120×120"),
+            ('href="/favicon.ico" type="image/x-icon"', "корневой .ico"),
+            ('rel="apple-touch-icon"', "иконка для закладок Apple")):
+        check(needle in head, f"в <head> объявлена {why}", needle)
 
     # ── подтверждение прав в Вебмастере ───────────────────────────────────
     # Тег выглядит мусором ровно до дня, когда его удаляют «при рефакторинге
@@ -241,7 +287,11 @@ def main() -> int:
         # и тащить его в зависимости витрины ради одной проверки значило бы
         # положить его в боевой образ. Ширина и высота лежат в байтах 16..24
         # блока IHDR — это часть формата, а не догадка.
-        import struct
+        #
+        # ИМПОРТ ЗДЕСЬ БЫЛ, И ОН ЖЕ ЛОМАЛ ПРОВЕРКУ ИКОНКИ ВЫШЕ: имя, присвоенное
+        # внутри функции, Python считает локальным НА ВСЮ функцию, поэтому
+        # обращение к `struct` до этой строки падало с UnboundLocalError. Один
+        # импорт на модуль — наверху.
         head = cover.read_bytes()[:24]
         png = head[:8] == b"\x89PNG\r\n\x1a\n"
         size = struct.unpack(">II", head[16:24]) if png else (0, 0)

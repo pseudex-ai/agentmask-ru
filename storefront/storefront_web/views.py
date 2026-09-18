@@ -20,7 +20,7 @@ from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import F
-from django.http import Http404, HttpResponse
+from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -396,6 +396,37 @@ def _legal_context() -> dict[str, object]:
         "grace_days": services.GRACE_DAYS,
         "updated": datetime.date.fromtimestamp(max(stamps)).strftime("%d.%m.%Y"),
     }
+
+
+def favicon(request):
+    """Отдать `/favicon.ico` НАСТОЯЩИМ файлом, кодом 200.
+
+    ЗДЕСЬ БЫЛ 301 НА `/static/favicon.svg`, И ЭТО РОВНО ТА ОШИБКА, КОТОРУЮ
+    НАЗЫВАЕТ ВЕБМАСТЕР. В его таблице причин у иконки есть отдельная строка —
+    «файл перенаправляет на другой адрес», — и проверка 17.09.2026 ответила:
+    «Добавьте файл favicon в формате SVG или размером 120 × 120 пикселей».
+
+    Раньше редирект был осмысленным: он уводил запрос робота от 404, а 404 на
+    этом сайте кормит счётчик fail2ban, который банит на уровне пакетов. Но 404
+    и 301 — не одно и то же: 404 робот просто отмечает, а 301 считает ошибкой и
+    иконку не берёт. Файл теперь отдаётся, а не переадресуется.
+
+    ИКОНКА ЛЕЖИТ В `static/`, ХОТЯ АДРЕС КОРНЕВОЙ. Справка требует файл с
+    именем `favicon` в корне сайта, но рядом же разрешает ссылку из `<head>` на
+    любой адрес. Здесь и то и другое: `/favicon.ico` отвечает 200 и остаётся
+    одним файлом с остальными иконками, а не второй копией.
+
+    ВЕКТОРНАЯ ИКОНКА ОСТАЁТСЯ ГЛАВНОЙ — она в разметке первой, и браузеры
+    берут её. Этот файл нужен тем, кто просит корневой `.ico` сам: старым
+    браузерам, закладкам и роботу YandexFavicons.
+    """
+    import pathlib as _pathlib
+    path = (_pathlib.Path(__file__).resolve().parent.parent
+            / "static" / "favicon.ico")
+    response = FileResponse(path.open("rb"), content_type="image/x-icon")
+    # Сутки: иконка меняется раз в год, а запрашивает её каждый новый посетитель.
+    response["Cache-Control"] = "public, max-age=86400"
+    return response
 
 
 def consent(request):

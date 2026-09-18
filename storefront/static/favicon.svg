@@ -2,7 +2,11 @@
      Not the header mark scaled down: at 16px the outlined square loses its
      stroke and the two shapes merge into a blob. This version inverts — solid
      accent tile, shapes knocked out — which is what the sheet specifies. -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+<!-- width/height ЯВНО, А НЕ ТОЛЬКО viewBox. Вебмастер требует размер
+     120x120, 32x32 или 16x16, а из одного viewBox растеризатор размер не
+     выводит: иконка выглядит корректной в браузере и не проходит проверку
+     у робота. Здесь тот же 32x32, что и в разметке. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
   <rect width="32" height="32" fill="#b3a0ea"/>
   <rect x="4" y="12" width="16" height="16" rx="4.5" fill="#17171a"/>
   <rect x="12" y="4" width="16" height="16" rx="4.5" fill="#b3a0ea" stroke="#17171a" stroke-width="2.4"/>

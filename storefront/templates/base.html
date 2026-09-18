@@ -64,7 +64,23 @@
 <meta property="og:image:alt" content="pseudex — шлюз персональных данных для LLM-агентов">
 <meta name="twitter:card" content="summary_large_image">
 {% endwith %}{% endwith %}
+{% comment %}
+ИКОНКА В ТРЁХ ФОРМАХ, И ВСЕ ТРИ — ОДНА И ТА ЖЕ КАРТИНКА. Вебмастер прямо
+   предупреждает: «если ссылка на фавиконку прописана несколько раз, робот может
+   выбрать любую из этих фавиконок» — поэтому форматы допустимо дублировать
+   только тогда, когда все они нарисованы из одного исходника (здесь — из
+   `favicon.svg`, растеризованного в PNG и ICO тем же скриптом).
+
+   ПОЧЕМУ ИХ ТРИ, А НЕ ОДНА. Векторную иконку берут современные браузеры, и она
+   масштабируется без потерь. PNG 120×120 назван в требованиях Вебмастера
+   отдельно — «размер 120 × 120 или формат SVG позволяют отображать логотип
+   чётче». ICO в корне нужен тем, кто просит `/favicon.ico` сам: закладкам,
+   старым браузерам и роботу, который рисует иконку в выдаче.
+{% endcomment %}
 <link rel="icon" href="{% static 'favicon.svg' %}" type="image/svg+xml">
+<link rel="icon" href="{% static 'favicon-120.png' %}" type="image/png" sizes="120x120">
+<link rel="icon" href="/favicon.ico" type="image/x-icon" sizes="16x16 32x32 48x48">
+<link rel="apple-touch-icon" href="{% static 'favicon-180.png' %}">
 <link rel="stylesheet" href="{% static 'site.css' %}">
 {% block head %}{% endblock %}
 </head>
