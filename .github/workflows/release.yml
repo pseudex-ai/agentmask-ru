@@ -253,14 +253,6 @@ jobs:
             sleep $((attempt * 15))
           done
 
-      - name: sign the digest
-        # The digest, never the tag: a tag is mutable, so a signature over one
-        # says nothing about the bytes a customer eventually pulls. This is what
-        # `cosign verify` on their side actually checks.
-        run: |
-          DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${REGISTRY}/${IMAGE}:${VERSION}")"
-          cosign sign --yes "${DIGEST}"
-
       # OUR OWN TWO IMAGES, BUILT HERE AND NOT ON THE HOST.
       #
       # They used to be `build:` entries in deploy/compose.yml, which means
@@ -276,7 +268,7 @@ jobs:
       # compromise. An unsigned image would make that check impossible and the
       # agent would be trusting the registry — which is exactly the thing a
       # signature exists to stop trusting.
-      - name: build, push and sign our own images
+      - name: build and push our own images
         run: |
           set -eu
           for pair in "licensing:prototype:licensing/Dockerfile" "storefront:storefront:Dockerfile" "backup:deploy:Dockerfile.backup" "supportbot:deploy/supportbot:Dockerfile"; do
@@ -291,9 +283,81 @@ jobs:
               echo "пуш не прошёл (попытка ${attempt}), повтор через $((attempt * 15))с"
               sleep $((attempt * 15))
             done
-            DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${REF}")"
+            echo "pushed ${REF}"
+          done
+
+      # БЕСПЛАТНАЯ ЗАМЕНА ПЛАТНОМУ СКАНИРОВАНИЮ РЕЕСТРА.
+      #
+      # В Container Registry было включено «Сканирование Docker-образов при
+      # загрузке»: 14,49 ₽ за образ, 90 сканирований за две недели и 1 217 ₽ из
+      # 1 226 ₽ всего счёта. Хуже цены другое — результат никто не смотрел:
+      # образ к тому моменту УЖЕ загружен и подписан, откатывать поздно, а
+      # находки лежат во вкладке, куда никто не заходит.
+      #
+      # Trivy делает то же бесплатно и ДО подписи, то есть до того, как образ
+      # станет выкатываемым. Пять образов сканируются ПАРАЛЛЕЛЬНО, база
+      # скачивается один раз: шаг занимает около минуты, а не пять.
+      #
+      # ПОРОГ — CRITICAL, ДЛЯ КОТОРОГО ЕСТЬ ИСПРАВЛЕНИЕ. Уязвимость без
+      # исправления заблокировала бы релизы навсегда: она живёт в базовом образе,
+      # пока Debian её не выпустит, и не выкатываться это время нельзя. HIGH
+      # печатается и не блокирует — так видно, к чему готовиться.
+      #
+      # ОТСУТСТВИЕ ОТЧЁТА — ЭТО ПРОВАЛ, А НЕ ПРОПУСК. Скан, который не
+      # выполнился (нет доступа к реестру, упал jq, пустой файл), обязан
+      # покраснеть: зелёный шаг без отчёта — ровно тот случай, ради которого
+      # сканирование и ставили.
+      - name: scan the images before signing
+        env:
+          TRIVY_CACHE_DIR: /tmp/trivy-cache
+        run: |
+          set -eu
+          IMAGES="${IMAGE} pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot"
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /tmp/bin >/dev/null
+          /tmp/bin/trivy image --download-db-only --quiet
+          rm -f /tmp/scan-failed
+          for name in ${IMAGES}; do
+            /tmp/bin/trivy image --quiet --scanners vuln --severity CRITICAL,HIGH \
+              --ignore-unfixed --format json \
+              -o "/tmp/scan-${name}.json" "${REGISTRY}/${name}:${VERSION}" &
+          done
+          wait
+          printf '%-24s %9s %9s\n' ОБРАЗ CRITICAL HIGH
+          for name in ${IMAGES}; do
+            report="/tmp/scan-${name}.json"
+            if [ ! -s "${report}" ]; then
+              printf '%-24s %9s %9s\n' "${name}" "—" "—"
+              echo "::error::${name}: отчёта нет, скан не выполнился"
+              echo "${name}" >> /tmp/scan-failed
+              continue
+            fi
+            critical="$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' "${report}")"
+            high="$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")] | length' "${report}")"
+            printf '%-24s %9s %9s\n' "${name}" "${critical}" "${high}"
+            [ "${critical}" = "0" ] || echo "${name}" >> /tmp/scan-failed
+          done
+          if [ -f /tmp/scan-failed ]; then
+            echo "::error::исправимые CRITICAL в образах: $(tr '\n' ' ' < /tmp/scan-failed)"
+            exit 1
+          fi
+
+      - name: sign the digests
+        # ПОДПИСЬ ПОСЛЕ СКАНА, А НЕ ДО НЕГО. Подписанный образ агент считает
+        # доказанным и выкатывает, поэтому подписать раньше проверки значило бы
+        # поставить печать на то, чего ещё не смотрели. Порядок здесь и есть
+        # гейт: упавший скан оставляет образы неподписанными, и агент их не
+        # возьмёт — он проверяет подпись до того, как что-либо остановит.
+        #
+        # The digest, never the tag: a tag is mutable, so a signature over one
+        # says nothing about the bytes a customer eventually pulls. This is what
+        # `cosign verify` on their side actually checks.
+        run: |
+          set -eu
+          for name in ${IMAGE} pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot; do
+            DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${REGISTRY}/${name}:${VERSION}")"
             cosign sign --yes "${DIGEST}"
-            echo "pushed and signed ${DIGEST}"
+            echo "signed ${DIGEST}"
           done
 
       # THE MANIFEST THE HOST READS. The deploy agent must not guess which
