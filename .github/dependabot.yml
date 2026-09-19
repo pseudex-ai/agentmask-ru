@@ -29,3 +29,36 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+
+  # БАЗОВЫЕ ОБРАЗЫ — ТО ЖЕ САМОЕ, ЧТО ACTIONS, И ПО ТОЙ ЖЕ ПРИЧИНЕ. `FROM
+  # python:3.12-slim-trixie` указывал на то, что Debian выложил последним:
+  # пересборка под тем же тегом меняла дайджест, Docker пересобирал всё ниже
+  # `FROM`, и релиз шёл 49 минут вместо 20. Теперь основа закреплена, а двигает
+  # её эта запись — иначе пин зарос бы.
+  #
+  # DEPENDABOT ЛОВИТ ИМЕННО НАШ СЛУЧАЙ: он умеет замечать новый дайджест У ТОГО
+  # ЖЕ ТЕГА. Это и есть «silent rebuild» — Debian пересобирает образ, не трогая
+  # тег (проверено по матрице поддержки инструментов у Chainguard/Bret Fisher:
+  # «Detect new digests for the same tag» — Dependabot: Yes, Dockerfiles: Yes).
+  #
+  # КУЛДАУН И МАЖОРЫ — ТЕ ЖЕ, ЧТО У ACTIONS. Неделя, потому что свежая
+  # пересборка может содержать регресс, который откатят; мажор — решение, а не
+  # бамп.
+  - package-ecosystem: docker
+    directories:
+      - /prototype
+      - /prototype/licensing
+      - /storefront
+    cooldown:
+      default-days: 7
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Moscow
+    groups:
+      base-images:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

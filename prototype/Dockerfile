@@ -21,8 +21,21 @@
 # Pinned to the same Debian release as Dockerfile.nuitka. Parity (gate P3/P4)
 # compares this image against the compiled one, so they must differ only in HOW
 # the engine is built — not in which libc, OpenSSL or timezone data they carry.
-FROM python:3.12-slim-trixie
+# ОСНОВА ЗАКРЕПЛЕНА ПО ДАЙДЖЕСТУ, А НЕ ПО ПЛАВАЮЩЕМУ ТЕГУ. `-trixie` указывает
+# на то, что Debian выложил ПОСЛЕДНИМ: он пересобирает образ под тем же тегом
+# («silent rebuild»), дайджест меняется, и Docker пересобирает всё, что ниже
+# `FROM` — у движка это компиляция Nuitka, 35–45 минут вместо 20. С дайджестом
+# основа не меняется, пока её не поменяем мы.
+#
+# ДВИГАЕТ ЕГО DEPENDABOT, А НЕ РУКА. Пин, который никто не двигает, гниёт —
+# поэтому в `.github/dependabot.yml` добавлена экосистема `docker` с тем же
+# недельным кулдауном, что у Actions. Dependabot умеет замечать новый дайджест
+# У ТОГО ЖЕ ТЕГА, то есть ловит ровно silent rebuild.
+#
+# ТЕГ ОСТАЁТСЯ РАДИ ЛЮДЕЙ: когда есть дайджест, Docker тег игнорирует и тянет по
+# дайджесту. Поэтому их обязательно двигать ВМЕСТЕ — Dependabot двигает оба.
 
+FROM python:3.12-slim-trixie@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9
 # ОБНОВЛЕНИЕ ПАКЕТОВ БАЗОВОГО ОБРАЗА, И ОБЯЗАТЕЛЬНО В ОБОИХ ОБРАЗАХ ДВИЖКА.
 # Тег `*-slim-trixie` фиксирует срез Debian на день публикации, поэтому
 # perl-base остаётся в нём прежним, пока образ не пересоберут: сканер нашёл

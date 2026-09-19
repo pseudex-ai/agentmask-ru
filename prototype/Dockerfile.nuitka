@@ -34,10 +34,23 @@
 #     --build-arg ARKARI_IMAGE=pseudex-arkari-clang:llvm20 \
 #     --build-arg PSEUDEX_OBFUSCATE=1 ...
 ARG ARKARI_IMAGE=debian:trixie-slim
+# ОСНОВА ЗАКРЕПЛЕНА ПО ДАЙДЖЕСТУ, А НЕ ПО ПЛАВАЮЩЕМУ ТЕГУ. `-trixie` указывает
+# на то, что Debian выложил ПОСЛЕДНИМ: он пересобирает образ под тем же тегом
+# («silent rebuild»), дайджест меняется, и Docker пересобирает всё, что ниже
+# `FROM` — у движка это компиляция Nuitka, 35–45 минут вместо 20. С дайджестом
+# основа не меняется, пока её не поменяем мы.
+#
+# ДВИГАЕТ ЕГО DEPENDABOT, А НЕ РУКА. Пин, который никто не двигает, гниёт —
+# поэтому в `.github/dependabot.yml` добавлена экосистема `docker` с тем же
+# недельным кулдауном, что у Actions. Dependabot умеет замечать новый дайджест
+# У ТОГО ЖЕ ТЕГА, то есть ловит ровно silent rebuild.
+#
+# ТЕГ ОСТАЁТСЯ РАДИ ЛЮДЕЙ: когда есть дайджест, Docker тег игнорирует и тянет по
+# дайджесту. Поэтому их обязательно двигать ВМЕСТЕ — Dependabot двигает оба.
+
 FROM ${ARKARI_IMAGE} AS arkari
 
-FROM python:3.12-slim-trixie AS build
-
+FROM python:3.12-slim-trixie@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9 AS build
 # patchelf is required by Nuitka standalone to fix up the RPATHs of the bundled
 # shared objects (pyrage, cryptography and sqlcipher3 are compiled extensions).
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -203,8 +216,7 @@ RUN if [ -n "$PSEUDEX_OBFUSCATE" ]; then \
 
 # Runtime carries no Python at all: the standalone build brings its own libpython.
 # Must be the SAME Debian release as the build stage — see the note at the top.
-FROM debian:trixie-slim
-
+FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
 # ОБНОВЛЕНИЕ ПАКЕТОВ БАЗОВОГО ОБРАЗА, И ОБЯЗАТЕЛЬНО В ОБОИХ ОБРАЗАХ ДВИЖКА.
 # Тег `*-slim-trixie` фиксирует срез Debian на день публикации, поэтому
 # perl-base остаётся в нём прежним, пока образ не пересоберут: сканер нашёл
