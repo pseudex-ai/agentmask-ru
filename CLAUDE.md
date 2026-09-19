@@ -1,6 +1,28 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file guides Claude Code in this repository. **The agent wiki is the source
+of truth for how the code is laid out and why; this file carries the commands,
+the architecture prose, and the few load-bearing invariants, and embeds the map.**
+
+## The agent wiki (`wiki/`) — read this before working
+
+| file | what it gives you |
+|---|---|
+| [`wiki/MAP.md`](wiki/MAP.md) | where every module, test, benchmark, doc and deploy file lives, who calls it, which test pins it. Embedded below under **Repository map**. |
+| [`wiki/FLOWS.md`](wiki/FLOWS.md) | how a request, a lease, a store and a build move through the code, step by step, with the real function names. |
+| [`wiki/INVARIANTS.md`](wiki/INVARIANTS.md) | the 178 rules a change must not break, grouped by module, each with the test that holds it. The six "Rules that changes must not break" sections that used to live in this file are there now. |
+| [`wiki/STATE.md`](wiki/STATE.md) | every decision, the alternative rejected and the price — the `D-NNN` log. Supersedes `docs/decisions.md`. |
+| [`wiki/INDEX.md`](wiki/INDEX.md) | what each file in `docs/` and `research/` answers, and its status. |
+
+**Keeping the wiki honest.** Do not edit the **Repository map** block below by
+hand — edit `wiki/MAP.md` and run `python3 wiki/check.py --sync`. `wiki/check.py`
+verifies that every path the wiki names exists, that the map matches the real
+import graph, that every FLOWS symbol is real, that every invariant names a test
+that exists, and that this file's embedded copy equals `wiki/MAP.md`; it runs in
+CI (`.github/workflows/checks.yml`). After changing `check.py` itself, run
+`python3 wiki/check.py --selftest` (it breaks the wiki in known ways and demands
+a red for each). When you add a module, a test, a benchmark, a doc, a deploy
+file, a rule or a decision, add its row to the wiki in the same change.
 
 ## What this is
 
@@ -17,6 +39,7 @@ consume (gazetteers, street vocabulary, cue words, priority table) lives in `pro
 never ships, and is leased to the running container as an encrypted bundle that exists only in
 memory. `docs/tz-license-packaging.md` is the spec for that; `docs/spec.md` §2 is the product
 decision behind it.
+
 
 ## Commands
 
@@ -120,6 +143,7 @@ docker build -t pseudex:latest . && docker run -p 8000:8000 -v pseudex-data:/dat
 
 Scripts needing a live LLM (`agent_demo.py`, `response_test.py`, `live_eval.py`) expect the proxy
 running on `localhost:4000` with a seeded `pseudex-dev` tenant.
+
 
 ## Architecture
 
@@ -321,111 +345,6 @@ makes the rule mean anything and what makes it safe, and one change buys both.**
 - `unmask_text` also does a **digit-signature reindex** so a numeric token the model *reformatted*
   (`+7…` → `8…`, separators stripped) still detokenizes.
 
-## Rules that changes must not break
-
-- **Fail-closed.** Any error in masking must propagate to a 5xx. Never fall back to passing text
-  through unmasked — the caller treats an error as a block, and that is the whole safety story.
-- **No PII pre-filter, ever.** A `maybe_contains_pii` gate existed and was removed: it silently
-  stopped being a superset of the recognizers (Latin names, `{"name":"john"}`) and leaked raw PII.
-  A pre-filter would have to stay a perfect permanent superset of every recognizer's triggers.
-  The content cache already removes the repeated-work cost; detection always runs.
-- **Never re-feed masked output into detection.** `mask(mask(x)) != mask(x)` — a fake phone is a
-  valid phone shape. The cache keys on RAW content for exactly this reason; "skip already-masked
-  messages" is a wrong optimization.
-- **Keep normalization 1:1.** Any substitution that changes length breaks every span offset
-  downstream, including `/spans` (which the UI uses to highlight the *original* text).
-- **`_morph_compat` must be imported before any `from natasha import …`** — it aliases
-  pymorphy2→pymorphy3 at module-load time, and natasha binds the name eagerly.
-- **`/spans` and `peek_token` are read-only** — rendering a dialog must never mint tokens or
-  write audit.
-- Audit stores type + token + a masked preview only. It is not a second PII surface; the full
-  value lives only in the vault (and `/reveal`, on explicit request).
-- **Every `/reveal` is recorded, and `actor` is required.** The record holds who / which token /
-  when — never the value, or the access log becomes the second copy of the data the vault exists
-  to contain. Misses are recorded too: a sweep of guessed tokens leaves no other trace. The ENGINE
-  writes it, not the UI — a log written by the caller about itself is not a log, and `curl` against
-  the sidecar is a supported shape.
-- **`requests` is a request counter, not `sum(entities)`.** It was the latter, so a plan sold as
-  "100 000 запросов" was consumed once per detected VALUE — several times faster than quoted and
-  impossible to reconcile against the customer's own gateway log. A request that finds no PII is
-  still billable, so it cannot be derived from the events table.
-- The self-check runs the REAL `/mask` + `/unmask` under `SELFCHECK_ORG`, which `billing_totals`
-  excludes: a customer proving our product works must not pay for it.
-- **No bundle means no detection, not less detection.** `names.py` used to treat an empty
-  dictionary as a supported state; that is inverted now. A gateway detecting with half its
-  gazetteer leaks silently, which is worse than a stopped service.
-- **A leased regex carries its own case flag** (`(?i)` inside the pattern source). Applying
-  `re.IGNORECASE` uniformly at compile time turned the marker-less address pattern's
-  `[А-ЯЁ][а-яё]+` from "a Capitalised word" into "any word" — "течение 12" became an address, and
-  those inflated LOC spans outranked NAME and swallowed real people (-12 PERSON on NEREL).
-- **`pseudex/` must never import from `licensing/`.** The licensing package holds the assets; an
-  import would drag them into the image and defeat the lease. Shared code goes the other way
-  (`pseudex/bundle.py` is imported BY the server).
-- The engine writes nothing to its own filesystem (`PYTHONDONTWRITEBYTECODE=1`), so "did the
-  container write a file" has a clean answer — gate L5 depends on it.
-- **`pseudex/` must never `import sqlite3`.** Stdlib sqlite3 accepts `PRAGMA key` WITHOUT raising
-  and writes plain text, so `except ImportError: import sqlite3` is a product that claims
-  encryption and silently has none. One driver (`sqlcipher3`), no branch; both Dockerfiles fail
-  the build on such an import, and P9 proves it from outside by opening the release image's own
-  volume with stdlib SQLite. The driver's exception classes are NOT subclasses of the stdlib
-  ones — not `IntegrityError`, not `OperationalError` — so handlers name the ones exported from
-  `sqlite_setup`.
-- **A SUBSTITUTE IS DRAWN FROM THE SAME STRING SPACE AS REAL VALUES, so sooner
-  or later it IS one.** A fake name is a well-formed name, a fake address a
-  well-formed address, a fake date a real date — and then one string means two
-  people at once. Backwards, the model writes the substitute and detokenization
-  hands the tool the OTHER person's data, sometimes a chimera («Кирилл Бородин»
-  restored as «Ян Бородин», each word resolved against a different row).
-  Forwards, the real bearer arrives in the traffic, `is_minted_token` says «this
-  is ours» and sends them to the model IN THE CLEAR, for ever. Measured on 2979
-  real people from NEREL: 3-7 backwards and 2-3 forwards per run, plus 10 dates
-  of birth per 800 once DOB started minting a date instead of `REDACTED…`. The
-  two halves need different answers, and neither answers the other:
-  * BACKWARDS is knowable at mint time — the real value is already in the vault
-    — so `_unique_token` refuses a candidate equal to any `canonical`, any
-    `canonical_fold`, or the value being minted for right now. That last one is
-    not pedantry: the row does not exist yet, and «15.06.1963» was minted as
-    «15.06.1963» — a date masked into itself and thereafter skipped for everyone
-    who shares it. Written as one `OR` the check planned a scan of every row the
-    customer has (1.27 ms at 20 000 rows, on a path that runs up to 200 times);
-    `UNION ALL` gives each branch its own covering index and costs 2 µs.
-  * FORWARDS is not knowable at mint time, and the discriminator is the
-    CONVERSATION. Our own substitute comes back to us inside the dialogue it was
-    handed to; a customer's contact who happens to bear that name walks in from
-    another one. `tokens.minted_in` carries it and `is_minted_token` compares.
-    A NULL (a row minted before the column) and an empty scope both behave as
-    before — a caller that named no conversation has nothing to compare.
-- **AGENT MEMORY IS AN ECHO FROM ANOTHER DIALOGUE, and the conversation scope
-  reads it as a stranger.** Every long-term memory store in the field keys by
-  USER, not by conversation (LangGraph Store, Mem0, Google ADK, Anthropic's
-  memory tool; `fork` and a per-agent handoff session arrive at the same place
-  by other means), so the text the host injects carries the substitute the model
-  was shown in an earlier dialogue. Judged at conversation scope it is masked a
-  SECOND time and the tool receives the FIRST dialogue's fake — 200 OK, empty
-  residual list. Widening the question costs a real person: `is_minted_token`
-  is also what stops us masking somebody who bears a name minted elsewhere, and
-  at customer scope they reach the model in the clear (2-3 per run on 2979
-  NEREL people). So the default does NOT move — 152-ФЗ counts the leak, not the
-  broken tool call — and a host with memory declares it: `pseudonym_scope` on
-  `/mask`, `PSEUDEX_PSEUDONYM_SCOPE` for the process. `Vault.with_pseudonym_scope`
-  holds the argument; `test_collisions` pins BOTH halves of the trade, because a
-  price stated only in a comment is a price nobody re-measures.
-- **The role of the message is NOT that discriminator, and using it would leak
-  everything.** The answer is detokenized before it is returned, so the assistant
-  messages the customer re-sends carry REAL values, not tokens. «assistant means
-  echo, do not mask» would hand the model every real value it ever mentioned, on
-  every later turn. Demonstrated, not argued.
-- **The conversation scope has a price and it is identity churn.** A derived
-  `conversation_key` reads the first two messages, so a trimmed transcript is a
-  new conversation and that dialogue's own substitutes are re-masked: the person
-  gets a second pseudonym mid-conversation and the entity is billed again. The
-  round trip still returns the real value (measured) — this costs coherence, not
-  correctness — and it is one more reason a caller should pass an explicit
-  `conversation_id` rather than let one be derived. A leak is worse than churn,
-  which is the whole trade.
-- **`bench_masking.py` and `profile_latency.py` cannot see the storage layer**: both use
-  `Vault(":memory:")`, so an encryption change leaves their numbers identical by construction.
-  "The bench did not move" is not evidence that a disk-layer change is free.
 
 ## Concurrency and perf model
 
@@ -449,6 +368,7 @@ Env knobs: `PSEUDEX_DB_DIR`, `PSEUDEX_WORKERS`, `PSEUDEX_MASK_CONCURRENCY`, `PSE
 `PSEUDEX_VAULT_ENCRYPTION` (`auto` | `required` | `off`; empty means `auto`),
 `PSEUDEX_VAULT_MIGRATION_BACKUP`. (There is no `PSEUDEX_TUNING_KEY` anymore — the
 tuning travels in the lease, not a compiled blob; see docs/tz-tuning-in-lease.md.)
+
 
 ## Eval discipline
 
@@ -592,770 +512,6 @@ its README before changing it. Three things about it are load-bearing:
   scores as recall while the surname reaches the model in the clear. Both numbers are printed, never
   merged: 97.6% recall against 95.0% coverage is 69 partial leaks the single number hid.
 
-## Rules that changes must not break, part two — detection precision
-
-These were all learned by measuring, and each one cost recall or precision in the opposite
-direction when done the obvious way:
-
-- **A bare date is not personal data.** It becomes personal by ASSOCIATION — next to a personal
-  identifier, or next to a birth cue — and a document word directly before it («наряд от», «счёт
-  от») wins over a person elsewhere in the sentence. A deny-list of document words was the
-  alternative and fails open; this fails closed.
-- **Canonicalisation needs EVIDENCE of an oblique case.** pymorphy3 reaches the nominative through
-  the lemma, which is masculine for surnames and invented for unknown ones. No conversion without
-  evidence, and no conversion of a part already nominative. A gender target and a stem guard were
-  both tried and removed — they broke «Руслану» and «Петру».
-- **Credentials are anchored to published prefixes, never to entropy.** A git SHA, a UUID, a content
-  hash and a base64 image are all high-entropy and none is a secret. `pk_live_` is publishable by
-  Stripe's own design and must not be masked; placeholders (`${VAR}`, `xxxx`, AWS's own EXAMPLE key)
-  must not either.
-- **A cue word may be misspelt.** «пасспорт» and «догвор» disabled the guards that word provides.
-  Deny matching tolerates one edit, bounded at one and at a two-letter prefix.
-- **Extending a name to its neighbour needs two signals**, not one: morphology must say the
-  neighbour can name a person AND its best reading must not be a function word. Any-parse alone ate
-  «В», «из» and «по» in news prose.
-- **`to_nominative` is called from two sides and only one may be changed.** `canonicalize` calls it
-  on the REAL value (the key for "have we met this person"); `name_key` calls it on the FAKE one
-  (the index that resolves a token the model inflected). A guard placed inside `to_nominative`
-  stopped «Иванова» collapsing to «Иванов» AND stopped «Тарасова» finding «Тарасов» — the fake
-  reaching the tool. Measured: `survives_round_trip` then rejected all 28 pool surnames and every
-  one-word substitute silently became two. The same guard in `canonicalize` alone is correct
-  (`morph_names.lone_nominative_gender`), and `detect_gender` must use it too — a key that says
-  woman with a substitute minted for a man is the disagreement, manufactured internally.
-- **A KV-typed span carries its own evidence and must skip `suppress`.** The KEY typed the value,
-  which is stronger than any word standing near it. Re-gating it lost `{"passport": "4509123456"}`
-  entirely — the cue list holds «паспорт» and not the Latin «passport» — while the same number after
-  the Russian word was masked. Extending the cue list fixes one key and leaves the next to be found
-  the same way.
-- **A `KEY_TYPE` entry types the WHOLE value with no shape check**, so an ambiguous Russian business
-  word may never be one. «счёт» is an invoice more often than a bank account, and «Реквизиты:»
-  introduces a LIST — adding them cost 12 of 298 on the golden set at once, because «Реквизиты:
-  СНИЛС 647-436-713 22, карта …» became one account number that swallowed the СНИЛС. Those words
-  belong in `CTX_TYPES`, where the 20-digit shape keeps an invoice number out.
-- **`normalize` folds a look-alike only when it is not glued to a letter.** «ч» is a look-alike for
-  4, and at a word edge its only neighbours inside the run were a space and the phone that followed:
-  «Валентинович» became «Валентинови4», the name span ended a character early, and the orphaned «ч»
-  glued itself to the substitute — a string in no vault, so `/unmask` and `/reveal` both returned
-  nothing and a person who does not exist was written into the customer's system. "Real letters
-  break the run" only ever held for letters INSIDE it.
-- **Never take `parse(word)[0]` for a gazetteer lookup.** «марину» has «марин» (a man) and «марина»
-  (a woman) at the SAME score of 0.500 and the winner is arbitrary; it picked the man, the gazetteer
-  had no such entry, and «запишите марину петрову» went to the model with both words in the clear.
-  Consider every name-tagged reading TIED FOR FIRST — unbounded costs 0.7pp of NEREL precision by
-  admitting «жене»→«Женя», «юре»→«Юра», «розами»→«Роза».
-- **A single-token NER person is kept unless the dictionary claims the word.** The gate used to
-  demand a known name or a Russian surname suffix, so it threw away every foreign name Natasha had
-  already found — Обама, Месси, Бейонсе, Акихито. NEREL PERSON recall 80.6% → 91.5% (Cyrillic 81.1%
-  → 92.3%) at **no** precision cost. The `is_known` half is what makes it free: dropping it admits
-  the capitalised nouns Natasha over-tags at a caption boundary («Цветы», «Девочки», «Дезинфектор» —
-  72 on NEREL) and costs 0.3pp. «Обама» survives the narrow rule because it carries a `Surn` reading
-  even though the dictionary knows the word.
-- **A mistyped name is reachable, but only with THREE signals.** Adjacent to a detected name, within
-  one edit of the gazetteer, AND unknown to morphology. The third is not optional: in a 197k-name
-  dictionary the distance-1 neighbourhood is dense enough that ordinary words land in it —
-  «заказ»→«Закар», «адрес»→«Адрей», «клиент»→«Клинт», «спасибо»→«Спасибов» are all real rare
-  surnames. Without it `test_product` returned «Яков Роман Карпов Василий перезвонить» to a tool.
-  Index by the DELETION NEIGHBOURHOOD (Mor-Fraenkel 1982, the construction SymSpell popularised):
-  two strings are within one edit — transposition included — exactly when their deletion sets
-  intersect, so the lookup is complete by construction. The first-three/last-three scheme that
-  stood here was a broken pigeonhole filter: the argument needs a gap between the two windows and
-  they have one only at length seven, so it reached 77.9% at length five and 95.1% at six.
-- **The apartment marker is usually glued to the house number.** «д.5кв12», «Строителей 53к193»,
-  «Гагарина88кв152» — `_TOK` demanded whitespace before the marker, so the flat fell outside the
-  span and went to the model inside an address whose street was already masked. A bare «к» is
-  admitted only when glued to a digit («за 100к 5 штук» must not read as an apartment), and both
-  branches stay SUPPORT so a stray match can never mask anything on its own.
-- **A surname alone may not decide gender, and the case must then be read in that gender.** A typo
-  in the given name («Кузнецова Ольго») leaves only the surname voting, and `-ова` scores higher as
-  a man's genitive — so the span canonicalised to «Кузнецов Ольго» and the tool was called with a
-  man. Both halves are gated on `has_given_name`: applying the case filter unconditionally cost -14
-  round trips, because where the gender is itself a guess (foreign names) it left a tally with
-  nothing sensible in it and «Ким Викдор» became «Ким Викдоры».
-- **An address span drops its leading CUE words.** «адрес ленинский проспект 55» matched with
-  «адрес» inside the street name and sent it to the tool as part of the address; «мой адрес …» sent
-  two. Marker-less streets are «adjective + type», so the pattern cannot see where the name starts.
-  Trimmed with signals that already exist — `addr_ctx` for the cue vocabulary, the `Apro` grammeme
-  for «мой»/«наш» — because part of speech alone does not separate them from «Ленинский». A street
-  TYPE word passes both tests, which is what keeps «улица Тверская» whole.
-- **A pool that a customer can exhaust is a permanent 5xx for that customer.** It has happened
-  twice: addresses at 33, and gender-invariant surnames at 6 (the seventh woman named by surname
-  alone). Any generator drawing from a fixed list needs a floor check at the pool, not a stack
-  trace in someone's traffic.
-- **A cue word licenses its neighbour, it does not name it.** «фамилия волков» must mask «волков»
-  (the bulk surname dictionary is capital-only, so lower case leaked), and «фамилия клиента не
-  указана» must not. Same two-signal rule: the cue AND morphology saying the word can name a person.
-- **NER spans get trimmed down to one token when the leading word is a verb.** The dictionary trim
-  stops at two, presuming «Имя Фамилия»; that presumption made «Наберите Игорю» one name, deleted
-  the sentence's verb, and gave the pair an identity unrelated to the person the same message had
-  already named.
-
-- **A settlement plus a number is not an address, and that is a VETO.** «погода в
-  Сочи 25 градусов», «в Москве 12 филиалов» — a city takes no house number, so
-  whatever the context says it is refused. `prep_before` counts as address
-  context on its own, and «в», «на», «по» open an address exactly as they open
-  everything else, so a vote would have lost. Street names that ARE toponyms
-  carry a second reading («Тверская» ADJF, «Ленина» Surn) and are untouched —
-  checked across EVERY parse, because «Тверская»'s Geox reading outranks its
-  adjectival one and `parse[0]` threw away a real street.
-- **A lower-case marker-less street is gated on the VOCABULARY, never on
-  morphology.** The capital is one of two signals; with it gone, morphology is
-  what admits «течение 12». A leased vocabulary cannot generalise to prose,
-  which is the property needed. A month in that vocabulary («марта», for «8
-  Марта») names a street only behind a number, so it is excluded there.
-- **A marked street with no house number needs an INTENT word, not a
-  preposition.** «на улицах Каира собрались десятки» opens with «на» too. Only
-  somebody saying they live or receive things there separates an address from
-  prose about streets — measured, `prep_before` alone cost 0.1pp of NEREL
-  precision. `площад\w+` is excluded from that arm entirely: without a house
-  number it matches «площадка», «площади», «площадью».
-- **A cue word reaches 60 characters and never across a sentence end.** One
-  «адрес» near the top of a system prompt licensed every capitalised-word-plus-
-  number for the rest of it. The candidate's own first letter joins the tail
-  before splitting, because a sentence end is a period FOLLOWED BY A CAPITAL and
-  that capital is the span being judged.
-- **An address span stops at a sentence boundary.** The gap vocabulary must hold
-  the period because «ул.» and «д.» are built from it, so «Наш адрес: …, д. 14.
-  Часы 9-21» masked as one address ending in «Часы 9».
-- **The trailing house number joins BEFORE the second merge.** «ул. Гагарина, 45,
-  кв. 12» lost its flat while «ул. Гагарина 45 кв 12» kept it — one comma made
-  the flat too far away at merge time.
-- **A plural reading, an unknown word and the VOCATIVE are not evidence of a
-  case.** «Тагиев» is read as genitive plural of an invented «Тагии»; «Ань» has
-  nothing left but a vocative and became «Аня». A person is never plural, and
-  the vocative survives only as address («мам!») — never in a form or a CRM
-  field. The guard lives in `detect_case`, which is safe there and only there:
-  the substitute pool is known singular Russian names, so no fake's reading is
-  plural or out-of-vocabulary.
-- **A stray space inside a surname needs FOUR signals.** «Фёдо ров Кирилл» was
-  detected as «Кирилл» and half the surname leaked. Joined must be a name or a
-  surname shape; the pair must touch a detected name; the left fragment may not
-  be a function word («на»+«Лебедева» → «наЛебедева» ends in «ева» and passes the
-  shape test); and at least one fragment must not be a word AND the left one may
-  not be a whole word of five letters or more (a typo makes «Влкова» unknown by
-  itself, so «получатель Влкова» joined). «Вол ков» is deliberately NOT joined —
-  both halves are ordinary words and nothing distinguishes the split.
-- **A given name that is also a surname wins the tie.** `any(Surn)` is right for
-  every real surname (they carry no `Name` reading) and wrong for «Регина», tied
-  at 0.33 — the shape became (surn, surn, patr), both parts mapped to one slot of
-  the substitute, and one person got two pseudonyms in one dialogue.
-- **A passport needs a cue, and the window after it is sixteen characters.**
-  «Паспортные данные: 4518123456» needed nine and the pattern allowed eight.
-- **A fuzzy street match needs THREE signals and a fourth condition** — the same
-  discipline a mistyped name needs, for a worse version of the same reason: 165 672
-  ГАР names, and about half of them a single ordinary-looking word. A street-type
-  word adjacent (rejects every bare word-plus-number in prose), the other word in
-  the leased ГАР vocabulary as written / as its normal form / as its nominative
-  (rejects «улица была пустой» and «на улицах Каира» — morphology admits all three
-  and is deliberately not consulted), and address intent. The fourth: a fuzzy hit
-  is accepted only for a word pymorphy3 does NOT know, and never for both words at
-  once — «линии», «территории», «съезда» and «алло» are known, so they match only
-  exactly. Full curve and counter-examples in `docs/gar-street-vocabulary.md`.
-- **Cutting the street vocabulary by frequency concentrates the risk, it does not
-  reduce it.** The intuition (a smaller gate lets less of the language through) is
-  backwards here: the share of entries pymorphy3 calls an ordinary word RISES from
-  22.9% at no cut to 65.1% at twelve, because the commonest Russian street names
-  ARE ordinary words — центральная, лесная, новая, садовая, школьная. Measured, the
-  whole tail costs nothing on NEREL, `test_overmasking` or news prose, and buys 0%
-  → 90% on tail streets in the typo register. `STREET_MIN_OBJECTS = 1`.
-- **Regex alternation picks the earliest POSITION, not the preferred branch.**
-  `street_lower_nohouse`'s marker-last branch matched «адрес москве проспекте»
-  before the marker-first branch could reach «проспекте мира», swallowed the cue
-  word (which the gate then could not see in front of the span) and made
-  `finditer` resume past the street. Ten of fourteen street values at the
-  no-punctuation rung. A lookahead leaves the marker unconsumed so both branches
-  fire and merge.
-- **A number with a unit of measure after it is not a house number.** «территория
-  завода 5 гектаров» satisfied every address signal — type word, name in the
-  vocabulary, a bare «5» — because nothing looked PAST the number; it only became
-  reachable when ГАР taught the engine all 42 street types. Same class `neg`
-  already guards with «кв.м», and ordinary consumer Russian is full of it. The
-  veto is on the NUMBER, not the span, so the match falls back to needing an
-  intent word and the two type tiers decide it themselves. «кв» is deliberately
-  NOT in the unit list: after a house number it is КВАРТИРА far more often than
-  квадратный метр, and «улица Ленина 14 кв 3» is the commonest address line in
-  the language — only the glued «кв.м» / «кв м» form counts.
-- **The ГАР attribution rides IN THE BUNDLE, not only in `docs/`.** ФНС's ОТКРЫТАЯ
-  ЛИЦЕНЗИЯ grants extraction and commercial reuse on one condition — «указывать
-  ссылку на источник открытых данных», with the dump date — and the customer loads
-  a bundle, never the repository. `licensing/fetch_gar.py` writes the line,
-  `pack.py` reads it back rather than restating it, so a stale bundle cannot claim
-  a fresh dump.
-- **A spoken numeral must match WHOLE, and the alternation order is what does it.**
-  «два» is a prefix of «двести», «три» of «тридцать», «пять» of «пятьсот» — so
-  «квартира двести двадцать девять» matched «две» and the span ended three words
-  early, inside an address the polnota column was already counting as found. The
-  numeral is built longest-class-first (hundreds → teens → tens → units) and
-  closed with `\b`. The old ceiling of ninety-nine was argued as «numbers above
-  that are vanishingly rare»: true of houses, false of flats — a tower block
-  numbers its flats into the hundreds as a matter of course.
-- **A spoken house letter is decided by what FOLLOWS it, never by which letter it
-  is.** «двадцать пять А» and «дом семнадцать В» are both real literas from real
-  calls, and «этаж четвёртый я у вас» is a pronoun the same one-letter rule ate. A
-  litera ends the address or hands over to the next marker; a conjunction or a
-  pronoun always drags a clause behind it. A list of admissible letters was the
-  alternative and would have to be kept in step with ГАР.
-- **The spoken address TAIL is SUPPORT, exactly like `apt`.** `apt` demands `\d+`,
-  so «улица дербенёвская двадцать четыре строение пять» masked through «четыре»
-  and the rest went to the model inside a found span — four of the six voice
-  truncations. It cannot mask alone (one marker plus a number word is «программу
-  дом два», a television show in our own negative set); merged with a core address
-  it is safe. «дом» is deliberately not in it — the chain of two already takes it.
-- **A bare street name in front of «дом N» is gated on the ГАР vocabulary AS
-  WRITTEN.** «бибиревская дом семнадцать в квартира…» has no type word, no capital
-  and no digit, so every arm that could find the street wanted something the
-  utterance does not carry. Not morphology — in lower case «бибиревская»,
-  «широкая» and «пустая» are one part of speech. Not the normal form or the
-  nominative either: `_fuzzy_street_candidates` may afford those because it
-  conjoins three signals, and here there are two. The second is the word ORDER —
-  «дом культуры» and «дом отдыха» put the register word after the marker.
-
-- **A BENCHMARK'S SELECTION FILTER CAN BE PART OF THE DETECTOR, and then the
-  benchmark cannot fail.** `bench/voice` admitted an utterance only if it held a
-  street-type word or a house marker — the same signals the engine leans on — so
-  it could only ever show cases we already handle. It reported 100% coverage.
-  Widened to a filter that provably cannot hide the class (an address with a house
-  number contains a number, so: any numeral or digit), 122 candidates became 1373
-  and the true number was 38.6%. Ask of any corpus not «where does it fail» but
-  «what could never have entered it».
-- **A street name with NO type word is the MAJORITY form of a spoken Russian
-  address, not a tail.** 400 hand-labelled utterances of real taxi dispatch: 100
-  of 156 address values carry no «улица», no «проспект», no capital and no digit
-  — «барышникова шестьдесят три первый подъезд». The class scored zero because
-  every arm needs one of those. `_bare_street_candidates` is the riskiest shape in
-  the engine (a lower-case word plus a number) and is admitted only past four
-  gates: the ГАР register in three forms; the shape of the name (a surname in any
-  case, an adjective only nominative or licensed by a preposition, never plural,
-  never pronominal, never a bare settlement); no age, measure or numeral
-  agreement after the number; and a DIGIT must satisfy the shape test even when
-  the register names the form as written. Zero false addresses on 2691 NEREL
-  sentences.
-- **Prose writes house numbers as DIGITS, speech writes them as WORDS, and that
-  separates the register from the language.** The ГАР register vouches for
-  «Победы» and «Труда» — the genitive IS the street name — but those words also
-  stand in the genitive in prose for the ordinary reason: «статьи 19 Федерации 2»,
-  «порядка 71 сайта». Measured, letting the register alone decide cost 21 false
-  addresses on news prose behind a digit and none behind a spelled number.
-- **A numeral GOVERNS what it counts, and a house number governs nothing.**
-  «один день» takes the nominative, «два дня» the genitive singular, «восемь
-  обвиняемых» the genitive plural. Checking agreement — not a word list — is what
-  separates «свободы один день» from «клубная восемьдесят пять». A genitive-only
-  veto does not fire after «один», which is exactly how «ограничения свободы один
-  день» became an address.
-- **A CAPITALISED bare street costs six people on NEREL and is not worth it.**
-  Allowing `[А-ЯЁ]` as the first letter of the bare-street arm took voice coverage
-  79.5% → 84.1% and PERSON Cyrillic 93.4% → 93.1%: a LOC span outranks NAME
-  (ADDR 4 > NAME 3) and swallows whoever is inside it. The arm stays lower-case,
-  and «Лермонтова тридцать три» stays uncovered on purpose.
-- **The entrance is named with an ORDINAL, and it stands BEFORE the marker.**
-  «первый подъезд», «последний подъезд», «угловой подъезд» — every marker arm
-  expected «подъезд первый». On the dispatch corpus that was 73 truncations out of
-  156: the street and house were found and the entrance went to the model inside a
-  span already reported as found.
-- **The house litera forbids exactly one letter, «я», and no more.** A lookahead
-  demanding the letter end the phrase or meet a marker was measured against real
-  speech and cut the house number on every third address — «сто тридцать восемь а
-  поедем на энгельса», «семьдесят два а магазин». The one measured harm was «этаж
-  четвёртый я у вас», a pronoun read as a litera; ГАР numbers houses from «а» into
-  the alphabet and «я» is a pronoun almost everywhere else. Forbid the letter that
-  breaks, not the shape.
-
-- **EIGHT OF THE TEN RUSSIAN DIGIT-WORDS ARE REAL ENTRIES IN THE ГАР REGISTER,
-  and in speech every digit is a word.** «Семь Ветров», «Пятая Парковая»,
-  «Первая» are genuine streets, so `один, четыре, пять, шесть, семь, восемь,
-  девять, десять` and the ordinals all return true from a register lookup. A
-  dictated order number therefore presents as exactly the shape the bare-street
-  arm looks for: «номер заказа шесть семь восемь девять» became the street
-  «шесть» at house «семь восемь», and «телефон восемь девять один шесть…» came
-  back masked as an ADDRESS. Those values must reach the tool IN THE CLEAR — a
-  track number, an invoice, a contract — so masking them does not leak, it makes
-  the call fail. A numeral names a street only INSIDE a longer name, and every
-  such name has a second word a one-word arm never sees; `NUMR` and `Anum` are
-  the test. Same shape and same reason as the month exclusion above.
-- **A NOUN NAMES A STREET IN THE GENITIVE, so a noun with no genitive form is a
-  thing standing next to a number.** «школа двести десять» is a school, «вышка
-  триста тридцать три» a call sign, «время двадцать двадцать один» a clock — all
-  three are in the register as written, and the register is not wrong, they name
-  streets somewhere. That is exactly why the register alone cannot decide it. An
-  adjective is exempt (it agrees with «улица» and is nominative by construction),
-  and so is a word a PREPOSITION put into an oblique case — «на литейном четыре»
-  has no genitive of its own and «на» is the evidence.
-- **EVERY WRITTEN CORPUS WE OWN IS STRUCTURALLY BLIND TO SPOKEN NUMBERS.** NEREL,
-  the golden and dirty sets, `test_overmasking` and news prose all write digits
-  as digits, so a run of spelled-out numbers cannot occur in any of them. All of
-  them declared the bare-street change free; it was masking every dictated order
-  number in the language. The class now lives in `test_overmasking.py`, which
-  ships and needs no corpus — and it is held by TWO independent vetoes, so the
-  test only fails when both are removed.
-- **Cheap gates run before morphology.** The bare-street pattern fires on any word
-  followed by a number — often, on ordinary text — and almost every hit is
-  rejected by a set lookup or a regex. Ordering those first is worth about a third
-  of the whole detection cost.
-
-- **AN OVERLAP OF THE WRONG TYPE IS NOT RECALL.** «Overlap is not coverage» is the
-  v1 lesson; this is one rung further out. A scorer that counts a gold item as
-  found when ANY span touches it will score a СНИЛС masked as a STREET as СНИЛС
-  recall — and a СНИЛС replaced by a fake street name is not a protected value,
-  it is a broken tool call, and only part of the digits are covered anyway.
-  Found when the digit-word defect above made a LOC fragment land inside a
-  spelled-out card number and a neighbouring benchmark reported CARD/SNILS/
-  PASSPORT going 18% → 100% as a WIN. Ours are clean and stay that way:
-  `bench/agentpii/score.py` requires `span.entity_type == item["type"]`,
-  `eval_dirty.py` prints the type-aware miss and the type-blind TRUE-LEAK as two
-  separate lines, and `bench/voice/score.py` filters to LOC before comparing.
-  Type-blind is defensible as a pure leak measure and must then be LABELLED as
-  one, never merged with recall.
-- **A CENSUS OF ONE STRATUM IS NOT A CENSUS OF THE CORPUS.** The RuDevices
-  labelling covers all 400 marker-carrying utterances and a random 250 of the
-  4805 that carry only a number. The second stratum holds ~250 address values
-  against the first one's 156 — the complete half is the smaller half, and any
-  rate over the sample must be weighted 250/4805. Kept in
-  `~/.cache/pseudex-bench/rudevices_addresses.json` under a `filter` field so the
-  two can never be added up by accident.
-
-- **AN IDENTIFIER DICTATED ALOUD HAS NO DIGIT, AND EVERY RECOGNIZER WAITED FOR
-  ONE.** Measured on a corpus built from real transcripts: 281 phones, cards,
-  СНИЛС, ИНН and passports spoken as words, and the engine found none. `spoken.py`
-  only turns words into a digit string; whether that string is an identifier is
-  decided by the SAME validators the digit path uses — Luhn, mod 101, the ИНН
-  weight vectors, libphonenumber. Nothing there is a new rule about what counts
-  as personal data, and that is what makes a run of ordinary Russian words safe
-  to claim. The run scanner alone fires once in 9300 utterances of real speech
-  and never in 2691 sentences of prose.
-- **FUZZY MATCHING IS FORBIDDEN ON NUMERALS, and it is not a close call.** Across
-  58 983 distinct words, 99 ordinary ones sit within a single edit of a numeral —
-  «есть» (1947 occurrences) beside «шесть», «опять» beside «пять», «ночь» beside
-  «ноль». Distance-1 would not merely admit noise, it would CORRUPT the digits
-  inside a real number, and a wrong digit string is worse than a missing one: it
-  can pass a checksum and mask the wrong thing. The typo table is MINED instead —
-  every form attested in a real corpus and occurring only inside a numeral run.
-  Three forms our own benchmark generates («семесят», «четверьый», «подъкзд») are
-  deliberately absent: chasing them would tune the engine to the instrument's
-  imagination.
-- **AN EMPTY CANONICAL IS A COLLISION GENERATOR.** `canonicalize` for СНИЛС/ИНН/
-  карта was «strip everything that is not a digit», which returns the empty
-  string for a value spoken aloud — so every spoken СНИЛС in the tenant collapsed
-  onto ONE row and two different people shared one substitute. That is the single
-  failure this product treats as unacceptable, it became reachable the moment the
-  engine learned to hear, and it was caught by our own measurement rather than by
-  a customer.
-- **A TOOL ARGUMENT IS RESTORED VERBATIM; PROSE IS RESTORED IN AGREEMENT.** The
-  old design assumed a model writes the nominative inside JSON, so one rule could
-  serve both. It cannot: the substitute reaches the model ALREADY inflected —
-  `_token_for_span` puts it into the original's case so the sentence stays
-  grammatical — the model copies it as written, and the restorer then agreed the
-  real value with it. «ленина пятьдесят» came back from the tool as «ленина
-  пятидесяти», a house number in the genitive that no CRM will match. 506 of the
-  diverged tool calls on the speech corpus were this; splitting the two paths
-  took the tool-call axis from 72.1% to 77.8% and NAME arguments from 79% to 91%.
-- **DETECTION WITHOUT A MATCHING SUBSTITUTE IS A NET LOSS ON THE TOOL AXIS.**
-  Teaching the engine to hear spoken identifiers raised detection and LOWERED the
-  tool-call axis by five points, because values that used to pass through
-  untouched now went through a lossy restore. Any new recognizer must be measured
-  on BOTH axes before it is called an improvement.
-- **A SPOKEN HOUSE NUMBER IS STILL A HOUSE NUMBER, in three places that each
-  decided it with `\d`.** `looks_like_street` chose between a street and a
-  settlement, `place_shape` chose what the substitute is made of, and
-  `inflect_place` decided what may not be declined. Fixing any one alone fixes
-  nothing: the first minted «Сортавала» for «школьная пятьдесят девять», the
-  second dropped the house from the substitute, the third declined «пятьдесят»
-  into «пятидесяти».
-- **«КВАРТИРА» IS NOT «КВАРТАЛ», and five letters cannot tell them apart.** The
-  street-type scan matched a generic by its first five characters, so «кварт»
-  made every flat marker into a street type and «химзаводская пять квартира
-  пятнадцать» minted «квартира Сосновый 66» — a phrase that names nothing.
-- **THE DICTIONARY IS NOT THE BOTTLENECK FOR NAMES, THE GATE IS.** Of 569 missed
-  names on real speech, 474 (83%) are words already in the leased dictionary —
-  28 413 given names and 196 800 surnames — refused because a lower-case surname
-  needs a cue word AND morphology, and dispatch speech carries no cue: «морзов по
-  улицам не пройти», «а захаров к 10 часам». Widening the dictionary is not
-  available (a sixth of it is homonymous with ordinary words, which is why the
-  gate exists). A perfect gate would take NAME polnota from 69.6% to 94.8%, and
-  that decision is contextual — the one thing rules cannot make.
-
-- **TWO INDEPENDENT CORPORA AGREE ON NAMES, AND THAT IS THE NUMBER TO DEFEND.**
-  Полнота по именам: **69.6% on AgentPII-RU v3** (our generator, our labels) and
-  **68.0% on MASSIVE ru-RU** (`bench/eval_massive_ru.py` — 16 521 utterances,
-  slot-annotated by a third party, CC BY 4.0, zero capitals, 1.1% punctuation).
-  Different data, different annotators, different years, one number. It therefore
-  describes the ENGINE and not our generator, and any future improvement must
-  move BOTH — a gain visible only on ours is a gain in our imagination. The same
-  run reports EMAIL 75% and `place_name` **0.1%**, and that zero is CORRECT: the
-  slot holds bare cities («в москве», «в пензе»), a city identifies nobody
-  (152-ФЗ ст. 3 п. 1) and we refuse it deliberately. Reading it as a hole would
-  send somebody to break a veto that stands on the law.
-- **A CLEAN-TEXT SUITE MUST PRINT WHAT IT CERTIFIES, NOT WHAT IT OBSERVED.** Zero
-  errors on 42 phrases certifies precision **≥93.1%**, not 100%; the product
-  promises 99.4%, which needs 498 flawless phrases. `test_overmasking.py` now
-  prints the exact one-sided Clopper-Pearson floor beside the observed rate, and
-  says how many phrases the gap would cost. The same arithmetic applies to the
-  headline NEREL number: 1 922 spans means the whole error budget at 99.4% is
-  **12 spans** and the interval is [98.91, 99.64] — «precision did not move» is a
-  statement that instrument cannot make.
-- **GROW A CLEAN SET BY SOMEBODY ELSE'S ANNOTATION, NEVER BY OUR OWN SILENCE.**
-  The 496 phrases added to `test_overmasking.py` were selected because MASSIVE's
-  annotators marked no PII-bearing slot in them, then read by hand and four
-  dropped for naming a real person. Selecting phrases because our detector
-  stayed quiet would build a suite that cannot fail — the exact forgery the voice
-  benchmark already showed us once. Brands, media and museums stay IN: «окко»,
-  «р б к», «третьяковская галерея» are not personal data and masking them is the
-  defect the suite exists to catch.
-- **A HYPHEN GLUES ONE TOKEN, AND HALF OF ONE IS NOT A NAME.** «Лос-Анджелесе»
-  reached the model as «Любовь-Анджелесе», «Алма-Ате» as «Зоя-Демьяну», «де-юре»
-  as «де-Ивану» — a city arriving as a mangled person, the substitute resolving
-  back on the return leg and corrupting the place name in the tool call. 86 such
-  spans on 933 NEREL documents, every one a fragment of a compound proper noun.
-  NEITHER INSTRUMENT COULD SEE IT: NEREL precision credits a span overlapping ANY
-  gold entity and «Лос» sits inside an annotated city, while the clean suite held
-  no hyphenated toponym at all. The test is the one `_lowercase_dictionary_ok`
-  already applies, asked of the WHOLE token — so «Жан-Клод» passes as a known
-  name and «Петров-то» passes as an unknown surname with a particle, and the list
-  of particles never has to be written down.
-- **AN INVENTED LEMMA AGAINST 197k SURNAMES IS A LOTTERY THE DICTIONARY WINS.**
-  pymorphy3 does not know «каоке», guesses the lemma «каока» by analogy, and that
-  guess is a real dictionary entry. The lemma path must stay — it finds «джоли»,
-  «липницкой», «зеленского», 365 hits across NEREL and both speech corpora — so
-  the gate is morphology's own opinion of the unknown word: consult the lemma
-  only when the word is known, or when some reading calls it a name.
-- **A TOOL RESULT ARRIVES AS JSON, AND JSON PUTS A QUOTE WHERE PROSE PUTS A
-  SPACE.** `_TOK` held whitespace, comma, semicolon, paren, № and #, so
-  «"addr": "г. Пермь, ул. Добролюбова, д. 154б"» lost its «г. » and
-  «{"a": "д. 12, кв. 5"}» was not found at all. That leg is where personal data
-  arrives from the customer's OWN systems. 189 of 267 leaked LOC tails on
-  AgentPII v3 were this one character; coverage 70.0% → 80.4% with recall
-  unmoved, which is the whole reason polnota and coverage are never one number.
-- **A STREET IN THE GENITIVE PLURAL IS ADMITTED ONLY WITH THE DOOR AFTER IT.**
-  «улица Коммунаров», «Металлистов», «Строителей», «Космонавтов» is a large
-  ordinary class and the plural veto threw all of it away. Lifting the veto is
-  NOT available: a genitive plural before a number is the Russian
-  approximate-quantity inversion — «строителей пять пришло на объект»,
-  «шахтёров двести спасли» — and the ГАР register cannot separate them because
-  the register is RIGHT, every one of those words names a street somewhere. Ten
-  of twelve became false addresses. What separates them is what follows the
-  number: a house takes an entrance or a flat, a quantity takes a verb. The
-  continuation must begin IMMEDIATELY, or «строителей пять пришло на объект в
-  доме два» talks its way into one.
-- **A POSSESSIVE FROM A GIVEN NAME IS HOW RUSSIAN SAYS WHOSE**, and its span must
-  carry the BASE NAME. «женин день рождения», «олино письмо», «машиного дня
-  рождения» sit in no dictionary, carry no capital, and morphology calls them
-  adjectives, so no arm saw them. Three gates: the `Poss` reading (the genitive
-  plural of «машина» offers none, so «пять машин» never becomes a candidate), the
-  base-name dictionary («мамин», «папин», «бабушкин», «дядин» all have `Poss` and
-  no name behind them), and agreement with the following noun. `span.value` is
-  BOTH the vault key and the source of gender, so with the written form «Женя»
-  and «женин» became two rows — one person, two substitutes, the second one
-  masculine. No corpus of ours can see that: none carries the possessive register
-  except MASSIVE, and MASSIVE measures only recall.
-- **`_LOWER_DICT_MIN = 5` IS MEASURED, NOT ASSERTED.** Lowering it to 4 finds nine
-  names (азиз, алик, алсу, илик, ирка, лекс, лера, леся, шура) and masks thirty
-  ordinary words — «вейп», «мега», «слыш», «джек», «лайт», «ляма», «раша»,
-  «дите». Three false masks per person found. EVERY OTHER INSTRUMENT CALLED THE
-  CHANGE FREE: NEREL +3 spans of 9720, the 538-phrase suite unmoved, MASSIVE
-  person 76.4% → 77.1%. Two are written in capitals, the third measures only
-  recall, and the harm lives in lower-case conversational speech.
-- **A STREET TYPE IS NOT A STREET NAME, and the ГАР register does not separate
-  them.** «улица», «проезд», «площадь», «шоссе», «дорога» all sit inside the NAME
-  vocabulary — real streets carry those names — so the bare-street arm read «на
-  дороге семьдесят» as the street «дороге» at house 70. The type stems are
-  already leased for the arms that look for a type word; asking them here needs
-  no second list. «дорог» was also simply MISSING from those stems, which is why
-  the collision was reachable at all.
-
-- **A MODEL TRANSLITERATES BY LETTER, NOT BY STANDARD, AND THE RESTORED NAME
-  MUST FOLLOW THE MODEL.** Four tables and «which one reproduces the model's
-  word» was the first design; measured on 1 812 Latin words the control arm
-  wrote for real names, no table reproduces «Meshcheryakova» and 96 words
-  follow endings no standard lists. Worse, when several tables explained the
-  word equally the FIRST won and ICAO's «iu» went into «BITIUKOVA» against the
-  control's «BITYUKOVA» — 38 triples, 33 with both controls agreeing. The unit
-  is the letter or the ending (`translit.UNITS`): `align` learns the model's
-  choice per unit from the SUBSTITUTE, `render` applies it to the real name and
-  fills the rest from the measured `DEFAULT` (й→y 112:24, ю→yu 87:0, «-ия»→ia
-  36:0); the vault indexes one `fold` under which every rendering collides. The
-  benchmark's scripted agent writes the same measured convention from its own
-  copy — an instrument writing ICAO scored the engine against a convention no
-  model uses.
-- **A PIECE OF A NAME IS AMBIGUOUS ACROSS A CUSTOMER AND UNAMBIGUOUS IN A
-  CONVERSATION; A SINGLE INITIAL IS AMBIGUOUS EVEN THERE.** «Т.О.» is owned by
-  many substitutes in a vault that served a thousand dialogues, and «no single
-  owner» sent the fake to the CRM. `residual_of` breaks the tie by `minted_in`
-  — the conversation the substitute was handed to — and refuses when two
-  substitutes of ONE conversation share the piece. A lone «С.» is one letter,
-  which no index may hold; its evidence is the OBJECT: the name it abbreviates
-  was restored one key over in the same tool call (`_join_initials`,
-  positional, from the same fake). 50 of 56 initials the gateway wrote
-  differently on the 05.09 medium run were single, and every such call carried
-  `first_name` beside them.
-- **A ONE-LETTER PREPOSITION IN FRONT OF WHAT IT GOVERNS IS NOT A LITERA.**
-  «двадцать семь в третий подъезд» is house 27 IN the third entrance; it went to
-  the courier as «27в». The test is the word after the letter — an ordinal («в
-  третий», «к пятому») or a marker in an oblique case («в квартиру», «к дому»)
-  — and only the letters that ARE prepositions (в, к, с, у, о) are tested, so
-  «двадцать пять а третий подъезд» keeps its litera and «семнадцать в квартира
-  двести двадцать девять» (a real call, nominative marker) stays whole. The rule
-  lives in TWO places, the leased `_LITERA` of the detector and
-  `_word_number_for` of the role split: the span was already whole, the roles
-  were cut by the second.
-- **THE THREE LEVELS OF THE BENCHMARK ARE A LADDER OF STRICTNESS, NOT THREE
-  EQUALITIES.** The mock stores a RECORD (`address.house`), the schema names an
-  argument (`contact.address.house`); read through `spec_for`, no spec resolved
-  and L3 fell back to raw string equality while L2 called the same value
-  `agree` — 186 of 437 diverging triples consisted of such lines only.
-  `tools.state_spec_for` maps the record path; one typed comparison per value
-  at every level.
-
-- **ONE REAL STREET IN A DIALOGUE IS ONE FAKE STREET.** A customer who corrects
-  the house keeps the street — «заречная пятьдесят семь … ой нет, правильно
-  заречная двадцать девять» — and the two mentions minted two unrelated streets,
-  so the model read a correction between two places (32 of 36 two-address
-  `correction` cases). `_same_street_in_conversation` hands the mint the fake
-  street already standing for that stem (equal or one typo apart, as
-  `_keys_match`), only the numbers are drawn, and a bare street with two owners
-  on one street answers with the LATEST row — the correction is the later
-  mention. Two different streets still get two different fakes.
-- **A DATE THE CUSTOMER SAID IS REPLACED BY A DATE IN WORDS, and the span
-  reaches the year without «года».** «родился одиннадцатого сентября пятьдесят
-  пятого» was masked as «родился 28.03.1972 пятьдесят пятого»: digits in a
-  spoken sentence, the real year left outside. The spoken-year arm accepts a
-  century, tens+ordinal or a decade ordinal on their own; a bare ordinal still
-  needs «года». `spoken.date_to_words` mirrors the customer's century style and
-  spells the century when two digits would read back to the wrong one; the ISO
-  the agent writes resolves through the canonical-date index (`date_owner`), and
-  the exact-token pass takes spoken dates from the detector's own arm.
-- **THE FAKE DATE OF BIRTH KEEPS THE YEAR AND THE SIDE OF TODAY — the owner's
-  decision, one bit of leak budget beyond the year.** The year alone left the
-  derived age off by one in 37 triples (real birthday still to come, fake one
-  passed). A year identifies nobody (~1.5M people a year); the day and month are
-  what turn a bucket into a person, and they stay fake.
-
-- **A STREET THE CUSTOMER MISTYPED REACHES THE TOOL AS THE REGISTER SPELLS IT,
-  AND ONLY THE TOOL.** Without the gateway the agent silently repairs
-  «мончгорская» to «Мончегорская» and the CRM finds the address; with a clean
-  substitute in front of it there is nothing to repair, and the customer's
-  literal words reach the tool — 88 of the 141 value conflicts on the 06.09
-  run. `address.register_spelling` asks three signals: the register does not
-  reach the word IN ANY OF THE THREE FORMS `_gar_reaches` asks (as written, by
-  lemma, by the nominative of any parse — asked only as written, the rule
-  rewrote the CORRECT «мончегорской» to «мончегорское»), exactly one register
-  entry is one Damerau edit away («лениа» reaches four and is refused), and the
-  word is at least six letters. In PROSE the customer keeps his own words:
-  repeating his address back corrected and filling a form with it are different
-  acts. v3's tool axis drops 1.1pp because its ground truth is the customer's
-  words verbatim and it has no control arm; the class is named `typo_repaired`
-  rather than folded into `ok`.
-
-- **THE FORM BELONGS TO THE AGENT, THE CONTENT TO THE VAULT.** The vault stores a
-  name canonically — lower case — and `_pick_value` handed that canonical straight
-  into a tool argument: the control wrote «Ким Виктор» into the CRM and the gateway
-  arm wrote «ким виктор». 262 field divergences on the 07.09 live run, 217 triples
-  of 834, the largest single class in it. `agent_form.cased_like` carries the case
-  word by word and positionally, and the rule is SYMMETRIC or it is nothing: an
-  agent that wrote lower case gets lower case back. PROSE IS UNTOUCHED — repeating
-  the customer's own address back to him is a different act from filling a form
-  with it, and there the older rule holds. The case has none of the price the CASE
-  (падеж) has: it changes nothing about WHAT is written, and no register looks up
-  with regard to it.
-- **THE AGENT'S GENERIC WORD SURVIVES EVEN WHEN OURS IS ABSENT.** `_street_like` had
-  a branch «we have no street type — return our name», and the agent's «ул.» fell
-  on the floor: he wrote «ул. Ольховая, 80» and the tool received «солнечная, 104»
-  while the control received «ул. Солнечная, 104». The type word is a marker of the
-  same class as «д.» and «кв.», which `in_form_of` already takes from the agent
-  verbatim, and the engine already preferred the agent's «ул.» over our «переулок»
-  when both existed.
-- **A SUBSTITUTE HOUSE NUMBER KEEPS THE MAGNITUDE OF THE REAL ONE.** «we do not
-  deliver above house 100» lives in the customer's system prompt, and a real house
-  33 under a fake 157 inverts it: the agent REFUSES an order nobody cancelled, and
-  the restored answer contradicts itself — «Дом 33 — номер больше 100». 12 triples
-  of `prompt_rule`, every one of them with zero calls on the gateway leg. The price
-  is named and paid deliberately: the band is under one and a half bits, less than
-  the year already given away by a fake date of birth. Owner's decision, 07.09.
-- **ONE ADDRESS IS ONE KEY, AND THE CITY MAY NOT BE IN IT.** The customer says
-  «центральная сто», the directory answers «Тульская область, г Одоев, ул
-  Центральная, д 100». `street_house_key` dropped the city by the `Geox` grammeme
-  and the dictionary knows Краснодар but not Одоев, so the keys missed each other,
-  ONE address was minted TWICE, the model asked about «Жасминовую 142», got
-  «Тополиную 161» and told the customer the address was not found. Four of the six
-  cases where the gateway leg did nothing at all, and −91pp for `tool_chain`. The
-  city is named by `split_roles` — the reader that already parses the address;
-  morphology stays as a fallback. A second reader of one phrase drifts from the
-  first, which is exactly what happened.
-- **A TWO-WORD CITY WITHOUT A COMMA IS STILL A CITY.** «нижний новгород проезд
-  калашникова 12» parsed as the street «нижний новгород проезд калашникова», so the
-  city went into the `street` field of the customer's CRM. With a comma it worked,
-  without it did not — the same gap that cost the full name beside a date of birth.
-  An adjective before a toponym, and only that: «Нижний Новгород», «Великий
-  Новгород», «Старый Оскол», «Сергиев Посад» are one class, and it cannot eat a
-  street, because a street's first word is followed by a GENERIC word, not a
-  toponym.
-- **TWO SUBSTITUTES THE MODEL GLUED WITH A HYPHEN ARE TWO SUBSTITUTES.** One person
-  is minted twice when the message calls him «Мухина» and the card «Бирюкова»; the
-  model writes «Мухина-Бирюкова», the whole resolves by no key, and BOTH fake
-  surnames reach the CRM. The rule «a hyphen glues one token, and half of one is not
-  a name» is about MASKING, where half of «Лос-Анджелес» became a person; here the
-  question is the reverse and the vault answers it, not morphology — a real toponym
-  has no halves in the vault, so the window resolves to nothing.
-- **AN IDENTIFIER LEFT WITHOUT A DICTIONARY IS THE ONLY THING THAT LEAKS.** Measured
-  on a corpus whose names and streets are drawn from OUTSIDE the leased lists:
-  0 of 2172 values inside them, 8 of 272 outside (2.9%). The number the corpus used
-  to print — zero — described how much the corpus resembled the dictionary.
-
-## Rules that changes must not break, part three — the instruments
-
-- **A CHECK THAT CANNOT GO RED IS NOT A CHECK, AND THE SHAPE IS DETECTABLE.**
-  Eight defects of one class were found by hand in a week and every one READS
-  correctly: `P1` proved the absence of four strings out of 573 and would have
-  passed grepping a missing file; `L12` asserted `requests > 0` after making
-  twelve calls, so an engine billing one request in twelve cleared the only gate
-  that guards the invoice; a benchmark triple with nothing to compare passed five
-  levels because `not any([])` is True. What separates them from a healthy check
-  is a property of the VERDICT EXPRESSION, so `e2e/audit_gates.py` checks it
-  mechanically over the whole roster and runs in the battery as `62-gate-audit`.
-  The rule it enforces: **every NEGATIVE atom (`x not in y`, `not rows`,
-  `count == 0`, `set <= set`, `all(...)`) needs a POSITIVE atom over THE SAME
-  SOURCE** — the same call, traced back through local assignments. "Has a
-  positive somewhere" is too coarse and cleared `L19`, whose positives read the
-  vault and the directory listing while its one negative read a grep that nothing
-  proved could run.
-- **THE ANALYSER'S OWN POSITIVE CONTROL IS NOT OPTIONAL.** `--selftest` runs the
-  classifier over thirteen fixtures of known-bad and known-good verdicts and
-  REFUSES to report on the real roster unless it separates them. Two classifier
-  defects were caught that way and both would have turned it into noise:
-  `returncode == 0` is a command that RAN (it was read as an empty count and
-  flagged four healthy terms in P6), and `p50_ratio <= bound` is arithmetic that
-  RAISES in an empty world rather than quietly passing. A tool that cries wolf
-  gets ignored, which is the same outcome as not having one.
-- **A CONDITION HANDED TO A HELPER IS STILL PART OF THE VERDICT.** `L12`'s
-  threshold sits inside `wait_until(lambda: ... > 0, ...)`, and the first version
-  of the analyser stopped at the healthy-looking name in the verdict. Missing the
-  one defect already known by hand would have made it exactly the kind of check
-  it exists to find. Lambdas are walked; so are names standing for a conjunction.
-- **A THRESHOLD IS A QUESTION, NOT A VERDICT.** `hits > 0` on a memory scan is
-  correct — presence is the whole claim — and `requests > 0` after twelve calls
-  is the billing hole. The shape is identical and only the author knows which, so
-  the analyser reports thresholds without failing on them.
-- **PROVE THE INSTRUMENT INSIDE THE HELPER, NOT BESIDE IT.**
-  `readable_pii_in_data` returns `(the search ran, what it found)`, because a
-  caller that can take the second without the first eventually will. Its command
-  ends in `|| true`, so a grep that could not run produces no output — and no
-  output is precisely the answer every caller wants to hear.
-- **MUTATE YOUR OWN FIX BEFORE CALLING IT DONE.** Each repair above was reverted
-  in place and the analyser confirmed red, then restored byte-exact. A fix nobody
-  has broken on purpose is a fix nobody has tested.
-- **MEASURE THE PRICE OF A VETO ON MASSIVE BEFORE ACCEPTING IT.** The composite
-  «neighbour unknown to morphology and to both dictionaries» veto looked
-  principled and cost four real people (Ирина Аллегрова among them) to buy two
-  fewer false masks. It was removed by measurement, not by argument.
-
-## Rules that changes must not break, part four — the business
-
-- **THE BILLING UNIT IS THE REQUEST, AND THE RATE LADDER MUST PAY TO CLIMB.**
-  Старт 990 ₽ / 10k / 79 ₽ за 1000 сверх · Рабочий 3 900 / 100k / 31 ·
-  Промышленный 11 900 / 1M / 9.50 · Enterprise по договору / 7.00. Each rate is
-  ~80% of that tier's own included price and DECLINES up the ladder, so overage
-  is never cheaper than the tier above — a single flat rate stood here once and
-  made volume through overage tens of times cheaper than the same volume inside
-  a tier, so nobody ever upgraded. `test_billing_lifecycle` asserts the
-  PROPERTY, not the numbers.
-- **METERING STARTS AT 300 000 REQUESTS OF EXCESS, ON EVERY TIER, and that is
-  metrology rather than generosity.** The error of granted capacity is
-  `(quantum + reserve) / period`, and below ~300k per process the lower quantum
-  bounds dominate. `docs/billing-integrity.md` put that threshold on the TIER; it
-  belongs on the VOLUME, which is what the accuracy actually depends on — and by
-  tier it left an inversion where a Старт customer at half a million requests was
-  the best deal on the price list. Checking the ladder AT a lower tier's included
-  volume is wrong and will read as a defect: below the floor, staying put is
-  genuinely cheaper and correct.
-- **`run_billing_cycle` IS THE ONLY CALLER OF THE BILLING PRIMITIVES.** Trial
-  ended → invoice, period ended → invoice, past due → stop, paid-but-not-resumed
-  → retry. Idempotent BY A ROW IN THE DATABASE, never by a flag: a schedule runs
-  it twice, a restart runs it again, an operator runs it by hand. It ships as its
-  own compose service, hourly, NOT as a thread inside gunicorn where N workers
-  would each run it.
-- **A SERVICE THAT LOOPS FOREVER HAS NO FAILURE MODE THE WATCHDOG CAN SEE.**
-  `while :; do …; sleep; done` stays `running` whether the command succeeds or
-  throws every hour. Health must mean «the last pass SUCCEEDED» — a stamp written
-  only on success — or the service that issues every invoice can be dead behind a
-  green dashboard.
-- **A TRANSITION THAT CHANGES SERVICE IS PROVED BY THE CONTAINER, NOT BY A ROW.**
-  `Subscription.state` is a mirror for rendering. A test that believes it passes
-  on a product that takes money and never switches a defaulter off, so
-  `test_billing_lifecycle` POSTs `/mask` into a live container after every such
-  transition.
-- **NUMBERS PRINTED TO THE CUSTOMER COME FROM THE CODE.** The landing promised
-  volume billing that did not exist and «48 hours on non-payment» that described
-  a different fact entirely (48h is the lease reserve covering OUR outage; a
-  defaulter gets invoice terms plus grace). `test_published_claims.py` compares
-  code to text and also asserts the ABSENCE of the literals it replaced — a page
-  rendering `{{ metered_floor }}` that still says «300 000» in prose has two
-  copies of one threshold.
-
-## Rules that changes must not break, part six — false reds
-
-Three false reds in a row on one afternoon, all from the same shape, and each
-cost more than the defect it was supposedly reporting. **A false red is worse
-than a false green**: it gets ignored, and then it gets ignored together with a
-true one.
-
-- **A CHECK MUST NOT DEPEND ON A NUMBER THE ENVIRONMENT HAPPENS TO CARRY.**
-  `test_billing_lifecycle` read the lease TTL from `STAND_LEASE_TTL` — a variable
-  of the CURRENT SHELL — while the stand runs with whatever it was created with.
-  Raise the stand once without that variable and the two disagree silently:
-  checks that wait for the window to close fail because they waited 33 seconds
-  instead of five minutes, and nothing about the product is wrong. The test now
-  ASKS THE SERVER: `/admin/fleet` returns `window_seconds` in every answer.
-- **A CHECK THAT STOPS A CONTAINER GOES LAST.** The stopped-container assertion
-  was inserted mid-flow, so every step after it depended on whether the container
-  had come back; two of them failed because the port was not listening yet. There
-  is no way to make that robust — the fix is ordering, not timing.
-- **A REPLACE-BASED EDIT CAN SILENTLY DROP A LINE.** Restructuring the same test
-  by string replacement removed the `call_command("run_billing_cycle")` between
-  the setup and the assertion, so the funnel row was deleted and never recreated.
-  The check failed correctly and the diagnosis cost an hour. After any such edit,
-  read back the region rather than trusting that the anchor matched what was
-  intended.
-- **VERIFY A RESPONSE SHAPE AGAINST THE LIVE SERVICE, NOT ITS DOCSTRING.**
-  `_detect_first_lease` read `row["instances"]` because the endpoint's docstring
-  described it that way; the real answer nests the counters under `usage`. And
-  the field that matters is `capacity_granted` (monotonic, "has it EVER leased")
-  rather than `instances` (windowed by TTL, "is it leasing right now") — a
-  customer who raised a container last month and stopped it shows zero
-  instances, and the funnel would lose them.
-- **`$VAR` INSIDE A COMPOSE `command:` IS INTERPOLATED BY COMPOSE, NOT THE
-  SHELL.** The once-a-day guard on the digest arrived empty, so the condition was
-  always true and the digest would have gone out hourly. Escape as `$$VAR`; the
-  absence of "variable is not set" warnings in `docker compose config` is the
-  check.
-
-## Rules that changes must not break, part five — operations
-
-- **THE LICENSING SERVER'S SCHEMA MIGRATES BEFORE ANY INDEX IS BUILT.**
-  `CREATE INDEX … ON leases(org_id, pubkey)` ran before `ALTER TABLE leases ADD
-  COLUMN pubkey`, so on a volume predating that column the process died at
-  startup and never reached its own migration: upgrading on existing data did not
-  come up at all. Every other path we own starts from an empty database — gates
-  do `down -v`, attacks use a temp dir — which is the one starting state
-  production will never have again. `licensing/test_store_upgrade.py` pins it
-  against a VERBATIM snapshot of the old schema, never «current minus a column».
-- **`uvicorn` DOES NOT CONFIGURE THE ROOT LOGGER, so the licensing server had no
-  operational log.** Everything at INFO was discarded silently — including
-  `RAW_LEASE_BODY`, over which gate L12 certified «nothing but counters leaves
-  the perimeter» while inspecting no body at all — and WARNING/ERROR reached
-  stderr through `logging.lastResort` with no timestamp, level or logger name.
-  `basicConfig` lives in `licensing/devserver.py`; uvicorn leaves root alone and
-  sets `disable_existing_loggers: False`, so it survives.
-- **THE STAND BUILDS `pseudex:local`, THE GATES BUILD `pseudex:source`.** They
-  bake DIFFERENT verification keys, and a shared tag meant a gate run silently
-  replaced the stand's image: the next container answered `lease signature is not
-  ours`, an exact message whose cause lives in another directory.
-- **`deploy/local.sh` PROVES THE STAND IS UP BEFORE SAYING SO.** It printed the
-  whole walkthrough without asking whether the licensing server was alive. A 401
-  from the admin port counts as proof of life; a refused connection proves
-  nothing.
-- **BOTH LICENSING TOKENS GO TO THE SERVER, not just to the storefront.**
-  `compose.local.yml` declared `PSEUDEX_LICENSE_STOREFRONT_TOKEN` for the
-  storefront and never passed it to the license service, so every storefront call
-  got 401 and the console said «no figures right now» — «no figures» and «we are
-  not being let in» are different facts. Production's `compose.yml` had it; the
-  two files had drifted.
 
 ## Conventions
 
@@ -1367,3 +523,769 @@ true one.
   behind the same API.
 - `prototype/README.md` status checkboxes are stale (streaming and RU NER are done). Trust the
   code and `docs/how-it-works.md` over it.
+
+
+## Invariants — the load-bearing few
+
+The full set — 178 rules, each with the test that pins it — is
+[`wiki/INVARIANTS.md`](wiki/INVARIANTS.md), grouped by module (detection →
+`#names` `#address` `#spoken` `#context`, the swap and vault → `#swap` `#vault`
+`#collisions` `#conversation-scope`, the lease → `#lease`, the instruments →
+`#instruments`, the business → `#billing`, and the rest). The seven that decide
+the most, so they are here too:
+
+- **Fail closed.** Any error in masking propagates to a 5xx; never pass text
+  through unmasked. The caller treats an error as a block — that is the whole
+  safety story. (`#engine-wide`)
+- **No PII pre-filter, ever.** A `maybe_contains_pii` gate silently stopped being
+  a superset of the recognizers and leaked raw PII; the content cache removes the
+  repeated-work cost, detection always runs. (`#engine-wide`)
+- **Never re-feed masked output into detection.** `mask(mask(x)) != mask(x)` — a
+  fake phone is a valid phone shape; the cache keys on RAW content. (`#engine-wide`)
+- **Keep normalization 1:1.** Any length change breaks every span offset
+  downstream, including `/spans`. (`#normalize`)
+- **No bundle means no detection, not less.** An empty dictionary is not a
+  supported state; `BundleNotLeased`, `/mask` 503. (`#engine-wide`)
+- **`pseudex/` never imports from `licensing/`**, and never `import sqlite3` —
+  both would defeat the product (leaked assets; silent plaintext). Both
+  Dockerfiles fail the build on them. (`#engine-wide`)
+- **Fail closed on the lease too:** `LEASED → STALE → EXPIRED`, grace on
+  `time.monotonic()` with a wall-clock ceiling; 402/403 bypass grace. (`#lease`)
+
+## Repository map
+
+The map is maintained in `wiki/MAP.md` and copied here by
+`python3 wiki/check.py --sync`. Do not edit between the markers by hand.
+
+<!-- wiki:MAP:begin -->
+# MAP — where everything lives
+
+The map of the repository for an agent that has to act in it. It answers
+**where** a thing is, **what** it is for, **who** calls it, **which test pins
+it** and **which document explains it**. How data moves is in [FLOWS.md](FLOWS.md);
+what must not be broken is in [INVARIANTS.md](INVARIANTS.md); why a choice was
+made is in [STATE.md](STATE.md); what each document in `docs/` and `research/`
+answers is in [INDEX.md](INDEX.md); how this wiki is kept current is in
+[PROTOCOL.md](PROTOCOL.md).
+
+Paths are relative to the repository root unless a section says otherwise.
+`wiki/check.py` verifies that every path named here exists, that every `Uses`
+line matches the real import graph, and that the copy embedded in `CLAUDE.md`
+equals this file.
+
+**Status vocabulary** (one per entry):
+
+| status | meaning for an agent |
+|---|---|
+| `live` | current code; change it through the normal path |
+| `frozen` | an instrument or reference that must NOT be tuned against the engine — read, run, never "fix" |
+| `superseded by X` | kept for history and for numbers cited elsewhere; new work goes to X |
+| `drifted` | known to lag behind its sibling; the lag is recorded where the entry says |
+| `generated` | produced by a build or a script; never edit by hand |
+| `design` | a specification with no implementation yet |
+
+---
+
+## 0. Top level
+
+| path | what it is | ships to customer? | entry points | read first |
+|---|---|---|---|---|
+| `prototype/pseudex/` | the engine: detection → vault → swap → audit, two HTTP surfaces, lease client | **yes** — as `.py` in `pseudex:source`, as a Nuitka binary in `pseudex:compiled` | `prototype/serve_main.py` via `prototype/entrypoint.sh` | §1, FLOWS.md |
+| `prototype/licensing/` | our side: the authored detection assets, the bundle packer, the licensing server and its store | **never** — an import of it from `pseudex/` is a build failure | `python3 -m licensing.devserver`, `python3 -m licensing.pack` | §2 |
+| `prototype/*.py`, `prototype/pseudexctl` | entry points, build steps, tests, evals, dataset generators (all flat, no package) | tests/evals never; `pseudexctl` and `serve_main.py` yes | see §3 | §3 |
+| `prototype/bench/` | measurement instruments: benchmarks we built, corpora we did not write, paired live runs | never | each script has a `main()` | §4 |
+| `prototype/e2e/` | closing gates against REAL containers: licensing (L1–L22), packaging (P1–P11), plus the gate that audits the gates | never | `e2e/gates.py`, `e2e/pack_gates.py` | §5 |
+| `prototype/Dockerfile`, `prototype/Dockerfile.nuitka` | the two images; same Debian release, different way of building the engine | — | `docker build` | §3.2 |
+| `storefront/` | landing, signup, customer cabinet, operator console, billing, analytics — Django, on OUR hardware; shares no code with the engine | no (runs on our side) | `storefront/manage.py`, `storefront/run_all.py` | §6, `storefront/README.md` |
+| `deploy/` | our production host: compose, Caddy, Prometheus/Loki/Grafana, backups, watchdog, systemd timers, support bot | no | `deploy/bootstrap.sh`, `deploy/agent.sh`, `deploy/local.sh` | §7 |
+| `.github/workflows/` | CI: checks on push, nightly gates, release on tag, ship, uptime, backup audit | — | — | §7.2 |
+| `docs/` | product specification and ТЗ, in Russian, for humans | — | — | INDEX.md |
+| `research/` | the evidence archive behind design decisions: deep dives, audits, pentests | — | — | INDEX.md |
+| `brand/` | logo, ad images, landing/UI mock-ups (`brand/*.dc.html`), bot avatar | — | `brand/README.md` | §8 |
+| `e2e-personas/` | persona runs against a LIVE model (OpenRouter), the harness and their findings | never | `e2e-personas/harness.py` | §8 |
+| `wiki/` | this wiki | never | `wiki/check.py` | PROTOCOL.md |
+| `.claude/` | Claude Code settings, skills, agent worktrees (worktrees hold STALE copies of `CLAUDE.md` — never read those) | — | — | — |
+
+Generated, ignored, never committed: `prototype/*.json` datasets (`make_*.py`),
+`prototype/*.db*`, `prototype/pseudex-vault.key`, `prototype/pseudex/_release.py`
+(the compiled-in verification key, written by both Dockerfiles), `deploy/secrets/`,
+`storefront/.venv`, `storefront/storefront.sqlite3`, `~/.cache/pseudex-bench/`
+(external corpora — NEREL, PII-Bench, RuDevices, MASSIVE, ru_prose).
+
+---
+
+## 1. `prototype/pseudex/` — the engine
+
+45 modules, ~22 400 lines. Paths in this section are relative to `prototype/`.
+`Uses` / `Used by` are the real import edges inside the package (lazy imports
+included). `Tests` lists scripts that import the module directly, then `via` —
+the modules through which the rest of the suite reaches it. Every test script
+is described in §3.3.
+
+### 1.1 Detection pipeline
+
+Composed in ONE place, `pseudex/detect_all.py`. Order: `normalize` → recognizers (union)
+→ `context.suppress` → `_resolve` (priority, longest-first, non-overlapping).
+See FLOWS.md §1.
+
+#### `pseudex/normalize.py` — 139 lines · `live`
+Layer 0: a 1:1 length-preserving fold of the text before detection — homoglyphs
+→ digits only inside digit-dense runs, dashes/spaces/zero-width. Offsets from the
+normalized text index straight back into the original.
+- **API:** `normalize`
+- **Uses:** assets · **Used by:** detect_all, vault
+- **Tests:** test_persona_defects, test_product · via detect_all → everything in §3.3
+- **Docs:** `research/dd4-A-noise-phone.md` · rules: INVARIANTS.md#normalize
+
+#### `pseudex/detect.py` — 97 lines · `live`
+The span types every recognizer emits (`Span`, `NameSpan`, `PartSpan`) and the
+first recognizer: libphonenumber ∪ regex phone/email.
+- **API:** `Span`, `NameSpan`, `PartSpan`, `detect_pii`
+- **Uses:** — · **Used by:** address, context, credentials, detect_all, names, quasi, redact, ru_pii, spoken, structured
+- **Tests:** test_loop · via detect_all
+- **Docs:** `docs/how-it-works.md`
+
+#### `pseudex/ru_pii.py` — 380 lines · `live`
+Russian structured identifiers, checksum-gated: СНИЛС (mod 101), ИНН (weight
+vectors), card (Luhn), ОГРН/ОГРНИП, passport (cue-gated), VIN, licence plates.
+The validators are the algorithm and stay in the binary; the cue words are leased.
+- **API:** `validate_snils`, `validate_inn`, `validate_luhn`, `validate_ogrn`, `vin_check_digit_valid`, `detect_vehicle_ids`, `detect_structured`, `detect_plates`
+- **Uses:** assets, detect, fuzzy · **Used by:** detect_all, spoken, vault
+- **Tests:** test_product, make_dataset · via detect_all → test_coverage_152fz, test_hard_cases, test_overmasking
+- **Docs:** `research/dd2-notes-C-disambiguation.md`, `research/ru-pii-dataset-and-detectors.md` · rules: INVARIANTS.md#structured-ids
+
+#### `pseudex/structured.py` — 219 lines · `live`
+Layer 1: JSON / form key-value, where the KEY types the WHOLE value with no shape
+check (`KEY_TYPE`), or only licenses a shape (`CTX_TYPES`). A KV-typed span skips
+`suppress`.
+- **API:** `detect_structured_kv`
+- **Uses:** assets, detect, morph_places · **Used by:** detect_all
+- **Tests:** none direct · via detect_all → test_hard_cases, test_persona_defects, test_product
+- **Docs:** `research/dd4-B-structured.md` · rules: INVARIANTS.md#structured-kv
+
+#### `pseudex/credentials.py` — 123 lines · `live`
+API keys, tokens, private keys — anchored to PUBLISHED prefixes, never to entropy.
+- **API:** `detect_credentials`, `secret_prefix`
+- **Uses:** detect · **Used by:** detect_all, vault
+- **Tests:** none direct · via detect_all, vault → test_credentials
+- **Docs:** `research/2026-08-16-secrets-detection-sota.md` · rules: INVARIANTS.md#credentials
+
+#### `pseudex/quasi.py` — 131 lines · `live`
+Quasi-identifiers: date of birth in birth context, age ≥ 90, medical terms.
+- **API:** `sentence_window`, `detect_quasi`
+- **Uses:** assets, detect, fuzzy · **Used by:** context, detect_all
+- **Tests:** none direct · via detect_all → test_hard_cases, test_coverage_152fz, test_overmasking
+- **Docs:** `research/dd4-C-quasi-identifiers.md` · rules: INVARIANTS.md#dates
+
+#### `pseudex/spoken.py` — 674 lines · `live`
+Identifiers DICTATED ALOUD: numeral runs → digit strings, then the SAME
+validators as the digit path (Luhn, mod 101, ИНН, libphonenumber). Spoken dates,
+e-mails, plates. The typo table is MINED from real transcripts; fuzzy matching on
+numerals is forbidden.
+- **API:** `is_numeral_word`, `numeral_alternation`, `canonical_numeral`, `date_from_words`, `date_to_words`, `run_to_digits`, `numeral_runs`, `detect_spoken_ids`, `email_from_words`, `detect_spoken_email`, `plate_from_words`, `detect_spoken_plate`, `main`
+- **Uses:** assets, detect, fuzzy, ru_pii · **Used by:** address, detect_all, morph_places, names, vault
+- **Tests:** test_product · via detect_all → test_overmasking (dictated order numbers), test_hard_cases; `bench/voice/`
+- **Docs:** `bench/voice/README.md`, `docs/known-issues.md` (Б1, Б6) · rules: INVARIANTS.md#spoken
+
+#### `pseudex/names.py` — 1 692 lines · `live`
+What NER misses and what it over-tags: the gazetteer (leased), lowercase
+diminutives, Latin names, initials, the cue-word gate, the deletion-neighbourhood
+typo index, the four-signal split-surname join. Also the gate that KEEPS or DROPS
+a Natasha PER/LOC.
+- **API:** `is_known_name`, `is_surname_shaped`, `keep_location`, `trim_person_span`, `keep_person`, `gazetteer_names`, `trim_document_words`
+- **Uses:** assets, detect, fuzzy, morph, spoken · **Used by:** address, assets, detect_all
+- **Tests:** test_product, test_unload_scrub, profile_deep · via detect_all → test_names_morphology, test_hard_cases, test_persona_defects, test_overmasking; `bench/gate/`, `bench/eval_massive_ru.py`, `bench/eval_external_ner.py`
+- **Docs:** `research/dd2-notes-A-ru-ner.md`, `research/2026-08-31-ml-gate-or-rules.md`, `bench/gate/README.md` · rules: INVARIANTS.md#names
+
+#### `pseudex/morph_names.py` — 988 lines · `live`
+Russian personal-name morphology: gender, case, nominative, inflection, the
+round-trip guard. `to_nominative` is called from two sides (real value in
+`canonicalize`, fake value in `name_key`) and only one may carry a guard.
+- **API:** `name_shape`, `has_given_name`, `detect_gender`, `detect_case`, `full_patronymic`, `governing_cases`, `read_person`, `to_nominative_governed`, `to_nominative`, `lone_nominative_gender`, `inflect_person`, `looks_like_person`, `given_name_gender`, `feminine_surname`, `survives_round_trip`
+- **Uses:** assets, fuzzy, morph · **Used by:** detect_all, redact, vault
+- **Tests:** test_derived_forms, test_names_morphology, test_product
+- **Docs:** `research/2026-08-16-russian-name-morphology.md`, `docs/tz-name-gender-canonical.md`, `research/2026-09-17-prose-case-homography.md` · rules: INVARIANTS.md#name-morphology
+
+#### `pseudex/address.py` — 1 927 lines · `live`
+High-recall Russian address detection: Natasha AddrExtractor ∪ regex anchors ∪
+marker-less streets (ГАР-vocabulary-gated) ∪ bare lower-case streets (four gates)
+∪ spoken tails, merged into maximal spans with a core part required. Also the
+register-spelling repair of a mistyped street for the TOOL leg.
+- **API:** `register_spelling`, `repair_street`, `detect_address`
+- **Uses:** _morph_compat, assets, detect, fuzzy, morph, morph_places, names, spoken · **Used by:** assets, detect_all, redact, vault
+- **Tests:** test_hard_cases, test_unload_scrub, profile_deep · via detect_all → test_overmasking, test_persona_defects, test_product; `bench/voice/`, `bench/eval_gar_cut.py`, `make_addr_real.py`
+- **Docs:** `docs/gar-street-vocabulary.md`, `research/dd2-notes-B-ru-address.md`, `research/dd3-location-pii.md` · rules: INVARIANTS.md#address
+
+#### `pseudex/morph_places.py` — 1 607 lines · `live`
+Place morphology and the address READER: street vs city, nominative, agreement
+with the generic word, `split_roles` (city / street / house / flat / entrance —
+the one parser every consumer must reuse), keys for the vault, `in_form_of` for
+restoring a tool argument in the agent's own form.
+- **API:** `looks_like_street`, `to_nominative`, `phrase_to_nominative`, `inflect_place`, `detect_case`, `place_gender`, `generic_forms`, `region_prefix_end`, `address_key`, `generic_full`, `street_house_key`, `strip_flat`, `strip_leading_city`, `place_shape`, `agree_with_generic`, `match_signature`, `signature_parts`, `is_generic_word`, `split_roles`, `role_spans`, `field_role`, `role_of_field`, `city_case`, `address_from_fields`, `part_in_form_of`, `house_digits`, `in_form_of`, `reduce_address`
+- **Uses:** agent_form, assets, morph, spoken · **Used by:** address, assets, redact, structured, vault
+- **Tests:** test_hard_cases, test_product, test_unload_scrub; `bench/agentpii4/harness.py`, `bench/agentpii4/microscope.py`
+- **Docs:** `docs/known-issues.md` (§2, Б2, Б10), `research/2026-09-02-agent-form-benchmark.md` · rules: INVARIANTS.md#address, INVARIANTS.md#agent-form
+
+#### `pseudex/context.py` — 386 lines · `live`
+Context-aware false-positive suppression (the deny-context layer): document
+words before a date, cue words within 60 characters and never across a sentence
+end, place-reference vs address. Runs BEFORE overlap resolution.
+- **API:** `location_is_pii`, `suppress`
+- **Uses:** assets, detect, fuzzy, quasi · **Used by:** detect_all
+- **Tests:** none direct · via detect_all → test_overmasking, test_hard_cases, test_coverage_152fz
+- **Docs:** `research/dd2-notes-C-disambiguation.md`, `research/dd3-location-pii.md` · rules: INVARIANTS.md#context
+
+#### `pseudex/fuzzy.py` — 213 lines · `live`
+One-edit matching shared by names and addresses: Damerau distance and the
+deletion-neighbourhood index (Mor-Fraenkel / SymSpell), complete by construction.
+- **API:** `within_one_edit`, `within_one_typo`, `deletion_keys`, `DeletionIndex`, `build_index`, `lookup`
+- **Uses:** — · **Used by:** address, context, morph_names, names, quasi, ru_pii, spoken, vault
+- **Tests:** `bench/blocking_recall.py` · via names/address → test_hard_cases, test_persona_defects
+- **Docs:** `docs/gar-street-vocabulary.md` (the fuzzy-street curve) · rules: INVARIANTS.md#names, INVARIANTS.md#spoken
+
+#### `pseudex/morph.py` — 38 lines · `live`
+The single pymorphy3 analyzer shared by every module that needs morphology.
+- **API:** `is_stretched_filler` (+ the module-level analyzer)
+- **Uses:** — · **Used by:** address, assets, morph_names, morph_places, names; `bench/eval_gar_cut.py`
+- **Tests:** none direct · via every morphology test
+- **Docs:** —
+
+#### `pseudex/_morph_compat.py` — 19 lines · `live`
+Aliases pymorphy2 → pymorphy3 at import time. MUST be imported before any
+`from natasha import …` — natasha binds the name eagerly.
+- **Uses:** — · **Used by:** address, detect_all; `bench/_baseline_independent.py`, `bench/eval_vault_precision.py`
+- **Tests:** none direct · via detect_all (an import-order regression shows as an ImportError at startup)
+- rules: INVARIANTS.md#morph-compat
+
+#### `pseudex/detect_all.py` — 279 lines · `live`
+The ONLY composition point. `Detector` holds the Natasha model and runs the
+pipeline above; `_PRIORITY` is the arbiter (checksum IDs 6 > phone/email 5 >
+ADDR 4 > NAME 3 > DATE/PASSPORT/LOC 2); `ADDR` exists only to outrank a NAME
+inside a street name and is remapped to `LOC` after resolution.
+- **API:** `Detector`
+- **Uses:** _morph_compat, address, assets, context, credentials, detect, morph_names, names, normalize, profiling, quasi, ru_pii, spoken, structured · **Used by:** envelope, proxy, service
+- **Tests:** test_argument_form, test_collisions, test_coverage_152fz, test_credentials, test_hard_cases, test_names_morphology, test_overmasking, test_perf_masking, test_persona_defects, test_product, test_prose_fragments; every `eval_*.py`; every `bench/`
+- **Docs:** `docs/how-it-works.md`, `docs/spec.md`, `research/dd2-notes-D-architecture-eval.md` · rules: INVARIANTS.md#pipeline
+
+#### `pseudex/translit.py` — 264 lines · `live`
+Transliteration and initials — the DERIVED forms a model writes. `align` learns
+the model's per-unit choice from the substitute, `render` applies it to the real
+name, `fold` is the vault index under which every rendering collides.
+- **API:** `apply`, `is_cyrillic_word`, `units_of`, `align`, `render`, `variants`, `table_for`, `fold`, `folded`, `match_case`, `squeezed_initials`, `main`
+- **Uses:** assets · **Used by:** redact, vault
+- **Tests:** test_derived_forms, test_prose_fragments
+- **Docs:** `research/2026-09-02-agent-form-benchmark.md` · rules: INVARIANTS.md#derived-forms
+
+#### `pseudex/agent_form.py` — 86 lines · `live`
+The FORM the agent wrote a substitute in (case, word by word, positional), laid
+over the real value on the way back to the tool. Symmetric: lower case in, lower
+case out.
+- **API:** `cased_like`, `main`
+- **Uses:** — · **Used by:** morph_places, redact
+- **Tests:** none direct · via redact → test_argument_form
+- **Docs:** `research/2026-09-02-agent-form-benchmark.md` · rules: INVARIANTS.md#agent-form
+
+### 1.2 Swap and vault
+
+#### `pseudex/redact.py` — 1 666 lines · `live`
+The swap layer: tokenize spans on the way to the model (substitute inflected to
+the original's case), detokenize on the way back — prose in agreement, tool
+arguments verbatim in the agent's form. Streaming detokenizer with one carry per
+`choice.index`; `unmask_arguments` for buffered tool calls; `residual_tokens`
+for substitutes that failed to resolve.
+- **API:** `mask_text`, `is_own_substitute`, `vault_value`, `tokenize_span`, `unmask_text`, `unmask_stream_chunk`, `unmask_arguments`, `residual_tokens`, `StreamDetokenizer`
+- **Uses:** address, agent_form, assets, detect, morph_names, morph_places, profiling, translit, vault · **Used by:** envelope, proxy, service
+- **Tests:** test_argument_form, test_collisions, test_derived_forms, test_hard_cases, test_loop, test_names_morphology, test_product, test_prose_fragments, bench_masking, profile_latency; `bench/agentpii{2,3,4}`, `bench/agentrun/roundtrip.py`
+- **Docs:** `docs/how-it-works.md`, `docs/known-issues.md` (§0, §1, Б8, Б11, Б12) · rules: INVARIANTS.md#swap, INVARIANTS.md#streaming
+
+#### `pseudex/vault.py` — 3 397 lines · `live`
+Token vault: persistent SQLCipher store keyed by `(customer, canonical)`;
+canonicalization (phones, names in the nominative with gender evidence,
+addresses via `split_roles`); format-preserving, checksum-INVALID substitutes;
+the conversation scope (`for_conversation`, `with_pseudonym_scope`, `minted_in`);
+the digit-signature and translit reindexes; the collision guards at mint time.
+- **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `looks_dictated`, `name_key`, `fold_key`, `place_key`, `token_re`, `Vault`
+- **Uses:** address, assets, credentials, fuzzy, morph_names, morph_places, normalize, profiling, ru_pii, spoken, sqlite_setup, translit · **Used by:** assets, envelope, proxy, redact, service
+- **Tests:** vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_hard_cases, test_loop, test_names_morphology, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
+- **Docs:** `docs/tz-vault-encryption.md`, `docs/tz-name-gender-canonical.md`, `docs/how-it-works.md`, `research/2026-09-03-checksum-valid-substitutes.md` · rules: INVARIANTS.md#vault, INVARIANTS.md#collisions, INVARIANTS.md#conversation-scope
+
+#### `pseudex/envelope.py` — 326 lines · `live`
+Transformations over the OpenAI chat wire envelope, shared by BOTH surfaces:
+`mask_messages` (multi-part content, `skip_system`, the mask cache),
+`mask_tools`, `unmask_response`, `conversation_key` (derived from the first two
+messages when the caller names none).
+- **API:** `MaskContext`, `conversation_key`, `mask_one`, `mask_messages`, `mask_tools`, `unmask_response`
+- **Uses:** audit, detect_all, maskcache, profiling, redact, vault · **Used by:** proxy, service
+- **Tests:** test_collisions, test_persona_defects, test_product, profile_deep; `bench/agentpii*/`
+- **Docs:** `docs/how-it-works.md` · rules: INVARIANTS.md#conversation-scope, INVARIANTS.md#cache
+
+#### `pseudex/maskcache.py` — 109 lines · `live`
+Content-keyed cache of MASKED output, per worker — the O(n²) killer on a growing
+transcript. Keys on RAW content (masked output is never re-fed); the key carries
+the conversation.
+- **API:** `content_key`, `MaskCache`
+- **Uses:** — · **Used by:** envelope, proxy, service
+- **Tests:** test_perf_masking, test_collisions, test_persona_defects, test_product, bench_masking
+- **Docs:** — · rules: INVARIANTS.md#cache
+
+#### `pseudex/audit.py` — 549 lines · `live`
+What was caught and what replaced it: type + token + masked preview only, never
+the value. Recorded on cache MISS only. Also the request counter (`requests` is
+a REQUEST counter, not `sum(entities)`), reveal records, billing totals
+(excluding `SELFCHECK_ORG`).
+- **API:** `AuditLog`
+- **Uses:** profiling, sqlite_setup · **Used by:** envelope, metering, operator, proxy, service
+- **Tests:** test_collisions, test_detok_security, test_localui, test_persona_defects, test_product; `bench/agentpii*/`
+- **Docs:** `docs/tz-local-ui.md`, `docs/metering-integrity.md` · rules: INVARIANTS.md#audit
+
+### 1.3 Lease and assets
+
+#### `pseudex/assets.py` — 540 lines · `live`
+In-memory registry of the LEASED detection assets — gazetteers, street
+vocabulary, cue words, priority table, look-alike folds, key→type map, fake
+pools. Compiles every regex ONCE at load; raises `BundleNotLeased` when nothing
+is loaded — no bundle means NO detection, not less.
+- **API:** `BundleNotLeased`, `NameAssets`, `AddressAssets`, `SpokenAssets`, `QuasiAssets`, `ContextAssets`, `StructuredAssets`, `RuPiiAssets`, `TranslitAssets`, `FakeAssets`, `DetectionAssets`, `Assets`
+- **Uses:** address, bundle, morph, morph_places, names, vault (lazy) · **Used by:** address, context, detect_all, license, morph_names, morph_places, names, normalize, proxy, quasi, redact, ru_pii, service, spoken, structured, translit, vault
+- **Tests:** test_canary, test_derived_forms, test_fingerprint, test_hard_cases, test_product, test_prose_fragments, test_tuning_lease_security, test_unload_scrub, test_watermark, testkit
+- **Docs:** `docs/tz-license-packaging.md`, `docs/tz-tuning-in-lease.md` · rules: INVARIANTS.md#lease
+
+#### `pseudex/bundle.py` — 413 lines · `live`
+The wire format shared by both sides: age-seal to ONE process key, Ed25519
+signature (who made it — encryption alone does not authenticate the sender),
+nonce wrap, framing, the usage-report MAC. Imported BY the licensing server —
+the one direction that is allowed.
+- **API:** `BundleError`, `ProcessKey`, `generate_process_key`, `is_recipient`, `seal`, `open_sealed`, `nonce_wrap`, `nonce_unwrap`, `merge_payload`, `is_framed`, `frame_payload`, `unframe_payload`, `plaintext_hash`, `signing_payload`, `report_payload`, `sign_lease`, `mac_report`, `verify_report`, `decode_public_key`, `verify_lease`
+- **Uses:** — · **Used by:** assets, license; `licensing/keys.py`, `licensing/pack.py`, `licensing/server.py`
+- **Tests:** test_canary, test_fingerprint, test_tuning_lease_security, test_watermark, `licensing/test_admin_api.py`, `licensing/test_metering_attacks.py`
+- **Docs:** `docs/tz-license-packaging.md` §3 · rules: INVARIANTS.md#lease
+
+#### `pseudex/license.py` — 977 lines · `live`
+Client side of the lease: X25519 process keypair in memory, `POST /v1/lease`,
+renewal loop, the degradation ladder `LEASED → STALE → EXPIRED` (grace on
+`time.monotonic()`, 402/403 bypass it), unload + scrub, usage reports, the
+compiled-in verification key from `pseudex/_release.py`.
+- **API:** `explain`, `LicenseError`, `LicenseStatus`, `LicenseClient`
+- **Uses:** _release (generated), assets, bundle, measure · **Used by:** metering, proxy, service
+- **Tests:** test_clock_freeze, test_localui, test_persona_defects, `licensing/test_admin_api.py`, `licensing/test_metering_attacks.py`; `e2e/gates.py` L1–L22
+- **Docs:** `docs/tz-license-packaging.md`, `docs/tz-tuning-in-lease.md`, `docs/staleness-and-rotation.md`, `docs/tz-offline-license.md` (design) · rules: INVARIANTS.md#lease
+
+#### `pseudex/measure.py` — 77 lines · `live`
+A measurement of the running build (which binary, which hash) — goes into the
+lease request and the usage report so the server can tell builds apart.
+- **API:** `build_measurement`
+- **Uses:** — · **Used by:** license, serve_main
+- **Tests:** `licensing/test_metering_attacks.py`
+- **Docs:** `docs/metering-integrity.md`
+
+#### `pseudex/metering.py` — 34 lines · `live`
+ONE point where a request is counted and capacity is charged for it.
+- **API:** `bill`
+- **Uses:** audit, license · **Used by:** proxy, service
+- **Tests:** none direct · via service → test_perf_masking, test_localui; `e2e/gates.py` L12; `licensing/test_metering_attacks.py`
+- **Docs:** `docs/metering-integrity.md`, `docs/billing-integrity.md` · rules: INVARIANTS.md#billing
+
+### 1.4 Surfaces
+
+#### `pseudex/service.py` — 1 015 lines · `live`
+The sidecar behind a host gateway: `/mask`, `/unmask`, `/unmask_chunk`,
+`/unmask_arguments`, `/spans`, `/health` (gateway token) + the operator router
+(admin token). `org_id` and `conversation_id` in the body; detection offloaded
+via `anyio.to_thread` under a `CapacityLimiter`.
+- **API:** `profile`, `health`, `license_status`, `mask`, `unmask`, `unmask_arguments_endpoint`, `unmask_chunk`, `spans`, `usage`, `reveal`
+- **Uses:** assets, audit, detect_all, envelope, license, maskcache, metering, operator, profiling, redact, sqlite_setup, vault · **Used by:** serve_main
+- **Tests:** test_detok_security, test_localui, test_perf_masking, test_persona_defects; `e2e/gates.py`
+- **Docs:** `docs/integration.md`, `docs/integration-diva-litellm.md`, `docs/integration-diva-backend-api.md`, `docs/how-it-works.md` · rules: INVARIANTS.md#surfaces, INVARIANTS.md#streaming
+
+#### `pseudex/proxy.py` — 911 lines · `live` (formerly `drifted`)
+The OpenAI-compatible reverse proxy: `sk-ps-…` key → `Tenants` → upstream URL +
+key; `POST /v1/chat/completions` with streaming (`StreamDetokenizer`; tool-call
+requests buffered), `GET /usage`. Shares `envelope.mask_messages`, `MaskCache`,
+the thread offload and the limiter with the sidecar. The one remaining
+difference: no `skip_system` (the proxy always masks the system prompt).
+`CLAUDE.md`'s "duplicated on purpose but have drifted" paragraph predates the
+shared envelope. `docs/known-issues.md` §3 lists what else lagged and what is closed.
+- **API:** `health`, `license_status`, `profile`, `usage`, `chat_completions`, `spans`, `mask`, `reveal`
+- **Uses:** assets, audit, detect_all, envelope, license, maskcache, metering, operator, profiling, redact, sqlite_setup, tenants, vault · **Used by:** serve_main
+- **Tests:** test_persona_defects · via redact → test_product (streaming detok); live: `agent_demo.py`, `response_test.py`, `live_eval.py` (live)
+- **Docs:** `docs/integration.md`, `docs/known-issues.md` §3 · rules: INVARIANTS.md#surfaces
+
+#### `pseudex/operator.py` — 532 lines · `live`
+Read-mostly endpoints for the operator's local interface, mounted on both
+surfaces under the ADMIN token: `/status`, `/events`, `/stats`, `/stats.csv`,
+`/reveals`, `/subscription`, `/diagnostics`, `/selfcheck`, `/reveal`, `/metrics`.
+- **API:** `processes`, `memory`, `build_router`
+- **Uses:** audit, metrics, preflight, profiling, sqlite_setup · **Used by:** proxy, service
+- **Tests:** none direct · via service → test_localui, test_perf_masking (401 on token drift), test_detok_security
+- **Docs:** `docs/tz-local-ui.md` · rules: INVARIANTS.md#surfaces, INVARIANTS.md#audit
+
+#### `pseudex/localui/server.py` — 428 lines · `live`
+The operator's local interface: a SEPARATE ASGI app on :8081 (`PSEUDEX_ROLE=ui`)
+so it can say "движок не отвечает". Startup token / `PSEUDEX_UI_PASSWORD`
+sign-in, token in the Authorization header (never a cookie), engine proxy as an
+ALLOWLIST of exact paths. Pages are vendored Preact+htm under `pseudex/localui/`
+and ship at `/app/ui`. Never imports `pseudex.service`, never leases.
+- **API:** `signin_url`, `signin`, `signout`, `whoami`, `engine_get`, `engine_post`, `healthz`, `index`, `static_file`
+- **Uses:** — · **Used by:** serve_main
+- **Tests:** test_localui · via a running UI process → test_localui_renders (real browser)
+- **Docs:** `docs/tz-local-ui.md` · rules: INVARIANTS.md#local-ui
+
+#### `pseudex/tenants.py` — 87 lines · `live`
+Multi-tenant API keys for the proxy shape: key → upstream URL + key.
+- **API:** `Tenant`, `Tenants`
+- **Uses:** sqlite_setup · **Used by:** proxy; `issue_key.py`
+- **Tests:** test_product
+- **Docs:** `docs/integration.md`
+
+#### `pseudex/metrics.py` — 113 lines · `live`
+Prometheus text format written by hand — no client library in the image.
+- **API:** `escape`, `render`, `series`, `Counter`
+- **Uses:** — · **Used by:** operator; `licensing/server.py`
+- **Tests:** none direct · via operator → test_localui
+- **Docs:** `docs/operations.md`
+
+### 1.5 Storage, process, ops
+
+#### `pseudex/sqlite_setup.py` — 392 lines · `live`
+The ONE SQLite driver setup for the four stores (vault, audit, tenants,
+licensing): `sqlcipher3` only, no `import sqlite3` anywhere in `pseudex/` (both
+Dockerfiles fail the build on it). HKDF per-store keys, read-only opens, volume
+state, preflight of the mounted volume.
+- **API:** `VaultLocked`, `store_key`, `connect`, `connect_readonly`, `volume_state`, `preflight`, `describe`
+- **Uses:** vault_key, vault_migrate · **Used by:** audit, operator, proxy, service, tenants, vault; `licensing/store.py`, `licensing/verify.py`, serve_main
+- **Tests:** `licensing/test_store_upgrade.py` · via vault → vault_test, test_pseudexctl; `e2e/pack_gates.py` P9
+- **Docs:** `docs/tz-vault-encryption.md` · rules: INVARIANTS.md#storage
+
+#### `pseudex/vault_key.py` — 507 lines · `live`
+Where the store key comes from, and never from us: `PSEUDEX_VAULT_KEY` →
+`_KEY_FILE` → `_KEY_CMD` → generated beside the data. `required` refuses to
+generate; `off` is plaintext (the licensing image only).
+- **API:** `VaultKeyError`, `VaultSecret`, `resolve`, `existing`, `replacement`, `key_literal`, `key_state`, `reset_cache`
+- **Uses:** — · **Used by:** sqlite_setup, vault_migrate, serve_main
+- **Tests:** none direct · via serve_main roles → test_pseudexctl (rekey proof, doctor); `e2e/gates.py` vault gates
+- **Docs:** `docs/tz-vault-encryption.md`, `docs/operations.md` · rules: INVARIANTS.md#storage
+
+#### `pseudex/vault_migrate.py` — 358 lines · `live`
+Plaintext store → encrypted, in place, under `flock`, idempotent by file header,
+`wal_checkpoint(TRUNCATE)` first. Rekey and decrypt are the same move in other
+directions (`PSEUDEX_ROLE=rekey|decrypt`).
+- **API:** `VaultMigrationError`, `file_state`, `ensure_encrypted`, `rekey_store`, `decrypt_store`
+- **Uses:** vault_key · **Used by:** sqlite_setup, serve_main
+- **Tests:** none direct · via serve_main roles → test_pseudexctl; `e2e/gates.py` (migration gates)
+- **Docs:** `docs/tz-vault-encryption.md` · rules: INVARIANTS.md#storage
+
+#### `pseudex/hardening.py` — 114 lines · `live`
+Process-level hardening against reading the worker's memory off disk: no core
+dumps, no ptrace attach, applied BEFORE any role touches the tuning or the vault.
+- **API:** `get_dumpable`, `tracer_pid`, `harden_process`
+- **Uses:** — · **Used by:** serve_main
+- **Tests:** test_memory_hardening; `e2e/gates.py` L14 (memscan)
+- **Docs:** `research/2026-09-15-ram-extraction-hardening.md`, `research/2026-09-14-pentest-client-greybox.md` · rules: INVARIANTS.md#hardening
+
+#### `pseudex/tripwire.py` — 240 lines · `live`
+Memory-read tripwire: detects and attributes attempts to read the engine's RAM,
+reports them to the licensing server (`/v1/tripwire`). Runs as
+`PSEUDEX_ROLE=tripwire`.
+- **API:** `engine_workers`, `ReadEvent`, `scan`, `watch`, `main`
+- **Uses:** — · **Used by:** serve_main
+- **Tests:** test_tripwire
+- **Docs:** `docs/staleness-and-rotation.md`, `research/2026-09-15-ip-protection-map-and-sota.md` · rules: INVARIANTS.md#hardening
+
+#### `pseudex/preflight.py` — 222 lines · `live`
+How many workers fit in the cgroup memory limit — computed BEFORE the fan-out
+(`PSEUDEX_ROLE=preflight`), refusing or lowering N instead of leaving it to the
+OOM killer.
+- **API:** `memory_limit_mb`, `plan`, `cpus_available`
+- **Uses:** — · **Used by:** operator, serve_main
+- **Tests:** test_preflight
+- **Docs:** `docs/operations.md` · rules: INVARIANTS.md#process
+
+#### `pseudex/profiling.py` — 126 lines · `live`
+Stage-level profiler for the masking hot path; exposed at `/profile`.
+- **API:** `StageStats`, `stage`, `snapshot`
+- **Uses:** — · **Used by:** audit, detect_all, envelope, operator, proxy, redact, service, vault; `profile_deep.py`
+- **Tests:** none dedicated (read by `profile_deep.py`, `profile_latency.py`)
+- **Docs:** —
+
+#### `pseudex/_release.py` — `generated`
+`LICENSE_PUBKEY = "…"`, written by both Dockerfiles from `PSEUDEX_LICENSE_PUBKEY`.
+Absent in a source checkout; `pseudex/license.py` explains the failure when it is missing.
+
+---
+
+## 2. `prototype/licensing/` — our side, never ships
+
+Paths relative to `prototype/`. `pseudex/` must never import from here; this
+package imports `pseudex.bundle`, `pseudex.sqlite_setup`, `pseudex.metrics`.
+
+| file | lines | status | what |
+|---|---|---|---|
+| `licensing/assets_source.py` | 1 422 | `live` | THE authored detection assets: cue words, address regexes, priority table, look-alike folds, key→type map, fake pools. The tuning. |
+| `licensing/data/first_names.txt`, `licensing/data/surnames.txt` | 28k / 197k entries | `live` | the bulk name dictionaries (`bench/build_name_dicts.py` rebuilt them once) |
+| `licensing/data/gar_streets.tsv`, `licensing/data/gar_types.json` | 165k streets / 42 types | `generated` by `licensing/fetch_gar.py` | the ГАР street vocabulary with its attribution line and dump date |
+| `licensing/fetch_gar.py` | 437 | `live` | rebuilds the street vocabulary from the ФНС ГАР dump without downloading 53 GiB (central-directory range reads) |
+| `licensing/pack.py` | 423 | `live` | builds the bundle: `build_plaintext` → zlib(JSON), version = content hash; weaves canary, fingerprint and watermark; reads the ГАР attribution back rather than restating it |
+| `licensing/canary.py` | 165 | `live` | per-customer canary surnames/streets in the leased gazetteers, for attribution of a leaked bundle |
+| `licensing/fingerprint.py` | 137 | `live` | Tardos collusion-resistant fingerprint; `accuse` survives a coalition |
+| `licensing/watermark.py` | 50 | `live` | per-customer watermark (`_wm`) in the payload |
+| `licensing/keys.py` | 69 | `live` | the Ed25519 signing key (private on the server, public compiled into the release binary by `deploy/make-release-keys.sh`) |
+| `licensing/server.py` | 1 317 | `live` | the licensing server — the only component on our hardware: `POST /v1/lease` (seal to the process key, sign), `/v1/release`, `/v1/tripwire`, `/v1/meter`, `/v1/usage`; admin API on :9443 (instances, anomalies, issue/revoke/suspend/resume/replan/plans, fleet) |
+| `licensing/store.py` | 1 675 | `live` | licensing state: keys, leases, usage chains, anomalies. Schema MIGRATES before any index is built. |
+| `licensing/devserver.py` | 68 | `live` | runs the server locally exactly as in production (`basicConfig` for the root logger lives here — uvicorn does not configure it) |
+| `licensing/verify.py` | 77 | `live` | is this copy of the licensing DB a WORKING database and how full is it (the restore drill asks this) |
+| `licensing/repair_usage.py` | 77 | `live` | one-off repair of `usage` rows written before input validation existed |
+| `licensing/test_admin_api.py` | 855 | `live` | attacks THROUGH HTTP, not around it: every admin action, auth, replay |
+| `licensing/test_metering_attacks.py` | 360 | `live` | attacks on instance counting and on the chain of usage reports (race, replay, forged MAC, frozen clock) |
+| `licensing/test_store_upgrade.py` | 116 | `live` | upgrade on EXISTING data: a verbatim snapshot of the old schema, never "current minus a column" |
+
+Docs: `docs/tz-license-packaging.md` (the spec), `docs/tz-tuning-in-lease.md`,
+`docs/metering-integrity.md`, `docs/staleness-and-rotation.md`,
+`docs/gar-street-vocabulary.md`, `docs/tz-offline-license.md` (design, O1–O15 not built).
+
+---
+
+## 3. `prototype/` root — entry points, build, tests, evals
+
+Paths relative to `prototype/`. Everything runs from `prototype/` with the venv
+active. There is NO pytest; each script has a `main()`.
+
+### 3.1 Entry points and the roles
+
+| file | status | what |
+|---|---|---|
+| `entrypoint.sh` | `live` | the container's PID 1: generates the two tokens ONCE for all workers, runs `PSEUDEX_ROLE=preflight` to size N, `PSEUDEX_ROLE=probe` to check the volume, then fans out N uvicorn workers (`engine`, or `proxy`) and starts the UI process (`PSEUDEX_ROLE=ui`) |
+| `serve_main.py` | `live` | entry point of ONE worker; dispatches on `PSEUDEX_ROLE`: `engine` (default) · `proxy` · `ui` · `preflight` · `probe` · `rekey` · `decrypt` · `measure` · `tripwire`. Hardens the process before any role runs. |
+| `pseudexctl` | `live` | the ops CLI, one entry instead of six `docker run -e PSEUDEX_ROLE=…`: `doctor`, `probe`, `preflight`, `decrypt`, `diag`, `metrics`, `rekey`, `backup`, `restore`. Pinned by `test_pseudexctl.py`. |
+| `issue_key.py` | `live` | mint a proxy tenant key (`sk-ps-…`) into `tenants.db` |
+| `testkit.py` | `live` (dev only) | `load_dev_bundle()` — builds a bundle from `licensing/pack.py` and loads it in-process; every test/eval that detects calls it first. NO equivalent in the shipped image. |
+| `requirements.txt` | `live` | not stdlib-only: `fastapi`, `uvicorn`, `httpx`, `phonenumbers`, `pymorphy3` + `pymorphy3-dicts-ru`, `natasha`, `pyrage` (age), `cryptography`, `sqlcipher3` |
+
+### 3.2 Build
+
+| file | status | what |
+|---|---|---|
+| `Dockerfile` | `live` | `pseudex:source` — the engine from `.py`; writes `pseudex/_release.py`; fails on `import sqlite3` in `pseudex/` |
+| `Dockerfile.nuitka` | `live` | `pseudex:compiled` — same Debian release, engine compiled to a native binary; the three `build_*.py` steps (§3.2) run first |
+| `build_strip_docstrings.py` | `live` | removes docstrings BEFORE Nuitka (`--python-flag=no_docstrings` leaves the literals in the constants blob) |
+| `build_mangle_names.py` | `live` | renames PRIVATE crown symbols to opaque names before compilation (WS-1); `_release` is on its keep-list |
+| `build_harden_strings.py` | `live` | hides the beacon strings of the licensing path from the compiled image |
+| `deploy/tripwire/` | `live` | the tripwire's own container files |
+| `THIRD-PARTY-NOTICES.md` | `live` | licences of what ships |
+
+### 3.3 Tests — what each one pins
+
+Run from `prototype/`; each loads the dev bundle itself.
+
+| script | pins |
+|---|---|
+| `test_loop.py` | the core proof: no PII reaches the model, tool-call round trip restores real values (no LLM, no network) |
+| `test_product.py` | tenancy, audit, streaming detok, the product layer offline |
+| `vault_test.py` | canonicalization (`+7`/`8`/bare → one token) and persistence across restart |
+| `test_perf_masking.py` | mask cache, audit dedup on cache miss, leak regression, loop responsiveness under load, the `/unmask_chunk` vs `/unmask_arguments` contract from both sides, the `requests` counter — against the real FastAPI app |
+| `test_localui.py` | the operator surface: closed by default, reveals audited with `actor`, requests billed apart from entities, self-check excluded from billing |
+| `test_localui_renders.py` | the interface in a REAL browser (playwright + chromium): a 200 and a CSP header are not evidence it executed |
+| `test_persona_defects.py` | the five defects the 18.08.2026 persona run found and no corpus of ours did |
+| `test_preflight.py` | worker arithmetic against the cgroup limit; what happens when N does not fit; the contract with `entrypoint.sh` |
+| `test_pseudexctl.py` | the ops CLI: command shapes, doctor verdicts, the rekey proof |
+| `test_collisions.py` | a substitute equal to a real value — both halves (backwards at mint, forwards via `minted_in`), and BOTH sides of the `pseudonym_scope` trade |
+| `test_derived_forms.py` | transliteration and initials in a tool argument — in the model's own convention, resolved by the conversation |
+| `test_argument_form.py` | a tool argument is restored VERBATIM in the agent's form (case, generic words); prose in agreement |
+| `test_prose_fragments.py` | a piece or a derivative of a substitute in the ANSWER to the customer |
+| `test_names_morphology.py` | gender, case and self-agreement of names; the round-trip guard |
+| `test_hard_cases.py` | 967 lines of the awkward, the rare and the deliberately hostile — addresses, names, dates, KV |
+| `test_overmasking.py` | 538 phrases of ordinary business/technical Russian with NO personal data (496 from MASSIVE's annotation): must stay unmasked; prints the Clopper-Pearson precision floor, not just the observed rate |
+| `test_coverage_152fz.py` | a checklist of the personal-data types 152-ФЗ cares about — each one detected |
+| `test_credentials.py` | credentials found when stamped by a vendor prefix, untouched when merely random (SHA, UUID, `pk_live_`, placeholders) |
+| `test_detok_security.py` | detok surface hardening (pentest B1/B2/B4): every `/unmask*` writes a counts-only audit row and is rate-limited per org; a bound container (`PSEUDEX_ORG`) refuses other orgs; the preview shows ≤1 char at each end. B3 (`/unmask` reachable on an expired lease) is BY DESIGN |
+| `test_memory_hardening.py` | the worker is non-dumpable and non-traceable |
+| `test_tripwire.py` | a memory read is detected and attributed (WS-7) |
+| `test_clock_freeze.py` | a frozen clock (LD_PRELOAD) does not extend a lease (pentest W2) |
+| `test_tuning_lease_security.py` | A2 is closed: the tuning rides in the lease, there is no compiled blob and no static key |
+| `test_unload_scrub.py` | leased-data caches are scrubbed on unload (H3) |
+| `test_canary.py` | per-customer canaries survive into the leased gazetteers and identify a leaked bundle |
+| `test_fingerprint.py` | the Tardos fingerprint survives a coalition |
+| `test_watermark.py` | every leased bundle carries the customer's watermark |
+| `test_metering_anomaly.py` | the fleet-wide anomaly report surfaces a silently root-patched counter (WS-6/M2) |
+| `test_published_claims.py` | numbers PRINTED to the customer (landing, EULA) equal the numbers the code works by — and the replaced literals are ABSENT |
+
+Not in `prototype/`: `licensing/test_*.py` (§2), `storefront/test_*.py` (§6),
+`e2e/` gates (§5).
+
+### 3.4 Evals and dataset generators (own corpora)
+
+| script | status | what |
+|---|---|---|
+| `make_dataset.py` → `eval_detect.py` | `live` | golden set: 100 synthetic RU cases with checksum-valid PII; per-type recall/precision |
+| `make_dirty.py` → `eval_dirty.py` | `live` | dirty set from the researched noise patterns: F2, FP/FN dump, hard-negative false-mask rate, type-aware miss and type-blind TRUE-LEAK printed apart. `pack_gates` P3 needs `dirty.json` and refuses BEFORE the Nuitka build without it |
+| `make_stress.py` → `eval_stress.py` | `frozen` | adversarial set built to break the detector — built independently, never tuned against |
+| `make_holdout.py` | `frozen` | large diverse hold-out; independent of the detector |
+| `make_addr_real.py <out> <seed>` | `frozen` | address benchmark on a FRESH seed each time |
+| `bench_masking.py` | `live` | O(n²) growing-transcript cost, cache on vs off. Uses `Vault(":memory:")` — cannot see the storage layer |
+| `profile_latency.py` | `live` | part 1 offline per-message cost; part 2 real A/B (needs `PSEUDEX_UPSTREAM_KEY`). Same blind spot |
+| `profile_deep.py` | `live` | three zoom levels on the masking bottleneck |
+| `agent_demo.py`, `response_test.py`, `live_eval.py` | `live` (needs proxy on :4000 + `pseudex-dev` tenant) | a real tool-using agent through the proxy; the response leg shows the REAL phone; end-to-end with tool calls that USE personal data as logic |
+
+---
+
+## 4. `prototype/bench/` — instruments
+
+Paths relative to `prototype/`. Every instrument here was built so that the
+engine could FAIL on it; read `CLAUDE.md` § "Eval discipline" before changing
+any of them. External corpora live in `~/.cache/pseudex-bench/`.
+
+### 4.1 Benchmarks we built
+
+Owner's decision 2026-09-20: of the four AgentPII generations only **v4 is
+live**; v1–v3 stay for the numbers cited from them and are not developed.
+
+| package | status | what it measures | normative file | doc |
+|---|---|---|---|---|
+| `bench/agentpii/` | `superseded by agentpii4` | AgentPII-RU v1: Russian conversational PII through tool schemas, four registers (clean/chat/sloppy/voice), recall vs COVERAGE printed apart, round-trip axis | `bench/agentpii/schema.py` | `bench/agentpii/README.md` |
+| `bench/agentpii2/` | `superseded by agentpii4` | v2: case schema and family taxonomy (families/, live/) | `bench/agentpii2/schema.py` | `docs/tz-agentpii2.md`, `bench/agentpii2/README.md` |
+| `bench/agentpii3/` | `superseded by agentpii4` | v3: полнота on speech-like agent traffic; mined dispatch calls and reference forms (`bench/agentpii3/mine_*.py`, `bench/agentpii3/mined/`); audit + crosscheck. **The 69.6% NAME полнота number cited in CLAUDE.md is from here** — kept for that number, not for new work | `bench/agentpii3/schema.py` | `docs/tz-agentpii3.md` |
+| `bench/agentpii4/` | `live` | v4 «шлюз не ломает агента»: three arms (control, control′, gateway) over a mock CRM; levels calls/fields/state; TOST at δ=3pp with cluster bootstrap; `autopsy`, `microscope`, `compare_runs`; fresh-seed corpora `bench/agentpii4/fresh5150/` … `bench/agentpii4/fresh8080/` | `bench/agentpii4/schema.py` | `docs/tz-agentpii4.md`, `bench/agentpii4/README.md`, `research/2026-09-05-agent-scenario-coverage.md`, `research/2026-09-06-benchmark-tiers.md`, `research/2026-09-07-benchmark-critics.md` |
+| `bench/agentrun/` | `live` | paired runs on BFCL tasks with injected Russian PII (`bench/inject_ru_pii.py`): did putting Pseudex in the path cost anything; `bench/agentrun/gpu/` + `bench/agentrun/GPU.md` for a local model | — | `bench/agentrun/GPU.md` |
+| `bench/gate/` | `frozen` | the ceiling of the dictionary gate: 600 hand-labelled OCCURRENCES pinned to a snapshot; the live detector re-runs and prints MOVEMENT | `bench/gate/labels.json` | `bench/gate/README.md` |
+| `bench/voice/` | `frozen` | real taxi-dispatch transcripts (RuDevices), addresses hand-labelled in two strata (400 marker-carrying + 250 of 4 805 number-only; weight the second 250/4805); `bench/voice/score.py` filters to LOC | `~/.cache/pseudex-bench/rudevices_addresses.json` | `bench/voice/README.md` |
+| `bench/runs/` | `frozen` | measurement outputs by date (2026-09-01 … ); `README.md` says what each run answered. Never edit. | — | `bench/runs/README.md` |
+
+### 4.2 Evals on corpora we did not write
+
+| script | corpus | question |
+|---|---|---|
+| `bench/eval_external_ner.py <NEREL> --splits dev,test` | NEREL | recall on a corpus we did not write (PERSON 91.5%, Cyrillic 92.3%) |
+| `bench/eval_external_precision.py <NEREL>` | NEREL | what we mask that no annotator labelled; 1 922 spans → the error budget at 99.4% is 12 spans |
+| `bench/eval_massive_ru.py` | MASSIVE ru-RU (16 521 utterances, CC BY 4.0) | полнота on third-party speech: NAME 68.0%, `place_name` 0.1% is CORRECT (bare cities are refused by law) |
+| `bench/eval_piibench.py` | hivetrace PII-Bench | Russian chat-register PII; prints TWO totals (КПП/ОГРН identify a legal entity) |
+| `bench/eval_noise_ladder.py --dataset dataset.json` | own | where detection breaks on live chat, rung by rung |
+| `bench/eval_noise_by_type.py dataset.json` | own | the same ladder BY TYPE — who exactly breaks |
+| `bench/eval_gar_cut.py` | ГАР | where to cut the street vocabulary and what each cut costs (`STREET_MIN_OBJECTS = 1`) |
+| `bench/eval_overmasking_volume.py` | `~/.cache/pseudex-bench/ru_prose.jsonl` (Wikipedia, `bench/fetch_ru_prose.py`) | over-masking on VOLUME of ordinary prose |
+| `bench/eval_vault_precision.py` | real speech | how many PROTECTED values are not personal data |
+| `bench/eval_canaries.py` | real messages + known PII | known PII planted into REAL messages |
+| `bench/eval_disagreement.py` | real traffic | what the INDEPENDENT baseline (`bench/_baseline_independent.py`: bare Natasha + naive regex, none of our dictionaries) finds and we do not |
+| `bench/eval_metamorphic.py` | own | metamorphic relations on addresses and names — an invariant, not a labelling |
+| `bench/blocking_recall.py` | — | recall of the deletion-neighbourhood index |
+| `bench/fuzz_registers.py` | — | every way one value can be written, mechanically |
+| `bench/leak_check.py` | a run's log | did any REAL personal data reach the model |
+| `bench/compare_arms.py` | paired run | what putting Pseudex in the path cost |
+| `bench/fetch_ru_prose.py`, `bench/fetch_ru_speech.py` | — | corpus fetchers (Wikipedia prose; real call transcripts) |
+| `bench/build_name_dicts.py` | — | extracted the name dictionaries into `licensing/data/` (one-off) |
+| `bench/run_all.py`, `bench/summarize_run.py` | — | the whole battery in one run; headline numbers of one run into one document |
+
+---
+
+## 5. `prototype/e2e/` — the gates
+
+Definition of done for the licensing layer and packaging. They run against REAL
+containers, never mocks, and are themselves audited.
+
+| file | what |
+|---|---|
+| `e2e/gates.py` | L1–L22 (+L2b): lease, renewal, grace, revocation, vault encryption/migration/rekey, preflight, memory scan, tokens, billing counter (L12), against a local stand (`deploy/compose.local.yml`). `--only L4,L5` for a subset; `--image pseudex:compiled --skip-build` with `PSEUDEX_SIGNING_KEY` to reuse a build. ~15 min |
+| `e2e/pack_gates.py` | P1–P11 on the compiled image: no `/app/pseudex`, no docstrings (`grep -a`), parity with the source tree (P3 via `e2e/parity.py` on `dirty.json`), latency, stdlib-SQLite cannot open the volume (P9), no `sqlite3` import… Builds BOTH images unless `--skip-build` |
+| `e2e/parity.py` | P3: the compiled image detects EXACTLY what the source tree detects |
+| `e2e/audit_gates.py` | the gate over the gates: every NEGATIVE atom needs a POSITIVE atom over the same source; `--selftest` on 13 fixtures REFUSES to report unless it separates them. Runs in the battery as `62-gate-audit` |
+| `e2e/lint_tests.py` | mechanical gates against checks that cannot fail: swallowed failures, unreachable and duplicate checks |
+| `e2e/memscan.py` | search a running process's memory for a string (L14) |
+| `e2e/fixtures.py` | the personal data the gates push through a real instance; `leak_values` for the memory scan |
+| `e2e/certs.py` | self-signed CA + server cert for the stand |
+
+The stand builds `pseudex:local`; the gates build `pseudex:source` — DIFFERENT
+verification keys, never share the tag.
+
+---
+
+## 6. `storefront/` — landing, signup, cabinet, console, billing
+
+Django on our infrastructure. Shares no code with the engine and MUST NOT: the
+storefront never sees personal data, the engine never depends on the shop. Talks
+to the licensing server through ONE connector (`storefront/billing/licensing.py`) with
+`PSEUDEX_LICENSE_STOREFRONT_TOKEN`. Run and test commands: `storefront/README.md`.
+
+| app / file | what |
+|---|---|
+| `storefront/pseudex_site/` | settings (no `PSEUDEX_SECRET_KEY` → refuses to start unless `PSEUDEX_DEBUG`), URL map, `storefront/pseudex_site/context.py` (numbers the templates must see so text never diverges from code), `storefront/pseudex_site/logfmt.py` (JSON logs) |
+| `storefront/storefront_web/` | the pages; `storefront/storefront_web/detection_types.py` (what the engine finds and does not — the configurator's data); `storefront/storefront_web/middleware.py` (security headers) |
+| `storefront/accounts/` | users, organisations, `storefront/accounts/payer.py` (who the customer is, as THEY state it) |
+| `storefront/billing/` | `storefront/billing/models.py` (Plan, Subscription, Key, Invoice, Offer), `storefront/billing/services.py` (ALL state changes in one place), `storefront/billing/payments.py` (ЮKassa: cards, СБП, invoice link), `storefront/billing/licensing.py` (connector to the licensing admin API), `storefront/billing/reconcile.py` (our invoice vs the customer's own gateway log), `storefront/billing/onboarding.py` (the coding-agent onboarding prompt); commands `run_billing_cycle` (the ONLY caller of the billing primitives, hourly as its own compose service, idempotent by a DB row) and `seed_plans` |
+| `storefront/ops/` | operator console (all customers, one customer, report chains, plans), first-party analytics (`storefront/ops/analytics_models.py`, `storefront/ops/collect.py` — daily salt, bot filter), demand for detection types we lack (`storefront/ops/models.py`), Yandex Metrika/Direct API + server-side conversions (`storefront/ops/yandex_api.py`, `storefront/ops/yandex_views.py`); commands `daily_digest`, `enroll_totp`, `rollup_analytics`, `yandex_auth`, `yandex_conversions` |
+| `storefront/templates/`, `storefront/static/` | pages, the configurator JS, generated images (`storefront/make_favicons.py`, `storefront/make_og_cover.py`, `storefront/make_ad_images.py` — from the SVG, never hand-drawn) |
+| `storefront/docs/` | the storefront's own specification, moved here from the root `docs/`: `storefront/docs/tz-site.md` (what the site must do), `storefront/docs/tz-site-stack.md` (stack choice and what was rejected). Its README links them as docs/tz-site.md relative to storefront/ |
+| `storefront/run_all.py` | the whole storefront in one command, «прошло» and «не гонялось» separated |
+| `storefront/testkit_otp.py` | sign in to the console FROM A TEST, with the second factor |
+
+Tests (`storefront/test_*.py`): `test_storefront` (against a REAL licensing
+server) · `test_billing_lifecycle` (landing → container on a mock provider;
+asks the server for `window_seconds`; POSTs `/mask` into a live container after
+every state transition; the container-stopping check goes LAST) ·
+`test_billing_e2e` (the REAL ЮKassa test shop) · `test_annual` · `test_hardcap`
+· `test_offers` · `test_paywall` · `test_passwordless` · `test_admin_2fa` ·
+`test_auth_style` · `test_signup_forms` · `test_configurator_renders` and
+`test_ops_renders` (real browser) · `test_seo` · `test_crawler_allowlist`
+(fail2ban allowlist) · `test_deploy_references` (SQL names in deploy scripts vs
+real tables) · `test_analytics` · `test_yandex_api`.
+
+Docs: `docs/sprint-cabinet-and-pricing.md`, `docs/billing-integrity.md`,
+`docs/metering-integrity.md`, `docs/tz-verticals-and-configurator.md` (design),
+`docs/payment-provider-request.md`, `docs/rkn-notification.md`,
+`research/2026-08-15-ru-payments.md`, `research/2026-09-17-yandex-offline-conversions.md`,
+`research/2026-09-14-legal-launch-audit.md`.
+
+---
+
+## 7. `deploy/` and CI
+
+### 7.1 `deploy/` — our production host
+
+| file | what |
+|---|---|
+| `deploy/compose.yml` | OUR side: licensing server, storefront, their database, the billing-cycle service, observability. `$VAR` in `command:` is interpolated by compose — escape as `$$VAR` |
+| `deploy/compose.local.yml` | the whole product on one machine (the stand the gates and `deploy/local.sh` use); builds `pseudex:local` |
+| `deploy/local.sh` | brings the stand up and PROVES it is up (a 401 from the admin port is proof of life) before printing the walkthrough |
+| `deploy/bootstrap.sh` | clean Ubuntu 24.04 → production host, one idempotent command |
+| `deploy/agent.sh` + `deploy/systemd/pseudex-agent.service`, `.timer` | the deploy the host performs ITSELF on a timer |
+| `deploy/watch.sh` | the watchdog: `docs/operations.md` §5 turned into a mechanism |
+| `deploy/backup.sh`, `deploy/restore-drill.sh` + `deploy/systemd/pseudex-restore-drill.service`, `.timer` | nightly backups of both databases; the weekly drill restores yesterday's and asks `licensing/verify.py` whether it is alive |
+| `deploy/housekeeping.sh` + `deploy/systemd/pseudex-housekeeping.service`, `.timer` | weekly disk cleanup, on its own timer |
+| `deploy/notify.sh` | one alert channel (Telegram) for deploys, the watchdog and backups |
+| `deploy/Caddyfile` | TLS, HSTS, security headers |
+| `deploy/prometheus.yml`, `deploy/alerts.yml`, `deploy/alertmanager.yml` | scrape targets with token; few alerts ON PURPOSE |
+| `deploy/loki.yml`, `deploy/promtail.yml`, `deploy/grafana-dashboard.json`, `deploy/grafana-provisioning/` | logs by LABEL (content not indexed); the one dashboard |
+| `deploy/fail2ban/` | jails + the crawler allowlist (`storefront/test_crawler_allowlist.py`) |
+| `deploy/supportbot/` | the Telegram support bot container |
+| `deploy/make-release-keys.sh` | the Ed25519 pair: public half compiled into the release binary, private on the server. A fresh one forces a full Nuitka rebuild |
+| `deploy/build-arkari-clang.sh` | the obfuscating clang for the Nuitka build — one time, pinned |
+| `deploy/check-dns.sh` | what the OUTSIDE world thinks of the domain |
+| `deploy/simulate.py` | synthetic, obviously fake people for demos |
+| `deploy/secrets/` | gitignored: `license-admin-token`, `tg-bot-token` |
+| `deploy/Dockerfile.backup` | the backup container |
+
+Docs: `docs/operations.md` (the operational spec), `research/2026-09-14-devops-audit.md`,
+`research/2026-08-15-hosting-domain.md`.
+
+### 7.2 `.github/workflows/`
+
+| workflow | trigger | what |
+|---|---|---|
+| `.github/workflows/checks.yml` | every push, every PR | the engine suite without containers: `test_loop`, `test_tuning_lease_security`, `test_watermark`, `test_canary`, `test_clock_freeze`, `test_detok_security`, `test_tripwire`, `test_memory_hardening`, `vault_test`, `test_coverage_152fz`, `test_product`, `test_localui`, `test_hard_cases` (+ storefront jobs) |
+| `.github/workflows/gates.yml` | nightly 01:00 UTC + dispatch | `make_dirty` → `pack_gates` (both images) → `gates.py --image pseudex:compiled --skip-build`; on dispatch a subset via `ONLY` |
+| `.github/workflows/release.yml` | tag `v[0-9]*` | build and publish both images |
+| `.github/workflows/ship.yml` | manual, with `bump` | version bump + tag |
+| `.github/workflows/uptime.yml` | every 10 min | is production answering |
+| `.github/workflows/backup-audit.yml` | daily 06:20 UTC | did last night's backup happen and is it readable |
+| `.github/zizmor.yml`, `.github/dependabot.yml` | — | workflow linting; dependency updates |
+
+---
+
+## 8. Everything else
+
+| path | what |
+|---|---|
+| `docs/` | 27 documents — see INDEX.md for what each answers and which are superseded |
+| `research/` | 50 documents — see INDEX.md |
+| `brand/` | `brand/README.md`, logo/landing/UI mock-ups as `brand/*.dc.html`, `brand/ad-images/`, `brand/uploads/`, `brand/support.js`, bot avatar |
+| `e2e-personas/` | `e2e-personas/REAL-LLM.md` (why personas call a live model; the key lives in `prototype/.env.local`), `e2e-personas/harness.py`, five personas (`e2e-personas/personas/`), findings by date (`e2e-personas/findings/`) — the 18.08.2026 run is what `test_persona_defects.py` pins |
+| `.trivyignore` | accepted CVE findings for the images |
+| `.claude/skills/`, `.claude/worktrees/` | project skills; agent worktrees hold STALE copies of `CLAUDE.md` |
+<!-- wiki:MAP:end -->

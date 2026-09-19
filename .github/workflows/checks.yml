@@ -458,3 +458,20 @@ jobs:
         run: python make_dataset.py && python eval_detect.py
       - name: dirty set — 150 values, no leak and no false mask
         run: python make_dirty.py && python eval_dirty.py
+
+  # The wiki (`wiki/`) claims where every module, test and doc lives, matches the
+  # map to the real import graph, and pins every invariant to a test. A claim
+  # nobody checks rots — `CLAUDE.md` had lost 16 tests and 4 directories before
+  # the wiki existed. This job is what makes "the agent always relies on the map"
+  # true: a map that has drifted from the code fails the build. It needs no
+  # dependencies (stdlib ast only), so it does not install requirements.
+  wiki:
+    name: wiki — map matches the code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: { python-version: "3.12" }
+      - name: the checker catches its own known breaks, then the wiki is green
+        run: python3 wiki/check.py --selftest
