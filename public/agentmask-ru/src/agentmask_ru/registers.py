@@ -48,8 +48,9 @@ _STREET_ABBR: dict[str, str] = {
 
 @dataclass(frozen=True)
 class Rendered:
-    value: str      # as written in the message
-    cue: str        # the cue word the template may put in front, register-appropriate
+    value: str           # as written in the message
+    cue: str             # the cue word the template may put in front, register-appropriate
+    shape_broken: bool   # a slip destroyed the shape a pattern would match
 
 
 # --- one generic slip --------------------------------------------------------
@@ -81,20 +82,26 @@ def slip(word: str, rng: random.Random) -> str:
     return word[:i] + _LATIN_TWIN[word[i]] + word[i + 1:]
 
 
-def slip_digits(value: str, rng: random.Random) -> str:
-    """One slip in a digit string: a Cyrillic «О» for a zero when there is
-    one, otherwise a separator lost or gained."""
+def slip_digits(value: str, rng: random.Random) -> tuple[str, bool]:
+    """One slip in a digit string, and whether it BREAKS THE SHAPE.
+
+    A Cyrillic «О» standing in for a zero breaks every digit pattern — the
+    value stops looking like a phone to a regex, which is why a benchmark
+    has to say so: a naive masker misses it for a reason that is about the
+    register, not about the masker being careless. Losing or gaining a
+    separator does not break the shape, so it returns False.
+    """
     zeros = [i for i, ch in enumerate(value) if ch == "0"]
     if zeros and rng.random() < 0.5:
         i = rng.choice(zeros)
-        return value[:i] + "О" + value[i + 1:]
+        return value[:i] + "О" + value[i + 1:], True
     if " " in value or "-" in value:
         seps = [i for i, ch in enumerate(value) if ch in " -"]
         i = rng.choice(seps)
-        return value[:i] + value[i + 1:]
+        return value[:i] + value[i + 1:], False
     digits = [i for i, ch in enumerate(value) if ch.isdigit()]
     i = rng.choice(digits[2:-2])
-    return value[:i] + " " + value[i:]
+    return value[:i] + " " + value[i:], True
 
 
 # --- names ----------------------------------------------------------------
@@ -117,7 +124,7 @@ def name_parts(person: Person, register: str, rng: random.Random) -> tuple[str, 
 
 def render_name(person: Person, register: str, rng: random.Random) -> Rendered:
     parts = name_parts(person, register, rng)
-    return Rendered(value=" ".join(parts), cue="ФИО" if register == "clean" else "меня зовут")
+    return Rendered(value=" ".join(parts), cue="ФИО" if register == "clean" else "меня зовут", shape_broken=False)
 
 
 def given_only(person: Person, register: str, rng: random.Random) -> Rendered:
@@ -125,7 +132,7 @@ def given_only(person: Person, register: str, rng: random.Random) -> Rendered:
     name = person.given.name if register == "clean" else person.given.name.lower()
     if register == "sloppy":
         name = slip(name, rng)
-    return Rendered(value=name, cue="")
+    return Rendered(value=name, cue="", shape_broken=False)
 
 
 # A schoolbook declension of the two name parts a support agent inflects.
@@ -182,11 +189,12 @@ def render_phone(digits10: str, register: str, rng: random.Random) -> Rendered:
     a, b, c, d = digits10[:3], digits10[3:6], digits10[6:8], digits10[8:]
     if register == "clean":
         value = rng.choice((f"+7 {a} {b}-{c}-{d}", f"+7 ({a}) {b}-{c}-{d}", f"8 ({a}) {b}-{c}-{d}"))
-        return Rendered(value=value, cue="телефон")
+        return Rendered(value=value, cue="телефон", shape_broken=False)
     value = rng.choice((f"8{digits10}", f"+7{digits10}", f"8 {a} {b}{c}{d}", f"8{a}{b}{c}{d}"))
+    broken = False
     if register == "sloppy":
-        value = slip_digits(value, rng)
-    return Rendered(value=value, cue="тел")
+        value, broken = slip_digits(value, rng)
+    return Rendered(value=value, cue="тел", shape_broken=broken)
 
 
 def reformat_phone(written: str, rng: random.Random) -> str:
@@ -207,54 +215,58 @@ def render_email(person: Person, rng: random.Random) -> Rendered:
         "".join(_TRANSLIT.get(ch, ch) for ch in person.surname.name.lower())
     if rng.random() < 0.5:
         local += str(rng.randint(70, 99))
-    return Rendered(value=f"{local}@{rng.choice(_EMAIL_DOMAINS)}", cue="почта")
+    return Rendered(value=f"{local}@{rng.choice(_EMAIL_DOMAINS)}", cue="почта", shape_broken=False)
 
 
 def render_snils(value: str, register: str, rng: random.Random) -> Rendered:
     if register == "clean":
-        return Rendered(value=value, cue="СНИЛС")
+        return Rendered(value=value, cue="СНИЛС", shape_broken=False)
     digits = "".join(ch for ch in value if ch.isdigit())
     written = rng.choice((digits, f"{digits[:3]} {digits[3:6]} {digits[6:9]} {digits[9:]}"))
+    broken = register != "clean"   # the bare digit run already lost the dashes a pattern keys on
     if register == "sloppy":
-        written = slip_digits(written, rng)
-    return Rendered(value=written, cue="снилс")
+        written, _ = slip_digits(written, rng)
+    return Rendered(value=written, cue="снилс", shape_broken=broken)
 
 
 def render_inn(value: str, register: str, rng: random.Random) -> Rendered:
     written = value
+    broken = False
     if register == "sloppy":
-        written = slip_digits(written, rng)
-    return Rendered(value=written, cue="ИНН" if register == "clean" else "инн")
+        written, broken = slip_digits(written, rng)
+    return Rendered(value=written, cue="ИНН" if register == "clean" else "инн", shape_broken=broken)
 
 
 def render_passport(value: str, register: str, rng: random.Random) -> Rendered:
     if register == "clean":
-        return Rendered(value=value, cue="паспорт")
+        return Rendered(value=value, cue="паспорт", shape_broken=False)
     digits = "".join(ch for ch in value if ch.isdigit())
     written = rng.choice((digits, f"{digits[:4]} {digits[4:]}", f"{digits[:2]} {digits[2:4]} {digits[4:]}"))
+    broken = False
     if register == "sloppy":
-        written = slip_digits(written, rng)
-    return Rendered(value=written, cue="паспорт")
+        written, broken = slip_digits(written, rng)
+    return Rendered(value=written, cue="паспорт", shape_broken=broken)
 
 
 def render_card(value: str, register: str, rng: random.Random) -> Rendered:
     if register == "clean":
-        return Rendered(value=value, cue="карта")
+        return Rendered(value=value, cue="карта", shape_broken=False)
     digits = value.replace(" ", "")
     written = rng.choice((digits, value))
+    broken = False
     if register == "sloppy":
-        written = slip_digits(written, rng)
-    return Rendered(value=written, cue="карта")
+        written, broken = slip_digits(written, rng)
+    return Rendered(value=written, cue="карта", shape_broken=broken)
 
 
 def render_dob(date: tuple[int, int, int], register: str, rng: random.Random) -> Rendered:
     day, month, year = date
     if register == "clean":
-        return Rendered(value=f"{day:02d}.{month:02d}.{year}", cue="дата рождения")
+        return Rendered(value=f"{day:02d}.{month:02d}.{year}", cue="дата рождения", shape_broken=False)
     written = rng.choice((f"{day:02d}.{month:02d}.{year}", f"{day}.{month}.{year % 100:02d}", f"{day} {_MONTHS_GEN[month - 1]} {year}"))
     if register == "sloppy":
         written = written.replace(".", "/") if "." in written else written
-    return Rendered(value=written, cue="др" if register != "clean" else "дата рождения")
+    return Rendered(value=written, cue="др" if register != "clean" else "дата рождения", shape_broken=False)
 
 
 # --- addresses --------------------------------------------------------------
@@ -267,7 +279,7 @@ def render_address(city: str, street: Street, house: int, flat: int, register: s
             f"{city}, {street.type} {street.name}, дом {house}, квартира {flat}",
             f"{abbr} {street.name}, {house}, кв. {flat}",
         ))
-        return Rendered(value=value, cue="адрес")
+        return Rendered(value=value, cue="адрес", shape_broken=False)
     name = street.name.lower()
     if register == "sloppy":
         words = name.split()
@@ -279,4 +291,4 @@ def render_address(city: str, street: Street, house: int, flat: int, register: s
         f"{name} {house} кв {flat}",
         f"{street.type} {name} д{house} кв{flat}",
     ))
-    return Rendered(value=value, cue="адрес")
+    return Rendered(value=value, cue="адрес", shape_broken=False)

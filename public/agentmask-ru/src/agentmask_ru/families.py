@@ -53,6 +53,12 @@ class Item:
     cue: bool
     tier: str | None
     identity: str
+    # Could a masker that knows only SHAPES find this value? A capitalised
+    # name can be guessed from its capitals; a lower-case one cannot. A
+    # phone with its digits intact has a shape; one with a look-alike letter
+    # inside them does not. The template knows which it wrote, so the
+    # corpus records it rather than asking a detector.
+    findable_by_shape: bool
 
 
 @dataclass(frozen=True)
@@ -76,7 +82,26 @@ class Draft:
     items: list[Item]
     negatives: list[Neg]
     expected: ExpectedCall
-    hard: dict[str, str] | None
+
+
+def _hard_reason(draft: Draft) -> dict[str, str] | None:
+    """A case is HARD when nothing in it has a shape to find.
+
+    Gate G7 demands that the naive reference masker leave a mark on every
+    case that does not say why it cannot. This is that «why», derived from
+    what the templates wrote: not from running a detector over the corpus,
+    which would make the corpus a mirror of that detector.
+    """
+    if not draft.items:
+        return {"why": "в сообщении нет персональных данных: случай измеряет только перемаскирование"}
+    if any(item.findable_by_shape for item in draft.items):
+        return None
+    reasons: list[str] = []
+    if any(item.type == "NAME" for item in draft.items):
+        reasons.append("имя строчными буквами: заглавной, за которую цепляется шаблон, нет")
+    if any(item.type != "NAME" for item in draft.items):
+        reasons.append("в цифрах стоит буква-двойник или потерян разделитель: формы, которую ищет шаблон, больше нет")
+    return {"why": "; ".join(reasons)}
 
 
 def _finish(draft: Draft, index: int, created_at: str, seed: int) -> Case:
@@ -107,7 +132,7 @@ def _finish(draft: Draft, index: int, created_at: str, seed: int) -> Case:
     return Case(
         id=case_id, version=VERSION, family=draft.family, register=draft.register, subcase=draft.subcase,
         messages=tuple(messages), tools=tools_for(draft.expected.name), expected_call=draft.expected,
-        pii=tuple(pii), negatives=tuple(negatives), hard=draft.hard, created_at=created_at,
+        pii=tuple(pii), negatives=tuple(negatives), hard=_hard_reason(draft), created_at=created_at,
         source=Source(generator="agentmask_ru.build", version=VERSION, seed=seed), canary=CANARY, license=DATA_LICENSE,
     )
 
@@ -172,15 +197,12 @@ def create_order(pools: Pools, rng: random.Random, register: str, tier: str, ind
         ]
     parts, name_cued = variants[rng.randrange(len(variants))]
     items = [
-        Item("name", "NAME", name.value, name.value, "name", name_cued, person.tier, "person1"),
-        Item("phone", "PHONE", phone.value, phone.value, "phone", True, None, "person1"),
-        Item("address", "ADDRESS", address.value, address.value, "address", True, None, "person1"),
+        Item("name", "NAME", name.value, name.value, "name", name_cued, person.tier, "person1", register == "clean"),
+        Item("phone", "PHONE", phone.value, phone.value, "phone", True, None, "person1", not phone.shape_broken),
+        Item("address", "ADDRESS", address.value, address.value, "address", True, None, "person1", register == "clean"),
     ]
-    hard = None
-    if register != "clean" and not name_cued and person.tier in ("tail", "foreign", "diminutive"):
-        hard = {"why": "lower-case name without a cue word; a naive regex has nothing to anchor on"}
     draft = Draft("create_order", register, None, [Turn(parts)], items, [prev, money],
-                  ExpectedCall("create_order", ("name", "phone", "address"), {}), hard)
+                  ExpectedCall("create_order", ("name", "phone", "address"), {}))
     return _finish(draft, index, created_at, seed)
 
 
@@ -199,7 +221,7 @@ def check_status(pools: Pools, rng: random.Random, register: str, tier: str, ind
         else:
             parts = ["где заказ, оформлял ", Slot("doc_date", date.value), " трек ", Slot("track_no", track.value),
                      " мой номер ", Slot("phone", phone.value)]
-        items = [Item("phone", "PHONE", phone.value, phone.value, "phone", True, None, "person1")]
+        items = [Item("phone", "PHONE", phone.value, phone.value, "phone", True, None, "person1", not phone.shape_broken)]
         expected = ExpectedCall("check_status", ("phone",), {})
     else:
         order = order_no(rng, register)
@@ -210,10 +232,9 @@ def check_status(pools: Pools, rng: random.Random, register: str, tier: str, ind
             parts = ["статус заказа ", Slot("order_no", order.value), " от ", Slot("doc_date", date.value), " трек ",
                      Slot("track_no", track.value), " не работает"]
         draft = Draft("check_status", register, None, [Turn(parts)], [], [order, track, date],
-                      ExpectedCall("check_status", (), {"order_no": order.value}),
-                      {"why": "no personal data in the message; the case measures over-masking only"})
+                      ExpectedCall("check_status", (), {"order_no": order.value}))
         return _finish(draft, index, created_at, seed)
-    draft = Draft("check_status", register, None, [Turn(parts)], items, [track, date], expected, None)
+    draft = Draft("check_status", register, None, [Turn(parts)], items, [track, date], expected)
     return _finish(draft, index, created_at, seed)
 
 
@@ -237,15 +258,12 @@ def verify_identity(pools: Pools, rng: random.Random, register: str, tier: str, 
                  Slot("name", name.value), " др ", Slot("dob", birth.value), f" {doc.cue} ", Slot("doc", doc.value)]
         name_cued = False
     items = [
-        Item("name", "NAME", name.value, name.value, "name", name_cued, person.tier, "person1"),
-        Item("dob", "DOB", birth.value, birth.value, "dob", True, None, "person1"),
-        Item("doc", doc_type, doc.value, doc.value, doc_param, True, None, "person1"),
+        Item("name", "NAME", name.value, name.value, "name", name_cued, person.tier, "person1", register == "clean"),
+        Item("dob", "DOB", birth.value, birth.value, "dob", True, None, "person1", "." in birth.value or "/" in birth.value),
+        Item("doc", doc_type, doc.value, doc.value, doc_param, True, None, "person1", not doc.shape_broken),
     ]
-    hard = None
-    if not name_cued and person.tier in ("tail", "foreign", "diminutive"):
-        hard = {"why": "lower-case name without a cue word; a naive regex has nothing to anchor on"}
     draft = Draft("verify_identity", register, None, [Turn(parts)], items, [contract, date],
-                  ExpectedCall("verify_identity", ("name", "dob", doc_param), {}), hard)
+                  ExpectedCall("verify_identity", ("name", "dob", doc_param), {}))
     return _finish(draft, index, created_at, seed)
 
 
@@ -260,9 +278,9 @@ def refund(pools: Pools, rng: random.Random, register: str, tier: str, index: in
     else:
         parts = ["верните деньги за заказ ", Slot("order_no", order.value), " от ", Slot("doc_date", date.value), " сумма ",
                  Slot("amount", money.value), " карта ", Slot("card", card.value)]
-    items = [Item("card", "CARD", card.value, card.value, "card", True, None, "person1")]
+    items = [Item("card", "CARD", card.value, card.value, "card", True, None, "person1", not card.shape_broken)]
     draft = Draft("refund", register, None, [Turn(parts)], items, [order, money, date],
-                  ExpectedCall("refund", ("card",), {"order_no": order.value, "amount": money.value}), None)
+                  ExpectedCall("refund", ("card",), {"order_no": order.value, "amount": money.value}))
     return _finish(draft, index, created_at, seed)
 
 
@@ -284,12 +302,13 @@ def send_sms(pools: Pools, rng: random.Random, register: str, tier: str, index: 
                  Slot("amount", money.value), " город ", Slot("city", city.value), " буду с 10 до 14, ", Slot("name", who.value)]
         name_cued = False
     items = [
-        Item("phone", "PHONE", phone.value, phone.value, "phone", True, None, "person1"),
-        Item("name", "NAME", who.value, who.value, None, name_cued, person.tier, "person1"),
+        Item("phone", "PHONE", phone.value, phone.value, "phone", True, None, "person1", not phone.shape_broken),
+        # A one-word signature: even capitalised, a two-capitalised-word rule
+        # does not reach it, so it is never findable by shape alone.
+        Item("name", "NAME", who.value, who.value, None, name_cued, person.tier, "person1", False),
     ]
-    hard = {"why": "a first name signing the message, no cue word"} if register != "clean" else None
     draft = Draft("send_sms", register, None, [Turn(parts)], items, [order, money, city],
-                  ExpectedCall("send_sms", ("phone",), {}), hard)
+                  ExpectedCall("send_sms", ("phone",), {}))
     return _finish(draft, index, created_at, seed)
 
 
@@ -314,13 +333,17 @@ def second_mention(pools: Pools, rng: random.Random, register: str, tier: str, i
                  " хочу поменять контакты по заказу ", Slot("order_no", order.value)]
     if subcase == "lower":
         second_name = first_name.value.lower()
-        second_phone = first_phone.value
+        second_phone, second_phone_broken = first_phone.value, first_phone.shape_broken
     elif subcase == "declined":
         second_name = declined_name(person, rng.choice(("acc", "dat")), register != "clean")
-        second_phone = first_phone.value
+        second_phone, second_phone_broken = first_phone.value, first_phone.shape_broken
     else:
+        # The model's own habit, written by the customer: the same number in
+        # the other format. Rendered in the opposite register, so a sloppy
+        # dialogue gets a tidy second mention and vice versa.
         second_name = first_name.value if register == "clean" else first_name.value.lower()
-        second_phone = render_phone(digits, "chat" if register == "clean" else "clean", rng).value
+        rendered = render_phone(digits, "chat" if register == "clean" else "clean", rng)
+        second_phone, second_phone_broken = rendered.value, rendered.shape_broken
     if register == "clean":
         turn2: list[str | Slot] = ["Да, оформляйте на ", Slot("name2", second_name), ", номер ", Slot("phone2", second_phone),
                                    ". Сумма заказа ", Slot("amount", money.value), " не меняется."]
@@ -328,16 +351,16 @@ def second_mention(pools: Pools, rng: random.Random, register: str, tier: str, i
         turn2 = ["да пиши на ", Slot("name2", second_name), " номер ", Slot("phone2", second_phone), " сумма ",
                  Slot("amount", money.value), " та же"]
     items = [
-        Item("name1", "NAME", first_name.value, first_name.value, None, True, person.tier, "person1"),
-        Item("phone1", "PHONE", first_phone.value, first_phone.value, None, True, None, "person1"),
-        Item("name2", "NAME", second_name, second_name, "name", False, person.tier, "person1"),
-        Item("phone2", "PHONE", second_phone, second_phone, "phone", True, None, "person1"),
+        Item("name1", "NAME", first_name.value, first_name.value, None, True, person.tier, "person1", register == "clean"),
+        Item("phone1", "PHONE", first_phone.value, first_phone.value, None, True, None, "person1", not first_phone.shape_broken),
+        # The second mention is lower-case whenever the register is, and in
+        # the «lower» subcase even a clean dialogue writes it in lower case.
+        Item("name2", "NAME", second_name, second_name, "name", False, person.tier, "person1",
+             register == "clean" and subcase != "lower"),
+        Item("phone2", "PHONE", second_phone, second_phone, "phone", True, None, "person1", not second_phone_broken),
     ]
-    hard = None
-    if subcase == "declined" or (register != "clean" and person.tier in ("tail", "foreign", "diminutive")):
-        hard = {"why": "the second mention is declined or lower-case without a cue; a naive regex keyed on the first form misses it"}
     draft = Draft("second_mention", register, subcase, [Turn(turn1), Turn(turn2)], items, [order, money],
-                  ExpectedCall("update_contact", ("name", "phone"), {}), hard)
+                  ExpectedCall("update_contact", ("name", "phone"), {}))
     return _finish(draft, index, created_at, seed)
 
 

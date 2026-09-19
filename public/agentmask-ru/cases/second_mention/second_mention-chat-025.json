@@ -183,9 +183,7 @@
    "end": 63
   }
  ],
- "hard": {
-  "why": "the second mention is declined or lower-case without a cue; a naive regex keyed on the first form misses it"
- },
+ "hard": null,
  "created_at": "2026-09-20",
  "source": {
   "generator": "agentmask_ru.build",
