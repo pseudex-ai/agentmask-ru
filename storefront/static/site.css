@@ -22,6 +22,7 @@
   --accent-bg-2: #282437;
   --green: #93cfaa;
   --amber: #dcbd85;
+  --amber-bg: #3b3427;
   --pink: #e293b4;
   --pink-2: #e5aec6;
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -57,7 +58,13 @@
 }
 
 * { box-sizing: border-box; }
-html { background: var(--bg); }
+/* Переход по якорю (#start, #demo и т.д.) едет плавно на всём сайте, а не
+   телепортирует. Отключаем для тех, кто попросил у системы поменьше движения:
+   у них это укачивает, а не помогает ориентироваться. */
+html { background: var(--bg); scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
 body {
   margin: 0; background: var(--bg); color: var(--text);
   font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased;

@@ -144,23 +144,39 @@ function heroStart() {
   let phase = reduceMotion ? 6 : 1;
   let parts = heroBuild(index);
   stage.replaceChildren(parts.dialog);
-  heroApply(parts, phase);
   if (phaseLabel) phaseLabel.textContent = HERO_STEPS[phase];
   /* БЕЗ ДВИЖЕНИЯ — СРАЗУ ФИНАЛ, А НЕ ПУСТАЯ ПАНЕЛЬ. Человек, который попросил
      систему не двигать картинку, просил об этом, а не о том, чтобы остаться без
      содержимого. */
-  if (reduceMotion) return;
+  if (reduceMotion) {
+    heroApply(parts, phase);
+    return;
+  }
+  /* Класс, включающий переход, нельзя ставить в том же тике, где узел только
+     что вставлен в DOM: браузер ещё не отрисовал скрытое начальное состояние
+     (opacity:0) и просто перескочит к финалу без анимации. Два кадра растра
+     дают ему этот кадр — иначе самое первое сообщение появляется не плавно, а
+     сразу целиком. */
+  requestAnimationFrame(() => requestAnimationFrame(() => heroApply(parts, phase)));
 
+  const FADE_MS = 750; // = длительность .hero-bubble transition в landing.css
   setInterval(() => {
     phase = (phase + 1) % 7;
-    /* Кадр 0 — пауза между заявками, на ней же меняется пример. */
+    if (phaseLabel) phaseLabel.textContent = HERO_STEPS[phase];
+    /* Кадр 0 — пауза между заявками. Сначала гасим текущие реплики и ждём,
+       пока затухание доиграет, и только потом подменяем DOM на следующий
+       пример — иначе узлы исчезают вместе со сменой разметки, минуя переход,
+       и смена примера выглядит как рывок, а не как затухание. */
     if (phase === 0) {
-      index = (index + 1) % HERO_CASES.length;
-      parts = heroBuild(index);
-      stage.replaceChildren(parts.dialog);
+      heroApply(parts, phase);
+      setTimeout(() => {
+        index = (index + 1) % HERO_CASES.length;
+        parts = heroBuild(index);
+        stage.replaceChildren(parts.dialog);
+      }, FADE_MS);
+      return;
     }
     heroApply(parts, phase);
-    if (phaseLabel) phaseLabel.textContent = HERO_STEPS[phase];
   }, 1700);
 }
 
@@ -294,17 +310,48 @@ function paint(target, chunks) {
     swap.appendChild(piece);
   });
   target.replaceChildren(swap);
+  /* БЕЗ ДВИЖЕНИЯ — СРАЗУ ФИНАЛ, А НЕ ПУСТАЯ ПАНЕЛЬ. `is-in` снимает
+     `opacity: 0`, и ветка «меньше движения» обязана его поставить: она
+     отключает ПЕРЕХОД, а не содержимое. Без этой строки демо-примеры
+     оставались невидимыми ровно у тех, кто попросил поменьше движения. */
+  if (reduceMotion) {
+    swap.classList.add("is-in");
+    return;
+  }
+  /* Класс, включающий переход, нельзя ставить в том же тике, где узел только
+     что вставлен: браузер ещё не отрисовал скрытое начальное состояние и
+     перескочит к финалу без анимации — тот же приём, что и в heroStart. */
+  requestAnimationFrame(() => requestAnimationFrame(() => swap.classList.add("is-in")));
 }
+
+const DEMO_FADE_MS = 500; // = длительность .demo-swap transition в landing.css
 
 function showDemo(index) {
   const example = DEMOS[index];
-  paint(document.getElementById("demo-orig"), example.orig);
-  paint(document.getElementById("demo-masked"), example.masked);
+  const origTarget = document.getElementById("demo-orig");
+  const maskedTarget = document.getElementById("demo-masked");
   const hint = document.getElementById("demo-hint");
   if (hint) hint.textContent = example.hint;
   document.querySelectorAll("[data-demo]").forEach((button) => {
     button.setAttribute("aria-selected", String(Number(button.dataset.demo) === index));
   });
+
+  const current = origTarget && origTarget.querySelector(".demo-swap");
+  if (!current || reduceMotion) {
+    paint(origTarget, example.orig);
+    paint(maskedTarget, example.masked);
+    return;
+  }
+  /* Сначала гасим текущий текст и ждём, пока затухание доиграет, и только
+     потом подменяем DOM на следующий пример — иначе старая реплика исчезает
+     вместе со сменой разметки, минуя переход, и смена вкладки выглядит как
+     рывок, а не как затухание. */
+  document.querySelectorAll("#demo-orig .demo-swap, #demo-masked .demo-swap")
+    .forEach((el) => el.classList.remove("is-in"));
+  setTimeout(() => {
+    paint(origTarget, example.orig);
+    paint(maskedTarget, example.masked);
+  }, DEMO_FADE_MS);
 }
 
 document.querySelectorAll("[data-demo]").forEach((button) => {
@@ -531,3 +578,55 @@ if (cfg) {
      тоже задают начальное состояние — `showDemo(0)`, `showProvider(0)`. */
   cfgRender();
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * ВОПРОСЫ: ОТВЕТ РАСКРЫВАЕТСЯ, А НЕ ПОЯВЛЯЕТСЯ РЫВКОМ
+ *
+ * `<details>` сам переключает `display` — свойство, которое CSS не умеет
+ * анимировать. Поэтому клик перехватывается здесь: высота ответа ставится по
+ * `scrollHeight` и меняется на 0, переход делает `.faq-a` в landing.css, а
+ * `details.open` выставляется уже ПОСЛЕ анимации закрытия — иначе `display:none`
+ * обрубил бы её на середине. */
+document.querySelectorAll("#faq details").forEach((details) => {
+  const summary = details.querySelector("summary");
+  const answer = details.querySelector(".faq-a");
+  if (!summary || !answer) return;
+
+  summary.addEventListener("click", (event) => {
+    event.preventDefault();
+    /* БЕЗ ПЕРЕХОДА НЕ БЫВАЕТ `transitionend`, И ОТВЕТ НЕ ЗАКРЫЛСЯ БЫ ВООБЩЕ.
+       При «уменьшить движение» CSS гасит переход, поэтому закрытие, которое
+       ждёт окончания анимации, не наступает никогда. Здесь состояние
+       переключается напрямую — без анимации, но и без залипания. */
+    if (reduceMotion) {
+      details.open = !details.open;
+      answer.style.maxHeight = details.open ? "none" : "0px";
+      return;
+    }
+    if (details.open) {
+      // Сначала переводим max-height из "none" в текущую высоту пикселями —
+      // без этого шага браузер не видит, ОТКУДА анимировать, и прыгает сразу
+      // в ноль.
+      answer.style.maxHeight = `${answer.scrollHeight}px`;
+      void answer.offsetHeight; // форсируем реflow между двумя присвоениями
+      answer.style.maxHeight = "0px";
+      answer.addEventListener("transitionend", function onClose(event) {
+        if (event.propertyName !== "max-height") return;
+        details.open = false;
+        answer.removeEventListener("transitionend", onClose);
+      });
+    } else {
+      details.open = true;
+      answer.style.maxHeight = "0px";
+      void answer.offsetHeight;
+      answer.style.maxHeight = `${answer.scrollHeight}px`;
+      answer.addEventListener("transitionend", function onOpen(event) {
+        if (event.propertyName !== "max-height") return;
+        // "none", а не пиксели: иначе перенос строки при ресайзе окна обрежет
+        // текст рамкой высоты, посчитанной для другой ширины.
+        answer.style.maxHeight = "none";
+        answer.removeEventListener("transitionend", onOpen);
+      });
+    }
+  });
+});
