@@ -16,7 +16,7 @@ import random
 from dataclasses import asdict, dataclass, field
 
 from agentmask_ru.adapters.base import Masker, MaskedView, TurnResult
-from agentmask_ru.align import project, rewrite_ratio
+from agentmask_ru.align import digits_of, is_number_like, norm, project, rewrite_ratio
 from agentmask_ru.policy import decide
 from agentmask_ru.schema import Case
 
@@ -74,19 +74,26 @@ class CaseObservation:
 def _same_value(produced: str, canonical: str) -> bool:
     """Did the tool receive the value?
 
-    Text is compared case-insensitively after collapsing whitespace; a
-    number by its digits, tail-anchored at ten, so «+7 907 …» and «8907…»
-    agree and a truncated number does not.
+    Text is compared case-insensitively after collapsing whitespace and
+    folding «ё»; a number by its digits, tail-anchored at ten, so «+7 907 …»
+    and «8907…» agree and a truncated number does not.
+
+    BOTH SIDES MUST BE NUMBER-LIKE for the digit rule to apply. Without
+    that guard «8 935 7476622-ерунда» passed as the phone, because its
+    digit tail is the phone's — an argument carrying a real value plus
+    something else is not the real value.
     """
-    left = " ".join(produced.split()).casefold().replace("ё", "е")
-    right = " ".join(canonical.split()).casefold().replace("ё", "е")
-    if left == right:
+    if norm(produced) == norm(canonical):
         return True
-    left_digits = "".join(ch for ch in produced if ch.isdigit())
-    right_digits = "".join(ch for ch in canonical if ch.isdigit())
-    if len(right_digits) >= 6 and left_digits and right_digits:
-        return left_digits[-10:] == right_digits[-10:] if len(right_digits) >= 10 else left_digits == right_digits
-    return False
+    right_digits = digits_of(canonical)
+    if len(right_digits) < 6 or not is_number_like(canonical) or not is_number_like(produced):
+        return False
+    left_digits = digits_of(produced)
+    if not left_digits:
+        return False
+    if len(right_digits) >= 10:
+        return left_digits[-10:] == right_digits[-10:]
+    return left_digits == right_digits
 
 
 def _typed_as(session: object, case: Case, item_id: str) -> str | None:

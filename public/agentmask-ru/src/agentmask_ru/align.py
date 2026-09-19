@@ -111,8 +111,20 @@ def project(original: str, masked: str, start: int, end: int) -> Substitute:
     return Substitute(text=text, altered=altered, covered=altered and untouched == 0)
 
 
-def _digits(text: str) -> str:
+def digits_of(text: str) -> str:
     return "".join(ch for ch in text if ch.isdigit())
+
+
+# Characters that only format a number: a phone may gain or lose any of
+# them and still be the same phone. A LETTER is not one of them, which is
+# what keeps «8 935 7476622-ерунда» from passing as the number.
+_SEPARATORS = frozenset(" -()+.,\u00a0\t")
+
+
+def is_number_like(text: str) -> bool:
+    """True when the text is digits and separators only."""
+    stripped = [ch for ch in text if ch not in _SEPARATORS]
+    return bool(stripped) and all(ch.isdigit() for ch in stripped)
 
 
 def _same_value(produced: str, value: str) -> bool:
@@ -123,11 +135,15 @@ def _same_value(produced: str, value: str) -> bool:
     reformatted the phone, not hidden it, and the model can read it. Six
     digits is the floor — below that the digits are a house number or an
     amount, where an equal digit string is a coincidence, not an identity.
+    Both sides must be number-LIKE: a value with letters attached is not
+    the same number in another format.
     """
     if norm(produced) == norm(value):
         return True
-    value_digits = _digits(value)
-    return len(value_digits) >= 6 and _digits(produced) == value_digits
+    value_digits = digits_of(value)
+    if len(value_digits) < 6 or not is_number_like(value) or not is_number_like(produced):
+        return False
+    return digits_of(produced) == value_digits
 
 
 def rewrite_ratio(original: str, masked: str, protected: list[tuple[int, int]]) -> float:

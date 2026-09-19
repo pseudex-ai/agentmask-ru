@@ -1,0 +1,25 @@
+# Cloud.ru guardrails-llm-filter, направленный на фальшивого провайдера
+# бенчмарка. Провайдер поднимается ХАРНЕССОМ на хосте:
+#
+#   agentmask run --adapter openai_proxy --name cloudru \
+#       --base-url http://127.0.0.1:8080/v1 --upstream-bind 0.0.0.0:8099
+#
+# Порт 8099 фиксирован, потому что адрес upstream компилируется в
+# конфигурацию контейнера до того, как харнесс стартует.
+services:
+  guardrails:
+    image: ghcr.io/cloud-ru-tech/guardrails-llm-filter:latest
+    # Опубликован только под amd64; на ARM-машине (Apple Silicon) Docker
+    # запустит его под эмуляцией. Это медленнее, но на 272 случаях не важно.
+    platform: linux/amd64
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      GUARDRAILS_LISTEN_ADDR: ":8080"
+      # Путь запроса дописывается к базовому URL, поэтому здесь без /v1:
+      # клиент зовёт /v1/chat/completions, и провайдер получает его же.
+      GUARDRAILS_UPSTREAM_BASE_URL: "http://host.docker.internal:8099"
+    extra_hosts:
+      # На macOS и Windows это имя есть всегда; на Linux строка ниже его
+      # создаёт. Если не сработало — network_mode: host и адрес 127.0.0.1.
+      - "host.docker.internal:host-gateway"
