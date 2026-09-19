@@ -1,0 +1,170 @@
+{
+ "id": "send_sms-clean-004",
+ "version": "0.1",
+ "family": "send_sms",
+ "register": "clean",
+ "subcase": null,
+ "messages": [
+  {
+   "role": "system",
+   "content": "Ты — оператор поддержки интернет-магазина «Северный ветер». Отвечай по-русски, коротко. Для действий с заказами и данными клиента вызывай инструменты; передавай в них значения так, как их назвал клиент. Служебная метка диалога: [case:send_sms-clean-004]."
+  },
+  {
+   "role": "user",
+   "content": "Отправьте, пожалуйста, СМС курьеру +7 (943) 564-76-24: заказ № 8929-593 оплачен, 1 990 ₽, город доставки Березники, получатель на месте с 10 до 14. Подпись — Аделия."
+  }
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "send_sms",
+    "description": "Отправить SMS клиенту.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "phone": {
+       "type": "string",
+       "description": "Телефон получателя"
+      },
+      "text": {
+       "type": "string",
+       "description": "Текст сообщения"
+      }
+     },
+     "required": [
+      "phone",
+      "text"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "update_contact",
+    "description": "Обновить контактные данные клиента в CRM.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО клиента"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Новый телефон"
+      },
+      "email": {
+       "type": "string",
+       "description": "Новая электронная почта"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "create_order",
+    "description": "Оформить заказ на доставку. Требует ФИО получателя, контактный телефон и адрес доставки.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО получателя, как назвал клиент"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Контактный телефон получателя"
+      },
+      "address": {
+       "type": "string",
+       "description": "Адрес доставки одной строкой"
+      },
+      "comment": {
+       "type": "string",
+       "description": "Комментарий курьеру"
+      }
+     },
+     "required": [
+      "name",
+      "phone",
+      "address"
+     ]
+    }
+   }
+  }
+ ],
+ "expected_call": {
+  "name": "send_sms",
+  "pii_params": [
+   "phone"
+  ],
+  "plain_params": {}
+ },
+ "pii": [
+  {
+   "id": "p1",
+   "type": "PHONE",
+   "value": "+7 (943) 564-76-24",
+   "canonical": "+7 (943) 564-76-24",
+   "turn": 1,
+   "start": 35,
+   "end": 53,
+   "tool_param": "phone",
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  },
+  {
+   "id": "p2",
+   "type": "NAME",
+   "value": "Аделия",
+   "canonical": "Аделия",
+   "turn": 1,
+   "start": 158,
+   "end": 164,
+   "tool_param": null,
+   "cue": false,
+   "tier": "common",
+   "identity": "person1"
+  }
+ ],
+ "negatives": [
+  {
+   "value": "№ 8929-593",
+   "kind": "order_no",
+   "turn": 1,
+   "start": 61,
+   "end": 71
+  },
+  {
+   "value": "1 990 ₽",
+   "kind": "amount",
+   "turn": 1,
+   "start": 81,
+   "end": 88
+  },
+  {
+   "value": "Березники",
+   "kind": "city",
+   "turn": 1,
+   "start": 105,
+   "end": 114
+  }
+ ],
+ "hard": null,
+ "created_at": "2026-09-20",
+ "source": {
+  "generator": "agentmask_ru.build",
+  "version": "0.1",
+  "seed": 20260920
+ },
+ "canary": "AGENTMASK-RU-CANARY-7c1e4b2a-6f3d-4a8e-9b1c-2d5e8f0a3b7c",
+ "license": "CC-BY-4.0"
+}
