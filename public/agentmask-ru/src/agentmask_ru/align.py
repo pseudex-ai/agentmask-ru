@@ -27,6 +27,7 @@ every projection meaningless, so the harness records the ratio and the
 report prints it; above 0.3 the case is flagged rather than silently scored.
 """
 
+import re
 import unicodedata
 from dataclasses import dataclass
 from difflib import SequenceMatcher
@@ -56,7 +57,7 @@ class Substitute:
 
     text: str
     altered: bool       # the masker put something else there
-    covered: bool       # no character of the span survived untouched
+    covered: bool       # no PIECE of the real value survived into it
 
 
 def blocks(original: str, masked: str) -> list[Block]:
@@ -108,7 +109,7 @@ def project(original: str, masked: str, start: int, end: int) -> Substitute:
         return Substitute(text="", altered=True, covered=True)
     text = masked[b_start:b_end]
     altered = not _same_value(text, value)
-    return Substitute(text=text, altered=altered, covered=altered and untouched == 0)
+    return Substitute(text=text, altered=altered, covered=altered and not surviving_pieces(value, text))
 
 
 def digits_of(text: str) -> str:
@@ -144,6 +145,26 @@ def _same_value(produced: str, value: str) -> bool:
     if len(value_digits) < 6 or not is_number_like(value) or not is_number_like(produced):
         return False
     return digits_of(produced) == value_digits
+
+
+# A piece worth calling a leak: a word of three letters or more, or a run of
+# three digits or more. Shorter than that and the «survivor» is a preposition
+# or the «+7» every Russian phone starts with.
+_PIECE = re.compile(r"[^\W\d_]{3,}|\d{3,}", re.UNICODE)
+
+
+def surviving_pieces(value: str, substitute: str) -> list[str]:
+    """Pieces of the real value that are still readable in the substitute.
+
+    COVERAGE CANNOT BE A CHARACTER COUNT. A format-preserving substitute
+    shares characters with the value by construction — «+7 907 123-45-67»
+    and «+7 935 476-22-11» agree on the plus, the seven and every dash —
+    and a character-level rule would call that a partial leak. What leaks
+    is a PIECE: «Кузнецов Дмитрий» masked as «Кузнецов <NAME_1>» hands the
+    model the surname, and that is what this finds.
+    """
+    folded = norm(substitute)
+    return [piece for piece in _PIECE.findall(norm(value)) if piece in folded]
 
 
 def rewrite_ratio(original: str, masked: str, protected: list[tuple[int, int]]) -> float:

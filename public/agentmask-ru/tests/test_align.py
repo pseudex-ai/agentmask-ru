@@ -67,3 +67,15 @@ def test_rewrite_ratio_sees_changes_outside_the_spans() -> None:
     everything = rewrite_ratio("тел 89071234567 заказ 123", "ТЕЛЕФОН СКРЫТ, ЗАКАЗ СКРЫТ", [(4, 15)])
     assert inside_only == 0.0
     assert everything > 0.3
+
+
+def test_coverage_is_about_pieces_not_characters() -> None:
+    # A format-preserving substitute shares the plus, the seven and the
+    # dashes with the real phone. Counting characters called that a partial
+    # leak and marked every realistic fake as uncovered.
+    from agentmask_ru.align import surviving_pieces
+
+    assert surviving_pieces("+7 907 123-45-67", "+7 935 476-22-11") == []
+    assert surviving_pieces("Кузнецов Дмитрий", "Кузнецов Валентин") == ["кузнецов"]
+    fpe = project("тел +7 907 123-45-67 ок", "тел +7 935 476-22-11 ок", 4, 20)
+    assert fpe.altered and fpe.covered
