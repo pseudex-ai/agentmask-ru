@@ -94,6 +94,24 @@ _STARTUP_BACKOFF_SECONDS = 2.0
 # who pays their invoice must come back without restarting every container.
 _TERMINAL_RETRY_SECONDS = 60.0
 
+# ОТЧЁТ О РАСХОДЕ — СВОИМ ТАЙМЕРОМ, А НЕ НА ПРОДЛЕНИИ АРЕНДЫ.
+#
+# Продление считается от TTL (`renew_after_seconds = TTL // 3`, то есть раз в
+# восемь часов при суточной аренде) и отвечает на вопрос «жива ли лицензия».
+# Расход к этому вопросу отношения не имеет, а был к нему привязан: счётчики
+# уезжали вместе с продлением. Следствия измеримы и оба плохие — кабинет
+# отставал на восемь часов, а контейнер, проживший меньше восьми, не
+# отчитывался ВООБЩЕ, и клиент платил по ВЫДАННОЙ ёмкости (200 запросов), а не
+# по фактическому расходу (семь).
+#
+# Эндпоинт `/v1/usage` существует ровно для этого, и в его же докстринге
+# написано: «Normally counters ride on /v1/lease; this exists for a client that
+# wants to report before its renewal is due». Не хватало только вызова.
+#
+# Две минуты — потому что отчёт КУМУЛЯТИВНЫЙ: потерянный исправляется
+# следующим, значит частые отправки дёшевы и безопасны, а редкие стоят клиенту
+# неверной цифры в кабинете. Стоимость — один лёгкий POST на контейнер.
+_USAGE_REPORT_SECONDS = float(os.environ.get("PSEUDEX_USAGE_REPORT_SECONDS", "120"))
 
 # What to DO about each terminal code. A persona following the documented
 # `docker run` hit an unreachable licensing host and got a bare Python traceback
@@ -295,6 +313,8 @@ class LicenseClient:
         # has to key off the attempt: pacing off the last success would retry on
         # every tick once a lease has gone stale.
         self._last_attempt_monotonic: float | None = None
+        # Когда последний раз УЕХАЛ РАСХОД — отдельно от аренды.
+        self._last_usage_monotonic: float | None = None
         self._ttl_seconds = 0
         self._grace_seconds = 0
         self._renew_after_seconds = 0
@@ -476,6 +496,42 @@ class LicenseClient:
                     "url": f"{self._base_url}/v1/lease"}
 
     # --- lease ---------------------------------------------------------
+
+    def _report_usage(self) -> None:
+        """Отправить счётчики, НЕ ДОЖИДАЯСЬ продления аренды.
+
+        Отчёт кумулятивный (см. `_usage_provider` и `_request_lease`): он
+        называет ИТОГ, а не приращение, поэтому неудачная отправка ничего не
+        теряет — следующий отчёт назовёт то же самое плюс новое. Именно поэтому
+        частота здесь может быть минутной без риска задвоить начисление.
+
+        Порядок важен: сначала ПОДПИСАТЬ и запомнить, потом отправить. Если
+        отправка не пройдёт, `seq` уже израсходован, и следующий отчёт встанет
+        в цепь ровно за тем, который до сервера не дошёл, — разрыв цепи на нашей
+        стороне и есть признак потери, а не молчание.
+        """
+        if self._lease_id is None:
+            # Без аренды отчитываться не о чем: процесс ещё не привязан к
+            # организации, и сервер такой отчёт отклонит.
+            return
+        usage = self._sign_usage(self._usage_provider())
+        with self._lock:
+            self._last_report = usage
+            self._last_report_at = time.time()
+        self._last_usage_monotonic = time.monotonic()
+        self._http.post(
+            f"{self._base_url}/v1/usage",
+            json={
+                "key": self._key,
+                "instance_id": self._instance_id,
+                "pubkey": self._process_key.public,
+                "usage": usage,
+            },
+        )
+
+    def _usage_due(self) -> bool:
+        last = self._last_usage_monotonic
+        return last is None or (time.monotonic() - last) >= _USAGE_REPORT_SECONDS
 
     def _request_lease(self) -> dict[str, object]:
         # Cumulative instance-wide totals, restated on every renewal rather than
@@ -849,6 +905,11 @@ class LicenseClient:
                 # квант нельзя — это была бы наша собственная DoS-атака.
                 if self._capacity_endpoint and self._quantum_due():
                     self._meter_step()
+                # РАСХОД УХОДИТ САМ, НЕ ВМЕСТЕ С АРЕНДОЙ. Продление — раз в
+                # `TTL / 3` (восемь часов при суточной аренде), и до этой
+                # правки счётчики ждали его вместе с клиентом.
+                if self._usage_due():
+                    self._report_usage()
                 if last_attempt is None or (
                         time.monotonic() - last_attempt >= due):
                     self._last_attempt_monotonic = time.monotonic()
