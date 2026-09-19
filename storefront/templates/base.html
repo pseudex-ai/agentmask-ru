@@ -174,5 +174,42 @@
         data-metrika-id="{{ metrika_id }}"
         data-goal="{{ metrika_goal }}"></script>
 {% endif %}
+{% comment %}
+     КНОПКА ПОДДЕРЖКИ — ДВЕ ДВЕРИ, А НЕ ОДНА, И ОНА ВИДНА ОТОВСЮДУ.
+     Часть клиентов пишет в мессенджер, часть — письмом, и выбирать за них
+     нельзя: в Telegram ответ быстрее, письмо оставляет след и к нему
+     прикладывают счёт. До этого на сайте не было ни одной двери: строчка в
+     ответе на вопрос в самом низу страницы, и та говорила «на почте», не
+     называя адреса, — потому что имя бота витрине не передавалось вовсе.
+
+     ПОЧЕМУ `SUPPORT_EMAIL`, А НЕ `FROM_EMAIL`. `noreply@pseudex.ru` существует
+     для исходящих писем, ответы на него никто не читает. Показать его как
+     «напишите нам» — значит гарантированно не получить письма и не узнать об
+     этом. Адрес приходит из настроек и задаётся без выкатки.
+{% endcomment %}
+{% if support_bot or support_email %}
+<details class="support">
+  <summary class="support-btn">ПОДДЕРЖКА</summary>
+  <div class="support-menu">
+    <div class="support-lead">Отвечаем сами, в рабочие часы по Москве. Настоящие значения клиентов присылать не нужно — они нам не видны, хватит токена из журнала и времени.</div>
+    {% if support_bot %}
+      <a href="https://t.me/{{ support_bot }}" rel="noopener" target="_blank">
+        <span class="support-where">Telegram</span>
+        <span class="support-how">@{{ support_bot }} · быстрее всего</span>
+      </a>
+    {% endif %}
+    {% if support_email %}
+      <a href="mailto:{{ support_email }}">
+        <span class="support-where">Почта</span>
+        <span class="support-how">{{ support_email }} · счета и предложения</span>
+      </a>
+      <a href="mailto:{{ support_email }}?subject=%D0%9F%D1%80%D0%B5%D0%B4%D0%BB%D0%BE%D0%B6%D0%B5%D0%BD%D0%B8%D0%B5%20%D0%BF%D0%BE%20pseudex">
+        <span class="support-where">Предложение по продукту</span>
+        <span class="support-how">чего не хватает или что неудобно</span>
+      </a>
+    {% endif %}
+  </div>
+</details>
+{% endif %}
 </body>
 </html>

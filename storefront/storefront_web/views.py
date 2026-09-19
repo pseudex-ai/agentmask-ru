@@ -429,6 +429,24 @@ def favicon(request):
     return response
 
 
+def favicon_svg(request):
+    """Отдать `/favicon.svg` из корня — вторая дверь к той же иконке.
+
+    Вебмастер называет SVG РЕКОМЕНДУЕМЫМ форматом, а справка просит положить
+    файл с именем `favicon` в корень сайта. Корневой `.ico` у нас есть и
+    отвечает 200; векторный лежит в `static/` и объявлен ссылкой в `<head>`, а
+    это справка тоже разрешает. Адрес в корне стоит трёх строк и снимает
+    вопрос «а какой именно файл искал робот» — при том что оба формата
+    нарисованы из одного исходника и не могут разойтись.
+    """
+    import pathlib as _pathlib
+    path = (_pathlib.Path(__file__).resolve().parent.parent
+            / "static" / "favicon.svg")
+    response = FileResponse(path.open("rb"), content_type="image/svg+xml")
+    response["Cache-Control"] = "public, max-age=86400"
+    return response
+
+
 def consent(request):
     """Текст согласия на обработку ПД — отдельным документом.
 

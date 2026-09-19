@@ -171,6 +171,12 @@ services:
       # Витрине — только меньший токен. Полный ей не нужен и лежать у неё не должен.
       PSEUDEX_LICENSE_STOREFRONT_TOKEN: ${PSEUDEX_LICENSE_STOREFRONT_TOKEN:?set PSEUDEX_LICENSE_STOREFRONT_TOKEN}
       PSEUDEX_DOCKER_IMAGE: ${CUSTOMER_IMAGE:-cr.yandex/pseudex/pseudex:1.0.0}
+      # ИМЯ БОТА ПОДДЕРЖКИ ВИТРИНЕ НЕ ПЕРЕДАВАЛОСЬ, и сайт говорил
+      # «Поддержка — на почте», хотя бот работал: `SUPPORT_BOT` брался из
+      # окружения, а в него попадал только ТОКЕН, и то сервису бота. Одна
+      # переменная решает, увидят ли клиенты вообще, куда писать.
+      PSEUDEX_SUPPORT_BOT: ${PSEUDEX_SUPPORT_BOT:-}
+      PSEUDEX_SUPPORT_EMAIL: ${PSEUDEX_SUPPORT_EMAIL:-}
       PSEUDEX_SMTP_HOST: ${SMTP_HOST:-}
       PSEUDEX_SMTP_USER: ${SMTP_USER:-}
       PSEUDEX_SMTP_PASSWORD: ${SMTP_PASSWORD:-}

@@ -162,6 +162,15 @@ def main() -> int:
     # `FileResponse` потоковый, поэтому тело собирается из `streaming_content`:
     # у него нет `.content`, и обращение к нему падает — а падение в проверке
     # выглядит как красный тест там, где всё в порядке.
+    # ВТОРАЯ ДВЕРЬ В КОРНЕ: Вебмастер называет SVG рекомендуемым форматом, а
+    # справка просит файл с именем `favicon` именно в корне. Обе нарисованы из
+    # одного исходника, поэтому разойтись не могут.
+    vector_root = client.get("/favicon.svg")
+    check(vector_root.status_code == 200
+          and vector_root["Content-Type"] == "image/svg+xml",
+          "favicon.svg в корне тоже отдаётся файлом",
+          f"{vector_root.status_code} {vector_root.get('Content-Type', '')}")
+
     icon_bytes = b"".join(favicon.streaming_content)
     check(len(icon_bytes) > 500 and icon_bytes[:4] == b"\x00\x00\x01\x00",
           "и это настоящая иконка ICO, а не пустышка",
@@ -198,6 +207,27 @@ def main() -> int:
             ('href="/favicon.ico" type="image/x-icon"', "корневой .ico"),
             ('rel="apple-touch-icon"', "иконка для закладок Apple")):
         check(needle in head, f"в <head> объявлена {why}", needle)
+
+    # ── кнопка поддержки ──────────────────────────────────────────────────
+    # ДВЕ ДВЕРИ, И НИ ОДНОЙ НЕ БЫЛО. Имя бота витрине не передавалось вовсе —
+    # `compose.yml` отдавал только токен, и то сервису бота, — поэтому сайт
+    # отвечал «Поддержка — на почте», не называя адреса. Проверка держит обе
+    # двери и отдельно следит, чтобы `noreply@` не выдали за ящик для писем:
+    # он существует для исходящих, ответы на него не читает никто.
+    from django.test import override_settings
+    with override_settings(SUPPORT_BOT="pseudex_support_bot",
+                           SUPPORT_EMAIL="support@pseudex.ru"):
+        page = client.get("/").content.decode()
+        check('class="support"' in page, "кнопка поддержки есть на странице")
+        check("t.me/pseudex_support_bot" in page, "и ведёт в Telegram")
+        check("mailto:support@pseudex.ru" in page, "и на почту")
+        check("subject=" in page and "mailto:support@pseudex.ru?" in page,
+              "и отдельная дверь для предложений по продукту")
+        check("noreply@" not in page, "noreply не показан как адрес для писем")
+    with override_settings(SUPPORT_BOT="", SUPPORT_EMAIL=""):
+        page = client.get("/").content.decode()
+        check('class="support"' not in page,
+              "без настроенных контактов кнопки нет, а не пустая")
 
     # ── подтверждение прав в Вебмастере ───────────────────────────────────
     # Тег выглядит мусором ровно до дня, когда его удаляют «при рефакторинге

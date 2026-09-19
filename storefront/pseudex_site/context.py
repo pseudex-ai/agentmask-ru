@@ -62,6 +62,7 @@ def analytics(request) -> dict[str, object]:
             "analytics_here": settings.ANALYTICS["mode"] != "off" and counters,
             "metrika_id": settings.METRIKA_ID if metrika_here else "",
             "support_bot": settings.SUPPORT_BOT,
+            "support_email": settings.SUPPORT_EMAIL,
             # ТА ЖЕ ГРАНИЦА РЕШАЕТ И ИНДЕКСАЦИЮ — но по `private_page`, а не по
             # `counters_allowed`: страницы с секретом индексировать не вредно,
             # а закрытые — вредно. Признак один на «закрытое», другой на

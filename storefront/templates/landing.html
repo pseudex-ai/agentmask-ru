@@ -719,7 +719,7 @@ docker logs pseudex | grep 'интерфейс' -A2
     <div style="display:grid;grid-template-columns:minmax(0,280px) minmax(0,3fr);gap:clamp(28px,3vw,64px)" class="faq-grid">
       <div data-reveal>
         <h2 style="margin:0;font-size:clamp(28px,3.4vw,42px);font-weight:900;letter-spacing:-.035em">Вопросы</h2>
-        <p style="margin:18px 0 0;font-size:15px;line-height:1.6;color:var(--dim)">Поддержка — {% if support_bot %}в Telegram: <a href="https://t.me/{{ support_bot }}" rel="noopener">@{{ support_bot }}</a>{% else %}на почте{% endif %}, отвечаем сами в рабочие часы по Москве. Настоящие значения клиентов присылать не нужно: они нам не видны, достаточно токена из журнала и времени.</p>
+        <p style="margin:18px 0 0;font-size:15px;line-height:1.6;color:var(--dim)">Поддержка — {% if support_bot %}в Telegram (<a href="https://t.me/{{ support_bot }}" rel="noopener">@{{ support_bot }}</a>){% if support_email %} или {% endif %}{% endif %}{% if support_email %}на почте (<a href="mailto:{{ support_email }}">{{ support_email }}</a>){% endif %}, отвечаем сами в рабочие часы по Москве. Настоящие значения клиентов присылать не нужно: они нам не видны, достаточно токена из журнала и времени.</p>
       </div>
       <div style="border-top:1px solid var(--line)">
                   <details style="border-bottom:1px solid var(--line-3)">
@@ -805,6 +805,10 @@ docker logs pseudex | grep 'интерфейс' -A2
     <a href="{% url 'consent' %}" style="color:var(--dim-3)" class="hv-muted">СОГЛАСИЕ</a>
     <a href="{% url 'requisites' %}" style="color:var(--dim-3)" class="hv-muted">РЕКВИЗИТЫ</a>
     <a href="{% url 'architecture' %}" style="color:var(--dim-3)" class="hv-muted">АРХИТЕКТУРА</a>
+    {% if support_bot %}<a href="https://t.me/{{ support_bot }}" rel="noopener" target="_blank"
+       style="color:var(--accent-2)" class="hv-muted">TELEGRAM</a>{% endif %}
+    {% if support_email %}<a href="mailto:{{ support_email }}"
+       style="color:var(--accent-2)" class="hv-muted">ПОЧТА</a>{% endif %}
     <span>ХОСТИНГ В РФ</span>
   </div>
 </footer>
