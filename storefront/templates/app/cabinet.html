@@ -24,9 +24,9 @@
     <div>
       <div class="label" style="margin-bottom:14px">ТАРИФ</div>
       {% if subscription %}
-        <div class="kv"><span class="k">план</span><span class="v">{{ subscription.plan.title }}</span></div>
-        <div class="kv"><span class="k">в месяц</span><span class="v">{{ subscription.plan.monthly_price|floatformat:0 }} ₽</span></div>
-        <div class="kv"><span class="k">контейнеров по тарифу</span><span class="v">{{ subscription.plan.max_instances }}</span></div>
+        <div class="kv"><span class="k">план</span><span class="v">{{ plan.title }}</span></div>
+        <div class="kv"><span class="k">в месяц</span><span class="v">{{ plan.monthly_price|floatformat:0 }} ₽</span></div>
+        <div class="kv"><span class="k">контейнеров по тарифу</span><span class="v">{{ plan.max_instances }}</span></div>
         <div class="kv"><span class="k">занято сейчас</span><span class="v">{{ instances|length }}</span></div>
         {% if instances %}
         <ul class="slots">
@@ -106,7 +106,9 @@
   {% if paid_plans %}
   <div style="margin-top:20px;border:1px solid {% if trial_over %}var(--accent){% else %}var(--line-2){% endif %};padding:22px">
     <div class="label" style="margin-bottom:10px">
-      {% if subscription.plan.is_trial %}ПЕРЕЙТИ НА ПЛАТНЫЙ{% else %}СМЕНИТЬ ТАРИФ{% endif %}</div>
+      {# Ярлык решается ПОКАЗЫВАЕМЫМ тарифом: на пробе он пробный, даже если в
+   строке подписки остался платный — см. `display_plan` во вьюхе. #}
+      {% if plan.is_trial %}ПЕРЕЙТИ НА ПЛАТНЫЙ{% else %}СМЕНИТЬ ТАРИФ{% endif %}</div>
     {% if trial_over %}
       <p style="font-size:14px;color:var(--text-2);line-height:1.6;margin:0 0 14px">
         {% if organization.trial_granted %}Пробный период закончился — маскирование остановлено.{% else %}Бесплатные дни этому аккаунту не выдавались: с этого адреса или домена проба уже была. Если это ошибка, напишите нам — включим.{% endif %}

@@ -161,7 +161,8 @@ def main() -> int:
 
 def run_checks(client, admin_url: str, public_url: str) -> None:
     from accounts.models import Organization
-    from billing.models import LicenseKey
+    from billing.models import LicenseKey, Plan, Subscription
+    from billing import services
 
     landing = client.get("/")
     body = landing.content.decode()
@@ -261,6 +262,36 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     check("following the link also signs the customer in",
           client.get("/app/").status_code == 200,
           "one letter must be enough to reach the cabinet")
+
+    # ПРОБА ПОКАЗЫВАЕТ ПРОБНЫЙ ТАРИФ, А НЕ ПРИВЯЗАННЫЙ ПЛАТНЫЙ.
+    #
+    # Регистрация привязывает правильный (`services.start_trial` берёт
+    # `trial_plan()`), но у аккаунтов, созданных ДО появления тарифа `free`, в
+    # строке подписки остался платный `start` — и кабинет сообщал человеку
+    # «Старт, 990 ₽/мес», тогда как он не платит ничего.
+    #
+    # Проверка держит ПОКАЗ, а не данные: строку подписки мы не переписываем
+    # (в ней ещё и намерение клиента), а смотрим ровно блок «ТАРИФ» — в списке
+    # смены тарифа платные названия быть обязаны.
+    pinned = Subscription.objects.first()
+    paid = Plan.objects.filter(is_public=True, is_trial=False).first()
+    trial = services.trial_plan()
+    if pinned is not None and paid is not None and trial is not None:
+        was = pinned.plan
+        pinned.plan = paid
+        pinned.save(update_fields=["plan"])
+        try:
+            body = client.get("/app/").content.decode()
+        finally:
+            # ПОДМЕНА ЖИВЁТ РОВНО ОДИН ЗАПРОС. Без этого следующий тест собирал
+            # счёт по подменённому тарифу и падал на сумме — проверка обязана
+            # убирать за собой, иначе она ломает соседа, а не проверяет своё.
+            pinned.plan = was
+            pinned.save(update_fields=["plan"])
+        block = body.split("ТАРИФ", 1)[-1].split("ИСПОЛЬЗОВАНО", 1)[0]
+        check(trial.title in block and paid.title not in block,
+              "на пробе кабинет показывает ПРОБНЫЙ тариф, а не привязанный платный",
+              f"пробный={trial.title in block} платный={paid.title in block}")
 
     welcome = client.get("/welcome")
     welcome_body = welcome.content.decode()

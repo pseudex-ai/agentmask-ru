@@ -838,7 +838,26 @@ def cabinet(request):
     # tracks the meter.
     used = int(reported.get("values", 0))
     requests = int(reported.get("requests", 0))
-    included = subscription.plan.included_requests if subscription else 0
+    # НА ПРОБЕ ПОКАЗЫВАЕМ ПРОБНЫЙ ТАРИФ, А НЕ ТОТ, ЧТО ПРИВЯЗАН.
+    #
+    # Регистрация привязывает к пробной подписке именно пробный тариф
+    # (`services.start_trial` берёт `trial_plan()`), и для новых организаций эти
+    # два совпадают. Но у аккаунтов, созданных ДО появления тарифа `free`, в
+    # строке подписки остался платный `start` — и кабинет сообщал человеку, что
+    # он на «Старте» за 990 ₽/мес, тогда как он не платит ничего.
+    #
+    # Чиним ПОКАЗ, а не данные: строка подписки хранит ещё и намерение клиента
+    # (`intended_plan`), и переписывать её ради вида значило бы потерять то, что
+    # он выбрал. Состояние подписки (`state == trial`) и есть признак, по
+    # которому видно правду, и оно не зависит от того, какая строка тарифа
+    # привязана.
+    display_plan = subscription.plan if subscription else None
+    if subscription is not None and subscription.state == Subscription.TRIAL:
+        trial_plan = services.trial_plan()
+        if trial_plan is not None:
+            display_plan = trial_plan
+
+    included = display_plan.included_requests if display_plan else 0
     # ЁМКОСТЬ: НА ЧЁМ СТРОИТСЯ СЧЁТ И ЧЕМ ОНО ЗАЖАТО. Клиент должен видеть обе
     # границы, потому что расстояние между ними — это ровно та скидка, которую
     # он получает за подтверждённые отчёты. Без этого фраза «отчёт — ваша
@@ -854,7 +873,7 @@ def cabinet(request):
     # а не ноль, который выглядит как «всё включено».
     pricing = None
     if subscription and not unreachable:
-        pricing = services.period_pricing(organization, subscription.plan, reported)
+        pricing = services.period_pricing(organization, display_plan, reported)
     # ГОДОВАЯ ПРЕДОПЛАТА: цена и «что получишь». Показываем, если тариф её даёт
     # ИЛИ есть адресный annual-оффер, и пока база НЕ оплачена вперёд. Срок
     # сверяется С СЕЙЧАС, а не по правдивости даты: истёкшая дата иначе вечно
@@ -871,6 +890,8 @@ def cabinet(request):
         "instances": slots,
         "organization": organization,
         "subscription": subscription,
+        # Тариф, который кабинет ПОКАЗЫВАЕТ: на пробе — пробный.
+        "plan": display_plan,
         "keys": organization.keys.filter(revoked_at__isnull=True),
         "invoices": organization.invoices.all()[:12],
         "used": used,
