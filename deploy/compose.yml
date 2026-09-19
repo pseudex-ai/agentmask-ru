@@ -76,6 +76,12 @@ services:
       PSEUDEX_LICENSE_DB: /data/license.db
       PSEUDEX_LEASE_TTL_SECONDS: ${LEASE_TTL:-86400}
       PSEUDEX_GRACE_SECONDS: ${GRACE:-172800}
+      # РЕЗЕРВ ЁМКОСТИ НЕ ПЕРЕДАВАЛСЯ ВОВСЕ, и это значило, что настроить его
+      # без релиза нельзя: значение бралось только из умолчания в коде. Рядом с
+      # TTL и GRACE ему и место — это третья величина того же рода.
+      # 172800 = 48 часов хода при нашем простое; цена названа в
+      # `licensing/store.py` (погрешность счёта 6.68% худшего случая).
+      PSEUDEX_RESERVE_SECONDS: ${PSEUDEX_RESERVE_SECONDS:-172800}
       PSEUDEX_LICENSE_ADMIN_TOKEN: ${PSEUDEX_LICENSE_ADMIN_TOKEN:?set PSEUDEX_LICENSE_ADMIN_TOKEN}
       PSEUDEX_LICENSE_STOREFRONT_TOKEN: ${PSEUDEX_LICENSE_STOREFRONT_TOKEN:?set PSEUDEX_LICENSE_STOREFRONT_TOKEN}
     volumes:
