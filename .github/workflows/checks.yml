@@ -440,8 +440,12 @@ jobs:
             | tar -xJ --strip-components=1 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
           bash <(curl -fsSL "https://raw.githubusercontent.com/rhysd/actionlint/v${ACTIONLINT_VERSION}/scripts/download-actionlint.bash") "${ACTIONLINT_VERSION}"
           ./actionlint -color -shellcheck ./shellcheck
+      # OUR workflows only. `.` also walked `public/agentmask-ru/.github/`,
+      # the published benchmark's CI, and judged it by this repository's
+      # blanket policy (hash-pinned actions); that repository has its own
+      # standards and its own CI.
       - name: zizmor
-        run: pipx run zizmor==1.30.1 --persona=pedantic --format=github --config .github/zizmor.yml .
+        run: pipx run zizmor==1.30.1 --persona=pedantic --format=github --config .github/zizmor.yml .github
 
   detection:
     name: detection — golden and dirty sets
