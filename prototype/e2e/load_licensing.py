@@ -22,6 +22,20 @@ watch its volume and `docker stats`. Its thresholds are named in
 `CONTAINER_THRESHOLDS` below so the acceptance bar exists for that half too; it
 is run separately because it needs a built image, not this in-process server.
 
+MEASUREMENT CAVEATS (read before trusting the absolute numbers):
+  * `/v1/lease` is SINGLE-CORE-bound: it age-seals the ~1.5 MB bundle, and pyrage
+    holds the GIL during that seal (measured: 8 threads seal at 1× the speed of 1).
+    So server throughput scales with WORKER PROCESSES, not threads — a threadpool
+    offload does nothing here. Steady state is easy (10k containers renewing every
+    ~8 h ≈ 0.35 leases/s vs a ~77/s single-core ceiling); the only real risk is a
+    SYNCHRONISED burst (mass restart / aligned TTLs). Renewal jitter in
+    `pseudex/license.py` spreads that herd; multiple server workers raise the ceiling.
+  * This harness co-locates the load CLIENT and the SERVER in one process, and the
+    client also holds the GIL (age keygen), so the reported latencies are INFLATED
+    by contention that production does not have. A true acceptance run puts the load
+    client on a SEPARATE host from the server; treat the in-process numbers as a
+    lower bound on capacity, not a verdict.
+
 RUN:
     python3 e2e/load_licensing.py                     # full: 10 000 processes
     python3 e2e/load_licensing.py --processes 200     # quick smoke

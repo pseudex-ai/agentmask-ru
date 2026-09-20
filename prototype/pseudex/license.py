@@ -32,6 +32,7 @@ of a container racing its own network, then exits non-zero.
 import hashlib
 import logging
 import os
+import random
 import secrets
 import threading
 import time
@@ -93,6 +94,15 @@ _STARTUP_BACKOFF_SECONDS = 2.0
 # the answer is unlikely to change minute to minute — but never never: a customer
 # who pays their invoice must come back without restarting every container.
 _TERMINAL_RETRY_SECONDS = 60.0
+# Каждый процесс продлевается на 80–100% интервала — свой случайный сдвиг
+# рассыпает синхронный флот по окну (см. _loop).
+_RENEW_JITTER = 0.2
+
+
+def _roll_renew_jitter() -> float:
+    """Множитель порога продления в [1 - _RENEW_JITTER, 1.0). Только ВНИЗ —
+    продлеваем не ПОЗЖЕ намеченного, никогда не рискуя уехать в STALE."""
+    return 1.0 - random.random() * _RENEW_JITTER
 
 # ОТЧЁТ О РАСХОДЕ — СВОИМ ТАЙМЕРОМ, А НЕ НА ПРОДЛЕНИИ АРЕНДЫ.
 #
@@ -318,6 +328,7 @@ class LicenseClient:
         self._ttl_seconds = 0
         self._grace_seconds = 0
         self._renew_after_seconds = 0
+        self._renew_jitter = _roll_renew_jitter()
         self._lease_id: str | None = None
         self._bundle_version: str | None = None
         self._plan: str | None = None
@@ -891,12 +902,21 @@ class LicenseClient:
             # stalling up to ~5 s for the scheduled wake.
             self._wake.clear()
             due = self._renew_after_seconds
+            # ДЖИТТЕР ПРОДЛЕНИЯ. 10k контейнеров, стартовавших вместе, иначе
+            # приходят продлеваться в одну минуту, а сервер сериализует аренды
+            # (seal ~1.5МБ держит GIL — нагрузочный тест §2.6.4). Свой множитель
+            # у каждого процесса размазывает флот по окну; только ВНИЗ, поэтому
+            # продление НЕ ПОЗЖЕ намеченного и STALE не грозит. Не трогает первый
+            # (холодный) заход — тот с last_attempt=None срабатывает сразу.
+            renew_threshold = self._renew_after_seconds * self._renew_jitter
             if self._terminal_code is not None:
                 # A revoked or unpaid licence keeps asking, just slowly. Stopping
                 # forever would mean a customer who pays their invoice has to
                 # restart every container to come back — the kill switch is meant
                 # to stop the service NOW, not to make recovery a support ticket.
                 due = max(due, _TERMINAL_RETRY_SECONDS)
+                # Терминальный бэкофф фиксирован, не джиттерится.
+                renew_threshold = due
             last_attempt = self._last_attempt_monotonic
             try:
                 # ЁМКОСТЬ И АРЕНДА ПОКУПАЮТСЯ ОТДЕЛЬНО. Аренда тяжёлая (бандл
@@ -911,9 +931,11 @@ class LicenseClient:
                 if self._usage_due():
                     self._report_usage()
                 if last_attempt is None or (
-                        time.monotonic() - last_attempt >= due):
+                        time.monotonic() - last_attempt >= renew_threshold):
                     self._last_attempt_monotonic = time.monotonic()
                     self._renew()
+                    # Свежий сдвиг на следующий цикл — флот продолжает расходиться.
+                    self._renew_jitter = _roll_renew_jitter()
                 self._tick()
             except Exception:  # noqa: BLE001 — see below
                 # THIS THREAD MUST NOT DIE. It is the only thing that renews the
