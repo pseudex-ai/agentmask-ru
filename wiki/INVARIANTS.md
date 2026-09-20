@@ -615,30 +615,6 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   leaves the literals in the constants blob where `grep -a` finds them; here the
   docstrings are the design record and the part most worth withholding. Pins:
   `e2e/pack_gates.py P2`.
-- **The version verdict rides UNDER the lease signature and is retracted by
-  absence** (D-055). Every top-level key of the lease response except `bundle`
-  and `signature` is signed, and the client verifies over what it received —
-  so a 0.3.14 engine accepts a `version` block it does not read, and a newer
-  one parses it ONCE into `LicenseStatus` (RFC 9745 `@unix`, RFC 8594
-  HTTP-date → unix seconds). A block missing from the next lease clears the
-  verdict and the notice; the server's silence is «неизвестно» on every
-  screen, never «новейшая». Pins: `licensing/test_admin_api.py` (ЛЕСТНИЦА
-  ВЕРСИЙ НА КЛИЕНТЕ), `test_pseudexctl`, `test_localui`.
-- **426 `unsupported_client` is a VERDICT outside grace, like 402/403** (D-056).
-  The server answers it only to a cycle whose `eol` passed AND was announced
-  ≥ 90 days ahead; the client treats it as terminal at renewal (assets
-  unloaded, `/mask` 503) and as a startup refusal with the upgrade remedy.
-  Deprecation before that changes nothing but the log and the banner (RFC
-  9745). Pins: `licensing/test_admin_api.py`, `test_pseudexctl`,
-  `test_localui_renders` (the banner in a real browser).
-- **A bundle format above `SUPPORTED_BUNDLE_FORMAT` is «обновите движок», not
-  «бандл повреждён»** (D-064). `bundle_format` is signed; a larger number is
-  `BundleFormatError` — grace on renewal (the leased bundle stays loaded,
-  because the mismatch is OUR deployment order), `bundle_format_unsupported`
-  at startup. The client declares `lease_contract` in every request and the
-  server records it beside the version, so «when can the contract-2 bridge
-  go» is a query, not a guess (D-063). Pins: `licensing/test_admin_api.py`,
-  `licensing/test_store_upgrade.py`.
 
 ## Billing
 
@@ -720,29 +696,6 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   idempotent by file header, `wal_checkpoint(TRUNCATE)` first because the real
   values live in the `-wal`. A store is atomic, a VOLUME is not: the role names
   which files moved. Pins: `test_pseudexctl`, `e2e/gates.py`.
-- **A volume is numbered, and an older image never opens a newer volume**
-  (D-058). Each store carries `application_id` (which store it is) and
-  `user_version`, moved only by numbered idempotent steps in historical order
-  (`vault.VAULT_MIGRATIONS` …); `schema.ensure` refuses `user_version` above the
-  image's maximum BEFORE any DDL, with both numbers and the file, and
-  `PSEUDEX_ROLE=probe` exits 2 (container 6) for it — an older image that opened
-  a newer volume would write rows the newer one reads half-filled. `0` is the
-  pre-versioned state every existing volume is in: all steps run, then the
-  stamp. Pins: `test_schema`, `test_preflight`, `e2e/gates.py L24`.
-- **A snapshot precedes the first step, under the same key, or nothing moves**
-  (D-059). `<store>.pre-<from>-<to>.db` by `VACUUM INTO` after
-  `wal_checkpoint(TRUNCATE)`, fsync of file and directory; free space ≥ 2×
-  (store + WAL) is checked before anything is touched. Once per volume in
-  `PSEUDEX_ROLE=migrate` before the fan-out; workers take the fast path. A
-  fresh store is stamped without a snapshot — there is nothing to restore to.
-  Pins: `test_schema` (the snapshot is OPENED with the store's key, not assumed),
-  `e2e/gates.py L25`.
-- **The maximum `user_version` per store is pinned per MINOR** (D-060):
-  `prototype/schema_lock.json` must equal `schema.versions()` for the minor in
-  `version.txt`. Adding a migration step under an already-pinned minor is red —
-  a patch keeps the number (rollback to the previous patch is free), a minor may
-  raise it one way, and opening a minor is the act of adding its line. Pins:
-  `test_schema`.
 - **The licensing server's schema MIGRATES before any index is built.**
   `CREATE INDEX … (org_id, pubkey)` ran before `ADD COLUMN pubkey`; upgrading on
   existing data did not come up. Every other path starts from an empty database
@@ -791,62 +744,19 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   and every platform release would read as a downgrade of the last old-scheme
   tag `.deployed` remembers), refuses an identity regexp that cannot match
   `refs/tags/platform/v…` in words before any signature check, and waits when no
-  platform tag exists. It also syncs the versions registry every tick from
-  «origin/main» — accepted only after `cosign verify` of the newest cycle's
-  digest with the image identity; an unparseable file or an unsigned digest
-  never replaces the last good copy, and says so. Pins: `deploy/test_agent.sh`.
-- **The engine is versioned only when the engine changed** (D-051, D-052). A
-  commit is attributed to a stream by the files it touches; the engine's
-  shipped set is derived from the `COPY` lines of `prototype/Dockerfile.nuitka`
-  (`deploy/shipped_paths.sh`). Three layers: release-please excludes
-  `licensing/`, `bench/`, `e2e/`; `deploy/lint_engine_commits.sh` refuses a
-  visible-type commit that touches `prototype/` and nothing shipped; the engine
-  publish job is red when the shipped set is unchanged since the previous
-  `v*` tag — `0.3.12` and `0.3.13` were one image under two numbers. No root
-  package `"."` in `release-please-config.json`: it receives every commit.
-  Pins: `.github/workflows/checks.yml` (lint + config gate); publish gate in
-  `.github/workflows/release.yml` — UNPINNED by a test script, enforced by CI.
-- **The versions registry is additive and announces closings 90 days ahead**
-  (D-054, D-056). `deploy/releases.json`: `latest`/`digest` are written by the
-  pipeline only; a recorded version never changes digest, `latest` never walks
-  back, a cycle is never removed; `eol` requires `eol_announced` ≤ today and
-  `eol ≥ eol_announced + 90 d`; the newest cycle alone carries `X` and `latest`.
-  The server refuses to enforce a late `eol` (`registry.check` returns «late»,
-  not a 426). Pins: `licensing/test_registry.py`; `.github/workflows/checks.yml`
-  validates against the previous file and requires tag `v<latest>` to exist.
+  platform tag exists. Pins: `deploy/test_agent.sh`.
 - **The engine version has ONE source, `prototype/version.txt`** (D-053): baked
   into `pseudex/_release.py` next to the verification key, read by
   `pseudex/license.py`, sent in the lease, shown by `/status`, the UI and
   `pseudexctl doctor`. It used to be `ENGINE_VERSION = "1.0.0"` in code, on every
   image ever shipped. Pins: `test_localui` (`/status` equals the file);
   `.github/workflows/release.yml` publish is red when the tag differs from the file.
-- **Only `security:` commits reach a «release/X.Y» branch, and only by
-  cherry-pick from `main`** (D-057). `.github/workflows/backport.yml` opens the
-  cherry-pick PR into every live support branch when a PR carrying such a
-  commit merges; release-please on the branch mints `X.Y.Z+1`;
-  `.github/workflows/release.yml` measures the empty-release gate against the previous tag of the SAME cycle
-  and moves alias `X.Y` only. An ordinary `fix:` is not backported — the
-  customer gets it with the next minor, or the support branch becomes a second
-  `main` with none of its gates. `deploy/watch.sh` warns when a cycle's `eol`
-  is ≤ 30 days away and containers still run on it. Pins: UNPINNED by a test
-  script — enforced by the workflows; the registry half by `licensing/test_registry.py`.
-- **`pseudexctl upgrade` is an ORDER, and the volume is never the thing that
-  pays for a failed one** (D-062): pull → probe with the NEW image, read-only,
-  before anything stops (key opens, volume not from the future) → stop →
-  archive of the volume → rename → run with the same name, ports, mounts,
-  environment (container env minus image env, via a 0600 `--env-file` —
-  secrets never in argv) → `/health`. Unhealthy: the old image's probe decides
-  — 0 → the previous container comes back by itself, 2 → nothing is deleted
-  and the `restore` command is printed. A compose-managed container is
-  refused. The tool ships in both images at `/app/pseudexctl`. Pins:
-  `test_pseudexctl` (order, shape, secrets, both rollback branches, dry-run).
-- **The image tag the site advertises comes from the versions registry, never
-  from a hand-set variable** (D-061). `engine_release.current_image()` returns
-  the floating minor of the newest cycle in the copy the agent synced; `latest`
-  when there is no file; `PSEUDEX_DOCKER_IMAGE` only as an explicit override.
-  `CUSTOMER_IMAGE=…:1.0.0` set once by hand advertised a tag the registry did
-  not hold; deriving it from the platform `VERSION` would have advertised a
-  platform number. Pins: `storefront/test_engine_release.py`.
+- **The image tag the site advertises is DERIVED from the deployed VERSION,
+  never set by hand.** `CUSTOMER_IMAGE=…:1.0.0` was set once and never
+  updated while the agent bumped `VERSION` on every release; the site advertised
+  a tag the registry did not hold. `deploy/compose.yml` now derives
+  `PSEUDEX_DOCKER_IMAGE` from `REGISTRY`/`VERSION`; `CUSTOMER_IMAGE` is a manual
+  override only. UNPINNED (the storefront cannot reach the registry from a test).
 
 ## Instruments
 

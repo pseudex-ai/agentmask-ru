@@ -303,11 +303,6 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
           stored.prefix in welcome_body, f"prefix={stored.prefix}")
     check("the run command comes with the key already in it",
           "PSEUDEX_LICENSE_KEY=" in welcome_body and stored.prefix in welcome_body)
-    # THE WAY UP IS SHOWN NEXT TO THE WAY IN (D-062): the same image the run
-    # command names hands out the tool, and the upgrade is one command.
-    check("the welcome page shows how to take pseudexctl out of the image and upgrade",
-          "/app/pseudexctl" in welcome_body and "pseudexctl upgrade" in welcome_body
-          and welcome_body.count("--entrypoint cat") >= 1)
 
     # A second activation must not mint a second key.
     replay = client.get(link[link.index("/activate"):], follow=False)

@@ -13,14 +13,12 @@
 заведён. `pip install playwright && python -m playwright install chromium`.
 """
 
-import http.server
 import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 import urllib.error
 import urllib.request
@@ -28,7 +26,6 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent
 _PORT = int(os.environ.get("PSEUDEX_RENDER_PORT", "8391"))
-_ENGINE_PORT = int(os.environ.get("PSEUDEX_RENDER_ENGINE_PORT", "8392"))
 _TOKEN = "render-check-token"
 # СТАВИТСЯ НАМИ, ЧТОБЫ ПРОВЕРКА НИЖЕ МОГЛА УПАСТЬ. Интерфейс наследует окружение
 # и с этим значением работает как в бою; экран обязан его не показать.
@@ -43,68 +40,10 @@ def check(name: str, condition: bool, detail: str = "") -> None:
         FAILURES.append(name)
 
 
-# ЧТО ГОВОРИТ ДВИЖОК О СВОЕЙ ВЕРСИИ (D-055) — ровно форма `/status` из
-# `operator.release_verdict`: снята с поддержки, есть новее, обслуживается до
-# даты. Баннер и строка в шапке существуют только в JS, и единственное
-# свидетельство, что они ОТРИСОВАЛИСЬ, — прочитать их из браузера.
-_DEPRECATED_STATUS = {
-    "engine": {"version": "0.3.16", "assets_loaded": True, "bundle_version": "abc",
-               "processes": [], "memory": {"limit_mb": 4096, "used_mb": 400,
-                                           "processes_running": 1, "worker_mb_budget": 350,
-                                           "largest_process_mb": 300, "headroom_mb": 3600,
-                                           "verdict": "ok", "reason": ""},
-               "release": {"version": "0.3.16", "running_latest": False, "latest": "0.4.2",
-                           "latest_in_cycle": "0.3.17", "min_supported": "0.3.17",
-                           "deprecated_at": 1788998400, "sunset_at": 1806883200,
-                           "notice": None, "upgrade": "pseudexctl upgrade --to 0.4",
-                           "cycles": [{"cycle": "0.4", "state": "current", "latest": "0.4.2",
-                                       "release_date": "2026-10-05", "eol": None},
-                                      {"cycle": "0.3", "state": "maintenance", "latest": "0.3.17",
-                                       "release_date": "2026-09-14", "eol": "2027-04-05"}]},
-               "schema": {"binary": {"vault": 9, "audit": 1, "tenants": 1},
-                          "volume": {"vault": 9, "audit": 1, "tenants": None}}},
-    "license": {"state": "active", "code": None, "grace_left_s": 1000,
-                "seconds_since_lease": 10, "last_error": None},
-    "vault": {"on_disk": "encrypted", "key_source": "env", "key_beside_data": False,
-              "stores": []},
-    "today": {"requests": 3, "values": 2, "by_type": {"PHONE": 2}},
-}
-
-
-class _FakeEngine(http.server.BaseHTTPRequestHandler):
-    """Движок из одного экрана: `/status` с вердиктом, остальное — пусто.
-    Заголовок Authorization не проверяется: что интерфейс ходит с НУЖНЫМ
-    токеном, пинит test_localui.py против настоящего сервиса."""
-
-    def do_GET(self) -> None:  # noqa: N802 — имя задаёт http.server
-        path = self.path.split("?", 1)[0]
-        body: object = _DEPRECATED_STATUS if path == "/status" else (
-            {"orgs": ["default"]} if path == "/orgs" else {})
-        payload = json.dumps(body).encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def log_message(self, *_args) -> None:
-        return
-
-
-def _start_engine() -> http.server.ThreadingHTTPServer:
-    engine = http.server.ThreadingHTTPServer(("127.0.0.1", _ENGINE_PORT), _FakeEngine)
-    threading.Thread(target=engine.serve_forever, daemon=True).start()
-    return engine
-
-
 def _start_ui() -> subprocess.Popen:
     env = dict(os.environ)
     env.update({"PSEUDEX_UI_TOKEN": _TOKEN, "PSEUDEX_UI_PORT": str(_PORT),
                 "PSEUDEX_GATEWAY_TOKEN": _GATEWAY_TOKEN,
-                "PSEUDEX_ENGINE_URL": f"http://127.0.0.1:{_ENGINE_PORT}",
-                # Без него прокси шлёт «Bearer » и сам же отвечает 503 —
-                # «движок не отвечает» про движок, к которому не ходил.
-                "PSEUDEX_ADMIN_TOKEN": "render-admin-token",
                 "PSEUDEX_DB_DIR": tempfile.mkdtemp(prefix="pseudex-render-")})
     server = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "pseudex.localui.server:app",
@@ -153,7 +92,6 @@ def main() -> None:
               "python -m playwright install chromium", file=sys.stderr)
         raise SystemExit(2) from None
 
-    engine = _start_engine()
     server = _start_ui()
     try:
         with sync_playwright() as pw:
@@ -171,48 +109,9 @@ def main() -> None:
             page.wait_for_timeout(1500)
 
             tabs = page.locator("nav button").all_inner_texts()
-            check("страница вообще отрисовалась", len(tabs) >= 8, str(tabs))
+            check("страница вообще отрисовалась", len(tabs) >= 7, str(tabs))
             check("ни одной ошибки исполнения и ни одного запрета CSP",
                   not broken, "; ".join(broken[:3]))
-
-            # ЛЕСТНИЦА ВЕРСИЙ НА ЭКРАНЕ (D-055). Движок сказал «снята с
-            # поддержки, есть новее, обслуживается до 2027-04-05» — экран обязан
-            # показать дату, новую версию и одну команду. Дата берётся из
-            # `sunset_at` (unix) и форматируется в браузере: если она не
-            # долетела, баннер печатает «—», и это пройдёт любую проверку на
-            # наличие элемента, но не эту.
-            head = page.inner_text("header")
-            check("в шапке рядом с версией — «доступна 0.4.2»",
-                  "0.3.16" in head and "доступна 0.4.2" in head, head[:200])
-            banner = page.locator(".banner").first
-            banner_text = banner.inner_text() if banner.count() else ""
-            check("баннер «версия устаревает» с датой окончания обслуживания и командой",
-                  "ВЕРСИЯ УСТАРЕВАЕТ" in banner_text and "05.04.2027" in banner_text
-                  and "pseudexctl upgrade --to 0.4" in banner_text, banner_text[:300])
-            check("баннер именно предупреждение, не остановка",
-                  banner.count() and "warn" in (banner.get_attribute("class") or ""),
-                  banner.get_attribute("class") if banner.count() else "нет баннера")
-
-            # ЭКРАН «ВЕРСИИ»: циклы из подписанного блока аренды, состояние по
-            # датам, свой цикл помечен, команда обновления с целевым минором.
-            # Таблица существует только в JS — читается из браузера.
-            if any("ВЕРСИИ" in tab for tab in tabs):
-                page.get_by_role("button", name="ВЕРСИИ").click()
-                page.wait_for_timeout(600)
-                versions_body = page.inner_text("main")
-                check("экран версий называет вердикт, новейшую и минимально обслуживаемую",
-                      "доступна 0.4.2" in versions_body and "0.3.17" in versions_body
-                      and "минимально обслуживаемая" in versions_body, versions_body[:300])
-                check("таблица циклов: текущий 0.4 и 0.3 на поддержке до 2027-04-05, свой помечен",
-                      "текущий" in versions_body and "поддержка, только security" in versions_body
-                      and "2027-04-05" in versions_body and "← ваш" in versions_body, versions_body[-600:])
-                check("команда обновления целится в новейший минор",
-                      "./pseudexctl upgrade --to 0.4" in versions_body
-                      and "docker cp pseudex:/app/pseudexctl" in versions_body)
-                check("схема тома и образа показаны обе",
-                      "vault 9" in versions_body and "tenants —" in versions_body, versions_body[-800:])
-            else:
-                check("вкладка ВЕРСИИ есть", False, str(tabs))
 
             if any("ИНТЕГРАЦИЯ" in tab for tab in tabs):
                 page.get_by_role("button", name="ИНТЕГРАЦИЯ").click()
@@ -288,7 +187,6 @@ def main() -> None:
                 check("вкладка ИНТЕГРАЦИЯ есть", False, str(tabs))
             browser.close()
     finally:
-        engine.shutdown()
         server.terminate()
         try:
             server.wait(timeout=10)

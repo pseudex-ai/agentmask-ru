@@ -16,8 +16,7 @@ import time
 import uuid
 
 from pseudex.profiling import stage
-from pseudex import schema
-from pseudex.sqlite_setup import AUDIT_STORE, Connection, connect as sqlite_connect
+from pseudex.sqlite_setup import AUDIT_STORE, connect as sqlite_connect
 
 # Day buckets follow the CONTAINER's local time, not UTC. The screens that read
 # them say "сегодня" to an operator sitting in one office, and a Moscow customer
@@ -51,87 +50,68 @@ def _preview(value: str) -> str:
     return value[0] + "•" * (n - 2) + value[-1]
 
 
-def create_tables(conn: Connection) -> None:
-    """The audit tables — `CREATE … IF NOT EXISTS`, every open."""
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS events ("
-        "ts REAL, customer TEXT, agent_id TEXT, entity_type TEXT, token TEXT, preview TEXT)"
-    )
-    # Requests are counted SEPARATELY from entities, and the difference is
-    # not cosmetic. `billing_totals` used to report sum(entities) as
-    # "requests", so the number the licensing server bills on was the count
-    # of detected VALUES. A customer whose messages carry six entities each
-    # burned a 100 000-request plan in under 17 000 requests. The two numbers
-    # also mean different things to the operator ("запросов обработано" vs
-    # "значений защищено") and the UI shows both.
-    #
-    # A request with no PII in it is still a request, so this cannot be
-    # derived from the events table at any level of cleverness — it has to be
-    # its own counter, incremented once per masking call.
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS requests ("
-        "customer TEXT, agent_id TEXT, day TEXT, n INTEGER, "
-        "PRIMARY KEY (customer, agent_id, day))"
-    )
-    # Who looked at a real value, and when. NOT what they saw: storing the
-    # revealed value would make this log a second copy of the personal data
-    # the vault exists to contain, which is the failure this table is meant
-    # to prevent rather than cause.
-    #
-    # Written by the ENGINE on the /reveal path, not by the UI that asked.
-    # The UI is one caller among possible others (curl against the sidecar
-    # port is a supported shape), and a log the caller writes about itself is
-    # not a log. Without this table the product hands the customer a
-    # disclosure channel with no accountability — worse for them under 152-ФЗ
-    # than not having it at all.
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS reveals ("
-        "ts REAL, customer TEXT, actor TEXT, token TEXT, entity_type TEXT, found INTEGER)"
-    )
-    # Detokenization is a disclosure path too: /unmask* returns real values
-    # from the vault. Legitimate detok restores tokens just masked in the same
-    # conversation; a sweep of guessed tokens (a compromised gateway credential
-    # trawling the vault) shows here as volume plus a high MISS rate. We record
-    # only counts — never the values — so the trace itself is not a second copy
-    # (pentest B1: /unmask* had no trace at all, so a sweep left none).
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS detoks ("
-        "ts REAL, customer TEXT, actor TEXT, resolved INTEGER, misses INTEGER)"
-    )
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)"
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS events_customer_ts "
-                       "ON events (customer, ts DESC)")
-    conn.execute("CREATE INDEX IF NOT EXISTS reveals_customer_ts "
-                       "ON reveals (customer, ts DESC)")
-    conn.execute("CREATE INDEX IF NOT EXISTS detoks_customer_ts "
-                       "ON detoks (customer, ts DESC)")
-
-
-def _migrate_agent_id(conn: Connection) -> None:
-    """Add agent_id to a pre-existing table created before this column."""
-    columns = [row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()]
-    if "agent_id" not in columns:
-        conn.execute("ALTER TABLE events ADD COLUMN agent_id TEXT DEFAULT ''")
-
-
-# The numbered history of the audit log (D-058); see vault.VAULT_MIGRATIONS.
-AUDIT_MIGRATIONS: tuple[schema.Step, ...] = (
-    schema.Step(1, "agent_id", "0.3.0", _migrate_agent_id),
-)
-
-
 class AuditLog:
     """Connector to the append-only audit store (external state -> class)."""
 
     def __init__(self, db_path: str) -> None:
         self._lock = threading.Lock()
         self._conn = sqlite_connect(db_path, AUDIT_STORE)
-        # Tables, the numbered step, the refusal of a volume from the future
-        # (D-058) — once per volume in `PSEUDEX_ROLE=migrate`, the fast path
-        # here. See pseudex/schema.py.
-        schema.ensure(self._conn, AUDIT_STORE, db_path)
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS events ("
+            "ts REAL, customer TEXT, agent_id TEXT, entity_type TEXT, token TEXT, preview TEXT)"
+        )
+        # Requests are counted SEPARATELY from entities, and the difference is
+        # not cosmetic. `billing_totals` used to report sum(entities) as
+        # "requests", so the number the licensing server bills on was the count
+        # of detected VALUES. A customer whose messages carry six entities each
+        # burned a 100 000-request plan in under 17 000 requests. The two numbers
+        # also mean different things to the operator ("запросов обработано" vs
+        # "значений защищено") and the UI shows both.
+        #
+        # A request with no PII in it is still a request, so this cannot be
+        # derived from the events table at any level of cleverness — it has to be
+        # its own counter, incremented once per masking call.
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS requests ("
+            "customer TEXT, agent_id TEXT, day TEXT, n INTEGER, "
+            "PRIMARY KEY (customer, agent_id, day))"
+        )
+        # Who looked at a real value, and when. NOT what they saw: storing the
+        # revealed value would make this log a second copy of the personal data
+        # the vault exists to contain, which is the failure this table is meant
+        # to prevent rather than cause.
+        #
+        # Written by the ENGINE on the /reveal path, not by the UI that asked.
+        # The UI is one caller among possible others (curl against the sidecar
+        # port is a supported shape), and a log the caller writes about itself is
+        # not a log. Without this table the product hands the customer a
+        # disclosure channel with no accountability — worse for them under 152-ФЗ
+        # than not having it at all.
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS reveals ("
+            "ts REAL, customer TEXT, actor TEXT, token TEXT, entity_type TEXT, found INTEGER)"
+        )
+        # Detokenization is a disclosure path too: /unmask* returns real values
+        # from the vault. Legitimate detok restores tokens just masked in the same
+        # conversation; a sweep of guessed tokens (a compromised gateway credential
+        # trawling the vault) shows here as volume plus a high MISS rate. We record
+        # only counts — never the values — so the trace itself is not a second copy
+        # (pentest B1: /unmask* had no trace at all, so a sweep left none).
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS detoks ("
+            "ts REAL, customer TEXT, actor TEXT, resolved INTEGER, misses INTEGER)"
+        )
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)"
+        )
+        self._conn.execute("CREATE INDEX IF NOT EXISTS events_customer_ts "
+                           "ON events (customer, ts DESC)")
+        self._conn.execute("CREATE INDEX IF NOT EXISTS reveals_customer_ts "
+                           "ON reveals (customer, ts DESC)")
+        self._conn.execute("CREATE INDEX IF NOT EXISTS detoks_customer_ts "
+                           "ON detoks (customer, ts DESC)")
+        self._migrate_agent_id()
+        self._conn.commit()
 
     def installation_id(self) -> str:
         """A stable id for THIS DATA DIRECTORY, minted once and kept beside the
@@ -369,6 +349,12 @@ class AuditLog:
             (customer, since_day),
         )
         return [{"agent_id": row[0] or "—", "requests": int(row[1])} for row in rows]
+
+    def _migrate_agent_id(self) -> None:
+        """Add agent_id to a pre-existing table created before this column."""
+        columns = [row[1] for row in self._fetchall("PRAGMA table_info(events)", ())]
+        if "agent_id" not in columns:
+            self._conn.execute("ALTER TABLE events ADD COLUMN agent_id TEXT DEFAULT ''")
 
     def record_many(self, customer: str, agent_id: str,
                     events: list[tuple[str, str, str]]) -> None:

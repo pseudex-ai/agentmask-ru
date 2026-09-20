@@ -32,8 +32,6 @@ deploy/.local-signing-key
 deploy/.local-tuning-key
 # Токены админки лицензионного сервера локального стенда.
 deploy/.local-tokens
-# The agent's verified copy of deploy/releases.json (deploy/agent.sh sync_registry)
-deploy/.registry/
 deploy/.local-tuning-key
 deploy/.local-admin
 # Полный админский токен для скрейпа Prometheus: он кладётся файлом именно

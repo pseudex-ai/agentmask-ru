@@ -1,0 +1,182 @@
+# ВЫКАТКА В ОДИН КЛИК — и один клик не значит «без проверок».
+#
+# ЧТО ЗДЕСЬ ПРОИСХОДИТ. Кнопка ставит ТЕГ. Всё остальное уже устроено и не
+# требует человека: тег запускает `release` (сборка обоих образов, гейты P1-P10
+# и L1-L22 на скомпилированном, публикация и подпись по дайджесту), а хост раз
+# в минуту видит новый тег, ПРОВЕРЯЕТ ПОДПИСИ ДО ТОГО, как что-либо остановит,
+# ждёт здоровья и откатывается сам, если не дождался.
+#
+# ПОЧЕМУ НЕ «ЗАДЕПЛОИТЬ ПО SSH». Это потребовало бы долгоживущего ключа с
+# root-доступом в секретах GitHub и открытого наружу SSH. Для продукта про
+# приватность плохой размен: здесь наружу не открыто ничего, машина забирает
+# сама.
+#
+# ТЕГ СТАВИТСЯ ТОЛЬКО НА ЗЕЛЁНЫЙ КОММИТ. Иначе «в один клик» означало бы «в
+# один клик выкатить непроверенное», а разница между автоматическим и
+# автономным ровно в этом: автоматическое умеет только ломать быстрее.
+
+name: ship
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Какая часть версии растёт"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      force:
+        description: "Выкатить, даже если проверки коммита не зелёные"
+        type: boolean
+        default: false
+
+# Nothing at the workflow level; the one job declares exactly what it holds.
+permissions: {}
+
+# Two ships at once would race for the same next tag. Queue, never cancel — a
+# cancelled ship can leave the tag pushed and the release never dispatched.
+concurrency:
+  group: ship
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: tag the next version and dispatch release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # push the tag
+      # ЗАПУСКАТЬ release — ЯВНО. Тег, запушенный GITHUB_TOKEN, НЕ запускает
+      # воркфлоу по триггеру `tags:` — правило GitHub против петель. Первый
+      # настоящий ship поставил тег, и release не шелохнулся.
+      actions: write    # gh workflow run release.yml
+      # ЧИТАТЬ ПРОВЕРКИ — ОТДЕЛЬНОЕ ПРАВО. Без него `gh api …/check-runs` отвечает
+      # 403, и «нет ни одной проверки» было не гонкой, а отказом в доступе — два
+      # запуска подряд. Диагноз по сообщению об ошибке, а не по догадке.
+      checks: read      # gh api …/check-runs
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      # СВОИ ПРОВЕРКИ ИСКЛЮЧАЮТСЯ ПО ПРЕФИКСУ ИМЕНИ. Имя check-run — это `name:`
+      # джобы, и когда джобы получили человеческие имена («tag the next
+      # version…», «probe the public surfaces»), точное сравнение с `tag` и
+      # `probe` перестало совпадать: ship ждал САМ СЕБЯ (in_progress) до
+      # таймаута, а красный uptime без DNS-записи запрещал бы выкатку. Это
+      # именно те две проверки, которые о готовности коммита не говорят ничего.
+      - name: проверки этого коммита зелёные
+        # НЕ «ЕСТЬ ЛИ ПРОВЕРКИ», А «ПРОШЛИ ЛИ ОНИ». Пустой список — это
+        # «проверки ещё не бежали», и трактовать его как успех значило бы
+        # выкатывать тем охотнее, чем быстрее нажали кнопку.
+        if: ${{ !inputs.force }}
+        # НИ ОДНОЙ ПОДСТАНОВКИ `${{ }}` ВНУТРИ run: — всё через env. Подстановка
+        # — текстовая склейка ДО shell: кавычка внутри значения становится
+        # кавычкой скрипта. Так порвался JSON-ключ реестра; здесь значения
+        # безобидны, но правило одно на все файлы, и zizmor pedantic его держит.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          sha="$GITHUB_SHA"
+          # ТОЛЬКО ПРОВЕРКИ КОДА: checks.yml и gates.yml. Первая версия брала ВСЕ
+          # check-runs коммита — и находила среди них саму себя (`tag`, красный,
+          # потому что отказала) и `probe` из uptime.yml, красный, пока сайта нет.
+          # Кнопка, которую нельзя нажать до запуска сайта, — это не защита.
+          #
+          # И ЖДЁТ, ПОКА ОНИ ХОТЯ БЫ НАЧНУТСЯ: в первую минуту после push
+          # check-runs ещё не зарегистрированы, и «нет ни одной проверки» —
+          # гонка, а не диагноз.
+          for _ in $(seq 1 12); do
+            gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs?per_page=100" \
+              --jq '.check_runs[] | select((.name | startswith("tag ") or startswith("probe ")) | not) | "\(.name)\t\(.status)\t\(.conclusion)"' > /tmp/checks.tsv || true
+            [ -s /tmp/checks.tsv ] && break
+            sleep 10
+          done
+          total="$(wc -l < /tmp/checks.tsv)"
+          if [ "${total}" -eq 0 ]; then
+            echo "::error::для ${sha} нет НИ ОДНОЙ проверки — нечего считать зелёным"
+            exit 1
+          fi
+          # НЕЗАВЕРШЁННЫЕ — ЖДЁМ, а не считаем красными: гейты идут 40 минут,
+          # и кнопка, нажатая через пять, должна дождаться, а не отказать.
+          for _ in $(seq 1 60); do
+            grep -qP '\t(queued|in_progress)\t' /tmp/checks.tsv || break
+            sleep 60
+            gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs?per_page=100" \
+              --jq '.check_runs[] | select((.name | startswith("tag ") or startswith("probe ")) | not) | "\(.name)\t\(.status)\t\(.conclusion)"' > /tmp/checks.tsv || true
+          done
+          bad="$(awk -F'\t' '$2 != "completed" || ($3 != "success" && $3 != "skipped" && $3 != "neutral")' /tmp/checks.tsv || true)"
+          if [ -n "${bad}" ]; then
+            echo "::error::проверки не зелёные:"
+            echo "${bad}"
+            echo "Выкатить всё равно — галочка «force», и тогда это осознанное решение."
+            exit 1
+          fi
+          echo "проверок зелёных: ${total}"
+
+      - name: следующая версия
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -eu
+          # `v[0-9]*`, НЕ `v*`: старый тег `veilgate-final` начинается с v, и
+          # первый запуск поставил `veilgate-final.1.0`. Та же строка живёт в
+          # deploy/agent.sh — хост выкатил бы этот тег.
+          last="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)"
+          [ -n "${last}" ] || last="v0.0.0"
+          IFS=. read -r major minor patch <<EOF
+          ${last#v}
+          EOF
+          case "$BUMP" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            *)     patch=$((patch + 1)) ;;
+          esac
+          next="v${major}.${minor}.${patch}"
+          echo "${last} -> ${next}"
+          echo "NEXT=${next}" >> "$GITHUB_ENV"
+          echo "LAST=${last}" >> "$GITHUB_ENV"
+
+      - name: поставить тег
+        run: |
+          set -eu
+          # АННОТИРОВАННЫЙ, А НЕ ЛЁГКИЙ: в нём остаётся, кто и когда выкатил, и
+          # `git describe` на хосте отвечает осмысленно, а не хешем.
+          git config user.name "ship"
+          git config user.email "ship@users.noreply.github.com"
+          # СООБЩЕНИЕ ЧЕРЕЗ ФАЙЛ, А НЕ ЧЕРЕЗ `-m` С ПЕРЕНОСАМИ. Многострочная
+          # строка внутри блока YAML разрушает его отступы: пустая строка и
+          # список коммитов оказываются за пределами блока, и весь файл
+          # перестаёт разбираться.
+          {
+            echo "релиз ${NEXT}"
+            echo
+            git log --oneline "${LAST}..HEAD" | head -30
+          } > /tmp/tagmsg
+          git tag -a "${NEXT}" -F /tmp/tagmsg
+          git push origin "${NEXT}"
+
+      - name: запустить сборку и публикацию по тегу
+        # НЕ ЧЕРЕЗ ТРИГГЕР `tags:`. Push токеном GITHUB_TOKEN другие воркфлоу
+        # не запускает — так GitHub защищается от петель, — и тег, поставленный
+        # отсюда, лежал бы без сборки. Явный dispatch на ref тега: release
+        # читает GITHUB_REF_NAME и получает ту же версию.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          gh workflow run release.yml --ref "${NEXT}" -f publish=true
+          echo "release запущен на ${NEXT}"
+
+      - name: сказать, что поехало
+        env:
+          TG_TOKEN: ${{ secrets.PSEUDEX_TG_TOKEN }}
+          TG_CHAT: ${{ secrets.PSEUDEX_TG_CHAT }}
+        run: |
+          set -eu
+          [ -n "$TG_TOKEN" ] || exit 0
+          curl -sS -o /dev/null \
+            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TG_CHAT}" \
+            --data-urlencode "text=🚢 Поставлен тег ${NEXT}. Сборка и гейты пошли; хост подхватит сам, когда образы будут подписаны."

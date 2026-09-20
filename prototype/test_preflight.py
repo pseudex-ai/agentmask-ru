@@ -198,8 +198,7 @@ def check_limit_syntax() -> None:
           preflight.plan(828, 8, {"PSEUDEX_UI": ""})["workers"] == 1)
 
 
-def _stub(directory: Path, preflight_action: str, probe_action: str = "exit 0",
-          migrate_action: str = "exit 0") -> Path:
+def _stub(directory: Path, preflight_action: str) -> Path:
     """Заглушка вместо бинарника: она отвечает на роли ровно как он.
 
     Настоящий движок здесь не годится — воркер поднимает модель, лезет за
@@ -210,8 +209,7 @@ def _stub(directory: Path, preflight_action: str, probe_action: str = "exit 0",
         "#!/bin/sh\n"
         'case "${PSEUDEX_ROLE:-engine}" in\n'
         f"    preflight) {preflight_action} ;;\n"
-        f"    probe) {probe_action} ;;\n"
-        f"    migrate) {migrate_action} ;;\n"
+        "    probe) exit 0 ;;\n"
         "    ui) sleep 30 ;;\n"
         "    *) echo \"stub worker\"; exit 7 ;;\n"
         "esac\n", encoding="utf-8")
@@ -243,12 +241,10 @@ def _sh_entrypoint(env: dict[str, str]) -> subprocess.CompletedProcess:
             _text(expired.stderr))
 
 
-def _run_entrypoint(preflight_action: str, probe_action: str = "exit 0",
-                    migrate_action: str = "exit 0") -> subprocess.CompletedProcess:
+def _run_entrypoint(preflight_action: str) -> subprocess.CompletedProcess:
     directory = Path(tempfile.mkdtemp(prefix="pseudex-entry-"))
     env = dict(os.environ)
-    env.update({"PSEUDEX_SERVE_CMD": str(_stub(directory, preflight_action,
-                                              probe_action, migrate_action)),
+    env.update({"PSEUDEX_SERVE_CMD": str(_stub(directory, preflight_action)),
                 "PSEUDEX_UI": "0", "PSEUDEX_DB_DIR": str(directory)})
     return _sh_entrypoint(env)
 
@@ -302,38 +298,6 @@ def check_entrypoint() -> None:
     # именно так «воркер умер» отличается от чистой остановки.
     check("код упавшего воркера доезжает наружу", started.returncode == 7,
           f"код {started.returncode}")
-
-    # ДВА ОТКАЗА ТОМА, ДВА КОДА (D-058). Пробa говорит 1 — «не открывается
-    # ключом» — и контейнер выходит 3; говорит 2 — «том писал более новый
-    # образ» — и контейнер выходит 6 с ДРУГОЙ фразой, до фан-аута. Внутри
-    # `if !` статус был бы отрицанием (всегда 0), и 2 никогда не отличили бы
-    # от 1 — поэтому он ловится через `|| status=$?`.
-    locked = _run_entrypoint("echo 3", probe_action="exit 1")
-    check("том не открывается — код 3, фраза про ключ",
-          locked.returncode == 3 and "не открывается текущим ключом" in locked.stdout
-          and "starting" not in locked.stdout, f"код {locked.returncode}")
-    future = _run_entrypoint("echo 3", probe_action="exit 2")
-    check("том новее образа — код 6, фраза про образ и снимок, до фан-аута",
-          future.returncode == 6 and "новее этого образа" in future.stdout
-          and "снимок" in future.stdout and "starting" not in future.stdout,
-          f"код {future.returncode} {future.stdout[-200:]!r}")
-    # СХЕМА ПОДНИМАЕТСЯ ОДИН РАЗ, ДО ФАН-АУТА (D-059): роль `migrate` стоит
-    # между пробой и запуском воркеров, и её отказ — код 5, тоже до фан-аута.
-    unmigrated = _run_entrypoint("echo 3", migrate_action="exit 5")
-    check("схема не поднята — код 5, до фан-аута",
-          unmigrated.returncode == 5 and "схема тома не поднята" in unmigrated.stdout
-          and "starting" not in unmigrated.stdout, f"код {unmigrated.returncode}")
-    # И роль одноразовая, как остальные: `docker run -e PSEUDEX_ROLE=migrate`
-    # мигрирует и выходит, а не запускает шлюз.
-    directory = Path(tempfile.mkdtemp(prefix="pseudex-oneshot-"))
-    env = dict(os.environ)
-    env.update({"PSEUDEX_SERVE_CMD": str(_stub(directory, "echo 3")),
-                "PSEUDEX_ROLE": "migrate", "PSEUDEX_UI": "0",
-                "PSEUDEX_DB_DIR": str(directory)})
-    oneshot_migrate = _sh_entrypoint(env)
-    check("PSEUDEX_ROLE=migrate — одноразовая роль",
-          oneshot_migrate.returncode == 0 and "starting" not in oneshot_migrate.stdout,
-          repr(oneshot_migrate.stdout[-120:]))
 
 
 def main() -> None:

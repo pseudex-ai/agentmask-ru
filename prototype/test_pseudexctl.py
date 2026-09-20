@@ -307,28 +307,15 @@ def check_doctor_verdicts() -> None:
     healthy = json.dumps({
         "engine": {"assets_loaded": True,
                    "memory": {"worker_mb_budget": 350, "largest_process_mb": 300,
-                              "limit_mb": 4096},
-                   "version": "0.3.16",
-                   "release": {"version": "0.3.16", "running_latest": True,
-                               "latest": "0.3.16", "latest_in_cycle": "0.3.16",
-                               "min_supported": "0.3.15", "deprecated_at": None,
-                               "sunset_at": None, "notice": None,
-                               "upgrade": "pseudexctl upgrade --to 0.3"}},
+                              "limit_mb": 4096}},
         "vault": {"on_disk": "encrypted"},
         "license": {"state": "active"},
     })
+    check("здоровый движок не рождает ни одной жалобы",
+          pseudexctl._read_status(healthy) == [], str(pseudexctl._read_status(healthy)))
 
     def marks(body: str) -> list[str]:
-        """Жалобы — всё, что не OK: строка «движок X — новейшая» есть всегда,
-        и это не жалоба, а ответ на вопрос, который задают первым."""
-        return [mark for mark, _what, _todo in pseudexctl._read_status(body)
-                if mark != pseudexctl.OK]
-
-    check("здоровый движок не рождает ни одной жалобы",
-          marks(healthy) == [], str(pseudexctl._read_status(healthy)))
-    check("новейшая версия названа так, а не промолчана",
-          any(mark == pseudexctl.OK and "новейшая" in what
-              for mark, what, _t in pseudexctl._read_status(healthy)))
+        return [mark for mark, _what, _todo in pseudexctl._read_status(body)]
 
     plaintext = json.loads(healthy)
     plaintext["vault"]["on_disk"] = "plaintext"
@@ -360,53 +347,7 @@ def check_doctor_verdicts() -> None:
     check("мусор вместо JSON не роняет инструмент",
           len(pseudexctl._read_status("<html>502 Bad Gateway</html>")) == 1)
     check("у каждой жалобы есть следующее действие",
-          all(todo for mark, _w, todo in pseudexctl._read_status(json.dumps(plaintext))
-              if mark != pseudexctl.OK))
-
-    # ЛЕСТНИЦА ВЕРСИЙ (D-055): что говорит сервер — то и печатает врач, и у
-    # каждой ступени своё действие. Молчание сервера — НЕ «новейшая».
-    def version_lines(body: dict) -> list[tuple[str, str, str]]:
-        return [line for line in pseudexctl._read_status(json.dumps(body))
-                if "движок" in line[1] or "уведомление" in line[1]]
-
-    newer = json.loads(healthy)
-    newer["engine"]["release"].update({"running_latest": False, "latest": "0.4.1",
-                                       "upgrade": "pseudexctl upgrade --to 0.4"})
-    lines = version_lines(newer)
-    check("есть новее — предупреждение с версией и командой обновления",
-          lines and lines[0][0] == pseudexctl.WARN and "0.4.1" in lines[0][1]
-          and lines[0][2] == "pseudexctl upgrade --to 0.4", str(lines))
-
-    deprecated = json.loads(json.dumps(newer))
-    deprecated["engine"]["release"].update({"deprecated_at": 1759622400, "sunset_at": 1806883200})
-    lines = version_lines(deprecated)
-    check("снята с поддержки — предупреждение с датой окончания обслуживания",
-          lines and lines[0][0] == pseudexctl.WARN and "2027-04-05" in lines[0][1]
-          and "откажет" in lines[0][2], str(lines))
-
-    refused = json.loads(json.dumps(deprecated))
-    refused["license"] = {"state": "expired", "code": "unsupported_client"}
-    lines = version_lines(refused)
-    check("426 — отказ, названный отказом по версии, а не «оплатите»",
-          lines and lines[0][0] == pseudexctl.BAD and "426" in lines[0][1]
-          and "0.3.15" in lines[0][2], str(lines))
-
-    silent = json.loads(healthy)
-    silent["engine"]["release"] = {"version": "0.3.16", "running_latest": None, "latest": None,
-                                   "latest_in_cycle": None, "min_supported": None,
-                                   "deprecated_at": None, "sunset_at": None, "notice": None,
-                                   "upgrade": None}
-    lines = version_lines(silent)
-    check("сервер промолчал — это «неизвестно», а не «новейшая»",
-          lines and lines[0][0] == pseudexctl.WARN and "не сообщил" in lines[0][1], str(lines))
-
-    noticed = json.loads(healthy)
-    noticed["engine"]["release"]["notice"] = {"id": "n-1", "severity": "danger",
-                                              "text": "обновитесь", "url": "https://pseudex.ru/a/1"}
-    lines = version_lines(noticed)
-    check("критическое уведомление — отказ со ссылкой",
-          any(mark == pseudexctl.BAD and "обновитесь" in what and todo.startswith("https://")
-              for mark, what, todo in lines), str(lines))
+          all(todo for _m, _w, todo in pseudexctl._read_status(json.dumps(plaintext))))
 
 
 def check_dry_run_touches_nothing() -> None:
@@ -426,215 +367,6 @@ def check_dry_run_touches_nothing() -> None:
           "PSEUDEX_VAULT_KEY=" not in printed)
 
 
-# --- обновление (D-062) ---------------------------------------------------
-
-_SPEC = {
-    "Name": "/pseudex",
-    "Image": "sha256:old",
-    "Config": {
-        "Image": "cr.yandex/pseudex/pseudex:0.3",
-        "Env": ["PATH=/usr/bin", "PSEUDEX_ROLE=proxy", "PSEUDEX_LICENSE_KEY=ps_live_SECRET",
-                "PSEUDEX_UPSTREAM=https://api.openai.com/v1"],
-        "Labels": {},
-        "User": "10001",
-    },
-    "HostConfig": {
-        # NOT the defaults on purpose: the volume is `crm-vault`, the port is
-        # 8080 — the tool must read both from the container, not from `--volume`
-        # and `--url`, or it probes an empty auto-created volume and polls a
-        # port nobody listens on.
-        "PortBindings": {"8000/tcp": [{"HostIp": "", "HostPort": "8080"}],
-                         "8081/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8081"}]},
-        "RestartPolicy": {"Name": "unless-stopped", "MaximumRetryCount": 0},
-        "Memory": 2147483648, "NetworkMode": "default",
-        "Ulimits": [{"Name": "memlock", "Soft": -1, "Hard": -1}],
-    },
-    "Mounts": [{"Type": "volume", "Name": "crm-vault", "Destination": "/data", "RW": True}],
-}
-
-
-class ScriptedRunner(FakeRunner):
-    """Ответы по ПЕРВЫМ словам команды, а не по порядку: `upgrade` делает
-    десяток вызовов, и тест, считающий их по позициям, ломался бы от любого
-    добавленного `docker inspect`. Содержимое `--env-file` читается в момент
-    вызова — файл удаляется сразу после."""
-
-    def __init__(self, replies: dict[str, tuple[int, str]], health: list[int]) -> None:
-        super().__init__()
-        self._replies = replies
-        self._health = list(health)
-        self.env_file_lines: list[str] = []
-
-    def docker(self, args, timeout: int = 600):
-        self.docker_calls.append(list(args))
-        if "--env-file" in args:
-            path = args[args.index("--env-file") + 1]
-            self.env_file_lines = Path(path).read_text(encoding="utf-8").splitlines()
-        for key, reply in self._replies.items():
-            if " ".join(args).startswith(key):
-                return reply
-        return 0, ""
-
-    def http(self, url, token, method="GET", timeout: int = 30):
-        self.http_calls.append((method, url))
-        if url.endswith("/health"):
-            return (self._health.pop(0) if self._health else 200), "{}"
-        return 200, "{}"
-
-
-def _upgrade_replies(**overrides) -> dict[str, tuple[int, str]]:
-    replies = {
-        "inspect pseudex": (0, json.dumps([_SPEC])),
-        "pull": (0, ""),
-        "image inspect --format {{.Id}}": (0, "sha256:new\n"),
-        "image inspect --format {{json .Config.Env}}": (0, '["PATH=/usr/bin"]\n'),
-        "run -d": (0, "cid\n"),
-    }
-    replies.update(overrides)
-    return replies
-
-
-def _verbs(runner: FakeRunner) -> list[str]:
-    """Каждый вызов docker одним словом: что он делал, а не как начинался."""
-    out = []
-    for call in runner.docker_calls:
-        if "PSEUDEX_ROLE=probe" in call:
-            out.append("probe")
-        elif "tar" in call:
-            out.append("tar")
-        elif call[:2] == ["run", "-d"]:
-            out.append("run")
-        elif call[0] == "image":
-            out.append("image inspect")
-        else:
-            out.append(call[0])
-    return out
-
-
-def check_upgrade() -> None:
-    """Порядок D-062 и обе ветки отката — без docker, по форме команд."""
-    pseudexctl.time.sleep = lambda _s: None  # health опрашивается без ожидания
-
-    # 1. Успех: pull → probe новым → stop → tar → rename → run → health → rm старого.
-    runner = ScriptedRunner(_upgrade_replies(), health=[200])
-    parsed = _real_parse(["upgrade", "--to", "0.4"])
-    code = parsed.run(parsed, runner)
-    verbs = _verbs(runner)
-    check("upgrade проходит в порядке D-062: pull, probe новым, stop, tar, rename, run, rm старого",
-          code == 0 and verbs == ["inspect", "pull", "image inspect", "probe", "stop", "tar",
-                                  "rename", "image inspect", "run", "rm"],
-          str(verbs))
-    probe = next(call for call in runner.docker_calls if "PSEUDEX_ROLE=probe" in call)
-    check("проба идёт НОВЫМ образом, ТЕМ ЖЕ томом, что у контейнера, только на чтение, до остановки",
-          probe[-1] == "cr.yandex/pseudex/pseudex:0.4" and "crm-vault:/data:ro" in probe
-          and "pseudex-data" not in " ".join(probe)
-          and verbs.index("probe") < verbs.index("stop"), " ".join(probe))
-    check("health опрашивается на ОПУБЛИКОВАННОМ порту контейнера, не на --url",
-          any(url.startswith("http://127.0.0.1:8080/health") for _m, url in runner.http_calls)
-          and not any(":8000/" in url for _m, url in runner.http_calls), str(runner.http_calls))
-    run = next(call for call in runner.docker_calls if call[:2] == ["run", "-d"])
-    joined = " ".join(run)
-    check("новый контейнер получает то же имя, порты, том, --restart, --memory, ulimit, user и целевой образ",
-          "--name pseudex" in joined and "-p 8080:8000" in joined and "-p 127.0.0.1:8081:8081" in joined
-          and "-v crm-vault:/data" in joined and "--restart unless-stopped" in joined
-          and "--memory=2147483648" in joined and "--ulimit memlock=-1:-1" in joined
-          and "--user 10001" in joined and run[-1] == "cr.yandex/pseudex/pseudex:0.4", joined)
-    check("секреты не в argv: ключ лицензии едет через --env-file, а не -e NAME=VALUE",
-          "--env-file" in run and "ps_live_SECRET" not in joined
-          and "PSEUDEX_LICENSE_KEY=ps_live_SECRET" in runner.env_file_lines, str(runner.env_file_lines))
-    check("PATH образа не переносится — новый образ оставляет свой",
-          not any(line.startswith("PATH=") for line in runner.env_file_lines))
-    tar = next(call for call in runner.docker_calls if "tar" in call)
-    check("снимок тома снимается ДО переименования, с тома контейнера, только на чтение",
-          "crm-vault:/data:ro" in tar and verbs.index("tar") < verbs.index("rename"))
-    check("прежний контейнер удалён после health, не до",
-          runner.docker_calls[-1][:2] == ["rm", "pseudex-old-0.3"])
-
-    # 2. Тот же образ — ничего не трогается.
-    runner = ScriptedRunner(_upgrade_replies(**{"image inspect --format {{.Id}}": (0, "sha256:old\n")}), health=[])
-    code = parsed.run(parsed, runner)
-    check("тот же образ — «уже на этой версии», stop не вызывался",
-          code == 0 and "stop" not in _verbs(runner), str(_verbs(runner)))
-
-    # 3. compose — отказ с его же командой, до pull.
-    composed = json.loads(json.dumps(_SPEC)); composed["Config"]["Labels"] = {"com.docker.compose.project": "app"}
-    runner = ScriptedRunner(_upgrade_replies(**{"inspect pseudex": (0, json.dumps([composed]))}), health=[])
-    code = parsed.run(parsed, runner)
-    check("контейнер compose — отказ до pull, обновлять им же",
-          code == 2 and _verbs(runner) == ["inspect"], str(_verbs(runner)))
-
-    # 4. Том из будущего для нового образа — отмена до остановки.
-    runner = ScriptedRunner(_upgrade_replies(**{"run --network none --rm -e PSEUDEX_ROLE=probe": (2, "ТОМ НОВЕЕ ОБРАЗА")}), health=[])
-    code = parsed.run(parsed, runner)
-    check("проба новым образом отвечает 2 — отмена, stop не вызывался",
-          code == 1 and "stop" not in _verbs(runner), str(_verbs(runner)))
-
-    # 4b. docker не дождался пробы (124) или не запустил образ (125) — это
-    # НЕ «проба прошла»: обновление отменяется, stop не вызывался.
-    for docker_code in (124, 125):
-        runner = ScriptedRunner(_upgrade_replies(**{"run --network none --rm -e PSEUDEX_ROLE=probe": (docker_code, "timeout")}), health=[])
-        code = parsed.run(parsed, runner)
-        check(f"docker {docker_code} на пробе — отмена, stop не вызывался",
-              code == 1 and "stop" not in _verbs(runner), str(_verbs(runner)))
-
-    # 5. Нездоров, схема не двинулась — назад на старый контейнер.
-    runner = ScriptedRunner(_upgrade_replies(), health=[0, 0, 0])
-    pseudexctl._wait_healthy = lambda _r, _u, seconds=180: False
-    code = parsed.run(parsed, runner)
-    verbs = _verbs(runner)
-    check("нездоров и старый образ открывает том — новый снесён, старый переименован назад и запущен",
-          code == 1 and verbs[-3:] == ["rm", "rename", "start"]
-          and any(call[:2] == ["rm", "-f"] for call in runner.docker_calls)
-          and ["rename", "pseudex-old-0.3", "pseudex"] in runner.docker_calls, str(verbs))
-
-    # 6. Нездоров, схема поднята — старый образ отвечает 2: откат только снимком.
-    class MovedRunner(ScriptedRunner):
-        def docker(self, args, timeout: int = 600):
-            if "PSEUDEX_ROLE=probe" in args and args[-1] == "cr.yandex/pseudex/pseudex:0.3":
-                self.docker_calls.append(list(args))
-                return 2, "ТОМ НОВЕЕ ОБРАЗА"
-            return super().docker(args, timeout)
-
-    runner = MovedRunner(_upgrade_replies(), health=[])
-    import io, contextlib
-    err = io.StringIO()
-    with contextlib.redirect_stderr(err):
-        code = parsed.run(parsed, runner)
-    verbs = _verbs(runner)
-    check("нездоров и схема поднята — start не вызывается, печатается restore со снимком",
-          code == 1 and "start" not in verbs and "pseudexctl restore crm-vault.pre-0.3-0.4.tgz --yes" in err.getvalue()
-          and "docker rename pseudex-old-0.3 pseudex" in err.getvalue(), err.getvalue()[-300:])
-    # 6b. Нездоров и проба старым образом НЕ ОТВЕТИЛА (124): неизвестно —
-    # считается «двинулась»: старый контейнер не запускается, печатается путь
-    # через снимок. «Откат выполнен» над контейнером, который выйдет 6, — ложь.
-    class SilentRunner(ScriptedRunner):
-        def docker(self, args, timeout: int = 600):
-            if "PSEUDEX_ROLE=probe" in args and args[-1] == "cr.yandex/pseudex/pseudex:0.3":
-                self.docker_calls.append(list(args))
-                return 124, "docker не ответил"
-            return super().docker(args, timeout)
-
-    runner = SilentRunner(_upgrade_replies(), health=[])
-    err = io.StringIO()
-    with contextlib.redirect_stderr(err):
-        code = parsed.run(parsed, runner)
-    check("проба старым образом не ответила — старый контейнер не запускается, назван путь через снимок",
-          code == 1 and "start" not in _verbs(runner) and "restore" in err.getvalue(), str(_verbs(runner)))
-    pseudexctl._wait_healthy = _real_wait_healthy
-
-    # 7. --dry-run: только печать, ни одного файла окружения.
-    before = set(os.listdir(tempfile.gettempdir()))
-    done = subprocess.run([sys.executable, str(_PATH), "--dry-run", "upgrade", "--to", "0.4"],
-                          capture_output=True, text=True, timeout=120)
-    leftovers = {name for name in set(os.listdir(tempfile.gettempdir())) - before if name.startswith("pseudexctl-env-")}
-    check("--dry-run upgrade печатает план и не оставляет env-файла",
-          done.returncode == 0 and "docker run -d" in done.stderr and "docker pull" in done.stderr
-          and not leftovers, (done.stdout + done.stderr)[-300:])
-
-
-_real_wait_healthy = pseudexctl._wait_healthy
-
-
 def main() -> None:
     check_command_shapes()
     check_archive_commands()
@@ -643,7 +375,6 @@ def main() -> None:
     check_rekey_proof()
     check_doctor_verdicts()
     check_dry_run_touches_nothing()
-    check_upgrade()
     print()
     if FAILURES:
         print(f"FAILED: {len(FAILURES)} — {', '.join(FAILURES)}")

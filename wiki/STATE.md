@@ -407,7 +407,7 @@ any claim.
 **Status:** active
 **Context:** semantic-release keeps one tag stream by construction («get-tags.js», `git log` without pathspec); changesets needs «package.json» per component. release-please attributes a commit to a component by file path (`commit-split.ts`) and skips hidden types.
 **Decision:** manifest mode with packages `prototype` (component `engine`, tag `vX.Y.Z`, `exclude-paths: [prototype/licensing]`) and `prototype/licensing` + `storefront` + `deploy` (component `platform`, `tag-separator: "/"`, linked). No `"."` package — it receives every commit. `security`, `perf`, `build` visible (patch); «chore/ci/docs/refactor/test/research/bench» do not bump. While `0.x`, `feat` → patch; a new minor is opened only by `Release-As: 0.Y.0` (a minor is a support cycle and a branch). A release is the merge of a Release PR; the tag is created by CI and never by hand.
-**Alternative rejected:** hand-picked bump in the former «ship.yml» (the number depended on memory of the schema); semantic-release; changesets.
+**Alternative rejected:** hand-picked bump in `.github/workflows/ship.yml` (the number depended on memory of the schema); semantic-release; changesets.
 **Price:** a GitHub Action dependency — the CONVENTION (types, path attribution, «version.txt», tags) is tool-independent and reproducible by a 100-line script; shared files outside every path belong to nobody by design (`deploy/` is platform; `.github/` bumps nothing).
 **Related:** D-051 · D-060
 
@@ -420,9 +420,9 @@ any claim.
 ### D-054 · 2026-09-20 · Versions registry «deploy/releases.json», endoflife.date-shaped, written by the engine pipeline, delivered through a platform release
 **Status:** active
 **Context:** endoflife.date is a static Jekyll site whose API is generated at build; hosting it for one product is Ruby for a 40-line JSON. The floor of the minimum supported version is security-relevant and must pass review.
-**Decision:** `cycles[]{cycle, state, release_date, eoas, eol, eol_announced, latest{version,date,digest}, aliases}` + `notices[]`. The engine publish job runs `licensing.registry record` and commits `chore(registry): pseudex X.Y.Z` to `main` — a hidden type, so no platform Release PR opens for data (a four-image release for a JSON change would be an empty release on our side). The server and the storefront read the copy the agent syncs every minute («git show origin/main:deploy/releases.json» + `cosign verify` of the newest digest with the image identity; a file that does not parse or whose digest is unsigned never replaces the last good copy). By hand only `eol`, `eol_announced`, `notices`, via PR — the floor still never moves without review.
+**Decision:** `cycles[]{cycle, state, release_date, eoas, eol, eol_announced, latest{version,date,digest}, aliases}` + `notices[]`. The engine publish job runs `licensing.registry record` and commits `chore(registry): pseudex X.Y.Z` to `main`; that opens the platform Release PR; the server reads the file synced by the agent (`git show origin/main:…` + `cosign verify` of the newest digest). By hand only `eol`, `eol_announced`, `notices`, via PR.
 **Alternative rejected:** the pipeline POSTing to an admin endpoint (the floor moves without review; two sources of truth); self-hosting endoflife.date.
-**Price:** the host trusts «origin/main» for DATA — bounded by the cosign check of the digest it names and by CI's validation of every change to the file.
+**Price:** a second «go» per engine release and ~10 minutes of platform CI.
 **Related:** D-056 · D-061
 
 ### D-055 · 2026-09-20 · The version verdict rides in the lease response, signed, with a three-rung client ladder
@@ -444,7 +444,6 @@ any claim.
 **Decision:** A minor is `current` until the next minor ships; then `maintenance` for six months (`eoas` = next minor's date, `eol` = +6 months, `eol_announced` = that day); then `eol`. Only `security:` commits (and `fix:` by the owner's call) are backported by cherry-pick into «release/X.Y»; a GitHub Action opens the backport PR on merge to `main`; release-please on the branch cuts `X.Y.Z+1`, which moves only the `X.Y` alias. The numbers live in `support{}` of the registry and change as data.
 **Alternative rejected:** fixes only in the current minor with 90 days to move (Immich-style) — simpler, riskier for the customer.
 **Price:** one branch per minor in the window; the owner merges backport PRs.
-**Built (2026-09-20):** `.github/workflows/backport.yml` (korthout/backport-action, pinned; `security…:` subject in the merged PR's commits → one cherry-pick PR per live «release/*»), `.github/workflows/release-please.yml` on «release/**» with `target-branch`, `.github/workflows/release.yml` baseline = previous tag of the same cycle, `deploy/watch.sh` warning ≤ 30 days before an `eol` with containers still on the cycle. The first «release/X.Y» is created by hand from the cycle's last tag when the next minor opens — no branch exists yet.
 **Related:** D-054 · D-061
 
 ### D-058 · 2026-09-20 · `PRAGMA application_id` + monotonic `PRAGMA user_version` per store; an older image refuses a volume from the future

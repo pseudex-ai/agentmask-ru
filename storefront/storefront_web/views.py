@@ -31,7 +31,6 @@ from accounts.models import Membership, Organization
 from billing import onboarding, licensing, payments, services
 from accounts.models import User
 from billing.models import Invoice, LicenseKey, Plan, Subscription
-from storefront_web import engine_release
 from ops.analytics_models import Funnel
 from ops.models import DemandDay
 from storefront_web import detection_types
@@ -246,7 +245,7 @@ def landing(request):
         "trial_days": services.trial_days(),
         "due_days": services.INVOICE_DUE_DAYS,
         "grace_days": services.GRACE_DAYS,
-        "image": engine_release.current_image(),
+        "image": settings.DOCKER_IMAGE,
         "license_url_env": (f"-e PSEUDEX_LICENSE_URL={settings.LICENSE_URL} "
                             if settings.LICENSE_URL else ""),
         # The same prompt the welcome page hands out, with the key as a
@@ -256,7 +255,7 @@ def landing(request):
         # never hear it.
         "claude_prompt": onboarding.claude_prompt(
             "ps_live_…  (подставится после регистрации)",
-            engine_release.current_image(), "8081", settings.LICENSE_URL),
+            settings.DOCKER_IMAGE, "8081", settings.LICENSE_URL),
     })
 
 
@@ -788,7 +787,7 @@ def welcome(request):
     response = render(request, "welcome.html", {
         "key": payload["key"],
         "org_id": payload["org"],
-        "image": engine_release.current_image(),
+        "image": settings.DOCKER_IMAGE,
         "license_url_env": (f"-e PSEUDEX_LICENSE_URL={settings.LICENSE_URL} "
                             if settings.LICENSE_URL else ""),
         "trial_days": services.trial_days(),
@@ -798,7 +797,7 @@ def welcome(request):
         # allowed to show it in full. The cabinet cannot offer this: it only
         # keeps a prefix and a hash, by design.
         "claude_prompt": onboarding.claude_prompt(
-            payload["key"], engine_release.current_image(), "8081", settings.LICENSE_URL),
+            payload["key"], settings.DOCKER_IMAGE, "8081", settings.LICENSE_URL),
     })
     # Read once, and not cached. Deleting the cookie alone does NOT keep the key
     # out of the back-forward cache — only `no-store` disables it, so Back
@@ -932,7 +931,7 @@ def cabinet(request):
                            services.trial_has_been_used(reported))
                        if subscription else 0),
         "unreachable": unreachable,
-        "image": engine_release.current_image(),
+        "image": settings.DOCKER_IMAGE,
         "license_url_env": (f"-e PSEUDEX_LICENSE_URL={settings.LICENSE_URL} "
                             if settings.LICENSE_URL else ""),
     })

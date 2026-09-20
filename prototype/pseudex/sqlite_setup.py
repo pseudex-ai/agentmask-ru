@@ -376,17 +376,10 @@ def describe(db_path: str, store: str) -> dict[str, object]:
         tables = [row[0] for row in connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table' "
             "AND name NOT LIKE 'sqlite_%' ORDER BY name")]
-        # The two header integers the schema contract stands on (D-058):
-        # readable only after the key, which is why they are reported HERE and
-        # not from sixteen bytes of header like `file_state`.
-        user_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
-        application_id = int(connection.execute("PRAGMA application_id").fetchone()[0])
     finally:
         connection.close()
     record["opens"] = True
     record["tables"] = tables
-    record["user_version"] = user_version
-    record["application_id"] = application_id
     return record
 
 
