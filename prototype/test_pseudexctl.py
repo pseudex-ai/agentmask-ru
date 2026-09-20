@@ -307,15 +307,28 @@ def check_doctor_verdicts() -> None:
     healthy = json.dumps({
         "engine": {"assets_loaded": True,
                    "memory": {"worker_mb_budget": 350, "largest_process_mb": 300,
-                              "limit_mb": 4096}},
+                              "limit_mb": 4096},
+                   "version": "0.3.16",
+                   "release": {"version": "0.3.16", "running_latest": True,
+                               "latest": "0.3.16", "latest_in_cycle": "0.3.16",
+                               "min_supported": "0.3.15", "deprecated_at": None,
+                               "sunset_at": None, "notice": None,
+                               "upgrade": "pseudexctl upgrade --to 0.3"}},
         "vault": {"on_disk": "encrypted"},
         "license": {"state": "active"},
     })
-    check("здоровый движок не рождает ни одной жалобы",
-          pseudexctl._read_status(healthy) == [], str(pseudexctl._read_status(healthy)))
 
     def marks(body: str) -> list[str]:
-        return [mark for mark, _what, _todo in pseudexctl._read_status(body)]
+        """Жалобы — всё, что не OK: строка «движок X — новейшая» есть всегда,
+        и это не жалоба, а ответ на вопрос, который задают первым."""
+        return [mark for mark, _what, _todo in pseudexctl._read_status(body)
+                if mark != pseudexctl.OK]
+
+    check("здоровый движок не рождает ни одной жалобы",
+          marks(healthy) == [], str(pseudexctl._read_status(healthy)))
+    check("новейшая версия названа так, а не промолчана",
+          any(mark == pseudexctl.OK and "новейшая" in what
+              for mark, what, _t in pseudexctl._read_status(healthy)))
 
     plaintext = json.loads(healthy)
     plaintext["vault"]["on_disk"] = "plaintext"
@@ -347,7 +360,53 @@ def check_doctor_verdicts() -> None:
     check("мусор вместо JSON не роняет инструмент",
           len(pseudexctl._read_status("<html>502 Bad Gateway</html>")) == 1)
     check("у каждой жалобы есть следующее действие",
-          all(todo for _m, _w, todo in pseudexctl._read_status(json.dumps(plaintext))))
+          all(todo for mark, _w, todo in pseudexctl._read_status(json.dumps(plaintext))
+              if mark != pseudexctl.OK))
+
+    # ЛЕСТНИЦА ВЕРСИЙ (D-055): что говорит сервер — то и печатает врач, и у
+    # каждой ступени своё действие. Молчание сервера — НЕ «новейшая».
+    def version_lines(body: dict) -> list[tuple[str, str, str]]:
+        return [line for line in pseudexctl._read_status(json.dumps(body))
+                if "движок" in line[1] or "уведомление" in line[1]]
+
+    newer = json.loads(healthy)
+    newer["engine"]["release"].update({"running_latest": False, "latest": "0.4.1",
+                                       "upgrade": "pseudexctl upgrade --to 0.4"})
+    lines = version_lines(newer)
+    check("есть новее — предупреждение с версией и командой обновления",
+          lines and lines[0][0] == pseudexctl.WARN and "0.4.1" in lines[0][1]
+          and lines[0][2] == "pseudexctl upgrade --to 0.4", str(lines))
+
+    deprecated = json.loads(json.dumps(newer))
+    deprecated["engine"]["release"].update({"deprecated_at": 1759622400, "sunset_at": 1806883200})
+    lines = version_lines(deprecated)
+    check("снята с поддержки — предупреждение с датой окончания обслуживания",
+          lines and lines[0][0] == pseudexctl.WARN and "2027-04-05" in lines[0][1]
+          and "откажет" in lines[0][2], str(lines))
+
+    refused = json.loads(json.dumps(deprecated))
+    refused["license"] = {"state": "expired", "code": "unsupported_client"}
+    lines = version_lines(refused)
+    check("426 — отказ, названный отказом по версии, а не «оплатите»",
+          lines and lines[0][0] == pseudexctl.BAD and "426" in lines[0][1]
+          and "0.3.15" in lines[0][2], str(lines))
+
+    silent = json.loads(healthy)
+    silent["engine"]["release"] = {"version": "0.3.16", "running_latest": None, "latest": None,
+                                   "latest_in_cycle": None, "min_supported": None,
+                                   "deprecated_at": None, "sunset_at": None, "notice": None,
+                                   "upgrade": None}
+    lines = version_lines(silent)
+    check("сервер промолчал — это «неизвестно», а не «новейшая»",
+          lines and lines[0][0] == pseudexctl.WARN and "не сообщил" in lines[0][1], str(lines))
+
+    noticed = json.loads(healthy)
+    noticed["engine"]["release"]["notice"] = {"id": "n-1", "severity": "critical",
+                                              "text": "обновитесь", "url": "https://pseudex.ru/a/1"}
+    lines = version_lines(noticed)
+    check("критическое уведомление — отказ со ссылкой",
+          any(mark == pseudexctl.BAD and "обновитесь" in what and todo.startswith("https://")
+              for mark, what, todo in lines), str(lines))
 
 
 def check_dry_run_touches_nothing() -> None:

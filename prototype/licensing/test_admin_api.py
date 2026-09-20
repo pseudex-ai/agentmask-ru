@@ -986,5 +986,121 @@ broken = _lease_for("0.3.15").json()
 check("битый реестр — аренда без блока version, не отказ", "version" not in broken and _signature_holds(broken))
 server.REGISTRY = _registry.Watch("")
 
+# ЛЕСТНИЦА НА КЛИЕНТЕ (D-055, D-063, D-064) — настоящий LicenseClient против
+# настоящего сервера. Реестр строится ОТНОСИТЕЛЬНО версии этого чекаута: её
+# цикл — в maintenance, следующий минор — current; иначе тест сломался бы на
+# первом же бампе version.txt, не найдя ни одного дефекта.
+print("\nЛЕСТНИЦА ВЕРСИЙ НА КЛИЕНТЕ")
+from pseudex.assets import ASSETS as _ASSETS  # noqa: E402
+from pseudex.license import ENGINE_VERSION as _ENGINE, LicenseError as _LicenseError, explain  # noqa: E402
+
+_major, _minor, _patch = (int(part) for part in _ENGINE.split("-")[0].split("."))
+_this_cycle = f"{_major}.{_minor}"
+_next_latest = f"{_major}.{_minor + 1}.2"
+_cycle_latest = f"{_major}.{_minor}.{_patch + 2}"
+
+
+def _relative_doc(*, eol: str | None, announced: str | None) -> dict:
+    return {
+        "product": "pseudex", "schema": 1, "updated_at": "2026-09-20T00:00:00Z",
+        "support": {"maintenance_months": 6, "eol_notice_days": 90},
+        "cycles": [
+            {"cycle": f"{_major}.{_minor + 1}", "state": "current", "release_date": "2026-10-05",
+             "eoas": None, "eol": None, "eol_announced": None,
+             "latest": {"version": _next_latest, "date": "2026-10-20", "digest": _digest},
+             "aliases": [f"{_major}.{_minor + 1}", str(_major), "latest"]},
+            {"cycle": _this_cycle,
+             "state": "eol" if eol and _dt.date.fromisoformat(eol) <= _today else "maintenance",
+             "release_date": "2026-09-14", "eoas": "2026-10-05",
+             "eol": eol, "eol_announced": announced,
+             "latest": {"version": _cycle_latest, "date": "2026-10-12", "digest": _digest},
+             "aliases": [_this_cycle]},
+        ],
+        "notices": [{"id": "n-client", "severity": "warning",
+                     "applies_to": f">={_this_cycle}.0 <{_cycle_latest}",
+                     "text": "обновитесь", "url": "https://pseudex.ru/advisories/n-client"}],
+    }
+
+
+_announced = _today - _dt.timedelta(days=10)
+_eol = _today + _dt.timedelta(days=200)
+_registry.dump(_relative_doc(eol=_eol.isoformat(), announced=_announced.isoformat()), _reg_path)
+server.REGISTRY = _registry.Watch(_reg_path)
+ladder = engine("ladder", "start")
+verdict = ladder.status()
+_announced_unix = _dt.datetime(_announced.year, _announced.month, _announced.day,
+                               tzinfo=_dt.timezone.utc).timestamp()
+_eol_unix = _dt.datetime(_eol.year, _eol.month, _eol.day, tzinfo=_dt.timezone.utc).timestamp()
+check("клиент разобрал подписанный блок version: есть новее, новейшая в цикле, пол",
+      verdict.running_latest is False and verdict.latest == _next_latest
+      and verdict.latest_in_cycle == _cycle_latest and verdict.min_supported == _cycle_latest,
+      str(verdict))
+check("@unix и HTTP-date разобраны в unix-секунды один раз, на клиенте",
+      verdict.deprecated_at == _announced_unix and verdict.sunset_at == _eol_unix,
+      f"deprecated_at={verdict.deprecated_at} ожидалось {_announced_unix}; "
+      f"sunset_at={verdict.sunset_at} ожидалось {_eol_unix}")
+check("уведомление по диапазону дошло до статуса с id, текстом и ссылкой",
+      (verdict.notice or {}).get("id") == "n-client"
+      and (verdict.notice or {}).get("url", "").startswith("https://"), str(verdict.notice))
+check("клиент называет свою версию из одного источника",
+      verdict.engine_version == _ENGINE)
+
+# D-063: клиент заявил контракт, сервер записал — по этой колонке видно, когда
+# мост контракта 2 можно снимать.
+fleet = admin.get("/admin/versions", headers=ADMIN).json()["fleet"]
+check("заявленный lease_contract записан рядом с версией во флоте",
+      any(row["engine_version"] == _ENGINE and row["lease_contract"] == 3 for row in fleet),
+      str([row for row in fleet if row["engine_version"] == _ENGINE]))
+_expected_bar = sum(row["instances"] for row in fleet if row["engine_version"] == _ENGINE)
+_metrics_text = admin.get("/admin/metrics", headers=ADMIN).text
+check("метрика флота суммирует строки одной версии (по контрактам), а не берёт последнюю",
+      f'pseudex_fleet_instances{{engine_version="{_ENGINE}"}} {_expected_bar}' in _metrics_text
+      and _expected_bar >= 2,
+      f"ожидалось {_expected_bar}: " + " | ".join(l for l in _metrics_text.splitlines() if "fleet_instances" in l))
+
+# Отзыв отсутствием: реестр пропал — следующее продление стирает вердикт целиком.
+server.REGISTRY = _registry.Watch("")
+ladder._renew()
+retracted = ladder.status()
+check("без блока в ответе вердикт и уведомление отозваны, а не запомнены",
+      retracted.latest is None and retracted.notice is None and retracted.deprecated_at is None
+      and retracted.running_latest is None, str(retracted))
+
+# D-064: формат бандла новее, чем понимает движок — «обновите», не «повреждён»;
+# на продлении — grace (бандл остаётся загружен), на старте — терминальный код.
+server.BUNDLE_FORMAT = 99
+ladder._renew()
+check("формат новее на продлении: бандл остаётся, ошибка названа форматом, не порчей",
+      _ASSETS.is_loaded and "bundle_format 99" in (ladder.status().last_error or "")
+      and ladder.status().code is None, str(ladder.status().last_error))
+try:
+    engine("ladder-cold", "start")
+    cold_code = "no error"
+except _LicenseError as error:
+    cold_code = error.code
+check("формат новее на старте: bundle_format_unsupported, не bundle_corrupt",
+      cold_code == "bundle_format_unsupported", cold_code)
+server.BUNDLE_FORMAT = 2
+
+# 426 через клиент: вердикт вне grace — как 402/403.
+_registry.dump(_relative_doc(eol=(_today - _dt.timedelta(days=1)).isoformat(),
+                             announced=(_today - _dt.timedelta(days=100)).isoformat()), _reg_path)
+server.REGISTRY = _registry.Watch(_reg_path)
+ladder._renew()
+refused_status = ladder.status()
+check("426 на продлении — терминальный unsupported_client, словари выгружены, grace не применяется",
+      refused_status.code == "unsupported_client" and refused_status.state == "expired"
+      and not _ASSETS.is_loaded and "pseudexctl upgrade" in (refused_status.last_error or ""),
+      f"code={refused_status.code} state={refused_status.state} loaded={_ASSETS.is_loaded}")
+try:
+    engine("ladder-refused", "start")
+    refused_code = "no error"
+except _LicenseError as error:
+    refused_code = error.code
+check("426 на старте — LicenseError unsupported_client с подсказкой обновиться",
+      refused_code == "unsupported_client" and "pseudexctl upgrade" in explain("unsupported_client"),
+      refused_code)
+server.REGISTRY = _registry.Watch("")
+
 print(f"\nсломано {len(fails)}")
 raise SystemExit(1 if fails else 0)

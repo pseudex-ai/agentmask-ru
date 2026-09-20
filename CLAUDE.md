@@ -863,9 +863,14 @@ the one direction that is allowed.
 #### `pseudex/license.py` — 977 lines · `live`
 Client side of the lease: X25519 process keypair in memory, `POST /v1/lease`,
 renewal loop, the degradation ladder `LEASED → STALE → EXPIRED` (grace on
-`time.monotonic()`, 402/403 bypass it), unload + scrub, usage reports, the
-compiled-in verification key from `pseudex/_release.py`.
-- **API:** `explain`, `LicenseError`, `LicenseStatus`, `LicenseClient`
+`time.monotonic()`, 402/403 and 426 bypass it), unload + scrub, usage reports, the
+compiled-in verification key from `pseudex/_release.py`. Also the version
+ladder (D-055): the signed `version` block of each lease is parsed once into
+`LicenseStatus` (INFO «есть новее» once per version, WARN on every renewal
+after `deprecated_at`, a notice once per id), `lease_contract` is declared in
+the request (D-063), and a `bundle_format` above `SUPPORTED_BUNDLE_FORMAT` is
+`BundleFormatError` — «обновите движок», grace on renewal, its own code at start (D-064).
+- **API:** `explain`, `BundleFormatError`, `LicenseError`, `LicenseStatus`, `LicenseClient`
 - **Uses:** _release (generated), assets, bundle, measure · **Used by:** metering, proxy, service
 - **Tests:** test_clock_freeze, test_localui, test_persona_defects, `licensing/test_admin_api.py`, `licensing/test_metering_attacks.py`; `e2e/gates.py` L1–L22
 - **Docs:** `docs/tz-license-packaging.md`, `docs/tz-tuning-in-lease.md`, `docs/staleness-and-rotation.md`, `docs/tz-offline-license.md` (design) · rules: INVARIANTS.md#lease
@@ -914,7 +919,10 @@ shared envelope. `docs/known-issues.md` §3 lists what else lagged and what is c
 Read-mostly endpoints for the operator's local interface, mounted on both
 surfaces under the ADMIN token: `/status`, `/events`, `/stats`, `/stats.csv`,
 `/reveals`, `/subscription`, `/diagnostics`, `/selfcheck`, `/reveal`, `/metrics`.
-- **API:** `processes`, `memory`, `build_router`
+`release_verdict` is the `engine.release` block of `/status` and `/subscription`:
+the server's verdict on this version (D-055) with unix dates and the one
+upgrade command, `None` fields when the server said nothing.
+- **API:** `processes`, `memory`, `release_verdict`, `build_router`
 - **Uses:** audit, metrics, preflight, profiling, sqlite_setup · **Used by:** proxy, service
 - **Tests:** none direct · via service → test_localui, test_perf_masking (401 on token drift), test_detok_security
 - **Docs:** `docs/tz-local-ui.md` · rules: INVARIANTS.md#surfaces, INVARIANTS.md#audit

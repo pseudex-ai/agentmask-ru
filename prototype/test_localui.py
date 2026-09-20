@@ -104,6 +104,19 @@ def test_operator_surface_is_closed(client: TestClient) -> None:
     check("/status names the version from version.txt",
           status["engine"]["version"] == file_version,
           f"status={status['engine'].get('version')!r} file={file_version!r}")
+    # THE VERDICT TRAVELS WITH THE VERSION (D-055). The local licensing server
+    # here has no registry, so every field the server did not say is None —
+    # and None must reach the screen as «неизвестно», never as «новейшая».
+    release = status["engine"].get("release") or {}
+    check("/status carries engine.release with the version and the server's verdict fields",
+          release.get("version") == file_version
+          and set(release) >= {"running_latest", "latest", "latest_in_cycle", "min_supported",
+                               "deprecated_at", "sunset_at", "notice", "upgrade"}
+          and release["running_latest"] is None and release["latest"] is None,
+          f"release={release!r}")
+    subscription = client.get("/subscription", headers=AUTH).json()
+    check("/subscription mirrors the same release verdict",
+          subscription.get("release") == release, f"{subscription.get('release')!r}")
 
     # The masking surface has its own credential, held by the customer's gateway.
     anonymous_mask = client.post("/mask", json={"org_id": "acme",
