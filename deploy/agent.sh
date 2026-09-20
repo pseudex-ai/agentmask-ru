@@ -68,6 +68,16 @@ sync_registry() {
                 "deploy/releases.json в origin/main не читается как реестр. Сервер лицензий работает на прежней копии."
             rm -f "$tmp"; return 0 ;;
     esac
+    # ВАЛИДНОСТЬ, НЕ ТОЛЬКО РАЗБОР. Файл, который читается как JSON, но не
+    # проходит `registry validate` (порядок циклов, алиасы, правило 90 дней),
+    # сервер отвергает ЦЕЛИКОМ — без пола и без блока version, — а этот агент
+    # клал его поверх хорошей копии и молчал. Проверка тем же кодом, которым
+    # проверяет сервер: registry.py — stdlib, запускается файлом.
+    if ! python3 "$HERE/../prototype/licensing/registry.py" validate "$tmp" >/dev/null 2>&1; then
+        notify crit "Реестр версий НЕ принят: файл не проходит проверку" \
+            "deploy/releases.json в origin/main не проходит registry validate — $(python3 "$HERE/../prototype/licensing/registry.py" validate "$tmp" 2>&1 | tail -3). Сервер лицензий работает на прежней копии."
+        rm -f "$tmp"; return 0
+    fi
     if ! cosign verify "${REGISTRY}/pseudex@${digest}" \
             --certificate-identity-regexp "$identity" \
             --certificate-oidc-issuer-regexp "$issuer" >/dev/null 2>&1; then

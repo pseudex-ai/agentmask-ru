@@ -17,6 +17,7 @@
 """
 
 import tempfile
+import time
 from pathlib import Path
 
 from pseudex.sqlite_setup import connect
@@ -90,6 +91,14 @@ def main() -> int:
           f"{fleet}")
     check("active_instances называет версию инстанса",
           any(i.get("engine_version") == "0.3.16" for i in store.active_instances("acme", 86400 * 365 * 100)))
+    # Версия НОВЕЙШЕЙ аренды инстанса, не строковый максимум: «0.3.9» > «0.3.10»
+    # как строки, и обновившийся инстанс сутки числился бы на старой версии.
+    store.record_lease("l9", "acme", "i9", "p9", 3600, pubkey="k9", engine_version="0.3.9")
+    time.sleep(0.01)
+    store.record_lease("l10", "acme", "i9", "p10", 3600, pubkey="k10", engine_version="0.3.10")
+    reported = next(i for i in store.active_instances("acme", 86400 * 365 * 100) if i["instance_id"] == "i9")
+    check("после обновления 0.3.9 → 0.3.10 инстанс числится на 0.3.10, не на строковом максимуме",
+          reported["engine_version"] == "0.3.10", reported["engine_version"])
     # ЗАЯВЛЕННЫЙ КОНТРАКТ (D-063): старый ряд — NULL (не заявлял), новый — то,
     # что клиент назвал; гистограмма делит версию по контрактам, чтобы было
     # видно, когда мост контракта 2 можно снять.

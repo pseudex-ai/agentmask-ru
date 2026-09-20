@@ -1344,7 +1344,12 @@ class LicenseStore:
             # инстанс «остывающим» в ту же секунду, как остановился любой из его
             # воркеров, — ровно то враньё оператору, которое эта функция чинит.
             "SUM(CASE WHEN released_at IS NULL THEN 1 ELSE 0 END), "
-            "MAX(COALESCE(engine_version, '')) "
+            # THE VERSION OF THE NEWEST LEASE, not `MAX(engine_version)`: that
+            # is a string maximum, and «0.3.9» > «0.3.10» kept an upgraded
+            # instance reported on the old version for a whole window.
+            "(SELECT COALESCE(l2.engine_version, '') FROM leases l2 "
+            " WHERE l2.org_id=leases.org_id AND l2.instance_id=leases.instance_id "
+            " ORDER BY l2.issued_at DESC LIMIT 1) "
             "FROM leases WHERE org_id=? AND issued_at>=? GROUP BY instance_id "
             "ORDER BY MAX(issued_at) DESC",
             (org_id, cutoff),

@@ -295,6 +295,13 @@ jobs:
           import json, subprocess
           cfg = json.load(open("release-please-config.json"))
           assert "." not in cfg["packages"], "release-please-config.json: корневой пакет «.» получает все коммиты — его быть не должно"
+          # Конфиг веток поддержки — ТОЛЬКО движок, и тот же пакет, что в main:
+          # платформенный пакет на release/X.Y чеканил бы platform/v* из
+          # манифеста ветки в одном пространстве номеров с main.
+          rel = json.load(open("release-please-config.release.json"))
+          assert set(rel["packages"]) == {"prototype"}, f"release-please-config.release.json: только пакет prototype, есть {sorted(rel['packages'])}"
+          assert rel["packages"]["prototype"] == cfg["packages"]["prototype"], "release-please-config.release.json: пакет prototype расходится с основным конфигом"
+          assert "plugins" not in rel, "release-please-config.release.json: linked-versions платформы на ветке поддержки не нужен"
           engine = cfg["packages"]["prototype"]
           excluded = tuple(engine.get("exclude-paths", []))
           shipped = subprocess.run(["sh", "deploy/shipped_paths.sh"], capture_output=True, text=True, check=True).stdout.split()

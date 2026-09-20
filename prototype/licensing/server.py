@@ -1008,6 +1008,8 @@ async def admin_versions() -> JSONResponse:
     if doc is not None:
         for cycle in doc["cycles"]:
             cycles.append({"cycle": cycle["cycle"], "state": cycle["state"],
+                           # What the dates say — the label lags until the next record.
+                           "effective_state": registry.effective_state(cycle, _today()),
                            "latest": cycle["latest"]["version"],
                            "eoas": cycle.get("eoas"), "eol": cycle.get("eol"),
                            "eol_announced": cycle.get("eol_announced")})

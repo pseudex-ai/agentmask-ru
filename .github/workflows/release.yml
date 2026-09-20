@@ -395,11 +395,17 @@ jobs:
       # ПЛАВАЮЩИЕ АЛИАСЫ ДВИЖКА (D-061): `X.Y.Z` плюс то, что скажет реестр —
       # `X.Y` всегда, `X` и `latest` только на новейшем цикле. Сайт советует
       # клиенту `pseudex:X.Y`, и патчи он получает одним `docker pull`.
+      #
+      # ИЗ origin/main, НЕ ИЗ ЧЕКАУТА ТЕГА. Тег с ветки поддержки release/0.3
+      # несёт реестр той ветки, где 0.3 ещё новейший цикл — и security-патч
+      # 0.3.17 получил бы `latest` и `0`, ровно то, чего D-057 запрещает.
+      # Записи реестра живут только в main; чекаут полный, origin/main в нём есть.
       - name: engine aliases from the registry
         if: env.STREAM == 'engine'
         run: |
           set -eu
-          aliases="$(cd prototype && python3 -m licensing.registry aliases --version "${VERSION}" ../deploy/releases.json)"
+          git show origin/main:deploy/releases.json > /tmp/releases-main.json
+          aliases="$(cd prototype && python3 -m licensing.registry aliases --version "${VERSION}" /tmp/releases-main.json)"
           for alias in ${aliases}; do
             docker tag "${REGISTRY}/${IMAGE}:${VERSION}" "${REGISTRY}/${IMAGE}:${alias}"
           done

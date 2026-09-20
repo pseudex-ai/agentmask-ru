@@ -1021,8 +1021,9 @@ class LicenseClient:
             notice_id = str(notice.get("id", ""))
             if notice_id and notice_id not in self._announced_notices:
                 self._announced_notices.add(notice_id)
+                # The registry's vocabulary (licensing/registry.py SEVERITIES): info, warning, danger.
                 level = {"info": logging.INFO, "warning": logging.WARNING,
-                         "critical": logging.ERROR}.get(str(notice.get("severity", "")),
+                         "danger": logging.ERROR}.get(str(notice.get("severity", "")),
                                                         logging.WARNING)
                 _log.log(level, "notice %s for engine %s: %s %s", notice_id,
                          ENGINE_VERSION, notice.get("text", ""), notice.get("url", ""))

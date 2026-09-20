@@ -135,6 +135,39 @@ def main() -> int:
           any("bad range token" in p for p in registry.validate(
               {**noticed, "notices": [{**noticed["notices"][0], "applies_to": "banana"}]}, previous=None, today=later)))
 
+    after = dt.date(2027, 4, 6)
+
+    # ── the calendar decides, the label catches up ───────────────────────
+    # A maintenance cycle whose eol has PASSED used to make the whole file
+    # invalid on that day with no edit: CI red, record refusing, the server
+    # dropping the registry after a restart. The dates decide; the label lags.
+    passed = registry.validate(doc, previous=None, today=dt.date(2027, 4, 6))
+    check("a maintenance cycle past its eol still validates — the file does not rot on eol day",
+          passed == [], "; ".join(passed))
+    check("effective_state reads eol from the dates while the label still says maintenance",
+          registry.effective_state(doc["cycles"][1], dt.date(2027, 4, 6)) == "eol"
+          and doc["cycles"][1]["state"] == "maintenance")
+    caught_up = registry.record(doc, version="0.4.3", digest=_DIGEST_B, date=dt.date(2027, 4, 6), now=_NOW)
+    check("the next record writes the label the dates already meant",
+          caught_up["cycles"][1]["state"] == "eol"
+          and registry.validate(caught_up, previous=doc, today=dt.date(2027, 4, 6)) == [],
+          "; ".join(registry.validate(caught_up, previous=doc, today=dt.date(2027, 4, 6))))
+    # ── a version the registry has not heard of yet ──────────────────────
+    # 0.5.0 published minutes ago, its chore(registry) not synced: it is the
+    # NEWEST engine, not the oldest — reading it as the oldest cycle answered
+    # 426 to the newest engine the moment any cycle was eol.
+    ahead = registry.verdict(doc, "0.5.0", after)
+    check("a version above every cycle is judged as the newest cycle and is not «behind»",
+          ahead["running_latest"] is True and ahead["latest_in_cycle"] == "0.4.0"
+          and ahead["deprecated_at"] is None, str(ahead))
+    check("and is never refused, even after the oldest cycle's eol",
+          registry.check(doc, "0.5.0", after) is None)
+    check("1.0.0 (pre-D-053) still reads as the oldest cycle — it parses as 1.0, above everything",
+          registry.verdict(doc, "1.0.0", later)["latest_in_cycle"] == "0.3.15"
+          and registry.verdict(doc, "1.0.0", later)["running_latest"] is False)
+    check("a version below every cycle reads as the oldest",
+          registry.verdict(doc, "0.2.9", later)["latest_in_cycle"] == "0.3.15")
+
     # ── check: 426 only after an eol announced in time ───────────────────
     check("no refusal while the cycle is maintained", registry.check(doc, "0.3.15", later) is None)
     after = dt.date(2027, 4, 6)

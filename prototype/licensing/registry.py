@@ -199,8 +199,11 @@ def validate(doc: dict, *, previous: dict | None, today: dt.date) -> list[str]:
             bad(f"{where} ({name}): state {state} requires eoas")
         if state == "eol" and (eol is None or eol > today):
             bad(f"{where} ({name}): state eol requires eol <= today ({today})")
-        if state in ("maintenance", "deprecated") and eol is not None and eol <= today:
-            bad(f"{where} ({name}): eol {eol} has passed but state is {state}")
+        # A `maintenance` cycle whose `eol` has PASSED is not an error: the
+        # dates decide (`floor`, `check`, `effective_state`), and the label
+        # catches up at the next `record`. Refusing it here made the file
+        # invalid on every eol day with no edit — CI red for every PR, `record`
+        # refusing, the server dropping the whole registry after a restart.
         # The ninety-day rule (D-056): an eol without its announcement, or with
         # too little notice, is the Docker 29.0 mistake in a file.
         if eol is not None:
@@ -290,6 +293,16 @@ def _validate_against_previous(doc: dict, previous: dict) -> list[str]:
 
 # ── the questions the server and the pipeline ask ────────────────────────────
 
+def effective_state(cycle: dict, today: dt.date) -> str:
+    """The state the DATES say, whatever the label says: a cycle whose `eol`
+    has passed is `eol`. The label in the file is what `record` last wrote; it
+    lags by at most one release and is never trusted over the calendar."""
+    eol = _date(cycle.get("eol"), "eol")
+    if eol is not None and eol <= today:
+        return "eol"
+    return str(cycle.get("state"))
+
+
 def _find_cycle(doc: dict, engine_version: str) -> dict | None:
     try:
         wanted = cycle_of(engine_version)
@@ -301,14 +314,33 @@ def _find_cycle(doc: dict, engine_version: str) -> dict | None:
     return None
 
 
+# What every image before D-053 reported, whatever it was. It parses as a
+# cycle «1.0» — NEWER than anything shipped — and must not be read that way.
+LEGACY_VERSION = "1.0.0"
+
+
 def _cycle_for_verdict(doc: dict, engine_version: str) -> dict:
-    """The cycle a version belongs to — or the OLDEST listed one when it
-    belongs to none. "1.0.0" is what every pre-D-053 image reports, and a
-    version outside every cycle is by definition something we no longer
-    describe: reading it as newer than the newest would make the floor
-    arithmetic call it fine."""
+    """The cycle a version belongs to, and where an unlisted one is placed:
+
+    - `LEGACY_VERSION` ("1.0.0", every pre-D-053 image) and anything that
+      does not parse → the OLDEST cycle: something we no longer describe;
+    - a version ABOVE the newest cycle → the NEWEST cycle: an engine published
+      minutes ago whose `chore(registry)` commit has not reached this server
+      yet. Reading it as the oldest cycle answered 426 to the newest engine
+      the moment any cycle was eol;
+    - a version below or between cycles → the oldest cycle, as before."""
     found = _find_cycle(doc, engine_version)
-    return found if found is not None else doc["cycles"][-1]
+    if found is not None:
+        return found
+    if engine_version == LEGACY_VERSION:
+        return doc["cycles"][-1]
+    try:
+        wanted = _cycle_tuple(cycle_of(engine_version))
+    except RegistryError:
+        return doc["cycles"][-1]
+    if wanted > _cycle_tuple(str(doc["cycles"][0]["cycle"])):
+        return doc["cycles"][0]
+    return doc["cycles"][-1]
 
 
 def floor(doc: dict, today: dt.date) -> str:
@@ -368,6 +400,12 @@ def record(doc: dict, *, version: str, digest: str, date: dt.date, now: dt.datet
             "eoas": None, "eol": None, "eol_announced": None,
             "latest": entry, "aliases": [cycle_name, major, "latest"],
         })
+    # THE LABELS CATCH UP WITH THE CALENDAR on every write: a cycle whose eol
+    # passed since the last release becomes `eol` in the file, so the file
+    # says on its face what `effective_state` has been saying from the dates.
+    for cycle in cycles:
+        if cycle.get("state") in ("maintenance", "deprecated") and effective_state(cycle, date) == "eol":
+            cycle["state"] = "eol"
     doc["updated_at"] = now.replace(microsecond=0).isoformat().replace("+00:00", "Z")
     return doc
 
@@ -397,7 +435,9 @@ def verdict(doc: dict, engine_version: str, today: dt.date) -> dict:
     announced = _date(cycle.get("eol_announced"), "eol_announced")
     eol = _date(cycle.get("eol"), "eol")
     return {
-        "running_latest": engine_version == latest,
+        # At or ABOVE the newest recorded version: an engine ahead of the
+        # registry (published before its record synced) is not «behind».
+        "running_latest": _at_least(engine_version, latest),
         "latest": latest,
         "latest_in_cycle": in_cycle,
         "min_supported": floor(doc, today),
@@ -405,6 +445,15 @@ def verdict(doc: dict, engine_version: str, today: dt.date) -> dict:
         "sunset_at": _http_date(eol) if eol is not None else None,
         "notice": _notice_for(doc, engine_version),
     }
+
+
+def _at_least(engine_version: str, latest: str) -> bool:
+    if engine_version == LEGACY_VERSION:
+        return False
+    try:
+        return version_tuple(engine_version) >= version_tuple(latest)
+    except RegistryError:
+        return False
 
 
 def check(doc: dict, engine_version: str, today: dt.date) -> dict | None:
