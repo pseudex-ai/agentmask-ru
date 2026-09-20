@@ -187,6 +187,46 @@ else
     report stale-instances OK info "Все аренды продлеваются" ""
 fi
 
+# ── 5bis. цикл закрывается, а на нём ещё кто-то есть ────────────────────────
+# Реестр версий (D-056) объявляет `eol` за девяносто дней, и в этот день сервер
+# начнёт отвечать 426 каждому контейнеру этого цикла. Сам по себе календарь —
+# не тревога; тревога — цикл, до закрытия которого меньше тридцати дней, и
+# флот, который на нём ЕЩЁ РАБОТАЕТ: это письма клиентам, которые надо
+# написать сейчас, а не в день, когда у них встанет маскирование. Уровень warn:
+# у нас ничего не сломано, и решение — сдвинуть eol или написать — человеческое.
+CLOSING="$(curl -sS --max-time 10 -H "Authorization: Bearer ${PSEUDEX_LICENSE_ADMIN_TOKEN:-}" \
+         "$LICENSE_ADMIN/admin/versions" 2>/dev/null \
+         | python3 -c '
+import datetime as dt, json, sys
+try:
+    body = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+today = dt.date.today()
+fleet = {}
+for row in body.get("fleet", []):
+    version = str(row.get("engine_version") or "")
+    cycle = ".".join(version.split(".")[:2]) if version.count(".") >= 2 else ""
+    fleet[cycle] = fleet.get(cycle, 0) + int(row.get("instances") or 0)
+lines = []
+for cycle in body.get("cycles", []):
+    eol = cycle.get("eol")
+    if not eol:
+        continue
+    left = (dt.date.fromisoformat(eol) - today).days
+    name = str(cycle.get("cycle"))
+    on_it = fleet.get(name, 0)
+    if left <= 30 and on_it:
+        lines.append(f"{name}: eol {eol} (через {left} дн.), контейнеров {on_it}")
+print("; ".join(lines))' 2>/dev/null || echo "")"
+if [ -n "$CLOSING" ]; then
+    report cycle-eol FAIL warn "Цикл закрывается, а на нём ещё работают: $CLOSING" \
+        "В день eol сервер ответит им 426 и маскирование встанет.
+Написать клиентам сейчас — или сдвинуть eol в deploy/releases.json (через PR, ≥ 90 дней от объявления)."
+else
+    report cycle-eol OK info "Закрывающихся циклов с живыми контейнерами нет" ""
+fi
+
 # ── 6. срок сертификата ─────────────────────────────────────────────────────
 # Caddy продлевает сам и делает это надёжно — но молчаливый отказ продления
 # кладёт сайт целиком, и узнать о нём за две недели стоит одной проверки.

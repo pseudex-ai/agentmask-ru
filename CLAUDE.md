@@ -10,7 +10,7 @@ the architecture prose, and the few load-bearing invariants, and embeds the map.
 |---|---|
 | [`wiki/MAP.md`](wiki/MAP.md) | where every module, test, benchmark, doc and deploy file lives, who calls it, which test pins it. Embedded below under **Repository map**. |
 | [`wiki/FLOWS.md`](wiki/FLOWS.md) | how a request, a lease, a store and a build move through the code, step by step, with the real function names. |
-| [`wiki/INVARIANTS.md`](wiki/INVARIANTS.md) | the 178 rules a change must not break, grouped by module, each with the test that holds it. The six "Rules that changes must not break" sections that used to live in this file are there now. |
+| [`wiki/INVARIANTS.md`](wiki/INVARIANTS.md) | the 192 rules a change must not break, grouped by module, each with the test that holds it. The six "Rules that changes must not break" sections that used to live in this file are there now. |
 | [`wiki/STATE.md`](wiki/STATE.md) | every decision, the alternative rejected and the price — the `D-NNN` log. Supersedes `docs/decisions.md`. |
 | [`wiki/INDEX.md`](wiki/INDEX.md) | what each file in `docs/` and `research/` answers, and its status. |
 
@@ -66,7 +66,8 @@ python3 test_perf_masking.py   # cache/audit-dedup/leak-regression/loop-responsi
 python3 test_localui.py        # operator surface is closed, reveals audited, requests billed apart from entities
 python3 test_persona_defects.py  # the five defects a persona run found and no corpus of ours did
 python3 test_preflight.py      # how many workers fit, and what happens when they do not
-python3 test_pseudexctl.py     # the ops CLI: command shapes, doctor verdicts, the rekey proof
+python3 test_pseudexctl.py     # the ops CLI: command shapes, doctor verdicts, the rekey proof, upgrade
+python3 test_schema.py         # the volume's schema contract: numbered, snapshotted, refused from the future
 python3 test_localui_renders.py  # the interface in a REAL browser (needs playwright + chromium):
                                  # a 200 and a matching CSP header are not evidence it executed
 python3 test_collisions.py     # подмена, совпавшая с настоящим значением: обе половины
@@ -143,6 +144,138 @@ docker build -t pseudex:latest . && docker run -p 8000:8000 -v pseudex-data:/dat
 
 Scripts needing a live LLM (`agent_demo.py`, `response_test.py`, `live_eval.py`) expect the proxy
 running on `localhost:4000` with a seeded `pseudex-dev` tenant.
+
+
+## Release and versions
+
+The full specification is `docs/tz-release-and-versions.md` (D-051…D-064 in
+`wiki/STATE.md`); this section is what an agent must not get wrong. **The
+number lies when the artifact did not change** — `0.3.12` and `0.3.13` were
+one image under two tags — and everything below exists to make that impossible.
+
+### Two streams from one repository (D-051)
+
+| stream | paths | tag | artifacts | who consumes |
+|---|---|---|---|---|
+| **engine** | `prototype/` minus `licensing/`, `bench/`, `e2e/` — exactly the `COPY` lines of `prototype/Dockerfile.nuitka` (`deploy/shipped_paths.sh` derives the set) | `vX.Y.Z` | `pseudex` (source + compiled), aliases `X.Y.Z`, `X.Y`, `X`, `latest` | the customer, by `docker run` |
+| **platform** | `prototype/licensing/`, `storefront/`, `deploy/` (linked versions, one tag) | `platform/vX.Y.Z` | `pseudex-licensing`, `-storefront`, `-backup`, `-supportbot` | our host, by `deploy/agent.sh` (follows `platform/v*` only) |
+
+A commit is attributed to a stream by the FILES it touches; `release-please`
+opens one Release PR per stream on `main`. **The engine is versioned only when
+the engine changed**, held by three layers: release-please's `exclude-paths`,
+`deploy/lint_engine_commits.sh` in `checks.yml` (a visible-type commit that
+touches `prototype/` and nothing shipped is red), and the publish job in
+`release.yml` (red when the shipped set is unchanged since the previous tag of
+the same cycle). There is no root package `"."` in `release-please-config.json`
+— it would receive every commit.
+
+### Release = merge of the Release PR (D-052)
+
+Nobody creates a tag by hand. `release-please.yml` opens/updates the Release
+PR on every push (changelog, `version.txt`, manifest); **merging it is the
+owner's «go»** — the `tag` job waits for green checks, creates the tag and
+GitHub Release, and dispatches `release.yml` on the tag explicitly (a tag
+pushed with `GITHUB_TOKEN` never triggers `tags:`). Manual fallback:
+`docs/operations.md` §6.
+
+Commit types decide the number (pre-1.0):
+
+| type | effect | note |
+|---|---|---|
+| `feat`, `fix`, `security`, `perf`, `build`, `revert` | patch | visible in the changelog |
+| `chore`, `ci`, `docs`, `refactor`, `test`, `research`, `bench` | nothing | hidden; `chore(registry)` is what the engine publish job commits |
+| footer `Release-As: X.(Y+1).0` | **new minor = new support cycle** | a conscious act: adds a `schema_lock.json` line, opens `release/X.Y` |
+
+### One version source (D-053)
+
+`prototype/version.txt` — baked into `pseudex/_release.py` next to the
+verification key, read by `pseudex/license.py`, sent in every lease, shown by
+`/status`, the UI and `pseudexctl doctor`. Never a constant in code again.
+
+### The versions registry (D-054, D-056, D-061)
+
+`deploy/releases.json`, endoflife.date shape: `cycles[]` newest first with
+`state` (`current` / `maintenance` / `eol`), `eoas`, `eol`, `eol_announced`,
+`latest{version,date,digest}`, `aliases`; `notices[]`. Rules an agent must obey:
+
+- **Written by the pipeline** (`python3 -m licensing.registry record` in the
+  engine publish job → commit `chore(registry): pseudex X.Y.Z` in `main`).
+  By hand only `eol`, `eol_announced`, `notices` — through a PR.
+- **Additive, always**: a recorded version never changes digest, `latest` never
+  walks back, a cycle is never removed (`checks.yml` validates against the
+  previous file). `eol` needs `eol_announced ≤ today` and `eol ≥ announced +
+  90 d`; the server refuses to ENFORCE a late `eol` (`registry.check` says
+  «late», not 426).
+- The site advertises `pseudex:X.Y` of the newest cycle
+  (`storefront_web/engine_release.py`), never a hand-set tag.
+- It reaches the licensing server through the platform release: `deploy/agent.sh`
+  syncs `origin/main:deploy/releases.json` every tick, accepted only after
+  `cosign verify` of the newest digest, into `deploy/.registry/` (`docs/operations.md` §2bis).
+
+### What the container learns, and when (D-055, D-056, D-063, D-064)
+
+The lease response carries a signed `version` block (`running_latest`, `latest`,
+`latest_in_cycle`, `min_supported`, `deprecated_at` as `@unix`, `sunset_at` as
+HTTP-date, `notice`), `bundle_format`, `lease_contract`. The client ladder:
+INFO «есть новее» once per version → WARN on every renewal after
+`deprecated_at` + banner in the UI + `pseudexctl doctor` → **426
+`unsupported_client` only past an `eol` announced ≥ 90 days ahead**, a verdict
+outside grace like 402/403. Silence from the server is «неизвестно» on every
+screen, never «новейшая». A `bundle_format` above `SUPPORTED_BUNDLE_FORMAT` is
+`bundle_format_unsupported` («обновите движок»), not `bundle_corrupt`.
+
+### The volume's schema (D-058, D-059, D-060)
+
+Every store carries `application_id` and `user_version`; steps are numbered
+in `vault.VAULT_MIGRATIONS`, `audit.AUDIT_MIGRATIONS`, `tenants.TENANTS_MIGRATIONS`
+and run by `pseudex/schema.py::ensure`. `PSEUDEX_ROLE=migrate` runs once
+before the fan-out (snapshot `<store>.pre-<from>-<to>.db` by `VACUUM INTO`
+under the same key, then steps, then stamp); `probe` exits 2 on a volume a
+newer image wrote → container exit 6, untouched; no room for the snapshot →
+exit 5 before anything is touched. **The contract of the number:** a patch
+keeps `user_version` (rollback within a minor is free); a minor may raise it,
+one way. `prototype/schema_lock.json` pins the maximum per minor — **adding a
+migration step under a pinned minor is red in `test_schema.py`; open a minor
+(`Release-As`) and add its line.**
+
+### Support window and `release/X.Y` (D-057)
+
+A minor is `current` until the next minor ships, then `maintenance` for six
+months (security only), then `eol` announced ≥ 90 days ahead (`registry.record`
+sets these dates on the day the next minor is recorded). Branch `release/X.Y`
+is created from the last tag of the cycle when the next minor opens. **Only
+`security:` commits go there**, by cherry-pick: `.github/workflows/backport.yml`
+opens a backport PR into every live `release/*` when a PR with a `security:`
+commit merges into `main`; a direct push needs `git switch release/X.Y && git
+cherry-pick -x <sha> && git push`. release-please on the branch produces
+`X.Y.Z+1`; `release.yml` moves alias `X.Y` only — never `latest`. Ordinary
+`fix:` commits are NOT backported.
+
+### The customer's upgrade (D-062)
+
+`pseudexctl upgrade [--to X.Y]`, shipped in both images at `/app/pseudexctl`:
+pull → probe with the NEW image before anything stops → stop → archive →
+rename → run with the same name/ports/mounts/env (`--env-file` 0600, secrets
+never in argv) → `/health`; unhealthy → the old image's probe decides between
+an automatic rollback and the printed `restore` command. Compose users:
+`docker compose pull && up -d`.
+
+### Commands
+
+```bash
+python3 test_schema.py                                  # the schema contract and the lock
+python3 -m licensing.test_registry                      # the registry's promises
+python3 -m licensing.registry validate [--previous OLD] ../deploy/releases.json   # from prototype/
+python3 -m licensing.registry record --version X.Y.Z --digest sha256:… --date YYYY-MM-DD ../deploy/releases.json
+sh deploy/test_agent.sh                                 # the deploy agent without docker
+sh deploy/lint_engine_commits.sh main..HEAD             # engine commits typed honestly
+pseudexctl --dry-run upgrade --to 0.4                   # the plan, nothing executed
+npx release-please release-pr --dry-run --repo-url … --config-file release-please-config.json --manifest-file .release-please-manifest.json
+```
+
+**Exit codes of the container** (`entrypoint.sh`): 3 volume does not open with
+the key · 4 preflight (memory) · 5 schema not brought forward (space) · 6
+volume newer than the image, untouched · 1 licence.
 
 
 ## Architecture
@@ -527,7 +660,7 @@ its README before changing it. Three things about it are load-bearing:
 
 ## Invariants — the load-bearing few
 
-The full set — 178 rules, each with the test that pins it — is
+The full set — 192 rules, each with the test that pins it — is
 [`wiki/INVARIANTS.md`](wiki/INVARIANTS.md), grouped by module (detection →
 `#names` `#address` `#spoken` `#context`, the swap and vault → `#swap` `#vault`
 `#collisions` `#conversation-scope`, the lease → `#lease`, the instruments →
@@ -1279,7 +1412,7 @@ Docs: `docs/sprint-cabinet-and-pricing.md`, `docs/billing-integrity.md`,
 | `deploy/lint_engine_commits.sh` | refuses a visible-type commit («feat/fix/security/perf/build/revert») that touches `prototype/` and nothing shipped: it would mint an engine version for an unchanged image. Runs in `.github/workflows/checks.yml` |
 | `deploy/version.txt`, `storefront/version.txt`, `prototype/licensing/version.txt` | the platform stream's version files (release-please `simple` strategy, linked as one component) — bumped by the Release PR, never by hand |
 | `deploy/test_agent.sh` | the agent's DECISIONS without docker: follows «platform/v*» only, compares «platform/v0.3.16» with `v0.3.15` by number (raw `sort -V` puts `p` before `v` and would refuse every release as a downgrade), refuses a real downgrade, refuses an identity that cannot match platform tags, waits when no platform tag exists. Runs in `.github/workflows/checks.yml` |
-| `deploy/watch.sh` | the watchdog: `docs/operations.md` §5 turned into a mechanism |
+| `deploy/watch.sh` | the watchdog: `docs/operations.md` §5 turned into a mechanism; also warns when a cycle's `eol` is ≤ 30 days away and containers still run on it (`/admin/versions`, D-056) |
 | `deploy/backup.sh`, `deploy/restore-drill.sh` + `deploy/systemd/pseudex-restore-drill.service`, `.timer` | nightly backups of both databases; the weekly drill restores yesterday's and asks `licensing/verify.py` whether it is alive |
 | `deploy/housekeeping.sh` + `deploy/systemd/pseudex-housekeeping.service`, `.timer` | weekly disk cleanup, on its own timer |
 | `deploy/notify.sh` | one alert channel (Telegram) for deploys, the watchdog and backups |
@@ -1305,7 +1438,8 @@ Docs: `docs/operations.md` (the operational spec), `research/2026-09-14-devops-a
 | `.github/workflows/checks.yml` | every push, every PR | the engine suite without containers: `test_loop`, `test_tuning_lease_security`, `test_watermark`, `test_canary`, `test_clock_freeze`, `test_detok_security`, `test_tripwire`, `test_memory_hardening`, `vault_test`, `test_coverage_152fz`, `test_product`, `test_localui`, `test_hard_cases` (+ storefront jobs) |
 | `.github/workflows/gates.yml` | nightly 01:00 UTC + dispatch | `make_dirty` → `pack_gates` (both images) → `gates.py --image pseudex:compiled --skip-build`; on dispatch a subset via `ONLY` |
 | `.github/workflows/release.yml` | tags `v[0-9]*` and «platform/v[0-9]*» | one file, two streams (the cosign identity the host trusts is this file's name): engine — tag equals `prototype/version.txt`, the shipped set (`deploy/shipped_paths.sh`) changed since the previous engine tag or red, aliases from the registry, anonymous pull of every ref, digest signed, `chore(registry): pseudex X.Y.Z` committed to `main`; platform — four images, closed to anonymous, signed |
-| `.github/workflows/release-please.yml` | every push to `main`; dispatch from `.github/workflows/release.yml` | keeps one Release PR per stream (engine `vX.Y.Z`, platform «platform/vX.Y.Z»); on merge waits for green checks, creates the tag and GitHub Release, dispatches `.github/workflows/release.yml` explicitly (a GITHUB_TOKEN tag push fires no `tags:` trigger). Replaced the former «ship.yml» (D-052) |
+| `.github/workflows/backport.yml` | a PR merged into `main` | when the PR carries a `security:` commit, opens a cherry-pick PR into every live «release/*» branch (korthout/backport-action, pinned); the only way commits reach a support branch (D-057). A direct push needs a manual `git cherry-pick -x` |
+| `.github/workflows/release-please.yml` | every push to `main` or a «release/**» branch; dispatch from `.github/workflows/release.yml` | keeps one Release PR per stream (engine `vX.Y.Z`, platform «platform/vX.Y.Z») on the branch the push came to (`target-branch`); on merge waits for green checks, creates the tag and GitHub Release, dispatches `.github/workflows/release.yml` explicitly (a GITHUB_TOKEN tag push fires no `tags:` trigger). Replaced the former «ship.yml» (D-052) |
 | `.github/workflows/uptime.yml` | every 10 min | is production answering |
 | `.github/workflows/backup-audit.yml` | daily 06:20 UTC | did last night's backup happen and is it readable |
 | `.github/zizmor.yml`, `.github/dependabot.yml` | — | workflow linting; dependency updates |

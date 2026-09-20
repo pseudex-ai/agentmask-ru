@@ -25,7 +25,12 @@ name: release-please
 
 on:
   push:
-    branches: [main]
+    # ВЕТКИ ПОДДЕРЖКИ — ТОТ ЖЕ МЕХАНИЗМ (D-057). `release/0.3` живёт шесть
+    # месяцев после выхода 0.4 и принимает только security-коммиты (cherry-pick
+    # из main, см. backport.yml); release-please на ней считает 0.3.Z+1 от
+    # манифеста этой ветки, тег ставится тем же джобом, release.yml публикует
+    # с алиасом только `0.3` — `latest` не двигается (licensing/registry.py).
+    branches: [main, "release/**"]
   # Ручной запуск, когда нужно пересчитать Release PR без нового push.
   workflow_dispatch:
 
@@ -50,6 +55,9 @@ jobs:
           skip-github-release: true
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          # main или release/X.Y — та ветка, куда пришёл push; манифест и
+          # changelog читаются и пишутся в ней же.
+          target-branch: ${{ github.ref_name }}
 
   tag:
     name: tag the merged release PR and dispatch release
@@ -130,6 +138,7 @@ jobs:
           skip-github-pull-request: true
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          target-branch: ${{ github.ref_name }}
 
       # ЯВНЫЙ DISPATCH НА КАЖДЫЙ СОЗДАННЫЙ ТЕГ. Платформенные пакеты связаны
       # (linked-versions) и дают ОДИН тег на троих — дубли отбрасываются.

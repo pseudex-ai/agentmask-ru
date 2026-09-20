@@ -276,7 +276,17 @@ jobs:
             echo "::error::тег ${GITHUB_REF_NAME} не совпадает с prototype/version.txt (${FILE_VERSION}) — образ назвал бы себя не той версией"
             exit 1
           fi
-          previous="$(git tag -l 'v[0-9]*' --sort=-v:refname | grep -vx "${GITHUB_REF_NAME}" | head -1 || true)"
+          # THE BASELINE IS THE PREVIOUS TAG OF THE SAME CYCLE when there is
+          # one (D-057): a security patch on release/0.3 is measured against
+          # v0.3.16, not against v0.4.2 — against the newest tag overall every
+          # maintenance release would look like a rewrite of the whole engine,
+          # and an EMPTY one would pass. Only a cycle's first tag falls back
+          # to the newest tag of any cycle.
+          cycle="$(printf '%s' "${VERSION}" | cut -d. -f1,2)"
+          previous="$(git tag -l "v${cycle}.[0-9]*" --sort=-v:refname | grep -vx "${GITHUB_REF_NAME}" | head -1 || true)"
+          if [ -z "${previous}" ]; then
+            previous="$(git tag -l 'v[0-9]*' --sort=-v:refname | grep -vx "${GITHUB_REF_NAME}" | head -1 || true)"
+          fi
           if [ -n "${previous}" ]; then
             # shellcheck disable=SC2046
             changed="$(git diff --name-only "${previous}" "${GITHUB_REF_NAME}" -- $(sh deploy/shipped_paths.sh))"

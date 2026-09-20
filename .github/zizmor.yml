@@ -2,9 +2,11 @@
 # whole list of what it is told to accept. Every entry names its reason; an
 # entry without one is a finding somebody silenced.
 rules:
-  # The ship job pushes a tag with the checkout's own token, so
+  # The backport job pushes the cherry-picked branches with the checkout's own
+  # token (korthout/backport-action pushes through git, not the API), so
   # `persist-credentials: false` there would break the one thing it does.
-  # Every other checkout in the repository sets it.
+  # Every other checkout in the repository sets it. (ship.yml, the previous
+  # entry here, was retired by release-please.yml — its tag job uses the API.)
   artipacked:
     ignore:
-      - ship.yml
+      - backport.yml
