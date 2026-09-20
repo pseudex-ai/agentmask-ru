@@ -394,3 +394,98 @@ any claim.
 **Alternative rejected:** a separate public registry for the customer image — a second registry to keep in step with the release pipeline, for no gain over a repository-level binding. Handing customers a pull token — a second secret in onboarding, and the image is designed to be in every customer's hands anyway (compiled, no source, no dictionaries; gates P1–P11).
 **Price:** the compiled image is now downloadable by anyone, which changes nothing the threat model did not already accept (`docs/tz-license-packaging.md` §3.4). The prod host's `.env` still carries the stale `CUSTOMER_IMAGE` line until the owner removes it.
 **Related:** INVARIANTS.md#process · `.github/workflows/release.yml` · `deploy/compose.yml` · wiki/AGENTMASK.md
+
+### D-051 · 2026-09-20 · Two release streams from one repository: engine (`vX.Y.Z`) and platform («platform/vX.Y.Z»)
+**Status:** active (ТЗ `docs/tz-release-and-versions.md`, stages 1–7)
+**Context:** One tag built five images; in 12 tags the engine changed in two; `0.3.12` and `0.3.13` are one image under two numbers. The customer image and our four services have different receivers, ladders and cadence.
+**Decision:** `engine` = `prototype/` minus `prototype/licensing/` → `vX.Y.Z` → image `pseudex`; `platform` = `prototype/licensing/` + `storefront/` + `deploy/` → «platform/vX.Y.Z» → the four internal images, deployed together by one agent with one `compose up`. The engine publish job is red on an empty diff of its paths.
+**Alternative rejected:** five streams (the agent would reconcile four tags for nothing); one stream (status quo).
+**Price:** two changelogs; a bridge release under the old scheme so the running agent learns «platform/v*».
+**Related:** `research/2026-09-20-release-and-version-lifecycle.md` · D-052 · D-053
+
+### D-052 · 2026-09-20 · release-please manifest mode, no root package, `security`/`perf`/`build` visible, `feat` → patch while 0.x
+**Status:** active
+**Context:** semantic-release keeps one tag stream by construction («get-tags.js», `git log` without pathspec); changesets needs «package.json» per component. release-please attributes a commit to a component by file path (`commit-split.ts`) and skips hidden types.
+**Decision:** manifest mode with packages `prototype` (component `engine`, tag `vX.Y.Z`, `exclude-paths: [prototype/licensing]`) and `prototype/licensing` + `storefront` + `deploy` (component `platform`, `tag-separator: "/"`, linked). No `"."` package — it receives every commit. `security`, `perf`, `build` visible (patch); «chore/ci/docs/refactor/test/research/bench» do not bump. While `0.x`, `feat` → patch; a new minor is opened only by `Release-As: 0.Y.0` (a minor is a support cycle and a branch). A release is the merge of a Release PR; the tag is created by CI and never by hand.
+**Alternative rejected:** hand-picked bump in `.github/workflows/ship.yml` (the number depended on memory of the schema); semantic-release; changesets.
+**Price:** a GitHub Action dependency — the CONVENTION (types, path attribution, «version.txt», tags) is tool-independent and reproducible by a 100-line script; shared files outside every path belong to nobody by design (`deploy/` is platform; `.github/` bumps nothing).
+**Related:** D-051 · D-060
+
+### D-053 · 2026-09-20 · «prototype/version.txt» is the single source of the engine version
+**Status:** active
+**Context:** `ENGINE_VERSION = "1.0.0"` in `prototype/pseudex/license.py` reached the licence server and the operator UI for every image ever shipped.
+**Decision:** «version.txt», written into `pseudex/_release.py` by both Dockerfiles, read by `prototype/pseudex/license.py` (dev checkout: the file), reported in the lease, `/status`, the UI and `pseudexctl doctor`. Publish is red when it differs from the tag.
+**Related:** D-051
+
+### D-054 · 2026-09-20 · Versions registry «deploy/releases.json», endoflife.date-shaped, written by the engine pipeline, delivered through a platform release
+**Status:** active
+**Context:** endoflife.date is a static Jekyll site whose API is generated at build; hosting it for one product is Ruby for a 40-line JSON. The floor of the minimum supported version is security-relevant and must pass review.
+**Decision:** `cycles[]{cycle, state, release_date, eoas, eol, eol_announced, latest{version,date,digest}, aliases}` + `notices[]`. The engine publish job runs `licensing.registry record` and commits `chore(registry): pseudex X.Y.Z` to `main`; that opens the platform Release PR; the server reads the file synced by the agent (`git show origin/main:…` + `cosign verify` of the newest digest). By hand only `eol`, `eol_announced`, `notices`, via PR.
+**Alternative rejected:** the pipeline POSTing to an admin endpoint (the floor moves without review; two sources of truth); self-hosting endoflife.date.
+**Price:** a second «go» per engine release and ~10 minutes of platform CI.
+**Related:** D-056 · D-061
+
+### D-055 · 2026-09-20 · The version verdict rides in the lease response, signed, with a three-rung client ladder
+**Status:** active
+**Context:** Every container renews its lease daily over an authenticated channel and already sends `engine_version`. Grafana/Nextcloud/Sentry add a separate phone-home and argue about opt-out; here the information flows server → client and the outbound stream does not grow. `sign_lease` covers every top-level key except `bundle`/`signature`, and 0.3.14 clients verify over what they received — new fields are signature-compatible.
+**Decision:** `version{running_latest, latest, latest_in_cycle, min_supported, deprecated_at (@unix, RFC 9745), sunset_at (HTTP-date, RFC 8594), notice{id, severity, text, url}}` added before signing. Client: `running_latest=false` → INFO once per version + `/status`/UI; `deprecated_at` passed → WARN every renewal + UI banner + doctor, fully functional; `sunset_at` passed → server 426 `unsupported_client` naming `min_supported` and the upgrade command, a verdict outside grace like 402/403. A notice is retracted by absence (Sentry beacon).
+**Alternative rejected:** a separate update-check endpoint.
+**Related:** D-056 · D-063 · D-064
+
+### D-056 · 2026-09-20 · The floor moves only through the registry, with ≥90 days of notice, and the server refuses to enforce a floor announced late
+**Status:** active
+**Context:** Docker 29.0 raised the minimum API from 1.24 to 1.44, broke Traefik and GitLab Runner, and reverted to 1.40 in 29.3.
+**Decision:** `min_supported` = `latest` of the oldest cycle whose `eol` has not passed. 426 only when `eol ≤ now` AND `eol − eol_announced ≥ 90 d` AND `now − eol_announced ≥ 90 d`; otherwise log and serve. CI rejects a registry diff that sets or advances `eol` without `eol_announced ≤ today` and `eol ≥ eol_announced + 90 d`. `PSEUDEX_MIN_ENGINE_VERSION` is retired. The fleet histogram (`/admin/versions`, from `engine_version` recorded per lease) is the precondition for moving the floor — and it is empty of truth until the first real version ships (every container says `1.0.0` today).
+**Related:** D-054 · D-055
+
+### D-057 · 2026-09-20 · Support window: current → maintenance (security only, 6 months, from «release/X.Y») → eol
+**Status:** active
+**Context:** The owner chose the promise a B2B customer expects: a security fix without a forced schema migration.
+**Decision:** A minor is `current` until the next minor ships; then `maintenance` for six months (`eoas` = next minor's date, `eol` = +6 months, `eol_announced` = that day); then `eol`. Only `security:` commits (and `fix:` by the owner's call) are backported by cherry-pick into «release/X.Y»; a GitHub Action opens the backport PR on merge to `main`; release-please on the branch cuts `X.Y.Z+1`, which moves only the `X.Y` alias. The numbers live in `support{}` of the registry and change as data.
+**Alternative rejected:** fixes only in the current minor with 90 days to move (Immich-style) — simpler, riskier for the customer.
+**Price:** one branch per minor in the window; the owner merges backport PRs.
+**Related:** D-054 · D-061
+
+### D-058 · 2026-09-20 · `PRAGMA application_id` + monotonic `PRAGMA user_version` per store; an older image refuses a volume from the future
+**Status:** active
+**Context:** Migrations ran inside every worker's `Vault.__init__` with no schema number; an older image opened a newer volume silently. SQLite reserves both header integers for the application; SQLCipher encrypts the header, so they are readable only after `PRAGMA key`.
+**Decision:** numbered steps beside each store (`VAULT_MIGRATIONS` …), run once by «pseudex/schema.py::ensure» in the new one-shot role `migrate` between `probe` and the worker fan-out; `probe` reads both numbers after key resolution and exits 2 (entrypoint 6) on `user_version > max` with a message naming both numbers, the minimum image and the snapshot path; `< min` → «upgrade to image Y first». `user_version 0` = pre-versioned: all idempotent steps, then stamp. Same guard in Gitea, Signal Desktop (SQLCipher), Home Assistant.
+**Alternative rejected:** `schema_version` (SQLite's own cookie, moves on VACUUM); a migrations table without the header (unreadable before trusting any table).
+**Related:** D-059 · D-060
+
+### D-059 · 2026-09-20 · A `VACUUM INTO` snapshot before any step that raises `user_version`
+**Status:** active
+**Decision:** free space ≥ 2 × (store + `-wal`) or refuse before touching anything; `PRAGMA wal_checkpoint(TRUNCATE)`; `VACUUM INTO '<store>.pre-<from>-<to>.db'` on the same keyed connection (SQLCipher keeps the key — `sqlcipher-compatibility.test`); fsync file and directory; once, under `vault_migrate._Lock`. The documented rollback is «stop, replace the store with the `.pre-*` snapshot, delete `-wal`/`-shm`, start the older image».
+**Alternative rejected:** copying the file (unsafe with WAL, «howtocorrupt.html»); no snapshot.
+**Price:** 2× disk during migration.
+**Related:** D-058
+
+### D-060 · 2026-09-20 · Semver is a schema contract, pinned by «schema_lock.json»
+**Status:** active
+**Decision:** patch → `user_version` unchanged, downgrade free; minor → may raise, one way; major → may require an operator role named in the release notes. `prototype/schema_lock.json` maps each minor to the max step per store; «test_schema.py» is red when `max_version(store)` differs from the row of the minor in «version.txt». Gitea/PostgreSQL/Grafana state the same contract in words; here it is a test.
+**Related:** D-052 · D-058
+
+### D-061 · 2026-09-20 · The site advertises the floating minor `pseudex:X.Y`; the registry moves the aliases; signatures stay on the digest
+**Status:** active
+**Context:** Docker Official Images require `1.2.3 → 1.2 → 1 → latest` aliases; under D-060 a patch never moves the schema, so a floating minor is safe in both directions.
+**Decision:** publish `X.Y.Z`, `X.Y`, `X`, `latest`; `X` and `latest` only on the newest cycle; a maintenance patch moves only `X.Y`. The storefront reads the newest cycle from the synced registry (`engine_release.current_image()`), never from a hand-set env var — the 20.09.2026 `1.0.0` defect. cosign signs the digest; the registry publishes it.
+**Alternative rejected:** the exact tag (no patches without a visit to the site); `latest` (a minor without consent).
+**Related:** D-054 · D-060
+
+### D-062 · 2026-09-20 · `pseudexctl upgrade` is the native update for `docker run` customers; Watchtower is not recommended
+**Status:** active
+**Decision:** pull → stop → snapshot (tar) → `probe` with the old image → rename → run with the same volume/ports/env (names only; values in the child environment) → health; unhealthy with an unmoved schema → back to the old image; moved → print `pseudexctl restore …` and touch nothing. Compose customers: `docker compose pull && up -d` (volumes survive everything but `down -v`).
+**Alternative rejected:** Watchtower (archived December 2025, «not for production» in its own README, leaves no container on failure).
+**Related:** D-058 · D-059
+
+### D-063 · 2026-09-20 · No new protocol field: the client sends the existing `lease_contract`; incompatible changes are contract 4
+**Status:** active
+**Context:** `lease_contract = 3` already exists server-side (`/v1/pubkey`, response) and is inferred today from the presence of `nonce`. A new `lease_protocol` would duplicate it.
+**Decision:** the client sends `lease_contract: 3` explicitly; the server records it; additive fields never bump it; a change an old client could misparse is contract 4, and contract-3 clients keep getting the contract-3 shape while it is served. Unversioned = oldest supported (PostgreSQL libpq, GitHub REST).
+**Related:** D-055
+
+### D-064 · 2026-09-20 · `bundle_format` integer in the signed lease; a too-old engine gets «upgrade», not «corrupt»
+**Status:** active
+**Context:** The bundle has an implicit format discriminator (`is_framed`) but no number; an old engine given a newer format would fail as `bundle_corrupt`.
+**Decision:** `bundle_format: 2` (sectioned frame) in the signed payload; the client compares with its maximum and reports `bundle_format_unsupported` naming the engine version that reads it. Raising it raises `min_supported` and is done only together (restic repository version).
+**Related:** D-055 · D-056
