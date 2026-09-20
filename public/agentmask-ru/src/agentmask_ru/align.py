@@ -129,8 +129,12 @@ def project_many(original: str, masked: str, spans: list[tuple[int, int]]) -> li
         cuts.append(block.b2)
         for k, i in enumerate(inside):
             shares[(i, b)] = (cuts[k], cuts[k + 1])
-    return [_project_one(original, masked, parts, start, end, {b: v for (i, b), v in shares.items() if i == index})
-            for index, (start, end) in enumerate(spans)]
+    return [
+        _project_one(original, masked, parts, start, end,
+                     {b: v for (i, b), v in shares.items() if i == index},
+                     tuple(s for j, s in enumerate(spans) if j != index))
+        for index, (start, end) in enumerate(spans)
+    ]
 
 
 def _snap(text: str, position: int, low: int, high: int) -> int:
@@ -154,11 +158,11 @@ def _snap(text: str, position: int, low: int, high: int) -> int:
 
 def project(original: str, masked: str, start: int, end: int) -> Substitute:
     """Read the masked text where `original[start:end]` used to be."""
-    return _project_one(original, masked, blocks(original, masked), start, end, {})
+    return _project_one(original, masked, blocks(original, masked), start, end, {}, ())
 
 
 def _project_one(original: str, masked: str, parts: list[Block], start: int, end: int,
-                 shares: dict[int, tuple[int, int]]) -> Substitute:
+                 shares: dict[int, tuple[int, int]], neighbours: tuple[tuple[int, int], ...]) -> Substitute:
     value = original[start:end]
     b_start: int | None = None
     b_end: int | None = None
@@ -181,6 +185,25 @@ def _project_one(original: str, masked: str, parts: list[Block], start: int, end
         b_end = high if b_end is None else max(b_end, high)
     if b_start is None or b_end is None:
         return Substitute(text="", altered=True, covered=True, shared=bool(shares))
+    # A PURE INSERT TOUCHING THE SPAN BELONGS TO IT. difflib matched «мит»
+    # between «ханна смит» and «Дмитрий Ковалёв» — three coincidental letters
+    # — so the substitute ended at «Дмит» and the rest of the name arrived as
+    # an insert just past the span's end. The scripted model then copied a
+    # fragment into the tool call and the round trip failed for a reason that
+    # belongs entirely to the instrument. An insert is zero-width on the
+    # original side, so it can only be claimed by a span it touches; one that
+    # touches a NEIGHBOUR's boundary too is left alone rather than stolen.
+    for block in parts:
+        if block.tag != "insert" or block.a1 != block.a2:
+            continue
+        if not start <= block.a1 <= end:
+            continue
+        if any(other_start <= block.a1 <= other_end for other_start, other_end in neighbours):
+            continue
+        if block.b1 == b_end:
+            b_end = block.b2
+        elif block.b2 == b_start:
+            b_start = block.b1
     text = masked[b_start:b_end].strip()
     altered = not _same_value(text, value)
     return Substitute(text=text, altered=altered, covered=altered and not surviving_pieces(value, text),

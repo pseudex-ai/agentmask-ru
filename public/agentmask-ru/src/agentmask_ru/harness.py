@@ -124,6 +124,39 @@ def _fold(text: str) -> list[str]:
     return out
 
 
+_MONTHS_GEN: tuple[str, ...] = (
+    "январ", "феврал", "март", "апрел", "ма", "июн", "июл", "август", "сентябр", "октябр", "ноябр", "декабр",
+)
+
+
+def _as_date(text: str) -> tuple[int, int, int] | None:
+    """(day, month, year) if this text is one date, else None. Two-digit years
+    pivot on the current year, as every Russian form does."""
+    import datetime as _dt
+
+    cleaned = norm(text).strip(" .,")
+    numeric = re.fullmatch(r"(\d{1,4})[./ -](\d{1,2})[./ -](\d{1,4})", cleaned)
+    if numeric:
+        first, middle, last = (int(part) for part in numeric.groups())
+        day, month, year = (last, middle, first) if first > 31 else (first, middle, last)
+    else:
+        worded = re.fullmatch(r"(\d{1,2})\s+([а-я]+)\s+(\d{2,4})", cleaned)
+        if not worded:
+            return None
+        stem = worded.group(2)
+        month = next((i + 1 for i, m in enumerate(_MONTHS_GEN) if stem.startswith(m)), 0)
+        if not month:
+            return None
+        day, year = int(worded.group(1)), int(worded.group(3))
+    if year < 100:
+        year += 2000 if year <= _dt.date.today().year % 100 else 1900
+    try:
+        _dt.date(year, month, day)
+    except ValueError:
+        return None
+    return day, month, year
+
+
 def _normalised(produced: str, canonical: str) -> bool:
     """Did the gateway hand the tool a REPAIRED version of the value?
 
@@ -141,6 +174,14 @@ def _normalised(produced: str, canonical: str) -> bool:
     """
     if not produced:
         return False
+    # A DATE IS ONE DATE HOWEVER IT IS WRITTEN. «2 июня 1975» returned as
+    # «02.06.1975» is the same day in another notation — the tool gets the
+    # right date — while «2 июня 1975» returned as «27.01.1975» is a different
+    # day and a real break. Parsing both sides is the only way to tell them
+    # apart, and it is the same courtesy every masker gets.
+    left, right = _as_date(produced), _as_date(canonical)
+    if left is not None and right is not None:
+        return left == right
     # A number is one value however it is grouped: «220О7282…» repaired and
     # regrouped into «2200 7282 …» lost nothing.
     if is_number_like(canonical.replace("О", "0").replace("о", "0")) or is_number_like(produced):

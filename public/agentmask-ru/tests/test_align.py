@@ -5,7 +5,7 @@ value was hidden, whether it was hidden completely, and what the scripted
 model copies into the tool call. These are the shapes that broke it.
 """
 
-from agentmask_ru.align import project, rewrite_ratio
+from agentmask_ru.align import project, project_many, rewrite_ratio
 
 
 def test_a_placeholder_hides_the_value() -> None:
@@ -79,3 +79,27 @@ def test_coverage_is_about_pieces_not_characters() -> None:
     assert surviving_pieces("Кузнецов Дмитрий", "Кузнецов Валентин") == ["кузнецов"]
     fpe = project("тел +7 907 123-45-67 ок", "тел +7 935 476-22-11 ок", 4, 20)
     assert fpe.altered and fpe.covered
+
+
+def test_a_coincidental_letter_match_does_not_cut_the_substitute() -> None:
+    # difflib matches «мит» between «ханна смит» and «Дмитрий Ковалёв» — three
+    # coincidental letters — and the rest of the name then arrives as an insert
+    # just past the span's end. The substitute came back as «Дмит», the scripted
+    # model copied a fragment into the tool call, and the round trip failed for a
+    # reason that belonged entirely to the instrument.
+    sub = project("привет это ханна смит тел 89464816238 дальше",
+                  "привет это Дмитрий Ковалёв тел 89060195989 дальше", 11, 21)
+    assert sub.text == "Дмитрий Ковалёв"
+    assert sub.altered and sub.covered
+
+
+def test_two_spans_in_one_block_split_it_and_are_marked() -> None:
+    # Two gold spans replaced by two substitutes that end up in ONE changed
+    # block: neither may claim the whole block, and both must be marked so the
+    # harness leaves them out of the round-trip lines. An instrument that
+    # cannot attribute a value must not score it.
+    first, second = project_many("иван петров сидор", "пётр васильев кузьма", [(0, 11), (12, 17)])
+    assert first.shared and second.shared
+    assert first.text and second.text
+    assert first.text != second.text
+    assert second.text not in first.text

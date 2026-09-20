@@ -9,7 +9,7 @@
 | cloudru | 43.7% [40–47] 297/680 | 42.8% [39–47] 291/680 | 100.0% [99–100] 247/247 | 100.0% [99–100] 536/536 | 100.0% [99–100] 624/624 | 22.2% [3–60] 2/9 | 0 |
 | noop | 0.0% [0–1] 0/680 | 0.0% [0–1] 0/680 | — | 100.0% [99–100] 536/536 | 100.0% [99–100] 624/624 | — | 0 |
 | placeholder_regex | 53.1% [49–57] 361/680 | 51.5% [48–55] 350/680 | 98.0% [96–99] 287/293 | 98.9% [98–100] 518/524 | 79.8% [76–83] 498/624 | 26.7% [8–55] 4/15 | 0 |
-| pseudex | 90.4% [88–93] 615/680 | 77.8% [74–81] 529/680 | 82.6% [79–86] 381/461 | 84.2% [81–87] 425/505 | 98.2% [97–99] 613/624 | 63.0% [48–77] 29/46 | 0 |
+| pseudex | 94.4% [92–96] 642/680 | 79.3% [76–82] 539/680 | 79.5% [76–83] 388/488 | 80.2% [76–84] 405/505 | 98.2% [97–99] 613/624 | 63.0% [48–77] 29/46 | 0 |
 
 ## Парные сравнения (McNemar, точный)
 
@@ -19,12 +19,12 @@
 | cloudru ↔ noop | end_to_end | 0 | 0 | 1.000 |
 | cloudru ↔ placeholder_regex | leak | 17 | 81 | 0.000 |
 | cloudru ↔ placeholder_regex | end_to_end | 6 | 0 | 0.031 |
-| cloudru ↔ pseudex | leak | 0 | 318 | 0.000 |
-| cloudru ↔ pseudex | end_to_end | 80 | 0 | 0.000 |
+| cloudru ↔ pseudex | leak | 0 | 345 | 0.000 |
+| cloudru ↔ pseudex | end_to_end | 100 | 0 | 0.000 |
 | noop ↔ placeholder_regex | leak | 0 | 361 | 0.000 |
 | noop ↔ placeholder_regex | end_to_end | 6 | 0 | 0.031 |
-| noop ↔ pseudex | leak | 0 | 615 | 0.000 |
-| noop ↔ pseudex | end_to_end | 80 | 0 | 0.000 |
-| placeholder_regex ↔ pseudex | leak | 11 | 265 | 0.000 |
-| placeholder_regex ↔ pseudex | end_to_end | 75 | 3 | 0.000 |
+| noop ↔ pseudex | leak | 0 | 642 | 0.000 |
+| noop ↔ pseudex | end_to_end | 100 | 0 | 0.000 |
+| placeholder_regex ↔ pseudex | leak | 0 | 281 | 0.000 |
+| placeholder_regex ↔ pseudex | end_to_end | 95 | 3 | 0.000 |
 
