@@ -644,42 +644,13 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
       </div>
     </div>
 
-    <div id="setup" data-image="{{ image }}" style="margin-top:64px" data-reveal>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--dim-2);margin-bottom:16px">ИЛИ РУКАМИ · КУДА ВЫ ХОДИТЕ ЗА МОДЕЛЬЮ</div>
-      <div id="provider-tabs" role="tablist" style="display:flex;border:1px solid var(--line);flex-wrap:wrap">
-        <button role="tab" aria-selected="true" data-provider="0" style="flex:1;min-width:150px;border:0;border-right:1px solid var(--line);padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">OPENROUTER</button>
-        <button role="tab" aria-selected="false" data-provider="1" style="flex:1;min-width:150px;border:0;border-right:1px solid var(--line);padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">OPENAI</button>
-        <button role="tab" aria-selected="false" data-provider="2" style="flex:1;min-width:150px;border:0;border-right:1px solid var(--line);padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">DEEPSEEK</button>
-        <button role="tab" aria-selected="false" data-provider="3" style="flex:1;min-width:150px;border:0;border-right:1px solid var(--line);padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">СВОЙ VLLM</button>
-        <button role="tab" aria-selected="false" data-provider="4" style="flex:1;min-width:150px;border:0;border-right:1px solid var(--line);padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">ANTHROPIC · GIGACHAT · YANDEXGPT</button>
-      </div>
-      <div style="margin-top:18px;font-size:14.5px;line-height:1.6;color:var(--dim);max-width:78ch" id="provider-note"></div>
-      <div class="cards cards--n3" style="border:1px solid var(--line-3);margin-top:24px">
-        <div style="min-width:0;padding:24px;">
-          <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--accent);margin-bottom:10px">02</div>
-          <h3 style="margin:0 0 16px;font-size:16px;font-weight:600" id="step2-title"></h3>
-          <pre style="margin:0;font-size:12.5px;line-height:1.9;color:var(--text-3);white-space:pre-wrap;font-family:'JetBrains Mono',monospace" id="step2-code"></pre>
-        </div>
-        <div style="min-width:0;padding:24px;">
-          <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--accent);margin-bottom:10px">03</div>
-          <h3 style="margin:0 0 16px;font-size:16px;font-weight:600" id="step3-title"></h3>
-          <pre style="margin:0;font-size:12.5px;line-height:1.9;color:var(--text-3);white-space:pre-wrap;font-family:'JetBrains Mono',monospace" id="step3-code"></pre>
-        </div>
-        <div style="min-width:0;padding:24px;">
-          <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--accent);margin-bottom:10px">04</div>
-          <h3 style="margin:0 0 16px;font-size:16px;font-weight:600">Убедиться, что работает</h3>
-          <pre style="margin:0;font-size:12.5px;line-height:1.9;color:var(--text-3);white-space:pre-wrap;font-family:'JetBrains Mono',monospace">curl localhost:8000/health
-docker logs pseudex | grep 'интерфейс' -A2
-# → http://localhost:8081/?token=9f3c1a…</pre>
-        </div>
-      </div>
-    </div>
+    {% include "_setup.html" %}
   </section>
 
   <section id="pricing" style="padding:120px 36px 0">
     <div style="display:flex;align-items:baseline;justify-content:space-between;gap:32px;flex-wrap:wrap;margin-bottom:14px" data-reveal>
       <h2 style="margin:0;font-size:clamp(28px,3.4vw,42px);font-weight:900;letter-spacing:-.035em">Цены</h2>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">ЦЕНА НА САЙТЕ · БЕЗ «СВЯЖИТЕСЬ С НАМИ»</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">ЦЕНЫ НА САЙТЕ · ENTERPRISE — ПО ДОГОВОРУ</div>
     </div>
     <p style="margin:0 0 40px;font-size:16px;line-height:1.6;color:var(--dim);max-width:62ch">Абонплата по числу контейнеров, сверх включённого — по запросам. Запрос виден в логе вашего же шлюза, поэтому наш счёт можно сверить со своей записью.</p>
     {% comment %}
@@ -689,7 +660,7 @@ docker logs pseudex | grep 'интерфейс' -A2
        Класс по числу тарифов даёт ровный прямоугольник при любом их числе, а
        `cards--plans-many` остаётся страховкой на семь и больше.
 {% endcomment %}
-    <div class="cards cards--plans-{% if plans|length <= 6 %}{{ plans|length }}{% else %}many{% endif %}" style="border:1px solid var(--line-3)">
+    <div class="cards cards--plans-{% if enterprise %}{% with n=plans|length|add:1 %}{% if n <= 6 %}{{ n }}{% else %}many{% endif %}{% endwith %}{% else %}{% if plans|length <= 6 %}{{ plans|length }}{% else %}many{% endif %}{% endif %}" style="border:1px solid var(--line-3)">
       {% for plan in plans %}
         <div style="min-width:0;background:{% if plan.code == "work" %}var(--accent-bg){% else %}var(--bg){% endif %};padding:32px 28px;display:flex;flex-direction:column;gap:22px;">
           <div>
@@ -707,6 +678,21 @@ docker logs pseudex | grep 'интерфейс' -A2
           <a href="#start" style="margin-top:auto;display:block;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;padding:14px;border:1px solid {% if plan.code == "work" %}var(--accent){% else %}var(--line){% endif %};color:{% if plan.code == "work" %}var(--accent-2){% else %}var(--dim){% endif %}" data-plan="{{ plan.code }}" class="hv-btn">НАЧАТЬ ПРОБУ</a>
         </div>
       {% endfor %}
+      {% if enterprise %}
+        <div style="min-width:0;background:var(--bg);padding:32px 28px;display:flex;flex-direction:column;gap:22px;">
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">{{ enterprise.title|upper }}</div>
+            <div style="font-size:28px;font-weight:900;letter-spacing:-.035em;margin-top:24px">по договору</div>
+            <div style="font-size:13.5px;color:var(--dim-2);margin-top:6px">до {{ enterprise.max_instances }} {{ enterprise.max_instances|plural:"контейнер,контейнера,контейнеров" }}</div>
+          </div>
+          <div style="display:grid;gap:11px;font-size:14.5px;line-height:1.5;color:var(--text-3)">
+            <div>объём и лимиты по договору</div>
+            <div>{{ enterprise.max_keys }} {{ enterprise.max_keys|plural:"ключ,ключа,ключей" }} доступа</div>
+            {% if enterprise.audience %}<div>Подходит: {{ enterprise.audience }}</div>{% endif %}
+          </div>
+          <a href="{% if support_email %}mailto:{{ support_email }}?subject=Enterprise{% elif support_bot %}https://t.me/{{ support_bot }}{% else %}/requisites{% endif %}" style="margin-top:auto;display:block;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;padding:14px;border:1px solid var(--line);color:var(--dim)" class="hv-btn">СВЯЗАТЬСЯ</a>
+        </div>
+      {% endif %}
     </div>
     <div style="border:1px solid var(--line-3);border-top:0;padding:20px 28px;display:flex;gap:40px;flex-wrap:wrap;font-size:13.5px;line-height:1.6;color:var(--dim-2)">
       <div style="max-width:46ch">Запрос — один вызов модели через шлюз. В агентском цикле одно сообщение клиента обычно даёт несколько вызовов: считайте по вызовам, а не по диалогам.</div>

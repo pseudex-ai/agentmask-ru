@@ -285,7 +285,7 @@ consumed = acked if acked is not None else max(prefetch_at, acked_prev)
 
 rate     = (consumed − acked_prev) / (now − acked_at_prev)   # считаем МЫ, по своим часам
 Q        = clamp(rate × 300 с,      Q_min[plan], Q_max[plan])
-R        = 0 если это первый квант, иначе clamp(rate × 6 ч, Q, R_max[plan])
+R        = 0 если это первый квант, иначе clamp(rate × 48 ч, Q, R_max[plan])
 granted  = max(granted, consumed + Q + R)                    # ЦЕЛЬ, а не прибавка
 prefetch_at = granted − R − Q/4
 ```

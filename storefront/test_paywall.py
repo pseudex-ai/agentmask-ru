@@ -142,9 +142,21 @@ def main() -> int:
           "повтор с того же адреса пробы не получает")
     check(repeat.subscription.trial_ends_at <= timezone.now(),
           "бесплатные дни ему не начислены")
-    check(services.bonus_days_for(repeat, industrial) == 0,
+    check(services.bonus_days_for(repeat, industrial, False) == 0,
           "и подарка за первый платёж тоже нет",
           "иначе подарок стал бы новым способом брать продукт бесплатно")
+
+    # ── 5b. проба НАЧАТА (был запрос через движок) — подарка нет ────────────
+    # Подарок платит за решение купить, не выработав пробу. Кто уже прогнал
+    # свои сценарии — получил то, ради чего проба была; лишние дни поверх лишние.
+    fresh = services.create_account("buy-before-trial@corp-x.ru", "", "start", "203.0.113.9")
+    check(fresh.trial_granted, "новой почте пробу выдали")
+    check(services.bonus_days_for(fresh, industrial, False)
+          == industrial.first_payment_bonus_days,
+          "не начавшему пробу — подарок равен настройке тарифа",
+          str(industrial.first_payment_bonus_days))
+    check(services.bonus_days_for(fresh, industrial, True) == 0,
+          "начавшему пробу (хоть один запрос через движок) — подарка нет")
 
     # ── 6. тот же КОРПОРАТИВНЫЙ домен — тоже повтор ────────────────────────
     same_domain = services.create_account("third@acme-corp.ru", "", "start", "198.51.100.4")

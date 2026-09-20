@@ -1172,6 +1172,7 @@ live**; v1–v3 stay for the numbers cited from them and are not developed.
 | `bench/fetch_ru_prose.py`, `bench/fetch_ru_speech.py` | — | corpus fetchers (Wikipedia prose; real call transcripts) |
 | `bench/build_name_dicts.py` | — | extracted the name dictionaries into `licensing/data/` (one-off) |
 | `bench/run_all.py`, `bench/summarize_run.py` | — | the whole battery in one run; headline numbers of one run into one document |
+| `bench/public_row.py` | — | produces OUR own row in the public benchmark the way anybody else's is made: starts a real sidecar and runs the PUBLIC harness against it over HTTP, so nothing of the engine reaches the benchmark but its endpoint answers. Also prints the corpus-name overlap our leased gazetteers already hold, which the benchmark itself cannot see |
 
 ---
 
@@ -1190,6 +1191,7 @@ containers, never mocks, and are themselves audited.
 | `e2e/memscan.py` | search a running process's memory for a string (L14) |
 | `e2e/fixtures.py` | the personal data the gates push through a real instance; `leak_values` for the memory scan |
 | `e2e/certs.py` | self-signed CA + server cert for the stand |
+| `e2e/load_licensing.py` | load test of the licensing server (`docs/tz-license-packaging.md` §2.6.4): boots the REAL server in-process, drives N processes (default 10 000) across enterprise-cap keys, measures `/v1/lease` `/v1/meter` `/v1/usage` p50/p99 + RPS + error rate + DB growth, PASS/FAIL against thresholds named in the file. Container-side (RSS, vault/audit.db) is a separate soak, its bars in `CONTAINER_THRESHOLDS` |
 
 The stand builds `pseudex:local`; the gates build `pseudex:source` — DIFFERENT
 verification keys, never share the tag.

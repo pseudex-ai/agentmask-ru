@@ -376,3 +376,20 @@ table.list td.mono { font-family: var(--mono); font-size: 12.5px; }
 .support-menu a:hover { background: var(--panel-2); }
 .support-where { font-size: 13px; color: var(--text); }
 .support-how { font-size: 11px; letter-spacing: .04em; color: var(--dim-2); }
+
+/* org_id рядом с поддержкой в шапке кабинета — копируемый (§2.6.5) */
+.orgid-chip { display:inline-flex; align-items:center; gap:8px; font-family:var(--mono); font-size:11px; color:var(--dim-2); border:1px solid var(--line-2); padding:4px 8px; }
+.orgid-chip code { color:var(--text-3); }
+.orgid-chip .btn { padding:2px 8px; font-size:10px; }
+/* «?» рядом с числом — одна строка на экране, подробности по клику (§2.6.2) */
+.qmark { display:inline; }
+.qmark > summary { display:inline-block; cursor:pointer; width:16px; height:16px; line-height:15px; text-align:center; border:1px solid var(--line-2); border-radius:50%; color:var(--dim-2); font-size:11px; list-style:none; }
+.qmark > summary::-webkit-details-marker { display:none; }
+.qmark[open] > summary { color:var(--text); border-color:var(--edge); }
+.qmark > div { margin-top:10px; font-size:13px; color:var(--dim); line-height:1.6; max-width:70ch; border-left:2px solid var(--line-2); padding-left:12px; }
+/* одна полоса объёма с метками включено/потолок/стоп (§2.6.1) */
+.usebar { position:relative; height:10px; background:var(--line-3); margin:16px 0 8px; }
+.usebar > i { position:absolute; left:0; top:0; bottom:0; background:var(--accent); max-width:100%; }
+.usebar > i.warn { background:var(--amber); }
+.usebar > i.stop { background:var(--pink); }
+.usebar > span { position:absolute; top:-4px; bottom:-4px; width:1px; }

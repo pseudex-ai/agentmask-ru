@@ -1,14 +1,42 @@
 {% extends "base.html" %}
 {% load ru %}
 {% block title %}Кабинет — pseudex{% endblock %}
-{% block nav %}{% endblock %}
+
+{# §2.6.4 В шапке — навигация к документации и обратно на сайт, вместо пустого меню. #}
+{% block nav %}
+<nav>
+  <a href="/">НА САЙТ</a>
+  <a href="/detection">ЧТО НАХОДИМ</a>
+  <a href="{% url 'architecture' %}">АРХИТЕКТУРА</a>
+  <a href="{% url 'offer' %}">ОФЕРТА</a>
+</nav>
+{% endblock %}
+
+{# §2.6.4/§2.6.5 Поддержка — в шапке (плавающая остаётся только на публичных страницах),
+   а рядом копируемый org_id: он нужен ровно тогда, когда человек пишет в поддержку. #}
+{% block head_cta %}
+<div class="head-cta">
+  <span class="orgid-chip" data-copy-scope title="Пригодится, когда пишете в поддержку">
+    <span>org_id</span>
+    <code data-copy="{{ organization.id }}">{{ organization.id }}</code>
+    <button type="button" class="btn" data-copy-btn>КОПИРОВАТЬ</button>
+  </span>
+  {% if support_bot %}<a class="btn" href="https://t.me/{{ support_bot }}" target="_blank" rel="noopener">ПОДДЕРЖКА</a>
+  {% elif support_email %}<a class="btn" href="mailto:{{ support_email }}">ПОДДЕРЖКА</a>{% endif %}
+  {% if user.is_staff %}<a class="btn" href="{% url 'ops_fleet' %}">ОПЕРАЦИИ</a>{% endif %}
+  <form method="post" action="{% url 'account_logout' %}" style="display:inline">{% csrf_token %}
+    <button class="btn" type="submit">ВЫЙТИ</button>
+  </form>
+</div>
+{% endblock %}
+
+{# §2.6.4 Плавающая кнопка поддержки — не в кабинете: у неё здесь нет соседей, а поддержка уже в шапке. #}
+{% block floating_support %}{% endblock %}
+
 {% block content %}
 <section>
   <div class="sec-head">
-    <div>
-      <h2>{{ organization.display_name }}</h2>
-      <div class="sec-meta" style="margin-top:8px">org_id <span class="mono" style="color:var(--text-3)">{{ organization.id }}</span></div>
-    </div>
+    <div><h2>{{ organization.display_name }}</h2></div>
     {% if subscription %}
       <div>
         {% if subscription.volume_capped %}<span class="pill bad">ЛИМИТ ОБЪЁМА ИСЧЕРПАН — СЕРВИС ОСТАНОВЛЕН</span>
@@ -20,94 +48,88 @@
     {% endif %}
   </div>
 
-  <div class="app">
-    <div>
-      <div class="label" style="margin-bottom:14px">ТАРИФ</div>
-      {% if subscription %}
-        <div class="kv"><span class="k">план</span><span class="v">{{ plan.title }}</span></div>
-        <div class="kv"><span class="k">в месяц</span><span class="v">{{ plan.monthly_price|floatformat:0 }} ₽</span></div>
-        <div class="kv"><span class="k">контейнеров по тарифу</span><span class="v">{{ plan.max_instances }}</span></div>
-        <div class="kv"><span class="k">занято сейчас</span><span class="v">{{ instances|length }}</span></div>
-        {% if instances %}
-        <ul class="slots">
-          {% for slot in instances %}
-          <li><code>{{ slot.instance_id }}</code></li>
-          {% endfor %}
-        </ul>
-        <p class="hint">Слот освобождается сам, когда аренда контейнера истекает.
-        Пока он занят, новый контейнер с тем же ключом получит 409 — это лимит
-        тарифа, а не отказ в оплате.</p>
-        {% endif %}
-        <div class="kv"><span class="k">период до</span><span class="v">{{ subscription.current_period_end|date:"d.m.Y" }}</span></div>
+  {# ── ВОПРОС 1: РАБОТАЕТ ЛИ ── статус, контейнеры, период, ключи. #}
+  <div style="margin-top:20px;border:1px solid var(--line-2);padding:22px">
+    <div class="label" style="margin-bottom:14px">РАБОТАЕТ ЛИ</div>
+    {% if subscription %}
+      <div class="kv"><span class="k">план</span><span class="v">{{ plan.title }} · {{ plan.monthly_price|floatformat:0 }} ₽/мес</span></div>
+      <div class="kv"><span class="k">контейнеры</span><span class="v">{{ instances|length }} из {{ plan.max_instances }} занято</span></div>
+      {% if instances %}
+      <ul class="slots">
+        {% for slot in instances %}<li><code>{{ slot.instance_id }}</code></li>{% endfor %}
+      </ul>
+      <p class="hint">Слот освобождается сам, когда аренда контейнера истекает. Пока он занят,
+        новый контейнер с тем же ключом получит 409 — это лимит тарифа, а не отказ в оплате.</p>
       {% endif %}
-    </div>
-    <div>
-      <div class="label" style="margin-bottom:14px">ИСПОЛЬЗОВАНО</div>
-      {% if unreachable %}
-        <div style="font-size:14px;color:var(--amber);line-height:1.6">Счётчики сейчас недоступны — лицензионный сервер не отвечает. Это не влияет на работу вашего контейнера: он продолжает маскировать на выданной аренде.</div>
-      {% else %}
-        <div style="font-size:30px;font-weight:900;letter-spacing:-.02em">{{ billable }}</div>
-        <div style="font-size:12.5px;color:var(--dim-2);margin-top:2px">запросов к начислению · выдано ёмкости {{ ceiling }}</div>
-        <div class="meter"><i class="{% if percent >= 100 %}over{% endif %}" style="width:{{ percent }}%"></i></div>
-        <div style="font-size:12.5px;color:var(--dim-2);margin-top:10px">значений защищено: {{ used }} · ориентир тарифа {{ included }}</div>
-        {% if capacity_discount %}
-          <div style="font-size:13px;color:var(--dim-2);margin-top:12px;line-height:1.6">Ваши контейнеры подтвердили фактический расход, и это <b style="color:var(--text)">снизило начисление на {{ capacity_discount }}</b> запрос(ов) против выданной ёмкости.</div>
-        {% endif %}
-        {% if unacked_quanta %}
-          <div style="font-size:13px;color:var(--amber);margin-top:12px;line-height:1.6">Порций ёмкости без подтверждённого отчёта: {{ unacked_quanta }}. Пока отчёт не доходит, начисление идёт по выданной ёмкости, а не по фактическому расходу — проверьте исходящий доступ контейнера к лицензионному серверу.</div>
-        {% endif %}
-        <div style="font-size:13px;color:var(--dim-2);margin-top:12px;line-height:1.6">Начисление считается по ёмкости, которую выдали мы: контейнер обслуживает ровно столько, на сколько её получил. Отчёт ваших контейнеров работает в обратную сторону — он <b style="color:var(--text)">уменьшает</b> начисление до фактического расхода. Единица — запрос, поэтому эти цифры можно сверить с логом вашего собственного шлюза.</div>
-      {% endif %}
-    </div>
-    <div>
-      <div class="label" style="margin-bottom:14px">БЫСТРЫЙ СТАРТ</div>
-      <div style="font-size:13.5px;color:var(--dim);line-height:1.6;margin-bottom:12px">Команда запуска для этой организации:</div>
-      <div class="copybar" style="margin-top:0">
-        <code data-copy="docker run -d --name pseudex -p 8000:8000 -p 127.0.0.1:8081:8081 -v pseudex-data:/data -e PSEUDEX_ROLE=proxy -e PSEUDEX_UPSTREAM=https://api.openai.com/v1 {{ license_url_env }}-e PSEUDEX_LICENSE_KEY=&lt;ваш ключ&gt; {{ image }}">docker run … {{ image }}</code>
-        <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
+      <div class="kv"><span class="k">период до</span><span class="v">{{ subscription.current_period_end|date:"d.m.Y" }}</span></div>
+      <div class="kv"><span class="k">ключей выпущено</span><span class="v">{{ keys|length }}</span></div>
+    {% else %}
+      <p style="color:var(--dim)">Подписки нет.</p>
+    {% endif %}
+  </div>
+
+  {# ── ВОПРОС 2: СКОЛЬКО Я ЗАПЛАЧУ ── §2.6.1 одна сумма сверху + §2.6.2 одна строка, детали под «?». #}
+  <div style="margin-top:20px;border:1px solid var(--line-2);padding:22px">
+    <div class="label" style="margin-bottom:8px">В ЭТОМ ПЕРИОДЕ</div>
+    {% if unreachable %}
+      <div style="font-size:14px;color:var(--amber);line-height:1.6">Счётчики сейчас недоступны — лицензионный сервер не отвечает. На работу вашего контейнера это не влияет: он маскирует на выданной аренде.</div>
+    {% elif pricing %}
+      {# §2.6.1 ОДНА сумма к оплате, а не цена в одном столбце и перерасход четвёртым блоком вниз. #}
+      <div style="font-size:32px;font-weight:900;letter-spacing:-.02em">{{ pricing.monthly_price|floatformat:0 }} ₽{% if pricing.overage_amount %} <span style="color:var(--amber)">+ {{ pricing.overage_amount }} ₽ перерасхода</span>{% endif %}</div>
+
+      {# §2.6.2 ОДНА строка рядом с числом, остальное — под «?». #}
+      <div style="font-size:13px;color:var(--dim-2);margin-top:8px">
+        израсходовано {{ pricing.used }} из {% if pricing.cap %}{{ pricing.cap }}{% else %}{{ pricing.included }}{% endif %} запросов{% if pricing.buffer_end %} · остановка на {{ pricing.buffer_end }}{% endif %}
+        <details class="qmark"><summary>?</summary>
+          <div>Начисление считается по ёмкости, которую выдали мы: контейнер обслуживает ровно столько, на сколько её получил. Отчёт ваших контейнеров работает в обратную сторону — он <b style="color:var(--text)">уменьшает</b> начисление до фактического расхода. Включено в тариф — {{ pricing.included }} запросов{% if pricing.rate %}; сверх включённого — {{ pricing.rate|floatformat:2 }} ₽ за 1000{% endif %}{% if pricing.cap %}; докупать можно до {{ pricing.cap }}, дальше буфер и остановка на {{ pricing.buffer_end }}{% endif %}. Единица — запрос, поэтому эти цифры можно сверить с логом вашего собственного шлюза.</div>
+        </details>
       </div>
-    </div>
+
+      {# §2.6.1 ОДНА полоса: израсходовано из «тариф + докупка», порог остановки отмечен. #}
+      {% if pricing.buffer_end %}
+        <div class="usebar">
+          <i class="{% if pricing.zone == 'stopped' %}stop{% elif pricing.zone == 'buffer' or pricing.zone == 'metered' %}warn{% endif %}" style="width:{% widthratio pricing.used pricing.buffer_end 100 %}%"></i>
+          <span style="left:{% widthratio pricing.included pricing.buffer_end 100 %}%;background:var(--text-3)" title="включено в тариф: {{ pricing.included }}"></span>
+          <span style="left:{% widthratio pricing.cap pricing.buffer_end 100 %}%;background:var(--amber)" title="потолок докупки: {{ pricing.cap }}"></span>
+          <span style="right:0;background:var(--pink);width:2px" title="остановка: {{ pricing.buffer_end }}"></span>
+        </div>
+        <div style="font-size:11.5px;color:var(--dim-2);display:flex;justify-content:space-between;gap:10px">
+          <span>включено {{ pricing.included }}</span>
+          <span>потолок {{ pricing.cap }}</span>
+          <span style="color:var(--pink)">стоп {{ pricing.buffer_end }}</span>
+        </div>
+      {% else %}
+        {# Тариф без потолка объёма (проба или Enterprise по договору): простая полоса. #}
+        <div class="meter" style="margin-top:16px"><i class="{% if pricing.used > pricing.included %}over{% endif %}" style="width:{% if pricing.included %}{% widthratio pricing.used pricing.included 100 %}{% else %}0{% endif %}%"></i></div>
+        <div style="font-size:11.5px;color:var(--dim-2);margin-top:8px">израсходовано {{ pricing.used }}{% if pricing.included %} из {{ pricing.included }} включённых{% endif %}</div>
+      {% endif %}
+
+      {% if unacked_quanta %}
+        <div style="font-size:13px;color:var(--amber);margin-top:12px;line-height:1.6">Порций ёмкости без подтверждённого отчёта: {{ unacked_quanta }}. Пока отчёт не доходит, начисление идёт по выданной ёмкости, а не по факту — проверьте исходящий доступ контейнера к лицензионному серверу.</div>
+      {% endif %}
+
+      {% if pricing.zone == 'stopped' %}
+        <div style="margin-top:14px"><span class="pill bad">ЛИМИТ ОБЪЁМА ИСЧЕРПАН — СЕРВИС ОСТАНОВЛЕН</span></div>
+        <p class="hint">Снимается переходом на старший тариф{% if pricing.upgrade_discount_pct %} (первый месяц −{{ pricing.upgrade_discount_pct }}%){% endif %} или новым периодом — не оплатой и не перевыпуском ключа.</p>
+      {% elif pricing.zone == 'buffer' %}
+        <div style="margin-top:14px"><span class="pill warn">ОБЪЁМ В БУФЕРЕ ЗА ПОТОЛКОМ — ДАЛЬШЕ ОСТАНОВКА</span></div>
+        <p class="hint">{% if pricing.upgrade_offer %}Спец-предложение для вас: <b style="color:var(--text-3)">{{ pricing.upgrade_offer.title }}</b>. {% endif %}Перейдите на старший тариф{% if pricing.upgrade_discount_pct %} — первый месяц со скидкой {{ pricing.upgrade_discount_pct }}%{% endif %}: он и дешевле этого перерасхода, и снимает потолок.</p>
+      {% endif %}
+    {% else %}
+      <div style="font-size:14px;color:var(--dim);line-height:1.6">Пока нечего показывать — расход появится, когда контейнер начнёт маскировать.</div>
+    {% endif %}
   </div>
 
-  {% if pricing %}
-  <div style="margin-top:34px;border:1px solid var(--line-2);padding:22px">
-    <div class="label" style="margin-bottom:14px">ТАРИФ И ОБЪЁМ ЗА ПЕРИОД</div>
-    <div class="kv"><span class="k">включено в тариф</span><span class="v">{{ pricing.included }} запросов за {{ pricing.monthly_price|floatformat:0 }} ₽</span></div>
-    {% if pricing.rate %}<div class="kv"><span class="k">сверх включённого</span><span class="v">{{ pricing.rate|floatformat:2 }} ₽ за 1000</span></div>{% endif %}
-    {% if pricing.cap %}
-      <div class="kv"><span class="k">докупать можно до</span><span class="v">{{ pricing.cap }} запросов</span></div>
-      <div class="kv"><span class="k">буфер, за ним остановка</span><span class="v">{{ pricing.buffer_end }} запросов</span></div>
-      <div class="meter" style="margin-top:14px"><i class="{% if pricing.zone == 'buffer' or pricing.zone == 'stopped' %}over{% endif %}" style="width:{{ pricing.pct_of_cap }}%"></i></div>
-      <div style="font-size:12.5px;color:var(--dim-2);margin-top:8px">{{ pricing.pct_of_cap }}% до глобального потолка ({{ pricing.used }} из {{ pricing.cap }})</div>
-    {% endif %}
-    {% if pricing.overage_amount %}
-      <div class="kv" style="margin-top:10px"><span class="k">начислено сверх на сейчас</span><span class="v">{{ pricing.overage_requests }} запросов — {{ pricing.overage_amount }} ₽</span></div>
-    {% endif %}
-
-    {% if pricing.zone == 'stopped' %}
-      <div style="margin-top:14px"><span class="pill bad">ЛИМИТ ОБЪЁМА ИСЧЕРПАН — СЕРВИС ОСТАНОВЛЕН</span></div>
-      <p class="hint">Снимается переходом на старший тариф{% if pricing.upgrade_discount_pct %} (первый месяц −{{ pricing.upgrade_discount_pct }}%){% endif %} или новым периодом — не оплатой и не перевыпуском ключа.</p>
-    {% elif pricing.zone == 'buffer' %}
-      <div style="margin-top:14px"><span class="pill warn">ОБЪЁМ В БУФЕРЕ ЗА ПОТОЛКОМ — ДАЛЬШЕ ОСТАНОВКА</span></div>
-      <p class="hint">{% if pricing.upgrade_offer %}Спец-предложение для вас: <b style="color:var(--text-3)">{{ pricing.upgrade_offer.title }}</b>. {% endif %}Перейдите на старший тариф{% if pricing.upgrade_discount_pct %} — первый месяц со скидкой {{ pricing.upgrade_discount_pct }}%{% endif %}: он и дешевле этого перерасхода, и снимает потолок.</p>
-    {% elif pricing.zone == 'metered' %}
-      <p class="hint">Объём сверх включённого тарифицируется и попадёт отдельной строкой в счёт. Сервис работает — превышение это счёт, а не рубильник.</p>
-    {% endif %}
-  </div>
-  {% endif %}
-
+  {# ── ВОПРОС 3: ЧТО СДЕЛАТЬ, ЧТОБЫ ПРОДОЛЖИТЬ ── оплата/смена тарифа и годовая. #}
 {% comment %}ОПЛАТИТЬ МОЖНО В ЛЮБОЙ МОМЕНТ, А НЕ ТОЛЬКО КОГДА ПРИШЁЛ СЧЁТ.
 
 Этого блока не было, и заплатить было физически нечем: счета выставляет
-месячный цикл по окончании пробы или периода, а до тех пор оплачивать нечего —
-единственной живой кнопкой в кабинете была годовая предоплата. Тот же блок
-служит сменой тарифа: «перейти на другой» и «начать платить» это одно действие,
-и разделять их значило бы писать вьюху дважды.{% endcomment %}
+месячный цикл по окончании пробы или периода, а до тех пор оплачивать нечего.
+Тот же блок служит сменой тарифа: «перейти на другой» и «начать платить» это
+одно действие, и разделять их значило бы писать вьюху дважды.{% endcomment %}
   {% if paid_plans %}
   <div style="margin-top:20px;border:1px solid {% if trial_over %}var(--accent){% else %}var(--line-2){% endif %};padding:22px">
     <div class="label" style="margin-bottom:10px">
-      {# Ярлык решается ПОКАЗЫВАЕМЫМ тарифом: на пробе он пробный, даже если в
-   строке подписки остался платный — см. `display_plan` во вьюхе. #}
       {% if plan.is_trial %}ПЕРЕЙТИ НА ПЛАТНЫЙ{% else %}СМЕНИТЬ ТАРИФ{% endif %}</div>
     {% if trial_over %}
       <p style="font-size:14px;color:var(--text-2);line-height:1.6;margin:0 0 14px">
@@ -139,7 +161,7 @@
   <div style="margin-top:20px;border:1px solid var(--line-2);padding:22px">
     <div class="label" style="margin-bottom:10px">ГОДОВАЯ ОПЛАТА — ВЫГОДНЕЕ</div>
     <div class="kv"><span class="k">{{ annual.label }}, 12 месяцев</span><span class="v"><s style="color:var(--dim-2)">{{ annual.gross|floatformat:0 }}</s> {{ annual.total|floatformat:0 }} ₽</span></div>
-    <div class="kv"><span class="k">экономия за год</span><span class="v" style="color:var(--ok,#3a7)">−{{ annual.discount|floatformat:0 }} ₽</span></div>
+    <div class="kv"><span class="k">экономия за год</span><span class="v" style="color:var(--green)">−{{ annual.discount|floatformat:0 }} ₽</span></div>
     <p class="hint">Оплачивается база на год вперёд. Включённый объём и перерасход остаются <b style="color:var(--text-3)">помесячными</b> — никакого сюрприз-счёта в конце года.</p>
     {% if card_available %}
       <form method="post" action="{% url 'pay_annual' %}" style="margin-top:8px">{% csrf_token %}
@@ -150,6 +172,10 @@
     {% endif %}
   </div>
   {% endif %}
+
+  {# ── ПОДКЛЮЧЕНИЕ ── §2.6.3 та же команда, что на лендинге: целиком и с вкладками провайдеров. #}
+  <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Подключение</h3>
+  {% include "_setup.html" %}
 
   <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Ключи</h3>
   <table class="list">
@@ -214,11 +240,6 @@
     </tr>
     {% empty %}<tr><td colspan="5" style="color:var(--dim-2)">Счетов пока нет — первый выставится по окончании пробного периода.</td></tr>{% endfor %}
   </table>
-
-  <div style="margin-top:40px;padding:22px;border:1px solid var(--line-2);font-size:14px;color:var(--dim);line-height:1.7">
-    <b style="color:var(--text-3)">Здесь нет ваших диалогов, токенов и значений — и не будет.</b><br>
-    Всё это живёт только в вашем контуре, в локальном интерфейсе на порту 8081. Если бы мы показывали это здесь, мы стали бы обработчиком ваших персональных данных, и весь смысл продукта пропал бы.
-  </div>
 </section>
 {% endblock %}
 {% block script %}{% load static %}<script src="{% static 'landing.js' %}"></script>{% endblock %}

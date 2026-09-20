@@ -40,6 +40,7 @@ Status: `spec` (describes shipped behaviour) · `ТЗ` (a specification;
 | `docs/tz-agentpii3.md` | AgentPII-RU v3: the ТЗ; normative file `bench/agentpii3/schema.py` | superseded by v4 (the 69.6% NAME number is from here) |
 | `docs/tz-agentpii4.md` | AgentPII-RU v4: the ТЗ; normative file `bench/agentpii4/schema.py` | ТЗ (the live benchmark) · STATE D-038, D-041 |
 | `docs/tz-verticals-and-configurator.md` | detection profiles per vertical and the landing configurator | ТЗ-design (not started) · STATE D-034 |
+| `docs/tz-roadmap-from-oss.md` | what to take from the OSS competitor landscape, what to refuse and why — a map of directions after the first public-benchmark run, not a sprint plan | roadmap-design |
 | `docs/gar-street-vocabulary.md` | why the ГАР street vocabulary exists, how it is fetched, how much is leased, the fuzzy-street curve | spec |
 | `docs/billing-integrity.md` | what we bill, what backs it, what it does not close | spec · STATE D-030, D-036 |
 | `docs/metering-integrity.md` | the metering design end to end: keys, statuses, the usage-report chain | spec · STATE D-036 |

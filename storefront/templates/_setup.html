@@ -1,0 +1,30 @@
+    <div id="setup" data-image="{{ image }}" style="margin-top:64px" data-reveal>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--dim-2);margin-bottom:16px">ИЛИ РУКАМИ · КУДА ВЫ ХОДИТЕ ЗА МОДЕЛЬЮ</div>
+      <div id="provider-tabs" role="tablist" style="display:flex;border:1px solid var(--line);flex-wrap:wrap">
+        <button role="tab" aria-selected="true" data-provider="0" style="flex:1;min-width:150px;border:0;border-right:1px solid var(--line);padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">OPENROUTER</button>
+        <button role="tab" aria-selected="false" data-provider="1" style="flex:1;min-width:150px;border:0;border-right:1px solid var(--line);padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">OPENAI</button>
+        <button role="tab" aria-selected="false" data-provider="2" style="flex:1;min-width:150px;border:0;border-right:1px solid var(--line);padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">DEEPSEEK</button>
+        <button role="tab" aria-selected="false" data-provider="3" style="flex:1;min-width:150px;border:0;border-right:1px solid var(--line);padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">СВОЙ VLLM</button>
+        <button role="tab" aria-selected="false" data-provider="4" style="flex:1;min-width:150px;border:0;border-right:1px solid var(--line);padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">ANTHROPIC · GIGACHAT · YANDEXGPT</button>
+      </div>
+      <div style="margin-top:18px;font-size:14.5px;line-height:1.6;color:var(--dim);max-width:78ch" id="provider-note"></div>
+      <div class="cards cards--n3" style="border:1px solid var(--line-3);margin-top:24px">
+        <div style="min-width:0;padding:24px;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--accent);margin-bottom:10px">02</div>
+          <h3 style="margin:0 0 16px;font-size:16px;font-weight:600" id="step2-title"></h3>
+          <pre style="margin:0;font-size:12.5px;line-height:1.9;color:var(--text-3);white-space:pre-wrap;font-family:'JetBrains Mono',monospace" id="step2-code"></pre>
+        </div>
+        <div style="min-width:0;padding:24px;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--accent);margin-bottom:10px">03</div>
+          <h3 style="margin:0 0 16px;font-size:16px;font-weight:600" id="step3-title"></h3>
+          <pre style="margin:0;font-size:12.5px;line-height:1.9;color:var(--text-3);white-space:pre-wrap;font-family:'JetBrains Mono',monospace" id="step3-code"></pre>
+        </div>
+        <div style="min-width:0;padding:24px;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--accent);margin-bottom:10px">04</div>
+          <h3 style="margin:0 0 16px;font-size:16px;font-weight:600">Убедиться, что работает</h3>
+          <pre style="margin:0;font-size:12.5px;line-height:1.9;color:var(--text-3);white-space:pre-wrap;font-family:'JetBrains Mono',monospace">curl localhost:8000/health
+docker logs pseudex | grep 'интерфейс' -A2
+# → http://localhost:8081/?token=9f3c1a…</pre>
+        </div>
+      </div>
+    </div>

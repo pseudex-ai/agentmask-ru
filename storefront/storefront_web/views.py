@@ -230,6 +230,10 @@ def landing(request):
     personal data onto our servers, which is precisely what we sell not doing."""
     return render(request, "landing.html", {
         "plans": Plan.objects.filter(is_public=True),
+        # Enterprise намеренно НЕ публичный (его нельзя купить самообслуживанием,
+        # см. seed_plans), поэтому он не в `plans` — иначе попал бы и в выпадашку
+        # регистрации. Отдаётся отдельно ради одной карточки «по договору».
+        "enterprise": Plan.objects.filter(code="enterprise").first(),
         # Группы конфигуратора — из того же реестра, что и страница /detection.
         "groups": detection_types.groups_for_page(),
         # ЧИСЛО ТИПОВ СЧИТАЕТСЯ, А НЕ ПИШЕТСЯ. «18» стояло литералом в трёх
@@ -923,7 +927,8 @@ def cabinet(request):
                            and subscription.trial_ends_at <= timezone.now()),
         "bonus_days": (services.bonus_days_for(
                            organization,
-                           subscription.intended_plan or subscription.plan)
+                           subscription.intended_plan or subscription.plan,
+                           services.trial_has_been_used(reported))
                        if subscription else 0),
         "unreachable": unreachable,
         "image": settings.DOCKER_IMAGE,

@@ -739,7 +739,18 @@ def has_ever_paid(organization: Organization) -> bool:
                                   state=Invoice.PAID).exists()
 
 
-def bonus_days_for(organization: Organization, plan: Plan) -> int:
+def trial_has_been_used(reported: dict) -> bool:
+    """Прошёл ли через движок хоть один запрос — «проба начата».
+
+    Счётчик `requests` приходит из `/admin/usage`, а самопроверка в него не
+    входит, поэтому ненулевое значение — это реальная работа агента, а не наш
+    служебный трафик.
+    """
+    return _int_or_zero(reported.get("requests")) > 0
+
+
+def bonus_days_for(organization: Organization, plan: Plan,
+                   trial_used: bool) -> int:
     """Сколько дней в подарок даёт немедленная оплата ЭТОГО тарифа.
 
     Два условия, и оба обязательны. Первое: платёж действительно первый —
@@ -749,8 +760,13 @@ def bonus_days_for(organization: Organization, plan: Plan) -> int:
     адреса или домена аккаунт получает, но ни бесплатных дней, ни подарка: иначе
     подарок стал бы новым способом брать продукт бесплатно пачками, ровно тем,
     ради закрытия которого проба и стала узкой.
+    Третье: проба ещё НЕ НАЧАТА — ни одного запроса через движок. Подарок
+    платит за решение купить, НЕ выработав пробу; тот, кто уже прогнал свои
+    сценарии, получил ровно то, ради чего проба была, и лишние дни поверх —
+    та же непрошеная скидка, что и на втором месяце.
     """
-    if not organization.trial_granted or has_ever_paid(organization):
+    if (not organization.trial_granted or has_ever_paid(organization)
+            or trial_used):
         return 0
     return plan.first_payment_bonus_days
 
@@ -785,7 +801,16 @@ def build_switch_invoice(organization: Organization, plan: Plan) -> Invoice:
             "was": pending.target_plan_id, "now": plan.code})
 
     now = timezone.now()
-    bonus = bonus_days_for(organization, plan)
+    # Подарочные дни просит немедленная оплата НЕ НАЧАТОЙ пробы; счётчик берём
+    # у licensing, а его недоступность не должна лишать платящего подарка —
+    # тогда падаем в прежнее поведение (проба считается неначатой).
+    try:
+        reported = licensing.usage(organization.id).get("usage", {})
+    except licensing.LicensingError:
+        reported = {}
+    if not isinstance(reported, dict):
+        reported = {}
+    bonus = bonus_days_for(organization, plan, trial_has_been_used(reported))
     invoice = Invoice.objects.create(
         organization=organization,
         number=Invoice.next_number(),
