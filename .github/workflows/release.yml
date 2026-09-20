@@ -284,7 +284,7 @@ jobs:
               echo "::error::с ${previous} до ${GITHUB_REF_NAME} не изменился ни один файл образа — пустой релиз, номер солгал бы. Ничего не опубликовано."
               exit 1
             fi
-            echo "изменения образа с ${previous}:"; echo "${changed}" | sed 's/^/  /'
+            echo "изменения образа с ${previous}:"; printf '%s\n' "${changed}" | while IFS= read -r f; do echo "  ${f}"; done
           else
             echo "первый тег движка — сравнивать не с чем"
           fi
