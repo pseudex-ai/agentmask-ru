@@ -233,8 +233,12 @@ RUN apt-get update && apt-get upgrade -y \
 
 WORKDIR /app
 COPY --from=build /src/serve_main.dist/ /app/
-COPY entrypoint.sh /app/
-RUN chmod +x /app/entrypoint.sh /app/pseudex-serve
+# THE OPS CLI SHIPS AS SOURCE, ON PURPOSE. It is stdlib-only ops tooling
+# (`docker …` command builder, verdicts), not the engine, carries no beacon
+# word (P2b) and no `.py` suffix (P1); the customer takes it out with
+#   docker run --rm --entrypoint cat <image> /app/pseudexctl > pseudexctl
+COPY entrypoint.sh pseudexctl /app/
+RUN chmod +x /app/entrypoint.sh /app/pseudex-serve /app/pseudexctl
 
 # Same guarantee, re-checked on the RUNTIME layer because this is the image that
 # actually ships: no detection assets on disk, ever.

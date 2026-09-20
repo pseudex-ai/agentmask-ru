@@ -24,7 +24,7 @@
     <pre class="claude-prompt" data-copy="{{ claude_prompt }}">{{ claude_prompt }}</pre>
   </div>
 
-  <div class="label" style="margin:40px 0 -8px">ИЛИ РУКАМИ, ТРИ КОМАНДЫ</div>
+  <div class="label" style="margin:40px 0 -8px">ИЛИ РУКАМИ, ТРИ КОМАНДЫ — И ОДНА НА ПОТОМ</div>
   <div class="steps" style="margin-top:32px">
     <div>
       <div class="what"><div class="step">01</div><h3>Запустить</h3><div class="note">ключ подставлен · адрес провайдера — ваш</div></div>
@@ -51,6 +51,17 @@
 #   docker logs pseudex 2>&amp;1 | grep -A2 "ключ шлюза"
 # → {"protected_counts":{"NAME":1,"PHONE":1,…}}
 # пусто = трафик идёт мимо</pre>
+      <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
+    </div>
+    <div>
+      <div class="what"><div class="step">04</div><h3>Обновлять</h3><div class="note">одна команда, том и ключ остаются</div></div>
+      <pre data-copy="docker run --rm --entrypoint cat {{ image }} /app/pseudexctl > pseudexctl &amp;&amp; chmod +x pseudexctl &amp;&amp; ./pseudexctl upgrade">docker run --rm --entrypoint cat {{ image }} /app/pseudexctl \
+  > pseudexctl &amp;&amp; chmod +x pseudexctl
+./pseudexctl upgrade          # тот же тег, заново скачанный
+./pseudexctl upgrade --to 0.4 # следующий минор
+# контейнер сам скажет «доступна X» — в интерфейсе
+# и в ./pseudexctl doctor; старый образ никогда
+# молча не откроет том, который писал новый</pre>
       <button type="button" data-copy-btn>КОПИРОВАТЬ</button>
     </div>
   </div>

@@ -426,6 +426,183 @@ def check_dry_run_touches_nothing() -> None:
           "PSEUDEX_VAULT_KEY=" not in printed)
 
 
+# --- обновление (D-062) ---------------------------------------------------
+
+_SPEC = {
+    "Name": "/pseudex",
+    "Image": "sha256:old",
+    "Config": {
+        "Image": "cr.yandex/pseudex/pseudex:0.3",
+        "Env": ["PATH=/usr/bin", "PSEUDEX_ROLE=proxy", "PSEUDEX_LICENSE_KEY=ps_live_SECRET",
+                "PSEUDEX_UPSTREAM=https://api.openai.com/v1"],
+        "Labels": {},
+        "User": "10001",
+    },
+    "HostConfig": {
+        "PortBindings": {"8000/tcp": [{"HostIp": "", "HostPort": "8000"}],
+                         "8081/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8081"}]},
+        "RestartPolicy": {"Name": "unless-stopped", "MaximumRetryCount": 0},
+        "Memory": 2147483648, "NetworkMode": "default",
+        "Ulimits": [{"Name": "memlock", "Soft": -1, "Hard": -1}],
+    },
+    "Mounts": [{"Type": "volume", "Name": "pseudex-data", "Destination": "/data", "RW": True}],
+}
+
+
+class ScriptedRunner(FakeRunner):
+    """Ответы по ПЕРВЫМ словам команды, а не по порядку: `upgrade` делает
+    десяток вызовов, и тест, считающий их по позициям, ломался бы от любого
+    добавленного `docker inspect`. Содержимое `--env-file` читается в момент
+    вызова — файл удаляется сразу после."""
+
+    def __init__(self, replies: dict[str, tuple[int, str]], health: list[int]) -> None:
+        super().__init__()
+        self._replies = replies
+        self._health = list(health)
+        self.env_file_lines: list[str] = []
+
+    def docker(self, args, timeout: int = 600):
+        self.docker_calls.append(list(args))
+        if "--env-file" in args:
+            path = args[args.index("--env-file") + 1]
+            self.env_file_lines = Path(path).read_text(encoding="utf-8").splitlines()
+        for key, reply in self._replies.items():
+            if " ".join(args).startswith(key):
+                return reply
+        return 0, ""
+
+    def http(self, url, token, method="GET", timeout: int = 30):
+        self.http_calls.append((method, url))
+        if url.endswith("/health"):
+            return (self._health.pop(0) if self._health else 200), "{}"
+        return 200, "{}"
+
+
+def _upgrade_replies(**overrides) -> dict[str, tuple[int, str]]:
+    replies = {
+        "inspect pseudex": (0, json.dumps([_SPEC])),
+        "pull": (0, ""),
+        "image inspect --format {{.Id}}": (0, "sha256:new\n"),
+        "image inspect --format {{json .Config.Env}}": (0, '["PATH=/usr/bin"]\n'),
+        "run -d": (0, "cid\n"),
+    }
+    replies.update(overrides)
+    return replies
+
+
+def _verbs(runner: FakeRunner) -> list[str]:
+    """Каждый вызов docker одним словом: что он делал, а не как начинался."""
+    out = []
+    for call in runner.docker_calls:
+        if "PSEUDEX_ROLE=probe" in call:
+            out.append("probe")
+        elif "tar" in call:
+            out.append("tar")
+        elif call[:2] == ["run", "-d"]:
+            out.append("run")
+        elif call[0] == "image":
+            out.append("image inspect")
+        else:
+            out.append(call[0])
+    return out
+
+
+def check_upgrade() -> None:
+    """Порядок D-062 и обе ветки отката — без docker, по форме команд."""
+    pseudexctl.time.sleep = lambda _s: None  # health опрашивается без ожидания
+
+    # 1. Успех: pull → probe новым → stop → tar → rename → run → health → rm старого.
+    runner = ScriptedRunner(_upgrade_replies(), health=[200])
+    parsed = _real_parse(["upgrade", "--to", "0.4"])
+    code = parsed.run(parsed, runner)
+    verbs = _verbs(runner)
+    check("upgrade проходит в порядке D-062: pull, probe новым, stop, tar, rename, run, rm старого",
+          code == 0 and verbs == ["inspect", "pull", "image inspect", "probe", "stop", "tar",
+                                  "rename", "image inspect", "run", "rm"],
+          str(verbs))
+    probe = next(call for call in runner.docker_calls if "PSEUDEX_ROLE=probe" in call)
+    check("проба идёт НОВЫМ образом, том только на чтение, до остановки",
+          probe[-1] == "cr.yandex/pseudex/pseudex:0.4" and "pseudex-data:/data:ro" in probe
+          and verbs.index("probe") < verbs.index("stop"), " ".join(probe))
+    run = next(call for call in runner.docker_calls if call[:2] == ["run", "-d"])
+    joined = " ".join(run)
+    check("новый контейнер получает то же имя, порты, том, --restart, --memory, ulimit, user и целевой образ",
+          "--name pseudex" in joined and "-p 8000:8000" in joined and "-p 127.0.0.1:8081:8081" in joined
+          and "-v pseudex-data:/data" in joined and "--restart unless-stopped" in joined
+          and "--memory=2147483648" in joined and "--ulimit memlock=-1:-1" in joined
+          and "--user 10001" in joined and run[-1] == "cr.yandex/pseudex/pseudex:0.4", joined)
+    check("секреты не в argv: ключ лицензии едет через --env-file, а не -e NAME=VALUE",
+          "--env-file" in run and "ps_live_SECRET" not in joined
+          and "PSEUDEX_LICENSE_KEY=ps_live_SECRET" in runner.env_file_lines, str(runner.env_file_lines))
+    check("PATH образа не переносится — новый образ оставляет свой",
+          not any(line.startswith("PATH=") for line in runner.env_file_lines))
+    tar = next(call for call in runner.docker_calls if "tar" in call)
+    check("снимок тома снимается ДО переименования и с тома только на чтение",
+          "pseudex-data:/data:ro" in tar and verbs.index("tar") < verbs.index("rename"))
+    check("прежний контейнер удалён после health, не до",
+          runner.docker_calls[-1][:2] == ["rm", "pseudex-old-0.3"])
+
+    # 2. Тот же образ — ничего не трогается.
+    runner = ScriptedRunner(_upgrade_replies(**{"image inspect --format {{.Id}}": (0, "sha256:old\n")}), health=[])
+    code = parsed.run(parsed, runner)
+    check("тот же образ — «уже на этой версии», stop не вызывался",
+          code == 0 and "stop" not in _verbs(runner), str(_verbs(runner)))
+
+    # 3. compose — отказ с его же командой, до pull.
+    composed = json.loads(json.dumps(_SPEC)); composed["Config"]["Labels"] = {"com.docker.compose.project": "app"}
+    runner = ScriptedRunner(_upgrade_replies(**{"inspect pseudex": (0, json.dumps([composed]))}), health=[])
+    code = parsed.run(parsed, runner)
+    check("контейнер compose — отказ до pull, обновлять им же",
+          code == 2 and _verbs(runner) == ["inspect"], str(_verbs(runner)))
+
+    # 4. Том из будущего для нового образа — отмена до остановки.
+    runner = ScriptedRunner(_upgrade_replies(**{"run --network none --rm -e PSEUDEX_ROLE=probe": (2, "ТОМ НОВЕЕ ОБРАЗА")}), health=[])
+    code = parsed.run(parsed, runner)
+    check("проба новым образом отвечает 2 — отмена, stop не вызывался",
+          code == 1 and "stop" not in _verbs(runner), str(_verbs(runner)))
+
+    # 5. Нездоров, схема не двинулась — назад на старый контейнер.
+    runner = ScriptedRunner(_upgrade_replies(), health=[0, 0, 0])
+    pseudexctl._wait_healthy = lambda _r, _u, seconds=180: False
+    code = parsed.run(parsed, runner)
+    verbs = _verbs(runner)
+    check("нездоров и старый образ открывает том — новый снесён, старый переименован назад и запущен",
+          code == 1 and verbs[-3:] == ["rm", "rename", "start"]
+          and any(call[:2] == ["rm", "-f"] for call in runner.docker_calls)
+          and ["rename", "pseudex-old-0.3", "pseudex"] in runner.docker_calls, str(verbs))
+
+    # 6. Нездоров, схема поднята — старый образ отвечает 2: откат только снимком.
+    class MovedRunner(ScriptedRunner):
+        def docker(self, args, timeout: int = 600):
+            if "PSEUDEX_ROLE=probe" in args and args[-1] == "cr.yandex/pseudex/pseudex:0.3":
+                self.docker_calls.append(list(args))
+                return 2, "ТОМ НОВЕЕ ОБРАЗА"
+            return super().docker(args, timeout)
+
+    runner = MovedRunner(_upgrade_replies(), health=[])
+    import io, contextlib
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        code = parsed.run(parsed, runner)
+    verbs = _verbs(runner)
+    check("нездоров и схема поднята — start не вызывается, печатается restore со снимком",
+          code == 1 and "start" not in verbs and "pseudexctl restore pseudex-data.pre-0.3-0.4.tgz --yes" in err.getvalue()
+          and "docker rename pseudex-old-0.3 pseudex" in err.getvalue(), err.getvalue()[-300:])
+    pseudexctl._wait_healthy = _real_wait_healthy
+
+    # 7. --dry-run: только печать, ни одного файла окружения.
+    before = set(os.listdir(tempfile.gettempdir()))
+    done = subprocess.run([sys.executable, str(_PATH), "--dry-run", "upgrade", "--to", "0.4"],
+                          capture_output=True, text=True, timeout=120)
+    leftovers = {name for name in set(os.listdir(tempfile.gettempdir())) - before if name.startswith("pseudexctl-env-")}
+    check("--dry-run upgrade печатает план и не оставляет env-файла",
+          done.returncode == 0 and "docker run -d" in done.stderr and "docker pull" in done.stderr
+          and not leftovers, (done.stdout + done.stderr)[-300:])
+
+
+_real_wait_healthy = pseudexctl._wait_healthy
+
+
 def main() -> None:
     check_command_shapes()
     check_archive_commands()
@@ -434,6 +611,7 @@ def main() -> None:
     check_rekey_proof()
     check_doctor_verdicts()
     check_dry_run_touches_nothing()
+    check_upgrade()
     print()
     if FAILURES:
         print(f"FAILED: {len(FAILURES)} — {', '.join(FAILURES)}")
