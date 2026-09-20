@@ -407,7 +407,7 @@ any claim.
 **Status:** active
 **Context:** semantic-release keeps one tag stream by construction («get-tags.js», `git log` without pathspec); changesets needs «package.json» per component. release-please attributes a commit to a component by file path (`commit-split.ts`) and skips hidden types.
 **Decision:** manifest mode with packages `prototype` (component `engine`, tag `vX.Y.Z`, `exclude-paths: [prototype/licensing]`) and `prototype/licensing` + `storefront` + `deploy` (component `platform`, `tag-separator: "/"`, linked). No `"."` package — it receives every commit. `security`, `perf`, `build` visible (patch); «chore/ci/docs/refactor/test/research/bench» do not bump. While `0.x`, `feat` → patch; a new minor is opened only by `Release-As: 0.Y.0` (a minor is a support cycle and a branch). A release is the merge of a Release PR; the tag is created by CI and never by hand.
-**Alternative rejected:** hand-picked bump in `.github/workflows/ship.yml` (the number depended on memory of the schema); semantic-release; changesets.
+**Alternative rejected:** hand-picked bump in the former «ship.yml» (the number depended on memory of the schema); semantic-release; changesets.
 **Price:** a GitHub Action dependency — the CONVENTION (types, path attribution, «version.txt», tags) is tool-independent and reproducible by a 100-line script; shared files outside every path belong to nobody by design (`deploy/` is platform; `.github/` bumps nothing).
 **Related:** D-051 · D-060
 

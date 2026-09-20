@@ -71,7 +71,7 @@ GitHub Action открывает backport-PR в каждую живую ветк
 
 | компонент | пути | тег | образы | кто получает |
 |---|---|---|---|---|
-| `engine` | `prototype/` кроме `prototype/licensing/` | `vX.Y.Z` | `pseudex` | клиенты |
+| `engine` | `prototype/` кроме `licensing/`, `bench/`, `e2e/`; бампает только то, что в образе | `vX.Y.Z` | `pseudex` | клиенты |
 | `platform` | `prototype/licensing/`, `storefront/`, `deploy/` | `platform/vX.Y.Z` | `pseudex-licensing`, `pseudex-storefront`, `pseudex-backup`, `pseudex-supportbot` | наш хост, одним `compose up` |
 
 Граница проведена по получателю, а не по сервису: у клиента и у нас разные
@@ -105,12 +105,22 @@ GitHub Action открывает backport-PR в каждую живую ветк
 **Релиз = merge Release PR. Тег руками не создаётся.** Job `tag` в
 `release-please.yml` ждёт зелёные проверки коммита, создаёт тег и вызывает
 `release.yml` явно (`gh workflow run`): тег, созданный `GITHUB_TOKEN`, не
-запускает `tags:`-триггер — та же причина, что была у `ship.yml`. Ручной
+запускает `tags:`-триггер — та же причина, что была у прежнего «ship.yml». Ручной
 fallback: `gh workflow run release.yml --ref <tag> -f publish=true`.
 
-**Гейт «пустой релиз».** Publish-джоба движка красная, если `git diff --quiet
-<предыдущий v*> HEAD -- prototype ':!prototype/licensing'` пуст: номер солгал
-бы. Это и есть пин D-051.
+**«Изменился ли движок» решает набор файлов образа, а не путь пакета.**
+`exclude-paths` у release-please матчит только каталоги, а плоские скрипты в
+корне `prototype/` — тесты, генераторы, инструменты — под путём пакета, но в
+образ не попадают: `fix(test): …` на `test_loop.py` чеканил бы номер для тех
+же байтов. Поэтому набор файлов образа выводится из `COPY`-строк
+`Dockerfile.nuitka` (`deploy/shipped_paths.sh`) — одно определение на три слоя:
+
+1. `exclude-paths`: `prototype/licensing`, `prototype/bench`, `prototype/e2e`;
+2. `deploy/lint_engine_commits.sh` в `checks.yml`: коммит видимого типа,
+   тронувший `prototype/` и ничего из образа, — красный с подсказкой
+   «типизируйте как `test:`/`bench:`/`chore:`»;
+3. publish-джоба движка красная, если с прошлого тега `v*` в наборе образа не
+   изменился ни один файл: номер солгал бы. Это и есть пин D-051.
 
 ## 4. Версия движка — один источник (D-053)
 
@@ -298,8 +308,8 @@ Diun; для compose в git — Renovate с пином дайджеста.
 ## 9. План и что план не предусмотрел
 
 Этапы: 0 — прод (regexp identity с `(platform/)?`); 1 — мост `v0.3.15` старым
-`ship.yml` (настоящая версия + агент понимает `platform/v*`), затем тег-якорь
-`platform/v0.3.15`; 2 — release-please, split `release.yml`, реестр, `ship.yml`
+«ship.yml» (настоящая версия + агент понимает `platform/v*`), затем тег-якорь
+`platform/v0.3.15`; 2 — release-please, split `release.yml`, реестр, «ship.yml»
 удалён; 3 — сервер и витрина читают реестр (платформа, до этапа 4); 4 — лестница
 в клиенте (`v0.3.16`); 5 — схема тома (`0.4.0`, открывает `release/0.3`); 6 —
 `pseudexctl upgrade`; 7 — пол в CI, backport-action, правила проекта.

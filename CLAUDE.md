@@ -1032,6 +1032,8 @@ package imports `pseudex.bundle`, `pseudex.sqlite_setup`, `pseudex.metrics`.
 | `licensing/server.py` | 1 317 | `live` | the licensing server — the only component on our hardware: `POST /v1/lease` (seal to the process key, sign), `/v1/release`, `/v1/tripwire`, `/v1/meter`, `/v1/usage`; admin API on :9443 (instances, anomalies, issue/revoke/suspend/resume/replan/plans, fleet) |
 | `licensing/store.py` | 1 675 | `live` | licensing state: keys, leases, usage chains, anomalies. Schema MIGRATES before any index is built. |
 | `licensing/devserver.py` | 68 | `live` | runs the server locally exactly as in production (`basicConfig` for the root logger lives here — uvicorn does not configure it) |
+| `licensing/registry.py` | 470 | `live` | the versions registry as code (stdlib only): `validate` (schema, order, aliases, the 90-day rule, additive against the previous file), `record` (patch moves `latest`; a new minor opens a cycle and closes the previous one), `aliases_for`, `verdict` (the lease `version` block), `check` (the 426, never for a late `eol`), `Watch` (the server's mtime-reloaded view). CLI `python3 -m licensing.registry validate|record|aliases|verdict` |
+| `licensing/test_registry.py` | 170 | `live` | every promise of `docs/tz-release-and-versions.md` §5–6 as a check |
 | `licensing/verify.py` | 77 | `live` | is this copy of the licensing DB a WORKING database and how full is it (the restore drill asks this) |
 | `licensing/repair_usage.py` | 77 | `live` | one-off repair of `usage` rows written before input validation existed |
 | `licensing/test_admin_api.py` | 855 | `live` | attacks THROUGH HTTP, not around it: every admin action, auth, replay |
@@ -1248,6 +1250,10 @@ Docs: `docs/sprint-cabinet-and-pricing.md`, `docs/billing-integrity.md`,
 | `deploy/local.sh` | brings the stand up and PROVES it is up (a 401 from the admin port is proof of life) before printing the walkthrough |
 | `deploy/bootstrap.sh` | clean Ubuntu 24.04 → production host, one idempotent command |
 | `deploy/agent.sh` + `deploy/systemd/pseudex-agent.service`, `.timer` | the deploy the host performs ITSELF on a timer |
+| `deploy/releases.json` | the versions registry (D-054): `cycles[]` newest→oldest with `state`, `eoas`, `eol`, `eol_announced`, `latest{version,date,digest}`, `aliases`; `notices[]`. Written by `.github/workflows/release.yml` (`record`), edited by hand only for `eol`/`eol_announced`/`notices` through a PR; validated by `.github/workflows/checks.yml`; read by the licence server and the storefront through the copy the agent syncs (stage 3) |
+| `deploy/shipped_paths.sh` | the files that make up the customer image, derived from the `COPY` lines of `prototype/Dockerfile.nuitka` — the one definition both the commit lint and the «empty engine release» refusal read |
+| `deploy/lint_engine_commits.sh` | refuses a visible-type commit («feat/fix/security/perf/build/revert») that touches `prototype/` and nothing shipped: it would mint an engine version for an unchanged image. Runs in `.github/workflows/checks.yml` |
+| `deploy/version.txt`, `storefront/version.txt`, `prototype/licensing/version.txt` | the platform stream's version files (release-please `simple` strategy, linked as one component) — bumped by the Release PR, never by hand |
 | `deploy/test_agent.sh` | the agent's DECISIONS without docker: follows «platform/v*» only, compares «platform/v0.3.16» with `v0.3.15` by number (raw `sort -V` puts `p` before `v` and would refuse every release as a downgrade), refuses a real downgrade, refuses an identity that cannot match platform tags, waits when no platform tag exists. Runs in `.github/workflows/checks.yml` |
 | `deploy/watch.sh` | the watchdog: `docs/operations.md` §5 turned into a mechanism |
 | `deploy/backup.sh`, `deploy/restore-drill.sh` + `deploy/systemd/pseudex-restore-drill.service`, `.timer` | nightly backups of both databases; the weekly drill restores yesterday's and asks `licensing/verify.py` whether it is alive |
@@ -1274,8 +1280,8 @@ Docs: `docs/operations.md` (the operational spec), `research/2026-09-14-devops-a
 |---|---|---|
 | `.github/workflows/checks.yml` | every push, every PR | the engine suite without containers: `test_loop`, `test_tuning_lease_security`, `test_watermark`, `test_canary`, `test_clock_freeze`, `test_detok_security`, `test_tripwire`, `test_memory_hardening`, `vault_test`, `test_coverage_152fz`, `test_product`, `test_localui`, `test_hard_cases` (+ storefront jobs) |
 | `.github/workflows/gates.yml` | nightly 01:00 UTC + dispatch | `make_dirty` → `pack_gates` (both images) → `gates.py --image pseudex:compiled --skip-build`; on dispatch a subset via `ONLY` |
-| `.github/workflows/release.yml` | tag `v[0-9]*` | build and publish both images |
-| `.github/workflows/ship.yml` | manual, with `bump` | version bump + tag |
+| `.github/workflows/release.yml` | tags `v[0-9]*` and «platform/v[0-9]*» | one file, two streams (the cosign identity the host trusts is this file's name): engine — tag equals `prototype/version.txt`, the shipped set (`deploy/shipped_paths.sh`) changed since the previous engine tag or red, aliases from the registry, anonymous pull of every ref, digest signed, `chore(registry): pseudex X.Y.Z` committed to `main`; platform — four images, closed to anonymous, signed |
+| `.github/workflows/release-please.yml` | every push to `main`; dispatch from `.github/workflows/release.yml` | keeps one Release PR per stream (engine `vX.Y.Z`, platform «platform/vX.Y.Z»); on merge waits for green checks, creates the tag and GitHub Release, dispatches `.github/workflows/release.yml` explicitly (a GITHUB_TOKEN tag push fires no `tags:` trigger). Replaced the former «ship.yml» (D-052) |
 | `.github/workflows/uptime.yml` | every 10 min | is production answering |
 | `.github/workflows/backup-audit.yml` | daily 06:20 UTC | did last night's backup happen and is it readable |
 | `.github/zizmor.yml`, `.github/dependabot.yml` | — | workflow linting; dependency updates |
@@ -1290,6 +1296,7 @@ Docs: `docs/operations.md` (the operational spec), `research/2026-09-14-devops-a
 | `research/` | 50 documents — see INDEX.md |
 | `brand/` | `brand/README.md`, logo/landing/UI mock-ups as `brand/*.dc.html`, `brand/ad-images/`, `brand/uploads/`, `brand/support.js`, bot avatar |
 | `e2e-personas/` | `e2e-personas/REAL-LLM.md` (why personas call a live model; the key lives in `prototype/.env.local`), `e2e-personas/harness.py`, five personas (`e2e-personas/personas/`), findings by date (`e2e-personas/findings/`) — the 18.08.2026 run is what `test_persona_defects.py` pins |
+| `release-please-config.json`, `.release-please-manifest.json` | the two release streams (D-052): packages `prototype` (engine, `exclude-paths` licensing/bench/e2e) and `prototype/licensing` + `storefront` + `deploy` (platform, linked); NO root package; per-package `version.txt` |
 | `.trivyignore` | accepted CVE findings for the images |
 | `.claude/skills/`, `.claude/worktrees/` | project skills; agent worktrees hold STALE copies of `CLAUDE.md` |
 <!-- wiki:MAP:end -->
