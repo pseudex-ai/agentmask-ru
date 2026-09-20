@@ -398,9 +398,16 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     check("cabinet pages are not cached",
           "no-store" in cabinet.headers.get("Cache-Control", ""),
           cabinet.headers.get("Cache-Control", "missing"))
-    # The site's whole legal position in one assertion.
-    check("the cabinet states plainly that it holds no dialogues or values",
-          "нет ваших диалогов" in cabinet_body)
+    # THE SITE'S WHOLE LEGAL POSITION IN ONE ASSERTION — ON /architecture, ONCE
+    # (docs/spec.md §2.6.6). It used to sit at the end of the cabinet's
+    # invoices and say what the cabinet does NOT hold; the spec moved it to
+    # where the customer first thinks about it. So the cabinet must NOT repeat
+    # it, and the architecture page must state it plainly.
+    check("the cabinet no longer carries the «no dialogues» block (§2.6.6: it lives on /architecture)",
+          "ваших диалогов" not in cabinet_body)
+    architecture_body = client.get("/architecture").content.decode()
+    check("/architecture states plainly that our side holds no dialogues, tokens or values",
+          "не содержит ваших диалогов, токенов и значений" in architecture_body)
 
     # The full key must never be written to OUR storage. Django's session
     # backend is a table, so a key parked in the session would sit in a database
@@ -724,17 +731,28 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
           f"ватермарка {metered_next.requests_billable_at_period_end}")
 
     cabinet_page = client.get("/app/").content.decode()
-    check("the cabinet shows what is billed and what it is capped by",
-          "запросов к начислению" in cabinet_page
-          and "выдано ёмкости" in cabinet_page,
+    # §2.6.1: ОДНА сумма сверху и ОДНА полоса с отмеченным порогом остановки —
+    # не две полосы про разное и ноль сумм. §2.6.2: ОДНА строка рядом с
+    # числом («израсходовано X из Y»), остальное — под «?»: там и начисление по
+    # выданной ёмкости (отчёт контейнеров его только УМЕНЬШАЕТ — «отчёт — ваша
+    # защита» иначе остаётся обещанием), и ставка сверх, и потолок докупки.
+    check("the cabinet shows ONE sum on top and ONE usage line (§2.6.1, §2.6.2)",
+          "В ЭТОМ ПЕРИОДЕ" in cabinet_page and "₽" in cabinet_page
+          and "израсходовано" in cabinet_page
+          and cabinet_page.count('class="meter"') + cabinet_page.count('class="usebar"') == 1,
+          f"meters={cabinet_page.count('class=\"meter\"')} usebars={cabinet_page.count('class=\"usebar\"')}")
+    check("the cabinet says what is billed — the capacity WE issued — and that the report only lowers it (§2.6.2, under «?»)",
+          'class="qmark"' in cabinet_page
+          and "по ёмкости, которую выдали мы" in cabinet_page
+          and "уменьшает" in cabinet_page,
           "без обеих границ фраза «отчёт — ваша защита» остаётся обещанием")
     # ЗОНА И ЦЕНА ЗА ПЕРИОД: «вот включено, вот цена сверх, вот докуда докуп,
     # вот где стоп». Раньше кабинет показывал только полосу, и клиент узнавал о
     # потолке и ставке из счёта.
-    check("кабинет показывает зону, ставку сверх и глобальный потолок",
-          "ТАРИФ И ОБЪЁМ ЗА ПЕРИОД" in cabinet_page
-          and "сверх включённого" in cabinet_page
-          and "докупать можно до" in cabinet_page,
+    check("кабинет показывает включённое, ставку сверх, потолок докупки и порог остановки",
+          "сверх включённого" in cabinet_page
+          and "докупать можно до" in cabinet_page
+          and "остановка на" in cabinet_page,
           "нет блока зоны/цены — «цена/что получу/овердрафт» осталось обещанием")
 
     # ОТРАВЛЕННЫЙ ОТВЕТ НЕ ДЕЛАЕТ КЛИЕНТА ВЕЧНО БЕСПЛАТНЫМ. Отрицательное
