@@ -264,7 +264,7 @@ PSEUDEX_TG_CHAT=ЗАПОЛНИТЕ
 
 # Кому верить при проверке подписи образов. Без них агент не выкатит ничего.
 COSIGN_ISSUER_REGEXP=^https://token\.actions\.githubusercontent\.com$
-COSIGN_IDENTITY_REGEXP=^https://github\.com/Isk4R1oT/Obscura/\.github/workflows/release\.yml@refs/tags/(platform/)?v[0-9]+\.[0-9]+\.[0-9]+$
+COSIGN_IDENTITY_REGEXP='^https://github\.com/Isk4R1oT/Obscura/\.github/workflows/release\.yml@refs/tags/(platform/)?v[0-9]+\.[0-9]+\.[0-9]+$'
 
 # Бот поддержки — ОТДЕЛЬНЫЙ. Группа операторов — супергруппа, id вида -100…
 PSEUDEX_SUPPORT_BOT_TOKEN=ЗАПОЛНИТЕ
