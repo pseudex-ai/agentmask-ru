@@ -155,7 +155,12 @@ class LicenseStore:
                             ("ttl_seconds", "ttl_seconds INTEGER DEFAULT 0"),
                             ("released_at", "released_at REAL"),
                             ("released_by", "released_by TEXT"),
-                            ("engine_version", "engine_version TEXT DEFAULT ''")):
+                            ("engine_version", "engine_version TEXT DEFAULT ''"),
+                            # `lease_contract` — какой формы ответ клиент ЗАЯВИЛ,
+                            # что прочтёт (D-063). NULL — не заявил: движок до
+                            # 0.3.16 шлёт только `engine_version`. По этой
+                            # колонке видно, когда мост контракта 2 можно снять.
+                            ("lease_contract", "lease_contract INTEGER")):
             if column not in columns:
                 self._conn.execute(f"ALTER TABLE leases ADD COLUMN {ddl}")
         usage_columns = {row[1] for row in
@@ -397,14 +402,15 @@ class LicenseStore:
 
     def record_lease(self, lease_id: str, org_id: str, instance_id: str,
                      process_id: str, ttl_seconds: int, pubkey: str = "",
-                     engine_version: str = "") -> None:
+                     engine_version: str = "",
+                     lease_contract: int | None = None) -> None:
         with self._lock:
             self._conn.execute(
                 "INSERT OR REPLACE INTO leases "
                 "(lease_id, org_id, instance_id, process_id, pubkey, issued_at, "
-                "ttl_seconds, engine_version) VALUES (?,?,?,?,?,?,?,?)",
+                "ttl_seconds, engine_version, lease_contract) VALUES (?,?,?,?,?,?,?,?,?)",
                 (lease_id, org_id, instance_id, process_id, pubkey, time.time(),
-                 ttl_seconds, engine_version),
+                 ttl_seconds, engine_version, lease_contract),
             )
             self._conn.commit()
 
@@ -1369,14 +1375,16 @@ class LicenseStore:
         reported nothing useful ("1.0.0" is recorded as such)."""
         cutoff = time.time() - window_seconds
         rows = self._fetchall(
-            "SELECT COALESCE(engine_version, ''), COUNT(DISTINCT instance_id), "
-            "COUNT(DISTINCT org_id) FROM leases "
+            "SELECT COALESCE(engine_version, ''), lease_contract, "
+            "COUNT(DISTINCT instance_id), COUNT(DISTINCT org_id) FROM leases "
             "WHERE issued_at>=? AND released_at IS NULL "
-            "GROUP BY COALESCE(engine_version, '') ORDER BY 2 DESC",
+            "GROUP BY COALESCE(engine_version, ''), lease_contract ORDER BY 3 DESC",
             (cutoff,),
         )
-        return [{"engine_version": str(version), "instances": int(instances), "orgs": int(orgs)}
-                for version, instances, orgs in rows]
+        return [{"engine_version": str(version),
+                 "lease_contract": None if contract is None else int(contract),
+                 "instances": int(instances), "orgs": int(orgs)}
+                for version, contract, instances, orgs in rows]
 
     def release_instance(self, org_id: str, instance_id: str) -> bool:
         """Give a slot back before its window expires. Operator lever.
@@ -1500,7 +1508,8 @@ class LicenseStore:
 
     def lease_if_allowed(self, lease_id: str, org_id: str, plan: str,
                          instance_id: str, process_id: str, window_seconds: int,
-                         pubkey: str, engine_version: str = "") -> tuple[bool, str]:
+                         pubkey: str, engine_version: str = "",
+                         lease_contract: int | None = None) -> tuple[bool, str]:
         """Проверить потолок и занять слот В ОДНОЙ критической секции.
 
         ПОТОЛОК ДЕРЖАЛСЯ НА ТОМ, ЧТО КЛИЕНТЫ СТУЧАТСЯ ПО ОЧЕРЕДИ. `may_lease` и
@@ -1519,7 +1528,8 @@ class LicenseStore:
                 return False, why_not
             self.record_lease(lease_id, org_id, instance_id, process_id,
                               window_seconds, pubkey=pubkey,
-                              engine_version=engine_version)
+                              engine_version=engine_version,
+                              lease_contract=lease_contract)
             return True, ""
 
     def prune_leases(self, window_seconds: int) -> int:

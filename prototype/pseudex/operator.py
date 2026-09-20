@@ -185,6 +185,29 @@ def memory(snapshot: list[dict[str, object]] | None = None) -> dict[str, object]
     }
 
 
+def release_verdict(state) -> dict[str, object]:
+    """What the licensing server said about THIS version at the last lease
+    (D-055), for the operator's screen and `pseudexctl doctor`. `None` fields
+    mean the server said nothing — no registry yet, or a server older than the
+    engine — and the interface must render that as unknown, not as current.
+    Dates are unix seconds; the interface formats them."""
+    return {
+        "version": state.engine_version,
+        "running_latest": state.running_latest,
+        "latest": state.latest,
+        "latest_in_cycle": state.latest_in_cycle,
+        "min_supported": state.min_supported,
+        "deprecated_at": (None if state.deprecated_at is None
+                          else int(state.deprecated_at)),
+        "sunset_at": None if state.sunset_at is None else int(state.sunset_at),
+        "notice": state.notice,
+        # The one command every verdict ends in. Named here so the interface
+        # and the CLI print the same words as the server's own 426.
+        "upgrade": (None if state.latest is None
+                    else f"pseudexctl upgrade --to {'.'.join(state.latest.split('.')[:2])}"),
+    }
+
+
 def _period_start(period: str) -> float:
     """Start of a named period. Unknown values collapse to 14 days rather than
     raising: this comes off a query string, and a typo should narrow nothing."""
@@ -233,6 +256,7 @@ def build_router(audit, license_client, assets, detector_version: str,
                 "version": detector_version,
                 "assets_loaded": assets.is_loaded,
                 "bundle_version": state.bundle_version,
+                "release": release_verdict(state),
                 "processes": running,
                 # HERE AND NOT ONLY IN /diagnostics. The preflight refuses at
                 # START; this is the same arithmetic asked of a container that
@@ -493,6 +517,7 @@ def build_router(audit, license_client, assets, detector_version: str,
                                   else round(state.next_renewal_in_seconds)),
             "lease_id": state.lease_id,
             "bundle_version": state.bundle_version,
+            "release": release_verdict(state),
             "seconds_since_lease": (None if state.seconds_since_lease is None
                                     else round(state.seconds_since_lease)),
             "grace_left_s": (None if state.grace_left_seconds is None

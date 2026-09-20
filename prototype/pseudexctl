@@ -547,6 +547,12 @@ def cmd_doctor(args, runner: Runner) -> int:
     return 1 if broken else 0
 
 
+def _day(stamp: object) -> str:
+    """unix → ГГГГ-ММ-ДД, по UTC: дата снятия с поддержки — календарная, а не
+    момент, и часовой пояс оператора здесь только запутал бы."""
+    return time.strftime("%Y-%m-%d", time.gmtime(float(stamp)))
+
+
 def _read_status(body: str) -> list[tuple[str, str, str]]:
     """Вердикты по телу /status. Отдельно от `cmd_doctor`, потому что это
     единственная часть, которую можно проверить без docker и без движка."""
@@ -560,6 +566,36 @@ def _read_status(body: str) -> list[tuple[str, str, str]]:
     if not engine.get("assets_loaded", True):
         out.append((BAD, "словари детекции не загружены — /mask отвечает 503",
                     "нет бандла: это не «детекция похуже», это остановка"))
+
+    # ВЕРСИЯ — ПО ВЕРДИКТУ СЕРВЕРА, НЕ ПО ОЩУЩЕНИЮ (D-055). Одна строка в любом
+    # случае: «новейшая», «доступна X», или «сервер не сказал» — молчание
+    # сервера не значит «новейшая», и тишина тут была бы неверным диагнозом.
+    release = engine.get("release") or {}
+    version = release.get("version") or engine.get("version") or "?"
+    upgrade = release.get("upgrade") or "pseudexctl upgrade"
+    licence = data.get("license") or {}
+    if licence.get("code") == "unsupported_client":
+        out.append((BAD, f"движок {version} больше не обслуживается — сервер лицензий "
+                         "отказал в аренде (426)",
+                    f"{upgrade}" + (f" — минимальная {release['min_supported']}"
+                                    if release.get("min_supported") else "")))
+    elif release.get("deprecated_at"):
+        until = release.get("sunset_at")
+        out.append((WARN, f"движок {version} снят с поддержки"
+                          + (f", обслуживается до {_day(until)}" if until else ""),
+                    f"{upgrade} — после этой даты сервер лицензий откажет в аренде"))
+    elif release.get("running_latest") is False:
+        out.append((WARN, f"движок {version}, доступна {release.get('latest')}",
+                    upgrade))
+    elif release.get("running_latest") is True:
+        out.append((OK, f"движок {version} — новейшая", ""))
+    else:
+        out.append((WARN, f"движок {version} — сервер лицензий не сообщил, есть ли новее",
+                    "реестр версий ещё не доехал до сервера, или сервер старше движка"))
+    notice = release.get("notice") or {}
+    if notice.get("text"):
+        mark = BAD if notice.get("severity") == "critical" else WARN
+        out.append((mark, f"уведомление о версии: {notice['text']}", notice.get("url", "")))
 
     memory = engine.get("memory") or {}
     budget = memory.get("worker_mb_budget") or 0

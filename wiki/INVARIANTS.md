@@ -615,6 +615,30 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   leaves the literals in the constants blob where `grep -a` finds them; here the
   docstrings are the design record and the part most worth withholding. Pins:
   `e2e/pack_gates.py P2`.
+- **The version verdict rides UNDER the lease signature and is retracted by
+  absence** (D-055). Every top-level key of the lease response except `bundle`
+  and `signature` is signed, and the client verifies over what it received —
+  so a 0.3.14 engine accepts a `version` block it does not read, and a newer
+  one parses it ONCE into `LicenseStatus` (RFC 9745 `@unix`, RFC 8594
+  HTTP-date → unix seconds). A block missing from the next lease clears the
+  verdict and the notice; the server's silence is «неизвестно» on every
+  screen, never «новейшая». Pins: `licensing/test_admin_api.py` (ЛЕСТНИЦА
+  ВЕРСИЙ НА КЛИЕНТЕ), `test_pseudexctl`, `test_localui`.
+- **426 `unsupported_client` is a VERDICT outside grace, like 402/403** (D-056).
+  The server answers it only to a cycle whose `eol` passed AND was announced
+  ≥ 90 days ahead; the client treats it as terminal at renewal (assets
+  unloaded, `/mask` 503) and as a startup refusal with the upgrade remedy.
+  Deprecation before that changes nothing but the log and the banner (RFC
+  9745). Pins: `licensing/test_admin_api.py`, `test_pseudexctl`,
+  `test_localui_renders` (the banner in a real browser).
+- **A bundle format above `SUPPORTED_BUNDLE_FORMAT` is «обновите движок», not
+  «бандл повреждён»** (D-064). `bundle_format` is signed; a larger number is
+  `BundleFormatError` — grace on renewal (the leased bundle stays loaded,
+  because the mismatch is OUR deployment order), `bundle_format_unsupported`
+  at startup. The client declares `lease_contract` in every request and the
+  server records it beside the version, so «when can the contract-2 bridge
+  go» is a query, not a guess (D-063). Pins: `licensing/test_admin_api.py`,
+  `licensing/test_store_upgrade.py`.
 
 ## Billing
 

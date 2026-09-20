@@ -659,6 +659,11 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
         return JSONResponse({"error": error, "detail": detail}, status_code=status_code)
 
     engine_version = str(body.get("engine_version", ""))
+    # Что клиент ЗАЯВИЛ читать (D-063) — записывается, не исполняется: форму
+    # ответа по-прежнему выбирает наличие нонса, а заявление говорит, когда
+    # последний клиент контракта 2 ушёл и мост ниже можно снять.
+    declared_contract = body.get("lease_contract")
+    lease_contract = declared_contract if isinstance(declared_contract, int) else None
     # ЛЕСТНИЦА ВЕРСИЙ (D-055, D-056). 426 — вердикт, не сбой: клиент не берёт
     # его в grace, как 402/403. Отдаётся ТОЛЬКО когда цикл закрыт по реестру И
     # закрытие было объявлено за eol_notice_days: поздний `eol` логируется и
@@ -715,7 +720,8 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     lease_id = "ls_" + secrets.token_urlsafe(16)
     allowed, why_not = STORE.lease_if_allowed(
         lease_id, record.org_id, record.plan, instance_id, process_id,
-        _TTL_SECONDS, pubkey=recipient, engine_version=engine_version)
+        _TTL_SECONDS, pubkey=recipient, engine_version=engine_version,
+        lease_contract=lease_contract)
     if not allowed:
         _log.warning("lease refused for org=%s instance=%s: %s",
                      record.org_id, instance_id, why_not)
@@ -979,6 +985,18 @@ async def admin_instances(request: Request) -> JSONResponse:
                          "cooldown_seconds": STORE.RELEASE_COOLDOWN_SECONDS,
                          "releases_last_hour": STORE.releases_last_hour(org_id),
                          "instances": STORE.active_instances(org_id, _TTL_SECONDS)})
+
+
+def _instances_by_version(fleet: list[dict]) -> dict[str, int]:
+    """One bar per engine version. `fleet_versions` also splits by declared
+    contract; a dict comprehension over it would keep only the LAST row of a
+    version and the histogram would under-count exactly the version whose fleet
+    is mid-upgrade."""
+    bars: dict[str, int] = {}
+    for row in fleet:
+        label = str(row["engine_version"]) or "unknown"
+        bars[label] = bars.get(label, 0) + int(row["instances"])
+    return bars
 
 
 @admin_app.get("/admin/versions")
@@ -1310,8 +1328,7 @@ async def admin_metrics() -> PlainTextResponse:
         metrics_format.render("pseudex_instances_serving", fleet["instances_serving"],
                               "Containers holding a live lease"),
         metrics_format.series(
-            "pseudex_fleet_instances", {row["engine_version"] or "unknown": row["instances"]
-                                        for row in STORE.fleet_versions(_TTL_SECONDS)},
+            "pseudex_fleet_instances", _instances_by_version(STORE.fleet_versions(_TTL_SECONDS)),
             "Containers holding a live lease, by engine version — the histogram "
             "the minimum-supported floor is moved against", "engine_version"),
         metrics_format.render("pseudex_processes_serving", fleet["processes_serving"],

@@ -90,6 +90,17 @@ def main() -> int:
           f"{fleet}")
     check("active_instances называет версию инстанса",
           any(i.get("engine_version") == "0.3.16" for i in store.active_instances("acme", 86400 * 365 * 100)))
+    # ЗАЯВЛЕННЫЙ КОНТРАКТ (D-063): старый ряд — NULL (не заявлял), новый — то,
+    # что клиент назвал; гистограмма делит версию по контрактам, чтобы было
+    # видно, когда мост контракта 2 можно снять.
+    check("колонка lease_contract доехала миграцией", "lease_contract" in columns)
+    store.record_lease("l3", "acme", "i3", "p3", 3600, pubkey="k3", engine_version="0.3.16",
+                       lease_contract=3)
+    rows = store.fleet_versions(86400 * 365 * 100)
+    check("старый ряд — контракт NULL, новый — 3, и это две строки одной версии",
+          any(r["engine_version"] == "0.3.16" and r["lease_contract"] is None for r in rows)
+          and any(r["engine_version"] == "0.3.16" and r["lease_contract"] == 3 for r in rows),
+          f"{rows}")
 
     usage_columns = {row[1] for row in
                      store._conn.execute("PRAGMA table_info(usage)")}

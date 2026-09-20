@@ -63,6 +63,21 @@ function stamp(ts) {
   return new Date(ts * 1000).toLocaleString('ru-RU', { hour12: false });
 }
 
+function day(ts) {
+  if (!ts) return '—';
+  return new Date(ts * 1000).toLocaleDateString('ru-RU');
+}
+
+/* What the licensing server said about THIS version at the last lease
+ * (/status → engine.release). One line for the header and the licence card:
+ * «новейшая», «доступна X», or «неизвестно» when the server said nothing —
+ * never «новейшая» by default, because silence is not a verdict. */
+function releaseLine(release) {
+  if (!release || release.running_latest === null || release.running_latest === undefined) return null;
+  if (release.running_latest) return { cls: 'green', text: 'новейшая' };
+  return { cls: 'amber', text: `доступна ${release.latest}` };
+}
+
 function duration(seconds) {
   if (seconds === null || seconds === undefined) return '—';
   if (seconds < 60) return `${Math.round(seconds)} с`;
@@ -212,6 +227,13 @@ function bannerFor(status, engineDown) {
       text: 'Интерфейс не получает ответ от движка. Проверьте, что контейнер запущен, и пришлите нам вывод: docker logs pseudex --tail 200' };
   }
   const license = status?.license || {};
+  const release = status?.engine?.release || {};
+  /* 426 is a VERDICT on the version, not a payment or a network problem: the
+   * generic «лицензия истекла» text would send the operator to the invoice. */
+  if (license.state === 'expired' && license.code === 'unsupported_client') {
+    return { cls: 'bad', tag: 'ВЕРСИЯ БОЛЬШЕ НЕ ОБСЛУЖИВАЕТСЯ',
+      text: `Движок ${release.version || '—'} снят с поддержки по объявленному заранее сроку, и лицензионный сервер отказал в аренде. Обновитесь${release.min_supported ? ` до ${release.min_supported} или новее` : ''}: ${release.upgrade || 'pseudexctl upgrade'}. Том с данными сохраняется.` };
+  }
   if (license.state === 'expired') {
     return { cls: 'bad', tag: 'ЛИЦЕНЗИЯ ИСТЕКЛА',
       text: `Причина: ${license.code || 'аренда не продлевается'}. Новый трафик не маскируется и шлюз его не пропускает. Журнал и статистика остаются доступными — это ваши уже собранные данные.` };
@@ -219,6 +241,20 @@ function bannerFor(status, engineDown) {
   if (license.state === 'stale') {
     return { cls: 'warn', tag: 'АРЕНДА НЕ ПРОДЛЕВАЕТСЯ',
       text: `Последняя успешная аренда ${duration(license.seconds_since_lease)} назад. Осталось ${duration(license.grace_left_s)} grace, после чего маскирование остановится и шлюз начнёт блокировать запросы. Оплатите подписку или проверьте доступ к лицензионному серверу.` };
+  }
+  /* Deprecation changes nothing today (RFC 9745) — the banner says WHEN it
+   * will, and the one command. Retracted by absence: the server stops
+   * sending the date, the banner goes. */
+  if (release.deprecated_at && release.deprecated_at * 1000 <= Date.now()) {
+    return { cls: 'warn', tag: 'ВЕРСИЯ УСТАРЕВАЕТ',
+      text: `Движок ${release.version} снят с поддержки с ${day(release.deprecated_at)}${release.sunset_at ? ` и обслуживается до ${day(release.sunset_at)}` : ''}, после чего лицензионный сервер откажет в аренде. Обновитесь заранее: ${release.upgrade || 'pseudexctl upgrade'}. Том с данными сохраняется.` };
+  }
+  if (release.notice && release.notice.text) {
+    const severity = release.notice.severity === 'critical' ? 'bad' : release.notice.severity === 'info' ? 'info' : 'warn';
+    return { cls: severity, tag: 'УВЕДОМЛЕНИЕ О ВЕРСИИ',
+      /* The block is signed by our server, but a link is still only a link
+       * when it is one: an https URL, or nothing. */
+      text: html`${release.notice.text}${/^https:\/\//.test(release.notice.url || '') ? html` — <a href=${release.notice.url} target="_blank" rel="noopener">${release.notice.url}</a>` : ''}` };
   }
   if (status && !status.today.requests) {
     return { cls: 'info', tag: 'ТРАФИКА ЕЩЁ НЕ БЫЛО',
@@ -361,6 +397,8 @@ function Status({ status, engineDown, org, goSandbox, onBlocked }) {
             ['последняя аренда', license.seconds_since_lease === null ? '—' : `${duration(license.seconds_since_lease)} назад`, ''],
             ['версия бандла', engine.bundle_version || '—', ''],
             ['движок', engine.version || '—', ''],
+            ['версия', releaseLine(engine.release)?.text || 'неизвестно', releaseLine(engine.release)?.cls || ''],
+            ...(engine.release?.sunset_at ? [['обслуживается до', day(engine.release.sunset_at), 'amber']] : []),
           ].map(([key, value, tone]) => html`
             <div class="kv"><span class="k">${key}</span><span class=${`v ${tone}`}>${value}</span></div>`)}
         </div>
@@ -1434,7 +1472,7 @@ function App() {
                        ${orgs.map((name) => html`<option value=${name}>${name}</option>`)}
                      </select>`
               : html`<b>${org}</b>`}</span>
-            <span>движок <b>${engine.version || '—'}</b></span>
+            <span>движок <b>${engine.version || '—'}</b>${engine.release?.running_latest === false ? html` · <b class="amber">доступна ${engine.release.latest}</b>` : ''}</span>
             <span>бандл <b>${engine.bundle_version || '—'}</b></span>
           </div>
         </div>

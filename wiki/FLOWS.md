@@ -155,17 +155,22 @@ worker start (serve_main.py, role engine|proxy)
  ├─ hardening.harden_process()                  before ANY role touches tuning or vault
  ├─ LicenseClient(base_url, key, instance_id, ca_path, …)
  │    ProcessKey = bundle.generate_process_key()          X25519, IN MEMORY, per process
- │    POST /v1/lease {key, instance_id, pubkey, measure.build_measurement(), usage counters}
- │      server: store.lease_if_allowed + record_lease → pack.build_plaintext (bulk + TUNING + canary + fingerprint + watermark)
- │              → bundle.seal(to pubkey) → bundle.sign_lease (Ed25519) → nonce_wrap
+ │    POST /v1/lease {key, instance_id, pubkey, engine_version, lease_contract, measure.build_measurement(), usage counters}
+ │      server: registry.check(engine_version) → 426 unsupported_client ONLY past an eol announced ≥ 90 d ahead
+ │              store.lease_if_allowed + record_lease(engine_version, lease_contract) → pack.build_plaintext (bulk + TUNING + canary + fingerprint + watermark)
+ │              → bundle.seal(to pubkey) → payload["bundle_format"], payload["version"] = registry.verdict(...) → bundle.sign_lease (Ed25519) → nonce_wrap
  │    client:   bundle.verify_lease(compiled-in LICENSE_PUBKEY from pseudex/_release.py)
+ │              → bundle_format ≤ SUPPORTED_BUNDLE_FORMAT else BundleFormatError («обновите движок»)
  │              → bundle.open_sealed(process key) → assets.load(plaintext)   every regex compiled ONCE
+ │              → _parse_verdict(lease["version"]) → LicenseStatus; _report_verdict(): INFO «есть новее» once per
+ │                version, WARN every renewal after deprecated_at, notice once per id; absent block → verdict cleared
  │
  ├─ renewal loop every TTL // 3
  │    POST /v1/lease again (counters ride on it); /v1/usage between renewals when needed
  │    OK          → state LEASED (STATE_LEASED = "active"), _last_ok_monotonic stamped
  │    5xx/timeout/DNS (OUR outage) → grace: STALE (serve, warn) while monotonic elapsed ≤ TTL + grace
  │    402 / 403 (unpaid, revoked)  → NOT an outage: EXPIRED at once, slow re-ask
+ │    426 (unsupported_client)     → the same: a VERDICT on the version, outside grace (D-056)
  │    wall-clock ceiling: if the wall says past TTL + grace + skew while monotonic looks fresh → EXPIRED
  │                        (a frozen clock fails CLOSED — pentest W2, test_clock_freeze)
  │
