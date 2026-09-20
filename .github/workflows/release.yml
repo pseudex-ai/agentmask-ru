@@ -429,7 +429,7 @@ jobs:
           set -eu
           # Пустой DOCKER_CONFIG = аноним. `docker logout` снял бы учётку, а
           # следующий шаг (`cosign sign`) ею пушит подпись в этот же реестр.
-          export DOCKER_CONFIG="$(mktemp -d)"
+          DOCKER_CONFIG="$(mktemp -d)"; export DOCKER_CONFIG
           if [ "${STREAM}" != "platform" ]; then
             for tag in "${VERSION}" ${ENGINE_ALIASES:-}; do
               if ! docker manifest inspect "${REGISTRY}/${IMAGE}:${tag}" >/dev/null 2>&1; then
