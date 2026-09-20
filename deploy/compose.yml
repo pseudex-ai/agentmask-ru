@@ -176,7 +176,14 @@ services:
       PSEUDEX_LICENSING_ADMIN_URL: http://license:9443
       # Витрине — только меньший токен. Полный ей не нужен и лежать у неё не должен.
       PSEUDEX_LICENSE_STOREFRONT_TOKEN: ${PSEUDEX_LICENSE_STOREFRONT_TOKEN:?set PSEUDEX_LICENSE_STOREFRONT_TOKEN}
-      PSEUDEX_DOCKER_IMAGE: ${CUSTOMER_IMAGE:-cr.yandex/pseudex/pseudex:1.0.0}
+      # ОБРАЗ, КОТОРЫЙ САЙТ ПОКАЗЫВАЕТ КЛИЕНТУ, ВЫВОДИТСЯ ИЗ ВЫКАТКИ, А НЕ
+      # ЗАДАЁТСЯ ОТДЕЛЬНО. Раньше здесь была своя переменная со значением
+      # `…:1.0.0`, которую задали один раз, а агент при каждом релизе обновлял
+      # только VERSION — и сайт полгода советовал тег, которого в реестре нет:
+      # клиент получал `manifest unknown` на первом же шаге. Найдено 20.09.2026,
+      # когда публичный бенчмарк попытался скачать образ читательским путём.
+      # CUSTOMER_IMAGE оставлен только как ручной override для нештатного случая.
+      PSEUDEX_DOCKER_IMAGE: ${CUSTOMER_IMAGE:-${REGISTRY:-cr.yandex/pseudex}/pseudex:${VERSION:?set VERSION}}
       # ИМЯ БОТА ПОДДЕРЖКИ ВИТРИНЕ НЕ ПЕРЕДАВАЛОСЬ, и сайт говорил
       # «Поддержка — на почте», хотя бот работал: `SUPPORT_BOT` брался из
       # окружения, а в него попадал только ТОКЕН, и то сервису бота. Одна

@@ -349,6 +349,34 @@ jobs:
             echo "pushed ${REF}"
           done
 
+      - name: the customer can pull the customer image, and ONLY it
+        # КЛИЕНТ СКАЧИВАЕТ ОБРАЗ БЕЗ ЛОГИНА. Сайт даёт ему `docker run …` с
+        # адресом образа и ключом лицензии — шага `docker login` там нет и не
+        # будет. Реестр при этом закрыт, и открыт публично один репозиторий:
+        # `${IMAGE}`. Ни один тест этого не проверял — персоны и гейты собирают
+        # образ локально — и 20.09.2026 обнаружилось, что клиент получал
+        # `unauthorized`, а сайт при этом советовал тег, которого в реестре нет.
+        # Здесь проверяется ОБЕ стороны: выпущенный тег виден анониму, а четыре
+        # серверных образа — нет. Второе важнее первого: один клик в консоли
+        # на уровне реестра открыл бы сервер лицензий вместе со словарями.
+        run: |
+          set -eu
+          # Пустой DOCKER_CONFIG = аноним. `docker logout` снял бы учётку, а
+          # следующий шаг (`cosign sign`) ею пушит подпись в этот же реестр.
+          export DOCKER_CONFIG="$(mktemp -d)"
+          if ! docker manifest inspect "${REGISTRY}/${IMAGE}:${VERSION}" >/dev/null 2>&1; then
+            echo "::error::${REGISTRY}/${IMAGE}:${VERSION} не скачивается без логина — клиент не запустит контейнер (репозиторию ${IMAGE} нужна роль container-registry.images.puller для allUsers)"
+            exit 1
+          fi
+          echo "anonymous pull ok: ${REGISTRY}/${IMAGE}:${VERSION}"
+          for name in pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot; do
+            if docker manifest inspect "${REGISTRY}/${name}:${VERSION}" >/dev/null 2>&1; then
+              echo "::error::${REGISTRY}/${name}:${VERSION} ОТКРЫТ анониму — серверный образ должен быть закрыт"
+              exit 1
+            fi
+            echo "closed to anonymous: ${name}"
+          done
+
       - name: sign the digests
         # ПОДПИСЬ ПОСЛЕ СКАНА, А НЕ ДО НЕГО. Подписанный образ агент считает
         # доказанным и выкатывает, поэтому подписать раньше проверки значило бы

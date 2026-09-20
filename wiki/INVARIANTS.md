@@ -726,6 +726,23 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   the OOM killer (status 137 names neither memory nor us). Pins: `test_preflight`.
 - **uvicorn does not configure the root logger.** The licensing server had no
   operational log; `basicConfig` lives in `licensing/devserver.py`. UNPINNED.
+- **The customer image pulls WITHOUT a login, and ONLY the customer image
+  does.** The site hands out `docker run …` with the image path and a licence
+  key — there is no `docker login` step and there must not be. The registry is
+  private; exactly one repository, `pseudex`, carries `allUsers` →
+  `container-registry.images.puller`. The four server images (licensing — with
+  the leased dictionaries and tuning inside — storefront, backup, supportbot)
+  stay closed. Found 2026-09-20: nothing pulled the image as a customer (personas
+  and gates build it locally), customers got `unauthorized`. UNPINNED by any
+  test script — the registry is not reachable from one; enforced on every
+  release by the `.github/workflows/release.yml` step «the customer can pull the
+  customer image, and ONLY it» (anonymous `DOCKER_CONFIG`, both directions).
+- **The image tag the site advertises is DERIVED from the deployed VERSION,
+  never set by hand.** `CUSTOMER_IMAGE=…:1.0.0` was set once and never
+  updated while the agent bumped `VERSION` on every release; the site advertised
+  a tag the registry did not hold. `deploy/compose.yml` now derives
+  `PSEUDEX_DOCKER_IMAGE` from `REGISTRY`/`VERSION`; `CUSTOMER_IMAGE` is a manual
+  override only. UNPINNED (the storefront cannot reach the registry from a test).
 
 ## Instruments
 
