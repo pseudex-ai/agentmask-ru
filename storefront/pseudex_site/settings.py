@@ -331,7 +331,16 @@ SELLER = {
     "phone": _env("PSEUDEX_SELLER_PHONE", ""),
 }
 
-DOCKER_IMAGE = _env("PSEUDEX_DOCKER_IMAGE", "cr.yandex/pseudex/pseudex:1.0.0")
+# ОБРАЗ, КОТОРЫЙ САЙТ СОВЕТУЕТ КЛИЕНТУ, — ИЗ РЕЕСТРА ВЕРСИЙ (D-061). Репозиторий
+# образа — здесь; ТЕГ — плавающий минор новейшего цикла из deploy/releases.json,
+# копию которого агент выкатки кладёт рядом (PSEUDEX_RELEASES_FILE). Клиент на
+# `pseudex:0.3` получает патчи одним `docker pull`, а шаг на минор остаётся
+# осознанным. Раньше тег стоял руками (`…:1.0.0`, которого в реестре не было),
+# потом выводился из VERSION платформы — и оба раза врал. PSEUDEX_DOCKER_IMAGE
+# остаётся только как ручной override: задан — показывается как есть.
+DOCKER_IMAGE_REPO = _env("PSEUDEX_DOCKER_REPO", "cr.yandex/pseudex/pseudex")
+RELEASES_FILE = _env("PSEUDEX_RELEASES_FILE", "")
+DOCKER_IMAGE = _env("PSEUDEX_DOCKER_IMAGE", "")
 
 # Адрес сервера лицензий, который витрина ПОКАЗЫВАЕТ в команде запуска. Пусто —
 # значит образ возьмёт своё боевое умолчание и лишняя переменная в команде не

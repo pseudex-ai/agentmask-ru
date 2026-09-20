@@ -851,5 +851,140 @@ check("всё, что грузит сервер, есть в COPY образа",
       f"грузится {sorted(_loaded) or 'НИЧЕГО — проба не запустилась'}, "
       f"не скопировано: {sorted(_loaded - _copied) or 'ничего'}")
 
+
+# ── РЕЕСТР ВЕРСИЙ В АРЕНДЕ (D-054…D-056, D-064) ───────────────────────────────
+# Блок `version` едет ПОД подписью; развёрнутые движки 0.3.14 проверяют подпись
+# по тому, что получили, — значит принимают его и игнорируют. 426 — вердикт,
+# и только для закрытия, объявленного вовремя. Всё это против настоящего
+# сервера, а реестр — файл, который подменяется на диске, как это делает агент.
+print("\nРЕЕСТР ВЕРСИЙ В АРЕНДЕ")
+import datetime as _dt  # noqa: E402
+import json as _json  # noqa: E402
+from licensing import registry as _registry  # noqa: E402
+
+_reg_dir = tempfile.mkdtemp(prefix="pseudex-registry-")
+_reg_path = os.path.join(_reg_dir, "releases.json")
+_today = _dt.datetime.now(_dt.timezone.utc).date()
+_digest = "sha256:" + "c" * 64
+
+
+def _registry_doc(*, old_eol: str | None, old_announced: str | None) -> dict:
+    return {
+        "product": "pseudex", "schema": 1, "updated_at": "2026-09-20T00:00:00Z",
+        "support": {"maintenance_months": 6, "eol_notice_days": 90},
+        "cycles": [
+            {"cycle": "0.4", "state": "current", "release_date": "2026-10-05",
+             "eoas": None, "eol": None, "eol_announced": None,
+             "latest": {"version": "0.4.2", "date": "2026-10-20", "digest": _digest},
+             "aliases": ["0.4", "0", "latest"]},
+            {"cycle": "0.3", "state": "eol" if old_eol and _dt.date.fromisoformat(old_eol) <= _today else "maintenance",
+             "release_date": "2026-09-14", "eoas": "2026-10-05",
+             "eol": old_eol, "eol_announced": old_announced,
+             "latest": {"version": "0.3.17", "date": "2026-10-12", "digest": _digest},
+             "aliases": ["0.3"]},
+        ],
+        "notices": [{"id": "n-1", "severity": "warning", "applies_to": ">=0.3.0 <0.3.17",
+                     "text": "обновитесь", "url": "https://pseudex.ru/advisories/n-1"}],
+    }
+
+
+def _lease_for(engine_version: str, *, with_nonce: bool = False) -> httpx.Response:
+    key = server.STORE.issue_key(f"reg-{engine_version}-{with_nonce}", "start")
+    body = {"key": key, "instance_id": "i", "pubkey": generate_process_key().public,
+            "engine_version": engine_version}
+    if with_nonce:
+        body["nonce"] = "n" * 32
+    return httpx.post(f"{_base}/v1/lease", timeout=60, json=body)
+
+
+def _signature_holds(lease: dict) -> bool:
+    try:
+        verify_lease(lease, decode_public_key(server.PUBLIC_KEY))
+        return True
+    except BundleError:
+        return False
+
+
+# 1. без реестра: блока нет, bundle_format есть, подпись сходится
+server.REGISTRY = _registry.Watch("")
+no_reg = _lease_for("0.3.14").json()
+check("без реестра аренда идёт без блока version, но с bundle_format, и подпись сходится",
+      "version" not in no_reg and no_reg.get("bundle_format") == server.BUNDLE_FORMAT
+      and _signature_holds(no_reg), f"keys={sorted(k for k in no_reg if k != 'bundle')}")
+
+# 2. реестр есть; запрос в форме 0.3.14 (без nonce = контракт 2) → блок под подписью
+_registry.dump(_registry_doc(old_eol=None, old_announced=None), _reg_path)
+server.REGISTRY = _registry.Watch(_reg_path)
+old_shape = _lease_for("0.3.14").json()
+check("запрос в форме 0.3.14 получает подписанный блок version и проверяет его подпись",
+      _signature_holds(old_shape) and old_shape.get("version", {}).get("latest") == "0.4.2"
+      and old_shape["version"]["latest_in_cycle"] == "0.3.17"
+      and old_shape["version"]["running_latest"] is False
+      and old_shape["version"]["notice"]["id"] == "n-1",
+      _json.dumps(old_shape.get("version"), ensure_ascii=False))
+
+# 3. «1.0.0» — то, что говорил каждый образ до D-053 — старейший цикл, без отказа
+legacy = _lease_for("1.0.0")
+check("1.0.0 читается как старейший цикл и обслуживается",
+      legacy.status_code == 200 and legacy.json()["version"]["latest_in_cycle"] == "0.3.17")
+
+# 4. новейшая версия — running_latest, без дат
+newest = _lease_for("0.4.2", with_nonce=True).json()
+check("новейшая версия — running_latest и без deprecated/sunset",
+      newest["version"]["running_latest"] is True and newest["version"]["deprecated_at"] is None
+      and newest["version"]["sunset_at"] is None and newest["version"]["notice"] is None)
+
+# 5. eol вчера, объявлен 100 дней назад → 426 unsupported_client с командой
+_registry.dump(_registry_doc(old_eol=(_today - _dt.timedelta(days=1)).isoformat(),
+                             old_announced=(_today - _dt.timedelta(days=100)).isoformat()), _reg_path)
+refused = _lease_for("0.3.15")
+check("после объявленного вовремя eol сервер отвечает 426 unsupported_client с min_supported и командой",
+      refused.status_code == 426 and refused.json().get("error") == "unsupported_client"
+      and refused.json().get("min_supported") == "0.4.2"
+      and "pseudexctl upgrade --to 0.4" in refused.json().get("detail", ""),
+      f"{refused.status_code} {refused.json()}")
+served_new = _lease_for("0.4.2", with_nonce=True)
+check("новейшая версия обслуживается, пока старый цикл закрыт", served_new.status_code == 200)
+
+# 6. eol вчера, объявлен 10 дней назад → реестр НЕ ПРОХОДИТ валидацию при
+#    загрузке, и сервер игнорирует его целиком: аренда выдана, блока нет, пола
+#    нет, причина — в логе и в /admin/versions. Поздний eol не принуждается
+#    никогда — даже ценой блока «есть новее» для всех, пока файл не починят.
+_registry.dump(_registry_doc(old_eol=(_today - _dt.timedelta(days=1)).isoformat(),
+                             old_announced=(_today - _dt.timedelta(days=10)).isoformat()), _reg_path)
+late = _lease_for("0.3.15")
+late_status = admin.get("/admin/versions", headers=ADMIN).json()["registry"]
+check("eol, объявленный поздно, НЕ принуждается: реестр отвергнут целиком, аренда выдана без блока",
+      late.status_code == 200 and "version" not in late.json()
+      and late_status["loaded"] is False and "90 days" in (late_status["error"] or ""),
+      f"{late.status_code} registry={late_status}")
+
+# 8. метрика флота по версиям
+metrics_text = admin.get("/admin/metrics", headers=ADMIN).text
+check("метрика pseudex_fleet_instances{engine_version} есть",
+      'pseudex_fleet_instances{engine_version="0.4.2"}' in metrics_text)
+
+# 9. подмена файла на диске видна следующей аренде без рестарта
+_registry.dump(_registry_doc(old_eol=None, old_announced=None), _reg_path)
+reopened = _lease_for("0.3.15")
+check("замена файла реестра видна следующей аренде без рестарта",
+      reopened.status_code == 200 and reopened.json()["version"]["sunset_at"] is None)
+
+# 7 (после восстановления файла). /admin/versions — флот по версиям и циклы реестра
+versions = admin.get("/admin/versions", headers=ADMIN).json()
+seen = {row["engine_version"] for row in versions["fleet"]}
+check("/admin/versions показывает флот по версиям и реестр",
+      versions["registry"]["loaded"] is True and {"0.3.14", "1.0.0", "0.4.2"} <= seen
+      and versions["registry"]["latest"] == "0.4.2",
+      f"fleet={sorted(seen)} registry={versions['registry']}")
+check("/admin/versions закрыт витрине",
+      admin.get("/admin/versions", headers={"Authorization": "Bearer test-shop"}).status_code == 403)
+
+# 10. битый файл → блока нет, аренда идёт, подпись сходится
+Path(_reg_path).write_text("{broken", encoding="utf-8")
+broken = _lease_for("0.3.15").json()
+check("битый реестр — аренда без блока version, не отказ", "version" not in broken and _signature_holds(broken))
+server.REGISTRY = _registry.Watch("")
+
 print(f"\nсломано {len(fails)}")
 raise SystemExit(1 if fails else 0)

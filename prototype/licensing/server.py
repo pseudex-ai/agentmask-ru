@@ -14,6 +14,7 @@ routes are not mounted in the public app at all.
 """
 
 import asyncio
+import datetime as dt
 import hashlib
 import json
 import logging
@@ -33,6 +34,7 @@ from functools import lru_cache
 from licensing.pack import build_plaintext
 from licensing.watermark import watermark_for
 from licensing.canary import enabled as _attribution_active
+from licensing import registry
 from licensing.store import (
     STATUS_ACTIVE,
     STATUS_REVOKED,
@@ -49,7 +51,18 @@ _log = logging.getLogger("licensing.server")
 _DB = os.environ.get("PSEUDEX_LICENSE_DB", "license.db")
 _TTL_SECONDS = int(os.environ.get("PSEUDEX_LEASE_TTL_SECONDS", "86400"))
 _GRACE_SECONDS = int(os.environ.get("PSEUDEX_GRACE_SECONDS", "172800"))
-_MIN_ENGINE = os.environ.get("PSEUDEX_MIN_ENGINE_VERSION", "")
+# РЕЕСТР ВЕРСИЙ ВМЕСТО PSEUDEX_MIN_ENGINE_VERSION (D-054, D-056). Пол
+# минимальной версии — не переменная окружения, которую кто-то однажды
+# выставит, а `eol` цикла в deploy/releases.json: файл проходит ревью и CI,
+# и сервер сам отказывается принуждать закрытие, объявленное поздно. Путь
+# пустой — реестра нет: аренда без блока `version`, пола нет, лог один раз.
+_RELEASES_FILE = os.environ.get("PSEUDEX_RELEASES_FILE", "")
+REGISTRY = registry.Watch(_RELEASES_FILE)
+_registry_warned: set[str] = set()
+# ФОРМАТ БАНДЛА (D-064): целое число, которое клиент сверяет со своим
+# максимумом. Старый движок, получив новый формат, говорит «обновите движок»,
+# а не «бандл повреждён». 2 — секционный фрейм (`bundle.frame_payload`).
+BUNDLE_FORMAT = 2
 
 # ДРЕЙФ БАНДЛА — ГЛАВНЫЙ ДОЛГОВЕЧНЫЙ РЫЧАГ ПРОТИВ ПИРАТСТВА, и он держится на
 # одном неравенстве: захваченный plaintext-бандл обслуживает не дольше TTL+grace,
@@ -295,6 +308,9 @@ ADMIN_ACTIONS: tuple[AdminAction, ...] = (
     AdminAction("/admin/resume", "POST", True),
     AdminAction("/admin/release", "POST", True),
     AdminAction("/admin/instances", "GET", True),
+    # ФЛОТ ПО ВЕРСИЯМ — оператору: сводка по всему парку, условие движения
+    # пола минимальной версии (D-056).
+    AdminAction("/admin/versions", "GET", False),
     AdminAction("/admin/usage", "GET", True),
     # АНОМАЛИИ — ОПЕРАТОРУ, не витрине: это сводка по ВСЕМУ флоту, называющая
     # подозрительные (молчащие/делящие ключ) организации ПОИМЁННО — тот же класс,
@@ -400,6 +416,10 @@ async def pubkey() -> dict[str, str]:
     """The verification key, so a customer can pin what their binary already has
     compiled in. Public by design — it verifies, it does not sign."""
     return {"public_key": PUBLIC_KEY, "lease_contract": str(LEASE_CONTRACT)}
+
+
+def _today() -> "dt.date":
+    return dt.datetime.now(dt.timezone.utc).date()
 
 
 def _version_tuple(version: str) -> tuple[int, ...]:
@@ -639,12 +659,29 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
         return JSONResponse({"error": error, "detail": detail}, status_code=status_code)
 
     engine_version = str(body.get("engine_version", ""))
-    if _MIN_ENGINE and _version_tuple(engine_version) < _version_tuple(_MIN_ENGINE):
-        return JSONResponse(
-            {"error": "engine_incompatible",
-             "detail": f"engine {engine_version} is below the required {_MIN_ENGINE}"},
-            status_code=409,
-        )
+    # ЛЕСТНИЦА ВЕРСИЙ (D-055, D-056). 426 — вердикт, не сбой: клиент не берёт
+    # его в grace, как 402/403. Отдаётся ТОЛЬКО когда цикл закрыт по реестру И
+    # закрытие было объявлено за eol_notice_days: поздний `eol` логируется и
+    # обслуживается — Docker 29.0 поднял пол быстрее флота и откатил в 29.3.
+    registry_doc = REGISTRY.doc(_today())
+    if registry_doc is None:
+        if REGISTRY.error and REGISTRY.error not in _registry_warned:
+            _registry_warned.add(REGISTRY.error)
+            _log.warning("versions registry unavailable — no version block, no floor: %s", REGISTRY.error)
+    else:
+        refusal = registry.check(registry_doc, engine_version, _today())
+        if refusal is not None and refusal.get("late"):
+            key = f"late:{refusal['cycle']}:{refusal['eol']}"
+            if key not in _registry_warned:
+                _registry_warned.add(key)
+                _log.warning("registry closes cycle %s on %s without %s days of notice "
+                             "(announced %s) — NOT enforcing; serving engine %s",
+                             refusal["cycle"], refusal["eol"], registry_doc["support"]["eol_notice_days"],
+                             refusal.get("eol_announced"), engine_version)
+        elif refusal is not None:
+            _log.warning("lease refused for org=%s instance=%s: engine %s is past end of life",
+                         record.org_id, body.get("instance_id", ""), engine_version)
+            return JSONResponse(refusal, status_code=426)
 
     recipient = body.get("pubkey")
     if not isinstance(recipient, str) or not recipient:
@@ -678,7 +715,7 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     lease_id = "ls_" + secrets.token_urlsafe(16)
     allowed, why_not = STORE.lease_if_allowed(
         lease_id, record.org_id, record.plan, instance_id, process_id,
-        _TTL_SECONDS, pubkey=recipient)
+        _TTL_SECONDS, pubkey=recipient, engine_version=engine_version)
     if not allowed:
         _log.warning("lease refused for org=%s instance=%s: %s",
                      record.org_id, instance_id, why_not)
@@ -766,6 +803,14 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
         # считается по старой, завышающей схеме. Никого не бьёт, пока тариф
         # фиксированный, и исчезает вместе с последним старым образом.
         STORE.record_grant(record.org_id, recipient, STORE.grant_size(record.plan))
+    # ПОД ПОДПИСЬЮ, КАК ВСЁ ОСТАЛЬНОЕ. `sign_lease` покрывает каждый верхне-
+    # уровневый ключ, кроме `bundle` и `signature`, а клиент проверяет подпись
+    # по тому, что получил, — поэтому новые поля совместимы с развёрнутыми
+    # движками: они их проверят и проигнорируют. Без реестра блока нет — и
+    # старый клиент, и новый читают его как «нечего сказать».
+    payload["bundle_format"] = BUNDLE_FORMAT
+    if registry_doc is not None:
+        payload["version"] = registry.verdict(registry_doc, engine_version, _today())
     payload["report_secret_sha256"] = hashlib.sha256(report_secret).hexdigest()
     payload["signature"] = sign_lease(payload, SIGNING_KEY)
 
@@ -934,6 +979,29 @@ async def admin_instances(request: Request) -> JSONResponse:
                          "cooldown_seconds": STORE.RELEASE_COOLDOWN_SECONDS,
                          "releases_last_hour": STORE.releases_last_hour(org_id),
                          "instances": STORE.active_instances(org_id, _TTL_SECONDS)})
+
+
+@admin_app.get("/admin/versions")
+async def admin_versions() -> JSONResponse:
+    """The fleet by engine version, and what the registry says about each
+    cycle — the two things the floor is moved against (D-056)."""
+    doc = REGISTRY.doc(_today())
+    cycles = []
+    if doc is not None:
+        for cycle in doc["cycles"]:
+            cycles.append({"cycle": cycle["cycle"], "state": cycle["state"],
+                           "latest": cycle["latest"]["version"],
+                           "eoas": cycle.get("eoas"), "eol": cycle.get("eol"),
+                           "eol_announced": cycle.get("eol_announced")})
+    return JSONResponse({
+        "window_seconds": _TTL_SECONDS,
+        "registry": {"path": REGISTRY.path, "loaded": doc is not None, "error": REGISTRY.error,
+                     "updated_at": doc.get("updated_at") if doc else None,
+                     "floor": registry.floor(doc, _today()) if doc else None,
+                     "latest": doc["cycles"][0]["latest"]["version"] if doc else None},
+        "cycles": cycles,
+        "fleet": STORE.fleet_versions(_TTL_SECONDS),
+    })
 
 
 @admin_app.get("/admin/tripwire")
@@ -1241,6 +1309,11 @@ async def admin_metrics() -> PlainTextResponse:
                               "Organisations holding a live lease"),
         metrics_format.render("pseudex_instances_serving", fleet["instances_serving"],
                               "Containers holding a live lease"),
+        metrics_format.series(
+            "pseudex_fleet_instances", {row["engine_version"] or "unknown": row["instances"]
+                                        for row in STORE.fleet_versions(_TTL_SECONDS)},
+            "Containers holding a live lease, by engine version — the histogram "
+            "the minimum-supported floor is moved against", "engine_version"),
         metrics_format.render("pseudex_processes_serving", fleet["processes_serving"],
                               "Worker processes holding a live lease"),
         metrics_format.render("pseudex_fleet_requests_total", fleet["requests"],

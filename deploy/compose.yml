@@ -84,8 +84,14 @@ services:
       PSEUDEX_RESERVE_SECONDS: ${PSEUDEX_RESERVE_SECONDS:-172800}
       PSEUDEX_LICENSE_ADMIN_TOKEN: ${PSEUDEX_LICENSE_ADMIN_TOKEN:?set PSEUDEX_LICENSE_ADMIN_TOKEN}
       PSEUDEX_LICENSE_STOREFRONT_TOKEN: ${PSEUDEX_LICENSE_STOREFRONT_TOKEN:?set PSEUDEX_LICENSE_STOREFRONT_TOKEN}
+      # РЕЕСТР ВЕРСИЙ (D-054): что выпущено и что поддерживается. Агент кладёт
+      # проверенную копию deploy/releases.json в deploy/.registry/ каждый тик;
+      # сервер перечитывает по mtime. Монтируется КАТАЛОГ, не файл: агент
+      # подменяет файл атомарно через mv, а bind одного файла держит старый inode.
+      PSEUDEX_RELEASES_FILE: /registry/releases.json
     volumes:
       - license-data:/data
+      - ./.registry:/registry:ro
     healthcheck:
       # STDLIB ONLY. The image has no `httpx` — the previous probe raised
       # ModuleNotFoundError on every tick and the server was «unhealthy» for
@@ -183,7 +189,15 @@ services:
       # клиент получал `manifest unknown` на первом же шаге. Найдено 20.09.2026,
       # когда публичный бенчмарк попытался скачать образ читательским путём.
       # CUSTOMER_IMAGE оставлен только как ручной override для нештатного случая.
-      PSEUDEX_DOCKER_IMAGE: ${CUSTOMER_IMAGE:-${REGISTRY:-cr.yandex/pseudex}/pseudex:${VERSION:?set VERSION}}
+      # ОБРАЗ ДЛЯ КЛИЕНТА — ИЗ РЕЕСТРА ВЕРСИЙ, А НЕ ИЗ ПЕРЕМЕННОЙ (D-061).
+      # Сайт советует плавающий минор `pseudex:X.Y` новейшего цикла из того же
+      # файла, по которому сервер лицензий судит о версиях, — двум местам не
+      # с чего разойтись. Раньше тег выводился из VERSION платформы, а ещё
+      # раньше стоял руками (`…:1.0.0`, которого в реестре не было).
+      # CUSTOMER_IMAGE — только ручной override на нештатный случай.
+      PSEUDEX_DOCKER_REPO: ${REGISTRY:-cr.yandex/pseudex}/pseudex
+      PSEUDEX_RELEASES_FILE: /registry/releases.json
+      PSEUDEX_DOCKER_IMAGE: ${CUSTOMER_IMAGE:-}
       # ИМЯ БОТА ПОДДЕРЖКИ ВИТРИНЕ НЕ ПЕРЕДАВАЛОСЬ, и сайт говорил
       # «Поддержка — на почте», хотя бот работал: `SUPPORT_BOT` брался из
       # окружения, а в него попадал только ТОКЕН, и то сервису бота. Одна
@@ -237,6 +251,8 @@ services:
       PSEUDEX_YOOKASSA_SHOP_ID: ${PSEUDEX_YOOKASSA_SHOP_ID:-}
       PSEUDEX_YOOKASSA_SECRET_KEY: ${PSEUDEX_YOOKASSA_SECRET_KEY:-}
       PSEUDEX_ACQUIRING_ENABLED: ${PSEUDEX_ACQUIRING_ENABLED:-0}
+    volumes:
+      - ./.registry:/registry:ro
     healthcheck:
       # Витрина была единственным сервисом на пути клиента без проверки: Django,
       # уронивший себя миграцией, отвечал бы `running` бесконечно, а агент

@@ -226,6 +226,9 @@ install -m 0644 "${TARGET}/deploy/fail2ban/pseudex-web-scan.conf" /etc/fail2ban/
 install -m 0644 "${TARGET}/deploy/fail2ban/pseudex-web-login.conf" /etc/fail2ban/filter.d/
 install -m 0644 "${TARGET}/deploy/fail2ban/jail.conf" /etc/fail2ban/jail.d/pseudex.conf
 mkdir -p "${TARGET}/deploy/logs/caddy" && touch "${TARGET}/deploy/logs/caddy/access.log"
+# Копия реестра версий, которую кладёт агент (sync_registry) и монтируют
+# сервер лицензий и витрина. Каталог должен существовать до первого `up`.
+mkdir -p "${TARGET}/deploy/.registry"
 mkdir -p /etc/systemd/system/fail2ban.service.d
 printf '[Unit]\nAfter=docker.service\n' > /etc/systemd/system/fail2ban.service.d/after-docker.conf
 systemctl daemon-reload

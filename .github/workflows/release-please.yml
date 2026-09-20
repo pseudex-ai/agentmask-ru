@@ -26,8 +26,7 @@ name: release-please
 on:
   push:
     branches: [main]
-  # Явный вызов из release.yml после коммита реестра: push токеном GITHUB_TOKEN
-  # триггер `push` не поднимает, а платформенный Release PR нужен сразу.
+  # Ручной запуск, когда нужно пересчитать Release PR без нового push.
   workflow_dispatch:
 
 permissions: {}

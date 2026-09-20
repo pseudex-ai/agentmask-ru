@@ -744,7 +744,10 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   and every platform release would read as a downgrade of the last old-scheme
   tag `.deployed` remembers), refuses an identity regexp that cannot match
   `refs/tags/platform/v…` in words before any signature check, and waits when no
-  platform tag exists. Pins: `deploy/test_agent.sh`.
+  platform tag exists. It also syncs the versions registry every tick from
+  «origin/main» — accepted only after `cosign verify` of the newest cycle's
+  digest with the image identity; an unparseable file or an unsigned digest
+  never replaces the last good copy, and says so. Pins: `deploy/test_agent.sh`.
 - **The engine is versioned only when the engine changed** (D-051, D-052). A
   commit is attributed to a stream by the files it touches; the engine's
   shipped set is derived from the `COPY` lines of `prototype/Dockerfile.nuitka`
@@ -770,12 +773,13 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   `pseudexctl doctor`. It used to be `ENGINE_VERSION = "1.0.0"` in code, on every
   image ever shipped. Pins: `test_localui` (`/status` equals the file);
   `.github/workflows/release.yml` publish is red when the tag differs from the file.
-- **The image tag the site advertises is DERIVED from the deployed VERSION,
-  never set by hand.** `CUSTOMER_IMAGE=…:1.0.0` was set once and never
-  updated while the agent bumped `VERSION` on every release; the site advertised
-  a tag the registry did not hold. `deploy/compose.yml` now derives
-  `PSEUDEX_DOCKER_IMAGE` from `REGISTRY`/`VERSION`; `CUSTOMER_IMAGE` is a manual
-  override only. UNPINNED (the storefront cannot reach the registry from a test).
+- **The image tag the site advertises comes from the versions registry, never
+  from a hand-set variable** (D-061). `engine_release.current_image()` returns
+  the floating minor of the newest cycle in the copy the agent synced; `latest`
+  when there is no file; `PSEUDEX_DOCKER_IMAGE` only as an explicit override.
+  `CUSTOMER_IMAGE=…:1.0.0` set once by hand advertised a tag the registry did
+  not hold; deriving it from the platform `VERSION` would have advertised a
+  platform number. Pins: `storefront/test_engine_release.py`.
 
 ## Instruments
 

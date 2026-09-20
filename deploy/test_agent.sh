@@ -28,8 +28,16 @@ cp "$AGENT" "$REPO/deploy/agent.sh"
 cat > "$REPO/deploy/compose.yml" <<'EOF'
 services: {}
 EOF
-git -C "$REPO" init -q
-git -C "$REPO" -c user.name=t -c user.email=t@t commit -q --allow-empty -m "one"
+git -C "$REPO" init -q -b main
+cat > "$REPO/deploy/releases.json" <<'EOF'
+{"product":"pseudex","schema":1,"updated_at":"2026-09-20T00:00:00Z",
+ "support":{"maintenance_months":6,"eol_notice_days":90},
+ "cycles":[{"cycle":"0.3","state":"current","release_date":"2026-09-14","eoas":null,"eol":null,"eol_announced":null,
+   "latest":{"version":"0.3.15","date":"2026-09-22","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+   "aliases":["0.3","0","latest"]}],"notices":[]}
+EOF
+git -C "$REPO" add deploy/releases.json
+git -C "$REPO" -c user.name=t -c user.email=t@t commit -q -m "one"
 git -C "$REPO" tag v0.3.15
 git -C "$REPO" tag platform/v0.3.15
 git -C "$REPO" -c user.name=t -c user.email=t@t commit -q --allow-empty -m "two"
@@ -58,7 +66,14 @@ cat > "$BIN/flock" <<'EOF'
 #!/bin/sh
 exit 0
 EOF
-chmod +x "$BIN/docker" "$BIN/flock" "$REPO/deploy/notify.sh"
+# cosign: verifies when COSIGN_SHIM_OK=1, fails otherwise — the registry sync
+# must accept the file only on a verified digest.
+cat > "$BIN/cosign" <<'EOF'
+#!/bin/sh
+[ "${COSIGN_SHIM_OK:-0}" = 1 ] && exit 0
+exit 1
+EOF
+chmod +x "$BIN/docker" "$BIN/flock" "$BIN/cosign" "$REPO/deploy/notify.sh"
 
 # `git fetch --tags` needs an origin; point it at the repo itself.
 git -C "$REPO" remote add origin "$REPO"
@@ -70,6 +85,7 @@ run_agent() {  # $1 = .deployed content ('' for none), $2 = identity regexp
     set +e
     PATH="$BIN:$PATH" PSEUDEX_AGENT_STATE="$STATE" PSEUDEX_AGENT_LOCK="$WORK/lock" \
         COSIGN_ISSUER_REGEXP='^https://token$' COSIGN_IDENTITY_REGEXP="$2" \
+        COSIGN_SHIM_OK="${COSIGN_SHIM_OK:-1}" \
         sh "$REPO/deploy/agent.sh" > "$WORK/out" 2>&1
     RC=$?
     set -e
@@ -111,6 +127,26 @@ expect "откат назад отменён" 1 "откат назад"
 # 4. Identity anchored on the old scheme only → refused in words, before verify
 run_agent "v0.3.15" "$OLD"
 expect "identity без platform отвергнута" 1 "не принимает platform/v-теги"
+
+# 6. The registry: accepted only on a verified digest, kept otherwise
+rm -rf "$REPO/deploy/.registry"
+COSIGN_SHIM_OK=0 run_agent "platform/v0.3.16" "$GOOD"
+[ -f "$REPO/deploy/.registry/releases.json" ] && { echo "FAIL registry: accepted an unverified digest"; exit 1; }
+grep -q "дайджест новейшей версии не подписан" "$NOTIFY_LOG" || { echo "FAIL registry: no crit on unverified digest"; cat "$NOTIFY_LOG"; exit 1; }
+echo "OK   реестр с неподписанным дайджестом не принят, тревога отправлена"
+COSIGN_SHIM_OK=1 run_agent "platform/v0.3.16" "$GOOD"
+[ -f "$REPO/deploy/.registry/releases.json" ] || { echo "FAIL registry: not synced on a verified digest"; cat "$WORK/out"; exit 1; }
+grep -q "реестр версий обновлён" "$WORK/out" || { echo "FAIL registry: no sync line"; cat "$WORK/out"; exit 1; }
+echo "OK   реестр принят после cosign verify"
+COSIGN_SHIM_OK=1 run_agent "platform/v0.3.16" "$GOOD"
+grep -q "реестр версий обновлён" "$WORK/out" && { echo "FAIL registry: re-synced an unchanged file"; exit 1; }
+echo "OK   неизменённый реестр не подменяется"
+printf '{broken' > "$WORK/broken.json"; cp "$WORK/broken.json" "$REPO/deploy/releases.json"
+git -C "$REPO" -c user.name=t -c user.email=t@t commit -q -am "break registry"
+COSIGN_SHIM_OK=1 run_agent "platform/v0.3.16" "$GOOD"
+grep -q "файл не разбирается" "$NOTIFY_LOG" || { echo "FAIL registry: broken file not reported"; cat "$NOTIFY_LOG"; exit 1; }
+python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$REPO/deploy/.registry/releases.json" || { echo "FAIL registry: the live copy was replaced by a broken file"; exit 1; }
+echo "OK   битый реестр не подменяет прежнюю копию"
 
 # 5. No platform tag at all → wait, touch nothing
 git -C "$REPO" tag -d platform/v0.3.15 platform/v0.3.16 >/dev/null

@@ -143,8 +143,19 @@ class LicenseStore:
                    self._conn.execute("PRAGMA table_info(leases)")}
         if "pubkey" not in columns:
             self._conn.execute("ALTER TABLE leases ADD COLUMN pubkey TEXT")
-        for column, ddl in (("released_at", "released_at REAL"),
-                            ("released_by", "released_by TEXT")):
+        # `engine_version` — какой движок арендовал (D-056): без неё пол
+        # минимальной версии двигался бы вслепую, а «кто ещё на 0.3»
+        # отвечалось бы только по логам. Старые ряды остаются пустой строкой.
+        # `process_id` и `ttl_seconds` — колонки, которых не было в самой первой
+        # схеме (`expires_at` вместо TTL). Проверка колонок их не искала, а
+        # запись аренды на таком томе падала «no column named process_id» —
+        # нашлось, когда test_store_upgrade впервые ЗАПИСАЛ аренду, а не только
+        # посмотрел на PRAGMA table_info.
+        for column, ddl in (("process_id", "process_id TEXT DEFAULT ''"),
+                            ("ttl_seconds", "ttl_seconds INTEGER DEFAULT 0"),
+                            ("released_at", "released_at REAL"),
+                            ("released_by", "released_by TEXT"),
+                            ("engine_version", "engine_version TEXT DEFAULT ''")):
             if column not in columns:
                 self._conn.execute(f"ALTER TABLE leases ADD COLUMN {ddl}")
         usage_columns = {row[1] for row in
@@ -385,14 +396,15 @@ class LicenseStore:
         return cursor.rowcount
 
     def record_lease(self, lease_id: str, org_id: str, instance_id: str,
-                     process_id: str, ttl_seconds: int, pubkey: str = "") -> None:
+                     process_id: str, ttl_seconds: int, pubkey: str = "",
+                     engine_version: str = "") -> None:
         with self._lock:
             self._conn.execute(
                 "INSERT OR REPLACE INTO leases "
                 "(lease_id, org_id, instance_id, process_id, pubkey, issued_at, "
-                "ttl_seconds) VALUES (?,?,?,?,?,?,?)",
+                "ttl_seconds, engine_version) VALUES (?,?,?,?,?,?,?,?)",
                 (lease_id, org_id, instance_id, process_id, pubkey, time.time(),
-                 ttl_seconds),
+                 ttl_seconds, engine_version),
             )
             self._conn.commit()
 
@@ -1325,13 +1337,14 @@ class LicenseStore:
             # активен. `MAX(released_at)` в одиночку показывал бы обслуживающий
             # инстанс «остывающим» в ту же секунду, как остановился любой из его
             # воркеров, — ровно то враньё оператору, которое эта функция чинит.
-            "SUM(CASE WHEN released_at IS NULL THEN 1 ELSE 0 END) "
+            "SUM(CASE WHEN released_at IS NULL THEN 1 ELSE 0 END), "
+            "MAX(COALESCE(engine_version, '')) "
             "FROM leases WHERE org_id=? AND issued_at>=? GROUP BY instance_id "
             "ORDER BY MAX(issued_at) DESC",
             (org_id, cutoff),
         )
         listed = []
-        for instance_id, last_lease, released_at, live_workers in rows:
+        for instance_id, last_lease, released_at, live_workers, engine_version in rows:
             # ЧТО ВИДИТ ПОДДЕРЖКА, ТО И ПРИМЕНЯЕТСЯ. Слот, освобождённый и ещё
             # остывающий, — не «активный» и не «свободный»; без третьего
             # состояния разговор с клиентом снова становится про контейнер,
@@ -1344,8 +1357,26 @@ class LicenseStore:
             listed.append({"instance_id": instance_id,
                            "last_lease": float(last_lease),
                            "state": "cooling" if cooling else "active",
-                           "free_at": free_at if cooling else None})
+                           "free_at": free_at if cooling else None,
+                           "engine_version": str(engine_version or "")})
         return listed
+
+    def fleet_versions(self, window_seconds: int) -> list[dict]:
+        """The fleet by engine version: how many live instances and organisations
+        run each one, within the lease window (D-056). This is the number the
+        floor is moved against — a cycle is closed when nobody is on it, not
+        when the calendar says so. An empty string is a pre-D-053 image that
+        reported nothing useful ("1.0.0" is recorded as such)."""
+        cutoff = time.time() - window_seconds
+        rows = self._fetchall(
+            "SELECT COALESCE(engine_version, ''), COUNT(DISTINCT instance_id), "
+            "COUNT(DISTINCT org_id) FROM leases "
+            "WHERE issued_at>=? AND released_at IS NULL "
+            "GROUP BY COALESCE(engine_version, '') ORDER BY 2 DESC",
+            (cutoff,),
+        )
+        return [{"engine_version": str(version), "instances": int(instances), "orgs": int(orgs)}
+                for version, instances, orgs in rows]
 
     def release_instance(self, org_id: str, instance_id: str) -> bool:
         """Give a slot back before its window expires. Operator lever.
@@ -1469,7 +1500,7 @@ class LicenseStore:
 
     def lease_if_allowed(self, lease_id: str, org_id: str, plan: str,
                          instance_id: str, process_id: str, window_seconds: int,
-                         pubkey: str) -> tuple[bool, str]:
+                         pubkey: str, engine_version: str = "") -> tuple[bool, str]:
         """Проверить потолок и занять слот В ОДНОЙ критической секции.
 
         ПОТОЛОК ДЕРЖАЛСЯ НА ТОМ, ЧТО КЛИЕНТЫ СТУЧАТСЯ ПО ОЧЕРЕДИ. `may_lease` и
@@ -1487,7 +1518,8 @@ class LicenseStore:
             if not allowed:
                 return False, why_not
             self.record_lease(lease_id, org_id, instance_id, process_id,
-                              window_seconds, pubkey=pubkey)
+                              window_seconds, pubkey=pubkey,
+                              engine_version=engine_version)
             return True, ""
 
     def prune_leases(self, window_seconds: int) -> int:
