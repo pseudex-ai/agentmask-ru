@@ -373,7 +373,7 @@ jobs:
           set -eu
           # Пустой DOCKER_CONFIG = аноним. `docker logout` снял бы учётку, а
           # следующий шаг (`cosign sign`) ею пушит подпись в этот же реестр.
-          export DOCKER_CONFIG="$(mktemp -d)"
+          DOCKER_CONFIG="$(mktemp -d)"; export DOCKER_CONFIG
           if ! docker manifest inspect "${REGISTRY}/${IMAGE}:${VERSION}" >/dev/null 2>&1; then
             echo "::error::${REGISTRY}/${IMAGE}:${VERSION} не скачивается без логина — клиент не запустит контейнер (репозиторию ${IMAGE} нужна роль container-registry.images.puller для allUsers)"
             exit 1
