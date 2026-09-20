@@ -212,7 +212,20 @@ source tree ──► Dockerfile          → pseudex:source    (.py, writes pse
 gates   e2e/gates.py L1–L22 (stand from deploy/compose.local.yml; builds pseudex:source)
         e2e/pack_gates.py P1–P11 (both images; P3 = e2e/parity.py on dirty.json — REFUSES before the build without it)
         e2e/audit_gates.py — the gate over the gates (negative atom ⇒ positive atom over the same source)
-CI      .github/workflows/checks.yml on every push; gates.yml nightly; release.yml on tag v*; ship.yml bumps
+CI      .github/workflows/checks.yml on every push (incl. deploy/lint_engine_commits.sh, registry validate);
+        gates.yml nightly; release-please.yml on push to main keeps one Release PR per stream and,
+        on merge, tags + dispatches release.yml (tags v* = engine, platform/v* = platform)
+
+Two streams (docs/tz-release-and-versions.md, D-051…D-054):
+  commit touches prototype/pseudex/… ─► release-please: Release PR «engine X.Y.Z»
+    merge ─► tag vX.Y.Z ─► release.yml: tests → gates → publish(engine):
+      version.txt == tag · shipped set changed since previous v* (deploy/shipped_paths.sh)
+      · pseudex:X.Y.Z + aliases (licensing.registry aliases) · anonymous pull · cosign digest
+      · licensing.registry record → commit «chore(registry): pseudex X.Y.Z» on main
+        ─► release-please: Release PR «platform …» ─► merge ─► platform/vX.Y.Z
+  commit touches storefront/ | deploy/ | prototype/licensing/ ─► Release PR «platform X.Y.Z»
+    merge ─► tag platform/vX.Y.Z ─► release.yml publish(platform): four images, closed to
+    anonymous, signed ─► deploy/agent.sh (platform/v* only) verifies, pulls by digest, up -d
 keys    deploy/make-release-keys.sh — public half compiled in, private on the server; a new pair = full rebuild
 ```
 

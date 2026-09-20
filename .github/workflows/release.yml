@@ -9,7 +9,7 @@ name: release
 
 on:
   push:
-    tags: ["v[0-9]*"]
+    tags: ["v[0-9]*", "platform/v[0-9]*"]
   workflow_dispatch:
     inputs:
       publish:
@@ -86,6 +86,18 @@ jobs:
       # waiting for; on every push it is a gate people learn to re-run.
       - name: cache, audit dedup and loop responsiveness
         run: python test_perf_masking.py
+      # THE SERVER'S OWN TESTS RUN ON A RELEASE TOO. They ran only in checks.yml,
+      # and a platform release is the one that ships the server: the registry
+      # of versions (the floor below which a customer's container stops masking),
+      # the admin API, the upgrade of an existing licensing database.
+      - name: versions registry — every promise of the ТЗ
+        run: python -m licensing.test_registry
+      - name: licensing store upgrades on existing data
+        run: python -m licensing.test_store_upgrade
+      - name: licensing admin API through HTTP
+        run: python licensing/test_admin_api.py
+      - name: metering attacks
+        run: python licensing/test_metering_attacks.py
 
   storefront:
     name: storefront
@@ -202,62 +214,92 @@ jobs:
     name: sign and push
     runs-on: ubuntu-latest
     needs: [gates, storefront]
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/platform/v') || inputs.publish
     permissions:
       id-token: write   # keyless signing
-      contents: read
+      contents: write   # ТОЛЬКО ради коммита реестра версий (поток движка, шаг ниже);
+                        # сборочные джобы выше держат read, и это не меняется
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with: { persist-credentials: false }
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          fetch-tags: true
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with: { name: pseudex-compiled, path: /tmp }
       - run: docker load < /tmp/pseudex-compiled.tar.gz
 
       - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
 
-      - name: log in
-        # СЕКРЕТ — ЧЕРЕЗ ОКРУЖЕНИЕ, НЕ ЧЕРЕЗ ПОДСТАНОВКУ В СТРОКУ. Пароль
-        # реестра Яндекса — JSON авторизованного ключа, с кавычками внутри;
-        # `echo "${{ secrets.… }}"` разрывался на первой из них, docker получал
-        # ПУСТОЙ stdin и падал с «Cannot perform an interactive login from a
-        # non TTY device» — сообщение, по которому причину не найти. Первый
-        # прогон с зелёными гейтами упал ровно здесь.
-        #
-        # ХОСТ, А НЕ ПУТЬ: `docker login` принимает сервер, а REGISTRY несёт
-        # ещё и id реестра.
-        env:
-          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
-          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+      # ДВА ПОТОКА, ОДИН ФАЙЛ (D-051). `vX.Y.Z` — движок клиенту, один образ
+      # `pseudex` плюс плавающие алиасы и запись в реестр версий. `platform/vX.Y.Z`
+      # — четыре наших образа, которые хост выкатывает одним `compose up`.
+      # Ручной dispatch с ветки — «dev»: все пять под коротким SHA, без алиасов и
+      # без реестра. Один файл, а не два, потому что identity подписи, которой
+      # верит агент на хосте, — это ИМЯ ЭТОГО ФАЙЛА и тег: два файла означали
+      # бы две identity в deploy/.env, и одна из них рано или поздно отстала бы.
+      - name: which stream, which version
         run: |
           set -eu
-          [ -n "${REGISTRY_PASSWORD}" ] || { echo "::error::REGISTRY_PASSWORD пуст"; exit 1; }
-          printf '%s' "${REGISTRY_PASSWORD}" | docker login "${REGISTRY%%/*}" -u "${REGISTRY_USERNAME}" --password-stdin
+          case "${GITHUB_REF_NAME}" in
+            platform/v[0-9]*)
+              STREAM=platform; VERSION="${GITHUB_REF_NAME#platform/v}"
+              IMAGES="pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot" ;;
+            v[0-9]*)
+              STREAM=engine; VERSION="${GITHUB_REF_NAME#v}"
+              IMAGES="${IMAGE}" ;;
+            *)
+              STREAM=dev; VERSION="$(git rev-parse --short HEAD)"
+              IMAGES="${IMAGE} pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot" ;;
+          esac
+          {
+            echo "STREAM=${STREAM}"; echo "VERSION=${VERSION}"; echo "IMAGES=${IMAGES}"
+          } >> "$GITHUB_ENV"
+          echo "stream=${STREAM} version=${VERSION} images: ${IMAGES}"
 
-      - name: tag the engine image
-        # НИЧЕГО НЕ ЗАГРУЖАЕТСЯ, ПОКА НЕ ПРОЙДЕН СКАН. Здесь стояли `tag and
-        # push` и сборка с пушем, то есть порядок «загрузить → проверить →
-        # подписать». Он оставлял в реестре НЕПОДПИСАННЫЕ образы, если скан
-        # падал: агент выкатки их видел, `cosign verify` возвращал пусто, и в
-        # телеграм уходило «подпись не сошлась. Разберитесь, откуда взялся этот
-        # образ» — тревога о подмене в реестре, которой не было. Проверено на
-        # v0.3.10. Порядок «собрать → проверить → загрузить → подписать»
-        # оставляет реестр чистым: упавший скан не оставляет в нём ничего.
+      # ОДИН ИСТОЧНИК ВЕРСИИ (D-053): бинарник знает себя из version.txt, тег
+      # обязан совпасть с ним. Расхождение — не опечатка, а образ, который
+      # назовёт серверу лицензий и оператору не ту версию, что на нём написана.
+      #
+      # ПУСТОЙ РЕЛИЗ ДВИЖКА — КРАСНЫЙ. 0.3.12 и 0.3.13 были одним образом под
+      # двумя номерами: кэш сборки отдал те же байты, а номер солгал. Набор
+      # файлов, из которых состоит образ, — из COPY-строк Dockerfile.nuitka
+      # (deploy/shipped_paths.sh), и если с прошлого тега движка в нём ничего
+      # не изменилось, номера не будет. Раньше это ловит deploy/lint_engine_commits.sh
+      # в checks.yml; здесь — последний рубеж.
+      - name: the engine tag names the version the binary is, and the engine actually changed
+        if: env.STREAM == 'engine'
         run: |
           set -eu
-          VERSION="${GITHUB_REF_NAME#v}"
-          [ "${VERSION}" = "${GITHUB_REF_NAME}" ] && VERSION="$(git rev-parse --short HEAD)"
-          # ОДИН ИСТОЧНИК ВЕРСИИ (D-053): бинарник знает себя из version.txt, тег
-          # обязан совпасть с ним. Расхождение — не опечатка, а образ, который
-          # назовёт серверу лицензий и оператору не ту версию, что на нём написана.
-          if [ "${VERSION}" != "$(git rev-parse --short HEAD)" ]; then
-            FILE_VERSION="$(tr -d '[:space:]' < prototype/version.txt)"
-            if [ "${FILE_VERSION}" != "${VERSION}" ]; then
-              echo "::error::тег ${GITHUB_REF_NAME} не совпадает с prototype/version.txt (${FILE_VERSION}) — образ назвал бы себя не той версией"
+          FILE_VERSION="$(tr -d '[:space:]' < prototype/version.txt)"
+          if [ "${FILE_VERSION}" != "${VERSION}" ]; then
+            echo "::error::тег ${GITHUB_REF_NAME} не совпадает с prototype/version.txt (${FILE_VERSION}) — образ назвал бы себя не той версией"
+            exit 1
+          fi
+          previous="$(git tag -l 'v[0-9]*' --sort=-v:refname | grep -vx "${GITHUB_REF_NAME}" | head -1 || true)"
+          if [ -n "${previous}" ]; then
+            # shellcheck disable=SC2046
+            changed="$(git diff --name-only "${previous}" "${GITHUB_REF_NAME}" -- $(sh deploy/shipped_paths.sh))"
+            if [ -z "${changed}" ]; then
+              echo "::error::с ${previous} до ${GITHUB_REF_NAME} не изменился ни один файл образа — пустой релиз, номер солгал бы. Ничего не опубликовано."
               exit 1
             fi
+            echo "изменения образа с ${previous}:"; echo "${changed}" | sed 's/^/  /'
+          else
+            echo "первый тег движка — сравнивать не с чем"
           fi
-          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
-          docker tag pseudex:compiled "${REGISTRY}/${IMAGE}:${VERSION}"
+
+      # НИЧЕГО НЕ ЗАГРУЖАЕТСЯ, ПОКА НЕ ПРОЙДЕН СКАН. Здесь стояли `tag and
+      # push` и сборка с пушем, то есть порядок «загрузить → проверить →
+      # подписать». Он оставлял в реестре НЕПОДПИСАННЫЕ образы, если скан
+      # падал: агент выкатки их видел, `cosign verify` возвращал пусто, и в
+      # телеграм уходило «подпись не сошлась. Разберитесь, откуда взялся этот
+      # образ» — тревога о подмене в реестре, которой не было. Проверено на
+      # v0.3.10. Порядок «собрать → проверить → загрузить → подписать»
+      # оставляет реестр чистым: упавший скан не оставляет в нём ничего.
+      - name: tag the engine image
+        if: env.STREAM != 'platform'
+        run: docker tag pseudex:compiled "${REGISTRY}/${IMAGE}:${VERSION}"
 
       # OUR OWN IMAGES, BUILT HERE AND NOT ON THE HOST.
       #
@@ -268,6 +310,7 @@ jobs:
       # layer cache, a base image that moved, a file that is gitignored on one
       # side), and the difference surfaces as a bug nobody can reproduce.
       - name: build our own images
+        if: env.STREAM != 'engine'
         run: |
           set -eu
           for pair in "licensing:prototype:licensing/Dockerfile" "storefront:storefront:Dockerfile" "backup:deploy:Dockerfile.backup" "supportbot:deploy/supportbot:Dockerfile"; do
@@ -287,8 +330,7 @@ jobs:
       # находки лежат во вкладке, куда никто не заходит.
       #
       # Trivy делает то же бесплатно и ДО подписи, то есть до того, как образ
-      # станет выкатываемым. Пять образов сканируются ПАРАЛЛЕЛЬНО, база
-      # скачивается один раз: шаг занимает около минуты, а не пять.
+      # станет выкатываемым. База скачивается один раз.
       #
       # ПОРОГ — CRITICAL, ДЛЯ КОТОРОГО ЕСТЬ ИСПРАВЛЕНИЕ. Уязвимость без
       # исправления заблокировала бы релизы навсегда: она живёт в базовом образе,
@@ -298,26 +340,17 @@ jobs:
       # ОТСУТСТВИЕ ОТЧЁТА — ЭТО ПРОВАЛ, А НЕ ПРОПУСК. Скан, который не
       # выполнился (нет доступа к реестру, упал jq, пустой файл), обязан
       # покраснеть: зелёный шаг без отчёта — ровно тот случай, ради которого
-      # сканирование и ставили.
+      # шаг существует.
       - name: scan the images before pushing
         env:
           TRIVY_CACHE_DIR: /tmp/trivy-cache
         run: |
           set -eu
-          IMAGES="${IMAGE} pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot"
           curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
             | sh -s -- -b /tmp/bin >/dev/null
           /tmp/bin/trivy image --download-db-only --quiet
           rm -f /tmp/scan-failed
           printf '%-24s %9s %9s\n' ОБРАЗ CRITICAL HIGH
-          # ПОСЛЕДОВАТЕЛЬНО, А НЕ ПАРАЛЛЕЛЬНО, И ЭТО ИЗМЕРЕНО. Пять
-          # одновременных `trivy image` с общим кэшем падают с «unable to
-          # initialize cache: cache may be in use by another process: timeout» —
-          # файловый кэш Trivy не рассчитан на несколько процессов. На v0.3.10
-          # это дало пять пустых отчётов и красный гейт при ЖИВЫХ образах.
-          # База скачивается один раз (16 с), скан образа занимает секунды,
-          # поэтому последовательный прогон стоит около минуты — дешевле, чем
-          # отдельный кэш на каждый образ и объяснение этого в комментарии.
           for name in ${IMAGES}; do
             report="/tmp/scan-${name}.json"
             rm -f "${report}"
@@ -340,16 +373,39 @@ jobs:
             exit 1
           fi
 
-      - name: push the images
-        # ПУШ ПОСЛЕ СКАНА. Ретрай тот же и по той же причине: реестр дважды
-        # ронял релиз уже после зелёных гейтов — `context deadline exceeded` на
-        # манифесте и `dial tcp … i/o timeout` на слое. Пуш идемпотентен, поэтому
-        # повтор дёшев. НЕ `|| true`: исчерпав попытки, шаг обязан упасть —
-        # иначе подпишем то, чего в реестре нет.
+      - name: log in
+        env:
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
         run: |
           set -eu
-          for name in ${IMAGE} pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot; do
-            REF="${REGISTRY}/${name}:${VERSION}"
+          [ -n "${REGISTRY_PASSWORD}" ] || { echo "::error::REGISTRY_PASSWORD пуст"; exit 1; }
+          printf '%s' "${REGISTRY_PASSWORD}" | docker login "${REGISTRY%%/*}" -u "${REGISTRY_USERNAME}" --password-stdin
+
+      # ПЛАВАЮЩИЕ АЛИАСЫ ДВИЖКА (D-061): `X.Y.Z` плюс то, что скажет реестр —
+      # `X.Y` всегда, `X` и `latest` только на новейшем цикле. Сайт советует
+      # клиенту `pseudex:X.Y`, и патчи он получает одним `docker pull`.
+      - name: engine aliases from the registry
+        if: env.STREAM == 'engine'
+        run: |
+          set -eu
+          aliases="$(cd prototype && python3 -m licensing.registry aliases --version "${VERSION}" ../deploy/releases.json)"
+          for alias in ${aliases}; do
+            docker tag "${REGISTRY}/${IMAGE}:${VERSION}" "${REGISTRY}/${IMAGE}:${alias}"
+          done
+          echo "ENGINE_ALIASES=${aliases}" >> "$GITHUB_ENV"
+          echo "aliases: ${aliases}"
+
+      # ПУШ С ПОВТОРАМИ. Реестр отвечал `unexpected EOF` на слое и `dial tcp …
+      # i/o timeout`. Пуш идемпотентен, поэтому повтор дёшев. НЕ `|| true`:
+      # исчерпав попытки, шаг обязан упасть — иначе подпишем то, чего в реестре нет.
+      - name: push the images
+        run: |
+          set -eu
+          refs=""
+          for name in ${IMAGES}; do refs="${refs} ${REGISTRY}/${name}:${VERSION}"; done
+          for alias in ${ENGINE_ALIASES:-}; do refs="${refs} ${REGISTRY}/${IMAGE}:${alias}"; done
+          for REF in ${refs}; do
             for attempt in 1 2 3 4; do
               docker push "${REF}" && break
               [ "${attempt}" = 4 ] && { echo "::error::пуш ${REF} не прошёл за 4 попытки"; exit 1; }
@@ -359,62 +415,99 @@ jobs:
             echo "pushed ${REF}"
           done
 
+      # КЛИЕНТ СКАЧИВАЕТ ОБРАЗ БЕЗ ЛОГИНА. Сайт даёт ему `docker run …` с
+      # адресом образа и ключом лицензии — шага `docker login` там нет и не
+      # будет. Реестр при этом закрыт, и открыт публично один репозиторий:
+      # `${IMAGE}`. Ни один тест этого не проверял — персоны и гейты собирают
+      # образ локально — и 20.09.2026 обнаружилось, что клиент получал
+      # `unauthorized`, а сайт при этом советовал тег, которого в реестре нет.
+      # Здесь проверяются ОБЕ стороны: выпущенные теги видны анониму, а
+      # серверные образы — нет. Второе важнее первого: один клик в консоли на
+      # уровне реестра открыл бы сервер лицензий вместе со словарями.
       - name: the customer can pull the customer image, and ONLY it
-        # КЛИЕНТ СКАЧИВАЕТ ОБРАЗ БЕЗ ЛОГИНА. Сайт даёт ему `docker run …` с
-        # адресом образа и ключом лицензии — шага `docker login` там нет и не
-        # будет. Реестр при этом закрыт, и открыт публично один репозиторий:
-        # `${IMAGE}`. Ни один тест этого не проверял — персоны и гейты собирают
-        # образ локально — и 20.09.2026 обнаружилось, что клиент получал
-        # `unauthorized`, а сайт при этом советовал тег, которого в реестре нет.
-        # Здесь проверяется ОБЕ стороны: выпущенный тег виден анониму, а четыре
-        # серверных образа — нет. Второе важнее первого: один клик в консоли
-        # на уровне реестра открыл бы сервер лицензий вместе со словарями.
         run: |
           set -eu
           # Пустой DOCKER_CONFIG = аноним. `docker logout` снял бы учётку, а
           # следующий шаг (`cosign sign`) ею пушит подпись в этот же реестр.
-          DOCKER_CONFIG="$(mktemp -d)"; export DOCKER_CONFIG
-          if ! docker manifest inspect "${REGISTRY}/${IMAGE}:${VERSION}" >/dev/null 2>&1; then
-            echo "::error::${REGISTRY}/${IMAGE}:${VERSION} не скачивается без логина — клиент не запустит контейнер (репозиторию ${IMAGE} нужна роль container-registry.images.puller для allUsers)"
-            exit 1
+          export DOCKER_CONFIG="$(mktemp -d)"
+          if [ "${STREAM}" != "platform" ]; then
+            for tag in "${VERSION}" ${ENGINE_ALIASES:-}; do
+              if ! docker manifest inspect "${REGISTRY}/${IMAGE}:${tag}" >/dev/null 2>&1; then
+                echo "::error::${REGISTRY}/${IMAGE}:${tag} не скачивается без логина — клиент не запустит контейнер (репозиторию ${IMAGE} нужна роль container-registry.images.puller для allUsers)"
+                exit 1
+              fi
+              echo "anonymous pull ok: ${IMAGE}:${tag}"
+            done
           fi
-          echo "anonymous pull ok: ${REGISTRY}/${IMAGE}:${VERSION}"
-          for name in pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot; do
-            if docker manifest inspect "${REGISTRY}/${name}:${VERSION}" >/dev/null 2>&1; then
-              echo "::error::${REGISTRY}/${name}:${VERSION} ОТКРЫТ анониму — серверный образ должен быть закрыт"
-              exit 1
-            fi
-            echo "closed to anonymous: ${name}"
-          done
+          if [ "${STREAM}" != "engine" ]; then
+            for name in pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot; do
+              if docker manifest inspect "${REGISTRY}/${name}:${VERSION}" >/dev/null 2>&1; then
+                echo "::error::${REGISTRY}/${name}:${VERSION} ОТКРЫТ анониму — серверный образ должен быть закрыт"
+                exit 1
+              fi
+              echo "closed to anonymous: ${name}"
+            done
+          fi
 
+      # ПОДПИСЬ ПОСЛЕ СКАНА, А НЕ ДО НЕГО. Подписанный образ агент считает
+      # доказанным и выкатывает, поэтому подписать раньше проверки значило бы
+      # поставить печать на то, чего ещё не смотрели. Порядок здесь и есть
+      # гейт: упавший скан оставляет образы неподписанными, и агент их не
+      # возьмёт — он проверяет подпись до того, как что-либо остановит.
+      #
+      # The digest, never the tag: a tag is mutable, so a signature over one
+      # says nothing about the bytes a customer eventually pulls. This is what
+      # `cosign verify` on their side actually checks. Алиасы указывают на тот
+      # же дайджест — подпись одна на всех.
       - name: sign the digests
-        # ПОДПИСЬ ПОСЛЕ СКАНА, А НЕ ДО НЕГО. Подписанный образ агент считает
-        # доказанным и выкатывает, поэтому подписать раньше проверки значило бы
-        # поставить печать на то, чего ещё не смотрели. Порядок здесь и есть
-        # гейт: упавший скан оставляет образы неподписанными, и агент их не
-        # возьмёт — он проверяет подпись до того, как что-либо остановит.
-        #
-        # The digest, never the tag: a tag is mutable, so a signature over one
-        # says nothing about the bytes a customer eventually pulls. This is what
-        # `cosign verify` on their side actually checks.
         run: |
           set -eu
-          for name in ${IMAGE} pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot; do
+          for name in ${IMAGES}; do
             DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${REGISTRY}/${name}:${VERSION}")"
             cosign sign --yes "${DIGEST}"
             echo "signed ${DIGEST}"
           done
 
-      # THE MANIFEST THE HOST READS. The deploy agent must not guess which
-      # version is current, and it must not read a mutable `latest` — so the
-      # release publishes one small file naming the exact digests it proved,
-      # and the agent moves only when this file changes.
+      # РЕЕСТР ВЕРСИЙ (D-054): выпущенный движок записывается в deploy/releases.json
+      # коммитом в main. Этот коммит трогает deploy/ и потому открывает Release PR
+      # платформы — так сервер лицензий узнаёт о новой версии ЧЕРЕЗ РЕВЬЮ, и пол
+      # минимальной версии никогда не двигается мимо него. Push токеном
+      # GITHUB_TOKEN другие воркфлоу не запускает, поэтому release-please.yml
+      # вызывается явно — та же причина, что у dispatch release.yml из tag-джоба.
+      - name: record the engine in the versions registry
+        if: env.STREAM == 'engine'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${REGISTRY}/${IMAGE}:${VERSION}")"
+          DIGEST="${DIGEST#*@}"
+          git config user.name "release"
+          git config user.email "release@pseudex.ru"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+          for attempt in 1 2 3; do
+            git fetch --quiet origin main
+            git checkout --quiet -B main origin/main
+            (cd prototype && python3 -m licensing.registry record \
+                --version "${VERSION}" --digest "${DIGEST}" --date "$(date -u +%F)" ../deploy/releases.json)
+            git add deploy/releases.json
+            git commit --quiet -m "chore(registry): pseudex ${VERSION}" \
+              -m "Выпущен движок ${VERSION} (${DIGEST}). Записан пайплайном release.yml; сервер лицензий узнаёт о нём через релиз платформы." \
+              -m "Claude-Session: https://claude.ai/code/session_01LEE9ejun7XaQQChtLJjoRX" 2>/dev/null \
+              || { echo "реестр уже содержит ${VERSION}"; break; }
+            git push --quiet origin main && break
+            [ "${attempt}" = 3 ] && { echo "::error::коммит реестра не запушился за 3 попытки"; exit 1; }
+            echo "main ушёл вперёд, повтор ${attempt}"
+          done
+          gh workflow run release-please.yml --ref main || echo "::warning::release-please.yml не запустился явно — платформенный PR откроется на следующем push в main"
+
       - name: publish the release manifest
         run: |
           set -eu
           {
+            echo "stream=${STREAM}"
             echo "version=${VERSION}"
-            for name in "${IMAGE}" "pseudex-licensing" "pseudex-storefront" "pseudex-backup" "pseudex-supportbot"; do
+            for name in ${IMAGES}; do
               echo "${name}=$(docker inspect --format='{{index .RepoDigests 0}}' "${REGISTRY}/${name}:${VERSION}")"
             done
           } > release-manifest.txt

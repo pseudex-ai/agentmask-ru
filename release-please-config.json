@@ -71,7 +71,9 @@
       "component": "engine",
       "include-component-in-tag": false,
       "exclude-paths": [
-        "prototype/licensing"
+        "prototype/licensing",
+        "prototype/bench",
+        "prototype/e2e"
       ],
       "changelog-path": "CHANGELOG.md"
     },
@@ -101,6 +103,5 @@
         "platform"
       ]
     }
-  ],
-  "bootstrap-sha": "80a42f457e344500947a5e97093061e6c0345d45"
+  ]
 }

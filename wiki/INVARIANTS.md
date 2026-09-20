@@ -745,6 +745,25 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   tag `.deployed` remembers), refuses an identity regexp that cannot match
   `refs/tags/platform/v…` in words before any signature check, and waits when no
   platform tag exists. Pins: `deploy/test_agent.sh`.
+- **The engine is versioned only when the engine changed** (D-051, D-052). A
+  commit is attributed to a stream by the files it touches; the engine's
+  shipped set is derived from the `COPY` lines of `prototype/Dockerfile.nuitka`
+  (`deploy/shipped_paths.sh`). Three layers: release-please excludes
+  `licensing/`, `bench/`, `e2e/`; `deploy/lint_engine_commits.sh` refuses a
+  visible-type commit that touches `prototype/` and nothing shipped; the engine
+  publish job is red when the shipped set is unchanged since the previous
+  `v*` tag — `0.3.12` and `0.3.13` were one image under two numbers. No root
+  package `"."` in `release-please-config.json`: it receives every commit.
+  Pins: `.github/workflows/checks.yml` (lint + config gate); publish gate in
+  `.github/workflows/release.yml` — UNPINNED by a test script, enforced by CI.
+- **The versions registry is additive and announces closings 90 days ahead**
+  (D-054, D-056). `deploy/releases.json`: `latest`/`digest` are written by the
+  pipeline only; a recorded version never changes digest, `latest` never walks
+  back, a cycle is never removed; `eol` requires `eol_announced` ≤ today and
+  `eol ≥ eol_announced + 90 d`; the newest cycle alone carries `X` and `latest`.
+  The server refuses to enforce a late `eol` (`registry.check` returns «late»,
+  not a 426). Pins: `licensing/test_registry.py`; `.github/workflows/checks.yml`
+  validates against the previous file and requires tag `v<latest>` to exist.
 - **The engine version has ONE source, `prototype/version.txt`** (D-053): baked
   into `pseudex/_release.py` next to the verification key, read by
   `pseudex/license.py`, sent in the lease, shown by `/status`, the UI and
