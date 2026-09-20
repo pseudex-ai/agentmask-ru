@@ -115,8 +115,11 @@ This benchmark is written by the **Pseudex** team, whose gateway it also measure
 - Value pools are disjoint from Pseudex's production dictionaries by construction; our
   run's manifest prints how many of the corpus's names our gazetteer holds anyway.
 - Our run is marked `vendor-submitted`, carries full observations, and is never withdrawn.
-- The engine cannot be reproduced from this repository — it is licensed. Until a trial
-  key is public, our row is a vendor claim, not an independent measurement.
+- Our row is reproducible **by the same path as everyone else's**: a trial key from
+  [pseudex.ru](https://pseudex.ru) (14 days, no payment), the released image and the
+  `openai_proxy` adapter — recipe in [`baselines/pseudex/`](baselines/pseudex/). The
+  engine is licensed and its source is not here; the benchmark sees only what the
+  endpoint answers.
 
 ## Not measured (v0.1)
 
