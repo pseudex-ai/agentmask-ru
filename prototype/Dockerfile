@@ -59,8 +59,8 @@ COPY THIRD-PARTY-NOTICES.md .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY pseudex/ ./pseudex/
-COPY serve_main.py entrypoint.sh version.txt ./
-RUN chmod +x entrypoint.sh
+COPY serve_main.py entrypoint.sh version.txt pseudexctl ./
+RUN chmod +x entrypoint.sh pseudexctl
 
 
 # The verification key is BAKED IN at build time, not read from the environment.

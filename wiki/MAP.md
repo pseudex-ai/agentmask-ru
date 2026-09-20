@@ -521,7 +521,7 @@ active. There is NO pytest; each script has a `main()`.
 | `version.txt` | `live` | the ONE source of the engine version (D-053): both Dockerfiles bake it into `pseudex/_release.py` as `ENGINE_VERSION`, `pseudex/license.py` reads it (dev checkout: the file), the lease, `/status`, the UI and `pseudexctl doctor` show it; `.github/workflows/release.yml` is red when it differs from the tag |
 | `entrypoint.sh` | `live` | the container's PID 1: generates the two tokens ONCE for all workers, runs `PSEUDEX_ROLE=preflight` to size N, `PSEUDEX_ROLE=probe` to check the volume, then fans out N uvicorn workers (`engine`, or `proxy`) and starts the UI process (`PSEUDEX_ROLE=ui`) |
 | `serve_main.py` | `live` | entry point of ONE worker; dispatches on `PSEUDEX_ROLE`: `engine` (default) · `proxy` · `ui` · `preflight` · `probe` · `rekey` · `decrypt` · `measure` · `tripwire`. Hardens the process before any role runs. |
-| `pseudexctl` | `live` | the ops CLI, one entry instead of six `docker run -e PSEUDEX_ROLE=…`: `doctor`, `probe`, `preflight`, `decrypt`, `diag`, `metrics`, `rekey`, `backup`, `restore`. Pinned by `test_pseudexctl.py`. |
+| `pseudexctl` | `live` | the ops CLI, one entry instead of six `docker run -e PSEUDEX_ROLE=…`: `doctor`, `probe`, `preflight`, `decrypt`, `diag`, `metrics`, `rekey`, `backup`, `restore`, `upgrade` (D-062: new image, same volume, rollback by itself or by snapshot). Ships in both images at `/app/pseudexctl`. Pinned by `test_pseudexctl.py`. |
 | `issue_key.py` | `live` | mint a proxy tenant key (`sk-ps-…`) into `tenants.db` |
 | `testkit.py` | `live` (dev only) | `load_dev_bundle()` — builds a bundle from `licensing/pack.py` and loads it in-process; every test/eval that detects calls it first. NO equivalent in the shipped image. |
 | `requirements.txt` | `live` | not stdlib-only: `fastapi`, `uvicorn`, `httpx`, `phonenumbers`, `pymorphy3` + `pymorphy3-dicts-ru`, `natasha`, `pyrage` (age), `cryptography`, `sqlcipher3` |
@@ -553,7 +553,7 @@ Run from `prototype/`; each loads the dev bundle itself.
 | `test_persona_defects.py` | the five defects the 18.08.2026 persona run found and no corpus of ours did |
 | `test_preflight.py` | worker arithmetic against the cgroup limit; what happens when N does not fit; the contract with `entrypoint.sh` (including probe 2 → 6 and migrate 5) |
 | `test_schema.py` | the schema contract of a volume (D-058…D-060): fresh store stamped, legacy volume snapshotted and brought forward (snapshot opens with the same key), future volume refused untouched, no space refused before touching, the maxima equal `schema_lock.json` for the minor in `version.txt`, `probe` exits 2 and `migrate` brings a volume forward |
-| `test_pseudexctl.py` | the ops CLI: command shapes, doctor verdicts, the rekey proof |
+| `test_pseudexctl.py` | the ops CLI: command shapes, doctor verdicts (incl. the version ladder), the rekey proof, `upgrade` (order, secrets never in argv, both rollback branches, dry-run leaves nothing) |
 | `test_collisions.py` | a substitute equal to a real value — both halves (backwards at mint, forwards via `minted_in`), and BOTH sides of the `pseudonym_scope` trade |
 | `test_derived_forms.py` | transliteration and initials in a tool argument — in the model's own convention, resolved by the conversation |
 | `test_argument_form.py` | a tool argument is restored VERBATIM in the agent's form (case, generic words); prose in agreement |

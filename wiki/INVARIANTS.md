@@ -820,6 +820,16 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   `pseudexctl doctor`. It used to be `ENGINE_VERSION = "1.0.0"` in code, on every
   image ever shipped. Pins: `test_localui` (`/status` equals the file);
   `.github/workflows/release.yml` publish is red when the tag differs from the file.
+- **`pseudexctl upgrade` is an ORDER, and the volume is never the thing that
+  pays for a failed one** (D-062): pull → probe with the NEW image, read-only,
+  before anything stops (key opens, volume not from the future) → stop →
+  archive of the volume → rename → run with the same name, ports, mounts,
+  environment (container env minus image env, via a 0600 `--env-file` —
+  secrets never in argv) → `/health`. Unhealthy: the old image's probe decides
+  — 0 → the previous container comes back by itself, 2 → nothing is deleted
+  and the `restore` command is printed. A compose-managed container is
+  refused. The tool ships in both images at `/app/pseudexctl`. Pins:
+  `test_pseudexctl` (order, shape, secrets, both rollback branches, dry-run).
 - **The image tag the site advertises comes from the versions registry, never
   from a hand-set variable** (D-061). `engine_release.current_image()` returns
   the floating minor of the newest cycle in the copy the agent synced; `latest`
