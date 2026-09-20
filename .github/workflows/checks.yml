@@ -85,6 +85,12 @@ jobs:
       # раньше, чем через ночной прогон.
       - name: preflight — сколько воркеров влезает и что будет, если не влезают
         run: python test_preflight.py
+      # СХЕМА ТОМА (D-058…D-060), без контейнера: свежий стор штампуется,
+      # до-версионный получает снимок и все шаги, том из будущего отвергается
+      # нетронутым, и максимум по стору равен schema_lock.json для минора из
+      # version.txt — новый шаг миграции при том же миноре красный.
+      - name: schema — номер тома, снимок до подъёма, отказ тому из будущего, пин по минору
+        run: python test_schema.py
       # Тоже без контейнера: проверяются форма собираемых команд (ошибка в ней
       # невидима — docker выполнит неправильное молча), вердикты doctor и
       # доказательство ротации.
@@ -225,8 +231,13 @@ jobs:
     name: deploy scripts and compose
     runs-on: ubuntu-latest
     steps:
+      # FULL HISTORY AND TAGS, FROM THE CHECKOUT. The registry gate below reads
+      # `HEAD~1:deploy/releases.json` and asks whether tag `v<latest>` exists;
+      # a depth-1 clone has no HEAD~1 (the additive check silently skipped
+      # itself) and a `git fetch --tags` after `persist-credentials: false`
+      # has no credential («could not read Username», exit 128).
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with: { persist-credentials: false }
+        with: { persist-credentials: false, fetch-depth: 0, fetch-tags: true }
       # THE OPS STACK CAN SHIP BROKEN AND NOBODY WOULD KNOW UNTIL IT RAN. The
       # deploy agent runs unattended on production at 3am; a typo in it is
       # discovered by the thing it was supposed to prevent. None of this needs a
@@ -244,6 +255,61 @@ jobs:
       # неверный `sort -V` здесь — и агент считает КАЖДЫЙ релиз откатом.
       - name: the deploy agent follows platform/v* and compares by number
         run: sh deploy/test_agent.sh
+      # РЕЕСТР ВЕРСИЙ ЧЕСТЕН (D-054, D-056): схема, порядок циклов, алиасы, eol
+      # только с уведомлением за 90 дней; относительно предыдущего файла —
+      # только аддитивно (дайджест записанной версии не меняется, latest не
+      # идёт назад, цикл не исчезает). Тег `v<latest>` существует: файл не
+      # может обещать версию, которой нет.
+      - name: the versions registry is sound and additive
+        run: |
+          set -eu
+          git cat-file -e "HEAD~1" || { echo "::error::нет HEAD~1 — чекаут неглубокий, гейт аддитивности не может сработать"; exit 1; }
+          previous=""
+          if git cat-file -e "HEAD~1:deploy/releases.json" 2>/dev/null; then
+            git show HEAD~1:deploy/releases.json > /tmp/releases-previous.json
+            previous="--previous /tmp/releases-previous.json"
+          fi
+          # shellcheck disable=SC2086
+          (cd prototype && python3 -m licensing.registry validate ${previous} ../deploy/releases.json)
+          latest="$(python3 -c "import json; print(json.load(open('deploy/releases.json'))['cycles'][0]['latest']['version'])")"
+          git tag -l "v${latest}" | grep -qx "v${latest}" || { echo "::error::реестр называет latest ${latest}, а тега v${latest} нет"; exit 1; }
+          echo "реестр: latest ${latest}, тег есть"
+      # ДВИЖОК БАМПАЕТСЯ ТОЛЬКО ОТ ДВИЖКА (D-051, D-052): коммит видимого типа,
+      # тронувший prototype/ и ничего из образа, — красный здесь, а не пустой
+      # релиз потом. Конфиг release-please без корневого пакета «.» — он
+      # получает все коммиты. Набор файлов образа из COPY-строк Dockerfile.nuitka
+      # целиком под путями пакета движка минус исключённые каталоги.
+      - name: engine commits are typed honestly and the release config has no root package
+        run: |
+          set -eu
+          # No fetch: the checkout above is full (all branches, all tags) and
+          # holds no credential, so a fetch here fails with «could not read
+          # Username» — origin/main is already in the clone.
+          base="$(git merge-base origin/main HEAD 2>/dev/null || echo "")"
+          if [ -n "${base}" ] && [ "${base}" != "$(git rev-parse HEAD)" ]; then
+            sh deploy/lint_engine_commits.sh "${base}..HEAD"
+          else
+            sh deploy/lint_engine_commits.sh HEAD
+          fi
+          python3 - <<'PY'
+          import json, subprocess
+          cfg = json.load(open("release-please-config.json"))
+          assert "." not in cfg["packages"], "release-please-config.json: корневой пакет «.» получает все коммиты — его быть не должно"
+          # Конфиг веток поддержки — ТОЛЬКО движок, и тот же пакет, что в main:
+          # платформенный пакет на release/X.Y чеканил бы platform/v* из
+          # манифеста ветки в одном пространстве номеров с main.
+          rel = json.load(open("release-please-config.release.json"))
+          assert set(rel["packages"]) == {"prototype"}, f"release-please-config.release.json: только пакет prototype, есть {sorted(rel['packages'])}"
+          assert rel["packages"]["prototype"] == cfg["packages"]["prototype"], "release-please-config.release.json: пакет prototype расходится с основным конфигом"
+          assert "plugins" not in rel, "release-please-config.release.json: linked-versions платформы на ветке поддержки не нужен"
+          engine = cfg["packages"]["prototype"]
+          excluded = tuple(engine.get("exclude-paths", []))
+          shipped = subprocess.run(["sh", "deploy/shipped_paths.sh"], capture_output=True, text=True, check=True).stdout.split()
+          for path in shipped:
+              assert path.startswith("prototype/"), f"файл образа вне пакета движка: {path}"
+              assert not path.startswith(excluded), f"файл образа в исключённом каталоге: {path}"
+          print(f"release config: {len(shipped)} shipped paths inside package prototype, root package absent")
+          PY
       # СПИСОК ОБЯЗАТЕЛЬНЫХ ПЕРЕМЕННЫХ БЕРЁТСЯ ИЗ САМОГО COMPOSE, А НЕ ИЗ ПАМЯТИ,
       # И СЧИТАЕТСЯ ОДИН РАЗ НА ВСЕ ШАГИ.
       #

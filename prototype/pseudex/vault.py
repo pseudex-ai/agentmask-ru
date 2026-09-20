@@ -30,7 +30,9 @@ from pseudex.spoken import (email_from_words, numeral_runs,
                             plate_from_words, run_to_digits)
 from pseudex.profiling import stage
 from pseudex.ru_pii import validate_inn, validate_luhn, validate_ogrn, validate_snils
+from pseudex import schema
 from pseudex.sqlite_setup import (
+    Connection,
     VAULT_STORE,
     VaultLocked,
     connect as sqlite_connect,
@@ -1581,6 +1583,297 @@ def _street_stem(value: str) -> str:
                     for word in words)
 
 
+def create_tables(conn: Connection) -> None:
+    """The base tables of the vault — `CREATE … IF NOT EXISTS`, every open.
+    Columns the STEPS added are not here: a fresh store gets them from the steps,
+    the same way every existing volume did."""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tokens ("
+        "customer TEXT, canonical TEXT, entity_type TEXT, token TEXT, "
+        "PRIMARY KEY (customer, canonical))"
+    )
+    # Which words each NAME row is made of, so a later partial mention can
+    # find its person by an indexed point query instead of a table scan.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS name_parts ("
+        "customer TEXT, part TEXT, canonical TEXT, "
+        "PRIMARY KEY (customer, part, canonical))"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_name_parts ON name_parts (customer, part)"
+
+    )
+    conn.execute(
+        # PARTS OF THE SUBSTITUTE, mirroring `name_parts` for the real value.
+        # `name_parts` answers «have we met this person»; this answers «is
+        # this string still one of ours». A model that reorders or shortens a
+        # fake produces a string that resolves to nothing, and without this
+        # the gateway cannot tell that from an ordinary sentence — which is
+        # why the failure was silent and every persona asked for a signal.
+        "CREATE TABLE IF NOT EXISTS token_parts ("
+        "customer TEXT NOT NULL, part TEXT NOT NULL, token TEXT NOT NULL, "
+        "PRIMARY KEY (customer, part, token))"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_token_parts ON token_parts (customer, part)"
+    )
+    conn.execute(
+        # WHICH FULL ADDRESSES A SHORT MENTION COULD BE, SCOPED TO ONE
+        # CONVERSATION. `name_parts` answers the same question for people
+        # and is scoped to the customer, which is right there: a person's
+        # name is distinctive enough that the single-candidate rule still
+        # fires. A street is not — «Ленина 14» exists in every Russian city,
+        # so at customer scope the rule would find a dozen owners and refuse
+        # every time. The conversation is where the question has an answer.
+        #
+        # No new class of data: `part` is a street stem and a house number,
+        # both already stored in full in `tokens.canonical`.
+        "CREATE TABLE IF NOT EXISTS place_parts ("
+        "customer TEXT NOT NULL, conversation TEXT NOT NULL, "
+        "part TEXT NOT NULL, canonical TEXT NOT NULL, "
+        "created REAL NOT NULL DEFAULT 0, "
+        "has_city INTEGER NOT NULL DEFAULT 1, "
+        "PRIMARY KEY (customer, conversation, part, canonical))"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_place_parts "
+        "ON place_parts (customer, conversation, part)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_place_parts_created "
+        "ON place_parts (created)"
+    )
+
+
+def create_indexes(conn: Connection) -> None:
+    """Indexes over columns the steps added; runs after them, every open."""
+    # Every lookup on the response leg is an indexed point query, so
+    # detokenization cost tracks the length of the answer, not the size of
+    # the vault. Without these indexes each one degrades to a table scan.
+    for statement in (
+        "CREATE INDEX IF NOT EXISTS idx_tokens_token ON tokens (customer, token)",
+        "CREATE INDEX IF NOT EXISTS idx_tokens_digits ON tokens (customer, digits)",
+        "CREATE INDEX IF NOT EXISTS idx_tokens_digits10 ON tokens (customer, digits10)",
+        "CREATE INDEX IF NOT EXISTS idx_tokens_namekey ON tokens (customer, name_key)",
+    ):
+        conn.execute(statement)
+
+
+def _migrate_digit_signatures(conn: Connection) -> None:
+    """Add + backfill the digit-signature columns used to resolve a numeric
+    token the model REFORMATTED. Previously this index was rebuilt from every
+    row of the vault on every single response; storing the signature makes it
+    an indexed lookup instead."""
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(tokens)").fetchall()]
+    if "digits" in columns:
+        return
+    conn.execute("ALTER TABLE tokens ADD COLUMN digits TEXT")
+    conn.execute("ALTER TABLE tokens ADD COLUMN digits10 TEXT")
+    rows = conn.execute(
+        "SELECT customer, canonical, token, entity_type FROM tokens"
+    ).fetchall()
+    for customer, canonical, token, entity_type in rows:
+        digits, digits10 = _digit_signatures(token, entity_type)
+        conn.execute(
+            "UPDATE tokens SET digits=?, digits10=? WHERE customer=? AND canonical=?",
+            (digits, digits10, customer, canonical),
+        )
+
+
+def _migrate_name_keys(conn: Connection) -> None:
+    """Add the case-invariant signature of a NAME token.
+
+    The exact counterpart of `digits` for phone numbers, and it exists for
+    the same reason. A phone the model reformatted (+7 -> 8, separators
+    dropped) no longer matches its minted shape, so it is resolved by digit
+    signature instead; a NAME the model INFLECTED (`Руслану Хвостову`) no
+    longer matches either, and until now nothing caught it — the fake went
+    straight into the customer's tool.
+
+    Backfilled for existing rows so a vault created before this migration
+    gains the protection without being rebuilt.
+    """
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(tokens)")}
+    if "name_key" in columns:
+        return
+    conn.execute("ALTER TABLE tokens ADD COLUMN name_key TEXT")
+    rows = conn.execute(
+        "SELECT customer, canonical, token FROM tokens WHERE entity_type='NAME'"
+    ).fetchall()
+    for customer, canonical, token in rows:
+        conn.execute(
+            "UPDATE tokens SET name_key=? WHERE customer=? AND canonical=?",
+            (name_key(token), customer, canonical),
+        )
+    conn.commit()
+
+
+def _migrate_original_form(conn: Connection) -> None:
+    """Add the surface form the value was FIRST seen in.
+
+    Canonicalization must stay, but only as the dedup key: it is what makes
+    `+7 999 123-45-67` and `89991234567` resolve to one token, so the model
+    sees one identity. What the TOOL receives is a different question, and
+    returning the canonical form was an observable behaviour change we
+    imposed — without Pseudex the tool would have received exactly what the
+    user typed. A CRM that matches phone numbers as strings would silently
+    fail to find the record. So the original is stored and returned; a caller
+    that wants a normalized form can normalize it itself.
+
+    Backfill sets original = canonical: for pre-existing rows the surface form
+    was never recorded and canonical is the only truth available."""
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(tokens)").fetchall()]
+    if "original" in columns:
+        return
+    conn.execute("ALTER TABLE tokens ADD COLUMN original TEXT")
+    conn.execute("UPDATE tokens SET original = canonical WHERE original IS NULL")
+
+
+def _migrate_first_seen(conn: Connection) -> None:
+    """When each value was FIRST protected — the billing meter.
+
+    Added because the meter we had counted the wrong thing. Audit events
+    record a cache MISS, so one phone number appearing in four different
+    messages counted as three "protected values" — and the count moved with
+    `PSEUDEX_MASK_CACHE_SIZE` (a customer could lower their own bill with an
+    env var) and with the worker count (each worker holds its own cache, so
+    the same traffic cost more on a bigger container).
+
+    A row here is one distinct real value for one customer, forever. Counting
+    rows created inside a period answers "how many new people's data did we
+    protect this month", which is what the invoice line actually claims and
+    the only number the customer can check against their own vault.
+
+    Existing rows get the migration time. Pre-launch there are none, and
+    NULL would silently drop them out of every period.
+    """
+    columns = [row[1] for row in
+               conn.execute("PRAGMA table_info(tokens)").fetchall()]
+    if "first_seen" in columns:
+        return
+    conn.execute("ALTER TABLE tokens ADD COLUMN first_seen REAL")
+    conn.execute("UPDATE tokens SET first_seen=? WHERE first_seen IS NULL",
+                       (time.time(),))
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tokens_first_seen ON tokens (first_seen)")
+    conn.commit()
+
+
+def _migrate_place_created(conn: Connection) -> None:
+    """Add the sweep timestamp to a `place_parts` table written before it.
+
+    The table itself is new, but a developer volume from earlier today has
+    rows without the column, and without it the sweep would raise on every
+    insert — turning a housekeeping detail into a fail-closed 5xx on every
+    message carrying an address.
+    """
+    columns = [row[1] for row in
+               conn.execute("PRAGMA table_info(place_parts)").fetchall()]
+    if "created" in columns:
+        return
+    conn.execute(
+        "ALTER TABLE place_parts ADD COLUMN created REAL NOT NULL DEFAULT 0")
+    conn.execute("UPDATE place_parts SET created=? WHERE created=0",
+                       (time.time(),))
+    conn.commit()
+
+
+def _migrate_place_has_city(conn: Connection) -> None:
+    """Whether the indexed address named a city. Rows written before the
+    column were city-bearing by construction, so the default is 1."""
+    columns = [row[1] for row in
+               conn.execute("PRAGMA table_info(place_parts)").fetchall()]
+    if "has_city" in columns:
+        return
+    conn.execute(
+        "ALTER TABLE place_parts ADD COLUMN has_city INTEGER NOT NULL DEFAULT 1")
+    conn.commit()
+
+
+def _migrate_fold_key(conn: Connection) -> None:
+    """Add the case/ё-insensitive lookup signature to existing vaults.
+
+    Backfilled in place: a customer's rows are their people, and rekeying
+    them would be a rewrite of the thing the product exists to keep stable.
+    The column is additive and the exact-canonical lookup still runs first,
+    so a vault that has not been migrated yet behaves exactly as before.
+    """
+    columns = [row[1] for row in
+               conn.execute("PRAGMA table_info(tokens)").fetchall()]
+    if "canonical_fold" in columns:
+        return
+    conn.execute("ALTER TABLE tokens ADD COLUMN canonical_fold TEXT")
+    rows = conn.execute(
+        "SELECT customer, canonical FROM tokens").fetchall()
+    conn.executemany(
+        "UPDATE tokens SET canonical_fold=? WHERE customer=? AND canonical=?",
+        [(fold_key(canonical), customer, canonical) for customer, canonical in rows])
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tokens_fold "
+        "ON tokens (customer, canonical_fold)")
+    conn.commit()
+
+
+def _migrate_minted_in(conn: Connection) -> None:
+    """Which conversation each substitute was born in.
+
+    THE RE-MASKING GUARD NEEDS A SCOPE OR IT IS A LEAK. `is_minted_token`
+    asks «is this string one of ours», and answers yes for a REAL person who
+    happens to bear a name we minted for somebody else — measured at 2 to 3
+    people per 3000 on NEREL, every one of them sent to the model in the
+    clear, for ever, because the answer does not change on the next turn.
+
+    A conversation is what separates the two readings. Our own token comes
+    back to us inside the dialogue it was minted in; a customer's contact who
+    happens to be called that arrives in some other one. Scoping the guard
+    keeps the echo case (which is what it was built for) and masks the
+    stranger.
+
+    EXISTING ROWS KEEP THE OLD BEHAVIOUR. A NULL here means «minted before we
+    recorded this», and the guard treats it as matching any conversation —
+    a vault that has not been migrated behaves exactly as it did, which is
+    the same rule every other migration in this file follows.
+    """
+    columns = [row[1] for row in
+               conn.execute("PRAGMA table_info(tokens)").fetchall()]
+    if "minted_in" not in columns:
+        conn.execute("ALTER TABLE tokens ADD COLUMN minted_in TEXT")
+        conn.commit()
+
+
+def _migrate_extends(conn: Connection) -> None:
+    """Which substitute this one was grown from — the short mention's token
+    for a full address, the two-word name's for a three-word one. NULL for
+    every row minted before the column and for every fresh mint; the chain
+    is what lets a fragment resolve when two tokens share its parts."""
+    columns = [row[1] for row in
+               conn.execute("PRAGMA table_info(tokens)").fetchall()]
+    if "extends" not in columns:
+        conn.execute("ALTER TABLE tokens ADD COLUMN extends TEXT")
+        conn.commit()
+
+
+# THE NUMBERED HISTORY OF THE VAULT (D-058). Order is the order the constructor
+# used to call them in, and it is load-bearing twice: `create_indexes` needs
+# the columns of steps 1 and 2, and `test_schema.py` pins the numbers so a
+# reordering cannot renumber what an existing volume was stamped with. Every
+# step is idempotent — it checks `PRAGMA table_info` first — because for a year
+# they all ran on every open; that is what lets a pre-versioned volume (0) run
+# all of them and be stamped. `introduced` is the engine version that first
+# shipped the step; all nine predate the numbering and say 0.3.0.
+VAULT_MIGRATIONS: tuple[schema.Step, ...] = (
+    schema.Step(1, "digit_signatures", "0.3.0", _migrate_digit_signatures),
+    schema.Step(2, "name_keys", "0.3.0", _migrate_name_keys),
+    schema.Step(3, "original_form", "0.3.0", _migrate_original_form),
+    schema.Step(4, "first_seen", "0.3.0", _migrate_first_seen),
+    schema.Step(5, "place_created", "0.3.0", _migrate_place_created),
+    schema.Step(6, "place_has_city", "0.3.0", _migrate_place_has_city),
+    schema.Step(7, "fold_key", "0.3.0", _migrate_fold_key),
+    schema.Step(8, "minted_in", "0.3.0", _migrate_minted_in),
+    schema.Step(9, "extends", "0.3.0", _migrate_extends),
+)
+
+
 class Vault:
     """Persistent per-customer token store (external state -> class)."""
 
@@ -1600,149 +1893,11 @@ class Vault:
         self._own_keys: frozenset[str] = frozenset()
         self._lock = threading.Lock()
         self._conn = sqlite_connect(db_path, VAULT_STORE)
-        self._conn.execute(
-            "CREATE TABLE IF NOT EXISTS tokens ("
-            "customer TEXT, canonical TEXT, entity_type TEXT, token TEXT, "
-            "PRIMARY KEY (customer, canonical))"
-        )
-        # Which words each NAME row is made of, so a later partial mention can
-        # find its person by an indexed point query instead of a table scan.
-        self._conn.execute(
-            "CREATE TABLE IF NOT EXISTS name_parts ("
-            "customer TEXT, part TEXT, canonical TEXT, "
-            "PRIMARY KEY (customer, part, canonical))"
-        )
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_name_parts ON name_parts (customer, part)"
-
-        )
-        self._conn.execute(
-            # PARTS OF THE SUBSTITUTE, mirroring `name_parts` for the real value.
-            # `name_parts` answers «have we met this person»; this answers «is
-            # this string still one of ours». A model that reorders or shortens a
-            # fake produces a string that resolves to nothing, and without this
-            # the gateway cannot tell that from an ordinary sentence — which is
-            # why the failure was silent and every persona asked for a signal.
-            "CREATE TABLE IF NOT EXISTS token_parts ("
-            "customer TEXT NOT NULL, part TEXT NOT NULL, token TEXT NOT NULL, "
-            "PRIMARY KEY (customer, part, token))"
-        )
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_token_parts ON token_parts (customer, part)"
-        )
-        self._conn.execute(
-            # WHICH FULL ADDRESSES A SHORT MENTION COULD BE, SCOPED TO ONE
-            # CONVERSATION. `name_parts` answers the same question for people
-            # and is scoped to the customer, which is right there: a person's
-            # name is distinctive enough that the single-candidate rule still
-            # fires. A street is not — «Ленина 14» exists in every Russian city,
-            # so at customer scope the rule would find a dozen owners and refuse
-            # every time. The conversation is where the question has an answer.
-            #
-            # No new class of data: `part` is a street stem and a house number,
-            # both already stored in full in `tokens.canonical`.
-            "CREATE TABLE IF NOT EXISTS place_parts ("
-            "customer TEXT NOT NULL, conversation TEXT NOT NULL, "
-            "part TEXT NOT NULL, canonical TEXT NOT NULL, "
-            "created REAL NOT NULL DEFAULT 0, "
-            "has_city INTEGER NOT NULL DEFAULT 1, "
-            "PRIMARY KEY (customer, conversation, part, canonical))"
-        )
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_place_parts "
-            "ON place_parts (customer, conversation, part)"
-        )
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_place_parts_created "
-            "ON place_parts (created)"
-        )
-        self._migrate_digit_signatures()
-        self._migrate_name_keys()
-        self._migrate_original_form()
-        self._migrate_first_seen()
-        self._migrate_place_created()
-        self._migrate_place_has_city()
-        self._migrate_fold_key()
-        self._migrate_minted_in()
-        self._migrate_extends()
-        # Every lookup on the response leg is an indexed point query, so
-        # detokenization cost tracks the length of the answer, not the size of
-        # the vault. Without these indexes each one degrades to a table scan.
-        for statement in (
-            "CREATE INDEX IF NOT EXISTS idx_tokens_token ON tokens (customer, token)",
-            "CREATE INDEX IF NOT EXISTS idx_tokens_digits ON tokens (customer, digits)",
-            "CREATE INDEX IF NOT EXISTS idx_tokens_digits10 ON tokens (customer, digits10)",
-            "CREATE INDEX IF NOT EXISTS idx_tokens_namekey ON tokens (customer, name_key)",
-        ):
-            self._conn.execute(statement)
-        self._conn.commit()
-
-    def _migrate_name_keys(self) -> None:
-        """Add the case-invariant signature of a NAME token.
-
-        The exact counterpart of `digits` for phone numbers, and it exists for
-        the same reason. A phone the model reformatted (+7 -> 8, separators
-        dropped) no longer matches its minted shape, so it is resolved by digit
-        signature instead; a NAME the model INFLECTED (`Руслану Хвостову`) no
-        longer matches either, and until now nothing caught it — the fake went
-        straight into the customer's tool.
-
-        Backfilled for existing rows so a vault created before this migration
-        gains the protection without being rebuilt.
-        """
-        columns = {row[1] for row in self._conn.execute("PRAGMA table_info(tokens)")}
-        if "name_key" in columns:
-            return
-        self._conn.execute("ALTER TABLE tokens ADD COLUMN name_key TEXT")
-        rows = self._conn.execute(
-            "SELECT customer, canonical, token FROM tokens WHERE entity_type='NAME'"
-        ).fetchall()
-        for customer, canonical, token in rows:
-            self._conn.execute(
-                "UPDATE tokens SET name_key=? WHERE customer=? AND canonical=?",
-                (name_key(token), customer, canonical),
-            )
-        self._conn.commit()
-
-    def _migrate_original_form(self) -> None:
-        """Add the surface form the value was FIRST seen in.
-
-        Canonicalization must stay, but only as the dedup key: it is what makes
-        `+7 999 123-45-67` and `89991234567` resolve to one token, so the model
-        sees one identity. What the TOOL receives is a different question, and
-        returning the canonical form was an observable behaviour change we
-        imposed — without Pseudex the tool would have received exactly what the
-        user typed. A CRM that matches phone numbers as strings would silently
-        fail to find the record. So the original is stored and returned; a caller
-        that wants a normalized form can normalize it itself.
-
-        Backfill sets original = canonical: for pre-existing rows the surface form
-        was never recorded and canonical is the only truth available."""
-        columns = [row[1] for row in self._conn.execute("PRAGMA table_info(tokens)").fetchall()]
-        if "original" in columns:
-            return
-        self._conn.execute("ALTER TABLE tokens ADD COLUMN original TEXT")
-        self._conn.execute("UPDATE tokens SET original = canonical WHERE original IS NULL")
-
-    def _migrate_digit_signatures(self) -> None:
-        """Add + backfill the digit-signature columns used to resolve a numeric
-        token the model REFORMATTED. Previously this index was rebuilt from every
-        row of the vault on every single response; storing the signature makes it
-        an indexed lookup instead."""
-        columns = [row[1] for row in self._conn.execute("PRAGMA table_info(tokens)").fetchall()]
-        if "digits" in columns:
-            return
-        self._conn.execute("ALTER TABLE tokens ADD COLUMN digits TEXT")
-        self._conn.execute("ALTER TABLE tokens ADD COLUMN digits10 TEXT")
-        rows = self._conn.execute(
-            "SELECT customer, canonical, token, entity_type FROM tokens"
-        ).fetchall()
-        for customer, canonical, token, entity_type in rows:
-            digits, digits10 = _digit_signatures(token, entity_type)
-            self._conn.execute(
-                "UPDATE tokens SET digits=?, digits10=? WHERE customer=? AND canonical=?",
-                (digits, digits10, customer, canonical),
-            )
+        # Base tables, numbered steps, indexes over migrated columns — and the
+        # refusals: a volume stamped above what this image knows is not opened
+        # (D-058). Once per volume in `PSEUDEX_ROLE=migrate`; here every worker
+        # takes the fast path. See pseudex/schema.py.
+        schema.ensure(self._conn, VAULT_STORE, db_path)
 
     def _unique_token(self, entity_type: str, gender: str | None = None,
                       original: str = "", canonical: str = "", head: str = "") -> str:
@@ -2641,8 +2796,6 @@ class Vault:
                              if len(word) > 2) == wanted}
         return next(iter(matches)) if len(matches) == 1 else None
 
-
-
     def _expire_place_parts(self) -> None:
         """Drop conversation links older than a day. Called under the lock."""
         global _last_place_sweep
@@ -3127,125 +3280,6 @@ class Vault:
                 (self._customer, token),
             ).fetchone()
         return row[0] if row is not None else None
-
-
-    def _migrate_place_created(self) -> None:
-        """Add the sweep timestamp to a `place_parts` table written before it.
-
-        The table itself is new, but a developer volume from earlier today has
-        rows without the column, and without it the sweep would raise on every
-        insert — turning a housekeeping detail into a fail-closed 5xx on every
-        message carrying an address.
-        """
-        columns = [row[1] for row in
-                   self._conn.execute("PRAGMA table_info(place_parts)").fetchall()]
-        if "created" in columns:
-            return
-        self._conn.execute(
-            "ALTER TABLE place_parts ADD COLUMN created REAL NOT NULL DEFAULT 0")
-        self._conn.execute("UPDATE place_parts SET created=? WHERE created=0",
-                           (time.time(),))
-        self._conn.commit()
-
-    def _migrate_place_has_city(self) -> None:
-        """Whether the indexed address named a city. Rows written before the
-        column were city-bearing by construction, so the default is 1."""
-        columns = [row[1] for row in
-                   self._conn.execute("PRAGMA table_info(place_parts)").fetchall()]
-        if "has_city" in columns:
-            return
-        self._conn.execute(
-            "ALTER TABLE place_parts ADD COLUMN has_city INTEGER NOT NULL DEFAULT 1")
-        self._conn.commit()
-
-    def _migrate_extends(self) -> None:
-        """Which substitute this one was grown from — the short mention's token
-        for a full address, the two-word name's for a three-word one. NULL for
-        every row minted before the column and for every fresh mint; the chain
-        is what lets a fragment resolve when two tokens share its parts."""
-        columns = [row[1] for row in
-                   self._conn.execute("PRAGMA table_info(tokens)").fetchall()]
-        if "extends" not in columns:
-            self._conn.execute("ALTER TABLE tokens ADD COLUMN extends TEXT")
-            self._conn.commit()
-
-    def _migrate_first_seen(self) -> None:
-        """When each value was FIRST protected — the billing meter.
-
-        Added because the meter we had counted the wrong thing. Audit events
-        record a cache MISS, so one phone number appearing in four different
-        messages counted as three "protected values" — and the count moved with
-        `PSEUDEX_MASK_CACHE_SIZE` (a customer could lower their own bill with an
-        env var) and with the worker count (each worker holds its own cache, so
-        the same traffic cost more on a bigger container).
-
-        A row here is one distinct real value for one customer, forever. Counting
-        rows created inside a period answers "how many new people's data did we
-        protect this month", which is what the invoice line actually claims and
-        the only number the customer can check against their own vault.
-
-        Existing rows get the migration time. Pre-launch there are none, and
-        NULL would silently drop them out of every period.
-        """
-        columns = [row[1] for row in
-                   self._conn.execute("PRAGMA table_info(tokens)").fetchall()]
-        if "first_seen" in columns:
-            return
-        self._conn.execute("ALTER TABLE tokens ADD COLUMN first_seen REAL")
-        self._conn.execute("UPDATE tokens SET first_seen=? WHERE first_seen IS NULL",
-                           (time.time(),))
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_tokens_first_seen ON tokens (first_seen)")
-        self._conn.commit()
-
-    def _migrate_fold_key(self) -> None:
-        """Add the case/ё-insensitive lookup signature to existing vaults.
-
-        Backfilled in place: a customer's rows are their people, and rekeying
-        them would be a rewrite of the thing the product exists to keep stable.
-        The column is additive and the exact-canonical lookup still runs first,
-        so a vault that has not been migrated yet behaves exactly as before.
-        """
-        columns = [row[1] for row in
-                   self._conn.execute("PRAGMA table_info(tokens)").fetchall()]
-        if "canonical_fold" in columns:
-            return
-        self._conn.execute("ALTER TABLE tokens ADD COLUMN canonical_fold TEXT")
-        rows = self._conn.execute(
-            "SELECT customer, canonical FROM tokens").fetchall()
-        self._conn.executemany(
-            "UPDATE tokens SET canonical_fold=? WHERE customer=? AND canonical=?",
-            [(fold_key(canonical), customer, canonical) for customer, canonical in rows])
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_tokens_fold "
-            "ON tokens (customer, canonical_fold)")
-        self._conn.commit()
-
-    def _migrate_minted_in(self) -> None:
-        """Which conversation each substitute was born in.
-
-        THE RE-MASKING GUARD NEEDS A SCOPE OR IT IS A LEAK. `is_minted_token`
-        asks «is this string one of ours», and answers yes for a REAL person who
-        happens to bear a name we minted for somebody else — measured at 2 to 3
-        people per 3000 on NEREL, every one of them sent to the model in the
-        clear, for ever, because the answer does not change on the next turn.
-
-        A conversation is what separates the two readings. Our own token comes
-        back to us inside the dialogue it was minted in; a customer's contact who
-        happens to be called that arrives in some other one. Scoping the guard
-        keeps the echo case (which is what it was built for) and masks the
-        stranger.
-
-        EXISTING ROWS KEEP THE OLD BEHAVIOUR. A NULL here means «minted before we
-        recorded this», and the guard treats it as matching any conversation —
-        a vault that has not been migrated behaves exactly as it did, which is
-        the same rule every other migration in this file follows.
-        """
-        columns = [row[1] for row in
-                   self._conn.execute("PRAGMA table_info(tokens)").fetchall()]
-        if "minted_in" not in columns:
-            self._conn.execute("ALTER TABLE tokens ADD COLUMN minted_in TEXT")
-            self._conn.commit()
 
     def reveal(self, token: str, for_tool: bool = False) -> tuple[str | None, str]:
         """Value and its entity type in one lookup, for the audited reveal path.

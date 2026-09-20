@@ -1,4 +1,4 @@
-"""The closing gate for the licensing layer: L1-L22 against a real local instance.
+"""The closing gate for the licensing layer: L1-L25 against a real local instance.
 
 RULES THIS FILE OBEYS (docs/tz-license-packaging.md §4.1), because a gate that
 cheats is worse than no gate:
@@ -1415,6 +1415,130 @@ def gate_l23() -> bool:
                     f"unpriv_open_refused={unpriv_refused} core_off_logged={hardening_logged}")
 
 
+# --- gates: the schema of the volume (D-058, D-059) -----------------------
+
+_VOLUME_KEY = "c" * 64
+_TOOL_IMAGE = "pseudex:source"
+
+
+def volume_tool(script: str) -> subprocess.CompletedProcess:
+    """Run a snippet against the stand's volume with the product's OWN driver
+    setup, from the source image. The image under test may be the compiled one,
+    which carries no Python; the source image always exists beside it in the
+    battery (pack_gates builds both), and using `pseudex.sqlite_setup` from it
+    means the volume is opened exactly as the sidecar opens it — same key
+    derivation, same cipher settings — rather than by a second, hand-written
+    path that could disagree with the first."""
+    return sh(["docker", "run", "--rm", "--network", "none",
+               "-v", "pseudex-e2e_sidecar-data:/data",
+               "-e", f"PSEUDEX_VAULT_KEY={_VOLUME_KEY}",
+               "-e", "PSEUDEX_DB_DIR=/data",
+               "--entrypoint", "python3", _TOOL_IMAGE, "-c", script], False, 180)
+
+
+def stamp_vault(user_version: int, application_id: int | None) -> subprocess.CompletedProcess:
+    """Write the header numbers of the stand's vault — what an older image
+    (0 / 0) or a future one (999) would have left."""
+    lines = ["from pseudex import sqlite_setup as s",
+             "c = s.connect('/data/vault.db', s.VAULT_STORE)",
+             "print('before', c.execute('PRAGMA user_version').fetchone()[0])",
+             f"c.execute('PRAGMA user_version = {int(user_version)}')"]
+    if application_id is not None:
+        lines.append(f"c.execute('PRAGMA application_id = {int(application_id)}')")
+    lines += ["c.execute('PRAGMA wal_checkpoint(TRUNCATE)')", "c.commit()",
+              "print('after', c.execute('PRAGMA user_version').fetchone()[0])"]
+    return volume_tool("\n".join(lines))
+
+
+def sidecar_exit_code() -> int | None:
+    container = compose(["ps", "-a", "-q", "sidecar"], False, 60).stdout.strip().splitlines()
+    if not container:
+        return None
+    result = sh(["docker", "inspect", "-f", "{{.State.ExitCode}}", container[0]], False, 30)
+    try:
+        return int(result.stdout.strip())
+    except ValueError:
+        return None
+
+
+def gate_l25() -> bool:
+    """A pre-versioned volume is snapshotted, brought forward, and every token
+    still resolves to the same value.
+
+    The precondition is written by hand: the vault L1 created is already
+    stamped, so the gate first turns it back into what every volume in the
+    field is — `user_version` 0, no application id, rows in it — and only then
+    recreates the sidecar. The consequence is three things at once: the
+    snapshot `vault.db.pre-0-<n>.db` exists beside the store, the log names it,
+    and the SAME masked text detokenizes to the same values on both sides.
+    """
+    set_env("PSEUDEX_VAULT_ENCRYPTION", "")
+    set_env("PSEUDEX_VAULT_KEY", _VOLUME_KEY)
+    if not restart_stand():
+        return gate("L25 a pre-versioned volume is snapshotted and brought forward",
+                    False, "stand did not start")
+    if sh(["docker", "image", "inspect", _TOOL_IMAGE], False, 30).returncode != 0:
+        return gate("L25 a pre-versioned volume is snapshotted and brought forward",
+                    False, f"tool image {_TOOL_IMAGE} is missing — build it first")
+    for _ in range(3):
+        post_mask(90)
+    masked = post_mask(90).json()["messages"][0]["content"]
+    before = post_unmask(masked, 60)
+    compose(["stop", "sidecar"], False, 120)
+    unstamped = stamp_vault(0, 0)
+    was_stamped = "before 0" not in unstamped.stdout and "after 0" in unstamped.stdout
+    if not recreate_sidecar():
+        return gate("L25 a pre-versioned volume is snapshotted and brought forward",
+                    False, f"sidecar did not come back; tool={unstamped.stdout[-200:]!r} "
+                           f"{unstamped.stderr[-200:]!r}")
+    after = post_unmask(masked, 60)
+    listing = data_dir_listing()
+    snapshot_named = re.search(r"vault\.db\.pre-0-\d+\.db", listing)
+    output = logs("sidecar")
+    logged = "снимок" in output and "схема 0 →" in output
+    return gate("L25 a pre-versioned volume is snapshotted and brought forward",
+                was_stamped and snapshot_named is not None and logged and after == before,
+                f"unstamped={was_stamped} snapshot={snapshot_named.group(0) if snapshot_named else 'none'} "
+                f"logged={logged} same_values={after == before}")
+
+
+def gate_l24() -> bool:
+    """A volume a NEWER image wrote is refused before any worker starts, in
+    our words, with exit code 6 — and it is not touched: put the stamp back and
+    the same sidecar serves the same tokens again.
+
+    Runs on the volume L25 left behind (stamped, with rows). The refusal alone
+    would be the weak half — a container that refuses everything passes it —
+    so the gate also proves the volume was left intact by restoring the header
+    and reading the values back.
+    """
+    masked = post_mask(90).json()["messages"][0]["content"]
+    before = post_unmask(masked, 60)
+    compose(["stop", "sidecar"], False, 120)
+    future = stamp_vault(999, None)
+    original = re.search(r"before (\d+)", future.stdout)
+    compose(["up", "-d", "--force-recreate", "sidecar"], False, 600)
+    ours = "новее этого образа"
+    spoke = wait_until(lambda: ours in logs("sidecar"), 180, 3, "our refusal of a future volume")
+    output = logs("sidecar")
+    named = "ТОМ НОВЕЕ ОБРАЗА" in output and "999" in output
+    exited = wait_until(lambda: sidecar_exit_code() not in (None, 0) or "exited" in
+                        compose(["ps", "-a", "sidecar"], False, 60).stdout, 120, 3,
+                        "sidecar to stop")
+    code = sidecar_exit_code()
+    could_ask, served = _port_probe()
+    # Put the stamp back — the volume must be exactly as it was.
+    restored = stamp_vault(int(original.group(1)) if original else 0, None)
+    came_back = recreate_sidecar()
+    after = post_unmask(masked, 60) if came_back else ""
+    return gate("L24 a volume from the future is refused untouched, exit 6",
+                spoke and named and exited and code == 6 and could_ask and not served
+                and came_back and after == before,
+                f"our_message={spoke} named={named} exit={code} still_serving={served} "
+                f"restored_to={original.group(1) if original else '?'} came_back={came_back} "
+                f"same_values={after == before} tool={restored.returncode}")
+
+
 def gate_l15() -> bool:
     """No real value in any log — and the logs must be REAL logs.
 
@@ -1520,6 +1644,14 @@ def main() -> None:
 
         if wanted("L23"):
             run_gate("L23", gate_l23)
+
+        # L25 before L24: L25 builds the stamped volume with rows that L24 then
+        # pushes into the future and back.
+        print("== the schema of the volume ==")
+        if wanted("L25"):
+            run_gate("L25", gate_l25)
+        if wanted("L24"):
+            run_gate("L24", gate_l24)
 
         if wanted("L15"):
             run_gate("L15", gate_l15)

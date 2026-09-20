@@ -17,6 +17,7 @@
 """
 
 import tempfile
+import time
 from pathlib import Path
 
 from pseudex.sqlite_setup import connect
@@ -78,6 +79,37 @@ def main() -> int:
                store._conn.execute("PRAGMA table_info(leases)")}
     check("колонка pubkey доехала миграцией", "pubkey" in columns,
           f"leases: {sorted(columns)}")
+    # ВЕРСИЯ ДВИЖКА В АРЕНДЕ (D-056): старый ряд без неё читается как пустая
+    # строка, новый — записывает то, что назвал контейнер, и гистограмма флота
+    # считает живые инстансы по версиям. Без этого пол минимальной версии
+    # двигался бы вслепую.
+    check("колонка engine_version доехала миграцией", "engine_version" in columns)
+    store.record_lease("l2", "acme", "i2", "p2", 3600, pubkey="k2", engine_version="0.3.16")
+    fleet = {row["engine_version"]: row for row in store.fleet_versions(86400 * 365 * 100)}
+    check("старый ряд — пустая версия, новый — своя; гистограмма считает по инстансам",
+          fleet.get("", {}).get("instances") == 1 and fleet.get("0.3.16", {}).get("instances") == 1,
+          f"{fleet}")
+    check("active_instances называет версию инстанса",
+          any(i.get("engine_version") == "0.3.16" for i in store.active_instances("acme", 86400 * 365 * 100)))
+    # Версия НОВЕЙШЕЙ аренды инстанса, не строковый максимум: «0.3.9» > «0.3.10»
+    # как строки, и обновившийся инстанс сутки числился бы на старой версии.
+    store.record_lease("l9", "acme", "i9", "p9", 3600, pubkey="k9", engine_version="0.3.9")
+    time.sleep(0.01)
+    store.record_lease("l10", "acme", "i9", "p10", 3600, pubkey="k10", engine_version="0.3.10")
+    reported = next(i for i in store.active_instances("acme", 86400 * 365 * 100) if i["instance_id"] == "i9")
+    check("после обновления 0.3.9 → 0.3.10 инстанс числится на 0.3.10, не на строковом максимуме",
+          reported["engine_version"] == "0.3.10", reported["engine_version"])
+    # ЗАЯВЛЕННЫЙ КОНТРАКТ (D-063): старый ряд — NULL (не заявлял), новый — то,
+    # что клиент назвал; гистограмма делит версию по контрактам, чтобы было
+    # видно, когда мост контракта 2 можно снять.
+    check("колонка lease_contract доехала миграцией", "lease_contract" in columns)
+    store.record_lease("l3", "acme", "i3", "p3", 3600, pubkey="k3", engine_version="0.3.16",
+                       lease_contract=3)
+    rows = store.fleet_versions(86400 * 365 * 100)
+    check("старый ряд — контракт NULL, новый — 3, и это две строки одной версии",
+          any(r["engine_version"] == "0.3.16" and r["lease_contract"] is None for r in rows)
+          and any(r["engine_version"] == "0.3.16" and r["lease_contract"] == 3 for r in rows),
+          f"{rows}")
 
     usage_columns = {row[1] for row in
                      store._conn.execute("PRAGMA table_info(usage)")}

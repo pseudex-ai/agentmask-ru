@@ -34,7 +34,7 @@ equals this file.
 | `prototype/licensing/` | our side: the authored detection assets, the bundle packer, the licensing server and its store | **never** — an import of it from `pseudex/` is a build failure | `python3 -m licensing.devserver`, `python3 -m licensing.pack` | §2 |
 | `prototype/*.py`, `prototype/pseudexctl` | entry points, build steps, tests, evals, dataset generators (all flat, no package) | tests/evals never; `pseudexctl` and `serve_main.py` yes | see §3 | §3 |
 | `prototype/bench/` | measurement instruments: benchmarks we built, corpora we did not write, paired live runs | never | each script has a `main()` | §4 |
-| `prototype/e2e/` | closing gates against REAL containers: licensing (L1–L22), packaging (P1–P11), plus the gate that audits the gates | never | `e2e/gates.py`, `e2e/pack_gates.py` | §5 |
+| `prototype/e2e/` | closing gates against REAL containers: licensing (L1–L25), packaging (P1–P11), plus the gate that audits the gates | never | `e2e/gates.py`, `e2e/pack_gates.py` | §5 |
 | `prototype/Dockerfile`, `prototype/Dockerfile.nuitka` | the two images; same Debian release, different way of building the engine | — | `docker build` | §3.2 |
 | `storefront/` | landing, signup, customer cabinet, operator console, billing, analytics — Django, on OUR hardware; shares no code with the engine | no (runs on our side) | `storefront/manage.py`, `storefront/run_all.py` | §6, `storefront/README.md` |
 | `deploy/` | our production host: compose, Caddy, Prometheus/Loki/Grafana, backups, watchdog, systemd timers, support bot | no | `deploy/bootstrap.sh`, `deploy/agent.sh`, `deploy/local.sh` | §7 |
@@ -48,7 +48,7 @@ equals this file.
 
 Generated, ignored, never committed: `prototype/*.json` datasets (`make_*.py`),
 `prototype/*.db*`, `prototype/pseudex-vault.key`, `prototype/pseudex/_release.py`
-(the compiled-in verification key, written by both Dockerfiles), `deploy/secrets/`,
+(the compiled-in verification key, written by both Dockerfiles), `deploy/secrets/`, «deploy/.registry/» (the agent's cosign-verified copy of `deploy/releases.json`),
 `storefront/.venv`, `storefront/storefront.sqlite3`, `~/.cache/pseudex-bench/`
 (external corpora — NEREL, PII-Bench, RuDevices, MASSIVE, ru_prose).
 
@@ -244,8 +244,8 @@ canonicalization (phones, names in the nominative with gender evidence,
 addresses via `split_roles`); format-preserving, checksum-INVALID substitutes;
 the conversation scope (`for_conversation`, `with_pseudonym_scope`, `minted_in`);
 the digit-signature and translit reindexes; the collision guards at mint time.
-- **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `looks_dictated`, `name_key`, `fold_key`, `place_key`, `token_re`, `Vault`
-- **Uses:** address, assets, credentials, fuzzy, morph_names, morph_places, normalize, profiling, ru_pii, spoken, sqlite_setup, translit · **Used by:** assets, envelope, proxy, redact, service
+- **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `looks_dictated`, `name_key`, `fold_key`, `place_key`, `token_re`, `create_tables`, `create_indexes`, `Vault` (+ `VAULT_MIGRATIONS`)
+- **Uses:** address, assets, credentials, fuzzy, morph_names, morph_places, normalize, profiling, ru_pii, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, proxy, redact, service, schema (lazy)
 - **Tests:** vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_hard_cases, test_loop, test_names_morphology, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
 - **Docs:** `docs/tz-vault-encryption.md`, `docs/tz-name-gender-canonical.md`, `docs/how-it-works.md`, `research/2026-09-03-checksum-valid-substitutes.md` · rules: INVARIANTS.md#vault, INVARIANTS.md#collisions, INVARIANTS.md#conversation-scope
 
@@ -273,8 +273,8 @@ What was caught and what replaced it: type + token + masked preview only, never
 the value. Recorded on cache MISS only. Also the request counter (`requests` is
 a REQUEST counter, not `sum(entities)`), reveal records, billing totals
 (excluding `SELFCHECK_ORG`).
-- **API:** `AuditLog`
-- **Uses:** profiling, sqlite_setup · **Used by:** envelope, metering, operator, proxy, service
+- **API:** `create_tables`, `AuditLog` (+ `AUDIT_MIGRATIONS`)
+- **Uses:** profiling, schema, sqlite_setup · **Used by:** envelope, metering, operator, proxy, service, schema (lazy)
 - **Tests:** test_collisions, test_detok_security, test_localui, test_persona_defects, test_product; `bench/agentpii*/`
 - **Docs:** `docs/tz-local-ui.md`, `docs/metering-integrity.md` · rules: INVARIANTS.md#audit
 
@@ -303,9 +303,14 @@ the one direction that is allowed.
 #### `pseudex/license.py` — 977 lines · `live`
 Client side of the lease: X25519 process keypair in memory, `POST /v1/lease`,
 renewal loop, the degradation ladder `LEASED → STALE → EXPIRED` (grace on
-`time.monotonic()`, 402/403 bypass it), unload + scrub, usage reports, the
-compiled-in verification key from `pseudex/_release.py`.
-- **API:** `explain`, `LicenseError`, `LicenseStatus`, `LicenseClient`
+`time.monotonic()`, 402/403 and 426 bypass it), unload + scrub, usage reports, the
+compiled-in verification key from `pseudex/_release.py`. Also the version
+ladder (D-055): the signed `version` block of each lease is parsed once into
+`LicenseStatus` (INFO «есть новее» once per version, WARN on every renewal
+after `deprecated_at`, a notice once per id), `lease_contract` is declared in
+the request (D-063), and a `bundle_format` above `SUPPORTED_BUNDLE_FORMAT` is
+`BundleFormatError` — «обновите движок», grace on renewal, its own code at start (D-064).
+- **API:** `explain`, `BundleFormatError`, `LicenseError`, `LicenseStatus`, `LicenseClient`
 - **Uses:** _release (generated), assets, bundle, measure · **Used by:** metering, proxy, service
 - **Tests:** test_clock_freeze, test_localui, test_persona_defects, `licensing/test_admin_api.py`, `licensing/test_metering_attacks.py`; `e2e/gates.py` L1–L22
 - **Docs:** `docs/tz-license-packaging.md`, `docs/tz-tuning-in-lease.md`, `docs/staleness-and-rotation.md`, `docs/tz-offline-license.md` (design) · rules: INVARIANTS.md#lease
@@ -354,8 +359,11 @@ shared envelope. `docs/known-issues.md` §3 lists what else lagged and what is c
 Read-mostly endpoints for the operator's local interface, mounted on both
 surfaces under the ADMIN token: `/status`, `/events`, `/stats`, `/stats.csv`,
 `/reveals`, `/subscription`, `/diagnostics`, `/selfcheck`, `/reveal`, `/metrics`.
-- **API:** `processes`, `memory`, `build_router`
-- **Uses:** audit, metrics, preflight, profiling, sqlite_setup · **Used by:** proxy, service
+`release_verdict` is the `engine.release` block of `/status` and `/subscription`:
+the server's verdict on this version (D-055) with unix dates and the one
+upgrade command, `None` fields when the server said nothing.
+- **API:** `processes`, `memory`, `release_verdict`, `build_router`
+- **Uses:** audit, metrics, preflight, profiling, schema, sqlite_setup · **Used by:** proxy, service
 - **Tests:** none direct · via service → test_localui, test_perf_masking (401 on token drift), test_detok_security
 - **Docs:** `docs/tz-local-ui.md` · rules: INVARIANTS.md#surfaces, INVARIANTS.md#audit
 
@@ -372,8 +380,8 @@ and ship at `/app/ui`. Never imports `pseudex.service`, never leases.
 
 #### `pseudex/tenants.py` — 87 lines · `live`
 Multi-tenant API keys for the proxy shape: key → upstream URL + key.
-- **API:** `Tenant`, `Tenants`
-- **Uses:** sqlite_setup · **Used by:** proxy; `issue_key.py`
+- **API:** `create_tables`, `Tenant`, `Tenants` (+ `TENANTS_MIGRATIONS`)
+- **Uses:** schema, sqlite_setup · **Used by:** proxy, schema (lazy); `issue_key.py`
 - **Tests:** test_product
 - **Docs:** `docs/integration.md`
 
@@ -392,7 +400,7 @@ licensing): `sqlcipher3` only, no `import sqlite3` anywhere in `pseudex/` (both
 Dockerfiles fail the build on it). HKDF per-store keys, read-only opens, volume
 state, preflight of the mounted volume.
 - **API:** `VaultLocked`, `store_key`, `connect`, `connect_readonly`, `volume_state`, `preflight`, `describe`
-- **Uses:** vault_key, vault_migrate · **Used by:** audit, operator, proxy, service, tenants, vault; `licensing/store.py`, `licensing/verify.py`, serve_main
+- **Uses:** vault_key, vault_migrate · **Used by:** audit, operator, proxy, schema, service, tenants, vault; `licensing/store.py`, `licensing/verify.py`, serve_main
 - **Tests:** `licensing/test_store_upgrade.py` · via vault → vault_test, test_pseudexctl; `e2e/pack_gates.py` P9
 - **Docs:** `docs/tz-vault-encryption.md` · rules: INVARIANTS.md#storage
 
@@ -410,9 +418,24 @@ Plaintext store → encrypted, in place, under `flock`, idempotent by file heade
 `wal_checkpoint(TRUNCATE)` first. Rekey and decrypt are the same move in other
 directions (`PSEUDEX_ROLE=rekey|decrypt`).
 - **API:** `VaultMigrationError`, `file_state`, `ensure_encrypted`, `rekey_store`, `decrypt_store`
-- **Uses:** vault_key · **Used by:** sqlite_setup, serve_main
+- **Uses:** vault_key · **Used by:** schema, sqlite_setup, serve_main
 - **Tests:** none direct · via serve_main roles → test_pseudexctl; `e2e/gates.py` (migration gates)
 - **Docs:** `docs/tz-vault-encryption.md` · rules: INVARIANTS.md#storage
+
+#### `pseudex/schema.py` — 330 lines · `live`
+The schema of a volume, numbered (D-058…D-060): `application_id` per store,
+`user_version` moved only by numbered idempotent steps (`vault.VAULT_MIGRATIONS`,
+`audit.AUDIT_MIGRATIONS`, `tenants.TENANTS_MIGRATIONS`), `ensure` — refuse a
+volume from the future (`SchemaTooNew`) or another store's file
+(`SchemaMismatch`) BEFORE touching it, `VACUUM INTO` snapshot under the same
+key before the first step (`SchemaNoSpace` when < 2× free), fast path when the
+volume is current. `PSEUDEX_ROLE=migrate` runs it once before the fan-out;
+`probe` exits 2 on a future volume (entrypoint 6). `schema_lock.json` pins the
+maximum per minor.
+- **API:** `SchemaError`, `SchemaTooNew`, `SchemaTooOld`, `SchemaMismatch`, `SchemaNoSpace`, `Step`, `StoreSchema`, `registry`, `short_name`, `max_version`, `versions`, `running`, `read_lock`, `on_disk`, `explain_too_new`, `snapshots`, `ensure`, `snapshot` (+ constants `APPLICATION_IDS`, `MIN_VERSION`, `RUNNING`)
+- **Uses:** sqlite_setup, vault_migrate, audit (lazy), tenants (lazy), vault (lazy) · **Used by:** audit, operator, tenants, vault, serve_main
+- **Tests:** test_schema · via entrypoint.sh → test_preflight (exit codes 5/6); `e2e/gates.py` L24–L25
+- **Docs:** `docs/tz-release-and-versions.md` §7 · rules: INVARIANTS.md#storage
 
 #### `pseudex/hardening.py` — 114 lines · `live`
 Process-level hardening against reading the worker's memory off disk: no core
@@ -472,6 +495,8 @@ package imports `pseudex.bundle`, `pseudex.sqlite_setup`, `pseudex.metrics`.
 | `licensing/server.py` | 1 317 | `live` | the licensing server — the only component on our hardware: `POST /v1/lease` (seal to the process key, sign), `/v1/release`, `/v1/tripwire`, `/v1/meter`, `/v1/usage`; admin API on :9443 (instances, anomalies, issue/revoke/suspend/resume/replan/plans, fleet) |
 | `licensing/store.py` | 1 675 | `live` | licensing state: keys, leases, usage chains, anomalies. Schema MIGRATES before any index is built. |
 | `licensing/devserver.py` | 68 | `live` | runs the server locally exactly as in production (`basicConfig` for the root logger lives here — uvicorn does not configure it) |
+| `licensing/registry.py` | 470 | `live` | the versions registry as code (stdlib only): `validate` (schema, order, aliases, the 90-day rule, additive against the previous file), `record` (patch moves `latest`; a new minor opens a cycle and closes the previous one), `aliases_for`, `verdict` (the lease `version` block), `check` (the 426, never for a late `eol`), `Watch` (the server's mtime-reloaded view). CLI `python3 -m licensing.registry validate|record|aliases|verdict` |
+| `licensing/test_registry.py` | 170 | `live` | every promise of `docs/tz-release-and-versions.md` §5–6 as a check |
 | `licensing/verify.py` | 77 | `live` | is this copy of the licensing DB a WORKING database and how full is it (the restore drill asks this) |
 | `licensing/repair_usage.py` | 77 | `live` | one-off repair of `usage` rows written before input validation existed |
 | `licensing/test_admin_api.py` | 855 | `live` | attacks THROUGH HTTP, not around it: every admin action, auth, replay |
@@ -496,7 +521,7 @@ active. There is NO pytest; each script has a `main()`.
 | `version.txt` | `live` | the ONE source of the engine version (D-053): both Dockerfiles bake it into `pseudex/_release.py` as `ENGINE_VERSION`, `pseudex/license.py` reads it (dev checkout: the file), the lease, `/status`, the UI and `pseudexctl doctor` show it; `.github/workflows/release.yml` is red when it differs from the tag |
 | `entrypoint.sh` | `live` | the container's PID 1: generates the two tokens ONCE for all workers, runs `PSEUDEX_ROLE=preflight` to size N, `PSEUDEX_ROLE=probe` to check the volume, then fans out N uvicorn workers (`engine`, or `proxy`) and starts the UI process (`PSEUDEX_ROLE=ui`) |
 | `serve_main.py` | `live` | entry point of ONE worker; dispatches on `PSEUDEX_ROLE`: `engine` (default) · `proxy` · `ui` · `preflight` · `probe` · `rekey` · `decrypt` · `measure` · `tripwire`. Hardens the process before any role runs. |
-| `pseudexctl` | `live` | the ops CLI, one entry instead of six `docker run -e PSEUDEX_ROLE=…`: `doctor`, `probe`, `preflight`, `decrypt`, `diag`, `metrics`, `rekey`, `backup`, `restore`. Pinned by `test_pseudexctl.py`. |
+| `pseudexctl` | `live` | the ops CLI, one entry instead of six `docker run -e PSEUDEX_ROLE=…`: `doctor`, `probe`, `preflight`, `decrypt`, `diag`, `metrics`, `rekey`, `backup`, `restore`, `upgrade` (D-062: new image, same volume, rollback by itself or by snapshot). Ships in both images at `/app/pseudexctl`. Pinned by `test_pseudexctl.py`. |
 | `issue_key.py` | `live` | mint a proxy tenant key (`sk-ps-…`) into `tenants.db` |
 | `testkit.py` | `live` (dev only) | `load_dev_bundle()` — builds a bundle from `licensing/pack.py` and loads it in-process; every test/eval that detects calls it first. NO equivalent in the shipped image. |
 | `requirements.txt` | `live` | not stdlib-only: `fastapi`, `uvicorn`, `httpx`, `phonenumbers`, `pymorphy3` + `pymorphy3-dicts-ru`, `natasha`, `pyrage` (age), `cryptography`, `sqlcipher3` |
@@ -526,8 +551,9 @@ Run from `prototype/`; each loads the dev bundle itself.
 | `test_localui.py` | the operator surface: closed by default, reveals audited with `actor`, requests billed apart from entities, self-check excluded from billing |
 | `test_localui_renders.py` | the interface in a REAL browser (playwright + chromium): a 200 and a CSP header are not evidence it executed |
 | `test_persona_defects.py` | the five defects the 18.08.2026 persona run found and no corpus of ours did |
-| `test_preflight.py` | worker arithmetic against the cgroup limit; what happens when N does not fit; the contract with `entrypoint.sh` |
-| `test_pseudexctl.py` | the ops CLI: command shapes, doctor verdicts, the rekey proof |
+| `test_preflight.py` | worker arithmetic against the cgroup limit; what happens when N does not fit; the contract with `entrypoint.sh` (including probe 2 → 6 and migrate 5) |
+| `test_schema.py` | the schema contract of a volume (D-058…D-060): fresh store stamped, legacy volume snapshotted and brought forward (snapshot opens with the same key), future volume refused untouched, no space refused before touching, the maxima equal `schema_lock.json` for the minor in `version.txt`, `probe` exits 2 and `migrate` brings a volume forward |
+| `test_pseudexctl.py` | the ops CLI: command shapes, doctor verdicts (incl. the version ladder), the rekey proof, `upgrade` (order, secrets never in argv, both rollback branches, dry-run leaves nothing) |
 | `test_collisions.py` | a substitute equal to a real value — both halves (backwards at mint, forwards via `minted_in`), and BOTH sides of the `pseudonym_scope` trade |
 | `test_derived_forms.py` | transliteration and initials in a tool argument — in the model's own convention, resolved by the conversation |
 | `test_argument_form.py` | a tool argument is restored VERBATIM in the agent's form (case, generic words); prose in agreement |
@@ -624,7 +650,7 @@ containers, never mocks, and are themselves audited.
 
 | file | what |
 |---|---|
-| `e2e/gates.py` | L1–L22 (+L2b): lease, renewal, grace, revocation, vault encryption/migration/rekey, preflight, memory scan, tokens, billing counter (L12), against a local stand (`deploy/compose.local.yml`). `--only L4,L5` for a subset; `--image pseudex:compiled --skip-build` with `PSEUDEX_SIGNING_KEY` to reuse a build. ~15 min |
+| `e2e/gates.py` | L1–L25 (+L2b): lease, renewal, grace, revocation, vault encryption/migration/rekey, preflight, memory scan, tokens, billing counter (L12), the schema of the volume (L25 pre-versioned volume snapshotted and brought forward, L24 a future volume refused untouched with exit 6), against a local stand (`deploy/compose.local.yml`). `--only L4,L5` for a subset; `--image pseudex:compiled --skip-build` with `PSEUDEX_SIGNING_KEY` to reuse a build. ~15 min |
 | `e2e/pack_gates.py` | P1–P11 on the compiled image: no `/app/pseudex`, no docstrings (`grep -a`), parity with the source tree (P3 via `e2e/parity.py` on `dirty.json`), latency, stdlib-SQLite cannot open the volume (P9), no `sqlite3` import… Builds BOTH images unless `--skip-build` |
 | `e2e/parity.py` | P3: the compiled image detects EXACTLY what the source tree detects |
 | `e2e/audit_gates.py` | the gate over the gates: every NEGATIVE atom needs a POSITIVE atom over the same source; `--selftest` on 13 fixtures REFUSES to report unless it separates them. Runs in the battery as `62-gate-audit` |
@@ -649,7 +675,7 @@ to the licensing server through ONE connector (`storefront/billing/licensing.py`
 | app / file | what |
 |---|---|
 | `storefront/pseudex_site/` | settings (no `PSEUDEX_SECRET_KEY` → refuses to start unless `PSEUDEX_DEBUG`), URL map, `storefront/pseudex_site/context.py` (numbers the templates must see so text never diverges from code), `storefront/pseudex_site/logfmt.py` (JSON logs) |
-| `storefront/storefront_web/` | the pages; `storefront/storefront_web/detection_types.py` (what the engine finds and does not — the configurator's data); `storefront/storefront_web/middleware.py` (security headers) |
+| `storefront/storefront_web/` | the pages; `storefront/storefront_web/detection_types.py` (what the engine finds and does not — the configurator's data); `storefront/storefront_web/middleware.py` (security headers); `storefront/storefront_web/engine_release.py` (the image the site advertises — the floating minor of the newest cycle from the synced registry, `latest` without a file, `PSEUDEX_DOCKER_IMAGE` as the only override; D-061) |
 | `storefront/accounts/` | users, organisations, `storefront/accounts/payer.py` (who the customer is, as THEY state it) |
 | `storefront/billing/` | `storefront/billing/models.py` (Plan, Subscription, Key, Invoice, Offer), `storefront/billing/services.py` (ALL state changes in one place), `storefront/billing/payments.py` (ЮKassa: cards, СБП, invoice link), `storefront/billing/licensing.py` (connector to the licensing admin API), `storefront/billing/reconcile.py` (our invoice vs the customer's own gateway log), `storefront/billing/onboarding.py` (the coding-agent onboarding prompt); commands `run_billing_cycle` (the ONLY caller of the billing primitives, hourly as its own compose service, idempotent by a DB row) and `seed_plans` |
 | `storefront/ops/` | operator console (all customers, one customer, report chains, plans), first-party analytics (`storefront/ops/analytics_models.py`, `storefront/ops/collect.py` — daily salt, bot filter), demand for detection types we lack (`storefront/ops/models.py`), Yandex Metrika/Direct API + server-side conversions (`storefront/ops/yandex_api.py`, `storefront/ops/yandex_views.py`); commands `daily_digest`, `enroll_totp`, `rollup_analytics`, `yandex_auth`, `yandex_conversions` |
@@ -665,7 +691,7 @@ every state transition; the container-stopping check goes LAST) ·
 `test_billing_e2e` (the REAL ЮKassa test shop) · `test_annual` · `test_hardcap`
 · `test_offers` · `test_paywall` · `test_passwordless` · `test_admin_2fa` ·
 `test_auth_style` · `test_signup_forms` · `test_configurator_renders` and
-`test_ops_renders` (real browser) · `test_seo` · `test_crawler_allowlist`
+`test_ops_renders` (real browser) · `test_engine_release` (the advertised image comes from the registry: override → file → `latest`, reload on replace, the landing shows the same tag) · `test_seo` · `test_crawler_allowlist`
 (fail2ban allowlist) · `test_deploy_references` (SQL names in deploy scripts vs
 real tables) · `test_analytics` · `test_yandex_api`.
 
@@ -688,8 +714,12 @@ Docs: `docs/sprint-cabinet-and-pricing.md`, `docs/billing-integrity.md`,
 | `deploy/local.sh` | brings the stand up and PROVES it is up (a 401 from the admin port is proof of life) before printing the walkthrough |
 | `deploy/bootstrap.sh` | clean Ubuntu 24.04 → production host, one idempotent command |
 | `deploy/agent.sh` + `deploy/systemd/pseudex-agent.service`, `.timer` | the deploy the host performs ITSELF on a timer |
+| `deploy/releases.json` | the versions registry (D-054): `cycles[]` newest→oldest with `state`, `eoas`, `eol`, `eol_announced`, `latest{version,date,digest}`, `aliases`; `notices[]`. Written by `.github/workflows/release.yml` (`record`), edited by hand only for `eol`/`eol_announced`/`notices` through a PR; validated by `.github/workflows/checks.yml`; read by the licence server and the storefront through the copy the agent syncs (stage 3) |
+| `deploy/shipped_paths.sh` | the files that make up the customer image, derived from the `COPY` lines of `prototype/Dockerfile.nuitka` — the one definition both the commit lint and the «empty engine release» refusal read |
+| `deploy/lint_engine_commits.sh` | refuses a visible-type commit («feat/fix/security/perf/build/revert») that touches `prototype/` and nothing shipped: it would mint an engine version for an unchanged image. Runs in `.github/workflows/checks.yml` |
+| `deploy/version.txt`, `storefront/version.txt`, `prototype/licensing/version.txt` | the platform stream's version files (release-please `simple` strategy, linked as one component) — bumped by the Release PR, never by hand |
 | `deploy/test_agent.sh` | the agent's DECISIONS without docker: follows «platform/v*» only, compares «platform/v0.3.16» with `v0.3.15` by number (raw `sort -V` puts `p` before `v` and would refuse every release as a downgrade), refuses a real downgrade, refuses an identity that cannot match platform tags, waits when no platform tag exists. Runs in `.github/workflows/checks.yml` |
-| `deploy/watch.sh` | the watchdog: `docs/operations.md` §5 turned into a mechanism |
+| `deploy/watch.sh` | the watchdog: `docs/operations.md` §5 turned into a mechanism; also warns when a cycle's `eol` is ≤ 30 days away and containers still run on it (`/admin/versions`, D-056) |
 | `deploy/backup.sh`, `deploy/restore-drill.sh` + `deploy/systemd/pseudex-restore-drill.service`, `.timer` | nightly backups of both databases; the weekly drill restores yesterday's and asks `licensing/verify.py` whether it is alive |
 | `deploy/housekeeping.sh` + `deploy/systemd/pseudex-housekeeping.service`, `.timer` | weekly disk cleanup, on its own timer |
 | `deploy/notify.sh` | one alert channel (Telegram) for deploys, the watchdog and backups |
@@ -714,8 +744,9 @@ Docs: `docs/operations.md` (the operational spec), `research/2026-09-14-devops-a
 |---|---|---|
 | `.github/workflows/checks.yml` | every push, every PR | the engine suite without containers: `test_loop`, `test_tuning_lease_security`, `test_watermark`, `test_canary`, `test_clock_freeze`, `test_detok_security`, `test_tripwire`, `test_memory_hardening`, `vault_test`, `test_coverage_152fz`, `test_product`, `test_localui`, `test_hard_cases` (+ storefront jobs) |
 | `.github/workflows/gates.yml` | nightly 01:00 UTC + dispatch | `make_dirty` → `pack_gates` (both images) → `gates.py --image pseudex:compiled --skip-build`; on dispatch a subset via `ONLY` |
-| `.github/workflows/release.yml` | tag `v[0-9]*` | build and publish both images |
-| `.github/workflows/ship.yml` | manual, with `bump` | version bump + tag |
+| `.github/workflows/release.yml` | tags `v[0-9]*` and «platform/v[0-9]*» | one file, two streams (the cosign identity the host trusts is this file's name): engine — tag equals `prototype/version.txt`, the shipped set (`deploy/shipped_paths.sh`) changed since the previous engine tag or red, aliases from the registry, anonymous pull of every ref, digest signed, `chore(registry): pseudex X.Y.Z` committed to `main`; platform — four images, closed to anonymous, signed |
+| `.github/workflows/backport.yml` | a PR merged into `main` | when the PR carries a `security:` commit that touches the image (`deploy/shipped_paths.sh`), opens a cherry-pick PR of the WHOLE PR into every live «release/*» branch (korthout/backport-action, pinned) — so an engine security fix is its own PR; the only way commits reach a support branch (D-057). A direct push needs a manual `git cherry-pick -x` |
+| `.github/workflows/release-please.yml` | every push to `main` or a «release/**» branch; dispatch from `.github/workflows/release.yml` | keeps one Release PR per stream (engine `vX.Y.Z`, platform «platform/vX.Y.Z») on the branch the push came to (`target-branch`); on merge waits for green checks, creates the tag and GitHub Release, dispatches `.github/workflows/release.yml` explicitly (a GITHUB_TOKEN tag push fires no `tags:` trigger). Replaced the former «ship.yml» (D-052) |
 | `.github/workflows/uptime.yml` | every 10 min | is production answering |
 | `.github/workflows/backup-audit.yml` | daily 06:20 UTC | did last night's backup happen and is it readable |
 | `.github/zizmor.yml`, `.github/dependabot.yml` | — | workflow linting; dependency updates |
@@ -730,5 +761,6 @@ Docs: `docs/operations.md` (the operational spec), `research/2026-09-14-devops-a
 | `research/` | 50 documents — see INDEX.md |
 | `brand/` | `brand/README.md`, logo/landing/UI mock-ups as `brand/*.dc.html`, `brand/ad-images/`, `brand/uploads/`, `brand/support.js`, bot avatar |
 | `e2e-personas/` | `e2e-personas/REAL-LLM.md` (why personas call a live model; the key lives in `prototype/.env.local`), `e2e-personas/harness.py`, five personas (`e2e-personas/personas/`), findings by date (`e2e-personas/findings/`) — the 18.08.2026 run is what `test_persona_defects.py` pins |
+| `release-please-config.json`, `release-please-config.release.json`, `.release-please-manifest.json` | the two release streams (D-052): packages `prototype` (engine, `exclude-paths` licensing/bench/e2e) and `prototype/licensing` + `storefront` + `deploy` (platform, linked); NO root package; per-package `version.txt`. The `.release.json` variant holds the `prototype` package only and is what `.github/workflows/release-please.yml` uses on «release/**» branches — the platform is never released from a support branch; `.github/workflows/checks.yml` pins the two configs equal on that package |
 | `.trivyignore` | accepted CVE findings for the images |
 | `.claude/skills/`, `.claude/worktrees/` | project skills; agent worktrees hold STALE copies of `CLAUDE.md` |

@@ -24,6 +24,7 @@ import os
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -463,6 +464,317 @@ def _verdict_after_rekey(before: dict[str, str], after: dict[str, str],
     return 0
 
 
+# --- обновление ------------------------------------------------------------
+
+def _inspect(runner: Runner, container: str) -> dict | None:
+    """`docker inspect` одного контейнера как словарь, или None."""
+    code, output = runner.docker(["inspect", container], timeout=60)
+    if code != 0 or not output.strip():
+        return None
+    try:
+        parsed = json.loads(output)
+    except ValueError:
+        return None
+    return parsed[0] if isinstance(parsed, list) and parsed else None
+
+
+def _image_env(runner: Runner, image: str) -> set[str]:
+    code, output = runner.docker(["image", "inspect", "--format", "{{json .Config.Env}}", image],
+                                 timeout=60)
+    if code != 0:
+        return set()
+    try:
+        return set(json.loads(output.strip() or "[]") or [])
+    except ValueError:
+        return set()
+
+
+def _image_id(runner: Runner, reference: str) -> str:
+    code, output = runner.docker(["image", "inspect", "--format", "{{.Id}}", reference], timeout=60)
+    return output.strip() if code == 0 else ""
+
+
+def _split_reference(reference: str) -> tuple[str, str]:
+    """`cr.yandex/x/pseudex:0.3` → (`cr.yandex/x/pseudex`, `0.3`). A digest
+    reference has no tag to move; the port in a registry host is not a tag."""
+    if "@" in reference:
+        return reference.split("@", 1)[0], ""
+    head, _sep, tail = reference.rpartition(":")
+    if _sep and "/" not in tail:
+        return head, tail
+    return reference, ""
+
+
+def _data_volume(spec: dict, fallback: str) -> str:
+    """The volume (or bind path) mounted at /data in THIS container.
+
+    Not `--volume`: the probe, the archive and the post-failure probe all
+    used the flag's default, so a container started with `-v crm-vault:/data`
+    was probed against an auto-created EMPTY `pseudex-data` — «нет файла» for
+    every store, exit 0, guard passed vacuously, archive of nothing.
+    """
+    for mount in spec.get("Mounts") or []:
+        if mount.get("Destination") != "/data":
+            continue
+        source = mount.get("Name") if mount.get("Type") == "volume" else mount.get("Source")
+        if source:
+            return str(source)
+    return fallback
+
+
+def _health_url(spec: dict, fallback: str) -> str:
+    """Where THIS container answers /health: its published binding of
+    8000/tcp, or `--url` when nothing is published (a container on a user
+    network reached by name). Polling the default 127.0.0.1:8000 for a
+    container run with `-p 8080:8000` declared a working upgrade dead."""
+    bindings = ((spec.get("HostConfig") or {}).get("PortBindings") or {}).get("8000/tcp") or []
+    for binding in bindings:
+        host_port = str(binding.get("HostPort") or "")
+        if not host_port:
+            continue
+        host_ip = str(binding.get("HostIp") or "")
+        if host_ip in ("", "0.0.0.0", "::"):
+            host_ip = "127.0.0.1"
+        return f"http://{host_ip}:{host_port}"
+    return fallback
+
+
+def _run_command_from(spec: dict, image: str, image_env: set[str],
+                      env_file: str) -> tuple[list[str], list[str]]:
+    """The `docker run` that recreates THIS container on ANOTHER image.
+
+    Returns (argv after `docker`, the names of the variables carried over).
+    What is carried: name, published ports, mounts (volumes and binds, with
+    their mode), the environment set at `docker run` time — the container's
+    env minus what the OLD image defined, so the new image's own PATH is not
+    overridden by the old one's — `--restart`, `--memory`, `--network`,
+    `--ulimit`, `--add-host`, `--user`. The rest of `docker run` is not read:
+    an operator who used more runs compose, and compose has `pull` + `up -d`.
+
+    SECRETS DO NOT GO INTO ARGV. The environment carries the vault key and the
+    licence key; `-e NAME=VALUE` would put both into `ps`, shell history and
+    the ticket the output is pasted into. They travel in an `--env-file` with
+    mode 0600 that is deleted the moment the container is created.
+    """
+    config = spec.get("Config") or {}
+    host = spec.get("HostConfig") or {}
+    name = str(spec.get("Name") or "").lstrip("/")
+    args = ["run", "-d", "--name", name]
+    for port, bindings in sorted((host.get("PortBindings") or {}).items()):
+        for binding in bindings or []:
+            host_ip = str(binding.get("HostIp") or "")
+            host_port = str(binding.get("HostPort") or "")
+            container_port = port.replace("/tcp", "")
+            published = f"{host_ip}:{host_port}:{container_port}" if host_ip else f"{host_port}:{container_port}"
+            args += ["-p", published]
+    for mount in spec.get("Mounts") or []:
+        source = mount.get("Name") if mount.get("Type") == "volume" else mount.get("Source")
+        if not source or not mount.get("Destination"):
+            continue
+        suffix = "" if mount.get("RW", True) else ":ro"
+        args += ["-v", f"{source}:{mount['Destination']}{suffix}"]
+    carried = sorted(entry.split("=", 1)[0] for entry in (config.get("Env") or [])
+                     if entry not in image_env)
+    if carried:
+        args += ["--env-file", env_file]
+    policy = (host.get("RestartPolicy") or {}).get("Name") or ""
+    if policy and policy != "no":
+        retries = (host.get("RestartPolicy") or {}).get("MaximumRetryCount") or 0
+        args += ["--restart", f"{policy}:{retries}" if policy == "on-failure" and retries else policy]
+    memory = int(host.get("Memory") or 0)
+    if memory:
+        args += [f"--memory={memory}"]
+    network = str(host.get("NetworkMode") or "")
+    if network and network not in ("default", "bridge"):
+        args += ["--network", network]
+    for limit in host.get("Ulimits") or []:
+        args += ["--ulimit", f"{limit.get('Name')}={limit.get('Soft')}:{limit.get('Hard')}"]
+    for extra in host.get("ExtraHosts") or []:
+        args += ["--add-host", str(extra)]
+    if config.get("User"):
+        args += ["--user", str(config["User"])]
+    args.append(image)
+    return args, carried
+
+
+def _write_env_file(spec: dict, image_env: set[str]) -> str:
+    """The run-time environment of the container, 0600, for `--env-file`."""
+    config = spec.get("Config") or {}
+    lines = [entry for entry in (config.get("Env") or []) if entry not in image_env]
+    handle, path = tempfile.mkstemp(prefix="pseudexctl-env-", suffix=".env")
+    with os.fdopen(handle, "w", encoding="utf-8") as fh:
+        os.fchmod(handle, 0o600)
+        fh.write("\n".join(lines) + ("\n" if lines else ""))
+    return path
+
+
+def cmd_upgrade(args, runner: Runner) -> int:
+    """Обновить контейнер на другой образ, сохранив том, и уметь вернуться.
+
+    ПОРЯДОК И ЕСТЬ ВСЯ ЗАЩИТА (D-062): pull → probe НОВЫМ образом (ключ
+    открывает том, том не из будущего — до того, как что-то остановлено) →
+    stop → снимок тома в архив → rename старого → run нового с теми же
+    томом, портами, окружением → health. Нездоров: если старый образ ещё
+    открывает том (схема не двинулась) — назад на старый контейнер; если схема
+    поднята — назад только через снимок, и инструмент печатает команду, а не
+    делает вид, что откатил.
+
+    Не для compose: у compose свой `pull` + `up -d`, и контейнер, который он
+    создал, пересоздавать мимо него значило бы рассинхронизировать его.
+    """
+    spec = _inspect(runner, args.container)
+    if spec is None and not runner.dry_run:
+        print(f"контейнер {args.container} не найден: pseudexctl --container ИМЯ upgrade",
+              file=sys.stderr)
+        return 2
+    spec = spec or {"Name": f"/{args.container}", "Config": {"Image": args.image, "Env": []},
+                    "HostConfig": {}, "Mounts": []}
+    labels = (spec.get("Config") or {}).get("Labels") or {}
+    if "com.docker.compose.project" in labels:
+        print(f"{args.container} создан docker compose (проект "
+              f"{labels['com.docker.compose.project']}). Обновляйте им же:\n"
+              f"  docker compose pull && docker compose up -d\n"
+              f"Том и окружение он сохранит сам; снимок тома перед этим — "
+              f"pseudexctl backup <файл>.", file=sys.stderr)
+        return 2
+    current = str((spec.get("Config") or {}).get("Image") or args.image)
+    repo, tag = _split_reference(current)
+    target = f"{repo}:{args.to}" if args.to else current
+    if not args.to and not tag:
+        print(f"контейнер запущен по дайджесту ({current}) — плавающего тега нет. "
+              f"Назовите версию: pseudexctl upgrade --to 0.4", file=sys.stderr)
+        return 2
+    volume = _data_volume(spec, args.volume)
+    health = _health_url(spec, args.url)
+    print(f"сейчас: {current}\nцель:   {target}\nтом:    {volume}")
+
+    code, output = runner.docker(["pull", target], timeout=1800)
+    if code != 0 and not runner.dry_run:
+        print(f"образ не скачан: {output.strip()[-300:]}\nНичего не тронуто.", file=sys.stderr)
+        return 1
+    old_id = str(spec.get("Image") or "")
+    new_id = _image_id(runner, target)
+    if old_id and new_id and old_id == new_id:
+        print("уже на этой версии — образ тот же самый. Ничего не тронуто.")
+        return 0
+
+    # ПРОБА НОВЫМ ОБРАЗОМ ДО ОСТАНОВКИ: ключ разрешается, том открывается, и
+    # он не из будущего (код 2). Отказ здесь стоит ноль секунд простоя.
+    # ТОЛЬКО НОЛЬ ИДЁТ ДАЛЬШЕ. 124 (не дождались — PSEUDEX_VAULT_KEY_CMD
+    # завис), 125 (docker не запустил образ) считались «пробa прошла», и
+    # инструмент останавливал движок, ничего не проверив.
+    code, output = _role(runner, "probe", target, volume, _passthrough_env(), read_only=True)
+    if runner.dry_run:
+        code = 0
+    if code == 2:
+        print(output, end="")
+        print("том новее нового образа — обновление отменено, ничего не тронуто.", file=sys.stderr)
+        return 1
+    if code in (124, 125, 126, 127):
+        print(output, end="")
+        print(f"проверить том новым образом не удалось (docker вернул {code}: "
+              f"{output.strip()[:120]}) — обновление отменено, ничего не тронуто.", file=sys.stderr)
+        return 1
+    if code != 0:
+        print(output, end="")
+        print("новый образ не открывает том текущим ключом — обновление отменено, "
+              "ничего не тронуто. Ключ задаётся теми же переменными, что у движка.",
+              file=sys.stderr)
+        return 1
+
+    code, output = runner.docker(["stop", args.container], timeout=180)
+    if code != 0 and not runner.dry_run:
+        print(f"не удалось остановить {args.container}: {output.strip()}\nНичего не тронуто.",
+              file=sys.stderr)
+        return 1
+
+    snapshot = ""
+    if not args.no_snapshot:
+        snapshot = args.snapshot or f"{volume}.pre-{tag or 'digest'}-{args.to or tag}.tgz"
+        try:
+            mount, name = _archive_mount(snapshot, "rw")
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            runner.docker(["start", args.container], timeout=180)
+            return 2
+        code, output = runner.docker([
+            "run", "--rm", "--network", "none", "-v", f"{volume}:/data:ro",
+            *mount, "--entrypoint", "tar", current,
+            "czf", f"/archive/{name}", "-C", "/data", "."], timeout=1800)
+        if code != 0 and not runner.dry_run:
+            print(f"снимок тома не снят: {output.strip()[-300:]}\nВозвращаю прежний контейнер.",
+                  file=sys.stderr)
+            runner.docker(["start", args.container], timeout=180)
+            return 1
+        print(f"снимок тома: {snapshot}")
+
+    old_name = f"{args.container}-old-{tag or 'digest'}"
+    code, output = runner.docker(["rename", args.container, old_name], timeout=60)
+    if code != 0 and not runner.dry_run:
+        print(f"не удалось переименовать {args.container}: {output.strip()}", file=sys.stderr)
+        runner.docker(["start", args.container], timeout=180)
+        return 1
+
+    image_env = _image_env(runner, old_id or current)
+    env_file = _write_env_file(spec, image_env) if not runner.dry_run else "<env-file>"
+    try:
+        run_args, carried = _run_command_from(spec, target, image_env, env_file)
+        if runner.dry_run or runner.verbose:
+            print(f"переносится окружение: {', '.join(carried) or '—'}", file=sys.stderr)
+        code, output = runner.docker(run_args, timeout=300)
+    finally:
+        if env_file != "<env-file>":
+            os.unlink(env_file)
+    if code != 0 and not runner.dry_run:
+        print(f"новый контейнер не создан: {output.strip()[-300:]}", file=sys.stderr)
+        return _rollback(args, runner, old_name, current, schema_moved=False)
+
+    if _wait_healthy(runner, health):
+        if not args.keep_old:
+            runner.docker(["rm", old_name], timeout=60)
+        print(f"обновлено: {current} → {target}. Том сохранён"
+              + (f", снимок: {snapshot}" if snapshot else "")
+              + ("" if args.keep_old else f"; прежний контейнер удалён")
+              + ".")
+        return 0
+
+    # НЕЗДОРОВ. Двинулась ли схема — спрашивает СТАРЫЙ образ: если он ещё
+    # открывает том, откат свободен; если отвечает 2 — только через снимок.
+    _code, tail = runner.docker(["logs", "--tail", "40", args.container], timeout=60)
+    print(f"новый контейнер не поднялся за три минуты. Последние строки:\n{tail}", file=sys.stderr)
+    runner.docker(["rm", "-f", args.container], timeout=120)
+    # Двинулась ли схема — спрашивает СТАРЫЙ образ. 0 — нет, откат свободен;
+    # 2 — да; ЛЮБОЙ ДРУГОЙ ответ (docker не дождался, образ не запустился) —
+    # неизвестно, и неизвестное считается «двинулась»: запуск старого
+    # контейнера на поднятом томе безопасен (он выйдет 6, том не тронув), но
+    # слова «откат выполнен» над ним были бы ложью.
+    probe_code, _out = _role(runner, "probe", current, volume, _passthrough_env(), read_only=True)
+    return _rollback(args, runner, old_name, current, schema_moved=(probe_code != 0), snapshot=snapshot)
+
+
+def _rollback(args, runner: Runner, old_name: str, current: str, schema_moved: bool,
+              snapshot: str = "") -> int:
+    """Back to the previous container, or the honest sentence when that is
+    not possible. The new container's NAME is freed first either way — a
+    half-created one would block the rename."""
+    runner.docker(["rm", "-f", args.container], timeout=120)
+    if schema_moved:
+        print("ОТКАТИТЬ АВТОМАТИЧЕСКИ НЕЛЬЗЯ: новый образ поднял схему тома, и прежний "
+              "образ её не откроет. Путь назад — снимок:\n"
+              f"  pseudexctl restore {snapshot or '<снимок>'} --yes\n"
+              f"  docker rename {old_name} {args.container} && docker start {args.container}\n"
+              "Прежний контейнер не удалён, том не тронут дальше.", file=sys.stderr)
+        return 1
+    runner.docker(["rename", old_name, args.container], timeout=60)
+    code, output = runner.docker(["start", args.container], timeout=180)
+    if code != 0 and not runner.dry_run:
+        print(f"откат: прежний контейнер не поднялся: {output.strip()}", file=sys.stderr)
+        return 1
+    print(f"откат выполнен: прежний контейнер {args.container} ({current}) запущен снова. "
+          f"Причина — в строках выше.", file=sys.stderr)
+    return 1
+
+
 def cmd_doctor(args, runner: Runner) -> int:
     """Собрать всё и сказать, ЧТО СЛОМАНО И ЧТО ДЕЛАТЬ.
 
@@ -536,6 +848,11 @@ def cmd_doctor(args, runner: Runner) -> int:
         lines.append((WARN, "ключ волта лежит в том же томе, что и данные",
                       "кража тома забирает и ключ: PSEUDEX_VAULT_KEY_CMD переносит "
                       "его в ваш менеджер секретов"))
+    if "снимки перед миграциями" in output:
+        names = [line.split()[0] for line in output.splitlines() if ".pre-" in line]
+        lines.append((WARN, f"в томе лежат снимки перед миграциями: {', '.join(names)}",
+                      "они весят столько же, сколько стор; удалите, когда новая "
+                      "версия поработала и откат не нужен"))
 
     for mark, what, todo in lines:
         print(f"{_MARK[mark]}  {what}")
@@ -545,6 +862,12 @@ def cmd_doctor(args, runner: Runner) -> int:
     print()
     print("всё в порядке" if not broken else f"проблем: {len(broken)}")
     return 1 if broken else 0
+
+
+def _day(stamp: object) -> str:
+    """unix → ГГГГ-ММ-ДД, по UTC: дата снятия с поддержки — календарная, а не
+    момент, и часовой пояс оператора здесь только запутал бы."""
+    return time.strftime("%Y-%m-%d", time.gmtime(float(stamp)))
 
 
 def _read_status(body: str) -> list[tuple[str, str, str]]:
@@ -560,6 +883,36 @@ def _read_status(body: str) -> list[tuple[str, str, str]]:
     if not engine.get("assets_loaded", True):
         out.append((BAD, "словари детекции не загружены — /mask отвечает 503",
                     "нет бандла: это не «детекция похуже», это остановка"))
+
+    # ВЕРСИЯ — ПО ВЕРДИКТУ СЕРВЕРА, НЕ ПО ОЩУЩЕНИЮ (D-055). Одна строка в любом
+    # случае: «новейшая», «доступна X», или «сервер не сказал» — молчание
+    # сервера не значит «новейшая», и тишина тут была бы неверным диагнозом.
+    release = engine.get("release") or {}
+    version = release.get("version") or engine.get("version") or "?"
+    upgrade = release.get("upgrade") or "pseudexctl upgrade"
+    licence = data.get("license") or {}
+    if licence.get("code") == "unsupported_client":
+        out.append((BAD, f"движок {version} больше не обслуживается — сервер лицензий "
+                         "отказал в аренде (426)",
+                    f"{upgrade}" + (f" — минимальная {release['min_supported']}"
+                                    if release.get("min_supported") else "")))
+    elif release.get("deprecated_at"):
+        until = release.get("sunset_at")
+        out.append((WARN, f"движок {version} снят с поддержки"
+                          + (f", обслуживается до {_day(until)}" if until else ""),
+                    f"{upgrade} — после этой даты сервер лицензий откажет в аренде"))
+    elif release.get("running_latest") is False:
+        out.append((WARN, f"движок {version}, доступна {release.get('latest')}",
+                    upgrade))
+    elif release.get("running_latest") is True:
+        out.append((OK, f"движок {version} — новейшая", ""))
+    else:
+        out.append((WARN, f"движок {version} — сервер лицензий не сообщил, есть ли новее",
+                    "реестр версий ещё не доехал до сервера, или сервер старше движка"))
+    notice = release.get("notice") or {}
+    if notice.get("text"):
+        mark = BAD if notice.get("severity") == "danger" else WARN
+        out.append((mark, f"уведомление о версии: {notice['text']}", notice.get("url", "")))
 
     memory = engine.get("memory") or {}
     budget = memory.get("worker_mb_budget") or 0
@@ -634,6 +987,19 @@ def main(argv: list[str] | None = None) -> int:
     restore.add_argument("file")
     restore.add_argument("--yes", action="store_true", help="да, перезаписать том")
     restore.set_defaults(run=cmd_restore)
+
+    upgrade = sub.add_parser("upgrade", help="обновить контейнер на другой образ, сохранив том")
+    upgrade.add_argument("--to", default="",
+                         help="тег назначения (0.4, 0.4.1); без него — тот же тег, что "
+                              "у контейнера, заново скачанный (плавающий 0.3 двинется)")
+    upgrade.add_argument("--snapshot", default="",
+                         help="куда снять архив тома перед обновлением "
+                              "(по умолчанию <том>.pre-<старый>-<новый>.tgz)")
+    upgrade.add_argument("--no-snapshot", action="store_true",
+                         help="не снимать архив тома (снимок схемы внутри тома всё равно будет)")
+    upgrade.add_argument("--keep-old", action="store_true",
+                         help="не удалять прежний контейнер после успешного подъёма")
+    upgrade.set_defaults(run=cmd_upgrade)
 
     args = parser.parse_args(argv)
     return args.run(args, Runner(args.dry_run, args.verbose))

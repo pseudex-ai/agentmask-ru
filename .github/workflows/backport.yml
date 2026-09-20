@@ -1,0 +1,97 @@
+# SECURITY-ФИКСЫ ЕДУТ В ВЕТКИ ПОДДЕРЖКИ САМИ (D-057). Минор поддерживается
+# шесть месяцев после выхода следующего — security-патчами из ветки
+# `release/X.Y`. Правило одно и его держит этот воркфлоу: в `release/*` попадают
+# ТОЛЬКО коммиты типа `security:`, cherry-pick'ом из main. Обычные `fix:` не
+# бэкпортятся — клиент получает их с переходом на следующий минор; иначе ветка
+# поддержки превращается во второй main с тем же объёмом гейтов.
+#
+# Что делает: при merge PR в main, среди коммитов которого есть `security…:`,
+# ТРОНУВШИЙ ФАЙЛЫ ОБРАЗА (deploy/shipped_paths.sh), открывает PR с
+# cherry-pick'ом в КАЖДУЮ живую ветку `release/*`. Переносится ВЕСЬ PR (action
+# не умеет выбирать коммиты), поэтому правило: security-фикс движка — ОТДЕЛЬНЫЙ
+# PR, без попутных feat/fix. Владелец
+# вливает; release-please на той ветке считает X.Y.Z+1; тег ставится тем же
+# путём, что и на main (release-please.yml, `target-branch`); release.yml
+# публикует с алиасом только `X.Y` — `latest` не двигается.
+#
+# Прямой push в main без PR этот воркфлоу не видит — тогда руками:
+#   git switch release/0.3 && git cherry-pick -x <sha> && git push
+# (release-please откроет Release PR на ветке сам).
+#
+# `pull_request`, не `pull_request_target`: форков у репозитория нет, а
+# `_target` исполняет код из ветки PR с правами на запись.
+name: backport security fixes
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions: {}
+
+# Один бэкпорт на PR: два запуска на один merge открыли бы два PR в одну ветку.
+concurrency:
+  group: backport-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  backport:
+    name: cherry-pick security commits into release/*
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push веток backport-*
+      pull-requests: write   # сами PR
+    steps:
+      # Учётка ОСТАЁТСЯ: action пушит cherry-pick'нутые ветки git'ом через неё
+      # (README korthout/backport-action). Исключение зафиксировано в
+      # .github/zizmor.yml с этой же причиной.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: есть ли security-коммиты и живые ветки поддержки
+        id: plan
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -eu
+          # ТОЛЬКО SECURITY-КОММИТЫ, ТРОНУВШИЕ ОБРАЗ. Ветка поддержки — это
+          # ветка ДВИЖКА (D-057): security-коммит в prototype/licensing/ или
+          # storefront/ ей не нужен и вредит — release-please на ветке считал
+          # бы платформенный тег. Набор файлов образа — из того же скрипта,
+          # что и гейты: deploy/shipped_paths.sh.
+          # shellcheck disable=SC2046
+          engine_security="$(git log --format=%H "${BASE}..${HEAD}" | while read -r sha; do
+            subject="$(git log -1 --format=%s "${sha}")"
+            printf '%s\n' "${subject}" | grep -Eq '^security(\([^)]*\))?!?:' || continue
+            if [ -n "$(git diff-tree --no-commit-id --name-only -r "${sha}" -- $(sh deploy/shipped_paths.sh))" ]; then
+              echo "${sha} ${subject}"
+            fi
+          done)"
+          if [ -z "${engine_security}" ]; then
+            echo "security-коммитов, тронувших образ, нет — бэкпортировать нечего"
+            echo "targets=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "security-коммиты движка:"; printf '%s\n' "${engine_security}"
+          targets="$(git branch -r --list 'origin/release/*' | sed 's#.*origin/##' | tr '\n' ' ' | sed 's/ *$//')"
+          echo "targets=${targets}" >> "$GITHUB_OUTPUT"
+          echo "ветки поддержки: ${targets:-нет}"
+
+      - name: открыть PR с cherry-pick в каждую ветку поддержки
+        if: steps.plan.outputs.targets != ''
+        uses: korthout/backport-action@2e830a1d0b8269505846ddd407a70876913ad1f8 # v4.6.0
+        with:
+          github_token: ${{ github.token }}
+          target_branches: ${{ steps.plan.outputs.targets }}
+          # Merge-коммиты внутри PR пропускаются, а не валят бэкпорт: вливание
+          # main в ветку PR — обычное дело, и это не то, что переносят.
+          merge_commits: skip
+          branch_name: backport-security-${pull_number}-to-${target_branch}
+          pull_title: "security(${target_branch}): ${pull_title}"
+          pull_description: |-
+            Cherry-pick security-коммитов из #${pull_number} в `${target_branch}` (D-057).
+            После merge release-please откроет Release PR на ветке; его merge — тег и публикация с алиасом только этого минора.
+          add_labels: security-backport

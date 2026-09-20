@@ -31,7 +31,7 @@ Status: `spec` (describes shipped behaviour) · `ТЗ` (a specification;
 | `docs/integration.md` | drop-in integration: change ONE env var, the OpenAI-compatible proxy | spec |
 | `docs/integration-diva-litellm.md` | integration with Diva-Soft-Back via a LiteLLM callback (the sidecar shape) | design (nothing in Diva modified yet) |
 | `docs/integration-diva-backend-api.md` | Diva backend API: per-agent toggle + stats | design |
-| `docs/known-issues.md` | the substitution-quality defects, live: §0–§3 and the owner's backlog Б1–Б16, each with what it costs and when to fix | spec (the defect register — read before touching redact/vault/address) |
+| `docs/known-issues.md` | the substitution-quality defects, live: §0–§3 and the owner's backlog Б1–Б21 (Б20 dead containers hold a trial slot; Б21 the flaky morphology pair that blocks green tags), each with what it costs and when to fix | spec (the defect register — read before touching redact/vault/address) |
 | `docs/tz-license-packaging.md` | the licensing layer and packaging: the threat model §3.4, the two images, gates L1–L22 / P1–P11 — the definition of done | ТЗ-done · STATE D-001 |
 | `docs/tz-tuning-in-lease.md` | why the tuning rides in the lease, not a compiled blob — closing A2 (extract-once-run-forever) | ТЗ-done · STATE D-039, D-045 |
 | `docs/tz-offline-license.md` | the term-licence SKU that works with no call home; the O1–O15 gates | ТЗ-design (O1–O15 not built) · STATE D-004 |

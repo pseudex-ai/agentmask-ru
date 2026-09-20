@@ -39,6 +39,7 @@ import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 import httpx
@@ -85,6 +86,16 @@ def _engine_version() -> str:
 
 
 ENGINE_VERSION = _engine_version()
+
+# ЧТО ЭТОТ ДВИЖОК УМЕЕТ, НАЗВАНО ЯВНО (D-063, D-064). `lease_contract` едет в
+# запросе, чтобы сервер знал, какой формы ответ этот клиент прочтёт: сегодня 3
+# (эхо нонса, ёмкость на /v1/meter); несовместимое изменение станет 4, и
+# старым клиентам сервер продолжит отдавать 3, пока тот поддерживается.
+# `bundle_format` — формат содержимого бандла (2 = секционный фрейм); ответ с
+# большим числом отвергается как «обновите движок», а не как «бандл повреждён»
+# — это разные диагнозы с разными действиями.
+LEASE_CONTRACT = 3
+SUPPORTED_BUNDLE_FORMAT = 2
 
 STATE_BOOT = "boot"
 STATE_LEASED = "active"
@@ -196,12 +207,33 @@ REMEDIES: dict[str, str] = {
     "instance_limit":
         "Тариф не позволяет столько одновременно работающих контейнеров. "
         "Остановите лишние или смените тариф в личном кабинете.",
+    # ВЕРДИКТ ПО ВЕРСИИ, НЕ СБОЙ (D-055, D-056). Сервер отвечает 426 только
+    # циклу, закрытие которого объявлено за 90 дней; до этого он предупреждал
+    # на каждом продлении. Grace здесь не применяется, как и к 402/403.
+    "unsupported_client":
+        "Эта версия движка больше не обслуживается — цикл закрыт по объявленному "
+        "заранее сроку. Обновитесь до поддерживаемой:\n"
+        "    pseudexctl upgrade\n"
+        "Том с данными сохраняется; какая версия минимальная и какая новейшая — "
+        "в тексте ответа выше.",
+    "bundle_format_unsupported":
+        "Сервер лицензий выдал бандл в формате новее, чем понимает этот движок. "
+        "Это не порча и не подмена — нужен более новый образ:\n"
+        "    pseudexctl upgrade",
 }
 
 
 def explain(code: str) -> str:
     """The operator-facing remedy for a terminal licence code."""
     return REMEDIES.get(code, "Напишите нам, приложив вывод контейнера.")
+
+
+class BundleFormatError(BundleError):
+    """The lease is genuine and ours, and its bundle is in a format this build
+    cannot read. A `BundleError` for the renewal loop — the leased assets stay
+    loaded and grace applies, because the mismatch is OUR deployment order,
+    not the customer's fault — and a distinct code at startup, where there is
+    nothing to fall back on and the remedy is an upgrade, not a support ticket."""
 
 
 class LicenseError(RuntimeError):
@@ -237,6 +269,22 @@ class LicenseStatus:
     seconds_since_lease: float | None
     grace_left_seconds: float | None
     last_error: str | None
+    # ВЕРДИКТ ПО ВЕРСИИ ИЗ ПОСЛЕДНЕЙ АРЕНДЫ (D-055). Всё из подписанного блока
+    # `version`; `None` — сервер его не прислал (нет реестра или сервер старше
+    # этого движка), и тогда экран говорит «неизвестно», а не «новейшая».
+    # Даты — unix-секунды: клиент разбирает `@unix` и HTTP-date один раз, и ни
+    # интерфейс, ни CLI не парсят RFC-формы заново.
+    engine_version: str
+    running_latest: bool | None
+    latest: str | None
+    latest_in_cycle: str | None
+    min_supported: str | None
+    deprecated_at: float | None
+    sunset_at: float | None
+    notice: dict[str, str] | None
+    # Every cycle the registry lists — cycle, state by the dates, latest,
+    # release_date, eol — for the «Версии» screen. None when the server said nothing.
+    cycles: list[dict[str, str | None]] | None
 
 
 def _public_key_material() -> str:
@@ -285,6 +333,61 @@ def _public_key_materials() -> list[str]:
 # проверке свежести лизы. Час — заведомо больше любого разумного дрейфа и
 # заведомо меньше окна, в котором повтор что-то даёт.
 _CLOCK_SKEW_SECONDS = 3600
+
+
+def _parse_verdict(block: object) -> dict[str, object] | None:
+    """The signed `version` block → one dict with unix dates, or None when the
+    server sent none. Wire forms are RFC 9745 `@unix` for `deprecated_at` and
+    RFC 8594 HTTP-date for `sunset_at`; a form we cannot read is dropped, not
+    guessed — a wrong date on the operator's screen is worse than no date."""
+    if not isinstance(block, dict):
+        return None
+    parsed: dict[str, object] = {}
+    for name in ("running_latest", "latest", "latest_in_cycle", "min_supported"):
+        parsed[name] = block.get(name)
+    parsed["deprecated_at"] = _unix_from_at(block.get("deprecated_at"))
+    parsed["sunset_at"] = _unix_from_http_date(block.get("sunset_at"))
+    notice = block.get("notice")
+    parsed["notice"] = ({str(k): str(v) for k, v in notice.items()}
+                        if isinstance(notice, dict) else None)
+    cycles = block.get("cycles")
+    parsed["cycles"] = ([{str(k): (None if v is None else str(v)) for k, v in c.items()}
+                         for c in cycles if isinstance(c, dict)]
+                        if isinstance(cycles, list) else None)
+    return parsed
+
+
+def _unix_from_at(value: object) -> float | None:
+    if isinstance(value, str) and value.startswith("@"):
+        try:
+            return float(value[1:])
+        except ValueError:
+            return None
+    return None
+
+
+def _unix_from_http_date(value: object) -> float | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return parsedate_to_datetime(value).timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def _verdict_field(verdict: dict[str, object] | None, name: str, kind: type):
+    if verdict is None:
+        return None
+    value = verdict.get(name)
+    return value if isinstance(value, kind) else None
+
+
+def _iso(stamp: float) -> str:
+    return time.strftime("%Y-%m-%d", time.gmtime(stamp))
+
+
+def _cycle_of(version: str) -> str:
+    return ".".join(version.split(".")[:2])
 
 
 class LicenseClient:
@@ -359,6 +462,14 @@ class LicenseClient:
         self._plan: str | None = None
         self._terminal_code: str | None = None
         self._last_error: str | None = None
+        # Блок `version` последней аренды, уже разобранный (даты в unix).
+        # Заменяется целиком на каждом продлении, поэтому уведомление,
+        # исчезнувшее из ответа, исчезает и отсюда — отзыв отсутствием (D-055).
+        self._verdict: dict[str, object] | None = None
+        # Что уже сказано в лог: «есть новее X» — раз на X, уведомление — раз
+        # на его id. Устаревание повторяется на каждом продлении намеренно.
+        self._announced_latest: str | None = None
+        self._announced_notices: set[str] = set()
         # A short history of renewal failures, not just the latest one. "Почему
         # встало" is rarely answered by the last error alone — a nightly connect
         # timeout that recovers on the third attempt looks identical to a hard
@@ -442,6 +553,15 @@ class LicenseClient:
             next_renewal_in_seconds=(
                 None if elapsed is None or not self._renew_after_seconds
                 else max(0.0, self._renew_after_seconds - elapsed)),
+            engine_version=ENGINE_VERSION,
+            running_latest=_verdict_field(self._verdict, "running_latest", bool),
+            latest=_verdict_field(self._verdict, "latest", str),
+            latest_in_cycle=_verdict_field(self._verdict, "latest_in_cycle", str),
+            min_supported=_verdict_field(self._verdict, "min_supported", str),
+            deprecated_at=_verdict_field(self._verdict, "deprecated_at", float),
+            sunset_at=_verdict_field(self._verdict, "sunset_at", float),
+            notice=_verdict_field(self._verdict, "notice", dict),
+            cycles=_verdict_field(self._verdict, "cycles", list),
         )
 
     def is_serving(self) -> bool:
@@ -589,6 +709,7 @@ class LicenseClient:
                 "process_id": self._process_id,
                 "pubkey": self._process_key.public,
                 "engine_version": ENGINE_VERSION,
+                "lease_contract": LEASE_CONTRACT,
                 "lease_id": self._lease_id,
                 "nonce": nonce,
                 "usage": usage,
@@ -756,6 +877,15 @@ class LicenseClient:
             raise BundleError(
                 f"lease is {int(age)}s old, past its {ttl}s lifetime — refusing "
                 f"a replayed lease")
+        # ФОРМАТ БАНДЛА — ДО РАСПЕЧАТЫВАНИЯ (D-064). Поле под подписью, так что
+        # число нельзя занизить по дороге. Отсутствие поля — сервер старше этого
+        # движка, и тогда формат узнаётся по содержимому, как и раньше.
+        declared = lease.get("bundle_format")
+        if isinstance(declared, int) and declared > SUPPORTED_BUNDLE_FORMAT:
+            raise BundleFormatError(
+                f"lease carries bundle_format {declared}; this engine "
+                f"({ENGINE_VERSION}) reads up to {SUPPORTED_BUNDLE_FORMAT} — "
+                f"upgrade the engine: pseudexctl upgrade")
         inner = open_sealed(str(lease["bundle"]), self._process_key)
         # КОНТРАКТ 3: снять внутренний слой ключом из НОНСА, который сгенерировал
         # ЭТОТ процесс для ЭТОГО запроса. Повтор старой/чужой аренды не
@@ -795,6 +925,8 @@ class LicenseClient:
             self._bundle_version = str(lease["bundle_version"])
             self._plan = str(lease.get("plan") or "") or None
             self._last_error = None
+            self._verdict = _parse_verdict(lease.get("version"))
+        self._report_verdict()
 
     def acquire(self) -> None:
         """First lease. Raises `LicenseError` if the process may not run.
@@ -828,6 +960,8 @@ class LicenseClient:
                              attempt, _STARTUP_ATTEMPTS, error)
                 if attempt < _STARTUP_ATTEMPTS:
                     time.sleep(_STARTUP_BACKOFF_SECONDS * attempt)
+            except BundleFormatError as error:
+                raise LicenseError("bundle_format_unsupported", str(error)) from error
             except BundleError as error:
                 raise LicenseError("bundle_corrupt", str(error)) from error
         # NAME THE HOST. «[Errno -2] Name or service not known» without it tells
@@ -856,9 +990,51 @@ class LicenseClient:
             _log.error("lease terminated (%s): %s — refusing further requests",
                        error.code, error.detail)
             self._expire()
+        except BundleFormatError as error:
+            # Наш порядок выкатки, не сбой клиента: бандл остаётся загруженным,
+            # grace идёт, а в логе — действие, а не «повреждён».
+            self._record_error(str(error))
+            _log.error("lease renewal refused: %s. %s", error,
+                       explain("bundle_format_unsupported"))
         except (_TransientLeaseError, httpx.HTTPError, BundleError) as error:
             self._record_error(str(error))
             _log.warning("lease renewal failed, running on the leased bundle: %s", error)
+
+    def _report_verdict(self) -> None:
+        """Лестница (D-055): INFO раз на «есть новее X», WARN на КАЖДОМ продлении
+        после `deprecated_at` (RFC 9745: устаревание не меняет поведение, но и
+        не даёт забыть), уведомление — раз на его id по своей серьёзности.
+        426 сюда не доходит — он ответ, и его обрабатывает `_renew` как 402."""
+        verdict = self._verdict
+        if verdict is None:
+            return
+        latest = verdict.get("latest")
+        if verdict.get("running_latest") is False and isinstance(latest, str) \
+                and latest != self._announced_latest:
+            self._announced_latest = latest
+            _log.info("engine %s: newer version %s is available (newest in this "
+                      "cycle: %s) — pseudexctl upgrade", ENGINE_VERSION, latest,
+                      verdict.get("latest_in_cycle"))
+        deprecated_at = verdict.get("deprecated_at")
+        if isinstance(deprecated_at, float) and deprecated_at <= time.time():
+            sunset_at = verdict.get("sunset_at")
+            _log.warning("engine %s is DEPRECATED since %s; served until %s, then the "
+                         "licensing server refuses it (426). Upgrade before then: "
+                         "pseudexctl upgrade --to %s", ENGINE_VERSION,
+                         _iso(deprecated_at),
+                         _iso(sunset_at) if isinstance(sunset_at, float) else "(unset)",
+                         _cycle_of(latest) if isinstance(latest, str) else "latest")
+        notice = verdict.get("notice")
+        if isinstance(notice, dict):
+            notice_id = str(notice.get("id", ""))
+            if notice_id and notice_id not in self._announced_notices:
+                self._announced_notices.add(notice_id)
+                # The registry's vocabulary (licensing/registry.py SEVERITIES): info, warning, danger.
+                level = {"info": logging.INFO, "warning": logging.WARNING,
+                         "danger": logging.ERROR}.get(str(notice.get("severity", "")),
+                                                        logging.WARNING)
+                _log.log(level, "notice %s for engine %s: %s %s", notice_id,
+                         ENGINE_VERSION, notice.get("text", ""), notice.get("url", ""))
 
     def _expire(self) -> None:
         """Give up the assets. Not a flag — the data goes away."""

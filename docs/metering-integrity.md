@@ -167,7 +167,9 @@ uvicorn worker →  LicenseClient.__init__
    права стать нашей пятисоткой — см. §6.1.
 2. **Ключ и статус.** `unpaid` → 402, `revoked`/`suspended` → 403, неизвестный
    статус → 403 с отказывающим умолчанием (а не `KeyError` → 500).
-3. **Версия движка.** Ниже `PSEUDEX_MIN_ENGINE_VERSION` → 409.
+3. **Версия движка.** Цикл закрыт по реестру версий (`deploy/releases.json`,
+   `eol` объявлен за ≥ 90 дней) → 426 `unsupported_client`; поздний `eol` не
+   принуждается. `PSEUDEX_MIN_ENGINE_VERSION` упразднена (D-056).
 4. **Получатель — настоящий age-адрес.** `is_recipient` (`bundle.py:62`).
    Битый `pubkey` разваливался внутри `seal()` в 500, а 500 у клиента
    grace-worthy: строки `age1x` хватало, чтобы купить 48 часов работы в долг.

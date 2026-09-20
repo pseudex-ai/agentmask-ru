@@ -49,7 +49,7 @@ set -e
 # объявленная в документации, обязана быть одноразовой на самом деле.
 # Рекурсии нет: ниже вызывается БИНАРНИК, а не этот скрипт.
 case "${PSEUDEX_ROLE:-sidecar}" in
-    preflight|probe|rekey|decrypt|measure|tripwire)
+    preflight|probe|migrate|rekey|decrypt|measure|tripwire)
         # tripwire is a long-running PRIVILEGED watcher (deploy it in the engine's
         # PID namespace); the rest are one-shot ops. Both exec the binary directly,
         # bypassing the worker fan-out below.
@@ -162,11 +162,39 @@ rm -f "$DATA_DIR/.pseudex-write-test" 2>/dev/null || true
 # The plaintext-to-encrypted conversion stays inside the connection factory under
 # its own flock for the same reason: a migration that only happened here would be
 # a migration half the deployments never get.
-if ! PSEUDEX_ROLE=probe ${PSEUDEX_SERVE_CMD:-./pseudex-serve}; then
+# ДВА РАЗНЫХ ОТКАЗА, ДВА РАЗНЫХ КОДА (D-058). 1 — том не открывается ключом;
+# 2 — том ПИСАЛ БОЛЕЕ НОВЫЙ ОБРАЗ, и этот его не тронул: старый образ, молча
+# открывший новый том, писал бы ряды, которые новый прочтёт полупустыми.
+# Выход 6 — свой, чтобы оркестратор и `pseudexctl doctor` отличали «нужен
+# образ новее либо снимок» от «нужен ключ».
+# `|| probe_status=$?`, not `$?` inside `if !`: under `!` the status the
+# branch sees is the negation, always 0, and 2 would never be told from 1.
+probe_status=0
+PSEUDEX_ROLE=probe ${PSEUDEX_SERVE_CMD:-./pseudex-serve} || probe_status=$?
+if [ "${probe_status}" -ne 0 ]; then
     echo ""
+    if [ "${probe_status}" -eq 2 ]; then
+        echo "pseudex: том новее этого образа — контейнер остановлен, том не тронут."
+        echo "         Запустите образ не старше того, что писал том, либо восстановите"
+        echo "         снимок <store>.pre-<from>-<to>.db, названный выше."
+        exit 6
+    fi
     echo "pseudex: том не открывается текущим ключом — контейнер остановлен."
     echo "         PSEUDEX_ROLE=probe выше показывает, какой файл и почему."
     exit 3
+fi
+echo ""
+
+# СХЕМА ПОДНИМАЕТСЯ ОДИН РАЗ, ДО ФАН-АУТА (D-059): снимок, шаги, штамп — в
+# одном процессе под flock; N воркеров затем находят каждый стор актуальным и
+# идут быстрым путём. Раньше миграции бежали в каждом воркере при первом
+# открытии — верно по результату (идемпотентны), но N снимков одного тома
+# в одну секунду были бы N-кратной ценой за одно и то же.
+if ! PSEUDEX_ROLE=migrate ${PSEUDEX_SERVE_CMD:-./pseudex-serve}; then
+    echo ""
+    echo "pseudex: схема тома не поднята — контейнер остановлен, см. строки ОТКАЗ выше."
+    echo "         Чаще всего это место на диске под снимок; том не изменён."
+    exit 5
 fi
 echo ""
 

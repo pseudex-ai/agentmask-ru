@@ -155,17 +155,22 @@ worker start (serve_main.py, role engine|proxy)
  ├─ hardening.harden_process()                  before ANY role touches tuning or vault
  ├─ LicenseClient(base_url, key, instance_id, ca_path, …)
  │    ProcessKey = bundle.generate_process_key()          X25519, IN MEMORY, per process
- │    POST /v1/lease {key, instance_id, pubkey, measure.build_measurement(), usage counters}
- │      server: store.lease_if_allowed + record_lease → pack.build_plaintext (bulk + TUNING + canary + fingerprint + watermark)
- │              → bundle.seal(to pubkey) → bundle.sign_lease (Ed25519) → nonce_wrap
+ │    POST /v1/lease {key, instance_id, pubkey, engine_version, lease_contract, measure.build_measurement(), usage counters}
+ │      server: registry.check(engine_version) → 426 unsupported_client ONLY past an eol announced ≥ 90 d ahead
+ │              store.lease_if_allowed + record_lease(engine_version, lease_contract) → pack.build_plaintext (bulk + TUNING + canary + fingerprint + watermark)
+ │              → bundle.seal(to pubkey) → payload["bundle_format"], payload["version"] = registry.verdict(...) → bundle.sign_lease (Ed25519) → nonce_wrap
  │    client:   bundle.verify_lease(compiled-in LICENSE_PUBKEY from pseudex/_release.py)
+ │              → bundle_format ≤ SUPPORTED_BUNDLE_FORMAT else BundleFormatError («обновите движок»)
  │              → bundle.open_sealed(process key) → assets.load(plaintext)   every regex compiled ONCE
+ │              → _parse_verdict(lease["version"]) → LicenseStatus; _report_verdict(): INFO «есть новее» once per
+ │                version, WARN every renewal after deprecated_at, notice once per id; absent block → verdict cleared
  │
  ├─ renewal loop every TTL // 3
  │    POST /v1/lease again (counters ride on it); /v1/usage between renewals when needed
  │    OK          → state LEASED (STATE_LEASED = "active"), _last_ok_monotonic stamped
  │    5xx/timeout/DNS (OUR outage) → grace: STALE (serve, warn) while monotonic elapsed ≤ TTL + grace
  │    402 / 403 (unpaid, revoked)  → NOT an outage: EXPIRED at once, slow re-ask
+ │    426 (unsupported_client)     → the same: a VERDICT on the version, outside grace (D-056)
  │    wall-clock ceiling: if the wall says past TTL + grace + skew while monotonic looks fresh → EXPIRED
  │                        (a frozen clock fails CLOSED — pentest W2, test_clock_freeze)
  │
@@ -182,15 +187,20 @@ is a new keypair and a new lease. The tuning exists ONLY inside a leased process
 ## 6. Container start (`entrypoint.sh`)
 
 ```
-PSEUDEX_ROLE=preflight|probe|rekey|decrypt|measure|tripwire  → run that role once, exit
+PSEUDEX_ROLE=preflight|probe|migrate|rekey|decrypt|measure|tripwire  → run that role once, exit
 otherwise:
  1. PSEUDEX_ADMIN_TOKEN, PSEUDEX_GATEWAY_TOKEN, PSEUDEX_UI_TOKEN  generated ONCE here if unset
     (N workers on one SO_REUSEPORT port must share one token, or the UI 401s at random)
- 2. PSEUDEX_ROLE=preflight ./pseudex-serve   → N workers that fit the cgroup limit, or refuse (preflight.plan)
- 3. PSEUDEX_ROLE=probe     ./pseudex-serve   → the volume opens with the key we have (sqlite_setup.preflight),
-                                               plaintext store → vault_migrate.ensure_encrypted under flock
- 4. N × uvicorn workers  (PSEUDEX_ROLE=engine → pseudex.service:app | proxy → pseudex.proxy:app)
- 5. PSEUDEX_ROLE=ui ./pseudex-serve  → localui on :8081, separate process, never leases
+ 2. PSEUDEX_ROLE=preflight ./pseudex-serve   → N workers that fit the cgroup limit, or refuse (exit 4)
+ 3. PSEUDEX_ROLE=probe     ./pseudex-serve   → the volume opens with the key we have (sqlite_setup.describe)
+                                               exit 1 «не открывается ключом» → container 3
+                                               exit 2 «том писал более новый образ» (user_version > schema.max_version) → container 6, untouched
+ 4. PSEUDEX_ROLE=migrate   ./pseudex-serve   → schema.ensure on every store ONCE under flock: snapshot
+                                               <store>.pre-<from>-<to>.db (VACUUM INTO, same key), numbered steps,
+                                               PRAGMA user_version stamp; exit 5 (no space, refusal) → container 5
+ 5. N × uvicorn workers  (PSEUDEX_ROLE=engine → pseudex.service:app | proxy → pseudex.proxy:app)
+    each Vault/AuditLog/Tenants __init__ → schema.ensure fast path (user_version == max: IF NOT EXISTS only)
+ 6. PSEUDEX_ROLE=ui ./pseudex-serve  → localui on :8081, separate process, never leases
 ```
 
 `pseudexctl` wraps steps 2–3 and the store roles for an operator:
@@ -209,10 +219,32 @@ source tree ──► Dockerfile          → pseudex:source    (.py, writes pse
                    Nuitka (Arkari clang)       native binary; glibc of the build stage → same Debian release at runtime
                    localui pages → /app/ui     NEVER under a directory called pseudex (P1 asserts /app/pseudex is absent)
 
-gates   e2e/gates.py L1–L22 (stand from deploy/compose.local.yml; builds pseudex:source)
+gates   e2e/gates.py L1–L25 (stand from deploy/compose.local.yml; builds pseudex:source)
         e2e/pack_gates.py P1–P11 (both images; P3 = e2e/parity.py on dirty.json — REFUSES before the build without it)
         e2e/audit_gates.py — the gate over the gates (negative atom ⇒ positive atom over the same source)
-CI      .github/workflows/checks.yml on every push; gates.yml nightly; release.yml on tag v*; ship.yml bumps
+CI      .github/workflows/checks.yml on every push (incl. deploy/lint_engine_commits.sh, registry validate);
+        gates.yml nightly; release-please.yml on push to main keeps one Release PR per stream and,
+        on merge, tags + dispatches release.yml (tags v* = engine, platform/v* = platform)
+
+Two streams (docs/tz-release-and-versions.md, D-051…D-054):
+  commit touches prototype/pseudex/… ─► release-please: Release PR «engine X.Y.Z»
+    merge ─► tag vX.Y.Z ─► release.yml: tests → gates → publish(engine):
+      version.txt == tag · shipped set changed since previous v* (deploy/shipped_paths.sh)
+      · pseudex:X.Y.Z + aliases (licensing.registry aliases) · anonymous pull · cosign digest
+      · licensing.registry record → commit «chore(registry): pseudex X.Y.Z» on main
+        ─► release-please: Release PR «platform …» ─► merge ─► platform/vX.Y.Z
+  commit touches storefront/ | deploy/ | prototype/licensing/ ─► Release PR «platform X.Y.Z»
+    merge ─► tag platform/vX.Y.Z ─► release.yml publish(platform): four images, closed to
+    anonymous, signed ─► deploy/agent.sh (platform/v* only) verifies, pulls by digest, up -d
+                        + sync_registry(): origin/main:deploy/releases.json → cosign verify newest digest → deploy/.registry/
+Support window (D-057):
+  Release-As: X.(Y+1).0 on main ─► registry.record opens cycle X.(Y+1) (current), closes X.Y
+    (maintenance, eol +6 months, announced today) ─► branch release/X.Y from vX.Y.<last>
+  PR with a `security:` commit merged into main ─► backport.yml ─► cherry-pick PR into every release/*
+    ─► merge ─► release-please (target-branch release/X.Y): Release PR X.Y.Z+1 ─► tag vX.Y.Z+1
+    ─► release.yml publish(engine): baseline = previous vX.Y.* tag; aliases = [X.Y] only (latest stays)
+  deploy/watch.sh: eol ≤ 30 days and containers still on the cycle (/admin/versions) → warn
+  eol day (announced ≥ 90 d before) ─► licensing/server.py: 426 unsupported_client to that cycle
 keys    deploy/make-release-keys.sh — public half compiled in, private on the server; a new pair = full rebuild
 ```
 
