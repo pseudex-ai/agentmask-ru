@@ -1,0 +1,106 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "simple",
+  "separate-pull-requests": true,
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": true,
+  "include-v-in-tag": true,
+  "changelog-sections": [
+    {
+      "type": "feat",
+      "section": "Новое"
+    },
+    {
+      "type": "fix",
+      "section": "Исправления"
+    },
+    {
+      "type": "security",
+      "section": "Безопасность"
+    },
+    {
+      "type": "perf",
+      "section": "Производительность"
+    },
+    {
+      "type": "build",
+      "section": "Сборка"
+    },
+    {
+      "type": "revert",
+      "section": "Откаты"
+    },
+    {
+      "type": "chore",
+      "section": "Прочее",
+      "hidden": true
+    },
+    {
+      "type": "ci",
+      "section": "CI",
+      "hidden": true
+    },
+    {
+      "type": "docs",
+      "section": "Документация",
+      "hidden": true
+    },
+    {
+      "type": "refactor",
+      "section": "Рефакторинг",
+      "hidden": true
+    },
+    {
+      "type": "test",
+      "section": "Тесты",
+      "hidden": true
+    },
+    {
+      "type": "research",
+      "section": "Исследования",
+      "hidden": true
+    },
+    {
+      "type": "bench",
+      "section": "Бенчмарки",
+      "hidden": true
+    }
+  ],
+  "packages": {
+    "prototype": {
+      "component": "engine",
+      "include-component-in-tag": false,
+      "exclude-paths": [
+        "prototype/licensing"
+      ],
+      "changelog-path": "CHANGELOG.md"
+    },
+    "prototype/licensing": {
+      "component": "platform",
+      "include-component-in-tag": true,
+      "tag-separator": "/"
+    },
+    "storefront": {
+      "component": "platform",
+      "include-component-in-tag": true,
+      "tag-separator": "/",
+      "skip-github-release": true
+    },
+    "deploy": {
+      "component": "platform",
+      "include-component-in-tag": true,
+      "tag-separator": "/",
+      "skip-github-release": true
+    }
+  },
+  "plugins": [
+    {
+      "type": "linked-versions",
+      "groupName": "platform",
+      "components": [
+        "platform"
+      ]
+    }
+  ],
+  "bootstrap-sha": "80a42f457e344500947a5e97093061e6c0345d45"
+}
