@@ -69,6 +69,7 @@ Not in root `docs/`: `storefront/docs/tz-site.md` and `storefront/docs/tz-site-s
 | `research/2026-08-15-ru-payments.md` | taking money from RU legal entities: card vs invoice | D-031 |
 | `research/2026-08-15-hosting-domain.md` | domain and hosting for launch | D-028 |
 | `research/2026-09-20-market-transparency-axis.md` | the market-transparency positioning axis for the article series | D-049 |
+| `research/2026-09-20-release-and-version-lifecycle.md` | how to version the customer engine apart from our platform out of one repo (release-please manifest mode, two streams), carry «newer / deprecated / EOL» in the lease response (Tailscale/Sentry shape, RFC 9745/8594), guard the volume with `user_version` + refuse-from-the-future + `VACUUM INTO` snapshot, and give the customer a native upgrade path; what to take ready-made and what to write; H3 (digest churn) refuted — `0.3.12` = `0.3.13` byte for byte | evidence (ТЗ pending) |
 | `research/2026-09-20-open-benchmark-mechanics.md` | how to run a NEW public benchmark (review-as-contribution, MMTEB) | D-049 |
 | `research/2026-09-20-ru-distribution-channels.md` | RU distribution: Habr 2026 mechanics, hubs, channels | D-049 |
 
