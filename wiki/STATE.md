@@ -444,6 +444,7 @@ any claim.
 **Decision:** A minor is `current` until the next minor ships; then `maintenance` for six months (`eoas` = next minor's date, `eol` = +6 months, `eol_announced` = that day); then `eol`. Only `security:` commits (and `fix:` by the owner's call) are backported by cherry-pick into «release/X.Y»; a GitHub Action opens the backport PR on merge to `main`; release-please on the branch cuts `X.Y.Z+1`, which moves only the `X.Y` alias. The numbers live in `support{}` of the registry and change as data.
 **Alternative rejected:** fixes only in the current minor with 90 days to move (Immich-style) — simpler, riskier for the customer.
 **Price:** one branch per minor in the window; the owner merges backport PRs.
+**Built (2026-09-20):** `.github/workflows/backport.yml` (korthout/backport-action, pinned; `security…:` subject in the merged PR's commits → one cherry-pick PR per live «release/*»), `.github/workflows/release-please.yml` on «release/**» with `target-branch`, `.github/workflows/release.yml` baseline = previous tag of the same cycle, `deploy/watch.sh` warning ≤ 30 days before an `eol` with containers still on the cycle. The first «release/X.Y» is created by hand from the cycle's last tag when the next minor opens — no branch exists yet.
 **Related:** D-054 · D-061
 
 ### D-058 · 2026-09-20 · `PRAGMA application_id` + monotonic `PRAGMA user_version` per store; an older image refuses a volume from the future

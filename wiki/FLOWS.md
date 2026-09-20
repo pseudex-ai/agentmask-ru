@@ -236,6 +236,15 @@ Two streams (docs/tz-release-and-versions.md, D-051…D-054):
   commit touches storefront/ | deploy/ | prototype/licensing/ ─► Release PR «platform X.Y.Z»
     merge ─► tag platform/vX.Y.Z ─► release.yml publish(platform): four images, closed to
     anonymous, signed ─► deploy/agent.sh (platform/v* only) verifies, pulls by digest, up -d
+                        + sync_registry(): origin/main:deploy/releases.json → cosign verify newest digest → deploy/.registry/
+Support window (D-057):
+  Release-As: X.(Y+1).0 on main ─► registry.record opens cycle X.(Y+1) (current), closes X.Y
+    (maintenance, eol +6 months, announced today) ─► branch release/X.Y from vX.Y.<last>
+  PR with a `security:` commit merged into main ─► backport.yml ─► cherry-pick PR into every release/*
+    ─► merge ─► release-please (target-branch release/X.Y): Release PR X.Y.Z+1 ─► tag vX.Y.Z+1
+    ─► release.yml publish(engine): baseline = previous vX.Y.* tag; aliases = [X.Y] only (latest stays)
+  deploy/watch.sh: eol ≤ 30 days and containers still on the cycle (/admin/versions) → warn
+  eol day (announced ≥ 90 d before) ─► licensing/server.py: 426 unsupported_client to that cycle
 keys    deploy/make-release-keys.sh — public half compiled in, private on the server; a new pair = full rebuild
 ```
 

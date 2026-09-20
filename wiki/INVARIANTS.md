@@ -820,6 +820,16 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   `pseudexctl doctor`. It used to be `ENGINE_VERSION = "1.0.0"` in code, on every
   image ever shipped. Pins: `test_localui` (`/status` equals the file);
   `.github/workflows/release.yml` publish is red when the tag differs from the file.
+- **Only `security:` commits reach a «release/X.Y» branch, and only by
+  cherry-pick from `main`** (D-057). `.github/workflows/backport.yml` opens the
+  cherry-pick PR into every live support branch when a PR carrying such a
+  commit merges; release-please on the branch mints `X.Y.Z+1`;
+  `.github/workflows/release.yml` measures the empty-release gate against the previous tag of the SAME cycle
+  and moves alias `X.Y` only. An ordinary `fix:` is not backported — the
+  customer gets it with the next minor, or the support branch becomes a second
+  `main` with none of its gates. `deploy/watch.sh` warns when a cycle's `eol`
+  is ≤ 30 days away and containers still run on it. Pins: UNPINNED by a test
+  script — enforced by the workflows; the registry half by `licensing/test_registry.py`.
 - **`pseudexctl upgrade` is an ORDER, and the volume is never the thing that
   pays for a failed one** (D-062): pull → probe with the NEW image, read-only,
   before anything stops (key opens, volume not from the future) → stop →
