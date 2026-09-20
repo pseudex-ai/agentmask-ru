@@ -978,6 +978,112 @@ function Subscription({ org }) {
     </div>`;
 }
 
+/* ---------- versions ---------- */
+
+/* WHAT THE LICENSING SERVER SAID ABOUT VERSIONS AT THE LAST LEASE, and nothing
+   else: the container never asks a second endpoint, and this screen never
+   guesses. Every field is from the signed `version` block of the lease,
+   mirrored by /status → engine.release (D-055). The server's silence — no
+   registry yet, a server older than this engine — renders as «сервер не
+   сообщил», never as «у вас новейшая»; a screen that reassures by default is
+   the one that lets a closed cycle reach its eol unnoticed. */
+const CYCLE_STATE = {
+  current: ['текущий', 'green'], maintenance: ['поддержка, только security', 'amber'],
+  deprecated: ['устаревает', 'amber'], eol: ['закрыт', 'pink'],
+};
+
+function Versions({ status, engineDown }) {
+  const engine = status?.engine || {};
+  const release = engine.release || {};
+  const schema = engine.schema || {};
+  const licence = status?.license || {};
+  const known = release.running_latest !== null && release.running_latest !== undefined;
+  const mine = release.version ? release.version.split('.').slice(0, 2).join('.') : '';
+  const cycles = Array.isArray(release.cycles) ? release.cycles : [];
+  const target = release.latest ? release.latest.split('.').slice(0, 2).join('.') : '';
+  const refused = licence.code === 'unsupported_client';
+  const [copied, setCopied] = useState('');
+  const copy = (label, text) => {
+    const done = navigator.clipboard?.writeText(text);
+    if (!done) { setCopied('нет доступа к буферу — выделите и скопируйте сами'); setTimeout(() => setCopied(''), 2000); return; }
+    done.then(() => { setCopied(label); setTimeout(() => setCopied(''), 1400); })
+      .catch(() => { setCopied('нет доступа к буферу — выделите и скопируйте сами'); setTimeout(() => setCopied(''), 2000); });
+  };
+  const upgradeCmd = `./pseudexctl upgrade${target ? ` --to ${target}` : ''}`;
+  const verdict = engineDown ? ['движок не отвечает', 'pink']
+    : refused ? ['больше не обслуживается — обновитесь', 'pink']
+    : !known ? ['сервер лицензий не сообщил, есть ли новее', 'amber']
+    : release.running_latest ? ['новейшая', 'green']
+    : [`доступна ${release.latest}`, 'amber'];
+
+  return html`
+    <div class="page">
+      <h1 class="title">Версии</h1>
+      <div class="subtitle" style="margin-bottom:16px">Что сказал лицензионный сервер при последней аренде. Обновляется раз в сутки вместе с арендой; сюда ничего не докачивается.</div>
+      <div class="grid cols-fit-md">
+        <div class="cell" style="padding:24px">
+          <div class="label mb">ЭТОТ КОНТЕЙНЕР</div>
+          ${[
+            ['движок', engine.version || '—', ''],
+            ['вердикт', verdict[0], verdict[1]],
+            ['новейшая', release.latest || '—', ''],
+            ['новейшая в вашем цикле', release.latest_in_cycle || '—', ''],
+            ['минимально обслуживаемая', release.min_supported || '—', ''],
+            ...(release.deprecated_at ? [['снята с поддержки с', day(release.deprecated_at), 'amber']] : []),
+            ...(release.sunset_at ? [['обслуживается до', day(release.sunset_at), release.deprecated_at ? 'amber' : '']] : []),
+            ['бандл', engine.bundle_version || '—', ''],
+            ['схема тома', schema.volume ? Object.entries(schema.volume).map(([k, v]) => `${k} ${v ?? '—'}`).join(' · ') : '—', ''],
+            ['схема образа', schema.binary ? Object.entries(schema.binary).map(([k, v]) => `${k} ${v}`).join(' · ') : '—', ''],
+          ].map(([key, value, tone]) => html`
+            <div class="kv lg"><span class="k">${key}</span><span class=${`v ${tone}`}>${value}</span></div>`)}
+          ${release.notice && release.notice.text && html`
+            <div class="errbox">
+              <div class="label">УВЕДОМЛЕНИЕ О ВЕРСИИ · ${release.notice.severity || ''}</div>
+              <div class=${`msg ${release.notice.severity === 'danger' ? 'pink' : ''}`}>${release.notice.text}${/^https:\/\//.test(release.notice.url || '') ? html` — <a href=${release.notice.url} target="_blank" rel="noopener">${release.notice.url}</a>` : ''}</div>
+            </div>`}
+        </div>
+        <div class="cell" style="padding:24px">
+          <div class="label mb">КАК ОБНОВИТЬСЯ · ТОМ И КЛЮЧ ОСТАЮТСЯ</div>
+          <div class="foot-note" style="margin-bottom:12px">Инструмент лежит в этом же контейнере. Один раз забрать, потом — одна команда: скачать → проверить том новым образом → снять архив → поднять → дождаться /health; не поднялся — вернёт прежний контейнер сам или назовёт архив.</div>
+          ${[
+            ['забрать инструмент', 'docker cp pseudex:/app/pseudexctl ./pseudexctl && chmod +x pseudexctl'],
+            ['обновить', upgradeCmd],
+            ['посмотреть план, ничего не делая', `./pseudexctl --dry-run upgrade${target ? ` --to ${target}` : ''}`],
+          ].map(([label, cmd]) => html`
+            <div style="margin-bottom:12px">
+              <div class="label" style="margin-bottom:6px">${label.toUpperCase()}</div>
+              <div class="row" style="gap:8px;align-items:stretch">
+                <pre class="report" style="flex:1;margin:0">${cmd}</pre>
+                <button class="btn" type="button" onClick=${() => copy(label, cmd)}>${copied === label ? 'СКОПИРОВАНО' : 'КОПИРОВАТЬ'}</button>
+              </div>
+            </div>`)}
+          ${copied && !['забрать инструмент', 'обновить', 'посмотреть план, ничего не делая'].includes(copied) && html`<div class="foot-note" style="color:var(--amber)">${copied}</div>`}
+          <div class="foot-note" style="margin-top:8px">Старый образ никогда молча не откроет том, который писал новый: он остановится с фразой «том новее этого образа». Compose: <span class="mono">docker compose pull && docker compose up -d</span>.</div>
+        </div>
+      </div>
+      <div class="cell" style="padding:0;margin-top:16px">
+        <div class="label" style="padding:16px 18px 8px">ЦИКЛЫ ПОДДЕРЖКИ</div>
+        ${cycles.length === 0 && html`<div class="empty">Сервер лицензий не прислал список циклов — реестр версий ещё не доехал до него или сервер старше этого движка.</div>`}
+        ${cycles.length > 0 && html`
+          <div class="table-wrap" style="border:0">
+            <div class="trow head" style="grid-template-columns:90px 220px 110px 120px 140px 1fr;min-width:0">
+              <span>цикл</span><span>состояние</span><span>новейшая</span><span>вышел</span><span>поддержка до</span><span></span>
+            </div>
+            ${cycles.map((c) => html`
+              <div class="trow" style=${`grid-template-columns:90px 220px 110px 120px 140px 1fr;min-width:0;${c.cycle === mine ? 'background:var(--panel-2, transparent)' : ''}`}>
+                <span class="type">${c.cycle}</span>
+                <span class=${(CYCLE_STATE[c.state] || ['', ''])[1]}>${(CYCLE_STATE[c.state] || [c.state || '—'])[0]}</span>
+                <span class="token">${c.latest || '—'}</span>
+                <span class="ts">${c.release_date || '—'}</span>
+                <span class="ts">${c.eol || '—'}</span>
+                <span class="agent">${c.cycle === mine ? '← ваш' : ''}</span>
+              </div>`)}
+          </div>`}
+        <div class="foot-note" style="padding:12px 18px 16px">Минор поддерживается до выхода следующего, затем шесть месяцев security-патчами; закрытие объявляется за девяносто дней, и в этот день сервер лицензий перестаёт выдавать аренду закрытому циклу.</div>
+      </div>
+    </div>`;
+}
+
 /* ---------- integration ---------- */
 
 /* ЕДИНСТВЕННЫЙ ЭКРАН ИЗ СПЕЦИФИКАЦИИ, КОТОРОГО НЕ БЫЛО (tz-local-ui §4.6), и
@@ -1393,7 +1499,7 @@ const TABS = [
   ['СТАТУС', 'status'], ['ПЕСОЧНИЦА', 'sandbox'], ['ЖУРНАЛ', 'log'],
   ['СТАТИСТИКА', 'stats'], ['РАСКРЫТИЯ', 'reveals'],
   ['ИНТЕГРАЦИЯ', 'integration'],
-  ['ПОДПИСКА', 'sub'], ['ДИАГНОСТИКА', 'diag'],
+  ['ПОДПИСКА', 'sub'], ['ВЕРСИИ', 'versions'], ['ДИАГНОСТИКА', 'diag'],
 ];
 
 function App() {
@@ -1514,6 +1620,7 @@ function App() {
           ${tab === 'reveals' && html`<${Reveals} org=${org} />`}
           ${tab === 'integration' && html`<${Integration} org=${org} />`}
           ${tab === 'sub' && html`<${Subscription} org=${org} />`}
+          ${tab === 'versions' && html`<${Versions} status=${status} engineDown=${engineDown} />`}
           ${tab === 'diag' && html`<${Diagnostics} org=${org} />`}
         </main>
       </div>

@@ -56,7 +56,13 @@ _DEPRECATED_STATUS = {
                "release": {"version": "0.3.16", "running_latest": False, "latest": "0.4.2",
                            "latest_in_cycle": "0.3.17", "min_supported": "0.3.17",
                            "deprecated_at": 1788998400, "sunset_at": 1806883200,
-                           "notice": None, "upgrade": "pseudexctl upgrade --to 0.4"}},
+                           "notice": None, "upgrade": "pseudexctl upgrade --to 0.4",
+                           "cycles": [{"cycle": "0.4", "state": "current", "latest": "0.4.2",
+                                       "release_date": "2026-10-05", "eol": None},
+                                      {"cycle": "0.3", "state": "maintenance", "latest": "0.3.17",
+                                       "release_date": "2026-09-14", "eol": "2027-04-05"}]},
+               "schema": {"binary": {"vault": 9, "audit": 1, "tenants": 1},
+                          "volume": {"vault": 9, "audit": 1, "tenants": None}}},
     "license": {"state": "active", "code": None, "grace_left_s": 1000,
                 "seconds_since_lease": 10, "last_error": None},
     "vault": {"on_disk": "encrypted", "key_source": "env", "key_beside_data": False,
@@ -165,7 +171,7 @@ def main() -> None:
             page.wait_for_timeout(1500)
 
             tabs = page.locator("nav button").all_inner_texts()
-            check("страница вообще отрисовалась", len(tabs) >= 7, str(tabs))
+            check("страница вообще отрисовалась", len(tabs) >= 8, str(tabs))
             check("ни одной ошибки исполнения и ни одного запрета CSP",
                   not broken, "; ".join(broken[:3]))
 
@@ -186,6 +192,27 @@ def main() -> None:
             check("баннер именно предупреждение, не остановка",
                   banner.count() and "warn" in (banner.get_attribute("class") or ""),
                   banner.get_attribute("class") if banner.count() else "нет баннера")
+
+            # ЭКРАН «ВЕРСИИ»: циклы из подписанного блока аренды, состояние по
+            # датам, свой цикл помечен, команда обновления с целевым минором.
+            # Таблица существует только в JS — читается из браузера.
+            if any("ВЕРСИИ" in tab for tab in tabs):
+                page.get_by_role("button", name="ВЕРСИИ").click()
+                page.wait_for_timeout(600)
+                versions_body = page.inner_text("main")
+                check("экран версий называет вердикт, новейшую и минимально обслуживаемую",
+                      "доступна 0.4.2" in versions_body and "0.3.17" in versions_body
+                      and "минимально обслуживаемая" in versions_body, versions_body[:300])
+                check("таблица циклов: текущий 0.4 и 0.3 на поддержке до 2027-04-05, свой помечен",
+                      "текущий" in versions_body and "поддержка, только security" in versions_body
+                      and "2027-04-05" in versions_body and "← ваш" in versions_body, versions_body[-600:])
+                check("команда обновления целится в новейший минор",
+                      "./pseudexctl upgrade --to 0.4" in versions_body
+                      and "docker cp pseudex:/app/pseudexctl" in versions_body)
+                check("схема тома и образа показаны обе",
+                      "vault 9" in versions_body and "tenants —" in versions_body, versions_body[-800:])
+            else:
+                check("вкладка ВЕРСИИ есть", False, str(tabs))
 
             if any("ИНТЕГРАЦИЯ" in tab for tab in tabs):
                 page.get_by_role("button", name="ИНТЕГРАЦИЯ").click()

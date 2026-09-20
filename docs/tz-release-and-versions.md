@@ -205,7 +205,9 @@ Sentry) добавил бы новый исходящий поток и спор
   "running_latest": false,
   "latest": "0.4.0", "latest_in_cycle": "0.3.17", "min_supported": "0.3.17",
   "deprecated_at": "@1759622400", "sunset_at": "Mon, 05 Apr 2027 00:00:00 GMT",
-  "notice": {"id": "2026-10-sec-01", "severity": "warning", "text": "…", "url": "…"}
+  "notice": {"id": "2026-10-sec-01", "severity": "warning", "text": "…", "url": "…"},
+  "cycles": [{"cycle": "0.4", "state": "current", "latest": "0.4.0", "release_date": "…", "eol": null},
+             {"cycle": "0.3", "state": "maintenance", "latest": "0.3.17", "release_date": "…", "eol": "2027-04-05"}]
 },
 "bundle_format": 2,
 "lease_contract": 3
@@ -224,6 +226,7 @@ Sentry) добавил бы новый исходящий поток и спор
 | `running_latest = false` | INFO раз на версию | «доступна X» | жёлтый | полное |
 | `deprecated_at` в прошлом | WARN на каждом продлении | баннер «версия устаревает, поддержка до <sunset>» | жёлтый | полное — RFC 9745: deprecation не меняет поведение |
 | `notice` | по `severity`, раз на `id` | баннер | — | полное |
+| `cycles` | — | экран «Версии»: таблица циклов, состояние по датам, свой помечен | — | полное |
 | `sunset_at` в прошлом | сервер: 426 `unsupported_client` | «версия больше не обслуживается: обновитесь до ≥ X — `pseudexctl upgrade`» | красный | вердикт вне grace, как 402/403 |
 
 `lease_contract` уже существует (сервер — 3, отдаёт в `/v1/pubkey` и в ответе);
