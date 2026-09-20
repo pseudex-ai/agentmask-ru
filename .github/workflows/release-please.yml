@@ -33,8 +33,19 @@ on:
     # манифеста этой ветки, тег ставится тем же джобом, release.yml публикует
     # с алиасом только `0.3` — `latest` не двигается (licensing/registry.py).
     branches: [main, "release/**"]
-  # Ручной запуск, когда нужно пересчитать Release PR без нового push.
+  # Ручной запуск: пересчитать Release PR без нового push, или довести до тега
+  # уже влитый Release PR (см. job `tag`). `force` — единственный способ поставить
+  # тег на merge-коммит с НЕ зелёными проверками, и это осознанное решение
+  # человека: например, красный только wiki-check на файле, который этот же
+  # Release PR принёс, а карта починена следующим коммитом — перепроверить сам
+  # merge-коммит уже нельзя. Публикацию это НЕ обходит: release.yml на теге
+  # снова гоняет тесты и гейты и без зелёных не пушит ни одного образа.
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Поставить тег, даже если проверки merge-коммита не зелёные (осознанно)"
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -116,7 +127,7 @@ jobs:
       # «cancelled» — не зелёное: checks.yml на main больше не отменяет
       # прогоны, но если такой всё же встретится, здесь красное с именем.
       - name: проверки merge-коммитов зелёные
-        if: steps.merged.outputs.release == 'true'
+        if: steps.merged.outputs.release == 'true' && inputs.force != true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -147,6 +158,10 @@ jobs:
             fi
             echo "проверок зелёных: ${total}"
           done < /tmp/merged.txt
+
+      - name: force — тег без зелёных проверок, по решению человека
+        if: steps.merged.outputs.release == 'true' && inputs.force == true
+        run: echo "::warning::тег ставится БЕЗ проверки зелёности merge-коммита — force=true; публикацию всё равно гейтит release.yml"
 
       - name: тег и GitHub Release
         if: steps.merged.outputs.release == 'true'
