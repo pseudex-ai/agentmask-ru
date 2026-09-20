@@ -102,13 +102,22 @@ class PresidioMasker:
     def __init__(self, language: str) -> None:
         self._language = language
         self._analyzer = _analyzer(language)
-        import presidio_analyzer
+        from importlib import metadata
+
+        def _version(name: str) -> str:
+            try:
+                return metadata.version(name)
+            except metadata.PackageNotFoundError:
+                return "not installed"
 
         self.config: dict[str, object] = {
             "adapter": "presidio",
             "language": language,
-            "presidio_analyzer": getattr(presidio_analyzer, "__version__", "unknown"),
-            "reversibility": "placeholder map kept by the adapter, exact substitution back",
+            "presidio_analyzer": _version("presidio-analyzer"),
+            "presidio_anonymizer": _version("presidio-anonymizer"),
+            "spacy_model": "ru_core_news_lg" if language == "ru" else "en_core_web_lg",
+            "recognizers": "по умолчанию, без настройки под РФ",
+            "reversibility": "карта плейсхолдеров ведётся адаптером, обратная подстановка точная",
         }
 
     def open(self, case_id: str) -> PresidioSession:

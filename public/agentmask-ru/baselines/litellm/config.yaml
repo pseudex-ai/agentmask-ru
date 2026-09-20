@@ -1,0 +1,29 @@
+# LiteLLM с Presidio-хуком, направленный на фальшивого провайдера бенчмарка.
+#
+# Маскирование у LiteLLM делает guardrail `presidio`: он зовёт presidio-analyzer
+# и presidio-anonymizer по HTTP (поэтому в compose они подняты рядом) и
+# восстанавливает значения в ответе, включая аргументы вызова инструмента.
+model_list:
+  - model_name: fake
+    litellm_params:
+      model: openai/fake
+      api_base: http://host.docker.internal:8099/v1
+      api_key: unused
+
+guardrails:
+  - guardrail_name: "presidio-pii"
+    litellm_params:
+      guardrail: presidio
+      mode: "pre_call"
+      # Выходная половина: вернуть настоящие значения в ответ и в аргументы.
+      output_parse_pii: true
+      # ВКЛЮЧЁН ПО УМОЛЧАНИЮ. Без этого guardrail применяется, только когда
+      # клиент сам попросит его в теле запроса, и бенчмарк измерял бы прокси
+      # с ВЫКЛЮЧЕННОЙ защитой — то есть ничего.
+      default_on: true
+
+litellm_settings:
+  # Кэш выключен: с ним один и тот же корпусный случай мог бы вернуться из
+  # кэша, и прокси не был бы измерен на каждом случае заново.
+  cache: false
+  set_verbose: false

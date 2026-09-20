@@ -6,10 +6,17 @@ the library as an integrator would use it.
 
     pip install "agentmask-ru[llm_guard]"
 
-Two things a reader should know before reading the numbers. The scanners
-are built on Presidio's English pipeline, so Russian detection is whatever
-the default recognisers manage; and `use_faker=True` mints a NEW fake per
-call, so the run is made with the default placeholder mode.
+ЧИТАТЬ ЧИСЛА ТОЛЬКО ВМЕСТЕ С ЭТИМ. LLM Guard 0.3.16 принимает ровно два
+языка — `en` и `zh`; попытка передать `ru` поднимает
+`LLMGuardValidationError: Language must be in the list of allowed:
+['en', 'zh']`. То есть русский не поддерживается продуктом, и низкая
+цифра здесь — не «плохо ищет по-русски», а «по-русски не работает вовсе».
+Прогон делается на английском конвейере, потому что другого нет, и этот
+факт записан в манифест прогона.
+
+Второе: `use_faker=True` чеканит НОВУЮ подделку на каждый вызов, что ломает
+консистентность по построению, поэтому прогон идёт в режиме плейсхолдеров
+по умолчанию.
 """
 
 from dataclasses import dataclass, field
@@ -45,10 +52,20 @@ class LLMGuardMasker:
     def __init__(self) -> None:
         import llm_guard
 
+        from importlib import metadata
+
+        try:
+            version = metadata.version("llm-guard")
+        except metadata.PackageNotFoundError:
+            version = "unknown"
         self.config: dict[str, object] = {
             "adapter": "llm_guard",
-            "llm_guard": getattr(llm_guard, "__version__", "unknown"),
-            "mode": "default placeholders (use_faker off: a fresh fake per call breaks consistency by design)",
+            "llm_guard": version,
+            "supported_languages": ["en", "zh"],
+            "language_used": "en",
+            "caveat": ("русский язык продуктом не поддерживается: Anonymize принимает только en и zh, "
+                       "поэтому прогон сделан на английском конвейере"),
+            "mode": "плейсхолдеры по умолчанию (use_faker выключен: новая подделка на вызов ломает консистентность)",
         }
 
     def open(self, case_id: str) -> LLMGuardSession:
