@@ -260,6 +260,7 @@ def _tuning_payload() -> dict[str, object]:
         },
         "quasi": {
             "birth_ctx": list(assets_source.BIRTH_CTX),
+            "birth_ctx_words": list(assets_source.BIRTH_CTX_WORDS),
             "months": list(assets_source.MONTHS),
             "medical": assets_source.MEDICAL_PATTERN,
         },

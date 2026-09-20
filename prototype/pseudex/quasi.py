@@ -20,7 +20,19 @@ _YEAR_RE = re.compile(r"\b(19\d{2}|20\d{2})\b")
 # и месяц. 23 значения на AgentPII v3.
 _NUM_DATE_RE = re.compile(
     r"\b\d{2}[.\-/ ]\d{2}[.\-/ ]\d{4}\b"
+    # ОДНА ЦИФРА В ДНЕ ИЛИ МЕСЯЦЕ И ДВУЗНАЧНЫЙ ГОД — та же дата, написанная от
+    # руки: «10.4.82», «1.4.1982», «26.10.02». Раньше не матчилось вовсе, а
+    # «1.4.1982» отдавало DOB только на ГОД — день и месяц уходили к модели
+    # открытыми, то есть значение рвалось пополам (публичный бенчмарк, 27 дат
+    # из 50). Разделитель здесь только знаковый: пробел оставлен ТОЛЬКО
+    # двузначной форме выше, иначе «заказ 1 2 34» стало бы датой.
+    r"|\b\d{1,2}[.\-/]\d{1,2}[.\-/](?:\d{4}|\d{2})\b"
     r"|(?<!\d)(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])(?!\d)")
+# Год, стоящий ХВОСТОМ полной даты: «…от 25.07.2026». Такой год не является
+# отдельной датой рождения, даже если подсказка рождения стоит в том же
+# предложении, — иначе год документной даты уезжает в маску отдельным спаном и
+# ломает реквизит договора (публичный бенчмарк, DOB '2026' из «от 25.07.2026»).
+_YEAR_TAIL_OF_DATE = re.compile(r"\d{1,2}[.\-/ ]\d{1,2}[.\-/ ]$")
 _AGE_RE = re.compile(r"\b(\d{2,3})\s*(?:лет|года|год)\b")
 # A stretched pronoun («оон», «онаа») is the same pronoun: the voice register
 # holds a vowel, and a date of birth was lost to it.
@@ -60,6 +72,28 @@ def sentence_window(text: str, start: int, end: int, back: int, forward: int) ->
     return (before + " " + after).lower()
 
 
+# «и др.» — «и другие», а не дата рождения. Единственное живое столкновение
+# словесной подсказки «др», и оно снимается тем, что перед ней стоит союз.
+_AND_OTHERS = re.compile(r"\bи\s*$")
+
+
+def _word_cue_before(before: str) -> bool:
+    """Подсказка-СЛОВО, стоящая непосредственно перед датой.
+
+    Только ПЕРЕД: «др 13.01.1991» — это дата рождения, а «13.01.1991 и др.» —
+    перечисление. И только не после союза «и», который превращает «др» в
+    «другие». Обе оговорки дешевле, чем подстрочный поиск, который зацепил бы
+    «адрес» и «друг».
+    """
+    words = ASSETS.get().quasi.birth_ctx_words
+    if words is None:
+        return False
+    for match in words.finditer(before):
+        if not _AND_OTHERS.search(before[:match.start()]):
+            return True
+    return False
+
+
 def _birth_context_near(text: str, low: str, start: int, end: int,
                         birth_ctx: tuple[str, ...]) -> bool:
     """True if a birth cue sits in the SAME CLAUSE and the SAME SENTENCE as this date.
@@ -91,6 +125,8 @@ def _birth_context_near(text: str, low: str, start: int, end: int,
     after = tail.lower().split(",", 1)[0].split(";", 1)[0]
     if any(ctx in before or ctx in after for ctx in birth_ctx):
         return True
+    if _word_cue_before(before):
+        return True
     # «дата рожжения 28.04.1975», «рдилась 22.04.1994»: the cue mistyped is
     # still the cue — one typo, judged on the same words the list holds.
     for token in re.findall(r"[а-яё]+", before + " " + after):
@@ -106,6 +142,8 @@ def detect_quasi(text: str) -> list[Span]:
     spans: list[Span] = []
     low = text.lower()
     for match in _YEAR_RE.finditer(text):
+        if _YEAR_TAIL_OF_DATE.search(text[max(0, match.start() - 6):match.start()]):
+            continue
         window = low[max(0, match.start() - 25): match.end() + 25]
         if any(ctx in window for ctx in quasi.birth_ctx):
             spans.append(Span(match.start(), match.end(), "DOB", match.group()))

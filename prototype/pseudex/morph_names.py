@@ -678,7 +678,15 @@ def read_person(surface: str, cases: tuple[str, ...],
     # …and for a fake the ENDING says the gender first («лебедеву» is a
     # woman's accusative, not a man's dative), which is the old `detect_gender`
     # signal a surname alone was always read by.
-    hinted = detect_gender(surface) if not lone_rule and len(parts) == 1 else None
+    # …и «одно слово» здесь — это одно ГОЛОСУЮЩЕЕ слово, а не один пробел.
+    # «росица пчёлкина»: имя морфологии неизвестно и разборов не даёт, так что
+    # решает фамилия одна — ровно тот случай, для которого подсказка по
+    # окончанию и написана, — но проверка смотрела на `parts` и видела два
+    # слова. Подсказка не применялась, тай-брейк уводил от именительного, и
+    # женщина канонизировалась в «Росица Пчёлкин»: в CRM уходил другой
+    # человек. Найдено публичным бенчмарком AgentMask-RU.
+    voting_parts = len(per_part)
+    hinted = detect_gender(surface) if not lone_rule and voting_parts == 1 else None
     best = max(candidates, key=lambda c: (sum(r.get(c, 0.0) for r in per_part),
                                           (c[0] == hinted) if hinted else False,
                                           (c[1] == "nomn") if lone_rule else (c[1] != "nomn"),

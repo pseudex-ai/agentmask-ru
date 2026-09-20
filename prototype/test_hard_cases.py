@@ -511,9 +511,23 @@ def test_tool_result_with_a_future_date_masks(vault: Vault, detector: Detector) 
     exception into a tool error the model read as «техническая ошибка», and
     304 gateway-arm replies on the r2 run of 06.09 said so while every record
     read `done`. The future date keeps its future, the birth date its year."""
-    import time
+    import datetime as _dt
     from pseudex.vault import _date_canonical
-    year_now = time.localtime().tm_year
+
+    def _as_date(canonical: str) -> _dt.date | None:
+        """«dd.mm.yyyy» -> date, или None, если даты нет."""
+        try:
+            return _dt.datetime.strptime(canonical, "%d.%m.%Y").date()
+        except ValueError:
+            return None
+
+    # СРАВНИВАЮТСЯ ДАТЫ, А НЕ ГОДЫ. Раньше здесь стояло `int(real[-4:]) >
+    # year_now`, и доставка «30.09.2026», назначенная на десять дней вперёд,
+    # считалась НЕ будущей только потому, что год совпадает с текущим — после
+    # чего от подмены требовали сохранить год, а движок справедливо уводил её
+    # в будущее. Граница года и граница «сегодня» — разные границы, и правило
+    # продукта («будущая дата остаётся будущей») про вторую.
+    today = _dt.date.today()
     for text in (
         '{"appointment_id": "apt-1", "slot": "2026-09-10T09:00:00+03:00", "status": "booked", "patient": {"birth_date": "1955-09-11"}}',
         '{"id": "clm-1", "interval": {"from": "2026-09-10T14:00:00+04:00", "to": "2026-09-10T18:00:00+04:00"}, "address": {"street": "Заречная", "building": "29"}}',
@@ -527,11 +541,14 @@ def test_tool_result_with_a_future_date_masks(vault: Vault, detector: Detector) 
             continue
         check(f"the result leg does not raise: {text[:40]}…", True)
         for token, original in talk._conn.execute("SELECT token, original FROM tokens WHERE entity_type IN ('DOB','DATE')").fetchall():  # noqa: SLF001
-            fake, real = _date_canonical(token), _date_canonical(original)
-            if real and int(real[-4:]) > year_now:
-                check(f"a future date stays in the future: {original} → {token}", int(fake[-4:]) > year_now, token)
-            elif real:
-                check(f"a birth date keeps its year: {original} → {token}", fake[-4:] == real[-4:], token)
+            fake_date, real_date = _as_date(_date_canonical(token)), _as_date(_date_canonical(original))
+            if real_date is None or fake_date is None:
+                continue
+            if real_date > today:
+                check(f"a future date stays in the future: {original} → {token}", fake_date > today, token)
+            else:
+                check(f"a birth date keeps its year: {original} → {token}",
+                      fake_date.year == real_date.year, token)
 
 
 def test_a_mistyped_street_reaches_the_tool_as_the_register_spells_it(

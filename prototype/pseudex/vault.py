@@ -608,13 +608,32 @@ _DATE_PARTS = re.compile(r"(?:^|\D)(\d{1,4})[.\-/ ](\d{1,2})[.\-/ ](\d{1,4})(?:\
 
 
 def _is_future(original: str) -> bool:
-    match = _DATE_PARTS.search(original or "")
-    if not match:
-        return False
-    first, middle, last = (int(part) for part in match.groups())
-    day, month, year = (last, middle, first) if first > 31 else (first, middle, last)
-    if year < 100:
-        year += 2000
+    """Is this date after today?
+
+    THE YEAR IS READ BY `_date_canonical`, NOT BY A SECOND RULE HERE. This
+    function used to parse the date itself and turned a two-digit year into
+    20YY unconditionally: «10.4.82» became 2082, the date read as future, and
+    a date of BIRTH was replaced by a substitute in 2027 — breaking the rule
+    that a fake date of birth keeps the year and the side of today. The
+    canonical reader pivots on the current year («82» → 1982, «02» → 2002),
+    and one phrase must have one reader; the repo has paid for a second one
+    before (`street_house_key` and the city).
+
+    Unreachable until dates with a two-digit year began to be detected at all,
+    and then found by the public benchmark rather than by the battery, because
+    no case in the battery carried one.
+    """
+    canonical = _date_canonical(original or "")
+    if canonical and len(canonical) == 10:
+        day, month, year = (int(part) for part in canonical.split("."))
+    else:
+        match = _DATE_PARTS.search(original or "")
+        if not match:
+            return False
+        first, middle, last = (int(part) for part in match.groups())
+        day, month, year = (last, middle, first) if first > 31 else (first, middle, last)
+        if year < 100:
+            year += 2000
     today = time.localtime()
     return (year, month, day) > (today.tm_year, today.tm_mon, today.tm_mday)
 

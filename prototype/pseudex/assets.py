@@ -161,6 +161,10 @@ class SpokenAssets:
 @dataclass(frozen=True)
 class QuasiAssets:
     birth_ctx: tuple[str, ...]
+    # Подсказки, которые ищутся ЦЕЛЫМ СЛОВОМ. Отдельный список, а не общий:
+    # «др» подстрокой сидит внутри «адрес» и «друг», и одна такая подсказка
+    # замаскировала бы дату в каждом втором деловом письме.
+    birth_ctx_words: re.Pattern[str] | None
     text_date: re.Pattern[str]
     medical: re.Pattern[str]
 
@@ -344,8 +348,13 @@ def _build_quasi(raw: dict[str, object]) -> QuasiAssets:
         r"|\b" + day + r"\s+(?:" + months + r")(?:" + spoken_year + r"|\s+(?:19|20)\d{2}(?:\s*г\w*)?)?",
         re.IGNORECASE,
     )
+    words = tuple(raw.get("birth_ctx_words", ()))
     return QuasiAssets(
         birth_ctx=tuple(raw["birth_ctx"]),
+        birth_ctx_words=(
+            re.compile(r"\b(?:" + "|".join(re.escape(w) for w in words) + r")\.?\b", re.IGNORECASE)
+            if words else None
+        ),
         text_date=text_date,
         medical=re.compile(raw["medical"], re.IGNORECASE),
     )
