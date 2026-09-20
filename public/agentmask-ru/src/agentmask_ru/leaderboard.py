@@ -50,6 +50,9 @@ def render(payloads: list[dict[str, object]], digest: str, cases: int) -> str:
     out.append("Столбцы НЕ складываются в общий балл: шлюз, который маскирует всё, выигрывает первый")
     out.append("столбец и проигрывает два последних.")
     out.append("")
+    out.append("Что стоит знать, читая цифры, — в разделе «Оговорки» ниже; конфигурация каждого")
+    out.append("прогона лежит в `results/<система>/` в поле `manifest`.")
+    out.append("")
     header = "| система | " + " | ".join(title for _, title in _COLUMNS) + " | ошибок |"
     out.append(header)
     out.append("|" + "---|" * (len(_COLUMNS) + 2))
@@ -80,6 +83,22 @@ def render(payloads: list[dict[str, object]], digest: str, cases: int) -> str:
                 right = str(b["manifest"]["system"])  # type: ignore[index]
                 out.append(f"| {left} ↔ {right} | {key} | {only_a} | {only_b} | {p_value:.3f} |")
         out.append("")
+
+    out.append("## Оговорки")
+    out.append("")
+    out.append("Каждая строка здесь — факт о конфигурации, без которого число читается неверно.")
+    out.append("")
+    for payload in current:
+        meta = payload["manifest"]
+        assert isinstance(meta, dict)
+        config = meta.get("adapter_config", {})
+        caveat = config.get("caveat") if isinstance(config, dict) else None
+        notes = str(meta.get("notes", "")).strip()
+        if caveat:
+            out.append(f"- **{meta['system']}** — {caveat}")
+        elif notes:
+            out.append(f"- **{meta['system']}** — {notes}")
+    out.append("")
 
     if stale:
         out.append("## Устаревшие прогоны (другой корпус)")
@@ -113,7 +132,24 @@ def _discordant(left: dict[str, object], right: dict[str, object], key: str) -> 
     return (sum(1 for k in shared if a[k] and not b[k]), sum(1 for k in shared if b[k] and not a[k]))
 
 
+def _utf8_stdout() -> None:
+    """Печатать по-русски в консоль Windows.
+
+    Windows отдаёт стандартному выводу кодировку страницы (cp1251/cp437), и
+    первая же русская строка роняет процесс с UnicodeEncodeError — что и
+    случилось в первом же прогоне CI. Матрица ubuntu+windows стоит в CI
+    ровно ради таких находок, и чинить это надо не переменной окружения в
+    workflow, а здесь: читатель статьи запустит бенчмарк у себя, и у него
+    тоже Windows.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _utf8_stdout()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--results", default="results")
     parser.add_argument("--cases", default="cases")

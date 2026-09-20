@@ -176,7 +176,24 @@ def run_gates(root: Path, cases: list[Case]) -> list[GateResult]:
     return results
 
 
+def _utf8_stdout() -> None:
+    """Печатать по-русски в консоль Windows.
+
+    Windows отдаёт стандартному выводу кодировку страницы (cp1251/cp437), и
+    первая же русская строка роняет процесс с UnicodeEncodeError — что и
+    случилось в первом же прогоне CI. Матрица ubuntu+windows стоит в CI
+    ровно ради таких находок, и чинить это надо не переменной окружения в
+    workflow, а здесь: читатель статьи запустит бенчмарк у себя, и у него
+    тоже Windows.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _utf8_stdout()
     parser = argparse.ArgumentParser(description="Проверки корпуса и репозитория")
     parser.add_argument("--cases", default="cases", help="каталог со случаями")
     parser.add_argument("--root", default=".", help="корень репозитория")
