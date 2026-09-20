@@ -117,6 +117,15 @@ def test_operator_surface_is_closed(client: TestClient) -> None:
     subscription = client.get("/subscription", headers=AUTH).json()
     check("/subscription mirrors the same release verdict",
           subscription.get("release") == release, f"{subscription.get('release')!r}")
+    # BOTH SIDES OF THE SCHEMA CONTRACT (D-060): what the image understands and
+    # what this process found the volume at. The audit log is opened at import,
+    # so its volume number is known; the vault is per org and may not be yet.
+    from pseudex import schema  # noqa: PLC0415
+    schema_block = status["engine"].get("schema") or {}
+    check("/status carries engine.schema with the image's maxima and the volume's numbers",
+          schema_block.get("binary") == schema.versions()
+          and schema_block.get("volume", {}).get("audit") == schema.versions()["audit"],
+          f"schema={schema_block!r}")
 
     # The masking surface has its own credential, held by the customer's gateway.
     anonymous_mask = client.post("/mask", json={"org_id": "acme",
