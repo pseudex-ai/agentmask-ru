@@ -23,6 +23,7 @@ Status: `spec` (describes shipped behaviour) · `ТЗ` (a specification;
 
 | file | answers | status |
 |---|---|---|
+| `docs/articles/2026-09-habr-01-agentmask-ru.md` | article #1 for Habr: the public benchmark and seven systems — a DRAFT the owner rewrites in his own prose (Habr bans AI-written text); Pseudex numbers marked ⚠ must be re-measured after the release that carries Б19 | design (draft, not published) |
 | `docs/idea.md` | the product concept: what Pseudex is, who it is for, the 152-ФЗ framing | spec (note: `docs/idea.md:69` cites ст. 13.1 wrongly — it is about upload to a Mincifry GIS; see STATE D-018) |
 | `docs/spec.md` | the master ТЗ: delivery, protection, performance, the benchmark — the current accepted state, not a changelog | ТЗ |
 | `docs/how-it-works.md` | the mechanics with worked examples: what happens to data, why the model sees nothing real, how the tool call still executes | spec |
