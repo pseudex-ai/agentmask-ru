@@ -444,6 +444,15 @@ def verdict(doc: dict, engine_version: str, today: dt.date) -> dict:
         "deprecated_at": _unix_at(announced) if announced is not None and announced <= today else None,
         "sunset_at": _http_date(eol) if eol is not None else None,
         "notice": _notice_for(doc, engine_version),
+        # EVERY CYCLE, compactly, so the operator's screen can show what
+        # exists, not only «есть новее»: state from the DATES, newest first.
+        # A few hundred bytes under the signature; no digests, no notices.
+        "cycles": [
+            {"cycle": str(c["cycle"]), "state": effective_state(c, today),
+             "latest": str(c["latest"]["version"]),
+             "release_date": c.get("release_date"), "eol": c.get("eol")}
+            for c in doc["cycles"]
+        ],
     }
 
 

@@ -201,6 +201,7 @@ def release_verdict(state) -> dict[str, object]:
                           else int(state.deprecated_at)),
         "sunset_at": None if state.sunset_at is None else int(state.sunset_at),
         "notice": state.notice,
+        "cycles": state.cycles,
         # The one command every verdict ends in. Named here so the interface
         # and the CLI print the same words as the server's own 426.
         "upgrade": (None if state.latest is None

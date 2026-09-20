@@ -282,6 +282,9 @@ class LicenseStatus:
     deprecated_at: float | None
     sunset_at: float | None
     notice: dict[str, str] | None
+    # Every cycle the registry lists — cycle, state by the dates, latest,
+    # release_date, eol — for the «Версии» screen. None when the server said nothing.
+    cycles: list[dict[str, str | None]] | None
 
 
 def _public_key_material() -> str:
@@ -347,6 +350,10 @@ def _parse_verdict(block: object) -> dict[str, object] | None:
     notice = block.get("notice")
     parsed["notice"] = ({str(k): str(v) for k, v in notice.items()}
                         if isinstance(notice, dict) else None)
+    cycles = block.get("cycles")
+    parsed["cycles"] = ([{str(k): (None if v is None else str(v)) for k, v in c.items()}
+                         for c in cycles if isinstance(c, dict)]
+                        if isinstance(cycles, list) else None)
     return parsed
 
 
@@ -554,6 +561,7 @@ class LicenseClient:
             deprecated_at=_verdict_field(self._verdict, "deprecated_at", float),
             sunset_at=_verdict_field(self._verdict, "sunset_at", float),
             notice=_verdict_field(self._verdict, "notice", dict),
+            cycles=_verdict_field(self._verdict, "cycles", list),
         )
 
     def is_serving(self) -> bool:
