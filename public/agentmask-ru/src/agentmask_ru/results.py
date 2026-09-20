@@ -74,6 +74,7 @@ def to_payload(meta: Manifest, scores: Scores, observations: list[CaseObservatio
         "run": {
             "cases": scores.cases, "errors": scores.errors, "calls_made": scores.calls_made,
             "calls_parsed": scores.calls_parsed, "rewrite_flagged": scores.rewrite_flagged,
+            "unattributable": scores.unattributable, "normalised": scores.normalised,
         },
         "observations": [asdict(o) for o in observations],
     }

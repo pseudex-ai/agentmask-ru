@@ -56,6 +56,8 @@ class Scores:
     calls_parsed: int
     cases: int
     rewrite_flagged: int
+    unattributable: int      # substitutes the alignment could not assign to one span
+    normalised: int          # misses where the tool got the value repaired, not lost
 
 
 def _line(name: str, hits: int, total: int) -> Line:
@@ -103,6 +105,8 @@ def score(observations: list[CaseObservation]) -> Scores:
         calls_parsed=sum(1 for o in observations if o.arguments_parse),
         cases=len(observations),
         rewrite_flagged=sum(1 for o in observations if o.rewrite_ratio > 0.3),
+        unattributable=sum(1 for i in items if i.shared_block and i.tool_param),
+        normalised=sum(1 for i in items if i.normalised),
     )
 
 

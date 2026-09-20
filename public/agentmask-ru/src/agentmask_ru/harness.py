@@ -13,10 +13,11 @@ published number from the run file without trusting our arithmetic.
 
 import json
 import random
+import re
 from dataclasses import asdict, dataclass, field
 
 from agentmask_ru.adapters.base import Masker, MaskedView, TurnResult
-from agentmask_ru.align import digits_of, is_number_like, norm, project, rewrite_ratio
+from agentmask_ru.align import digits_of, is_number_like, norm, project_many, rewrite_ratio
 from agentmask_ru.policy import decide
 from agentmask_ru.schema import Case
 
@@ -39,7 +40,9 @@ class ItemObservation:
     covered: bool
     typed_as: str | None     # the type the masker declared, when it exposes spans
     delivered: str | None    # what the tool received for this parameter
-    round_trip: bool | None  # delivered == canonical; None when no parameter
+    round_trip: bool | None  # delivered == canonical; None when no parameter or not attributable
+    normalised: bool         # the tool got the value REPAIRED, not lost
+    shared_block: bool       # the substitute could not be attributed to this span alone
     identity: str
 
 
@@ -96,6 +99,68 @@ def _same_value(produced: str, canonical: str) -> bool:
     return left_digits == right_digits
 
 
+# Latin letters that look like Cyrillic ones. A gateway that folds them
+# back has repaired the customer's slip, which is a different outcome from
+# losing the value — and telling the two apart needs the same table the
+# slip was made with.
+_LOOKALIKE: dict[str, str] = {"a": "а", "e": "е", "o": "о", "p": "р", "c": "с", "y": "у", "x": "х"}
+# Letters that stand in for digits when somebody types a number. Folded
+# ONLY inside a token that is mostly digits — «оля» is a name, «58О2333»
+# is a phone with a slip in it, and the rule that tells them apart is the
+# same one a detector uses.
+_DIGIT_LOOKALIKE: dict[str, str] = {"о": "0", "О": "0", "o": "0", "O": "0", "з": "3", "З": "3", "б": "6"}
+
+
+def _fold(text: str) -> list[str]:
+    """Words and digit runs of a value, look-alikes folded, case ignored."""
+    folded = "".join(_LOOKALIKE.get(ch, ch) for ch in norm(text))
+    tokens = [part for part in re.split(r"[^\w]+", folded, flags=re.UNICODE) if part]
+    out: list[str] = []
+    for token in tokens:
+        digits = sum(1 for ch in token if ch.isdigit())
+        if digits and digits >= len(token) / 2:
+            token = "".join(_DIGIT_LOOKALIKE.get(ch, ch) for ch in token)
+        out.append(token)
+    return out
+
+
+def _normalised(produced: str, canonical: str) -> bool:
+    """Did the gateway hand the tool a REPAIRED version of the value?
+
+    Some gateways deliberately normalise what the customer wrote: a Latin
+    «a» inside a Cyrillic word folded back, a lower-case street rewritten
+    the way the register spells it, a generic word («улицы») inserted. That
+    is not the value as written — the round-trip line counts it as a miss,
+    because the ground truth here is what the customer typed — but it is
+    NOT the same failure as a value that arrived broken or not at all, and
+    a reader choosing between gateways needs to tell them apart.
+
+    The test is that NOTHING WAS LOST: every word and digit run of the
+    canonical still appears, in order, in what the tool received. Counted
+    and printed beside the line, never folded into the pass rate.
+    """
+    if not produced:
+        return False
+    # A number is one value however it is grouped: «220О7282…» repaired and
+    # regrouped into «2200 7282 …» lost nothing.
+    if is_number_like(canonical.replace("О", "0").replace("о", "0")) or is_number_like(produced):
+        left = "".join(_DIGIT_LOOKALIKE.get(ch, ch) for ch in canonical)
+        right = "".join(_DIGIT_LOOKALIKE.get(ch, ch) for ch in produced)
+        if digits_of(left) and digits_of(left) == digits_of(right):
+            return True
+    wanted, got = _fold(canonical), _fold(produced)
+    if not wanted:
+        return False
+    position = 0
+    for piece in wanted:
+        while position < len(got) and got[position] != piece:
+            position += 1
+        if position == len(got):
+            return False
+        position += 1
+    return True
+
+
 def _typed_as(session: object, case: Case, item_id: str) -> str | None:
     item = next(p for p in case.pii if p.id == item_id)
     spans = getattr(session, "spans", None)
@@ -139,20 +204,25 @@ def run_case(masker: Masker, case: Case, policy: str, seed: int) -> CaseObservat
             masked = result.masked or captured.get("masked")
             if isinstance(masked, MaskedView):
                 last_masked = masked
+                for message_index in {i.turn for i in case.pii if i.turn <= turn}:
+                    shown = masked.messages[message_index].get("content")
+                    if not isinstance(shown, str):
+                        continue
+                    here = [i for i in case.pii if i.turn == message_index]
+                    projected = project_many(case.messages[message_index]["content"], shown,
+                                             [(i.start, i.end) for i in here])
+                    for item, substitute in zip(here, projected):
+                        seen_by_item[item.id] = (substitute.text, substitute.altered, substitute.covered, substitute.shared)
+                        if turn == user_turns[0]:
+                            first_substitutes[item.id] = substitute.text
                 for item in case.pii:
                     if item.turn > turn:
                         continue
-                    shown = masked.messages[item.turn].get("content")
-                    if not isinstance(shown, str):
-                        continue
-                    substitute = project(case.messages[item.turn]["content"], shown, item.start, item.end)
-                    seen_by_item[item.id] = (substitute.text, substitute.altered, substitute.covered)
-                    if turn == user_turns[0]:
-                        first_substitutes[item.id] = substitute.text
-                    elif item.id in first_substitutes and item.turn == user_turns[0]:
+                    substitute_text = seen_by_item.get(item.id, ("", False, False, False))[0]
+                    if turn != user_turns[0] and item.id in first_substitutes and item.turn == user_turns[0]:
                         # The same span, shown again in a later request: a
                         # per-request masker may give it a new substitute.
-                        moved = first_substitutes[item.id] != substitute.text
+                        moved = first_substitutes[item.id] != substitute_text
                         observation.stability = not moved if observation.stability is None else (observation.stability and not moved)
             last_result = result
             if result.error:
@@ -171,10 +241,10 @@ def run_case(masker: Masker, case: Case, policy: str, seed: int) -> CaseObservat
                 protected = [(p.start, p.end) for p in case.pii if p.turn == turn]
                 protected += [(n.start, n.end) for n in case.negatives if n.turn == turn]
                 observation.rewrite_ratio = max(observation.rewrite_ratio, rewrite_ratio(original, shown, protected))
-            for negative in (n for n in case.negatives if n.turn == turn):
-                if not isinstance(shown, str):
-                    continue
-                substitute = project(original, shown, negative.start, negative.end)
+            if not isinstance(shown, str):
+                continue
+            here = [n for n in case.negatives if n.turn == turn]
+            for negative, substitute in zip(here, project_many(original, shown, [(n.start, n.end) for n in here])):
                 observation.negatives.append(NegativeObservation(
                     case_id=case.id, value=negative.value, kind=negative.kind,
                     register=case.register, family=case.family, touched=substitute.altered,
@@ -195,16 +265,21 @@ def run_case(masker: Masker, case: Case, policy: str, seed: int) -> CaseObservat
                 observation.arguments_parse = False
 
     for item in case.pii:
-        substitute, altered, covered = seen_by_item.get(item.id, ("", False, False))
+        substitute, altered, covered, shared = seen_by_item.get(item.id, ("", False, False, False))
         received = delivered.get(item.tool_param) if item.tool_param else None
         round_trip = None
-        if item.tool_param and observation.call_made:
+        normalised = False
+        # A substitute the alignment could not attribute to this span alone
+        # is not evidence about the round trip in either direction.
+        if item.tool_param and observation.call_made and not shared:
             round_trip = received is not None and _same_value(received, item.canonical)
+            if round_trip is False and received is not None:
+                normalised = _normalised(received, item.canonical)
         observation.items.append(ItemObservation(
             case_id=case.id, item_id=item.id, type=item.type, register=case.register, family=case.family,
             tier=item.tier, cue=item.cue, turn=item.turn, tool_param=item.tool_param, substitute=substitute,
             altered=altered, covered=covered, typed_as=_typed_as(session, case, item.id), delivered=received,
-            round_trip=round_trip, identity=item.identity,
+            round_trip=round_trip, normalised=normalised, shared_block=shared, identity=item.identity,
         ))
 
     if case.family == "second_mention":

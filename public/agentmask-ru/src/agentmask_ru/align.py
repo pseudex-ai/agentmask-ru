@@ -58,6 +58,7 @@ class Substitute:
     text: str
     altered: bool       # the masker put something else there
     covered: bool       # no PIECE of the real value survived into it
+    shared: bool        # another gold span sits in the same changed block
 
 
 def blocks(original: str, masked: str) -> list[Block]:
@@ -83,14 +84,86 @@ def blocks(original: str, masked: str) -> list[Block]:
     return merged
 
 
+def project_many(original: str, masked: str, spans: list[tuple[int, int]]) -> list[Substitute]:
+    """Project several gold spans of ONE message at once.
+
+    WHY THIS EXISTS AND `project` ALONE IS NOT ENOUGH. Two gold spans that
+    sit next to each other — an address and the name right after it — are
+    replaced by substitutes that also sit next to each other, and difflib
+    sees ONE changed block covering both. Asked separately, each span then
+    claims the whole block, so the name comes back as «. 101 Алиса
+    Фролова»: the tail of the address plus the name. The scripted model
+    copies that into the tool call and the round trip fails for a reason
+    that is entirely the instrument's.
+
+    So a block covering more than one gold span is DIVIDED between them,
+    at the nearest word boundary to the proportional point, and every span
+    that had to share is marked `shared`.
+
+    THE MARK IS THE POINT, NOT THE SPLIT. No alignment can know where one
+    substitute ends inside a single replacement; the division keeps one
+    span from swallowing its neighbour's substitute, but the result is a
+    guess. An instrument that cannot attribute a value must not score it,
+    so the harness excludes shared items from the round-trip lines and the
+    report prints how many there were.
+    """
+    if not spans:
+        return []
+    order = sorted(range(len(spans)), key=lambda i: spans[i][0])
+    parts = blocks(original, masked)
+    # (span index, block index) -> the slice of that block's masked side
+    # this span may read. Only blocks shared by two or more spans appear.
+    shares: dict[tuple[int, int], tuple[int, int]] = {}
+    for b, block in enumerate(parts):
+        if block.tag == "equal":
+            continue
+        inside = [i for i in order if spans[i][0] < block.a2 and block.a1 < spans[i][1]]
+        if len(inside) < 2:
+            continue
+        span_a = block.a2 - block.a1
+        span_b = block.b2 - block.b1
+        cuts = [block.b1]
+        for i in inside[:-1]:
+            share = (min(spans[i][1], block.a2) - block.a1) / span_a if span_a else 0.0
+            cuts.append(_snap(masked, block.b1 + round(share * span_b), block.b1, block.b2))
+        cuts.append(block.b2)
+        for k, i in enumerate(inside):
+            shares[(i, b)] = (cuts[k], cuts[k + 1])
+    return [_project_one(original, masked, parts, start, end, {b: v for (i, b), v in shares.items() if i == index})
+            for index, (start, end) in enumerate(spans)]
+
+
+def _snap(text: str, position: int, low: int, high: int) -> int:
+    """Move a cut to the nearest word boundary inside [low, high].
+
+    A proportional cut lands wherever the arithmetic says — in the middle
+    of «кв. 101», giving one span «кв. 1» and the next «01». Substitutes
+    are separated by whitespace like everything else, so the nearest space
+    is a better guess than the exact ratio, and it keeps a number whole.
+    """
+    for distance in range(0, high - low + 1):
+        for candidate in (position - distance, position + distance):
+            if candidate in (low, high):
+                return candidate
+            # Cut AFTER the space: the left span keeps its last word, the
+            # right one starts at its first, and neither carries the gap.
+            if low < candidate < high and text[candidate].isspace():
+                return candidate
+    return position
+
+
 def project(original: str, masked: str, start: int, end: int) -> Substitute:
     """Read the masked text where `original[start:end]` used to be."""
+    return _project_one(original, masked, blocks(original, masked), start, end, {})
+
+
+def _project_one(original: str, masked: str, parts: list[Block], start: int, end: int,
+                 shares: dict[int, tuple[int, int]]) -> Substitute:
     value = original[start:end]
-    parts = blocks(original, masked)
     b_start: int | None = None
     b_end: int | None = None
     untouched = 0
-    for block in parts:
+    for index, block in enumerate(parts):
         if block.a2 <= start or block.a1 >= end:
             continue
         if block.tag == "equal":
@@ -101,15 +174,17 @@ def project(original: str, masked: str, start: int, end: int) -> Substitute:
             high = block.b1 + (overlap_a2 - block.a1)
         else:
             # A changed block that touches the span contributes all of its
-            # masked side: the masker decided that region as a whole.
-            low, high = block.b1, block.b2
+            # masked side: the masker decided that region as a whole. When
+            # another gold span shares this block, only this span's share.
+            low, high = shares.get(index, (block.b1, block.b2))
         b_start = low if b_start is None else min(b_start, low)
         b_end = high if b_end is None else max(b_end, high)
     if b_start is None or b_end is None:
-        return Substitute(text="", altered=True, covered=True)
-    text = masked[b_start:b_end]
+        return Substitute(text="", altered=True, covered=True, shared=bool(shares))
+    text = masked[b_start:b_end].strip()
     altered = not _same_value(text, value)
-    return Substitute(text=text, altered=altered, covered=altered and not surviving_pieces(value, text))
+    return Substitute(text=text, altered=altered, covered=altered and not surviving_pieces(value, text),
+                      shared=bool(shares))
 
 
 def digits_of(text: str) -> str:

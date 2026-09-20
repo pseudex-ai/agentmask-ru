@@ -40,7 +40,11 @@ def render(name: str, scores: Scores, observations: list[CaseObservation] | None
     out: list[str] = []
     out.append(f"# {name}")
     out.append(f"  случаев {scores.cases} · вызовов {scores.calls_made} · аргументы разобраны {scores.calls_parsed}"
-               f" · ошибок {scores.errors} · переписан текст {scores.rewrite_flagged}")
+               f" · ошибок {scores.errors} · переписан текст {scores.rewrite_flagged}"
+               f" · не атрибутируется {scores.unattributable}")
+    if scores.normalised:
+        out.append(f"  из расхождений круга {scores.normalised} — значение вернулось ПОЧИНЕННЫМ "
+                   f"(описка исправлена, написание приведено к реестру), а не потерянным")
     out.append("")
     for key in _ORDER:
         line = scores.lines.get(key)
