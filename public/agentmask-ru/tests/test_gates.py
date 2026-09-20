@@ -29,13 +29,13 @@ def test_a_drifted_offset_is_caught() -> None:
     broken = cases[0]
     item = broken.pii[0]
     cases[0] = replace(broken, pii=(replace(item, start=item.start + 1),) + broken.pii[1:])
-    assert not _verdicts(cases)["G1-G5 структура случая"]
+    assert not _verdicts(cases)["G2-G5 структура случая"]
 
 
 def test_a_case_without_negatives_is_caught() -> None:
     cases = load_dir(CASES)
     cases[0] = replace(cases[0], negatives=())
-    assert not _verdicts(cases)["G1-G5 структура случая"]
+    assert not _verdicts(cases)["G2-G5 структура случая"]
 
 
 def test_an_unreachable_canonical_is_caught_by_the_passthrough() -> None:

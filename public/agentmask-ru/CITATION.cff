@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+title: "AgentMask-RU: does a PII-masking gateway break a Russian-speaking LLM agent?"
+message: "Если вы используете этот бенчмарк, сошлитесь на него так."
+type: dataset
+authors:
+  - name: "AgentMask-RU contributors"
+repository-code: "https://github.com/pseudex-ai/agentmask-ru"
+license: Apache-2.0
+version: "0.1.0"
+date-released: "2026-09-20"
+keywords:
+  - pii
+  - benchmark
+  - llm-agents
+  - tool-calling
+  - russian
+  - pseudonymisation

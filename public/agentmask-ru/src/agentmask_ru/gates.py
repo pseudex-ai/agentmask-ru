@@ -45,14 +45,40 @@ class GateResult:
     detail: str
 
 
-def _g1_g5_per_case(cases: list[Case]) -> list[GateResult]:
+def _g1_schema(root: Path) -> GateResult:
+    """Каждый файл случая — по JSON-схеме.
+
+    Схема и `schema.py` описывают одно и то же с двух сторон, и гейт нужен
+    ровно потому, что они могут разойтись: человек правит датакласс и
+    забывает схему, а корпус собирают внешние люди по схеме.
+    """
+    import json
+
+    from jsonschema import Draft202012Validator
+
+    path = root / "schema" / "case.schema.json"
+    if not path.exists():
+        return GateResult("G1 файлы случаев по схеме", False, f"нет {path}")
+    validator = Draft202012Validator(json.loads(path.read_text(encoding="utf-8")))
+    problems: list[str] = []
+    for case_path in sorted((root / "cases").rglob("*.json")):
+        raw = json.loads(case_path.read_text(encoding="utf-8"))
+        for error in validator.iter_errors(raw):
+            problems.append(f"{case_path.name}: {error.message[:100]}")
+            break
+    ok = not problems
+    detail = "все файлы по схеме" if ok else "; ".join(problems[:4])
+    return GateResult("G1 файлы случаев по схеме", ok, detail)
+
+
+def _g2_g5_per_case(cases: list[Case]) -> list[GateResult]:
     problems: list[str] = []
     for case in cases:
         for problem in validate(case):
             problems.append(f"{case.id}: {problem}")
     ok = not problems
     detail = "все случаи структурно верны" if ok else "; ".join(problems[:5]) + (f" (+{len(problems) - 5})" if len(problems) > 5 else "")
-    return [GateResult("G1-G5 структура случая", ok, detail)]
+    return [GateResult("G2-G5 структура случая", ok, detail)]
 
 
 def _g6_identity(cases: list[Case]) -> GateResult:
@@ -140,7 +166,8 @@ def _g11_results(root: Path, cases: list[Case]) -> GateResult:
 
 
 def run_gates(root: Path, cases: list[Case]) -> list[GateResult]:
-    results = _g1_g5_per_case(cases)
+    results = [_g1_schema(root)]
+    results += _g2_g5_per_case(cases)
     results.append(_g6_identity(cases))
     results.append(_g7_reference_differs(cases))
     results.append(_g8_strata(cases))
