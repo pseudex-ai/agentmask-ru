@@ -428,7 +428,7 @@ def check_index(lines: list[str]) -> list[Finding]:
     return findings
 
 
-PIN_RE = re.compile(r"`((?:licensing/|storefront/|e2e/|wiki/)?(?:test_\w+|vault_test|bench_masking|gates|pack_gates|audit_gates|lint_tests|parity|check)(?:\.py)?)")
+PIN_RE = re.compile(r"`((?:licensing/|storefront/|e2e/|wiki/|deploy/)?(?:test_\w+|vault_test|bench_masking|gates|pack_gates|audit_gates|lint_tests|parity|check)(?:\.py|\.sh)?)")
 
 
 FN_PIN_RE = re.compile(r"`([\w/]+)` \(((?:`\w+`(?:, )?)+)\)")
@@ -450,6 +450,10 @@ def heading_slugs(lines: list[str]) -> set[str]:
 
 
 def locate_pin(pin: str) -> Path | None:
+    # A shell test lives where it is named (deploy/test_agent.sh); it has no
+    # `.py` twin to search for.
+    if pin.endswith(".sh"):
+        return (ROOT / pin) if (ROOT / pin).exists() else None
     bare = pin[:-3] if pin.endswith(".py") else pin
     for cand in (PROTO / f"{bare}.py", PROTO / "e2e" / f"{bare}.py", ROOT / f"{bare}.py",
                  PROTO / "licensing" / f"{bare.split('/')[-1]}.py", ROOT / "storefront" / f"{bare.split('/')[-1]}.py",

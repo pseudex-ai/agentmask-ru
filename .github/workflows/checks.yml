@@ -239,6 +239,11 @@ jobs:
           # SC2029/SC1090 are about sourcing and remote expansion, neither of
           # which these scripts do; everything else is a real finding.
           shellcheck -e SC1090,SC1091 -S warning deploy/*.sh
+      # РЕШЕНИЯ АГЕНТА ВЫКАТКИ, БЕЗ DOCKER: за каким тегом он идёт, как
+      # сравнивает `platform/v0.3.16` с `v0.3.15`, когда отказывает. Один
+      # неверный `sort -V` здесь — и агент считает КАЖДЫЙ релиз откатом.
+      - name: the deploy agent follows platform/v* and compares by number
+        run: sh deploy/test_agent.sh
       # СПИСОК ОБЯЗАТЕЛЬНЫХ ПЕРЕМЕННЫХ БЕРЁТСЯ ИЗ САМОГО COMPOSE, А НЕ ИЗ ПАМЯТИ,
       # И СЧИТАЕТСЯ ОДИН РАЗ НА ВСЕ ШАГИ.
       #

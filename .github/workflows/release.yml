@@ -246,6 +246,16 @@ jobs:
           set -eu
           VERSION="${GITHUB_REF_NAME#v}"
           [ "${VERSION}" = "${GITHUB_REF_NAME}" ] && VERSION="$(git rev-parse --short HEAD)"
+          # ОДИН ИСТОЧНИК ВЕРСИИ (D-053): бинарник знает себя из version.txt, тег
+          # обязан совпасть с ним. Расхождение — не опечатка, а образ, который
+          # назовёт серверу лицензий и оператору не ту версию, что на нём написана.
+          if [ "${VERSION}" != "$(git rev-parse --short HEAD)" ]; then
+            FILE_VERSION="$(tr -d '[:space:]' < prototype/version.txt)"
+            if [ "${FILE_VERSION}" != "${VERSION}" ]; then
+              echo "::error::тег ${GITHUB_REF_NAME} не совпадает с prototype/version.txt (${FILE_VERSION}) — образ назвал бы себя не той версией"
+              exit 1
+            fi
+          fi
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
           docker tag pseudex:compiled "${REGISTRY}/${IMAGE}:${VERSION}"
 

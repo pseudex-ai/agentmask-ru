@@ -35,7 +35,7 @@ from pathlib import Path
 # in a way the static rules cannot see. Keep this list short and justified.
 _EXCLUDE: frozenset[str] = frozenset({
     "_lifespan",       # FastAPI lifespan, wired by framework introspection
-    "_release",        # generated module pseudex/_release.py (LICENSE_PUBKEY)
+    "_release",        # generated module pseudex/_release.py (LICENSE_PUBKEY, ENGINE_VERSION)
     "_morph_compat",   # import-time pymorphy2->3 alias, bound by name eagerly
 })
 

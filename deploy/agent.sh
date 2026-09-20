@@ -43,15 +43,30 @@ git fetch --tags --quiet --force
 # PSEUDEX_PIN закрепляет версию и выключает автовыкатку. Нужен ровно в тот
 # момент, когда что-то пошло не так и нужно время подумать, не воюя с агентом,
 # который упорно возвращает «правильную» версию.
-# `v[0-9]*`, НЕ `v*`: старый тег `veilgate-final` начинается с v и сортировался
-# выше любой версии — агент выкатил бы его первым же обходом.
-WANT="${PSEUDEX_PIN:-$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)}"
-[ -n "$WANT" ] || { echo "agent: тегов вида v* нет"; exit 0; }
+#
+# АГЕНТ СЛЕДИТ ТОЛЬКО ЗА `platform/v*` (D-051). Движок клиента выпускается
+# своим потоком `vX.Y.Z`, и на нашем хосте ему делать нечего: те теги агент не
+# видит вовсе, и это не упущение, а граница. `platform/v[0-9]*`, не `platform/v*`:
+# старый урок с `veilgate-final` — тег, начинающийся с v, сортировался выше
+# любой версии. Пока ни одного платформенного тега нет (мост между схемами),
+# агент тихо ждёт: то, что крутится, продолжает крутиться.
+WANT="${PSEUDEX_PIN:-$(git tag -l 'platform/v[0-9]*' --sort=-v:refname | head -1)}"
+[ -n "$WANT" ] || { echo "agent: тегов platform/v* ещё нет — жду первого"; exit 0; }
+
+# Номер без префиксов: `platform/v0.3.16` и `v0.3.15` (последний тег старой
+# схемы, который .deployed помнит после моста) сравниваются как 0.3.16 и 0.3.15.
+# Сравнивать сырые строки нельзя: `sort -V` ставит `p` раньше `v`, и агент
+# счёл бы КАЖДУЮ платформенную версию откатом относительно старой.
+version_of() {
+    v="${1#platform/}"
+    printf '%s' "${v#v}"
+}
 
 HAVE="$(cat "$STATE" 2>/dev/null || echo "")"
 [ "$WANT" = "$HAVE" ] && exit 0
+[ -n "$HAVE" ] && [ "$(version_of "$WANT")" = "$(version_of "$HAVE")" ] && exit 0
 
-VERSION="${WANT#v}"
+VERSION="$(version_of "$WANT")"
 echo "agent: $HAVE -> $WANT"
 
 # ОТКАТ НАЗАД — ВЕКТОР АТАКИ, НЕ ОБНОВЛЕНИЕ. Кто может пушить в реестр, способен
@@ -60,8 +75,9 @@ echo "agent: $HAVE -> $WANT"
 # путь берёт ВЫСШИЙ git-тег, поэтому назад он идёт только если нас обманули;
 # отказываемся. Намеренный откат — только явным PSEUDEX_PIN (оператор решил).
 if [ -z "${PSEUDEX_PIN:-}" ] && [ -n "$HAVE" ]; then
-    older="$(printf '%s\n%s\n' "$WANT" "$HAVE" | sort -V | head -1)"
-    if [ "$older" = "$WANT" ] && [ "$WANT" != "$HAVE" ]; then
+    want_v="$(version_of "$WANT")"; have_v="$(version_of "$HAVE")"
+    older="$(printf '%s\n%s\n' "$want_v" "$have_v" | sort -V | head -1)"
+    if [ "$older" = "$want_v" ] && [ "$want_v" != "$have_v" ]; then
         notify crit "Выкатка ОТМЕНЕНА: откат назад" \
             "$WANT старше развёрнутой $HAVE. Авто-агент не откатывается на более
 старую версию — подписанный откат через пере-тегирование в реестре так и
@@ -71,9 +87,10 @@ if [ -z "${PSEUDEX_PIN:-}" ] && [ -n "$HAVE" ]; then
 fi
 
 # ── подпись, ДО остановки чего бы то ни было ────────────────────────────────
-# Проверяется каждый образ, включая клиентский: он не крутится у нас, но его
-# дайджест — то, что мы показываем клиенту в инструкции, и расхождение здесь
-# означает, что мы собираемся раздать неподтверждённые байты.
+# Проверяются четыре платформенных образа. Клиентский `pseudex` живёт в своём
+# потоке и под платформенной версией не существует; его дайджест — то, что мы
+# показываем клиенту, — проверяется отдельно при синхронизации реестра версий
+# (этап 3 ТЗ docs/tz-release-and-versions.md).
 # ЛИЧНОСТЬ ПОДПИСАНТА ОБЯЗАТЕЛЬНА, И БЕЗ НЕЁ АГЕНТ НЕ РАБОТАЕТ. Здесь стояло
 # `${COSIGN_IDENTITY_REGEXP:-.*}` — и по коду cosign (`pkg/cosign/verify.go`,
 # CheckCertificatePolicy) регексп `.*` делает проверку личности тавтологией:
@@ -109,8 +126,21 @@ case "$IDENTITY" in
 прошла бы как релизная. Ничего не остановлено, работает $HAVE."
         exit 1 ;;
 esac
+# Платформенные образы подписаны в `release.yml@refs/tags/platform/vX.Y.Z`.
+# Regexp, написанный под старую схему (`@refs/tags/v[0-9]…$`), их не примет —
+# и агент слал бы «подпись не сошлась» каждую минуту, ничего не выкатывая.
+# Лучше сказать это один раз и словами, до первой проверки.
+case "$IDENTITY" in
+    *platform*) : ;;
+    *)
+        notify crit "Выкатка ОТМЕНЕНА: identity не принимает platform/v-теги" \
+            "COSIGN_IDENTITY_REGEXP=$IDENTITY
+Нужен якорь вида …release\\.yml@refs/tags/(platform/)?v[0-9]+\\.[0-9]+\\.[0-9]+\$
+Образец — deploy/.env.example. Ничего не остановлено, работает $HAVE."
+        exit 1 ;;
+esac
 
-for name in pseudex pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot; do
+for name in pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot; do
     REF="${REGISTRY}/${name}:${VERSION}"
     # ОБРАЗА ЕЩЁ НЕТ — ЭТО НЕ «ПОДПИСЬ НЕ СОШЛАСЬ». Тег появляется сразу, образы
     # — через ~50 минут сборки, и всё это время агент раз в минуту приходил
@@ -150,14 +180,6 @@ for name in pseudex pseudex-licensing pseudex-storefront pseudex-backup pseudex-
 извлёкся. Работает $HAVE."
             exit 1 ;;
     esac
-    # КЛИЕНТСКИЙ ОБРАЗ ДВИЖКА КРУТИТСЯ У КЛИЕНТА, НЕ ЗДЕСЬ. На лицензионном хосте
-    # его нет в compose — нам нужна только его ПОДПИСЬ+дайджест (что и сделано выше,
-    # это мы публикуем клиенту). Тянуть+метить его — качать ~350МБ неиспользуемого
-    # модельного стека на хост каждый релиз И дать транзиентному сбою НЕиспользуемого
-    # образа уронить выкатку четырёх здоровых. Поэтому для `pseudex` — только verify.
-    case "$name" in
-        pseudex) continue ;;
-    esac
     if ! docker pull --quiet "${REGISTRY}/${name}@${digest}" >/dev/null 2>&1; then
         notify crit "Выкатка ОТМЕНЕНА: проверенный дайджест не скачался" \
             "${REGISTRY}/${name}@${digest}. Работает $HAVE."
@@ -177,7 +199,7 @@ notify info "Выкатка $HAVE → $WANT" "Подписи проверены,
 # ── выкатка ────────────────────────────────────────────────────────────────
 # Прежний тег запоминается ДО checkout: после него `git describe` покажет уже
 # новый, и откатываться будет некуда.
-PREV="${HAVE:-$(git describe --tags --abbrev=0 HEAD 2>/dev/null || echo "")}"
+PREV="${HAVE:-$(git describe --tags --match 'platform/v*' --abbrev=0 HEAD 2>/dev/null || echo "")}"
 git checkout --quiet "$WANT"
 
 # ЗДОРОВЬЕ ЖДЁТ САМ COMPOSE, И ЭТО НЕ ЗАМЕНА НАШЕГО ЦИКЛА, А ЕГО ПОЧИНКА. Ниже
@@ -223,10 +245,11 @@ fi
 # крутится.
 remember_version() {
     env_file="$HERE/.env"
+    ver="$(version_of "$1")"
     if grep -q '^VERSION=' "$env_file"; then
-        sed -i "s/^VERSION=.*/VERSION=${1#v}/" "$env_file"
+        sed -i "s/^VERSION=.*/VERSION=${ver}/" "$env_file"
     else
-        printf 'VERSION=%s\n' "${1#v}" >> "$env_file"
+        printf 'VERSION=%s\n' "${ver}" >> "$env_file"
     fi
 }
 deploy() {
@@ -237,7 +260,7 @@ deploy() {
     # берёт локальные наши образы и дотягивает только сторонние (postgres, caddy…).
     # Откат `deploy "$PREV"` использует ещё локальные образы прошлой версии
     # (prune держит 168ч, а PREV только что работал).
-    VERSION="${1#v}" PSEUDEX_CONF_REV="$conf_rev" \
+    VERSION="$(version_of "$1")" PSEUDEX_CONF_REV="$conf_rev" \
         docker compose -f "$HERE/compose.yml" up -d --remove-orphans \
         --wait --wait-timeout "$WAIT_TIMEOUT"
 }

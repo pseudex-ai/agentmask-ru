@@ -96,6 +96,15 @@ def test_operator_surface_is_closed(client: TestClient) -> None:
     wrong = client.get("/status", headers={"Authorization": "Bearer nope"})
     check("a wrong operator token is refused", wrong.status_code == 401)
 
+    # THE VERSION THE OPERATOR SEES IS THE VERSION THE BUILD IS (D-053). It used
+    # to be a constant that said "1.0.0" on every image ever shipped; the one
+    # source is version.txt, and /status must read from it, not from memory.
+    file_version = (Path(__file__).resolve().parent / "version.txt").read_text(encoding="utf-8").strip()
+    status = client.get("/status", headers=AUTH).json()
+    check("/status names the version from version.txt",
+          status["engine"]["version"] == file_version,
+          f"status={status['engine'].get('version')!r} file={file_version!r}")
+
     # The masking surface has its own credential, held by the customer's gateway.
     anonymous_mask = client.post("/mask", json={"org_id": "acme",
                                  "messages": [{"role": "user", "content": "привет"}]})

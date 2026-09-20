@@ -39,6 +39,7 @@ import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -59,7 +60,31 @@ from pseudex.bundle import (
 
 _log = logging.getLogger("pseudex.license")
 
-ENGINE_VERSION = "1.0.0"
+def _engine_version() -> str:
+    """The version this build IS, from one source (D-053).
+
+    A released image carries it in the generated `pseudex/_release.py` next to
+    the verification key; a dev checkout reads `prototype/version.txt`. It used
+    to be a constant here that said "1.0.0" to the licence server and the
+    operator for every image ever shipped — so the server compared its minimum
+    against a number nobody had set, and the fleet histogram was one bar.
+    """
+    try:
+        from pseudex import _release  # noqa: PLC0415  (optional, generated at build)
+        version = str(getattr(_release, "ENGINE_VERSION", "")).strip()
+        if version:
+            return version
+    except ImportError:
+        pass
+    version_file = Path(__file__).resolve().parent.parent / "version.txt"
+    if version_file.exists():
+        version = version_file.read_text(encoding="utf-8").strip()
+        if version:
+            return version
+    return "0.0.0-dev"
+
+
+ENGINE_VERSION = _engine_version()
 
 STATE_BOOT = "boot"
 STATE_LEASED = "active"

@@ -73,7 +73,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools \
     && pip install --no-cache-dir nuitka
 
 COPY pseudex/ ./pseudex/
-COPY serve_main.py build_strip_docstrings.py build_harden_strings.py build_mangle_names.py ./
+COPY serve_main.py build_strip_docstrings.py build_harden_strings.py build_mangle_names.py version.txt ./
 
 
 # Same guard as the source image, before anything is compiled: the engine must
@@ -91,9 +91,13 @@ RUN if grep -rn "^[[:space:]]*\(from\|import\)[[:space:]]\+sqlite3" ./pseudex/; 
 
 # Baked before compilation, so the verification key ends up INSIDE the binary
 # rather than in a file next to it.
+# The engine VERSION rides in the same generated module, from `version.txt`
+# (D-053), so the binary knows what it is without a file beside it.
 ARG PSEUDEX_LICENSE_PUBKEY
 RUN test -n "$PSEUDEX_LICENSE_PUBKEY" || (echo "PSEUDEX_LICENSE_PUBKEY build-arg is required" && exit 1) \
-    && printf 'LICENSE_PUBKEY = "%s"\n' "$PSEUDEX_LICENSE_PUBKEY" > ./pseudex/_release.py
+    && ENGINE_VERSION="$(tr -d '[:space:]' < version.txt)" \
+    && test -n "$ENGINE_VERSION" || (echo "version.txt is empty" && exit 1) \
+    && printf 'LICENSE_PUBKEY = "%s"\nENGINE_VERSION = "%s"\n' "$PSEUDEX_LICENSE_PUBKEY" "$ENGINE_VERSION" > ./pseudex/_release.py
 
 # pymorphy3's dictionaries and natasha's NER models are DATA inside third-party
 # packages; Nuitka does not follow them unless told. They ship in the image on

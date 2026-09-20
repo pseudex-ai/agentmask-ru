@@ -1053,6 +1053,7 @@ active. There is NO pytest; each script has a `main()`.
 
 | file | status | what |
 |---|---|---|
+| `version.txt` | `live` | the ONE source of the engine version (D-053): both Dockerfiles bake it into `pseudex/_release.py` as `ENGINE_VERSION`, `pseudex/license.py` reads it (dev checkout: the file), the lease, `/status`, the UI and `pseudexctl doctor` show it; `.github/workflows/release.yml` is red when it differs from the tag |
 | `entrypoint.sh` | `live` | the container's PID 1: generates the two tokens ONCE for all workers, runs `PSEUDEX_ROLE=preflight` to size N, `PSEUDEX_ROLE=probe` to check the volume, then fans out N uvicorn workers (`engine`, or `proxy`) and starts the UI process (`PSEUDEX_ROLE=ui`) |
 | `serve_main.py` | `live` | entry point of ONE worker; dispatches on `PSEUDEX_ROLE`: `engine` (default) · `proxy` · `ui` · `preflight` · `probe` · `rekey` · `decrypt` · `measure` · `tripwire`. Hardens the process before any role runs. |
 | `pseudexctl` | `live` | the ops CLI, one entry instead of six `docker run -e PSEUDEX_ROLE=…`: `doctor`, `probe`, `preflight`, `decrypt`, `diag`, `metrics`, `rekey`, `backup`, `restore`. Pinned by `test_pseudexctl.py`. |
@@ -1247,6 +1248,7 @@ Docs: `docs/sprint-cabinet-and-pricing.md`, `docs/billing-integrity.md`,
 | `deploy/local.sh` | brings the stand up and PROVES it is up (a 401 from the admin port is proof of life) before printing the walkthrough |
 | `deploy/bootstrap.sh` | clean Ubuntu 24.04 → production host, one idempotent command |
 | `deploy/agent.sh` + `deploy/systemd/pseudex-agent.service`, `.timer` | the deploy the host performs ITSELF on a timer |
+| `deploy/test_agent.sh` | the agent's DECISIONS without docker: follows «platform/v*» only, compares «platform/v0.3.16» with `v0.3.15` by number (raw `sort -V` puts `p` before `v` and would refuse every release as a downgrade), refuses a real downgrade, refuses an identity that cannot match platform tags, waits when no platform tag exists. Runs in `.github/workflows/checks.yml` |
 | `deploy/watch.sh` | the watchdog: `docs/operations.md` §5 turned into a mechanism |
 | `deploy/backup.sh`, `deploy/restore-drill.sh` + `deploy/systemd/pseudex-restore-drill.service`, `.timer` | nightly backups of both databases; the weekly drill restores yesterday's and asks `licensing/verify.py` whether it is alive |
 | `deploy/housekeeping.sh` + `deploy/systemd/pseudex-housekeeping.service`, `.timer` | weekly disk cleanup, on its own timer |

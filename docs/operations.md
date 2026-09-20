@@ -359,6 +359,16 @@ ssh -L 3000:127.0.0.1:3000 <хост>                 # Grafana смотрят �
 
 ## 6. Выпуск
 
+> **Переход (этапы 1–7 `docs/tz-release-and-versions.md`).** Версий теперь две:
+> движок клиенту — `vX.Y.Z`, платформа нам — `platform/vX.Y.Z`. Агент на хосте
+> следит **только за `platform/v*`** и сравнивает номера без префиксов; тег
+> `v0.3.15` — последний, выкаченный старой схемой, и `.deployed` его помнит.
+> Identity для `cosign` — `…release\.yml@refs/tags/(platform/)?v[0-9]+\.[0-9]+\.[0-9]+$`
+> (образец в `deploy/.env.example`); с прежним якорем агент откажет словами
+> «identity не принимает platform/v-теги», не проверив ни одной подписи. До
+> этапа 2 тег по-прежнему создаёт `ship`; после — merge Release PR. Ниже — текст
+> для старой схемы, он переписывается в этапе 2.
+
 ```bash
 git tag v1.0.1 && git push --tags
 ```
@@ -388,7 +398,7 @@ git tag v1.0.1 && git push --tags
    разница между «автономно» и «автоматически»: автоматическое умеет только
    ломать быстрее.
 
-Откат вручную: `PSEUDEX_PIN=v1.0.0` в `deploy/.env` закрепляет версию и выключает
+Откат вручную: `PSEUDEX_PIN=platform/v0.3.16` в `deploy/.env` закрепляет версию и выключает
 автовыкатку. Нужен ровно тогда, когда что-то пошло не так и нужно время подумать,
 не воюя с агентом, который упорно возвращает «правильную» версию.
 
@@ -404,7 +414,7 @@ git tag v1.0.1 && git push --tags
 ```bash
 cosign verify cr.yandex/crpkutn2el1knpsbrs2d/pseudex:0.1.0 \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  --certificate-identity-regexp '^https://github\.com/Isk4R1oT/Obscura/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'
+  --certificate-identity-regexp '^https://github\.com/Isk4R1oT/Obscura/\.github/workflows/release\.yml@refs/tags/(platform/)?v[0-9]+\.[0-9]+\.[0-9]+$'
 ```
 
 Проверено на `v0.1.0`: этот шаблон проходит, а `@refs/heads/main`, чужой

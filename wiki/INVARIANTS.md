@@ -737,6 +737,20 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   test script — the registry is not reachable from one; enforced on every
   release by the `.github/workflows/release.yml` step «the customer can pull the
   customer image, and ONLY it» (anonymous `DOCKER_CONFIG`, both directions).
+- **The deploy agent follows «platform/v*» only and compares versions by
+  NUMBER.** Two release streams (D-051): engine tags `vX.Y.Z` are the customer's
+  and never reach our host; the agent picks `git tag -l 'platform/v[0-9]*'`,
+  strips «platform/» and `v` before `sort -V` (raw strings put `p` before `v`,
+  and every platform release would read as a downgrade of the last old-scheme
+  tag `.deployed` remembers), refuses an identity regexp that cannot match
+  `refs/tags/platform/v…` in words before any signature check, and waits when no
+  platform tag exists. Pins: `deploy/test_agent.sh`.
+- **The engine version has ONE source, `prototype/version.txt`** (D-053): baked
+  into `pseudex/_release.py` next to the verification key, read by
+  `pseudex/license.py`, sent in the lease, shown by `/status`, the UI and
+  `pseudexctl doctor`. It used to be `ENGINE_VERSION = "1.0.0"` in code, on every
+  image ever shipped. Pins: `test_localui` (`/status` equals the file);
+  `.github/workflows/release.yml` publish is red when the tag differs from the file.
 - **The image tag the site advertises is DERIVED from the deployed VERSION,
   never set by hand.** `CUSTOMER_IMAGE=…:1.0.0` was set once and never
   updated while the agent bumped `VERSION` on every release; the site advertised

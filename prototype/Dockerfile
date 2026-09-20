@@ -59,7 +59,7 @@ COPY THIRD-PARTY-NOTICES.md .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY pseudex/ ./pseudex/
-COPY serve_main.py entrypoint.sh ./
+COPY serve_main.py entrypoint.sh version.txt ./
 RUN chmod +x entrypoint.sh
 
 
@@ -67,9 +67,14 @@ RUN chmod +x entrypoint.sh
 # If the customer could point it at a key of their own, they could sign their own
 # bundles and the signature would prove nothing. `pseudex/license.py` only falls
 # back to the environment when this file is absent, which is a dev checkout.
+# The engine VERSION is baked next to it, from `version.txt` — the one source
+# (D-053). It used to be a constant in `license.py` that said "1.0.0" to the
+# licence server and the operator for every image ever shipped.
 ARG PSEUDEX_LICENSE_PUBKEY
 RUN test -n "$PSEUDEX_LICENSE_PUBKEY" || (echo "PSEUDEX_LICENSE_PUBKEY build-arg is required" && exit 1) \
-    && printf 'LICENSE_PUBKEY = "%s"\n' "$PSEUDEX_LICENSE_PUBKEY" > ./pseudex/_release.py
+    && ENGINE_VERSION="$(tr -d '[:space:]' < version.txt)" \
+    && test -n "$ENGINE_VERSION" || (echo "version.txt is empty" && exit 1) \
+    && printf 'LICENSE_PUBKEY = "%s"\nENGINE_VERSION = "%s"\n' "$PSEUDEX_LICENSE_PUBKEY" "$ENGINE_VERSION" > ./pseudex/_release.py
 
 # Fail the build rather than ship assets by accident. Both checks guard the same
 # thing from different directions: the gazetteers must not be on the customer's
