@@ -59,10 +59,13 @@ jobs:
       contents: write   # тег и GitHub Release
       actions: write    # gh workflow run release.yml
       checks: read      # gh api …/check-runs
-      pull-requests: read
+      pull-requests: read   # gh api …/commits/<sha>/pulls — метка autorelease
     steps:
+      # Без persist-credentials: git здесь только читает теги, а release-please
+      # и gh ходят своим токеном через API.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           fetch-depth: 0
           fetch-tags: true
 

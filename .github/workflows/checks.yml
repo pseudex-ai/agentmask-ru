@@ -282,7 +282,9 @@ jobs:
       - name: engine commits are typed honestly and the release config has no root package
         run: |
           set -eu
-          git fetch --quiet origin main
+          # No fetch: the checkout above is full (all branches, all tags) and
+          # holds no credential, so a fetch here fails with «could not read
+          # Username» — origin/main is already in the clone.
           base="$(git merge-base origin/main HEAD 2>/dev/null || echo "")"
           if [ -n "${base}" ] && [ "${base}" != "$(git rev-parse HEAD)" ]; then
             sh deploy/lint_engine_commits.sh "${base}..HEAD"
