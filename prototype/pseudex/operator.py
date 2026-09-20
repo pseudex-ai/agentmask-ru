@@ -26,7 +26,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from pseudex import metrics as metrics_format
-from pseudex import preflight, sqlite_setup
+from pseudex import preflight, schema, sqlite_setup
 from pseudex.audit import SELFCHECK_ORG
 from pseudex.profiling import snapshot as profiling_snapshot
 
@@ -257,6 +257,12 @@ def build_router(audit, license_client, assets, detector_version: str,
                 "assets_loaded": assets.is_loaded,
                 "bundle_version": state.bundle_version,
                 "release": release_verdict(state),
+                # THE SCHEMA CONTRACT, BOTH SIDES (D-060): what this image
+                # understands per store and what the volume was found at by
+                # this process (None for a store it has not opened). The
+                # two numbers are what `pseudexctl upgrade` reads before it
+                # promises a rollback.
+                "schema": {"binary": schema.versions(), "volume": schema.running()},
                 "processes": running,
                 # HERE AND NOT ONLY IN /diagnostics. The preflight refuses at
                 # START; this is the same arithmetic asked of a container that

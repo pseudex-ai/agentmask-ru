@@ -720,6 +720,29 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   idempotent by file header, `wal_checkpoint(TRUNCATE)` first because the real
   values live in the `-wal`. A store is atomic, a VOLUME is not: the role names
   which files moved. Pins: `test_pseudexctl`, `e2e/gates.py`.
+- **A volume is numbered, and an older image never opens a newer volume**
+  (D-058). Each store carries `application_id` (which store it is) and
+  `user_version`, moved only by numbered idempotent steps in historical order
+  (`vault.VAULT_MIGRATIONS` …); `schema.ensure` refuses `user_version` above the
+  image's maximum BEFORE any DDL, with both numbers and the file, and
+  `PSEUDEX_ROLE=probe` exits 2 (container 6) for it — an older image that opened
+  a newer volume would write rows the newer one reads half-filled. `0` is the
+  pre-versioned state every existing volume is in: all steps run, then the
+  stamp. Pins: `test_schema`, `test_preflight`, `e2e/gates.py L24`.
+- **A snapshot precedes the first step, under the same key, or nothing moves**
+  (D-059). `<store>.pre-<from>-<to>.db` by `VACUUM INTO` after
+  `wal_checkpoint(TRUNCATE)`, fsync of file and directory; free space ≥ 2×
+  (store + WAL) is checked before anything is touched. Once per volume in
+  `PSEUDEX_ROLE=migrate` before the fan-out; workers take the fast path. A
+  fresh store is stamped without a snapshot — there is nothing to restore to.
+  Pins: `test_schema` (the snapshot is OPENED with the store's key, not assumed),
+  `e2e/gates.py L25`.
+- **The maximum `user_version` per store is pinned per MINOR** (D-060):
+  `prototype/schema_lock.json` must equal `schema.versions()` for the minor in
+  `version.txt`. Adding a migration step under an already-pinned minor is red —
+  a patch keeps the number (rollback to the previous patch is free), a minor may
+  raise it one way, and opening a minor is the act of adding its line. Pins:
+  `test_schema`.
 - **The licensing server's schema MIGRATES before any index is built.**
   `CREATE INDEX … (org_id, pubkey)` ran before `ADD COLUMN pubkey`; upgrading on
   existing data did not come up. Every other path starts from an empty database

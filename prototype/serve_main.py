@@ -29,7 +29,7 @@ import sys
 
 import uvicorn
 
-from pseudex import preflight, sqlite_setup, vault_key, vault_migrate
+from pseudex import preflight, schema, sqlite_setup, vault_key, vault_migrate
 from pseudex.hardening import harden_process
 
 # What the volume looks like, in one word, for the header line of the roles
@@ -83,19 +83,81 @@ def _probe() -> int:
     failures = 1 if state.get("error") else 0
     if state.get("error"):
         print(f"  ключ не разрешён: {state['error']}")
+    # A VOLUME FROM THE FUTURE IS REFUSED HERE, BEFORE ANY WORKER (D-058). The
+    # header numbers are readable only after the key, and this is the role that
+    # has it. Exit 2, distinct from «does not open» (1): `entrypoint.sh` prints
+    # a different sentence for each, and an operator scripting this gets a
+    # verdict rather than a colour.
+    too_new = 0
     for filename, store in sqlite_setup.STORES:
-        record = sqlite_setup.describe(os.path.join(directory, filename), store)
+        path = os.path.join(directory, filename)
+        record = sqlite_setup.describe(path, store)
         if record["state"] == vault_migrate.MISSING:
             print(f"  {filename:<12} нет файла")
             continue
         verdict = "открывается" if record["opens"] else "НЕ ОТКРЫВАЕТСЯ"
         detail = f"  {record['error']}" if record["error"] else ""
-        print(f"  {filename:<12} {record['state']:<9} {verdict}{detail}")
+        found = record.get("user_version")
+        known = schema.max_version(store)
+        stamp = "" if found is None else f"  схема {found} (образ до {known})"
+        print(f"  {filename:<12} {record['state']:<9} {verdict}{detail}{stamp}")
         if not record["opens"]:
             failures += 1
+        elif isinstance(found, int) and found > known:
+            too_new += 1
+            print(f"  {'':<12} ТОМ НОВЕЕ ОБРАЗА: {schema.explain_too_new(path, schema.short_name(store), found, known)}")
+    snapshots = schema.snapshots(directory)
+    if snapshots:
+        print("  снимки перед миграциями (удалите, когда новая версия поработала и "
+              "откат больше не нужен):")
+        for entry in snapshots:
+            print(f"    {entry['name']}  {int(entry['bytes']) // 1024} КиБ")
     # Non-zero when something cannot be opened, so this is usable from a script
-    # and from a healthcheck, not only by eye.
+    # and from a healthcheck, not only by eye. 2 beats 1: a volume from the
+    # future is the verdict that changes what the operator does next.
+    if too_new:
+        return 2
     return 1 if failures else 0
+
+
+def _migrate() -> int:
+    """Bring every store of the volume to this image's schema — ONCE, before
+    the fan-out (D-059). Workers then take the fast path.
+
+    Every store whose file exists, plus the two every deployment has: the vault
+    and the audit log. `tenants.db` exists only for the proxy shape, and the
+    first `Tenants()` creates and stamps it under the same lock.
+    """
+    directory = _data_dir()
+    print(f"pseudex migrate: {os.path.abspath(directory)}")
+    problems = 0
+    for filename, store in sqlite_setup.STORES:
+        path = os.path.join(directory, filename)
+        if store == sqlite_setup.TENANTS_STORE and not os.path.exists(path):
+            print(f"  {filename:<12} нет файла — создаст первый процесс, которому он нужен")
+            continue
+        try:
+            connection = sqlite_setup.connect(path, store)
+        except (sqlite_setup.VaultLocked, vault_key.VaultKeyError,
+                vault_migrate.VaultMigrationError) as error:
+            print(f"  {filename:<12} НЕ ОТКРЫВАЕТСЯ: {str(error).strip().splitlines()[0]}")
+            problems += 1
+            continue
+        try:
+            done = schema.ensure(connection, store, path)
+        except schema.SchemaError as error:
+            print(f"  {filename:<12} ОТКАЗ: {error}")
+            problems += 1
+            continue
+        finally:
+            connection.close()
+        if done["applied"]:
+            print(f"  {filename:<12} схема {done['from']} → {done['to']}: "
+                  f"{', '.join(done['applied'])}"
+                  + (f"; снимок {done['snapshot']}" if done["snapshot"] else ""))
+        else:
+            print(f"  {filename:<12} схема {done['to']} — актуальна")
+    return 5 if problems else 0
 
 
 def _rekey() -> int:
@@ -284,6 +346,8 @@ def main() -> None:
         raise SystemExit(_tripwire_main())
     if role == "probe":
         raise SystemExit(_probe())
+    if role == "migrate":
+        raise SystemExit(_migrate())
     if role == "rekey":
         raise SystemExit(_rekey())
     if role == "measure":
@@ -332,6 +396,12 @@ def main() -> None:
         # a second substitute for every person who already has one, and the
         # first set would still be sitting in the customer's CRM.
         raise SystemExit(3) from None
+    except schema.SchemaError as error:
+        # A worker that reached this saw a volume the probe did not refuse —
+        # a process started around the entrypoint. Same rule: the store is
+        # not touched, the process does not serve, the sentence is ours.
+        print(f"pseudex: {error}", file=sys.stderr)
+        raise SystemExit(6) from None
 
     port = int(os.environ.get("PSEUDEX_PORT", "8000"))
     backlog = int(os.environ.get("PSEUDEX_BACKLOG", "2048"))

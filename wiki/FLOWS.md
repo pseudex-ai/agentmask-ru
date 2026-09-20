@@ -187,15 +187,20 @@ is a new keypair and a new lease. The tuning exists ONLY inside a leased process
 ## 6. Container start (`entrypoint.sh`)
 
 ```
-PSEUDEX_ROLE=preflight|probe|rekey|decrypt|measure|tripwire  → run that role once, exit
+PSEUDEX_ROLE=preflight|probe|migrate|rekey|decrypt|measure|tripwire  → run that role once, exit
 otherwise:
  1. PSEUDEX_ADMIN_TOKEN, PSEUDEX_GATEWAY_TOKEN, PSEUDEX_UI_TOKEN  generated ONCE here if unset
     (N workers on one SO_REUSEPORT port must share one token, or the UI 401s at random)
- 2. PSEUDEX_ROLE=preflight ./pseudex-serve   → N workers that fit the cgroup limit, or refuse (preflight.plan)
- 3. PSEUDEX_ROLE=probe     ./pseudex-serve   → the volume opens with the key we have (sqlite_setup.preflight),
-                                               plaintext store → vault_migrate.ensure_encrypted under flock
- 4. N × uvicorn workers  (PSEUDEX_ROLE=engine → pseudex.service:app | proxy → pseudex.proxy:app)
- 5. PSEUDEX_ROLE=ui ./pseudex-serve  → localui on :8081, separate process, never leases
+ 2. PSEUDEX_ROLE=preflight ./pseudex-serve   → N workers that fit the cgroup limit, or refuse (exit 4)
+ 3. PSEUDEX_ROLE=probe     ./pseudex-serve   → the volume opens with the key we have (sqlite_setup.describe)
+                                               exit 1 «не открывается ключом» → container 3
+                                               exit 2 «том писал более новый образ» (user_version > schema.max_version) → container 6, untouched
+ 4. PSEUDEX_ROLE=migrate   ./pseudex-serve   → schema.ensure on every store ONCE under flock: snapshot
+                                               <store>.pre-<from>-<to>.db (VACUUM INTO, same key), numbered steps,
+                                               PRAGMA user_version stamp; exit 5 (no space, refusal) → container 5
+ 5. N × uvicorn workers  (PSEUDEX_ROLE=engine → pseudex.service:app | proxy → pseudex.proxy:app)
+    each Vault/AuditLog/Tenants __init__ → schema.ensure fast path (user_version == max: IF NOT EXISTS only)
+ 6. PSEUDEX_ROLE=ui ./pseudex-serve  → localui on :8081, separate process, never leases
 ```
 
 `pseudexctl` wraps steps 2–3 and the store roles for an operator:
@@ -214,7 +219,7 @@ source tree ──► Dockerfile          → pseudex:source    (.py, writes pse
                    Nuitka (Arkari clang)       native binary; glibc of the build stage → same Debian release at runtime
                    localui pages → /app/ui     NEVER under a directory called pseudex (P1 asserts /app/pseudex is absent)
 
-gates   e2e/gates.py L1–L22 (stand from deploy/compose.local.yml; builds pseudex:source)
+gates   e2e/gates.py L1–L25 (stand from deploy/compose.local.yml; builds pseudex:source)
         e2e/pack_gates.py P1–P11 (both images; P3 = e2e/parity.py on dirty.json — REFUSES before the build without it)
         e2e/audit_gates.py — the gate over the gates (negative atom ⇒ positive atom over the same source)
 CI      .github/workflows/checks.yml on every push (incl. deploy/lint_engine_commits.sh, registry validate);

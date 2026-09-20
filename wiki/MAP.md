@@ -34,7 +34,7 @@ equals this file.
 | `prototype/licensing/` | our side: the authored detection assets, the bundle packer, the licensing server and its store | **never** — an import of it from `pseudex/` is a build failure | `python3 -m licensing.devserver`, `python3 -m licensing.pack` | §2 |
 | `prototype/*.py`, `prototype/pseudexctl` | entry points, build steps, tests, evals, dataset generators (all flat, no package) | tests/evals never; `pseudexctl` and `serve_main.py` yes | see §3 | §3 |
 | `prototype/bench/` | measurement instruments: benchmarks we built, corpora we did not write, paired live runs | never | each script has a `main()` | §4 |
-| `prototype/e2e/` | closing gates against REAL containers: licensing (L1–L22), packaging (P1–P11), plus the gate that audits the gates | never | `e2e/gates.py`, `e2e/pack_gates.py` | §5 |
+| `prototype/e2e/` | closing gates against REAL containers: licensing (L1–L25), packaging (P1–P11), plus the gate that audits the gates | never | `e2e/gates.py`, `e2e/pack_gates.py` | §5 |
 | `prototype/Dockerfile`, `prototype/Dockerfile.nuitka` | the two images; same Debian release, different way of building the engine | — | `docker build` | §3.2 |
 | `storefront/` | landing, signup, customer cabinet, operator console, billing, analytics — Django, on OUR hardware; shares no code with the engine | no (runs on our side) | `storefront/manage.py`, `storefront/run_all.py` | §6, `storefront/README.md` |
 | `deploy/` | our production host: compose, Caddy, Prometheus/Loki/Grafana, backups, watchdog, systemd timers, support bot | no | `deploy/bootstrap.sh`, `deploy/agent.sh`, `deploy/local.sh` | §7 |
@@ -244,8 +244,8 @@ canonicalization (phones, names in the nominative with gender evidence,
 addresses via `split_roles`); format-preserving, checksum-INVALID substitutes;
 the conversation scope (`for_conversation`, `with_pseudonym_scope`, `minted_in`);
 the digit-signature and translit reindexes; the collision guards at mint time.
-- **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `looks_dictated`, `name_key`, `fold_key`, `place_key`, `token_re`, `Vault`
-- **Uses:** address, assets, credentials, fuzzy, morph_names, morph_places, normalize, profiling, ru_pii, spoken, sqlite_setup, translit · **Used by:** assets, envelope, proxy, redact, service
+- **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `looks_dictated`, `name_key`, `fold_key`, `place_key`, `token_re`, `create_tables`, `create_indexes`, `Vault` (+ `VAULT_MIGRATIONS`)
+- **Uses:** address, assets, credentials, fuzzy, morph_names, morph_places, normalize, profiling, ru_pii, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, proxy, redact, service, schema (lazy)
 - **Tests:** vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_hard_cases, test_loop, test_names_morphology, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
 - **Docs:** `docs/tz-vault-encryption.md`, `docs/tz-name-gender-canonical.md`, `docs/how-it-works.md`, `research/2026-09-03-checksum-valid-substitutes.md` · rules: INVARIANTS.md#vault, INVARIANTS.md#collisions, INVARIANTS.md#conversation-scope
 
@@ -273,8 +273,8 @@ What was caught and what replaced it: type + token + masked preview only, never
 the value. Recorded on cache MISS only. Also the request counter (`requests` is
 a REQUEST counter, not `sum(entities)`), reveal records, billing totals
 (excluding `SELFCHECK_ORG`).
-- **API:** `AuditLog`
-- **Uses:** profiling, sqlite_setup · **Used by:** envelope, metering, operator, proxy, service
+- **API:** `create_tables`, `AuditLog` (+ `AUDIT_MIGRATIONS`)
+- **Uses:** profiling, schema, sqlite_setup · **Used by:** envelope, metering, operator, proxy, service, schema (lazy)
 - **Tests:** test_collisions, test_detok_security, test_localui, test_persona_defects, test_product; `bench/agentpii*/`
 - **Docs:** `docs/tz-local-ui.md`, `docs/metering-integrity.md` · rules: INVARIANTS.md#audit
 
@@ -363,7 +363,7 @@ surfaces under the ADMIN token: `/status`, `/events`, `/stats`, `/stats.csv`,
 the server's verdict on this version (D-055) with unix dates and the one
 upgrade command, `None` fields when the server said nothing.
 - **API:** `processes`, `memory`, `release_verdict`, `build_router`
-- **Uses:** audit, metrics, preflight, profiling, sqlite_setup · **Used by:** proxy, service
+- **Uses:** audit, metrics, preflight, profiling, schema, sqlite_setup · **Used by:** proxy, service
 - **Tests:** none direct · via service → test_localui, test_perf_masking (401 on token drift), test_detok_security
 - **Docs:** `docs/tz-local-ui.md` · rules: INVARIANTS.md#surfaces, INVARIANTS.md#audit
 
@@ -380,8 +380,8 @@ and ship at `/app/ui`. Never imports `pseudex.service`, never leases.
 
 #### `pseudex/tenants.py` — 87 lines · `live`
 Multi-tenant API keys for the proxy shape: key → upstream URL + key.
-- **API:** `Tenant`, `Tenants`
-- **Uses:** sqlite_setup · **Used by:** proxy; `issue_key.py`
+- **API:** `create_tables`, `Tenant`, `Tenants` (+ `TENANTS_MIGRATIONS`)
+- **Uses:** schema, sqlite_setup · **Used by:** proxy, schema (lazy); `issue_key.py`
 - **Tests:** test_product
 - **Docs:** `docs/integration.md`
 
@@ -400,7 +400,7 @@ licensing): `sqlcipher3` only, no `import sqlite3` anywhere in `pseudex/` (both
 Dockerfiles fail the build on it). HKDF per-store keys, read-only opens, volume
 state, preflight of the mounted volume.
 - **API:** `VaultLocked`, `store_key`, `connect`, `connect_readonly`, `volume_state`, `preflight`, `describe`
-- **Uses:** vault_key, vault_migrate · **Used by:** audit, operator, proxy, service, tenants, vault; `licensing/store.py`, `licensing/verify.py`, serve_main
+- **Uses:** vault_key, vault_migrate · **Used by:** audit, operator, proxy, schema, service, tenants, vault; `licensing/store.py`, `licensing/verify.py`, serve_main
 - **Tests:** `licensing/test_store_upgrade.py` · via vault → vault_test, test_pseudexctl; `e2e/pack_gates.py` P9
 - **Docs:** `docs/tz-vault-encryption.md` · rules: INVARIANTS.md#storage
 
@@ -418,9 +418,24 @@ Plaintext store → encrypted, in place, under `flock`, idempotent by file heade
 `wal_checkpoint(TRUNCATE)` first. Rekey and decrypt are the same move in other
 directions (`PSEUDEX_ROLE=rekey|decrypt`).
 - **API:** `VaultMigrationError`, `file_state`, `ensure_encrypted`, `rekey_store`, `decrypt_store`
-- **Uses:** vault_key · **Used by:** sqlite_setup, serve_main
+- **Uses:** vault_key · **Used by:** schema, sqlite_setup, serve_main
 - **Tests:** none direct · via serve_main roles → test_pseudexctl; `e2e/gates.py` (migration gates)
 - **Docs:** `docs/tz-vault-encryption.md` · rules: INVARIANTS.md#storage
+
+#### `pseudex/schema.py` — 330 lines · `live`
+The schema of a volume, numbered (D-058…D-060): `application_id` per store,
+`user_version` moved only by numbered idempotent steps (`vault.VAULT_MIGRATIONS`,
+`audit.AUDIT_MIGRATIONS`, `tenants.TENANTS_MIGRATIONS`), `ensure` — refuse a
+volume from the future (`SchemaTooNew`) or another store's file
+(`SchemaMismatch`) BEFORE touching it, `VACUUM INTO` snapshot under the same
+key before the first step (`SchemaNoSpace` when < 2× free), fast path when the
+volume is current. `PSEUDEX_ROLE=migrate` runs it once before the fan-out;
+`probe` exits 2 on a future volume (entrypoint 6). `schema_lock.json` pins the
+maximum per minor.
+- **API:** `SchemaError`, `SchemaTooNew`, `SchemaTooOld`, `SchemaMismatch`, `SchemaNoSpace`, `Step`, `StoreSchema`, `registry`, `short_name`, `max_version`, `versions`, `running`, `read_lock`, `on_disk`, `explain_too_new`, `snapshots`, `ensure`, `snapshot` (+ constants `APPLICATION_IDS`, `MIN_VERSION`, `RUNNING`)
+- **Uses:** sqlite_setup, vault_migrate, audit (lazy), tenants (lazy), vault (lazy) · **Used by:** audit, operator, tenants, vault, serve_main
+- **Tests:** test_schema · via entrypoint.sh → test_preflight (exit codes 5/6); `e2e/gates.py` L24–L25
+- **Docs:** `docs/tz-release-and-versions.md` §7 · rules: INVARIANTS.md#storage
 
 #### `pseudex/hardening.py` — 114 lines · `live`
 Process-level hardening against reading the worker's memory off disk: no core
@@ -536,7 +551,8 @@ Run from `prototype/`; each loads the dev bundle itself.
 | `test_localui.py` | the operator surface: closed by default, reveals audited with `actor`, requests billed apart from entities, self-check excluded from billing |
 | `test_localui_renders.py` | the interface in a REAL browser (playwright + chromium): a 200 and a CSP header are not evidence it executed |
 | `test_persona_defects.py` | the five defects the 18.08.2026 persona run found and no corpus of ours did |
-| `test_preflight.py` | worker arithmetic against the cgroup limit; what happens when N does not fit; the contract with `entrypoint.sh` |
+| `test_preflight.py` | worker arithmetic against the cgroup limit; what happens when N does not fit; the contract with `entrypoint.sh` (including probe 2 → 6 and migrate 5) |
+| `test_schema.py` | the schema contract of a volume (D-058…D-060): fresh store stamped, legacy volume snapshotted and brought forward (snapshot opens with the same key), future volume refused untouched, no space refused before touching, the maxima equal `schema_lock.json` for the minor in `version.txt`, `probe` exits 2 and `migrate` brings a volume forward |
 | `test_pseudexctl.py` | the ops CLI: command shapes, doctor verdicts, the rekey proof |
 | `test_collisions.py` | a substitute equal to a real value — both halves (backwards at mint, forwards via `minted_in`), and BOTH sides of the `pseudonym_scope` trade |
 | `test_derived_forms.py` | transliteration and initials in a tool argument — in the model's own convention, resolved by the conversation |
@@ -634,7 +650,7 @@ containers, never mocks, and are themselves audited.
 
 | file | what |
 |---|---|
-| `e2e/gates.py` | L1–L22 (+L2b): lease, renewal, grace, revocation, vault encryption/migration/rekey, preflight, memory scan, tokens, billing counter (L12), against a local stand (`deploy/compose.local.yml`). `--only L4,L5` for a subset; `--image pseudex:compiled --skip-build` with `PSEUDEX_SIGNING_KEY` to reuse a build. ~15 min |
+| `e2e/gates.py` | L1–L25 (+L2b): lease, renewal, grace, revocation, vault encryption/migration/rekey, preflight, memory scan, tokens, billing counter (L12), the schema of the volume (L25 pre-versioned volume snapshotted and brought forward, L24 a future volume refused untouched with exit 6), against a local stand (`deploy/compose.local.yml`). `--only L4,L5` for a subset; `--image pseudex:compiled --skip-build` with `PSEUDEX_SIGNING_KEY` to reuse a build. ~15 min |
 | `e2e/pack_gates.py` | P1–P11 on the compiled image: no `/app/pseudex`, no docstrings (`grep -a`), parity with the source tree (P3 via `e2e/parity.py` on `dirty.json`), latency, stdlib-SQLite cannot open the volume (P9), no `sqlite3` import… Builds BOTH images unless `--skip-build` |
 | `e2e/parity.py` | P3: the compiled image detects EXACTLY what the source tree detects |
 | `e2e/audit_gates.py` | the gate over the gates: every NEGATIVE atom needs a POSITIVE atom over the same source; `--selftest` on 13 fixtures REFUSES to report unless it separates them. Runs in the battery as `62-gate-audit` |
