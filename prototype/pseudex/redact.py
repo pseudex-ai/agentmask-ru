@@ -967,7 +967,7 @@ def _restore_inflected_spans(text: str, vault: Vault, inflect: bool = True,
             continue
         entity_type, value = found
         spans.append((start, end,
-                      _in_case_of(value, surface, entity_type, inflect)))
+                      _in_case_of(value, surface, entity_type, inflect, vault)))
     return spans
 
 
@@ -1163,8 +1163,8 @@ def _residual_owner(surface: str, vault: Vault,
     return entity_type, value
 
 
-def _in_case_of(value: str, surface: str, entity_type: str = "NAME",
-                inflect: bool = True) -> str:
+def _in_case_of(value: str, surface: str, entity_type: str, inflect: bool,
+                vault: Vault) -> str:
     """Put the real name into the case the token was standing in.
 
     Both readings of "restore" are legitimate and they disagree, so neither can
@@ -1228,7 +1228,20 @@ def _in_case_of(value: str, surface: str, entity_type: str = "NAME",
     case = morph_names.detect_case(surface)
     if case is None or case == "nomn":
         return value
-    return morph_names.inflect_person(value, case, morph_names.detect_gender(value))
+    gender = morph_names.detect_gender(value)
+    # THE CASE THE CUSTOMER WROTE IN WINS A TIE. «Виктории Мещеряковой» is
+    # genitive, dative and prepositional in one spelling; pymorphy3's prior
+    # says genitive and «к Анне Черных» came back «к Анны Черных» — the right
+    # person in a case the sentence does not take. The model kept a form
+    # compatible with the original, so the original's case is the one piece
+    # of evidence the surface cannot give (Б21).
+    written = vault.written_form(value)
+    if written is not None:
+        written_case = morph_names.detect_case(written, gender)
+        if (written_case not in (None, "nomn", case)
+                and written_case in morph_names.cases_spelled_as(surface, gender)):
+            case = written_case
+    return morph_names.inflect_person(value, case, gender)
 
 
 # Longest token across our format-preserving tokens is well under this.

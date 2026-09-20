@@ -223,6 +223,16 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
 
 ## Name morphology
 
+- **A name part with no dictionary NAME reading is not thereby indeclinable,
+  and a surname-shaped word never out-votes the given name** (Б21). «София» is
+  in OpenCorpora only as the city: `_name_parses` falls back to the feminine
+  first-declension readings (lemma in -а/-я, known) so case, gender, nominative
+  and inflection all see the same word; a part with a `Surn` reading votes with
+  a surname's weight whatever `Name` tags its oblique forms carry. On the way
+  back, a form syncretic between cases («Виктории Мещеряковой») restores in
+  the case the CUSTOMER wrote (`Vault.written_form`, `cases_spelled_as`), not
+  in pymorphy3's prior. Pins: `test_names_morphology` (its Б21 block forces
+  the three pool draws that made the file flake).
 - **Canonicalisation needs EVIDENCE of an oblique case.** pymorphy3 reaches the
   nominative through the lemma, which is masculine for surnames and invented for
   unknown ones. No conversion without evidence, none of a part already

@@ -137,8 +137,26 @@ def _paradigm_inflect(word: str, case: str, gender: str) -> str | None:
 
 
 def _name_parses(word: str) -> list:
-    """Parses that pymorphy3 itself considers part of a personal name."""
-    return [p for p in _MORPH.parse(word) if _NAME_TAGS & set(p.tag.grammemes)]
+    """Parses that pymorphy3 itself considers part of a personal name — and,
+    when it offers NONE, the feminine first-declension readings it holds under
+    another label. «София» is in OpenCorpora only as the city (`Geox`), and that
+    reading declines exactly like the name; with no name parse the word was
+    called indeclinable everywhere at once, so «к Анне Черных» was masked as
+    «к София Пановой» (the given name frozen in the nominative while the surname
+    moved), the way back read the case off the surname alone, and «Софии Пановой»
+    keyed as «Софии Панова». One door, used by every reader of a name part:
+    case, gender, nominative, inflection. Feminine and first declension only
+    (lemma in -а/-я, known to the dictionary) — that is where a name shares its
+    paradigm with a common noun; a masculine word with no name reading is still
+    left alone (Б21).
+    """
+    parses = _MORPH.parse(word)
+    named = [p for p in parses if _NAME_TAGS & set(p.tag.grammemes)]
+    if named or word.lower() in _MASC_NAMES_IN_A:
+        return named
+    return [p for p in parses
+            if p.tag.POS == "NOUN" and p.tag.gender == "femn" and p.tag.number == "sing"
+            and p.is_known and p.normal_form.endswith(("а", "я"))]
 
 
 @functools.lru_cache(maxsize=8192)
@@ -372,10 +390,18 @@ def detect_gender(surface: str) -> str | None:
             elif lowered.endswith(("а", "я")) and len(lowered) > 3:
                 votes["femn"] += 2.0
             continue
+        # A WORD THAT CAN BE A SURNAME VOTES AS ONE. OpenCorpora tags the
+        # masculine genitive «Мещерякова» as `Name` too, and with the given
+        # name's weight that reading beat «Вера» (whose name reading scores
+        # 0.3 against the common noun «вера»): the pair came out masculine,
+        # the model's rewrite got a masculine ending, and the fake surname
+        # reached the tool (Б21). The structural ambiguity the comment above
+        # describes belongs to the WORD, whatever label its readings carry.
+        surname_shaped = any("Surn" in parse.tag.grammemes for parse in parses)
         for parse in parses:
             if parse.tag.gender not in ("masc", "femn"):
                 continue
-            weight = 3.0 if "Name" in parse.tag.grammemes else 1.0
+            weight = 3.0 if "Name" in parse.tag.grammemes and not surname_shaped else 1.0
             votes[parse.tag.gender] += parse.score * weight
     # A SURNAME ALONE MAY NOT WIN THIS VOTE, however decisively it scores. When
     # no part yielded a given name or a patronymic — which is what a typo in the
@@ -485,6 +511,20 @@ _IRREGULAR_PATRONYMIC: dict[str, str] = {
     "пётр": "петрович", "петр": "петрович", "лев": "львович",
     "павел": "павлович",
 }
+
+
+def cases_spelled_as(surface: str, gender: str | None) -> set[str]:
+    """Every case this written name could be in — the cases whose form is
+    spelled EXACTLY like `surface`. «Виктории Мещеряковой» is the genitive,
+    the dative and the prepositional at once; `detect_case` picks one by
+    pymorphy3's prior (genitive), which is a guess dressed as a reading. The
+    restorer uses this set to prefer the case the customer actually wrote in
+    when the model's form does not decide it (Б21: «к Анне Черных» came back
+    «к Анны Черных»).
+    """
+    nominative = to_nominative(surface)
+    return {case for case in _CASES
+            if inflect_person(nominative, case, gender).casefold() == surface.casefold()}
 
 
 def full_patronymic(word: str) -> str:

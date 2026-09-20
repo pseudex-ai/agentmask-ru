@@ -3281,6 +3281,17 @@ class Vault:
             ).fetchone()
         return row[0] if row is not None else None
 
+    def written_form(self, canonical: str) -> str | None:
+        """The surface this NAME was FIRST written in («Анне Черных» for the
+        row keyed «Анна Черных»), for the restorer: when the model's form is
+        syncretic between cases, the case the customer wrote in is the one
+        evidence morphology does not have."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT original FROM tokens WHERE customer=? AND canonical=? "
+                "AND entity_type='NAME'", (self._customer, canonical)).fetchone()
+        return None if row is None or not row[0] else str(row[0])
+
     def reveal(self, token: str, for_tool: bool = False) -> tuple[str | None, str]:
         """Value and its entity type in one lookup, for the audited reveal path.
 

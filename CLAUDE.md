@@ -843,7 +843,7 @@ a Natasha PER/LOC.
 Russian personal-name morphology: gender, case, nominative, inflection, the
 round-trip guard. `to_nominative` is called from two sides (real value in
 `canonicalize`, fake value in `name_key`) and only one may carry a guard.
-- **API:** `name_shape`, `has_given_name`, `detect_gender`, `detect_case`, `full_patronymic`, `governing_cases`, `read_person`, `to_nominative_governed`, `to_nominative`, `lone_nominative_gender`, `inflect_person`, `looks_like_person`, `given_name_gender`, `feminine_surname`, `survives_round_trip`
+- **API:** `name_shape`, `has_given_name`, `detect_gender`, `detect_case`, `full_patronymic`, `governing_cases`, `read_person`, `to_nominative_governed`, `to_nominative`, `lone_nominative_gender`, `inflect_person`, `cases_spelled_as`, `looks_like_person`, `given_name_gender`, `feminine_surname`, `survives_round_trip`
 - **Uses:** assets, fuzzy, morph · **Used by:** detect_all, redact, vault
 - **Tests:** test_derived_forms, test_names_morphology, test_product
 - **Docs:** `research/2026-08-16-russian-name-morphology.md`, `docs/tz-name-gender-canonical.md`, `research/2026-09-17-prose-case-homography.md` · rules: INVARIANTS.md#name-morphology

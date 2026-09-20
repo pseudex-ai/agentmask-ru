@@ -293,6 +293,70 @@ def test_one_person_is_one_row(vault: Vault, detector: Detector) -> None:
           len(tokens) == 1, f"identities={tokens}")
 
 
+def test_b21_pinned(detector: Detector) -> None:
+    """THE THREE POOL DRAWS THAT MADE THIS FILE FLAKE (Б21), forced.
+
+    Substitutes are drawn with `secrets` — unseedable on purpose — so the
+    defects below surfaced in one run of five and hid in the other four. Each
+    is forced here by choosing the pool draw the flaky run made, so the pin is
+    deterministic while the product keeps its randomness:
+
+    1. «София» is in OpenCorpora only as the city: with no name reading the
+       given name was frozen in the nominative while the surname declined
+       («к София Пановой»), and the way back read the case off the surname.
+    2. «Вера Мещерякова» voted masculine — the masculine genitive of
+       «Мещерякова» carries a `Name` tag and out-scored «Вера» — so the
+       model's rewrite got a masculine ending and half a fake reached the tool.
+    3. «Виктории Мещеряковой» is genitive, dative and prepositional in one
+       spelling; restoring by pymorphy3's prior returned «к Анны Черных».
+       The customer's own case wins the tie now.
+    """
+    import secrets  # noqa: PLC0415
+
+    real_choice = secrets.choice
+
+    def forcing(*wanted: str):
+        def choice(seq):
+            for want in wanted:
+                if want in seq:
+                    return want
+            return real_choice(seq)
+        return choice
+
+    try:
+        secrets.choice = forcing("Панова", "София")
+        vault = Vault(":memory:", "b21")
+        original = "Курьер выехал к Анне Черных"
+        masked = mask_text(original, vault, detector.detect(original))
+        check("a given name the dictionary holds only as a city still declines (София → Софии)",
+              "Софии" in masked, masked)
+        check("and the customer's dative comes back as the customer's dative",
+              unmask_text(masked, vault) == original, unmask_text(masked, vault))
+
+        secrets.choice = forcing("Мещерякова", "Вера")
+        vault = Vault(":memory:", "b21")
+        original = "Клиент Ольга Кузнецова"
+        masked = mask_text(original, vault, detector.detect(original))
+        token = masked.replace("Клиент ", "")
+        check("a surname-shaped word does not out-vote the given name",
+              detect_gender(token) == "femn", f"{token} → {detect_gender(token)}")
+        rewritten = inflect_person(token, "ablt", detect_gender(token))
+        check("so the model's instrumental gets the feminine ending",
+              rewritten.endswith("ой"), rewritten)
+        restored = unmask_text(f"Клиент {rewritten}", vault)
+        check("and the real person, not half a fake, reaches the caller",
+              to_nominative(restored.replace("Клиент ", "")) == "Ольга Кузнецова", restored)
+
+        secrets.choice = forcing("Мещерякова", "Виктория")
+        vault = Vault(":memory:", "b21")
+        original = "Курьер выехал к Анне Черных"
+        masked = mask_text(original, vault, detector.detect(original))
+        check("a form syncretic between cases restores in the case the customer wrote",
+              unmask_text(masked, vault) == original, f"{masked} → {unmask_text(masked, vault)}")
+    finally:
+        secrets.choice = real_choice
+
+
 def main() -> int:
     testkit.load_dev_bundle()
     detector = Detector()
@@ -306,6 +370,7 @@ def main() -> int:
     test_masked_text_is_well_formed(vault, detector)
     test_model_rewrite_does_not_leak(vault, detector)
     test_one_person_is_one_row(vault, detector)
+    test_b21_pinned(detector)
 
     if _FAILURES:
         print(f"\nFAILED: {len(_FAILURES)} — {_FAILURES}")
