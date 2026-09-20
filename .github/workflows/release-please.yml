@@ -85,7 +85,8 @@ jobs:
       contents: write   # тег и GitHub Release
       actions: write    # gh workflow run release.yml
       checks: read      # gh api …/check-runs
-      pull-requests: read   # gh api …/commits/<sha>/pulls — метка autorelease
+      pull-requests: write  # release-please снимает `autorelease: pending`, ставит `tagged`
+      issues: write         # …и пишет в PR комментарий «release created» (API issues)
     steps:
       # Без persist-credentials: git здесь только читает теги, а release-please
       # и gh ходят своим токеном через API.
