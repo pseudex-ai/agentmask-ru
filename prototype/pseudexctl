@@ -505,6 +505,40 @@ def _split_reference(reference: str) -> tuple[str, str]:
     return reference, ""
 
 
+def _data_volume(spec: dict, fallback: str) -> str:
+    """The volume (or bind path) mounted at /data in THIS container.
+
+    Not `--volume`: the probe, the archive and the post-failure probe all
+    used the flag's default, so a container started with `-v crm-vault:/data`
+    was probed against an auto-created EMPTY `pseudex-data` — «нет файла» for
+    every store, exit 0, guard passed vacuously, archive of nothing.
+    """
+    for mount in spec.get("Mounts") or []:
+        if mount.get("Destination") != "/data":
+            continue
+        source = mount.get("Name") if mount.get("Type") == "volume" else mount.get("Source")
+        if source:
+            return str(source)
+    return fallback
+
+
+def _health_url(spec: dict, fallback: str) -> str:
+    """Where THIS container answers /health: its published binding of
+    8000/tcp, or `--url` when nothing is published (a container on a user
+    network reached by name). Polling the default 127.0.0.1:8000 for a
+    container run with `-p 8080:8000` declared a working upgrade dead."""
+    bindings = ((spec.get("HostConfig") or {}).get("PortBindings") or {}).get("8000/tcp") or []
+    for binding in bindings:
+        host_port = str(binding.get("HostPort") or "")
+        if not host_port:
+            continue
+        host_ip = str(binding.get("HostIp") or "")
+        if host_ip in ("", "0.0.0.0", "::"):
+            host_ip = "127.0.0.1"
+        return f"http://{host_ip}:{host_port}"
+    return fallback
+
+
 def _run_command_from(spec: dict, image: str, image_env: set[str],
                       env_file: str) -> tuple[list[str], list[str]]:
     """The `docker run` that recreates THIS container on ANOTHER image.
@@ -610,7 +644,9 @@ def cmd_upgrade(args, runner: Runner) -> int:
         print(f"контейнер запущен по дайджесту ({current}) — плавающего тега нет. "
               f"Назовите версию: pseudexctl upgrade --to 0.4", file=sys.stderr)
         return 2
-    print(f"сейчас: {current}\nцель:   {target}")
+    volume = _data_volume(spec, args.volume)
+    health = _health_url(spec, args.url)
+    print(f"сейчас: {current}\nцель:   {target}\nтом:    {volume}")
 
     code, output = runner.docker(["pull", target], timeout=1800)
     if code != 0 and not runner.dry_run:
@@ -624,12 +660,22 @@ def cmd_upgrade(args, runner: Runner) -> int:
 
     # ПРОБА НОВЫМ ОБРАЗОМ ДО ОСТАНОВКИ: ключ разрешается, том открывается, и
     # он не из будущего (код 2). Отказ здесь стоит ноль секунд простоя.
-    code, output = _role(runner, "probe", target, args.volume, _passthrough_env(), read_only=True)
-    if code == 2 and not runner.dry_run:
+    # ТОЛЬКО НОЛЬ ИДЁТ ДАЛЬШЕ. 124 (не дождались — PSEUDEX_VAULT_KEY_CMD
+    # завис), 125 (docker не запустил образ) считались «пробa прошла», и
+    # инструмент останавливал движок, ничего не проверив.
+    code, output = _role(runner, "probe", target, volume, _passthrough_env(), read_only=True)
+    if runner.dry_run:
+        code = 0
+    if code == 2:
         print(output, end="")
         print("том новее нового образа — обновление отменено, ничего не тронуто.", file=sys.stderr)
         return 1
-    if code not in (0, 124, 125, 126, 127) and not runner.dry_run:
+    if code in (124, 125, 126, 127):
+        print(output, end="")
+        print(f"проверить том новым образом не удалось (docker вернул {code}: "
+              f"{output.strip()[:120]}) — обновление отменено, ничего не тронуто.", file=sys.stderr)
+        return 1
+    if code != 0:
         print(output, end="")
         print("новый образ не открывает том текущим ключом — обновление отменено, "
               "ничего не тронуто. Ключ задаётся теми же переменными, что у движка.",
@@ -644,7 +690,7 @@ def cmd_upgrade(args, runner: Runner) -> int:
 
     snapshot = ""
     if not args.no_snapshot:
-        snapshot = args.snapshot or f"{args.volume}.pre-{tag or 'digest'}-{args.to or tag}.tgz"
+        snapshot = args.snapshot or f"{volume}.pre-{tag or 'digest'}-{args.to or tag}.tgz"
         try:
             mount, name = _archive_mount(snapshot, "rw")
         except ValueError as error:
@@ -652,7 +698,7 @@ def cmd_upgrade(args, runner: Runner) -> int:
             runner.docker(["start", args.container], timeout=180)
             return 2
         code, output = runner.docker([
-            "run", "--rm", "--network", "none", "-v", f"{args.volume}:/data:ro",
+            "run", "--rm", "--network", "none", "-v", f"{volume}:/data:ro",
             *mount, "--entrypoint", "tar", current,
             "czf", f"/archive/{name}", "-C", "/data", "."], timeout=1800)
         if code != 0 and not runner.dry_run:
@@ -683,7 +729,7 @@ def cmd_upgrade(args, runner: Runner) -> int:
         print(f"новый контейнер не создан: {output.strip()[-300:]}", file=sys.stderr)
         return _rollback(args, runner, old_name, current, schema_moved=False)
 
-    if _wait_healthy(runner, args.url):
+    if _wait_healthy(runner, health):
         if not args.keep_old:
             runner.docker(["rm", old_name], timeout=60)
         print(f"обновлено: {current} → {target}. Том сохранён"
@@ -697,8 +743,13 @@ def cmd_upgrade(args, runner: Runner) -> int:
     _code, tail = runner.docker(["logs", "--tail", "40", args.container], timeout=60)
     print(f"новый контейнер не поднялся за три минуты. Последние строки:\n{tail}", file=sys.stderr)
     runner.docker(["rm", "-f", args.container], timeout=120)
-    probe_code, _out = _role(runner, "probe", current, args.volume, _passthrough_env(), read_only=True)
-    return _rollback(args, runner, old_name, current, schema_moved=(probe_code == 2), snapshot=snapshot)
+    # Двинулась ли схема — спрашивает СТАРЫЙ образ. 0 — нет, откат свободен;
+    # 2 — да; ЛЮБОЙ ДРУГОЙ ответ (docker не дождался, образ не запустился) —
+    # неизвестно, и неизвестное считается «двинулась»: запуск старого
+    # контейнера на поднятом томе безопасен (он выйдет 6, том не тронув), но
+    # слова «откат выполнен» над ним были бы ложью.
+    probe_code, _out = _role(runner, "probe", current, volume, _passthrough_env(), read_only=True)
+    return _rollback(args, runner, old_name, current, schema_moved=(probe_code != 0), snapshot=snapshot)
 
 
 def _rollback(args, runner: Runner, old_name: str, current: str, schema_moved: bool,
@@ -860,7 +911,7 @@ def _read_status(body: str) -> list[tuple[str, str, str]]:
                     "реестр версий ещё не доехал до сервера, или сервер старше движка"))
     notice = release.get("notice") or {}
     if notice.get("text"):
-        mark = BAD if notice.get("severity") == "critical" else WARN
+        mark = BAD if notice.get("severity") == "danger" else WARN
         out.append((mark, f"уведомление о версии: {notice['text']}", notice.get("url", "")))
 
     memory = engine.get("memory") or {}

@@ -250,7 +250,7 @@ function bannerFor(status, engineDown) {
       text: `Движок ${release.version} снят с поддержки с ${day(release.deprecated_at)}${release.sunset_at ? ` и обслуживается до ${day(release.sunset_at)}` : ''}, после чего лицензионный сервер откажет в аренде. Обновитесь заранее: ${release.upgrade || 'pseudexctl upgrade'}. Том с данными сохраняется.` };
   }
   if (release.notice && release.notice.text) {
-    const severity = release.notice.severity === 'critical' ? 'bad' : release.notice.severity === 'info' ? 'info' : 'warn';
+    const severity = release.notice.severity === 'danger' ? 'bad' : release.notice.severity === 'info' ? 'info' : 'warn';
     return { cls: severity, tag: 'УВЕДОМЛЕНИЕ О ВЕРСИИ',
       /* The block is signed by our server, but a link is still only a link
        * when it is one: an https URL, or nothing. */

@@ -401,7 +401,7 @@ def check_doctor_verdicts() -> None:
           lines and lines[0][0] == pseudexctl.WARN and "не сообщил" in lines[0][1], str(lines))
 
     noticed = json.loads(healthy)
-    noticed["engine"]["release"]["notice"] = {"id": "n-1", "severity": "critical",
+    noticed["engine"]["release"]["notice"] = {"id": "n-1", "severity": "danger",
                                               "text": "обновитесь", "url": "https://pseudex.ru/a/1"}
     lines = version_lines(noticed)
     check("критическое уведомление — отказ со ссылкой",
@@ -439,13 +439,17 @@ _SPEC = {
         "User": "10001",
     },
     "HostConfig": {
-        "PortBindings": {"8000/tcp": [{"HostIp": "", "HostPort": "8000"}],
+        # NOT the defaults on purpose: the volume is `crm-vault`, the port is
+        # 8080 — the tool must read both from the container, not from `--volume`
+        # and `--url`, or it probes an empty auto-created volume and polls a
+        # port nobody listens on.
+        "PortBindings": {"8000/tcp": [{"HostIp": "", "HostPort": "8080"}],
                          "8081/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8081"}]},
         "RestartPolicy": {"Name": "unless-stopped", "MaximumRetryCount": 0},
         "Memory": 2147483648, "NetworkMode": "default",
         "Ulimits": [{"Name": "memlock", "Soft": -1, "Hard": -1}],
     },
-    "Mounts": [{"Type": "volume", "Name": "pseudex-data", "Destination": "/data", "RW": True}],
+    "Mounts": [{"Type": "volume", "Name": "crm-vault", "Destination": "/data", "RW": True}],
 }
 
 
@@ -521,14 +525,18 @@ def check_upgrade() -> None:
                                   "rename", "image inspect", "run", "rm"],
           str(verbs))
     probe = next(call for call in runner.docker_calls if "PSEUDEX_ROLE=probe" in call)
-    check("проба идёт НОВЫМ образом, том только на чтение, до остановки",
-          probe[-1] == "cr.yandex/pseudex/pseudex:0.4" and "pseudex-data:/data:ro" in probe
+    check("проба идёт НОВЫМ образом, ТЕМ ЖЕ томом, что у контейнера, только на чтение, до остановки",
+          probe[-1] == "cr.yandex/pseudex/pseudex:0.4" and "crm-vault:/data:ro" in probe
+          and "pseudex-data" not in " ".join(probe)
           and verbs.index("probe") < verbs.index("stop"), " ".join(probe))
+    check("health опрашивается на ОПУБЛИКОВАННОМ порту контейнера, не на --url",
+          any(url.startswith("http://127.0.0.1:8080/health") for _m, url in runner.http_calls)
+          and not any(":8000/" in url for _m, url in runner.http_calls), str(runner.http_calls))
     run = next(call for call in runner.docker_calls if call[:2] == ["run", "-d"])
     joined = " ".join(run)
     check("новый контейнер получает то же имя, порты, том, --restart, --memory, ulimit, user и целевой образ",
-          "--name pseudex" in joined and "-p 8000:8000" in joined and "-p 127.0.0.1:8081:8081" in joined
-          and "-v pseudex-data:/data" in joined and "--restart unless-stopped" in joined
+          "--name pseudex" in joined and "-p 8080:8000" in joined and "-p 127.0.0.1:8081:8081" in joined
+          and "-v crm-vault:/data" in joined and "--restart unless-stopped" in joined
           and "--memory=2147483648" in joined and "--ulimit memlock=-1:-1" in joined
           and "--user 10001" in joined and run[-1] == "cr.yandex/pseudex/pseudex:0.4", joined)
     check("секреты не в argv: ключ лицензии едет через --env-file, а не -e NAME=VALUE",
@@ -537,8 +545,8 @@ def check_upgrade() -> None:
     check("PATH образа не переносится — новый образ оставляет свой",
           not any(line.startswith("PATH=") for line in runner.env_file_lines))
     tar = next(call for call in runner.docker_calls if "tar" in call)
-    check("снимок тома снимается ДО переименования и с тома только на чтение",
-          "pseudex-data:/data:ro" in tar and verbs.index("tar") < verbs.index("rename"))
+    check("снимок тома снимается ДО переименования, с тома контейнера, только на чтение",
+          "crm-vault:/data:ro" in tar and verbs.index("tar") < verbs.index("rename"))
     check("прежний контейнер удалён после health, не до",
           runner.docker_calls[-1][:2] == ["rm", "pseudex-old-0.3"])
 
@@ -560,6 +568,14 @@ def check_upgrade() -> None:
     code = parsed.run(parsed, runner)
     check("проба новым образом отвечает 2 — отмена, stop не вызывался",
           code == 1 and "stop" not in _verbs(runner), str(_verbs(runner)))
+
+    # 4b. docker не дождался пробы (124) или не запустил образ (125) — это
+    # НЕ «проба прошла»: обновление отменяется, stop не вызывался.
+    for docker_code in (124, 125):
+        runner = ScriptedRunner(_upgrade_replies(**{"run --network none --rm -e PSEUDEX_ROLE=probe": (docker_code, "timeout")}), health=[])
+        code = parsed.run(parsed, runner)
+        check(f"docker {docker_code} на пробе — отмена, stop не вызывался",
+              code == 1 and "stop" not in _verbs(runner), str(_verbs(runner)))
 
     # 5. Нездоров, схема не двинулась — назад на старый контейнер.
     runner = ScriptedRunner(_upgrade_replies(), health=[0, 0, 0])
@@ -586,8 +602,24 @@ def check_upgrade() -> None:
         code = parsed.run(parsed, runner)
     verbs = _verbs(runner)
     check("нездоров и схема поднята — start не вызывается, печатается restore со снимком",
-          code == 1 and "start" not in verbs and "pseudexctl restore pseudex-data.pre-0.3-0.4.tgz --yes" in err.getvalue()
+          code == 1 and "start" not in verbs and "pseudexctl restore crm-vault.pre-0.3-0.4.tgz --yes" in err.getvalue()
           and "docker rename pseudex-old-0.3 pseudex" in err.getvalue(), err.getvalue()[-300:])
+    # 6b. Нездоров и проба старым образом НЕ ОТВЕТИЛА (124): неизвестно —
+    # считается «двинулась»: старый контейнер не запускается, печатается путь
+    # через снимок. «Откат выполнен» над контейнером, который выйдет 6, — ложь.
+    class SilentRunner(ScriptedRunner):
+        def docker(self, args, timeout: int = 600):
+            if "PSEUDEX_ROLE=probe" in args and args[-1] == "cr.yandex/pseudex/pseudex:0.3":
+                self.docker_calls.append(list(args))
+                return 124, "docker не ответил"
+            return super().docker(args, timeout)
+
+    runner = SilentRunner(_upgrade_replies(), health=[])
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        code = parsed.run(parsed, runner)
+    check("проба старым образом не ответила — старый контейнер не запускается, назван путь через снимок",
+          code == 1 and "start" not in _verbs(runner) and "restore" in err.getvalue(), str(_verbs(runner)))
     pseudexctl._wait_healthy = _real_wait_healthy
 
     # 7. --dry-run: только печать, ни одного файла окружения.

@@ -6,7 +6,10 @@
 # поддержки превращается во второй main с тем же объёмом гейтов.
 #
 # Что делает: при merge PR в main, среди коммитов которого есть `security…:`,
-# открывает PR с cherry-pick'ом в КАЖДУЮ живую ветку `release/*`. Владелец
+# ТРОНУВШИЙ ФАЙЛЫ ОБРАЗА (deploy/shipped_paths.sh), открывает PR с
+# cherry-pick'ом в КАЖДУЮ живую ветку `release/*`. Переносится ВЕСЬ PR (action
+# не умеет выбирать коммиты), поэтому правило: security-фикс движка — ОТДЕЛЬНЫЙ
+# PR, без попутных feat/fix. Владелец
 # вливает; release-please на той ветке считает X.Y.Z+1; тег ставится тем же
 # путём, что и на main (release-please.yml, `target-branch`); release.yml
 # публикует с алиасом только `X.Y` — `latest` не двигается.
@@ -54,15 +57,28 @@ jobs:
           HEAD: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           set -eu
-          subjects="$(git log --format=%s "${BASE}..${HEAD}" || true)"
-          if ! printf '%s\n' "${subjects}" | grep -Eq '^security(\([^)]*\))?!?:'; then
-            echo "security-коммитов нет — бэкпортировать нечего"
+          # ТОЛЬКО SECURITY-КОММИТЫ, ТРОНУВШИЕ ОБРАЗ. Ветка поддержки — это
+          # ветка ДВИЖКА (D-057): security-коммит в prototype/licensing/ или
+          # storefront/ ей не нужен и вредит — release-please на ветке считал
+          # бы платформенный тег. Набор файлов образа — из того же скрипта,
+          # что и гейты: deploy/shipped_paths.sh.
+          # shellcheck disable=SC2046
+          engine_security="$(git log --format=%H "${BASE}..${HEAD}" | while read -r sha; do
+            subject="$(git log -1 --format=%s "${sha}")"
+            printf '%s\n' "${subject}" | grep -Eq '^security(\([^)]*\))?!?:' || continue
+            if [ -n "$(git diff-tree --no-commit-id --name-only -r "${sha}" -- $(sh deploy/shipped_paths.sh))" ]; then
+              echo "${sha} ${subject}"
+            fi
+          done)"
+          if [ -z "${engine_security}" ]; then
+            echo "security-коммитов, тронувших образ, нет — бэкпортировать нечего"
             echo "targets=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          echo "security-коммиты движка:"; printf '%s\n' "${engine_security}"
           targets="$(git branch -r --list 'origin/release/*' | sed 's#.*origin/##' | tr '\n' ' ' | sed 's/ *$//')"
           echo "targets=${targets}" >> "$GITHUB_OUTPUT"
-          echo "security-коммиты есть; ветки поддержки: ${targets:-нет}"
+          echo "ветки поддержки: ${targets:-нет}"
 
       - name: открыть PR с cherry-pick в каждую ветку поддержки
         if: steps.plan.outputs.targets != ''

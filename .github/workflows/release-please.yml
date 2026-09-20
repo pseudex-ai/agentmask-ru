@@ -50,10 +50,15 @@ jobs:
       contents: write        # ветка release-please--branches--…
       pull-requests: write   # сам PR
     steps:
+      # НА ВЕТКЕ ПОДДЕРЖКИ — ТОЛЬКО ДВИЖОК. release-please-config.release.json
+      # содержит один пакет `prototype`: платформенные пакеты на release/X.Y
+      # считали бы platform/v0.3.N+1 от манифеста ветки — в том же пространстве
+      # номеров, что main, — и следующий платформенный релиз с main упёрся бы в
+      # уже существующий тег. Платформа выпускается только с main.
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           skip-github-release: true
-          config-file: release-please-config.json
+          config-file: ${{ github.ref_name == 'main' && 'release-please-config.json' || 'release-please-config.release.json' }}
           manifest-file: .release-please-manifest.json
           # main или release/X.Y — та ветка, куда пришёл push; манифест и
           # changelog читаются и пишутся в ней же.
@@ -136,7 +141,7 @@ jobs:
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           skip-github-pull-request: true
-          config-file: release-please-config.json
+          config-file: ${{ github.ref_name == 'main' && 'release-please-config.json' || 'release-please-config.release.json' }}
           manifest-file: .release-please-manifest.json
           target-branch: ${{ github.ref_name }}
 

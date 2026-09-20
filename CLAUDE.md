@@ -206,6 +206,11 @@ verification key, read by `pseudex/license.py`, sent in every lease, shown by
   previous file). `eol` needs `eol_announced ≤ today` and `eol ≥ announced +
   90 d`; the server refuses to ENFORCE a late `eol` (`registry.check` says
   «late», not 426).
+- **The dates decide, the `state` label lags**: a `maintenance` cycle whose
+  `eol` has passed is closed (`registry.effective_state`), the file stays
+  valid, and the next `record` writes the label. A version the registry has
+  not recorded yet (published minutes ago) is judged as the NEWEST cycle;
+  `1.0.0` (every pre-D-053 image) as the oldest.
 - The site advertises `pseudex:X.Y` of the newest cycle
   (`storefront_web/engine_release.py`), never a hand-set tag.
 - It reaches the licensing server through the platform release: `deploy/agent.sh`
@@ -244,12 +249,16 @@ A minor is `current` until the next minor ships, then `maintenance` for six
 months (security only), then `eol` announced ≥ 90 days ahead (`registry.record`
 sets these dates on the day the next minor is recorded). Branch `release/X.Y`
 is created from the last tag of the cycle when the next minor opens. **Only
-`security:` commits go there**, by cherry-pick: `.github/workflows/backport.yml`
-opens a backport PR into every live `release/*` when a PR with a `security:`
-commit merges into `main`; a direct push needs `git switch release/X.Y && git
-cherry-pick -x <sha> && git push`. release-please on the branch produces
-`X.Y.Z+1`; `release.yml` moves alias `X.Y` only — never `latest`. Ordinary
-`fix:` commits are NOT backported.
+`security:` commits that touch the image go there**, by cherry-pick:
+`.github/workflows/backport.yml` opens a backport PR into every live
+`release/*` when a PR with such a commit merges into `main` — the WHOLE PR is
+cherry-picked, so **a security fix of the engine is its own PR**, never mixed
+with other work; a direct push needs `git switch release/X.Y && git
+cherry-pick -x <sha> && git push`. release-please on the branch uses
+`release-please-config.release.json` (the `prototype` package only — the
+platform is released from `main` alone) and produces `X.Y.Z+1`; `release.yml`
+reads aliases from `origin/main`'s registry and moves `X.Y` only — never
+`latest`. Ordinary `fix:` commits are NOT backported.
 
 ### The customer's upgrade (D-062)
 
@@ -1438,7 +1447,7 @@ Docs: `docs/operations.md` (the operational spec), `research/2026-09-14-devops-a
 | `.github/workflows/checks.yml` | every push, every PR | the engine suite without containers: `test_loop`, `test_tuning_lease_security`, `test_watermark`, `test_canary`, `test_clock_freeze`, `test_detok_security`, `test_tripwire`, `test_memory_hardening`, `vault_test`, `test_coverage_152fz`, `test_product`, `test_localui`, `test_hard_cases` (+ storefront jobs) |
 | `.github/workflows/gates.yml` | nightly 01:00 UTC + dispatch | `make_dirty` → `pack_gates` (both images) → `gates.py --image pseudex:compiled --skip-build`; on dispatch a subset via `ONLY` |
 | `.github/workflows/release.yml` | tags `v[0-9]*` and «platform/v[0-9]*» | one file, two streams (the cosign identity the host trusts is this file's name): engine — tag equals `prototype/version.txt`, the shipped set (`deploy/shipped_paths.sh`) changed since the previous engine tag or red, aliases from the registry, anonymous pull of every ref, digest signed, `chore(registry): pseudex X.Y.Z` committed to `main`; platform — four images, closed to anonymous, signed |
-| `.github/workflows/backport.yml` | a PR merged into `main` | when the PR carries a `security:` commit, opens a cherry-pick PR into every live «release/*» branch (korthout/backport-action, pinned); the only way commits reach a support branch (D-057). A direct push needs a manual `git cherry-pick -x` |
+| `.github/workflows/backport.yml` | a PR merged into `main` | when the PR carries a `security:` commit that touches the image (`deploy/shipped_paths.sh`), opens a cherry-pick PR of the WHOLE PR into every live «release/*» branch (korthout/backport-action, pinned) — so an engine security fix is its own PR; the only way commits reach a support branch (D-057). A direct push needs a manual `git cherry-pick -x` |
 | `.github/workflows/release-please.yml` | every push to `main` or a «release/**» branch; dispatch from `.github/workflows/release.yml` | keeps one Release PR per stream (engine `vX.Y.Z`, platform «platform/vX.Y.Z») on the branch the push came to (`target-branch`); on merge waits for green checks, creates the tag and GitHub Release, dispatches `.github/workflows/release.yml` explicitly (a GITHUB_TOKEN tag push fires no `tags:` trigger). Replaced the former «ship.yml» (D-052) |
 | `.github/workflows/uptime.yml` | every 10 min | is production answering |
 | `.github/workflows/backup-audit.yml` | daily 06:20 UTC | did last night's backup happen and is it readable |
@@ -1454,7 +1463,7 @@ Docs: `docs/operations.md` (the operational spec), `research/2026-09-14-devops-a
 | `research/` | 50 documents — see INDEX.md |
 | `brand/` | `brand/README.md`, logo/landing/UI mock-ups as `brand/*.dc.html`, `brand/ad-images/`, `brand/uploads/`, `brand/support.js`, bot avatar |
 | `e2e-personas/` | `e2e-personas/REAL-LLM.md` (why personas call a live model; the key lives in `prototype/.env.local`), `e2e-personas/harness.py`, five personas (`e2e-personas/personas/`), findings by date (`e2e-personas/findings/`) — the 18.08.2026 run is what `test_persona_defects.py` pins |
-| `release-please-config.json`, `.release-please-manifest.json` | the two release streams (D-052): packages `prototype` (engine, `exclude-paths` licensing/bench/e2e) and `prototype/licensing` + `storefront` + `deploy` (platform, linked); NO root package; per-package `version.txt` |
+| `release-please-config.json`, `release-please-config.release.json`, `.release-please-manifest.json` | the two release streams (D-052): packages `prototype` (engine, `exclude-paths` licensing/bench/e2e) and `prototype/licensing` + `storefront` + `deploy` (platform, linked); NO root package; per-package `version.txt`. The `.release.json` variant holds the `prototype` package only and is what `.github/workflows/release-please.yml` uses on «release/**» branches — the platform is never released from a support branch; `.github/workflows/checks.yml` pins the two configs equal on that package |
 | `.trivyignore` | accepted CVE findings for the images |
 | `.claude/skills/`, `.claude/worktrees/` | project skills; agent worktrees hold STALE copies of `CLAUDE.md` |
 <!-- wiki:MAP:end -->
