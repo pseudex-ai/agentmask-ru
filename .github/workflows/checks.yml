@@ -22,11 +22,15 @@ name: checks
 permissions:
   contents: read
 
-# A newer push to the same ref cancels the run in flight: the verdict on a
-# commit that has already been replaced is read by nobody.
+# A newer push to the same BRANCH cancels the run in flight: the verdict on a
+# commit that has already been replaced is read by nobody — EXCEPT on main.
+# There every commit's verdict is read by the release-please `tag` job, which
+# tags the merge commit of a Release PR only on green checks OF THAT COMMIT; a
+# docs push a minute after the merge cancelled its run, the tag job saw
+# «cancelled» and the release never happened. On main runs queue, never cancel.
 concurrency:
   group: checks-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 on:
   push:

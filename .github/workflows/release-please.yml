@@ -10,9 +10,11 @@
 #
 # Два джоба, оба на push в main:
 #   release-pr — открыть/обновить Release PR (changelog, version.txt, манифест);
-#   tag        — если push и есть merge Release PR: дождаться зелёных проверок
-#                коммита, создать тег и GitHub Release, ЯВНО запустить release.yml
-#                на теге. Не через триггер `tags:` — push токеном GITHUB_TOKEN
+#   tag        — если есть влитый, но ещё не выпущенный Release PR (метка
+#                `autorelease: pending`; ищется по метке, не по HEAD): дождаться
+#                зелёных проверок ЕГО merge-коммита, создать тег и GitHub
+#                Release, ЯВНО запустить release.yml на теге. Идемпотентно и
+#                перезапускаемо руками (workflow_dispatch). Не через триггер `tags:` — push токеном GITHUB_TOKEN
 #                другие воркфлоу не запускает (так GitHub защищается от петель),
 #                и тег без явного dispatch лежал бы без сборки. Ровно та причина,
 #                по которой это делал ship.yml.
@@ -82,58 +84,69 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      # ЭТОТ PUSH — MERGE RELEASE PR? Метку `autorelease: pending` release-please
-      # ставит на свои PR; после merge коммит несёт её через API pulls. Squash
-      # и merge-commit — оба видны так. Обычный push — джоб тихо заканчивается.
-      - name: это merge Release PR?
+      # НЕ «ЭТОТ PUSH — MERGE RELEASE PR?», А «ЕСТЬ ЛИ ВЛИТЫЙ, НО НЕ ВЫПУЩЕННЫЙ
+      # RELEASE PR». Первая версия смотрела на GITHUB_SHA: push в main через
+      # минуту после merge, и merge-коммит уже не HEAD — джоб говорил «обычный
+      # push», а Release PR оставался без тега навсегда. release-please сам
+      # ищет по метке `autorelease: pending` (после тега меняет её на
+      # `autorelease: tagged`), и этот шаг делает то же: любой запуск — по push
+      # или руками через workflow_dispatch — находит невыпущенное и доводит
+      # его до тега. Идемпотентно: нет таких PR — нечего делать.
+      - name: есть ли влитый, но не выпущенный Release PR?
         id: merged
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          labels="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
-            --jq '.[] | select(.merged_at != null) | .labels[].name' 2>/dev/null || true)"
-          if printf '%s\n' "${labels}" | grep -qx 'autorelease: pending'; then
-            echo "release=true" >> "$GITHUB_OUTPUT"
-            echo "merge Release PR — тегирую после зелёных проверок"
-          else
+          shas="$(gh pr list --repo "${GITHUB_REPOSITORY}" --state merged --base "${GITHUB_REF_NAME}" \
+                    --label 'autorelease: pending' --json number,mergeCommit \
+                    --jq '.[] | "\(.number) \(.mergeCommit.oid)"' 2>/dev/null || true)"
+          if [ -z "${shas}" ]; then
             echo "release=false" >> "$GITHUB_OUTPUT"
-            echo "обычный push — тегировать нечего"
+            echo "невыпущенных Release PR нет — тегировать нечего"
+            exit 0
           fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "${shas}" > /tmp/merged.txt
+          echo "влиты и ждут тега:"; cat /tmp/merged.txt
 
-      # НЕ «ЕСТЬ ЛИ ПРОВЕРКИ», А «ПРОШЛИ ЛИ ОНИ». Свои джобы исключаются по
-      # префиксу имени; ждёт, пока проверки хотя бы начнутся, и пока идущие
-      # закончатся. Перенесено из ship.yml дословно вместе с уроками.
-      - name: проверки этого коммита зелёные
+      # НЕ «ЕСТЬ ЛИ ПРОВЕРКИ», А «ПРОШЛИ ЛИ ОНИ» — НА КАЖДОМ merge-коммите из
+      # списка выше, не на HEAD. Свои джобы исключаются по префиксу имени;
+      # ждёт, пока проверки хотя бы начнутся, и пока идущие закончатся.
+      # «cancelled» — не зелёное: checks.yml на main больше не отменяет
+      # прогоны, но если такой всё же встретится, здесь красное с именем.
+      - name: проверки merge-коммитов зелёные
         if: steps.merged.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          sha="$GITHUB_SHA"
-          query='.check_runs[] | select((.name | startswith("tag ") or startswith("probe ") or startswith("release PR")) | not) | "\(.name)\t\(.status)\t\(.conclusion)"'
-          for _ in $(seq 1 12); do
-            gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs?per_page=100" --jq "${query}" > /tmp/checks.tsv || true
-            [ -s /tmp/checks.tsv ] && break
-            sleep 10
-          done
-          total="$(wc -l < /tmp/checks.tsv)"
-          if [ "${total}" -eq 0 ]; then
-            echo "::error::для ${sha} нет НИ ОДНОЙ проверки — нечего считать зелёным"
-            exit 1
-          fi
-          for _ in $(seq 1 60); do
-            grep -qP '\t(queued|in_progress)\t' /tmp/checks.tsv || break
-            sleep 60
-            gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs?per_page=100" --jq "${query}" > /tmp/checks.tsv || true
-          done
-          bad="$(awk -F'\t' '$2 != "completed" || ($3 != "success" && $3 != "skipped" && $3 != "neutral")' /tmp/checks.tsv || true)"
-          if [ -n "${bad}" ]; then
-            echo "::error::проверки не зелёные — тег не ставится:"
-            echo "${bad}"
-            exit 1
-          fi
-          echo "проверок зелёных: ${total}"
+          query='.check_runs[] | select((.name | startswith("tag ") or startswith("probe ") or startswith("release PR") or startswith("есть ли")) | not) | "\(.name)\t\(.status)\t\(.conclusion)"'
+          while read -r number sha; do
+            echo "== PR #${number} @ ${sha}"
+            for _ in $(seq 1 12); do
+              gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs?per_page=100" --jq "${query}" > /tmp/checks.tsv || true
+              [ -s /tmp/checks.tsv ] && break
+              sleep 10
+            done
+            total="$(wc -l < /tmp/checks.tsv)"
+            if [ "${total}" -eq 0 ]; then
+              echo "::error::для ${sha} нет НИ ОДНОЙ проверки — нечего считать зелёным"
+              exit 1
+            fi
+            for _ in $(seq 1 60); do
+              grep -qP '\t(queued|in_progress)\t' /tmp/checks.tsv || break
+              sleep 60
+              gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs?per_page=100" --jq "${query}" > /tmp/checks.tsv || true
+            done
+            bad="$(awk -F'\t' '$2 != "completed" || ($3 != "success" && $3 != "skipped" && $3 != "neutral")' /tmp/checks.tsv || true)"
+            if [ -n "${bad}" ]; then
+              echo "::error::проверки merge-коммита PR #${number} не зелёные — тег не ставится. Перезапустите их (gh run rerun --failed) и этот воркфлоу (gh workflow run release-please.yml):"
+              echo "${bad}"
+              exit 1
+            fi
+            echo "проверок зелёных: ${total}"
+          done < /tmp/merged.txt
 
       - name: тег и GitHub Release
         if: steps.merged.outputs.release == 'true'
