@@ -11,12 +11,20 @@
 services:
   pseudex:
     image: ${PSEUDEX_IMAGE:-cr.yandex/crpkutn2el1knpsbrs2d/pseudex:0.3.14}
+    # Опубликован только под amd64; на ARM-машине (Apple Silicon) Docker
+    # запустит его под эмуляцией. Это медленнее, но на 272 случаях не важно.
+    platform: linux/amd64
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
       - pseudex-data:/data
     environment:
       PSEUDEX_ROLE: proxy
+      # Бенчмарк шлёт запросы по одному; по умолчанию движок поднимает
+      # воркер на каждое ядро (~350 МБ каждый), и под эмуляцией на ноутбуке
+      # десять воркеров упираются в память Docker — контейнер гибнет со
+      # статусом 137 до первого запроса. Двух хватает с запасом.
+      PSEUDEX_WORKERS: "2"
       # Ключ провайдера прокси не хранит: заголовок Authorization уходит
       # upstream как есть, поэтому харнессу хватает любого значения.
       PSEUDEX_UPSTREAM: "http://host.docker.internal:8099/v1"
