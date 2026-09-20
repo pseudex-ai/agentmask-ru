@@ -40,6 +40,47 @@ flock -n 9 || { echo "agent: предыдущая выкатка ещё идёт
 cd "$REPO"
 git fetch --tags --quiet --force
 
+# ── реестр версий, каждый тик ───────────────────────────────────────────────
+# deploy/releases.json — данные, не код (D-054): что выпущено, что
+# поддерживается, когда закрывается. Сервер лицензий и витрина читают КОПИЮ в
+# deploy/.registry/, а кладёт её сюда агент — из origin/main, и только после
+# того, как cosign подтвердил подпись дайджеста новейшей версии той же
+# identity, что у образов. Так «что мы советуем клиенту скачать» никогда не
+# расходится с «что мы подписали»; а файл, который не разбирается или чей
+# дайджест не подписан, НЕ подменяет прежний — сервер продолжает жить на
+# последней хорошей копии, и об этом кричит тревога. Каталог, не файл: bind
+# одного файла держал бы старый inode, и контейнер не увидел бы mv.
+sync_registry() {
+    identity="${COSIGN_IDENTITY_REGEXP:-}"; issuer="${COSIGN_ISSUER_REGEXP:-}"
+    [ -n "$identity" ] && [ -n "$issuer" ] || return 0   # выкатка ниже скажет об этом сама
+    dir="$HERE/.registry"; live="$dir/releases.json"; tmp="$dir/releases.json.tmp"
+    mkdir -p "$dir"
+    if ! git show origin/main:deploy/releases.json > "$tmp" 2>/dev/null; then
+        rm -f "$tmp"; return 0                            # реестра в main ещё нет
+    fi
+    if [ -f "$live" ] && cmp -s "$tmp" "$live"; then
+        rm -f "$tmp"; return 0
+    fi
+    digest="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["cycles"][0]["latest"]["digest"])' "$tmp" 2>/dev/null || true)"
+    case "$digest" in
+        sha256:*) : ;;
+        *)  notify crit "Реестр версий НЕ принят: файл не разбирается" \
+                "deploy/releases.json в origin/main не читается как реестр. Сервер лицензий работает на прежней копии."
+            rm -f "$tmp"; return 0 ;;
+    esac
+    if ! cosign verify "${REGISTRY}/pseudex@${digest}" \
+            --certificate-identity-regexp "$identity" \
+            --certificate-oidc-issuer-regexp "$issuer" >/dev/null 2>&1; then
+        notify crit "Реестр версий НЕ принят: дайджест новейшей версии не подписан нами" \
+            "${REGISTRY}/pseudex@${digest} не проходит cosign verify с нашей identity.
+Сервер лицензий работает на прежней копии реестра."
+        rm -f "$tmp"; return 0
+    fi
+    mv "$tmp" "$live"
+    echo "agent: реестр версий обновлён (latest $digest)"
+}
+sync_registry
+
 # PSEUDEX_PIN закрепляет версию и выключает автовыкатку. Нужен ровно в тот
 # момент, когда что-то пошло не так и нужно время подумать, не воюя с агентом,
 # который упорно возвращает «правильную» версию.

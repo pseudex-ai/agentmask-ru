@@ -78,6 +78,18 @@ def main() -> int:
                store._conn.execute("PRAGMA table_info(leases)")}
     check("колонка pubkey доехала миграцией", "pubkey" in columns,
           f"leases: {sorted(columns)}")
+    # ВЕРСИЯ ДВИЖКА В АРЕНДЕ (D-056): старый ряд без неё читается как пустая
+    # строка, новый — записывает то, что назвал контейнер, и гистограмма флота
+    # считает живые инстансы по версиям. Без этого пол минимальной версии
+    # двигался бы вслепую.
+    check("колонка engine_version доехала миграцией", "engine_version" in columns)
+    store.record_lease("l2", "acme", "i2", "p2", 3600, pubkey="k2", engine_version="0.3.16")
+    fleet = {row["engine_version"]: row for row in store.fleet_versions(86400 * 365 * 100)}
+    check("старый ряд — пустая версия, новый — своя; гистограмма считает по инстансам",
+          fleet.get("", {}).get("instances") == 1 and fleet.get("0.3.16", {}).get("instances") == 1,
+          f"{fleet}")
+    check("active_instances называет версию инстанса",
+          any(i.get("engine_version") == "0.3.16" for i in store.active_instances("acme", 86400 * 365 * 100)))
 
     usage_columns = {row[1] for row in
                      store._conn.execute("PRAGMA table_info(usage)")}

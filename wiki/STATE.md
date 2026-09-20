@@ -420,9 +420,9 @@ any claim.
 ### D-054 · 2026-09-20 · Versions registry «deploy/releases.json», endoflife.date-shaped, written by the engine pipeline, delivered through a platform release
 **Status:** active
 **Context:** endoflife.date is a static Jekyll site whose API is generated at build; hosting it for one product is Ruby for a 40-line JSON. The floor of the minimum supported version is security-relevant and must pass review.
-**Decision:** `cycles[]{cycle, state, release_date, eoas, eol, eol_announced, latest{version,date,digest}, aliases}` + `notices[]`. The engine publish job runs `licensing.registry record` and commits `chore(registry): pseudex X.Y.Z` to `main`; that opens the platform Release PR; the server reads the file synced by the agent (`git show origin/main:…` + `cosign verify` of the newest digest). By hand only `eol`, `eol_announced`, `notices`, via PR.
+**Decision:** `cycles[]{cycle, state, release_date, eoas, eol, eol_announced, latest{version,date,digest}, aliases}` + `notices[]`. The engine publish job runs `licensing.registry record` and commits `chore(registry): pseudex X.Y.Z` to `main` — a hidden type, so no platform Release PR opens for data (a four-image release for a JSON change would be an empty release on our side). The server and the storefront read the copy the agent syncs every minute («git show origin/main:deploy/releases.json» + `cosign verify` of the newest digest with the image identity; a file that does not parse or whose digest is unsigned never replaces the last good copy). By hand only `eol`, `eol_announced`, `notices`, via PR — the floor still never moves without review.
 **Alternative rejected:** the pipeline POSTing to an admin endpoint (the floor moves without review; two sources of truth); self-hosting endoflife.date.
-**Price:** a second «go» per engine release and ~10 minutes of platform CI.
+**Price:** the host trusts «origin/main» for DATA — bounded by the cosign check of the digest it names and by CI's validation of every change to the file.
 **Related:** D-056 · D-061
 
 ### D-055 · 2026-09-20 · The version verdict rides in the lease response, signed, with a three-rung client ladder

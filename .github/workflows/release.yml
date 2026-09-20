@@ -469,11 +469,13 @@ jobs:
           done
 
       # РЕЕСТР ВЕРСИЙ (D-054): выпущенный движок записывается в deploy/releases.json
-      # коммитом в main. Этот коммит трогает deploy/ и потому открывает Release PR
-      # платформы — так сервер лицензий узнаёт о новой версии ЧЕРЕЗ РЕВЬЮ, и пол
-      # минимальной версии никогда не двигается мимо него. Push токеном
-      # GITHUB_TOKEN другие воркфлоу не запускает, поэтому release-please.yml
-      # вызывается явно — та же причина, что у dispatch release.yml из tag-джоба.
+      # коммитом `chore(registry)` в main. Тип скрытый — Release PR платформы от
+      # него НЕ открывается: реестр — данные, а не код, и релиз четырёх образов
+      # ради JSON был бы тем самым пустым релизом, только на нашей стороне. На
+      # хост он попадает через deploy/agent.sh::sync_registry — из origin/main,
+      # после `cosign verify` дайджеста новейшей версии той же identity, что у
+      # образов. Ревью сохраняется там, где оно нужно: пол минимальной версии
+      # (`eol`) руками меняется только PR-ом в main; запись версии аддитивна.
       - name: record the engine in the versions registry
         if: env.STREAM == 'engine'
         env:
@@ -492,14 +494,13 @@ jobs:
                 --version "${VERSION}" --digest "${DIGEST}" --date "$(date -u +%F)" ../deploy/releases.json)
             git add deploy/releases.json
             git commit --quiet -m "chore(registry): pseudex ${VERSION}" \
-              -m "Выпущен движок ${VERSION} (${DIGEST}). Записан пайплайном release.yml; сервер лицензий узнаёт о нём через релиз платформы." \
+              -m "Выпущен движок ${VERSION} (${DIGEST}). Записан пайплайном release.yml; на хост попадает через deploy/agent.sh::sync_registry после проверки подписи." \
               -m "Claude-Session: https://claude.ai/code/session_01LEE9ejun7XaQQChtLJjoRX" 2>/dev/null \
               || { echo "реестр уже содержит ${VERSION}"; break; }
             git push --quiet origin main && break
             [ "${attempt}" = 3 ] && { echo "::error::коммит реестра не запушился за 3 попытки"; exit 1; }
             echo "main ушёл вперёд, повтор ${attempt}"
           done
-          gh workflow run release-please.yml --ref main || echo "::warning::release-please.yml не запустился явно — платформенный PR откроется на следующем push в main"
 
       - name: publish the release manifest
         run: |

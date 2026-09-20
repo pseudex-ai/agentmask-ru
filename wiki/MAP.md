@@ -48,7 +48,7 @@ equals this file.
 
 Generated, ignored, never committed: `prototype/*.json` datasets (`make_*.py`),
 `prototype/*.db*`, `prototype/pseudex-vault.key`, `prototype/pseudex/_release.py`
-(the compiled-in verification key, written by both Dockerfiles), `deploy/secrets/`,
+(the compiled-in verification key, written by both Dockerfiles), `deploy/secrets/`, «deploy/.registry/» (the agent's cosign-verified copy of `deploy/releases.json`),
 `storefront/.venv`, `storefront/storefront.sqlite3`, `~/.cache/pseudex-bench/`
 (external corpora — NEREL, PII-Bench, RuDevices, MASSIVE, ru_prose).
 
@@ -651,7 +651,7 @@ to the licensing server through ONE connector (`storefront/billing/licensing.py`
 | app / file | what |
 |---|---|
 | `storefront/pseudex_site/` | settings (no `PSEUDEX_SECRET_KEY` → refuses to start unless `PSEUDEX_DEBUG`), URL map, `storefront/pseudex_site/context.py` (numbers the templates must see so text never diverges from code), `storefront/pseudex_site/logfmt.py` (JSON logs) |
-| `storefront/storefront_web/` | the pages; `storefront/storefront_web/detection_types.py` (what the engine finds and does not — the configurator's data); `storefront/storefront_web/middleware.py` (security headers) |
+| `storefront/storefront_web/` | the pages; `storefront/storefront_web/detection_types.py` (what the engine finds and does not — the configurator's data); `storefront/storefront_web/middleware.py` (security headers); `storefront/storefront_web/engine_release.py` (the image the site advertises — the floating minor of the newest cycle from the synced registry, `latest` without a file, `PSEUDEX_DOCKER_IMAGE` as the only override; D-061) |
 | `storefront/accounts/` | users, organisations, `storefront/accounts/payer.py` (who the customer is, as THEY state it) |
 | `storefront/billing/` | `storefront/billing/models.py` (Plan, Subscription, Key, Invoice, Offer), `storefront/billing/services.py` (ALL state changes in one place), `storefront/billing/payments.py` (ЮKassa: cards, СБП, invoice link), `storefront/billing/licensing.py` (connector to the licensing admin API), `storefront/billing/reconcile.py` (our invoice vs the customer's own gateway log), `storefront/billing/onboarding.py` (the coding-agent onboarding prompt); commands `run_billing_cycle` (the ONLY caller of the billing primitives, hourly as its own compose service, idempotent by a DB row) and `seed_plans` |
 | `storefront/ops/` | operator console (all customers, one customer, report chains, plans), first-party analytics (`storefront/ops/analytics_models.py`, `storefront/ops/collect.py` — daily salt, bot filter), demand for detection types we lack (`storefront/ops/models.py`), Yandex Metrika/Direct API + server-side conversions (`storefront/ops/yandex_api.py`, `storefront/ops/yandex_views.py`); commands `daily_digest`, `enroll_totp`, `rollup_analytics`, `yandex_auth`, `yandex_conversions` |
@@ -667,7 +667,7 @@ every state transition; the container-stopping check goes LAST) ·
 `test_billing_e2e` (the REAL ЮKassa test shop) · `test_annual` · `test_hardcap`
 · `test_offers` · `test_paywall` · `test_passwordless` · `test_admin_2fa` ·
 `test_auth_style` · `test_signup_forms` · `test_configurator_renders` and
-`test_ops_renders` (real browser) · `test_seo` · `test_crawler_allowlist`
+`test_ops_renders` (real browser) · `test_engine_release` (the advertised image comes from the registry: override → file → `latest`, reload on replace, the landing shows the same tag) · `test_seo` · `test_crawler_allowlist`
 (fail2ban allowlist) · `test_deploy_references` (SQL names in deploy scripts vs
 real tables) · `test_analytics` · `test_yandex_api`.
 
