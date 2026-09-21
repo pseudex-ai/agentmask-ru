@@ -912,14 +912,20 @@ def test_four_word_token_survives_a_shared_fake_surname() -> None:
 
     real_choice = secrets.choice
 
-    def forcing(*wanted: str):
+    def forcing(*wanted: str, sticky: tuple[str, ...] = ()):
         # IN ORDER, each once: the two given-name slots draw from one pool, and
         # a steer that answers «Константин» to both makes a repeated word the
-        # minter refuses 200 times.
+        # minter refuses 200 times. `sticky` words are answered on EVERY draw:
+        # the minter retries a candidate a guard refused, and a surname consumed
+        # on the first attempt left the retry to chance — «Ярослав Фомин» once
+        # in a few dozen runs, red on the merge commit of the fourth cut.
         queue = list(wanted)
 
         def choice(seq):
             seq = list(seq)
+            for want in sticky:
+                if want in seq:
+                    return want
             for want in queue:
                 if want in seq:
                     queue.remove(want)
@@ -931,11 +937,11 @@ def test_four_word_token_survives_a_shared_fake_surname() -> None:
     try:
         with tempfile.TemporaryDirectory() as tmp:
             vault = Vault(os.path.join(tmp, "v.db"), "acme")
-            secrets.choice = forcing("Ершов", "Константин", "Мирослав", "Леонидович")
+            secrets.choice = forcing("Константин", "Мирослав", sticky=("Ершов", "Леонидович"))
             said = "Клиент Алиев Рустам Ахмед оглы"
             shown = mask_text(said, vault, detector.detect(said))
             assert shown.split()[1] == "Ершов" and len(shown.split()) == 5, shown
-            secrets.choice = forcing("Ершов")
+            secrets.choice = forcing(sticky=("Ершов",))
             other = "Иван Петров улица Ленина 5"
             other_shown = mask_text(other, vault, detector.detect(other))
             assert "Ершов" in other_shown, other_shown          # the surname IS shared
