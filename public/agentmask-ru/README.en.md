@@ -26,7 +26,7 @@ PII-masking corpora and tool-calling benchmarks each measure something else.
 | **Name tiers** | `common` · `tail` · `diminutive` · `foreign` |
 | **Adapters** | `noop` · `placeholder_regex` · `openai_proxy` · `presidio` · `llm_guard` · `pseudex_sidecar` |
 
-Eight lines that **never add up to a single score**:
+Nine lines that **never add up to a single score**:
 
 | line | meaning |
 |---|---|
@@ -34,12 +34,20 @@ Eight lines that **never add up to a single score**:
 | `coverage` | no PIECE of the real value survived into what the model saw |
 | `typed` | the type was named correctly (where the masker exposes spans) |
 | `round_trip` | the tool received the real value — over the values that WERE masked |
+| `round_trip_repaired` | the same, also counting a value delivered in **canonical form** — `02.06.1975` for «2 июня 1975», the nominative of a name for its accusative. The gap to the line above is exactly the masker's normalisation, and nothing else |
 | `end_to_end` | the same over all values: "the agent still works" |
 | `overmask` | order numbers, tracking numbers, amounts, document dates and bare cities untouched |
-| `consistency` | the second mention of a person got the first one's substitute |
+| `consistency` | the second mention of a person got the first one's substitute — the same one **up to inflection**: «Харитон Рыбаков» and «Харитона Рыбакова» are one substitute |
 | `stability` | the substitute did not change between requests |
 
 A gateway that masks everything wins the first line and loses the last two. Every rate
+
+**The judge reads Russian.** Names are compared by word lemmas (pymorphy3) in any
+word order: «есина рушана» in the chat and «Рушан Есин» in the CRM are one person,
+«Иван Петров» and «Пётр Иванов» are not (dictionary readings scored below 0.1 are
+dropped). One rule for every system: a placeholder `<PERSON_1>` equals only itself,
+as before. The table is re-derived from the recorded observations by the current
+judge, so older runs are read with the same eyes as new ones.
 carries an exact Clopper–Pearson interval; a flawless line prints what it **certifies**,
 never "100%".
 

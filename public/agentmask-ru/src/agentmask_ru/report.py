@@ -10,7 +10,7 @@ from agentmask_ru.score import Line, Scores, by_axis
 from agentmask_ru.harness import CaseObservation
 
 _ORDER: tuple[str, ...] = (
-    "leak", "coverage", "typed", "round_trip", "end_to_end", "overmask", "consistency", "stability",
+    "leak", "coverage", "typed", "round_trip", "round_trip_repaired", "end_to_end", "overmask", "consistency", "stability",
 )
 
 _MEANING: dict[str, str] = {
@@ -18,6 +18,7 @@ _MEANING: dict[str, str] = {
     "coverage": "изменено целиком, хвост не утёк",
     "typed": "тип определён верно (если маскер отдаёт типы)",
     "round_trip": "инструмент получил настоящее значение (из изменённых)",
+    "round_trip_repaired": "то же, считая значение, вернувшееся в канонической форме, доставленным",
     "end_to_end": "инструмент получил настоящее значение (из всех)",
     "overmask": "не тронуто то, что не является персональными данными",
     "consistency": "второе упоминание получило ту же подстановку",

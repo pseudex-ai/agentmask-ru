@@ -18,6 +18,7 @@ from dataclasses import asdict, dataclass, field
 
 from agentmask_ru.adapters.base import Masker, MaskedView, TurnResult
 from agentmask_ru.align import digits_of, is_number_like, norm, project_many, rewrite_ratio
+from agentmask_ru.person import looks_like_person, same_person
 from agentmask_ru.policy import decide
 from agentmask_ru.schema import Case
 
@@ -174,6 +175,14 @@ def _normalised(produced: str, canonical: str) -> bool:
     """
     if not produced:
         return False
+    # A PERSON IS ONE PERSON HOWEVER THE NAME IS INFLECTED OR ORDERED.
+    # «есина рушана» returned as «Рушан Есин» is the customer named a turn
+    # earlier, in the nominative a CRM record wants; a string judge read
+    # «есина» as a feminine surname and scored the correct answer as a loss.
+    # Same lemma per word, any order — see `person.py`. Neutral: a
+    # placeholder is not a person shape and is judged below as before.
+    if looks_like_person(produced) and looks_like_person(canonical):
+        return same_person(produced, canonical)
     # A DATE IS ONE DATE HOWEVER IT IS WRITTEN. «2 июня 1975» returned as
     # «02.06.1975» is the same day in another notation — the tool gets the
     # right date — while «2 июня 1975» returned as «27.01.1975» is a different
@@ -337,7 +346,15 @@ def run_case(masker: Masker, case: Case, policy: str, seed: int) -> CaseObservat
             # person whose second mention reached the model in the clear.
             if not first.altered and not second.altered:
                 continue
-            same = " ".join(first.substitute.split()).casefold() == " ".join(second.substitute.split()).casefold()
+            # ONE SUBSTITUTE IN TWO CASES IS ONE SUBSTITUTE. A masker that
+            # inflects its fake to the sentence («Харитон Рыбаков» … «Харитона
+            # Рыбакова») kept the identity the model sees; a string
+            # comparison called that two people, and the line read 63% for
+            # the one system that declines. A placeholder still equals only
+            # itself.
+            same = (" ".join(first.substitute.split()).casefold() == " ".join(second.substitute.split()).casefold()
+                    or (looks_like_person(first.substitute) and looks_like_person(second.substitute)
+                        and same_person(first.substitute, second.substitute)))
             observation.consistency = first.altered and second.altered and same
     return observation
 

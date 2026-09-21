@@ -87,3 +87,73 @@ def write(path: Path, payload: dict[str, object]) -> None:
 
 def read(path: Path) -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def observations_of(payload: dict[str, object]) -> list[CaseObservation]:
+    """The per-item observations of a run file, back as the dataclasses the
+    scorer reads — the reason a run file carries them at all."""
+    from agentmask_ru.harness import ItemObservation, NegativeObservation  # noqa: PLC0415 — cycle-free at call time
+
+    out: list[CaseObservation] = []
+    for raw in payload.get("observations", []):
+        assert isinstance(raw, dict)
+        items = [ItemObservation(**item) for item in raw.get("items", [])]
+        negatives = [NegativeObservation(**neg) for neg in raw.get("negatives", [])]
+        fields = {k: v for k, v in raw.items() if k not in ("items", "negatives")}
+        out.append(CaseObservation(**fields, items=items, negatives=negatives))
+    return out
+
+
+def rejudge(observations: list[CaseObservation], cases: list[Case]) -> None:
+    """Re-apply the CURRENT judge to observations recorded earlier, in place.
+
+    The judge is part of the benchmark, not of the run: when it learns
+    something — that «есина рушана» and «Рушан Есин» are one person — every
+    system's stored run must be read with the same eyes, or the table would
+    compare one masker under the new rule with six under the old one. Only
+    the verdicts a judge makes are recomputed (`normalised`, `consistency`);
+    what the masker did and what the tool received are the record and stay.
+    """
+    from agentmask_ru.harness import _normalised, _same_value  # noqa: PLC0415
+    from agentmask_ru.person import looks_like_person, same_person  # noqa: PLC0415
+
+    canonical = {(case.id, item.id): item.canonical for case in cases for item in case.pii}
+    for observation in observations:
+        for item in observation.items:
+            if item.round_trip is None or item.delivered is None:
+                continue
+            key = (item.case_id, item.item_id)
+            if key not in canonical:
+                continue
+            item.round_trip = _same_value(item.delivered, canonical[key])
+            item.normalised = (not item.round_trip) and _normalised(item.delivered, canonical[key])
+        if observation.family != "second_mention":
+            continue
+        by_identity: dict[str, list[object]] = {}
+        for item in observation.items:
+            if item.type == "NAME":
+                by_identity.setdefault(item.identity, []).append(item)
+        for mentions in by_identity.values():
+            if len(mentions) < 2:
+                continue
+            first, second = mentions[0], mentions[1]  # type: ignore[assignment]
+            if not first.altered and not second.altered:
+                continue
+            same = (" ".join(first.substitute.split()).casefold() == " ".join(second.substitute.split()).casefold()
+                    or (looks_like_person(first.substitute) and looks_like_person(second.substitute)
+                        and same_person(first.substitute, second.substitute)))
+            observation.consistency = first.altered and second.altered and same
+
+
+def rescored(payload: dict[str, object], cases: list[Case]) -> dict[str, object]:
+    """The same run, its lines re-derived from its observations by the current judge."""
+    from agentmask_ru.score import score  # noqa: PLC0415
+
+    observations = observations_of(payload)
+    rejudge(observations, cases)
+    scores = score(observations)
+    meta = payload["manifest"]
+    assert isinstance(meta, dict)
+    fresh = to_payload(Manifest(**meta), scores, observations)
+    fresh["rescored"] = {"benchmark_version": VERSION}
+    return fresh

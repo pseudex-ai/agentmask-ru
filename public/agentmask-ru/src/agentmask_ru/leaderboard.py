@@ -15,7 +15,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from agentmask_ru.results import corpus_digest, read
+from agentmask_ru.results import corpus_digest, read, rescored
 from agentmask_ru.schema import load_dir
 from agentmask_ru.stats import mcnemar_exact
 
@@ -23,6 +23,7 @@ _COLUMNS: tuple[tuple[str, str], ...] = (
     ("leak", "скрыто"),
     ("coverage", "скрыто целиком"),
     ("round_trip", "круг (из скрытых)"),
+    ("round_trip_repaired", "круг с починкой"),
     ("end_to_end", "круг (из всех)"),
     ("overmask", "не тронуто лишнего"),
     ("consistency", "одна подстановка"),
@@ -51,7 +52,8 @@ def render(payloads: list[dict[str, object]], digest: str, cases: int) -> str:
     out.append("столбец и проигрывает два последних.")
     out.append("")
     out.append("Что стоит знать, читая цифры, — в разделе «Оговорки» ниже; конфигурация каждого")
-    out.append("прогона лежит в `results/<система>/` в поле `manifest`.")
+    out.append("прогона лежит в `results/<система>/` в поле `manifest`. Строки таблицы пересчитаны из")
+    out.append("записанных наблюдений текущим судьёй харнесса — один и тот же для всех систем.")
     out.append("")
     header = "| система | " + " | ".join(title for _, title in _COLUMNS) + " | ошибок |"
     out.append(header)
@@ -170,7 +172,10 @@ def main(argv: list[str] | None = None) -> int:
         run_at = str(payload["manifest"]["run_at"])  # type: ignore[index]
         if system not in latest or run_at > str(latest[system]["manifest"]["run_at"]):  # type: ignore[index]
             latest[system] = payload
-    text = render(list(latest.values()), corpus_digest(cases), len(cases))
+    # EVERY RUN IS READ BY THE CURRENT JUDGE. The lines a run file carries are
+    # the ones computed on its day; the table re-derives them from the stored
+    # observations so that seven systems are compared under one rule.
+    text = render([rescored(p, cases) for p in latest.values()], corpus_digest(cases), len(cases))
     Path(args.out).write_text(text + "\n", encoding="utf-8")
     print(text)
     return 0

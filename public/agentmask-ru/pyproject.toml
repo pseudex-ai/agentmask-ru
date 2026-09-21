@@ -23,7 +23,9 @@ classifiers = [
 # particular adapter or the corpus generator needs, so a reader on a laptop
 # without a GPU or a gigabyte of spaCy models can still reproduce every
 # placeholder-based row.
-dependencies = ["jsonschema>=4.20"]
+# pymorphy3 is the judge's dictionary: «есина рушана» and «Рушан Есин» are one
+# person only to a reader of Russian morphology (src/agentmask_ru/person.py).
+dependencies = ["jsonschema>=4.20", "pymorphy3>=2.0", "pymorphy3-dicts-ru>=2.4"]
 
 [project.optional-dependencies]
 build = ["mimesis>=18", "Faker>=30", "phonenumbers>=8.13"]

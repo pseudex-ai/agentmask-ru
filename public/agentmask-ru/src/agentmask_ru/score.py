@@ -8,6 +8,12 @@
   round_trip  the tool received the real value — counted over the items the
               masker ALTERED, because restoring a value nobody masked is not
               an achievement
+  round_trip_repaired
+              the same, counting a value that arrived REPAIRED (canonical
+              date notation, the nominative of a name, a folded look-alike
+              digit) beside one that arrived as written — the two lines
+              differ by exactly what the masker's normalisation costs the
+              reader who wanted the text verbatim, and by nothing else
   end_to_end  the tool received the real value, over ALL items — the
               passthrough scores 100% here and that is the point: this line
               says «the agent still works», the leak line says «the data was
@@ -77,6 +83,7 @@ def score(observations: list[CaseObservation]) -> Scores:
     with_param = [i for i in items if i.tool_param and i.round_trip is not None]
     altered_with_param = [i for i in with_param if i.altered]
     round_trip_hits = sum(1 for i in altered_with_param if i.round_trip)
+    repaired_hits = sum(1 for i in altered_with_param if i.round_trip or i.normalised)
     end_to_end_hits = sum(1 for i in with_param if i.round_trip)
 
     overmask_hits = sum(1 for n in negatives if not n.touched)
@@ -88,6 +95,7 @@ def score(observations: list[CaseObservation]) -> Scores:
         "leak": _line("leak", leak_hits, len(items)),
         "coverage": _line("coverage", coverage_hits, len(items)),
         "round_trip": _line("round_trip", round_trip_hits, len(altered_with_param)),
+        "round_trip_repaired": _line("round_trip_repaired", repaired_hits, len(altered_with_param)),
         "end_to_end": _line("end_to_end", end_to_end_hits, len(with_param)),
         "overmask": _line("overmask", overmask_hits, len(negatives)),
     }
