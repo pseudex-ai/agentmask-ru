@@ -265,6 +265,65 @@ def test_two_people_in_one_dialogue_never_share_a_fake_surname(detector: Detecto
     print("основа фамилии OK — два человека в одной беседе не делят подмену; 300 чеканок")
 
 
+def test_b23_customer_word_equal_to_another_dialogue_substitute(detector: Detector) -> None:
+    """Б23: НАСТОЯЩЕЕ СЛОВО КЛИЕНТА, РАВНОЕ ЧУЖОЙ ПОДМЕНЕ, НЕ СТАНОВИТСЯ ЧУЖИМ
+    ЧЕЛОВЕКОМ на обратном пути.
+
+    Публичный бенчмарк на выпущенном 0.3.16: диалог 021 вытянул для «ахат
+    дормедонтов» подмену «Николай Крылов»; в диалоге 024 клиент написал
+    «адрес николая заболоцкого 81 кв 51», детектор взял «заболоцкого 81 кв
+    51», слово «николая» ушло к модели открытым, а из аргумента инструмента
+    вернулось «ахат улицы Заболоцкого…» — единственный владелец куска
+    «Николая» во ВСЁМ томе заказчика побеждал сразу. Кусок подмены может
+    прийти только из диалога, которому показали целое: `token_uses` это
+    помнит, и в чужом диалоге слово остаётся словом клиента.
+
+    Обе половины: (1) в диалоге 024 «николая» не трогается; (2) в диалоге
+    021 — и в любом позднем диалоге, где та же подмена показана снова, —
+    кусок «Николая» по-прежнему разрешается в Ахата.
+    """
+    import secrets  # noqa: PLC0415
+
+    real_choice = secrets.choice
+
+    def forcing(*sticky: str):
+        def choice(seq):
+            seq = list(seq)
+            for want in sticky:
+                if want in seq:
+                    return want
+            return real_choice(seq)
+        return choice
+
+    vault = Vault(":memory:", _ORG)
+    try:
+        secrets.choice = forcing("Николай", "Крылов")
+        first = _context(detector, vault, "conv-021")
+        shown = mask_one("заказ на ахат дормедонтов, тел 89162148803", first)
+    finally:
+        secrets.choice = real_choice
+    assert "Николай Крылов" in shown, shown
+
+    other = _context(detector, vault, "conv-024")
+    said = "адрес николая заболоцкого 81 кв 51"
+    masked = mask_one(said, other)
+    assert "николая" in masked, masked            # the first word of the street stays in the clear (open issue)
+    argument = json.dumps({"address": masked.replace("адрес ", "")}, ensure_ascii=False)
+    back = json.loads(unmask_arguments(argument, vault.for_conversation("conv-024")))["address"]
+    assert back.startswith("николая"), back
+    assert "ахат" not in back.lower(), back
+
+    # The positive half: the dialogue that WAS shown the substitute resolves its piece.
+    piece = json.dumps({"name": "Николая"}, ensure_ascii=False)
+    assert json.loads(unmask_arguments(piece, vault.for_conversation("conv-021")))["name"].lower().startswith("ахат")
+    # ...and so does a later dialogue where the same person is masked again (token reused).
+    later = _context(detector, vault, "conv-031")
+    again = mask_one("заказ на ахат дормедонтов, тел 89162148803", later)
+    assert "Николай Крылов" in again, again
+    assert json.loads(unmask_arguments(piece, vault.for_conversation("conv-031")))["name"].lower().startswith("ахат")
+    print("Б23 OK — кусок подмены разрешается только в диалоге, которому её показали; чужое слово остаётся словом клиента")
+
+
 def main() -> int:
     testkit.load_dev_bundle()
     detector = Detector()
@@ -277,6 +336,7 @@ def main() -> int:
     test_migrated_vault_keeps_the_old_behaviour(detector)
     test_pool_is_not_narrowed_by_the_extra_rejections()
     test_two_people_in_one_dialogue_never_share_a_fake_surname(detector)
+    test_b23_customer_word_equal_to_another_dialogue_substitute(detector)
     print("\nвсе проверки коллизий пройдены")
     return 0
 

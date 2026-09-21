@@ -31,7 +31,7 @@ Status: `spec` (describes shipped behaviour) · `ТЗ` (a specification;
 | `docs/integration.md` | drop-in integration: change ONE env var, the OpenAI-compatible proxy | spec |
 | `docs/integration-diva-litellm.md` | integration with Diva-Soft-Back via a LiteLLM callback (the sidecar shape) | design (nothing in Diva modified yet) |
 | `docs/integration-diva-backend-api.md` | Diva backend API: per-agent toggle + stats | design |
-| `docs/known-issues.md` | the substitution-quality defects, live: §0–§3 and the owner's backlog Б1–Б22 (Б20 dead containers hold a trial slot; Б21 the flaky morphology pair and Б22 the four-word substitute chimera — both found by a red tag, both fixed in 0.3.16), each with what it costs and when to fix | spec (the defect register — read before touching redact/vault/address) |
+| `docs/known-issues.md` | the substitution-quality defects, live: §0–§3 and the owner's backlog Б1–Б23 (Б20 dead containers hold a trial slot; Б21 and Б22 found by a red tag and fixed in 0.3.16; Б23 the customer's own word resolved to another dialogue's person — found by the public benchmark on 0.3.16, fixed in 0.3.17), each with what it costs and when to fix | spec (the defect register — read before touching redact/vault/address) |
 | `docs/tz-license-packaging.md` | the licensing layer and packaging: the threat model §3.4, the two images, gates L1–L22 / P1–P11 — the definition of done | ТЗ-done · STATE D-001 |
 | `docs/tz-tuning-in-lease.md` | why the tuning rides in the lease, not a compiled blob — closing A2 (extract-once-run-forever) | ТЗ-done · STATE D-039, D-045 |
 | `docs/tz-offline-license.md` | the term-licence SKU that works with no call home; the O1–O15 gates | ТЗ-design (O1–O15 not built) · STATE D-004 |
@@ -72,6 +72,7 @@ Not in root `docs/`: `storefront/docs/tz-site.md` and `storefront/docs/tz-site-s
 | `research/2026-09-20-market-transparency-axis.md` | the market-transparency positioning axis for the article series | D-049 |
 | `research/2026-09-20-release-and-version-lifecycle.md` | how to version the customer engine apart from our platform out of one repo (release-please manifest mode, two streams), carry «newer / deprecated / EOL» in the lease response (Tailscale/Sentry shape, RFC 9745/8594), guard the volume with `user_version` + refuse-from-the-future + `VACUUM INTO` snapshot, and give the customer a native upgrade path; what to take ready-made and what to write; H3 (digest churn) refuted — `0.3.12` = `0.3.13` byte for byte | evidence (ТЗ pending) |
 | `research/2026-09-20-open-benchmark-mechanics.md` | how to run a NEW public benchmark (review-as-contribution, MMTEB) | D-049 |
+| `research/2026-09-21-public-row-0316.md` | our public-benchmark row on the RELEASED 0.3.16 vs 0.3.14: per-value diff (27 DOB leaks closed, 4 names), the corpus's blind spot to Б22 (no two-word patronymics), the chimera it found (Б23), what the judge could not read | Б22, Б23 |
 | `research/2026-09-20-ru-distribution-channels.md` | RU distribution: Habr 2026 mechanics, hubs, channels | D-049 |
 
 ### Architecture, interception, monetisation

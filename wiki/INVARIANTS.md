@@ -547,6 +547,15 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
 
 ## Conversation scope
 
+- **A PIECE OF A SUBSTITUTE RESOLVES ONLY IN A DIALOGUE THAT WAS SHOWN THE
+  WHOLE.** «николая» in a street the customer wrote in the clear resolved to
+  the one dialogue in the customer's vault that had drawn «Николай Крылов», and
+  the tool received another person (known-issues Б23). `token_uses` records
+  which name substitutes each conversation saw — minted or reused — and
+  `Vault.residual_of` answers from that set: one owner shown here wins, none
+  means the word is the customer's own. Pins: `test_collisions`
+  (`test_b23_customer_word_equal_to_another_dialogue_substitute`).
+
 - **A partial mention resolves against a fuller one only inside ONE
   conversation, and the reason is arithmetic.** «Ленина 14» exists in every
   city; at tenant scope the single-candidate rule finds a dozen owners and

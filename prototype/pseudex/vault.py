@@ -1643,6 +1643,24 @@ def create_tables(conn: Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_place_parts_created "
         "ON place_parts (created)"
     )
+    # WHICH NAME SUBSTITUTES THIS CONVERSATION WAS SHOWN. A piece of a
+    # substitute («Николая» for «Николай Крылов») can only come back from the
+    # dialogue that saw the whole; resolved against the customer's WHOLE
+    # vault, the customer's own word «николая» inside «улица Николая
+    # Заболоцкого» became another person (known-issues Б23). `minted_in` names
+    # the first dialogue only; a token reused by a later one is recorded here.
+    # Expires with `place_parts`, for the same reason: it is a record of who
+    # was talked about when. No new class of data — the token is already in
+    # `tokens`, the conversation in `minted_in`.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS token_uses ("
+        "customer TEXT NOT NULL, token TEXT NOT NULL, conversation TEXT NOT NULL, "
+        "created REAL NOT NULL DEFAULT 0, "
+        "PRIMARY KEY (customer, token, conversation))"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_token_uses_created ON token_uses (created)"
+    )
 
 
 def create_indexes(conn: Connection) -> None:
@@ -2232,6 +2250,22 @@ class Vault:
         return self._tokenize(value, "NAME", cases)
 
     def _tokenize(self, value: str, entity_type: str, cases: tuple[str, ...] = ()) -> str:
+        token = self._tokenize_unrecorded(value, entity_type, cases)
+        if entity_type == "NAME" and self._conversation:
+            self._record_use(token)
+        return token
+
+    def _record_use(self, token: str) -> None:
+        """This conversation was shown this substitute — see `token_uses`."""
+        with self._lock:
+            self._expire_place_parts()
+            self._conn.execute(
+                "INSERT OR IGNORE INTO token_uses (customer, token, conversation, created) "
+                "VALUES (?,?,?,?)",
+                (self._customer, token, self._conversation, time.time()))
+            self._conn.commit()
+
+    def _tokenize_unrecorded(self, value: str, entity_type: str, cases: tuple[str, ...] = ()) -> str:
         canonical = (canonicalize_person(value, cases) if entity_type == "NAME" and cases
                      else canonicalize(entity_type, value))
         with self._lock:
@@ -2734,10 +2768,31 @@ class Vault:
                     return None
                 owners.append({row[0] for row in rows})
         shared = set.intersection(*owners)
-        if len(shared) == 1:
-            return next(iter(shared))
         if not shared:
             return None
+        # ONLY A SUBSTITUTE THIS CONVERSATION WAS SHOWN. A single owner across
+        # the customer's whole vault used to win outright, and «николая» in a
+        # street name the customer wrote in the clear resolved to the one
+        # dialogue, a week earlier, that had drawn «Николай Крылов» — the
+        # tool received another person (known-issues Б23). The model can only
+        # write a piece of what it read HERE, so `token_uses` decides: one
+        # owner shown here wins, none means the word is the customer's own,
+        # several fall to the tie-breaks below. Without a conversation scope
+        # nothing has changed.
+        if self._conversation:
+            rows = self._conn.execute(
+                "SELECT token FROM token_uses WHERE customer=? AND conversation=? "
+                f"AND token IN ({','.join('?' * len(shared))})",
+                (self._customer, self._conversation, *sorted(shared)),
+            ).fetchall()
+            here = {row[0] for row in rows}
+            if len(here) == 1:
+                return next(iter(here))
+            if not here:
+                return None
+            shared = here
+        if len(shared) == 1:
+            return next(iter(shared))
         one = self._one_identity(shared)
         if one is not None:
             return one
@@ -2804,6 +2859,8 @@ class Vault:
             return
         _last_place_sweep = now
         self._conn.execute("DELETE FROM place_parts WHERE created < ?",
+                           (now - _PLACE_PART_TTL,))
+        self._conn.execute("DELETE FROM token_uses WHERE created < ?",
                            (now - _PLACE_PART_TTL,))
 
     def _place_rows(self, part: str, has_city: int | None) -> list:
