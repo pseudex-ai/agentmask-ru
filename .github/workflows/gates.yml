@@ -106,13 +106,65 @@ jobs:
   # ПОЛНЫЙ ПРОГОН — ночью, руками и по метке `run-gates` на PR. Метка, а не
   # каждый PR: сорок минут на каждое обновление ветки — то самое ожидание,
   # которое учатся пропускать.
+  # ── НОЧЬЮ — ТОЛЬКО ЕСЛИ БЫЛО ЧТО ПРОВЕРЯТЬ ─────────────────────────────────
+  # Полный прогон собирает оба образа Nuitka и гоняет P1-P11 + L1-L25 — около
+  # пятидесяти минут раннера. Каждую ночь, менялся движок или нет, это ~1500
+  # минут в месяц: три четверти бесплатной квоты уходили на доказательство того,
+  # что вчерашний образ всё ещё вчерашний. Решает diff с ПОСЛЕДНЕГО ЗЕЛЁНОГО
+  # ночного прогона по тому, что гейты и стерегут: набор образа
+  # (`deploy/shipped_paths.sh`), `e2e/`, `licensing/` и сам этот файл.
+  # Пропущенный прогон тоже зелёный, и цепочка честна по индукции: он
+  # пропущен ровно потому, что с предыдущего зелёного ничего не менялось.
+  # Понедельник — полный прогон всегда: базовые образы и зависимости
+  # дрейфуют без коммитов, и недельный пол ловит это.
+  nightly-needed:
+    name: было ли что проверять с прошлого зелёного ночного прогона
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false, fetch-depth: 0 }
+      - name: diff с последнего зелёного ночного прогона
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          if [ "$(date -u +%u)" = "1" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "понедельник — полный прогон по расписанию"; exit 0
+          fi
+          last="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow gates.yml --event schedule \
+                    --status success --branch main --limit 1 --json headSha -q '.[0].headSha' 2>/dev/null || true)"
+          if [ -z "${last}" ] || ! git cat-file -e "${last}^{commit}" 2>/dev/null; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "зелёного ночного прогона в истории нет — полный"; exit 0
+          fi
+          # shellcheck disable=SC2046
+          changed="$(git diff --name-only "${last}" HEAD -- $(sh deploy/shipped_paths.sh) \
+                       prototype/e2e prototype/licensing .github/workflows/gates.yml)"
+          if [ -n "${changed}" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "с ${last} изменилось:"; printf '%s\n' "${changed}" | sed 's/^/  /'
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "с ${last} ни один файл образа, гейтов и лицензирования не менялся — полный прогон пропущен"
+          fi
+
   full:
     name: L1-L22 + P1-P10 против контейнеров
+    needs: [nightly-needed]
+    # `needs` на пропущенный job (не schedule) даёт skipped всему, что от него
+    # зависит, — отсюда `always()` в начале и явный разбор случаев ниже. Если
+    # решающий job сам упал (API, сеть) — полный прогон идёт: ошибка решения
+    # не должна стоить ночного вердикта.
     if: >-
-      github.event_name == 'schedule' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' &&
-       contains(github.event.pull_request.labels.*.name, 'run-gates'))
+      always() &&
+      ((github.event_name == 'schedule' && (needs.nightly-needed.outputs.run == 'true' || needs.nightly-needed.result != 'success')) ||
+       github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'run-gates')))
     runs-on: ubuntu-latest
     timeout-minutes: 120
     defaults:
