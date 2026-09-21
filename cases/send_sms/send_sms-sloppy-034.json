@@ -1,0 +1,172 @@
+{
+ "id": "send_sms-sloppy-034",
+ "version": "0.1",
+ "family": "send_sms",
+ "register": "sloppy",
+ "subcase": null,
+ "messages": [
+  {
+   "role": "system",
+   "content": "Ты — оператор поддержки интернет-магазина «Северный ветер». Отвечай по-русски, коротко. Для действий с заказами и данными клиента вызывай инструменты; передавай в них значения так, как их назвал клиент. Служебная метка диалога: [case:send_sms-sloppy-034]."
+  },
+  {
+   "role": "user",
+   "content": "кинь смс на +797212885О3 что заказ 7803-118 оплачен 11 000 руб город благовещенск буду с 10 до 14, верноика"
+  }
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "send_sms",
+    "description": "Отправить SMS клиенту.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "phone": {
+       "type": "string",
+       "description": "Телефон получателя"
+      },
+      "text": {
+       "type": "string",
+       "description": "Текст сообщения"
+      }
+     },
+     "required": [
+      "phone",
+      "text"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "update_contact",
+    "description": "Обновить контактные данные клиента в CRM.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО клиента"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Новый телефон"
+      },
+      "email": {
+       "type": "string",
+       "description": "Новая электронная почта"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "create_order",
+    "description": "Оформить заказ на доставку. Требует ФИО получателя, контактный телефон и адрес доставки.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО получателя, как назвал клиент"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Контактный телефон получателя"
+      },
+      "address": {
+       "type": "string",
+       "description": "Адрес доставки одной строкой"
+      },
+      "comment": {
+       "type": "string",
+       "description": "Комментарий курьеру"
+      }
+     },
+     "required": [
+      "name",
+      "phone",
+      "address"
+     ]
+    }
+   }
+  }
+ ],
+ "expected_call": {
+  "name": "send_sms",
+  "pii_params": [
+   "phone"
+  ],
+  "plain_params": {}
+ },
+ "pii": [
+  {
+   "id": "p1",
+   "type": "PHONE",
+   "value": "+797212885О3",
+   "canonical": "+797212885О3",
+   "turn": 1,
+   "start": 12,
+   "end": 24,
+   "tool_param": "phone",
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  },
+  {
+   "id": "p2",
+   "type": "NAME",
+   "value": "верноика",
+   "canonical": "верноика",
+   "turn": 1,
+   "start": 99,
+   "end": 107,
+   "tool_param": null,
+   "cue": false,
+   "tier": "tail",
+   "identity": "person1"
+  }
+ ],
+ "negatives": [
+  {
+   "value": "7803-118",
+   "kind": "order_no",
+   "turn": 1,
+   "start": 35,
+   "end": 43
+  },
+  {
+   "value": "11 000 руб",
+   "kind": "amount",
+   "turn": 1,
+   "start": 52,
+   "end": 62
+  },
+  {
+   "value": "благовещенск",
+   "kind": "city",
+   "turn": 1,
+   "start": 69,
+   "end": 81
+  }
+ ],
+ "hard": {
+  "why": "имя строчными буквами: заглавной, за которую цепляется шаблон, нет; в цифрах стоит буква-двойник или потерян разделитель: формы, которую ищет шаблон, больше нет"
+ },
+ "created_at": "2026-09-20",
+ "source": {
+  "generator": "agentmask_ru.build",
+  "version": "0.1",
+  "seed": 20260920
+ },
+ "canary": "AGENTMASK-RU-CANARY-7c1e4b2a-6f3d-4a8e-9b1c-2d5e8f0a3b7c",
+ "license": "CC-BY-4.0"
+}

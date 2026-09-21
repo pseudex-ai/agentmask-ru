@@ -1,0 +1,195 @@
+{
+ "id": "second_mention-clean-013",
+ "version": "0.1",
+ "family": "second_mention",
+ "register": "clean",
+ "subcase": "lower",
+ "messages": [
+  {
+   "role": "system",
+   "content": "Ты — оператор поддержки интернет-магазина «Северный ветер». Отвечай по-русски, коротко. Для действий с заказами и данными клиента вызывай инструменты; передавай в них значения так, как их назвал клиент. Служебная метка диалога: [case:second_mention-clean-013]."
+  },
+  {
+   "role": "user",
+   "content": "Здравствуйте, меня зовут Тэдди Ермилин, телефон +7 948 352-88-58. Хочу изменить контакты по заказу № 7534-745."
+  },
+  {
+   "role": "assistant",
+   "content": "Принято."
+  },
+  {
+   "role": "user",
+   "content": "Да, оформляйте на тэдди ермилин, номер +7 948 352-88-58. Сумма заказа 5 150 ₽ не меняется."
+  }
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "update_contact",
+    "description": "Обновить контактные данные клиента в CRM.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО клиента"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Новый телефон"
+      },
+      "email": {
+       "type": "string",
+       "description": "Новая электронная почта"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "create_order",
+    "description": "Оформить заказ на доставку. Требует ФИО получателя, контактный телефон и адрес доставки.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО получателя, как назвал клиент"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Контактный телефон получателя"
+      },
+      "address": {
+       "type": "string",
+       "description": "Адрес доставки одной строкой"
+      },
+      "comment": {
+       "type": "string",
+       "description": "Комментарий курьеру"
+      }
+     },
+     "required": [
+      "name",
+      "phone",
+      "address"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "check_status",
+    "description": "Проверить статус заказа по номеру заказа или по телефону клиента.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "order_no": {
+       "type": "string",
+       "description": "Номер заказа, если клиент его назвал"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Телефон клиента, если номер заказа неизвестен"
+      }
+     },
+     "required": []
+    }
+   }
+  }
+ ],
+ "expected_call": {
+  "name": "update_contact",
+  "pii_params": [
+   "name",
+   "phone"
+  ],
+  "plain_params": {}
+ },
+ "pii": [
+  {
+   "id": "p1",
+   "type": "NAME",
+   "value": "Тэдди Ермилин",
+   "canonical": "Тэдди Ермилин",
+   "turn": 1,
+   "start": 25,
+   "end": 38,
+   "tool_param": null,
+   "cue": true,
+   "tier": "diminutive",
+   "identity": "person1"
+  },
+  {
+   "id": "p2",
+   "type": "PHONE",
+   "value": "+7 948 352-88-58",
+   "canonical": "+7 948 352-88-58",
+   "turn": 1,
+   "start": 48,
+   "end": 64,
+   "tool_param": null,
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  },
+  {
+   "id": "p3",
+   "type": "NAME",
+   "value": "тэдди ермилин",
+   "canonical": "тэдди ермилин",
+   "turn": 3,
+   "start": 18,
+   "end": 31,
+   "tool_param": "name",
+   "cue": false,
+   "tier": "diminutive",
+   "identity": "person1"
+  },
+  {
+   "id": "p4",
+   "type": "PHONE",
+   "value": "+7 948 352-88-58",
+   "canonical": "+7 948 352-88-58",
+   "turn": 3,
+   "start": 39,
+   "end": 55,
+   "tool_param": "phone",
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  }
+ ],
+ "negatives": [
+  {
+   "value": "№ 7534-745",
+   "kind": "order_no",
+   "turn": 1,
+   "start": 99,
+   "end": 109
+  },
+  {
+   "value": "5 150 ₽",
+   "kind": "amount",
+   "turn": 3,
+   "start": 70,
+   "end": 77
+  }
+ ],
+ "hard": null,
+ "created_at": "2026-09-20",
+ "source": {
+  "generator": "agentmask_ru.build",
+  "version": "0.1",
+  "seed": 20260920
+ },
+ "canary": "AGENTMASK-RU-CANARY-7c1e4b2a-6f3d-4a8e-9b1c-2d5e8f0a3b7c",
+ "license": "CC-BY-4.0"
+}

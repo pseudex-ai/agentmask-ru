@@ -1,0 +1,313 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "AgentMask-RU case",
+ "description": "Один случай: короткий русский диалог с персональными данными и инструмент, который агент должен вызвать. Нормативный файл — src/agentmask_ru/schema.py; расхождение разрешается в пользу него.",
+ "type": "object",
+ "required": [
+  "id",
+  "version",
+  "family",
+  "register",
+  "subcase",
+  "messages",
+  "tools",
+  "expected_call",
+  "pii",
+  "negatives",
+  "hard",
+  "created_at",
+  "source",
+  "canary",
+  "license"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "id": {
+   "type": "string",
+   "minLength": 1
+  },
+  "version": {
+   "type": "string"
+  },
+  "family": {
+   "enum": [
+    "create_order",
+    "check_status",
+    "verify_identity",
+    "refund",
+    "send_sms",
+    "second_mention",
+    "decompose"
+   ]
+  },
+  "register": {
+   "enum": [
+    "clean",
+    "chat",
+    "sloppy"
+   ]
+  },
+  "subcase": {
+   "oneOf": [
+    {
+     "enum": [
+      "lower",
+      "declined",
+      "reformatted"
+     ]
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "messages": {
+   "type": "array",
+   "minItems": 1,
+   "items": {
+    "type": "object",
+    "required": [
+     "role",
+     "content"
+    ],
+    "properties": {
+     "role": {
+      "enum": [
+       "system",
+       "user",
+       "assistant"
+      ]
+     },
+     "content": {
+      "type": "string"
+     }
+    },
+    "additionalProperties": false
+   }
+  },
+  "tools": {
+   "type": "array",
+   "minItems": 1
+  },
+  "expected_call": {
+   "type": "object",
+   "required": [
+    "name",
+    "pii_params",
+    "plain_params"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "pii_params": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "plain_params": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  "pii": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "type",
+     "value",
+     "canonical",
+     "turn",
+     "start",
+     "end",
+     "tool_param",
+     "cue",
+     "tier",
+     "identity"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "type": {
+      "enum": [
+       "NAME",
+       "PHONE",
+       "EMAIL",
+       "ADDRESS",
+       "SNILS",
+       "INN",
+       "PASSPORT",
+       "CARD",
+       "DOB"
+      ]
+     },
+     "value": {
+      "type": "string"
+     },
+     "canonical": {
+      "type": "string"
+     },
+     "turn": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "start": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "end": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "tool_param": {
+      "oneOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "cue": {
+      "type": "boolean"
+     },
+     "tier": {
+      "oneOf": [
+       {
+        "enum": [
+         "common",
+         "tail",
+         "diminutive",
+         "foreign"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "identity": {
+      "type": "string"
+     },
+     "parts": {
+      "oneOf": [
+       {
+        "type": "object",
+        "additionalProperties": {
+         "type": "string"
+        }
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    }
+   }
+  },
+  "negatives": {
+   "type": "array",
+   "minItems": 1,
+   "items": {
+    "type": "object",
+    "required": [
+     "value",
+     "kind",
+     "turn",
+     "start",
+     "end"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "value": {
+      "type": "string"
+     },
+     "kind": {
+      "enum": [
+       "order_no",
+       "track_no",
+       "invoice",
+       "amount",
+       "doc_date",
+       "city"
+      ]
+     },
+     "turn": {
+      "type": "integer"
+     },
+     "start": {
+      "type": "integer"
+     },
+     "end": {
+      "type": "integer"
+     }
+    }
+   }
+  },
+  "hard": {
+   "oneOf": [
+    {
+     "type": "object",
+     "required": [
+      "why"
+     ],
+     "properties": {
+      "why": {
+       "type": "string"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "created_at": {
+   "type": "string"
+  },
+  "source": {
+   "type": "object",
+   "required": [
+    "generator",
+    "version",
+    "seed"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "generator": {
+     "type": "string"
+    },
+    "version": {
+     "type": "string"
+    },
+    "seed": {
+     "oneOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   }
+  },
+  "canary": {
+   "const": "AGENTMASK-RU-CANARY-7c1e4b2a-6f3d-4a8e-9b1c-2d5e8f0a3b7c"
+  },
+  "license": {
+   "const": "CC-BY-4.0"
+  }
+ }
+}

@@ -1,0 +1,180 @@
+{
+ "id": "verify_identity-chat-031",
+ "version": "0.1",
+ "family": "verify_identity",
+ "register": "chat",
+ "subcase": null,
+ "messages": [
+  {
+   "role": "system",
+   "content": "Ты — оператор поддержки интернет-магазина «Северный ветер». Отвечай по-русски, коротко. Для действий с заказами и данными клиента вызывай инструменты; передавай в них значения так, как их назвал клиент. Служебная метка диалога: [case:verify_identity-chat-031]."
+  },
+  {
+   "role": "user",
+   "content": "хочу баланс по договору 610/56 от 25.08.2026 тина иличевская др 10 июля 1981 снилс 60715953999"
+  }
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "verify_identity",
+    "description": "Подтвердить личность клиента перед выдачей персональной информации.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО клиента"
+      },
+      "dob": {
+       "type": "string",
+       "description": "Дата рождения, как назвал клиент"
+      },
+      "passport": {
+       "type": "string",
+       "description": "Серия и номер паспорта"
+      },
+      "snils": {
+       "type": "string",
+       "description": "СНИЛС"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "refund",
+    "description": "Оформить возврат средств на карту клиента.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "order_no": {
+       "type": "string",
+       "description": "Номер заказа"
+      },
+      "card": {
+       "type": "string",
+       "description": "Номер карты для возврата"
+      },
+      "amount": {
+       "type": "string",
+       "description": "Сумма возврата в рублях"
+      }
+     },
+     "required": [
+      "order_no",
+      "card",
+      "amount"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "send_sms",
+    "description": "Отправить SMS клиенту.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "phone": {
+       "type": "string",
+       "description": "Телефон получателя"
+      },
+      "text": {
+       "type": "string",
+       "description": "Текст сообщения"
+      }
+     },
+     "required": [
+      "phone",
+      "text"
+     ]
+    }
+   }
+  }
+ ],
+ "expected_call": {
+  "name": "verify_identity",
+  "pii_params": [
+   "name",
+   "dob",
+   "snils"
+  ],
+  "plain_params": {}
+ },
+ "pii": [
+  {
+   "id": "p1",
+   "type": "NAME",
+   "value": "тина иличевская",
+   "canonical": "тина иличевская",
+   "turn": 1,
+   "start": 45,
+   "end": 60,
+   "tool_param": "name",
+   "cue": false,
+   "tier": "diminutive",
+   "identity": "person1"
+  },
+  {
+   "id": "p2",
+   "type": "DOB",
+   "value": "10 июля 1981",
+   "canonical": "10 июля 1981",
+   "turn": 1,
+   "start": 64,
+   "end": 76,
+   "tool_param": "dob",
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  },
+  {
+   "id": "p3",
+   "type": "SNILS",
+   "value": "60715953999",
+   "canonical": "60715953999",
+   "turn": 1,
+   "start": 83,
+   "end": 94,
+   "tool_param": "snils",
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  }
+ ],
+ "negatives": [
+  {
+   "value": "610/56",
+   "kind": "invoice",
+   "turn": 1,
+   "start": 24,
+   "end": 30
+  },
+  {
+   "value": "25.08.2026",
+   "kind": "doc_date",
+   "turn": 1,
+   "start": 34,
+   "end": 44
+  }
+ ],
+ "hard": {
+  "why": "имя строчными буквами: заглавной, за которую цепляется шаблон, нет; в цифрах стоит буква-двойник или потерян разделитель: формы, которую ищет шаблон, больше нет"
+ },
+ "created_at": "2026-09-20",
+ "source": {
+  "generator": "agentmask_ru.build",
+  "version": "0.1",
+  "seed": 20260920
+ },
+ "canary": "AGENTMASK-RU-CANARY-7c1e4b2a-6f3d-4a8e-9b1c-2d5e8f0a3b7c",
+ "license": "CC-BY-4.0"
+}

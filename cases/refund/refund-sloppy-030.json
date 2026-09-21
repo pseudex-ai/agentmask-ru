@@ -1,0 +1,158 @@
+{
+ "id": "refund-sloppy-030",
+ "version": "0.1",
+ "family": "refund",
+ "register": "sloppy",
+ "subcase": null,
+ "messages": [
+  {
+   "role": "system",
+   "content": "Ты — оператор поддержки интернет-магазина «Северный ветер». Отвечай по-русски, коротко. Для действий с заказами и данными клиента вызывай инструменты; передавай в них значения так, как их назвал клиент. Служебная метка диалога: [case:refund-sloppy-030]."
+  },
+  {
+   "role": "user",
+   "content": "верните деньги за заказ 5262-706 от 12.11.2026 сумма 900 руб карта 220О854452511128"
+  }
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "refund",
+    "description": "Оформить возврат средств на карту клиента.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "order_no": {
+       "type": "string",
+       "description": "Номер заказа"
+      },
+      "card": {
+       "type": "string",
+       "description": "Номер карты для возврата"
+      },
+      "amount": {
+       "type": "string",
+       "description": "Сумма возврата в рублях"
+      }
+     },
+     "required": [
+      "order_no",
+      "card",
+      "amount"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "send_sms",
+    "description": "Отправить SMS клиенту.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "phone": {
+       "type": "string",
+       "description": "Телефон получателя"
+      },
+      "text": {
+       "type": "string",
+       "description": "Текст сообщения"
+      }
+     },
+     "required": [
+      "phone",
+      "text"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "update_contact",
+    "description": "Обновить контактные данные клиента в CRM.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО клиента"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Новый телефон"
+      },
+      "email": {
+       "type": "string",
+       "description": "Новая электронная почта"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  }
+ ],
+ "expected_call": {
+  "name": "refund",
+  "pii_params": [
+   "card"
+  ],
+  "plain_params": {
+   "order_no": "5262-706",
+   "amount": "900 руб"
+  }
+ },
+ "pii": [
+  {
+   "id": "p1",
+   "type": "CARD",
+   "value": "220О854452511128",
+   "canonical": "220О854452511128",
+   "turn": 1,
+   "start": 67,
+   "end": 83,
+   "tool_param": "card",
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  }
+ ],
+ "negatives": [
+  {
+   "value": "5262-706",
+   "kind": "order_no",
+   "turn": 1,
+   "start": 24,
+   "end": 32
+  },
+  {
+   "value": "900 руб",
+   "kind": "amount",
+   "turn": 1,
+   "start": 53,
+   "end": 60
+  },
+  {
+   "value": "12.11.2026",
+   "kind": "doc_date",
+   "turn": 1,
+   "start": 36,
+   "end": 46
+  }
+ ],
+ "hard": {
+  "why": "в цифрах стоит буква-двойник или потерян разделитель: формы, которую ищет шаблон, больше нет"
+ },
+ "created_at": "2026-09-20",
+ "source": {
+  "generator": "agentmask_ru.build",
+  "version": "0.1",
+  "seed": 20260920
+ },
+ "canary": "AGENTMASK-RU-CANARY-7c1e4b2a-6f3d-4a8e-9b1c-2d5e8f0a3b7c",
+ "license": "CC-BY-4.0"
+}

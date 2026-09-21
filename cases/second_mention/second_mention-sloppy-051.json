@@ -1,0 +1,195 @@
+{
+ "id": "second_mention-sloppy-051",
+ "version": "0.1",
+ "family": "second_mention",
+ "register": "sloppy",
+ "subcase": "reformatted",
+ "messages": [
+  {
+   "role": "system",
+   "content": "Ты — оператор поддержки интернет-магазина «Северный ветер». Отвечай по-русски, коротко. Для действий с заказами и данными клиента вызывай инструменты; передавай в них значения так, как их назвал клиент. Служебная метка диалога: [case:second_mention-sloppy-051]."
+  },
+  {
+   "role": "user",
+   "content": "привет это олвиье ким тел 89474285 158 хочу поменять контакты по заказу 1994-442"
+  },
+  {
+   "role": "assistant",
+   "content": "Принято."
+  },
+  {
+   "role": "user",
+   "content": "да пиши на олвиье ким номер 8 (947) 428-51-58 сумма 1 690 руб та же"
+  }
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "update_contact",
+    "description": "Обновить контактные данные клиента в CRM.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО клиента"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Новый телефон"
+      },
+      "email": {
+       "type": "string",
+       "description": "Новая электронная почта"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "create_order",
+    "description": "Оформить заказ на доставку. Требует ФИО получателя, контактный телефон и адрес доставки.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО получателя, как назвал клиент"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Контактный телефон получателя"
+      },
+      "address": {
+       "type": "string",
+       "description": "Адрес доставки одной строкой"
+      },
+      "comment": {
+       "type": "string",
+       "description": "Комментарий курьеру"
+      }
+     },
+     "required": [
+      "name",
+      "phone",
+      "address"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "check_status",
+    "description": "Проверить статус заказа по номеру заказа или по телефону клиента.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "order_no": {
+       "type": "string",
+       "description": "Номер заказа, если клиент его назвал"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Телефон клиента, если номер заказа неизвестен"
+      }
+     },
+     "required": []
+    }
+   }
+  }
+ ],
+ "expected_call": {
+  "name": "update_contact",
+  "pii_params": [
+   "name",
+   "phone"
+  ],
+  "plain_params": {}
+ },
+ "pii": [
+  {
+   "id": "p1",
+   "type": "NAME",
+   "value": "олвиье ким",
+   "canonical": "олвиье ким",
+   "turn": 1,
+   "start": 11,
+   "end": 21,
+   "tool_param": null,
+   "cue": true,
+   "tier": "foreign",
+   "identity": "person1"
+  },
+  {
+   "id": "p2",
+   "type": "PHONE",
+   "value": "89474285 158",
+   "canonical": "89474285 158",
+   "turn": 1,
+   "start": 26,
+   "end": 38,
+   "tool_param": null,
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  },
+  {
+   "id": "p3",
+   "type": "NAME",
+   "value": "олвиье ким",
+   "canonical": "олвиье ким",
+   "turn": 3,
+   "start": 11,
+   "end": 21,
+   "tool_param": "name",
+   "cue": false,
+   "tier": "foreign",
+   "identity": "person1"
+  },
+  {
+   "id": "p4",
+   "type": "PHONE",
+   "value": "8 (947) 428-51-58",
+   "canonical": "8 (947) 428-51-58",
+   "turn": 3,
+   "start": 28,
+   "end": 45,
+   "tool_param": "phone",
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  }
+ ],
+ "negatives": [
+  {
+   "value": "1994-442",
+   "kind": "order_no",
+   "turn": 1,
+   "start": 72,
+   "end": 80
+  },
+  {
+   "value": "1 690 руб",
+   "kind": "amount",
+   "turn": 3,
+   "start": 52,
+   "end": 61
+  }
+ ],
+ "hard": null,
+ "created_at": "2026-09-20",
+ "source": {
+  "generator": "agentmask_ru.build",
+  "version": "0.1",
+  "seed": 20260920
+ },
+ "canary": "AGENTMASK-RU-CANARY-7c1e4b2a-6f3d-4a8e-9b1c-2d5e8f0a3b7c",
+ "license": "CC-BY-4.0"
+}

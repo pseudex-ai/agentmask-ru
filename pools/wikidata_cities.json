@@ -1,0 +1,3977 @@
+{
+ "meta": {
+  "source": "Wikidata Query Service",
+  "license": "CC0-1.0",
+  "license_url": "https://www.wikidata.org/wiki/Wikidata:Licensing",
+  "fetched": "2026-09-20",
+  "query": "SELECT DISTINCT ?item ?label ?pop WHERE {\n  ?item wdt:P31 wd:Q7930989 ; wdt:P17 wd:Q159 ; rdfs:label ?label .\n  OPTIONAL { ?item wdt:P1082 ?pop }\n  FILTER(LANG(?label) = \"ru\")\n}",
+  "rows_fetched": 3288
+ },
+ "count": 991,
+ "items": [
+  {
+   "name": "Агрыз",
+   "population": 19804
+  },
+  {
+   "name": "Адыгейск",
+   "population": 13247
+  },
+  {
+   "name": "Азнакаево",
+   "population": 33905
+  },
+  {
+   "name": "Азов",
+   "population": 79872
+  },
+  {
+   "name": "Аксай",
+   "population": 48372
+  },
+  {
+   "name": "Алагир",
+   "population": 21315
+  },
+  {
+   "name": "Алапаевск",
+   "population": 35704
+  },
+  {
+   "name": "Алатырь",
+   "population": 32265
+  },
+  {
+   "name": "Алдан",
+   "population": 21490
+  },
+  {
+   "name": "Алейск",
+   "population": 25380
+  },
+  {
+   "name": "Александров",
+   "population": 54179
+  },
+  {
+   "name": "Александровск",
+   "population": 10502
+  },
+  {
+   "name": "Алексеевка",
+   "population": 36578
+  },
+  {
+   "name": "Алексин",
+   "population": 58220
+  },
+  {
+   "name": "Алзамай",
+   "population": 5373
+  },
+  {
+   "name": "Алупка",
+   "population": 9063
+  },
+  {
+   "name": "Алушта",
+   "population": 31364
+  },
+  {
+   "name": "Альметьевск",
+   "population": 163747
+  },
+  {
+   "name": "Амурск",
+   "population": 37204
+  },
+  {
+   "name": "Анадырь",
+   "population": 13224
+  },
+  {
+   "name": "Анапа",
+   "population": 84804
+  },
+  {
+   "name": "Ангарск",
+   "population": 216973
+  },
+  {
+   "name": "Андреаполь",
+   "population": 6956
+  },
+  {
+   "name": "Анива",
+   "population": 9686
+  },
+  {
+   "name": "Апатиты",
+   "population": 48410
+  },
+  {
+   "name": "Апрелевка",
+   "population": 38955
+  },
+  {
+   "name": "Апшеронск",
+   "population": 39047
+  },
+  {
+   "name": "Арамиль",
+   "population": 20559
+  },
+  {
+   "name": "Аргун",
+   "population": 42126
+  },
+  {
+   "name": "Ардатов",
+   "population": 8857
+  },
+  {
+   "name": "Ардон",
+   "population": 18915
+  },
+  {
+   "name": "Арзамас",
+   "population": 103538
+  },
+  {
+   "name": "Аркадак",
+   "population": 10990
+  },
+  {
+   "name": "Армавир",
+   "population": 185356
+  },
+  {
+   "name": "Армянск",
+   "population": 19917
+  },
+  {
+   "name": "Арсеньев",
+   "population": 46543
+  },
+  {
+   "name": "Арск",
+   "population": 20421
+  },
+  {
+   "name": "Артём",
+   "population": 108274
+  },
+  {
+   "name": "Артёмовск",
+   "population": 1344
+  },
+  {
+   "name": "Артёмовский",
+   "population": 28546
+  },
+  {
+   "name": "Архангельск",
+   "population": 294914
+  },
+  {
+   "name": "Асбест",
+   "population": 55518
+  },
+  {
+   "name": "Асино",
+   "population": 24913
+  },
+  {
+   "name": "Астрахань",
+   "population": 465990
+  },
+  {
+   "name": "Аткарск",
+   "population": 22709
+  },
+  {
+   "name": "Ахтубинск",
+   "population": 34873
+  },
+  {
+   "name": "Ачинск",
+   "population": 99048
+  },
+  {
+   "name": "Аша",
+   "population": 27442
+  },
+  {
+   "name": "Бабаево",
+   "population": 11646
+  },
+  {
+   "name": "Бабушкин",
+   "population": 4209
+  },
+  {
+   "name": "Бавлы",
+   "population": 21628
+  },
+  {
+   "name": "Багратионовск",
+   "population": 6379
+  },
+  {
+   "name": "Байкальск",
+   "population": 13199
+  },
+  {
+   "name": "Баймак",
+   "population": 17833
+  },
+  {
+   "name": "Бакал",
+   "population": 15947
+  },
+  {
+   "name": "Баксан",
+   "population": 40010
+  },
+  {
+   "name": "Балабаново",
+   "population": 30194
+  },
+  {
+   "name": "Балаково",
+   "population": 180694
+  },
+  {
+   "name": "Балахна",
+   "population": 46915
+  },
+  {
+   "name": "Балашиха",
+   "population": 544303
+  },
+  {
+   "name": "Балашов",
+   "population": 71959
+  },
+  {
+   "name": "Балей",
+   "population": 10286
+  },
+  {
+   "name": "Балтийск",
+   "population": 27318
+  },
+  {
+   "name": "Барабинск",
+   "population": 27648
+  },
+  {
+   "name": "Барнаул",
+   "population": 621598
+  },
+  {
+   "name": "Барыш",
+   "population": 14924
+  },
+  {
+   "name": "Батайск",
+   "population": 124987
+  },
+  {
+   "name": "Бахчисарай",
+   "population": 28609
+  },
+  {
+   "name": "Бежецк",
+   "population": 30800
+  },
+  {
+   "name": "Белая Калитва",
+   "population": 38597
+  },
+  {
+   "name": "Белая Холуница",
+   "population": 9659
+  },
+  {
+   "name": "Белгород",
+   "population": 321761
+  },
+  {
+   "name": "Белинский",
+   "population": 8656
+  },
+  {
+   "name": "Белово",
+   "population": 66862
+  },
+  {
+   "name": "Белогорск",
+   "population": 59901
+  },
+  {
+   "name": "Белозерск",
+   "population": 8183
+  },
+  {
+   "name": "Беломорск",
+   "population": 7407
+  },
+  {
+   "name": "Белоозёрский",
+   "population": 18297
+  },
+  {
+   "name": "Белореченск",
+   "population": 54190
+  },
+  {
+   "name": "Белоусово",
+   "population": 10980
+  },
+  {
+   "name": "Белоярский",
+   "population": 19994
+  },
+  {
+   "name": "Белый",
+   "population": 3125
+  },
+  {
+   "name": "Белёв",
+   "population": 12746
+  },
+  {
+   "name": "Бердск",
+   "population": 101987
+  },
+  {
+   "name": "Березники",
+   "population": 132841
+  },
+  {
+   "name": "Берёзовский",
+   "population": 60752
+  },
+  {
+   "name": "Беслан",
+   "population": 36011
+  },
+  {
+   "name": "Бийск",
+   "population": 179211
+  },
+  {
+   "name": "Бикин",
+   "population": 15482
+  },
+  {
+   "name": "Билибино",
+   "population": 5449
+  },
+  {
+   "name": "Биробиджан",
+   "population": 67212
+  },
+  {
+   "name": "Бирск",
+   "population": 44611
+  },
+  {
+   "name": "Бирюсинск",
+   "population": 8632
+  },
+  {
+   "name": "Бирюч",
+   "population": 7114
+  },
+  {
+   "name": "Благовещенск",
+   "population": 239932
+  },
+  {
+   "name": "Благодарный",
+   "population": 30632
+  },
+  {
+   "name": "Бобров",
+   "population": 20413
+  },
+  {
+   "name": "Богданович",
+   "population": 29574
+  },
+  {
+   "name": "Богородицк",
+   "population": 29560
+  },
+  {
+   "name": "Богородск",
+   "population": 33818
+  },
+  {
+   "name": "Боготол",
+   "population": 18206
+  },
+  {
+   "name": "Богучар",
+   "population": 14165
+  },
+  {
+   "name": "Бодайбо",
+   "population": 8921
+  },
+  {
+   "name": "Бокситогорск",
+   "population": 15480
+  },
+  {
+   "name": "Болгар",
+   "population": 8285
+  },
+  {
+   "name": "Бологое",
+   "population": 19310
+  },
+  {
+   "name": "Болотное",
+   "population": 15644
+  },
+  {
+   "name": "Болохово",
+   "population": 9339
+  },
+  {
+   "name": "Болхов",
+   "population": 9359
+  },
+  {
+   "name": "Большой Камень",
+   "population": 40387
+  },
+  {
+   "name": "Бор",
+   "population": 77024
+  },
+  {
+   "name": "Борзя",
+   "population": 28888
+  },
+  {
+   "name": "Борисоглебск",
+   "population": 57682
+  },
+  {
+   "name": "Боровичи",
+   "population": 46325
+  },
+  {
+   "name": "Боровск",
+   "population": 12686
+  },
+  {
+   "name": "Бородино",
+   "population": 15174
+  },
+  {
+   "name": "Братск",
+   "population": 219365
+  },
+  {
+   "name": "Бронницы",
+   "population": 22643
+  },
+  {
+   "name": "Брянск",
+   "population": 372123
+  },
+  {
+   "name": "Бугульма",
+   "population": 78851
+  },
+  {
+   "name": "Бугуруслан",
+   "population": 41792
+  },
+  {
+   "name": "Будённовск",
+   "population": 56258
+  },
+  {
+   "name": "Буинск",
+   "population": 19968
+  },
+  {
+   "name": "Буй",
+   "population": 20564
+  },
+  {
+   "name": "Буйнакск",
+   "population": 69554
+  },
+  {
+   "name": "Бутурлиновка",
+   "population": 23648
+  },
+  {
+   "name": "Валдай",
+   "population": 14074
+  },
+  {
+   "name": "Валуйки",
+   "population": 33032
+  },
+  {
+   "name": "Велиж",
+   "population": 6005
+  },
+  {
+   "name": "Великий Новгород",
+   "population": 222669
+  },
+  {
+   "name": "Великий Устюг",
+   "population": 28266
+  },
+  {
+   "name": "Вельск",
+   "population": 21406
+  },
+  {
+   "name": "Венёв",
+   "population": 12668
+  },
+  {
+   "name": "Верещагино",
+   "population": 22077
+  },
+  {
+   "name": "Верея",
+   "population": 6413
+  },
+  {
+   "name": "Верхнеуральск",
+   "population": 8861
+  },
+  {
+   "name": "Верхний Тагил",
+   "population": 9779
+  },
+  {
+   "name": "Верхний Уфалей",
+   "population": 22548
+  },
+  {
+   "name": "Верхняя Пышма",
+   "population": 77492
+  },
+  {
+   "name": "Верхняя Салда",
+   "population": 39766
+  },
+  {
+   "name": "Верхняя Тура",
+   "population": 8279
+  },
+  {
+   "name": "Верхотурье",
+   "population": 6455
+  },
+  {
+   "name": "Верхоянск",
+   "population": 745
+  },
+  {
+   "name": "Весьегонск",
+   "population": 6330
+  },
+  {
+   "name": "Ветлуга",
+   "population": 7681
+  },
+  {
+   "name": "Видное",
+   "population": 108683
+  },
+  {
+   "name": "Вилюйск",
+   "population": 10045
+  },
+  {
+   "name": "Вилючинск",
+   "population": 21834
+  },
+  {
+   "name": "Вихоревка",
+   "population": 21719
+  },
+  {
+   "name": "Вичуга",
+   "population": 30694
+  },
+  {
+   "name": "Владикавказ",
+   "population": 293287
+  },
+  {
+   "name": "Владимир",
+   "population": 341579
+  },
+  {
+   "name": "Волгоград",
+   "population": 1012219
+  },
+  {
+   "name": "Волгодонск",
+   "population": 162908
+  },
+  {
+   "name": "Волгореченск",
+   "population": 14355
+  },
+  {
+   "name": "Волжск",
+   "population": 51054
+  },
+  {
+   "name": "Волжский",
+   "population": 313034
+  },
+  {
+   "name": "Вологда",
+   "population": 311476
+  },
+  {
+   "name": "Володарск",
+   "population": 9705
+  },
+  {
+   "name": "Волоколамск",
+   "population": 26389
+  },
+  {
+   "name": "Волосово",
+   "population": 11433
+  },
+  {
+   "name": "Волхов",
+   "population": 37337
+  },
+  {
+   "name": "Волчанск",
+   "population": 8304
+  },
+  {
+   "name": "Вольск",
+   "population": 52825
+  },
+  {
+   "name": "Воркута",
+   "population": 55702
+  },
+  {
+   "name": "Воронеж",
+   "population": 1041722
+  },
+  {
+   "name": "Ворсма",
+   "population": 10162
+  },
+  {
+   "name": "Воскресенск",
+   "population": 95495
+  },
+  {
+   "name": "Всеволожск",
+   "population": 78011
+  },
+  {
+   "name": "Вуктыл",
+   "population": 9001
+  },
+  {
+   "name": "Выборг",
+   "population": 70443
+  },
+  {
+   "name": "Выкса",
+   "population": 43842
+  },
+  {
+   "name": "Высоковск",
+   "population": 13081
+  },
+  {
+   "name": "Высоцк",
+   "population": 1121
+  },
+  {
+   "name": "Вытегра",
+   "population": 10292
+  },
+  {
+   "name": "Вышний Волочёк",
+   "population": 42884
+  },
+  {
+   "name": "Вяземский",
+   "population": 12647
+  },
+  {
+   "name": "Вязники",
+   "population": 33815
+  },
+  {
+   "name": "Вязьма",
+   "population": 49932
+  },
+  {
+   "name": "Вятские Поляны",
+   "population": 29742
+  },
+  {
+   "name": "Гаврилов Посад",
+   "population": 5429
+  },
+  {
+   "name": "Гагарин",
+   "population": 25374
+  },
+  {
+   "name": "Гаджиево",
+   "population": 9088
+  },
+  {
+   "name": "Галич",
+   "population": 12856
+  },
+  {
+   "name": "Гвардейск",
+   "population": 13962
+  },
+  {
+   "name": "Гдов",
+   "population": 3194
+  },
+  {
+   "name": "Геленджик",
+   "population": 80534
+  },
+  {
+   "name": "Георгиевск",
+   "population": 61046
+  },
+  {
+   "name": "Глазов",
+   "population": 85340
+  },
+  {
+   "name": "Голицыно",
+   "population": 23315
+  },
+  {
+   "name": "Горбатов",
+   "population": 1925
+  },
+  {
+   "name": "Горнозаводск",
+   "population": 10890
+  },
+  {
+   "name": "Горняк",
+   "population": 10112
+  },
+  {
+   "name": "Городец",
+   "population": 28660
+  },
+  {
+   "name": "Городище",
+   "population": 7796
+  },
+  {
+   "name": "Городовиковск",
+   "population": 8161
+  },
+  {
+   "name": "Гороховец",
+   "population": 12666
+  },
+  {
+   "name": "Горячий Ключ",
+   "population": 42634
+  },
+  {
+   "name": "Грайворон",
+   "population": 6179
+  },
+  {
+   "name": "Гремячинск",
+   "population": 8100
+  },
+  {
+   "name": "Грозный",
+   "population": 291687
+  },
+  {
+   "name": "Грязи",
+   "population": 43640
+  },
+  {
+   "name": "Грязовец",
+   "population": 14424
+  },
+  {
+   "name": "Губаха",
+   "population": 22368
+  },
+  {
+   "name": "Губкин",
+   "population": 83150
+  },
+  {
+   "name": "Губкинский",
+   "population": 33869
+  },
+  {
+   "name": "Гудермес",
+   "population": 66352
+  },
+  {
+   "name": "Гуково",
+   "population": 58316
+  },
+  {
+   "name": "Гулькевичи",
+   "population": 32911
+  },
+  {
+   "name": "Гурьевск",
+   "population": 27751
+  },
+  {
+   "name": "Гусев",
+   "population": 28820
+  },
+  {
+   "name": "Гусиноозёрск",
+   "population": 24319
+  },
+  {
+   "name": "Дагестанские Огни",
+   "population": 31412
+  },
+  {
+   "name": "Далматово",
+   "population": 11172
+  },
+  {
+   "name": "Дальнегорск",
+   "population": 32310
+  },
+  {
+   "name": "Дальнереченск",
+   "population": 23028
+  },
+  {
+   "name": "Данилов",
+   "population": 13677
+  },
+  {
+   "name": "Данков",
+   "population": 19726
+  },
+  {
+   "name": "Дегтярск",
+   "population": 14831
+  },
+  {
+   "name": "Дедовск",
+   "population": 30740
+  },
+  {
+   "name": "Демидов",
+   "population": 6261
+  },
+  {
+   "name": "Дербент",
+   "population": 127084
+  },
+  {
+   "name": "Десногорск",
+   "population": 24618
+  },
+  {
+   "name": "Дзержинск",
+   "population": 213410
+  },
+  {
+   "name": "Дзержинский",
+   "population": 57918
+  },
+  {
+   "name": "Дивногорск",
+   "population": 27477
+  },
+  {
+   "name": "Дигора",
+   "population": 9994
+  },
+  {
+   "name": "Димитровград",
+   "population": 108073
+  },
+  {
+   "name": "Дмитриев",
+   "population": 6082
+  },
+  {
+   "name": "Дмитров",
+   "population": 63044
+  },
+  {
+   "name": "Дмитровск",
+   "population": 5177
+  },
+  {
+   "name": "Дно",
+   "population": 7850
+  },
+  {
+   "name": "Добрянка",
+   "population": 28545
+  },
+  {
+   "name": "Долгопрудный",
+   "population": 120907
+  },
+  {
+   "name": "Долинск",
+   "population": 11840
+  },
+  {
+   "name": "Домодедово",
+   "population": 158046
+  },
+  {
+   "name": "Донецк",
+   "population": 45334
+  },
+  {
+   "name": "Дорогобуж",
+   "population": 9086
+  },
+  {
+   "name": "Дрезна",
+   "population": 12206
+  },
+  {
+   "name": "Дубна",
+   "population": 75179
+  },
+  {
+   "name": "Дубовка",
+   "population": 14779
+  },
+  {
+   "name": "Дудинка",
+   "population": 19309
+  },
+  {
+   "name": "Духовщина",
+   "population": 3866
+  },
+  {
+   "name": "Дюртюли",
+   "population": 31185
+  },
+  {
+   "name": "Дятьково",
+   "population": 25255
+  },
+  {
+   "name": "Евпатория",
+   "population": 105549
+  },
+  {
+   "name": "Егорьевск",
+   "population": 71024
+  },
+  {
+   "name": "Ейск",
+   "population": 81099
+  },
+  {
+   "name": "Елабуга",
+   "population": 73759
+  },
+  {
+   "name": "Елец",
+   "population": 93761
+  },
+  {
+   "name": "Елизово",
+   "population": 36199
+  },
+  {
+   "name": "Ельня",
+   "population": 7911
+  },
+  {
+   "name": "Еманжелинск",
+   "population": 27290
+  },
+  {
+   "name": "Емва",
+   "population": 10620
+  },
+  {
+   "name": "Енисейск",
+   "population": 17537
+  },
+  {
+   "name": "Ермолино",
+   "population": 11189
+  },
+  {
+   "name": "Ершов",
+   "population": 18095
+  },
+  {
+   "name": "Ессентуки",
+   "population": 123138
+  },
+  {
+   "name": "Ефремов",
+   "population": 34965
+  },
+  {
+   "name": "Железноводск",
+   "population": 21727
+  },
+  {
+   "name": "Железногорск",
+   "population": 94959
+  },
+  {
+   "name": "Жердевка",
+   "population": 13883
+  },
+  {
+   "name": "Жигулёвск",
+   "population": 48070
+  },
+  {
+   "name": "Жиздра",
+   "population": 5433
+  },
+  {
+   "name": "Жирновск",
+   "population": 15003
+  },
+  {
+   "name": "Жуков",
+   "population": 15656
+  },
+  {
+   "name": "Жуковка",
+   "population": 17628
+  },
+  {
+   "name": "Жуковский",
+   "population": 109831
+  },
+  {
+   "name": "Завитинск",
+   "population": 9253
+  },
+  {
+   "name": "Заводоуковск",
+   "population": 27100
+  },
+  {
+   "name": "Заволжск",
+   "population": 8896
+  },
+  {
+   "name": "Заволжье",
+   "population": 35930
+  },
+  {
+   "name": "Задонск",
+   "population": 9887
+  },
+  {
+   "name": "Заинск",
+   "population": 38363
+  },
+  {
+   "name": "Закаменск",
+   "population": 10556
+  },
+  {
+   "name": "Заозёрный",
+   "population": 9954
+  },
+  {
+   "name": "Заозёрск",
+   "population": 7760
+  },
+  {
+   "name": "Западная Двина",
+   "population": 7869
+  },
+  {
+   "name": "Заполярный",
+   "population": 14231
+  },
+  {
+   "name": "Зарайск",
+   "population": 27205
+  },
+  {
+   "name": "Заречный",
+   "population": 58597
+  },
+  {
+   "name": "Заринск",
+   "population": 41272
+  },
+  {
+   "name": "Звенигово",
+   "population": 10822
+  },
+  {
+   "name": "Звенигород",
+   "population": 37915
+  },
+  {
+   "name": "Зверево",
+   "population": 19353
+  },
+  {
+   "name": "Зеленогорск",
+   "population": 52389
+  },
+  {
+   "name": "Зеленоградск",
+   "population": 17085
+  },
+  {
+   "name": "Зеленодольск",
+   "population": 98791
+  },
+  {
+   "name": "Зеленокумск",
+   "population": 32800
+  },
+  {
+   "name": "Зерноград",
+   "population": 24076
+  },
+  {
+   "name": "Зея",
+   "population": 18864
+  },
+  {
+   "name": "Зима",
+   "population": 30640
+  },
+  {
+   "name": "Златоуст",
+   "population": 157244
+  },
+  {
+   "name": "Злынка",
+   "population": 5270
+  },
+  {
+   "name": "Змеиногорск",
+   "population": 9410
+  },
+  {
+   "name": "Знаменск",
+   "population": 23487
+  },
+  {
+   "name": "Зубцов",
+   "population": 6217
+  },
+  {
+   "name": "Зуевка",
+   "population": 9767
+  },
+  {
+   "name": "Ивангород",
+   "population": 9552
+  },
+  {
+   "name": "Иваново",
+   "population": 356735
+  },
+  {
+   "name": "Ивантеевка",
+   "population": 84203
+  },
+  {
+   "name": "Ивдель",
+   "population": 13708
+  },
+  {
+   "name": "Игарка",
+   "population": 3559
+  },
+  {
+   "name": "Ижевск",
+   "population": 616297
+  },
+  {
+   "name": "Избербаш",
+   "population": 55996
+  },
+  {
+   "name": "Изобильный",
+   "population": 38177
+  },
+  {
+   "name": "Иланский",
+   "population": 15945
+  },
+  {
+   "name": "Инза",
+   "population": 16293
+  },
+  {
+   "name": "Инкерман",
+   "population": 13858
+  },
+  {
+   "name": "Иннополис",
+   "population": 3955
+  },
+  {
+   "name": "Инсар",
+   "population": 7920
+  },
+  {
+   "name": "Инта",
+   "population": 19372
+  },
+  {
+   "name": "Ипатово",
+   "population": 25682
+  },
+  {
+   "name": "Ирбит",
+   "population": 36178
+  },
+  {
+   "name": "Исилькуль",
+   "population": 20050
+  },
+  {
+   "name": "Истра",
+   "population": 37474
+  },
+  {
+   "name": "Ишим",
+   "population": 67345
+  },
+  {
+   "name": "Ишимбай",
+   "population": 61978
+  },
+  {
+   "name": "Кадников",
+   "population": 4022
+  },
+  {
+   "name": "Казань",
+   "population": 1329825
+  },
+  {
+   "name": "Калач",
+   "population": 16635
+  },
+  {
+   "name": "Калачинск",
+   "population": 20825
+  },
+  {
+   "name": "Калининград",
+   "population": 488690
+  },
+  {
+   "name": "Калининск",
+   "population": 14949
+  },
+  {
+   "name": "Калтан",
+   "population": 20724
+  },
+  {
+   "name": "Калуга",
+   "population": 324989
+  },
+  {
+   "name": "Калязин",
+   "population": 12621
+  },
+  {
+   "name": "Камбарка",
+   "population": 10080
+  },
+  {
+   "name": "Каменка",
+   "population": 32477
+  },
+  {
+   "name": "Каменногорск",
+   "population": 7009
+  },
+  {
+   "name": "Камешково",
+   "population": 12028
+  },
+  {
+   "name": "Камызяк",
+   "population": 16154
+  },
+  {
+   "name": "Камышин",
+   "population": 104220
+  },
+  {
+   "name": "Камышлов",
+   "population": 26915
+  },
+  {
+   "name": "Канаш",
+   "population": 43035
+  },
+  {
+   "name": "Кандалакша",
+   "population": 28438
+  },
+  {
+   "name": "Канск",
+   "population": 85182
+  },
+  {
+   "name": "Карабаново",
+   "population": 13150
+  },
+  {
+   "name": "Карабаш",
+   "population": 10339
+  },
+  {
+   "name": "Карабулак",
+   "population": 44323
+  },
+  {
+   "name": "Карасук",
+   "population": 24890
+  },
+  {
+   "name": "Карачаевск",
+   "population": 23728
+  },
+  {
+   "name": "Карачев",
+   "population": 16593
+  },
+  {
+   "name": "Каргат",
+   "population": 8316
+  },
+  {
+   "name": "Каргополь",
+   "population": 8737
+  },
+  {
+   "name": "Карпинск",
+   "population": 24918
+  },
+  {
+   "name": "Карталы",
+   "population": 26679
+  },
+  {
+   "name": "Касимов",
+   "population": 27821
+  },
+  {
+   "name": "Касли",
+   "population": 15006
+  },
+  {
+   "name": "Каспийск",
+   "population": 129833
+  },
+  {
+   "name": "Катайск",
+   "population": 11309
+  },
+  {
+   "name": "Качканар",
+   "population": 36252
+  },
+  {
+   "name": "Кашин",
+   "population": 13444
+  },
+  {
+   "name": "Кашира",
+   "population": 49638
+  },
+  {
+   "name": "Кедровый",
+   "population": 1818
+  },
+  {
+   "name": "Кемь",
+   "population": 9712
+  },
+  {
+   "name": "Керчь",
+   "population": 151103
+  },
+  {
+   "name": "Кизел",
+   "population": 14748
+  },
+  {
+   "name": "Кизилюрт",
+   "population": 38335
+  },
+  {
+   "name": "Кизляр",
+   "population": 49999
+  },
+  {
+   "name": "Кимовск",
+   "population": 26475
+  },
+  {
+   "name": "Кимры",
+   "population": 38441
+  },
+  {
+   "name": "Кинель",
+   "population": 36358
+  },
+  {
+   "name": "Кинешма",
+   "population": 74197
+  },
+  {
+   "name": "Киреевск",
+   "population": 25560
+  },
+  {
+   "name": "Киренск",
+   "population": 10998
+  },
+  {
+   "name": "Кириллов",
+   "population": 7069
+  },
+  {
+   "name": "Киров",
+   "population": 475871
+  },
+  {
+   "name": "Кировград",
+   "population": 18234
+  },
+  {
+   "name": "Кировск",
+   "population": 26986
+  },
+  {
+   "name": "Кирс",
+   "population": 8520
+  },
+  {
+   "name": "Кирсанов",
+   "population": 16164
+  },
+  {
+   "name": "Киселёвск",
+   "population": 80115
+  },
+  {
+   "name": "Кисловодск",
+   "population": 125931
+  },
+  {
+   "name": "Климовск",
+   "population": 56239
+  },
+  {
+   "name": "Клин",
+   "population": 89153
+  },
+  {
+   "name": "Клинцы",
+   "population": 61153
+  },
+  {
+   "name": "Княгинино",
+   "population": 6447
+  },
+  {
+   "name": "Ковдор",
+   "population": 15423
+  },
+  {
+   "name": "Ковров",
+   "population": 127831
+  },
+  {
+   "name": "Ковылкино",
+   "population": 19793
+  },
+  {
+   "name": "Когалым",
+   "population": 61441
+  },
+  {
+   "name": "Кодинск",
+   "population": 13324
+  },
+  {
+   "name": "Козельск",
+   "population": 16603
+  },
+  {
+   "name": "Козловка",
+   "population": 7781
+  },
+  {
+   "name": "Козьмодемьянск",
+   "population": 19355
+  },
+  {
+   "name": "Кола",
+   "population": 8933
+  },
+  {
+   "name": "Кологрив",
+   "population": 2299
+  },
+  {
+   "name": "Коломна",
+   "population": 164000
+  },
+  {
+   "name": "Колпашево",
+   "population": 20824
+  },
+  {
+   "name": "Кольчугино",
+   "population": 37324
+  },
+  {
+   "name": "Коммунар",
+   "population": 25706
+  },
+  {
+   "name": "Комсомольск",
+   "population": 8364
+  },
+  {
+   "name": "Конаково",
+   "population": 31169
+  },
+  {
+   "name": "Кондрово",
+   "population": 15734
+  },
+  {
+   "name": "Константиновск",
+   "population": 17207
+  },
+  {
+   "name": "Копейск",
+   "population": 143751
+  },
+  {
+   "name": "Кораблино",
+   "population": 10084
+  },
+  {
+   "name": "Кореновск",
+   "population": 40944
+  },
+  {
+   "name": "Коркино",
+   "population": 35832
+  },
+  {
+   "name": "Королёв",
+   "population": 228095
+  },
+  {
+   "name": "Короча",
+   "population": 5623
+  },
+  {
+   "name": "Корсаков",
+   "population": 32772
+  },
+  {
+   "name": "Коряжма",
+   "population": 34002
+  },
+  {
+   "name": "Костерёво",
+   "population": 7113
+  },
+  {
+   "name": "Кострома",
+   "population": 264952
+  },
+  {
+   "name": "Котельники",
+   "population": 75289
+  },
+  {
+   "name": "Котельниково",
+   "population": 22016
+  },
+  {
+   "name": "Котельнич",
+   "population": 20144
+  },
+  {
+   "name": "Котлас",
+   "population": 55614
+  },
+  {
+   "name": "Котовск",
+   "population": 26694
+  },
+  {
+   "name": "Кохма",
+   "population": 30940
+  },
+  {
+   "name": "Красавино",
+   "population": 5460
+  },
+  {
+   "name": "Красноармейск",
+   "population": 27600
+  },
+  {
+   "name": "Красновишерск",
+   "population": 14164
+  },
+  {
+   "name": "Красногорск",
+   "population": 196987
+  },
+  {
+   "name": "Краснозаводск",
+   "population": 29900
+  },
+  {
+   "name": "Краснознаменск",
+   "population": 44687
+  },
+  {
+   "name": "Краснокаменск",
+   "population": 51358
+  },
+  {
+   "name": "Краснокамск",
+   "population": 47051
+  },
+  {
+   "name": "Краснослободск",
+   "population": 16419
+  },
+  {
+   "name": "Краснотурьинск",
+   "population": 55056
+  },
+  {
+   "name": "Красноуральск",
+   "population": 21159
+  },
+  {
+   "name": "Красноуфимск",
+   "population": 37350
+  },
+  {
+   "name": "Красноярск",
+   "population": 1092851
+  },
+  {
+   "name": "Красный Кут",
+   "population": 14296
+  },
+  {
+   "name": "Красный Сулин",
+   "population": 34694
+  },
+  {
+   "name": "Красный Холм",
+   "population": 7900
+  },
+  {
+   "name": "Кремёнки",
+   "population": 11637
+  },
+  {
+   "name": "Кропоткин",
+   "population": 73854
+  },
+  {
+   "name": "Крымск",
+   "population": 54756
+  },
+  {
+   "name": "Кстово",
+   "population": 61118
+  },
+  {
+   "name": "Кубинка",
+   "population": 26300
+  },
+  {
+   "name": "Кувандык",
+   "population": 26596
+  },
+  {
+   "name": "Кувшиново",
+   "population": 9262
+  },
+  {
+   "name": "Кудрово",
+   "population": 66310
+  },
+  {
+   "name": "Кудымкар",
+   "population": 28630
+  },
+  {
+   "name": "Кузнецк",
+   "population": 75965
+  },
+  {
+   "name": "Куйбышев",
+   "population": 41123
+  },
+  {
+   "name": "Кукмор",
+   "population": 17886
+  },
+  {
+   "name": "Кулебаки",
+   "population": 32184
+  },
+  {
+   "name": "Кумертау",
+   "population": 56748
+  },
+  {
+   "name": "Кунгур",
+   "population": 60946
+  },
+  {
+   "name": "Купино",
+   "population": 15065
+  },
+  {
+   "name": "Курган",
+   "population": 300763
+  },
+  {
+   "name": "Курганинск",
+   "population": 46089
+  },
+  {
+   "name": "Курильск",
+   "population": 2537
+  },
+  {
+   "name": "Курлово",
+   "population": 6309
+  },
+  {
+   "name": "Куровское",
+   "population": 21819
+  },
+  {
+   "name": "Куртамыш",
+   "population": 14629
+  },
+  {
+   "name": "Курчалой",
+   "population": 26581
+  },
+  {
+   "name": "Курчатов",
+   "population": 38543
+  },
+  {
+   "name": "Куса",
+   "population": 16934
+  },
+  {
+   "name": "Кусково",
+   "population": 0
+  },
+  {
+   "name": "Кушва",
+   "population": 26347
+  },
+  {
+   "name": "Кызыл",
+   "population": 131981
+  },
+  {
+   "name": "Кыштым",
+   "population": 35325
+  },
+  {
+   "name": "Кяхта",
+   "population": 17758
+  },
+  {
+   "name": "Лабинск",
+   "population": 55434
+  },
+  {
+   "name": "Лабытнанги",
+   "population": 25969
+  },
+  {
+   "name": "Лагань",
+   "population": 13756
+  },
+  {
+   "name": "Ладушкин",
+   "population": 3634
+  },
+  {
+   "name": "Лаишево",
+   "population": 9076
+  },
+  {
+   "name": "Лакинск",
+   "population": 12861
+  },
+  {
+   "name": "Лахденпохья",
+   "population": 5855
+  },
+  {
+   "name": "Лебедянь",
+   "population": 20049
+  },
+  {
+   "name": "Ленинск",
+   "population": 13391
+  },
+  {
+   "name": "Ленск",
+   "population": 21181
+  },
+  {
+   "name": "Лермонтов",
+   "population": 22887
+  },
+  {
+   "name": "Лесной",
+   "population": 47994
+  },
+  {
+   "name": "Лесозаводск",
+   "population": 34289
+  },
+  {
+   "name": "Лесосибирск",
+   "population": 54451
+  },
+  {
+   "name": "Ливны",
+   "population": 42256
+  },
+  {
+   "name": "Липецк",
+   "population": 483040
+  },
+  {
+   "name": "Липки",
+   "population": 8325
+  },
+  {
+   "name": "Лиски",
+   "population": 51778
+  },
+  {
+   "name": "Лихославль",
+   "population": 11017
+  },
+  {
+   "name": "Лобня",
+   "population": 90231
+  },
+  {
+   "name": "Лодейное Поле",
+   "population": 18444
+  },
+  {
+   "name": "Луга",
+   "population": 36454
+  },
+  {
+   "name": "Луза",
+   "population": 9122
+  },
+  {
+   "name": "Лукоянов",
+   "population": 12652
+  },
+  {
+   "name": "Луховицы",
+   "population": 29808
+  },
+  {
+   "name": "Лысково",
+   "population": 21657
+  },
+  {
+   "name": "Лысьва",
+   "population": 52258
+  },
+  {
+   "name": "Лыткарино",
+   "population": 66930
+  },
+  {
+   "name": "Льгов",
+   "population": 16779
+  },
+  {
+   "name": "Любань",
+   "population": 4321
+  },
+  {
+   "name": "Люберцы",
+   "population": 238534
+  },
+  {
+   "name": "Любим",
+   "population": 5076
+  },
+  {
+   "name": "Людиново",
+   "population": 34621
+  },
+  {
+   "name": "Лянтор",
+   "population": 40977
+  },
+  {
+   "name": "Магадан",
+   "population": 90421
+  },
+  {
+   "name": "Магас",
+   "population": 19199
+  },
+  {
+   "name": "Магнитогорск",
+   "population": 408487
+  },
+  {
+   "name": "Майский",
+   "population": 26210
+  },
+  {
+   "name": "Макаров",
+   "population": 5691
+  },
+  {
+   "name": "Макарьев",
+   "population": 5463
+  },
+  {
+   "name": "Макушино",
+   "population": 6603
+  },
+  {
+   "name": "Малая Вишера",
+   "population": 9996
+  },
+  {
+   "name": "Малгобек",
+   "population": 37999
+  },
+  {
+   "name": "Малмыж",
+   "population": 6931
+  },
+  {
+   "name": "Малоархангельск",
+   "population": 3512
+  },
+  {
+   "name": "Малоярославец",
+   "population": 41511
+  },
+  {
+   "name": "Мамадыш",
+   "population": 15726
+  },
+  {
+   "name": "Мамоново",
+   "population": 8295
+  },
+  {
+   "name": "Мантурово",
+   "population": 13043
+  },
+  {
+   "name": "Мариинск",
+   "population": 39883
+  },
+  {
+   "name": "Маркс",
+   "population": 28749
+  },
+  {
+   "name": "Мглин",
+   "population": 6919
+  },
+  {
+   "name": "Мегион",
+   "population": 52887
+  },
+  {
+   "name": "Медвежьегорск",
+   "population": 11737
+  },
+  {
+   "name": "Медногорск",
+   "population": 23013
+  },
+  {
+   "name": "Медынь",
+   "population": 8042
+  },
+  {
+   "name": "Межгорье",
+   "population": 15697
+  },
+  {
+   "name": "Междуреченск",
+   "population": 94435
+  },
+  {
+   "name": "Мезень",
+   "population": 2797
+  },
+  {
+   "name": "Меленки",
+   "population": 13407
+  },
+  {
+   "name": "Мелеуз",
+   "population": 54847
+  },
+  {
+   "name": "Менделеевск",
+   "population": 22875
+  },
+  {
+   "name": "Мензелинск",
+   "population": 16008
+  },
+  {
+   "name": "Мещовск",
+   "population": 3722
+  },
+  {
+   "name": "Миасс",
+   "population": 146650
+  },
+  {
+   "name": "Микунь",
+   "population": 8288
+  },
+  {
+   "name": "Миллерово",
+   "population": 34246
+  },
+  {
+   "name": "Минеральные Воды",
+   "population": 68761
+  },
+  {
+   "name": "Минусинск",
+   "population": 68034
+  },
+  {
+   "name": "Миньяр",
+   "population": 8364
+  },
+  {
+   "name": "Мирный",
+   "population": 34013
+  },
+  {
+   "name": "Михайлов",
+   "population": 10085
+  },
+  {
+   "name": "Михайловка",
+   "population": 54343
+  },
+  {
+   "name": "Михайловск",
+   "population": 113701
+  },
+  {
+   "name": "Мичуринск",
+   "population": 87914
+  },
+  {
+   "name": "Могоча",
+   "population": 13285
+  },
+  {
+   "name": "Можайск",
+   "population": 33880
+  },
+  {
+   "name": "Можга",
+   "population": 43065
+  },
+  {
+   "name": "Моздок",
+   "population": 35662
+  },
+  {
+   "name": "Мончегорск",
+   "population": 38810
+  },
+  {
+   "name": "Морозовск",
+   "population": 24258
+  },
+  {
+   "name": "Мосальск",
+   "population": 4251
+  },
+  {
+   "name": "Москва",
+   "population": 13274285
+  },
+  {
+   "name": "Московский",
+   "population": 59218
+  },
+  {
+   "name": "Муравленко",
+   "population": 29306
+  },
+  {
+   "name": "Мураши",
+   "population": 5700
+  },
+  {
+   "name": "Мурманск",
+   "population": 264339
+  },
+  {
+   "name": "Муром",
+   "population": 104078
+  },
+  {
+   "name": "Мценск",
+   "population": 35116
+  },
+  {
+   "name": "Мыски",
+   "population": 38720
+  },
+  {
+   "name": "Мытищи",
+   "population": 278693
+  },
+  {
+   "name": "Мышкин",
+   "population": 5647
+  },
+  {
+   "name": "Набережные Челны",
+   "population": 548221
+  },
+  {
+   "name": "Навашино",
+   "population": 14664
+  },
+  {
+   "name": "Наволоки",
+   "population": 8167
+  },
+  {
+   "name": "Надым",
+   "population": 44046
+  },
+  {
+   "name": "Назарово",
+   "population": 43770
+  },
+  {
+   "name": "Назрань",
+   "population": 126292
+  },
+  {
+   "name": "Называевск",
+   "population": 10236
+  },
+  {
+   "name": "Нальчик",
+   "population": 245588
+  },
+  {
+   "name": "Нариманов",
+   "population": 11104
+  },
+  {
+   "name": "Нарткала",
+   "population": 33119
+  },
+  {
+   "name": "Находка",
+   "population": 133859
+  },
+  {
+   "name": "Невель",
+   "population": 13980
+  },
+  {
+   "name": "Невельск",
+   "population": 10457
+  },
+  {
+   "name": "Невьянск",
+   "population": 22079
+  },
+  {
+   "name": "Нелидово",
+   "population": 18603
+  },
+  {
+   "name": "Неман",
+   "population": 9216
+  },
+  {
+   "name": "Нерехта",
+   "population": 19977
+  },
+  {
+   "name": "Нерчинск",
+   "population": 14919
+  },
+  {
+   "name": "Нерюнгри",
+   "population": 53366
+  },
+  {
+   "name": "Нестеров",
+   "population": 3342
+  },
+  {
+   "name": "Нефтегорск",
+   "population": 17717
+  },
+  {
+   "name": "Нефтекамск",
+   "population": 133874
+  },
+  {
+   "name": "Нефтекумск",
+   "population": 23075
+  },
+  {
+   "name": "Нефтеюганск",
+   "population": 126690
+  },
+  {
+   "name": "Нижнекамск",
+   "population": 240842
+  },
+  {
+   "name": "Нижнеудинск",
+   "population": 29995
+  },
+  {
+   "name": "Нижние Серги",
+   "population": 7598
+  },
+  {
+   "name": "Нижний Новгород",
+   "population": 1198245
+  },
+  {
+   "name": "Нижний Тагил",
+   "population": 328157
+  },
+  {
+   "name": "Нижняя Салда",
+   "population": 15929
+  },
+  {
+   "name": "Нижняя Тура",
+   "population": 17510
+  },
+  {
+   "name": "Николаевск",
+   "population": 13460
+  },
+  {
+   "name": "Никольск",
+   "population": 19873
+  },
+  {
+   "name": "Никольское",
+   "population": 21382
+  },
+  {
+   "name": "Новая Ладога",
+   "population": 7147
+  },
+  {
+   "name": "Новая Ляля",
+   "population": 10454
+  },
+  {
+   "name": "Новоалександровск",
+   "population": 25718
+  },
+  {
+   "name": "Новоалтайск",
+   "population": 73292
+  },
+  {
+   "name": "Новоаннинский",
+   "population": 15351
+  },
+  {
+   "name": "Нововоронеж",
+   "population": 30434
+  },
+  {
+   "name": "Новодвинск",
+   "population": 32366
+  },
+  {
+   "name": "Новозыбков",
+   "population": 37852
+  },
+  {
+   "name": "Новокубанск",
+   "population": 33048
+  },
+  {
+   "name": "Новокузнецк",
+   "population": 528747
+  },
+  {
+   "name": "Новокуйбышевск",
+   "population": 95862
+  },
+  {
+   "name": "Новомичуринск",
+   "population": 16752
+  },
+  {
+   "name": "Новомосковск",
+   "population": 115938
+  },
+  {
+   "name": "Новоржев",
+   "population": 3222
+  },
+  {
+   "name": "Новороссийск",
+   "population": 261973
+  },
+  {
+   "name": "Новосибирск",
+   "population": 1637266
+  },
+  {
+   "name": "Новосиль",
+   "population": 2847
+  },
+  {
+   "name": "Новосокольники",
+   "population": 6895
+  },
+  {
+   "name": "Новотроицк",
+   "population": 73994
+  },
+  {
+   "name": "Новоузенск",
+   "population": 14813
+  },
+  {
+   "name": "Новоульяновск",
+   "population": 13673
+  },
+  {
+   "name": "Новоуральск",
+   "population": 76982
+  },
+  {
+   "name": "Новохопёрск",
+   "population": 5488
+  },
+  {
+   "name": "Новочебоксарск",
+   "population": 120361
+  },
+  {
+   "name": "Новочеркасск",
+   "population": 160529
+  },
+  {
+   "name": "Новошахтинск",
+   "population": 100738
+  },
+  {
+   "name": "Новый Оскол",
+   "population": 18359
+  },
+  {
+   "name": "Новый Уренгой",
+   "population": 106890
+  },
+  {
+   "name": "Ногинск",
+   "population": 123020
+  },
+  {
+   "name": "Нолинск",
+   "population": 8262
+  },
+  {
+   "name": "Норильск",
+   "population": 175773
+  },
+  {
+   "name": "Ноябрьск",
+   "population": 102938
+  },
+  {
+   "name": "Нурлат",
+   "population": 33990
+  },
+  {
+   "name": "Нытва",
+   "population": 16463
+  },
+  {
+   "name": "Нюрба",
+   "population": 10055
+  },
+  {
+   "name": "Нягань",
+   "population": 63034
+  },
+  {
+   "name": "Нязепетровск",
+   "population": 9939
+  },
+  {
+   "name": "Няндома",
+   "population": 18146
+  },
+  {
+   "name": "Обоянь",
+   "population": 11671
+  },
+  {
+   "name": "Обь",
+   "population": 30369
+  },
+  {
+   "name": "Одинцово",
+   "population": 189797
+  },
+  {
+   "name": "Ожск",
+   "population": 0
+  },
+  {
+   "name": "Озёрск",
+   "population": 4321
+  },
+  {
+   "name": "Озёры",
+   "population": 28500
+  },
+  {
+   "name": "Октябрьский",
+   "population": 116510
+  },
+  {
+   "name": "Окуловка",
+   "population": 9949
+  },
+  {
+   "name": "Оленегорск",
+   "population": 19533
+  },
+  {
+   "name": "Олонец",
+   "population": 7631
+  },
+  {
+   "name": "Олёкминск",
+   "population": 8457
+  },
+  {
+   "name": "Омск",
+   "population": 1101367
+  },
+  {
+   "name": "Омутнинск",
+   "population": 19629
+  },
+  {
+   "name": "Онега",
+   "population": 16449
+  },
+  {
+   "name": "Опочка",
+   "population": 9928
+  },
+  {
+   "name": "Оренбург",
+   "population": 536515
+  },
+  {
+   "name": "Орлов",
+   "population": 5508
+  },
+  {
+   "name": "Орёл",
+   "population": 289503
+  },
+  {
+   "name": "Оса",
+   "population": 19369
+  },
+  {
+   "name": "Осинники",
+   "population": 38740
+  },
+  {
+   "name": "Осташков",
+   "population": 16674
+  },
+  {
+   "name": "Остров",
+   "population": 20923
+  },
+  {
+   "name": "Островной",
+   "population": 1225
+  },
+  {
+   "name": "Острогожск",
+   "population": 30549
+  },
+  {
+   "name": "Отрадное",
+   "population": 25258
+  },
+  {
+   "name": "Отрадный",
+   "population": 46123
+  },
+  {
+   "name": "Оха",
+   "population": 19888
+  },
+  {
+   "name": "Оханск",
+   "population": 6290
+  },
+  {
+   "name": "Очёр",
+   "population": 14294
+  },
+  {
+   "name": "Павлово",
+   "population": 55307
+  },
+  {
+   "name": "Павловск",
+   "population": 21409
+  },
+  {
+   "name": "Павловский Посад",
+   "population": 65331
+  },
+  {
+   "name": "Палласовка",
+   "population": 14966
+  },
+  {
+   "name": "Партизанск",
+   "population": 32635
+  },
+  {
+   "name": "Певек",
+   "population": 4083
+  },
+  {
+   "name": "Пенза",
+   "population": 487978
+  },
+  {
+   "name": "Первомайск",
+   "population": 13223
+  },
+  {
+   "name": "Первоуральск",
+   "population": 110999
+  },
+  {
+   "name": "Перевоз",
+   "population": 8999
+  },
+  {
+   "name": "Пересвет",
+   "population": 14719
+  },
+  {
+   "name": "Пермь",
+   "population": 1027518
+  },
+  {
+   "name": "Пестово",
+   "population": 14032
+  },
+  {
+   "name": "Петров Вал",
+   "population": 12526
+  },
+  {
+   "name": "Петровск",
+   "population": 26319
+  },
+  {
+   "name": "Петухово",
+   "population": 8149
+  },
+  {
+   "name": "Петушки",
+   "population": 13317
+  },
+  {
+   "name": "Печора",
+   "population": 33766
+  },
+  {
+   "name": "Печоры",
+   "population": 9808
+  },
+  {
+   "name": "Пикалёво",
+   "population": 20161
+  },
+  {
+   "name": "Пионерский",
+   "population": 12928
+  },
+  {
+   "name": "Питкяранта",
+   "population": 8094
+  },
+  {
+   "name": "Плавск",
+   "population": 16893
+  },
+  {
+   "name": "Пласт",
+   "population": 18243
+  },
+  {
+   "name": "Плёс",
+   "population": 1796
+  },
+  {
+   "name": "Поворино",
+   "population": 16224
+  },
+  {
+   "name": "Подольск",
+   "population": 314934
+  },
+  {
+   "name": "Подпорожье",
+   "population": 15512
+  },
+  {
+   "name": "Покачи",
+   "population": 16040
+  },
+  {
+   "name": "Покров",
+   "population": 17747
+  },
+  {
+   "name": "Покровск",
+   "population": 11991
+  },
+  {
+   "name": "Полевской",
+   "population": 53366
+  },
+  {
+   "name": "Полысаево",
+   "population": 25177
+  },
+  {
+   "name": "Полярные Зори",
+   "population": 14078
+  },
+  {
+   "name": "Полярный",
+   "population": 12154
+  },
+  {
+   "name": "Поронайск",
+   "population": 15953
+  },
+  {
+   "name": "Порхов",
+   "population": 7309
+  },
+  {
+   "name": "Похвистнево",
+   "population": 27333
+  },
+  {
+   "name": "Почеп",
+   "population": 14991
+  },
+  {
+   "name": "Починок",
+   "population": 7351
+  },
+  {
+   "name": "Пошехонье",
+   "population": 5639
+  },
+  {
+   "name": "Правдинск",
+   "population": 3934
+  },
+  {
+   "name": "Приволжск",
+   "population": 14332
+  },
+  {
+   "name": "Приморск",
+   "population": 6334
+  },
+  {
+   "name": "Приозерск",
+   "population": 18235
+  },
+  {
+   "name": "Прокопьевск",
+   "population": 170429
+  },
+  {
+   "name": "Пролетарск",
+   "population": 18983
+  },
+  {
+   "name": "Протвино",
+   "population": 37735
+  },
+  {
+   "name": "Прохладный",
+   "population": 60009
+  },
+  {
+   "name": "Псков",
+   "population": 185486
+  },
+  {
+   "name": "Пугачёв",
+   "population": 40127
+  },
+  {
+   "name": "Пудож",
+   "population": 7207
+  },
+  {
+   "name": "Пустошка",
+   "population": 4070
+  },
+  {
+   "name": "Пучеж",
+   "population": 6879
+  },
+  {
+   "name": "Пушкино",
+   "population": 112807
+  },
+  {
+   "name": "Пущино",
+   "population": 21281
+  },
+  {
+   "name": "Пыталово",
+   "population": 5263
+  },
+  {
+   "name": "Радужный",
+   "population": 43577
+  },
+  {
+   "name": "Райчихинск",
+   "population": 15860
+  },
+  {
+   "name": "Раменское",
+   "population": 121908
+  },
+  {
+   "name": "Рассказово",
+   "population": 46264
+  },
+  {
+   "name": "Ревда",
+   "population": 58831
+  },
+  {
+   "name": "Реж",
+   "population": 36094
+  },
+  {
+   "name": "Реутов",
+   "population": 118065
+  },
+  {
+   "name": "Ржев",
+   "population": 52619
+  },
+  {
+   "name": "Родники",
+   "population": 24101
+  },
+  {
+   "name": "Рославль",
+   "population": 43208
+  },
+  {
+   "name": "Россошь",
+   "population": 59568
+  },
+  {
+   "name": "Ростов Великий",
+   "population": 27298
+  },
+  {
+   "name": "Рошаль",
+   "population": 25271
+  },
+  {
+   "name": "Ртищево",
+   "population": 37850
+  },
+  {
+   "name": "Рубцовск",
+   "population": 121698
+  },
+  {
+   "name": "Рудня",
+   "population": 8490
+  },
+  {
+   "name": "Руза",
+   "population": 16400
+  },
+  {
+   "name": "Рузаевка",
+   "population": 41660
+  },
+  {
+   "name": "Рыбинск",
+   "population": 169579
+  },
+  {
+   "name": "Рыбное",
+   "population": 21200
+  },
+  {
+   "name": "Рыльск",
+   "population": 14843
+  },
+  {
+   "name": "Ряжск",
+   "population": 20197
+  },
+  {
+   "name": "Рязань",
+   "population": 519315
+  },
+  {
+   "name": "Саки",
+   "population": 24285
+  },
+  {
+   "name": "Салават",
+   "population": 144970
+  },
+  {
+   "name": "Салаир",
+   "population": 6747
+  },
+  {
+   "name": "Салехард",
+   "population": 51188
+  },
+  {
+   "name": "Сальск",
+   "population": 56605
+  },
+  {
+   "name": "Самара",
+   "population": 1154223
+  },
+  {
+   "name": "Саранск",
+   "population": 309349
+  },
+  {
+   "name": "Сарапул",
+   "population": 88388
+  },
+  {
+   "name": "Саратов",
+   "population": 838042
+  },
+  {
+   "name": "Саров",
+   "population": 93493
+  },
+  {
+   "name": "Сасово",
+   "population": 21220
+  },
+  {
+   "name": "Сатка",
+   "population": 41556
+  },
+  {
+   "name": "Сафоново",
+   "population": 36779
+  },
+  {
+   "name": "Саяногорск",
+   "population": 43726
+  },
+  {
+   "name": "Саянск",
+   "population": 35561
+  },
+  {
+   "name": "Светлогорск",
+   "population": 16771
+  },
+  {
+   "name": "Светлоград",
+   "population": 34406
+  },
+  {
+   "name": "Светлый",
+   "population": 21054
+  },
+  {
+   "name": "Светогорск",
+   "population": 13419
+  },
+  {
+   "name": "Свирск",
+   "population": 15485
+  },
+  {
+   "name": "Свободный",
+   "population": 48789
+  },
+  {
+   "name": "Себеж",
+   "population": 6246
+  },
+  {
+   "name": "Северобайкальск",
+   "population": 24375
+  },
+  {
+   "name": "Северодвинск",
+   "population": 155365
+  },
+  {
+   "name": "Североморск",
+   "population": 43394
+  },
+  {
+   "name": "Североуральск",
+   "population": 23705
+  },
+  {
+   "name": "Северск",
+   "population": 104982
+  },
+  {
+   "name": "Севск",
+   "population": 6732
+  },
+  {
+   "name": "Сегежа",
+   "population": 23074
+  },
+  {
+   "name": "Сельцо",
+   "population": 15906
+  },
+  {
+   "name": "Семикаракорск",
+   "population": 21719
+  },
+  {
+   "name": "Семилуки",
+   "population": 28103
+  },
+  {
+   "name": "Семёнов",
+   "population": 25075
+  },
+  {
+   "name": "Сенгилей",
+   "population": 6407
+  },
+  {
+   "name": "Серафимович",
+   "population": 8633
+  },
+  {
+   "name": "Сергач",
+   "population": 20256
+  },
+  {
+   "name": "Сергиев Посад",
+   "population": 98476
+  },
+  {
+   "name": "Сердобск",
+   "population": 30220
+  },
+  {
+   "name": "Серов",
+   "population": 91550
+  },
+  {
+   "name": "Серпухов",
+   "population": 143618
+  },
+  {
+   "name": "Сертолово",
+   "population": 71614
+  },
+  {
+   "name": "Сибай",
+   "population": 55354
+  },
+  {
+   "name": "Сим",
+   "population": 12569
+  },
+  {
+   "name": "Симферополь",
+   "population": 335009
+  },
+  {
+   "name": "Сковородино",
+   "population": 6328
+  },
+  {
+   "name": "Славгород",
+   "population": 27040
+  },
+  {
+   "name": "Славск",
+   "population": 4013
+  },
+  {
+   "name": "Сланцы",
+   "population": 33514
+  },
+  {
+   "name": "Слободской",
+   "population": 29148
+  },
+  {
+   "name": "Слюдянка",
+   "population": 18058
+  },
+  {
+   "name": "Снежинск",
+   "population": 50711
+  },
+  {
+   "name": "Снежногорск",
+   "population": 10023
+  },
+  {
+   "name": "Собинка",
+   "population": 17444
+  },
+  {
+   "name": "Советск",
+   "population": 14626
+  },
+  {
+   "name": "Советская Гавань",
+   "population": 23232
+  },
+  {
+   "name": "Советский",
+   "population": 31138
+  },
+  {
+   "name": "Сокол",
+   "population": 34298
+  },
+  {
+   "name": "Солигалич",
+   "population": 5534
+  },
+  {
+   "name": "Соликамск",
+   "population": 87745
+  },
+  {
+   "name": "Солнечногорск",
+   "population": 58400
+  },
+  {
+   "name": "Сольвычегодск",
+   "population": 1768
+  },
+  {
+   "name": "Сольцы",
+   "population": 8449
+  },
+  {
+   "name": "Сорочинск",
+   "population": 28478
+  },
+  {
+   "name": "Сорск",
+   "population": 10124
+  },
+  {
+   "name": "Сортавала",
+   "population": 14787
+  },
+  {
+   "name": "Сосенский",
+   "population": 11259
+  },
+  {
+   "name": "Сосновка",
+   "population": 8428
+  },
+  {
+   "name": "Сосновоборск",
+   "population": 40442
+  },
+  {
+   "name": "Сосновый Бор",
+   "population": 63462
+  },
+  {
+   "name": "Сосногорск",
+   "population": 21850
+  },
+  {
+   "name": "Сочи",
+   "population": 445149
+  },
+  {
+   "name": "Спасск",
+   "population": 6936
+  },
+  {
+   "name": "Спутник",
+   "population": 0
+  },
+  {
+   "name": "Среднеколымск",
+   "population": 3118
+  },
+  {
+   "name": "Среднеуральск",
+   "population": 24103
+  },
+  {
+   "name": "Сретенск",
+   "population": 6581
+  },
+  {
+   "name": "Ставрополь",
+   "population": 450680
+  },
+  {
+   "name": "Старая Купавна",
+   "population": 25052
+  },
+  {
+   "name": "Старая Русса",
+   "population": 27487
+  },
+  {
+   "name": "Старица",
+   "population": 6938
+  },
+  {
+   "name": "Стародуб",
+   "population": 17687
+  },
+  {
+   "name": "Старый Оскол",
+   "population": 215937
+  },
+  {
+   "name": "Стерлитамак",
+   "population": 277410
+  },
+  {
+   "name": "Стрежевой",
+   "population": 37165
+  },
+  {
+   "name": "Строитель",
+   "population": 23780
+  },
+  {
+   "name": "Струнино",
+   "population": 11774
+  },
+  {
+   "name": "Ступино",
+   "population": 63151
+  },
+  {
+   "name": "Суворов",
+   "population": 17598
+  },
+  {
+   "name": "Судак",
+   "population": 17834
+  },
+  {
+   "name": "Суджа",
+   "population": 12800
+  },
+  {
+   "name": "Судогда",
+   "population": 10408
+  },
+  {
+   "name": "Суздаль",
+   "population": 9286
+  },
+  {
+   "name": "Сунжа",
+   "population": 62843
+  },
+  {
+   "name": "Суоярви",
+   "population": 6819
+  },
+  {
+   "name": "Сураж",
+   "population": 11176
+  },
+  {
+   "name": "Сургут",
+   "population": 432875
+  },
+  {
+   "name": "Суровикино",
+   "population": 18227
+  },
+  {
+   "name": "Сурск",
+   "population": 6034
+  },
+  {
+   "name": "Сусуман",
+   "population": 4175
+  },
+  {
+   "name": "Сухиничи",
+   "population": 14407
+  },
+  {
+   "name": "Сухой Лог",
+   "population": 32293
+  },
+  {
+   "name": "Сызрань",
+   "population": 159587
+  },
+  {
+   "name": "Сыктывкар",
+   "population": 219094
+  },
+  {
+   "name": "Сысерть",
+   "population": 20245
+  },
+  {
+   "name": "Сычёвка",
+   "population": 7469
+  },
+  {
+   "name": "Сясьстрой",
+   "population": 12283
+  },
+  {
+   "name": "Тавда",
+   "population": 31773
+  },
+  {
+   "name": "Таганрог",
+   "population": 240055
+  },
+  {
+   "name": "Тайга",
+   "population": 21717
+  },
+  {
+   "name": "Тайшет",
+   "population": 34491
+  },
+  {
+   "name": "Талдом",
+   "population": 17317
+  },
+  {
+   "name": "Талица",
+   "population": 14471
+  },
+  {
+   "name": "Тамбов",
+   "population": 254940
+  },
+  {
+   "name": "Тара",
+   "population": 26874
+  },
+  {
+   "name": "Таруса",
+   "population": 9791
+  },
+  {
+   "name": "Татарск",
+   "population": 23711
+  },
+  {
+   "name": "Таштагол",
+   "population": 21209
+  },
+  {
+   "name": "Тверь",
+   "population": 412806
+  },
+  {
+   "name": "Теберда",
+   "population": 8963
+  },
+  {
+   "name": "Тейково",
+   "population": 31305
+  },
+  {
+   "name": "Темников",
+   "population": 6451
+  },
+  {
+   "name": "Темрюк",
+   "population": 40415
+  },
+  {
+   "name": "Терек",
+   "population": 20154
+  },
+  {
+   "name": "Тетюши",
+   "population": 10535
+  },
+  {
+   "name": "Тимашёвск",
+   "population": 51101
+  },
+  {
+   "name": "Тихвин",
+   "population": 53778
+  },
+  {
+   "name": "Тихорецк",
+   "population": 54009
+  },
+  {
+   "name": "Тобольск",
+   "population": 99538
+  },
+  {
+   "name": "Тогучин",
+   "population": 20766
+  },
+  {
+   "name": "Томари",
+   "population": 4299
+  },
+  {
+   "name": "Томмот",
+   "population": 6320
+  },
+  {
+   "name": "Томск",
+   "population": 544566
+  },
+  {
+   "name": "Топки",
+   "population": 26648
+  },
+  {
+   "name": "Торопец",
+   "population": 11441
+  },
+  {
+   "name": "Тосно",
+   "population": 32074
+  },
+  {
+   "name": "Тотьма",
+   "population": 8647
+  },
+  {
+   "name": "Троицк",
+   "population": 69471
+  },
+  {
+   "name": "Трубчевск",
+   "population": 13287
+  },
+  {
+   "name": "Трёхгорный",
+   "population": 32478
+  },
+  {
+   "name": "Туапсе",
+   "population": 60089
+  },
+  {
+   "name": "Туймазы",
+   "population": 67209
+  },
+  {
+   "name": "Тула",
+   "population": 456813
+  },
+  {
+   "name": "Тулун",
+   "population": 37366
+  },
+  {
+   "name": "Туран",
+   "population": 5044
+  },
+  {
+   "name": "Туринск",
+   "population": 16453
+  },
+  {
+   "name": "Тутаев",
+   "population": 39009
+  },
+  {
+   "name": "Тында",
+   "population": 27626
+  },
+  {
+   "name": "Тырныауз",
+   "population": 22334
+  },
+  {
+   "name": "Тюкалинск",
+   "population": 9732
+  },
+  {
+   "name": "Уварово",
+   "population": 23584
+  },
+  {
+   "name": "Углегорск",
+   "population": 7686
+  },
+  {
+   "name": "Углич",
+   "population": 32146
+  },
+  {
+   "name": "Удачный",
+   "population": 13349
+  },
+  {
+   "name": "Удомля",
+   "population": 25950
+  },
+  {
+   "name": "Ужур",
+   "population": 14134
+  },
+  {
+   "name": "Узловая",
+   "population": 47558
+  },
+  {
+   "name": "Ульяновск",
+   "population": 612516
+  },
+  {
+   "name": "Унеча",
+   "population": 24274
+  },
+  {
+   "name": "Урай",
+   "population": 41251
+  },
+  {
+   "name": "Урень",
+   "population": 12450
+  },
+  {
+   "name": "Уржум",
+   "population": 8210
+  },
+  {
+   "name": "Урюпинск",
+   "population": 34783
+  },
+  {
+   "name": "Усинск",
+   "population": 31192
+  },
+  {
+   "name": "Усмань",
+   "population": 19662
+  },
+  {
+   "name": "Усолье",
+   "population": 6489
+  },
+  {
+   "name": "Уссурийск",
+   "population": 178803
+  },
+  {
+   "name": "Устюжна",
+   "population": 7653
+  },
+  {
+   "name": "Уфа",
+   "population": 1144809
+  },
+  {
+   "name": "Ухта",
+   "population": 77164
+  },
+  {
+   "name": "Учалы",
+   "population": 36175
+  },
+  {
+   "name": "Уяр",
+   "population": 12036
+  },
+  {
+   "name": "Фатеж",
+   "population": 4592
+  },
+  {
+   "name": "Фокино",
+   "population": 19427
+  },
+  {
+   "name": "Фролово",
+   "population": 33933
+  },
+  {
+   "name": "Фрязино",
+   "population": 58535
+  },
+  {
+   "name": "Фурманов",
+   "population": 29715
+  },
+  {
+   "name": "Хабаровск",
+   "population": 615600
+  },
+  {
+   "name": "Хадыженск",
+   "population": 21700
+  },
+  {
+   "name": "Харабали",
+   "population": 18514
+  },
+  {
+   "name": "Харовск",
+   "population": 8361
+  },
+  {
+   "name": "Хасавюрт",
+   "population": 155144
+  },
+  {
+   "name": "Хвалынск",
+   "population": 12042
+  },
+  {
+   "name": "Хилок",
+   "population": 10607
+  },
+  {
+   "name": "Химки",
+   "population": 259399
+  },
+  {
+   "name": "Холм",
+   "population": 3214
+  },
+  {
+   "name": "Холмск",
+   "population": 24884
+  },
+  {
+   "name": "Хотьково",
+   "population": 23400
+  },
+  {
+   "name": "Цивильск",
+   "population": 12762
+  },
+  {
+   "name": "Цимлянск",
+   "population": 14731
+  },
+  {
+   "name": "Циолковский",
+   "population": 8037
+  },
+  {
+   "name": "Чадан",
+   "population": 9732
+  },
+  {
+   "name": "Чайковский",
+   "population": 74382
+  },
+  {
+   "name": "Чапаевск",
+   "population": 68211
+  },
+  {
+   "name": "Чаплыгин",
+   "population": 11579
+  },
+  {
+   "name": "Чебаркуль",
+   "population": 44341
+  },
+  {
+   "name": "Чебоксары",
+   "population": 497061
+  },
+  {
+   "name": "Чегем",
+   "population": 21161
+  },
+  {
+   "name": "Чекалин",
+   "population": 875
+  },
+  {
+   "name": "Чердынь",
+   "population": 4502
+  },
+  {
+   "name": "Черемхово",
+   "population": 52879
+  },
+  {
+   "name": "Черепаново",
+   "population": 19900
+  },
+  {
+   "name": "Череповец",
+   "population": 298160
+  },
+  {
+   "name": "Черкесск",
+   "population": 123100
+  },
+  {
+   "name": "Черноголовка",
+   "population": 21925
+  },
+  {
+   "name": "Черногорск",
+   "population": 75672
+  },
+  {
+   "name": "Чернушка",
+   "population": 33092
+  },
+  {
+   "name": "Черняховск",
+   "population": 35066
+  },
+  {
+   "name": "Чехов",
+   "population": 89025
+  },
+  {
+   "name": "Чистополь",
+   "population": 57844
+  },
+  {
+   "name": "Чита",
+   "population": 337063
+  },
+  {
+   "name": "Чкаловск",
+   "population": 11535
+  },
+  {
+   "name": "Чудово",
+   "population": 14302
+  },
+  {
+   "name": "Чулым",
+   "population": 11034
+  },
+  {
+   "name": "Чусовой",
+   "population": 44047
+  },
+  {
+   "name": "Чухлома",
+   "population": 4252
+  },
+  {
+   "name": "Чёрмоз",
+   "population": 2919
+  },
+  {
+   "name": "Шагонар",
+   "population": 11772
+  },
+  {
+   "name": "Шадринск",
+   "population": 67067
+  },
+  {
+   "name": "Шали",
+   "population": 55225
+  },
+  {
+   "name": "Шарыпово",
+   "population": 33961
+  },
+  {
+   "name": "Шарья",
+   "population": 20439
+  },
+  {
+   "name": "Шатура",
+   "population": 36714
+  },
+  {
+   "name": "Шахты",
+   "population": 219111
+  },
+  {
+   "name": "Шахунья",
+   "population": 17626
+  },
+  {
+   "name": "Шацк",
+   "population": 5791
+  },
+  {
+   "name": "Шебекино",
+   "population": 46200
+  },
+  {
+   "name": "Шелехов",
+   "population": 41998
+  },
+  {
+   "name": "Шенкурск",
+   "population": 4524
+  },
+  {
+   "name": "Шилка",
+   "population": 12663
+  },
+  {
+   "name": "Шимановск",
+   "population": 16178
+  },
+  {
+   "name": "Шиханы",
+   "population": 4775
+  },
+  {
+   "name": "Шлиссельбург",
+   "population": 13850
+  },
+  {
+   "name": "Шумиха",
+   "population": 16045
+  },
+  {
+   "name": "Шуя",
+   "population": 52971
+  },
+  {
+   "name": "Щигры",
+   "population": 14386
+  },
+  {
+   "name": "Щучье",
+   "population": 7831
+  },
+  {
+   "name": "Щёкино",
+   "population": 52177
+  },
+  {
+   "name": "Щёлково",
+   "population": 139737
+  },
+  {
+   "name": "Электрогорск",
+   "population": 30044
+  },
+  {
+   "name": "Электросталь",
+   "population": 143048
+  },
+  {
+   "name": "Электроугли",
+   "population": 21263
+  },
+  {
+   "name": "Элиста",
+   "population": 104082
+  },
+  {
+   "name": "Энгельс",
+   "population": 222115
+  },
+  {
+   "name": "Эртиль",
+   "population": 9666
+  },
+  {
+   "name": "Югорск",
+   "population": 38238
+  },
+  {
+   "name": "Южа",
+   "population": 12957
+  },
+  {
+   "name": "Южноуральск",
+   "population": 36964
+  },
+  {
+   "name": "Юрга",
+   "population": 77092
+  },
+  {
+   "name": "Юрюзань",
+   "population": 10130
+  },
+  {
+   "name": "Юхнов",
+   "population": 6470
+  },
+  {
+   "name": "Ялта",
+   "population": 72013
+  },
+  {
+   "name": "Ялуторовск",
+   "population": 38824
+  },
+  {
+   "name": "Янаул",
+   "population": 25908
+  },
+  {
+   "name": "Яранск",
+   "population": 14284
+  },
+  {
+   "name": "Яровое",
+   "population": 16406
+  },
+  {
+   "name": "Ярославль",
+   "population": 563717
+  },
+  {
+   "name": "Ярцево",
+   "population": 39801
+  },
+  {
+   "name": "Ясногорск",
+   "population": 15269
+  },
+  {
+   "name": "Ясный",
+   "population": 15471
+  },
+  {
+   "name": "Яхрома",
+   "population": 13618
+  }
+ ]
+}

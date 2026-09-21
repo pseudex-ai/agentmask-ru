@@ -1,0 +1,179 @@
+{
+ "id": "create_order-clean-009",
+ "version": "0.1",
+ "family": "create_order",
+ "register": "clean",
+ "subcase": null,
+ "messages": [
+  {
+   "role": "system",
+   "content": "Ты — оператор поддержки интернет-магазина «Северный ветер». Отвечай по-русски, коротко. Для действий с заказами и данными клиента вызывай инструменты; передавай в них значения так, как их назвал клиент. Служебная метка диалога: [case:create_order-clean-009]."
+  },
+  {
+   "role": "user",
+   "content": "Здравствуйте! Хочу оформить доставку, как в прошлый раз (заказ № 3999-388). ФИО: Нечаева Весела Матвеевна. Телефон: +7 (943) 024-10-98. Адрес: г. Ачинск, б-р Купца Ефремова, д. 25, кв. 24. Сумма к оплате была 11 990 ₽, оплачу так же."
+  }
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "create_order",
+    "description": "Оформить заказ на доставку. Требует ФИО получателя, контактный телефон и адрес доставки.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО получателя, как назвал клиент"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Контактный телефон получателя"
+      },
+      "address": {
+       "type": "string",
+       "description": "Адрес доставки одной строкой"
+      },
+      "comment": {
+       "type": "string",
+       "description": "Комментарий курьеру"
+      }
+     },
+     "required": [
+      "name",
+      "phone",
+      "address"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "check_status",
+    "description": "Проверить статус заказа по номеру заказа или по телефону клиента.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "order_no": {
+       "type": "string",
+       "description": "Номер заказа, если клиент его назвал"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Телефон клиента, если номер заказа неизвестен"
+      }
+     },
+     "required": []
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "verify_identity",
+    "description": "Подтвердить личность клиента перед выдачей персональной информации.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО клиента"
+      },
+      "dob": {
+       "type": "string",
+       "description": "Дата рождения, как назвал клиент"
+      },
+      "passport": {
+       "type": "string",
+       "description": "Серия и номер паспорта"
+      },
+      "snils": {
+       "type": "string",
+       "description": "СНИЛС"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  }
+ ],
+ "expected_call": {
+  "name": "create_order",
+  "pii_params": [
+   "name",
+   "phone",
+   "address"
+  ],
+  "plain_params": {}
+ },
+ "pii": [
+  {
+   "id": "p1",
+   "type": "NAME",
+   "value": "Нечаева Весела Матвеевна",
+   "canonical": "Нечаева Весела Матвеевна",
+   "turn": 1,
+   "start": 81,
+   "end": 105,
+   "tool_param": "name",
+   "cue": true,
+   "tier": "tail",
+   "identity": "person1"
+  },
+  {
+   "id": "p2",
+   "type": "PHONE",
+   "value": "+7 (943) 024-10-98",
+   "canonical": "+7 (943) 024-10-98",
+   "turn": 1,
+   "start": 116,
+   "end": 134,
+   "tool_param": "phone",
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  },
+  {
+   "id": "p3",
+   "type": "ADDRESS",
+   "value": "г. Ачинск, б-р Купца Ефремова, д. 25, кв. 24",
+   "canonical": "г. Ачинск, б-р Купца Ефремова, д. 25, кв. 24",
+   "turn": 1,
+   "start": 143,
+   "end": 187,
+   "tool_param": "address",
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  }
+ ],
+ "negatives": [
+  {
+   "value": "№ 3999-388",
+   "kind": "order_no",
+   "turn": 1,
+   "start": 63,
+   "end": 73
+  },
+  {
+   "value": "11 990 ₽",
+   "kind": "amount",
+   "turn": 1,
+   "start": 209,
+   "end": 217
+  }
+ ],
+ "hard": null,
+ "created_at": "2026-09-20",
+ "source": {
+  "generator": "agentmask_ru.build",
+  "version": "0.1",
+  "seed": 20260920
+ },
+ "canary": "AGENTMASK-RU-CANARY-7c1e4b2a-6f3d-4a8e-9b1c-2d5e8f0a3b7c",
+ "license": "CC-BY-4.0"
+}

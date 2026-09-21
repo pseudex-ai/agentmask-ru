@@ -1,0 +1,56 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "AgentMask-RU run",
+ "description": "Прогон одной системы: манифест, строки и ПООБЪЕКТНЫЕ наблюдения. Наблюдения обязательны: число, которое нельзя пересчитать из артефактов, — заявление, а не измерение.",
+ "type": "object",
+ "required": [
+  "manifest",
+  "lines",
+  "run",
+  "observations"
+ ],
+ "properties": {
+  "manifest": {
+   "type": "object",
+   "required": [
+    "system",
+    "adapter_config",
+    "policy",
+    "seed",
+    "corpus_digest",
+    "corpus_cases",
+    "benchmark_version",
+    "run_at",
+    "python",
+    "submitted_by",
+    "notes"
+   ]
+  },
+  "lines": {
+   "type": "object",
+   "additionalProperties": {
+    "type": "object",
+    "required": [
+     "hits",
+     "total",
+     "rate",
+     "ci95",
+     "certifies"
+    ]
+   }
+  },
+  "run": {
+   "type": "object",
+   "required": [
+    "cases",
+    "errors",
+    "calls_made",
+    "calls_parsed"
+   ]
+  },
+  "observations": {
+   "type": "array",
+   "minItems": 1
+  }
+ }
+}

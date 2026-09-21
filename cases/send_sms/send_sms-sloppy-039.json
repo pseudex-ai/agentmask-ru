@@ -1,0 +1,172 @@
+{
+ "id": "send_sms-sloppy-039",
+ "version": "0.1",
+ "family": "send_sms",
+ "register": "sloppy",
+ "subcase": null,
+ "messages": [
+  {
+   "role": "system",
+   "content": "Ты — оператор поддержки интернет-магазина «Северный ветер». Отвечай по-русски, коротко. Для действий с заказами и данными клиента вызывай инструменты; передавай в них значения так, как их назвал клиент. Служебная метка диалога: [case:send_sms-sloppy-039]."
+  },
+  {
+   "role": "user",
+   "content": "кинь смс на 8973 2919319 что заказ 2195-270 оплачен 2 390 руб город салават буду с 10 до 14, вая"
+  }
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "send_sms",
+    "description": "Отправить SMS клиенту.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "phone": {
+       "type": "string",
+       "description": "Телефон получателя"
+      },
+      "text": {
+       "type": "string",
+       "description": "Текст сообщения"
+      }
+     },
+     "required": [
+      "phone",
+      "text"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "update_contact",
+    "description": "Обновить контактные данные клиента в CRM.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО клиента"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Новый телефон"
+      },
+      "email": {
+       "type": "string",
+       "description": "Новая электронная почта"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "create_order",
+    "description": "Оформить заказ на доставку. Требует ФИО получателя, контактный телефон и адрес доставки.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО получателя, как назвал клиент"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Контактный телефон получателя"
+      },
+      "address": {
+       "type": "string",
+       "description": "Адрес доставки одной строкой"
+      },
+      "comment": {
+       "type": "string",
+       "description": "Комментарий курьеру"
+      }
+     },
+     "required": [
+      "name",
+      "phone",
+      "address"
+     ]
+    }
+   }
+  }
+ ],
+ "expected_call": {
+  "name": "send_sms",
+  "pii_params": [
+   "phone"
+  ],
+  "plain_params": {}
+ },
+ "pii": [
+  {
+   "id": "p1",
+   "type": "PHONE",
+   "value": "8973 2919319",
+   "canonical": "8973 2919319",
+   "turn": 1,
+   "start": 12,
+   "end": 24,
+   "tool_param": "phone",
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  },
+  {
+   "id": "p2",
+   "type": "NAME",
+   "value": "вая",
+   "canonical": "вая",
+   "turn": 1,
+   "start": 93,
+   "end": 96,
+   "tool_param": null,
+   "cue": false,
+   "tier": "diminutive",
+   "identity": "person1"
+  }
+ ],
+ "negatives": [
+  {
+   "value": "2195-270",
+   "kind": "order_no",
+   "turn": 1,
+   "start": 35,
+   "end": 43
+  },
+  {
+   "value": "2 390 руб",
+   "kind": "amount",
+   "turn": 1,
+   "start": 52,
+   "end": 61
+  },
+  {
+   "value": "салават",
+   "kind": "city",
+   "turn": 1,
+   "start": 68,
+   "end": 75
+  }
+ ],
+ "hard": {
+  "why": "имя строчными буквами: заглавной, за которую цепляется шаблон, нет; в цифрах стоит буква-двойник или потерян разделитель: формы, которую ищет шаблон, больше нет"
+ },
+ "created_at": "2026-09-20",
+ "source": {
+  "generator": "agentmask_ru.build",
+  "version": "0.1",
+  "seed": 20260920
+ },
+ "canary": "AGENTMASK-RU-CANARY-7c1e4b2a-6f3d-4a8e-9b1c-2d5e8f0a3b7c",
+ "license": "CC-BY-4.0"
+}

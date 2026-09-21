@@ -1,0 +1,179 @@
+{
+ "id": "create_order-clean-001",
+ "version": "0.1",
+ "family": "create_order",
+ "register": "clean",
+ "subcase": null,
+ "messages": [
+  {
+   "role": "system",
+   "content": "Ты — оператор поддержки интернет-магазина «Северный ветер». Отвечай по-русски, коротко. Для действий с заказами и данными клиента вызывай инструменты; передавай в них значения так, как их назвал клиент. Служебная метка диалога: [case:create_order-clean-001]."
+  },
+  {
+   "role": "user",
+   "content": "Добрый день. Оформите, пожалуйста, новый заказ на Янин Ратмир Андреевич, тел. +7 947 307-35-59, доставка по адресу г. Ноябрьск, ул. Салова, д. 83, кв. 157. Предыдущий заказ № 9501-903 на 10 390 ₽ доставили вовремя, спасибо."
+  }
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "create_order",
+    "description": "Оформить заказ на доставку. Требует ФИО получателя, контактный телефон и адрес доставки.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО получателя, как назвал клиент"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Контактный телефон получателя"
+      },
+      "address": {
+       "type": "string",
+       "description": "Адрес доставки одной строкой"
+      },
+      "comment": {
+       "type": "string",
+       "description": "Комментарий курьеру"
+      }
+     },
+     "required": [
+      "name",
+      "phone",
+      "address"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "check_status",
+    "description": "Проверить статус заказа по номеру заказа или по телефону клиента.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "order_no": {
+       "type": "string",
+       "description": "Номер заказа, если клиент его назвал"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Телефон клиента, если номер заказа неизвестен"
+      }
+     },
+     "required": []
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "verify_identity",
+    "description": "Подтвердить личность клиента перед выдачей персональной информации.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО клиента"
+      },
+      "dob": {
+       "type": "string",
+       "description": "Дата рождения, как назвал клиент"
+      },
+      "passport": {
+       "type": "string",
+       "description": "Серия и номер паспорта"
+      },
+      "snils": {
+       "type": "string",
+       "description": "СНИЛС"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  }
+ ],
+ "expected_call": {
+  "name": "create_order",
+  "pii_params": [
+   "name",
+   "phone",
+   "address"
+  ],
+  "plain_params": {}
+ },
+ "pii": [
+  {
+   "id": "p1",
+   "type": "NAME",
+   "value": "Янин Ратмир Андреевич",
+   "canonical": "Янин Ратмир Андреевич",
+   "turn": 1,
+   "start": 50,
+   "end": 71,
+   "tool_param": "name",
+   "cue": false,
+   "tier": "common",
+   "identity": "person1"
+  },
+  {
+   "id": "p2",
+   "type": "PHONE",
+   "value": "+7 947 307-35-59",
+   "canonical": "+7 947 307-35-59",
+   "turn": 1,
+   "start": 78,
+   "end": 94,
+   "tool_param": "phone",
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  },
+  {
+   "id": "p3",
+   "type": "ADDRESS",
+   "value": "г. Ноябрьск, ул. Салова, д. 83, кв. 157",
+   "canonical": "г. Ноябрьск, ул. Салова, д. 83, кв. 157",
+   "turn": 1,
+   "start": 115,
+   "end": 154,
+   "tool_param": "address",
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  }
+ ],
+ "negatives": [
+  {
+   "value": "№ 9501-903",
+   "kind": "order_no",
+   "turn": 1,
+   "start": 173,
+   "end": 183
+  },
+  {
+   "value": "10 390 ₽",
+   "kind": "amount",
+   "turn": 1,
+   "start": 187,
+   "end": 195
+  }
+ ],
+ "hard": null,
+ "created_at": "2026-09-20",
+ "source": {
+  "generator": "agentmask_ru.build",
+  "version": "0.1",
+  "seed": 20260920
+ },
+ "canary": "AGENTMASK-RU-CANARY-7c1e4b2a-6f3d-4a8e-9b1c-2d5e8f0a3b7c",
+ "license": "CC-BY-4.0"
+}

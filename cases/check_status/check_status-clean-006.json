@@ -1,0 +1,147 @@
+{
+ "id": "check_status-clean-006",
+ "version": "0.1",
+ "family": "check_status",
+ "register": "clean",
+ "subcase": null,
+ "messages": [
+  {
+   "role": "system",
+   "content": "Ты — оператор поддержки интернет-магазина «Северный ветер». Отвечай по-русски, коротко. Для действий с заказами и данными клиента вызывай инструменты; передавай в них значения так, как их назвал клиент. Служебная метка диалога: [case:check_status-clean-006]."
+  },
+  {
+   "role": "user",
+   "content": "Подскажите, где мой заказ? Оформлял 04.05.2026, трек-номер 54416133308692. Телефон при заказе: 8 (944) 378-58-21."
+  }
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "check_status",
+    "description": "Проверить статус заказа по номеру заказа или по телефону клиента.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "order_no": {
+       "type": "string",
+       "description": "Номер заказа, если клиент его назвал"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Телефон клиента, если номер заказа неизвестен"
+      }
+     },
+     "required": []
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "verify_identity",
+    "description": "Подтвердить личность клиента перед выдачей персональной информации.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО клиента"
+      },
+      "dob": {
+       "type": "string",
+       "description": "Дата рождения, как назвал клиент"
+      },
+      "passport": {
+       "type": "string",
+       "description": "Серия и номер паспорта"
+      },
+      "snils": {
+       "type": "string",
+       "description": "СНИЛС"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "refund",
+    "description": "Оформить возврат средств на карту клиента.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "order_no": {
+       "type": "string",
+       "description": "Номер заказа"
+      },
+      "card": {
+       "type": "string",
+       "description": "Номер карты для возврата"
+      },
+      "amount": {
+       "type": "string",
+       "description": "Сумма возврата в рублях"
+      }
+     },
+     "required": [
+      "order_no",
+      "card",
+      "amount"
+     ]
+    }
+   }
+  }
+ ],
+ "expected_call": {
+  "name": "check_status",
+  "pii_params": [
+   "phone"
+  ],
+  "plain_params": {}
+ },
+ "pii": [
+  {
+   "id": "p1",
+   "type": "PHONE",
+   "value": "8 (944) 378-58-21",
+   "canonical": "8 (944) 378-58-21",
+   "turn": 1,
+   "start": 95,
+   "end": 112,
+   "tool_param": "phone",
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  }
+ ],
+ "negatives": [
+  {
+   "value": "54416133308692",
+   "kind": "track_no",
+   "turn": 1,
+   "start": 59,
+   "end": 73
+  },
+  {
+   "value": "04.05.2026",
+   "kind": "doc_date",
+   "turn": 1,
+   "start": 36,
+   "end": 46
+  }
+ ],
+ "hard": null,
+ "created_at": "2026-09-20",
+ "source": {
+  "generator": "agentmask_ru.build",
+  "version": "0.1",
+  "seed": 20260920
+ },
+ "canary": "AGENTMASK-RU-CANARY-7c1e4b2a-6f3d-4a8e-9b1c-2d5e8f0a3b7c",
+ "license": "CC-BY-4.0"
+}

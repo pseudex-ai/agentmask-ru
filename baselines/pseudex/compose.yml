@@ -1,0 +1,40 @@
+# Pseudex в режиме обратного прокси, направленный на фальшивого провайдера
+# бенчмарка. Провайдер поднимается ХАРНЕССОМ на хосте:
+#
+#   export PSEUDEX_LICENSE_KEY=ps_live_…      # пробный ключ с pseudex.ru
+#   agentmask run --adapter openai_proxy --name pseudex \
+#       --base-url http://127.0.0.1:8000/v1 --upstream-bind 0.0.0.0:8099
+#
+# Тот же путь, что для Cloud.ru и LiteLLM: движок видит только ответы
+# эндпоинта, бенчмарк — только то, что вернулось. Порт 8099 фиксирован,
+# потому что адрес upstream попадает в контейнер до старта харнесса.
+services:
+  pseudex:
+    image: ${PSEUDEX_IMAGE:-cr.yandex/crpkutn2el1knpsbrs2d/pseudex:0.3.14}
+    # Опубликован только под amd64; на ARM-машине (Apple Silicon) Docker
+    # запустит его под эмуляцией. Это медленнее, но на 272 случаях не важно.
+    platform: linux/amd64
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - pseudex-data:/data
+    environment:
+      PSEUDEX_ROLE: proxy
+      # Бенчмарк шлёт запросы по одному; по умолчанию движок поднимает
+      # воркер на каждое ядро (~350 МБ каждый), и под эмуляцией на ноутбуке
+      # десять воркеров упираются в память Docker — контейнер гибнет со
+      # статусом 137 до первого запроса. Двух хватает с запасом.
+      PSEUDEX_WORKERS: "2"
+      # Ключ провайдера прокси не хранит: заголовок Authorization уходит
+      # upstream как есть, поэтому харнессу хватает любого значения.
+      PSEUDEX_UPSTREAM: "http://host.docker.internal:8099/v1"
+      PSEUDEX_LICENSE_KEY: ${PSEUDEX_LICENSE_KEY:?получите пробный ключ на https://pseudex.ru}
+      # Локальный интерфейс оператора бенчмарку не нужен.
+      PSEUDEX_UI: "0"
+    extra_hosts:
+      # На macOS и Windows это имя есть всегда; на Linux строка ниже его
+      # создаёт. Если не сработало — network_mode: host и адрес 127.0.0.1.
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  pseudex-data:

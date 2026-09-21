@@ -1,0 +1,31 @@
+name: gates
+
+# Корпус проверяется на двух системах: читатели статьи приходят и с Windows,
+# а расхождение в переводе строк или в кодировке ломает офсеты — то есть
+# ровно то, на чём стоит вся разметка.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gates:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Ядро — стандартная библиотека плюс валидатор схемы; [dev] добавляет
+      # pytest и генератор корпуса. Presidio и LLM Guard НЕ ставятся: их
+      # модели весят под гигабайт, и ни один гейт их не требует.
+      - run: pip install -e ".[dev]"
+      - run: python -m pytest -q
+      - run: python -m agentmask_ru.gates --cases cases --root .
+      # Корпус обязан пересобираться из своего зерна байт в байт: набор,
+      # который никто не может воспроизвести, никто не может и проверить.
+      - run: python -m agentmask_ru.build --seed 20260920 --out cases --check

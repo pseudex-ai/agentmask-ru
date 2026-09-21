@@ -1,0 +1,195 @@
+{
+ "id": "second_mention-clean-002",
+ "version": "0.1",
+ "family": "second_mention",
+ "register": "clean",
+ "subcase": "lower",
+ "messages": [
+  {
+   "role": "system",
+   "content": "Ты — оператор поддержки интернет-магазина «Северный ветер». Отвечай по-русски, коротко. Для действий с заказами и данными клиента вызывай инструменты; передавай в них значения так, как их назвал клиент. Служебная метка диалога: [case:second_mention-clean-002]."
+  },
+  {
+   "role": "user",
+   "content": "Здравствуйте, меня зовут Пётр Антипин, телефон +7 973 757-07-47. Хочу изменить контакты по заказу № 2842-347."
+  },
+  {
+   "role": "assistant",
+   "content": "Принято."
+  },
+  {
+   "role": "user",
+   "content": "Да, оформляйте на пётр антипин, номер +7 973 757-07-47. Сумма заказа 5 090 ₽ не меняется."
+  }
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "update_contact",
+    "description": "Обновить контактные данные клиента в CRM.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО клиента"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Новый телефон"
+      },
+      "email": {
+       "type": "string",
+       "description": "Новая электронная почта"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "create_order",
+    "description": "Оформить заказ на доставку. Требует ФИО получателя, контактный телефон и адрес доставки.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО получателя, как назвал клиент"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Контактный телефон получателя"
+      },
+      "address": {
+       "type": "string",
+       "description": "Адрес доставки одной строкой"
+      },
+      "comment": {
+       "type": "string",
+       "description": "Комментарий курьеру"
+      }
+     },
+     "required": [
+      "name",
+      "phone",
+      "address"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "check_status",
+    "description": "Проверить статус заказа по номеру заказа или по телефону клиента.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "order_no": {
+       "type": "string",
+       "description": "Номер заказа, если клиент его назвал"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Телефон клиента, если номер заказа неизвестен"
+      }
+     },
+     "required": []
+    }
+   }
+  }
+ ],
+ "expected_call": {
+  "name": "update_contact",
+  "pii_params": [
+   "name",
+   "phone"
+  ],
+  "plain_params": {}
+ },
+ "pii": [
+  {
+   "id": "p1",
+   "type": "NAME",
+   "value": "Пётр Антипин",
+   "canonical": "Пётр Антипин",
+   "turn": 1,
+   "start": 25,
+   "end": 37,
+   "tool_param": null,
+   "cue": true,
+   "tier": "common",
+   "identity": "person1"
+  },
+  {
+   "id": "p2",
+   "type": "PHONE",
+   "value": "+7 973 757-07-47",
+   "canonical": "+7 973 757-07-47",
+   "turn": 1,
+   "start": 47,
+   "end": 63,
+   "tool_param": null,
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  },
+  {
+   "id": "p3",
+   "type": "NAME",
+   "value": "пётр антипин",
+   "canonical": "пётр антипин",
+   "turn": 3,
+   "start": 18,
+   "end": 30,
+   "tool_param": "name",
+   "cue": false,
+   "tier": "common",
+   "identity": "person1"
+  },
+  {
+   "id": "p4",
+   "type": "PHONE",
+   "value": "+7 973 757-07-47",
+   "canonical": "+7 973 757-07-47",
+   "turn": 3,
+   "start": 38,
+   "end": 54,
+   "tool_param": "phone",
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  }
+ ],
+ "negatives": [
+  {
+   "value": "№ 2842-347",
+   "kind": "order_no",
+   "turn": 1,
+   "start": 98,
+   "end": 108
+  },
+  {
+   "value": "5 090 ₽",
+   "kind": "amount",
+   "turn": 3,
+   "start": 69,
+   "end": 76
+  }
+ ],
+ "hard": null,
+ "created_at": "2026-09-20",
+ "source": {
+  "generator": "agentmask_ru.build",
+  "version": "0.1",
+  "seed": 20260920
+ },
+ "canary": "AGENTMASK-RU-CANARY-7c1e4b2a-6f3d-4a8e-9b1c-2d5e8f0a3b7c",
+ "license": "CC-BY-4.0"
+}

@@ -1,0 +1,142 @@
+{
+ "id": "check_status-sloppy-030",
+ "version": "0.1",
+ "family": "check_status",
+ "register": "sloppy",
+ "subcase": null,
+ "messages": [
+  {
+   "role": "system",
+   "content": "Ты — оператор поддержки интернет-магазина «Северный ветер». Отвечай по-русски, коротко. Для действий с заказами и данными клиента вызывай инструменты; передавай в них значения так, как их назвал клиент. Служебная метка диалога: [case:check_status-sloppy-030]."
+  },
+  {
+   "role": "user",
+   "content": "статус заказа 7312-970 от 13.10.2026 трек 87236924077247 не работает"
+  }
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "check_status",
+    "description": "Проверить статус заказа по номеру заказа или по телефону клиента.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "order_no": {
+       "type": "string",
+       "description": "Номер заказа, если клиент его назвал"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Телефон клиента, если номер заказа неизвестен"
+      }
+     },
+     "required": []
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "verify_identity",
+    "description": "Подтвердить личность клиента перед выдачей персональной информации.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО клиента"
+      },
+      "dob": {
+       "type": "string",
+       "description": "Дата рождения, как назвал клиент"
+      },
+      "passport": {
+       "type": "string",
+       "description": "Серия и номер паспорта"
+      },
+      "snils": {
+       "type": "string",
+       "description": "СНИЛС"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "refund",
+    "description": "Оформить возврат средств на карту клиента.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "order_no": {
+       "type": "string",
+       "description": "Номер заказа"
+      },
+      "card": {
+       "type": "string",
+       "description": "Номер карты для возврата"
+      },
+      "amount": {
+       "type": "string",
+       "description": "Сумма возврата в рублях"
+      }
+     },
+     "required": [
+      "order_no",
+      "card",
+      "amount"
+     ]
+    }
+   }
+  }
+ ],
+ "expected_call": {
+  "name": "check_status",
+  "pii_params": [],
+  "plain_params": {
+   "order_no": "7312-970"
+  }
+ },
+ "pii": [],
+ "negatives": [
+  {
+   "value": "7312-970",
+   "kind": "order_no",
+   "turn": 1,
+   "start": 14,
+   "end": 22
+  },
+  {
+   "value": "87236924077247",
+   "kind": "track_no",
+   "turn": 1,
+   "start": 42,
+   "end": 56
+  },
+  {
+   "value": "13.10.2026",
+   "kind": "doc_date",
+   "turn": 1,
+   "start": 26,
+   "end": 36
+  }
+ ],
+ "hard": {
+  "why": "в сообщении нет персональных данных: случай измеряет только перемаскирование"
+ },
+ "created_at": "2026-09-20",
+ "source": {
+  "generator": "agentmask_ru.build",
+  "version": "0.1",
+  "seed": 20260920
+ },
+ "canary": "AGENTMASK-RU-CANARY-7c1e4b2a-6f3d-4a8e-9b1c-2d5e8f0a3b7c",
+ "license": "CC-BY-4.0"
+}

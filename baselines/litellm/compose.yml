@@ -1,0 +1,33 @@
+# LiteLLM + Presidio, направленные на фальшивого провайдера бенчмарка:
+#
+#   agentmask run --adapter openai_proxy --name litellm \
+#       --base-url http://127.0.0.1:4000/v1 --upstream-bind 0.0.0.0:8099 \
+#       --api-key sk-agentmask
+#
+# Порт 8099 фиксирован: адрес upstream прописан в config.yaml до старта харнесса.
+services:
+  presidio-analyzer:
+    image: mcr.microsoft.com/presidio-analyzer:latest
+    platform: linux/amd64
+    ports: ["127.0.0.1:5002:3000"]
+
+  presidio-anonymizer:
+    image: mcr.microsoft.com/presidio-anonymizer:latest
+    platform: linux/amd64
+    ports: ["127.0.0.1:5001:3000"]
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    platform: linux/amd64
+    depends_on: [presidio-analyzer, presidio-anonymizer]
+    ports: ["127.0.0.1:4000:4000"]
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    environment:
+      LITELLM_MASTER_KEY: "sk-agentmask"
+      PRESIDIO_ANALYZER_API_BASE: "http://presidio-analyzer:3000"
+      PRESIDIO_ANONYMIZER_API_BASE: "http://presidio-anonymizer:3000"
+      OPENAI_API_KEY: "unused"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
