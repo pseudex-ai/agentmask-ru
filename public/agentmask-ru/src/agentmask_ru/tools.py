@@ -89,6 +89,21 @@ TOOLS: dict[str, dict[str, object]] = {
         },
         ("name",),
     ),
+    "create_contact": _tool(
+        "create_contact",
+        "Завести карточку клиента в CRM. ФИО и адрес — по полям, как в паспорте и в адресной строке.",
+        {
+            "last_name": ("string", "Фамилия"),
+            "first_name": ("string", "Имя"),
+            "middle_name": ("string", "Отчество, если названо"),
+            "city": ("string", "Город, если назван"),
+            "street": ("string", "Улица — как назвал клиент"),
+            "house": ("string", "Дом"),
+            "flat": ("string", "Квартира"),
+            "phone": ("string", "Контактный телефон"),
+        },
+        ("last_name", "first_name", "street", "house", "phone"),
+    ),
 }
 
 PII_PARAMS: dict[str, dict[str, str]] = {
@@ -98,6 +113,9 @@ PII_PARAMS: dict[str, dict[str, str]] = {
     "refund": {"card": "CARD"},
     "send_sms": {"phone": "PHONE"},
     "update_contact": {"name": "NAME", "phone": "PHONE", "email": "EMAIL"},
+    "create_contact": {"last_name": "NAME", "first_name": "NAME", "middle_name": "NAME",
+                       "city": "ADDRESS", "street": "ADDRESS", "house": "ADDRESS", "flat": "ADDRESS",
+                       "phone": "PHONE"},
 }
 
 PLAIN_PARAMS: dict[str, tuple[str, ...]] = {
@@ -107,13 +125,21 @@ PLAIN_PARAMS: dict[str, tuple[str, ...]] = {
     "refund": ("order_no", "amount"),
     "send_sms": ("text",),
     "update_contact": (),
+    "create_contact": (),
 }
 
 
 def tools_for(primary: str) -> tuple[dict[str, object], ...]:
     """The primary tool plus two distractors, in a fixed order so the corpus
     is deterministic and a masker cannot be helped by position."""
-    names = list(TOOLS)
-    i = names.index(primary)
-    chosen = [primary, names[(i + 1) % len(names)], names[(i + 2) % len(names)]]
+    # THE SIX ORIGINAL TOOLS KEEP THEIR RING. `create_contact` came later, and
+    # inserting it into the ring would have changed the distractors of the
+    # cases already measured under one corpus digest (the digest reads ids and
+    # user text, not tools). It takes its two distractors explicitly.
+    ring = [name for name in TOOLS if name != "create_contact"]
+    if primary == "create_contact":
+        chosen = ["create_contact", "create_order", "check_status"]
+    else:
+        i = ring.index(primary)
+        chosen = [primary, ring[(i + 1) % len(ring)], ring[(i + 2) % len(ring)]]
     return tuple(TOOLS[n] for n in chosen)

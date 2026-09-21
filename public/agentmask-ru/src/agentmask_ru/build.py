@@ -35,13 +35,16 @@ PLAN: dict[str, dict[str, int]] = {
     "send_sms":        {"clean": 12, "chat": 16, "sloppy": 12},
     "check_status":    {"clean": 12, "chat": 14, "sloppy": 12},
     "refund":          {"clean": 10, "chat": 12, "sloppy": 10},
+    # Added in v0.2: the tool wants the PARTS. Appended, so the streams of the
+    # six families above are untouched and their cases stay byte-identical.
+    "decompose":       {"clean": 14, "chat": 16, "sloppy": 12},
 }
 
 # The tier mix for families that carry a name. «common» is what every
 # gazetteer holds; the other three are where a benchmark can still fail.
 TIER_MIX: tuple[tuple[str, int], ...] = (("common", 40), ("tail", 30), ("diminutive", 15), ("foreign", 15))
 
-NAMED_FAMILIES: frozenset[str] = frozenset({"create_order", "verify_identity", "second_mention", "send_sms"})
+NAMED_FAMILIES: frozenset[str] = frozenset({"create_order", "verify_identity", "second_mention", "send_sms", "decompose"})
 
 
 def tier_sequence(total: int) -> list[str]:

@@ -39,6 +39,7 @@ REGISTERS: tuple[str, ...] = (
 
 FAMILIES: tuple[str, ...] = (
     "create_order", "check_status", "verify_identity", "refund", "send_sms", "second_mention",
+    "decompose",
 )
 
 # How the second mention of a person is written in `second_mention` cases.
@@ -81,6 +82,12 @@ class PiiItem:
     cue: bool           # a cue word stands right before the value («телефон:»)
     tier: str | None    # NAME_TIERS for names, None otherwise
     identity: str       # persons sharing a value across turns share this
+    # THE VALUE IN PARTS, where the tool wants them apart: `last_name` /
+    # `first_name` / `middle_name` for a name, `street` / `house` / `flat`
+    # for an address — each part as the customer WROTE it, cut by the same
+    # rule the scripted agent cuts the substitute with (`parts.py`). A
+    # placeholder cannot be cut: that is the whole point of the family.
+    parts: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -134,7 +141,9 @@ def to_dict(case: Case) -> dict[str, object]:
     raw = asdict(case)
     raw["messages"] = list(case.messages)
     raw["tools"] = list(case.tools)
-    raw["pii"] = [asdict(p) for p in case.pii]
+    # `parts` is written only where it exists, so the six families that
+    # predate it stay byte-identical on disk.
+    raw["pii"] = [{k: v for k, v in asdict(p).items() if not (k == "parts" and v is None)} for p in case.pii]
     raw["negatives"] = [asdict(n) for n in case.negatives]
     raw["expected_call"] = {
         "name": case.expected_call.name,
@@ -234,6 +243,9 @@ def validate(case: Case) -> list[str]:
     if case.expected_call.name not in tool_names:
         problems.append(f"expected tool {case.expected_call.name} is not offered")
     fed = {p.tool_param for p in case.pii if p.tool_param}
+    for p in case.pii:
+        if p.parts:
+            fed |= set(p.parts)
     for param in case.expected_call.pii_params:
         if param not in fed:
             problems.append(f"pii_param {param} is fed by no item")

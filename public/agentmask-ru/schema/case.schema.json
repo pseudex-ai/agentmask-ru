@@ -36,7 +36,8 @@
     "verify_identity",
     "refund",
     "send_sms",
-    "second_mention"
+    "second_mention",
+    "decompose"
    ]
   },
   "register": {
@@ -197,6 +198,19 @@
      },
      "identity": {
       "type": "string"
+     },
+     "parts": {
+      "oneOf": [
+       {
+        "type": "object",
+        "additionalProperties": {
+         "type": "string"
+        }
+       },
+       {
+        "type": "null"
+       }
+      ]
      }
     }
    }

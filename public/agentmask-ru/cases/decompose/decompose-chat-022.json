@@ -1,0 +1,211 @@
+{
+ "id": "decompose-chat-022",
+ "version": "0.1",
+ "family": "decompose",
+ "register": "chat",
+ "subcase": null,
+ "messages": [
+  {
+   "role": "system",
+   "content": "Ты — оператор поддержки интернет-магазина «Северный ветер». Отвечай по-русски, коротко. Для действий с заказами и данными клиента вызывай инструменты; передавай в них значения так, как их назвал клиент. Служебная метка диалога: [case:decompose-chat-022]."
+  },
+  {
+   "role": "user",
+   "content": "добавьте в базу лениза берёзина 89432615680 живу аверкина 9 кв 205 заказ 3046-664 на 3 190 руб"
+  }
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "create_contact",
+    "description": "Завести карточку клиента в CRM. ФИО и адрес — по полям, как в паспорте и в адресной строке.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "last_name": {
+       "type": "string",
+       "description": "Фамилия"
+      },
+      "first_name": {
+       "type": "string",
+       "description": "Имя"
+      },
+      "middle_name": {
+       "type": "string",
+       "description": "Отчество, если названо"
+      },
+      "city": {
+       "type": "string",
+       "description": "Город, если назван"
+      },
+      "street": {
+       "type": "string",
+       "description": "Улица — как назвал клиент"
+      },
+      "house": {
+       "type": "string",
+       "description": "Дом"
+      },
+      "flat": {
+       "type": "string",
+       "description": "Квартира"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Контактный телефон"
+      }
+     },
+     "required": [
+      "last_name",
+      "first_name",
+      "street",
+      "house",
+      "phone"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "create_order",
+    "description": "Оформить заказ на доставку. Требует ФИО получателя, контактный телефон и адрес доставки.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО получателя, как назвал клиент"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Контактный телефон получателя"
+      },
+      "address": {
+       "type": "string",
+       "description": "Адрес доставки одной строкой"
+      },
+      "comment": {
+       "type": "string",
+       "description": "Комментарий курьеру"
+      }
+     },
+     "required": [
+      "name",
+      "phone",
+      "address"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "check_status",
+    "description": "Проверить статус заказа по номеру заказа или по телефону клиента.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "order_no": {
+       "type": "string",
+       "description": "Номер заказа, если клиент его назвал"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Телефон клиента, если номер заказа неизвестен"
+      }
+     },
+     "required": []
+    }
+   }
+  }
+ ],
+ "expected_call": {
+  "name": "create_contact",
+  "pii_params": [
+   "first_name",
+   "last_name",
+   "phone",
+   "street",
+   "house",
+   "flat"
+  ],
+  "plain_params": {}
+ },
+ "pii": [
+  {
+   "id": "p1",
+   "type": "NAME",
+   "value": "лениза берёзина",
+   "canonical": "лениза берёзина",
+   "turn": 1,
+   "start": 16,
+   "end": 31,
+   "tool_param": "last_name",
+   "cue": false,
+   "tier": "tail",
+   "identity": "person1",
+   "parts": {
+    "first_name": "лениза",
+    "last_name": "берёзина"
+   }
+  },
+  {
+   "id": "p2",
+   "type": "PHONE",
+   "value": "89432615680",
+   "canonical": "89432615680",
+   "turn": 1,
+   "start": 32,
+   "end": 43,
+   "tool_param": "phone",
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  },
+  {
+   "id": "p3",
+   "type": "ADDRESS",
+   "value": "аверкина 9 кв 205",
+   "canonical": "аверкина 9 кв 205",
+   "turn": 1,
+   "start": 49,
+   "end": 66,
+   "tool_param": "street",
+   "cue": true,
+   "tier": null,
+   "identity": "person1",
+   "parts": {
+    "street": "аверкина",
+    "house": "9",
+    "flat": "205"
+   }
+  }
+ ],
+ "negatives": [
+  {
+   "value": "3046-664",
+   "kind": "order_no",
+   "turn": 1,
+   "start": 73,
+   "end": 81
+  },
+  {
+   "value": "3 190 руб",
+   "kind": "amount",
+   "turn": 1,
+   "start": 85,
+   "end": 94
+  }
+ ],
+ "hard": null,
+ "created_at": "2026-09-20",
+ "source": {
+  "generator": "agentmask_ru.build",
+  "version": "0.1",
+  "seed": 20260920
+ },
+ "canary": "AGENTMASK-RU-CANARY-7c1e4b2a-6f3d-4a8e-9b1c-2d5e8f0a3b7c",
+ "license": "CC-BY-4.0"
+}

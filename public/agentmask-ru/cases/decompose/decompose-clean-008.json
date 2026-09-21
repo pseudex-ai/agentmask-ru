@@ -1,0 +1,213 @@
+{
+ "id": "decompose-clean-008",
+ "version": "0.1",
+ "family": "decompose",
+ "register": "clean",
+ "subcase": null,
+ "messages": [
+  {
+   "role": "system",
+   "content": "Ты — оператор поддержки интернет-магазина «Северный ветер». Отвечай по-русски, коротко. Для действий с заказами и данными клиента вызывай инструменты; передавай в них значения так, как их назвал клиент. Служебная метка диалога: [case:decompose-clean-008]."
+  },
+  {
+   "role": "user",
+   "content": "Добрый день. Новый клиент — Гумилёв Холмуроди Харитонович, тел. +7 944 658-33-65, адрес ул. Затонская, 33, кв. 27. Заказ № 8134-313 на 8 090 ₽, занесите в базу."
+  }
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "create_contact",
+    "description": "Завести карточку клиента в CRM. ФИО и адрес — по полям, как в паспорте и в адресной строке.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "last_name": {
+       "type": "string",
+       "description": "Фамилия"
+      },
+      "first_name": {
+       "type": "string",
+       "description": "Имя"
+      },
+      "middle_name": {
+       "type": "string",
+       "description": "Отчество, если названо"
+      },
+      "city": {
+       "type": "string",
+       "description": "Город, если назван"
+      },
+      "street": {
+       "type": "string",
+       "description": "Улица — как назвал клиент"
+      },
+      "house": {
+       "type": "string",
+       "description": "Дом"
+      },
+      "flat": {
+       "type": "string",
+       "description": "Квартира"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Контактный телефон"
+      }
+     },
+     "required": [
+      "last_name",
+      "first_name",
+      "street",
+      "house",
+      "phone"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "create_order",
+    "description": "Оформить заказ на доставку. Требует ФИО получателя, контактный телефон и адрес доставки.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО получателя, как назвал клиент"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Контактный телефон получателя"
+      },
+      "address": {
+       "type": "string",
+       "description": "Адрес доставки одной строкой"
+      },
+      "comment": {
+       "type": "string",
+       "description": "Комментарий курьеру"
+      }
+     },
+     "required": [
+      "name",
+      "phone",
+      "address"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "check_status",
+    "description": "Проверить статус заказа по номеру заказа или по телефону клиента.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "order_no": {
+       "type": "string",
+       "description": "Номер заказа, если клиент его назвал"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Телефон клиента, если номер заказа неизвестен"
+      }
+     },
+     "required": []
+    }
+   }
+  }
+ ],
+ "expected_call": {
+  "name": "create_contact",
+  "pii_params": [
+   "last_name",
+   "first_name",
+   "middle_name",
+   "phone",
+   "street",
+   "house",
+   "flat"
+  ],
+  "plain_params": {}
+ },
+ "pii": [
+  {
+   "id": "p1",
+   "type": "NAME",
+   "value": "Гумилёв Холмуроди Харитонович",
+   "canonical": "Гумилёв Холмуроди Харитонович",
+   "turn": 1,
+   "start": 28,
+   "end": 57,
+   "tool_param": "last_name",
+   "cue": false,
+   "tier": "tail",
+   "identity": "person1",
+   "parts": {
+    "last_name": "Гумилёв",
+    "first_name": "Холмуроди",
+    "middle_name": "Харитонович"
+   }
+  },
+  {
+   "id": "p2",
+   "type": "PHONE",
+   "value": "+7 944 658-33-65",
+   "canonical": "+7 944 658-33-65",
+   "turn": 1,
+   "start": 64,
+   "end": 80,
+   "tool_param": "phone",
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  },
+  {
+   "id": "p3",
+   "type": "ADDRESS",
+   "value": "ул. Затонская, 33, кв. 27",
+   "canonical": "ул. Затонская, 33, кв. 27",
+   "turn": 1,
+   "start": 88,
+   "end": 113,
+   "tool_param": "street",
+   "cue": true,
+   "tier": null,
+   "identity": "person1",
+   "parts": {
+    "street": "ул. Затонская",
+    "house": "33",
+    "flat": "27"
+   }
+  }
+ ],
+ "negatives": [
+  {
+   "value": "№ 8134-313",
+   "kind": "order_no",
+   "turn": 1,
+   "start": 121,
+   "end": 131
+  },
+  {
+   "value": "8 090 ₽",
+   "kind": "amount",
+   "turn": 1,
+   "start": 135,
+   "end": 142
+  }
+ ],
+ "hard": null,
+ "created_at": "2026-09-20",
+ "source": {
+  "generator": "agentmask_ru.build",
+  "version": "0.1",
+  "seed": 20260920
+ },
+ "canary": "AGENTMASK-RU-CANARY-7c1e4b2a-6f3d-4a8e-9b1c-2d5e8f0a3b7c",
+ "license": "CC-BY-4.0"
+}

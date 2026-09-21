@@ -18,7 +18,9 @@ from dataclasses import asdict, dataclass, field
 
 from agentmask_ru.adapters.base import Masker, MaskedView, TurnResult
 from agentmask_ru.align import digits_of, is_number_like, norm, project_many, rewrite_ratio
+from agentmask_ru.parts import cut_address, cut_name
 from agentmask_ru.person import looks_like_person, same_person
+from agentmask_ru.rewrite import rewrite
 from agentmask_ru.policy import decide
 from agentmask_ru.schema import Case
 
@@ -316,15 +318,40 @@ def run_case(masker: Masker, case: Case, policy: str, seed: int) -> CaseObservat
 
     for item in case.pii:
         substitute, altered, covered, shared = seen_by_item.get(item.id, ("", False, False, False))
+        # WHAT THE TOOL IS OWED depends on the agent: a copier owes the value
+        # as written; a rewriter owes it in ITS notation — what that agent
+        # would have passed without any gateway (`rewrite` on the original).
+        owed = rewrite(item.type, item.canonical) if policy == "rewriter" else item.canonical
         received = delivered.get(item.tool_param) if item.tool_param else None
         round_trip = None
         normalised = False
+        if item.parts and item.tool_param and observation.call_made and not shared:
+            # THE TOOL WANTS THE PARTS: every part the case cut from the gold
+            # must arrive in its own field. The gold is cut by the same rule
+            # the agent cut the substitute with (`parts.py`), from the owed
+            # whole; a placeholder cannot be cut, so its parts arrive as one
+            # string in the first field and empties elsewhere.
+            owed_parts = (cut_name(owed, tuple(item.parts)) if item.type == "NAME"
+                          else cut_address(owed, "city" in item.parts))
+            got_parts = {part: delivered.get(part) for part in item.parts}
+            received = json.dumps(got_parts, ensure_ascii=False)
+            present = all(got_parts[part] is not None for part in item.parts)
+            round_trip = present and all(
+                _same_value(str(got_parts[part]), owed_parts.get(part, "")) if owed_parts.get(part, "")
+                else not str(got_parts[part] or "").strip()
+                for part in item.parts)
+            if not round_trip and present:
+                normalised = all(
+                    (_same_value(str(got_parts[part]), owed_parts.get(part, ""))
+                     or _normalised(str(got_parts[part]), owed_parts.get(part, "")))
+                    if owed_parts.get(part, "") else not str(got_parts[part] or "").strip()
+                    for part in item.parts)
         # A substitute the alignment could not attribute to this span alone
         # is not evidence about the round trip in either direction.
-        if item.tool_param and observation.call_made and not shared:
-            round_trip = received is not None and _same_value(received, item.canonical)
+        elif item.tool_param and observation.call_made and not shared:
+            round_trip = received is not None and _same_value(received, owed)
             if round_trip is False and received is not None:
-                normalised = _normalised(received, item.canonical)
+                normalised = _normalised(received, owed)
         observation.items.append(ItemObservation(
             case_id=case.id, item_id=item.id, type=item.type, register=case.register, family=case.family,
             tier=item.tier, cue=item.cue, turn=item.turn, tool_param=item.tool_param, substitute=substitute,

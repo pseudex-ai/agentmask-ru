@@ -1,0 +1,213 @@
+{
+ "id": "decompose-clean-001",
+ "version": "0.1",
+ "family": "decompose",
+ "register": "clean",
+ "subcase": null,
+ "messages": [
+  {
+   "role": "system",
+   "content": "Ты — оператор поддержки интернет-магазина «Северный ветер». Отвечай по-русски, коротко. Для действий с заказами и данными клиента вызывай инструменты; передавай в них значения так, как их назвал клиент. Служебная метка диалога: [case:decompose-clean-001]."
+  },
+  {
+   "role": "user",
+   "content": "Здравствуйте! Заведите, пожалуйста, карточку клиента по заказу № 1574-546. ФИО: Гаяз Шестинский. Телефон: +7 975 416-55-59. Адрес: г. Всеволожск, ул. Чигиринская, д. 34, кв. 180. Сумма заказа 450 ₽."
+  }
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "create_contact",
+    "description": "Завести карточку клиента в CRM. ФИО и адрес — по полям, как в паспорте и в адресной строке.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "last_name": {
+       "type": "string",
+       "description": "Фамилия"
+      },
+      "first_name": {
+       "type": "string",
+       "description": "Имя"
+      },
+      "middle_name": {
+       "type": "string",
+       "description": "Отчество, если названо"
+      },
+      "city": {
+       "type": "string",
+       "description": "Город, если назван"
+      },
+      "street": {
+       "type": "string",
+       "description": "Улица — как назвал клиент"
+      },
+      "house": {
+       "type": "string",
+       "description": "Дом"
+      },
+      "flat": {
+       "type": "string",
+       "description": "Квартира"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Контактный телефон"
+      }
+     },
+     "required": [
+      "last_name",
+      "first_name",
+      "street",
+      "house",
+      "phone"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "create_order",
+    "description": "Оформить заказ на доставку. Требует ФИО получателя, контактный телефон и адрес доставки.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "ФИО получателя, как назвал клиент"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Контактный телефон получателя"
+      },
+      "address": {
+       "type": "string",
+       "description": "Адрес доставки одной строкой"
+      },
+      "comment": {
+       "type": "string",
+       "description": "Комментарий курьеру"
+      }
+     },
+     "required": [
+      "name",
+      "phone",
+      "address"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "check_status",
+    "description": "Проверить статус заказа по номеру заказа или по телефону клиента.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "order_no": {
+       "type": "string",
+       "description": "Номер заказа, если клиент его назвал"
+      },
+      "phone": {
+       "type": "string",
+       "description": "Телефон клиента, если номер заказа неизвестен"
+      }
+     },
+     "required": []
+    }
+   }
+  }
+ ],
+ "expected_call": {
+  "name": "create_contact",
+  "pii_params": [
+   "first_name",
+   "last_name",
+   "phone",
+   "city",
+   "street",
+   "house",
+   "flat"
+  ],
+  "plain_params": {}
+ },
+ "pii": [
+  {
+   "id": "p1",
+   "type": "NAME",
+   "value": "Гаяз Шестинский",
+   "canonical": "Гаяз Шестинский",
+   "turn": 1,
+   "start": 80,
+   "end": 95,
+   "tool_param": "last_name",
+   "cue": true,
+   "tier": "common",
+   "identity": "person1",
+   "parts": {
+    "first_name": "Гаяз",
+    "last_name": "Шестинский"
+   }
+  },
+  {
+   "id": "p2",
+   "type": "PHONE",
+   "value": "+7 975 416-55-59",
+   "canonical": "+7 975 416-55-59",
+   "turn": 1,
+   "start": 106,
+   "end": 122,
+   "tool_param": "phone",
+   "cue": true,
+   "tier": null,
+   "identity": "person1"
+  },
+  {
+   "id": "p3",
+   "type": "ADDRESS",
+   "value": "г. Всеволожск, ул. Чигиринская, д. 34, кв. 180",
+   "canonical": "г. Всеволожск, ул. Чигиринская, д. 34, кв. 180",
+   "turn": 1,
+   "start": 131,
+   "end": 177,
+   "tool_param": "street",
+   "cue": true,
+   "tier": null,
+   "identity": "person1",
+   "parts": {
+    "city": "Всеволожск",
+    "street": "ул. Чигиринская",
+    "house": "34",
+    "flat": "180"
+   }
+  }
+ ],
+ "negatives": [
+  {
+   "value": "№ 1574-546",
+   "kind": "order_no",
+   "turn": 1,
+   "start": 63,
+   "end": 73
+  },
+  {
+   "value": "450 ₽",
+   "kind": "amount",
+   "turn": 1,
+   "start": 192,
+   "end": 197
+  }
+ ],
+ "hard": null,
+ "created_at": "2026-09-20",
+ "source": {
+  "generator": "agentmask_ru.build",
+  "version": "0.1",
+  "seed": 20260920
+ },
+ "canary": "AGENTMASK-RU-CANARY-7c1e4b2a-6f3d-4a8e-9b1c-2d5e8f0a3b7c",
+ "license": "CC-BY-4.0"
+}

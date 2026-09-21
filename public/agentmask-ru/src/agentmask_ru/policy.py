@@ -7,11 +7,22 @@ into the tool call. A real model paraphrases and occasionally drops a digit;
 forgiving that would hide a round-trip break, so the scripted model forgives
 nothing.
 
-`reformat` is the one model habit the benchmark does model: a phone gets its
-separators stripped and its prefix swapped on the way into an argument. Every
-model does this, and it is the cheapest version of the question «can the
-gateway restore a substitute the model REWROTE» — the full version (case,
-transliteration, initials) is out of scope for v0.1.
+`reformat` is the cheapest model habit: a phone gets its separators
+stripped and its prefix swapped on the way into an argument.
+
+`rewriter` (v0.2) is a model that writes every value IN ITS OWN FORMAT, the
+way a real model fills a JSON argument: a name in Title case and the
+nominative («есина рушана» → «Есина Рушана»), a phone as «+7XXXXXXXXXX», a
+date as ISO, a card as bare digits, a СНИЛС as «XXX-XXX-XXX XX», a passport as
+«XX XX XXXXXX», an e-mail in lower case, an address with its markers spelled
+out («кв 51» → «кв. 51»). It rewrites what it was SHOWN — a placeholder has
+nothing to rewrite and passes through, which is exactly the point: the two
+policies together say whether a gateway is good only when the agent mirrors,
+or also when the agent has habits of its own. Every rewrite is deterministic
+and reversible in principle: the same value, another notation.
+
+Both policies CUT a value into parts when the tool wants them apart
+(`decompose`): the rule is `parts.py`, the same the corpus cut the gold with.
 
 WHY THE POLICY LOOKS AT THE MASKED TEXT AND NOT AT THE CASE. It is handed
 the substitutes the alignment found, never the gold values. A policy that
@@ -25,10 +36,12 @@ from dataclasses import dataclass
 
 from agentmask_ru.adapters.base import MaskedView, ModelReply, ToolCall
 from agentmask_ru.align import project
+from agentmask_ru.parts import cut_address, cut_name
 from agentmask_ru.registers import reformat_phone
+from agentmask_ru.rewrite import rewrite
 from agentmask_ru.schema import Case
 
-POLICIES: tuple[str, ...] = ("copier", "reformat")
+POLICIES: tuple[str, ...] = ("copier", "reformat", "rewriter")
 
 
 @dataclass(frozen=True)
@@ -73,13 +86,36 @@ def decide(case: Case, masked: MaskedView, upto_turn: int, policy: str, rng: ran
 
     arguments: dict[str, str] = {}
     by_param = {s.tool_param: s for s in seen if s.tool_param}
+    items_by_id = {item.id: item for item in case.pii}
+    cut_done: set[str] = set()
     for param in case.expected_call.pii_params:
+        # A PART of a value: the agent cuts what it saw for the whole, once
+        # per whole, into every part field the tool has for it.
+        owner = next((candidate for candidate in seen
+                      if (items_by_id.get(candidate.item_id) or None) is not None
+                      and items_by_id[candidate.item_id].parts and param in items_by_id[candidate.item_id].parts), None)
+        if owner is not None:
+            if owner.item_id in cut_done:
+                continue
+            item = items_by_id[owner.item_id]
+            shown = owner.text
+            if policy == "rewriter":
+                shown = rewrite(item.type, shown)
+            pieces = (cut_name(shown, tuple(item.parts)) if item.type == "NAME"
+                      else cut_address(shown, "city" in item.parts))
+            for part, piece in pieces.items():
+                if part in case.expected_call.pii_params:
+                    arguments[part] = piece
+            cut_done.add(owner.item_id)
+            continue
         observed = by_param.get(param)
         if observed is None:
             continue
         value = observed.text
         if policy == "reformat" and param == "phone":
             value = reformat_phone(value, rng)
+        elif policy == "rewriter":
+            value = rewrite(items_by_id[observed.item_id].type, value)
         arguments[param] = value
     for param, value in case.expected_call.plain_params.items():
         # Negatives travel through the model too: an order number the

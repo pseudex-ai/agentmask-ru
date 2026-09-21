@@ -104,7 +104,7 @@ def observations_of(payload: dict[str, object]) -> list[CaseObservation]:
     return out
 
 
-def rejudge(observations: list[CaseObservation], cases: list[Case]) -> None:
+def rejudge(observations: list[CaseObservation], cases: list[Case], policy: str = "copier") -> None:
     """Re-apply the CURRENT judge to observations recorded earlier, in place.
 
     The judge is part of the benchmark, not of the run: when it learns
@@ -114,19 +114,41 @@ def rejudge(observations: list[CaseObservation], cases: list[Case]) -> None:
     the verdicts a judge makes are recomputed (`normalised`, `consistency`);
     what the masker did and what the tool received are the record and stay.
     """
-    from agentmask_ru.harness import _normalised, _same_value  # noqa: PLC0415
-    from agentmask_ru.person import looks_like_person, same_person  # noqa: PLC0415
+    import json  # noqa: PLC0415
 
-    canonical = {(case.id, item.id): item.canonical for case in cases for item in case.pii}
+    from agentmask_ru.harness import _normalised, _same_value  # noqa: PLC0415
+    from agentmask_ru.parts import cut_address, cut_name  # noqa: PLC0415
+    from agentmask_ru.person import looks_like_person, same_person  # noqa: PLC0415
+    from agentmask_ru.rewrite import rewrite  # noqa: PLC0415
+
+    gold = {(case.id, item.id): item for case in cases for item in case.pii}
     for observation in observations:
         for item in observation.items:
             if item.round_trip is None or item.delivered is None:
                 continue
             key = (item.case_id, item.item_id)
-            if key not in canonical:
+            if key not in gold:
                 continue
-            item.round_trip = _same_value(item.delivered, canonical[key])
-            item.normalised = (not item.round_trip) and _normalised(item.delivered, canonical[key])
+            owed = rewrite(gold[key].type, gold[key].canonical) if policy == "rewriter" else gold[key].canonical
+            parts = gold[key].parts
+            if parts:
+                try:
+                    got_parts = json.loads(item.delivered)
+                except (ValueError, TypeError):
+                    continue
+                owed_parts = (cut_name(owed, tuple(parts)) if gold[key].type == "NAME"
+                              else cut_address(owed, "city" in parts))
+                present = all(got_parts.get(part) is not None for part in parts)
+                item.round_trip = present and all(
+                    _same_value(str(got_parts[part]), owed_parts.get(part, "")) if owed_parts.get(part, "")
+                    else not str(got_parts[part] or "").strip() for part in parts)
+                item.normalised = (not item.round_trip) and present and all(
+                    (_same_value(str(got_parts[part]), owed_parts.get(part, ""))
+                     or _normalised(str(got_parts[part]), owed_parts.get(part, "")))
+                    if owed_parts.get(part, "") else not str(got_parts[part] or "").strip() for part in parts)
+                continue
+            item.round_trip = _same_value(item.delivered, owed)
+            item.normalised = (not item.round_trip) and _normalised(item.delivered, owed)
         if observation.family != "second_mention":
             continue
         by_identity: dict[str, list[object]] = {}
@@ -150,10 +172,10 @@ def rescored(payload: dict[str, object], cases: list[Case]) -> dict[str, object]
     from agentmask_ru.score import score  # noqa: PLC0415
 
     observations = observations_of(payload)
-    rejudge(observations, cases)
-    scores = score(observations)
     meta = payload["manifest"]
     assert isinstance(meta, dict)
+    rejudge(observations, cases, str(meta.get("policy", "copier")))
+    scores = score(observations)
     fresh = to_payload(Manifest(**meta), scores, observations)
     fresh["rescored"] = {"benchmark_version": VERSION}
     return fresh

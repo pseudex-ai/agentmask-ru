@@ -157,6 +157,11 @@ def _g11_results(root: Path, cases: list[Case]) -> GateResult:
     digest = corpus_digest(cases)
     stale: list[str] = []
     for path in sorted((root / "results").rglob("*.json")):
+        # `results/_archive/` holds runs WITHDRAWN on a corpus bump — kept in
+        # git so a published number stays checkable, ignored here and by the
+        # leaderboard, because they were measured on a corpus that no longer is.
+        if "_archive" in path.parts:
+            continue
         payload = json.loads(path.read_text(encoding="utf-8"))
         found = str(payload.get("manifest", {}).get("corpus_digest", ""))
         if found != digest:

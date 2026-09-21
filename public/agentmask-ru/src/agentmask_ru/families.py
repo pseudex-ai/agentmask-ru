@@ -28,10 +28,12 @@ from dataclasses import dataclass
 
 from agentmask_ru import ids
 from agentmask_ru.assemble import Slot, assemble
+from agentmask_ru.parts import cut_address, cut_name
 from agentmask_ru.pools import Pools, draw_person
+from agentmask_ru.pools import Street
 from agentmask_ru.registers import (
-    declined_name, given_only, render_address, render_card, render_dob, render_name, render_passport, render_phone,
-    render_snils,
+    declined_name, given_only, name_parts, render_address, render_card, render_dob, render_name, render_passport,
+    render_phone, render_snils,
 )
 from agentmask_ru.schema import CANARY, DATA_LICENSE, VERSION, Case, ExpectedCall, Negative, PiiItem, Source
 from agentmask_ru.tools import tools_for
@@ -59,6 +61,7 @@ class Item:
     # inside them does not. The template knows which it wrote, so the
     # corpus records it rather than asking a detector.
     findable_by_shape: bool
+    parts: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -124,6 +127,7 @@ def _finish(draft: Draft, index: int, created_at: str, seed: int) -> Case:
         pii.append(PiiItem(
             id=f"p{k + 1}", type=item.type, value=item.value, canonical=item.canonical, turn=turn_index,
             start=start, end=end, tool_param=item.tool_param, cue=item.cue, tier=item.tier, identity=item.identity,
+            parts=item.parts,
         ))
     negatives: list[Negative] = []
     for neg in draft.negatives:
@@ -364,6 +368,75 @@ def second_mention(pools: Pools, rng: random.Random, register: str, tier: str, i
     return _finish(draft, index, created_at, seed)
 
 
+
+
+def decompose(pools: Pools, rng: random.Random, register: str, tier: str, index: int, created_at: str, seed: int) -> Case:
+    """THE TOOL WANTS THE PARTS. A CRM card takes `last_name` / `first_name` /
+    `middle_name` and `street` / `house` / `flat`, not one string each. The
+    agent has to cut what it was shown, and here the maskers part company: a
+    format-preserving substitute cuts the way the original cuts; a placeholder
+    («<PERSON_1>», «[ADDRESS]») cannot be cut, lands whole in the first field
+    and leaves the rest empty — and on the way back the gateway can only
+    restore the whole into that one field. The gold parts are cut from the
+    ORIGINAL by the same rule the scripted agent cuts the substitute with
+    (`parts.py`), so the family measures what the masker showed, not how the
+    benchmark read it."""
+    person = draw_person(pools, rng, tier)
+    name_written = name_parts(person, register, rng)
+    # Which position is which part, as the register writes it (`name_parts`).
+    if register == "clean" and len(name_written) == 3:
+        order: tuple[str, ...] = ("last_name", "first_name", "middle_name")
+    elif register == "clean":
+        order = ("first_name", "last_name")
+    else:
+        order = ("first_name", "last_name")
+    name = " ".join(name_written)
+    phone = render_phone(ids.phone_digits(rng), register, rng)
+    street = rng.choice(pools.streets)
+    address = render_address(rng.choice(pools.cities[:200]), street, rng.randint(1, 120), rng.randint(1, 240), register, rng)
+    with_city = _address_has_city(address.value, street)
+    prev = order_no(rng, register)
+    money = amount(rng, register)
+    if register == "clean":
+        variants: list[tuple[list[str | Slot], bool]] = [
+            (["Здравствуйте! Заведите, пожалуйста, карточку клиента по заказу ", Slot("order_no", prev.value),
+              ". ФИО: ", Slot("name", name), ". Телефон: ", Slot("phone", phone.value), ". Адрес: ",
+              Slot("address", address.value), ". Сумма заказа ", Slot("amount", money.value), "."], True),
+            (["Добрый день. Новый клиент — ", Slot("name", name), ", тел. ", Slot("phone", phone.value),
+              ", адрес ", Slot("address", address.value), ". Заказ ", Slot("order_no", prev.value), " на ",
+              Slot("amount", money.value), ", занесите в базу."], False),
+        ]
+    else:
+        variants = [
+            (["привет заведите клиента по заказу ", Slot("order_no", prev.value), " меня зовут ", Slot("name", name),
+              " тел ", Slot("phone", phone.value), " адрес ", Slot("address", address.value), " сумма ",
+              Slot("amount", money.value)], True),
+            (["добавьте в базу ", Slot("name", name), " ", Slot("phone", phone.value), " живу ",
+              Slot("address", address.value), " заказ ", Slot("order_no", prev.value), " на ",
+              Slot("amount", money.value)], False),
+        ]
+    parts, name_cued = variants[rng.randrange(len(variants))]
+    name_parts_gold = cut_name(name, order)
+    address_parts_gold = cut_address(address.value, with_city)
+    items = [
+        Item("name", "NAME", name, name, "last_name", name_cued, person.tier, "person1", register == "clean",
+             parts=name_parts_gold),
+        Item("phone", "PHONE", phone.value, phone.value, "phone", True, None, "person1", not phone.shape_broken),
+        Item("address", "ADDRESS", address.value, address.value, "street", True, None, "person1", register == "clean",
+             parts=address_parts_gold),
+    ]
+    pii_params = tuple(order) + ("phone",) + tuple(address_parts_gold)
+    draft = Draft("decompose", register, None, [Turn(parts)], items, [prev, money],
+                  ExpectedCall("create_contact", pii_params, {}))
+    return _finish(draft, index, created_at, seed)
+
+
+def _address_has_city(written: str, street: Street) -> bool:
+    """Whether the register wrote the city in front of the street."""
+    return not written.lower().lstrip().startswith((street.type.lower(), street.name.lower().split()[0],
+                                                     "ул", "пр", "пер", "б-р", "бул", "ш", "наб", "пл"))
+
+
 BUILDERS = {
     "create_order": create_order,
     "check_status": check_status,
@@ -371,6 +444,7 @@ BUILDERS = {
     "refund": refund,
     "send_sms": send_sms,
     "second_mention": second_mention,
+    "decompose": decompose,
 }
 
 
