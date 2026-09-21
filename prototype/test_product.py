@@ -890,6 +890,62 @@ def test_restored_ranges_are_closed_to_later_passes() -> None:
     print("restored ranges OK — one splice, exact tokens protected, 125 round trips in one vault")
 
 
+def test_four_word_token_survives_a_shared_fake_surname() -> None:
+    """A two-word patronymic mints a FOUR-word substitute, and the whole of it
+    must be one window on the way back — pinned with the draw that broke it.
+
+    «Алиев Рустам Ахмед оглы» → «Ершов Константин Мирослав Леонидович». With
+    name windows capped at three words the token was restored as a three-word
+    tail by parts plus a lone «Ершов»; the moment another person of the same
+    customer drew the same fake surname (36 in the pool, and a customer-wide
+    vault has no conversation scope to forbid it) the lone surname had two
+    owners, was refused, and «Ершов Рустам Ахмед оглы» reached the customer.
+    One draw in ~40 of `test_restored_ranges_are_closed_to_later_passes`, red
+    on the merge commit of engine 0.3.16. Forced here through `secrets.choice`
+    the way `test_b21_pinned` does, so the pin is deterministic while the
+    product keeps its randomness.
+    """
+    import os
+    import secrets
+    import tempfile
+    from pseudex.redact import unmask_text
+
+    real_choice = secrets.choice
+
+    def forcing(*wanted: str):
+        # IN ORDER, each once: the two given-name slots draw from one pool, and
+        # a steer that answers «Константин» to both makes a repeated word the
+        # minter refuses 200 times.
+        queue = list(wanted)
+
+        def choice(seq):
+            seq = list(seq)
+            for want in queue:
+                if want in seq:
+                    queue.remove(want)
+                    return want
+            return real_choice(seq)
+        return choice
+
+    detector = Detector()
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = Vault(os.path.join(tmp, "v.db"), "acme")
+            secrets.choice = forcing("Ершов", "Константин", "Мирослав", "Леонидович")
+            said = "Клиент Алиев Рустам Ахмед оглы"
+            shown = mask_text(said, vault, detector.detect(said))
+            assert shown.split()[1] == "Ершов" and len(shown.split()) == 5, shown
+            secrets.choice = forcing("Ершов")
+            other = "Иван Петров улица Ленина 5"
+            other_shown = mask_text(other, vault, detector.detect(other))
+            assert "Ершов" in other_shown, other_shown          # the surname IS shared
+            assert unmask_text(shown, vault) == said, (said, shown, unmask_text(shown, vault))
+            assert unmask_text(other_shown, vault) == other, (other, other_shown, unmask_text(other_shown, vault))
+    finally:
+        secrets.choice = real_choice
+    print("four-word token OK — whole window wins over a fake surname two people share")
+
+
 def test_name_is_read_with_its_sentence() -> None:
     """Gender and case of a name are ONE reading of the whole phrase, and the
     word in front of it breaks the tie.
@@ -1052,5 +1108,6 @@ if __name__ == "__main__":
     test_spoken_birth_date_in_the_agents_form()
     test_fresh_seed_shapes()
     test_restored_ranges_are_closed_to_later_passes()
+    test_four_word_token_survives_a_shared_fake_surname()
     test_name_is_read_with_its_sentence()
     test_tool_schemas_are_masked_at_every_depth()

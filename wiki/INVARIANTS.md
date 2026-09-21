@@ -451,6 +451,14 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   restored too** (known-issues Б11). Pins: `test_prose_fragments`.
 - **`/spans` and `peek_token` are read-only** — rendering a dialog must never
   mint tokens or write audit. Pins: `test_localui`.
+- **THE WHOLE SUBSTITUTE IS A WINDOW ON THE WAY BACK — as many words as the
+  pool mints.** A two-word patronymic mints four words; with name windows
+  capped at three the token came back as a three-word tail resolved by parts
+  plus a lone fake surname, and once two people of one customer shared that
+  surname (no conversation scope in a customer-wide vault) the chimera «Ершов
+  Рустам Ахмед оглы» reached the customer (known-issues Б22). Widening the
+  pool's shape widens `redact._name_windows` in the same change. Pins:
+  `test_product` (`test_four_word_token_survives_a_shared_fake_surname`).
 
 ## Streaming
 

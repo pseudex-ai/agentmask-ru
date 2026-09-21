@@ -694,18 +694,29 @@ _CITY_OF_TOKEN = re.compile(r"^([А-ЯЁ][а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?)
 
 
 def _name_windows(text: str) -> list[tuple[int, int, str]]:
-    """Every contiguous 1-3 word window of capitalised Cyrillic words.
+    """Every contiguous 1-4 word window of capitalised Cyrillic words.
 
     Windows rather than maximal runs, because a sentence-initial word is
     capitalised too: `Позвоните Ивану Щукину` is one run of three, and looking
     it up whole finds nothing while `Ивану Щукину` would have matched. Misses
     are free — an indexed point query that returns no row — so enumerating is
     cheaper than being clever about which word starts a sentence.
+
+    FOUR, NOT THREE. A two-word patronymic («Ахмед оглы») is minted as a
+    four-word substitute, «Ершов Константин Мирослав Леонидович», and with a
+    ceiling of three that whole token was never a window: it came back as the
+    three-word tail resolved by parts plus a lone surname — and the moment a
+    second person of the customer had drawn the same fake surname (36 in the
+    pool, no conversation scope in a customer-wide vault), the lone «Ершов»
+    had two owners, was refused, and the chimera «Ершов Рустам Ахмед оглы»
+    reached the customer. One draw in ~40 on `test_product`, red on the
+    merge commit of engine 0.3.16. The whole token is a window now and its
+    exact key wins, as it does for every three-word name.
     """
     words = [(m.start(), m.end(), m.group()) for m in _NAME_WORD.finditer(text)]
     windows: list[tuple[int, int, str]] = []
     for i in range(len(words)):
-        for size in (3, 2, 1):
+        for size in (4, 3, 2, 1):
             if i + size > len(words):
                 continue
             start, end = words[i][0], words[i + size - 1][1]
