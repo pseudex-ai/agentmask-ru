@@ -188,7 +188,7 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     # согласия придётся нам.
     before = Organization.objects.count()
     without = client.post("/signup", {"email": f"noconsent-{int(time.time())}@example.test",
-                                    "company": "Тест", "plan": "start", "terms": "1"})
+                                    "company": "Тест", "plan": "free", "terms": "1"})
     check("без галочки согласия аккаунт не создаётся",
           Organization.objects.count() == before, f"код={without.status_code}")
     # ДВЕ ГАЛОЧКИ, И КАЖДАЯ ОБЯЗАТЕЛЬНА ПОРОЗНЬ. С 01.09.2025 согласие на
@@ -197,7 +197,7 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     # совмещённое согласие, то есть его отсутствие. Согласие без акцепта
     # оферты — тоже не регистрация: договора нет.
     no_terms = client.post("/signup", {"email": f"noterms-{int(time.time())}@example.test",
-                                     "company": "Тест", "plan": "start", "consent": "1"})
+                                     "company": "Тест", "plan": "free", "consent": "1"})
     check("без акцепта оферты аккаунт не создаётся",
           Organization.objects.count() == before, f"код={no_terms.status_code}")
     check("согласие и оферта — две разные галочки на форме",
@@ -221,7 +221,7 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
           "default-src 'self'" in landing.headers.get("Content-Security-Policy", ""))
 
     signed = client.post("/signup", {"email": "buyer@acme.ru", "consent": "1", "terms": "1",
-                                     "company": "ООО Ромашка", "plan": "start"})
+                                     "company": "ООО Ромашка", "plan": "free"})
     check("sign-up does not hand a key to whoever typed the address",
           signed.status_code == 200 and "Проверьте почту" in signed.content.decode()
           or "Письмо ушло" in signed.content.decode(),
@@ -423,14 +423,14 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     for index in range(6):
         throttled = client.post("/signup", {"email": f"flood{index}@example.com",
                                             "consent": "1", "terms": "1",
-                                            "company": "x", "plan": "start"})
+                                            "company": "x", "plan": "free"})
     check("sign-up is throttled",
           throttled.url == "/" if throttled.status_code == 302 else False,
           f"last redirect={getattr(throttled, 'url', throttled.status_code)}")
 
     repeat = client.post("/signup", {"email": "buyer@acme.ru", "company": "x",
                                      "consent": "1", "terms": "1",
-                                     "plan": "start"})
+                                     "plan": "free"})
     check("a known email is sent to sign-in, not given a second organisation",
           Organization.objects.filter(memberships__user__email="buyer@acme.ru").count() == 1,
           f"orgs={Organization.objects.filter(memberships__user__email='buyer@acme.ru').count()}")

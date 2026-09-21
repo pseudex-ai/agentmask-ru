@@ -231,10 +231,22 @@ def landing(request):
     personal data onto our servers, which is precisely what we sell not doing."""
     return render(request, "landing.html", {
         "plans": Plan.objects.filter(is_public=True),
+        # БЕСПЛАТНЫЙ ТАРИФ — ОТДЕЛЬНОЙ КАРТОЧКОЙ И ПЕРВЫМ В ВЫПАДАШКЕ. Он
+        # непубличный (не товар), но это единственный вход без денег, и пока его
+        # не было на экране, «Старт — 990 ₽/мес» рядом с «14 дней бесплатно»
+        # читалось как «Старт бесплатно две недели» — обещание, которого код не
+        # давал. Один список на выпадашку и на проверку в `signup`.
+        "signup_plans": services.signup_plans(),
+        "free_plan": services.trial_plan(),
         # Enterprise намеренно НЕ публичный (его нельзя купить самообслуживанием,
         # см. seed_plans), поэтому он не в `plans` — иначе попал бы и в выпадашку
         # регистрации. Отдаётся отдельно ради одной карточки «по договору».
         "enterprise": Plan.objects.filter(code="enterprise").first(),
+        # Число карточек цен считает вьюха: сетка выбирает класс по нему, а
+        # шаблонная арифметика на трёх слагаемых нечитаема.
+        "plan_card_count": (Plan.objects.filter(is_public=True).count()
+                            + (1 if services.trial_plan() is not None else 0)
+                            + (1 if Plan.objects.filter(code="enterprise").exists() else 0)),
         # Группы конфигуратора — из того же реестра, что и страница /detection.
         "groups": detection_types.groups_for_page(),
         # ЧИСЛО ТИПОВ СЧИТАЕТСЯ, А НЕ ПИШЕТСЯ. «18» стояло литералом в трёх
@@ -543,13 +555,13 @@ def resend_activation(request):
 
 
 def signup(request):
-    """Email, company name, plan. Three fields, and the key exists at the end of
-    the post — before payment, before any confirmation click."""
+    """Email, company name, plan. Three fields. On the free plan the key
+    follows the confirmation click; on a paid plan it follows the payment."""
     if request.method != "POST":
         return redirect("landing")
     email = (request.POST.get("email") or "").strip().lower()
     name = (request.POST.get("company") or "").strip()
-    plan_code = request.POST.get("plan") or "start"
+    plan_code = request.POST.get("plan") or ""
     if not email or "@" not in email:
         messages.error(request, "Нужен рабочий email.")
         return redirect("landing")
@@ -612,7 +624,7 @@ def signup(request):
                                "на почту, ключи в кабинете.")
         return redirect("account_login")
 
-    if not Plan.objects.filter(code=plan_code, is_public=True).exists():
+    if plan_code not in {plan.code for plan in services.signup_plans()}:
         messages.error(request, "Такого тарифа нет.")
         return redirect("landing")
 
@@ -654,13 +666,28 @@ def signup(request):
     link = request.build_absolute_uri(
         "/activate?t=" + signing.dumps({"org": organization.id, "email": email})
     )
+    # ПИСЬМО ОБЕЩАЕТ ТО, ЧТО ССЫЛКА СДЕЛАЕТ. На бесплатном тарифе — ключ; на
+    # платном по ней открывается кабинет с оплатой, а ключ выпускается после
+    # денег. Обещать ключ второму значило бы, что первое же письмо продукта
+    # неправда.
+    pending = organization.subscription.state == Subscription.PENDING
+    if pending:
+        plan_title = organization.subscription.plan.title
+        subject = "pseudex — подтвердите почту и оплатите тариф"
+        body = (f"Здравствуйте!\n\n"
+                f"Аккаунт создан, тариф «{plan_title}». Откройте ссылку — она "
+                f"подтверждает почту и ведёт в кабинет с оплатой; ключ будет "
+                f"выпущен сразу после оплаты:\n\n{link}\n\n")
+    else:
+        subject = "pseudex — ваш ключ готов к выпуску"
+        body = (f"Здравствуйте!\n\n"
+                f"Аккаунт создан. Ключ будет выпущен и показан один раз, когда вы "
+                f"откроете ссылку:\n\n{link}\n\n")
     send_mail(
-        subject="pseudex — ваш ключ готов к выпуску",
+        subject=subject,
         message=(
-            f"Здравствуйте!\n\n"
-            f"Аккаунт создан. Ключ будет выпущен и показан один раз, когда вы "
-            f"откроете ссылку:\n\n{link}\n\n"
-            f"Ссылка действует {_ACTIVATION_HOURS} часа. Если это были не вы — "
+            body
+            + f"Ссылка действует {_ACTIVATION_HOURS} часа. Если это были не вы — "
             f"просто не открывайте её, ничего не произошло."
         ),
         from_email=None,
@@ -673,7 +700,8 @@ def signup(request):
     # цель удвоила бы регистрацию в отчёте. Цель уходит из браузера, то есть
     # только при согласии на счётчик — так же, как обещает раздел 9bis политики.
     return render(request, "check_email.html",
-                  {"email": email, "metrika_goal": "signup"})
+                  {"email": email, "metrika_goal": "signup",
+                   "pending": pending})
 
 
 _ACTIVATION_HOURS = 24
@@ -703,10 +731,14 @@ def activate(request):
     #
     # Поэтому GET только ПОКАЗЫВАЕТ форму, а вход делает POST с CSRF-токеном.
     # Одна лишняя кнопка на регистрации против смены личности по ссылке.
+    subscription = getattr(organization, "subscription", None)
+    pending = (subscription is not None
+               and subscription.state == Subscription.PENDING)
     if request.method != "POST":
         return render(request, "activate.html",
                       {"token": request.GET.get("t", ""),
-                       "email": payload["email"]})
+                       "email": payload["email"],
+                       "pending": pending})
     # И личность не подменяется молча: если в браузере уже кто-то другой, мы
     # об этом говорим, а не переключаем под ним стул.
     current = getattr(request, "user", None)
@@ -724,6 +756,18 @@ def activate(request):
         messages.info(request, "Ключ уже был выпущен и показан один раз. "
                                "Здесь виден его префикс и расход; если ключ "
                                "потерян — выпустите новый.")
+        return redirect("cabinet")
+    # ПЛАТНЫЙ ТАРИФ: ССЫЛКА ПОДТВЕРЖДАЕТ ПОЧТУ, КЛЮЧ — ПОСЛЕ ДЕНЕГ. Тот же
+    # вход в кабинет, что и у пробы, но вместо ключа — форма оплаты с уже
+    # выбранным тарифом; `new_key` выпустит первый ключ, когда подписка станет
+    # активной. Отказ пробы повторному аккаунту идёт той же дорогой: сервиса
+    # нет — ключа нет.
+    if not services.may_issue_keys(subscription):
+        _funnel(Funnel.ACTIVATED, "", request, organization)
+        _sign_in(request, payload["email"])
+        if pending:
+            messages.info(request, "Почта подтверждена. Оплатите тариф — ключ "
+                                   "выпустится сразу после оплаты.")
         return redirect("cabinet")
     try:
         _funnel(Funnel.ACTIVATED, "", request, organization)
@@ -785,9 +829,14 @@ def welcome(request):
         payload = signing.loads(raw, max_age=_HANDOFF_MAX_AGE)
     except (signing.BadSignature, signing.SignatureExpired):
         return redirect("landing")
+    subscription = Subscription.objects.filter(
+        organization_id=payload["org"]).first()
     response = render(request, "welcome.html", {
         "key": payload["key"],
         "org_id": payload["org"],
+        # Проба или оплаченный тариф: страница обещает «оплата не нужна» только
+        # тому, кому она и правда не нужна.
+        "on_trial": bool(subscription and subscription.state == Subscription.TRIAL),
         "image": engine_release.current_image(),
         "license_url_env": (f"-e PSEUDEX_LICENSE_URL={settings.LICENSE_URL} "
                             if settings.LICENSE_URL else ""),
@@ -818,8 +867,14 @@ def cabinet(request):
                                "завершите регистрацию, и ключ выдастся сразу.")
         return redirect("/#start")
     subscription = getattr(organization, "subscription", None)
+    # БЕЗ КЛЮЧА ЛИЦЕНЗИОННЫЙ СЕРВЕР ОБ ОРГАНИЗАЦИИ НЕ ЗНАЕТ: он заводит её при
+    # выпуске первого ключа. Спросить расход у него раньше значит получить 404
+    # и написать человеку «сервер не отвечает» — про сервер, который отвечает
+    # исправно. Нет ключа — нет расхода, и это ноль, а не недоступность.
+    has_keys = organization.keys.filter(revoked_at__isnull=True).exists()
     try:
-        reported = licensing.usage(organization.id).get("usage", {})
+        reported = (licensing.usage(organization.id).get("usage", {})
+                    if has_keys else {})
         unreachable = False
     except licensing.LicensingError:
         # The cabinet still renders. Counters are the one thing here that comes
@@ -891,6 +946,20 @@ def cabinet(request):
             annual_prepaid_until = subscription.base_paid_through
         elif services.annual_available(organization, subscription.plan):
             annual = services.annual_price(organization, subscription.plan)
+    # ТАРИФ, ЗА КОТОРЫЙ ПРЕДЛАГАЕТСЯ ЗАПЛАТИТЬ, и от которого считаются подарок
+    # и скидка на экране. На платном — он сам. На пробе — то, что человек
+    # выбрал на лендинге, если выбирал платное; бесплатный вход намерения не
+    # несёт (он и есть выбор), и тогда берётся первый платный из списка — та
+    # же строка, что браузер покажет в выпадашке по умолчанию.
+    paid_plans = list(Plan.objects.filter(is_public=True))
+    offer_plan = None
+    if subscription is not None:
+        if subscription.plan.is_trial:
+            intended = subscription.intended_plan
+            offer_plan = (intended if intended is not None and not intended.is_trial
+                          else (paid_plans[0] if paid_plans else None))
+        else:
+            offer_plan = subscription.plan
     return render(request, "app/cabinet.html", {
         "instances": slots,
         "organization": organization,
@@ -920,17 +989,24 @@ def cabinet(request):
         # (`intended_plan`). Он сохранён ровно ради этой строки: подставить
         # выбранное вместо того, чтобы заставлять выбирать второй раз, и не
         # потерять намерение того, кто так и не заплатил.
-        "paid_plans": Plan.objects.filter(is_public=True),
-        "suggested_plan": (subscription.intended_plan_id
-                           if subscription and subscription.plan.is_trial
-                           else (subscription.plan_id if subscription else None)),
+        "paid_plans": paid_plans,
+        "suggested_plan": offer_plan.code if offer_plan else None,
         "trial_over": bool(subscription and subscription.plan.is_trial
                            and subscription.trial_ends_at <= timezone.now()),
+        "pending": bool(subscription and subscription.state == Subscription.PENDING),
+        # Ключ — за деньгами или за живой пробой; без них форма выпуска
+        # заменяется объяснением, почему её нет.
+        "may_issue_keys": services.may_issue_keys(subscription),
         "bonus_days": (services.bonus_days_for(
-                           organization,
-                           subscription.intended_plan or subscription.plan,
+                           organization, offer_plan,
                            services.trial_has_been_used(reported))
-                       if subscription else 0),
+                       if offer_plan else 0),
+        # Вторая половина той же сделки: прошедшему пробу — скидка на первый
+        # месяц. Ноль, пока владелец не задал её на тарифе.
+        "post_trial_discount_pct": (services.post_trial_discount_for(
+                                        organization, offer_plan,
+                                        services.trial_has_been_used(reported))
+                                    if offer_plan else 0),
         "unreachable": unreachable,
         "image": engine_release.current_image(),
         "license_url_env": (f"-e PSEUDEX_LICENSE_URL={settings.LICENSE_URL} "
@@ -942,14 +1018,27 @@ def cabinet(request):
 @require_POST
 def new_key(request):
     organization = _organization(request)
+    # ПЕРВЫЙ КЛЮЧ ОПЛАТИВШЕГО ВЫПУСКАЕТСЯ ЗДЕСЬ. У пробы он выходит по ссылке
+    # из письма; у платного тарифа ссылка пришла раньше денег, и первым ключом
+    # становится эта кнопка. Путь «первого ключа» отдельный ради воронки:
+    # `key_issued` — шаг, по которому считается, дошёл ли человек до продукта.
     try:
-        key = services.issue_additional_key(
-            organization,
-            label=(request.POST.get("label") or "").strip()[:100],
-            environment=("test" if request.POST.get("environment") == "test" else "live"),
-        )
+        if not organization.keys.exists():
+            key = services.issue_first_key(organization)
+            _funnel(Funnel.KEY_ISSUED, "", request, organization)
+        else:
+            key = services.issue_additional_key(
+                organization,
+                label=(request.POST.get("label") or "").strip()[:100],
+                environment=("test" if request.POST.get("environment") == "test" else "live"),
+            )
     except ValueError as error:
         messages.error(request, str(error))
+        return redirect("cabinet")
+    except licensing.LicensingError as error:
+        _log.error("issuing a key for %s failed: %s", organization.id, error)
+        messages.error(request, "Не удалось выпустить ключ — это на нашей стороне. "
+                                "Напишите нам, и мы выпустим его вручную.")
         return redirect("cabinet")
     return _handoff(redirect("welcome"), key, organization.id)
 

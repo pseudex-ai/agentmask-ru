@@ -258,37 +258,41 @@ def main() -> int:
     if organization is None:
         return 1
 
-    key = services.issue_first_key(organization)
-    check("ключ выпущен и это настоящий ключ", key.startswith("ps_"), key[:12] + "…")
-
-
-    # ПОКУПКА В ТОТ ЖЕ ДЕНЬ, А НЕ ОЖИДАНИЕ КОНЦА ПРОБЫ.
+    # ПЛАТНЫЙ ТАРИФ С ЛЕНДИНГА — ПОКУПКА: КЛЮЧ ПОСЛЕ ДЕНЕГ.
     #
-    # Регистрация сажает на БЕСПЛАТНЫЙ тариф — тысяча запросов, один контейнер,
-    # цена ноль, — и жизненный цикл платной подписки на нём не проверить: счёт
-    # вышел бы нулевым, погасился сам, и дальше проверять было бы нечего.
-    # Раньше проба шла на ВЫБРАННОМ тарифе и наследовала его лимиты, из-за чего
-    # эти строки работали случайно — и это была та самая дыра, через которую
-    # «Промышленный» брали бесплатно с каждой новой почты.
-    #
-    # Кнопки «оплатить сейчас» тоже не существовало: счёт выставлял только
-    # месячный цикл, то есть заплатить до конца пробы было физически нечем.
-    # Здесь проверяется в том числе она.
-    check("после регистрации клиент на пробном тарифе",
-          organization.subscription.plan.is_trial,
-          organization.subscription.plan_id)
-    check("и выбранный на лендинге тариф запомнен",
-          organization.subscription.intended_plan_id == "industrial")
+    # Бесплатный вход ровно один — тариф `free` (тысяча запросов, один
+    # контейнер, цена ноль), и жизненный цикл платной подписки на нём не
+    # проверить: счёт вышел бы нулевым, погасился сам, и дальше проверять было
+    # бы нечего. Раньше любой выбор в форме давал ту же пробу и ключ до оплаты,
+    # и «Промышленный» брали бесплатно с каждой новой почты. Теперь выбравший
+    # платный ждёт оплаты на нём, ключа до денег нет, а за оплату без пробы
+    # положены дни в подарок.
+    check("после регистрации на платный тариф клиент ЖДЁТ ОПЛАТЫ на нём",
+          organization.subscription.state == Subscription.PENDING
+          and organization.subscription.plan_id == "industrial",
+          f"{organization.subscription.plan_id}/{organization.subscription.state}")
+    try:
+        services.issue_first_key(organization)
+    except services.KeyNotAvailable:
+        check("ключ до оплаты не выпускается", True)
+    else:
+        check("ключ до оплаты не выпускается", False, "выпустился без денег")
     purchase = services.build_switch_invoice(organization,
                                              Plan.objects.get(code="industrial"))
     check("счёт на выбранный тариф выставляется по требованию",
           purchase.total == plans["industrial"].monthly_price, str(purchase.total))
+    check("и несёт дни в подарок за оплату без пробы",
+          purchase.bonus_days == plans["industrial"].first_payment_bonus_days,
+          str(purchase.bonus_days))
     services.mark_paid(purchase, payment_ref="1a2b3c4d-0000-4000-8000-000000000001")
     organization.refresh_from_db()
     check("оплата перевела на тариф и включила обслуживание",
           organization.subscription.plan_id == "industrial"
           and organization.subscription.state == Subscription.ACTIVE,
           f"{organization.subscription.plan_id}/{organization.subscription.state}")
+
+    key = services.issue_first_key(organization)
+    check("после оплаты ключ выпущен и это настоящий ключ", key.startswith("ps_"), key[:12] + "…")
 
     # --- 2. контейнер клиента работает ----------------------------------
     up = start_container(key)

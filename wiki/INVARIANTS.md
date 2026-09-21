@@ -708,6 +708,16 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   volume billing that did not exist and «48 hours on non-payment» that described
   the lease reserve. The test also asserts the ABSENCE of the literals it
   replaced. Pins: `test_published_claims`.
+- **ONE free entry, and a key is what the money (or a live trial) buys.** The
+  trial is the `free` plan only; a paid plan chosen on the landing is `pending`
+  — no trial, no key — until `mark_paid`. `services.may_issue_keys` gates every
+  key path; a form without a plan is refused, never defaulted to «Старт». Pins:
+  `storefront/test_paywall.py`, `storefront/test_signup_forms.py`,
+  `storefront/test_billing_lifecycle.py`.
+- **Gift days and the post-trial discount are mirrors and never both.** Decided
+  by the engine request counter on the FIRST payment: zero requests →
+  `first_payment_bonus_days`; any request → `post_trial_discount_pct`; a second
+  payment gets neither. Pins: `storefront/test_paywall.py`.
 
 ## Surfaces
 

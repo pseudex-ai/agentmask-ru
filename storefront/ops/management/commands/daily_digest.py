@@ -109,8 +109,10 @@ class Command(BaseCommand):
             lines.append(f"Пробный период кончается в ближайшие 3 дня: {trials}")
 
         active = Subscription.objects.filter(state=Subscription.ACTIVE).count()
+        pending = Subscription.objects.filter(state=Subscription.PENDING).count()
         past_due = Subscription.objects.filter(state=Subscription.PAST_DUE).count()
-        lines.append(f"Подписок: {active} активных, {past_due} остановленных")
+        lines.append(f"Подписок: {active} активных, {pending} ждут первой оплаты, "
+                     f"{past_due} остановленных")
 
         if options["weekly"]:
             lines.extend(self._yandex(7))

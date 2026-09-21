@@ -477,6 +477,9 @@ def analytics(request):
     metered = paid_invoices.aggregate(total=Sum("metered_amount"))["total"] or Decimal("0")
 
     trials = Subscription.objects.filter(state=Subscription.TRIAL).count()
+    # Выбрали платный тариф и ещё не заплатили: не проба и не отток, третья
+    # колонка. Без неё они не видны нигде — ни в пробах, ни в платящих.
+    pending = Subscription.objects.filter(state=Subscription.PENDING).count()
     past_due = Subscription.objects.filter(state=Subscription.PAST_DUE).count()
     cancelled = Subscription.objects.filter(
         cancel_at_period_end=True).exclude(state=Subscription.CANCELLED).count()
@@ -492,7 +495,7 @@ def analytics(request):
 
     money = {
         "mrr": mrr, "revenue": revenue, "metered": metered,
-        "paying": len(active), "trials": trials,
+        "paying": len(active), "trials": trials, "pending": pending,
         "past_due": past_due, "cancelling": cancelled, "lost": lost,
         "invoices_paid": paid_invoices.count(),
         "average": (revenue / paid_invoices.count()) if paid_invoices.count() else Decimal("0"),

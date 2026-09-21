@@ -103,6 +103,21 @@ def trial_plan() -> Plan | None:
     return Plan.objects.filter(is_trial=True).first()
 
 
+def signup_plans() -> list[Plan]:
+    """Что можно выбрать в форме регистрации: бесплатный тариф первым, затем
+    публичные платные.
+
+    ОДИН СПИСОК НА ЭКРАН И НА ПРОВЕРКУ. Лендинг рисует из него выпадашку, а
+    `signup` по нему же решает, существует ли присланный код: два списка
+    разошлись бы на первом же непубличном тарифе. Бесплатный тариф в него
+    входит, хотя он `is_public=False`: непубличность значит «нет в карточках
+    цен как товар», а не «нельзя выбрать» — это единственный вход без денег.
+    """
+    trial = trial_plan()
+    paid = list(Plan.objects.filter(is_public=True))
+    return ([trial] if trial is not None else []) + paid
+
+
 def trial_days() -> int:
     """Сколько дней бесплатно. Ноль — бесплатного периода нет.
 
@@ -177,16 +192,29 @@ def trial_allowed(ip_hash: str, domain: str) -> bool:
 
 def create_account(email: str, display_name: str, plan_code: str,
                    client_ip: str) -> Organization:
-    """Create the account and hand back a WORKING key, before any payment.
+    """Create the account. On the free plan the key follows before any payment;
+    on a paid plan the key follows the payment.
 
-    This is the whole product promise on the storefront side: the single metric
-    is time from first visit to first masked request, and every step between
-    those two points is a place to lose someone. Asking for a card, or for ИНН,
-    or for a confirmation click before the key exists, each add minutes to that
-    number and buy nothing — the key is worthless without our licensing server,
-    which we can switch off at any time.
+    The free path is the whole product promise on the storefront side: the
+    single metric is time from first visit to first masked request, and every
+    step between those two points is a place to lose someone. Asking for a
+    card, or for ИНН, or for a confirmation click before the key exists, each
+    add minutes to that number and buy nothing — the key is worthless without
+    our licensing server, which we can switch off at any time.
+
+    ПЛАТНЫЙ ТАРИФ С ЛЕНДИНГА — ЭТО ПОКУПКА, А НЕ ПРОБА С НАМЕРЕНИЕМ. Раньше
+    любой выбор в форме давал те же четырнадцать бесплатных дней, и слово
+    «Старт — 990 ₽/мес» рядом с «ключ работает сразу и бесплатно» читалось как
+    «Старт бесплатно две недели». Теперь бесплатных входов ровно один — тариф
+    `free`, — а выбравший платный получает подписку в состоянии `pending`:
+    без пробы, без ключа, с кнопкой оплаты в кабинете. Ключ выпускается после
+    денег (`may_issue_keys`), и за оплату без пробы ему положены подарочные
+    дни (`bonus_days_for`).
     """
     intended = Plan.objects.get(code=plan_code)
+    trial = trial_plan()
+    if trial is None or intended.code != trial.code:
+        return _create_pending_account(email, display_name, intended, client_ip)
     ip_hash = signup_ip_hash(client_ip)
     domain = email_domain(email)
 
@@ -214,9 +242,8 @@ def create_account(email: str, display_name: str, plan_code: str,
         #
         # Повторная регистрация аккаунт получает, но без бесплатных дней: проба
         # кончается в момент создания, и чтобы начать работать, надо заплатить.
-        trial = trial_plan()
-        granted = bool(trial) and trial_allowed(ip_hash, domain)
-        plan = trial if trial is not None else intended
+        granted = trial_allowed(ip_hash, domain)
+        plan = trial
         trial_ends = now + timedelta(days=trial.trial_days) if granted else now
         organization.signup_ip_hash = ip_hash
         organization.signup_email_domain = domain
@@ -247,10 +274,84 @@ def create_account(email: str, display_name: str, plan_code: str,
     return organization
 
 
+def _create_pending_account(email: str, display_name: str, plan: Plan,
+                            client_ip: str) -> Organization:
+    """An account that has chosen a paid plan and not paid yet.
+
+    Same split as the free path — the account commits on its own, the
+    licensing server is not involved at all: it learns about the organisation
+    when the first key is issued, and that happens after `mark_paid`. The
+    trial is NOT granted and not refused either — it was never asked for —
+    and `trial_ends_at` sits in the past so no code path can read a free window
+    into it. The terms snapshot is taken from the plan being bought: that is
+    the price the invoice will carry, and `mark_paid` → `adopt_current_terms`
+    re-takes it on the day the money arrives.
+    """
+    ip_hash = signup_ip_hash(client_ip)
+    domain = email_domain(email)
+    with transaction.atomic():
+        user, _ = User.objects.get_or_create(email=email)
+        organization = Organization.objects.create(display_name=display_name or email)
+        Membership.objects.create(user=user, organization=organization,
+                                  role=Membership.ROLE_OWNER)
+        now = timezone.now()
+        organization.signup_ip_hash = ip_hash
+        organization.signup_email_domain = domain
+        organization.trial_granted = False
+        organization.save(update_fields=["signup_ip_hash", "signup_email_domain",
+                                         "trial_granted"])
+        Subscription.objects.create(
+            organization=organization,
+            plan=plan,
+            intended_plan=plan,
+            state=Subscription.PENDING,
+            trial_ends_at=now,
+            current_period_start=now,
+            current_period_end=now,
+            terms_monthly_price=plan.monthly_price,
+            terms_included_requests=plan.included_requests,
+            terms_metered_per_1k=plan.metered_per_1k,
+            terms_metered_floor=plan.metered_floor,
+            terms_taken_at=now,
+        )
+    _log.info("pending account created", extra={"org": organization.id,
+                                                "plan": plan.code})
+    return organization
+
+
+class KeyNotAvailable(ValueError):
+    """A key was asked for while the subscription pays for nothing.
+
+    A `ValueError` so the cabinet's existing handling shows the text; its own
+    class so a caller can tell «pay first» from «too many keys»."""
+
+
+def may_issue_keys(subscription: Subscription | None) -> bool:
+    """Is there a paid-for or free-for-now service for a key to open.
+
+    THE KEY IS WHAT THE MONEY BUYS, AND A LIVE TRIAL IS THE ONE EXCEPTION.
+    Before this gate the cabinet minted keys for any organisation in any state:
+    a paid signup could take a key before paying, and a refused-trial repeat
+    got one that leased for up to an hour until the billing cycle stopped it.
+    Both were the same hole — a credential handed out with nothing behind it.
+    `past_due` and `cancelled` are refused for the same reason: the licensing
+    server would not honour the key, and a key that does not work is a support
+    ticket, not a feature.
+    """
+    if subscription is None:
+        return False
+    if subscription.state == Subscription.ACTIVE:
+        return True
+    return (subscription.state == Subscription.TRIAL
+            and subscription.trial_ends_at > timezone.now())
+
+
 def issue_first_key(organization: Organization) -> str:
     """The key, issued once the mailbox is proven. Separate from account
     creation so that no credential exists until someone has demonstrated they
     can read the address it was requested for."""
+    if not may_issue_keys(getattr(organization, "subscription", None)):
+        raise KeyNotAvailable("ключ выпускается после оплаты тарифа")
     key = licensing.issue_key(organization.id, organization.subscription.plan.code)
     LicenseKey.record(organization, key, label="первый ключ", environment="live")
     _log.info("first key issued", extra={"org": organization.id,
@@ -277,6 +378,8 @@ def issue_additional_key(organization: Organization, label: str,
     привязанный ни к какому кабинету и не видимый ни в одной сверке — та самая
     осиротевшая запись, ради недопущения которой разделён `create_account`.
     """
+    if not may_issue_keys(organization.subscription):
+        raise KeyNotAvailable("ключ выпускается после оплаты тарифа")
     allowed = organization.subscription.plan.max_keys
     if organization.keys.filter(revoked_at__isnull=True).count() >= allowed:
         raise ValueError(
@@ -751,24 +854,37 @@ def trial_has_been_used(reported: dict) -> bool:
 
 def bonus_days_for(organization: Organization, plan: Plan,
                    trial_used: bool) -> int:
-    """Сколько дней в подарок даёт немедленная оплата ЭТОГО тарифа.
+    """Сколько дней в подарок даёт оплата ЭТОГО тарифа без пробы.
 
     Два условия, и оба обязательны. Первое: платёж действительно первый —
-    подарок существует, чтобы человек заплатил СЕГОДНЯ вместо «досижу пробу», и
-    на втором месяце он был бы просто скидкой, которую никто не просил.
-    Второе: пробу этой организации выдали — повторная регистрация с того же
-    адреса или домена аккаунт получает, но ни бесплатных дней, ни подарка: иначе
-    подарок стал бы новым способом брать продукт бесплатно пачками, ровно тем,
-    ради закрытия которого проба и стала узкой.
-    Третье: проба ещё НЕ НАЧАТА — ни одного запроса через движок. Подарок
-    платит за решение купить, НЕ выработав пробу; тот, кто уже прогнал свои
-    сценарии, получил ровно то, ради чего проба была, и лишние дни поверх —
-    та же непрошеная скидка, что и на втором месяце.
+    подарок платит за доверие, за решение купить, не глядя, и на втором месяце
+    он был бы просто скидкой, которую никто не просил. Второе: проба НЕ
+    НАЧАТА — ни одного запроса через движок. Кто уже прогнал свои сценарии,
+    получил ровно то, ради чего проба была; ему положена другая половина —
+    `post_trial_discount_for`, — и никогда обе сразу.
+
+    Выдавалась ли проба, здесь БОЛЬШЕ НЕ СПРАШИВАЕТСЯ. Условие стояло против
+    фарма подарков, но подарок требует ДЕНЕГ, и брать продукт бесплатно им
+    нельзя. А главный его получатель теперь — тот, кто выбрал платный тариф на
+    лендинге: пробы у него нет по собственному выбору, и именно ему обещан
+    месяц за то, что он не стал её брать.
     """
-    if (not organization.trial_granted or has_ever_paid(organization)
-            or trial_used):
+    if has_ever_paid(organization) or trial_used:
         return 0
     return plan.first_payment_bonus_days
+
+
+def post_trial_discount_for(organization: Organization, plan: Plan,
+                            trial_used: bool) -> int:
+    """Процент скидки на первый оплаченный месяц тому, кто ПРОШЁЛ пробу.
+
+    Зеркало `bonus_days_for` с теми же двумя условиями наоборот: платёж
+    первый, проба начата. Удержание в момент, когда человек всё увидел и
+    решает, платить ли; число — с тарифа, который он покупает.
+    """
+    if has_ever_paid(organization) or not trial_used:
+        return 0
+    return plan.post_trial_discount_pct
 
 
 def build_switch_invoice(organization: Organization, plan: Plan) -> Invoice:
@@ -810,7 +926,26 @@ def build_switch_invoice(organization: Organization, plan: Plan) -> Invoice:
         reported = {}
     if not isinstance(reported, dict):
         reported = {}
-    bonus = bonus_days_for(organization, plan, trial_has_been_used(reported))
+    trial_used = trial_has_been_used(reported)
+    bonus = bonus_days_for(organization, plan, trial_used)
+    # СКИДКА ЗА ПРОЙДЕННУЮ ПРОБУ — ЗДЕСЬ, ПОТОМУ ЧТО ЭТОТ СЧЁТ И ЕСТЬ ПЕРВЫЙ
+    # ПЛАТЁЖ: месячный цикл после пробы счёта не выставляет вовсе (проба
+    # останавливает обслуживание), значит первый месяц покупается только этой
+    # кнопкой. Адресное предложение на первый месяц (`Offer`) с ней не
+    # складывается — берётся лучшее для клиента, как у годовой оплаты.
+    discount = Decimal("0")
+    offer = None
+    if not has_ever_paid(organization):
+        discount_pct = post_trial_discount_for(organization, plan, trial_used)
+        discount = _round(plan.monthly_price * Decimal(discount_pct) / Decimal(100))
+        offer = resolve_offer(organization, applies_to=Offer.APPLIES_FIRST_MONTH,
+                              plan=plan, amount=plan.monthly_price)
+        offer_discount = (_round(plan.monthly_price - offer.apply_to(plan.monthly_price))
+                          if offer is not None else Decimal("0"))
+        if offer_discount > discount:
+            discount = offer_discount
+        else:
+            offer = None
     invoice = Invoice.objects.create(
         organization=organization,
         number=Invoice.next_number(),
@@ -822,13 +957,18 @@ def build_switch_invoice(organization: Organization, plan: Plan) -> Invoice:
         plan_amount=plan.monthly_price,
         metered_requests=0,
         metered_amount=Decimal("0"),
-        total=plan.monthly_price,
+        discount_amount=discount,
+        discount_offer=offer,
+        total=_round(plan.monthly_price - discount),
         issued_at=now,
         due_at=(now + timedelta(days=INVOICE_DUE_DAYS)).date(),
     )
+    if offer is not None:
+        Offer.objects.filter(pk=offer.pk).update(uses=F("uses") + 1)
     _log.info("switch invoice built", extra={
         "invoice": invoice.number, "org": organization.id, "plan": plan.code,
-        "total": str(invoice.total), "bonus_days": bonus})
+        "total": str(invoice.total), "bonus_days": bonus,
+        "discount": str(discount)})
     return invoice
 
 

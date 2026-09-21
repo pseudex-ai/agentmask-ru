@@ -523,7 +523,12 @@ def main() -> int:  # noqa: C901 — линейный сценарий из пр
               "на лендинге атрибут цели есть и он пустой — регистрация не "
               "случилась", landing_body[:0])
 
-        plan_match = _re.search(r'name="plan"[^>]*value="([^"]+)"', landing_body)
+        # Первый пункт выпадашки — то, что отправил бы браузер без клика;
+        # умолчания на сервере нет.
+        select = _re.search(r'<select[^>]*name="plan"[^>]*>(.*?)</select>',
+                            landing_body, _re.S)
+        plan_match = (_re.search(r'<option[^>]*value="([^"]+)"', select.group(1))
+                      if select else None)
         payload = {"email": "goal-probe@example.test", "consent": "1", "terms": "1"}
         if plan_match:
             payload["plan"] = plan_match.group(1)

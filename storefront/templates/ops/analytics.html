@@ -58,6 +58,11 @@
       <div style="font-size:12px;color:var(--dim-2);margin-top:6px">{% if money.trial_conversion is not None %}конверсия {{ money.trial_conversion }}% из {{ money.trial_decided }} решивших{% else %}ещё никто не решил{% endif %}</div>
     </div>
     <div style="background:var(--panel);padding:16px 18px 18px">
+      <div class="label">ЖДУТ ОПЛАТЫ</div>
+      <div class="mono" style="font-size:26px;font-weight:700;margin-top:8px">{{ money.pending }}</div>
+      <div style="font-size:12px;color:var(--dim-2);margin-top:6px">выбрали платный тариф, ключа ещё нет</div>
+    </div>
+    <div style="background:var(--panel);padding:16px 18px 18px">
       <div class="label">НЕ ОПЛАТИЛИ</div>
       <div class="mono" style="font-size:26px;font-weight:700;margin-top:8px;color:{% if money.past_due %}var(--amber){% else %}var(--dim-2){% endif %}">{{ money.past_due }}</div>
       <div style="font-size:12px;color:var(--dim-2);margin-top:6px">обслуживание остановлено</div>

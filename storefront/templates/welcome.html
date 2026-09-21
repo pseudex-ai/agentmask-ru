@@ -4,7 +4,7 @@
 <section>
   <div class="eyebrow"><i></i><span>КЛЮЧ ВЫПУЩЕН</span></div>
   <h2>Ключ работает прямо сейчас</h2>
-  <p class="sub" style="margin-top:16px">Оплата не нужна: {{ trial_days }} дней проба. Команда ниже уже содержит ваш ключ — подставлять ничего не надо.</p>
+  <p class="sub" style="margin-top:16px">{% if on_trial %}Оплата не нужна: {{ trial_days }} дней проба. {% endif %}Команда ниже уже содержит ваш ключ — подставлять ничего не надо.</p>
 
   <div class="keybox">
     <div class="label">ВАШ КЛЮЧ · ПОКАЗЫВАЕТСЯ ОДИН РАЗ</div>

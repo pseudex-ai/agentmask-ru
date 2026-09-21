@@ -290,7 +290,7 @@ def main() -> int:
     from django.contrib.auth import get_user_model
     from accounts.models import Membership
     from billing import services
-    org = services.create_account("seo@corp-seo.ru", "", "start", "203.0.113.90")
+    org = services.create_account("seo@corp-seo.ru", "", "free", "203.0.113.90")
     user = Membership.objects.get(organization=org).user
     private = Client()
     private.force_login(user)

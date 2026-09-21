@@ -40,6 +40,7 @@
     {% if subscription %}
       <div>
         {% if subscription.volume_capped %}<span class="pill bad">ЛИМИТ ОБЪЁМА ИСЧЕРПАН — СЕРВИС ОСТАНОВЛЕН</span>
+        {% elif subscription.state == 'pending' %}<span class="pill warn">ЖДЁТ ОПЛАТЫ — КЛЮЧ ПОСЛЕ ОПЛАТЫ</span>
         {% elif subscription.state == 'trial' %}<span class="pill warn">ПРОБНЫЙ ПЕРИОД ДО {{ subscription.trial_ends_at|date:"d.m.Y" }}</span>
         {% elif subscription.state == 'active' %}<span class="pill ok">АКТИВНА</span>
         {% elif subscription.state == 'past_due' %}<span class="pill bad">НЕ ОПЛАЧЕНА — СЕРВИС ОСТАНОВЛЕН</span>
@@ -61,7 +62,7 @@
       <p class="hint">Слот освобождается сам, когда аренда контейнера истекает. Пока он занят,
         новый контейнер с тем же ключом получит 409 — это лимит тарифа, а не отказ в оплате.</p>
       {% endif %}
-      <div class="kv"><span class="k">период до</span><span class="v">{{ subscription.current_period_end|date:"d.m.Y" }}</span></div>
+      <div class="kv"><span class="k">период до</span><span class="v">{% if pending %}начнётся с оплаты{% else %}{{ subscription.current_period_end|date:"d.m.Y" }}{% endif %}</span></div>
       <div class="kv"><span class="k">ключей выпущено</span><span class="v">{{ keys|length }}</span></div>
     {% else %}
       <p style="color:var(--dim)">Подписки нет.</p>
@@ -130,13 +131,15 @@
   {% if paid_plans %}
   <div style="margin-top:20px;border:1px solid {% if trial_over %}var(--accent){% else %}var(--line-2){% endif %};padding:22px">
     <div class="label" style="margin-bottom:10px">
-      {% if plan.is_trial %}ПЕРЕЙТИ НА ПЛАТНЫЙ{% else %}СМЕНИТЬ ТАРИФ{% endif %}</div>
-    {% if trial_over %}
+      {% if pending %}ОПЛАТИТЬ ТАРИФ{% elif plan.is_trial %}ПЕРЕЙТИ НА ПЛАТНЫЙ{% else %}СМЕНИТЬ ТАРИФ{% endif %}</div>
+    {% if pending %}
+      <p style="font-size:14px;color:var(--text-2);line-height:1.6;margin:0 0 14px">Тариф «{{ plan.title }}» выбран при регистрации, пробы у него нет: <b style="color:var(--text-3)">ключ выпускается сразу после оплаты</b>{% if bonus_days %}, и к оплаченному месяцу добавляется <b style="color:var(--text-3)">{{ bonus_days }} дней в подарок</b> за первый платёж без пробы{% endif %}. Передумали — выберите бесплатный тариф в поддержке или другой платный здесь.</p>
+    {% elif trial_over %}
       <p style="font-size:14px;color:var(--text-2);line-height:1.6;margin:0 0 14px">
         {% if organization.trial_granted %}Пробный период закончился — маскирование остановлено.{% else %}Бесплатные дни этому аккаунту не выдавались: с этого адреса или домена проба уже была. Если это ошибка, напишите нам — включим.{% endif %}
-        Оплата возвращает обслуживание сразу.</p>
+        Оплата возвращает обслуживание сразу{% if post_trial_discount_pct %} — и первый месяц идёт <b style="color:var(--text-3)">со скидкой {{ post_trial_discount_pct }}%</b> за то, что вы прошли пробу{% endif %}.</p>
     {% elif subscription.plan.is_trial %}
-      <p style="font-size:14px;color:var(--dim);line-height:1.6;margin:0 0 14px">Пробный период идёт до <b style="color:var(--text-3)">{{ subscription.trial_ends_at|date:"d.m.Y" }}</b>, ждать его конца не нужно: оплаченный период начинается сейчас{% if bonus_days %}, и к нему добавляется <b style="color:var(--text-3)">{{ bonus_days }} дней в подарок</b> за первый платёж{% endif %}.</p>
+      <p style="font-size:14px;color:var(--dim);line-height:1.6;margin:0 0 14px">Пробный период идёт до <b style="color:var(--text-3)">{{ subscription.trial_ends_at|date:"d.m.Y" }}</b>, ждать его конца не нужно: оплаченный период начинается сейчас{% if bonus_days %}, и к нему добавляется <b style="color:var(--text-3)">{{ bonus_days }} дней в подарок</b> за первый платёж{% elif post_trial_discount_pct %}, и первый месяц идёт <b style="color:var(--text-3)">со скидкой {{ post_trial_discount_pct }}%</b> за то, что вы прошли пробу{% endif %}.</p>
     {% else %}
       <p style="font-size:14px;color:var(--dim);line-height:1.6;margin:0 0 14px">Новый тариф вступает в силу <b style="color:var(--text-3)">после оплаты</b>, а не после нажатия. Лимиты контейнеров и ёмкость меняются в тот же момент.</p>
     {% endif %}
@@ -194,8 +197,16 @@
     </tr>
     {% empty %}<tr><td colspan="5" style="color:var(--dim-2)">Ключей нет.</td></tr>{% endfor %}
   </table>
+  {% comment %}
+КЛЮЧ — ЗА ДЕНЬГАМИ ИЛИ ЗА ЖИВОЙ ПРОБОЙ. Форма выпуска раньше стояла в любом
+  состоянии подписки, и платный тариф с лендинга получал бы ключ до оплаты, а
+  кончившаяся проба — ключ, который лицензионный сервер не обслужит. Вместо
+  формы — причина, почему её нет; оплата выше на этой же странице.
+{% endcomment %}
+  {% if may_issue_keys %}
   <form method="post" action="{% url 'new_key' %}" style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center">
     {% csrf_token %}
+    {% if not keys %}<span style="font-size:14px;color:var(--text-2);flex-basis:100%">{% if subscription.state == 'active' %}Оплачено. {% endif %}Выпустите первый ключ — он покажется один раз, вместе с командой запуска.</span>{% endif %}
     <input class="field" style="width:220px" type="text" name="label" placeholder="название (например, прод)">
     <select class="field" style="width:auto" name="environment"><option value="live">прод</option><option value="test">стенд</option></select>
     <button class="btn accent" type="submit">ВЫПУСТИТЬ КЛЮЧ</button>
@@ -203,6 +214,9 @@
       <b style="color:var(--text-3)">Потеряли — выпустите новый и отзовите старый:</b> у нас лежит только его хеш,
       восстановить прежний не может никто, включая нас.</span>
   </form>
+  {% else %}
+  <p style="font-size:14px;color:var(--dim);line-height:1.6;margin:16px 0 0">{% if pending %}Ключ выпускается после оплаты тарифа — форма оплаты выше.{% elif trial_over %}Пробный период закончился; новый ключ выпускается после оплаты.{% else %}Подписка не оплачена — ключ выпускается после оплаты.{% endif %}</p>
+  {% endif %}
 
   <h3 id="payer" style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Плательщик</h3>
   {% comment %}
@@ -238,7 +252,7 @@
       <td>{% if invoice.state == 'paid' %}<span class="pill ok">ОПЛАЧЕН</span>{% elif invoice.state == 'issued' %}<span class="pill warn">ВЫСТАВЛЕН</span>{% else %}<span class="pill">{{ invoice.get_state_display|upper }}</span>{% endif %}</td>
       <td style="text-align:right"><a class="btn" href="{% url 'invoice_detail' invoice.number %}">ОТКРЫТЬ</a></td>
     </tr>
-    {% empty %}<tr><td colspan="5" style="color:var(--dim-2)">Счетов пока нет — первый выставится по окончании пробного периода.</td></tr>{% endfor %}
+    {% empty %}<tr><td colspan="5" style="color:var(--dim-2)">Счетов пока нет — первый {% if pending %}выставится кнопкой «оплатить» выше{% else %}выставится по окончании пробного периода{% endif %}.</td></tr>{% endfor %}
   </table>
 </section>
 {% endblock %}

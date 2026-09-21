@@ -77,7 +77,11 @@ def main() -> int:
 
     # --- исход: каждая форма реально выпускает ключ -------------------------
     for i, form in enumerate(forms, 1):
-        plan = re.search(r'name="plan"[^>]*value="([^"]+)"', form)
+        # Тариф — ПЕРВЫЙ пункт выпадашки, как отправил бы браузер без единого
+        # клика. Сервер умолчания больше не подставляет: форма без тарифа это
+        # сломанная форма, а не «Старт».
+        select = re.search(r'<select[^>]*name="plan"[^>]*>(.*?)</select>', form, re.S)
+        plan = re.search(r'<option[^>]*value="([^"]+)"', select.group(1)) if select else None
         data = {"email": f"form{i}@example.com"}
         if plan:
             data["plan"] = plan.group(1)
@@ -104,16 +108,24 @@ def main() -> int:
               f"форма #{i}: отправка ДЕЙСТВИТЕЛЬНО заводит аккаунт",
               f"аккаунт={created} ошибка_на_странице={failed}")
 
-    # --- кнопки пробы в прайсе: ни одна не ведёт в никуда -------------------
-    from billing.models import Plan
-    public = set(Plan.objects.filter(is_public=True).values_list("code", flat=True))
+    # --- кнопки в прайсе: ни одна не ведёт в никуда --------------------------
+    # Бесплатный тариф — своя карточка и своя кнопка: он не публичный (не
+    # товар), но выбрать его можно, и `signup_plans()` — тот же список, по
+    # которому сервер принимает код. Кнопка и проверка читают один источник.
+    from billing import services
+    sellable = {plan.code for plan in services.signup_plans()}
     buttons = re.findall(r'<a[^>]*data-plan="([^"]+)"[^>]*>', page)
-    check(len(buttons) == len(public),
-          f"кнопок пробы столько же, сколько публичных тарифов: {len(buttons)} и {len(public)}",
+    check(len(buttons) == len(sellable),
+          f"кнопок столько же, сколько тарифов в форме: {len(buttons)} и {len(sellable)}",
           "тариф без кнопки не продать, кнопка без тарифа — отказ сервера")
-    check(set(buttons) == public,
-          "каждая кнопка несёт существующий публичный тариф",
-          f"на странице {sorted(set(buttons))}, в базе {sorted(public)}")
+    check(set(buttons) == sellable,
+          "каждая кнопка несёт тариф, который сервер примет",
+          f"на странице {sorted(set(buttons))}, в форме {sorted(sellable)}")
+    check("free" in buttons and buttons.index("free") == 0,
+          "бесплатный тариф — первая карточка прайса",
+          "иначе платные карточки снова читаются как «начать пробу»")
+    check("НАЧАТЬ ПРОБУ" not in page,
+          "платные карточки не обещают пробу — проба одна, на бесплатном")
     # Якорь, на который они ведут, обязан существовать — иначе нажатие ничего
     # не делает и человек просто остаётся стоять на прайсе.
     anchors = re.findall(r'<a[^>]*data-plan="[^"]+"[^>]*href="([^"]+)"', page) \
@@ -125,8 +137,8 @@ def main() -> int:
     print("=" * 60)
     if not ok:
         raise SystemExit("signup forms are not correct")
-    print("signup-forms OK — форма собирает два согласия раздельно и выпускает "
-          "ключ, а каждая кнопка пробы ведёт к ней с существующим тарифом")
+    print("signup-forms OK — форма собирает два согласия раздельно и заводит "
+          "аккаунт, а каждая кнопка прайса ведёт к ней с тарифом, который сервер примет")
     return 0
 
 

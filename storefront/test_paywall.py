@@ -12,6 +12,10 @@
 НА ВЫБРАННОМ тарифе — отметил «Промышленный», получил миллион запросов
 бесплатно, завёл второй ящик, получил ещё.
 
+Третья половина (21.09): бесплатных входов ровно ОДИН — тариф `free`. Платный
+тариф с лендинга это покупка: ни пробы, ни ключа до денег; за оплату без пробы
+— дни в подарок, за оплату после пробы — скидка на первый месяц. Никогда обе.
+
 Сеть здесь подменяется: `mark_paid` ходит на лицензионный сервер, а предмет
 проверки — что происходит с подпиской и счётом, а не то, доступен ли он.
 
@@ -66,21 +70,59 @@ def main() -> int:
           "лимиты пробы МЕНЬШЕ «Старта»",
           f"free={trial.included_requests} start={Plan.objects.get(code='start').included_requests}")
 
-    # ── 1. проба идёт на пробном тарифе, выбор запоминается ────────────────
-    org = services.create_account("first@acme-corp.ru", "Акме", "industrial", "203.0.113.7")
+    check([plan.code for plan in services.signup_plans()][0] == "free",
+          "в форме регистрации бесплатный тариф стоит ПЕРВЫМ",
+          str([plan.code for plan in services.signup_plans()]))
+
+    # ── 1. проба идёт на бесплатном тарифе, и только на нём ────────────────
+    org = services.create_account("first@acme-corp.ru", "Акме", "free", "203.0.113.7")
     sub = org.subscription
-    check(sub.plan_id == "free",
-          "новый аккаунт садится на ПРОБНЫЙ тариф, а не на выбранный",
-          f"оказался на {sub.plan_id}")
-    check(sub.intended_plan_id == "industrial",
-          "выбранный тариф запомнен как намерение", str(sub.intended_plan_id))
+    check(sub.plan_id == "free" and sub.state == Subscription.TRIAL,
+          "выбравший бесплатный садится на ПРОБНЫЙ тариф в состоянии пробы",
+          f"{sub.plan_id} / {sub.state}")
     check(org.trial_granted and sub.trial_ends_at > timezone.now(),
           "первому — бесплатные дни выданы")
     check((sub.trial_ends_at - timezone.now()).days >= trial.trial_days - 1,
           f"и их столько, сколько стоит в тарифе ({trial.trial_days})")
+    check(services.may_issue_keys(sub), "на живой пробе ключ выпускается")
+
+    # ── 1b. платный тариф с лендинга — покупка: ни пробы, ни ключа до денег ─
+    #
+    # Раньше любой выбор в форме давал те же четырнадцать бесплатных дней, и
+    # «Старт — 990 ₽/мес» рядом с «ключ работает сразу и бесплатно» читалось
+    # как «Старт бесплатно две недели». Теперь платный тариф ждёт оплаты.
+    buyer0 = services.create_account("paid@buyer-corp.ru", "", "industrial", "203.0.113.70")
+    bsub = buyer0.subscription
+    check(bsub.state == Subscription.PENDING and bsub.plan_id == "industrial",
+          "выбравший платный тариф ждёт оплаты НА НЁМ, без пробы",
+          f"{bsub.state} / {bsub.plan_id}")
+    check(not buyer0.trial_granted and bsub.trial_ends_at <= timezone.now(),
+          "бесплатных дней у него нет — он их не просил")
+    check(not services.may_issue_keys(bsub), "и ключ до оплаты не выпускается")
+    try:
+        services.issue_first_key(buyer0)
+    except services.KeyNotAvailable:
+        check(True, "выпуск ключа до оплаты отказан явно, своим классом")
+    else:
+        check(False, "выпуск ключа до оплаты отказан явно, своим классом",
+              "ключ выпустился без денег")
+    industrial = Plan.objects.get(code="industrial")
+    pending_invoice = services.build_switch_invoice(buyer0, industrial)
+    check(pending_invoice.bonus_days == industrial.first_payment_bonus_days
+          and pending_invoice.bonus_days > 0,
+          "первый платёж без пробы несёт дни в подарок — это и есть «за доверие»",
+          str(pending_invoice.bonus_days))
+    check(pending_invoice.discount_amount == 0,
+          "а скидки «после пробы» у него нет: пробы не было")
+    services.mark_paid(pending_invoice, payment_ref="test-paid-signup")
+    bsub.refresh_from_db()
+    check(bsub.state == Subscription.ACTIVE, "оплата делает подписку активной", bsub.state)
+    check((bsub.current_period_end - timezone.now()).days
+          >= 30 + pending_invoice.bonus_days - 1,
+          "и период = месяц плюс подарок")
+    check(services.may_issue_keys(bsub), "после оплаты ключ выпускается")
 
     # ── 2. счёт по требованию, с подарком ──────────────────────────────────
-    industrial = Plan.objects.get(code="industrial")
     invoice = services.build_switch_invoice(org, industrial)
     check(invoice.target_plan_id == "industrial" and invoice.state == Invoice.ISSUED,
           "во время пробы счёт ВЫСТАВЛЯЕТСЯ по требованию",
@@ -137,19 +179,27 @@ def main() -> int:
     check(sub.plan_id == "work", "смена тарифа у платящего тоже работает", sub.plan_id)
 
     # ── 5. повтор с того же адреса — без бесплатных дней ───────────────────
-    repeat = services.create_account("second@other-corp.ru", "", "start", "203.0.113.7")
+    repeat = services.create_account("second@other-corp.ru", "", "free", "203.0.113.7")
     check(not repeat.trial_granted,
           "повтор с того же адреса пробы не получает")
     check(repeat.subscription.trial_ends_at <= timezone.now(),
           "бесплатные дни ему не начислены")
-    check(services.bonus_days_for(repeat, industrial, False) == 0,
-          "и подарка за первый платёж тоже нет",
-          "иначе подарок стал бы новым способом брать продукт бесплатно")
+    check(not services.may_issue_keys(repeat.subscription),
+          "и ключа без пробы и без денег у него нет",
+          "раньше ключ выходил и работал до первого тика цикла")
+    # Подарок за первый платёж ему ПОЛОЖЕН: подарок требует денег, бесплатно
+    # продукт им не взять, а «не тронул пробу» — ровно его случай. Условие
+    # «пробу выдавали» снято 21.09: главный получатель подарка теперь тот, кто
+    # выбрал платный тариф на лендинге, и пробы у него нет по своему выбору.
+    check(services.bonus_days_for(repeat, industrial, False)
+          == industrial.first_payment_bonus_days,
+          "подарок за оплату без пробы не зависит от того, выдавали ли пробу")
 
-    # ── 5b. проба НАЧАТА (был запрос через движок) — подарка нет ────────────
+    # ── 5b. проба НАЧАТА (был запрос через движок) — подарка нет, есть скидка ─
     # Подарок платит за решение купить, не выработав пробу. Кто уже прогнал
-    # свои сценарии — получил то, ради чего проба была; лишние дни поверх лишние.
-    fresh = services.create_account("buy-before-trial@corp-x.ru", "", "start", "203.0.113.9")
+    # свои сценарии — получил то, ради чего проба была; ему положена другая
+    # половина сделки — скидка на первый месяц, если владелец задал её тарифу.
+    fresh = services.create_account("buy-before-trial@corp-x.ru", "", "free", "203.0.113.9")
     check(fresh.trial_granted, "новой почте пробу выдали")
     check(services.bonus_days_for(fresh, industrial, False)
           == industrial.first_payment_bonus_days,
@@ -157,15 +207,38 @@ def main() -> int:
           str(industrial.first_payment_bonus_days))
     check(services.bonus_days_for(fresh, industrial, True) == 0,
           "начавшему пробу (хоть один запрос через движок) — подарка нет")
+    check(services.post_trial_discount_for(fresh, industrial, True) == 0
+          and industrial.post_trial_discount_pct == 0,
+          "скидка после пробы по умолчанию ноль — размер решает владелец в админке")
+    Plan.objects.filter(code="industrial").update(post_trial_discount_pct=20)
+    industrial.refresh_from_db()
+    check(services.post_trial_discount_for(fresh, industrial, True) == 20,
+          "задана на тарифе — прошедшему пробу она положена")
+    check(services.post_trial_discount_for(fresh, industrial, False) == 0,
+          "не прошедшему — нет: ему подарок, и никогда оба")
+    licensing.usage = lambda org_id: {"usage": {"requests": 7}}
+    after_trial = services.build_switch_invoice(fresh, industrial)
+    check(after_trial.bonus_days == 0
+          and after_trial.discount_amount == industrial.monthly_price * 20 / 100
+          and after_trial.total == industrial.monthly_price * 80 / 100,
+          "счёт прошедшего пробу: без подарка, со скидкой 20% на месяц",
+          f"bonus={after_trial.bonus_days} discount={after_trial.discount_amount} total={after_trial.total}")
+    services.mark_paid(after_trial, payment_ref="test-retention")
+    second_month = services.build_switch_invoice(fresh, Plan.objects.get(code="work"))
+    check(second_month.discount_amount == 0,
+          "скидка только на ПЕРВЫЙ платёж", str(second_month.discount_amount))
+    licensing.usage = lambda org_id: {"usage": {}}
+    Plan.objects.filter(code="industrial").update(post_trial_discount_pct=0)
+    industrial.refresh_from_db()
 
     # ── 6. тот же КОРПОРАТИВНЫЙ домен — тоже повтор ────────────────────────
-    same_domain = services.create_account("third@acme-corp.ru", "", "start", "198.51.100.4")
+    same_domain = services.create_account("third@acme-corp.ru", "", "free", "198.51.100.4")
     check(not same_domain.trial_granted,
           "повтор с того же корпоративного домена пробы не получает")
 
     # ── 7. а общий почтовый домен НЕ считается ─────────────────────────────
-    services.create_account("someone@gmail.com", "", "start", "198.51.100.5")
-    public_mail = services.create_account("another@gmail.com", "", "start", "198.51.100.6")
+    services.create_account("someone@gmail.com", "", "free", "198.51.100.5")
+    public_mail = services.create_account("another@gmail.com", "", "free", "198.51.100.6")
     check(public_mail.trial_granted,
           "gmail не считается компанией: второй человек пробу получает",
           "иначе первый зарегистрировавшийся с gmail отрезал бы всех остальных")
@@ -179,7 +252,7 @@ def main() -> int:
     # снаружи выглядит как «всё работает».
     from django.core.management import call_command as _call
     from django.core import mail as _mail
-    ending = services.create_account("ends@third-corp.ru", "", "start", "198.51.100.20")
+    ending = services.create_account("ends@third-corp.ru", "", "free", "198.51.100.20")
     ending.subscription.trial_ends_at = timezone.now() - timedelta(minutes=1)
     ending.subscription.save(update_fields=["trial_ends_at"])
     invoices_before = Invoice.objects.filter(organization=ending).count()
@@ -207,7 +280,7 @@ def main() -> int:
     # клиенту, купившему тариф сегодня: период кончился, счёта нет, деньги не
     # выставлены — и видно это только через месяц по недостающей выручке.
     # Ровно та же ловушка уже была с годовым счётом, и это её второй случай.
-    buyer = services.create_account("cycle@fourth-corp.ru", "", "start", "198.51.100.30")
+    buyer = services.create_account("cycle@fourth-corp.ru", "", "free", "198.51.100.30")
     bought = services.build_switch_invoice(buyer, Plan.objects.get(code="start"))
     services.mark_paid(bought, payment_ref="test-cycle")
     buyer.subscription.refresh_from_db()
@@ -228,7 +301,7 @@ def main() -> int:
     # нечего. Раньше это была бы ошибка обработки платежа, ЮKassa начала бы
     # повторять доставку, и каждая попытка падала бы так же — при том что деньги
     # записаны и всё в порядке.
-    early = services.create_account("early@fifth-corp.ru", "", "start", "198.51.100.31")
+    early = services.create_account("early@fifth-corp.ru", "", "free", "198.51.100.31")
     early_invoice = services.build_switch_invoice(early, Plan.objects.get(code="start"))
     # Имя проверки одно на обе ветки: провал записывается ТАМ, ГДЕ СЛУЧИЛСЯ,
     # а не выносится флагом наружу — исключение, превращённое в булево,
@@ -253,7 +326,7 @@ def main() -> int:
     # кнопки, для клиента не существует.
     from django.test import Client
     from accounts.models import Membership
-    fresh = services.create_account("cabinet@another-corp.ru", "", "work", "198.51.100.9")
+    fresh = services.create_account("cabinet@another-corp.ru", "", "free", "198.51.100.9")
     member = Membership.objects.get(organization=fresh).user
     client = Client()
     client.force_login(member)
@@ -261,11 +334,34 @@ def main() -> int:
     check('action="/app/subscribe"' in cabinet,
           "в кабинете НА ПРОБЕ есть форма оплаты тарифа",
           "именно её отсутствие и было жалобой: платить нечем")
-    check('value="work"' in cabinet and 'selected' in cabinet,
-          "и в ней подставлен тариф, выбранный при регистрации")
     check("дней в подарок" in cabinet,
           "подарок за первый платёж назван на экране",
           "иначе повода платить сегодня по-прежнему нет")
+    check('action="/app/keys/new"' in cabinet,
+          "на живой пробе форма выпуска ключа есть")
+
+    # Платный с лендинга: ждёт оплаты, тариф подставлен, ключа выпустить нельзя.
+    buyer_member = Membership.objects.get(organization=buyer0).user
+    paid_client = Client()
+    paid_client.force_login(buyer_member)
+    waiting = services.create_account("waiting@sixth-corp.ru", "", "work", "198.51.100.40")
+    waiting_client = Client()
+    waiting_client.force_login(Membership.objects.get(organization=waiting).user)
+    waiting_cabinet = waiting_client.get("/app/").content.decode()
+    check("ЖДЁТ ОПЛАТЫ" in waiting_cabinet,
+          "выбравшему платный тариф кабинет говорит, что ждёт оплату")
+    check('value="work" selected' in waiting_cabinet,
+          "и в форме оплаты подставлен выбранный тариф")
+    check('action="/app/keys/new"' not in waiting_cabinet
+          and "после оплаты" in waiting_cabinet,
+          "формы выпуска ключа нет, вместо неё — почему",
+          "ключ до оплаты был бы кредитом, которого никто не выдавал")
+    response = waiting_client.post("/app/keys/new", {"label": "x", "environment": "live"})
+    check(response.status_code == 302 and not waiting.keys.exists(),
+          "и POST в обход экрана ключа тоже не даёт")
+    paid_cabinet = paid_client.get("/app/").content.decode()
+    check('action="/app/keys/new"' in paid_cabinet and "Выпустите первый ключ" in paid_cabinet,
+          "оплатившему кабинет предлагает выпустить первый ключ")
 
     # И у повторного аккаунта экран говорит правду, а не молчит.
     repeat_member = Membership.objects.get(organization=repeat).user
@@ -282,7 +378,8 @@ def main() -> int:
     if not ok:
         raise SystemExit("paywall is not correct")
     print("paywall OK — заплатить можно в любой момент, смена тарифа доходит до "
-          "лицензионного сервера, проба выдаётся один раз и на своих лимитах")
+          "лицензионного сервера, проба выдаётся один раз и на своих лимитах, "
+          "платный тариф с лендинга ждёт денег, а не выдаёт ключ")
     return 0
 
 

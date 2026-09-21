@@ -471,10 +471,31 @@ if (document.getElementById("setup")) showProvider(0);
  * отправиться — они собирали одно согласие из двух. С одной формой этот класс
  * ошибки исчезает: сломать нечего, дублировать нечего.
  * ──────────────────────────────────────────────────────────────────────────── */
+/* КНОПКА И ПОДПИСЬ ГОВОРЯТ ТО, ЧТО СЛУЧИТСЯ. Бесплатный тариф — «получить
+   ключ», платный — «зарегистрироваться и оплатить»: ключ на платном выпускается
+   после денег, и обещать его кнопкой значило бы обещать то, чего форма не
+   делает. Без JS остаётся бесплатная подпись — она же выбрана по умолчанию. */
+const signupPlanSelect = document.querySelector('#signup-form select[name="plan"]');
+function reflectSignupPlan() {
+  if (!signupPlanSelect) return;
+  const option = signupPlanSelect.options[signupPlanSelect.selectedIndex];
+  const paid = option && option.dataset.paid === "1";
+  const button = document.querySelector('#signup-form button[type="submit"]');
+  if (button) button.textContent = paid ? button.dataset.labelPaid : button.dataset.labelFree;
+  document.querySelectorAll('#signup-form [data-when]').forEach((note) => {
+    note.hidden = (note.dataset.when === "paid") !== paid;
+  });
+}
+if (signupPlanSelect) {
+  signupPlanSelect.addEventListener("change", reflectSignupPlan);
+  reflectSignupPlan();
+}
+
 document.querySelectorAll("[data-plan]").forEach((link) => {
   link.addEventListener("click", () => {
     const select = document.querySelector('#signup-form select[name="plan"]');
     if (select) select.value = link.dataset.plan;
+    reflectSignupPlan();
     const email = document.querySelector('#signup-form input[name="email"]');
     /* Фокус — после прокрутки: поставленный сразу, он прокручивает страницу сам
        и спорит с якорем. */
