@@ -228,11 +228,13 @@ date in the agent's.
 - **Tests:** `python3 -m pseudex.date_form` (self-test) · via redact → test_argument_form (`_forms_follow`), test_product, test_hard_cases
 - **Docs:** `docs/known-issues.md` (Б24) · rules: INVARIANTS.md#swap
 
-#### `pseudex/agent_form.py` — 86 lines · `live`
+#### `pseudex/agent_form.py` — 135 lines · `live`
 The FORM the agent wrote a substitute in (case, word by word, positional), laid
 over the real value on the way back to the tool. Symmetric: lower case in, lower
-case out.
-- **API:** `cased_like`, `main`
+case out. A NAME is cased as a whole class (`lower`/`upper`/`title`), never
+word by word — mirroring a lower-case particle onto the fake's patronymic
+produced a run the windows could not read back (Б24).
+- **API:** `cased_like`, `case_class`, `name_cased_like`, `main`
 - **Uses:** — · **Used by:** morph_places, redact
 - **Tests:** none direct · via redact → test_argument_form
 - **Docs:** `research/2026-09-02-agent-form-benchmark.md` · rules: INVARIANTS.md#agent-form
