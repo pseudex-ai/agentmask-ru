@@ -4,9 +4,15 @@ text + keep the per-org vault + audit. Runs in the customer's contour.
 
   POST /mask          {org_id, messages, tools, conversation_id?}
                                                    -> {messages, tools}  (audited)
-  POST /unmask        {org_id, response}           -> {response}
-  POST /unmask_arguments {org_id, arguments[]}     -> {arguments[]}   (streamed tool calls)
-  POST /unmask_chunk  {org_id, delta, carry, flush}-> {text, carry}      (SSE leg)
+  POST /unmask        {org_id, response, conversation_id?}     -> {response}
+  POST /unmask_arguments {org_id, arguments[], conversation_id?} -> {arguments[]}   (streamed tool calls)
+  POST /unmask_chunk  {org_id, delta, carry, flush, conversation_id?} -> {text, carry}  (SSE leg)
+
+  `conversation_id` on the way back is the SAME id the host gave /mask (or
+  derived the same way from the messages). Without it the vault answers
+  customer-wide: exact tokens resolve, but what the dialogue decided — a
+  linked address, which substitutes it was shown, the customer's literal
+  string for a verbatim copy — cannot be read back.
   POST /spans         {org_id, texts}              -> offsets for highlighting
   GET  /usage?org_id=...                           -> counts + recent (for UI)
   GET  /license                                    -> lease state, for monitoring
@@ -657,7 +663,7 @@ async def unmask(request: Request) -> JSONResponse:
     # Detokenization is indexed lookups now, but still SQLite I/O per answer —
     # offload so it never blocks the loop.
     result = await anyio.to_thread.run_sync(
-        _unmask_for, response, org_id, limiter=_MASK_LIMITER
+        _unmask_for, response, org_id, str(body.get("conversation_id", "")), limiter=_MASK_LIMITER
     )
     # WHAT DID NOT COME BACK. Detokenization is best-effort by construction: a
     # model that reorders or shortens a substitute produces a string that
@@ -724,7 +730,7 @@ async def unmask_arguments_endpoint(request: Request) -> JSONResponse:
         return JSONResponse({"error": "arguments must be a list of strings"},
                             status_code=400)
     restored, residual, disclosed = await anyio.to_thread.run_sync(
-        _unmask_arguments_for, arguments, org_id, limiter=_MASK_LIMITER
+        _unmask_arguments_for, arguments, org_id, str(body.get("conversation_id", "")), limiter=_MASK_LIMITER
     )
     await anyio.to_thread.run_sync(
         AUDIT.record_detok, org_id, _detok_actor(body), disclosed, len(residual)
@@ -785,7 +791,7 @@ async def unmask_chunk(request: Request) -> JSONResponse:
         return JSONResponse({"error": "delta and carry must be strings"}, status_code=400)
     result = await anyio.to_thread.run_sync(
         _unmask_chunk_leg, delta, carry, org_id, bool(body.get("flush", False)),
-        _detok_actor(body), limiter=_MASK_LIMITER,
+        _detok_actor(body), str(body.get("conversation_id", "")), limiter=_MASK_LIMITER,
     )
     if result is _RATE_LIMITED:
         return JSONResponse({"error": "detok rate limit exceeded"}, status_code=429)
@@ -798,14 +804,21 @@ def _spans_for_texts(texts: list[object], org_id: str) -> list[list[dict[str, ob
     return [_spans_for(text, vault) if isinstance(text, str) else [] for text in texts]
 
 
+def _scoped(org_id: str, conversation_id: str) -> Vault:
+    """The org's vault, in the conversation the host named — see the module
+    docstring on `conversation_id` for the way back."""
+    vault = _vault(org_id)
+    return vault.for_conversation(conversation_id) if conversation_id else vault
+
+
 def _unmask_arguments_for(arguments: list[str],
-                          org_id: str) -> tuple[list[str], list[str], int]:
+                          org_id: str, conversation_id: str = "") -> tuple[list[str], list[str], int]:
     """Vault resolved inside the worker thread — see _mask_request. Returns the
     restored arguments, the residual (substitutes that failed to resolve — a fake
     reaching the tool), and the count of real values DISCLOSED (minted tokens in the
     input arguments, gone from the output), which is what the F2 value-based rate
     limit and audit count — many values in one argument count as many, not one."""
-    vault = _vault(org_id)
+    vault = _scoped(org_id, conversation_id)
     restored = [unmask_arguments(raw, vault) for raw in arguments]
     residual: list[str] = []
     for text in restored:
@@ -815,9 +828,10 @@ def _unmask_arguments_for(arguments: list[str],
     return restored, residual, disclosed
 
 
-def _unmask_for(response: dict[str, object], org_id: str) -> dict[str, object]:
+def _unmask_for(response: dict[str, object], org_id: str,
+                conversation_id: str = "") -> dict[str, object]:
     """Vault resolved inside the worker thread — see _mask_request."""
-    return unmask_response(response, _vault(org_id))
+    return unmask_response(response, _scoped(org_id, conversation_id))
 
 
 def _residual_for(response: dict[str, object], org_id: str) -> list[str]:
@@ -858,7 +872,8 @@ def _response_texts(response: dict[str, object]) -> list[str]:
 _RATE_LIMITED = object()  # sentinel: this org is over its per-minute detok VALUE cap
 
 
-def _unmask_chunk_leg(delta: str, carry: str, org_id: str, flush: bool, actor: str):
+def _unmask_chunk_leg(delta: str, carry: str, org_id: str, flush: bool, actor: str,
+                      conversation_id: str = ""):
     """Streaming detok on the worker thread, behind a minted-token gate (pentest F1). The
     minted tokens in the input (`before`) are computed ONCE — if there are none, the chunk
     cannot disclose a value, so it skips the shared-audit rate SUM and the audit; an
@@ -869,7 +884,7 @@ def _unmask_chunk_leg(delta: str, carry: str, org_id: str, flush: bool, actor: s
     gone from the EMITTED text was disclosed; a token still standing there is a fake that
     reached the caller; one carried to new_carry is split across the boundary, not yet
     emitted, so it is neither."""
-    vault = _vault(org_id)
+    vault = _scoped(org_id, conversation_id)
     before = _minted_in([carry, delta], vault)
     if not before:
         return unmask_stream_chunk(delta, carry, vault, flush)

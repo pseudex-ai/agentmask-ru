@@ -95,6 +95,35 @@ def _forms_follow(detector) -> bool:
     return ok
 
 
+def _verbatim_is_literal(detector) -> bool:
+    """AN AGENT THAT COPIES GETS THE CUSTOMER'S STRING BACK, CHARACTER FOR
+    CHARACTER — the Latin «a» inside «бaбичев», the Cyrillic «О» inside
+    «682О 8116», the address with no street word. That is exactly what it
+    would have passed without us. The vault remembers what this dialogue was
+    shown (`shown_forms`); the verbatim pass puts the literal back before any
+    form is rebuilt. 39 of the 56 «repaired» values on the public benchmark
+    were look-alike letters we had folded; 12 were addresses we had dressed
+    with «улицы»."""
+    ok = True
+    # An address counts only when the customer wrote the street word himself
+    # («ул. Заболоцкого 81 кв 51»): for a bare «заболоцкого 81» the substitute
+    # still adds «улица» on the way in — the open half of Б24 — and an agent
+    # that copies it is copying a shape the customer did not write.
+    for said in (
+        "заказ на антон бaбичев, адрес ул. Заболоцкого 81 кв 51, карта 2200 6638 682О 8116",
+        "снилс 618 318 3О1 82, паспорт 5021 675О54, тел 8 972 58О2333",
+        "пиши на есина рушана номер +79720652255, др 2 июня 1975",
+    ):
+        vault = Vault(":memory:", "acme").for_conversation("c1")
+        masked = mask_text(said, vault, detector.detect(said))
+        assert masked != said, said
+        back = json.loads(unmask_arguments(json.dumps({"field": masked}, ensure_ascii=False), vault))["field"]
+        ok &= _check(f"дословно: {said[:40]}…", back, said)
+        prose = unmask_text("Записал: " + masked, vault)
+        ok &= _check(f"дословно в прозе: {said[:40]}…", prose, "Записал: " + said)
+    return ok
+
+
 def _iso(worded: str) -> str:
     """«19 июля 1975» → «1975-07-19», the way an agent rewrites a date for a `date` field."""
     from pseudex.vault import _date_canonical  # noqa: PLC0415
@@ -228,6 +257,7 @@ def main() -> int:
     # показал как «вернулось починенным» или как фейк в инструменте: 78 + 15
     # значений, форму которых на одном из плеч менял не агент, а мы.
     failures += not _forms_follow(detector)
+    failures += not _verbatim_is_literal(detector)
 
     # --- то, что полем схемы не является, трогать нельзя --------------------
     vault = Vault(":memory:", "acme").for_conversation("c1")

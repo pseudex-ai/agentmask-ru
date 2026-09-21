@@ -686,11 +686,19 @@ async def chat_completions(request: Request):
         )
     with stage("proxy.tenant"):
         tenant = _tenant(request)
-    vault = _get_vault(tenant.customer_id)
     with stage("proxy.parse_body"):
         body = await request.json()
     if not isinstance(body, dict) or not isinstance(body.get("messages"), list):
         raise HTTPException(status_code=400, detail="missing messages array")
+    # THE WAY BACK IS SCOPED TO THE SAME CONVERSATION AS THE WAY IN. The mask
+    # leg keys everything a dialogue decides — a linked address, the
+    # substitutes it was shown (`token_uses`, `shown_forms`) — under
+    # `conversation_key(messages)`; the unmask leg used the bare customer
+    # vault, so none of it was ever read back on this shape: a piece of a
+    # substitute resolved against the customer's whole vault (Б23), a verbatim
+    # copy could not be handed the customer's literal string (Б24). Same
+    # derivation, same key, on both legs.
+    vault = _get_vault(tenant.customer_id).for_conversation(conversation_key(body["messages"]))
 
     # CPU-heavy morphology runs off the event loop under a capacity limiter, so a
     # burst QUEUES instead of thrashing every core. FAIL-CLOSED is preserved: any

@@ -446,6 +446,22 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   the sentence. Pins: `test_argument_form` (`_forms_follow`, one case per
   type, both directions), `test_hard_cases`, `test_product`
   (`test_spoken_birth_date_in_the_agents_form`, `test_card_leaves_link_by_position`).
+- **COPIED VERBATIM COMES BACK VERBATIM — the customer's literal string,
+  typos and look-alike letters included.** The vault remembers per
+  conversation what the dialogue was SHOWN where the customer wrote what
+  (`shown_forms`, the original text slice, never the normalised value), and
+  the verbatim pass runs before any form is rebuilt. Recorded for an address
+  only when the customer wrote the street word himself, because the address
+  substitute still adds one (the open half of Б24). Pins: `test_argument_form`
+  (`_verbatim_is_literal`).
+- **THE WAY BACK IS SCOPED TO THE SAME CONVERSATION AS THE WAY IN.** The proxy
+  derives `conversation_key(messages)` for both legs; the sidecar's
+  `/unmask*` take the `conversation_id` the host gave `/mask`. Without it
+  nothing a dialogue decided on the way in (a linked address, `token_uses`,
+  `shown_forms`) can be read back — which is how Б23 and Б24 would have been
+  fixed in tests and dead in production. Pins: `test_argument_form`,
+  `test_collisions`; UNPINNED at the HTTP surface — `test_perf_masking` should
+  send `conversation_id` on `/unmask_arguments` and expect the literal.
 - **DETECTION WITHOUT A MATCHING SUBSTITUTE IS A NET LOSS on the tool axis.**
   Hearing spoken identifiers raised detection and LOWERED the tool axis five
   points, because values that used to pass through went through a lossy restore.

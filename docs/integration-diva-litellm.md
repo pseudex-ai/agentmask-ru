@@ -110,6 +110,15 @@ on the same connection, and a shared carry splices one answer's tail onto
 another's head. The proxy leg keys its detokenizers on `choice.index` for exactly
 this reason.
 
+**Pass the same `conversation_id` to `/unmask`, `/unmask_arguments` and
+`/unmask_chunk` that you passed to `/mask`** (or none on both, and the sidecar
+derives one from the first two messages of `/mask` — but then it cannot derive
+it on the way back, where there are no messages). Without it the vault answers
+customer-wide: exact substitutes still resolve, but what THIS dialogue decided
+— a linked address, which substitutes it was shown, the customer's literal
+string for an argument the model copied verbatim — cannot be read back, and a
+piece of a substitute may resolve to another dialogue's person.
+
 **Check `residual_tokens` in the `/unmask_arguments` reply.** A substitute that
 did not resolve inside a tool call is a fake reaching the tool, and there is no
 other way to see it: the JSON is well-formed and the status is 200.

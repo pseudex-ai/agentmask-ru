@@ -70,11 +70,45 @@ def mask_text(text: str, vault: Vault, spans: list[Span]) -> str:
     KNOWN LIMIT: a real person whose name exactly equals a minted fake name would
     be passed through unmasked. That needs a fake-name pool far larger than the
     current seed list (see names.py) — the same production swap already planned."""
-    return _splice(text, [
-        (span.start, span.end, _token_for_text(span, vault))
-        for span in spans
-        if not is_own_substitute(span, vault)
-    ])
+    replacements: list[tuple[int, int, str]] = []
+    for span in spans:
+        if is_own_substitute(span, vault):
+            continue
+        shown = _token_for_text(span, vault)
+        # REMEMBERED CHARACTER FOR CHARACTER: what this dialogue was shown
+        # where the customer wrote what. The verbatim pass on the way back
+        # (`_restore_verbatim_spans`) hands an agent that copied the shown
+        # form the customer's literal string — see `Vault.shown_forms`. The
+        # literal is the ORIGINAL text at the span, not `span.value`: the
+        # detector reads the normalised text, where «бaбичев» has already lost
+        # its Latin «a» and «682О» its Cyrillic «О», and offsets index the
+        # original 1:1 by the normalisation invariant.
+        literal = text[span.start:span.end]
+        if _shown_mirrors(shown, literal, span.entity_type):
+            vault.remember_shown(shown, literal, span.entity_type)
+        replacements.append((span.start, span.end, shown))
+    return _splice(text, replacements)
+
+
+def _shown_mirrors(shown: str, literal: str, entity_type: str) -> bool:
+    """Whether the shown form has the customer's SHAPE, so that an agent
+    copying it is copying the customer's form and deserves the literal back.
+
+    Two readings of «form from the agent» part company exactly where our
+    substitute changed the shape on the way in: for «луговая 10» the
+    address substitute reads «улица Полевая 52», and an agent that writes
+    «Самара, улица Полевая 52» has an ADDRESS WITH A STREET WORD as its
+    form — a real model composes one from «луговая 10» on its own (55 of 55
+    controls on the 07.09 live run), while a verbatim copier would have
+    passed «луговая 10». Both are «the agent's form»; they agree only when
+    the shown form mirrors the customer's. Until the address substitute
+    does (the open half of Б24), a shown address counts as a mirror only
+    when the customer wrote the street word himself; every other type's
+    substitute already mirrors case, order, notation and grouping."""
+    if entity_type in ("LOC", "ADDR"):
+        shape = morph_places.place_shape(literal)
+        return bool(shape.get("generic")) and agent_form.case_class(shown) == agent_form.case_class(literal)
+    return True
 
 
 def is_own_substitute(span: Span, vault: Vault) -> bool:
@@ -249,7 +283,16 @@ def unmask_text(text: str, vault: Vault, inflect: bool = True,
         # substitute «Иван» was resolved a second time into that other
         # person («Иван Петров» → «валерий Петров», hard cases, one vault).
         # A restored range is closed to every later pass.
-        taken: list[tuple[int, int, str]] = _restore_tokens_spans(text, vault, for_tool)
+        # COPIED VERBATIM COMES BACK VERBATIM. Before any form is rebuilt, every
+        # occurrence of a form this dialogue was SHOWN is put back as the
+        # customer's literal string — the typo, the look-alike letter, the
+        # address with no street word, all of it: exactly what an agent that
+        # copies would have passed without us. Form is rebuilt only for text
+        # the agent changed, by the passes below.
+        taken: list[tuple[int, int, str]] = _restore_verbatim_spans(text, vault)
+        for span in sorted(_restore_tokens_spans(text, vault, for_tool), key=lambda item: (item[0], -item[1])):
+            if not any(span[0] < end and start < span[1] for start, end, _ in taken):
+                taken.append(span)
         passes = [_restore_reformatted_spans(text, vault, for_tool)]
         if not for_tool:
             passes.append(_restore_cued_numbers_spans(text, vault))
@@ -397,6 +440,26 @@ def _date_readings(value: str) -> list[str]:
         return [f"{int(first):02d}.{int(middle):02d}.{last}",
                 f"{int(middle):02d}.{int(first):02d}.{last}"]
     return []
+
+
+def _restore_verbatim_spans(text: str, vault: Vault) -> list[tuple[int, int, str]]:
+    """Every occurrence of a form this conversation was shown, as the
+    customer's literal string. Longest shown form first, non-overlapping,
+    whole-word: «Ольховая 10» must not match inside «Ольховая 105»."""
+    spans: list[tuple[int, int, str]] = []
+    for shown, original, _kind in vault.shown_forms():
+        if not shown or shown not in text:
+            continue
+        for match in re.finditer(re.escape(shown), text):
+            start, end = match.start(), match.end()
+            if start > 0 and text[start - 1].isalnum() and shown[0].isalnum():
+                continue
+            if end < len(text) and text[end].isalnum() and shown[-1].isalnum():
+                continue
+            if any(start < b and a < end for a, b, _ in spans):
+                continue
+            spans.append((start, end, original))
+    return spans
 
 
 def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> list[tuple[int, int, str]]:

@@ -1704,6 +1704,25 @@ def create_tables(conn: Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_token_uses_created ON token_uses (created)"
     )
+    # WHAT THIS CONVERSATION WAS SHOWN IN PLACE OF WHAT THE CUSTOMER WROTE —
+    # character for character, on both sides. An agent that copies the shown
+    # form verbatim gets the customer's literal string back: the Latin «a»
+    # inside «бaбичев», the Cyrillic «О» inside «682О 8116», the address with
+    # no street word — exactly what it would have passed without us. Rebuilt
+    # forms (case, notation, grouping) are for the agent that rewrote the
+    # substitute. One row per shown form per conversation; expires with
+    # `place_parts`. The literal is the same class of data as
+    # `tokens.original`, under the same key.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS shown_forms ("
+        "customer TEXT NOT NULL, conversation TEXT NOT NULL, shown TEXT NOT NULL, "
+        "original TEXT NOT NULL, entity_type TEXT NOT NULL, "
+        "created REAL NOT NULL DEFAULT 0, "
+        "PRIMARY KEY (customer, conversation, shown))"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_shown_forms_created ON shown_forms (created)"
+    )
 
 
 def create_indexes(conn: Connection) -> None:
@@ -2909,6 +2928,8 @@ class Vault:
                            (now - _PLACE_PART_TTL,))
         self._conn.execute("DELETE FROM token_uses WHERE created < ?",
                            (now - _PLACE_PART_TTL,))
+        self._conn.execute("DELETE FROM shown_forms WHERE created < ?",
+                           (now - _PLACE_PART_TTL,))
 
     def _place_rows(self, part: str, has_city: int | None) -> list:
         """This conversation's indexed places whose short key names the same
@@ -3384,6 +3405,33 @@ class Vault:
                 (self._customer, token),
             ).fetchone()
         return row[0] if row is not None else None
+
+    def remember_shown(self, shown: str, original: str, entity_type: str) -> None:
+        """This conversation saw `shown` where the customer wrote `original`
+        (see `shown_forms`). A no-op without a conversation scope, and when
+        nothing was replaced."""
+        if not self._conversation or shown == original:
+            return
+        with self._lock:
+            self._expire_place_parts()
+            self._conn.execute(
+                "INSERT OR REPLACE INTO shown_forms "
+                "(customer, conversation, shown, original, entity_type, created) VALUES (?,?,?,?,?,?)",
+                (self._customer, self._conversation, shown, original, entity_type, time.time()))
+            self._conn.commit()
+
+    def shown_forms(self) -> list[tuple[str, str, str]]:
+        """Every (shown, original, entity_type) this conversation was shown,
+        longest shown form first — so that a form containing another is
+        matched whole."""
+        if not self._conversation:
+            return []
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT shown, original, entity_type FROM shown_forms "
+                "WHERE customer=? AND conversation=? ORDER BY length(shown) DESC",
+                (self._customer, self._conversation)).fetchall()
+        return [(str(a), str(b), str(c)) for a, b, c in rows]
 
     def as_minted(self, surface: str) -> bool:
         """Every word of `surface` is a word of a NAME substitute exactly as it
