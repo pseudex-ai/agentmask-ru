@@ -24,7 +24,12 @@ import re
 
 _FLAT = re.compile(r"(?i)\b(?:кв\.?|квартира)\s*(\d+\s*[а-яё]?)\s*$")
 _HOUSE = re.compile(r"(?i)(?:\b(?:д\.?|дом)\s*)?(\d+\s*[а-яё]?)\s*,?\s*$")
-_CITY_FIRST = re.compile(r"^\s*(?:г\.?\s*)?([А-ЯЁа-яё-]+)\s*,\s*(.+)$")
+# The city is EVERYTHING before the first comma, not one word: a Russian city
+# is two words as often as one («Нижний Новгород», «Набережные Челны», «Великий
+# Устюг», «Старый Оскол»). Reading only the first word put «Нижний» in the
+# `city` field and «Новгород,» at the head of the street — a cut no real agent
+# makes, and the mismatch it caused was the instrument's, not the masker's.
+_CITY_FIRST = re.compile(r"^\s*(?:г\.?\s*)?([^,]+?)\s*,\s*(.+)$")
 
 
 def cut_name(shown: str, order: tuple[str, ...]) -> dict[str, str]:
