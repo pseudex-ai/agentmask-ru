@@ -452,6 +452,13 @@ changelog, вливается ПОСЛЕ тега, от которого счи�
 release-please создаёт GitHub Release сам (job `tag`). Первый платформенный
 релиз — `platform/v0.3.16`.
 
+**Перед merge Release PR — его собственные проверки зелёные.** Это тот же
+код, что попадёт в merge-коммит; красное на ветке PR станет красным на merge и
+тег не встанет (ниже). Если прогон на ветке PR висит как `action_required`
+(автор PR — `github-actions[bot]`, GitHub иногда требует одобрить его
+воркфлоу): `gh api -X POST repos/Isk4R1oT/Obscura/actions/runs/<id>/approve`,
+id — из `gh run list --branch release-please--branches--main--components--engine`.
+
 **Release PR влит, а его merge-коммит красный.** Job `tag` тега не ставит —
 и это правильно: `release.yml` на теге прогнал бы те же тесты и остановился
 до публикации, а мёртвый тег движка отравил бы следующий номер (проверка
