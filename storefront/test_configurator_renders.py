@@ -91,7 +91,7 @@ def _start_site() -> subprocess.Popen:
 
 def main() -> None:
     try:
-        from playwright.sync_api import sync_playwright
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
     except ImportError:
         print("playwright не установлен, а без него эта проверка ничего не "
               "проверяет:\n  pip install playwright && "
@@ -151,8 +151,17 @@ def main() -> None:
             # ОТПРАВКА ИДЁТ ДО СЕРВЕРА И ЗАПИСЫВАЕТСЯ. Кнопка, говорящая
             # «записали» без записи, — тот же промах, что «СКОПИРОВАНО» при
             # недоступном буфере обмена.
+            # The note changes when the POST has RETURNED, not after a fixed
+            # pause: 1200 ms was enough on a laptop and red on a loaded CI
+            # runner (merge d98c12d of engine 0.3.16) — a flake with nothing
+            # behind it. Wait for the text itself, bounded by a ceiling.
             page.locator("#cfg-send").click()
-            page.wait_for_timeout(1200)
+            try:
+                page.wait_for_function(
+                    "() => (document.querySelector('#cfg-note')?.innerText || '').includes('Записали')",
+                    timeout=15000)
+            except PlaywrightTimeoutError:
+                pass
             note = page.locator("#cfg-note").inner_text()
             check("после отправки страница говорит, что записала",
                   "Записали" in note, note[:120])
