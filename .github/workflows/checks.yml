@@ -119,6 +119,14 @@ jobs:
         run: python licensing/test_metering_attacks.py
       - name: metering attacks (HTTP surface and capacity protocol)
         run: python licensing/test_admin_api.py
+      # Ran only in release.yml until the v0.3.16 tag went red on it: a test
+      # that runs first at release time fails at the worst moment there is.
+      - name: versions registry — every promise of the ТЗ
+        run: python -m licensing.test_registry
+      - name: licensing store upgrades on existing data
+        run: python -m licensing.test_store_upgrade
+      - name: cache, audit dedup and loop responsiveness
+        run: python test_perf_masking.py
 
       # The one that exists because every metric we had said 100% while «Счёт
       # 1234 от 15.05.2025» was being masked. Ordinary business text, no PII in
