@@ -36,22 +36,48 @@ def check(name: str, condition: bool, detail: str = "") -> None:
 _SEED = Path(__file__).resolve().parents[2] / "deploy" / "releases.json"
 _DIGEST_A = "sha256:" + "a" * 64
 _DIGEST_B = "sha256:" + "b" * 64
+_DIGEST_0 = "sha256:" + "0" * 64
 _TODAY = dt.date(2026, 9, 20)
 _NOW = dt.datetime(2026, 9, 20, 12, 0, tzinfo=dt.timezone.utc)
 
 
+def _fixture() -> dict:
+    """The registry as it looked before any pipeline wrote to it: one cycle,
+    one version. The scenarios below build on THIS, never on the committed
+    file — the file is written by every engine release, and the first one
+    (0.3.15) turned `record("0.3.15", …)` into «already recorded with another
+    digest» on the very release run that ran this test. The committed file
+    is still read once, to check that it validates."""
+    return {
+        "product": "pseudex", "schema": 1, "updated_at": "2026-09-20T00:00:00Z",
+        "support": {"maintenance_months": 6, "eol_notice_days": 90},
+        "cycles": [{
+            "cycle": "0.3", "state": "current", "release_date": "2026-09-14",
+            "eoas": None, "eol": None, "eol_announced": None,
+            "latest": {"version": "0.3.14", "date": "2026-09-17", "digest": _DIGEST_0},
+            "aliases": ["0.3", "0", "latest"],
+        }],
+        "notices": [],
+    }
+
+
 def _two_cycles(today: dt.date = _TODAY) -> dict:
     """0.4 current, 0.3 in maintenance with an eol announced in time."""
-    doc = json.loads(_SEED.read_text(encoding="utf-8"))
+    doc = _fixture()
     doc = registry.record(doc, version="0.3.15", digest=_DIGEST_A, date=dt.date(2026, 9, 22), now=_NOW)
     doc = registry.record(doc, version="0.4.0", digest=_DIGEST_B, date=dt.date(2026, 10, 5), now=_NOW)
     return doc
 
 
 def main() -> int:
-    seed = json.loads(_SEED.read_text(encoding="utf-8"))
-    check("the committed seed validates", registry.validate(seed, previous=None, today=_TODAY) == [],
-          "; ".join(registry.validate(seed, previous=None, today=_TODAY)))
+    committed = json.loads(_SEED.read_text(encoding="utf-8"))
+    check("the committed seed validates",
+          registry.validate(committed, previous=None, today=dt.date.today()) == [],
+          "; ".join(registry.validate(committed, previous=None, today=dt.date.today())))
+    check("the fixture validates and is one version behind the scenarios",
+          registry.validate(_fixture(), previous=None, today=_TODAY) == []
+          and _fixture()["cycles"][0]["latest"]["version"] == "0.3.14")
+    seed = _fixture()
 
     # ── validate: the three silent lies ──────────────────────────────────
     broken = json.loads(json.dumps(seed)); broken["cycles"][0]["latest"]["digest"] = "sha256:short"
