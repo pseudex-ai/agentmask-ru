@@ -461,22 +461,18 @@ def _pick_value(entity_type: str, canonical: str, original: str,
     if (for_tool and entity_type in _CANONICAL_IS_THE_VALUE and entity_type not in ("DOB", "DATE")
             and looks_dictated(original or "", canonical or "")):
         return canonical
-    # A STREET THE CUSTOMER MISTYPED REACHES THE TOOL AS THE REGISTER SPELLS
-    # IT, AND ONLY THE TOOL. Without the gateway the agent silently repairs
-    # «мончгорская» to «Мончегорская» and the CRM finds the address; with the
-    # gateway it is shown a clean substitute, has nothing to repair, and the
-    # customer's literal words reach the tool — a street that does not exist.
-    # 42 of the 103 street/address conflicts on the 06.09 live run, and in
-    # every one of them BOTH control arms had repaired it, so this is the
-    # reference behaviour rather than a policy of ours.
-    #
-    # IN PROSE THE CUSTOMER KEEPS HIS OWN WORDS. Repeating his address back
-    # corrected is a different act from filling a form with it: one is the
-    # agent talking to him, the other is the agent acting for him. The three
-    # signals that make the repair safe are in `address.register_spelling`.
-    if for_tool and entity_type == "LOC" and original:
-        from pseudex.address import repair_street
-        return repair_street(original)
+    # NO REPAIR — THE CUSTOMER'S LITERAL STRING, TYPO AND ALL. Fixing a
+    # mistyped street to the register spelling («золоторожксий» →
+    # «золоторожский») was us CHANGING the parameter the agent passes, which
+    # is exactly what the product promises never to do: «содержимое из волта,
+    # форма — агента». If the agent wrote the address correctly, we mirror
+    # that; if it copied the customer's typo, the tool gets the typo — the
+    # same string it would have got without us. Correcting the customer's
+    # address is the AGENT's business, not the gateway's. (Measured cost of the
+    # old repair: 26 addresses scored as changed on the public benchmark, every
+    # one a repair the ground truth — the customer's own words — did not ask
+    # for.) `repair_street` stays available as an opt-in host policy, off by
+    # default.
     return original
 
 

@@ -429,10 +429,14 @@ def test_corrected_address_shares_its_street(vault: Vault, detector: Detector) -
     real spelling, and the house to the corrected house."""
     import json
     from pseudex.redact import unmask_arguments
+    # The agent fills the field from the CAPITALISED fake («Заречная», как его
+    # чеканит генератор), so the real street returns in the agent's case —
+    # «Заречная», not the dictated lower-case «заречная». Форма агента, включая
+    # регистр: та же половина правила, что и в опечатке «Мончгорская» выше.
     for said, street, house in (
-        ("курьера на адрес заречная пятьдесят семь квартира сто восемьдесят семь ой нет правильно заречная двадцать девять квартира сто восемьдесят семь это в воткинск", "заречная", "29"),
-        ("курьера на адрес калашнкова 61кв134 стоп правильно калашникова 33 квартира 134 это в абакан", "калашникова", "33"),
-        ("привет курьера на энгельса 134 кв 92 нет не так правильно энгельса 106 квартира 92 это в воткинск", "энгельса", "106"),
+        ("курьера на адрес заречная пятьдесят семь квартира сто восемьдесят семь ой нет правильно заречная двадцать девять квартира сто восемьдесят семь это в воткинск", "Заречная", "29"),
+        ("курьера на адрес калашнкова 61кв134 стоп правильно калашникова 33 квартира 134 это в абакан", "Калашникова", "33"),
+        ("привет курьера на энгельса 134 кв 92 нет не так правильно энгельса 106 квартира 92 это в воткинск", "Энгельса", "106"),
     ):
         talk = Vault(":memory:", "acme").for_conversation("fix")
         masked = mask_text(said, talk, detector.detect(said))
@@ -551,23 +555,18 @@ def test_tool_result_with_a_future_date_masks(vault: Vault, detector: Detector) 
                       fake_date.year == real_date.year, token)
 
 
-def test_a_mistyped_street_reaches_the_tool_as_the_register_spells_it(
+def test_a_mistyped_street_reaches_the_tool_as_the_customer_wrote_it(
         vault: Vault, detector: Detector) -> None:
-    """The agent repairs a typo; the gateway used to take that away.
+    """NO REPAIR: the customer's literal address reaches the tool, typo and all.
 
-    «курьера на мончгорская 195» — without the gateway the model silently
-    sends «Мончегорская» to the CRM and the address is found. With it the
-    model is shown a CLEAN substitute, has nothing to repair, and the
-    customer's literal words reach the tool: a street that does not exist.
-    42 of the 103 street/address value conflicts on the 06.09 live run, and
-    in every one of them BOTH control arms had repaired it — so the register
-    spelling is the reference behaviour, not a policy of ours.
-
-    THE OTHER HALF MATTERS MORE. A correct street in an oblique case is not in
-    the register as written either, and asked only as written the rule rewrote
-    «мончегорской» to «мончегорское» and «вишнёвой» to «вишневый» — corrupting
-    an address that was right. The register is asked in all three forms
-    `_gar_reaches` asks."""
+    «курьера на мончгорская 195» — the gateway used to «fix» the typo to the
+    register spelling «Мончегорская» before handing it to the CRM. That was us
+    CHANGING the parameter the agent passes, which the product promises never
+    to do: correcting the customer's address is the AGENT's business, not the
+    gateway's. If the agent wrote it correctly, we mirror that; if it copied
+    the customer's typo, the tool gets the typo — the same string it would have
+    got without us. `register_spelling` still exists (an opt-in host policy);
+    it is no longer applied by default, and the round trip below pins that."""
     import json
     from pseudex.address import register_spelling
     from pseudex.redact import unmask_arguments
@@ -615,11 +614,11 @@ def test_a_mistyped_street_reaches_the_tool_as_the_register_spells_it(
     back = json.loads(unmask_arguments(json.dumps(
         {"address": {"street": fake["street"].split()[-1], "building": fake["house"],
                      "sflat": fake.get("flat", "")}}, ensure_ascii=False), talk))
-    # Заглавная — АГЕНТСКАЯ: он написал подмену с заглавной, значит и
-    # исправленное реестром название уходит с заглавной. Содержимое наше,
-    # форма его — те же две половины, что и в самом правиле починки.
-    check("в инструмент уходит написание реестра, дом и квартира — клиента",
-          back["address"]["street"] == "Мончегорская" and back["address"]["building"] == "195"
+    # ОПЕЧАТКА КЛИЕНТА ДОХОДИТ ДОСЛОВНО, в регистре агента (он написал подмену
+    # с заглавной — значит и настоящее слово уходит с заглавной). Никакого
+    # «Мончегорская»: содержимое клиента, форма агента, ни одного исправления.
+    check("в инструмент уходит написание КЛИЕНТА (опечатка), дом и квартира — тоже",
+          back["address"]["street"] == "Мончгорская" and back["address"]["building"] == "195"
           and back["address"]["sflat"] == "12", f"{back}")
     # …AND IN PROSE THE CUSTOMER KEEPS HIS OWN WORDS. Repeating his address
     # back corrected is a different act from filling a form with it.
@@ -779,7 +778,7 @@ def main() -> int:
     test_street_stays_a_street(vault, detector)
     test_preposition_is_not_a_litera(vault, detector)
     test_corrected_address_shares_its_street(vault, detector)
-    test_a_mistyped_street_reaches_the_tool_as_the_register_spells_it(vault, detector)
+    test_a_mistyped_street_reaches_the_tool_as_the_customer_wrote_it(vault, detector)
     test_a_card_address_comes_back_from_free_text(vault, detector)
     test_a_dictated_phone_survives_a_deny_word(vault, detector)
     test_spoken_birth_date_keeps_its_register(vault, detector)

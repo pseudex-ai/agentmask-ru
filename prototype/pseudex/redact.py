@@ -91,24 +91,21 @@ def mask_text(text: str, vault: Vault, spans: list[Span]) -> str:
 
 
 def _shown_mirrors(shown: str, literal: str, entity_type: str) -> bool:
-    """Whether the shown form has the customer's SHAPE, so that an agent
-    copying it is copying the customer's form and deserves the literal back.
+    """Whether this dialogue was shown a form worth remembering verbatim.
 
-    Two readings of «form from the agent» part company exactly where our
-    substitute changed the shape on the way in: for «луговая 10» the
-    address substitute reads «улица Полевая 52», and an agent that writes
-    «Самара, улица Полевая 52» has an ADDRESS WITH A STREET WORD as its
-    form — a real model composes one from «луговая 10» on its own (55 of 55
-    controls on the 07.09 live run), while a verbatim copier would have
-    passed «луговая 10». Both are «the agent's form»; they agree only when
-    the shown form mirrors the customer's. Until the address substitute
-    does (the open half of Б24), a shown address counts as a mirror only
-    when the customer wrote the street word himself; every other type's
-    substitute already mirrors case, order, notation and grouping."""
-    if entity_type in ("LOC", "ADDR"):
-        shape = morph_places.place_shape(literal)
-        return bool(shape.get("generic")) and agent_form.case_class(shown) == agent_form.case_class(literal)
-    return True
+    Recorded for EVERY type now, addresses included: an agent that copies the
+    shown substitute into a tool argument gets the customer's literal string
+    back, character for character — «заболоцкого 81 кв 51» with no «улица», no
+    comma, its own case, its own typo — which is exactly what it would have
+    passed without us. The verbatim pass keys on the EXACT shown string, so it
+    only ever fires on a true copy; a model that REWRITES the address writes a
+    different string, misses the verbatim pass and falls to the form-rebuild
+    below. The old rule refused to record a bare-street address (the substitute
+    added «улица» the customer had not written) and returned our rebuilt form
+    instead — 17 addresses scored as changed on the public benchmark. The
+    substitute now mirrors the customer's form (`_fake_place`), so there is
+    nothing to refuse."""
+    return bool(shown) and shown != literal
 
 
 def is_own_substitute(span: Span, vault: Vault) -> bool:
@@ -206,6 +203,15 @@ def _token_for_text(span: Span, vault: Vault) -> str:
             # (live v4, chain-009). Any other missing role still gets the
             # whole substitute: fail closed on the street and the house.
             return span.value if span.role == "city" else whole
+        if span.role == "street":
+            # THE FAKE STREET IN THE CUSTOMER'S FORM — his type word or none.
+            # The substitute is minted WITH a type («улица Мятная»); a record
+            # field that held a bare «луговая» must mask to a bare «мятная»,
+            # or we inject an «улица» the customer never wrote — the same
+            # «type word is content» rule the restore leg applies, mirrored.
+            # `_street_like` keeps the fake's NAME, takes the type-presence and
+            # the letter-case from the customer's field.
+            return morph_places._street_like(part, span.value)
         part = morph_places.part_in_form_of(span.value, part, span.role)
         if span.value.islower():
             return part.lower()
@@ -1826,8 +1832,14 @@ def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
         part = roles.get(role)
         if part:
             # THE FORM IS THE AGENT'S: digits where it wrote digits, no type
-            # word where it wrote none. See `morph_places.part_in_form_of`.
-            out[key] = morph_places.part_in_form_of(fragments[key], part, role)
+            # word where it wrote none, and the AGENT'S LETTER-CASE. The vault
+            # keeps the street as the customer wrote it («мончегорской»,
+            # lower); the agent copied a capitalised fake into the field
+            # («Вязовая»), so the real word goes back capitalised too —
+            # «Мончегорской». `part_in_form_of` handles markers and digits,
+            # `cased_like` the case, word for word. See `agent_form`.
+            laid = morph_places.part_in_form_of(fragments[key], part, role)
+            out[key] = agent_form.cased_like(laid, fragments[key])
     return out
 
 

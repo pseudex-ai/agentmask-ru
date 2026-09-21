@@ -1369,13 +1369,22 @@ def part_in_form_of(agent_part: str, real_part: str, role: str) -> str:
             return _part_to_digits(real_part) or real_part
         return real_part
     if role == "street":
-        agent_type = _STREET_TYPE_LEAD.match(agent_part.strip())
-        real_type = _STREET_TYPE_LEAD.match(real_part.strip())
-        if real_type and not agent_type:
-            return real_part.strip()[real_type.end():]
-        if agent_type and not real_type:
-            return agent_type.group() + real_part.strip()
-    return real_part
+        # THE CUSTOMER'S STREET, AS WRITTEN — the type word is his or absent,
+        # never ours. `real_part` already carries the customer's own form
+        # («бисертская» bare, «ул Ленина» with his marker); the agent's part
+        # carries OUR fake's marker («улица Вязовая»), which is not the
+        # customer's choice. Laying the fake's «улица» onto the real street
+        # gave a tool «улица Бисертская» for a customer who wrote a bare
+        # «бисертская» — us adding a word he did not write. The type word is
+        # content the customer either wrote or did not, so it comes from the
+        # record, not from the substitute the model happened to copy.
+        return real_part.strip()
+    # CITY AND ANY OTHER TEXT ROLE — the customer's part as written. A city
+    # («Самара») has no marker to strip and no digits to convert; it goes to
+    # the tool verbatim, in the agent's case (the caller applies it). Without
+    # this branch the city role fell through to an implicit `None` and the
+    # restore crashed the moment a `city` field was asked.
+    return real_part.strip()
 
 
 _ANY_DIGIT = re.compile(r"\d")
@@ -1477,39 +1486,49 @@ def _like(part: str, model: str) -> str:
     return agent_form.cased_like(part, model)
 
 
-def _street_like(street: str, model: str) -> str:
-    """Название улицы в том виде, в каком родовое слово написал АГЕНТ.
+def _leading_generic(text: str) -> str:
+    """Ведущий тип улицы в строке агента, дословно: «улица Вязовая» -> «улица»,
+    «ул. Вязовая» -> «ул.», голое «Вязовая» -> «». Только с начала: тип стоит
+    перед названием, и «Садовая улица» (тип в конце — редкость) не в счёт."""
+    marker: list[str] = []
+    for word in text.split():
+        if is_generic_word(word):
+            marker.append(word)
+        else:
+            break
+    return " ".join(marker)
 
-    То же правило, что и для частей, на слово ниже: агент написал «Речная» без
-    «улицы» — значит поле его схемы хочет одно название, и «улица Ленина» в нём
-    лишнее слово. Написал «ул.» — вернём «ул.», а не «улица»: сокращение он
-    выбрал сам.
+
+def _street_like(street: str, model: str) -> str:
+    """Настоящая улица в форме АГЕНТА: его тип (или его отсутствие) + название.
+
+    Форма принадлежит агенту, СОДЕРЖИМОЕ — записи клиента, и тип улицы —
+    содержимое: клиент либо написал «улица», либо нет. Отсюда два правила, и
+    оба измерены на публичном бенчмарке:
+
+    * Клиент написал улицу БЕЗ типа («бисертская», «луговая») — типа в аргументе
+      не будет, даже если агент скопировал наш фейк «улица Вязовая» дословно.
+      Мы не дописываем слово, которого в записи клиента нет: «улица Бисертская»
+      на голую «бисертскую» — это МЫ добавили «улица» (25 адресов «по полям»).
+    * Клиент написал улицу С типом («улица Ленина») — тип остаётся, но в
+      МАРКЕРЕ АГЕНТА: клиент «улица», агент сократил до «ул.» — уходит «ул.».
+      Агент вовсе опустил тип (взял одно название) — уходит одно название.
+
+    `street` — роль настоящего адреса (тип у неё есть ⇔ клиент его написал);
+    `model` — та же роль в строке агента (несёт его маркер, сокращение и
+    РЕГИСТР: агент написал подмену «Вязовая» с заглавной — настоящее «мончгорская»
+    уходит «Мончгорская», как и всякая часть адреса через `_like`).
     """
     words = street.split()
-    generic = [word for word in words if _GENERIC_STEMS.match(word)
-               or word.lower().strip(".") in _SIGNATURE_NOISE]
-    named = [word for word in words if word not in generic]
-    if not named:
-        return street
-    theirs = [word for word in model.split()
-              if _GENERIC_STEMS.match(word) or word.lower().strip(".") in _SIGNATURE_NOISE]
-    model_named = [word for word in model.split() if word not in theirs]
-    body = agent_form.cased_like(" ".join(named), " ".join(model_named))
-    if not theirs:
-        return body
-    # РОДОВОЕ СЛОВО, КОТОРОЕ НАПИСАЛ АГЕНТ, ОСТАЁТСЯ — ДАЖЕ ЕСЛИ У НАС ЕГО НЕТ.
-    # Ветка «у нас нет типа — вернуть своё название целиком» роняла агентское
-    # «ул.» на пол: агент писал «ул. Ольховая, 80», инструмент получал
-    # «солнечная, 104», а контроль — «ул. Солнечная, 104». 55 расхождений на
-    # живом прогоне 07.09. Тип улицы у настоящего адреса тот же самый (он
-    # просто не попал в значение, которое отдал волт), и слово это агентское:
-    # он выбрал и сокращение, и место.
-    #
-    # Порядок и написание родового слова — агентские: «ул. Ленина» и «Ленина
-    # улица» это его выбор, а не наш.
-    lead = model.split()[0] in theirs
-    return f"{theirs[0]} {body}" if lead else f"{body} {theirs[0]}"
-
+    named = [w for w in words if not is_generic_word(w)]
+    real_name = " ".join(named) if named else street
+    if len(named) == len(words):
+        # У клиента типа нет — не навязываем свой, что бы агент ни скопировал.
+        result = real_name
+    else:
+        agent_marker = _leading_generic(model)
+        result = f"{agent_marker} {real_name}" if agent_marker else real_name
+    return agent_form.cased_like(result, model)
 
 def in_form_of(value: str, surface: str) -> str:
     """Настоящий адрес, вписанный В ФОРМУ, КОТОРОЙ ПОЛЬЗУЕТСЯ АГЕНТ.
