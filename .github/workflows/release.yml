@@ -193,16 +193,37 @@ jobs:
         run: |
           [ -n "${REGISTRY_PASSWORD}" ] || { echo "::error::REGISTRY_PASSWORD пуст"; exit 1; }
           printf '%s' "${REGISTRY_PASSWORD}" | docker login "${REGISTRY%%/*}" -u "${REGISTRY_USERNAME}" --password-stdin
+      # ГЕЙТЫ — ПО ПОТОКУ (D-051). Движок: упаковочные P1–P11 на СКОМПИЛИРОВАННОМ
+      # образе (это его артефакт) и лицензионные L1–L25 на нём же. Платформа:
+      # выпускаются четыре наших образа, движок не выпускается — поэтому
+      # лицензионные L-гейты на образе из ИСХОДНИКОВ (стенд собирает его сам),
+      # без Nuitka и без P-гейтов: упаковка движка — не свойство платформенного
+      # релиза, а двадцать минут сборки и его же ложный красный (P9 на
+      # platform/v0.3.16) останавливали выпуск лицензионного сервера.
+      - name: which stream
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            platform/v[0-9]*) echo "STREAM=platform" >> "$GITHUB_ENV" ;;
+            v[0-9]*)          echo "STREAM=engine"   >> "$GITHUB_ENV" ;;
+            *)                echo "STREAM=dev"      >> "$GITHUB_ENV" ;;
+          esac
       - name: packaging gates (builds both images)
+        if: env.STREAM != 'platform'
         env:
           PSEUDEX_BUILDX_CACHE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE }}:buildcache
         run: python -u e2e/pack_gates.py
       - name: licensing gates on the release image
+        if: env.STREAM != 'platform'
         run: python -u e2e/gates.py --image pseudex:compiled --skip-build
+      - name: licensing gates on the source image (platform stream)
+        if: env.STREAM == 'platform'
+        run: python -u e2e/gates.py
 
       - name: keep the proved image
+        if: env.STREAM != 'platform'
         run: docker save pseudex:compiled | gzip > /tmp/pseudex-compiled.tar.gz
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: env.STREAM != 'platform'
         with:
           name: pseudex-compiled
           path: /tmp/pseudex-compiled.tar.gz
@@ -225,9 +246,13 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
           fetch-tags: true
+      # Доказанный образ движка есть только у потоков engine/dev: платформа его
+      # не собирает и не публикует (см. job gates).
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: "!startsWith(github.ref, 'refs/tags/platform/')"
         with: { name: pseudex-compiled, path: /tmp }
       - run: docker load < /tmp/pseudex-compiled.tar.gz
+        if: "!startsWith(github.ref, 'refs/tags/platform/')"
 
       - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
 

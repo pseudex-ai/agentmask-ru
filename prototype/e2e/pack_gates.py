@@ -705,10 +705,20 @@ def gate_p9() -> bool:
     files = sorted(path for path in copied.rglob("*") if path.is_file())
     opened: list[str] = []
     readable: list[str] = []
+    empty: list[str] = []
     for path in files:
         blob = path.read_bytes()
         if any(value.encode("utf-8") in blob for value in marker_values):
             readable.append(path.name)
+        # AN EMPTY FILE HOLDS NOTHING TO READ. `<store>.lock` is the flock the
+        # schema migration and the plaintext→encrypted conversion take; it is
+        # created with O_CREAT and never written, and stdlib sqlite3 «opens» any
+        # zero-byte file as a brand-new database. Counting that as «ordinary
+        # SQLite can read the volume» stopped platform/v0.3.16 on a file with
+        # no bytes in it. Named in the verdict, never silently skipped.
+        if not blob:
+            empty.append(path.name)
+            continue
         # `with` on a sqlite3 connection is a TRANSACTION context manager, not a
         # closer, so it is not used here: this loop opens every file in a volume
         # and leaking a handle per file is how a gate starts failing on the size
@@ -725,7 +735,8 @@ def gate_p9() -> bool:
     ok = bool(held) and bool(files) and not opened and not readable
     return gate("P9 the release image writes nothing ordinary SQLite can read", ok,
                 f"vault_holds={len(held)}/{len(marker_values)} files={len(files)} "
-                f"opened_by_stdlib={opened or 'none'} readable={readable or 'none'}")
+                f"opened_by_stdlib={opened or 'none'} readable={readable or 'none'} "
+                f"empty={empty or 'none'}")
 
 
 def gate_p6() -> bool:
