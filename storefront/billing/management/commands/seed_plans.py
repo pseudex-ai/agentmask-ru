@@ -126,6 +126,9 @@ FREE_PLAN_LIMITS = {
 # выбор человека был «досидеть пробу», и повода заплатить сегодня не возникало
 # никогда. Число стартовое — дальше правится в админке по каждому тарифу.
 FIRST_PAYMENT_BONUS_DAYS = 30
+# Подпись к подарку — слова владельца (21.09): не объяснять, за что, а сказать
+# спасибо. Ставится только в пустое поле, дальше живёт в админке.
+BONUS_NOTE = "спасибо за доверие"
 
 
 class Command(BaseCommand):
@@ -190,6 +193,8 @@ class Command(BaseCommand):
             if code != "enterprise":
                 Plan.objects.filter(code=code, first_payment_bonus_days=0).update(
                     first_payment_bonus_days=FIRST_PAYMENT_BONUS_DAYS)
+                Plan.objects.filter(code=code, bonus_note="").update(
+                    bonus_note=BONUS_NOTE)
 
         # ── бесплатный тариф: создаём, но НЕ перетираем ─────────────────────
         free_code = FREE_PLAN["code"]

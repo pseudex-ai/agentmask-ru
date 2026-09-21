@@ -991,6 +991,8 @@ def cabinet(request):
         # потерять намерение того, кто так и не заплатил.
         "paid_plans": paid_plans,
         "suggested_plan": offer_plan.code if offer_plan else None,
+        # Подписи к подарку и скидке живут на тарифе, который предлагается.
+        "offer_plan": offer_plan,
         "trial_over": bool(subscription and subscription.plan.is_trial
                            and subscription.trial_ends_at <= timezone.now()),
         "pending": bool(subscription and subscription.state == Subscription.PENDING),

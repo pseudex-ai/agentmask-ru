@@ -145,6 +145,13 @@ class Plan(models.Model):
     # каждому тарифу, а не константа выката.
     post_trial_discount_pct = models.PositiveSmallIntegerField(default=0)
 
+    # ПОДПИСИ К ЧИСЛАМ — ТОЖЕ В АДМИНКЕ. Число без слов на экране не живёт, а
+    # слова рядом с подарком — тон продукта, и владелец меняет его чаще, чем
+    # выкатывается код («спасибо за доверие» вместо объяснения, за что подарок).
+    # Печатаются после «+N дней в подарок» и «скидка N%»; пусто — только число.
+    bonus_note = models.CharField(max_length=80, blank=True, default="")
+    discount_note = models.CharField(max_length=80, blank=True, default="")
+
     class Meta:
         ordering = ["sort_order"]
 

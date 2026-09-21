@@ -23,14 +23,14 @@ class PlanAdmin(admin.ModelAdmin):
     list_display = ("code", "title", "monthly_price", "max_instances",
                     "included_requests", "rpm_limit", "max_keys", "is_public",
                     "is_trial", "trial_days", "first_payment_bonus_days",
-                    "post_trial_discount_pct")
+                    "bonus_note", "post_trial_discount_pct", "discount_note")
     # ПРАВИТСЯ ПРЯМО В СПИСКЕ, И ЭТО ТРЕБОВАНИЕ, А НЕ УДОБСТВО. Длительность
     # пробы и подарок за первый платёж — коммерческие ручки: они меняются чаще
     # кода и не должны ждать выката. Раньше проба была константой `TRIAL_DAYS`
     # в `services.py`, то есть менялась релизом.
     list_editable = ("monthly_price", "included_requests", "is_public",
                      "is_trial", "trial_days", "first_payment_bonus_days",
-                     "post_trial_discount_pct")
+                     "bonus_note", "post_trial_discount_pct", "discount_note")
     list_filter = ("is_public", "is_trial")
     search_fields = ("code", "title")   # для autocomplete из OfferAdmin
 
