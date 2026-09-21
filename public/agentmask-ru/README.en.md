@@ -7,7 +7,7 @@
 [![data](https://img.shields.io/badge/data-CC%20BY%204.0-blue)](LICENSE-DATA)
 [![python](https://img.shields.io/badge/python-3.12+-blue)](pyproject.toml)
 
-[Leaderboard](leaderboard.md) · [Contributing](CONTRIBUTING.md) · [Русский](README.md)
+[Contributing](CONTRIBUTING.md) · [Русский](README.md)
 
 Masking text is half the job. An agent CALLS TOOLS, and a tool needs the real value:
 `create_order(phone="+7 907 …")` finds no order under a substitute. A gateway must put
@@ -83,9 +83,19 @@ Recipes for third-party gateways are in [`baselines/`](baselines/).
 
 ## Results
 
-[leaderboard.md](leaderboard.md) — seven systems on one corpus, with paired McNemar
-comparisons. Every run under `results/<system>/` carries per-item observations, so
-anyone can recompute the lines with their own arithmetic.
+This repo ships the HARNESS, not a table. Numbers — especially measurements of
+OTHER products — are not published here: they belong in an article, where the
+methodology is visible and it reads as the author's measurement, not an
+«official ranking». Run your own:
+
+```sh
+agentmask run --adapter <your adapter> --out results/   # results/ is .gitignored
+agentmask leaderboard                                    # table, locally
+```
+
+`results/` and `leaderboard.md` are deliberately `.gitignore`d. Every run carries
+per-item observations, so any result is recomputable — but it is published by
+whoever measured it.
 
 ## Corpus
 

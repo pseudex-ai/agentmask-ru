@@ -38,7 +38,6 @@ agentmask = "agentmask_ru.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/pseudex/agentmask-ru"
-Leaderboard = "https://github.com/pseudex/agentmask-ru/blob/main/leaderboard.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]

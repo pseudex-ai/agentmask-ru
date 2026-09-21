@@ -7,7 +7,7 @@
 [![data](https://img.shields.io/badge/data-CC%20BY%204.0-blue)](LICENSE-DATA)
 [![python](https://img.shields.io/badge/python-3.12+-blue)](pyproject.toml)
 
-[Таблица результатов](leaderboard.md) · [Как добавить случай](CONTRIBUTING.md) · [English](README.en.md)
+[Как добавить случай](CONTRIBUTING.md) · [English](README.en.md)
 
 Маскировать текст — половина задачи. Агент ВЫЗЫВАЕТ ИНСТРУМЕНТЫ, а инструменту нужно
 настоящее значение: `create_order(phone="+7 907 …")` не найдёт заказ по подстановке.
@@ -70,7 +70,7 @@ agentmask run --adapter presidio
 agentmask run --adapter openai_proxy --name мой-шлюз \
     --base-url http://localhost:8080/v1 --upstream-bind 0.0.0.0:8099
 
-# записать прогон и пересобрать таблицу
+# снять свой прогон и собрать таблицу ЛОКАЛЬНО (results/ не публикуется)
 agentmask run --adapter presidio --out results/
 agentmask leaderboard
 ```
@@ -84,9 +84,19 @@ agentmask leaderboard
 
 ## Результаты
 
-[leaderboard.md](leaderboard.md) — семь систем на одном корпусе, с парными сравнениями
-по McNemar. Каждый прогон в `results/<система>/` содержит пообъектные наблюдения: любой
-может пересчитать строки своей арифметикой.
+Репозиторий даёт ХАРНЕСС, а не таблицу. Числа — особенно измерения ЧУЖИХ
+продуктов — здесь не публикуются: их место в статье, где видна методология и
+где это авторское измерение, а не «официальный рейтинг». Снимите свой прогон
+сами:
+
+```sh
+agentmask run --adapter <ваш адаптер> --out results/   # results/ в .gitignore
+agentmask leaderboard                                   # таблица локально
+```
+
+`results/` и `leaderboard.md` намеренно в `.gitignore`. Каждый прогон содержит
+пообъектные наблюдения, так что любой результат пересчитывается своей арифметикой
+— но публикует его тот, кто снял.
 
 ## Корпус
 
