@@ -157,12 +157,12 @@ def test_memory_recall_across_conversations(detector: Detector) -> None:
         shown = mask_one(said, first)
         token = vault._conn.execute(  # noqa: SLF001 - the test reads the store directly
             "SELECT token FROM tokens WHERE customer=? AND entity_type='NAME'", (_ORG,)).fetchone()[0]
-        assert token in shown, (scope, shown)
+        assert token.casefold() in shown.casefold(), (scope, shown)   # shown in the customer's lower case
 
         later = _context(detector, vault, "conv-B", scope)
         memory = f"из памяти: клиент {token} звонил на прошлой неделе"
         seen = mask_one(memory, later)
-        assert (token in seen) is recalled_is_ours, (scope, seen)
+        assert (token.casefold() in seen.casefold()) is recalled_is_ours, (scope, seen)
         back = unmask_arguments(json.dumps({"name": token}, ensure_ascii=False),
                                 vault.for_conversation("conv-B").with_pseudonym_scope(scope))
         # The token itself always resolves — the vault's own lookup is
@@ -173,7 +173,7 @@ def test_memory_recall_across_conversations(detector: Detector) -> None:
         # THE PRICE, measured in the same test rather than promised in a comment.
         namesake = _context(detector, vault, "conv-C", scope)
         out = mask_one(f"Клиент {token} просит перезвонить", namesake)
-        leaked = token in out
+        leaked = token.casefold() in out.casefold()
         assert leaked is recalled_is_ours, (scope, out)
     print("память OK — при `customer` подмена из прошлой беседы узнаётся, "
           "при `conversation` перечеканивается; тёзка подмены — цена расширения")
@@ -302,7 +302,7 @@ def test_b23_customer_word_equal_to_another_dialogue_substitute(detector: Detect
         shown = mask_one("заказ на ахат дормедонтов, тел 89162148803", first)
     finally:
         secrets.choice = real_choice
-    assert "Николай Крылов" in shown, shown
+    assert "николай крылов" in shown, shown          # in the customer's lower case, as the source
 
     other = _context(detector, vault, "conv-024")
     said = "адрес николая заболоцкого 81 кв 51"
@@ -319,7 +319,7 @@ def test_b23_customer_word_equal_to_another_dialogue_substitute(detector: Detect
     # ...and so does a later dialogue where the same person is masked again (token reused).
     later = _context(detector, vault, "conv-031")
     again = mask_one("заказ на ахат дормедонтов, тел 89162148803", later)
-    assert "Николай Крылов" in again, again
+    assert "николай крылов" in again, again
     assert json.loads(unmask_arguments(piece, vault.for_conversation("conv-031")))["name"].lower().startswith("ахат")
     print("Б23 OK — кусок подмены разрешается только в диалоге, которому её показали; чужое слово остаётся словом клиента")
 

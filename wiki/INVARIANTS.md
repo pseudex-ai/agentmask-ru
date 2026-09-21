@@ -430,11 +430,22 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
 
 ## Swap
 
-- **A TOOL ARGUMENT is restored VERBATIM; PROSE is restored in AGREEMENT.**
-  The substitute reaches the model already inflected, the model copies it, the
-  restorer then agreed the real value with it: «ленина пятьдесят» came back as
-  «ленина пятидесяти» — 506 diverged tool calls. Splitting the paths took the
-  tool axis 72.1% → 77.8%. Pins: `test_argument_form`, `test_hard_cases`.
+- **CONTENT FROM THE VAULT, FORM FROM THE AGENT — FOR EVERY TYPE, ON BOTH
+  LEGS, WITH NO EXCEPTION FOR NAMES.** On the way in the substitute mirrors
+  the form the CUSTOMER wrote (a name's grammatical case, letter case and
+  word order; a date's notation — «2 июня 1975», «10.4.82», ISO, spoken; an
+  identifier's digit grouping — «4509 123456», «11223344595»); on the way
+  back the real value takes the form the AGENT wrote the substitute in — copied
+  verbatim, re-cased, re-inflected, re-notated, re-grouped. «Игорь Анфалов»
+  for an agent that wrote «Максима Дмитрова» was a guess about a CRM we know
+  nothing about and the one written exception to the rule; the public
+  benchmark's verbatim agent showed it as 78 values «repaired» into a form
+  nobody wrote. Numbers are the boundary: a house number is never inflected
+  («ленина пятидесяти», 506 diverged calls), so addresses go through
+  `in_form_of`, never an inflector. Prose is still restored in AGREEMENT with
+  the sentence. Pins: `test_argument_form` (`_forms_follow`, one case per
+  type, both directions), `test_hard_cases`, `test_product`
+  (`test_spoken_birth_date_in_the_agents_form`, `test_card_leaves_link_by_position`).
 - **DETECTION WITHOUT A MATCHING SUBSTITUTE IS A NET LOSS on the tool axis.**
   Hearing spoken identifiers raised detection and LOWERED the tool axis five
   points, because values that used to pass through went through a lossy restore.

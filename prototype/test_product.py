@@ -527,7 +527,11 @@ def test_fuller_mention_reuses_the_substitute() -> None:
         args = json.loads(unmask_arguments(json.dumps(
             {"last_name": two.split()[0], "first_name": two.split()[1]}, ensure_ascii=False), people))
         assert args == {"last_name": "Букин", "first_name": "Сергей"}, args
-        assert unmask_text(f"{two.split()[1]} {two.split()[0]} звонил", people) == "Букин Сергей звонил"
+        # The agent reordered the token given-first; the real name goes back
+        # in the AGENT's order (form from the agent, content from the vault),
+        # capitalised as the agent capitalised it.
+        assert unmask_text(f"{two.split()[1]} {two.split()[0]} звонил", people) == "Сергей Букин звонил"
+        assert unmask_text(f"{two} звонил", people) == "Букин Сергей звонил"
 
         # ВЫРАЩЕН ЛИ ТОКЕН — ЭТО ФАКТ В СТРОКЕ, А НЕ СОВПАДЕНИЕ СЛОВ.
         #
@@ -756,8 +760,14 @@ def test_spoken_birth_date_in_the_agents_form() -> None:
     assert not any(ch.isdigit() for ch in token) and token.endswith("года"), token
     day, month, year = _date_canonical(token).split(".")
     assert year == "1987", token
+    # THE TOKEN COPIED VERBATIM COMES BACK IN THE AGENT'S FORM — the words. It
+    # used to come back as the canonical digits («a tool cannot execute spoken
+    # words»), which was a guess about the tool: an agent that passes the
+    # customer's words without us passes words, and the promise is to change
+    # nothing about what it passes. Content from the vault, form from the agent.
     for written, want in ((f"{year}-{month}-{day}", "1987-03-14"), (f"{day}.{month}.{year}", "14.03.1987"),
-                          (f"{day}/{month}/{year}", "14/03/1987"), (token, "14.03.1987")):
+                          (f"{day}/{month}/{year}", "14/03/1987"),
+                          (token, "четырнадцатого марта восемьдесят седьмого года")):
         back = json.loads(unmask_arguments(json.dumps({"birth_date": written}), talk))["birth_date"]
         assert back == want, (written, back, want)
     # «четвёртое августа девяносто седьмого года»: restoring every «е» of the
@@ -770,7 +780,11 @@ def test_spoken_birth_date_in_the_agents_form() -> None:
     mask_text(said, talk, detector.detect(said))
     token = talk._conn.execute("SELECT token FROM tokens WHERE entity_type='DOB'").fetchone()[0]  # noqa: SLF001
     assert _date_canonical(token).endswith(".1997") and "девяносто" in token, token
-    assert json.loads(unmask_arguments(json.dumps({"birth_date": token}), talk))["birth_date"] == "04.08.1997"
+    # Copied verbatim: the agent's form is the spoken one, so the customer's
+    # own words come back (the same notation keeps them as said, «четвёртое»,
+    # not a re-rendered «четвёртого»); rewritten as ISO: the ISO date.
+    assert json.loads(unmask_arguments(json.dumps({"birth_date": token}), talk))["birth_date"] == "четвёртое августа девяносто седьмого года"
+    assert json.loads(unmask_arguments(json.dumps({"birth_date": "1997-08-04"}), talk))["birth_date"] == "1997-08-04"
     print("spoken birth date OK — a spoken substitute, rebuilt component-wise into ISO, dotted and slashed forms")
 
 

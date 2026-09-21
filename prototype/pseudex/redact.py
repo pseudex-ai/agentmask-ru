@@ -9,7 +9,7 @@ import json
 import re
 
 from pseudex.detect import NameSpan, PartSpan, Span
-from pseudex import agent_form, morph_names, morph_places, translit
+from pseudex import agent_form, date_form, morph_names, morph_places, translit
 from pseudex.assets import ASSETS
 from pseudex.profiling import stage
 from pseudex.vault import LOC_TOKEN_PATTERN, token_re, Vault, name_key, place_key, _date_canonical
@@ -194,9 +194,41 @@ def _token_for_text(span: Span, vault: Vault) -> str:
     # sentence — not a vote over the words — says the person stands in.
     gender, case = morph_names.read_person(
         span.value, span.cases if isinstance(span, NameSpan) else ())
-    if case is None or case == "nomn":
+    # …IN THE WORD ORDER OF THIS MENTION. One person is one token, minted in
+    # the arrangement of the FIRST mention («рушан есин» → «Гордей Якушев»);
+    # the customer then writes «есина рушана», and a token shown given-first
+    # in a surname-first sentence is a form the customer never wrote — the
+    # agent copies it, and the tool receives the name reordered. The parts
+    # are permuted by role when the two shapes are the same set of roles.
+    token = _parts_in_order_of(token, span.value)
+    if case is not None and case != "nomn":
+        token = morph_names.inflect_person(token, case, gender)
+    # …AND INTO THE LETTER CASE THE CUSTOMER WROTE. «игорь анфалов» used to
+    # become «Максим Дмитров»: the substitute changed the form before the
+    # agent ever saw it, so an agent that copies verbatim copied OUR
+    # capitals, and the tool received «Игорь Анфалов» for a customer who
+    # never wrote a capital — measured on the public benchmark, where every
+    # chat-register name came back re-cased. The address leaves already
+    # mirror the record's case (above); a name mirrors the sentence's. The
+    # form belongs to the customer on the way in and to the agent on the way
+    # out; ours appears nowhere.
+    return agent_form.name_cased_like(token, span.value)
+
+
+def _parts_in_order_of(token: str, mention: str) -> str:
+    """The token's words permuted into the role order of `mention`, when both
+    read as the same set of roles in a different order; the token itself
+    otherwise (a shape the reader cannot pair is left alone rather than
+    guessed at)."""
+    ours = morph_names.name_shape(token)
+    theirs = morph_names.name_shape(mention)
+    words = token.split()
+    if len(ours) != len(words) or len(theirs) != len(words) or ours == theirs:
         return token
-    return morph_names.inflect_person(token, case, gender)
+    if sorted(ours) != sorted(theirs) or len(set(ours)) != len(ours):
+        return token
+    by_role = dict(zip(ours, words))
+    return " ".join(by_role[role] for role in theirs)
 
 
 def unmask_text(text: str, vault: Vault, inflect: bool = True,
@@ -342,7 +374,11 @@ _PLATE_SOUND = str.maketrans("AVEKMNORSTUHavekmnorstuh", "АВЕКМНОРСТУ
 # was minted in and looked up as itself. ISO is unambiguous (four digits lead);
 # d/m/y and m/d/y are both offered when the year is last, and whichever resolves
 # wins, because only one of them can be a token this customer holds.
-_DATE_ANY = re.compile(r"^(\d{1,4})[.\-/](\d{1,2})[.\-/](\d{2,4})$")
+_DATE_ANY = re.compile(r"^(\d{1,4})[.\-/ ](\d{1,2})[.\-/ ](\d{2,4})$")
+_PLATE_SHAPE = re.compile(r"(?i)[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]\d{3}[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]{2}\d{2,3}")
+# A value that could be a date in digits — the cheap test before `_date_canonical`
+# is asked, so a phone or a card number is never parsed as one.
+_DATE_SHAPE = re.compile(r"^\s*\d{1,4}[.\-/ ]\d{1,2}[.\-/ ]\d{2,4}\s*$|^\s*\d{1,2}\s+[а-яёА-ЯЁ]+(?:\s+\d{4})?")
 
 
 def _date_readings(value: str) -> list[str]:
@@ -352,6 +388,11 @@ def _date_readings(value: str) -> list[str]:
     first, middle, last = match.groups()
     if len(first) == 4:
         return [f"{int(last):02d}.{int(middle):02d}.{first}"]
+    if len(last) == 2:
+        # A TWO-DIGIT YEAR reads by the same century rule the vault keys a
+        # date with (`_date_canonical`): «82» is 1982, «02» is 2002.
+        canonical = _date_canonical(value.strip())
+        return [canonical] if len(canonical) == 10 else []
     if len(last) == 4:
         return [f"{int(first):02d}.{int(middle):02d}.{last}",
                 f"{int(middle):02d}.{int(first):02d}.{last}"]
@@ -379,11 +420,26 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> li
     readings: dict[str, list[str]] = {}
     for value in candidates:
         alternates = [value.translate(_PLATE_FOLD), value.translate(_PLATE_SOUND)]
+        # THE AGENT'S LETTER CASE IS NOT PART OF THE KEY: a token is minted
+        # in one case and the agent may write it in another («HUTHDHTQ@…»,
+        # «е940ае613»); the lookup asks for the minted spelling as well.
+        alternates.extend([value.lower(), value.upper(),
+                           value.upper().translate(_PLATE_FOLD), value.upper().translate(_PLATE_SOUND)])
         alternates.extend(_date_readings(value))
+        # A DATE WITH THE MONTH IN WORDS reads to its canonical too: the
+        # substitute was minted as «15 апреля 1990 года», the agent dropped
+        # «года», and the exact token no longer matched — the canonical is
+        # what `date_owner` is keyed by.
+        if _DATE_SHAPE.match(value) and not _DATE_ANY.match(value.strip()):
+            canonical = _date_canonical(value)
+            if len(canonical) == 10:
+                alternates.append(canonical)
         readings[value] = [alt for alt in alternates if alt != value]
 
     asked = candidates | {alt for group in readings.values() for alt in group}
-    values = vault.detokenize_many(asked, for_tool)
+    typed = vault.detokenize_many_typed(asked, for_tool)
+    values = {written: value for written, (_, value) in typed.items()}
+    types = {written: kind for written, (kind, _) in typed.items()}
     # A DATE THE VAULT HOLDS IN WORDS. The agent writes «1955-08-17» for the
     # substitute «семнадцатого августа пятьдесят пятого года»; the reading
     # «17.08.1955» is no token, but it is the canonical the vault indexed the
@@ -394,21 +450,48 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> li
                 owner = vault.date_owner(alternate, for_tool)
                 if owner is not None:
                     values[alternate] = owner
+                    types[alternate] = "DOB"
 
-    def resolved(written: str) -> str | None:
+    def resolved(written: str) -> tuple[str, str | None] | None:
         if written in values:
-            return values[written]
+            return values[written], types.get(written)
         for alternate in readings.get(written, ()):
             if alternate in values:
-                return values[alternate]
+                return values[alternate], types.get(alternate)
         return None
 
     spans: list[tuple[int, int, str]] = []
     for match in matches:
-        value = resolved(match.group())
-        if value is not None:
-            if for_tool:
-                value = _digits_in_form_of(match.group(), value)
+        hit = resolved(match.group())
+        if hit is not None:
+            value, kind = hit
+            surface = match.group()
+            # A DATE COMES BACK IN THE AGENT'S NOTATION — «2 июня 1975» where
+            # the agent wrote «19 июля 1975», «1975-06-02» where it wrote ISO,
+            # «2.6.75» where it kept the customer's short form — and in the
+            # customer's own words when the notation is already the same. The
+            # vault holds the canonical and the original; the form belongs to
+            # whoever wrote the substitute, on both legs. Decided BEFORE the
+            # digit splice: a date is not an identifier, and laying its digits
+            # into the surface's slots padded «10.4.82» to «10.04.82».
+            canonical = _date_canonical(value) if _DATE_SHAPE.search(value) or not any(ch.isdigit() for ch in value) else ""
+            if len(canonical) == 10 and _date_canonical(surface):
+                if not date_form.same_notation(value, surface):
+                    value = date_form.render_like(canonical, surface)
+            elif for_tool and kind == "NAME":
+                # THE EXACT TOKEN, RE-CASED OR NOT: the agent wrote the
+                # nominative it was shown («Николай Сорокин» for a substitute
+                # the text carried as «николай сорокин»), so the real name goes
+                # back in the nominative and in the agent's letter case — the
+                # same rule the inflected windows apply.
+                value = agent_form.name_cased_like(_person_in_case_of(value, surface, vault), surface)
+            elif for_tool and ("@" in surface or _PLATE_SHAPE.fullmatch(surface)):
+                # An e-mail or a plate comes back in the agent's letter case:
+                # the value is the customer's, the spelling of the field is
+                # the agent's, as for every other type.
+                value = agent_form.cased_like(value, surface)
+            elif for_tool:
+                value = _digits_in_form_of(surface, value)
             spans.append((match.start(), match.end(), value))
     return spans
 
@@ -773,10 +856,15 @@ def _name_windows(text: str) -> list[tuple[int, int, str]]:
     return windows
 
 
-# Five letters is the same floor `names._LOWER_DICT_MIN` uses, and for the same
-# reason: below it an ordinary short word is as likely as a street name, and the
-# query is wasted more often than not.
-_LOWER_WORD = re.compile(r"(?<![А-ЯЁа-яё-])[а-яё]{5,}(?![А-ЯЁа-яё-])")
+# TWO LETTERS, NOT FIVE. The floor of five (the same `names._LOWER_DICT_MIN`
+# uses) guarded an ordinary short word against a wasted query — and left
+# «егор», «яков», «пётр», «ян» unresolvable the day substitutes started to
+# mirror the customer's lower case: a four-letter fake given name copied into
+# `first_name` reached the tool as the fake. This window is offered on the
+# argument leg only, and what resolves it (`Vault.residual_of`) demands a
+# word that is OURS and was shown to THIS dialogue; the rest of the cost is
+# an indexed query that returns nothing.
+_LOWER_WORD = re.compile(r"(?<![А-ЯЁа-яё-])[а-яё]{2,}(?![А-ЯЁа-яё-])")
 # ПРОГОН СТРОЧНЫХ СЛОВ — ОДНО ИМЯ, А НЕ НЕСКОЛЬКО. Одиночное окно выше знает
 # только слово, и «осипов юрий» восстанавливалось пословно: «осипов» находил
 # владельца и разворачивался в ПОЛНОЕ настоящее имя, а «юрий» не доставал до
@@ -1121,7 +1209,7 @@ def _residual_owner(surface: str, vault: Vault,
     different problem and guessing at it would replace text we do not own.
     """
     words = surface.split()
-    if not (1 <= len(words) <= 2):
+    if not (1 <= len(words) <= 4):
         return None
     token = vault.residual_of(surface)
     if token is None:
@@ -1165,10 +1253,20 @@ def _residual_owner(surface: str, vault: Vault,
         # When `last_name` still gets the given name, the SHAPE READING at mint
         # time was wrong («миллер валерий» read as given-first), and that is
         # fixed in `name_shape`, not here.
+        # IN THE ORDER THE AGENT WROTE THEM. The agent copied «якушева гордея»
+        # (the token shown surname-first, as the customer had written the
+        # person); the real parts go back in that order, «есина рушана», not
+        # in the token's own.
         picked = []
-        for fake, real in zip(fake_parts, real_parts):
-            if fake.casefold() in wanted or morph_names.to_nominative(fake).casefold() in wanted:
-                picked.append(real)
+        for word in surface.split():
+            forms = {word.casefold(), morph_names.to_nominative(word).casefold()}
+            for gender in ("masc", "femn"):
+                forms.add(morph_names._part_to_nominative(word, gender).casefold())
+            for index, fake in enumerate(fake_parts):
+                if (fake.casefold() in forms or morph_names.to_nominative(fake).casefold() in forms) \
+                        and real_parts[index] not in picked:
+                    picked.append(real_parts[index])
+                    break
         if len(picked) == len(surface.split()):
             return entity_type, " ".join(picked)
     return entity_type, value
@@ -1220,13 +1318,27 @@ def _in_case_of(value: str, surface: str, entity_type: str, inflect: bool,
         # «часть подмены».
         if entity_type in ("LOC", "ADDR"):
             return morph_places.in_form_of(value, surface)
-        # РЕГИСТР ИМЕНИ — ТОЖЕ ФОРМА, И ОНА АГЕНТСКАЯ. Волт хранит имя
-        # каноническим, то есть строчным, и `_pick_value` отдавал канон прямо
-        # в аргумент: контроль писал в CRM «Ким Виктор», плечо шлюза — «ким
-        # виктор». 262 расхождения полей на живом прогоне 07.09, задето 217
-        # троек из 834. Регистр не меняет того, ЧТО написано, и ни один
-        # справочник не ищет с его учётом, поэтому цены падежа у него нет.
-        return agent_form.cased_like(value, surface)
+        # A NAME IN THE AGENT'S FORM — GRAMMATICAL CASE, LETTER CASE, ORDER.
+        # This branch used to hand the tool the nominative («Игорь Анфалов»
+        # for an agent that wrote «Максима Дмитрова») on the reasoning that a
+        # CRM wants the nominative — a guess about a tool we know nothing
+        # about, and the one exception to «content from the vault, form from
+        # the agent». The product's promise is to change NOTHING about how
+        # the agent passes a parameter: an agent that copies the customer's
+        # «есина рушана» must see «есина рушана» arrive, an agent that
+        # normalises to «Есин Рушан» must see that. So the real name takes
+        # the case the agent wrote the substitute in (the same reading prose
+        # uses), its word order (the substitute mirrors the original part for
+        # part, so positions agree) and its letter case. Letter case alone was
+        # mirrored here since the 07.09 live run (262 fields); the public
+        # benchmark's verbatim agent showed the other two — 78 values
+        # «repaired» into a form no one had written.
+        #
+        # Numbers are the boundary and they stay as they are: «ленина
+        # пятьдесят» once came back as «ленина пятидесяти» — a house number
+        # in the genitive that no CRM matches — which is why addresses go
+        # through `in_form_of` above and never through an inflector.
+        return agent_form.name_cased_like(_person_in_case_of(value, surface, vault), surface)
     # ПРОЗА НИЖЕ НЕ ТРОНУТА, И ЭТО ГРАНИЦА ПРАВИЛА. Решение владельца — «никак
     # не влиять на то, как агент передаёт ПАРАМЕТРЫ»; пересказать клиенту его
     # же адрес — другой акт, и там действует уже записанное правило «клиент
@@ -1236,8 +1348,23 @@ def _in_case_of(value: str, surface: str, entity_type: str, inflect: bool,
         if case is None or case == "nomn":
             return value
         return morph_places.inflect_place(value, case)
+    # …AND IN THE AGENT'S LETTER-CASE CLASS, in prose as in an argument: the
+    # agent that wrote «Котов Ратмир» in its reply capitalised a name the text
+    # had shown it lower-case, and its sentence keeps its capitals.
+    return agent_form.name_cased_like(_person_in_case_of(value, surface, vault), surface)
+
+
+def _person_in_case_of(value: str, surface: str, vault: Vault) -> str:
+    """The real person in the grammatical case the agent wrote the substitute in."""
+    # THE AGENT COPIED THE NOMINATIVE IT WAS SHOWN. When every word of the
+    # surface is a substitute word exactly as minted, the agent bent nothing,
+    # and no reading of the spelling («Карпова» — a woman's nominative or a
+    # man's genitive) may bend the real name instead. Asked first because it
+    # is evidence, not a prior.
+    if vault.as_minted(surface):
+        return value
     case = morph_names.detect_case(surface)
-    if case is None or case == "nomn":
+    if case is None:
         return value
     gender = morph_names.detect_gender(value)
     # THE CASE THE CUSTOMER WROTE IN WINS A TIE. «Виктории Мещеряковой» is
@@ -1245,13 +1372,19 @@ def _in_case_of(value: str, surface: str, entity_type: str, inflect: bool,
     # says genitive and «к Анне Черных» came back «к Анны Черных» — the right
     # person in a case the sentence does not take. The model kept a form
     # compatible with the original, so the original's case is the one piece
-    # of evidence the surface cannot give (Б21).
+    # of evidence the surface cannot give (Б21). THE NOMINATIVE IS A CASE
+    # TOO: a lone «Устинова» in a `last_name` field is the feminine
+    # nominative the agent copied AND the masculine genitive the prior
+    # prefers; the customer wrote «лебедева ирина петровна» in the
+    # nominative, so the nominative is what the agent's spelling means here.
     written = vault.written_form(value)
     if written is not None:
         written_case = morph_names.detect_case(written, gender)
-        if (written_case not in (None, "nomn", case)
+        if (written_case is not None and written_case != case
                 and written_case in morph_names.cases_spelled_as(surface, gender)):
             case = written_case
+    if case == "nomn":
+        return value
     return morph_names.inflect_person(value, case, gender)
 
 

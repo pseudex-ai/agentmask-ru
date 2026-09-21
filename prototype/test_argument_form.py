@@ -33,6 +33,75 @@ def _round_trip(detector, source, take):
     return masked, written, restored
 
 
+def _substitute_of(masked: str, source: str, pattern: str) -> str:
+    """The substitute standing where the customer's value stood."""
+    match = re.search(pattern, masked)
+    assert match is not None, (source, masked, pattern)
+    return match.group()
+
+
+def _forms_follow(detector) -> bool:
+    """One case per type: the substitute is written like the customer wrote the
+    value (form IN), and the tool receives the value written like the AGENT
+    wrote the substitute (form OUT) — verbatim, re-cased, re-inflected,
+    re-ordered, re-notated. Every «want» is what an agent WITHOUT the gateway
+    would have passed, given the same rewriting habit."""
+    ok = True
+    # (source, regex for the substitute in the masked text, [(agent's rewrite of the substitute, expected at the tool)])
+    cases = [
+        # NAME — lower case in, lower case out; the agent's case and order
+        ("заказ на игорь анфалов, тел 89162148803", r"(?<=заказ на )[а-яё]+ [а-яё]+",
+         [(lambda t: t, "игорь анфалов"), (lambda t: t.upper(), "ИГОРЬ АНФАЛОВ"),
+          (lambda t: " ".join(w.capitalize() for w in t.split()), "Игорь Анфалов")]),
+        # NAME — the customer's oblique case and surname-first order, copied verbatim
+        ("пиши на есина рушана номер +79720652255", r"(?<=пиши на )[а-яё]+ [а-яё]+",
+         [(lambda t: t, "есина рушана")]),
+        # NAME — Title case in, Title case out; the agent inflects → so does the real name
+        ("Клиент Игорь Анфалов ждёт звонка", r"(?<=Клиент )[А-ЯЁ][а-яё]+ [А-ЯЁ][а-яё]+",
+         [(lambda t: t, "Игорь Анфалов")]),
+        # DOB — month in words in, month in words out; ISO from the agent → ISO
+        ("др 2 июня 1975, клиент мая одинцова", r"\d{1,2} [а-яё]+ \d{4}",
+         [(lambda t: t, "2 июня 1975"), (lambda t: _iso(t), "1975-06-02")]),
+        # DOB — the customer's short notation, kept; the agent's dotted form → dotted
+        ("дата рождения 10.4.82, зовут ольга", r"\d{1,2}\.\d{1,2}\.\d{2}",
+         [(lambda t: t, "10.4.82")]),
+        # PASSPORT — the customer's grouping, not the register's
+        ("паспорт 4509 123456", r"\d{4} \d{6}",
+         [(lambda t: t, "4509 123456"), (lambda t: t.replace(" ", ""), "4509123456")]),
+        # SNILS — bare digits in, bare out; dashed from the agent → dashed
+        ("снилс 11223344595", r"(?<=снилс )\d{11}",
+         [(lambda t: t, "11223344595"), (lambda t: f"{t[:3]}-{t[3:6]}-{t[6:9]} {t[9:]}", "112-233-445 95")]),
+        # CARD — spaced in, spaced out; dashes from the agent → dashes
+        ("карта 4276 1600 1234 5675", r"\d{4} \d{4} \d{4} \d{4}",
+         [(lambda t: t, "4276 1600 1234 5675"), (lambda t: t.replace(" ", "-"), "4276-1600-1234-5675")]),
+        # PHONE — the customer's form in; the agent's rewrite out
+        ("тел 8 (916) 214-88-03", r"8 \(\d{3}\) \d{3}-\d{2}-\d{2}",
+         [(lambda t: t, "8 (916) 214-88-03"), (lambda t: "+7" + re.sub(r"\D", "", t)[1:], "+79162148803")]),
+        # EMAIL — the agent's letter case
+        ("почта ivan.petrov@mail.ru", r"[a-z]{8}@example\.ru",
+         [(lambda t: t, "ivan.petrov@mail.ru"), (lambda t: t.upper(), "IVAN.PETROV@MAIL.RU")]),
+        # PLATE — Latin look-alikes and lower case from the agent still resolve, in its case
+        ("номер А123ВС77", r"[АВЕКМНОРСТУХ]\d{3}[АВЕКМНОРСТУХ]{2}\d{2,3}",
+         [(lambda t: t, "А123ВС77"), (lambda t: t.lower(), "а123вс77")]),
+    ]
+    for source, pattern, rewrites in cases:
+        vault = Vault(":memory:", "acme").for_conversation("c1")
+        masked = mask_text(source, vault, detector.detect(source))
+        token = _substitute_of(masked, source, pattern)
+        for rewrite, want in rewrites:
+            written = rewrite(token)
+            got = json.loads(unmask_arguments(json.dumps({"field": written}, ensure_ascii=False), vault))["field"]
+            ok &= _check(f"форма: {source[:32]} ← агент написал {written!r}", got, want)
+    return ok
+
+
+def _iso(worded: str) -> str:
+    """«19 июля 1975» → «1975-07-19», the way an agent rewrites a date for a `date` field."""
+    from pseudex.vault import _date_canonical  # noqa: PLC0415
+    day, month, year = _date_canonical(worded).split(".")
+    return f"{year}-{month}-{day}"
+
+
 def _check(name, got, want):
     ok = got == want
     print(f"{'PASS' if ok else 'FAIL'}  {name}\n      получили {got!r}\n      ждали    {want!r}")
@@ -130,15 +199,16 @@ def main() -> int:
     # «миллер валерий» читалось как (имя, фамилия): подмена чеканилась в том же
     # порядке, и `last_name` получал «валерий». Форма читается по документному
     # порядку, пара фейк↔настоящее позиционна по построению.
-    # РЕГИСТР ЗДЕСЬ НЕ ПРЕДМЕТ, А СЛЕДСТВИЕ: подмена чеканится с заглавной, агент
-    # копирует её как есть, и настоящее имя уходит в ЕГО регистре — правило
-    # «форма принадлежит агенту» живёт в `agent_form` и закреплено там же.
-    # Проверяется ПОРЯДОК частей, поэтому ожидание — с заглавной.
-    for source, want_last, want_first in (("это миллер валерий, телефон 8 916 402 11 87", "Миллер", "Валерий"),
-                                          ("это ерохин пётр николаевич", "Ерохин", "Пётр")):
+    # РЕГИСТР ТЕПЕРЬ ТОЖЕ ЗЕРКАЛИТСЯ НА ВХОДЕ: клиент написал строчными, подмена
+    # чеканится строчными, агент копирует её как есть, и настоящее имя уходит в
+    # ЕГО регистре — то есть строчными. Раньше подмена шла с заглавной и этот
+    # тест ждал «Миллер»: форму менял не агент, а мы, на плече маскирования.
+    # Проверяется ПОРЯДОК частей — и регистр, потому что он теперь агентский.
+    for source, want_last, want_first in (("это миллер валерий, телефон 8 916 402 11 87", "миллер", "валерий"),
+                                          ("это ерохин пётр николаевич", "ерохин", "пётр")):
         vault = Vault(":memory:", "acme").for_conversation("c1")
         masked = mask_text(source, vault, detector.detect(source))
-        fake = re.search(r"это ([А-ЯЁ][а-яё]+) ([А-ЯЁ][а-яё]+)", masked)
+        fake = re.search(r"это ([а-яё]+) ([а-яё]+)", masked)
         restored = json.loads(unmask_arguments(json.dumps(
             {"last_name": fake.group(1), "first_name": fake.group(2)}, ensure_ascii=False), vault))  # type: ignore[union-attr]
         failures += not _check(f"фамилия перед именем: {source.split()[1]}", restored,
@@ -150,6 +220,14 @@ def main() -> int:
                               ("одно имя", 1, "Пётр")):
         _, _, restored = _round_trip(detector, source, lambda m, i=index: m.split()[i])
         failures += not _check(name, restored, want)
+
+    # --- ФОРМА, ТИП ЗА ТИПОМ, В ОБЕ СТОРОНЫ ---------------------------------
+    # На входе подмена зеркалит форму КЛИЕНТА (падеж, регистр, порядок,
+    # нотация даты, группировка цифр), на выходе настоящее значение принимает
+    # форму АГЕНТА. Каждая строка ниже — то, что публичный бенчмарк на 0.3.16
+    # показал как «вернулось починенным» или как фейк в инструменте: 78 + 15
+    # значений, форму которых на одном из плеч менял не агент, а мы.
+    failures += not _forms_follow(detector)
 
     # --- то, что полем схемы не является, трогать нельзя --------------------
     vault = Vault(":memory:", "acme").for_conversation("c1")

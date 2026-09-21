@@ -25,7 +25,7 @@ import threading
 import time
 
 from pseudex.fuzzy import within_one_typo
-from pseudex import morph_names, morph_places, spoken, translit
+from pseudex import date_form, morph_names, morph_places, spoken, translit
 from pseudex.spoken import (email_from_words, numeral_runs,
                             plate_from_words, run_to_digits)
 from pseudex.profiling import stage
@@ -452,7 +452,13 @@ def _pick_value(entity_type: str, canonical: str, original: str,
     # слов», а продиктованный адрес — тоже фраза из русских слов: LOC в
     # аргументе рухнул с 84.5% до 30.6% на всём корпусе, и поймал это прогон, а
     # не рассуждение.
-    if (for_tool and entity_type in _CANONICAL_IS_THE_VALUE
+    # A DATE GOES BACK AS THE CUSTOMER WROTE IT, on both legs. Its substitute
+    # mirrors the customer's notation (digits, month in words, or spoken), so
+    # an agent that copies gets the customer's own words and an agent that
+    # rewrites («1997-08-04») gets the real date re-rendered in ITS notation
+    # by the restorer. The dictated exception stays for identifiers, whose
+    # substitutes are still minted in digits.
+    if (for_tool and entity_type in _CANONICAL_IS_THE_VALUE and entity_type not in ("DOB", "DATE")
             and looks_dictated(original or "", canonical or "")):
         return canonical
     # A STREET THE CUSTOMER MISTYPED REACHES THE TOOL AS THE REGISTER SPELLS
@@ -589,6 +595,24 @@ def _digits_in_customer_form(original: str, canonical_token: str) -> str:
     return rendered if re.sub(r"\D", "", rendered)[-10:] == tail else canonical_token
 
 
+def _digits_laid_like(original: str, token: str) -> str:
+    """The fake's digits under the customer's own separators — «4509 123456»
+    → «0006 543820», «11223344595» → «81893751149», «4276-1600-1234-5675»
+    → «0879-8274-8727-6119». The identifier's shape at the mint mirrored a
+    REGISTER («dd dd dddddd», «ddd-ddd-ddd dd»), not the customer, so an
+    agent copying the substitute copied our grouping and the tool received
+    a form the customer never wrote. Only when the digit counts agree; a
+    different count (a dictated number, an extension) keeps the canonical.
+    The way back never depended on the grouping: numeric tokens are indexed
+    by their digit signature."""
+    fake = re.sub(r"\D", "", token)
+    real = re.sub(r"\D", "", original)
+    if not fake or len(fake) != len(real):
+        return token
+    digits = iter(fake)
+    return "".join(next(digits) if ch.isdigit() else ch for ch in original)
+
+
 def _digit_signatures(token: str, entity_type: str) -> tuple[str | None, str | None]:
     """Digit signature of a NUMERIC token, so a token the model reformatted
     (separators stripped, +7 rewritten as 8) still resolves. Phones also key on
@@ -705,7 +729,15 @@ def _fake_date(original: str) -> str:
         words = spoken.date_to_words(rendered if len(known) == 10 else rendered[:5], original)
         if words:
             return words
-    return rendered
+    # …AND A DATE WRITTEN IN DIGITS OR WITH THE MONTH IN WORDS IS REPLACED IN
+    # THE SAME NOTATION: «2 июня 1975» by «19 июля 1975», «10.4.82» by
+    # «15.9.82», an ISO date by an ISO date. The substitute changed the
+    # notation before the agent saw it, an agent that copies verbatim copied
+    # our «19.07.1975», and the tool received a form the customer never
+    # wrote (25 of 27 dates of birth on the public benchmark). The way back
+    # reads every one of these shapes (`token_re`, `_date_readings`) and
+    # renders the real date like the agent's.
+    return date_form.render_like(rendered, original) if original else rendered
 
 
 def _fake_phone() -> str:
@@ -1497,7 +1529,11 @@ def _token_re(version: str) -> re.Pattern[str]:
     it). Everything else is fixed shape."""
     fakes = ASSETS.get().fakes
     return re.compile("|".join([
-        r"[a-z]{8}@example\.ru",                      # EMAIL
+        # EMAIL, IN ANY LETTER CASE: an agent that upper-cases a field wrote
+        # «HUTHDHTQ@EXAMPLE.RU» and the token was never a candidate, so the
+        # fake reached the tool. The lookup folds it; the real address comes
+        # back in the agent's case.
+        r"(?i:[a-z]{8}@example\.ru)",                 # EMAIL
         # NAME is combinatorial, so it is anchored on the FIRST-NAME pool rather than
         # listed exhaustively or matched as "two capitalised words". The generic
         # shape was tried and is wrong: scanning left to right, `Клиент Мирослава
@@ -1539,7 +1575,8 @@ def _token_re(version: str) -> re.Pattern[str]:
         # letters a plate LOOKS like in Latin; a model that spells it out uses others
         # — V for «В», N for «Н», S for «С», U for «У», R for «Р». Those forms never
         # became candidates, so the fold that resolves them never ran.
-        r"[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]\d{3}[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]{2}\d{2,3}",  # PLATE
+        # …AND A PLATE IN LOWER CASE, for the same reason («е940ае613»).
+        r"(?i:[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]\d{3}[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]{2}\d{2,3})",  # PLATE
         r"\d{4} \d{4} \d{4} \d{4}",                   # CARD
         # Bare digit runs, LONGEST FIRST: leftmost-first alternation would otherwise
         # let \d{10} consume the head of a 20-digit account.
@@ -1558,6 +1595,12 @@ def _token_re(version: str) -> re.Pattern[str]:
         # booked a patient into 1977.
         r"\d{4}-\d{2}-\d{2}",                           # ISO
         r"\d{2}[/-]\d{2}[/-]\d{4}",                     # 12/04/1961, 12-04-1961
+        # DATE, КАК ЕЁ НАПИСАЛ КЛИЕНТ — и как её теперь чеканит подмена:
+        # «15.9.82», «5.09.1982», «10/4/82». Двузначный год читается тем же
+        # правилом века, что и в `_date_canonical`. Промах стоит один
+        # индексный запрос; ложного попадания быть не может — строка должна
+        # совпасть с канонической датой подмены этого заказчика.
+        r"\b\d{1,2}([./ -])\d{1,2}\1\d{2,4}\b",         # DATE, свободная запись («15.9.82», «19 12 1992»)
         r"\+79\d{9}",                                 # PHONE
         r"REDACTED[0-9a-f]{6}",                       # fallback
         r"\b\d{10}\b",                                # INN — least specific, last
@@ -2355,6 +2398,10 @@ class Vault:
                 # digits under whatever form the customer used first — and the
                 # digit-signature index resolves every rewriting of it.
                 token = _digits_in_customer_form(value, token)
+            elif entity_type in _NUMERIC_TYPES and any(ch.isdigit() for ch in value):
+                # EVERY OTHER IDENTIFIER, THE SAME WAY: the customer's
+                # grouping, not the register's. See `_digits_laid_like`.
+                token = _digits_laid_like(value, token)
             digits, digits10 = _digit_signatures(token, entity_type)
             # `value` (not `canonical`) — the surface form the user actually
             # typed, which is what the tool must receive. First writer wins: the
@@ -3338,6 +3385,27 @@ class Vault:
             ).fetchone()
         return row[0] if row is not None else None
 
+    def as_minted(self, surface: str) -> bool:
+        """Every word of `surface` is a word of a NAME substitute exactly as it
+        was minted — the nominative. The agent then did NOT inflect what it
+        was shown, whatever the morphology prior reads into the spelling:
+        a lone «Карпова» in `last_name` is the woman's nominative the card
+        carried, not the masculine genitive the dictionary prefers. One
+        indexed query; a word the agent bent («Карповой») is not a part."""
+        words = [word.casefold() for word in surface.split() if word]
+        if not words:
+            return False
+        asked = sorted({w for word in words for w in (word, word.replace("ё", "е"))})
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT DISTINCT t.part FROM token_parts AS t "
+                "JOIN tokens AS k ON k.customer=t.customer AND k.token=t.token "
+                f"WHERE t.customer=? AND k.entity_type='NAME' AND t.part IN ({','.join('?' * len(asked))})",
+                (self._customer, *asked),
+            ).fetchall()
+        found = {row[0] for row in rows}
+        return all(word in found or word.replace("ё", "е") in found for word in words)
+
     def written_form(self, canonical: str) -> str | None:
         """The surface this NAME was FIRST written in («Анне Черных» for the
         row keyed «Анна Черных»), for the restorer: when the model's form is
@@ -3436,6 +3504,14 @@ class Vault:
         candidates are simply absent from the result — the caller leaves that text
         untouched. This is what keeps the response leg independent of vault size."""
         return self._lookup("token", tokens, for_tool)
+
+    def detokenize_many_typed(self, tokens: set[str],
+                              for_tool: bool = False) -> dict[str, tuple[str, str]]:
+        """`detokenize_many`, carrying the entity type: the restorer puts the
+        value into the agent's form, and WHICH form a type has — a name's
+        case, a date's notation, a number's grouping — is recorded at the
+        mint, not guessed from the string."""
+        return self._lookup_typed("token", tokens, for_tool)
 
     def resolve_digit_signatures(self, signatures: set[str],
                                  for_tool: bool = False) -> dict[str, str]:

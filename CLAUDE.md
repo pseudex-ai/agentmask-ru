@@ -758,7 +758,7 @@ Generated, ignored, never committed: `prototype/*.json` datasets (`make_*.py`),
 
 ## 1. `prototype/pseudex/` — the engine
 
-45 modules, ~22 400 lines. Paths in this section are relative to `prototype/`.
+46 modules, ~22 500 lines. Paths in this section are relative to `prototype/`.
 `Uses` / `Used by` are the real import edges inside the package (lazy imports
 included). `Tests` lists scripts that import the module directly, then `via` —
 the modules through which the rest of the suite reaches it. Every test script
@@ -825,7 +825,7 @@ validators as the digit path (Luhn, mod 101, ИНН, libphonenumber). Spoken dat
 e-mails, plates. The typo table is MINED from real transcripts; fuzzy matching on
 numerals is forbidden.
 - **API:** `is_numeral_word`, `numeral_alternation`, `canonical_numeral`, `date_from_words`, `date_to_words`, `run_to_digits`, `numeral_runs`, `detect_spoken_ids`, `email_from_words`, `detect_spoken_email`, `plate_from_words`, `detect_spoken_plate`, `main`
-- **Uses:** assets, detect, fuzzy, ru_pii · **Used by:** address, detect_all, morph_places, names, vault
+- **Uses:** assets, detect, fuzzy, ru_pii · **Used by:** address, date_form, detect_all, morph_places, names, vault
 - **Tests:** test_product · via detect_all → test_overmasking (dictated order numbers), test_hard_cases; `bench/voice/`
 - **Docs:** `bench/voice/README.md`, `docs/known-issues.md` (Б1, Б6) · rules: INVARIANTS.md#spoken
 
@@ -918,6 +918,18 @@ name, `fold` is the vault index under which every rendering collides.
 - **Tests:** test_derived_forms, test_prose_fragments
 - **Docs:** `research/2026-09-02-agent-form-benchmark.md` · rules: INVARIANTS.md#derived-forms
 
+#### `pseudex/date_form.py` — 108 lines · `live`
+A date written the way ANOTHER date is written: `render_like` puts the
+canonical «dd.mm.yyyy» into the notation of a sample (separator, padding,
+two-digit year, ISO, month in words with or without the year, spoken),
+`same_notation` says when the customer's own words must stay. The substitute
+mirrors the customer's notation at the mint, the restorer renders the real
+date in the agent's.
+- **API:** `notation_of`, `same_notation`, `render_like`, `main`
+- **Uses:** spoken · **Used by:** redact, vault
+- **Tests:** `python3 -m pseudex.date_form` (self-test) · via redact → test_argument_form (`_forms_follow`), test_product, test_hard_cases
+- **Docs:** `docs/known-issues.md` (Б24) · rules: INVARIANTS.md#swap
+
 #### `pseudex/agent_form.py` — 86 lines · `live`
 The FORM the agent wrote a substitute in (case, word by word, positional), laid
 over the real value on the way back to the tool. Symmetric: lower case in, lower
@@ -936,7 +948,7 @@ arguments verbatim in the agent's form. Streaming detokenizer with one carry per
 `choice.index`; `unmask_arguments` for buffered tool calls; `residual_tokens`
 for substitutes that failed to resolve.
 - **API:** `mask_text`, `is_own_substitute`, `vault_value`, `tokenize_span`, `unmask_text`, `unmask_stream_chunk`, `unmask_arguments`, `residual_tokens`, `StreamDetokenizer`
-- **Uses:** address, agent_form, assets, detect, morph_names, morph_places, profiling, translit, vault · **Used by:** envelope, proxy, service
+- **Uses:** address, agent_form, assets, date_form, detect, morph_names, morph_places, profiling, translit, vault · **Used by:** envelope, proxy, service
 - **Tests:** test_argument_form, test_collisions, test_derived_forms, test_hard_cases, test_loop, test_names_morphology, test_product, test_prose_fragments, bench_masking, profile_latency; `bench/agentpii{2,3,4}`, `bench/agentrun/roundtrip.py`
 - **Docs:** `docs/how-it-works.md`, `docs/known-issues.md` (§0, §1, Б8, Б11, Б12) · rules: INVARIANTS.md#swap, INVARIANTS.md#streaming
 
@@ -947,7 +959,7 @@ addresses via `split_roles`); format-preserving, checksum-INVALID substitutes;
 the conversation scope (`for_conversation`, `with_pseudonym_scope`, `minted_in`);
 the digit-signature and translit reindexes; the collision guards at mint time.
 - **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `looks_dictated`, `name_key`, `fold_key`, `place_key`, `token_re`, `create_tables`, `create_indexes`, `Vault` (+ `VAULT_MIGRATIONS`)
-- **Uses:** address, assets, credentials, fuzzy, morph_names, morph_places, normalize, profiling, ru_pii, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, proxy, redact, service, schema (lazy)
+- **Uses:** address, assets, credentials, date_form, fuzzy, morph_names, morph_places, normalize, profiling, ru_pii, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, proxy, redact, service, schema (lazy)
 - **Tests:** vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_hard_cases, test_loop, test_names_morphology, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
 - **Docs:** `docs/tz-vault-encryption.md`, `docs/tz-name-gender-canonical.md`, `docs/how-it-works.md`, `research/2026-09-03-checksum-valid-substitutes.md` · rules: INVARIANTS.md#vault, INVARIANTS.md#collisions, INVARIANTS.md#conversation-scope
 

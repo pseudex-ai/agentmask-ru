@@ -39,6 +39,41 @@ def cased_like(value: str, model: str) -> str:
     return " ".join(out)
 
 
+def case_class(text: str) -> str:
+    """The letter-case class of a whole name: «lower» («игорь анфалов»),
+    «upper» («ИГОРЬ АНФАЛОВ»), otherwise «title» — which includes a name with
+    a lower-case particle («Алиев Рустам Ахмед оглы»). A NAME is cased as a
+    whole, not word by word: mirroring «оглы» onto the fake's patronymic
+    produced «Гущин Юрий Валентин андреевич», a run the capitalised-word
+    windows could not read back, and the fake patronymic reached the prose."""
+    letters = [ch for ch in text if ch.isalpha()]
+    if not letters:
+        return "title"
+    if all(ch.islower() for ch in letters):
+        return "lower"
+    if len(letters) > 1 and all(ch.isupper() for ch in letters):
+        return "upper"
+    return "title"
+
+
+def name_cased_like(value: str, model: str) -> str:
+    """`value` in the letter-case CLASS of `model`. The same class keeps
+    `value` exactly as it is — a customer's «Алиев Рустам Ахмед оглы» keeps
+    its particle when the agent kept Title case; a different class is
+    applied whole: lower, upper, or every word capitalised. So an agent that
+    did not change the class gets the customer's own spelling back, and one
+    that did gets its own."""
+    kind = case_class(model)
+    if kind == case_class(value):
+        return value
+    if kind == "lower":
+        return value.lower()
+    if kind == "upper":
+        return value.upper()
+    return " ".join("-".join(part[:1].upper() + part[1:] for part in _HYPHEN.split(word))
+                    for word in value.split())
+
+
 def _cased_word(word: str, model: str) -> str:
     """Одно слово в регистре одного слова модели.
 
@@ -78,6 +113,20 @@ def main() -> int:
         if got != want:
             failures += 1
             print(f"FAIL cased_like({value!r}, {model!r}) = {got!r}, wanted {want!r}")
+    for value, model, want in (
+        ("Гущин Юрий Валентин Андреевич", "Алиев Рустам Ахмед оглы", "Гущин Юрий Валентин Андреевич"),
+        ("Гущин Юрий", "игорь анфалов", "гущин юрий"),
+        ("Гущин Юрий", "ИГОРЬ АНФАЛОВ", "ГУЩИН ЮРИЙ"),
+        ("Алиев Рустам Ахмед оглы", "Гущин Юрий Валентин Андреевич", "Алиев Рустам Ахмед оглы"),
+        ("Алиев Рустам Ахмед оглы", "гущин юрий валентин андреевич", "алиев рустам ахмед оглы"),
+        ("игорь анфалов", "Георгий Рыбаков", "Игорь Анфалов"),
+        ("игорь анфалов", "георгий рыбаков", "игорь анфалов"),
+        ("санкт-петербургский иван", "Георгий Рыбаков", "Санкт-Петербургский Иван"),
+    ):
+        got = name_cased_like(value, model)
+        if got != want:
+            failures += 1
+            print(f"FAIL name_cased_like({value!r}, {model!r}) = {got!r}, wanted {want!r}")
     print("agent_form: PASS" if not failures else f"agent_form: FAIL ({failures})")
     return 1 if failures else 0
 
