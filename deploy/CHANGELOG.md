@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.17](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.16...platform/v0.3.17) (2026-09-21)
+
+
+### Прочее
+
+* **deploy:** platform/v0.3.16 не собрался — переиздать содержимое как 0.3.17 ([a14047f](https://github.com/Isk4R1oT/Obscura/commit/a14047f77d9e8ac25805eda9529500f4849bc68e))
+
 ## [0.3.16](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.15...platform/v0.3.16) (2026-09-20)
 
 **Не опубликован.** Тег стоит, образов нет: на этом коммите конвейер гонял по
