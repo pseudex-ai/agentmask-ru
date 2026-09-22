@@ -616,3 +616,20 @@ worth paying for: **a perfect-gateway probe over the whole corpus prints ≥ 99 
 on every value and form line, and the mutant sweep still kills every wrong
 gateway.** Then I write the GO brief for the owner: tier, cost, what the run
 answers, and the v4 comparison.
+
+## Round 4 — a caveat the PROVE stage must honour (from FIX-4, 2026-09-23)
+
+**The perfect-gateway probe (`/Users/igor/.claude/jobs/4e5fce9b/tmp/metrics-r3/perfect.py`)
+writes ONE value per leaf path.** A free-text leaf that carries several hops
+therefore keeps only the last of them: `escalate_to_human.summary` is handed a
+NAME, a PHONE and a LOC and ends up with one. 135 of the 928 chain transitions
+land on such a shared leaf (`notify_sms.text` 75, `escalate_to_human.summary` 36,
+`ticket_create.text` 24), and that is where `chain_value`'s 36 misses (892/928)
+come from — **a probe artifact, not a gateway or corpus defect**. FIX-4's own
+per-transition measurement composed the prose properly and found 0 of 210
+free-leaf transitions unhittable and 0 unfailable.
+
+So before `chain_value`, `chain_form`, `form_hOUT` or `multi_all_out` are read
+as gateway numbers, the probe must compose ONE sentence per leaf carrying every
+hop that leaf declares. A readiness verdict taken on the uncorrected probe
+understates the instrument and would send us fixing what is not broken.

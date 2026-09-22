@@ -329,3 +329,62 @@ on the integrators' questions:
   unreachable — the fixtures pin both rates exactly); no decoration.
 - **R-56 `JudgeConfig.temperature: float`** is explicit (no SDK default) and
   the K repeats run at the same value the run uses.
+
+---
+
+# R-57 (2026-09-23) — a stamp refresh is not a redraw
+
+FIX-4's CSV fix (310 items carrying the literal surface «None», because a seed
+path walked through a LIST) changes `case.base`, so the v4 corpus digest moves
+and `write_ladder` refuses the kept ladder — while the MEMBERSHIP of every tier
+is provably unchanged (holdout 347 → 347, moved 0; every tier moved 0).
+
+**The freeze protects membership, not a hash.** Its promise is «the holdout has
+not seen the debugging»; a corpus whose tiers hold exactly the same case ids
+keeps that promise literally, and refusing it would mean either shipping a
+corpus with 310 poisoned surfaces or hand-editing a stamp — both worse.
+
+So: **`build` refreshes `corpus_sha256` in place when it PROVES every tier's
+membership identical by case id, and prints the proof** («холдаут не сдвинулся:
+0 из 347», per tier). `--regenerate-ladder --unfrozen-before-first-run` stays
+for an actual REDRAW and keeps its meaning (no live run has happened yet); a
+refresh that would move even one id is refused and becomes a contract question.
+A run's report records the ladder's `corpus_sha256` and the id-set hash, so a
+reader can tell a refresh from a redraw after the fact.
+
+Defence in depth, separately: the needle layer must refuse a PLACEHOLDER
+surface («None», «», «null») as an identifying piece whatever the corpus says —
+FIX-1's contract, so that a corpus defect of this class can never again make a
+leak check silently exempt a value.
+
+---
+
+# R-58 (2026-09-23) — a needle must be IDENTIFYING, whole value or piece
+
+FIX-4's reproduction: `doc_masked` prints 92/100 for the PERFECT gateway, and
+all eight misses are a LOC house item whose whole value is one or two digits
+(«19», «6», «13»). The value never reached the model — `form_parse` renders the
+person columns and no address — but the `whole` needle is a bare substring
+test with no floor, so «19» is «found» inside «i11: 1977-01-07».
+
+**The rule.** `PIECE_MIN_CHARS` guards a piece because a two-character
+fragment identifies nobody; the same is true of a two-character VALUE. So the
+floor belongs to the needle, not to the piece: a value below the identifying
+floor (digits-only values below the digit floor) carries NO needle, and
+`survives_in` answers False for it — everywhere, not only in `doc_masked`. The
+engine takes the same position on a bare house number and a bare city.
+
+**And the half that matters more:** an item that carries no needle must be
+EXCLUDED from every survival-based denominator, never credited as clean. A
+value we cannot look for is not a value we protected. The report prints the
+count («не оценивается по выживанию: n»), so the exclusion is visible rather
+than flattering.
+
+**Where a span exists, the span decides.** The needle path is the UNTAGGED
+fallback; a short value the mock tagged is still scored by its span, so this
+ruling costs no coverage — it removes evidence we never had.
+
+Corpus note (no change ordered): a bare house number as a standalone item is
+only scorable through its tag, which is why the tagged path stays the primary
+one. If a family ever declares a short item with no tag, `build` should refuse
+it — FIX-4's call after H4.2.
