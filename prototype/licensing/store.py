@@ -1566,6 +1566,21 @@ class LicenseStore:
         показывала «остывает» — то есть отказ и кабинет говорили клиенту
         разное про один и тот же контейнер.
 
+        ДВЕ ЗАНЯТОСТИ, ДВА СРОКА, И ПУТАТЬ ИХ НЕЛЬЗЯ — ТРИ ЗАХОДА СЛОМАЛИСЬ
+        ИМЕННО ОБ ЭТО (Б26quater):
+
+          * СЛОТ КОНТЕЙНЕРА (`instances[…]['occupies']`) — на ПРИЗНАКЕ ЖИЗНИ,
+            T_alive = 600 с. Это и была жалоба Б26: упавший контейнер держал
+            слот до суток, и отказ предлагал остановить то, чего нет;
+          * МЕСТО РАБОЧЕГО ПРОЦЕССА (`processes[…]['holds_place']`) — на ОКНЕ
+            АРЕНДЫ, как в базе: ключ занимает место, пока в окне стоит хоть
+            одна его строка, чем бы он аренду ни закончил.
+
+        Тариф продаётся контейнерами, а принуждается и тем, и другим, потому
+        что `instance_id` выбирает клиент, а ключ процесса — нет. Перевести
+        второе на признак жизни значит умножить потолок тарифа на
+        `T_offline / T_alive`.
+
         ЗАНЯТ — ЗНАЧИТ НЕДАВНО ВИДЕЛИ, и видели ПО НАШИМ ЧАСАМ: все четыре
         отметки ставит сервер, поэтому подкрученные часы контейнера в
         занятость не входят вообще. Источники признака жизни:
@@ -1587,9 +1602,9 @@ class LicenseStore:
 
         ПРИЗНАК ЖИЗНИ ПРОЦЕССА — ТОЛЬКО ЕГО СОБСТВЕННЫЙ. `usage` пишется по
         инстансу, то есть любым воркером; сложив его в признак жизни КЛЮЧА, мы
-        бы держали ключи мёртвых воркеров живыми, пока жив хоть один сосед, —
-        ровно тот дефект, из-за которого честный клиент не мог перезапустить
-        свой контейнер третий раз за сутки.
+        бы считали живыми ключи мёртвых воркеров, пока жив хоть один сосед, —
+        то есть печатали бы оператору «живых 32» у контейнера с одним рабочим
+        процессом.
 
         Возвращает (инстансы, процессы). Миграции не нужны: все четыре таблицы
         и все индексы под этот запрос уже существуют.
@@ -1621,7 +1636,7 @@ class LicenseStore:
             record = instances.setdefault(instance_id, {
                 "instance_id": instance_id, "last_lease": 0.0, "last_seen": 0.0,
                 "reported": 0.0, "engine_version": "", "open_rows": 0,
-                "heard": 0.0, "last_release": 0.0})
+                "heard": 0.0, "last_release": 0.0, "released_by": ""})
             record["last_lease"] = max(record["last_lease"], issued)
             record["last_seen"] = max(record["last_seen"], key_seen,
                                       float(seen_usage or 0.0))
@@ -1636,17 +1651,30 @@ class LicenseStore:
             if released_at is None:
                 record["open_rows"] += 1
             else:
+                # ПРИЧИНА ПОСЛЕДНЕГО УХОДА ЕДЕТ НА ЭКРАН. `released` покрывает
+                # три разных события — клиент остановил контейнер сам
+                # (`process`), место у молчащего забрали мы (`silence`), слот
+                # освободила поддержка (`admin`), — и клиенту это три разные
+                # новости. Без этого поля витрина показывала отобранное место
+                # как «вы сами остановили»: она читает `released_by`
+                # (`storefront/billing/slots.py::_state_of`), а сервер его не
+                # отдавал, поэтому охраняющая проверка не могла упасть.
+                if float(released_at) >= record["last_release"]:
+                    record["released_by"] = str(released_by)
                 record["last_release"] = max(record["last_release"],
                                              float(released_at))
             if not pubkey:
                 continue
             process = processes.setdefault(pubkey, {
                 "pubkey": pubkey, "owners": [], "open": False, "reclaimed": False,
-                "last_seen": 0.0, "heard": 0.0, "last_release": 0.0})
+                "last_seen": 0.0, "heard": 0.0, "last_release": 0.0,
+                "rows": 0, "rows_by_admin": 0, "last_lease": 0.0})
             if instance_id not in process["owners"]:
                 process["owners"].append(instance_id)
             process["last_seen"] = max(process["last_seen"], key_seen)
             process["heard"] = max(process["heard"], spoke)
+            process["last_lease"] = max(process["last_lease"], issued)
+            process["rows"] += 1
             if released_at is None:
                 process["open"] = True
             else:
@@ -1657,6 +1685,10 @@ class LicenseStore:
                     # читается в `_admission`: отобранный ключ теряет быстрый
                     # путь и получает 409 на следующем продлении.
                     process["reclaimed"] = True
+                elif released_by == "admin":
+                    # НАШ СОБСТВЕННЫЙ РЫЧАГ — ЕДИНСТВЕННОЕ, ЧТО ОСВОБОЖДАЕТ
+                    # МЕСТО ПРОЦЕССА ДОСРОЧНО. См. `holds_place` ниже.
+                    process["rows_by_admin"] += 1
         for record in instances.values():
             capable = self._liveness_capable(
                 record["engine_version"], record["reported"] - record["last_lease"])
@@ -1669,12 +1701,50 @@ class LicenseStore:
             record["occupies"] = (not record["released"]
                                   and (record["last_seen"] >= alive_from if capable else True))
         for process in processes.values():
+            # МЕСТО ПРОЦЕССА ДЕРЖИТСЯ ОКНОМ АРЕНДЫ, А НЕ ОКНОМ МОЛЧАНИЯ, И ЭТО
+            # РОВНО БАЗОВАЯ АРИФМЕТИКА (Б26quater).
+            #
+            # Признак жизни правит слотом КОНТЕЙНЕРА — это и была жалоба Б26:
+            # упавший контейнер держал слот сутки. Потолок РАБОЧИХ ПРОЦЕССОВ
+            # внутри контейнера на признак жизни переводить нельзя, и цена
+            # этого измерена на трёх заходах: поколение из 32 ключей
+            # переоткрывалось каждые T_alive, то есть один допуск покупал 32
+            # обслуживающих процесса против базовой единицы, а цикл
+            # «аренда → /v1/release» под ОДНИМ `instance_id` не ограничивался
+            # вообще (база отказывала на 35-м). Оба обхода живут одной и той же
+            # арифметикой: `потолок × (T_offline / период переоткрытия)`.
+            # Сделать период короче суток — значит умножить потолок тарифа на
+            # отношение суток к этому периоду, чем бы период ни назывался.
+            #
+            # Поэтому: ключ занимает место, пока в окне аренды стоит хоть
+            # одна его строка. Ни молчание, ни `/v1/release` места не освобождают —
+            # «ушёл» и «замолчал» суть заявления о будущем, а запечатанный
+            # бандл у процесса в памяти действителен до `ttl + grace` при любом
+            # из них. Единственное досрочное освобождение — НАШЕ: `/admin/release`
+            # (`released_by='admin'`), потому что его выполняем мы, а не клиент,
+            # и оно и в базе удаляло строки.
+            #
+            # ЧЕМ ЗА ЭТО ПЛАТИТ ЧЕСТНЫЙ КЛИЕНТ, СКАЗАНО ВСЛУХ: ключи мёртвых
+            # воркеров держат места до конца окна, поэтому контейнер на 16
+            # воркеров при тарифе в один контейнер поднимается заново один раз,
+            # а не десять (E8). Это поведение выпущенного 0.3.17, а не регресс
+            # относительно него; отказ обязан назвать срок и действие
+            # (`_refuse_processes`).
+            process["holds_place"] = process["rows"] > process["rows_by_admin"]
+            # КОГДА МЕСТО ОСВОБОДИТСЯ САМО — по ПОСЛЕДНЕЙ аренде ключа, а не
+            # по первой: окно отбирает строки по `issued_at`, и пока в нём
+            # стоит хоть одна строка ключа, место занято. Продлевавшийся ключ
+            # держит место дольше, и обещать по первой аренде значило бы
+            # назвать клиенту срок, который наступит раньше освобождения.
+            process["frees_at"] = process["last_lease"] + window_seconds
             # Правило ключа — правило его инстанса. Пока ХОТЯ БЫ ОДИН из
-            # назвавших его образов не умеет пульс, ключ считается по окну:
-            # иначе мы бы применили к старому движку срок, которого он не знает.
+            # назвавших его образов не умеет пульс, ключ считается живым по
+            # окну: иначе мы бы применили к старому движку срок, которого он не
+            # знает. ЭТО НЕ ПОТОЛОК, а то, что показывается оператору и клиенту
+            # («живых процессов N»): сколько воркеров мы СЛЫШИМ.
             capable = all(instances[owner]["liveness"] for owner in process["owners"])
-            process["occupies"] = ((process["open"] or self._speaks_after_release(process))
-                                   and (process["last_seen"] >= alive_from if capable else True))
+            process["alive"] = ((process["open"] or self._speaks_after_release(process))
+                                and (process["last_seen"] >= alive_from if capable else True))
         ordered = sorted(instances.values(), key=lambda r: r["last_lease"], reverse=True)
         return ordered, processes
 
@@ -1695,10 +1765,19 @@ class LicenseStore:
                          образов до 0.3.14 — аренда в окне);
           * `silent`   — аренда не отпущена, но признака жизни нет: слот УЖЕ
                          свободен, и труп больше не показан работающим;
-          * `released` — контейнер отпустил слот сам (и с тех пор молчит) или
-                         мы признали его замолчавшим. Отпустивший и
-                         продолжающий работать стоит здесь `active`: заявление
-                         об уходе действует до первого слова после него.
+          * `released` — контейнер отпустил слот сам (и с тех пор молчит), мы
+                         признали его замолчавшим или слот освободила
+                         поддержка. Отпустивший и продолжающий работать стоит
+                         здесь `active`: заявление об уходе действует до
+                         первого слова после него.
+
+        КОТОРОЕ ИЗ ТРЁХ — ГОВОРИТ `released_by`, и без него экран врал. Одно
+        слово `released` покрывает «вы остановили контейнер» (`process`), «мы
+        забрали место у молчащего» (`silence`) и «поддержка освободила слот»
+        (`admin`); клиенту это три разные новости, и во втором случае его
+        движок ещё работает, но встанет на следующем продлении. Витрина эту
+        развилку уже умеет (`storefront/billing/slots.py::_state_of`) — поля не
+        было в ответе.
 
         `free_at` — когда слот освободится САМ, если больше ничего не услышим;
         `None` там, где сказать нечего (старый образ не шлёт признак жизни).
@@ -1714,13 +1793,19 @@ class LicenseStore:
                 state = "released"
             else:
                 state = "silent"
-            live_processes = sum(1 for process in processes.values()
-                                 if process["occupies"]
-                                 and record["instance_id"] in process["owners"])
+            mine = [process for process in processes.values()
+                    if record["instance_id"] in process["owners"]]
+            live_processes = sum(1 for process in mine if process["alive"])
+            held_places = sum(1 for process in mine if process["holds_place"])
             listed.append({"instance_id": record["instance_id"],
                            "last_lease": record["last_lease"],
                            "last_seen": record["last_seen"],
                            "state": state,
+                           # ПОЧЕМУ МЕСТО СВОБОДНО — СЛОВОМ, А НЕ ДОГАДКОЙ
+                           # ЭКРАНА: `process` клиент сделал сам, `silence` —
+                           # забрали мы, `admin` — освободила поддержка. Пустая
+                           # строка значит «не отпускал».
+                           "released_by": record["released_by"],
                            # ЗАНЯТОСТЬ ОТДАЁТСЯ ЧИСЛОМ, А НЕ ВЫВОДИТСЯ ИЗ
                            # НАЗВАНИЯ СОСТОЯНИЯ: считает её одна функция, и
                            # витрина обязана складывать «занято» по этому полю,
@@ -1729,7 +1814,17 @@ class LicenseStore:
                            "free_at": (record["last_seen"] + self.ALIVE_SECONDS
                                        if record["occupies"] and record["liveness"]
                                        else None),
+                           # ДВА РАЗНЫХ ЧИСЛА, И ОБА НУЖНЫ, ПОТОМУ ЧТО ОТКАЗ
+                           # СЧИТАЕТ НЕ ТО, ЧТО ЭКРАН ПОКАЗЫВАЕТ.
+                           # `live_processes` — сколько воркеров мы СЛЫШИМ
+                           # (это и есть «работает ли контейнер»);
+                           # `held_places` — сколько мест под потолком тарифа
+                           # заняли его ключи, включая мёртвые: место держится
+                           # до конца окна аренды. Показать одно и отказать по
+                           # другому — это и есть «два мнения об одном
+                           # контейнере», которыми этот файл уже платил.
                            "live_processes": live_processes,
+                           "held_places": held_places,
                            "engine_version": record["engine_version"]})
         return listed
 
@@ -1768,11 +1863,24 @@ class LicenseStore:
         made slot release the only unserialized writer on a connection opened
         `check_same_thread=False` — while `devserver.py` runs the admin app on a
         second thread.
+
+        ПОМЕТКА, А НЕ УДАЛЕНИЕ, И ЭТО ЕДИНСТВЕННОЕ ДОСРОЧНОЕ ОСВОБОЖДЕНИЕ МЕСТ.
+        Удаляя строки, мы стирали и сам факт: экран показывал контейнер
+        исчезнувшим, а клиенту оставалось гадать, кто его остановил. Теперь
+        причина уезжает в `active_instances` словом `admin` — «слот освободила
+        поддержка», — и это третья новость, отличная от «вы остановили» и «мы
+        забрали». `released_by='admin'` ставится и поверх уже закрытых строк:
+        оператор говорит «этого контейнера нет», и места его рабочих процессов
+        обязаны освободиться СРАЗУ, чем бы они ни были закрыты раньше
+        (`_occupancy::holds_place`). Это и есть наш ручной рычаг для клиента,
+        который упёрся в потолок процессов после нескольких перезапусков.
         """
         with self._lock:
             cursor = self._conn.execute(
-                "DELETE FROM leases WHERE org_id=? AND instance_id=?",
-                (org_id, instance_id))
+                "UPDATE leases SET released_at=COALESCE(released_at, ?), "
+                "released_by='admin' WHERE org_id=? AND instance_id=? "
+                "AND COALESCE(released_by, '')<>'admin'",
+                (time.time(), org_id, instance_id))
             self._conn.commit()
         return cursor.rowcount > 0
 
@@ -1784,7 +1892,7 @@ class LicenseStore:
     # ВЕРДИКТ, КОТОРЫЙ НИКОГО НЕ ПОДВИНУЛ. Хвост общий, потому что забыть его
     # — значит списать единицу за допуск, который ничего не освобождал, и
     # именно так бюджет и оказался на стороне освобождения.
-    _NOTHING_TAKEN = {"reclaim": "", "keys": ()}
+    _NOTHING_TAKEN = {"reclaim": ""}
 
     _REDEPLOY_HINT = (" Если это переразвёртывание, поднимите контейнер НА ТОМ ЖЕ "
                       "ТОМЕ (-v pseudex-data:/data): он сохранит свой идентификатор "
@@ -1865,7 +1973,7 @@ class LicenseStore:
                 f"Перезапустите контейнер (docker restart): его процессы возьмут "
                 f"новые места, если тариф их допускает.{self._REDEPLOY_HINT}")
 
-    def _refuse_turnover(self, org_id: str, lapsed: list[dict], keys: list[str],
+    def _refuse_turnover(self, org_id: str, lapsed: list[dict],
                          allowed: int, spent: int, budget: int, now: float) -> str:
         """Слот свободен, но за час он уже переходил столько раз, сколько можно.
 
@@ -1877,20 +1985,23 @@ class LicenseStore:
         """
         needed = spent - budget + 1
         frees_in = max(0.0, self.turnover_frees_at(org_id, needed) - now)
-        if keys and not lapsed:
-            what = (f"рабочие процессы прежнего запуска молчат и больше не "
-                    f"считаются живыми ({len(keys)} шт.), но переоткрыть их места")
+        oldest = min(lapsed, key=lambda record: record["last_seen"])
+        # ОТПУСТИЛ, ЗАМОЛЧАЛ И «МЫ ЗАБРАЛИ» — ТРИ РАЗНЫХ СОБЫТИЯ, И КЛИЕНТ
+        # ЗНАЕТ, КОТОРОЕ СЛУЧИЛОСЬ. «Молчит 0 с» про контейнер, который сам
+        # сказал «я ухожу», — та же ложь, что «остановите лишний» про труп,
+        # только в другую сторону; а «отпустил слот» про контейнер, чьи строки
+        # закрыли МЫ (`reclaim_silent`), — ровно то враньё, из-за которого
+        # экрану и понадобился `released_by`. Признак «строк не осталось»
+        # одинаков во всех трёх случаях, поэтому спрашивается ПРИЧИНА.
+        if oldest["released_by"] == "process":
+            gone = "отпустил слот"
+        elif oldest["released_by"] == "admin":
+            gone = "освобождён поддержкой"
         else:
-            oldest = min(lapsed, key=lambda record: record["last_seen"])
-            # ОТПУСТИЛ И ЗАМОЛЧАЛ — РАЗНЫЕ СОБЫТИЯ, И КЛИЕНТ ЗНАЕТ, КОТОРОЕ
-            # СЛУЧИЛОСЬ. «Молчит 0 с» про контейнер, который сам сказал «я
-            # ухожу», — это та же ложь, что «остановите лишний» про труп,
-            # только в другую сторону.
-            gone = ("отпустил слот" if oldest["released"] else
-                    f"молчит {ago(now - oldest['last_seen'])} и больше не "
+            gone = (f"молчит {ago(now - oldest['last_seen'])} и больше не "
                     f"считается работающим")
-            what = (f"прежний контейнер ({oldest['instance_id']}) {gone}, но "
-                    f"занять его слот")
+        what = (f"прежний контейнер ({oldest['instance_id']}) {gone}, но "
+                f"занять его слот")
         return (f"тариф допускает {allowed} контейнер(ов), и {what} "
                 f"сейчас нельзя: за последний час слот уже переходил к новому "
                 f"контейнеру {spent} раз(а) при потолке {budget} — иначе тариф "
@@ -1898,29 +2009,39 @@ class LicenseStore:
                 f"{int(frees_in // 60) + 1} мин.{self._REDEPLOY_HINT} "
                 f"Переразвёртывание на том же томе бюджет не тратит.")
 
-    def _refuse_processes(self, live_keys: list[dict], instances: list[dict],
-                          allowed: int, ceiling: int, window_seconds: float) -> str:
-        """Потолок РАБОЧИХ ПРОЦЕССОВ. Сегодня этот отказ не объяснялся ничем:
+    def _refuse_processes(self, held: list[dict], allowed: int, ceiling: int,
+                          now: float) -> str:
+        """Потолок МЕСТ РАБОЧИХ ПРОЦЕССОВ. Этот отказ не объяснялся ничем:
         клиент читал про «рабочие процессы» — слово, которого нет ни на одном
-        его экране, — и не мог знать ни что это, ни когда отпустит."""
-        owners = {owner for process in live_keys for owner in process["owners"]}
-        by_id = {record["instance_id"]: record for record in instances}
+        его экране, — и не мог знать ни что это, ни когда отпустит.
+
+        ОН ОБЯЗАН НАЗВАТЬ СРОК, ПОТОМУ ЧТО СРОК ЗДЕСЬ ДЛИННЫЙ. Место ключа
+        держится до конца окна аренды (Б26quater), а не до конца молчания:
+        контейнер на много воркеров, поднявшийся заново, занимает вторую пачку
+        мест, и третья упрётся сюда. Клиент, который этого не знает, читает
+        отказ как поломку — поэтому здесь и срок освобождения, и три действия,
+        которые работают СЕЙЧАС: меньше воркеров, больший тариф или поддержка
+        (`POST /admin/release` — единственное досрочное освобождение мест).
+        """
+        owners = {owner for process in held for owner in process["owners"]}
         named = ", ".join(sorted(owners)[:3])
-        capable = all(by_id[owner]["liveness"] for owner in owners if owner in by_id)
-        if capable:
-            when = (f" Если это перезапуск, подождите {int(self.ALIVE_SECONDS // 60)} мин: "
-                    f"процессы прежнего запуска перестают считаться через "
-                    f"{int(self.ALIVE_SECONDS // 60)} минут молчания и их места "
-                    f"переоткрываются одной перевыдачей на весь запуск.")
-        else:
-            when = (f" Процессы прежнего запуска на движке до 0.3.15 перестают "
-                    f"считаться только по истечении аренды (до {int(window_seconds // 3600)} ч) "
-                    f"— обновите движок (pseudexctl upgrade), и они будут освобождаться "
-                    f"за {int(self.ALIVE_SECONDS // 60)} минут.")
+        # КОГДА ОСВОБОДИТСЯ ПЕРВОЕ МЕСТО — по самому старому ключу: раньше него
+        # не освободится ни одно, и назвать меньшее значило бы пообещать то,
+        # чего не будет.
+        soonest = min(process["frees_at"] for process in held) if held else now
+        # БЕЗ ПОДСКАЗКИ ПРО ТОТ ЖЕ ТОМ. Она про слот КОНТЕЙНЕРА, а здесь
+        # кончились места РАБОЧИХ ПРОЦЕССОВ: клиент чаще всего уже на своём
+        # томе, и совет сделать сделанное — ровно та болезнь Б26, которую этот
+        # файл лечит.
         return (f"тариф допускает {allowed} контейнер(ов) — это {ceiling} рабочих "
-                f"процессов, и сейчас живых {len(live_keys)}"
-                f"{f' (инстанс {named})' if named else ''}.{when} Если контейнеров "
-                f"действительно несколько — уменьшите PSEUDEX_WORKERS или смените тариф.")
+                f"процесса(ов), и все места заняты ({len(held)}"
+                f"{f', инстанс {named}' if named else ''}). Место рабочего процесса "
+                f"держится до конца его аренды, даже если процесс уже остановлен: "
+                f"первое освободится через {ago(max(0.0, soonest - now))}. "
+                f"Если это повторный перезапуск многоворкерного контейнера — "
+                f"уменьшите PSEUDEX_WORKERS или смените тариф в личном кабинете; "
+                f"если контейнер нужно поднять немедленно, напишите в поддержку: "
+                f"мы освобождаем места вручную.")
 
     def _admission(self, org_id: str, plan: str, instance_id: str,
                    window_seconds: float, pubkey: str, now: float) -> dict:
@@ -1998,51 +2119,46 @@ class LicenseStore:
             # стоить бюджета (Б26ter).
             #
             # Чем тогда связан цикл «аренда — release — аренда» под одним
-            # именем, за который эта строка и платила: тем, что отпустивший и
-            # продолжающий работать процесс СЛЫШЕН и места не освобождает
-            # (`_speaks_after_release`), а обслуживать, ни разу не придя за
-            # ёмкостью, движок не может. Ограничитель переехал с заявления на
-            # наблюдение — туда, где его нельзя просто не позвать.
+            # именем, за который эта строка и платила: тем, что МЕСТО КЛЮЧА
+            # держится до конца окна аренды (`holds_place`), а не до конца
+            # молчания. Ключей у тарифа конечное число, круг тратит по ключу за
+            # оборот — и упирается ровно в ту же арифметику, что в базе.
             lapsed = [record for record in instances
                       if not record["occupies"]
                       and record["instance_id"] != instance_id]
             if len(occupying) + len(lapsed) >= allowed:
                 reclaim = min(lapsed,
                               key=lambda record: record["last_seen"])["instance_id"]
-        # МЕСТА ПРОЦЕССОВ — ТА ЖЕ АРИФМЕТИКА, ТА ЖЕ ЦЕНА.
+        # МЕСТА ПРОЦЕССОВ СЧИТАЮТСЯ ПО ОКНУ АРЕНДЫ, И БЮДЖЕТ ИХ НЕ ПОКУПАЕТ.
         #
-        # Без этого инстанс, переиспользующий СВОЙ идентификатор, прокручивал
-        # потолок в 32 процесса каждые T_alive и не тратил ни единицы: молчание
-        # ключей было бесплатным способом освободить их места. Тридцать два
-        # процесса каждые десять минут при T_offline = 72 ч — это 13 824
-        # обслуживающих процесса на тарифе в один контейнер.
+        # Здесь стояло обратное — места молчащих ключей переоткрывались одним
+        # допуском за единицу бюджета, — и замер назвал цену: единица покупала
+        # 32 обслуживающих процесса против базовой единицы, а круг «аренда →
+        # /v1/release» под одним `instance_id` не тратил ничего и не
+        # ограничивался ничем. Потолок нельзя ставить на окно молчания ни за
+        # какую цену: `потолок × T_offline / T_alive` — это умножение тарифа на
+        # 432 (Б26quater).
         #
-        # ПОКОЛЕНИЕ КЛЮЧЕЙ ОСВОБОЖДАЕТСЯ ОДНИМ ДОПУСКОМ, А НЕ ПО ЕДИНИЦЕ ЗА
-        # КЛЮЧ, и это не скидка: допуск — это ОДИН контейнер, а контейнер
-        # всегда стоил одной единицы и всегда приносил до 32 воркеров. Единица
-        # за ключ вынесла бы честному клиенту с 24-ядерной машиной весь часовой
-        # бюджет за один перезапуск.
-        reclaimed_keys: list[str] = []
-        live_keys = [process for process in processes.values() if process["occupies"]]
-        if len(live_keys) >= ceiling:
+        # Поэтому переоткрывать нечего: место освобождается САМО, когда истечёт
+        # аренда ключа, и купить это время нельзя. Бюджет остаётся ровно там,
+        # где он и должен быть, — на переходе слота КОНТЕЙНЕРА.
+        held_places = [process for process in processes.values()
+                       if process["holds_place"]]
+        if len(held_places) >= ceiling:
             # ОТНОШЕНИЕ КЛЮЧЕЙ К ИНСТАНСАМ — НАШЕ НАБЛЮДЕНИЕ, а не то, что
             # контейнер о себе сообщил. Значение много выше правдоподобного
             # числа воркеров означает, что несколько контейнеров называются
-            # одним `instance_id`.
-            _log.warning("process ceiling reached for org=%s: %d live keys across %d "
-                         "instance ids (ratio %.1f)", org_id, len(live_keys),
-                         len(occupying), len(live_keys) / max(len(occupying), 1))
+            # одним `instance_id`. Считается по тем, кто ДЕРЖИТ МЕСТА, а не по
+            # занятым слотам: слот замолчавшего уже свободен, и деление на ноль
+            # занятых печатало бы отношение, которого нет.
+            owners = {owner for process in held_places for owner in process["owners"]}
+            _log.warning("process ceiling reached for org=%s: %d held places across "
+                         "%d instance ids (ratio %.1f)", org_id, len(held_places),
+                         len(owners), len(held_places) / max(len(owners), 1))
             return {"allowed": False, **self._NOTHING_TAKEN,
-                    "detail": self._refuse_processes(live_keys, instances, allowed,
-                                                     ceiling, window_seconds)}
-        # Ключи инстанса, который и так переходит к нам целиком, считать второй
-        # раз нельзя: его строки закроет та же перевыдача.
-        lapsed_keys = [process for process in processes.values()
-                       if process["open"] and not process["occupies"]
-                       and process["owners"] != [reclaim]]
-        if lapsed_keys and len(live_keys) + len(lapsed_keys) >= ceiling:
-            reclaimed_keys = [process["pubkey"] for process in lapsed_keys]
-        if not reclaim and not reclaimed_keys:
+                    "detail": self._refuse_processes(held_places, allowed, ceiling,
+                                                     now)}
+        if not reclaim:
             return {"allowed": True, **self._NOTHING_TAKEN, "detail": ""}
         # ОДИН ДОПУСК — ОДНА ЕДИНИЦА, что бы он ни вытеснил. Проверка бюджета
         # стоит ЗДЕСЬ, а не на освобождении: освобождение — это событие, за
@@ -2056,11 +2172,9 @@ class LicenseStore:
             lapsed_named = [record for record in instances
                             if record["instance_id"] == reclaim]
             return {"allowed": False, **self._NOTHING_TAKEN,
-                    "detail": self._refuse_turnover(org_id, lapsed_named,
-                                                    reclaimed_keys, allowed, spent,
-                                                    budget, now)}
-        return {"allowed": True, "reclaim": reclaim, "keys": reclaimed_keys,
-                "detail": ""}
+                    "detail": self._refuse_turnover(org_id, lapsed_named, allowed,
+                                                    spent, budget, now)}
+        return {"allowed": True, "reclaim": reclaim, "detail": ""}
 
     def may_lease(self, org_id: str, plan: str, instance_id: str,
                   window_seconds: int, pubkey: str = "") -> tuple[bool, str]:
@@ -2105,16 +2219,13 @@ class LicenseStore:
             if not verdict["allowed"]:
                 return False, str(verdict["detail"])
             # ЕДИНИЦА СПИСЫВАЕТСЯ ЗДЕСЬ И ОДИН РАЗ — в той же секции, что и
-            # решение, и одна на весь допуск, сколько бы мест он ни переоткрыл.
-            if verdict["reclaim"] or verdict["keys"]:
-                if verdict["reclaim"]:
-                    self.reclaim_silent(org_id, str(verdict["reclaim"]), now)
-                if verdict["keys"]:
-                    self.reclaim_keys(org_id, list(verdict["keys"]), now)
-                self.record_admission(org_id, instance_id,
-                                      str(verdict["reclaim"]) or "processes",
-                                      "instance" if verdict["reclaim"] else "processes",
-                                      now)
+            # решение. Тратит её ровно одно событие: слот КОНТЕЙНЕРА перешёл к
+            # тому, кто просит. Мест рабочих процессов бюджет не покупает —
+            # они освобождаются только временем (Б26quater).
+            if verdict["reclaim"]:
+                self.reclaim_silent(org_id, str(verdict["reclaim"]), now)
+                self.record_admission(org_id, instance_id, str(verdict["reclaim"]),
+                                      "instance", now)
             self.record_lease(lease_id, org_id, instance_id, process_id,
                               window_seconds, pubkey=pubkey,
                               engine_version=engine_version,
@@ -2210,14 +2321,19 @@ class LicenseStore:
     def release_process(self, org_id: str, pubkey: str) -> bool:
         """Пометить слот процесса освобождённым. Строка остаётся — она ЗАПИСЬ.
 
-        Слот свободен с этой секунды И РОВНО ПОКА ЭТОТ ПРОЦЕСС МОЛЧИТ. Остывание
-        на 300 с убрано (оно не связывало — бюджет перевыдачи жёстче его в 4–12
-        раз), поэтому клиент, честно остановивший контейнер, поднимается сразу;
-        а тот, кто «ушёл» и продолжает покупать ёмкость, слышен и место занимает
-        (`_speaks_after_release`). Это и есть ограничитель цикла «аренда —
-        release — аренда»: возврат на СВОЙ слот бюджета не тратит (Б26ter),
-        поэтому связывать его заявлением об уходе больше нечем — только
-        наблюдением.
+        СЛОТ КОНТЕЙНЕРА свободен с этой секунды И РОВНО ПОКА ЭТОТ ПРОЦЕСС
+        МОЛЧИТ. Остывание на 300 с убрано (оно не связывало — бюджет перевыдачи
+        жёстче его в 4–12 раз), поэтому клиент, честно остановивший контейнер,
+        поднимается сразу; а тот, кто «ушёл» и продолжает покупать ёмкость,
+        слышен и слот занимает (`_speaks_after_release`).
+
+        МЕСТО РАБОЧЕГО ПРОЦЕССА ПОД ПОТОЛКОМ ТАРИФА ЭТИМ НЕ ОСВОБОЖДАЕТСЯ, и
+        это второй из двух сроков, которые тремя заходами подряд мерили одним
+        счётчиком (Б26quater). `/v1/release` — заявление о будущем: бандл
+        остаётся у процесса в памяти и действителен до `ttl + grace`, поэтому
+        освободить по нему МЕСТО значит отдать круг «аренда — release —
+        аренда» со скоростью сети. Место держится до конца окна аренды
+        (`_occupancy::holds_place`), как в базе.
 
         И НИЧЕГО НЕ СТОИТ. Освобождение — событие, которого клиент не просил, и
         брать за него единицу значило наказывать за корректный `docker stop`:
@@ -2261,29 +2377,6 @@ class LicenseStore:
             _log.info("slot reclaimed for org=%s instance=%s: silent for more than "
                       "%d s (%d lease rows)", org_id, instance_id,
                       int(self.ALIVE_SECONDS), cursor.rowcount)
-        return cursor.rowcount
-
-    def reclaim_keys(self, org_id: str, pubkeys: list[str], now: float) -> int:
-        """Закрыть строки замолчавших КЛЮЧЕЙ ПРОЦЕССОВ — места, которые допуск
-        переоткрыл под потолком процессов.
-
-        Отдельно от `reclaim_silent`, потому что инстанс при этом может быть
-        жив: перезапуск на том же томе меняет все ключи, не меняя
-        `instance_id`. Без этой записи молчание ключей было бы бесплатным
-        способом прокрутить потолок в 32 процесса каждые десять минут.
-        """
-        if not pubkeys:
-            return 0
-        placeholders = ",".join("?" for _ in pubkeys)
-        with self._lock:
-            cursor = self._conn.execute(
-                "UPDATE leases SET released_at=?, released_by='silence' "
-                f"WHERE org_id=? AND pubkey IN ({placeholders}) "
-                "AND released_at IS NULL", (now, org_id, *pubkeys))
-            self._conn.commit()
-        if cursor.rowcount:
-            _log.info("process slots reclaimed for org=%s: %d keys silent for more "
-                      "than %d s", org_id, len(pubkeys), int(self.ALIVE_SECONDS))
         return cursor.rowcount
 
     def record_admission(self, org_id: str, instance_id: str, displaced: str,

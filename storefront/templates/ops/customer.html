@@ -106,9 +106,9 @@
   <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Контейнеры</h3>
   <p style="font-size:13px;color:var(--dim-2);margin:0 0 12px">
     {% if not slots.known %}лицензионный сервер не ответил — занятость неизвестна
-    {% else %}{% if slots.occupied is None %}<b style="color:var(--amber)">лицензионный сервер не назвал занятость</b>{% if subscription %} — по тарифу положено {{ subscription.plan.max_instances }}{% endif %}{% else %}занято по тарифу <b style="color:var(--text-3)">{{ slots.occupied }}</b>{% if subscription %} из {{ subscription.plan.max_instances }}{% endif %}{% endif %} · слот освобождается после {{ slots.alive_label }} молчания · перевыдач за час {% if slots.turnover_last_hour is None or slots.turnover_budget is None %}сервер не назвал{% else %}{{ slots.turnover_last_hour }} из {{ slots.turnover_budget }}{% endif %}{% endif %}</p>
+    {% else %}{% if slots.occupied is None %}<b style="color:var(--amber)">лицензионный сервер не назвал занятость</b>{% if subscription %} — по тарифу положено {{ subscription.plan.max_instances }}{% endif %}{% else %}занято по тарифу <b style="color:var(--text-3)">{{ slots.occupied }}</b>{% if subscription %} из {{ subscription.plan.max_instances }}{% endif %}{% endif %} · мест под потолком тарифа занято {% if slots.held_places is None %}сервер не назвал{% else %}{{ slots.held_places }}{% endif %} при {% if slots.live_processes is None %}не названном числе живых процессов{% else %}{{ slots.live_processes }} живых процессах{% endif %} · слот освобождается после {{ slots.alive_label }} молчания · перевыдач за час {% if slots.turnover_last_hour is None or slots.turnover_budget is None %}сервер не назвал{% else %}{{ slots.turnover_last_hour }} из {{ slots.turnover_budget }}{% endif %}{% endif %}</p>
   <table class="list">
-    <tr><th>ИНСТАНС</th><th>ПРИЗНАК ЖИЗНИ</th><th>ПРОЦЕССОВ</th><th>ВЕРСИЯ</th><th>СОСТОЯНИЕ</th></tr>
+    <tr><th>ИНСТАНС</th><th>ПРИЗНАК ЖИЗНИ</th><th>ПРОЦЕССОВ</th><th>МЕСТ</th><th>ВЕРСИЯ</th><th>СОСТОЯНИЕ</th></tr>
     {% for slot in slots.rows %}
     <tr>
       <td class="mono">{{ slot.instance_id }}</td>
@@ -116,15 +116,18 @@
       {% comment %}ПРОЦЕССЫ: «—» ЗНАЧИТ «НЕ СООБЩЕНО». Ноль здесь читался как «воркеров нет» —
       так в консоли и стояло «vol-one · процессов 0» у контейнера с тридцатью двумя.{% endcomment %}
       <td class="mono">{% if slot.live_processes is None %}—{% else %}{{ slot.live_processes }}{% endif %}</td>
+      {% comment %}МЕСТ — НЕ ТО ЖЕ, ЧТО ПРОЦЕССОВ, и оператор отвечает клиенту именно по этому числу: отказ по потолку считает занятые места (ключи мёртвых воркеров держат их до конца окна аренды), а «процессов» — это сколько воркеров мы слышим сейчас.{% endcomment %}
+      <td class="mono">{% if slot.held_places is None %}—{% else %}{{ slot.held_places }}{% endif %}</td>
       <td class="mono">{{ slot.engine_version|default:"—" }}</td>
       <td>
         <span class="pill {{ slot.pill_class }}">{{ slot.pill }}</span>
         {% if slot.state == 'active' %}{% if slot.frees_in %}<span style="color:var(--dim-2);font-size:12px"> освободит через {{ slot.frees_in }}, если замолчит</span>{% else %}<span style="color:var(--amber);font-size:12px"> без признака жизни — по окну аренды</span>{% endif %}
-        {% elif slot.state == 'reclaimed' %}<span style="color:var(--amber);font-size:12px"> место отдано другому контейнеру; этот получит 409 на следующем продлении</span>
-        {% elif slot.heard_recently %}<span style="color:var(--amber);font-size:12px"> но слышали его меньше {{ slots.alive_label }} назад — слот заберут при следующем продлении</span>{% endif %}
+        {% elif slot.state == 'reclaimed' %}<span style="color:var(--amber);font-size:12px"> место отдано другому контейнеру; этот получит 409 на следующем продлении{% if slot.heard_recently %} — и он ещё отчитывается, то есть работает{% endif %}</span>
+        {% comment %}«СЛЫШАЛИ НЕДАВНО» ОСТАЁТСЯ ТОЛЬКО ДЛЯ ОСВОБОЖДЁННОГО, и смысл у него другой: заявление об уходе действует до первого слова после него, поэтому контейнер, который отпустил слот и продолжает отчитываться, снова займёт его сам. У `silent` этой оговорки быть не может по построению — состояние и значит «свежего признака жизни нет».{% endcomment %}
+        {% elif slot.heard_recently %}<span style="color:var(--amber);font-size:12px"> но слышали его меньше {{ slots.alive_label }} назад — если он работает, следующее продление снова займёт слот</span>{% endif %}
       </td>
     </tr>
-    {% empty %}<tr><td colspan="5" style="color:var(--dim-2)">Аренд в окне нет.</td></tr>{% endfor %}
+    {% empty %}<tr><td colspan="6" style="color:var(--dim-2)">Аренд в окне нет.</td></tr>{% endfor %}
   </table>
 
   <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Процессы и цепь отчётов</h3>

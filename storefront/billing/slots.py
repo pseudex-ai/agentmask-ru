@@ -15,12 +15,22 @@
   * `active`    — признак жизни свежее `alive_seconds`: слот занят;
   * `silent`    — аренда не отпущена, но контейнер молчит: слот УЖЕ свободен,
                   и труп больше не показан работающим;
-  * `released`  — контейнер отпустил слот сам (`/v1/release`);
+  * `released`  — контейнер отпустил слот сам (`released_by='process'`);
   * `reclaimed` — место у молчащего ЗАБРАЛИ, чтобы пустить другой контейнер
                   (`released_by='silence'`). Для клиента это не то же самое,
                   что «вы его остановили»: его движок ещё работает, но на
                   следующем продлении получит 409 (Б26ter), и сказать ему об
-                  этом обязан экран, а не поддержка по телефону.
+                  этом обязан экран, а не поддержка по телефону;
+  * `released:<причина>` — освобождение, причину которого витрина не знает
+                  (сервер называет и `admin` — слот освободила поддержка).
+                  Называется словами сервера, а не подводится под «остановлен
+                  сам».
+
+ДВА ЧИСЛА ПРО ПРОЦЕССЫ, И ОНИ РАЗНЫЕ. `live_processes` — сколько воркеров
+сервер СЛЫШИТ; `held_places` — сколько мест под потолком тарифа занимают их
+ключи, включая ключи мёртвых воркеров (место держится до конца окна аренды).
+Отказ по потолку считает второе. Показать одно и отказать по другому — это те
+самые «два мнения об одном контейнере», которыми этот экран уже платил.
 
 ДВА ПРАВИЛА, КОТОРЫЕ ЗДЕСЬ НЕЛЬЗЯ НАРУШАТЬ, И ОБА КУПЛЕНЫ ДОРОГО:
 
@@ -69,6 +79,17 @@ def _number(raw: dict, key: str) -> int | None:
     return int(value)
 
 
+def _sum(rows: list[dict], key: str) -> int | None:
+    """Сумма по строкам, которые сервер назвал; не назвал ни одной — `None`.
+
+    Ноль здесь читается как «ни одного процесса не живо», то есть как ответ, и
+    именно так на экран попадало «процессов 0» у контейнера с тридцатью двумя
+    воркерами.
+    """
+    named = [row[key] for row in rows if row[key] is not None]
+    return sum(named) if named else None
+
+
 def _state_of(raw: dict) -> str:
     """Имя состояния — СЕРВЕРНОЕ, и незнакомое остаётся собой.
 
@@ -81,8 +102,18 @@ def _state_of(raw: dict) -> str:
     сам (`reclaimed`), верим ему; иначе выводим по причине освобождения.
     """
     state = str(raw.get("state", "") or "")
-    if state == "released" and str(raw.get("released_by", "") or "") == "silence":
+    if state != "released":
+        return state
+    reason = str(raw.get("released_by", "") or "")
+    if reason == "silence":
         return "reclaimed"
+    if reason and reason != "process":
+        # ПРИЧИНА, КОТОРОЙ ВИТРИНА НЕ ЗНАЕТ, НАЗЫВАЕТСЯ, А НЕ ПОДВОДИТСЯ ПОД
+        # «остановлен сам». Сервер называет три причины (`process`, `silence`,
+        # `admin`), и список может вырасти раньше витрины; молча подписать
+        # чужое освобождение словами «вы сами остановили контейнер» — тот же
+        # дефект, ради которого причина вообще поехала на экран.
+        return f"released:{reason}"
     return state
 
 
@@ -152,6 +183,13 @@ def _row(raw: dict, now: float, alive_seconds: float) -> dict:
         # допускает 1 контейнер — это 32 рабочих процесса, сейчас живых 32»
         # клиент до сих пор не мог сверить ни с одним своим экраном.
         "live_processes": _number(raw, "live_processes"),
+        # МЕСТА ПОД ПОТОЛКОМ ТАРИФА — ВТОРОЕ ЧИСЛО, И ОНО НЕ РАВНО ПЕРВОМУ.
+        # `live_processes` — сколько воркеров сервер СЛЫШИТ, `held_places` —
+        # сколько мест их ключи занимают под потолком, включая ключи мёртвых
+        # воркеров: место держится до конца окна аренды. Отказ по потолку
+        # считает ВТОРОЕ, поэтому экран без него оставлял клиента сверять
+        # отказ с числом, которое к отказу не относится.
+        "held_places": _number(raw, "held_places"),
         # СЕРВЕР СКАЗАЛ «СЛОТ СВОБОДЕН» — И ТУТ ЖЕ, ЧТО СЛЫШАЛ ЭТОТ КОНТЕЙНЕР
         # МИНУТУ НАЗАД. Два его же поля противоречат друг другу (так выглядели
         # 128 живых аренд, показанных свободными), и экран обязан сказать об
@@ -170,7 +208,8 @@ def unknown() -> dict:
     Молчание обязано выглядеть молчанием.
     """
     return {"known": False, "occupied": None, "alive_label": "", "rows": [],
-            "turnover_last_hour": None, "turnover_budget": None}
+            "turnover_last_hour": None, "turnover_budget": None,
+            "live_processes": None, "held_places": None}
 
 
 def describe(payload: dict, now: float) -> dict:
@@ -187,6 +226,7 @@ def describe(payload: dict, now: float) -> dict:
     if not isinstance(listed, list):
         listed = []
     alive_seconds = float(payload.get("alive_seconds", 0.0) or 0.0)
+    rows = [_row(raw, now, alive_seconds) for raw in listed if isinstance(raw, dict)]
     return {
         "known": True,
         "occupied": _number(payload, "occupied"),
@@ -196,6 +236,13 @@ def describe(payload: dict, now: float) -> dict:
         "alive_label": ago(alive_seconds) if alive_seconds else "",
         "turnover_last_hour": _number(payload, "turnover_last_hour"),
         "turnover_budget": _number(payload, "turnover_budget"),
-        "rows": [_row(raw, now, alive_seconds)
-                 for raw in listed if isinstance(raw, dict)],
+        "rows": rows,
+        # ИТОГИ ПО ОРГАНИЗАЦИИ, ПОТОМУ ЧТО ПОТОЛОК СЧИТАЕТСЯ ПО НЕЙ. Отказ
+        # «тариф допускает 1 контейнер — это 32 рабочих процесса, и сейчас
+        # живых 32» называет числа по ВСЕЙ организации, а экран показывал их
+        # только по строкам: сложить их глазами клиент мог, сверить с отказом —
+        # нет. Сумма считается по тем строкам, где сервер число назвал; не
+        # назвал ни в одной — это `None`, то есть «неизвестно», а не ноль.
+        "live_processes": _sum(rows, "live_processes"),
+        "held_places": _sum(rows, "held_places"),
     }

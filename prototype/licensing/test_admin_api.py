@@ -578,6 +578,55 @@ check("остывания в ответе больше нет, есть срок
       "cooldown_seconds" not in slots and slots["alive_seconds"] == 600.0
       and slots["turnover_last_hour"] == 1,
       f"{ {k: v for k, v in slots.items() if k != 'instances'} }")
+# ПОЧЕМУ МЕСТО ОСВОБОДИЛОСЬ — НА НАСТОЯЩЕМ ОТВЕТЕ, А НЕ НА ВЫДУМАННОМ.
+#
+# Витрина различает «вы остановили контейнер» и «мы забрали место у молчащего»
+# по полю `released_by` (`storefront/billing/slots.py::_state_of`), и охраняющая
+# это проверка витрины ездит на СОБРАННОМ ответе — то есть не может упасть от
+# того, что сервер поля не присылает. Он его и не присылал: клиенту, у которого
+# место отобрали, экран говорил «вы сами остановили». Здесь ответ НАСТОЯЩИЙ.
+_by_id = {row["instance_id"]: row for row in slots["instances"]}
+check("ответ /admin/instances называет ПРИЧИНУ освобождения",
+      _by_id["vol-dead"]["released_by"] == "silence"
+      and _by_id["vol-fresh"]["released_by"] == "",
+      f"{[(k, v.get('released_by')) for k, v in _by_id.items()]}")
+# И ЧИСЛА, ПО КОТОРЫМ ОТКАЗЫВАЮТ, ВИДНЫ ТАМ ЖЕ: живые процессы — это «работает
+# ли контейнер», занятые места — это то, что считает потолок тарифа. Ноль на
+# месте живых у работающего контейнера был вторым враньём вердикта.
+check("и числа процессов: живых у работающего, мест у обоих",
+      _by_id["vol-fresh"]["live_processes"] == 1
+      and _by_id["vol-dead"]["live_processes"] == 0
+      and _by_id["vol-dead"]["held_places"] >= 1,
+      f"{[(k, v.get('live_processes'), v.get('held_places')) for k, v in _by_id.items()]}")
+
+# РЫЧАГ ПОДДЕРЖКИ — ЧЕРЕЗ РУЧКУ, А НЕ ЧЕРЕЗ МЕТОД. Место рабочего процесса
+# держится до конца окна аренды, и `POST /admin/release` — единственное, что
+# освобождает его досрочно; отказ по потолку процессов посылает клиента именно
+# сюда. Раз это обещано в отказе, проверяется оно через HTTP.
+_HELP_ORG, _HELP_ID = "helped", "vol-jam"
+help_key = admin.post("/admin/issue", json={"org_id": _HELP_ORG, "plan": "start"},
+                      headers=ADMIN).json()["key"]
+for _ in range(server.STORE.PROCESSES_PER_INSTANCE):
+    lease_as(help_key, _HELP_ID, generate_process_key().public, version="0.3.17")
+jammed = public.post("/v1/lease", json={
+    "key": help_key, "instance_id": _HELP_ID,
+    "pubkey": generate_process_key().public, "engine_version": "0.3.17"})
+check("потолок мест рабочих процессов отказывает и называет срок",
+      jammed.status_code == 409
+      and "все места заняты" in jammed.json().get("detail", "")
+      and "напишите в поддержку" in jammed.json().get("detail", ""),
+      f"{jammed.status_code} {jammed.json().get('detail', '')[:170]}")
+freed = admin.post("/admin/release",
+                   json={"org_id": _HELP_ORG, "instance_id": _HELP_ID}, headers=ADMIN)
+after = lease_as(help_key, _HELP_ID, generate_process_key().public, version="0.3.17")
+check("POST /admin/release освобождает места и клиент поднимается",
+      freed.status_code == 200 and after == 200,
+      f"release={freed.status_code} lease={after}")
+_help_rows = {row["instance_id"]: row for row in admin.get(
+    "/admin/instances", params={"org_id": _HELP_ORG}, headers=ADMIN).json()["instances"]}
+check("а причина на экране — admin, а не «вы сами остановили»",
+      _help_rows[_HELP_ID]["released_by"] == "admin",
+      f"{_help_rows[_HELP_ID].get('released_by')!r}")
 
 # УХОД НЕ ОТКАЗЫВАЕТСЯ НИКОГДА, А БЮДЖЕТ БЬЁТ ПО ДОПУСКУ.
 #

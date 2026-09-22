@@ -693,6 +693,42 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   server records it beside the version, so «when can the contract-2 bridge
   go» is a query, not a guess (D-063). Pins: `licensing/test_admin_api.py`,
   `licensing/test_store_upgrade.py`.
+- **TWO OCCUPANCIES, TWO WINDOWS, AND ONE COUNTER FOR BOTH IS THE DEFECT**
+  (Б26quater). The CONTAINER slot is held by the liveness mark
+  (`ALIVE_SECONDS` = 600 s, all four marks written by the SERVER) — that was
+  Б26: a dead container held the slot for 16–24 h and the refusal named a
+  container that did not exist. The PROCESS PLACE is held by the LEASE window:
+  a key occupies a place while ANY of its leases is still inside that window,
+  and neither silence nor `/v1/release` frees it earlier, because both are
+  statements about the future while the sealed bundle stays valid for
+  `ttl + grace`. Three passes moved the place onto the silence window and each
+  one multiplied the plan by `T_offline / T_alive`: measured, one admission bought 32 serving
+  processes against the baseline's one, and the ring «lease → `/v1/release`»
+  under ONE `instance_id` was bounded by nothing. The only early release of a
+  place is OURS, `POST /admin/release` (`released_by='admin'`) — we perform it,
+  so it needs no proof. Pins: `licensing/test_metering_attacks.py`,
+  `licensing/test_admin_api.py`.
+- **A unit of the turnover budget is spent by an ADMISSION that displaced
+  another container's slot, and by nothing else** (Б26bis, Б26ter). Not by a
+  release (a `docker stop` of a 4-worker container that had renewed three times
+  spent the whole hourly budget and then blocked its own redeploy), not by
+  returning to your OWN slot (the documented upgrade command cannot cost
+  budget), and places of processes are not purchasable at all. Pins:
+  `licensing/test_metering_attacks.py`.
+- **The server names the REASON a place was freed, because one word covers
+  three different pieces of news.** `released_by` is `process` (the customer
+  stopped it), `silence` (we took it from a container we stopped hearing — its
+  engine is still running and will stop at its next renewal) or `admin`
+  (support freed it); `live_processes` is what we HEAR, `held_places` is what
+  the ceiling counts, and a screen showing one while the refusal counts the
+  other is the «two opinions about one container» this layer has already paid
+  for twice. The REFUSAL names the same reason the screen does: a container
+  whose rows WE closed is not «released it itself» — the «no open rows left»
+  signal is identical in all three cases, so the text asks for the reason. A
+  storefront check assembled from fields the server does not send cannot fail —
+  so the pin rides on the REAL `/admin/instances` response. Pins:
+  `licensing/test_admin_api.py`, `licensing/test_metering_attacks.py`,
+  `storefront/test_slots.py`.
 
 ## Billing
 
