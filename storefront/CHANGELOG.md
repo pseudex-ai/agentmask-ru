@@ -1,12 +1,5 @@
 # Changelog
 
-## [0.3.19](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.18...platform/v0.3.19) (2026-09-21)
-
-
-### Новое
-
-* **storefront:** подарок и скидка без объяснений — «+30 дней в подарок — спасибо за доверие», подписи правятся в админке ([6b8b4a6](https://github.com/Isk4R1oT/Obscura/commit/6b8b4a60eea241355b625923094984cd5d34a6a7))
-
 ## [0.3.18](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.17...platform/v0.3.18) (2026-09-21)
 
 
