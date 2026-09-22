@@ -56,7 +56,9 @@
           {% else %}<span class="pill">ОТМЕНЕНА</span>{% endif %}
         {% else %}<span class="pill">НЕТ</span>{% endif %}
       </td>
-      <td class="mono">{{ row.instances }} / {{ row.allowed }}</td>
+      {% comment %}ЗАНЯТО / РАЗРЕШЕНО. «?» значит, что лицензионный сервер не ответил: ноль
+      на этом месте читался бы как «контейнеров нет», то есть как ответ.{% endcomment %}
+      <td class="mono">{{ row.instances|default_if_none:"?" }} / {{ row.allowed }}</td>
       <td class="mono">{{ row.requests }}</td>
       <td class="mono">{{ row.billable }}</td>
       <td class="mono">{% if row.unpaid %}{{ row.unpaid }} ₽{% else %}—{% endif %}</td>

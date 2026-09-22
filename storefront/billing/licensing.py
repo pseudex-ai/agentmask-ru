@@ -145,13 +145,21 @@ def usage(org_id: str) -> dict[str, object]:
 
 
 def instances(org_id: str) -> dict[str, object]:
-    """Which containers hold a slot right now, and since when.
+    """Which containers the licensing server sees, and which of them hold a slot.
 
     The plan is sold in containers and the limit is enforced on them, but the
     cabinet had nowhere to show them: a persona whose only slot was held by a
     container they had already deleted read «остановите лишний контейнер или
     перейдите на больший тариф» — asked to stop something that did not exist,
     and offered a bigger plan as the remedy.
+
+    THE LIST IS NOT THE COUNT. It carries every lease in the window: `active`
+    (holds a slot), `silent` (we stopped hearing it — the slot is already free)
+    and `released` (given back). «Сколько занято» is `occupied`, computed by the
+    same function that refuses a lease; `alive_seconds` is after how much
+    silence a slot frees itself, and `turnover_last_hour`/`turnover_budget` are
+    how many times the slot has already passed to a new container this hour.
+    `billing.slots` turns all of it into what the two screens draw.
     """
     return _get(INSTANCES, {"org_id": org_id})
 

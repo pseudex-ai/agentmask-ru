@@ -41,6 +41,10 @@ from fastapi.testclient import TestClient  # noqa: E402
 from licensing import server  # noqa: E402
 from licensing.store import LicenseStore  # noqa: E402
 from pseudex.bundle import generate_process_key  # noqa: E402
+# Что движок считает ОТВЕТОМ, а что нашим сбоем, — читается из самого движка,
+# а не переписывается сюда строкой: копия жила бы своей жизнью ровно до первой
+# правки в `pseudex/license.py`.
+from pseudex.license import _ANSWER_CODES as _license_answer_codes  # noqa: E402
 
 public = TestClient(server.app)
 admin = TestClient(server.admin_app)
@@ -446,18 +450,22 @@ check("детализация цепи без org_id отказывает",
       admin.get("/admin/chains", headers=ADMIN).status_code == 400)
 
 
-# --- ПОТОЛОК ИНСТАНСОВ: ОСВОБОЖДЁННЫЙ СЛОТ ОСТЫВАЕТ ----------------------
-# Проверено руками до правки: на тарифе «Старт» (один контейнер) поднимались
-# пять подряд — каждый освобождал свой слот сам и уступал место следующему.
+# --- ПОТОЛОК ИНСТАНСОВ: СЛОТ ДЕРЖИТ ТОЛЬКО ЖИВОЙ ------------------------
+# Проверено руками до первой правки: на тарифе «Старт» (один контейнер)
+# поднимались пять подряд — каждый освобождал свой слот сам и уступал место
+# следующему. Ограничителей на это стало два — остывание слота на 300 с и
+# бюджет освобождений, — и замер показал, что связывает ТОЛЬКО бюджет
+# (3 в час против 12 у остывания). Остывание снято; карусель упирается в
+# бюджет ровно там же, где упиралась бы с ним.
 print("\nПОТОЛОК ИНСТАНСОВ")
 carousel_key = admin.post("/admin/issue", json={"org_id": "carousel", "plan": "start"},
                           headers=ADMIN).json()["key"]
 
 
-def lease_as(key: str, instance: str, pubkey: str) -> int:
+def lease_as(key: str, instance: str, pubkey: str, version: str = "1.0.0") -> int:
     return public.post("/v1/lease", json={
         "key": key, "instance_id": instance, "pubkey": pubkey,
-        "engine_version": "1.0.0"}).status_code
+        "engine_version": version}).status_code
 
 
 def release_as(key: str, instance: str, pubkey: str) -> int:
@@ -472,30 +480,202 @@ for number in range(5):
     if code == 200:
         served.append(number)
         release_as(carousel_key, f"c{number}", process)
-check("карусель контейнеров упирается в остывший слот", len(served) == 1,
+# БЫЛО: «упирается в остывший слот», обслужено 1 из 5. Стало: упирается в
+# бюджет перевыдач, обслужено 4 — и это ровно то число, которое замер даёт для
+# конфигурации «остывание 0 с, бюджет 3/ч». Потолок одновременно обслуживающих
+# контейнеров от этого не двинулся: он равен темпу (3/ч), умноженному на время
+# работы без связи с нами, а темп не изменился.
+check("карусель контейнеров упирается в бюджет перевыдач", len(served) == 4,
       f"обслужено {len(served)} из 5 на тарифе в один инстанс")
-
-# А ПЕРЕРАЗВЁРТЫВАНИЕ — ТОТ ЖЕ ТОМ, ТОТ ЖЕ `instance_id` — НЕ ЗАДЕТО ВОВСЕ.
-# Это и есть причина, по которой остывание можно себе позволить.
-redeploy = lease_as(carousel_key, "c0", generate_process_key().public)
-check("переразвёртывание на том же томе поднимается сразу", redeploy == 200,
-      f"POST /v1/lease -> {redeploy}")
 
 refusal = public.post("/v1/lease", json={
     "key": carousel_key, "instance_id": "c9",
     "pubkey": generate_process_key().public, "engine_version": "1.0.0"}).json()
 check("отказ называет работающий путь, а не только запрет",
       "ТОМ ЖЕ ТОМЕ" in refusal.get("detail", ""), refusal.get("detail", "")[:90])
+check("и не путает «отпустил слот» с «молчит 0 с»",
+      "отпустил слот" in refusal.get("detail", ""), refusal.get("detail", "")[:110])
 
+# СТАРЫЙ ОБРАЗ НЕ ОБЕЩАЕТ ТОГО, ЧЕГО НЕ УМЕЕТ, И НЕ ПРОСИТ НЕВОЗМОЖНОГО.
+#
+# Контейнер на движке до 0.3.15 признака жизни не шлёт, поэтому про УБИТЫЙ
+# (никакого `/v1/release` не было) мы не знаем ничего: его слот занят до конца
+# аренды. «Остановите лишний контейнер» здесь — это Б26 буква в букву, совет
+# сделать то, что клиент уже сделал. Отказ обязан назвать срок и путь.
+legacy_key = admin.post("/admin/issue", json={"org_id": "legacy", "plan": "start"},
+                        headers=ADMIN).json()["key"]
+lease_as(legacy_key, "vol-legacy", generate_process_key().public, version="1.0.0")
+legacy_refusal = public.post("/v1/lease", json={
+    "key": legacy_key, "instance_id": "vol-second",
+    "pubkey": generate_process_key().public, "engine_version": "1.0.0"}).json()
+check("про движок без пульса сказано честно, с путём обновиться",
+      "не сообщает признак жизни" in legacy_refusal.get("detail", "")
+      and "pseudexctl upgrade" in legacy_refusal.get("detail", ""),
+      legacy_refusal.get("detail", "")[-140:])
+check("и «остановите лишний» про него НЕ печатается",
+      "остановите лишний" not in legacy_refusal.get("detail", "").lower(),
+      legacy_refusal.get("detail", "")[:140])
+check("зато назван срок, через который слот освободится сам",
+      "до конца аренды" in legacy_refusal.get("detail", ""),
+      legacy_refusal.get("detail", "")[:160])
+
+# ПЕРЕРАЗВЁРТЫВАНИЕ — ТОТ ЖЕ ТОМ, ТОТ ЖЕ `instance_id` — НЕ ЗАДЕТО ВОВСЕ, и
+# бюджета не тратит. Своя организация: в карусели единственный слот уже занят
+# другим контейнером, и вернуть его прежнему было бы дырой, а не удобством.
+redeploy_key = admin.post("/admin/issue", json={"org_id": "redeploy", "plan": "start"},
+                          headers=ADMIN).json()["key"]
+first = generate_process_key().public
+lease_as(redeploy_key, "vol-one", first)
+release_as(redeploy_key, "vol-one", first)
+redeploy = lease_as(redeploy_key, "vol-one", generate_process_key().public)
+check("переразвёртывание на том же томе поднимается сразу", redeploy == 200,
+      f"POST /v1/lease -> {redeploy}")
+
+# СЛОТ УПАВШЕГО КОНТЕЙНЕРА ОСВОБОЖДАЕТСЯ САМ (Б26). Контейнер не отпускал
+# ничего — он умер; раньше клиент ждал до суток и читал «остановите лишний
+# контейнер», которого нет.
+dead_key = admin.post("/admin/issue", json={"org_id": "dead", "plan": "start"},
+                      headers=ADMIN).json()["key"]
+lease_as(dead_key, "vol-dead", generate_process_key().public, version="0.3.16")
+blocked = public.post("/v1/lease", json={
+    "key": dead_key, "instance_id": "vol-fresh",
+    "pubkey": generate_process_key().public, "engine_version": "0.3.16"})
+check("пока прежний контейнер на связи, новый не поднимается",
+      blocked.status_code == 409, f"{blocked.status_code}")
+check("и отказ называет его и когда его слышали",
+      "vol-dead" in blocked.json().get("detail", "")
+      and "на связи" in blocked.json().get("detail", ""),
+      blocked.json().get("detail", "")[:100])
+# ЖИВОЙ ДЛЯ НАС — ЭТО ЕЩЁ T_alive ПОСЛЕ СМЕРТИ. Контейнер, убитый минуту
+# назад, стоит в этом отказе как работающий, поэтому «остановите лишний» обязан
+# ехать вместе со сроком: иначе клиент, у которого он уже мёртв, читает совет
+# сделать то, что он сделал, — Б26 в миниатюре.
+check("и называет срок на случай, если он уже мёртв",
+      "уже остановлен или упал" in blocked.json().get("detail", "")
+      and "мин молчания" in blocked.json().get("detail", ""),
+      blocked.json().get("detail", "")[:190])
+# ПОСТАРИТЬ ВСЕ ТРИ ОТМЕТКИ. Аренда обновляет и `process_reports` — секрет
+# отчётов чеканится на каждую, — поэтому одной таблицы мало: признак жизни
+# берётся МАКСИМУМОМ, и это ровно то, чего мы от него хотим.
+aged = time.time() - 1200
+server.STORE._conn.execute("UPDATE leases SET issued_at=? WHERE org_id='dead'", (aged,))
+server.STORE._conn.execute("UPDATE process_reports SET updated_at=? WHERE org_id='dead'", (aged,))
+server.STORE._conn.execute("UPDATE usage SET updated_at=? WHERE org_id='dead'", (aged,))
+server.STORE._conn.execute("UPDATE meter SET updated_at=? WHERE org_id='dead'", (aged,))
+server.STORE._conn.commit()
+revived = lease_as(dead_key, "vol-fresh", generate_process_key().public, version="0.3.16")
+check("замолчавший 20 мин контейнер отдаёт слот новому", revived == 200,
+      f"POST /v1/lease -> {revived}")
+slots = admin.get("/admin/instances", params={"org_id": "dead"}, headers=ADMIN).json()
+check("кабинет показывает труп silent, а не работающим",
+      {row["instance_id"]: row["state"] for row in slots["instances"]}
+      == {"vol-dead": "released", "vol-fresh": "active"},
+      f"{[(row['instance_id'], row['state']) for row in slots['instances']]}")
+check("«занято» отдаётся числом, а не длиной списка",
+      slots["occupied"] == 1 and len(slots["instances"]) == 2,
+      f"occupied={slots['occupied']} строк={len(slots['instances'])}")
+check("остывания в ответе больше нет, есть срок признака жизни",
+      "cooldown_seconds" not in slots and slots["alive_seconds"] == 600.0
+      and slots["turnover_last_hour"] == 1,
+      f"{ {k: v for k, v in slots.items() if k != 'instances'} }")
+
+# УХОД НЕ ОТКАЗЫВАЕТСЯ НИКОГДА, А БЮДЖЕТ БЬЁТ ПО ДОПУСКУ.
+#
+# Здесь стоял 429 на `/v1/release`: бюджет считался освобождениями, и восемь
+# честных остановок одного и того же контейнера упирались в потолок. Клиент
+# при этом не получал НИЧЕГО — он всего лишь останавливал свой контейнер, — а
+# следующий его редеплой оказывался заблокирован его же аккуратностью.
 budget_key = admin.post("/admin/issue", json={"org_id": "budget", "plan": "start"},
                         headers=ADMIN).json()["key"]
-codes = []
+leases, releases = [], []
 for number in range(8):
     process = generate_process_key().public
-    lease_as(budget_key, "b0", process)
-    codes.append(release_as(budget_key, "b0", process))
-check("бюджет освобождений исчерпывается и отвечает 429", 429 in codes,
-      f"коды освобождений: {codes}")
+    leases.append(lease_as(budget_key, "b0", process, version="0.3.17"))
+    releases.append(release_as(budget_key, "b0", process))
+check("уход не отказывается НИ РАЗУ, сколько бы их ни было",
+      releases == [200] * 8, f"коды освобождений: {releases}")
+# ЗДЕСЬ СТОЯЛО `[200] * 4 + [409] * 4` — И ЭТО БЫЛ ЗАМЕР ЧЕСТНОГО РЕДЕПЛОЯ,
+# ПРИНЯТЫЙ ЗА ЗАМЕР КАРУСЕЛИ. Восемь кругов «аренда — release — аренда» под
+# ОДНИМ `instance_id` — это ровно то, что делает `docker compose up -d` и
+# `pseudexctl upgrade` на том же томе; пока свой собственный уход считался
+# вытеснением, пятый такой круг получал 409. Документированная команда
+# обновления не может стоить бюджета (Б26ter).
+check("восемь редеплоев на ТОМ ЖЕ томе проходят все",
+      leases == [200] * 8, f"коды аренд: {leases}")
+check("и не стоят ни одной единицы бюджета",
+      server.STORE.turnover_last_hour("budget") == 0,
+      f"перевыдач: {server.STORE.turnover_last_hour('budget')} (было 3 из 3)")
+# ЧЕМ ТОГДА СВЯЗАН ТОТ ЖЕ ЦИКЛ У АТАКУЮЩЕГО: ТЕМ, ЧТО «УШЕДШИЙ» И
+# ПРОДОЛЖАЮЩИЙ РАБОТАТЬ СЛЫШЕН. Отпустивший слот процесс держит бандл до конца
+# аренды, и проверить его заявление нечем — но обслужить запрос сверх
+# предоплаченного кванта, не придя за ёмкостью, он не может
+# (`license.has_capacity`), а отметку ставим мы.
+loud_key = admin.post("/admin/issue", json={"org_id": "loud", "plan": "start"},
+                      headers=ADMIN).json()["key"]
+loud = generate_process_key().public
+lease_as(loud_key, "l0", loud, version="0.3.17")
+release_as(loud_key, "l0", loud)
+check("честно остановленный контейнер отдаёт слот сразу",
+      lease_as(loud_key, "l1", generate_process_key().public,
+               version="0.3.17") == 200,
+      "иначе редеплой на новом томе ждал бы на ровном месте")
+quiet_key = admin.post("/admin/issue", json={"org_id": "quiet", "plan": "start"},
+                       headers=ADMIN).json()["key"]
+quiet = generate_process_key().public
+lease_as(quiet_key, "q0", quiet, version="0.3.17")
+release_as(quiet_key, "q0", quiet)
+# Уход — 2 минуты назад, покупка ёмкости — сейчас: процесс работает.
+server.STORE._conn.execute(
+    "UPDATE leases SET released_at=? WHERE org_id='quiet'", (time.time() - 120,))
+server.STORE._conn.execute(
+    "INSERT OR REPLACE INTO meter (org_id, pubkey, first_seen, updated_at) "
+    "VALUES (?,?,?,?)", ("quiet", quiet, time.time() - 600, time.time()))
+server.STORE._conn.commit()
+still_there = public.post("/v1/lease", json={
+    "key": quiet_key, "instance_id": "q1",
+    "pubkey": generate_process_key().public, "engine_version": "0.3.17"})
+check("а «ушедший» и продолжающий покупать ёмкость слота не отдаёт",
+      still_there.status_code == 409
+      and still_there.json().get("error") == "instance_limit",
+      f"{still_there.status_code} {str(still_there.json())[:110]}")
+
+# ОТОБРАННЫЙ КЛЮЧ ВСТАЁТ, А НЕ КОПИТСЯ — ЭТО ВИДНО ПО HTTP.
+#
+# 409 `instance_limit` лежит в `_ANSWER_CODES` каждого выпущенного движка, то
+# есть не берётся в grace: воркер выгружает бандл и перестаёт маскировать
+# (`/mask` 503). Пока продление отобранного ключа проходило, поколение, у
+# которого забрали места, продлевалось вечно — 128 живых аренд на тарифе в один
+# контейнер после трёх единиц бюджета.
+taken_key = admin.post("/admin/issue", json={"org_id": "taken", "plan": "start"},
+                       headers=ADMIN).json()["key"]
+taken = generate_process_key().public
+lease_as(taken_key, "t0", taken, version="0.3.17")
+# Контейнер замолчал 20 минут назад — а «замолчал» это ВСЕ отметки, включая
+# ту, что ставит сама аренда (`record_report_secret` чеканит секрет отчётов и
+# двигает `process_reports.updated_at`).
+aged_taken = time.time() - 1200
+server.STORE._conn.execute("UPDATE leases SET issued_at=? WHERE org_id='taken'",
+                           (aged_taken,))
+server.STORE._conn.execute(
+    "UPDATE process_reports SET updated_at=? WHERE org_id='taken'", (aged_taken,))
+server.STORE._conn.execute("UPDATE usage SET updated_at=? WHERE org_id='taken'",
+                           (aged_taken,))
+server.STORE._conn.commit()
+lease_as(taken_key, "t1", generate_process_key().public, version="0.3.17")
+stood_down = public.post("/v1/lease", json={
+    "key": taken_key, "instance_id": "t0", "pubkey": taken,
+    "engine_version": "0.3.17"})
+check("продление отобранного ключа — 409 instance_limit, а не 200",
+      stood_down.status_code == 409
+      and stood_down.json().get("error") == "instance_limit",
+      f"{stood_down.status_code} {stood_down.json().get('error')}")
+check("и отказ говорит, что место отдано и что делать",
+      "уже отдано" in stood_down.json().get("detail", "")
+      and "Перезапустите контейнер" in stood_down.json().get("detail", ""),
+      stood_down.json().get("detail", "")[:130])
+check("этот код движок читает как ОТВЕТ, а не как наш сбой",
+      "instance_limit" in _license_answer_codes,
+      "иначе 409 ушёл бы в grace и контейнер работал бы ещё 72 ч")
 
 
 # --- ОДНА ТОЧКА СПИСАНИЯ, И ОНА ЕСТЬ НА ОБОИХ ЛЕГАХ ----------------------

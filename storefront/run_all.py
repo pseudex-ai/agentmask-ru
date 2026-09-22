@@ -74,6 +74,12 @@ STEPS = [
     ("02-analytics", "test_analytics.py", lambda: True, ""),
     ("03-configurator", "test_configurator_renders.py", lambda: True, ""),
     ("04-ops-console", "test_ops_renders.py", lambda: True, ""),
+    # ЭКРАНЫ СЛОТОВ. Их два, у них разные читатели — клиент и поддержка, — и
+    # оба до Б26bis выводили занятость сами: кабинет длиной списка, консоль
+    # зелёной плашкой на всём, что не «остывает». Обе догадки стали враньём в
+    # тот день, когда сервер начал отдавать в том же списке контейнеры, которые
+    # слот не держат.
+    ("04l-slots", "test_slots.py", lambda: True, ""),
     ("04b-offers", "test_offers.py", lambda: True, ""),
     ("04c-hardcap", "test_hardcap.py", lambda: True, ""),
     ("04d-annual", "test_annual.py", lambda: True, ""),

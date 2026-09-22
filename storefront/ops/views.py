@@ -22,6 +22,7 @@
 import csv
 import datetime
 import logging
+import time
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
@@ -43,6 +44,7 @@ from accounts.models import Organization
 
 _log = logging.getLogger("ops")
 from billing import licensing
+from billing import slots
 from billing import reconcile as billing_reconcile
 from billing import services
 from billing.models import Invoice, Plan, PlanChange, Subscription
@@ -176,11 +178,18 @@ def fleet(request):
         licence = state.get(organization.id, {})
         usage = licence.get("usage", {}) if isinstance(licence, dict) else {}
         subscription = getattr(organization, "subscription", None)
+        occupied = licence.get("occupied") if isinstance(licence, dict) else None
         rows.append({
             "organization": organization,
             "subscription": subscription,
             "plan": subscription.plan if subscription else None,
-            "instances": len(licence.get("instances", []) or []),
+            # ЗАНЯТО — ЧИСЛО С СЕРВЕРА, И «НЕ СКАЗАЛ» — НЕ НОЛЬ. Длина списка
+            # перестала быть ответом: в нём теперь и молчащие, и отпущенные
+            # контейнеры, и колонка «контейнеры» показывала бы оператору число
+            # БОЛЬШЕ тарифа — превышение, которого нет. А ноль на месте
+            # неотвеченного вопроса читается как «никто не работает» — тот же
+            # экран, который врёт, только в другую сторону.
+            "instances": occupied if isinstance(occupied, int) else None,
             "allowed": (limits.get(subscription.plan.code,
                                    subscription.plan.max_instances)
                         if subscription else 0),
@@ -210,17 +219,18 @@ def customer(request, org_id: str):
         messages.error(request, f"Организации {org_id} нет.")
         return redirect("ops_fleet")
 
-    usage, instances, history, processes, error = {}, [], [], [], ""
+    usage, history, processes, error = {}, [], [], ""
+    slot_view = slots.unknown()
     try:
         usage = licensing.usage(organization.id).get("usage", {}) or {}
         # ИНСТАНСЫ БЕРУТСЯ У `/admin/instances`, А НЕ ИЗ ОТВЕТА `/admin/usage`.
         # Оба поля называются `instances`, и это ловушка: у `/admin/usage` там
         # сырые строки аренд (`instance_id`/`process_id`/`issued_at`, по строке
         # на выдачу, с освобождёнными и с потолком в сотню), а таблица ниже
-        # рисует `last_lease` и `state` — их там просто нет, так что колонка
-        # «состояние» молча зеленела бы у КАЖДОЙ строки, включая отпущенные
-        # слоты.
-        instances = licensing.instances(organization.id).get("instances", []) or []
+        # рисует `state`, `occupies` и признак жизни — их там просто нет, так
+        # что колонка «состояние» молча зеленела бы у КАЖДОЙ строки, включая
+        # отпущенные слоты. Занятость числом есть только здесь же.
+        slot_view = slots.describe(licensing.instances(organization.id), time.time())
         detail = licensing.chains(organization.id)
         history = detail.get("history", []) or []
         processes = detail.get("processes", []) or []
@@ -232,7 +242,7 @@ def customer(request, org_id: str):
         "subscription": getattr(organization, "subscription", None),
         "invoices": organization.invoices.all()[:12],
         "keys": organization.keys.filter(revoked_at__isnull=True),
-        "usage": usage, "instances": instances, "processes": processes,
+        "usage": usage, "slots": slot_view, "processes": processes,
         "history": _with_daily_deltas(history), "error": error,
     })
 

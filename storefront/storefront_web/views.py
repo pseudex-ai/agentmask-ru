@@ -10,6 +10,7 @@ later must be checked against it rather than against convenience.
 import json
 import logging
 import re
+import time
 
 from django.conf import settings
 from django.contrib import messages
@@ -28,7 +29,7 @@ from django.views.decorators.http import require_POST
 
 from accounts import payer
 from accounts.models import Membership, Organization
-from billing import onboarding, licensing, payments, services
+from billing import onboarding, licensing, payments, services, slots
 from accounts.models import User
 from billing.models import Invoice, LicenseKey, Plan, Subscription
 from storefront_web import engine_release
@@ -883,16 +884,22 @@ def cabinet(request):
         reported, unreachable = {}, True
     if not isinstance(reported, dict):
         reported = {}
-    # WHICH CONTAINERS HOLD A SLOT. The plan is sold in containers and the limit
-    # is enforced on them, and until now the cabinet showed only the allowance.
-    # A customer refused a lease was told to stop a container they had already
-    # deleted; now they can see what the licensing server thinks is running.
+    # КАКИЕ КОНТЕЙНЕРЫ ДЕРЖАТ СЛОТ — И СКОЛЬКО ИХ, ПО СЧЁТУ СЕРВЕРА.
+    #
+    # Тариф продаётся контейнерами, потолок принуждается по ним, а кабинет
+    # показывал только разрешённое. Клиенту, которому отказали в аренде,
+    # предлагали остановить контейнер, которого он уже удалил.
+    #
+    # ЗАНЯТО — ЭТО НЕ ДЛИНА СПИСКА. В списке теперь есть и `silent`, и
+    # `released`: контейнеры, которые слот НЕ держат. Складывать их длиной
+    # значило бы показать человеку «1 из 1 занято» ровно в ту минуту, когда
+    # слот свободен, — то самое враньё экрана, ради которого всё это чинится.
     try:
-        slots = licensing.instances(organization.id).get("instances", [])
+        slot_view = slots.describe(licensing.instances(organization.id), time.time())
     except licensing.LicensingError:
-        slots = []
-    if not isinstance(slots, list):
-        slots = []
+        # Сервер молчит — занятость НЕИЗВЕСТНА. Ноль здесь читался бы как
+        # «свободно», то есть как ответ, которого у нас нет.
+        slot_view = slots.unknown()
     # What is billed: protected values, from the monotonic accumulator. Requests
     # are shown beside it because the operator recognises them, but the bar
     # tracks the meter.
@@ -961,7 +968,7 @@ def cabinet(request):
         else:
             offer_plan = subscription.plan
     return render(request, "app/cabinet.html", {
-        "instances": slots,
+        "slots": slot_view,
         "organization": organization,
         "subscription": subscription,
         # Тариф, который кабинет ПОКАЗЫВАЕТ: на пробе — пробный.

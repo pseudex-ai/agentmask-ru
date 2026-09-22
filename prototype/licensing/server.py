@@ -422,19 +422,6 @@ def _today() -> "dt.date":
     return dt.datetime.now(dt.timezone.utc).date()
 
 
-def _version_tuple(version: str) -> tuple[int, ...]:
-    """Compare versions numerically, not as strings.
-
-    String order gets this backwards exactly where it matters: "1.10.0" sorts
-    BELOW "1.9.0", so the first double-digit minor release would be told it is
-    too old and every customer running it would be pushed into grace."""
-    parts = []
-    for chunk in version.split("."):
-        digits = "".join(character for character in chunk if character.isdigit())
-        parts.append(int(digits) if digits else 0)
-    return tuple(parts)
-
-
 # ПРЕДЕЛ НА ТЕЛО И ОДНА ДВЕРЬ ДЛЯ ЕГО РАЗБОРА.
 #
 # 64 KiB с запасом покрывают лизу и отчёт: самое большое, что клиент присылает,
@@ -608,9 +595,12 @@ async def release(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     требуется ключ процесса, и удаляется ровно его строка.
 
     ЧТО ЭТИМ НЕ ЗАКРЫТО, СКАЗАНО ВСЛУХ: контейнер, отдавший слот, продолжает
-    работать до конца TTL, потому что дотянуться до него мы не можем. Сузить
-    окно освобождения — решение продуктовое: оно бьёт по переразвёртыванию,
-    ради которого release и существует.
+    работать до конца TTL, потому что дотянуться до него мы не можем. Но и
+    молчать при этом он не может: чтобы обслужить запрос сверх предоплаченного
+    кванта, он обязан прийти за ёмкостью, а отчёт уходит своим таймером. Поэтому
+    заявление об уходе действует до первого слова после него
+    (`store._speaks_after_release`) — честно остановленный отдаёт слот в ту же
+    секунду, «ушедший» и работающий не отдаёт вовсе.
     """
     record = STORE.lookup(str(body.get("key", "")))
     if record is None:
@@ -618,17 +608,19 @@ async def release(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     pubkey = str(body.get("pubkey", ""))
     if not pubkey:
         return JSONResponse({"error": "no process public key"}, status_code=400)
-    # БЮДЖЕТ ОСВОБОЖДЕНИЙ. Остывание ограничивает темп, но не количество:
-    # контейнер, отдавший слот, продолжает обслуживать до конца TTL, и это не
-    # чинится в софте, работающем в чужом периметре. Сверх бюджета ручка не
-    # делает ничего, и слот истекает по TTL — как до её появления.
-    budget = STORE.release_budget(record.plan)
-    if STORE.releases_last_hour(record.org_id) >= budget:
-        _log.warning("release budget exhausted for org=%s: %d in the last hour",
-                     record.org_id, budget)
-        return JSONResponse({"error": "release_budget",
-                             "detail": f"не более {budget} освобождений в час"},
-                            status_code=429)
+    # УХОД НЕ СТОИТ НИЧЕГО, И ЗДЕСЬ НЕТ НИ ОДНОГО ОТКАЗА.
+    #
+    # Бюджет перевыдач стоял ЗДЕСЬ и считал освобождения — то есть брал плату
+    # с события, которого клиент не просил. Честная остановка контейнера с
+    # четырьмя воркерами, продлившегося трижды, списывала двенадцать единиц
+    # (весь часовой бюджет) и блокировала клиенту его же редеплой: ограничитель
+    # бил ровно по тому поведению, которое мы просим.
+    #
+    # Ограничитель никуда не делся, он переехал туда, где происходит то, что
+    # он ограничивает: единицу тратит ДОПУСК, вытеснивший чужой слот
+    # (`store._admission`), одну на допуск, чем бы слот ни освободился — этой
+    # ручкой или молчанием. «Не звать /v1/release» перестало быть способом
+    # обойти бюджет ровно потому, что бюджет больше не про release.
     return JSONResponse({"released": STORE.release_process(record.org_id, pubkey)})
 
 
@@ -980,11 +972,18 @@ async def admin_instances(request: Request) -> JSONResponse:
     org_id = request.query_params.get("org_id", "")
     if not org_id:
         return JSONResponse({"error": "org_id required"}, status_code=400)
+    instances = STORE.active_instances(org_id, _TTL_SECONDS)
+    # «ЗАНЯТО» ОТДАЁТСЯ ЧИСЛОМ. Список теперь содержит и `silent`, и
+    # `released` — контейнеры, которые слот НЕ держат, — поэтому его длина
+    # перестала быть ответом на вопрос «сколько занято по тарифу», а именно
+    # так её читала витрина.
     return JSONResponse({"org_id": org_id,
                          "window_seconds": _TTL_SECONDS,
-                         "cooldown_seconds": STORE.RELEASE_COOLDOWN_SECONDS,
-                         "releases_last_hour": STORE.releases_last_hour(org_id),
-                         "instances": STORE.active_instances(org_id, _TTL_SECONDS)})
+                         "alive_seconds": STORE.ALIVE_SECONDS,
+                         "occupied": sum(1 for row in instances if row["occupies"]),
+                         "turnover_last_hour": STORE.turnover_last_hour(org_id),
+                         "turnover_budget": STORE.release_budget(STORE.org_plan(org_id)),
+                         "instances": instances})
 
 
 def _instances_by_version(fleet: list[dict]) -> dict[str, int]:
@@ -1272,9 +1271,16 @@ async def admin_fleet(request: Request) -> JSONResponse:
     for org_id in org_ids:
         if org_id in seen:
             continue
+        listed = STORE.active_instances(org_id, _TTL_SECONDS)
         seen[org_id] = {"org_id": org_id,
                         "usage": STORE.usage_totals(org_id),
-                        "instances": STORE.active_instances(org_id, _TTL_SECONDS)}
+                        # «ЗАНЯТО ПО ТАРИФУ» — ЧИСЛО, А НЕ ДЛИНА СПИСКА. В
+                        # списке теперь есть и `silent`, и `released`: слот они
+                        # не держат, а колонка на экране флота называется
+                        # именно «занято», и считать её длиной значило бы
+                        # показать оператору число больше тарифа.
+                        "occupied": sum(1 for row in listed if row["occupies"]),
+                        "instances": listed}
     return JSONResponse({"orgs": list(seen.values()),
                          "window_seconds": _TTL_SECONDS})
 
