@@ -124,6 +124,148 @@ def _verbatim_is_literal(detector) -> bool:
     return ok
 
 
+# Как модель переписывает адрес, которому её научила схема: каждое слово с
+# заглавной, маркер дома и квартиры отделён точкой и пробелом. Детерминированно
+# и по СТРОКЕ, потому что подмена тянется случайно, а проверяется здесь не она.
+#
+# Родовые слова остаются строчными, и это НЕ косметика: заглавное «Кв» в строке
+# агента сегодня возвращает в инструмент УДВОЕННУЮ улицу («Мерецкова 23
+# мерецкова 23 кв 186»). Отдельный открытый дефект, воспроизводимый и без этой
+# правки, и на нём нельзя строить проверку про букву клиента.
+_MODEL_MARKERS = frozenset({"улица", "ул.", "ул", "проезд", "переулок",
+                            "д.", "д", "кв.", "кв", "г.", "г"})
+
+
+def _as_a_model_writes(text: str) -> str:
+    spaced = re.sub(r"(?i)\b(д|кв)(\d)", r"\1. \2", text)
+    return " ".join(word if word.lower() in _MODEL_MARKERS else word[:1].upper() + word[1:]
+                    for word in spaced.split())
+
+
+def _rewritten_is_literal(detector) -> bool:
+    """AN AGENT THAT REWRITES GETS THE CUSTOMER'S CHARACTERS TOO (D-067).
+
+    The copying half is `_verbatim_is_literal` above. This is the other half:
+    the agent wrote a DIFFERENT string, so the verbatim pass cannot fire and
+    the form is rebuilt — and the rebuild used to take its content from the
+    NORMALISED canon, which is where the customer's Latin «c» inside «ваcи»
+    was silently repaired. Repairing it is the gateway deciding for the
+    customer's own system, and the same thing `_pick_value` already refuses to
+    do about a typo: correcting an address is the AGENT's business.
+
+    THE FALLBACK IS THE CANON AND THERE IS ONLY ONE. A dialogue that was never
+    shown the value — a token minted in another conversation, a volume written
+    before `shown_forms` existed — has no literal slice to return, and neither
+    has a dialogue that wrote the same word both ways. Both are pinned below,
+    because a rule with an unpinned fallback is a rule nobody can rely on.
+    """
+    ok = True
+    said = "адрес улица ваcи алексеева д36 кв179"
+
+    # Одно поле: содержимое клиента, форма агента. Свой волт на проверку: адрес
+    # чеканится ОДИН РАЗ на заказчика, и второй диалог того же волта получил бы
+    # готовую строку, отчеканенную в первом.
+    conversation = Vault(":memory:", "acme").for_conversation("c1")
+    masked = mask_text(said, conversation, detector.detect(said))
+    written = _as_a_model_writes(masked[len("адрес "):])
+    got = json.loads(unmask_arguments(json.dumps({"address": written}, ensure_ascii=False),
+                                      conversation))["address"]
+    ok &= _check("переписанный адрес: латинская «c» клиента уцелела", got,
+                 "улица Ваcи Алексеева д. 36 кв. 179")
+
+    # Схема просит поля порознь — плечо `_join_one_address`, мимо склейки
+    # `unmask_text`: пересборка по ролям тоже обязана вернуть букву клиента.
+    conversation = Vault(":memory:", "acme").for_conversation("c2")
+    masked = mask_text(said, conversation, detector.detect(said))
+    words = _as_a_model_writes(masked[len("адрес "):]).split()
+    fields = {"street": " ".join(words[:-4]), "house": words[-3], "flat": words[-1]}
+    got = json.loads(unmask_arguments(json.dumps(fields, ensure_ascii=False), conversation))
+    ok &= _check("переписанный адрес по полям: буква клиента в `street`", got,
+                 {"street": "улица Ваcи Алексеева", "house": "36", "flat": "179"})
+
+    # ИМЯ — ЕДИНСТВЕННЫЙ ТИП, КОТОРЫЙ ОСТАЁТСЯ КАНОНИЧЕСКИМ, и линия та же, что
+    # у `_pick_value`: в поле CRM уезжает именительный, а не поверхность, — а
+    # канон наш целиком, включая написание. Проверка стоит здесь, чтобы правило
+    # нельзя было «дочинить» до буквы клиента, не заметив, что оно двинет.
+    conversation = Vault(":memory:", "acme").for_conversation("c3")
+    person = "клиент антон бaбичев ждёт"
+    masked = mask_text(person, conversation, detector.detect(person))
+    shown = masked[len("клиент "):-len(" ждёт")]
+    written = " ".join(word.capitalize() for word in shown.split())
+    got = json.loads(unmask_arguments(json.dumps({"name": written}, ensure_ascii=False),
+                                      conversation))["name"]
+    ok &= _check("переписанное имя остаётся каноническим", got, "Антон Бабичев")
+
+    # ...но улица, НАЗВАННАЯ ПО ЧЕЛОВЕКУ, — это адрес, а не имя: содержимое
+    # клиента, буква клиента. Одно слово решает, к какому правилу относится
+    # значение, и решает его ТИП, записанный при чеканке.
+    conversation = Vault(":memory:", "acme").for_conversation("c5")
+    street = "адрес меpецкова 23 кв 186"
+    masked = mask_text(street, conversation, detector.detect(street))
+    written = _as_a_model_writes(masked[len("адрес "):])
+    got = json.loads(unmask_arguments(json.dumps({"address": written}, ensure_ascii=False),
+                                      conversation))["address"]
+    ok &= _check("улица по фамилии — буква клиента уцелела", got, "Меpецкова 23 кв 186")
+
+    # Ни одного среза у этого диалога — честный запасной вариант, канон. ОБЕ
+    # половины в одной проверке: та же подмена, та же строка агента, два
+    # разных разговора — иначе проверка «канон вернулся» проходила бы и у
+    # правила, которое не возвращает букву клиента никогда.
+    vault = Vault(":memory:", "acme")
+    minted = vault.for_conversation("cA")
+    masked = mask_text(said, minted, detector.detect(said))
+    written = _as_a_model_writes(masked[len("адрес "):])
+    asked = json.dumps({"address": written}, ensure_ascii=False)
+    at_home = json.loads(unmask_arguments(asked, minted))["address"]
+    elsewhere = json.loads(unmask_arguments(asked, vault.for_conversation("cB")))["address"]
+    ok &= _check("срез виден только своему диалогу, чужому — канон",
+                 (at_home, elsewhere),
+                 ("улица Ваcи Алексеева д. 36 кв. 179", "улица Васи Алексеева д. 36 кв. 179"))
+
+    # ОПИСКА ПРИНАДЛЕЖИТ ЗНАЧЕНИЮ, А НЕ СЛОВУ. Один диалог, две РАЗНЫЕ улицы с
+    # общим названием: латинская «a» стоит в первом адресе и не стоит во
+    # втором. Таблица по слову на весь диалог отвечала на это одинаково для
+    # обоих (канон), то есть отнимала букву у того, кто её написал; таблица по
+    # значению отдаёт каждому его собственное написание и — главное — НЕ
+    # ПЕРЕЛИВАЕТ описку в соседнее значение.
+    both = "доставка задунaйская 14 кв 62, а склад задунайская 20 кв 7"
+    conversation = Vault(":memory:", "acme").for_conversation("c4")
+    masked = mask_text(both, conversation, detector.detect(both))
+    spellings = tuple(
+        json.loads(unmask_arguments(json.dumps(
+            {"address": _as_a_model_writes(piece)}, ensure_ascii=False),
+            conversation))["address"]
+        for piece in (masked[len("доставка "):].split(",")[0],
+                      masked.split("а склад ")[1]))
+    ok &= _check("два значения, одно слово: каждое со своим написанием",
+                 spellings, ("Задунaйская 14 кв 62", "Задунайская 20 кв 7"))
+
+    # ...а ОДНО значение, написанное диалогом двумя способами, «как написал
+    # клиент» не определяет — и канон единственный честный ответ.
+    twice = "адрес задунaйская 14 кв 62, повторяю: задунайская 14 кв 62"
+    conversation = Vault(":memory:", "acme").for_conversation("c6")
+    masked = mask_text(twice, conversation, detector.detect(twice))
+    written = _as_a_model_writes(masked[len("адрес "):].split(",")[0])
+    got = json.loads(unmask_arguments(json.dumps({"address": written}, ensure_ascii=False),
+                                      conversation))["address"]
+    ok &= _check("одно значение, два написания — канон", got, "Задунайская 14 кв 62")
+
+    # И ЧЕРЕЗ ТИП: улица «гагаринa» с латинской «a» и человек по фамилии
+    # Гагарин — одно слово на два значения. Описка улицы, положенная в фамилию,
+    # это латинская буква в карточке клиента, которую никто не набирал.
+    conversation = Vault(":memory:", "acme").for_conversation("c7")
+    mixed = "доставка по адресу гагаринa 12 кв 5, получатель Гагарин Пётр Ильич"
+    masked = mask_text(mixed, conversation, detector.detect(mixed))
+    fake_name = [shown for shown, _original, kind in conversation.shown_forms()
+                 if kind == "NAME"][0]
+    from pseudex import morph_names  # noqa: PLC0415
+    oblique = morph_names.inflect_person(fake_name, "gent", "masc")
+    got = unmask_text(f"Заказ оформлен на {oblique}.", conversation)
+    ok &= _check("описка улицы не переливается в фамилию человека",
+                 got, "Заказ оформлен на Гагарина Петра Ильича.")
+    return ok
+
+
 def _iso(worded: str) -> str:
     """«19 июля 1975» → «1975-07-19», the way an agent rewrites a date for a `date` field."""
     from pseudex.vault import _date_canonical  # noqa: PLC0415
@@ -262,6 +404,7 @@ def main() -> int:
     # значений, форму которых на одном из плеч менял не агент, а мы.
     failures += not _forms_follow(detector)
     failures += not _verbatim_is_literal(detector)
+    failures += not _rewritten_is_literal(detector)
 
     # --- то, что полем схемы не является, трогать нельзя --------------------
     vault = Vault(":memory:", "acme").for_conversation("c1")

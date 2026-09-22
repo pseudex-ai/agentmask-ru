@@ -764,7 +764,12 @@ def _residual_in(response: dict[str, object], vault) -> list[str]:
             arguments = (call.get("function") or {}).get("arguments") \
                 if isinstance(call, dict) else None
             if isinstance(arguments, str):
-                found.extend(residual_tokens(arguments, vault))
+                # THE ARGUMENT LEG'S OWN WINDOWS. A lower-case street standing
+                # alone in a schema field is the shape that leaks, and the
+                # restoring side offers it only here (`_tool_windows`); a
+                # signal that looked for less than the restorer did would go
+                # quiet on exactly those.
+                found.extend(residual_tokens(arguments, vault, True))
     return sorted(set(found))
 
 

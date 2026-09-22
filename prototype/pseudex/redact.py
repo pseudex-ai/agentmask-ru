@@ -346,10 +346,36 @@ def _parts_in_order_of(token: str, mention: str) -> str:
 # `\w` без подчёркивания: подчёркивание разделяет слова в поле схемы, а не
 # внутри значения.
 _VALUE_RUN = re.compile(r"[^\W_]+", re.UNICODE)
+# Буквенный прогон и цифровой прогон ПОРОЗНЬ — ими значение опознаётся.
+# «д36» — один прогон значения, но слово в нём «д», а число «36».
+_LETTER_RUN = re.compile(r"[^\W\d_]+", re.UNICODE)
 
 
-def _as_written_table(shown_forms: list[tuple[str, str, str]]) -> dict[str, str]:
-    """The spelling THIS DIALOGUE used for a word the Layer-0 fold rewrote.
+class _AsWritten(NamedTuple):
+    """ONE value this dialogue was shown, and how the customer spelt each of its
+    words. `words` and `digits` are what IDENTIFY the value; `spellings` is what
+    it has to say about a rebuild of itself."""
+
+    words: frozenset[str]
+    digits: frozenset[str]
+    offers: bool
+    spellings: dict[str, str]
+
+
+def _significant_words(text: str) -> frozenset[str]:
+    """The words that NAME this value rather than its slots. A generic street
+    word («улица», «дом», «кв»), a settlement marker and a one- or two-letter
+    abbreviation say which FIELD a piece is, not which place it is — and the
+    rebuild adds and drops them freely, so a value would never recognise itself
+    across them."""
+    return frozenset(
+        word for word in (_fold_word(run.group()) for run in _LETTER_RUN.finditer(text))
+        if len(word) > 2 and word not in _SETTLEMENT_MARKERS
+        and not morph_places.is_generic_word(word))
+
+
+def _as_written_rows(shown_forms: list[tuple[str, str, str]]) -> tuple[_AsWritten, ...]:
+    """The spelling THIS DIALOGUE used, kept PER VALUE it was written in.
 
     THE CONTENT THAT LEAVES IS WHAT THE CUSTOMER WROTE (D-067). Detection reads
     the NORMALISED text, so the vault holds «васи алексеева 36» where the
@@ -362,6 +388,39 @@ def _as_written_table(shown_forms: list[tuple[str, str, str]]) -> dict[str, str]
     what the customer wrote, in either direction. Correcting the address is the
     AGENT's business, exactly as `_pick_value` already says about a typo.
 
+    A SLIP BELONGS TO THE VALUE IT WAS WRITTEN IN, NOT TO THE WORD. Keyed by
+    the word across the whole dialogue, a Latin «a» in «гагаринa 12» — the
+    street — was laid into «Гагарина Петра Ильича», the PERSON, on the way back
+    to the tool: one message, two values, one shared word, and the customer's
+    CRM got a surname with a Latin letter in it that nobody ever typed. The
+    same keying also refused both values their own spelling whenever two of
+    them wrote one word differently, because a single table cannot hold two
+    answers. So a row is one value — one span occurrence, the unit
+    `remember_shown` already records — and it speaks only about a rebuild of
+    ITSELF.
+
+    HOW A VALUE RECOGNISES ITS OWN REBUILD: every significant word of the
+    rebuild is a word of the value, and the digits do not contradict. The
+    rebuild adds and drops the words that name slots («улица», «д.», «кв.»)
+    and it re-cases freely, so those cannot be part of the test
+    (`_significant_words`); the NAME of the street and of the person cannot be,
+    so they are.
+
+    CONTAINMENT, NOT EQUALITY, AND IN THAT DIRECTION. A rebuild is often a PART
+    of the value: the settlement is real in the substitute already, so the span
+    the restorer replaces is «Серебрянический 87 кв 147» while the customer
+    wrote «оренбург серебряничeский 87 кв 147», and a schema asking for
+    `street` alone gets one word of it. Equality refused both and took the slip
+    back off two of the public benchmark's addresses. The other direction is
+    what must NOT be allowed: a rebuild carrying words the value does not have
+    is a DIFFERENT value that merely shares one — «Гагарина Петра Ильича», the
+    person, against «гагаринa 12», the street.
+
+    THE DIGITS TELL TWO MENTIONS OF ONE STREET APART — «садовaя 5 кв 10» and
+    «садовая 7 кв 12» share every word and are different addresses — and they
+    are compared by containment too, because a schema that asks for no flat
+    drops one honestly and a `street` field carries none at all.
+
     WHY A TABLE OF WORDS AND NOT THE WHOLE VALUE. The literal cannot simply
     replace the canon as the CONTENT of the rebuild: the rebuilders read the
     value with morphology (`split_roles`, `to_nominative`, the date reader,
@@ -372,12 +431,13 @@ def _as_written_table(shown_forms: list[tuple[str, str, str]]) -> dict[str, str]
     makes the two spellings line up by offset and what lets the re-spelling be
     a character-for-character swap rather than a guess.
 
-    AMBIGUITY IS REFUSED, NOT RESOLVED. A word this dialogue wrote two ways —
-    once with the slip and once without — has no single «as written», and the
-    canon is then the honest answer. A dialogue with no recorded slice at all
-    (a token minted in another conversation, a volume written before
-    `shown_forms` existed) yields an empty table and the canon, for the same
-    reason: there is nothing else to return.
+    AMBIGUITY IS REFUSED, NOT RESOLVED. A word this dialogue wrote two ways
+    INSIDE THE SAME VALUE — or two recorded mentions of one value that disagree
+    — has no single «as written», and the canon is then the honest answer. A
+    dialogue with no recorded slice at all (a token minted in another
+    conversation, a volume written before `shown_forms` existed) recognises
+    nothing and gets the canon, for the same reason: there is nothing else to
+    return.
 
     A NAME OFFERS NO SPELLING, AND THE LINE IS `_pick_value`'S OWN. That
     function already decides what a value IS on the way out: for a NAME the
@@ -394,26 +454,69 @@ def _as_written_table(shown_forms: list[tuple[str, str, str]]) -> dict[str, str]
     substitute carrying the SAME slip, so that an agent which folds the fake's
     letter tells us it would have folded the customer's — the mint does not
     mirror the slip today, so there is nothing to read the agent's intent from.
-    A NAME still contributes its spellings to the CONFLICT test below: the
-    dialogue wrote what it wrote, whatever the word was part of.
+    A NAME row is still KEPT, and still says how the dialogue spelt its own
+    words: a person and a street written identically are one value to every
+    test here, and the name's clean spelling is then what refuses the street's
+    slip.
+
+    THE RESIDUAL RISK, STATED: a rebuild that is ONE WORD and no digits — a
+    lone `street` or `last_name` field — is contained in every value of the
+    dialogue that holds that word, so a person named exactly as a street is
+    spelt cannot be told from the street. Both are then answered together, and
+    they agree unless the dialogue wrote them differently — in which case they
+    disagree and the canon wins, which is the outcome that matters. Separating
+    them needs the span's TYPE carried down to the splice, which the restoring
+    legs do not return today.
     """
     if not shown_forms or not ASSETS.is_loaded:
-        return {}
-    spellings: dict[str, set[str]] = {}
-    offered: set[str] = set()
+        return ()
+    rows: list[_AsWritten] = []
     for _shown, literal, kind in shown_forms:
         folded = normalize(literal)
         if len(folded) != len(literal):
             continue
+        spellings: dict[str, str] = {}
+        refused: set[str] = set()
         for run in _VALUE_RUN.finditer(literal):
             canonical = folded[run.start():run.end()]
             if _VALUE_RUN.fullmatch(canonical) is None:
                 continue
-            spellings.setdefault(canonical.lower(), set()).add(run.group().lower())
-            if kind != "NAME":
-                offered.add(canonical.lower())
-    return {canonical: next(iter(written)) for canonical, written in spellings.items()
-            if canonical in offered and len(written) == 1 and next(iter(written)) != canonical}
+            key, written = canonical.lower(), run.group().lower()
+            if spellings.setdefault(key, written) != written:
+                refused.add(key)
+        rows.append(_AsWritten(
+            words=_significant_words(folded),
+            digits=frozenset(run.group() for run in _DIGIT_RUN.finditer(folded)),
+            offers=kind != "NAME",
+            spellings={key: written for key, written in spellings.items()
+                       if key not in refused}))
+    return tuple(rows)
+
+
+def _spellings_for(value: str, rows: tuple[_AsWritten, ...]) -> dict[str, str]:
+    """What the customer's own writing of THIS value was, as far as the rows
+    that are this value agree on it. A word no non-NAME row offers keeps the
+    canon (see `_as_written_rows`); a word two matching rows spell differently
+    keeps it too."""
+    if not rows:
+        return {}
+    words, digits = _significant_words(value), frozenset(
+        run.group() for run in _DIGIT_RUN.finditer(value))
+    mine = [row for row in rows if words <= row.words
+            and (row.digits <= digits or digits <= row.digits)]
+    if not mine:
+        return {}
+    table: dict[str, str] = {}
+    refused: set[str] = set()
+    offered: set[str] = set()
+    for row in mine:
+        for key, written in row.spellings.items():
+            if table.setdefault(key, written) != written:
+                refused.add(key)
+            if row.offers:
+                offered.add(key)
+    return {key: written for key, written in table.items()
+            if key in offered and key not in refused and written != key}
 
 
 def _as_written(text: str, table: dict[str, str]) -> str:
@@ -443,18 +546,18 @@ def _as_written(text: str, table: dict[str, str]) -> str:
 
 class _Literals(NamedTuple):
     """What this dialogue was shown, and the customer's own spelling of every
-    word the fold rewrote. READ ONCE PER DETOKENISATION, not per JSON leaf:
-    `unmask_arguments` calls the restorer for every string in the object, and
-    rebuilding the table there made a fifteen-field tool call pay for it
-    fifteen times (+16% measured, 65 → 75 ms)."""
+    word the fold rewrote, VALUE BY VALUE. READ ONCE PER DETOKENISATION, not
+    per JSON leaf: `unmask_arguments` calls the restorer for every string in
+    the object, and rebuilding the rows there made a fifteen-field tool call
+    pay for it fifteen times (+16% measured, 65 → 75 ms)."""
 
     forms: list[tuple[str, str, str]]
-    as_written: dict[str, str]
+    as_written: tuple[_AsWritten, ...]
 
 
 def _literals_of(vault: Vault) -> _Literals:
     forms = vault.shown_forms()
-    return _Literals(forms, _as_written_table(forms))
+    return _Literals(forms, _as_written_rows(forms))
 
 
 def unmask_text(text: str, vault: Vault, inflect: bool = True,
@@ -503,10 +606,13 @@ def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
                     taken.append(span)
         # CONTENT AS THE CUSTOMER WROTE IT, FORM AS THE AGENT WROTE IT. The
         # passes above rebuilt the form out of the normalised canon; the
-        # re-spelling puts the customer's own characters back into it. A
-        # verbatim span is already literal and its words carry the slip, so
-        # nothing in the table matches them — the pass is idempotent.
-        return _splice(text, [(start, end, _as_written(value, literals.as_written))
+        # re-spelling puts the customer's own characters back into it, and it
+        # asks the VALUE that was rebuilt, not the dialogue — a slip belongs to
+        # one value, and the span is the only place we still know which.
+        # A verbatim span is already literal and its words carry the slip, so
+        # it recognises no row and nothing changes — the pass is idempotent.
+        return _splice(text, [(start, end,
+                               _as_written(value, _spellings_for(value, literals.as_written)))
                               for start, end, value in taken])
 
 
@@ -1155,6 +1261,58 @@ _CAPS_RUN = re.compile(r"(?<![А-ЯЁа-яё-])[А-ЯЁ]{2,}(?:[ -][А-ЯЁ]{2,}
 _INITIALS_PAIR = re.compile(r"(?<![А-ЯЁа-яё])([А-ЯЁ])\.\s?([А-ЯЁ])\.(?![А-ЯЁа-яё])")
 
 
+def _tool_windows(text: str) -> list[tuple[int, int, str]]:
+    """The candidate windows only a TOOL ARGUMENT is short enough to offer.
+
+    Shared by the restoring leg and by `residual_tokens`, which has to look
+    for exactly what the restoring leg looked for: a leftover it does not
+    propose is a fake reaching the tool with an empty residual list — the
+    silence this signal exists to break."""
+    windows: list[tuple[int, int, str]] = []
+    # A LOWER-CASE STREET STANDING ALONE IS STILL OURS, and only a tool
+    # argument is short enough to ask.
+    #
+    # A CRM card stores «солнечная» in lower case, the substitute agrees
+    # with the field, and the model writes it straight into an `address`
+    # argument. `_name_windows` proposes capitalised runs only, so no
+    # window was ever offered, no key was ever asked, and the fake street
+    # reached the customer's tool. Seventeen of sixty `long_order` cases
+    # on the family's first run.
+    #
+    # BOUNDED TO THE ARGUMENT LEG ON PURPOSE. Offering every long word of
+    # a REPLY would put a paragraph's worth of candidates in front of the
+    # vault; an argument is a field, and the same reasoning `_place_windows`
+    # already uses four times over applies — a word that is not ours costs
+    # one indexed point query that returns nothing, and a word that IS ours
+    # is the failure this path exists to prevent.
+    windows.extend((m.start(), m.end(), m.group()) for m in _LOWER_WORD.finditer(text))
+    # Каждое подокно прогона, как `_name_windows` делает для заглавных:
+    # начало фразы может быть чужим словом, и целиком она не найдётся.
+    for run in _LOWER_RUN.finditer(text):
+        words = [(m.start(), m.end()) for m in re.finditer(r"[а-яё]{2,}", run.group())]
+        for i in range(len(words)):
+            for size in (3, 2):
+                if i + size > len(words):
+                    continue
+                start = run.start() + words[i][0]
+                end = run.start() + words[i + size - 1][1]
+                windows.append((start, end, text[start:end]))
+    # ДЕФИС СКЛЕИЛ НАШУ ПОДМЕНУ С ЧУЖИМ СЛОВОМ, И ПОЛОВИНА ЕГО — НАША.
+    # `_name_windows` уже предлагает обе половины, когда ОБЕ заглавные
+    # («Мухина-Бирюкова», 0e877b3); строчная половина не предлагалась
+    # никем — дефис стоит в классе исключения у `_LOWER_WORD` и
+    # `_LOWER_RUN` намеренно, иначе разорвалась бы дефисная фамилия при
+    # МАСКИРОВАНИИ. Здесь вопрос обратный: «литвина-осиновая 86» — это
+    # настоящее «литвина» клиента и наша «осиновая», и без окна фейковая
+    # улица уходила в инструмент. Отвечает волт, а не морфология: у
+    # настоящего «Миклухо-Маклая» половинок в волте нет, окно не
+    # разрешается, цена промаха — один индексный запрос.
+    for match in _HYPHEN_PAIR.finditer(text):
+        for half in (1, 2):
+            windows.append((match.start(half), match.end(half), match.group(half)))
+    return windows
+
+
 def _restore_inflected_spans(text: str, vault: Vault, inflect: bool = True,
                        for_tool: bool = False) -> list[tuple[int, int, str]]:
     """NAME tokens the model put into another case no longer match their minted
@@ -1171,47 +1329,7 @@ def _restore_inflected_spans(text: str, vault: Vault, inflect: bool = True,
     # to a tool, which is the failure this whole path exists to prevent.
     windows = _name_windows(text)
     if for_tool:
-        # A LOWER-CASE STREET STANDING ALONE IS STILL OURS, and only a tool
-        # argument is short enough to ask.
-        #
-        # A CRM card stores «солнечная» in lower case, the substitute agrees
-        # with the field, and the model writes it straight into an `address`
-        # argument. `_name_windows` proposes capitalised runs only, so no
-        # window was ever offered, no key was ever asked, and the fake street
-        # reached the customer's tool. Seventeen of sixty `long_order` cases
-        # on the family's first run.
-        #
-        # BOUNDED TO THE ARGUMENT LEG ON PURPOSE. Offering every long word of
-        # a REPLY would put a paragraph's worth of candidates in front of the
-        # vault; an argument is a field, and the same reasoning `_place_windows`
-        # already uses four times over applies — a word that is not ours costs
-        # one indexed point query that returns nothing, and a word that IS ours
-        # is the failure this path exists to prevent.
-        windows.extend((m.start(), m.end(), m.group()) for m in _LOWER_WORD.finditer(text))
-        # Каждое подокно прогона, как `_name_windows` делает для заглавных:
-        # начало фразы может быть чужим словом, и целиком она не найдётся.
-        for run in _LOWER_RUN.finditer(text):
-            words = [(m.start(), m.end()) for m in re.finditer(r"[а-яё]{2,}", run.group())]
-            for i in range(len(words)):
-                for size in (3, 2):
-                    if i + size > len(words):
-                        continue
-                    start = run.start() + words[i][0]
-                    end = run.start() + words[i + size - 1][1]
-                    windows.append((start, end, text[start:end]))
-        # ДЕФИС СКЛЕИЛ НАШУ ПОДМЕНУ С ЧУЖИМ СЛОВОМ, И ПОЛОВИНА ЕГО — НАША.
-        # `_name_windows` уже предлагает обе половины, когда ОБЕ заглавные
-        # («Мухина-Бирюкова», 0e877b3); строчная половина не предлагалась
-        # никем — дефис стоит в классе исключения у `_LOWER_WORD` и
-        # `_LOWER_RUN` намеренно, иначе разорвалась бы дефисная фамилия при
-        # МАСКИРОВАНИИ. Здесь вопрос обратный: «литвина-осиновая 86» — это
-        # настоящее «литвина» клиента и наша «осиновая», и без окна фейковая
-        # улица уходила в инструмент. Отвечает волт, а не морфология: у
-        # настоящего «Миклухо-Маклая» половинок в волте нет, окно не
-        # разрешается, цена промаха — один индексный запрос.
-        for match in _HYPHEN_PAIR.finditer(text):
-            for half in (1, 2):
-                windows.append((match.start(half), match.end(half), match.group(half)))
+        windows.extend(_tool_windows(text))
     # Each window carries BOTH signatures, because a single capitalised word can
     # be either kind and the two normalisers disagree: `Еловцке` is a settlement,
     # and asking the PERSON normaliser about it returns it unchanged, so the row
@@ -2049,6 +2167,7 @@ def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
                 roles["city"] = head[0].strip(" ,.")
                 roles["street"] = head[1]
     out = dict(restored)
+    spellings = _spellings_for(value, literals.as_written)
     for key in fragments:
         role = _role_of_field(key)
         part = roles.get(role)
@@ -2065,12 +2184,18 @@ def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
             # passes through `unmask_text`'s splice — it reads the whole
             # address out of the vault and cuts it into the schema's fields —
             # so the re-spelling that puts back a look-alike letter has to be
-            # asked for here too. See `_as_written_table`.
-            out[key] = _as_written(agent_form.cased_like(laid, fragments[key]), literals.as_written)
+            # asked for here too. See `_as_written_rows`.
+            #
+            # ASKED OF THE WHOLE ADDRESS, APPLIED TO THE PIECE. The value is in
+            # hand here (`vault.reveal(owner)`), so the row that speaks is the
+            # one that IS this address — a field on its own carries neither its
+            # neighbours' words nor its own house number, and could never
+            # recognise itself.
+            out[key] = _as_written(agent_form.cased_like(laid, fragments[key]), spellings)
     return out
 
 
-def residual_tokens(text: str, vault: Vault) -> list[str]:
+def residual_tokens(text: str, vault: Vault, for_tool: bool = False) -> list[str]:
     """Minted tokens still standing in text that has already been detokenized.
 
     THE SIGNAL EVERY PERSONA ASKED FOR, in the same words three times: «мне
@@ -2079,6 +2204,22 @@ def residual_tokens(text: str, vault: Vault) -> list[str]:
     the FAKE goes to the customer's tool — with a 200, empty counters and nothing
     in the log. Their code cannot find out, so they cannot fail closed on their
     own side.
+
+    A SUBSTITUTE THE VAULT REFUSED TO ANSWER IS THE SAME EVENT AND WAS THE ONE
+    THIS COULD NOT SEE. A bare street minted in another dialogue resolves to
+    nothing on purpose (`Vault._answers_another_dialogue`) — and because the row
+    answers no lookup, the leftover was ours to nobody: `detokenize_many` misses
+    it and `residual_of` is names-only. So the price D-067 names — «the street
+    comes back as a residual token, VISIBLY, instead of answering with somebody
+    else's street silently» — was only half true, and the half that was missing
+    is the half the caller can act on. `Vault.refusable_place_keys` asks the
+    same question the restoring leg asked, customer-wide.
+
+    `for_tool` OFFERS THE SAME WINDOWS THE RESTORING LEG OFFERED. A leftover
+    this does not propose cannot be reported, and a lower-case street standing
+    alone in a schema field is exactly the shape that leaks; in prose those
+    windows would put a paragraph of words in front of the vault, which is why
+    the restoring leg bounds them the same way (`_tool_windows`).
 
     Read-only and cheap: the candidates are the same shapes `unmask_text` already
     scans for, and each is one indexed lookup that MISSES for a real value and
@@ -2093,19 +2234,58 @@ def residual_tokens(text: str, vault: Vault) -> list[str]:
     # A NAME the model REWROTE no longer matches any token, so `TOKEN_RE` alone
     # would miss exactly the case this exists for. Capitalised runs are offered
     # too, and the vault decides which of them are made of its own words.
-    candidates |= {surface for _start, _end, surface in _name_windows(text)}
-    if not candidates:
+    windows = _name_windows(text)
+    candidates |= {surface for _start, _end, surface in windows}
+    if not candidates and not for_tool:
         return []
     known = vault.detokenize_many(candidates)
     residual = {value for value in candidates if value in known}
     residual |= {value for value in candidates
                  if value not in known and vault.residual_of(value) is not None}
+    # THE REFUSAL IS ASKED OVER THE WINDOWS THE RESTORING LEG OFFERED, and the
+    # argument leg offers more of them — a lower-case street standing alone in a
+    # schema field is the shape that leaks. Only this question gets the wider
+    # set: the others (`detokenize_many`, `residual_of`) would pay morphology
+    # for every word of the field to answer about names, which the capitalised
+    # windows already cover.
+    asked = {surface for _start, _end, surface in
+             (windows + (_tool_windows(text) if for_tool else []))}
+    residual |= _refused_candidates(asked - residual, vault)
     # MAXIMAL WINDOWS ONLY. «Римма Цветкова» is one leftover, not three; a caller
     # reading a count would otherwise see the same defect three times and could
     # not tell one damaged name from several.
     return sorted(value for value in residual
                   if not any(value != other and value in other
                              for other in residual))
+
+
+def _refused_candidates(candidates: set[str], vault: Vault) -> set[str]:
+    """Those of `candidates` whose place key names a row this dialogue may not
+    read. The SAME signature the restoring leg asks the vault with
+    (`_restore_inflected_spans`), so what is reported is what was refused rather
+    than a second guess at it.
+
+    THE VAULT IS ASKED BEFORE THE MORPHOLOGY IS RUN. `refusable_place_keys` is
+    one indexed read and is empty for every customer who has no bare street
+    from another dialogue — which is the ordinary case, and the one that must
+    not pay for this. A candidate carrying a DIGIT can never match: a key with
+    digits names one address and is answered customer-wide by design."""
+    if not candidates:
+        return set()
+    refusable = vault.refusable_place_keys()
+    if not refusable:
+        return set()
+    refused: set[str] = set()
+    for candidate in candidates:
+        if any(character.isdigit() for character in candidate):
+            continue
+        try:
+            key = place_key(candidate)
+        except Exception:  # noqa: BLE001 - morphology must never break a response
+            continue
+        if key in refusable:
+            refused.add(candidate)
+    return refused
 
 
 class StreamDetokenizer:

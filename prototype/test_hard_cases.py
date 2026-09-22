@@ -417,15 +417,34 @@ def test_the_mirror_shows_nothing_real(detector: Detector) -> None:
     check("and the mirror shows no real word of the address",
           all("Комсомольск" not in m for m in mirrored), f"{mirrored}")
 
-    # The refuse half: `in_form_of` mis-aligns on a NUMBERED street and leaves
-    # the customer's own name and his ordinal standing inside the fake
-    # («г. Киров, липоваяд 8-й Вешняковский, д. 38»). Neither the name nor the
-    # ordinal can be minted, so both are evidence and neither is a lottery.
+    # The refuse half: `in_form_of` mis-aligns and leaves the customer's own
+    # words standing inside the fake. The shapes below are what the alignment
+    # still cannot read — a street whose NAME BEGINS WITH A CARDINAL number
+    # («26 Бакинских Комиссаров», «9 Мая», «8 Марта»): the number is taken for
+    # the house, the fake's street is spliced where it stood, and the real name
+    # is simply left where it was — «г Казань, бульвар барбарисовый 91
+    # Бакинских Комиссаров, дом 69А», the model reading a real street.
+    #
+    # THE FIRST TWO ROWS ARE NOT EVIDENCE ANY MORE and are kept as coverage: an
+    # ORDINAL prefix («4-й Вешняковский», «3-я Победиловская») is read as part
+    # of the street since `_heads_a_numbered_street`, so those align and would
+    # pass with the fail-safe deleted. The rows below are the ones that go red
+    # without it — which is the only reason a fail-safe has a test. Real words
+    # that the fake pool (trees, plants, landscape) cannot draw, so «it came
+    # back» never means «it was drawn»; 20 of 20 draws leak without the guard,
+    # measured, so the five here are a margin, not a hope.
     for surface, real_words in (
         ("Доставка на г. Киров, пр-д 4-й Вешняковский, д. 38, кв. 77",
          ("Вешняковск", "4-й", "-й ")),
         ("Доставка на г. Балашов, ул. 3-я Победиловская, д. 77, кв. 113",
          ("Победиловск", "3-я", "-я ")),
+        ("Доставка на г Казань, бульвар 26 Бакинских Комиссаров, дом 69А",
+         ("Бакинских", "Комиссаров")),
+        ("Доставка на ул.26 Бакинских Комиссаров д41А кв.144",
+         ("Бакинских", "Комиссаров")),
+        ("Доставка на ул.9 Мая д32 кв.139", ("Мая",)),
+        ("Доставка на г Тюмень, площадь 9 Мая, дом 116/4", ("Мая",)),
+        ("Доставка на г. Челябинск, ш. 8 Марта, д. 79 стр.2", ("Марта",)),
     ):
         leaked = []
         for attempt in range(5):

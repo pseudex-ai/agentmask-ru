@@ -15,6 +15,7 @@ the owner; see the report.
 
 Run:  python3 test_detok_security.py
 """
+import json
 import os
 import sys
 import tempfile
@@ -33,6 +34,8 @@ import httpx  # noqa: E402
 import testkit  # noqa: E402
 from pseudex import service  # noqa: E402
 from pseudex.audit import AuditLog, _preview  # noqa: E402
+from pseudex.detect_all import Detector  # noqa: E402
+from pseudex.redact import mask_text  # noqa: E402
 
 # Fake pools are leased (WS-2), so /unmask* (token recognition) needs a bundle.
 testkit.load_dev_bundle()
@@ -204,6 +207,155 @@ def test_unmask_chunk_audited_and_limited() -> None:
         service._BOUND_ORG = ""
 
 
+async def _unnamed_conversation_calls() -> None:
+    """THE RESTORING LEGS HONOUR THE SCOPE EVEN WHEN NOBODY NAMES IT.
+
+    `/mask` derives a conversation from the transcript when the host sends no
+    `conversation_id` — there is one to derive from. The restoring legs have no
+    transcript, so they used to run on the bare customer vault, and the rule
+    that keeps one dialogue's bare street out of another's tool
+    (`Vault._answers_another_dialogue`) read an empty scope as «nothing to
+    compare» and stood down. The disclosure was therefore open exactly where
+    the value is HANDED BACK, on all three legs at once.
+
+    And the refusal has to be AUDIBLE: D-067 prices the narrowing as «the
+    street comes back as a residual token, visibly, instead of answering with
+    somebody else's street silently», and a 200 with a fake inside and an empty
+    `residual_tokens` is that silence.
+    """
+    service._BOUND_ORG = ""
+    org = "unnamed-conv-org"
+    gw = {"Authorization": f"Bearer {os.environ['PSEUDEX_GATEWAY_TOKEN']}"}
+    transport = httpx.ASGITransport(app=service.app)
+    # A BARE STREET — no house, no flat — is the row with a degenerate key. It
+    # is minted in dialogue A the way the masking leg mints it (this file does
+    # not stand up a licence server, and /mask is the one endpoint that needs
+    # one); everything asserted below is the RESTORING side, over HTTP.
+    said = "подъезжаем на набережную Ольгина"
+    minting = service._vault(org).for_conversation("conv-A")
+    detector = Detector()
+    shown = mask_text(said, minting, detector.detect(said))
+    fake = shown.split("набережную", 1)[1].strip().rstrip(".,")
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+        # The agent of ANOTHER dialogue writes that street into a tool argument.
+        argument = json.dumps({"street": fake}, ensure_ascii=False)
+        nameless = await client.post("/unmask_arguments", headers=gw,
+                                     json={"org_id": org, "arguments": [argument]})
+        named = await client.post("/unmask_arguments", headers=gw,
+                                  json={"org_id": org, "conversation_id": "conv-A",
+                                        "arguments": [argument]})
+        answer = {"choices": [{"message": {"content": f"везём на {fake}"}}]}
+        nameless_answer = await client.post("/unmask", headers=gw,
+                                            json={"org_id": org, "response": answer})
+        chunk = await client.post("/unmask_chunk", headers=gw, json={
+            "org_id": org, "delta": f"везём на {fake}", "carry": "", "flush": True})
+
+    body = nameless.json()
+    check("Ольгина" not in body["arguments"][0] and fake in body["arguments"][0],
+          "/unmask_arguments with no conversation does not answer with another dialogue's street",
+          f"{body['arguments'][0]}")
+    check(body.get("residual_tokens") == [fake]
+          and nameless.headers.get("X-Pseudex-Residual") == "1",
+          "…and says so: the unresolved substitute is in residual_tokens",
+          f"residual={body.get('residual_tokens')} header={nameless.headers.get('X-Pseudex-Residual')}")
+    check("Ольгина" in named.json()["arguments"][0]
+          and not named.json().get("residual_tokens"),
+          "…while the dialogue that minted it still gets the real street, with no residual",
+          f"{named.json()}")
+
+    answered = nameless_answer.json()
+    text = answered["response"]["choices"][0]["message"]["content"]
+    check("Ольгина" not in text and fake in text,
+          "/unmask with no conversation does not answer with another dialogue's street",
+          text)
+    check(answered.get("residual_tokens") == [fake],
+          "…and /unmask reports it as residual too", f"{answered.get('residual_tokens')}")
+    check("Ольгина" not in chunk.json()["text"],
+          "/unmask_chunk with no conversation does not answer with it either",
+          chunk.json()["text"])
+
+
+def test_unnamed_conversation_is_not_every_conversation() -> None:
+    import anyio
+    try:
+        anyio.run(_unnamed_conversation_calls)
+    finally:
+        service._BOUND_ORG = ""
+
+
+async def _proxy_leg_calls() -> None:
+    """THE PROXY'S WAY BACK IS SCOPED TOO, AND BY ITS OWN TRANSCRIPT.
+
+    This shape names no conversation on the wire at all — it derives one from
+    the messages (`conversation_key`) on the way in AND on the way back, so the
+    two legs meet. That is what makes the narrowing bite here: a bare street
+    minted under one transcript is not read under another, the fake stays where
+    it stood, and the caller learns about it from `X-Pseudex-Residual`, which
+    is the only channel an OpenAI-shaped answer leaves for it.
+
+    The upstream is a stub: what is under test is the pair of legs around it,
+    not the provider.
+    """
+    from pseudex import proxy  # noqa: PLC0415
+
+    key = "sk-ps-test-proxy-scope"
+    proxy.TENANTS.upsert(key, "proxy-scope-org", "http://upstream.invalid/v1", "up-key")
+    # A BARE STREET minted under transcript A, through the proxy's own masking
+    # leg — so the conversation it lands under is the one the proxy derives.
+    said = "подъезжаем на набережную Ольгина"
+    first = [{"role": "user", "content": said}]
+    minting = proxy._get_vault("proxy-scope-org").for_conversation(
+        proxy.conversation_key(first))
+    fake = mask_text(said, minting, Detector().detect(said)).split("набережную", 1)[1].strip()
+
+    async def _stub(body, tenant):
+        return {"choices": [{"message": {"role": "assistant", "content": None,
+                                         "tool_calls": [{"id": "1", "type": "function",
+                                                         "function": {"name": "dispatch",
+                                                                      "arguments": json.dumps(
+                                                                          {"street": fake},
+                                                                          ensure_ascii=False)}}]}}]}
+
+    class _Serving:
+        def is_serving(self):
+            return True
+
+    saved = (proxy._forward, proxy.LICENSE, proxy.metering.bill)
+    proxy._forward, proxy.LICENSE = _stub, _Serving()
+    proxy.metering.bill = lambda *args, **kwargs: None
+    try:
+        transport = httpx.ASGITransport(app=proxy.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+            headers = {"Authorization": f"Bearer {key}"}
+            # ANOTHER transcript — another derived conversation.
+            other = await client.post("/v1/chat/completions", headers=headers, json={
+                "messages": [{"role": "user", "content": "а куда ехать, напомни"}],
+                "tools": [{"type": "function", "function": {"name": "dispatch"}}]})
+            same = await client.post("/v1/chat/completions", headers=headers,
+                                     json={"messages": first, "tools": [
+                                         {"type": "function",
+                                          "function": {"name": "dispatch"}}]})
+    finally:
+        proxy._forward, proxy.LICENSE, proxy.metering.bill = saved
+
+    theirs = other.json()["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+    check("Ольгина" not in theirs and fake in theirs,
+          "proxy: another transcript does not get this one's real street",
+          f"{theirs} status={other.status_code}")
+    check(other.headers.get("X-Pseudex-Residual") == "1",
+          "…and the proxy says so in X-Pseudex-Residual",
+          f"{other.headers.get('X-Pseudex-Residual')}")
+    ours = same.json()["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+    check("Ольгина" in ours and "X-Pseudex-Residual" not in same.headers,
+          "…while the transcript that minted it still gets the real street",
+          f"{ours} residual={same.headers.get('X-Pseudex-Residual')}")
+
+
+def test_proxy_response_leg_is_scoped() -> None:
+    import anyio
+    anyio.run(_proxy_leg_calls)
+
+
 def test_name_trawl_visible() -> None:
     """WS-7 exfiltrator #2: a NAME/VALUE-guess sweep resolves nothing AND leaves no
     residual, so `miss_rate` stays 0.0 and the trawl used to hide. It now shows as
@@ -232,6 +384,8 @@ def main() -> None:
     test_detok_counts_values_not_calls()
     test_app_org_bind_and_audit()
     test_unmask_chunk_audited_and_limited()
+    test_unnamed_conversation_is_not_every_conversation()
+    test_proxy_response_leg_is_scoped()
     test_name_trawl_visible()
     failed = [n for ok, n, _ in RESULTS if not ok]
     print("=" * 60)

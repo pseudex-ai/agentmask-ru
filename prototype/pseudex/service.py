@@ -9,10 +9,16 @@ text + keep the per-org vault + audit. Runs in the customer's contour.
   POST /unmask_chunk  {org_id, delta, carry, flush, conversation_id?} -> {text, carry}  (SSE leg)
 
   `conversation_id` on the way back is the SAME id the host gave /mask (or
-  derived the same way from the messages). Without it the vault answers
-  customer-wide: exact tokens resolve, but what the dialogue decided — a
-  linked address, which substitutes it was shown, the customer's literal
-  string for a verbatim copy — cannot be read back.
+  derived the same way from the messages), and the restoring legs SHOULD send
+  it. Without it the request stands in no dialogue: a WHOLE substitute still
+  resolves — it is unique, and only the dialogue it was handed to could have
+  written it — while everything a dialogue decided does not. That is what it
+  was shown (the verbatim literal, the customer's own spelling) and every
+  answer built from a FRAGMENT: a street with no number, a schema field
+  holding part of an address, a date or a group of digits cut out of a longer
+  value. Those come back as the SUBSTITUTE, and the call says so in
+  `residual_tokens` / `X-Pseudex-Residual` rather than resolving them against
+  another dialogue's data.
   POST /spans         {org_id, texts}              -> offsets for highlighting
   GET  /usage?org_id=...                           -> counts + recent (for UI)
   GET  /license                                    -> lease state, for monitoring
@@ -344,25 +350,39 @@ def _detok_rate_ok(org_id: str) -> bool:
     return AUDIT.detok_values_since(org_id, time.time() - _DETOK_WINDOW) < _DETOK_MAX_PER_MIN
 
 
-def _minted_in(texts: list, vault: Vault) -> set:
+def _minted_in(texts: list, vault: Vault, for_tool: bool = False) -> set:
     """The minted tokens standing in these texts, by the SAME recognizer as the
     residual signal — so 'disclosed' is symmetric with 'residual': a token present
-    in the INPUT and gone from the OUTPUT is a real value the call resolved."""
+    in the INPUT and gone from the OUTPUT is a real value the call resolved.
+
+    `for_tool` travels with the leg, because the recognizer's windows do: the
+    argument leg offers a lower-case field and the prose leg does not, and the
+    two sides of one subtraction have to be counted by one rule or the
+    difference is not a count of anything."""
     found: set = set()
     for text in texts:
         if isinstance(text, str):
-            found.update(residual_tokens(text, vault))
+            found.update(residual_tokens(text, vault, for_tool))
     return found
 
 
-def _audit_detok(org_id: str, actor: str, before: dict, residual: list) -> None:
+def _audit_detok(org_id: str, actor: str, before: dict, residual: list,
+                 conversation_id: str) -> None:
     """Record that a detok call disclosed real values — counts only, never values
     (pentest B1). `resolved` = the number of minted tokens the call actually resolved
     (present in the input response, gone from the residual), so a call carrying many
     values in one text counts as many, not one (pentest F2); `misses` = substitutes
     that failed to resolve (a sweep of guessed tokens shows as high misses and high
     call volume)."""
-    before_tokens = _minted_in(_response_texts(before), _vault(org_id))
+    # THE SAME VIEW THE RESTORE USED. `residual` was computed in the caller's
+    # conversation, and a count made against a WIDER view subtracts two lists
+    # that were not drawn from one vault — a substitute another dialogue minted
+    # would be «present before» and never «residual», i.e. reported as a value
+    # this call disclosed when it disclosed nothing.
+    vault = _scoped(org_id, conversation_id)
+    before_tokens: set = set()
+    for text, for_tool in _response_parts(before):
+        before_tokens |= _minted_in([text], vault, for_tool)
     disclosed = len(before_tokens - set(residual))
     AUDIT.record_detok(org_id, actor, disclosed, len(residual))
 
@@ -662,8 +682,9 @@ async def unmask(request: Request) -> JSONResponse:
         return JSONResponse({"error": "response must be an object"}, status_code=400)
     # Detokenization is indexed lookups now, but still SQLite I/O per answer —
     # offload so it never blocks the loop.
+    conversation_id = str(body.get("conversation_id", ""))
     result = await anyio.to_thread.run_sync(
-        _unmask_for, response, org_id, str(body.get("conversation_id", "")), limiter=_MASK_LIMITER
+        _unmask_for, response, org_id, conversation_id, limiter=_MASK_LIMITER
     )
     # WHAT DID NOT COME BACK. Detokenization is best-effort by construction: a
     # model that reorders or shortens a substitute produces a string that
@@ -674,9 +695,9 @@ async def unmask(request: Request) -> JSONResponse:
     # A LIST, not a boolean, and the values are OUR substitutes: naming them
     # discloses nothing about the customer's data, and the caller needs them to
     # decide what to do — refuse the tool call, retry, or ask the model again.
-    residual = _residual_for(result, org_id)
+    residual = _residual_for(result, org_id, conversation_id)
     await anyio.to_thread.run_sync(
-        _audit_detok, org_id, _detok_actor(body), response, residual
+        _audit_detok, org_id, _detok_actor(body), response, residual, conversation_id
     )
     payload: dict[str, object] = {"response": result}
     if residual:
@@ -822,9 +843,9 @@ def _unmask_arguments_for(arguments: list[str],
     restored = [unmask_arguments(raw, vault) for raw in arguments]
     residual: list[str] = []
     for text in restored:
-        residual.extend(residual_tokens(text, vault))
+        residual.extend(residual_tokens(text, vault, True))
     residual = sorted(set(residual))
-    disclosed = len(_minted_in(arguments, vault) - set(residual))
+    disclosed = len(_minted_in(arguments, vault, True) - set(residual))
     return restored, residual, disclosed
 
 
@@ -834,24 +855,37 @@ def _unmask_for(response: dict[str, object], org_id: str,
     return unmask_response(response, _scoped(org_id, conversation_id))
 
 
-def _residual_for(response: dict[str, object], org_id: str) -> list[str]:
+def _residual_for(response: dict[str, object], org_id: str,
+                  conversation_id: str) -> list[str]:
     """Substitutes still standing in an already-detokenized answer.
 
     Walks the same text the caller will read, so what it reports is exactly what
     would have reached their tool. Read-only: no token is minted and nothing is
     audited — a diagnostic that changes the vault would change the thing it is
     diagnosing.
+
+    IN THE CONVERSATION THE RESTORE RAN IN, or it is diagnosing a different
+    engine: `_unmask_for` resolves through `_scoped`, and a wider view here
+    would resolve what the restore refused and report NOTHING for the one case
+    the refusal exists to make visible.
     """
-    vault = _vault(org_id)
+    vault = _scoped(org_id, conversation_id)
     found: list[str] = []
-    for text in _response_texts(response):
-        found.extend(residual_tokens(text, vault))
+    for text, for_tool in _response_parts(response):
+        found.extend(residual_tokens(text, vault, for_tool))
     return sorted(set(found))
 
 
-def _response_texts(response: dict[str, object]) -> list[str]:
-    """Every string in a chat completion a customer's code might act on."""
-    out: list[str] = []
+def _response_parts(response: dict[str, object]) -> list[tuple[str, bool]]:
+    """Every string in a chat completion a customer's code might act on, each
+    with the LEG it belongs to: prose, or a tool call's arguments.
+
+    The two are recognised differently — an argument is a schema field and a
+    lower-case street standing alone in one is ours, while offering every
+    lower-case word of a paragraph would put a page in front of the vault
+    (`_tool_windows`). One list with one rule would have to pick the wrong one
+    for half of it."""
+    out: list[tuple[str, bool]] = []
     for choice in response.get("choices", []) or []:
         if not isinstance(choice, dict):
             continue
@@ -860,12 +894,12 @@ def _response_texts(response: dict[str, object]) -> list[str]:
             continue
         content = message.get("content")
         if isinstance(content, str):
-            out.append(content)
+            out.append((content, False))
         for call in message.get("tool_calls", []) or []:
             if isinstance(call, dict):
                 arguments = (call.get("function") or {}).get("arguments")
                 if isinstance(arguments, str):
-                    out.append(arguments)
+                    out.append((arguments, True))
     return out
 
 

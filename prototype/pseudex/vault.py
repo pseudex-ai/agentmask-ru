@@ -412,6 +412,27 @@ _VALUE_SQL = ("CASE WHEN entity_type='NAME' THEN canonical ELSE original END")
 # туда, где его видно и можно проверить тестом.
 _VALUE_SQL_BOTH = "entity_type, canonical, original"
 
+# ЭТОТ ДИАЛОГ ЧЕКАНИЛ СТРОКУ — ИЛИ НИКАКОЙ. Условие четырёх пофрагментных
+# поисков (`place_owner`, `place_owner_by_street`, `date_owner`,
+# `digit_fragment_owner`): фрагмент подмены не уникален — «Полевая 35»,
+# «35», «15.05.2025» выглядят одинаково у всех, — поэтому владельца ищут
+# только среди строк СВОЕГО разговора.
+#
+# ПУСТАЯ ОБЛАСТЬ — ЭТО НЕ «ЛЮБАЯ». Раньше при пустой области условие
+# ВЫБРАСЫВАЛОСЬ целиком, и каждый из четырёх поисков отвечал по всему
+# заказчику. На плече маскирования области всегда есть (её выводит
+# `conversation_key`), а вот `/unmask`, `/unmask_chunk` и `/unmask_arguments`
+# выводить её не из чего — и сужение выключалось ровно там, где значение
+# ОТДАЮТ: диалог B получал в поле `street` настоящий адрес диалога A. Теперь
+# пустая область не совпадает ни с одним `minted_in`, то есть отвечают только
+# строки БЕЗ него — записанные до появления столбца или прямым `Vault` без
+# разговора, для которых сравнивать действительно не с чем.
+# Две записи одного условия, потому что один запрос идёт по `tokens` напрямую,
+# а три — через JOIN с алиасом `k`. Собирать вторую из первой заменой строки
+# значило бы прятать имя таблицы в вызове.
+_MINTED_HERE_JOINED = " AND (k.minted_in=? OR k.minted_in IS NULL OR k.minted_in='')"
+_MINTED_HERE = " AND (minted_in=? OR minted_in IS NULL OR minted_in='')"
+
 _SPOKEN_WORD = re.compile(r"[А-Яа-яЁё]{2,}")
 # Типы, у которых канонизация даёт САМО ЗНАЧЕНИЕ в нормальной форме, а не ключ
 # для поиска. Для них и только для них аргументу отдаётся канон.
@@ -2637,7 +2658,6 @@ class Vault:
         # выглядит одинаково у всех, — и без области диалог B получал адрес,
         # отчеканенный в диалоге A. Это ровно то раскрытие, ради запрета
         # которого область и заведена.
-        scope = " AND (k.minted_in=? OR k.minted_in IS NULL OR k.minted_in='')"
         with self._lock:
             owners: list[set[str]] = []
             for part in parts:
@@ -2645,9 +2665,8 @@ class Vault:
                     "SELECT t.token FROM token_parts AS t "
                     "JOIN tokens AS k ON k.customer=t.customer AND k.token=t.token "
                     "WHERE t.customer=? AND t.part=? AND k.entity_type='LOC'"
-                    + (scope if self._conversation else ""),
-                    (self._customer, part, self._conversation)
-                    if self._conversation else (self._customer, part),
+                    + _MINTED_HERE_JOINED,
+                    (self._customer, part, self._conversation),
                 ).fetchall()
                 if not rows:
                     return None
@@ -2680,7 +2699,6 @@ class Vault:
         stems, numbers = morph_places.signature_parts(candidate)
         if numbers or not stems:
             return None
-        scope = " AND (k.minted_in=? OR k.minted_in IS NULL OR k.minted_in='')"
         with self._lock:
             owners: list[set[str]] = []
             for part in stems:
@@ -2688,8 +2706,8 @@ class Vault:
                     "SELECT t.token FROM token_parts AS t "
                     "JOIN tokens AS k ON k.customer=t.customer AND k.token=t.token "
                     "WHERE t.customer=? AND t.part=? AND k.entity_type='LOC'"
-                    + (scope if self._conversation else ""),
-                    (self._customer, part, self._conversation) if self._conversation else (self._customer, part),
+                    + _MINTED_HERE_JOINED,
+                    (self._customer, part, self._conversation),
                 ).fetchall()
                 if not rows:
                     return None
@@ -2714,15 +2732,13 @@ class Vault:
         lookup: two dialogues may well hold substitutes on one date."""
         if not reading:
             return None
-        scope = " AND (k.minted_in=? OR k.minted_in IS NULL OR k.minted_in='')"
         with self._lock:
             rows = self._conn.execute(
                 "SELECT k.entity_type, k.canonical, k.original FROM token_parts AS t "
                 "JOIN tokens AS k ON k.customer=t.customer AND k.token=t.token "
                 "WHERE t.customer=? AND t.part=? AND k.entity_type IN ('DOB','DATE')"
-                + (scope if self._conversation else "") + " LIMIT 3",
-                (self._customer, reading, self._conversation) if self._conversation
-                else (self._customer, reading),
+                + _MINTED_HERE_JOINED + " LIMIT 3",
+                (self._customer, reading, self._conversation),
             ).fetchall()
         values = {_pick_value(row[0], row[1], row[2], for_tool) for row in rows}
         return next(iter(values)) if len(values) == 1 else None
@@ -2750,15 +2766,13 @@ class Vault:
         digits = "".join(ch for ch in fragment if ch.isdigit())
         if len(digits) < 2:
             return None
-        scope = " AND (minted_in=? OR minted_in IS NULL OR minted_in='')"
         with self._lock:
             rows = self._conn.execute(
                 "SELECT token, digits, entity_type, canonical, original "
                 "FROM tokens WHERE customer=? AND digits IS NOT NULL "
                 "AND length(digits) > ? AND instr(digits, ?) > 0"
-                + (scope if self._conversation else ""),
-                (self._customer, len(digits), digits, self._conversation)
-                if self._conversation else (self._customer, len(digits), digits),
+                + _MINTED_HERE,
+                (self._customer, len(digits), digits, self._conversation),
             ).fetchall()
         # THE CUE NARROWS THE QUESTION. «контрольное число 77» is the END of a
         # СНИЛС, «серия 4509» the START of a passport, «последние четыре цифры
@@ -3605,19 +3619,54 @@ class Vault:
             placeholders = ",".join("?" * len(chunk))
             with stage(f"vault.lookup.{column}"), self._lock:
                 rows = self._conn.execute(
-                    f"SELECT {column}, {_VALUE_SQL_BOTH}, minted_in "
+                    f"SELECT {column}, {_VALUE_SQL_BOTH}, minted_in, name_key "
                     f"FROM tokens WHERE customer=? AND {column} IN ({placeholders})",
                     (self._customer, *chunk),
                 ).fetchall()
             for row in rows:
-                if self._answers_another_dialogue(column, row[0], row[1], row[4]):
+                if self._answers_another_dialogue(row[1], row[5], row[4]):
                     continue
                 found[row[0]] = (row[1], _pick_value(row[1], row[2], row[3],
                                                      for_tool))
         return found
 
-    def _answers_another_dialogue(self, column: str, key: str,
-                                  entity_type: str, minted_in: str | None) -> bool:
+    def refusable_place_keys(self) -> set[str]:
+        """The place keys this customer HAS a row for and this dialogue may NOT
+        read — `_answers_another_dialogue` asked in the reporting direction.
+
+        THE REFUSAL HAS TO BE VISIBLE OR IT IS A SILENT SWAP. The restoring leg
+        skips such a row and leaves the substitute standing, so the FAKE goes to
+        the customer's tool inside a well-formed 200; `residual_tokens` is the
+        only way the caller can see that, and it could not see this one — the
+        row answers no lookup, so nothing in the detokenised text resolves to it
+        and nothing marks it as ours. Asked customer-wide on purpose: a
+        diagnostic that obeyed the scope it is reporting on would report
+        nothing.
+
+        ASKED ONCE, AND FIRST, BECAUSE IT IS THE CHEAP HALF. The keys come back
+        by one indexed read of a column; deciding whether a candidate string
+        HAS one of them costs morphology per candidate, and on ordinary traffic
+        there is nothing to decide — no customer has a bare-street row from
+        another dialogue, the set is empty, and the caller stops there.
+        `LIMIT` because this is a warning, not an index: a customer with
+        thousands of such rows is already a customer whose every bare street is
+        refused, and the first of them says so.
+        """
+        if self._pseudonym_scope == "customer":
+            return set()
+        with stage("vault.lookup.refusable"), self._lock:
+            rows = self._conn.execute(
+                "SELECT DISTINCT name_key, minted_in FROM tokens "
+                "WHERE customer=? AND entity_type='LOC' AND name_key IS NOT NULL "
+                "AND minted_in IS NOT NULL AND minted_in<>'' AND minted_in<>? "
+                "AND name_key NOT GLOB '*[0-9]*' LIMIT 500",
+                (self._customer, self._conversation),
+            ).fetchall()
+        return {row[0] for row in rows
+                if self._answers_another_dialogue("LOC", row[0], row[1])}
+
+    def _answers_another_dialogue(self, entity_type: str, name_key: str | None,
+                                  minted_in: str | None) -> bool:
         """A DEGENERATE PLACE KEY IS NOT UNIQUE, SO IT ANSWERS ONLY AT HOME.
 
         A street with no number — «наб. Ольгина», minted when the detector took
@@ -3630,17 +3679,34 @@ class Vault:
         it stays customer-wide on purpose — «one address, one substitute, for
         ever» is what lets a corrected house keep its street.
 
+        THE ROW DECIDES, NOT THE ROUTE TO IT. The question is asked of the
+        row's own `name_key` whichever column the lookup came in by, because
+        the bare street is equally reachable by its exact token — «Каштановая»
+        minted with no marker IS the whole substitute — and a rule that closed
+        the key and left the token open would close half a door.
+
+        NO CONVERSATION IS NOT EVERY CONVERSATION. A restoring leg that names
+        none — `/unmask`, `/unmask_chunk`, `/unmask_arguments` without
+        `conversation_id`, where there is no transcript to derive one from —
+        stands in no dialogue, so it is not the one that minted this row and it
+        does not read it. That is the same answer `shown_forms` already gives an
+        unscoped view, and the OPPOSITE of `is_minted_token`, deliberately: on
+        the masking leg the permissive reading only risks re-masking our own
+        echo, while here it hands one dialogue's real street to another's tool.
+        A host that wants the wide answer says so — by naming the conversation,
+        or by declaring agent memory (`with_pseudonym_scope`), exactly as
+        `is_minted_token` takes the same declaration.
+
         The price is the trade `#conversation-scope` already records: a bare
         street named in one dialogue and asked about in another no longer
-        resolves and comes back as a residual token, visibly, instead of
-        answering with somebody else's street silently. A host that declared
-        agent memory (`with_pseudonym_scope`) keeps the wide answer, exactly as
-        `is_minted_token` does — the same declaration, the same consequence."""
-        if column != "name_key" or entity_type != "LOC":
+        resolves and comes back as a residual token, VISIBLY
+        (`refusable_place_keys` → `residual_tokens`), instead of answering with
+        somebody else's street silently."""
+        if entity_type != "LOC" or not name_key:
             return False
-        if self._pseudonym_scope == "customer" or not self._conversation:
+        if self._pseudonym_scope == "customer":
             return False
-        if any(character.isdigit() for character in key):
+        if any(character.isdigit() for character in name_key):
             return False
         return bool(minted_in) and minted_in != self._conversation
 

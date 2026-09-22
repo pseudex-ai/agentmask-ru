@@ -31,7 +31,8 @@ from pseudex.audit import AuditLog
 from pseudex.detect_all import Detector
 from pseudex.envelope import MaskContext, mask_one
 from pseudex.maskcache import MaskCache
-from pseudex.redact import mask_text, unmask_arguments, unmask_text
+from pseudex.redact import (mask_text, residual_tokens, unmask_arguments,
+                            unmask_text)
 from pseudex.vault import Vault
 
 _ORG = "collide"
@@ -392,7 +393,28 @@ def test_a_bare_street_answers_only_in_its_own_dialogue(detector: Detector) -> N
     declared = json.loads(unmask_arguments(
         field, vault.for_conversation("conv-bare-B").with_pseudonym_scope("customer")))["street"]
     assert declared == "Ольгина", declared
+
+    # ПЛЕЧО, КОТОРОЕ НЕ НАЗВАЛО РАЗГОВОРА, СТОИТ НЕ ВО ВСЕХ, А НИ В ОДНОМ.
+    # `/mask` выводит разговор из самой переписки, когда хост его не назвал;
+    # у `/unmask` переписки нет, и правило, написанное как «пустая область —
+    # значит сравнивать не с чем», выключало сужение ровно там, где значение
+    # ОТДАЮТ. Половина пути была закрыта.
+    nameless = json.loads(unmask_arguments(field, vault))["street"]
+    assert "Ольгина" not in nameless, nameless
+    assert nameless == "Каштановая", nameless
+
+    # И ОТКАЗ ВИДЕН. Цена сужения, записанная в D-067, — «улица возвращается
+    # ВИДИМЫМ остатком вместо тихой чужой улицы»; пока `residual_tokens` не
+    # знал об отказе, в инструмент уходил фейк при 200 и пустом списке, то есть
+    # ровно та тишина, ради которой список и заведён.
+    for asked in (vault, vault.for_conversation("conv-bare-Z")):
+        left = residual_tokens(json.loads(unmask_arguments(field, asked))["street"], asked, True)
+        assert left == ["Каштановая"], left
+    # …и своему диалогу отвечать есть чем, поэтому остатка там нет.
+    home = vault.for_conversation("conv-bare-A")
+    assert residual_tokens(json.loads(unmask_arguments(field, home))["street"], home, True) == []
     print("вырожденный ключ улицы OK — чужой диалог получает свою улицу, свой — первую; "
+          "плечо без разговора — фейк и видимый остаток; "
           "полный адрес остаётся общим, объявленная память агента — тоже")
 
 
