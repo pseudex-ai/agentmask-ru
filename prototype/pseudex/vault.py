@@ -1481,7 +1481,14 @@ def _loc_token_pattern() -> str:
     # ordinary prose around the token.
     head = (rf"(?:(?i:{generics})\s{name}"         # улица Тополиная
             rf"|{name}\s(?i:{generics})"           # Тополиный проспект
-            rf"|(?i:{abbrs})\.?\s{name}"           # ул. Тополиная
+            # ЛЕВАЯ ГРАНИЦА У СОКРАЩЕНИЯ ОБЯЗАТЕЛЬНА. Без неё «ул» находится
+            # ВНУТРИ слова: «Барнаул Ивовая 55» давало окно «ул Ивовая 55» со
+            # смещения 5, и восстановление подставляло настоящую улицу прямо в
+            # середину названия города — «Барнаонватаняна 50». Запятая после
+            # города пряталa дефект, потому что подмена чеканилась с ней;
+            # клиент, написавший город без запятой, его вскрывает. Дефис в
+            # классе — чтобы «-ул» дефисного названия тоже не открывало окно.
+            rf"|(?<![А-Яа-яЁёA-Za-z-])(?i:{abbrs})\.?\s{name}"   # ул. Тополиная
             # СОКРАЩЕНИЕ СТОИТ И ПОСЛЕ ИМЕНИ. «Луговой просп., 129» — модель
             # сократила родовое слово в форме «имя + тип», а эта ветка была
             # только у полных слов, поэтому окно не строилось вовсе и адрес
@@ -3598,14 +3605,44 @@ class Vault:
             placeholders = ",".join("?" * len(chunk))
             with stage(f"vault.lookup.{column}"), self._lock:
                 rows = self._conn.execute(
-                    f"SELECT {column}, {_VALUE_SQL_BOTH} "
+                    f"SELECT {column}, {_VALUE_SQL_BOTH}, minted_in "
                     f"FROM tokens WHERE customer=? AND {column} IN ({placeholders})",
                     (self._customer, *chunk),
                 ).fetchall()
-            found.update({row[0]: (row[1], _pick_value(row[1], row[2], row[3],
-                                                       for_tool))
-                          for row in rows})
+            for row in rows:
+                if self._answers_another_dialogue(column, row[0], row[1], row[4]):
+                    continue
+                found[row[0]] = (row[1], _pick_value(row[1], row[2], row[3],
+                                                     for_tool))
         return found
+
+    def _answers_another_dialogue(self, column: str, key: str,
+                                  entity_type: str, minted_in: str | None) -> bool:
+        """A DEGENERATE PLACE KEY IS NOT UNIQUE, SO IT ANSWERS ONLY AT HOME.
+
+        A street with no number — «наб. Ольгина», minted when the detector took
+        half of «наб. Ольгина пруда, 119» — keys as «ольгин|», and every
+        dialogue of that customer that is shown a fake street with the same name
+        asks the same key. Dialogue B wrote «Каштановая» into a `street` field
+        and the tool received dialogue A's REAL street: a disclosure, not a form
+        divergence, and the same class `residual_of` closed for a piece of a
+        NAME (known-issues Б23). A key that carries DIGITS names one address, so
+        it stays customer-wide on purpose — «one address, one substitute, for
+        ever» is what lets a corrected house keep its street.
+
+        The price is the trade `#conversation-scope` already records: a bare
+        street named in one dialogue and asked about in another no longer
+        resolves and comes back as a residual token, visibly, instead of
+        answering with somebody else's street silently. A host that declared
+        agent memory (`with_pseudonym_scope`) keeps the wide answer, exactly as
+        `is_minted_token` does — the same declaration, the same consequence."""
+        if column != "name_key" or entity_type != "LOC":
+            return False
+        if self._pseudonym_scope == "customer" or not self._conversation:
+            return False
+        if any(character.isdigit() for character in key):
+            return False
+        return bool(minted_in) and minted_in != self._conversation
 
     def resolve_name_keys(self, keys: set[str]) -> dict[str, str]:
         """Resolve NAME tokens the model INFLECTED, by case-invariant key.

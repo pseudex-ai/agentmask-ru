@@ -324,6 +324,78 @@ def test_b23_customer_word_equal_to_another_dialogue_substitute(detector: Detect
     print("Б23 OK — кусок подмены разрешается только в диалоге, которому её показали; чужое слово остаётся словом клиента")
 
 
+def test_a_bare_street_answers_only_in_its_own_dialogue(detector: Detector) -> None:
+    """ВЫРОЖДЕННЫЙ КЛЮЧ УЛИЦЫ НЕ ОТДАЁТ УЛИЦУ ЧУЖОГО ДИАЛОГА.
+
+    Улица без номера — «наб. Ольгина», каким его берёт детектор из «наб.
+    Ольгина пруда, 119» (Б16), — чеканится ключом «ольгин|»: ни одной цифры,
+    то есть ни одного признака, который отличал бы ОДИН адрес от всех
+    остальных с тем же названием. Второму диалогу того же заказчика выпадает
+    фейковая улица с тем же названием, агент кладёт её в поле `street`, и
+    `_lookup_typed` по `name_key` отдавал настоящую улицу ПЕРВОГО диалога —
+    раскрытие данных одного разговора в инструменте другого, тот же класс,
+    который Б23 закрыл для куска имени.
+
+    Обе половины: чужой диалог получает СВОЮ улицу, свой — по-прежнему первую.
+    Подмена тянется случайно, поэтому название фейка здесь закреплено, а не
+    разыграно: иначе проверка ловила бы дефект раз в сорок прогонов.
+    """
+    import secrets  # noqa: PLC0415
+
+    real_choice = secrets.choice
+
+    def forcing(*sticky: str):
+        def choice(seq):
+            seq = list(seq)
+            for want in sticky:
+                if want in seq:
+                    return want
+            return real_choice(seq)
+        return choice
+
+    vault = Vault(":memory:", _ORG)
+    first_said = "доставка по адресу наб. Ольгина пруда, 119, кв. 234"
+    second_said = "адрес изобильная 60 кв 186"
+    try:
+        secrets.choice = forcing("Каштановой")
+        first = _context(detector, vault, "conv-bare-A")
+        first_masked = mask_one(first_said, first)
+        second = _context(detector, vault, "conv-bare-B")
+        second_masked = mask_one(second_said, second)
+    finally:
+        secrets.choice = real_choice
+    assert "Каштановая" in first_masked, first_masked
+    assert "каштановая" in second_masked.lower(), second_masked
+
+    field = json.dumps({"street": "Каштановая"}, ensure_ascii=False)
+    theirs = json.loads(unmask_arguments(field, vault.for_conversation("conv-bare-B")))["street"]
+    assert "Ольгина" not in theirs, theirs
+    assert theirs.lower().startswith("изобильн"), theirs
+
+    ours = json.loads(unmask_arguments(field, vault.for_conversation("conv-bare-A")))["street"]
+    assert ours == "Ольгина", ours
+
+    # A FULL ADDRESS KEEPS THE CUSTOMER-WIDE ANSWER: its key carries the house
+    # and the flat, so it names ONE address and «одна подмена, навсегда» holds.
+    whole = second_masked.split("адрес ", 1)[1].strip()
+    everywhere = json.loads(unmask_arguments(
+        json.dumps({"address": whole}, ensure_ascii=False),
+        vault.for_conversation("conv-bare-C")))["address"]
+    assert "изобильн" in everywhere.lower(), everywhere
+
+    # …И ХОЗЯИН, ОБЪЯВИВШИЙ ПАМЯТЬ АГЕНТА, ПО-ПРЕЖНЕМУ ПОЛУЧАЕТ ШИРОКИЙ ОТВЕТ.
+    # Сужение — это УМОЛЧАНИЕ, а не запрет: `with_pseudonym_scope("customer")`
+    # объявляет, что диалоги одного заказчика — один субъект, и тогда улица без
+    # номера разрешается за пределами своего разговора ровно так же, как это уже
+    # делает `is_minted_token`. Без этой половины правило читалось бы как
+    # «вырожденный ключ не разрешается никогда», и объявление ничего не значило бы.
+    declared = json.loads(unmask_arguments(
+        field, vault.for_conversation("conv-bare-B").with_pseudonym_scope("customer")))["street"]
+    assert declared == "Ольгина", declared
+    print("вырожденный ключ улицы OK — чужой диалог получает свою улицу, свой — первую; "
+          "полный адрес остаётся общим, объявленная память агента — тоже")
+
+
 def main() -> int:
     testkit.load_dev_bundle()
     detector = Detector()
@@ -337,6 +409,7 @@ def main() -> int:
     test_pool_is_not_narrowed_by_the_extra_rejections()
     test_two_people_in_one_dialogue_never_share_a_fake_surname(detector)
     test_b23_customer_word_equal_to_another_dialogue_substitute(detector)
+    test_a_bare_street_answers_only_in_its_own_dialogue(detector)
     print("\nвсе проверки коллизий пройдены")
     return 0
 

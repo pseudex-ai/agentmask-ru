@@ -20,6 +20,7 @@ hard, so a future failure is diagnosable rather than just red.
     python3 test_hard_cases.py
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -27,7 +28,7 @@ import tempfile
 import testkit
 from pseudex import morph_places
 from pseudex.detect_all import Detector
-from pseudex.redact import mask_text, unmask_text
+from pseudex.redact import mask_text, residual_tokens, unmask_arguments, unmask_text
 from pseudex.vault import Vault
 
 _FAILURES: list[str] = []
@@ -387,6 +388,54 @@ def test_addresses(vault: Vault, detector: Detector) -> None:
           not nominative_in_oblique, f"{nominative_in_oblique}")
 
 
+def test_the_mirror_shows_nothing_real(detector: Detector) -> None:
+    """The substitute is laid into the customer's own presentation, and the
+    fail-safe that guards it asks about WORDS, not about a key.
+
+    BOTH HALVES, because a proxy lies in both directions. The accept half:
+    «г. Ачинск, б-р Озёрный, д. 78, кв. 105» has a flawless mirror — every word
+    in it is the fake's or a marker — and `place_key` refused it anyway, since
+    the vault's noise list carries «д» and «кв» but not «г», so the two strings
+    differed by one stem. The model was shown a tidied canon, a rewriting agent
+    had nothing to normalise, and the customer's own raw string came back where
+    the agent's form was owed. The refuse half: a numbered or two-word street
+    mis-aligns inside `in_form_of` and leaves the REAL name and the REAL house
+    standing — «г. Киров, липоваяд 8-й Вешняковский, д. 38» — and that must
+    still fall back to the canonical fake. Several draws because the fake is
+    drawn at random and only the structure is ours to assert."""
+    # A REAL STREET NAME THE POOL CANNOT DRAW, so «it came back» never means
+    # «it was drawn»; the house and flat numbers ARE drawn from the real ones'
+    # magnitude, so no assertion here may rest on a digit literal.
+    tidy = "Доставка на г. Ачинск, б-р Комсомольский, д. 78, кв. 105"
+    mirrored = []
+    for attempt in range(5):
+        talk = Vault(":memory:", "acme").for_conversation(f"mirror-{attempt}")
+        mirrored.append(mask_text(tidy, talk, detector.detect(tidy)))
+    check("the customer's own presentation is mirrored when nothing real survives",
+          all(m.startswith("Доставка на г. Ачинск, б-р ") and ", д. " in m and ", кв. " in m
+              for m in mirrored), f"{mirrored}")
+    check("and the mirror shows no real word of the address",
+          all("Комсомольск" not in m for m in mirrored), f"{mirrored}")
+
+    # The refuse half: `in_form_of` mis-aligns on a NUMBERED street and leaves
+    # the customer's own name and his ordinal standing inside the fake
+    # («г. Киров, липоваяд 8-й Вешняковский, д. 38»). Neither the name nor the
+    # ordinal can be minted, so both are evidence and neither is a lottery.
+    for surface, real_words in (
+        ("Доставка на г. Киров, пр-д 4-й Вешняковский, д. 38, кв. 77",
+         ("Вешняковск", "4-й", "-й ")),
+        ("Доставка на г. Балашов, ул. 3-я Победиловская, д. 77, кв. 113",
+         ("Победиловск", "3-я", "-я ")),
+    ):
+        leaked = []
+        for attempt in range(5):
+            talk = Vault(":memory:", "acme").for_conversation(f"mis-{attempt}")
+            masked = mask_text(surface, talk, detector.detect(surface))
+            if any(word in masked for word in real_words):
+                leaked.append(masked)
+        check(f"a mis-aligned mirror is refused: {surface[12:40]}…", not leaked, f"{leaked}")
+
+
 def test_preposition_is_not_a_litera(vault: Vault, detector: Detector) -> None:
     """«двадцать семь в третий подъезд» is house 27 IN the third entrance, not
     house 27в. The letter is a preposition when what follows is what a
@@ -417,6 +466,146 @@ def test_preposition_is_not_a_litera(vault: Vault, detector: Detector) -> None:
     back = json.loads(unmask_arguments(json.dumps({"address": {"building": fake["house"], "porch": fake["entrance"], "sflat": fake["flat"]}}), talk))
     check("building 27, porch 3, flat 162 reach the courier", back == {"address": {"building": "27", "porch": "3", "sflat": "162"}},
           f"token={token!r} back={back}")
+
+
+def test_a_numbered_street_is_not_a_house(detector: Detector) -> None:
+    """«ул. 3-я Победиловская, д. 77» — дом 77, а улица называется «3-я
+    Победиловская».
+
+    Дом берётся как ПЕРВОЕ число, которое не забрал ни один маркер, и
+    порядковый префикс названия — такое же число: роли выходили
+    `street='ул'`, `house='3'`. Отсюда две поломки от одной причины. Схема,
+    просящая поля по отдельности, получала в CRM «ул. Ул» и дом «3» — это
+    мусор, а не иная форма. А `in_form_of` резал строку клиента по этим же
+    ролям и вставлял части фейка ВНУТРЬ настоящего названия
+    («родниковаяд 8-й Вешняковский, д. 38»), после чего предохранитель по
+    словам правильно отбивал зеркало и показывал канон — то есть цена
+    неверного разбора платилась и формой тоже.
+
+    «дом 5-й корпус 2» проверяется здесь же: порядковое окончание за маркером
+    дома — это дом, а не улица, иначе правка забрала бы номер дома."""
+    for phrase, street, house in (
+        ("г. Балашов, ул. 3-я Победиловская, д. 77, кв. 113", "ул. 3-я Победиловская", "77"),
+        ("г. Киров, пр-д 4-й Вешняковский, д. 38, кв. 77", "пр-д 4-й Вешняковский", "38"),
+        ("Москва, 2-я Тверская-Ямская 10, кв. 4", "2-я Тверская-Ямская", "10"),
+        ("улица 5-й армии д62 кв149", "улица 5-й армии", "62"),
+        ("3-я линия 5", "3-я линия", "5"),
+        ("дом 5-й корпус 2", "", "5"),
+        ("ул. Ленина, д. 14, кв. 3", "ул. Ленина", "14"),
+    ):
+        roles = morph_places.split_roles(phrase)
+        check(f"роли: {phrase[:38]}…",
+              roles.get("street", "") == street and roles.get("house") == house,
+              f"{roles}")
+
+    # …И ПОЛЕ `street` СХЕМЫ ПОЛУЧАЕТ НАЗВАНИЕ, А НЕ ОСТАТОК МАРКЕРА.
+    said = "адрес г. Балашов, ул. 3-я Победиловская, д. 77, кв. 113"
+    wrong = []
+    for attempt in range(4):
+        talk = Vault(":memory:", "acme").for_conversation(f"numbered-{attempt}")
+        masked = mask_text(said, talk, detector.detect(said))
+        fields = morph_places.split_roles(masked.split("адрес ", 1)[1])
+        argument = json.dumps({"street": fields.get("street", ""),
+                               "house": fields.get("house", ""),
+                               "flat": fields.get("flat", "")}, ensure_ascii=False)
+        restored = unmask_arguments(argument, talk)
+        back = json.loads(restored)
+        if (back["house"] != "77" or back["flat"] != "113"
+                or "победиловск" not in back["street"].lower()
+                or residual_tokens(restored, talk)):
+            wrong.append((argument, restored, residual_tokens(restored, talk)))
+    check("поля street/house/flat возвращают настоящий адрес без остатка", not wrong, f"{wrong}")
+
+
+def test_a_frozen_genitive_street_is_not_an_oblique_case(detector: Detector) -> None:
+    """«заболоцкого 81 кв 51» — ЭТО НАЗВАНИЕ УЛИЦЫ, А НЕ ПАДЕЖ ПРЕДЛОЖЕНИЯ.
+
+    Без родового слова и без сокращённого маркера `detect_case` голосует по
+    словам, а улица, названная по человеку, голосует за родительный или
+    винительный — потому что так она и пишется в именительном. Прочитанная как
+    косвенная, подмена склонялась и показывалась причёсанным каноном («улицы
+    Вязовой 59, кв. 127»); переписывающему агенту нечего было нормализовать, он
+    копировал, и наружу уходила сырая строка клиента там, где была должна форма
+    агента. Чатовый регистр — основной трафик — именно такой формы.
+
+    ВТОРАЯ ПОЛОВИНА ОБЯЗАТЕЛЬНА: прилагательное женского рода согласуется с
+    опущенной «улицей» («на Тверской 7»), и там косвенное чтение остаётся —
+    иначе модель читает ломаный русский и переписывает токен.
+    """
+    for said in ("курьера на заболоцкого 81 кв 51", "адрес чернышевского 29 кв 52"):
+        shown = []
+        for attempt in range(4):
+            talk = Vault(":memory:", "acme").for_conversation(f"frozen-{attempt}")
+            masked = mask_text(said, talk, detector.detect(said))
+            shown.append(masked.split()[-4:])
+        flat = [" ".join(words) for words in shown]
+        check(f"замороженный родительный зеркалится, а не склоняется: {said[:28]}…",
+              all("улиц" not in form and form == form.lower() for form in flat), f"{flat}")
+
+    oblique = "Встретимся на Тверской 7"
+    still_inflected = []
+    for attempt in range(4):
+        talk = Vault(":memory:", "acme").for_conversation(f"oblique-{attempt}")
+        masked = mask_text(oblique, talk, detector.detect(oblique))
+        for span in detector.detect(masked):
+            if span.entity_type == "LOC" and morph_places.detect_case(span.value) == "nomn":
+                still_inflected.append(masked)
+    check("а согласующееся прилагательное по-прежнему склоняется",
+          not still_inflected, f"{still_inflected}")
+
+
+def test_an_abbreviation_inside_a_word_opens_no_window(vault: Vault, detector: Detector) -> None:
+    """«ул» ВНУТРИ «Барнаул» — не маркер улицы.
+
+    Ветка сокращений у `LOC_TOKEN_PATTERN` не имела левой границы слова, и окно
+    восстановления строилось со смещения 5 в «Барнаул Ивовая 55»: настоящая
+    улица вставлялась В СЕРЕДИНУ названия города — «Барнаватаняна 50». Запятая
+    после города прятала дефект, потому что подмена чеканилась с ней; клиент,
+    написавший город без запятой, его вскрывает — а теперь подмена повторяет
+    форму клиента, значит вскрывает всегда."""
+    said = "адрес барнаул ватаняна 50 кв 86"
+    chewed = []
+    for attempt in range(4):
+        talk = Vault(":memory:", "acme").for_conversation(f"barnaul-{attempt}")
+        masked = mask_text(said, talk, detector.detect(said))
+        field = masked.split("адрес ", 1)[1]
+        agent = " ".join(word[:1].upper() + word[1:] if word[:1].isalpha() and word[0] not in "к"
+                         else word for word in field.replace(" кв ", " кв. ").split())
+        back = json.loads(unmask_arguments(
+            json.dumps({"address": agent}, ensure_ascii=False), talk))["address"]
+        if not back.lower().startswith("барнаул "):
+            chewed.append((agent, back))
+    check("настоящая улица не вставляется внутрь названия города", not chewed, f"{chewed}")
+
+
+def test_a_hyphen_glued_substitute_is_two_words(vault: Vault, detector: Detector) -> None:
+    """ДЕФИС СКЛЕИЛ ПОДМЕНУ С НАСТОЯЩИМ СЛОВОМ КЛИЕНТА, И ПОЛОВИНА — НАША.
+
+    «литвина-седого 39 кв 62»: детектор берёт «седого 39 кв 62» (Б16), первое
+    слово остаётся клиентским, и в показанной строке «литвина-осиновая 39 кв 62»
+    наша половина приклеена дефисом. Ни `_LOWER_WORD`, ни `_LOWER_RUN` её не
+    предлагают — дефис стоит в их классе исключения НАМЕРЕННО, иначе при
+    маскировании разрывалась бы дефисная фамилия. Пока подмена показывалась
+    каноном («улицы Осиновой»), окно находил заглавный проход; со строчным
+    зеркалом окна не стало, и **фейковая улица с фейковым домом уходила в
+    инструмент с ПУСТЫМ `residual_tokens`** — статус 200 и никакого признака.
+
+    Копирующий агент этого не видит: буквальный срез ловит `shown_forms`.
+    Ломается переписывающий, поэтому агент здесь дописывает точку и запятую."""
+    said = "адрес литвина-седого 39 кв 62"
+    leaked = []
+    for attempt in range(4):
+        talk = Vault(":memory:", "acme").for_conversation(f"hyphen-{attempt}")
+        masked = mask_text(said, talk, detector.detect(said))
+        field = masked.split("адрес ", 1)[1]
+        rewritten = field.replace(" кв ", ", кв. ")
+        agent = rewritten[:1].upper() + rewritten[1:]
+        argument = json.dumps({"address": agent}, ensure_ascii=False)
+        back = json.loads(unmask_arguments(argument, talk))["address"]
+        if "седого" not in back.lower() or "39" not in back:
+            leaked.append((agent, back, residual_tokens(argument, talk)))
+    check("склеенная дефисом подмена разрешается, а не уезжает в инструмент",
+          not leaked, f"{leaked}")
 
 
 def test_corrected_address_shares_its_street(vault: Vault, detector: Detector) -> None:
@@ -784,7 +973,12 @@ def main() -> int:
     test_address_signature_is_inflection_proof()
     test_street_stays_a_street(vault, detector)
     test_preposition_is_not_a_litera(vault, detector)
+    test_the_mirror_shows_nothing_real(detector)
     test_corrected_address_shares_its_street(vault, detector)
+    test_a_numbered_street_is_not_a_house(detector)
+    test_a_frozen_genitive_street_is_not_an_oblique_case(detector)
+    test_an_abbreviation_inside_a_word_opens_no_window(vault, detector)
+    test_a_hyphen_glued_substitute_is_two_words(vault, detector)
     test_a_mistyped_street_reaches_the_tool_as_the_customer_wrote_it(vault, detector)
     test_a_card_address_comes_back_from_free_text(vault, detector)
     test_a_dictated_phone_survives_a_deny_word(vault, detector)

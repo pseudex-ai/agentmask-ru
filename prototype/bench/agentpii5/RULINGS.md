@@ -388,3 +388,32 @@ Corpus note (no change ordered): a bare house number as a standalone item is
 only scorable through its tag, which is why the tagged path stays the primary
 one. If a family ever declares a short item with no tag, `build` should refuse
 it — FIX-4's call after H4.2.
+
+---
+
+# R-60 (2026-09-23, owner) — a case that answers the customer DECLARES what the answer carries
+
+Round 5's order J1.1 said «a case with no required answer hop is outside
+`answer_real`'s denominator». The owner's correction: **требовать, а не
+исключать** — excluding 720 of 1357 cases shrinks the instrument to protect a
+metric, when the defect is that the CORPUS does not say what the answer owes.
+
+So the rule is the other way round:
+
+- **Every case whose loop reaches the customer declares a REQUIRED answer hop**
+  naming the value the answer must carry. That is what the product promises —
+  the customer reads a real value in the agent's own form — and a case that
+  ends in an answer and demands nothing of it is not a case, it is a gap.
+- **Exclusion stays only as the safety net**, for the few cases that genuinely
+  say nothing to the customer (a silent tool action, a handover with no reply).
+  Their count is PRINTED, per family, and `build --check` refuses a corpus
+  where the excluded share grows past what the families justify.
+- `answer_real`'s denominator is then the cases that declare, which must be the
+  overwhelming majority; the metric-side guard (a case declaring nothing cannot
+  score) stays, because it is what makes «all() over an empty list» impossible
+  to reintroduce.
+
+**The order of work:** FIX-1's metric guard is the floor and lands as ordered;
+the corpus half is FIX-4's next round and is what actually earns the line. The
+acceptance probe re-runs after it, and the number that matters is `answer_real`
+over the DECLARING cases — with the excluded count beside it, never folded in.

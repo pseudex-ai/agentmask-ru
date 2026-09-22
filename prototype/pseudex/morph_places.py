@@ -340,6 +340,68 @@ def detect_case(phrase: str) -> str | None:
 _CASE_PREFERENCE = ("loct", "nomn", "accs", "datv", "gent", "ablt")
 
 
+def _has_generic_word(phrase: str) -> bool:
+    """Whether the phrase names its street TYPE — «улица», «проезд», «бульвар».
+
+    The same test `detect_case` uses to decide it can read the case off the
+    generic word, asked as a question instead of as a side effect."""
+    for token in phrase.split():
+        stripped = token.strip(",.")
+        if stripped.lower() in _GENERIC:
+            return True
+        if any(parse.normal_form in _GENERIC for parse in MORPH.parse(stripped)):
+            return True
+    return False
+
+
+def _agrees_with_a_dropped_generic(phrase: str) -> bool:
+    """Whether some word of the phrase is a FEMININE adjective.
+
+    That is the only shape a street name takes when it agrees with an «улица»
+    the customer did not write: «улица Тверская» → «на Тверской 7». Every other
+    marker-less name — a surname («Заболоцкого»), a genitive plural
+    («Комиссаров»), a noun («Победы») — is frozen and carries no case of the
+    sentence at all."""
+    for token in phrase.split():
+        stripped = token.strip(",.")
+        if not any(character.isalpha() for character in stripped):
+            continue
+        for parse in MORPH.parse(stripped):
+            if parse.tag.POS == "ADJF" and parse.tag.gender == "femn" and parse.score >= 0.1:
+                return True
+    return False
+
+
+def street_case(phrase: str) -> str | None:
+    """The case an address phrase stands in, for the legs that lay a SUBSTITUTE
+    into a form. `detect_case` answers the same question for a SETTLEMENT and
+    keeps its answer — see `city_case`.
+
+    A FROZEN GENITIVE IS THE STREET'S NAME, NOT A CASE OF THE SENTENCE.
+    «заболоцкого 81 кв 51», «чернышевского 29», «комиссаров 56» have no generic
+    word and no abbreviated marker, so `detect_case` falls through to a vote
+    over the words — and a street named after a person votes genitive or
+    accusative every time, because that IS how it is written in the nominative.
+    Read as an oblique mention, the substitute was inflected and shown as a
+    tidied canon («улицы Вязовой 59, кв. 127»); a rewriting agent had nothing to
+    normalise, copied it, and the customer's own raw string came back where the
+    agent's form was owed. The chat register — the bulk of real traffic — is
+    exactly the shape that has neither marker nor generic word.
+
+    THE ONE SHAPE THAT DOES CARRY THE SENTENCE'S CASE is an adjective agreeing
+    with the dropped «улица», and it is feminine because that word is: «на
+    Тверской 7» must still be shown inflected, or the model reads broken Russian
+    and rewrites the token. So the oblique reading survives for an agreeing
+    adjective and for nothing else.
+    """
+    case = detect_case(phrase)
+    if case is None or case == "nomn":
+        return case
+    if _has_generic_word(phrase):
+        return case
+    return case if _agrees_with_a_dropped_generic(phrase) else None
+
+
 # Written forms of the generic word that carry no letters to match on. Mapped to
 # the gender they impose, so an adjectival name can still be made to agree.
 _GENERIC_SHORT: dict[str, tuple[str, str]] = {
@@ -1101,6 +1163,42 @@ _PART_MARKERS: tuple[tuple[str, str], ...] = (
 )
 
 
+# ПОРЯДКОВОЕ ОКОНЧАНИЕ ПОСЛЕ ЧИСЛА. Длинное перед коротким — иначе «ый»
+# обрезалось бы до «й» и следующее слово читалось бы с середины.
+_ORDINAL_SUFFIX = re.compile(r"(?i)\d+\s*-\s*(?:ый|ий|ая|ое|ья|й|я|е)")
+# «Д» — МАРКЕР ДОМА ТОЛЬКО ОТДЕЛЬНЫМ СЛОВОМ. `_HOUSE_MARKER_TAIL` опирается на
+# `\b`, а он срабатывает и после дефиса: в «пр-д 4-й Вешняковский» «д» от
+# «проезда» читалось как «дом», и порядковый префикс названия снова уезжал в
+# номер дома. Левая граница здесь своя, а не в общем маркере: тот стоит в
+# `$`-якоре и правит границу улицы у КАЖДОГО «пр-д N», что этой правкой не
+# покупается и не измерено.
+_HOUSE_MARKER_WORD_TAIL = re.compile(r"(?i)(?<![А-Яа-яЁё-])(?:дом|д|влад\w*|вл)\.?[\s,.]*$")
+
+
+def _heads_a_numbered_street(text: str, position: int) -> bool:
+    """Число в начале НАЗВАНИЯ улицы, а не номер дома.
+
+    «ул. 3-я Победиловская, д. 77, кв. 113» отдавало `house='3'` и
+    `street='ул'`: дом берётся как ПЕРВОЕ число, которое не забрал ни один
+    маркер, а порядковый префикс названия — такое же число. Отсюда две поломки
+    от одной причины: `in_form_of` резал строку клиента по этим ролям и
+    вставлял части фейка внутрь настоящего названия, а схема, просящая
+    `street`/`house` по отдельности, получала в CRM «ул. Ул» и дом «3».
+
+    ДВА ПРИЗНАКА, И ОБА НУЖНЫ. За числом идёт СЛОВО (иначе «дом 5-й» — это
+    дом), и перед числом НЕ СТОИТ маркер дома (иначе «дом 5-й корпус 2»
+    потеряло бы свой дом). Родовое слово перед числом, наоборот, признак
+    улицы — «3-я линия 5» и «5-я просека 12» существуют, поэтому следующее
+    слово НЕ проверяется на родовое: там оно и есть название.
+    """
+    ordinal = _ORDINAL_SUFFIX.match(text, position)
+    if ordinal is None:
+        return False
+    if re.match(r"[\s,]+[А-Яа-яЁё]", text[ordinal.end():]) is None:
+        return False
+    return _HOUSE_MARKER_WORD_TAIL.search(text[:position]) is None
+
+
 def _number_at(text: str, position: int) -> re.Match[str] | None:
     """Число (цифрами или словами), начинающееся сразу за `position`."""
     gap = re.match(r"[\s,.]*", text[position:])
@@ -1164,6 +1262,8 @@ def role_spans(phrase: str) -> dict[str, tuple[int, int]]:
     for pattern in (_DIGIT_NUMBER, _word_number()):
         for number in pattern.finditer(text):
             if any(start <= number.start() < end for start, end in claimed):
+                continue
+            if _heads_a_numbered_street(text, number.start()):
                 continue
             if house is None or number.start() < house.start():
                 house = number

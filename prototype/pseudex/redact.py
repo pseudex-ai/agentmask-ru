@@ -7,10 +7,12 @@ lighter one. Reverse uses longest-token-first to avoid prefix collisions.
 
 import json
 import re
+from typing import NamedTuple
 
 from pseudex.detect import NameSpan, PartSpan, Span
 from pseudex import agent_form, date_form, morph_names, morph_places, translit
 from pseudex.assets import ASSETS
+from pseudex.normalize import normalize
 from pseudex.profiling import stage
 from pseudex.vault import LOC_TOKEN_PATTERN, token_re, Vault, name_key, place_key, _date_canonical
 
@@ -175,6 +177,48 @@ def _agree_settlement(token: str, original: str) -> str:
     return token.replace(city, morph_places.inflect_place(city, case), 1)
 
 
+# THE SETTLEMENT MARKERS `_SIGNATURE_NOISE` DOES NOT CARRY. That list is the
+# vault INDEX and may not move — rows already minted hold keys built from it —
+# but a settlement marker is exactly as structural as «д.» or «кв.»: it names a
+# field, not a place. Its absence there is why «г. Ачинск, б-р Вишнёвый, д. 30»
+# and «Ачинск, б-р Вишнёвый 30» got different keys and a flawless mirror was
+# refused. Local to this check, one line of it, so the index stays where it is.
+_SETTLEMENT_MARKERS = frozenset({"г", "гор", "город", "с", "пос"})
+_ADDRESS_WORD = re.compile(r"[А-Яа-яЁёA-Za-z][А-Яа-яЁёA-Za-z-]*")
+_DIGIT_RUN = re.compile(r"\d+")
+
+
+def _mirror_leaks_nothing(shown: str, agreed: str) -> bool:
+    """Whether the mirrored form shows the model nothing real.
+
+    THE PROPERTY, STATED DIRECTLY: every alphabetic word and every digit run of
+    the shown string belongs to the FAKE, or is a structural marker that names a
+    field rather than a place. `place_key` equality used to stand in for it, and
+    a proxy lies in both directions — it refused a mirror that leaked nothing
+    (the two strings differed only by the «г» its noise list lacks) while the
+    property it was meant to guard is about WORDS, which a key of sorted lemmas
+    can only approximate. The digits are checked apart and exactly: a real house
+    or flat number surviving in the shown form is the leak that matters most and
+    the one `in_form_of` mis-alignment produces.
+
+    The generic word is the agent's own («проспект» where the fake carries
+    «улица») and is admitted by the shared reader, not a second list."""
+    fake_words = {_fold_word(word) for word in _ADDRESS_WORD.findall(agreed)}
+    for word in _ADDRESS_WORD.findall(shown):
+        if _fold_word(word) in fake_words or _fold_word(word) in _SETTLEMENT_MARKERS:
+            continue
+        if morph_places.is_generic_word(word):
+            continue
+        return False
+    fake_digits = set(_DIGIT_RUN.findall(agreed))
+    return all(run in fake_digits for run in _DIGIT_RUN.findall(shown))
+
+
+def _fold_word(word: str) -> str:
+    """One spelling for the comparison: «Ё» is «е» and case does not count."""
+    return word.casefold().replace("ё", "е")
+
+
 def _token_for_text(span: Span, vault: Vault) -> str:
     """The token as it should READ in this sentence.
 
@@ -223,7 +267,7 @@ def _token_for_text(span: Span, vault: Vault) -> str:
         # Same reason as NAME: a nominative phrase dropped into an oblique slot
         # reads as broken Russian, and broken Russian is what makes a model
         # rewrite the token instead of using it.
-        case = morph_places.detect_case(span.value)
+        case = morph_places.street_case(span.value)
         if case is None or case == "nomn":
             # THE FORM IS THE CUSTOMER'S ON THE WAY IN. `in_form_of` lays the
             # fake into the customer's own surface — lower case where he wrote
@@ -244,12 +288,13 @@ def _token_for_text(span: Span, vault: Vault) -> str:
             # can mis-align in `in_form_of` and leave the customer's real word
             # or number standing — «черёмуховаяд 5-й Вешняковский», the real
             # «Вешняковский» to the model. So the mirror is accepted only when
-            # its street+house+flat key equals the canonical fake's; otherwise
-            # the safe canonical fake is shown. Correctness over form: we never
-            # leak a real part to gain the customer's presentation.
+            # NO REAL WORD AND NO REAL DIGIT SURVIVES IN IT
+            # (`_mirror_leaks_nothing`); otherwise the safe canonical fake is
+            # shown. Correctness over form: we never leak a real part to gain
+            # the customer's presentation.
             agreed = _agree_settlement(token, span.value)
             shown = morph_places.in_form_of(agreed, span.value)
-            if shown and place_key(shown) == place_key(agreed):
+            if shown and _mirror_leaks_nothing(shown, agreed):
                 return shown
             return agreed
         return morph_places.inflect_place(token, case)
@@ -297,6 +342,121 @@ def _parts_in_order_of(token: str, mention: str) -> str:
     return " ".join(by_role[role] for role in theirs)
 
 
+# ОДНА БУКВА ИЛИ ОДНА ЦИФРА ЗНАЧЕНИЯ — то, из чего складывается «дословно».
+# `\w` без подчёркивания: подчёркивание разделяет слова в поле схемы, а не
+# внутри значения.
+_VALUE_RUN = re.compile(r"[^\W_]+", re.UNICODE)
+
+
+def _as_written_table(shown_forms: list[tuple[str, str, str]]) -> dict[str, str]:
+    """The spelling THIS DIALOGUE used for a word the Layer-0 fold rewrote.
+
+    THE CONTENT THAT LEAVES IS WHAT THE CUSTOMER WROTE (D-067). Detection reads
+    the NORMALISED text, so the vault holds «васи алексеева 36» where the
+    customer typed «ваcи алексеева 36» with a Latin «c», and every leg that
+    rebuilds a form — `in_form_of`, `part_in_form_of`, the digit splice, the
+    name caser — rebuilds it out of the folded canon. An agent that COPIED the
+    substitute already gets the literal back (`_restore_verbatim_spans`); an
+    agent that REWROTE it got the customer's slip silently repaired, which is
+    the gateway deciding for the customer's own system — and we do not correct
+    what the customer wrote, in either direction. Correcting the address is the
+    AGENT's business, exactly as `_pick_value` already says about a typo.
+
+    WHY A TABLE OF WORDS AND NOT THE WHOLE VALUE. The literal cannot simply
+    replace the canon as the CONTENT of the rebuild: the rebuilders read the
+    value with morphology (`split_roles`, `to_nominative`, the date reader,
+    `digits_of`), and a Latin letter inside a Cyrillic word — or a letter
+    standing where a digit belongs — is exactly what those readers cannot
+    parse. So the canon does the work and the OUTPUT is re-spelled, word by
+    word, at the end. `normalize` is 1:1 and length-preserving, which is what
+    makes the two spellings line up by offset and what lets the re-spelling be
+    a character-for-character swap rather than a guess.
+
+    AMBIGUITY IS REFUSED, NOT RESOLVED. A word this dialogue wrote two ways —
+    once with the slip and once without — has no single «as written», and the
+    canon is then the honest answer. A dialogue with no recorded slice at all
+    (a token minted in another conversation, a volume written before
+    `shown_forms` existed) yields an empty table and the canon, for the same
+    reason: there is nothing else to return.
+
+    A NAME OFFERS NO SPELLING, AND THE LINE IS `_pick_value`'S OWN. That
+    function already decides what a value IS on the way out: for a NAME the
+    CANONICAL nominative, because a declined name is not what belongs in a
+    customer's CRM field, and for every other type the customer's own string.
+    Re-spelling is that same rule carried down to the character, so it reaches
+    exactly the values that are the customer's writing and leaves the one whose
+    outward form is ours by an older decision. Measured, not reasoned: on the
+    public benchmark's rewriting agent, restoring the slip inside a NAME moved
+    13 values from delivered to «repaired» (−6.4 pp on the NAME line) while the
+    address line gained 11.8 pp, because that instrument's model of an agent
+    folds a look-alike in a person's name and keeps it in a street's.
+    THE PREMISE THAT WOULD SETTLE IT IS NOT BUILT YET: D-067 rests on the
+    substitute carrying the SAME slip, so that an agent which folds the fake's
+    letter tells us it would have folded the customer's — the mint does not
+    mirror the slip today, so there is nothing to read the agent's intent from.
+    A NAME still contributes its spellings to the CONFLICT test below: the
+    dialogue wrote what it wrote, whatever the word was part of.
+    """
+    if not shown_forms or not ASSETS.is_loaded:
+        return {}
+    spellings: dict[str, set[str]] = {}
+    offered: set[str] = set()
+    for _shown, literal, kind in shown_forms:
+        folded = normalize(literal)
+        if len(folded) != len(literal):
+            continue
+        for run in _VALUE_RUN.finditer(literal):
+            canonical = folded[run.start():run.end()]
+            if _VALUE_RUN.fullmatch(canonical) is None:
+                continue
+            spellings.setdefault(canonical.lower(), set()).add(run.group().lower())
+            if kind != "NAME":
+                offered.add(canonical.lower())
+    return {canonical: next(iter(written)) for canonical, written in spellings.items()
+            if canonical in offered and len(written) == 1 and next(iter(written)) != canonical}
+
+
+def _as_written(text: str, table: dict[str, str]) -> str:
+    """A rebuilt value re-spelled the way the customer wrote it, with the
+    AGENT'S letter case kept (Б24: content from the customer, form from the
+    agent). Only whole runs are touched and only when the lengths agree, so
+    the swap is one character for one character and nothing is inserted or
+    dropped."""
+    if not table:
+        return text
+    pieces: list[str] = []
+    last = 0
+    for run in _VALUE_RUN.finditer(text):
+        word = run.group()
+        written = table.get(word.lower())
+        if written is None or len(written) != len(word):
+            continue
+        pieces.append(text[last:run.start()])
+        pieces.append("".join(spelt.upper() if shown.isupper() else spelt
+                              for spelt, shown in zip(written, word)))
+        last = run.end()
+    if not pieces:
+        return text
+    pieces.append(text[last:])
+    return "".join(pieces)
+
+
+class _Literals(NamedTuple):
+    """What this dialogue was shown, and the customer's own spelling of every
+    word the fold rewrote. READ ONCE PER DETOKENISATION, not per JSON leaf:
+    `unmask_arguments` calls the restorer for every string in the object, and
+    rebuilding the table there made a fifteen-field tool call pay for it
+    fifteen times (+16% measured, 65 → 75 ms)."""
+
+    forms: list[tuple[str, str, str]]
+    as_written: dict[str, str]
+
+
+def _literals_of(vault: Vault) -> _Literals:
+    forms = vault.shown_forms()
+    return _Literals(forms, _as_written_table(forms))
+
+
 def unmask_text(text: str, vault: Vault, inflect: bool = True,
                 for_tool: bool = False) -> str:
     """Replace tokens with their real values, then catch numeric tokens the model
@@ -307,6 +467,11 @@ def unmask_text(text: str, vault: Vault, inflect: bool = True,
     size of the vault. The previous approach loaded every token the org had ever
     minted and substring-scanned the text once per token, which made an org with
     100k tokens pay 100k scans on every single response."""
+    return _unmask(text, vault, _literals_of(vault), inflect, for_tool)
+
+
+def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
+            for_tool: bool) -> str:
     with stage("unmask.total"):
         # EVERY PASS READS THE SAME MASKED TEXT, AND THE EXACT TOKENS WIN. The
         # passes used to run one after another on the text the previous pass
@@ -321,7 +486,10 @@ def unmask_text(text: str, vault: Vault, inflect: bool = True,
         # address with no street word, all of it: exactly what an agent that
         # copies would have passed without us. Form is rebuilt only for text
         # the agent changed, by the passes below.
-        taken: list[tuple[int, int, str]] = _restore_verbatim_spans(text, vault)
+        # ONE READ OF THE DIALOGUE'S LITERAL SLICES, TWO USES: the verbatim
+        # pass puts a COPIED substitute back as the customer's whole string,
+        # and the table re-spells what the other passes REBUILD.
+        taken: list[tuple[int, int, str]] = _restore_verbatim_spans(text, literals.forms)
         for span in sorted(_restore_tokens_spans(text, vault, for_tool), key=lambda item: (item[0], -item[1])):
             if not any(span[0] < end and start < span[1] for start, end, _ in taken):
                 taken.append(span)
@@ -333,7 +501,13 @@ def unmask_text(text: str, vault: Vault, inflect: bool = True,
             for span in sorted(spans, key=lambda item: (item[0], -item[1])):
                 if not any(span[0] < end and start < span[1] for start, end, _ in taken):
                     taken.append(span)
-        return _splice(text, taken)
+        # CONTENT AS THE CUSTOMER WROTE IT, FORM AS THE AGENT WROTE IT. The
+        # passes above rebuilt the form out of the normalised canon; the
+        # re-spelling puts the customer's own characters back into it. A
+        # verbatim span is already literal and its words carry the slip, so
+        # nothing in the table matches them — the pass is idempotent.
+        return _splice(text, [(start, end, _as_written(value, literals.as_written))
+                              for start, end, value in taken])
 
 
 # A SHORT NUMBER IN PROSE IS A QUANTITY — unless the word before it says what
@@ -474,12 +648,13 @@ def _date_readings(value: str) -> list[str]:
     return []
 
 
-def _restore_verbatim_spans(text: str, vault: Vault) -> list[tuple[int, int, str]]:
+def _restore_verbatim_spans(text: str, shown_forms: list[tuple[str, str, str]],
+                            ) -> list[tuple[int, int, str]]:
     """Every occurrence of a form this conversation was shown, as the
     customer's literal string. Longest shown form first, non-overlapping,
     whole-word: «Ольховая 10» must not match inside «Ольховая 105»."""
     spans: list[tuple[int, int, str]] = []
-    for shown, original, _kind in vault.shown_forms():
+    for shown, original, _kind in shown_forms:
         if not shown or shown not in text:
             continue
         for match in re.finditer(re.escape(shown), text):
@@ -972,6 +1147,9 @@ _LOWER_WORD = re.compile(r"(?<![А-ЯЁа-яё-])[а-яё]{2,}(?![А-ЯЁа-яё
 # с таким именем оставляла его фейком («ким ян»). В прогоне из двух-трёх слов
 # короткое слово ничем не рискует — ключ строится по ВСЕМУ окну.
 _LOWER_RUN = re.compile(r"(?<![А-ЯЁа-яё-])[а-яё]{2,}(?:[ -][а-яё]{2,}){1,2}(?![А-ЯЁа-яё-])")
+# Обе половины дефисного склеивания, в любом регистре — заглавную пару
+# `_name_windows` уже разбирает, строчную не разбирал никто.
+_HYPHEN_PAIR = re.compile(r"(?<![А-ЯЁа-яё-])([А-ЯЁа-яё][а-яё]+)-([А-ЯЁа-яё][а-яё]+)(?![А-ЯЁа-яё-])")
 _LATIN_WORD = re.compile(r"(?<![A-Za-z])(?:[A-Z][a-z]{2,}|[A-Z]{3,})(?![A-Za-z])")
 _CAPS_RUN = re.compile(r"(?<![А-ЯЁа-яё-])[А-ЯЁ]{2,}(?:[ -][А-ЯЁ]{2,}){1,2}(?![А-ЯЁа-яё-])")
 _INITIALS_PAIR = re.compile(r"(?<![А-ЯЁа-яё])([А-ЯЁ])\.\s?([А-ЯЁ])\.(?![А-ЯЁа-яё])")
@@ -1021,6 +1199,19 @@ def _restore_inflected_spans(text: str, vault: Vault, inflect: bool = True,
                     start = run.start() + words[i][0]
                     end = run.start() + words[i + size - 1][1]
                     windows.append((start, end, text[start:end]))
+        # ДЕФИС СКЛЕИЛ НАШУ ПОДМЕНУ С ЧУЖИМ СЛОВОМ, И ПОЛОВИНА ЕГО — НАША.
+        # `_name_windows` уже предлагает обе половины, когда ОБЕ заглавные
+        # («Мухина-Бирюкова», 0e877b3); строчная половина не предлагалась
+        # никем — дефис стоит в классе исключения у `_LOWER_WORD` и
+        # `_LOWER_RUN` намеренно, иначе разорвалась бы дефисная фамилия при
+        # МАСКИРОВАНИИ. Здесь вопрос обратный: «литвина-осиновая 86» — это
+        # настоящее «литвина» клиента и наша «осиновая», и без окна фейковая
+        # улица уходила в инструмент. Отвечает волт, а не морфология: у
+        # настоящего «Миклухо-Маклая» половинок в волте нет, окно не
+        # разрешается, цена промаха — один индексный запрос.
+        for match in _HYPHEN_PAIR.finditer(text):
+            for half in (1, 2):
+                windows.append((match.start(half), match.end(half), match.group(half)))
     # Each window carries BOTH signatures, because a single capitalised word can
     # be either kind and the two normalisers disagree: `Еловцке` is a settlement,
     # and asking the PERSON normaliser about it returns it unchanged, so the row
@@ -1439,7 +1630,7 @@ def _in_case_of(value: str, surface: str, entity_type: str, inflect: bool,
     # же адрес — другой акт, и там действует уже записанное правило «клиент
     # остаётся при своих словах».
     if entity_type in ("LOC", "ADDR"):
-        case = morph_places.detect_case(surface)
+        case = morph_places.street_case(surface)
         if case is None or case == "nomn":
             return value
         return morph_places.inflect_place(value, case)
@@ -1581,16 +1772,17 @@ def unmask_arguments(raw: str, vault: Vault) -> str:
     to emit a broken object, and refusing to detokenise it would send a FAKE to
     the tool — the one outcome worse than imperfect text.
     """
+    literals = _literals_of(vault)
     try:
         parsed = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
-        return unmask_text(raw, vault, inflect=False, for_tool=True)
+        return _unmask(raw, vault, literals, False, True)
 
     def walk(node: object) -> object:
         if isinstance(node, str):
             # VERBATIM, NOT AGREED. A tool executes on the value; grammar is a
             # property of prose. See `_in_case_of`.
-            return unmask_text(node, vault, inflect=False, for_tool=True)
+            return _unmask(node, vault, literals, False, True)
         if isinstance(node, list):
             return [walk(item) for item in node]
         if isinstance(node, dict):
@@ -1607,8 +1799,8 @@ def unmask_arguments(raw: str, vault: Vault) -> str:
                     for key, value in node.items()}
         return node
 
-    return json.dumps(_join_initials_deep(_join_addresses_deep(walk(parsed), parsed, vault), parsed),
-                      ensure_ascii=False)
+    return json.dumps(_join_initials_deep(
+        _join_addresses_deep(walk(parsed), parsed, vault, literals), parsed), ensure_ascii=False)
 
 
 _INITIALS_LEAF = re.compile(r"^\s*([А-ЯЁ])\.?(?:\s?([А-ЯЁ])\.?)?\s*$")
@@ -1705,7 +1897,8 @@ def _join_initials(restored: dict, original: dict) -> dict:
     return out
 
 
-def _join_addresses_deep(restored: object, original: object, vault: Vault) -> object:
+def _join_addresses_deep(restored: object, original: object, vault: Vault,
+                         literals: _Literals) -> object:
     """`_join_address_fields` at EVERY level of the object, not only the top.
 
     The first schema this was written against was flat — `dispatch_car` asked
@@ -1717,13 +1910,14 @@ def _join_addresses_deep(restored: object, original: object, vault: Vault) -> ob
     dict on the way down; a list is walked for the dicts inside it.
     """
     if isinstance(restored, dict) and isinstance(original, dict):
-        joined = _join_address_fields(restored, original, vault)
+        joined = _join_address_fields(restored, original, vault, literals)
         if not isinstance(joined, dict):
             return joined
-        return {key: _join_addresses_deep(value, original.get(key), vault)
+        return {key: _join_addresses_deep(value, original.get(key), vault, literals)
                 for key, value in joined.items()}
     if isinstance(restored, list) and isinstance(original, list):
-        return [_join_addresses_deep(value, original[index] if index < len(original) else None, vault)
+        return [_join_addresses_deep(value, original[index] if index < len(original) else None,
+                                    vault, literals)
                 for index, value in enumerate(restored)]
     return restored
 
@@ -1734,7 +1928,8 @@ def _join_addresses_deep(restored: object, original: object, vault: Vault) -> ob
 _role_of_field = morph_places.role_of_field
 
 
-def _join_address_fields(restored: object, original: object, vault: Vault) -> object:
+def _join_address_fields(restored: object, original: object, vault: Vault,
+                         literals: _Literals) -> object:
     """Собрать адрес, который модель разложила по ПОЛЯМ схемы, и разложить обратно.
 
     ПОЧЕМУ ЭТО НЕЛЬЗЯ СДЕЛАТЬ ПОЛИСТНО. Подмена адреса — одна фраза, а
@@ -1790,12 +1985,13 @@ def _join_address_fields(restored: object, original: object, vault: Vault) -> ob
     out = dict(restored)
     for group in groups.values():
         out = _join_one_address(out, {key: value for key, value in group.items() if key in fragments},
-                                group, vault)
+                                group, vault, literals)
     return out
 
 
 def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
-                      evidence: dict[str, str], vault: Vault) -> dict[str, object]:
+                      evidence: dict[str, str], vault: Vault,
+                      literals: _Literals) -> dict[str, object]:
     """Одна группа полей — один адрес. `evidence` — все адресные листья группы
     как их написала модель, `fragments` — те из них, что ещё не разрешились."""
     if not fragments:
@@ -1865,7 +2061,12 @@ def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
             # «Мончегорской». `part_in_form_of` handles markers and digits,
             # `cased_like` the case, word for word. See `agent_form`.
             laid = morph_places.part_in_form_of(fragments[key], part, role)
-            out[key] = agent_form.cased_like(laid, fragments[key])
+            # AND THE CUSTOMER'S OWN SPELLING OF THE WORD. This leg never
+            # passes through `unmask_text`'s splice — it reads the whole
+            # address out of the vault and cuts it into the schema's fields —
+            # so the re-spelling that puts back a look-alike letter has to be
+            # asked for here too. See `_as_written_table`.
+            out[key] = _as_written(agent_form.cased_like(laid, fragments[key]), literals.as_written)
     return out
 
 

@@ -775,7 +775,7 @@ Layer 0: a 1:1 length-preserving fold of the text before detection — homoglyph
 → digits only inside digit-dense runs, dashes/spaces/zero-width. Offsets from the
 normalized text index straight back into the original.
 - **API:** `normalize`
-- **Uses:** assets · **Used by:** detect_all, vault
+- **Uses:** assets · **Used by:** detect_all, redact, vault
 - **Tests:** test_persona_defects, test_product · via detect_all → everything in §3.3
 - **Docs:** `research/dd4-A-noise-phone.md` · rules: INVARIANTS.md#normalize
 
@@ -863,7 +863,7 @@ Place morphology and the address READER: street vs city, nominative, agreement
 with the generic word, `split_roles` (city / street / house / flat / entrance —
 the one parser every consumer must reuse), keys for the vault, `in_form_of` for
 restoring a tool argument in the agent's own form.
-- **API:** `looks_like_street`, `to_nominative`, `phrase_to_nominative`, `inflect_place`, `detect_case`, `place_gender`, `generic_forms`, `region_prefix_end`, `address_key`, `generic_full`, `street_house_key`, `strip_flat`, `strip_leading_city`, `place_shape`, `agree_with_generic`, `match_signature`, `signature_parts`, `is_generic_word`, `split_roles`, `role_spans`, `field_role`, `role_of_field`, `city_case`, `address_from_fields`, `part_in_form_of`, `house_digits`, `in_form_of`, `reduce_address`
+- **API:** `looks_like_street`, `to_nominative`, `phrase_to_nominative`, `inflect_place`, `detect_case`, `place_gender`, `generic_forms`, `region_prefix_end`, `address_key`, `generic_full`, `street_house_key`, `strip_flat`, `strip_leading_city`, `place_shape`, `agree_with_generic`, `match_signature`, `signature_parts`, `is_generic_word`, `street_case`, `split_roles`, `role_spans`, `field_role`, `role_of_field`, `city_case`, `address_from_fields`, `part_in_form_of`, `house_digits`, `in_form_of`, `reduce_address`
 - **Uses:** agent_form, assets, morph, spoken · **Used by:** address, assets, redact, structured, vault
 - **Tests:** test_hard_cases, test_product, test_unload_scrub; `bench/agentpii4/harness.py`, `bench/agentpii4/microscope.py`
 - **Docs:** `docs/known-issues.md` (§2, Б2, Б10), `research/2026-09-02-agent-form-benchmark.md` · rules: INVARIANTS.md#address, INVARIANTS.md#agent-form
@@ -950,7 +950,7 @@ arguments verbatim in the agent's form. Streaming detokenizer with one carry per
 `choice.index`; `unmask_arguments` for buffered tool calls; `residual_tokens`
 for substitutes that failed to resolve.
 - **API:** `mask_text`, `is_own_substitute`, `vault_value`, `tokenize_span`, `unmask_text`, `unmask_stream_chunk`, `unmask_arguments`, `residual_tokens`, `StreamDetokenizer`
-- **Uses:** address, agent_form, assets, date_form, detect, morph_names, morph_places, profiling, translit, vault · **Used by:** envelope, proxy, service
+- **Uses:** address, agent_form, assets, date_form, detect, morph_names, morph_places, normalize, profiling, translit, vault · **Used by:** envelope, proxy, service
 - **Tests:** test_argument_form, test_collisions, test_derived_forms, test_hard_cases, test_loop, test_names_morphology, test_product, test_prose_fragments, bench_masking, profile_latency; `bench/agentpii{2,3,4}`, `bench/agentrun/roundtrip.py`
 - **Docs:** `docs/how-it-works.md`, `docs/known-issues.md` (§0, §1, Б8, Б11, Б12) · rules: INVARIANTS.md#swap, INVARIANTS.md#streaming
 
@@ -1394,7 +1394,7 @@ to the licensing server through ONE connector (`storefront/billing/licensing.py`
 | `storefront/pseudex_site/` | settings (no `PSEUDEX_SECRET_KEY` → refuses to start unless `PSEUDEX_DEBUG`), URL map, `storefront/pseudex_site/context.py` (numbers the templates must see so text never diverges from code), `storefront/pseudex_site/logfmt.py` (JSON logs) |
 | `storefront/storefront_web/` | the pages; `storefront/storefront_web/detection_types.py` (what the engine finds and does not — the configurator's data); `storefront/storefront_web/middleware.py` (security headers); `storefront/storefront_web/engine_release.py` (the image the site advertises — the floating minor of the newest cycle from the synced registry, `latest` without a file, `PSEUDEX_DOCKER_IMAGE` as the only override; D-061) |
 | `storefront/accounts/` | users, organisations, `storefront/accounts/payer.py` (who the customer is, as THEY state it) |
-| `storefront/billing/` | `storefront/billing/models.py` (Plan, Subscription, Key, Invoice, Offer), `storefront/billing/services.py` (ALL state changes in one place), `storefront/billing/payments.py` (ЮKassa: cards, СБП, invoice link), `storefront/billing/licensing.py` (connector to the licensing admin API), `storefront/billing/reconcile.py` (our invoice vs the customer's own gateway log), `storefront/billing/onboarding.py` (the coding-agent onboarding prompt); commands `run_billing_cycle` (the ONLY caller of the billing primitives, hourly as its own compose service, idempotent by a DB row) and `seed_plans` |
+| `storefront/billing/` | `storefront/billing/models.py` (Plan, Subscription, Key, Invoice, Offer), `storefront/billing/services.py` (ALL state changes in one place), `storefront/billing/payments.py` (ЮKassa: cards, СБП, invoice link), `storefront/billing/licensing.py` (connector to the licensing admin API), `storefront/billing/slots.py` (the one reading of `/admin/instances` both screens draw: occupancy is the server's number, never the length of the list, and its silence is «неизвестно», never zero), `storefront/billing/reconcile.py` (our invoice vs the customer's own gateway log), `storefront/billing/onboarding.py` (the coding-agent onboarding prompt); commands `run_billing_cycle` (the ONLY caller of the billing primitives, hourly as its own compose service, idempotent by a DB row) and `seed_plans` |
 | `storefront/ops/` | operator console (all customers, one customer, report chains, plans), first-party analytics (`storefront/ops/analytics_models.py`, `storefront/ops/collect.py` — daily salt, bot filter), demand for detection types we lack (`storefront/ops/models.py`), Yandex Metrika/Direct API + server-side conversions (`storefront/ops/yandex_api.py`, `storefront/ops/yandex_views.py`); commands `daily_digest`, `enroll_totp`, `rollup_analytics`, `yandex_auth`, `yandex_conversions` |
 | `storefront/templates/`, `storefront/static/` | pages, the configurator JS, generated images (`storefront/make_favicons.py`, `storefront/make_og_cover.py`, `storefront/make_ad_images.py` — from the SVG, never hand-drawn) |
 | `storefront/docs/` | the storefront's own specification, moved here from the root `docs/`: `storefront/docs/tz-site.md` (what the site must do), `storefront/docs/tz-site-stack.md` (stack choice and what was rejected). Its README links them as docs/tz-site.md relative to storefront/ |
@@ -1410,7 +1410,7 @@ every state transition; the container-stopping check goes LAST) ·
 `test_auth_style` · `test_signup_forms` · `test_configurator_renders` and
 `test_ops_renders` (real browser) · `test_engine_release` (the advertised image comes from the registry: override → file → `latest`, reload on replace, the landing shows the same tag) · `test_seo` · `test_crawler_allowlist`
 (fail2ban allowlist) · `test_deploy_references` (SQL names in deploy scripts vs
-real tables) · `test_analytics` · `test_yandex_api`.
+real tables) · `test_analytics` · `test_yandex_api` · `test_slots` (real browser: the cabinet, the customer card and the fleet count OCCUPIED slots and tell `active`/`silent`/`released` apart — Б26bis).
 
 Docs: `docs/sprint-cabinet-and-pricing.md`, `docs/billing-integrity.md`,
 `docs/metering-integrity.md`, `docs/tz-verticals-and-configurator.md` (design),
