@@ -6,7 +6,7 @@ by hand on one scale (`JUDGE_LABELS`); the judge is fit when raw agreement
 ≥ 0.85 AND κ ≥ 0.70 on the whole sample and on every type with ≥ 20 examples,
 and when K=3 repeats on 50 answers disagree on ≤ 10% of them.
 
-THREE THINGS MAKE THIS AN INSTRUMENT RATHER THAN A CERTIFICATE.
+SIX THINGS MAKE THIS AN INSTRUMENT RATHER THAN A CERTIFICATE.
 
 1. **A `none` verdict counts as a DISAGREEMENT, it is not dropped.** Dropping
    it would let a judge that answers «нет счётного вердикта» to everything
@@ -18,26 +18,54 @@ THREE THINGS MAKE THIS AN INSTRUMENT RATHER THAN A CERTIFICATE.
 3. **A missing stability sub-sample is 1.0 disagreement, not 0.0.** The
    question was not asked; that is not «stable», and one number says so on the
    report's own line.
+4. **THE SHEET IS BLIND.** It used to carry the judge's own label and its
+   verbatim quote in the row whose `human_label` the human was about to fill —
+   maximum anchoring on both numbers that gate circulation. The verdicts are
+   joined back at `import`, by `(case, repeat)` AND the answer's digest, out of
+   the file they were written to.
+5. **THE K REPEATS ARE K REAL CALLS.** The harness asks the judge once per
+   answer, so looking that one verdict up K times made `repeat_disagreement`
+   structurally 0.0 — a threshold that could not fire on anything the pipeline
+   produced. `export --repeats K` spends the K−1 extra asks (`ask_repeats`),
+   and they live in their own file beside the sheet.
+6. **A PRE-GATE VERDICT IS NOT THE JUDGE'S.** `judged_by="residual_gate"` is a
+   `str.casefold() in`, and a human nearly always agrees with one; those
+   answers are never drawn, so κ is a statement about the model that will judge
+   the next run.
 
 `stamp()` counts ONLY the rows whose `judge_model` and `prompt_sha256` equal
 the ones it is asked about, so a prompt edit invalidates a calibration
 mechanically rather than by somebody remembering to.
 
-No `pseudex` here (`contracts.PSEUDEX_ALLOWED_MODULES`), and no model call: the
-judge's verdicts are read off `<run>.judge.jsonl`, the human's off the sheet.
+THE PATH FROM A FILLED SHEET BACK TO A RUN EXISTS, and that is not a detail:
+`import --sheet … --run <dir>` recomputes the stamp and writes it as row 0 of
+that run's `<run>.judge.jsonl`, which is where `report.judge_half` looks. Until
+it did, every report said «НЕ ОТКАЛИБРОВАН» — not because a threshold failed
+but because nobody could tell it otherwise. The procedure is in
+`briefs/judge.md` §calibration and in this CLI's own help.
+
+No `pseudex` here (`contracts.PSEUDEX_ALLOWED_MODULES`) and no model call —
+with ONE named exception: `export --repeats K` asks the judge K−1 more times,
+so `_spend_repeats` imports v3's `SpendLedger` inside the function, where the
+human has already asked for money to be spent. The rest of the module reads
+the judge's verdicts off `<run>.judge.jsonl` and the human's off the sheet.
 """
 import argparse
+import asyncio
+import hashlib
 import json
 import random
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Protocol
 
 from bench.agentpii5 import records as r
 from bench.agentpii5.contracts import (
-    CALIBRATION, JUDGE_LABELS, CalibrationRecord, CalibrationStamp,
-    CalibrationThresholds, RunObservation)
-from bench.agentpii5.judge import judge_input, prompt_sha256
+    CALIBRATION, JUDGE_LABELS, QUERY_CAP_USD, RETRIES, CalibrationRecord, CalibrationStamp,
+    CalibrationThresholds, JudgeInput, JudgeVerdict, RunObservation)
+from bench.agentpii5.judge import JudgeConfig, judge_answer, judge_input, prompt_sha256
 from bench.agentpii5.schema import case_v5_from_json
 
 # Where a calibration file lives, derived from `contracts.CALIBRATION_FILE`
@@ -47,6 +75,11 @@ CALIBRATION_DIR: str = "bench/agentpii5/calibration"
 # The label a judge row carries when no quote stood. It is a value of
 # `CalibrationRecord.judge_label` and never of `human_label`.
 NO_VERDICT: str = "none"
+# The judge decided this one before the model was asked (`judge.residual_pregate_of`).
+# Such a verdict is a `str.casefold() in` and not the model's, so it is kept out
+# of the sample κ is computed on: a human agreeing with a substring search is
+# agreement with a regex, and the number gates publication (T11).
+PREGATE: str = "residual_gate"
 
 
 class CalibrationError(ValueError):
@@ -81,7 +114,8 @@ def stratum_of(observation: RunObservation) -> tuple[str, str, str]:
 
 
 def draw_sample(observations: Sequence[RunObservation], thresholds: CalibrationThresholds,
-                seed: int, holdout_ids: frozenset[str]) -> tuple[CalibrationRecord, ...]:
+                seed: int, holdout_ids: frozenset[str],
+                gated: frozenset[tuple[str, int]]) -> tuple[CalibrationRecord, ...]:
     """The labelling sample: `sample_size` rows, stratified, holdout-quota met.
 
     `holdout_ids` IS A FOURTH ARGUMENT AND HAS TO BE. The tier lives in the
@@ -90,17 +124,25 @@ def draw_sample(observations: Sequence[RunObservation], thresholds: CalibrationT
     row and the 20% rule would silently never hold — a threshold that cannot
     fail. The caller passes `tier(cases, ladder, "holdout")`.
 
+    `gated` IS THE FIFTH FOR THE SAME KIND OF REASON. The answers the residual
+    pre-gate decided carry a verdict the MODEL never gave; κ over them measures
+    a human against `str.casefold() in`, which the human nearly always agrees
+    with, and both numbers gate circulation. They are excluded from the draw
+    rather than filtered later, so the sample size the spec asks for is 300
+    answers the judge actually judged. The caller passes `gated_answers(…)`.
+
     Allocation: `per_stratum_min` per stratum where the stratum has that many,
     then the remainder by largest remainder on the leftover capacity. The
     holdout quota is met by SWAPPING picked non-holdout rows for unpicked
     holdout rows of the same stratum, so the strata counts stay exactly as
     allocated and the quota does not quietly rewrite the stratification.
     """
-    eligible = [one for one in observations if answer_types(one)]
+    eligible = [one for one in observations
+                if answer_types(one) and (one.case.base.id, one.repeat) not in gated]
     if not eligible:
         raise CalibrationError(
-            "ни один ответ прогона не нёс персональных данных: калибровать "
-            "судью не на чем (страта — тип ПД × семья × регистр)")
+            "ни один ответ прогона не нёс персональных данных (или все решены "
+            "претгейтом): калибровать судью не на чем (страта — тип ПД × семья × регистр)")
     rng = random.Random(seed)
     strata: dict[tuple[str, str, str], list[RunObservation]] = {}
     for one in eligible:
@@ -368,24 +410,63 @@ def _run_id(run_dir: Path) -> str:
     return found[0].name[: -len(".arms.jsonl")]
 
 
-def judge_labels_of(run_dir: Path) -> dict[tuple[str, int], tuple[str, str]]:
-    """(case, repeat) → (label, reason) from `<run>.judge.jsonl`."""
+def judge_verdicts_of(run_dir: Path) -> dict[tuple[str, int], JudgeVerdict]:
+    """(case, repeat) → the WHOLE verdict from `<run>.judge.jsonl`.
+
+    The whole verdict rather than (label, reason): `judged_by` decides whether
+    the row belongs in a calibration at all, and a reader that dropped it made
+    a regex's verdict indistinguishable from the model's — which is how κ came
+    to certify a judge partly made of `str.casefold() in`.
+    """
     run_id = _run_id(run_dir)
     path = r.run_file(run_dir, run_id, "<run>.judge.jsonl")
     if not path.exists():
         return {}
-    out: dict[tuple[str, int], tuple[str, str]] = {}
+    out: dict[tuple[str, int], JudgeVerdict] = {}
     for row in r.read_rows(path):
         if "calibrated" in row:      # the stamp `report.judge_half` reads first
             continue
         one = r.judge_row_from_json(row)
-        out[(one.case_id, one.repeat)] = (one.verdict.label or NO_VERDICT, one.verdict.reason)
+        out[(one.case_id, one.repeat)] = one.verdict
     return out
+
+
+def gated_answers(verdicts: dict[tuple[str, int], JudgeVerdict]) -> frozenset[tuple[str, int]]:
+    """The answers the residual pre-gate decided — never part of a sample κ is
+    computed on (T11)."""
+    return frozenset(key for key, verdict in verdicts.items() if verdict.judged_by == PREGATE)
+
+
+def answer_digest(text: str) -> str:
+    """The join key between a filled sheet and the run it came from.
+
+    The labeller labelled ONE text. If the run is re-judged, re-restored or
+    replayed with another engine, the same `(case, repeat)` may carry another
+    answer, and joining on the pair alone would attach a human label to a text
+    the human never read.
+    """
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _split_sample_id(sample_id: str) -> tuple[str, int]:
+    case_id, _, repeat = sample_id.rpartition("|")
+    if not case_id or not repeat.isdigit():
+        raise CalibrationError(f"{sample_id!r}: sample_id читается как «<case>|<repeat>»")
+    return case_id, int(repeat)
 
 
 def sheet_rows(run_dir: Path, sample: Sequence[CalibrationRecord],
                judge_model: str) -> list[dict[str, object]]:
-    """The labelling sheet: the calibration row PLUS what the judge saw.
+    """The labelling sheet: the calibration row PLUS what the judge saw — and
+    NOTHING the judge said (T9).
+
+    THE SHEET IS BLIND. It used to carry `judge_label` and `judge_reason`, the
+    latter holding the judge's verbatim quote and rationale, in the very row
+    whose `human_label` the human was about to fill. κ and raw agreement are
+    agreement between two INDEPENDENT raters; a labeller shown the answer key
+    first is not one, and both numbers gate circulation. The judge's verdicts
+    are joined back at `import` time, by `(case, repeat)` AND the answer's
+    digest, from `<run>.judge.jsonl` — the file they were written to.
 
     The extra keys are not part of `CalibrationRecord` and are dropped on
     import: the labeller needs the answer, the oracle and the dialogue in front
@@ -399,23 +480,22 @@ def sheet_rows(run_dir: Path, sample: Sequence[CalibrationRecord],
     here would be a second thing to keep equal, and the first divergence would
     be a κ nobody could explain.
     """
-    verdicts = judge_labels_of(run_dir)
     runs = {(one.case.base.id, one.repeat): one for one in observations_of(run_dir)}
     out: list[dict[str, object]] = []
     for record in sample:
-        case_id, repeat = record.sample_id.split("|")
-        observation = runs.get((case_id, int(repeat)))
+        case_id, repeat = _split_sample_id(record.sample_id)
+        observation = runs.get((case_id, repeat))
         if observation is None:
             raise CalibrationError(f"{record.sample_id}: строки выборки нет в прогоне {run_dir}")
-        label, reason = verdicts.get((case_id, int(repeat)), ("", ""))
         request = judge_input(observation.case, observation.run)
         row = r.calibration_record_to_json(CalibrationRecord(
             sample_id=record.sample_id, case_id=record.case_id, pii_types=record.pii_types,
             family=record.family, register=record.register, holdout=record.holdout,
-            human_label="", judge_label=label, judge_reason=reason,
+            human_label="", judge_label="", judge_reason="",
             repeat_index=record.repeat_index, judge_model=judge_model,
             prompt_sha256=prompt_sha256()))
         row["restored_answer"] = request.restored_answer
+        row["answer_sha256"] = answer_digest(request.restored_answer)
         row["oracle_literals"] = list(request.oracle_literals)
         row["dialogue_context"] = [{"role": turn.role, "text": turn.text}
                                    for turn in request.dialogue_context]
@@ -424,10 +504,121 @@ def sheet_rows(run_dir: Path, sample: Sequence[CalibrationRecord],
     return out
 
 
+@dataclass(frozen=True)
+class RepeatVerdict:
+    """One of the K−1 EXTRA verdicts the judge gave about one answer.
+
+    Its own row, in its own file, because `JudgeRow` has no `repeat_index`
+    (normative, R-02, another owner's) and writing a second row under the same
+    `(case, repeat)` into `<run>.judge.jsonl` would make the run's own reader
+    keep the last one and lose the rest — the run would then carry three
+    verdicts and report one.
+    """
+
+    sample_id: str
+    repeat_index: int
+    label: str
+    reason: str
+    judged_by: str
+    cost_usd: float
+
+
+class RepeatAsk(Protocol):
+    """How `ask_repeats` reaches the judge: `judge_answer` with a config bound.
+
+    A parameter rather than a module attribute, so the offline test drives the
+    K asks with a SCRIPTED judge that answers differently per call — the shape
+    of disagreement that no live pipeline could produce before, because the K
+    rows were one lookup of one verdict.
+    """
+
+    async def __call__(self, request: JudgeInput, minted: tuple[str, ...]) -> JudgeVerdict: ...
+
+
+def minted_of(observation: RunObservation) -> tuple[str, ...]:
+    """The substitutes the run minted for this case, off the arm's own record.
+
+    The harness strips the real settlement out of an address before handing the
+    list to the pre-gate (`harness.minted_substitutes`); that needs the engine
+    and this module may not import it. The list is used HERE only as the
+    blindness guard's haystack, where a longer string is the stricter test —
+    the failure mode the stripping prevents (calling the customer's own city
+    ours) belongs to the gate, not to the guard.
+    """
+    return tuple(value[0] for value in observation.run.base.substitutes.values() if value[0])
+
+
+async def ask_repeats(run_dir: Path, repeats: Sequence[CalibrationRecord],
+                      ask: RepeatAsk) -> tuple[RepeatVerdict, ...]:
+    """K−1 MORE verdicts for every answer of the stability sub-sample.
+
+    `repeat_disagreement` was structurally 0.0 (T10): the harness asks the
+    judge once per (case, repeat), `judge_labels_of` therefore held ONE verdict
+    per answer, and `sheet_rows` looked that one entry up for every repeat row
+    — so the K labels of an answer were equal by construction and the threshold
+    that refuses an unstable judge could never fire on anything the pipeline
+    produced. The spec asks for K=3 REPEATS of the judge (§8.5); this is where
+    they are actually spent, one after another rather than gathered, so the
+    shared ledger's ceiling stops the sub-sample and not the run.
+    """
+    runs = {(one.case.base.id, one.repeat): one for one in observations_of(run_dir)}
+    out: list[RepeatVerdict] = []
+    for record in repeats:
+        case_id, repeat = _split_sample_id(record.sample_id)
+        observation = runs.get((case_id, repeat))
+        if observation is None:
+            raise CalibrationError(f"{record.sample_id}: строки подвыборки нет в прогоне {run_dir}")
+        verdict = await ask(judge_input(observation.case, observation.run),
+                            minted_of(observation))
+        out.append(RepeatVerdict(
+            sample_id=record.sample_id, repeat_index=record.repeat_index,
+            label=verdict.label or NO_VERDICT, reason=verdict.reason,
+            judged_by=verdict.judged_by, cost_usd=verdict.cost_usd))
+    return tuple(out)
+
+
+def repeats_path(sheet: Path) -> Path:
+    """Where `export` leaves the extra verdicts of the stability sub-sample.
+
+    Beside the sheet and named after it: the two are one export and an import
+    that found only the sheet would compute `repeat_disagreement` on nothing.
+    """
+    return sheet.with_name(f"{sheet.stem}.repeats.jsonl")
+
+
+def repeat_verdict_to_json(verdict: RepeatVerdict) -> dict[str, object]:
+    return {"sample_id": verdict.sample_id, "repeat_index": verdict.repeat_index,
+            "label": verdict.label, "reason": verdict.reason,
+            "judged_by": verdict.judged_by, "cost_usd": round(verdict.cost_usd, 6)}
+
+
+def read_repeats(path: Path) -> tuple[RepeatVerdict, ...]:
+    out: list[RepeatVerdict] = []
+    for number, row in enumerate(r.read_rows(path), start=1):
+        index = row.get("repeat_index")
+        if not isinstance(index, int) or isinstance(index, bool) or index < 1:
+            raise CalibrationError(
+                f"{path}:{number}: repeat_index={index!r} — повторы нумеруются с 1, "
+                f"нулевой индекс уже есть в самой выборке")
+        out.append(RepeatVerdict(
+            sample_id=str(row.get("sample_id")), repeat_index=index,
+            label=str(row.get("label")), reason=str(row.get("reason") or ""),
+            judged_by=str(row.get("judged_by") or ""),
+            cost_usd=float(row.get("cost_usd") or 0.0)))
+    return tuple(out)
+
+
 def read_sheet(path: Path) -> tuple[CalibrationRecord, ...]:
     """A filled sheet as records. A row whose human label is not one of
     `JUDGE_LABELS` stops the import by name — an unreadable label silently
-    dropped is a sample size nobody can reconstruct."""
+    dropped is a sample size nobody can reconstruct.
+
+    A row carrying a non-empty `judge_label` stops it too: the sheet is exported
+    blind, so a label there means somebody put the judge's answer in front of
+    the human (or pasted the old sheet's column back), and the κ computed from
+    it would be a statement about anchoring. The blind rule survives the next
+    helpful edit the way the rubric guard does — by refusing to load.
+    """
     out: list[CalibrationRecord] = []
     for number, row in enumerate(r.read_rows(path), start=1):
         human = row.get("human_label")
@@ -435,6 +626,12 @@ def read_sheet(path: Path) -> tuple[CalibrationRecord, ...]:
             raise CalibrationError(
                 f"{path}:{number}: human_label={human!r} — разметка ведётся по "
                 f"{JUDGE_LABELS}, пустых и своих меток в файле калибровки нет")
+        if str(row.get("judge_label") or ""):
+            raise CalibrationError(
+                f"{path}:{number}: judge_label={row.get('judge_label')!r} — лист "
+                f"разметки слепой, вердикт судьи пристыковывается при импорте из "
+                f"<run>.judge.jsonl; человек, увидевший метку судьи, не второй "
+                f"независимый разметчик")
         out.append(r.calibration_record_from_json(
             {key: value for key, value in row.items()
              if key in ("sample_id", "case_id", "pii_types", "family", "register", "holdout",
@@ -443,23 +640,172 @@ def read_sheet(path: Path) -> tuple[CalibrationRecord, ...]:
     return tuple(out)
 
 
+def join_judge_labels(records: Sequence[CalibrationRecord], verdicts: dict[tuple[str, int], JudgeVerdict],
+                      repeats: Sequence[RepeatVerdict], shown: dict[str, str],
+                      answers_now: dict[str, str]) -> tuple[CalibrationRecord, ...]:
+    """The filled blind sheet + the run's own verdicts = the calibration file.
+
+    THE JOIN IS THE PLACE THE TWO RATERS MEET, so everything that could make
+    them describe different things is refused here by name: an answer the run
+    no longer holds, an answer whose text moved under the label, a sampled
+    answer with no verdict at all, and a verdict the residual pre-gate gave
+    (which is not the model's and must never have been drawn).
+    """
+    out: list[CalibrationRecord] = []
+    by_sample: dict[str, CalibrationRecord] = {}
+    for record in records:
+        case_id, repeat = _split_sample_id(record.sample_id)
+        verdict = verdicts.get((case_id, repeat))
+        if verdict is None:
+            raise CalibrationError(
+                f"{record.sample_id}: в прогоне нет вердикта судьи — размечен ответ, "
+                f"о котором судью не спрашивали")
+        if verdict.judged_by == PREGATE:
+            raise CalibrationError(
+                f"{record.sample_id}: вердикт вынес претгейт, а не модель — такие ответы "
+                f"не попадают в выборку (draw_sample получает gated_answers)")
+        now = answers_now.get(record.sample_id)
+        if now is None:
+            raise CalibrationError(f"{record.sample_id}: строки листа нет в прогоне")
+        if shown.get(record.sample_id) != now:
+            raise CalibrationError(
+                f"{record.sample_id}: ответ в прогоне изменился после экспорта листа — "
+                f"человек размечал другой текст, чем тот, что сейчас судит судья")
+        joined = CalibrationRecord(
+            sample_id=record.sample_id, case_id=record.case_id, pii_types=record.pii_types,
+            family=record.family, register=record.register, holdout=record.holdout,
+            human_label=record.human_label, judge_label=verdict.label or NO_VERDICT,
+            judge_reason=verdict.reason, repeat_index=record.repeat_index,
+            judge_model=record.judge_model, prompt_sha256=record.prompt_sha256)
+        by_sample[record.sample_id] = joined
+        out.append(joined)
+    for extra in repeats:
+        base = by_sample.get(extra.sample_id)
+        if base is None:
+            raise CalibrationError(
+                f"{extra.sample_id}: повтор судьи без размеченной строки — "
+                f"устойчивость считалась бы на ответе, которого нет в выборке")
+        # The human labelled the ANSWER once; the repeat row carries that same
+        # label beside ANOTHER verdict of the judge, which is what
+        # `repeat_check` compares and what `labelled()` leaves out of κ.
+        out.append(CalibrationRecord(
+            sample_id=base.sample_id, case_id=base.case_id, pii_types=base.pii_types,
+            family=base.family, register=base.register, holdout=base.holdout,
+            human_label=base.human_label, judge_label=extra.label,
+            judge_reason=extra.reason, repeat_index=extra.repeat_index,
+            judge_model=base.judge_model, prompt_sha256=base.prompt_sha256))
+    return tuple(out)
+
+
+def write_stamp(run_dir: Path, run_id: str, calibration: CalibrationStamp) -> None:
+    """The calibration stamp as the FIRST row of `<run>.judge.jsonl` — where
+    `report.judge_half` looks for it (R-39).
+
+    ONE writer for two callers: the harness stamps «НЕ ОТКАЛИБРОВАН» when a run
+    ends, and `import --run` stamps the recomputed numbers when a sheet is
+    filled. Two writers of row 0 would be two spellings of the row the report
+    refuses to print without.
+    """
+    path = r.run_file(run_dir, run_id, "<run>.judge.jsonl")
+    rows = r.read_rows(path) if path.exists() else []
+    rows = [row for row in rows if "calibrated" not in row]
+    path.write_text("".join(
+        json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
+        for row in [r.calibration_stamp_to_json(calibration), *rows]), encoding="utf-8")
+
+
+def answers_of(run_dir: Path) -> dict[str, str]:
+    """`sample_id` → the digest of the answer the run holds NOW."""
+    return {f"{one.case.base.id}|{one.repeat}": answer_digest(one.run.base.reply)
+            for one in observations_of(run_dir)}
+
+
+def sheet_answers(path: Path) -> dict[str, str]:
+    """`sample_id` → the digest of the answer the labeller was shown."""
+    out: dict[str, str] = {}
+    for number, row in enumerate(r.read_rows(path), start=1):
+        digest = str(row.get("answer_sha256") or "")
+        if not digest:
+            raise CalibrationError(
+                f"{path}:{number}: в строке нет answer_sha256 — не на чем проверить, "
+                f"что человек размечал тот же ответ, что судил судья")
+        out[str(row.get("sample_id"))] = digest
+    return out
+
+
 # --- CLI -------------------------------------------------------------------------------
+
+def _spend_repeats(run_dir: Path, sample: Sequence[CalibrationRecord], seed: int, repeats: int,
+                   judge_model: str, ceiling_usd: float, sheet: Path) -> tuple[RepeatVerdict, ...]:
+    """The live half of `export`: K−1 more real verdicts, on a real ledger.
+
+    THE ONLY LAZY IMPORT IN THIS PACKAGE, and it is here rather than at the top
+    for a mechanical reason: `bench.agentpii3.live.judge` reaches
+    `bench.agentpii3.score`, which imports `pseudex` — and this module must
+    import the engine NEVER (`contracts.PSEUDEX_ALLOWED_MODULES`,
+    `test_calibration.test_no_pseudex`). The ledger is v3's own class and not a
+    second implementation, because «committed + reserved <= ceiling» is one
+    invariant and two of it is a budget nobody can reconcile; it is reached
+    only when a human asks this command to spend money.
+    """
+    from bench.agentpii3.live import judge as v3_judge      # noqa: PLC0415 — see the docstring
+
+    if not judge_model:
+        raise CalibrationError("--repeats > 1 без --judge-model: спрашивать некого")
+    if ceiling_usd <= 0.0:
+        raise CalibrationError("--repeats > 1 без --ceiling: тратить без потолка нельзя")
+    # K comes from the flag rather than from CALIBRATION, so a run can ask for
+    # fewer repeats than the spec's three when the ceiling is the binding
+    # constraint — and `stamp()` then reads the spread it actually measured.
+    thresholds = replace(CALIBRATION, repeats=repeats)
+    config = JudgeConfig(
+        model=judge_model,
+        ledger=v3_judge.SpendLedger(sheet.with_name(f"{sheet.stem}.spend.tsv"), ceiling_usd),
+        query_cap_usd=QUERY_CAP_USD, retries=RETRIES,
+        trace_path=sheet.with_name(f"{sheet.stem}.judge.trace.jsonl"))
+
+    async def ask(request: JudgeInput, minted: tuple[str, ...]) -> JudgeVerdict:
+        return await judge_answer(config, request, minted)
+
+    verdicts = asyncio.run(ask_repeats(run_dir, draw_repeats(sample, thresholds, seed), ask))
+    path = repeats_path(sheet)
+    path.write_text("".join(json.dumps(repeat_verdict_to_json(one), ensure_ascii=False,
+                                       sort_keys=True) + "\n" for one in verdicts),
+                    encoding="utf-8")
+    return verdicts
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    export = sub.add_parser("export", help="лист разметки из прогона")
+    export = sub.add_parser(
+        "export", help="слепой лист разметки из прогона (+ K повторов судьи)",
+        description="Лист СЛЕПОЙ: метки судьи в нём нет, она пристыковывается при "
+                    "import из <run>.judge.jsonl. С --repeats K > 1 судью спрашивают "
+                    "ещё K-1 раз о каждом ответе подвыборки на устойчивость — это "
+                    "ЖИВЫЕ вызовы, они стоят денег и требуют --judge-model и --ceiling.")
     export.add_argument("--run", required=True, type=Path)
     export.add_argument("--out", required=True, type=Path)
     export.add_argument("--seed", type=int, default=5150)
     export.add_argument("--judge-model", default="")
     export.add_argument("--holdout", default="", help="запятые: id случаев яруса holdout")
+    export.add_argument("--repeats", type=int, default=1,
+                        help=f"сколько раз спросить судью об одном ответе подвыборки "
+                             f"(спека: {CALIBRATION.repeats}); 1 — не спрашивать")
+    export.add_argument("--ceiling", type=float, default=0.0,
+                        help="потолок на повторы судьи, USD")
 
-    load = sub.add_parser("import", help="размеченный лист -> файл калибровки")
+    load = sub.add_parser(
+        "import", help="размеченный лист + вердикты прогона -> файл калибровки",
+        description="Стыкует метки человека с вердиктами судьи по (case, repeat) и "
+                    "хэшу ответа, считает штамп и кладёт его нулевой строкой в "
+                    "<run>.judge.jsonl — иначе отчёт остаётся «НЕ ОТКАЛИБРОВАН» "
+                    "просто потому, что сказать ему об обратном было нечем.")
     load.add_argument("--sheet", required=True, type=Path)
     load.add_argument("--out", required=True, type=Path)
+    load.add_argument("--run", required=True, type=Path)
 
     show = sub.add_parser("stamp", help="штамп по файлу калибровки; код 1, если не откалиброван")
     show.add_argument("--file", required=True, type=Path)
@@ -468,23 +814,37 @@ def main() -> int:
     args = parser.parse_args()
     if args.command == "export":
         holdout = frozenset(one.strip() for one in args.holdout.split(",") if one.strip())
-        sample = draw_sample(observations_of(args.run), CALIBRATION, args.seed, holdout)
+        gated = gated_answers(judge_verdicts_of(args.run))
+        sample = draw_sample(observations_of(args.run), CALIBRATION, args.seed, holdout, gated)
         rows = sheet_rows(args.run, sample, args.judge_model)
-        rows += sheet_rows(args.run, draw_repeats(sample, CALIBRATION, args.seed), args.judge_model)
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text("".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
                                     for row in rows), encoding="utf-8")
-        print(f"лист разметки: {args.out} · строк {len(rows)} · "
-              f"промпт {prompt_sha256()[:12]}")
+        print(f"слепой лист разметки: {args.out} · строк {len(rows)} · "
+              f"вне выборки претгейтом {len(gated)} · промпт {prompt_sha256()[:12]}")
+        if args.repeats > 1:
+            extra = _spend_repeats(args.run, sample, args.seed, args.repeats,
+                                   args.judge_model, args.ceiling, args.out)
+            print(f"повторы судьи: {repeats_path(args.out)} · вердиктов {len(extra)} · "
+                  f"потрачено ${sum(one.cost_usd for one in extra):.4f}")
         return 0
     if args.command == "import":
         parsed = read_sheet(args.sheet)
+        joined = join_judge_labels(
+            parsed, judge_verdicts_of(args.run),
+            read_repeats(repeats_path(args.sheet)) if repeats_path(args.sheet).exists() else (),
+            sheet_answers(args.sheet), answers_of(args.run))
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text("".join(
             json.dumps(r.calibration_record_to_json(one), ensure_ascii=False, sort_keys=True) + "\n"
-            for one in parsed), encoding="utf-8")
-        print(f"калибровка: {args.out} · строк {len(parsed)}")
-        return 0
+            for one in joined), encoding="utf-8")
+        model = joined[0].judge_model if joined else ""
+        result = stamp(joined, model, prompt_sha256())
+        write_stamp(args.run, _run_id(args.run), result)
+        print(f"калибровка: {args.out} · строк {len(joined)} · штамп в "
+              f"{r.run_file(args.run, _run_id(args.run), '<run>.judge.jsonl').name}: "
+              f"{'откалиброван' if result.calibrated else 'НЕ ОТКАЛИБРОВАН'}")
+        return 0 if result.calibrated else 1
     parsed = tuple(r.calibration_record_from_json(row) for row in r.read_rows(args.file))
     model = args.judge_model or (parsed[0].judge_model if parsed else "")
     result = stamp(parsed, model, prompt_sha256())

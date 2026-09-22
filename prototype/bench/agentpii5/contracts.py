@@ -80,6 +80,14 @@ IN_OWNERS: tuple[str, ...] = ("user", "tool", "document", "memory")
 # must take on the way out.
 OUT_OWNERS: tuple[str, ...] = ("tool_arg", "answer", "template", "summary")
 HOP_OWNERS: tuple[str, ...] = IN_OWNERS + OUT_OWNERS
+# The OUT owners that are an ACT of the agent on a tool — what «B» means in an
+# A→B chain. The answer is an OUT hop too, and it is not a tool: 3 870 of the
+# corpus's 6 880 declared `source_hop` transitions end in the answer, so a
+# chain line that accepted them would be 56% a line about prose. Declared here
+# rather than in `schema.py` because BOTH the corpus rules and `metrics.
+# _transitions` decide by it, and two copies of one tuple is one drift away
+# from the corpus and the metric disagreeing about what a chain is.
+ACTING_OUT_OWNERS: tuple[str, ...] = ("tool_arg", "template", "summary")
 # The minimal loop every case with a tool result carries, in this order. A case
 # that declares fewer hops than this and claims a result is invalid
 # (`V5_CASE_RULES`). Chains and multi-call turns LENGTHEN it, never shorten it.
@@ -862,35 +870,54 @@ METRICS: tuple[MetricSpec, ...] = (
     MetricSpec("state", "triples with the same typed state", "comparable triples", "level", "v4_level", False),
     MetricSpec("values", "triples where the tool got the same VALUES", "comparable triples", "level", "v4_level", False),
     MetricSpec("verbatim", "triples where the values match byte for byte", "comparable triples", "level", "v4_level", False),
-    # §4.2 — carried from the public harness, with the public denominators
-    MetricSpec("leak", "items the gateway ALTERED before the model saw them", "all items shown to the model", "item", "public", False),
-    MetricSpec("coverage", "items of which NO piece survived (city / generic word / marker are not PII)", "all items shown to the model", "item", "public", False),
-    MetricSpec("typed", "items the gateway typed as the declared type", "items with a declared type and an exposed type", "item", "public", False),
-    MetricSpec("round_trip", "items the tool received as the real canonical (absolute, not paired)", "altered items with a tool parameter", "item", "public", False),
-    MetricSpec("round_trip_repaired", "the same, counting a value that arrived REPAIRED", "altered items with a tool parameter", "item", "public", True),
-    MetricSpec("end_to_end", "items the tool received as the real value", "all items with a tool parameter", "item", "public", False),
+    # §4.2 — carried from the public harness. THE WORDING NAMES WHAT THE CODE
+    # COUNTS, not what the public unit is: v5 counts a datum PER CROSSING (one
+    # item read in a message and again in a tool result is two IN hops), while
+    # the public harness counts it once per case. A spec that said «items»
+    # while the code counted hops would be a denominator nobody could check.
+    MetricSpec("leak", "IN hops the gateway ALTERED before the model saw them", "IN hops shown to the model (observed ∪ leaked; `absent` was shown to nobody)", "hop", "public", False),
+    MetricSpec("coverage", "IN hops of which NO piece survived (city / generic word / marker are not PII)", "IN hops shown to the model (observed ∪ leaked)", "hop", "public", False),
+    MetricSpec("typed", "IN/tool hops the gateway typed as the declared type", "IN/tool hops with a declared type and an exposed type", "hop", "public", False),
+    MetricSpec("round_trip", "OUT/tool_arg leaves the tool received as the real value of THAT leaf (absolute, not paired)", "OUT/tool_arg leaves of items altered on the way in", "leaf", "public", False),
+    MetricSpec("round_trip_repaired", "the same, counting a value that arrived REPAIRED", "OUT/tool_arg leaves of items altered on the way in", "leaf", "public", True),
+    MetricSpec("end_to_end", "OUT/tool_arg leaves the tool received as the real value of THAT leaf", "all declared OUT/tool_arg leaves", "leaf", "public", False),
     MetricSpec("overmask", "negatives NOT altered", "all negatives", "negative", "public", False),
-    MetricSpec("consistency", "second mentions that got the first mention's substitute", "observations with a second mention", "observation", "public", False),
-    MetricSpec("stability", "first-mention substitutes unchanged between requests", "observations with a second request", "observation", "public", False),
-    MetricSpec("rewrite_ratio", "cases whose gateway-arm reply rewrote > 30% of the control's tokens", "cases with both replies", "case", "public", True),
-    MetricSpec("shared_block", "items whose substitute could not be attributed to one span", "items with a tool parameter", "item", "public", True),
+    MetricSpec("consistency", "items whose every mention carried ONE substitute", "items mentioned in more than one message", "item", "public", False),
+    MetricSpec("stability", "items whose substitute did not change between requests", "items mentioned in more than one request", "item", "public", False),
+    # NOT THE PUBLIC QUANTITIES, AND THE NAMES SAY SO (`_v5` / `_answer`).
+    # `agentmask_ru.align.rewrite_ratio` is the share of characters changed
+    # OUTSIDE the protected spans of the message the model reads, flagged over
+    # 0.3; this line compares the gateway arm's REPLY with the control's and
+    # flags a similarity below `REWRITE_RATIO_FLOOR`. The public
+    # `unattributable` counts ITEMS with a tool parameter whose substitute the
+    # alignment could not place; this line counts ANSWER SPANS carrying more
+    # than one item. Two numbers under one name would be read as one.
+    MetricSpec("rewrite_ratio_v5", "cases whose gateway-arm REPLY is a different text from the control's (not the public message-level ratio)", "cases with both replies", "case", "public", True),
+    MetricSpec("shared_block_answer", "ANSWER spans the alignment could not assign to one item (not the public per-item `unattributable`)", "answer spans", "answer", "public", True),
     # §4.3 / §8.3 — new in v5
     MetricSpec("form_hIN", "IN hops where form_match == same", "IN hops observed (not leaked)", "hop", "v5_new", False),
-    MetricSpec("form_hOUT", "OUT hops where form_match == same", "OUT hops observed (not residual)", "hop", "v5_new", False),
-    MetricSpec("toolresult_masked", "tool results where no real value reached the model", "tool results carrying PII", "result", "v5_new", False),
-    MetricSpec("answer_real", "answers where every datum is the REAL value in the agent's form", "answers carrying PII", "answer", "v5_new", False),
+    MetricSpec("form_hOUT", "OUT hops where form_match == same", "OUT hops the agent WROTE (observed ∪ unmasked; `absent` is printed beside the line by `out_absent`)", "hop", "v5_new", False),
+    MetricSpec("out_absent", "declared OUT hops the agent never wrote", "all declared OUT hops", "hop", "v5_new", True),
+    MetricSpec("toolresult_masked", "declared tool results where no real value reached the model", "results the case DECLARES personal data in (`returns[].result_item_ids`) and the agent obtained", "result", "v5_new", False),
+    MetricSpec("answer_real", "answers where every declared datum is the REAL value in the agent's form", "answers the case declares an OUT/answer hop for", "answer", "v5_new", False),
     MetricSpec("chain_value", "A→B transitions where the real value in B equals the real value from A", "all A→B transitions", "transition", "v5_new", False),
     MetricSpec("chain_form", "A→B transitions with form_match == same on OUT(B)", "all A→B transitions", "transition", "v5_new", False),
     MetricSpec("multi_all_out", "turns where EVERY OUT argument is right in value and form", "turns with N ≥ 2 OUT hops", "turn", "v5_new", False),
     MetricSpec("multi_consistency", "turns where one value → one substitute across all its calls", "turns with N ≥ 2 calls", "turn", "v5_new", False),
     MetricSpec("retry_form", "retries where OUT form matched the agent's form on EVERY attempt", "retries of one tool", "retry", "v5_new", False),
-    MetricSpec("memory_consistency", "values mentioned in > 1 turn with ONE substitute", "values mentioned in > 1 turn", "value", "v5_new", False),
-    MetricSpec("memory_stability", "substitutes unchanged between requests of one conversation", "substitutes seen in > 1 request", "substitute", "v5_new", False),
+    MetricSpec("memory_consistency", "values a `MemorySpec` names, mentioned in > 1 turn with ONE substitute", "values a `MemorySpec` names", "value", "v5_new", False),
+    MetricSpec("memory_stability", "substitutes of `MemorySpec` values unchanged between requests of the conversation", "substitutes of `MemorySpec` values seen in > 1 request", "substitute", "v5_new", False),
     MetricSpec("rag_masked", "chunks with PII where no real value reached the model", "chunks with PII", "chunk", "v5_new", False),
     MetricSpec("rag_identity_kept", "foreign identities in chunks kept apart from the customer", "foreign identities in chunks", "identity", "v5_new", False),
     MetricSpec("doc_masked", "documents where every real value was masked", "documents", "document", "v5_new", False),
     MetricSpec("doc_extracted", "extracted items that reached the tool as the REAL value", "items the agent extracted", "extracted", "v5_new", False),
-    MetricSpec("residual", "answers and argument leaves WITHOUT a substitute in them", "all answers and argument leaves", "leaf", "v5_new", False),
+    MetricSpec("residual", "answers and argument leaves WITHOUT a substitute in them", "all answers, and every OUT leaf the agent WROTE (`absent` is neither)", "leaf", "v5_new", False),
+    # THE STREAMING LEG, WHICH NOTHING READ. `ArmRunV5.stream_mismatch` was
+    # written by the harness on all 84 streaming cases and consumed by no
+    # metric and no report line, so the one defect the leg exists to catch —
+    # the chunked restoration differing from the whole-text one — could not
+    # appear anywhere. A field nobody reads is a measurement nobody made.
+    MetricSpec("stream_fidelity", "streaming cases whose chunked restoration equals the whole-text one", "streaming cases", "case", "v5_new", False),
 )
 METRIC_NAMES: tuple[str, ...] = tuple(spec.name for spec in METRICS)
 V5_NEW_METRIC_NAMES: tuple[str, ...] = tuple(spec.name for spec in METRICS if spec.family == "v5_new")
@@ -915,6 +942,12 @@ AXES: tuple[str, ...] = (
 # «НЕПОЛНЫЙ» in its header. Not printing is the only sanction that survives
 # a deadline.
 FIXTURE_KINDS: tuple[str, ...] = ("zero", "one", "adversarial")
+# A SECOND LOCK ON A DOOR THE EXPECTATIONS ALREADY BOLT. `Fixture.
+# expected_hits`/`expected_total` pin the two rates exactly (0/n and n/n), so
+# the gate's separation check can no longer fire on its own — it is kept as the
+# guard against a PAIR that declares 0/0, where both rates would be 0.0 and the
+# equality checks would pass while the metric said nothing. Deleting it means
+# deleting its reader in `report.gate`, which belongs to another owner.
 FIXTURE_MIN_SEPARATION: float = 1.0      # rate(one) == 1.0 and rate(zero) == 0.0, exactly
 INCOMPLETE_REPORT_MARK: str = "НЕПОЛНЫЙ"
 
@@ -1080,9 +1113,19 @@ class HopObservation:
     denominators are declared hops. `status`: `observed` (compared),
     `leaked` (IN: the real value reached the model unaltered — no form to
     compare, counted by `leak`/`toolresult_masked`), `residual` (OUT: a
-    substitute reached the consumer — counted by `residual`), `absent` (a
-    required hop that did not happen). `verdict` is set iff status ==
-    "observed"."""
+    substitute reached the consumer — counted by `residual`), `unmasked`
+    (OUT: the leaf the agent wrote carried no substitute at all, so there is
+    nothing to restore and nothing to compare — a MISS everywhere a form or a
+    value is asked for, never a hit, never dropped), `absent` (a required hop
+    that did not happen). `verdict` is set iff status == "observed".
+
+    WHY `unmasked` IS ITS OWN STATUS AND NOT `observed`. When the gateway
+    missed the value on the way IN, the agent writes the REAL value, the
+    engine restores nothing, and `produced == reference` — so `form_match`
+    said «same» and a gateway that masked NOTHING printed 100% on
+    `form_hOUT`, `chain_form`, `chain_value` and `multi_all_out`. The hop
+    happened; there was simply no substitute in it, and a comparison of a
+    string with itself is not evidence about the product."""
 
     case_id: str
     repeat: int
@@ -1095,7 +1138,7 @@ class HopObservation:
     verdict: FormVerdict | None
 
 
-HOP_STATUSES: tuple[str, ...] = ("observed", "leaked", "residual", "absent")
+HOP_STATUSES: tuple[str, ...] = ("observed", "leaked", "residual", "unmasked", "absent")
 
 
 @dataclass(frozen=True)

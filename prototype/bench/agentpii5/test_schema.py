@@ -180,6 +180,35 @@ def test_r07() -> list[str]:
     return _expect(replace(VALID, has_result=False), "R07")
 
 
+def test_r07_min_hops() -> list[str]:
+    """R07's SECOND half: a case that reaches a result carries the whole minimal
+    loop, not a corner of it.
+
+    C-004: `MIN_HOPS_WITH_RESULT` appeared at schema.py:176 and in an assertion
+    ABOUT the fixture, and in no negative anywhere — so the clause «a case with
+    has_result carries at least MIN_HOPS_WITH_RESULT hops» had never been shown
+    to fire. Dropping the OUT/tool_arg leg leaves a case that still has an
+    IN/tool and an OUT/answer hop, so `has_result` stays true and only the count
+    can catch it.
+    """
+    dropped = {hop.hop_index for hop in VALID.hops
+               if hop.kind == "OUT" and hop.owner == "tool_arg"}
+    spare = [hop.hop_index for hop in VALID.hops
+             if hop.kind == "OUT" and hop.owner == "answer"]
+    dropped.add(spare[-1])                      # one answer hop is still an answer
+    kept = [hop for hop in VALID.hops if hop.hop_index not in dropped]
+    if len(kept) >= c.MIN_HOPS_WITH_RESULT:
+        return [f"the fixture still has {len(kept)} hops without its argument leg; "
+                f"the negative cannot fire"]
+    renumbered = tuple(replace(hop, hop_index=index, source_hop=-1)
+                       for index, hop in enumerate(kept))
+    short = replace(VALID, hops=renumbered)
+    if not s.has_result(renumbered):
+        return ["dropping the argument leg also dropped the result; R07's first half "
+                "would fire instead of its second"]
+    return _expect(short, "R07")
+
+
 def test_r08() -> list[str]:
     broken = list(VALID.hops)
     broken[1] = replace(broken[1], tool_name="tool_nobody_offers")
@@ -1012,6 +1041,7 @@ def test_no_pseudex() -> list[str]:
 CHECKS: tuple[object, ...] = (
     test_valid_case_is_quiet, test_r01, test_r02, test_r03, test_r03_owner_direction,
     test_r04, test_r04_turn, test_r05, test_r05_undeclared_return, test_r06, test_r07,
+    test_r07_min_hops,
     test_r08, test_r08_ordinal, test_r09, test_r10, test_r10_two_slots, test_r11, test_r12,
     test_r13, test_r14, test_r15, test_r15_summary_acts, test_r16, test_r17, test_r18,
     test_r18_records_are_seed_records, test_r18_extracted_items_belong_to_those_records, test_r19,

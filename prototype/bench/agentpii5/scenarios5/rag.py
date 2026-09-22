@@ -124,13 +124,21 @@ def _search_shape(ctx: c.Ctx, k: int, crowded: bool) -> Case:
     result_items.append(own["who"])
     chunk_item_ids.append(own["who"])
 
-    strangers = extra_people(ctx, city, drawn, k - 1)
+    # ONE DRAW FOR EVERY STRANGER OF THE CASE, AND THE CROWDED CHUNK'S SECOND
+    # PERSON IS THE LAST OF THEM. `extra_people` restarts its ordinal at 1 on
+    # every call, so a second call inside one case handed back a person the
+    # first call had already used: 70 of 100 cases gave ONE value two
+    # identities and two gave a «stranger» the customer's own name — and
+    # `rag_identity_kept` then charged the gateway with a merge no gateway
+    # could avoid. Pairwise distinctness only holds WITHIN one call.
+    everyone = extra_people(ctx, city, drawn, k - 1 + (1 if crowded else 0))
+    strangers = everyone[:k - 1]
     for position, stranger in enumerate(strangers):
         chunk_id = f"kb-{position + 1}"
         stranger_identity = f"{identity}x{position}"
         foreign.append(stranger_identity)
         if crowded and position == 0:
-            extra = extra_people(ctx, city, stranger, 1)[0]
+            extra = everyone[-1]
             extra_identity = f"{identity}y{position}"
             foreign.append(extra_identity)
             ids = c.chunk_seed(chunk_id, TWO_PERSON_CHUNK, {

@@ -27,6 +27,8 @@ from bench.agentpii5 import contracts as c
 from bench.agentpii5 import schema as s
 from bench.agentpii5 import revise as r
 from bench.agentpii5.contracts import CaseV5
+from bench.agentpii5.mock import render_problems
+from bench.agentpii5.tools import expected_leaf_value, spec_v5_for
 
 V4_CASES = r.load_v4_corpus()
 V4_RAW: list[dict[str, object]] = json.loads(
@@ -218,7 +220,123 @@ def test_missing_corpus_is_a_refusal() -> list[str]:
         r.V4_CORPUS = original
 
 
+def test_every_declared_crossing_is_rendered() -> list[str]:
+    """THE PROOF, over all 834: the backend really produces every IN/tool hop
+    and every `result_item_ids` the revision declares.
+
+    THE REPRODUCTION THIS PINS (corpus-lens, T1): driving the revised half
+    against the real mock, 132 of the 455 cases claiming `has_result` had not
+    one observable tool crossing, and 42% of the declared IN/tool hops were
+    crossings the mock never renders — every one of them a permanent gateway
+    miss and a free hit on `leak`.
+    """
+    problems: list[str] = []
+    for case in REVISED:
+        problems.extend(render_problems(case))
+    return problems[:8]
+
+
+def test_a_declared_transition_is_attainable() -> list[str]:
+    """R12's link is declared only when the source result PRINTED the value the
+    argument leaf will hold.
+
+    THE REPRODUCTION THIS PINS (corpus-lens/chain.py + roles.py): of 5 441
+    transitions in the revised half only 520 were attainable with the gateway
+    removed entirely and 1 240 were actively contradicted — the street item's
+    IN span reads «толстого» while `contact.address.city` holds «омск», the
+    surname item's reads «букин» while `contact.first_name` holds «сергей».
+    """
+    problems: list[str] = []
+    contradicted = 0
+    for case in REVISED:
+        items = {item.id: item for item in case.base.pii}
+        for hop in case.hops:
+            if hop.kind != "OUT" or hop.source_hop == -1 or not hop.path:
+                continue
+            source = case.hops[hop.source_hop]
+            if source.kind != "IN" or source.owner != "tool":
+                continue
+            spec = spec_v5_for(hop.tool_name, hop.path)
+            if spec is None or not expected_leaf_value(items[hop.item_id], spec):
+                contradicted += 1
+    if contradicted:
+        problems.append(f"{contradicted} declared transitions carry a leaf the item "
+                        f"has no part for")
+    # THE NEGATIVE: the rule itself, shown refusing. A surname item cannot be
+    # the value of `contact.first_name`, whatever its type says.
+    surname = next((item for case in REVISED for item in case.base.pii
+                    if item.type == "NAME" and set(item.parts) <= {"surname", "gender"}), None)
+    if surname is None:
+        problems.append("no surname-only item in the revision to test the rule with")
+    else:
+        given = spec_v5_for("crm_upsert_contact", "contact.first_name")
+        if given is None:
+            problems.append("crm_upsert_contact has no contact.first_name leaf")
+        elif expected_leaf_value(surname, given):
+            problems.append(f"a surname item was accepted for a given-name leaf: "
+                            f"{expected_leaf_value(surname, given)!r}")
+    return problems
+
+
+def test_the_loop_family_declares_its_memory() -> list[str]:
+    """`user_in_loop` shows a value and the customer confirms it without saying
+    it again — a recall by anaphora, and the family declared none (C-048), so
+    `memory_consistency` had an empty population in the one family whose whole
+    shape is a value held across two turns."""
+    problems: list[str] = []
+    loops = [case for case in REVISED if case.behaviour == "user_in_loop"]
+    if not loops:
+        return ["the revision has no user_in_loop case"]
+    without = [case.base.id for case in loops if not case.memory]
+    if without:
+        problems.append(f"{len(without)} loop cases declare no MemorySpec: {without[:3]}")
+    for case in loops[:20]:
+        assert case.loop is not None
+        for spec in case.memory:
+            if spec.first_turn != case.loop.show_turn:
+                problems.append(f"{case.base.id}: recall starts at {spec.first_turn}, "
+                                f"the value is shown at {case.loop.show_turn}")
+            if spec.recall_turn != case.loop.confirm_turn:
+                problems.append(f"{case.base.id}: recall at {spec.recall_turn}, the "
+                                f"confirmation is at {case.loop.confirm_turn}")
+            if spec.anaphora == "none":
+                problems.append(f"{case.base.id}: a confirmation that repeats the value "
+                                f"is not the loop this family measures")
+    # THE NEGATIVE: no other revised family invents one.
+    stray = [case.base.id for case in REVISED
+             if case.memory and case.behaviour != "user_in_loop"]
+    if stray:
+        problems.append(f"memory declared outside the loop family: {stray[:3]}")
+    return problems[:6]
+
+
+def test_singles_that_reach_a_result_carry_the_minimal_loop() -> list[str]:
+    """§8.2's «одиночный вызов: базовый, 4 перехода» (C-041, C-137), over the
+    singles that actually reach one — and the count of the two-hop v4 shapes
+    beside it, because 418 in one number read as 418 of the base shape."""
+    problems: list[str] = []
+    singles = [case for case in REVISED if case.behaviour == "single"]
+    looped = [case for case in singles if case.has_result]
+    if not looped:
+        return ["no single case reaches a tool result"]
+    for case in looped:
+        pairs = {(hop.kind, hop.owner) for hop in case.hops}
+        missing = [pair for pair in c.MINIMAL_LOOP if pair not in pairs]
+        if missing:
+            problems.append(f"{case.base.id}: reaches a result without {missing}")
+    # THE NEGATIVE: the check sees a loop with a leg cut out.
+    stripped = replace(looped[0], hops=tuple(
+        hop for hop in looped[0].hops if not (hop.kind == "OUT" and hop.owner == "answer")))
+    if all(pair in {(hop.kind, hop.owner) for hop in stripped.hops}
+           for pair in c.MINIMAL_LOOP):
+        problems.append("a loop with no answer hop still read as minimal")
+    return problems[:6]
+
+
 CHECKS: tuple[Callable[[], list[str]], ...] = (
+    test_every_declared_crossing_is_rendered, test_a_declared_transition_is_attainable,
+    test_the_loop_family_declares_its_memory,
+    test_singles_that_reach_a_result_carry_the_minimal_loop,
     test_messages_byte_identical, test_nothing_is_dropped, test_455_get_loop, test_k10,
     test_behaviour_mapping, test_specs_match_the_behaviour, test_all_valid,
     test_chains_are_real, test_return_forms_are_declared, test_streaming_is_a_voice_axis,

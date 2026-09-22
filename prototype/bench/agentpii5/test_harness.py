@@ -16,6 +16,7 @@ WHAT IS ACTUALLY PROVEN HERE.
 * a run directory ends up holding every name in `contracts.RUN_FILES`, the
   last two written by the report itself.
 """
+import ast
 import asyncio
 import json
 import sys
@@ -306,6 +307,168 @@ def test_baseline_flag_reads_v4_dir() -> list[str]:
     return failures
 
 
+class _MintedOnly:
+    """A stand-in for `GatewayV5` with the ONE method `judge_triple` reads.
+
+    The real gateway needs a detector, a vault, an audit log and a cache, and
+    `judge_triple` asks it for exactly one thing — the substitutes the run
+    minted. Building the whole engine to answer that would make this check
+    depend on the engine's state, which is not what it is about.
+    """
+
+    def __init__(self, substitutes: tuple[str, ...]) -> None:
+        self._substitutes = substitutes
+
+    def substitutes(self) -> tuple[str, ...]:
+        return self._substitutes
+
+
+def _run_with_turns(case: CaseV5, turns: tuple[str, ...], answer: str) -> ArmRunV5:
+    run = _gateway_run(case)
+    base = ArmRun(case_id=case.base.id, arm="I", repeat=0, calls=run.base.calls, state=(),
+                  reply=answer, termination="done", cost_usd=0.01,
+                  substitutes={"p1": (SUBSTITUTE, {})}, masked_spans={})
+    return ArmRunV5(base=base, reply_raw=answer, control_reply=run.control_reply,
+                    tool_results=(), mentions=run.mentions, turn_replies=turns,
+                    call_turns=run.call_turns, request_count=run.request_count,
+                    stream_mismatch=False)
+
+
+def test_residual_in_an_earlier_turn_is_measured() -> list[str]:
+    """F3.2, the reviewers' `f2_oracleleak.py` turned into the pin: a substitute
+    the restorer left in an INTERMEDIATE turn is counted, not fatal.
+
+    The same residual in the FINAL answer was always measured (the pre-gate
+    calls it «неверно» for free); one turn earlier it raised `OracleLeak` out
+    of `build_prompt`, and `judge_triple` has no `except` — so the exception
+    left `run_triple_v5` AFTER all three arms were paid for, left `drive_v5`
+    before a single row was appended, and left `main()` before the report, the
+    gate file and the stamp. 62 of 66 multi-turn cases in a 150-case sample
+    are one agent restatement away from it.
+    """
+    failures: list[str] = []
+    case = _fixture_case()
+    gateway = _MintedOnly((SUBSTITUTE,))
+    earlier = _run_with_turns(case, (f"Нашёл {SUBSTITUTE}.", f"Готово, {REAL_NAME}."),
+                              f"Готово, {REAL_NAME}.")
+    try:
+        outcome = asyncio.run(h.judge_triple(case, earlier, gateway, None))  # type: ignore[arg-type]
+    except h.OracleLeak as leak:
+        # Reported rather than propagated: this is the very failure F3.2
+        # closed, and a check that dies takes the rest of the file with it.
+        return [f"подмена в раннем ходе снова убивает тройку: {leak}"]
+    if outcome.turn_residual != 1:
+        failures.append(f"нераскрытых подмен в ходах насчитано {outcome.turn_residual}, а она одна")
+    if len(outcome.row.input_sha256) != 64:
+        failures.append(f"промпт не захэширован: {outcome.row.input_sha256!r}")
+    if outcome.row.verdict.judged_by != "none":
+        failures.append(f"судья выключен, а вердикт {outcome.row.verdict.judged_by}")
+    # The same residual in the ANSWER is the pre-gate's verdict, free and
+    # deterministic — and it still does not raise.
+    in_answer = _run_with_turns(case, (f"Нашёл {REAL_NAME}.", f"Готово, {SUBSTITUTE}."),
+                                f"Готово, {SUBSTITUTE}.")
+    gated = asyncio.run(h.judge_triple(case, in_answer, gateway, None))  # type: ignore[arg-type]
+    if gated.row.verdict.judged_by != "residual_gate":
+        failures.append(f"подмена в ответе не остановила судью: {gated.row.verdict}")
+    if gated.row.verdict.cost_usd != 0.0:
+        failures.append("претгейт потратил деньги")
+    if len(gated.row.input_sha256) != 64:
+        failures.append("претгейт оставил тройку без хэша промпта — переджудить нечем")
+    # The NEGATIVE: a turn with no substitute is counted as nothing, so the
+    # number above reads the record rather than the presence of turns.
+    honest = _run_with_turns(case, (f"Нашёл {REAL_NAME}.", f"Готово, {REAL_NAME}."),
+                             f"Готово, {REAL_NAME}.")
+    clean = asyncio.run(h.judge_triple(case, honest, gateway, None))  # type: ignore[arg-type]
+    if clean.turn_residual != 0:
+        failures.append(f"честный прогон насчитал {clean.turn_residual} нераскрытых подмен")
+    return failures
+
+
+def _handles(source: Path, function: str, exception: str) -> bool:
+    """Does `function` in `source` catch `exception`? Walked with `ast`.
+
+    A text scan would find the name in the docstring that explains why the
+    catch is there — which is the one place it is guaranteed to appear whether
+    or not the catch survived an edit.
+    """
+    tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name != function:
+            continue
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.ExceptHandler) and isinstance(inner.type, ast.Name):
+                if inner.type.id == exception:
+                    return True
+    return False
+
+
+def test_a_judge_leak_never_discards_the_arms() -> list[str]:
+    """F3.2, half two: a leak we DID cause (a substitute in the oracle or in
+    the customer's question) still stops the judging — and no longer the run.
+
+    Shown by the reviewers' `f2b_blast.py`: one `OracleLeak` propagated out of
+    `drive_v5`, the triple that had paid for three arms left no row at all, and
+    `<run>.spend.tsv`, `<run>.report.txt` and `<run>.gate.json` were never
+    written. `--resume` would then re-pay for the same leak for ever.
+    """
+    failures: list[str] = []
+    here = Path(__file__).resolve().parent
+    if not _handles(here / "harness.py", "run_triple_v5", "OracleLeak"):
+        failures.append("run_triple_v5 не ловит OracleLeak — одна утечка снова убьёт прогон")
+    # The walk must be able to say «нет», or the check above passes on anything.
+    with tempfile.TemporaryDirectory() as tmp:
+        naked = Path(tmp) / "naked.py"
+        naked.write_text("def run_triple_v5() -> None:\n    \"\"\"OracleLeak\"\"\"\n    pass\n",
+                         encoding="utf-8")
+        if _handles(naked, "run_triple_v5", "OracleLeak"):
+            failures.append("обход ast принял упоминание в строке документации за перехват")
+    # And the leak is still LOUD where it is ours: the oracle list.
+    case = _fixture_case()
+    faked = _run_with_turns(case, (f"Нашёл {REAL_NAME}.",), f"Готово, {REAL_NAME}.")
+    try:
+        asyncio.run(h.judge_triple(case, faked, _MintedOnly((REAL_NAME,)),  # type: ignore[arg-type]
+                                   None))
+        failures.append("подмена, совпавшая с оракулом, не подняла OracleLeak")
+    except h.OracleLeak:
+        pass
+    return failures
+
+
+def test_the_judge_spend_is_charged_to_the_run() -> list[str]:
+    """F3.6: the judge draws on the SAME ledger, so a triple's `cost_usd` that
+    counted only the arms let `--resume` re-open a ceiling already spent."""
+    failures: list[str] = []
+    if h.charged(0.03, 0.02) != 0.05:
+        failures.append(f"тройка посчитала себе {h.charged(0.03, 0.02)} вместо 0.05")
+    if h.charged(0.03, 0.0) != 0.03:
+        failures.append("бесплатный судья изменил цену тройки")
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = Path(tmp) / "v5-live-nano"
+        run_dir.mkdir()
+        arms = r.run_file(run_dir, RUN_ID, "<run>.arms.jsonl")
+        for arm in ("C", "I", "C2"):
+            r.append_row(arms, {"case_id": "c-0001", "repeat": 0, "arm": arm,
+                                "termination": "done"})
+        r.append_row(r.run_file(run_dir, RUN_ID, "<run>.triples.jsonl"),
+                     {"case_id": "c-0001", "repeat": 0,
+                      "cost_usd": h.charged(0.03, 0.02), "judge_cost_usd": 0.02})
+        already, spent = h._resume(run_dir)
+        if already != frozenset({("c-0001", 0)}):
+            failures.append(f"продолжение не увидело готовую тройку: {already}")
+        if abs(spent - 0.05) > 1e-9:
+            failures.append(f"продолжение списало с потолка ${spent}, а тройка стоила $0.05")
+    # The refused triple carries both numbers too, so a run that spent nothing
+    # still has the columns the report's cost lines read.
+    with tempfile.TemporaryDirectory() as tmp:
+        ledger = v3_judge.SpendLedger(Path(tmp) / "spend.tsv", 0.0)
+        refused = asyncio.run(h.run_triple_v5(_fixture_case(), 0, None, ledger, None,  # type: ignore[arg-type]
+                                              "claude-haiku-4-5-20251001", RUN_ID))
+        for key in ("cost_usd", "judge_cost_usd", "turn_residual"):
+            if key not in refused.triple:
+                failures.append(f"в строке тройки нет поля {key}")
+    return failures
+
+
 def main() -> int:
     checks: tuple[tuple[str, Callable[[], list[str]]], ...] = (
         ("only_harness_imports_pseudex", test_only_harness_imports_pseudex),
@@ -314,6 +477,9 @@ def main() -> int:
         ("control_reply_is_copied", test_control_reply_is_copied),
         ("turn_replies_are_restored", test_turn_replies_are_restored),
         ("baseline_flag_reads_v4_dir", test_baseline_flag_reads_v4_dir),
+        ("residual_in_an_earlier_turn_is_measured", test_residual_in_an_earlier_turn_is_measured),
+        ("a_judge_leak_never_discards_the_arms", test_a_judge_leak_never_discards_the_arms),
+        ("the_judge_spend_is_charged_to_the_run", test_the_judge_spend_is_charged_to_the_run),
     )
     failures: list[str] = []
     for name, check in checks:

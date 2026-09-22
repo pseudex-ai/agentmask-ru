@@ -1,4 +1,4 @@
-"""`observe.py` pinned: orientation, ownership, alignment, and the four statuses.
+"""`observe.py` pinned: orientation, ownership, alignment, and the five statuses.
 
     cd prototype && source .venv/bin/activate && python3 -m bench.agentpii5.test_observe
 
@@ -32,6 +32,7 @@ from bench.agentpii5.fixtures import (
     _result,
     _run,
     _with_calls,
+    _with_masked,
     _with_mentions,
     _with_replies,
     _with_results,
@@ -78,9 +79,9 @@ def test_out_orientation() -> list[str]:
     substitute AS THE AGENT WROTE IT — never canonicalised first."""
     hop = _hop("OUT", "tool_arg", "p1", 0, 0, "crm_upsert_contact", 0, -1, "contact.last_name")
     case = _case("obs-out", "single", (REAL_NAME,), (NAME,), (hop,))
-    run = _with_calls(_run("obs-out"), (_call(
+    run = _with_subs(_with_calls(_run("obs-out"), (_call(
         "crm_upsert_contact", {"contact": {"last_name": "Пахомовой"}},
-        {"contact": {"last_name": "Ивановой"}}, {}, "", 0),), (0,))
+        {"contact": {"last_name": "Ивановой"}}, {}, "", 0),), (0,)), {"p1": FAKE_NAME})
     got = _one(case, run).hops[0]
     problems: list[str] = []
     if got.produced != "Ивановой":
@@ -146,23 +147,166 @@ def test_answer_alignment() -> list[str]:
 
 
 def test_residual_out() -> list[str]:
-    """A substitute the engine reported as surviving in a tool leaf is
-    `residual` and carries NO verdict: there is no form question about a value
-    that never became real."""
+    """A substitute still standing in a tool leaf is `residual` and carries NO
+    verdict: there is no form question about a value that never became real.
+
+    THE OBSERVER DECIDES, NOT THE ENGINE. `ObservedCall.residual` is the
+    gateway's own `residual_tokens` report, and the third case below is the
+    one that matters: the fake reached the tool and the engine reported
+    NOTHING. Reading the flag made that a clean `observed` hop with
+    `form_match` comparing the fake to itself — the product's worst defect
+    scored as a success by asking the defendant."""
     hop = _hop("OUT", "tool_arg", "p1", 0, 0, "crm_upsert_contact", 0, -1, "contact.last_name")
     case = _case("obs-res", "single", (REAL_NAME,), (NAME,), (hop,))
-    run = _with_calls(_run("obs-res"), (_call(
-        "crm_upsert_contact", {"contact": {"last_name": FAKE_NAME}},
-        {"contact": {"last_name": FAKE_NAME}}, {"contact.last_name": (FAKE_NAME,)}, "", 0),), (0,))
-    got = _one(case, run).hops[0]
-    clean = _with_calls(_run("obs-res"), (_call(
-        "crm_upsert_contact", {"contact": {"last_name": FAKE_NAME}},
-        {"contact": {"last_name": REAL_NAME}}, {"contact.last_name": ()}, "", 0),), (0,))
+
+    def one(restored: str, reported: tuple[str, ...]) -> object:
+        return _one(case, _with_subs(_with_calls(_run("obs-res"), (_call(
+            "crm_upsert_contact", {"contact": {"last_name": FAKE_NAME}},
+            {"contact": {"last_name": restored}}, {"contact.last_name": reported}, "", 0),), (0,)),
+            {"p1": FAKE_NAME})).hops[0]
+
     problems: list[str] = []
+    got = one(FAKE_NAME, (FAKE_NAME,))
     if got.status != "residual" or got.verdict is not None:
         problems.append(f"a surviving substitute must be residual without a verdict, got {got.status}")
-    if _one(case, clean).hops[0].status != "observed":
-        problems.append("an EMPTY residual tuple is not a residual; the leaf was clean")
+    if one(REAL_NAME, ()).status != "observed":
+        problems.append("a restored leaf is clean; the engine reported nothing and there is nothing")
+    silent = one(FAKE_NAME, ())
+    if silent.status != "residual":
+        problems.append("the fake reached the tool and the ENGINE reported nothing: the observer "
+                        f"must still say residual, got {silent.status}")
+    return problems
+
+
+def test_out_unmasked_has_nothing_to_compare() -> list[str]:
+    """A leaf the gateway never masked is `unmasked`, never `observed`.
+
+    The reviewer's passthrough probe: no substitute minted, the agent wrote the
+    REAL value, `/unmask_arguments` left it alone, so `restored == written` and
+    `form_match` said «same». `form_hOUT`, `chain_form`, `chain_value` and
+    `multi_all_out` all printed 100% for a gateway that protected nothing."""
+    hop = _hop("OUT", "tool_arg", "p1", 0, 0, "crm_upsert_contact", 0, -1, "contact.last_name")
+    case = _case("obs-pass", "single", (REAL_NAME,), (NAME,), (hop,))
+    missed = _with_calls(_run("obs-pass"), (_call(
+        "crm_upsert_contact", {"contact": {"last_name": REAL_NAME}},
+        {"contact": {"last_name": REAL_NAME}}, {}, "", 0),), (0,))
+    worked = _with_subs(_with_calls(_run("obs-pass"), (_call(
+        "crm_upsert_contact", {"contact": {"last_name": FAKE_NAME}},
+        {"contact": {"last_name": REAL_NAME}}, {}, "", 0),), (0,)), {"p1": FAKE_NAME})
+    problems: list[str] = []
+    got = _one(case, missed).hops[0]
+    if got.status != "unmasked" or got.verdict is not None:
+        problems.append(f"a leaf with no substitute in it must be `unmasked`, got {got.status}")
+    if _one(case, worked).hops[0].status != "observed":
+        problems.append("a leaf that DID carry a substitute must stay observed — the fixture "
+                        "would otherwise separate on nothing")
+    if "unmasked" not in contracts.HOP_STATUSES:
+        problems.append("contracts.HOP_STATUSES does not carry the status the observer emits")
+    return problems
+
+
+def test_out_reformatted_substitute_is_not_unmasked() -> list[str]:
+    """The agent re-notated the substitute before writing it — «8 999 000-11-22»
+    for a minted «+79990001122». The leaf DOES carry the substitute, and a
+    check that looked for the surface or a `pieces_of` piece found neither: on
+    Russian traffic that is the common case, and calling it `unmasked` would
+    turn the gateway's own promise (follow the agent's notation) into a miss."""
+    hop = _hop("OUT", "tool_arg", "p2", 0, 0, "crm_upsert_contact", 0, -1, "contact.phone")
+    case = _case("obs-note", "single", ("…",), (PHONE,), (hop,))
+    run = _with_subs(_with_calls(_run("obs-note"), (_call(
+        "crm_upsert_contact", {"contact": {"phone": "8 999 000-11-22"}},
+        {"contact": {"phone": REAL_PHONE}}, {}, "", 0),), (0,)), {"p2": "+79990001122"})
+    got = _one(case, run).hops[0]
+    return [] if got.status == "observed" else [
+        f"a reformatted substitute is still a substitute, got {got.status}"]
+
+
+def test_memory_hop_reads_what_the_harness_records() -> list[str]:
+    """The memory hop, decided from mentions the harness actually writes.
+
+    `GatewayV5._note_message_mentions` records a message's mentions ONCE, when
+    the message is pushed; the transcript then carries it forward. The observer
+    used to ask for a re-recording of the first message at «the request after
+    the last mention», which never exists, so EVERY IN/memory hop on the
+    production path came back `leaked` — the memory family's headline defect
+    was an artefact of the instrument."""
+    recall = _hop("IN", "memory", "p1", 1, 4, "", -1, -1, "")
+    case = _case("obs-mem", "memory_anaphora", ("…", "…"), (NAME,), (recall,))
+    pushed = {0: ((0, len(REAL_NAME)),), 4: ()}
+    carried = _with_masked(_with_mentions(_run("obs-mem"), (
+        contracts.MentionRecord("p1", 0, -1, FAKE_NAME, 1),)), pushed)
+    never = _with_masked(_run("obs-mem"), pushed)
+    unreached = _with_masked(_with_mentions(_run("obs-mem"), (
+        contracts.MentionRecord("p1", 0, -1, FAKE_NAME, 1),)), {0: ((0, len(REAL_NAME)),)})
+    problems: list[str] = []
+    got = _one(case, carried).hops[0]
+    if got.status != "observed" or got.produced != FAKE_NAME:
+        problems.append(f"the substitute the transcript carries is what the model read: {got.status}"
+                        f" / {got.produced!r}")
+    if _one(case, never).hops[0].status != "leaked":
+        problems.append("the message was masked and left no mention: the real value went into the "
+                        "context, which is `leaked`")
+    if _one(case, unreached).hops[0].status != "absent":
+        problems.append("a recall turn the run never reached is `absent`, not a miss the gateway owns")
+    return problems
+
+
+def test_answer_needles_survive_inflection() -> list[str]:
+    """A correctly restored DECLINED name and a REFORMATTED phone are answer
+    hops, not `absent`. The needles used to be whole surfaces and whole parts,
+    so «Передал Пахомовой Ольге» → «Передал Ивановой Елене» — two of the four
+    registers the corpus is written in — was invisible to the answer leg."""
+    name_hop = _hop("OUT", "answer", "p1", 0, 0, "", -1, -1, "")
+    name_case = _case("obs-decl", "single", (REAL_NAME,), (NAME,), (name_hop,))
+    declined = _with_subs(_with_replies(
+        _run("obs-decl"), "Передал Пахомовой Ольге, всё готово.",
+        "Передал Ивановой Елене, всё готово.", ""), {"p1": FAKE_NAME})
+    phone_hop = _hop("OUT", "answer", "p2", 0, 0, "", -1, -1, "")
+    phone_case = _case("obs-note2", "single", ("…",), (PHONE,), (phone_hop,))
+    renotated = _with_subs(_with_replies(
+        _run("obs-note2"), "Звоните на +7 (999) 000-11-22.",
+        "Звоните на +7 (916) 402-11-87.", ""), {"p2": "+79990001122"})
+    problems: list[str] = []
+    for label, case, run in (("declined", name_case, declined), ("renotated", phone_case, renotated)):
+        hops = _one(case, run).hops
+        if not hops or hops[0].status != "observed":
+            problems.append(f"{label}: expected an observed answer hop, got "
+                            f"{[one.status for one in hops]}")
+    return problems
+
+
+def test_residual_answer_reads_the_whole_reply() -> list[str]:
+    """A substitute standing in the reply the customer reads is `residual`
+    wherever it stands, in whatever form, declared or not.
+
+    Three inputs the alignment-based scan could not see: a DECLINED substitute
+    that survived, a REFORMATTED one, and one belonging to an item the case
+    declared no answer hop for. And one it must NOT fire on: a restored reply
+    whose real name shares a given name with the substitute."""
+    from bench.agentpii5.observe import residual_answer_items
+    problems: list[str] = []
+    cases = (
+        ("declined", NAME, {"p1": FAKE_NAME}, "Передал Пахомовой Ольге.", True),
+        ("renotated", PHONE, {"p2": "+79990001122"}, "Звоните на +7 (999) 000-11-22.", True),
+        ("restored", NAME, {"p1": FAKE_NAME}, "Передал Ивановой Елене.", False),
+    )
+    for label, item, subs, reply, expected in cases:
+        case = _case(f"obs-res-{label}", "single", ("…",), (item,), ())
+        run = _with_subs(_with_replies(_run(f"obs-res-{label}"), reply, reply, ""), subs)
+        left = bool(residual_answer_items(case, run))
+        if left != expected:
+            problems.append(f"{label}: residual_answer_items said {left}, expected {expected}")
+    # The engine may mint a substitute that SHARES a given name with the real
+    # value; the restored reply is full of real values. Without the own-stem
+    # filter the critical-defect line fires on the product working.
+    shared = _item("p1", "NAME", REAL_NAME, REAL_NAME, "i1", _in_message(0, 0, len(REAL_NAME)))
+    case = _case("obs-res-shared", "single", ("…",), (shared,), ())
+    reply = "Передал Ивановой Елене."
+    run = _with_subs(_with_replies(_run("obs-res-shared"), reply, reply, ""),
+                     {"p1": "Пахомова Елена"})
+    if residual_answer_items(case, run):
+        problems.append("a substitute sharing the customer's own given name is not evidence that "
+                        "the substitute survived")
     return problems
 
 
@@ -237,6 +381,41 @@ def test_extra_hop_undeclared() -> list[str]:
     return problems
 
 
+def test_parent_path_joins_the_leaves_in_field_order() -> list[str]:
+    """One value carried by SEVERAL leaves is ONE hop.
+
+    `leaf_text` joins the leaves under a parent path with `contracts.FIELD_SEP`
+    in the TOOL's field order, and the comparator reads `by_fields` off that
+    separator. Both halves were exercised by nothing: the order check is not
+    decorative — sorting the keys alphabetically puts `address.building`
+    before `address.locality`, so «Ижевск, Клубная, 85» would be compared as
+    «85, Ижевск, Клубная» and every `house_marker` and `generic_position`
+    feature would be read off the wrong word. A blank field is skipped rather
+    than joined as an empty segment, or a flat the agent left out would look
+    like a missing piece of the street."""
+    address = _item("p4", "LOC", "Ижевск, улица Клубная, 85", "Ижевск, улица Клубная, 85", "i1",
+                    _in_message(0, 0, 25))
+    hop = _hop("OUT", "tool_arg", "p4", 0, 0, "courier_book", 0, -1, "address")
+    case = _case("obs-parent", "single", ("…",), (address,), (hop,))
+    run = _with_subs(_with_calls(_run("obs-parent"), (_call(
+        "courier_book",
+        {"address": {"locality": "Самара", "street": "Луговая", "building": "10", "sflat": ""}},
+        {"address": {"locality": "Ижевск", "street": "Клубная", "building": "85", "sflat": ""}},
+        {}, "", 0),), (0,)), {"p4": "Самара, улица Луговая, 10"})
+    got = _one(case, run).hops[0]
+    sep = contracts.FIELD_SEP
+    problems: list[str] = []
+    if got.produced != f"Ижевск{sep}Клубная{sep}85":
+        problems.append(f"the leaves must join in the tool's field order, got {got.produced!r}")
+    if got.reference != f"Самара{sep}Луговая{sep}10":
+        problems.append(f"the written half joins the same way, got {got.reference!r}")
+    if got.status != "observed" or got.verdict is None:
+        problems.append(f"a by-fields leaf is an ordinary OUT hop, got {got.status}")
+    elif "by_fields" in got.verdict.differs:
+        problems.append("both halves came from the same leaves; `by_fields` cannot differ here")
+    return problems
+
+
 def test_seed_item_has_no_message_span() -> list[str]:
     """A seed item's locus carries no message offsets; the observer must not
     index the transcript with them. Pinned because the IN/user path and the
@@ -261,9 +440,16 @@ def main() -> int:
         ("template_owner", test_template_owner),
         ("answer_alignment", test_answer_alignment),
         ("residual_out", test_residual_out),
+        ("out_unmasked_has_nothing_to_compare", test_out_unmasked_has_nothing_to_compare),
+        ("out_reformatted_substitute_is_not_unmasked", test_out_reformatted_substitute_is_not_unmasked),
+        ("memory_hop_reads_what_the_harness_records", test_memory_hop_reads_what_the_harness_records),
+        ("answer_needles_survive_inflection", test_answer_needles_survive_inflection),
+        ("residual_answer_reads_the_whole_reply", test_residual_answer_reads_the_whole_reply),
         ("leaked_in_partial_cover", test_leaked_in_partial_cover),
         ("optional_absent_not_emitted", test_optional_absent_not_emitted),
         ("extra_hop_undeclared", test_extra_hop_undeclared),
+        ("parent_path_joins_the_leaves_in_field_order",
+         test_parent_path_joins_the_leaves_in_field_order),
         ("seed_item_has_no_message_span", test_seed_item_has_no_message_span),
     )
     failures: list[str] = []

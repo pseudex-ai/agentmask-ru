@@ -28,7 +28,7 @@ from bench.agentpii4.pools import BuildError
 from bench.agentpii5 import contracts as c
 from bench.agentpii5 import schema as s
 from bench.agentpii5.contracts import CaseV5, LoopSpec
-from bench.agentpii5.mock import seed_backend_v5
+from bench.agentpii5.mock import render_problems
 from bench.agentpii5.scenarios5 import common, document, memory_anaphora, rag, user_in_loop
 from bench.agentpii5.scenarios5.plan_b import PLAN_B
 from bench.agentpii5.tools import FILE_EXTENSIONS
@@ -221,6 +221,46 @@ def test_memory_cases_are_long() -> list[str]:
 
 # --- rag ---------------------------------------------------------------------------
 
+def test_rag_identities_are_distinct_people() -> list[str]:
+    """One value never belongs to two identities, and no «stranger» is the
+    customer under another name.
+
+    THE REPRODUCTION THIS PINS (corpus-lens, rag.py:134): `extra_people` was
+    called twice inside one case and restarts its ordinal each time, so 70 of
+    100 cases gave ONE value two identities and two gave a foreign identity the
+    customer's own name — `rag_identity_kept` then charged the gateway with a
+    merge no gateway could avoid.
+    """
+    problems: list[str] = []
+    shared = 0
+    for case in BUILT["rag"]:
+        owners: dict[tuple[str, str], set[str]] = {}
+        for item in case.base.pii:
+            if item.where.kind != "seed":
+                continue
+            owners.setdefault((item.type, item.value), set()).add(item.identity)
+        for (kind, value), identities in owners.items():
+            if len(identities) > 1:
+                shared += 1
+                if len(problems) < 4:
+                    problems.append(f"{case.base.id}: {kind} {value!r} belongs to "
+                                    f"{sorted(identities)}")
+    if shared:
+        problems.append(f"{shared} seeded values carry two identities")
+    # THE NEGATIVE: the check sees a case where one value has two owners.
+    case = BUILT["rag"][0]
+    twin = next(item for item in case.base.pii if item.where.kind == "seed")
+    doubled = list(case.base.pii) + [replace(twin, id=f"{twin.id}-twin",
+                                             identity=f"{twin.identity}-twin")]
+    owners = {}
+    for item in doubled:
+        if item.where.kind == "seed":
+            owners.setdefault((item.type, item.value), set()).add(item.identity)
+    if not any(len(identities) > 1 for identities in owners.values()):
+        problems.append("the duplicate check does not see a value with two owners")
+    return problems[:6]
+
+
 def test_rag_foreign_identities() -> list[str]:
     """Every RAG case declares at least one stranger, none of them is the
     customer, and each is in a chunk the case seeds."""
@@ -408,62 +448,32 @@ def test_plate_spoken_parses() -> list[str]:
 # --- the mock is part of the corpus ----------------------------------------------------
 
 def test_declared_returns_are_tagged() -> list[str]:
-    """Every `ReturnExpectation` names items the real backend actually tags.
+    """Every `ReturnExpectation` names items the real backend actually tags, and
+    every IN/tool hop has a rendered span.
 
     THIS IS THE CHECK THAT COSTS THE MOST AND CATCHES THE MOST. A declared hop
     on an untagged value cannot be observed, so it scores as a permanent gateway
     miss — the corpus would report a defect no gateway could avoid. It has
-    already caught three: a slot named `{who2}` that the mock's template split
+    already caught four: a slot named `{who2}` that the mock's template split
     does not recognise as a slot, a customer phone duplicated between the CRM
-    card and a document (ambiguous by value, tagged on neither), and a `.pdf`
-    path `file_read` refuses.
+    card and a document (ambiguous by value, tagged on neither), a `.pdf` path
+    `file_read` refuses, and a `kb_search` whose payload shrank when the agent
+    rephrased the query.
+
+    ONE DRIVER, IN `mock.py`. The hand-written `_arguments_for` this used to
+    carry drove five tools and returned None for the rest, so a family it did
+    not name was never checked at all; `mock.render_problems` drives every
+    declared call from the case's own OUT hops and is the same refusal
+    `build.py` makes.
     """
     problems: list[str] = []
     for case in ALL_CASES:
-        backend = seed_backend_v5(case)
-        for expectation in case.returns:
-            arguments = _arguments_for(case, expectation.tool_name)
-            if arguments is None:
-                continue
-            log = backend.call(expectation.tool_name, arguments)
-            form = backend.form_of(log.seq)
-            if form != expectation.return_form:
-                problems.append(f"{case.base.id}: {expectation.tool_name} answered "
-                                f"{form!r}, the case expects {expectation.return_form!r}")
-            lost = [item for item in expectation.result_item_ids
-                    if item not in log.result_spans]
-            if lost:
-                problems.append(f"{case.base.id}: {expectation.tool_name} tagged none of "
-                                f"{lost[:3]}")
-    return problems
-
-
-def _arguments_for(case: CaseV5, tool: str) -> dict[str, object] | None:
-    """Arguments that make `tool` answer what the case declared, read off the
-    case's own seeds. Returns None for a tool this check does not drive."""
-    if tool == "crm_find_contact":
-        phone = next(item for item in case.base.pii
-                     if item.type == "PHONE" and item.where.kind == "seed"
-                     and item.where.record == "c-caller")
-        return {"query": {"phone": phone.value}}
-    if tool == "kb_search":
-        assert case.rag is not None
-        topics = " ".join(str(record.fields.get("topic", ""))
-                          for record in case.base.seed_records if record.table == "kb_chunks")
-        return {"query": topics, "k": case.rag.k}
-    if tool == "doc_retrieve":
-        return {"doc_id": "doc-1"}
-    if tool == "file_read":
-        record = next(one for one in case.base.seed_records if one.table == "documents")
-        return {"path": str(record.fields["path"])}
-    if tool == "form_parse":
-        record = next(one for one in case.base.seed_records if one.table == "documents")
-        return {"text": f"{record.fields['last_name']} {record.fields['first_name']} "
-                        f"{record.fields['snils']}"}
-    return None
+        problems.extend(render_problems(case))
+    return problems[:8]
 
 
 CHECKS: tuple[Callable[[], list[str]], ...] = (
+    test_rag_identities_are_distinct_people,
     test_no_pseudex, test_build_each_family, test_case_ids_are_unique, test_registers,
     test_no_search, test_loop_confirm_has_no_value, test_loop_acts_after_the_confirmation,
     test_anaphora_not_written, test_memory_cases_are_long, test_rag_foreign_identities,

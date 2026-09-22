@@ -59,11 +59,13 @@ from pathlib import Path
 
 from bench.agentpii4.pools import BuildError
 from bench.agentpii4.schema import Case, PiiItem, SeedRecord, case_from_json
-from bench.agentpii5.contracts import (BranchSpec, CaseV5, Hop, LoopSpec, PickSpec,
+from bench.agentpii4.tools import FieldSpec
+from bench.agentpii5 import mock
+from bench.agentpii5.contracts import (BranchSpec, CaseV5, Hop, LoopSpec, MemorySpec, PickSpec,
                                        ReturnExpectation, SPEECH_REGISTERS,
                                        V4_KIND_TO_BEHAVIOUR, hop_owner_of_leaf)
 from bench.agentpii5.schema import has_result, validate_v5
-from bench.agentpii5.tools import REGISTRY_V5, spec_v5_for
+from bench.agentpii5.tools import REGISTRY_V5, expected_leaf_value, spec_v5_for
 
 V4_CORPUS: Path = Path(__file__).resolve().parent.parent / "agentpii4" / "corpus.json"
 # One streaming case in every `STREAMING_EVERY` eligible ones (a speech register
@@ -130,9 +132,59 @@ def revise_reporting(cases: Sequence[Case]) -> tuple[list[Revision], list[str]]:
 # --- one case -------------------------------------------------------------------
 
 def _revise_one(case: Case, streaming: bool) -> Revision:
-    """The whole derivation for one case, in the order the hops must be declared:
-    what the customer said, what a tool returned, what went into the next call,
-    what the answer carried."""
+    """The whole derivation for one case, DECLARED TWICE.
+
+    THE FIRST DRAFT IS A QUESTION AND THE SECOND IS THE ANSWER. v4 recorded
+    which tools a case offers, never which values a call actually brings back,
+    so the first pass declares every crossing the registry's leaf list IMPLIES
+    and the second declares only the ones the real backend RENDERED when the
+    draft's own calls were made (`mock.drive_returns`). Before the proof, 42% of
+    the revised half's IN/tool hops were crossings the mock never produces —
+    permanent gateway misses the corpus had invented, and 132 cases claiming a
+    tool loop with no observable crossing in it at all.
+    """
+    draft = _declare(case, _readers(case), {}, {}, streaming)
+    rendered = _rendered(draft)
+    kept = {tool: [(item, path) for item, path in pairs
+                   if item.id in rendered.get((tool, 0), {})]
+            for tool, pairs in _readers(case).items()}
+    revised, downgraded, reason = _finish(
+        case, {tool: pairs for tool, pairs in kept.items() if pairs},
+        {call.tool_name: call.form for call in mock.drive_returns(draft) if call.form},
+        rendered, streaming)
+    problems = validate_v5(revised)
+    if problems:
+        raise BuildError("; ".join(problems))
+    return Revision(case=revised, downgraded_from=downgraded, reason=reason)
+
+
+def _rendered(draft: CaseV5) -> dict[tuple[str, int], dict[str, str]]:
+    """(tool, ordinal) → {item id: the text that call's result printed for it}."""
+    return {(call.tool_name, call.call_ordinal): dict(call.rendered)
+            for call in mock.drive_returns(draft)}
+
+
+def _finish(case: Case, reads: dict[str, list[tuple[PiiItem, str]]], forms: dict[str, str],
+            rendered: dict[tuple[str, int], dict[str, str]], streaming: bool
+            ) -> tuple[CaseV5, str, str]:
+    """The proven declaration plus the behaviour it can carry."""
+    declared = _declare(case, reads, forms, rendered, streaming)
+    behaviour, downgraded, reason, pick, branch, loop = _behaviour_of(
+        case, declared.behaviour, declared.hops, declared.loop, reads)
+    return (CaseV5(base=declared.base, behaviour=behaviour, hops=declared.hops,
+                   returns=declared.returns, forced=(), memory=declared.memory,
+                   pick=pick, branch=branch, loop=loop if behaviour == "user_in_loop" else None,
+                   rag=None, document=None, has_result=declared.has_result,
+                   streaming=declared.streaming, revised_from_v4=True),
+            downgraded, reason)
+
+
+def _declare(case: Case, reads: dict[str, list[tuple[PiiItem, str]]], forms: dict[str, str],
+             rendered: dict[tuple[str, int], dict[str, str]], streaming: bool) -> CaseV5:
+    """One pass of the derivation, in the order the hops must be declared: what
+    the customer said, what a tool returned, what went into the next call, what
+    the answer carried. `forms` and `rendered` are what the backend did with the
+    previous pass; empty on the first, where nothing has been driven yet."""
     hops: list[Hop] = []
     in_hop: dict[str, int] = {}
     user_turns = [index for index, message in enumerate(case.messages) if message.role == "user"]
@@ -148,7 +200,6 @@ def _revise_one(case: Case, streaming: bool) -> Revision:
                         turn=item.where.msg, tool_name="", call_ordinal=-1, parallel_group="",
                         source_hop=-1, path="", optional=False))
 
-    reads = _readers(case)
     returns: list[ReturnExpectation] = []
     for tool in sorted(reads):
         for item, path in reads[tool]:
@@ -157,11 +208,13 @@ def _revise_one(case: Case, streaming: bool) -> Revision:
                             turn=first_turn, tool_name=tool, call_ordinal=0, parallel_group="",
                             source_hop=-1, path=path, optional=False))
         returns.append(ReturnExpectation(
-            tool, 0, _return_form(tool, {item.where.record for item, _path in reads[tool]}),
+            tool, 0,
+            forms.get(tool) or _return_form(tool, {item.where.record
+                                                   for item, _path in reads[tool]}),
             tuple(item.id for item, _path in reads[tool])))
 
     behaviour = V4_KIND_TO_BEHAVIOUR[case.kind]
-    loop = _loop_spec(case, behaviour, user_turns) if behaviour == "user_in_loop" else None
+    loop = _loop_spec(case, user_turns) if behaviour == "user_in_loop" else None
     show_turn = loop.show_turn if loop is not None else last_turn
 
     answered = _answer_items(case, reads)
@@ -181,8 +234,8 @@ def _revise_one(case: Case, streaming: bool) -> Revision:
         argument_hops.append(Hop(kind="OUT", owner=hop_owner_of_leaf(tool, path),
                                  item_id=item.id, hop_index=-1, turn=last_turn,
                                  tool_name=tool, call_ordinal=0, parallel_group="",
-                                 source_hop=in_hop.get(item.id, -1), path=path,
-                                 optional=not spec.required))
+                                 source_hop=_source_of(item, spec, hops, in_hop, rendered),
+                                 path=path, optional=not spec.required))
 
     # The answer comes before the arguments for `user_in_loop` (it is what the
     # confirmation is about) and after them everywhere else, which is the order
@@ -194,17 +247,83 @@ def _revise_one(case: Case, streaming: bool) -> Revision:
                         call_ordinal=hop.call_ordinal, parallel_group=hop.parallel_group,
                         source_hop=hop.source_hop, path=hop.path, optional=hop.optional))
 
-    behaviour, downgraded, reason, pick, branch, loop = _behaviour_of(
-        case, behaviour, hops, loop, reads)
-    revised = CaseV5(
-        base=case, behaviour=behaviour, hops=tuple(hops), returns=tuple(returns), forced=(),
-        memory=(), pick=pick, branch=branch, loop=loop, rag=None, document=None,
-        has_result=has_result(tuple(hops)),
-        streaming=streaming and has_result(tuple(hops)), revised_from_v4=True)
-    problems = validate_v5(revised)
-    if problems:
-        raise BuildError("; ".join(problems))
-    return Revision(case=revised, downgraded_from=downgraded, reason=reason)
+    reached = has_result(tuple(hops))
+    return CaseV5(base=case, behaviour=behaviour, hops=tuple(hops), returns=tuple(returns),
+                  forced=(), memory=_memory_specs(loop, answered), pick=None, branch=None,
+                  loop=loop, rag=None, document=None, has_result=reached,
+                  streaming=streaming and reached, revised_from_v4=True)
+
+
+def _source_of(item: PiiItem, spec: FieldSpec, hops: Sequence[Hop], in_hop: dict[str, int],
+               rendered: dict[tuple[str, int], dict[str, str]]) -> int:
+    """The IN hop an OUT leaf carries forward — declared only when the source
+    result REALLY PRINTED the value the leaf will hold.
+
+    `chain_value` compares the text at the OUT leaf with the text of the source
+    IN hop's span, so «the result of A fed the argument of B» is a claim about
+    two strings being one value. Declared from the leaf list alone it was false
+    twice over: the street item's IN span reads «толстого» while the leaf
+    `contact.address.city` holds «омск», and the surname item's span reads
+    «букин» while `contact.first_name` holds «сергей» — 1 240 of 5 441 revised
+    transitions that no gateway could satisfy, against 520 that could.
+    """
+    source = in_hop.get(item.id, -1)
+    if source < 0 or source >= len(hops):
+        return -1
+    origin = hops[source]
+    if origin.kind != "IN" or origin.owner != "tool":
+        return source
+    printed = rendered.get((origin.tool_name, origin.call_ordinal), {}).get(item.id, "")
+    wanted = expected_leaf_value(item, spec)
+    return source if printed and wanted and _same_value(item.type, printed, wanted) else -1
+
+
+# The types whose value IS its digits, so a notation change is not a different
+# value: «+7 916…» and «+7 (916) …», «XXX-XXX-XXX YY» and eleven digits. LOC and
+# NAME are absent on purpose — «г Ростов-на-дону, ул Дзержинского, д 44» and
+# «44» have one digit signature and are not one value, and reading them as one
+# declared 177 hand-overs the source result never made.
+DIGIT_TYPES: tuple[str, ...] = ("PHONE", "CARD", "SNILS", "INN", "PASSPORT", "PLATE", "DOB")
+
+
+def _same_value(pii_type: str, left: str, right: str) -> bool:
+    """Two spellings of one value, under the fold the comparator uses: case and
+    ё→е for letters, the digit signature for the types that ARE digits. Not the
+    comparator itself — `metrics.value_matches` reads a run, this reads a
+    corpus — but the same question, so a hop this accepts is a hop that line
+    can hit."""
+    if left.casefold().replace("ё", "е") == right.casefold().replace("ё", "е"):
+        return True
+    if pii_type not in DIGIT_TYPES:
+        return False
+    digits = "".join(character for character in left if character.isdigit())
+    other = "".join(character for character in right if character.isdigit())
+    return bool(digits) and digits == other
+
+
+# How a confirmation refers BACK to the value it confirms, by the type of that
+# value: «да, это он» about a person, «на тот же телефон», «на тот адрес», and a
+# bare pronoun for everything else. The vocabulary is `ANAPHORA_KINDS`.
+ANAPHORA_BY_TYPE: dict[str, str] = {
+    "NAME": "same_person", "PHONE": "same_phone", "LOC": "same_address"}
+
+
+def _memory_specs(loop: LoopSpec | None, answered: Sequence[PiiItem]) -> tuple[MemorySpec, ...]:
+    """The value the loop SHOWS and the confirmation refers back to.
+
+    `user_in_loop` IS A MEMORY FAMILY AND DECLARED NONE. The agent shows a value
+    at `show_turn` and the customer confirms it at `confirm_turn` without
+    repeating it — the definition of an anaphoric recall — yet
+    `memory_consistency`'s population in the family whose whole shape is a value
+    held across two turns was empty (C-048). The item is the one the answer hop
+    SHOWED, because that is the value being confirmed.
+    """
+    if loop is None or not answered:
+        return ()
+    shown = answered[0]
+    return (MemorySpec(item_id=shown.id, first_turn=loop.show_turn,
+                       recall_turn=loop.confirm_turn,
+                       anaphora=ANAPHORA_BY_TYPE.get(shown.type, "pronoun")),)
 
 
 # --- what a tool returns ----------------------------------------------------------
@@ -310,26 +429,59 @@ def _arguments(case: Case, in_hop: dict[str, int],
         for field in spec.base.fields:
             if field.kind != "identity" or not field.pii_type:
                 continue
-            item = _argument_item(case, field.pii_type, in_hop, read_by, tool)
+            item = _argument_item(case, field, in_hop, read_by, tool)
             if item is not None:
                 out.append((tool, field.path, item))
     return out
 
 
-def _argument_item(case: Case, pii_type: str, in_hop: dict[str, int],
+def _argument_item(case: Case, field: FieldSpec, in_hop: dict[str, int],
                    read_by: dict[str, str], tool: str) -> PiiItem | None:
     """The value that fills one leaf: a result of a DIFFERENT tool if the case
-    has one of this type for the primary identity, else what was said."""
+    has one for the primary identity, else what was said.
+
+    THE LEAF'S ROLE DECIDES, NOT ONLY ITS TYPE. `expected_leaf_value` is "" for
+    an item that carries no part for the role, and such an item cannot be the
+    value of that leaf — the surname item on `contact.first_name` was 300 hops
+    nothing could satisfy.
+
+    THE IDENTITY IS THE WHOLE IDENTITY. Splitting on the first dot made
+    `p0.other2` and `p0` one person, and 150 OUT hops then wrote a stranger's
+    value into the customer's record; a suffix names a DIFFERENT person in v4's
+    `lookup_list` families and the same person's other address in others, so the
+    only safe reading is the exact one, plus the suffixes the primary itself
+    carries.
+    """
     primary = case.expects.primary_identity
     candidates = [item for item in case.pii
-                  if item.type == pii_type and item.id in in_hop
-                  and item.identity.split(".")[0] == primary.split(".")[0]]
+                  if item.type == field.pii_type and item.id in in_hop
+                  and _same_person(case, item.identity, primary)
+                  and expected_leaf_value(item, field)]
     chained = [item for item in candidates
                if read_by.get(item.id, "") not in ("", tool)]
     if chained:
         return chained[0]
     said = [item for item in candidates if item.where.kind == "message"]
     return said[0] if said else None
+
+
+def _same_person(case: Case, identity: str, primary: str) -> bool:
+    """One person's several loci («p0», «p0.home», «p0.sugg1») against ANOTHER
+    person under the same stem («p0.other2», «p0.courier»).
+
+    THE STEM CANNOT TELL THEM APART AND THE CASE CAN. `identity.split(".")[0]`
+    made the three distinct Букины of a `lookup_list` case one person, and 150
+    OUT hops wrote a stranger's value into the customer's record. What
+    separates them is whether the sub-identity carries a NAME OF ITS OWN: over
+    the 834, `home` / `sugg` / `addr` / `new` / `dir` carry only places
+    (1 105 sub-identities, not one NAME between them) and `other` / `courier`
+    carry a name each (42) — because a person is named and a place is not.
+    """
+    if identity == primary:
+        return True
+    if not identity.startswith(f"{primary}."):
+        return False
+    return not any(item.identity == identity and item.type == "NAME" for item in case.pii)
 
 
 # --- the behaviour, claimed only with its structure ---------------------------------
@@ -424,15 +576,22 @@ def _branch_spec(case: Case) -> BranchSpec | None:
                       then_tool=rest[0], else_tool=rest[1])
 
 
-def _loop_spec(case: Case, behaviour: str, user_turns: Sequence[int]) -> LoopSpec | None:
+def _loop_spec(case: Case, user_turns: Sequence[int]) -> LoopSpec | None:
     """R15: a second user message that confirms WITHOUT repeating a value.
 
     The phrase is the message's own text, not a phrase invented here — a
     revision must describe the case it revises, and a confirmation the dialogue
     never contained would make `LoopSpec.confirm_phrase` fiction the metrics
     then read as fact.
+
+    «CARRIES A VALUE» IS A LOCUS, NOT A SUBSTRING. This used to ask
+    `item.value in case.messages[turn].content`, which is the one search in a
+    corpus builder the whole `prove_no_search` machinery exists to forbid — and
+    it is answerable exactly: v4 wrote every item into a message through
+    `Writer` and recorded WHICH message in `Locus.msg`. The register transform
+    may have rewritten the surface, so the substring test could also be WRONG
+    about a turn it had rewritten.
     """
-    del behaviour
     if len(user_turns) < 2 or not case.seed_records:
         return None
     # THE LAST VALUE-FREE TURN, NOT THE SECOND ONE. A `long_clinic` dialogue
@@ -441,13 +600,16 @@ def _loop_spec(case: Case, behaviour: str, user_turns: Sequence[int]) -> LoopSpe
     # by position downgraded all forty-five of them, because the second turn is
     # where the birth date arrives. The confirmation is the last turn that says
     # nothing new, and it is also the turn the act follows.
-    free = [turn for turn in user_turns[1:]
-            if not any(item.value and item.value in case.messages[turn].content
-                       for item in case.pii)]
+    spoken = {item.where.msg for item in case.pii if item.where.kind == "message"}
+    free = [turn for turn in user_turns[1:] if turn not in spoken]
     if not free:
         return None
     confirm_turn = free[-1]
-    show_turn = user_turns[user_turns.index(confirm_turn) - 1]
+    # THE USER TURN BEFORE THE CONFIRMATION, found by comparing turn numbers.
+    # `user_turns.index(confirm_turn)` said the same thing and is a scan of a
+    # built structure — the shape `prove_no_search` watches for, and the watch
+    # now covers this file.
+    show_turn = [turn for turn in user_turns if turn < confirm_turn][-1]
     phrase = case.messages[confirm_turn].content
     reachable = case.expects.reachable_tools or case.tools
     act = [tool for tool in case.tools if tool != reachable[0]]

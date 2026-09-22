@@ -7,9 +7,13 @@ fixture as well as to pass on a good one — a blindness guard that has never
 refused a prompt is a comment, and the whole point of this module is that the
 guard runs on the paid path.
 """
+import ast
 import hashlib
+import inspect
 import sys
+import tempfile
 from collections.abc import Callable
+from pathlib import Path
 
 from bench.agentpii4.compare import ArmRun
 from bench.agentpii4.schema import (Case, Expectation, Locus, Message, PiiItem, Provenance,
@@ -99,16 +103,49 @@ def test_dialogue_carries_the_agents_turns() -> list[str]:
 
 
 def test_agents_turns_are_restored() -> list[str]:
-    """`turn_replies` is the RESTORED reply per turn. A harness that stored the
-    raw one would put a substitute in front of a judge the whole module is
-    built to keep blind — so the blindness guard must refuse that prompt."""
+    """`turn_replies` is the RESTORED reply per turn — and a substitute the
+    restorer LEFT STANDING there is measured, not fatal (F3.2).
+
+    The engine does not restore a lower-cased substitute, which is the form it
+    mints for the corpus's chat / sloppy / voice registers, so «the agent
+    restated a value in the register it read it in» is the common case and not
+    an edge one: 62 of 66 multi-turn cases in the reviewer's sample. Raising
+    there discarded three paid arms, killed `drive_v5` before a single row was
+    written and made `--resume` re-pay for the same leak for ever.
+    """
+    failures: list[str] = []
     case = _two_turn_case()
     raw = judge.judge_input(case, _run_with_turns((f"Нашёл карточку: {SUBSTITUTE}.", "готово")))
+    # THE REPRODUCTION (reviewers' f2_oracleleak.py / f2e_endtoend.py, half B):
+    # this call used to raise OracleLeak.
     try:
-        judge.build_prompt(raw, (SUBSTITUTE,))
+        prompt = judge.build_prompt(raw, (SUBSTITUTE,))
     except judge.OracleLeak as refused:
-        return [] if SUBSTITUTE in str(refused) else [f"OracleLeak не называет подмену: {refused}"]
-    return ["промпт с подменой в реплике агента собрался"]
+        return [f"подмена в реплике агента убила сборку промпта: {refused}"]
+    if SUBSTITUTE.casefold() in prompt.casefold():
+        failures.append("подмена из реплики агента доехала до судьи")
+    if judge.RESIDUAL_MARKER not in prompt:
+        failures.append("подмену вырезали, но маркер на её место не поставили — "
+                        "предложение изменилось молча")
+    _, flagged = judge.masked_dialogue(raw, (SUBSTITUTE,))
+    if flagged != 1:
+        failures.append(f"ходов с нераскрытой подменой насчитано {flagged}, а он один")
+    # The lower-cased form the engine really leaves standing, and the surname
+    # alone: both are the same defect and both must be caught.
+    for written in (SUBSTITUTE.casefold(), SUBSTITUTE.split()[0]):
+        one = judge.judge_input(case, _run_with_turns((f"передал {written} в доставку.", "готово")))
+        text = judge.build_prompt(one, (SUBSTITUTE,))
+        if written.casefold() in text.casefold():
+            failures.append(f"подмена в написании {written!r} доехала до судьи")
+    # The NEGATIVE: a turn that carries NO substitute is not touched, or the
+    # masking would eat the context question 4 is asked about.
+    honest = judge.judge_input(case, _run_with_turns((f"Нашёл карточку: {REAL}.", "готово")))
+    clean, untouched = judge.masked_dialogue(honest, (SUBSTITUTE,))
+    if untouched != 0:
+        failures.append(f"честный ход посчитан за подменённый: {[t.text for t in clean]}")
+    if not any(REAL in turn.text for turn in clean):
+        failures.append("настоящее значение клиента вырезано из диалога")
+    return failures
 
 
 def test_no_pseudex() -> list[str]:
@@ -129,14 +166,36 @@ def test_input_is_blind() -> list[str]:
     for heading in judge.HEADINGS:
         if heading not in prompt:
             failures.append(f"в промпте нет раздела «{heading}»")
-    # The NEGATIVE: the harness left a substitute in the dialogue it restored.
+    # The DIALOGUE is masked rather than refused (F3.2) — but the substitute
+    # must be gone from the prompt either way, and that is what is asserted.
     leaked = _request("Курьер приедет.", (DialogueTurn(role="tool", text=f"клиент: {SUBSTITUTE}"),))
     try:
-        judge.build_prompt(leaked, (SUBSTITUTE,))
-        failures.append("build_prompt собрал промпт с подменой в диалоге")
+        served = judge.build_prompt(leaked, (SUBSTITUTE,))
     except judge.OracleLeak as refused:
-        if SUBSTITUTE not in str(refused):
-            failures.append(f"OracleLeak не называет подмену: {refused}")
+        # Reported, not raised: a check that dies takes the other nine with it,
+        # and this is the exact failure F3.2 closed.
+        failures.append(f"подмена в диалоге снова роняет сборку промпта: {refused}")
+        served = ""
+    if SUBSTITUTE.casefold() in served.casefold():
+        failures.append("подмена из диалога доехала до судьи")
+    # …and a substitute split across a line break is the same leak: the guard
+    # compares under collapsed whitespace, so the mask must too.
+    wrapped = _request("Курьер приедет.",
+                       (DialogueTurn(role="tool", text="клиент: Пахомова\nОльга"),))
+    try:
+        if "Пахомова" in judge.build_prompt(wrapped, (SUBSTITUTE,)):
+            failures.append("подмена, перенесённая по строкам, доехала до судьи")
+    except judge.OracleLeak as refused:
+        failures.append(f"перенос по строкам не замаскирован, а уронил сборку: {refused}")
+    # A leak in the QUESTION is still a hard error: the customer's own message
+    # cannot legitimately carry something we minted, so it is ours.
+    asked = JudgeInput(case_id="c-0001", restored_answer="ok", oracle_literals=(REAL,),
+                       dialogue_context=(), customer_question=f"где {SUBSTITUTE}?")
+    try:
+        judge.build_prompt(asked, (SUBSTITUTE,))
+        failures.append("build_prompt принял подмену в вопросе клиента")
+    except judge.OracleLeak:
+        pass
     # And the same leak in the oracle list, which is the likelier slip: a
     # caller that passed the MASKED values as the oracle.
     faked = JudgeInput(case_id="c-0001", restored_answer="ok", oracle_literals=(SUBSTITUTE,),
@@ -168,17 +227,46 @@ def test_rubric_names_four_questions() -> list[str]:
 
 
 def test_rubric_has_no_form_rules() -> list[str]:
-    """The words the comparator owns. Checked over the whole prompt, not the
-    rubric alone: a heading naming form would steer the judge just as well."""
+    """The words the comparator owns, hunted by `form_words_in` — the same
+    function the module runs at import (F3.6).
+
+    The old test was four stems compared with `in`, and it was wrong in both
+    directions: it missed «склонение», «написание», «орфография», «нотация» —
+    the synonyms a helpful editor reaches for — and it fired on «инФОРМАция»,
+    so an ordinary word could not be written in the rubric. The guard now
+    matches at a WORD START and is run over the rubric MINUS its own «чего ты
+    не судишь» clause, which is the one sentence allowed to name form because
+    it forbids judging it.
+    """
     failures: list[str] = []
-    prompt = judge.build_prompt(_request("ответ", ()), ()).casefold()
-    for word in ("падеж", "регистр", "формат", "форма"):
-        if word in prompt:
-            failures.append(f"промпт судьи называет форму: {word!r}")
-    # The negative: the guard is a real check, so a rubric that DID name form
-    # must be caught by the same test the module runs at import.
-    if not any(word in "проверь падеж и формат" for word in ("падеж", "формат")):
-        failures.append("проверка слов сама не ловит пример со словами формы")
+    said = judge.form_words_in(judge.RUBRIC.replace(judge._NOT_JUDGED, "")
+                               + " " + " ".join(judge.HEADINGS))
+    if said:
+        failures.append(f"рубрика судьи называет форму: {said}")
+    # THE NEGATIVE, one sentence per synonym: the guard must go red on each.
+    for sentence, expected in (("Проверь, в каком падеже написано имя.", "падеж"),
+                               ("Учти склонение фамилии.", "склонен"),
+                               ("Оцени написание адреса.", "написани"),
+                               ("Смотри на орфографию.", "орфограф"),
+                               ("Важна нотация даты.", "нотаци"),
+                               ("Проверь формат телефона.", "формат"),
+                               ("Сверь регистр букв.", "регистр"),
+                               ("Форма записи должна совпасть.", "форма"),
+                               ("Проверь транслитерацию.", "транслит")):
+        if expected not in judge.form_words_in(sentence):
+            failures.append(f"страж не увидел слово формы в {sentence!r}")
+    # …and it must NOT fire on ordinary Russian that merely contains a stem:
+    # «информация» carries «форма» and the flat substring test banned it.
+    for allowed in ("информация о клиенте", "трансформация данных", "платформа доставки"):
+        fired = judge.form_words_in(allowed)
+        if fired:
+            failures.append(f"страж сработал на обычном слове {allowed!r}: {fired}")
+    # The clause that FORBIDS judging form still names it, or the rubric would
+    # have stopped saying what it must say.
+    if not judge.form_words_in(judge._NOT_JUDGED):
+        failures.append("в «чего ты не судишь» больше нет ни одного слова о форме")
+    if judge._NOT_JUDGED not in judge.RUBRIC:
+        failures.append("рубрика больше не запрещает судить форму")
     return failures
 
 
@@ -255,6 +343,86 @@ def test_prompt_sha_changes_with_rubric() -> list[str]:
     return failures
 
 
+def _called_names(package: Path) -> set[str]:
+    """Every identifier the package READS — `ast`, never a text scan.
+
+    A grep would count the four docstrings that name `judge_with` and call the
+    adapter reachable; a load is a load whether the caller imported the name or
+    reached it through the module object.
+    """
+    out: set[str] = set()
+    for path in sorted(package.glob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"), filename=str(path))):
+            if isinstance(node, ast.Name):
+                out.add(node.id)
+            elif isinstance(node, ast.Attribute):
+                out.add(node.attr)
+            elif isinstance(node, ast.ImportFrom):
+                out.update(alias.name for alias in node.names)
+    return out
+
+
+def _unused_public(source: Path, package: Path) -> tuple[str, ...]:
+    """Public functions of `source` that nothing in `package` ever reads.
+
+    `main` is excluded: it is the CLI's entry and is named by `__main__`.
+    """
+    tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+    public = [node.name for node in tree.body
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+              and not node.name.startswith("_") and node.name != "main"]
+    read = _called_names(package)
+    return tuple(name for name in public if name not in read)
+
+
+def test_no_unreachable_adapters() -> list[str]:
+    """F3.6: an adapter no caller spells is a docstring, not a seam.
+
+    `pregate_with` and `judge_with` were both written, both documented as «what
+    the harness uses», and both called from nothing — the exact shape CLAUDE.md
+    records for `Case.negatives` and `FieldSpec.required`. The check is
+    mechanical so the next one cannot be added quietly.
+    """
+    here = Path(__file__).resolve().parent
+    failures: list[str] = []
+    orphans = _unused_public(here / "judge.py", here)
+    if orphans:
+        failures.append(f"судья экспортирует то, что никто не зовёт: {orphans}")
+    # The walk must be able to FIND one, or «ничего лишнего» is a statement
+    # about the scanner.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "lonely.py").write_text("def used(): ...\n\n\ndef orphan(): ...\n", encoding="utf-8")
+        (root / "caller.py").write_text("from lonely import used\nused()\n", encoding="utf-8")
+        found = _unused_public(root / "lonely.py", root)
+        if found != ("orphan",):
+            failures.append(f"обход нашёл {found}, а должен был найти ровно ('orphan',)")
+    return failures
+
+
+def test_prompt_hashes_what_was_sent() -> list[str]:
+    """`judge_prompt` takes the prompt the caller built, so the hash on disk is
+    of the string the model was actually given (F3.2).
+
+    Building it twice — once to ask, once to hash — is two strings that can
+    drift, and the second build used to raise `OracleLeak` for a case the
+    pre-gate had already decided: the run died over a judge call it was never
+    going to make.
+    """
+    failures: list[str] = []
+    request = _request("Курьер приедет к Ивановой Елене в 14:00.",
+                       (DialogueTurn(role="user", text=f"это {REAL}"),))
+    built = judge.build_prompt(request, (SUBSTITUTE,))
+    if judge.build_prompt(request, (SUBSTITUTE,)) != built:
+        failures.append("две сборки одного промпта дали разный текст — хэш ничего не пинит")
+    signature = inspect.signature(judge.judge_prompt).parameters
+    if "prompt" not in signature:
+        failures.append(f"judge_prompt не принимает готовый промпт: {list(signature)}")
+    if "substitutes_minted" not in inspect.signature(judge.judge_answer).parameters:
+        failures.append("judge_answer больше не получает список подмен — страж слеп")
+    return failures
+
+
 def test_judged_by_none_carries_no_label() -> list[str]:
     """Ruling R-03: `judged_by == "none"` ⇔ `label == ""`. A reader refuses any
     other combination, so a writer that produced one would break a replay."""
@@ -276,6 +444,8 @@ def main() -> int:
         ("quote_must_stand", test_quote_must_stand),
         ("prompt_sha_changes_with_rubric", test_prompt_sha_changes_with_rubric),
         ("judged_by_none_carries_no_label", test_judged_by_none_carries_no_label),
+        ("no_unreachable_adapters", test_no_unreachable_adapters),
+        ("prompt_hashes_what_was_sent", test_prompt_hashes_what_was_sent),
         ("dialogue_carries_the_agents_turns", test_dialogue_carries_the_agents_turns),
         ("agents_turns_are_restored", test_agents_turns_are_restored),
     )

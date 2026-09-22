@@ -15,7 +15,7 @@ from dataclasses import replace
 from bench.agentpii3.schema import Negative
 from bench.agentpii4.compare import LevelVerdict, PairVerdict
 from bench.agentpii5 import contracts
-from bench.agentpii5.contracts import Hop, MentionRecord, RagSpec
+from bench.agentpii5.contracts import Hop, MemorySpec, MentionRecord, RagSpec
 from bench.agentpii5.fixtures import (
     FAKE_NAME,
     OTHER_NAME,
@@ -35,7 +35,13 @@ from bench.agentpii5.fixtures import (
     _with_results,
     _with_subs,
 )
-from bench.agentpii5.metrics import METRIC_FUNCTIONS, by_axis
+from bench.agentpii5.metrics import (
+    HOP_AXES,
+    HOP_SLICEABLE,
+    METRIC_FUNCTIONS,
+    by_axis,
+    prints_on_axis,
+)
 
 NAME = _item("p1", "NAME", REAL_NAME, REAL_NAME, "i1", _in_message(0, 0, len(REAL_NAME)))
 PHONE = _item("p2", "PHONE", REAL_PHONE, REAL_PHONE, "i1", _in_message(0, 15, 27))
@@ -236,6 +242,109 @@ def test_axes_split_hops_not_observations() -> list[str]:
     return problems
 
 
+def _rich() -> object:
+    """One observation with hops of two types, two owners and one tool — the
+    smallest input on which a hop axis can move a denominator."""
+    in_name = _hop("IN", "user", "p1", 0, 0, "", -1, -1, "")
+    in_phone = _hop("IN", "user", "p2", 1, 0, "", -1, -1, "")
+    out_name = _hop("OUT", "tool_arg", "p1", 2, 0, "crm_upsert_contact", 0, -1, "contact.last_name")
+    out_phone = _hop("OUT", "tool_arg", "p2", 3, 0, "crm_upsert_contact", 0, -1, "contact.phone")
+    case = _case("m-rich", "single", (f"{REAL_NAME}, {REAL_PHONE}",), (NAME, PHONE),
+                 (in_name, in_phone, out_name, out_phone))
+    run = _with_masked(_run("m-rich"), {0: ((0, len(REAL_NAME)),)})
+    return _obs(case, run, (
+        _seen(case, in_name, "NAME", FAKE_NAME, REAL_NAME),
+        _seen(case, in_phone, "PHONE", "+79990001122", REAL_PHONE),
+        _seen(case, out_name, "NAME", "Иванова", "Пахомова"),
+        _seen(case, out_phone, "PHONE", REAL_PHONE, "+79990001122")))
+
+
+def test_hop_axis_totals_sum() -> list[str]:
+    """A line printed inside a HOP bucket must be one a hop axis can split.
+
+    `by_axis` on a hop axis hands every bucket a COPY of the observation
+    carrying only that bucket's hops, so a metric whose denominator comes from
+    `one.run` or `one.case` counts the same answer, turn or document once per
+    bucket and the column adds up to more units than the corpus holds. The
+    criterion is mechanical and it is checked here rather than declared: for a
+    line `metrics.HOP_SLICEABLE` allows, the bucket totals must equal the
+    whole line's total on every hop axis."""
+    rows = (_rich(),)
+    problems: list[str] = []
+    for name in sorted(METRIC_FUNCTIONS):
+        whole = METRIC_FUNCTIONS[name](rows).total
+        for axis in HOP_AXES:
+            parts = sum(METRIC_FUNCTIONS[name](bucket).total
+                        for bucket in by_axis(rows, axis).values())
+            allowed = prints_on_axis(name, axis)
+            if allowed and parts != whole:
+                problems.append(f"{name} by {axis}: buckets total {parts}, the line totals {whole} "
+                                f"— it must not be in HOP_SLICEABLE")
+            if not allowed and name in HOP_SLICEABLE:
+                problems.append(f"{name}: HOP_SLICEABLE and prints_on_axis disagree on {axis}")
+    if prints_on_axis("answer_real", "pii_type"):
+        problems.append("answer_real is per ANSWER; a hop axis must not print it")
+    if not prints_on_axis("answer_real", "register"):
+        problems.append("an observation-level axis prints every line")
+    return problems
+
+
+def test_leaf_value_is_the_part() -> list[str]:
+    """C-168 bis. A tool leaf that asks for a PART is scored against that part.
+
+    `contact.last_name` takes the surname and `contact.phone` takes the digits;
+    comparing either with the WHOLE canonical made a PERFECT gateway a miss,
+    and `end_to_end` / `round_trip` / `multi_all_out` / `doc_extracted` /
+    `chain_value` topped out at 76.8%. The third hop is the other half of the
+    rule: a role the item has no part for cannot be satisfied by any string, so
+    it is a miss and not a silent hit."""
+    surname = _hop("OUT", "tool_arg", "p1", 0, 0, "crm_upsert_contact", 0, -1, "contact.last_name")
+    phone = _hop("OUT", "tool_arg", "p2", 1, 0, "crm_upsert_contact", 0, -1, "contact.phone")
+    patronymic = _hop("OUT", "tool_arg", "p1", 2, 0, "crm_upsert_contact", 0, -1,
+                      "contact.middle_name")
+    case = _case("m-leaf", "single", ("…",), (NAME, PHONE), (surname, phone, patronymic))
+    perfect = _obs(case, _run("m-leaf"), (
+        _seen(case, surname, "NAME", "Иванова", "Пахомова"),
+        _seen(case, phone, "PHONE", "8 916 402-11-87", "8 999 000-11-22"),
+        _seen(case, patronymic, "NAME", "Сергеевна", "Олеговна")))
+    line = METRIC_FUNCTIONS["end_to_end"]((perfect,))
+    problems: list[str] = []
+    if (line.hits, line.total) != (2, 3):
+        problems.append(f"the surname and the re-notated phone are the values those leaves ask "
+                        f"for, the patronymic is not in the value at all: got {line.hits}/{line.total}")
+    whole = _obs(case, _run("m-leaf"), (
+        _seen(case, surname, "NAME", REAL_NAME, "Пахомова"),
+        _seen(case, phone, "PHONE", REAL_PHONE, "8 999 000-11-22"),
+        _seen(case, patronymic, "NAME", "", "")))
+    line = METRIC_FUNCTIONS["end_to_end"]((whole,))
+    if line.hits != 1:
+        problems.append("the WHOLE name written into a surname field is not that leaf's value: "
+                        f"got {line.hits}/{line.total}")
+    return problems
+
+
+def test_memory_stability_is_not_stability() -> list[str]:
+    """The two were ONE function under two names — identical bodies, identical
+    answers on every fixture in the package — and a report printing one number
+    twice tells a reader there are two pieces of evidence. `memory_stability`
+    counts the items a `MemorySpec` names; `stability` counts them all."""
+    mentions = (MentionRecord("p1", 0, -1, FAKE_NAME, 0), MentionRecord("p1", 0, -1, OTHER_NAME, 1))
+    plain = _case("m-ms-1", "single", ("…",), (NAME,), ())
+    remembered = replace(plain, base=replace(plain.base, id="m-ms-2"),
+                         memory=(MemorySpec(item_id="p1", first_turn=0, recall_turn=2,
+                                            anaphora="none"),))
+    problems: list[str] = []
+    for label, case, want_stab, want_mem in (("no memory spec", plain, 1, 0),
+                                             ("memory spec", remembered, 1, 1)):
+        one = _obs(case, _with_mentions(_run(case.base.id), mentions), ())
+        stab = METRIC_FUNCTIONS["stability"]((one,))
+        mem = METRIC_FUNCTIONS["memory_stability"]((one,))
+        if stab.total != want_stab or mem.total != want_mem:
+            problems.append(f"{label}: stability {stab.total}, memory_stability {mem.total}; "
+                            f"expected {want_stab} and {want_mem}")
+    return problems
+
+
 def main() -> int:
     checks: tuple[tuple[str, Callable[[], list[str]]], ...] = (
         ("no_pseudex", test_no_pseudex),
@@ -246,6 +355,9 @@ def main() -> int:
         ("public_denominators", test_public_denominators),
         ("empty_is_na", test_empty_is_na),
         ("axes_split_hops_not_observations", test_axes_split_hops_not_observations),
+        ("hop_axis_totals_sum", test_hop_axis_totals_sum),
+        ("leaf_value_is_the_part", test_leaf_value_is_the_part),
+        ("memory_stability_is_not_stability", test_memory_stability_is_not_stability),
     )
     failures: list[str] = []
     for name, check in checks:

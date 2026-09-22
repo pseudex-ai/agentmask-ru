@@ -35,6 +35,7 @@ import re
 from dataclasses import replace
 
 from bench.agentpii4 import tools as v4tools
+from bench.agentpii4.schema import PiiItem
 from bench.agentpii4.tools import (CSV_HEADER, REGISTRY as V4_REGISTRY, FieldSpec, Refusal,
                                    ToolSpec, parse_e164, parse_inn, parse_int, parse_iso_date,
                                    parse_name_word, parse_snils)
@@ -999,6 +1000,29 @@ def spec_v5_for(tool: str, path: str) -> FieldSpec | None:
         if spec.path == generic:
             return spec
     return None
+
+
+def expected_leaf_value(item: PiiItem, spec: FieldSpec) -> str:
+    """The value a tool argument leaf CARRIES of this datum: the item's part for
+    the leaf's role, or the whole canonical for a leaf that names no role.
+    "" when the item has no such part, and then the leaf cannot carry it at all.
+
+    THE LEAF IS NOT THE DATUM. `contact.last_name` takes a surname and
+    `contact.address.city` takes a city; a v4 `PiiItem` is one part of a name
+    («букин», parts {surname}) or a whole address (parts {city, street, house,
+    flat}). Matching by PII TYPE alone put the surname item on `first_name`,
+    `middle_name` and `last_name` alike and the street item on `.city`, `.house`
+    and `.flat` — 1 627 of 8 399 OUT hops whose declared item can never be the
+    value of the declared leaf, and 1 012 of them inside `chain_value`'s
+    denominator, where they read as a hand-over the gateway broke.
+
+    THE VOCABULARY IS ALREADY SHARED: `FieldSpec.role` and `PiiItem.parts` use
+    the same words — surname / given / patronymic / city / street / house /
+    flat / iso / digits — so nothing is invented here, only read.
+    """
+    if not spec.role:
+        return item.canonical or item.value
+    return item.parts.get(spec.role, "")
 
 
 def result_types(tool: str) -> tuple[str, ...]:

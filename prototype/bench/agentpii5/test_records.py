@@ -151,6 +151,13 @@ def test_round_trips() -> list[str]:
          r.hop_observation_from_json),
         ("HopObservation.leaked", _observation("leaked", None),
          lambda: r.hop_observation_to_json(_observation("leaked", None)), r.hop_observation_from_json),
+        # `unmasked` is a v5 status like the others and the reader's closed
+        # vocabulary is checked on READ: a replay is all a `--report` run has,
+        # and a status the writer emits that the reader refuses would take the
+        # whole report down three weeks after the run that cost the money.
+        ("HopObservation.unmasked", _observation("unmasked", None),
+         lambda: r.hop_observation_to_json(_observation("unmasked", None)),
+         r.hop_observation_from_json),
         ("JudgeVerdict.model", JudgeVerdict("частично", "«Нашёл Елену»", "model", 0.0031),
          lambda: r.judge_verdict_to_json(JudgeVerdict("частично", "«Нашёл Елену»", "model", 0.0031)),
          r.judge_verdict_from_json),

@@ -41,14 +41,26 @@ def _spec_features() -> dict[str, tuple[str, ...]]:
 
 
 def _spec_metrics() -> tuple[str, ...]:
-    """§4.1 levels, §4.2 public, §4.3/§8.3 new — copied by hand."""
+    """§4.1 levels, §4.2 public, §4.3/§8.3 new — copied by hand.
+
+    FOUR NAMES DIFFER FROM THE SPEC'S TABLE, AND EACH DIFFERENCE IS A DECISION.
+    `rewrite_ratio_v5` / `shared_block_answer` carry the version because they
+    are NOT the public quantities of those names (a message-level change ratio
+    and a per-item attribution failure); printing two different numbers under
+    one name is how a reader comes to believe a v5 line was validated by the
+    public harness. `out_absent` is the count `form_hOUT`'s denominator leaves
+    out, and `stream_fidelity` is the one reader of `stream_mismatch`, which
+    the harness wrote on every streaming case and nothing consumed.
+    """
     return (
         "action", "tools", "keys", "state", "values", "verbatim",
         "leak", "coverage", "typed", "round_trip", "round_trip_repaired", "end_to_end",
-        "overmask", "consistency", "stability", "rewrite_ratio", "shared_block",
-        "form_hIN", "form_hOUT", "toolresult_masked", "answer_real", "chain_value", "chain_form",
+        "overmask", "consistency", "stability", "rewrite_ratio_v5", "shared_block_answer",
+        "form_hIN", "form_hOUT", "out_absent",
+        "toolresult_masked", "answer_real", "chain_value", "chain_form",
         "multi_all_out", "multi_consistency", "retry_form", "memory_consistency", "memory_stability",
         "rag_masked", "rag_identity_kept", "doc_masked", "doc_extracted", "residual",
+        "stream_fidelity",
     )
 
 

@@ -20,10 +20,12 @@ change the corpus.
 
 NOTHING HERE IMPORTS `pseudex`, AND NO CHECK HERE CALLS A MODEL.
 """
+import ast
 import json
 import sys
 import tempfile
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 from bench.agentpii4.schema import case_from_json
@@ -112,23 +114,89 @@ def test_holdout_frozen() -> list[str]:
     problems: list[str] = []
     with tempfile.TemporaryDirectory() as folder:
         out = Path(folder)
-        ladder, _lines = b.write_ladder(CASES, SEED, out, True)
-        if ladder is None:
-            return ["the first build wrote no ladder"]
+        ladder, _lines, broken = b.write_ladder(CASES, SEED, out, True)
+        if ladder is None or broken:
+            return [f"the first build wrote no ladder: {broken}"]
         first = (out / "ladder.json").read_bytes()
-        again, lines = b.write_ladder(CASES, SEED, out, False)
+        again, lines, broken = b.write_ladder(CASES, SEED, out, False)
         if again is not None:
             problems.append("a second build rebuilt the ladder without the flag")
+        if broken:
+            problems.append(f"an unchanged corpus was refused its own ladder: {broken}")
         if (out / "ladder.json").read_bytes() != first:
             problems.append("a second build changed ladder.json")
         if not any("--regenerate-ladder" in line for line in lines):
             problems.append("the second build did not say how to redraw the ladder")
-        # …and the flag really does redraw it, or the freeze above would be the
-        # freeze of a function that never writes.
+        # …and the flag is not a way PAST the freeze either: a corpus that lost
+        # half its cases would redraw the holdout of the survivors, so the
+        # regeneration is refused and the file stays exactly as it was. The
+        # freeze above would otherwise be the freeze of a function that never
+        # writes, and this is the write it declines to make.
         shrunk = CASES[: len(CASES) // 2]
-        b.write_ladder(shrunk, SEED, out, True)
-        if (out / "ladder.json").read_bytes() == first:
-            problems.append("--regenerate-ladder on half the corpus changed nothing")
+        _ladder, _lines, broken = b.write_ladder(shrunk, SEED, out, True)
+        if not broken:
+            problems.append("--regenerate-ladder on half the corpus moved the holdout "
+                            "without saying so")
+        if (out / "ladder.json").read_bytes() != first:
+            problems.append("a refused regeneration wrote the file anyway")
+    return problems
+
+
+def test_a_changed_corpus_refuses_the_kept_ladder() -> list[str]:
+    """THE DIRECTION K12 IS ACTUALLY ABOUT, and the one nothing watched.
+
+    The freeze above only ever saw a corpus that had not changed. Rebuilding
+    with another seed into a directory holding today's ladder printed «лестница
+    оставлена как есть» and exited 0 while 162 of 319 holdout ids named a
+    DIFFERENT case — a holdout frozen against nothing. The refusal names both
+    digests, and `--regenerate-ladder` is refused in turn if it would move a
+    case that still exists between tiers.
+    """
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as folder:
+        out = Path(folder)
+        b.write_ladder(CASES, SEED, out, True)
+        mutated = [replace(CASES[0], base=replace(CASES[0].base, now="2031-01-01T00:00:00+03:00"))]
+        mutated.extend(CASES[1:])
+        kept, _lines, broken = b.write_ladder(mutated, SEED, out, False)
+        if kept is not None:
+            problems.append("a changed corpus rebuilt the ladder by itself")
+        if not broken:
+            problems.append("a corpus with another digest kept the ladder silently")
+        elif "--regenerate-ladder" not in broken[0]:
+            problems.append(f"the refusal does not name the way out: {broken[0]}")
+        # …and the refusal is about the DIGEST, not about any change: the same
+        # cases are accepted again.
+        _kept, _lines, still = b.write_ladder(CASES, SEED, out, False)
+        if still:
+            problems.append(f"the unchanged corpus was refused too: {still}")
+    return problems
+
+
+def test_regeneration_keeps_the_holdout() -> list[str]:
+    """`--regenerate-ladder` may distribute NEW cases and may not move an
+    existing one: a holdout that changed tier is a holdout that has seen the
+    debugging it was drawn to avoid."""
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as folder:
+        out = Path(folder)
+        b.write_ladder(CASES, SEED, out, True)
+        first = json.loads((out / "ladder.json").read_text(encoding="utf-8"))
+        _ladder, _lines, broken = b.write_ladder(CASES, SEED, out, True)
+        if broken:
+            problems.append(f"an identical corpus moved its own holdout: {broken}")
+        # The negative: a ladder whose holdout was drawn from ANOTHER corpus must
+        # be refused, and `_holdout_moved` is what says so.
+        foreign = dict(first)
+        tiers = {name: list(ids) for name, ids in first["tiers"].items()}
+        tiers["holdout"] = [identifier for identifier in tiers["holdout"]][:-1]
+        moved_out = first["tiers"]["holdout"][-1]
+        foreign["tiers"] = tiers
+        (out / "ladder.json").write_text(json.dumps(foreign, ensure_ascii=False),
+                                         encoding="utf-8")
+        _ladder, _lines, broken = b.write_ladder(CASES, SEED, out, True)
+        if not broken:
+            problems.append(f"a holdout missing {moved_out} was accepted as frozen")
     return problems
 
 
@@ -137,7 +205,7 @@ def test_holdout_is_disjoint() -> list[str]:
     problems: list[str] = []
     with tempfile.TemporaryDirectory() as folder:
         out = Path(folder)
-        ladder, _lines = b.write_ladder(CASES, SEED, out, True)
+        ladder, _lines, _broken = b.write_ladder(CASES, SEED, out, True)
         if ladder is None:
             return ["no ladder was written"]
         held = set(ladder.tiers["holdout"])
@@ -159,11 +227,13 @@ def test_check_prints_shares() -> list[str]:
     views, the result share, the two new types, the owners, and an MDE line per
     family."""
     problems: list[str] = []
-    lines = b.coverage_table(CASES) + b.mde_table(CASES) + b.form_disagreements(CASES)
+    lines = (b.coverage_table(CASES) + b.mde_table(CASES) + b.form_disagreements(CASES)
+             + b.loop_table(CASES))
     text = "\n".join(lines)
     for needed in ("поведение:", "регистр (весь корпус):", "регистр (написано в v5):",
                    "с результатом инструмента:", "потоковых:", "владельцы переходов:",
-                   "явный conversation_id:", "ожидаемые формы ответа:", "MDE по семьям"):
+                   "явный conversation_id:", "формы ответа (проверены на реальном моке):",
+                   "одиночные:", "MDE по семьям"):
         if needed not in text:
             problems.append(f"--check prints no {needed!r}")
     for behaviour in c.BEHAVIOURS:
@@ -183,6 +253,65 @@ def test_no_search_in_any_generator() -> list[str]:
     return [f"search in a generator: {hit}" for hit in hits]
 
 
+def test_static_proof_sees_containment() -> list[str]:
+    """The `in` operator and a hand-rolled scan, which the dynamic watch cannot
+    see at all.
+
+    THE REPRODUCTION THIS PINS (corpus-lens/proof_nosearch.py): `str.find`
+    inside a watched directory was caught, `x in y` and a slice scan were not,
+    and `revise.py` — which builds 834 of the 1 594 cases and did ask
+    `item.value in case.messages[turn].content` — was outside the watched set
+    entirely.
+    """
+    problems: list[str] = []
+    if b.static_search_hits():
+        problems.append(f"a builder searches a finished string: {b.static_search_hits()[0]}")
+    watched = {Path(one).name for one in b.WATCHED_V5}
+    for needed in ("revise.py", "build.py", "scenarios5"):
+        if needed not in watched:
+            problems.append(f"{needed} is not watched")
+    # THE NEGATIVE: each forbidden shape, read off its own AST.
+    for source, why in (("item.value in case.messages[turn].content", "the `in` operator"),
+                        ("case.messages[t].content.find(value)", "str.find"),
+                        ("log.result_text.startswith(value)", "startswith"),
+                        ("re.search(pattern, rendered)", "re.search"),
+                        ("body.index(value)", "str.index")):
+        node = ast.parse(source, mode="eval").body
+        if not any(b._searched_surface(one) for one in ast.walk(node)):   # noqa: SLF001
+            problems.append(f"the static proof does not see {why}")
+    # …and it does not fire on what a builder legitimately does.
+    for source in ("writer.put(text, tag)", "x in values", "text.replace(old, new)"):
+        node = ast.parse(source, mode="eval").body
+        if any(b._searched_surface(one) for one in ast.walk(node)):       # noqa: SLF001
+            problems.append(f"the static proof fires on {source!r}")
+    return problems
+
+
+def test_every_case_proves_its_declaration() -> list[str]:
+    """`build` refuses a corpus whose declarations the real backend does not
+    produce (T1, T4, T5): a phantom result item, a return form the tool does not
+    answer in, an IN hop with no rendered span."""
+    problems: list[str] = []
+    if b.proof_problems(CASES):
+        problems.append(f"the built corpus does not prove itself: "
+                        f"{b.proof_problems(CASES)[0]}")
+    with_return = next(case for case in CASES if case.returns)
+    phantom = replace(with_return, returns=(replace(
+        with_return.returns[0],
+        result_item_ids=with_return.returns[0].result_item_ids + ("ghost",)),))
+    if not b.proof_problems([phantom]):
+        problems.append("a declared result item the backend never renders passed the build")
+    forms = {one.form for one in REGISTRY_V5[with_return.returns[0].tool_name].return_forms}
+    other = sorted(forms - {with_return.returns[0].return_form})
+    if not other:
+        problems.append(f"{with_return.returns[0].tool_name} declares one form only; "
+                        f"pick another case for the form negative")
+    elif not b.proof_problems([replace(with_return, returns=(
+            replace(with_return.returns[0], return_form=other[0]),))]):
+        problems.append("a wrong return_form passed the build")
+    return problems
+
+
 def test_widened_watch_is_restored() -> list[str]:
     """The watch list is put back. A module-level tuple left extended would make
     every later v4 run watch a directory v4 does not own."""
@@ -194,6 +323,8 @@ def test_widened_watch_is_restored() -> list[str]:
 
 
 CHECKS: tuple[Callable[[], list[str]], ...] = (
+    test_a_changed_corpus_refuses_the_kept_ladder, test_regeneration_keeps_the_holdout,
+    test_static_proof_sees_containment, test_every_case_proves_its_declaration,
     test_corpus_size_and_plan, test_corpus_rules,
     test_v4_view_loads, test_v5_round_trip, test_holdout_frozen, test_holdout_is_disjoint,
     test_check_prints_shares, test_no_search_in_any_generator,

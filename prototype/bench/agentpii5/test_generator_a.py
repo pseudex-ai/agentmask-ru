@@ -30,9 +30,9 @@ from bench.agentpii4 import validate as v4validate
 from bench.agentpii5 import contracts as c
 from bench.agentpii5 import schema as s
 from bench.agentpii5.contracts import CaseV5, Hop, ReturnExpectation
-from bench.agentpii5.mock import seed_backend_v5
+from bench.agentpii5.mock import render_problems
 from bench.agentpii5.scenarios5 import common
-from bench.agentpii5.scenarios5.plan_a import PLAN_A, spaced_snils
+from bench.agentpii5.scenarios5.plan_a import PLAN_A
 
 SEED: int = 4
 # The corpus-wide quotas this half owes (brief «Type quotas across your 400
@@ -390,128 +390,16 @@ def test_offered_tools_are_in_the_family_inventory() -> list[str]:
 
 # --- the backend check ----------------------------------------------------------
 
-# What a call needs beyond the values the hops declare. These are plain business
-# arguments (an amount, a page size, a day) and record ids the dialogue does not
-# carry; they are listed rather than invented per call so a change of tool schema
-# fails HERE instead of silently skipping the tool.
-_FILLER: dict[str, dict[str, object]] = {
-    "kb_search": {"k": 3},
-    "calendar_free": {"date": "2026-09-05"},
-    "account_statement": {"client_id": "bc-1"},
-    "ticket_history": {"issue_id": "t-1"},
-    "doc_retrieve": {"doc_id": "doc-1"},
-}
-_INTERVAL: dict[str, object] = {"from": "2026-09-05T10:00:00+03:00",
-                                "to": "2026-09-05T14:00:00+03:00"}
-
-
-def _put(arguments: dict[str, object], path: str, value: str) -> None:
-    """Write one dotted leaf, growing the nested objects on the way."""
-    node = arguments
-    parts = path.split(".")
-    for part in parts[:-1]:
-        child = node.get(part)
-        if not isinstance(child, dict):
-            child = {}
-            node[part] = child
-        node = child
-    node[parts[-1]] = value
-
-
-def _arguments(case: CaseV5, tool: str, ordinal: int, state: dict[str, str]) -> dict[str, object]:
-    """The call a case's OUT hops describe, plus the filler that tool needs."""
-    items = {item.id: item for item in case.base.pii}
-    arguments: dict[str, object] = {}
-    for hop in case.hops:
-        if hop.kind != "OUT" or hop.tool_name != tool or hop.call_ordinal != ordinal:
-            continue
-        item = items[hop.item_id]
-        value = item.canonical or item.value
-        # THE FAKE AGENT WRITES EACH LEAF IN THE NOTATION THAT LEAF'S PARSER
-        # TAKES, because a real one does: `parse_snils` accepts «XXX-XXX-XXX YY»
-        # and nothing else, and a caller's register hands the corpus bare digits.
-        # Only notations a parser DEMANDS are applied — this harness must not
-        # quietly repair an argument the case got wrong.
-        if item.type == "SNILS" and len(value.replace("-", "").replace(" ", "")) == 11:
-            value = spaced_snils(value.replace("-", "").replace(" ", ""))
-        _put(arguments, hop.path, value)
-    arguments.update(_FILLER.get(tool, {}))
-    if tool == "courier_book":
-        contact = next((record for record in case.base.seed_records
-                        if record.table == "contacts"), None)
-        address = dict(contact.fields.get("address") or {}) if contact else {}
-        _put(arguments, "address.locality", str(address.get("city", "ижевск")))
-        _put(arguments, "address.building", str(address.get("house", "1")))
-        _put(arguments, "address.porch", "")
-        _put(arguments, "address.sflat", str(address.get("flat", "")))
-        arguments["interval"] = dict(_INTERVAL)
-    if tool == "file_read":
-        document = next(record for record in case.base.seed_records
-                        if record.table == "documents")
-        arguments["path"] = str(document.fields["path"])
-    # A MISSING PIECE OF STATE IS LEFT EMPTY, NOT INVENTED: the tool then
-    # refuses, and a refusal is reported as a problem — which is the truth (the
-    # chain's earlier step did not hand its successor what it needed).
-    if tool == "form_parse":
-        arguments["text"] = state.get("document_text", "")
-    if tool == "courier_status":
-        arguments["claim_id"] = state.get("claim_id", "")
-    if tool == "crm_upsert_contact" and "address" in str(arguments.get("contact", {})):
-        # `crm_upsert_contact` refuses an address without its city, and a bare
-        # city is not personal data, so no hop declares it — it is business
-        # filler like an amount or a page size.
-        contact = next((record for record in case.base.seed_records
-                        if record.table == "contacts"), None)
-        address = dict(contact.fields.get("address") or {}) if contact else {}
-        _put(arguments, "contact.address.city", str(address.get("city", "ижевск")))
-        _put(arguments, "contact.address.house", str(address.get("house", "1")))
-    return arguments
-
-
 def _backend_problems(case: CaseV5) -> list[str]:
     """Run the case's declared calls against the real mock and check the tags.
 
-    ONLY THE CALLS THE CASE DECLARES A RETURN FOR ARE ASSERTED, in the order the
-    returns were declared, because that order is the order the chain needs (a
-    claim id exists only after the booking that minted it). A forced ordinal is
-    still CALLED — the refusal has to be consumed for the next attempt to be the
-    next attempt — but nothing is asserted about it: `ForcedError`, not the
-    return table, decides what it answers.
+    ONE DEFINITION, IN `mock.py`. This used to carry its own argument builder
+    and its own assertions; `build.py` then needed the same thing to REFUSE an
+    unprovable case, and two drivers of one backend are two answers to «does
+    this loop close». `mock.render_problems` is now that answer, and this test
+    is where a family's authors see it fail first.
     """
-    problems: list[str] = []
-    backend = seed_backend_v5(case)
-    state: dict[str, str] = {}
-    forced: set[tuple[str, int]] = {(one.tool_name, one.call_ordinal) for one in case.forced}
-    for expectation in case.returns:
-        for ordinal in range(expectation.call_ordinal + 1):
-            if (expectation.tool_name, ordinal) in forced:
-                backend.call(expectation.tool_name,
-                             _arguments(case, expectation.tool_name, ordinal, state))
-        log = backend.call(expectation.tool_name,
-                           _arguments(case, expectation.tool_name,
-                                      expectation.call_ordinal, state))
-        if log.refusal is not None:
-            problems.append(f"{case.base.id}: {expectation.tool_name} refused the call the "
-                            f"hops describe: {log.refusal}")
-            continue
-        form = backend.form_of(log.seq)
-        if form != expectation.return_form:
-            problems.append(f"{case.base.id}: {expectation.tool_name}#"
-                            f"{expectation.call_ordinal} answered {form!r}, the case "
-                            f"declared {expectation.return_form!r}")
-        missing = [item_id for item_id in expectation.result_item_ids
-                   if item_id not in log.result_spans]
-        if missing:
-            problems.append(f"{case.base.id}: {expectation.tool_name}#"
-                            f"{expectation.call_ordinal} did not carry {missing}")
-        result = log.result or {}
-        if expectation.tool_name == "courier_book":
-            state["claim_id"] = str(result.get("claim_id", ""))
-        if expectation.tool_name == "doc_retrieve":
-            state["document_text"] = str(result.get("body", ""))
-        if expectation.tool_name == "file_read":
-            state["document_text"] = str(result.get("text", ""))
-    return problems
+    return render_problems(case)
 
 
 def test_backend_returns_the_declared_items() -> list[str]:

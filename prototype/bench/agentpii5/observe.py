@@ -7,7 +7,7 @@ the consumer received, and whether the crossing happened at all. Everything
 downstream — every metric, every fixture, the report — reads only what this
 file produced, so a metric can never reach for the engine or for a model.
 
-THREE RULES DECIDE EVERYTHING HERE, AND THEY ARE NOT SYMMETRIC.
+FOUR RULES DECIDE EVERYTHING HERE, AND THEY ARE NOT SYMMETRIC.
 
   * ORIENTATION. On the way IN the owner of the form is the SOURCE, so
     `produced` is the substitute the model read and `reference` is the
@@ -23,21 +23,31 @@ THREE RULES DECIDE EVERYTHING HERE, AND THEY ARE NOT SYMMETRIC.
     `absent` and counts as a miss. Emitting both as «observed with nothing to
     compare» is v4's D1 defect — `values_ok` was `not any(...)` over an empty
     list and a triple that made no call passed five levels.
+  * NOTHING TO COMPARE IS NOT A PASS. An OUT leaf that carries no substitute
+    is `unmasked`, never `observed`: `produced == reference` there, so
+    `form_match` said «same» and a gateway that masked NOTHING printed 100%
+    on `form_hOUT`, `chain_form`, `chain_value` and `multi_all_out`. The same
+    rule, one level up, is why D1 was a defect at all.
 
 WHY `difflib` FOR THE ANSWER. The engine restores the reply in one pass and
 records no spans for it; asking the engine where it substituted would be the
 instrument reading the defendant's notes. `SequenceMatcher` over
 (`reply_raw`, `reply`) is a pure alignment of two strings this file did not
-write: every `replace` opcode is a candidate crossing, and a substitute
-standing inside an `equal` opcode is a substitute that SURVIVED into what the
-customer reads — `residual`, the product's own critical defect.
+write: every `replace` opcode is a candidate crossing. The SURVIVING
+substitute — `residual`, the product's own critical defect — is NOT read off
+that alignment: it is scanned for in the whole restored reply
+(`residual_answer_items`), because «the engine rewrote this region» is not an
+alibi for a fake standing three words later, and the declined and reformatted
+spellings a model writes are invisible to an equality of raw regions.
 
 Run the test: cd prototype && source .venv/bin/activate
                 && python3 -m bench.agentpii5.test_observe
 """
 import difflib
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 
 from bench.agentpii4.compare import ObservedCall, PairVerdict
 from bench.agentpii4.parts import parts_of
@@ -73,6 +83,36 @@ EXEMPT_ROLES: frozenset[str] = frozenset({"city", "gender"})
 # before anything reads them, and the floor is `MIN_PIECE` for the same reason
 # `MIN_PIECE` is four: below it a match is a coincidence.
 MIN_EQUAL_RUN = 4
+# Roles that belong to EVERYBODY, so a needle built from them proves nothing
+# about which value stood in a string: the settlement, the grammatical gender,
+# the mail domain («@yandex.ru»), the street's generic word. `EXEMPT_ROLES` is
+# the narrower list `coverage` uses (what is not a LEAK); this is the list the
+# ATTRIBUTION uses (what is not EVIDENCE) and it is wider — a surviving
+# «yandex.ru» is not a leak AND is not proof that a particular address was
+# written.
+GENERIC_ROLES: frozenset[str] = frozenset({"city", "gender", "domain", "street_type"})
+# Types whose identity is a DIGIT SIGNATURE and never a spelling: the model
+# reformats «+79990001122» as «8 999 000-11-22» and the letters-and-stems test
+# finds nothing at all. PHONE compares the last ten digits, because +7 and 8
+# are the same number said twice (`pseudex.vault`'s own canonicalisation rule,
+# arrived at here independently — this package never imports the engine).
+DIGIT_TYPES: frozenset[str] = frozenset({"PHONE", "CARD", "SNILS", "INN", "PASSPORT"})
+PHONE_SIGNATURE_DIGITS = 10
+# A date is neither: «14.03.1987» and «1987-03-14» share no substring at all.
+DATE_TYPES: frozenset[str] = frozenset({"DOB", "DATE"})
+
+# The three shapes a needle can be found in. `_WORD` is a run of LETTERS, so a
+# stem match is anchored at a word start and «Лев» inside «Лебедева» — the
+# attribution bug MIN_PIECE exists for — cannot come back through the stems.
+_WORD = re.compile(r"[^\W\d_]+", re.UNICODE)
+# A number as a human writes one: digits with the separators a phone, a card
+# or a СНИЛС wears. The comma is NOT a separator — «Клубная, 85, кв 14» would
+# become one number and every house in the corpus would carry every flat.
+_NUMBER_RUN = re.compile(r"\+?\d[\d  ().\-–—]*\d|\d")
+_ISO_DATE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+# Only «.» and «/»: a space would let «+7 916 402…» read as a date and put a
+# phone's digits into the date fold.
+_RU_DATE = re.compile(r"(\d{1,2})[./](\d{1,2})[./](\d{4})")
 
 
 class ObserveError(ValueError):
@@ -120,6 +160,111 @@ def pieces_of(pii_type: str, surface: str) -> tuple[str, ...]:
                  if role not in EXEMPT_ROLES and len(value) >= MIN_PIECE)
 
 
+def digits_of(text: str) -> str:
+    return "".join(character for character in text if character.isdigit())
+
+
+def date_folds(text: str) -> tuple[tuple[int, int, str], ...]:
+    """Every date in `text`, as (start, end, ISO). The fold is what makes
+    «14.03.1987» and «1987-03-14» ONE date: a metric comparing the strings
+    would call a correctly restored birth date absent, and the answer leg
+    would be blind to every DOB an agent reformatted."""
+    out: list[tuple[int, int, str]] = []
+    for match in _ISO_DATE.finditer(text):
+        out.append((match.start(), match.end(),
+                    f"{match.group(1)}-{match.group(2)}-{match.group(3)}"))
+    for match in _RU_DATE.finditer(text):
+        out.append((match.start(), match.end(),
+                    f"{int(match.group(3)):04d}-{int(match.group(2)):02d}-{int(match.group(1)):02d}"))
+    return tuple(sorted(out))
+
+
+def needles_of(pii_type: str, surface: str) -> tuple[tuple[str, str], ...]:
+    """(kind, needle) pairs that say «this value stood here», in the shapes a
+    MODEL writes it — not only the one the gateway minted.
+
+    v1 of this observer looked for whole surfaces and whole parts, so a
+    correctly restored «Пахомовой Ольге» (dative) and a reformatted «+7 (999)
+    000-11-22» both read `absent`: two of the three registers the corpus is
+    built from write exactly that way. The four kinds are the four ways a
+    Russian value survives being rewritten — verbatim, declined (a word stem),
+    renotated (a digit signature), reformatted (a date fold)."""
+    out: list[tuple[str, str]] = [("whole", surface)]
+    if pii_type in DIGIT_TYPES:
+        digits = digits_of(surface)
+        signature = digits[-PHONE_SIGNATURE_DIGITS:] if pii_type == "PHONE" else digits
+        if len(signature) >= MIN_PIECE:
+            out.append(("digits", signature))
+        return tuple(out)
+    if pii_type in DATE_TYPES:
+        out += [("date", iso) for _start, _end, iso in date_folds(surface)]
+        return tuple(out)
+    for role, value in sorted(parts_of(pii_type, surface).items()):
+        if role in GENERIC_ROLES or len(value) < MIN_PIECE:
+            continue
+        out.append(("stem", fold(value)[:MIN_PIECE]))
+    return tuple(out)
+
+
+def _needle_spans(kind: str, needle: str, text: str) -> list[tuple[int, int]]:
+    if not needle:
+        return []
+    if kind == "whole":
+        return _occurrences(_indexable_fold(text), _indexable_fold(needle))
+    if kind == "stem":
+        return [(match.start(), match.end()) for match in _WORD.finditer(text)
+                if fold(match.group()).startswith(needle)]
+    if kind == "digits":
+        return [(match.start(), match.end()) for match in _NUMBER_RUN.finditer(text)
+                if needle in digits_of(match.group())]
+    return [(start, end) for start, end, iso in date_folds(text) if iso == needle]
+
+
+def occurrences_of(pii_type: str, surface: str, text: str) -> tuple[tuple[int, int], ...]:
+    """Where `surface` stands in `text`, inflection and notation included."""
+    spans = [span for kind, needle in needles_of(pii_type, surface)
+             for span in _needle_spans(kind, needle, text)]
+    return tuple(sorted(set(spans)))
+
+
+def own_stems(case: CaseV5) -> frozenset[str]:
+    """Word stems the customer's OWN real values already carry.
+
+    A substitute may share a given name with the value it replaced — the
+    engine mints from a pool, not from a disjoint alphabet — and the RESTORED
+    reply is full of real values. Without this filter «Пахомова Елена»
+    standing for «Иванова Елена» would make every correctly restored answer
+    read as a surviving substitute, and `residual`, the critical-defect line,
+    would fire on the product working."""
+    out: set[str] = set()
+    for item in case.base.pii:
+        for surface in (item.value, item.canonical):
+            out.update(needle for kind, needle in needles_of(item.type, surface) if kind == "stem")
+        for role, value in item.parts.items():
+            if role not in GENERIC_ROLES and len(value) >= MIN_PIECE:
+                out.add(fold(value)[:MIN_PIECE])
+    return frozenset(out)
+
+
+def survives_in(pii_type: str, surface: str, text: str, own: frozenset[str]) -> bool:
+    """Is `surface` — a SUBSTITUTE — still standing in `text`?
+
+    The stems the customer's own values carry are skipped (`own_stems`); the
+    whole surface, the digit signature and the date fold are not, because a
+    fake phone never wears the real one's digits and a fake name never spells
+    the real one."""
+    for kind, needle in needles_of(pii_type, surface):
+        if kind == "stem" and needle in own:
+            continue
+        if _needle_spans(kind, needle, text):
+            return True
+    return False
+
+
+def carries_any(pii_type: str, surfaces: Sequence[str], text: str, own: frozenset[str]) -> bool:
+    return any(surface and survives_in(pii_type, surface, text, own) for surface in surfaces)
+
+
 def substitute_surfaces(run: ArmRunV5, item_id: str) -> tuple[str, ...]:
     """Every spelling of one item's substitute the run recorded: the one the
     arm record kept and every one a mention saw. A model that read «Кудрявцева»
@@ -159,10 +304,15 @@ def leaf_text(flat: dict[str, object], tool_name: str, path: str) -> str:
     return contracts.FIELD_SEP.join(text for text in (_as_text(flat[key]) for key in ordered) if text)
 
 
-def _has_residual(call: ObservedCall, path: str) -> bool:
-    """The engine reported a surviving substitute at this leaf or under it."""
-    return any(left and (key == path or key.startswith(path + ".") or key.startswith(path + "["))
-               for key, left in call.residual.items())
+def engine_residual(call: ObservedCall, path: str) -> tuple[str, ...]:
+    """What the ENGINE says survived at this leaf. Diagnostic only, and that
+    is the whole point: `ObservedCall.residual` is `/unmask_arguments`'s own
+    `residual_tokens` report, and a benchmark whose verdict on «did a fake
+    reach the customer's CRM» is the gateway's own answer has measured
+    nothing. `_out_status` decides; this is printed beside it."""
+    return tuple(one for key, left in call.residual.items()
+                 for one in left
+                 if key == path or key.startswith(path + ".") or key.startswith(path + "["))
 
 
 def calls_of_turn(run: ArmRunV5, turn: int) -> tuple[tuple[int, ObservedCall], ...]:
@@ -219,8 +369,16 @@ def covering_piece(record: ToolResultRecord, span: tuple[int, int]) -> tuple[int
 Opcode = tuple[str, int, int, int, int]
 
 
+@lru_cache(maxsize=256)
 def merged_opcodes(raw: str, restored: str) -> tuple[Opcode, ...]:
     """`SequenceMatcher` opcodes with short `equal` islands absorbed.
+
+    MEMOISED because it is 40 ms on a 1 600-character reply and pure over its
+    two strings: `answer_spans` is recomputed by every metric that reads the
+    answer and by every axis bucket the report prints, so one run's replies
+    were being aligned tens of times each. A cache on a pure function of two
+    strings cannot change a verdict; the size is bounded so a long run does
+    not hold every reply it ever saw.
 
     `autojunk=False` on purpose: the heuristic drops characters occurring in
     more than 1% of a long string, and a Russian reply is mostly such
@@ -275,11 +433,13 @@ def answer_spans(case: CaseV5, run: ArmRunV5) -> tuple[AttributedSpan, ...]:
     resolved, because an attribution nothing can inspect is one nobody checked.
     """
     surfaces = {item.id: substitute_surfaces(run, item.id) for item in case.base.pii}
-    needles = {item.id: tuple(dict.fromkeys(
-        (*surfaces[item.id], *(piece for surface in surfaces[item.id]
-                               for piece in pieces_of(item.type, surface)))))
-        for item in case.base.pii}
-    raw_folded = _indexable_fold(run.reply_raw)
+    # The occurrences are found ONCE per item, in the shapes `needles_of`
+    # knows: a declined name and a reformatted phone are the two commonest
+    # things a Russian answer does to a substitute, and looking only for whole
+    # surfaces made every such answer hop `absent`.
+    placed = {item.id: tuple(span for surface in surfaces[item.id]
+                             for span in occurrences_of(item.type, surface, run.reply_raw))
+              for item in case.base.pii}
     opcodes = merged_opcodes(run.reply_raw, run.base.reply)
     out: list[AttributedSpan] = []
     for index, (tag, raw_start, raw_end, new_start, new_end) in enumerate(opcodes):
@@ -291,8 +451,7 @@ def answer_spans(case: CaseV5, run: ArmRunV5) -> tuple[AttributedSpan, ...]:
         carried: list[str] = []
         window_start, window_end = raw_start, raw_end
         for item in case.base.pii:
-            hits = [span for needle in needles[item.id]
-                    for span in _occurrences(raw_folded, _indexable_fold(needle))
+            hits = [span for span in placed[item.id]
                     if span[0] < raw_end and raw_start < span[1]]
             if not hits:
                 continue
@@ -328,20 +487,22 @@ def _merge_overlapping(spans: list[AttributedSpan]) -> tuple[AttributedSpan, ...
 
 
 def residual_answer_items(case: CaseV5, run: ArmRunV5) -> frozenset[str]:
-    """Items whose substitute stands in a region the restoration did NOT touch.
+    """Items whose substitute is still standing in the reply the CUSTOMER reads.
 
-    Read off the same alignment, so «the engine replaced it elsewhere» cannot
-    excuse a copy that survived: an `equal` opcode is text identical in both
-    replies, and a substitute inside it is text the customer reads."""
-    surfaces = {item.id: substitute_surfaces(run, item.id) for item in case.base.pii}
+    THE WHOLE RESTORED REPLY, not the `equal` regions of the alignment, and
+    every needle rather than whole surfaces only. The alignment version could
+    see a substitute only where it had been left byte for byte in a region the
+    restoration did not touch — so a declined «Пахомовой Ольге», a reformatted
+    «+7 (999) 000-11-22» and the substitute of an item the case declared no
+    answer hop for were all invisible to the product's critical-defect line.
+    The question is not «did the engine touch this text» but «does a fake
+    stand in what the customer reads», and that is asked of the finished
+    reply."""
+    own = own_stems(case)
     kept: set[str] = set()
-    for tag, raw_start, raw_end, _new_start, _new_end in merged_opcodes(run.reply_raw, run.base.reply):
-        if tag != "equal":
-            continue
-        raw = fold(run.reply_raw[raw_start:raw_end])
-        for item_id, spellings in surfaces.items():
-            if any(fold(surface) in raw for surface in spellings if surface):
-                kept.add(item_id)
+    for item in case.base.pii:
+        if carries_any(item.type, substitute_surfaces(run, item.id), run.base.reply, own):
+            kept.add(item.id)
     return frozenset(kept)
 
 
@@ -390,38 +551,64 @@ def _in_tool(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem) 
     return _observed(case, repeat, hop, True, item.type, piece[2], reference)
 
 
-def _recall_request(run: ArmRunV5, turn: int) -> int | None:
-    """The model request that carried the recall turn.
+def carried_substitute(run: ArmRunV5, item_id: str, turn: int) -> str:
+    """The substitute the transcript carries INTO `turn` for this item.
 
-    The turn's own mentions name it directly. Under anaphora the recall turn
-    says no value at all, so there is no mention to read: the request is the one
-    AFTER the last mention before the turn — the transcript grew by one request
-    and carried the earlier message forward."""
-    at_turn = [mention.request_index for mention in run.mentions if mention.msg == turn]
-    if at_turn:
-        return min(at_turn)
-    before = [mention for mention in run.mentions if 0 <= mention.msg < turn]
+    The SDK holds the transcript and the gateway masks each message once, as
+    it is pushed (`harness.GatewayV5._push` → `_note_message_mentions`), so
+    «what the model reads at turn 7» is «the last substitute it was shown at
+    or before turn 7» — there is no per-request re-recording, and asking for
+    one is what made every memory hop read `leaked`. Mentions from a tool
+    result carry `msg == -1` and count: the model read them too.
+    """
+    before = [mention for mention in run.mentions
+              if mention.item_id == item_id and (mention.msg < 0 or mention.msg <= turn)]
     if not before:
-        return None
-    last_msg = max(mention.msg for mention in before)
-    return max(mention.request_index for mention in before if mention.msg == last_msg) + 1
+        return ""
+    return max(before, key=lambda mention: (mention.request_index, mention.msg)).substitute
 
 
 def _in_memory(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem) -> HopObservation:
-    request = _recall_request(run, hop.turn)
-    own = [mention for mention in run.mentions if mention.item_id == item.id]
-    if request is None or not own:
+    """The value said at turn 1 and needed again at turn 7.
+
+    Decided from what the harness ACTUALLY records. `masked_spans` is keyed by
+    the index of every message that was pushed, so it is the only evidence on
+    disk that the conversation reached a turn at all: a recall turn the run
+    never got to is `absent`, and a value whose own message was masked but
+    left a mention behind is `leaked` — the real value went into the context
+    and every later turn carries it.
+    """
+    pushed = run.base.masked_spans
+    if hop.turn not in pushed:
         return _flat(case, repeat, hop, True, item.type, "", item.value, "absent")
-    first_msg = min(mention.msg for mention in own)
-    carried = [mention for mention in own
-               if mention.request_index == request and mention.msg == first_msg]
-    if not carried:
-        return _flat(case, repeat, hop, True, item.type, "", item.value, "leaked")
-    return _observed(case, repeat, hop, True, item.type, carried[0].substitute, item.value)
+    substitute = carried_substitute(run, item.id, hop.turn)
+    if substitute:
+        return _observed(case, repeat, hop, True, item.type, substitute, item.value)
+    said = item.where.kind == "message" and item.where.msg in pushed and item.where.msg <= hop.turn
+    return _flat(case, repeat, hop, True, item.type, "", item.value,
+                 "leaked" if said else "absent")
 
 
-def _out_call(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop,
-              item: PiiItem) -> HopObservation | None:
+def _out_status(pii_type: str, surfaces: Sequence[str], written: str, restored: str,
+                own: frozenset[str]) -> str:
+    """The status of an OUT leaf, decided HERE and not by the engine's report.
+
+    Two readings that used to come from elsewhere are made in this file now.
+    `unmasked`: the leaf the agent wrote carried no substitute at all, so
+    `restored == written` and `form_match` compared a string with itself — a
+    gateway that masked NOTHING printed 100% on `form_hOUT`. `residual`: the
+    engine's own `ObservedCall.residual` said whether a substitute survived,
+    and a benchmark that asks the defendant whether it left a fake in the
+    customer's CRM is not measuring anything; the scan of the restored leaf
+    is the same one `residual_answer_items` runs on the reply.
+    """
+    if not carries_any(pii_type, surfaces, written, own):
+        return "unmasked"
+    return "residual" if carries_any(pii_type, surfaces, restored, own) else "observed"
+
+
+def _out_call(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem,
+              own: frozenset[str]) -> HopObservation | None:
     expected_owner = contracts.hop_owner_of_leaf(hop.tool_name, hop.path)
     if hop.owner != expected_owner:
         raise ObserveError(
@@ -433,9 +620,10 @@ def _out_call(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop,
         return None if hop.optional else _flat(case, repeat, hop, True, item.type, "", "", "absent")
     written = leaf_text(flatten(call.written), hop.tool_name, hop.path)
     restored = leaf_text(flatten(call.restored), hop.tool_name, hop.path)
-    if _has_residual(call, hop.path):
-        return _flat(case, repeat, hop, True, item.type, restored, written, "residual")
-    return _observed(case, repeat, hop, True, item.type, restored, written)
+    status = _out_status(item.type, substitute_surfaces(run, item.id), written, restored, own)
+    if status == "observed":
+        return _observed(case, repeat, hop, True, item.type, restored, written)
+    return _flat(case, repeat, hop, True, item.type, restored, written, status)
 
 
 def _out_answer(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem,
@@ -447,6 +635,12 @@ def _out_answer(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiIte
                              run.reply_raw[span.raw_start:span.raw_end])
     if item.id in residual:
         return _flat(case, repeat, hop, True, item.type, "", "", "residual")
+    # The agent NAMED the person and wrote the real value: the gateway never
+    # minted a substitute, so there is no rewritten span to find. That is
+    # `unmasked` — a miss with a cause — and not `absent`, which says the
+    # agent said nothing about this datum at all.
+    if occurrences_of(item.type, item.value, run.reply_raw):
+        return _flat(case, repeat, hop, True, item.type, "", "", "unmasked")
     return None if hop.optional else _flat(case, repeat, hop, True, item.type, "", "", "absent")
 
 
@@ -463,8 +657,8 @@ def _synthetic(kind: str, owner: str, item_id: str, turn: int, tool_name: str,
                source_hop=-1, path=path, optional=False)
 
 
-def _extra_call_hops(case: CaseV5, run: ArmRunV5, repeat: int,
-                     declared: Sequence[Hop]) -> list[HopObservation]:
+def _extra_call_hops(case: CaseV5, run: ArmRunV5, repeat: int, declared: Sequence[Hop],
+                     own: frozenset[str]) -> list[HopObservation]:
     taken = {(hop.turn, hop.tool_name, hop.call_ordinal, hop.path)
              for hop in declared if hop.kind == "OUT" and hop.tool_name}
     surfaces = {item.id: substitute_surfaces(run, item.id) for item in case.base.pii}
@@ -487,15 +681,23 @@ def _extra_call_hops(case: CaseV5, run: ArmRunV5, repeat: int,
             restored = _as_text(flat_restored.get(path, ""))
             if not written:
                 continue
-            item_id = next((one for one, spellings in surfaces.items()
-                            if any(spelling and fold(spelling) in fold(written)
-                                   for spelling in spellings)), "")
+            # Matched with the ITEM's type, not the leaf's: the needle shapes
+            # are a property of the value («is this a digit signature or a
+            # word stem?»), and an agent that wrote a phone into a name field
+            # is exactly the crossing this branch exists to catch.
+            item_id = next((item.id for item in case.base.pii
+                            if carries_any(item.type, surfaces[item.id], written, own)), "")
             hop = _synthetic("OUT", contracts.hop_owner_of_leaf(call.name, path),
                              item_id, turn, call.name, ordinal, path)
-            status = "residual" if _has_residual(call, path) else "observed"
-            out.append(_flat(case, repeat, hop, False, spec.pii_type, restored, written, status)
-                       if status == "residual"
-                       else _observed(case, repeat, hop, False, spec.pii_type, restored, written))
+            # No item's substitute is in this leaf: the agent wrote something
+            # the gateway never touched. It is still a crossing of the form
+            # axis — and it has nothing to compare, so it is `unmasked`.
+            status = ("unmasked" if not item_id
+                      else _out_status(items_by_id(case)[item_id].type, surfaces[item_id],
+                                       written, restored, own))
+            out.append(_observed(case, repeat, hop, False, spec.pii_type, restored, written)
+                       if status == "observed"
+                       else _flat(case, repeat, hop, False, spec.pii_type, restored, written, status))
     return out
 
 
@@ -528,6 +730,10 @@ def observe(case: CaseV5, run: ArmRunV5, ic: PairVerdict | None,
     items = items_by_id(case)
     spans = answer_spans(case, run)
     residual = residual_answer_items(case, run)
+    # Computed ONCE per observation: every OUT leaf and the answer scan ask
+    # the same question («is this needle the substitute's or the customer's
+    # own?») and the answer depends only on the case.
+    own = own_stems(case)
     observations: list[HopObservation] = []
     for hop in case.hops:
         item = items.get(hop.item_id)
@@ -549,14 +755,14 @@ def observe(case: CaseV5, run: ArmRunV5, ic: PairVerdict | None,
         elif hop.kind == "OUT" and hop.owner == "answer":
             one = _out_answer(case, run, run.base.repeat, hop, item, spans, residual)
         elif hop.kind == "OUT":
-            one = _out_call(case, run, run.base.repeat, hop, item)
+            one = _out_call(case, run, run.base.repeat, hop, item, own)
         else:
             raise ObserveError(
                 f"{case.base.id}: hop {hop.hop_index} is {hop.kind}/{hop.owner}, which is not a "
                 f"pair of contracts.HOP_KINDS × HOP_OWNERS")
         if one is not None:
             observations.append(one)
-    observations += _extra_call_hops(case, run, run.base.repeat, case.hops)
+    observations += _extra_call_hops(case, run, run.base.repeat, case.hops, own)
     observations += _extra_answer_hops(case, run, run.base.repeat, case.hops, spans)
     return RunObservation(case=case, repeat=run.base.repeat, hops=tuple(observations),
                           run=run, ic=ic, cc=cc)

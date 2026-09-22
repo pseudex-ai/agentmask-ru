@@ -110,6 +110,35 @@ def test_missing_fixtures_are_a_refusal() -> list[str]:
     return problems
 
 
+def test_gate_demands_every_declared_kind() -> list[str]:
+    """F2.8 / C-089. The gate demands one fixture per kind in
+    `contracts.FIXTURE_KINDS` — the TUPLE, never a list re-typed here. FIX-1
+    may add a fourth kind (`clause`, for the per-clause fixtures the review
+    found missing); the day it lands, a metric shipping only the first three
+    must be refused by name, and this check is what makes that automatic
+    rather than a line somebody remembers to add.
+
+    Driven by dropping each declared kind in turn from a REAL metric's
+    fixtures: a gate that accepted the short set would be printing a metric on
+    evidence it never saw."""
+    problems: list[str] = []
+    for kind in contracts.FIXTURE_KINDS:
+        short = tuple(one for one in FIXTURES[BROKEN] if one.kind != kind)
+        if len(short) == len(FIXTURES[BROKEN]):
+            problems.append(f"{kind}: no fixture of that kind exists to drop")
+            continue
+        verdict = gate(METRIC_FUNCTIONS[BROKEN], short)
+        if verdict.printable:
+            problems.append(f"{kind}: a metric with no {kind} fixture was allowed to print")
+        elif kind not in verdict.why:
+            problems.append(f"{kind}: the refusal does not name the missing kind: {verdict.why!r}")
+    # The other side: the full set of the same metric IS printable, or «a short
+    # set is refused» would pass on a gate that refuses everything.
+    if not gate(METRIC_FUNCTIONS[BROKEN], FIXTURES[BROKEN]).printable:
+        problems.append(f"the full fixture set of {BROKEN} was refused")
+    return problems
+
+
 def test_selftest_passes() -> list[str]:
     """C-091. Every metric, replaced by a constant, must be refused; every real
     one must be printable. The `e2e/audit_gates.py --selftest` shape."""
@@ -122,6 +151,7 @@ def main() -> int:
         ("broken_metric_is_refused", test_broken_metric_is_refused),
         ("gate_never_raises", test_gate_never_raises),
         ("missing_fixtures_are_a_refusal", test_missing_fixtures_are_a_refusal),
+        ("gate_demands_every_declared_kind", test_gate_demands_every_declared_kind),
         ("selftest_passes", test_selftest_passes),
     )
     failures: list[str] = []

@@ -4,8 +4,10 @@
 
 THE FIXTURE RUN IS WRITTEN, NOT MOCKED. `build_run` puts a v4-shaped
 `corpus.json` and `<run>.arms.jsonl` on disk beside the v5 files, exactly as
-`contracts.RUN_FILES` describes them, and the report is then produced by the
-same code path a GO run uses — including `bench.agentpii4.autopsy._load_run`
+`contracts.RUN_FILES` describes them — and, since the phase-4 review, the three
+files the report's own sections are computed from as well (`<run>.triples.
+jsonl`, `<run>.spend.tsv`, `<run>.meta.json`). The report is then produced by
+the same code path a GO run uses — including `bench.agentpii4.autopsy._load_run`
 and `bench.agentpii4.report.render`. The promise of §8 is that v4's own tools
 read a v5 run directory unchanged, and only v4's code can testify to that.
 
@@ -13,17 +15,23 @@ The directory is built under `tempfile`, not committed: a fixture run in the
 tree would be a second corpus to keep in step with `contracts.py`, and the one
 thing it would prove — that the writers and the readers agree — is proved
 better by writing it with the writers on every test run.
+
+FOUR CHECKS HERE ARE THE REVIEWERS' OWN REPRODUCTIONS, turned into tests that
+go red the moment the fix is reverted: the level table that could only show
+agreement (#6), the hops file whose absence certified cleanliness (#5), the
+calibration stamp that was believed (#7), and the price that was never printed
+(G-cost). Each one asserts the defect's shape, not merely the fix's presence.
 """
 import json
 import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 
 from bench.agentpii4.records import ArmMeta, arm_record
 from bench.agentpii5 import contracts, records
-from bench.agentpii5.contracts import CalibrationStamp, JudgeVerdict, Line
+from bench.agentpii5.contracts import CalibrationStamp, CaseV5, JudgeVerdict, Line
 from bench.agentpii5.fixtures import (
     FAKE_NAME,
     REAL_NAME,
@@ -41,44 +49,71 @@ from bench.agentpii5.fixtures import (
     _with_replies,
     _with_subs,
 )
-from bench.agentpii5.metrics import METRIC_FUNCTIONS, by_axis
+from bench.agentpii5.metrics import METRIC_FUNCTIONS
 from bench.agentpii5.observe import observe
 from bench.agentpii5.report import (
     V4_BLOCK_END,
     V4_BLOCK_START,
     ReportError,
+    calibration_problems,
+    cost_lines,
     differs_histogram,
+    level_rows,
+    read_parts,
     render_line,
     report_lines,
     run_id_of,
+    side_by_side,
     v4_half,
     v5_observations,
 )
 from bench.agentpii5.schema import case_v5_to_json
 
 RUN_ID = "fixture0001"
+PROMPT_SHA = "f" * 64
+CEILING_USD = 12.0
 NAME = _item("p1", "NAME", REAL_NAME, REAL_NAME, "i1", _in_message(1, 0, len(REAL_NAME)))
 PHONE = _item("p2", "PHONE", REAL_PHONE, REAL_PHONE, "i1", _in_message(1, 15, 27))
-STAMP = CalibrationStamp(judge_model=contracts.JUDGE_MODEL, prompt_sha256="f" * 64, n=300,
+STAMP = CalibrationStamp(judge_model=contracts.JUDGE_MODEL, prompt_sha256=PROMPT_SHA, n=300,
                          raw_agreement=0.88, kappa=0.74, per_type_kappa={"NAME": 0.76},
                          repeat_disagreement=0.04, calibrated=True)
 
 
-def _fixture_case():  # noqa: ANN202 - a CaseV5, named by its only caller
+def _fixture_case(case_id: str, behaviour: str) -> CaseV5:
     in_user = _hop("IN", "user", "p1", 0, 1, "", -1, -1, "")
     out_arg = _hop("OUT", "tool_arg", "p1", 1, 1, "crm_upsert_contact", 0, -1, "contact.last_name")
     answer = _hop("OUT", "answer", "p1", 2, 1, "", -1, -1, "")
-    return _case("c-0001", "single", ("ты оператор", f"{REAL_NAME}, {REAL_PHONE}"),
+    return _case(case_id, behaviour, ("ты оператор", f"{REAL_NAME}, {REAL_PHONE}"),
                  (NAME, PHONE), (in_user, out_arg, answer))
 
 
-def _fixture_run(case):  # noqa: ANN001, ANN202 - an ArmRunV5 for that case
-    run = _with_subs(_run("c-0001"), {"p1": FAKE_NAME})
+def _fixture_run(case: CaseV5):  # noqa: ANN202 - an ArmRunV5 for that case
+    run = _with_subs(_run(case.base.id), {"p1": FAKE_NAME})
     run = _with_replies(run, "Готово, ЩУКИН.", "Готово, Иванова.", "Готово, Иванова.")
     run = _with_calls(run, (_call("crm_upsert_contact", {"contact": {"last_name": "Пахомовой"}},
                                   {"contact": {"last_name": "Ивановой"}}, {}, "", 0),), (1,))
     return _with_mentions(run, (contracts.MentionRecord("p1", 1, -1, FAKE_NAME, 0),
                                 contracts.MentionRecord("p1", 1, -1, FAKE_NAME, 1)))
+
+
+# TWO behaviours, because the per-behaviour v4 blocks (C-043/C-046/C-047) are a
+# claim about EACH family: a fixture with one behaviour cannot tell «one block
+# per behaviour» from «one block».
+FIXTURE_BEHAVIOURS: tuple[tuple[str, str], ...] = (
+    ("c-0001", "single"), ("c-0002", "retry_same_tool"))
+
+
+def _triple_row(case: CaseV5) -> dict[str, object]:
+    """One `<run>.triples.jsonl` row in the shape `harness.run_triple_v5`
+    writes: the cost section is computed from these fields and from nothing
+    else, so a fixture that invented its own shape would pin the wrong file."""
+    return {"case_id": case.base.id, "repeat": 0, "kind": case.base.kind,
+            "behaviour": case.behaviour, "register": case.base.register,
+            "cluster": case.base.cluster, "cap_usd": 0.06, "cost_usd": 0.12,
+            "status": "complete", "reason": "",
+            "arms": {arm: {"termination": "done", "cost_usd": 0.04, "calls": 1, "reason": ""}
+                     for arm in ("C", "I", "C2")},
+            "judge": {"label": "верно", "judged_by": "model", "cost_usd": 0.01}}
 
 
 def build_run(root: Path, run_id: str, with_v5: bool) -> Path:
@@ -87,30 +122,54 @@ def build_run(root: Path, run_id: str, with_v5: bool) -> Path:
     baseline that had already moved with the treatment."""
     run_dir = root / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    case = _fixture_case()
-    run = _fixture_run(case)
+    cases = [_fixture_case(case_id, behaviour) for case_id, behaviour in FIXTURE_BEHAVIOURS]
     meta = ArmMeta("fixture", 1, 0, "sess", "success", False, None, (), "", 0.0)
     (run_dir / "corpus.json").write_text(json.dumps(
-        {"corpus": [case.base.to_json()], "digest": "digest-v4"}, ensure_ascii=False),
-        encoding="utf-8")
-    for arm in ("C", "I", "C2"):
-        records.append_row(records.run_file(run_dir, run_id, "<run>.arms.jsonl"),
-                           arm_record(replace(run.base, arm=arm), meta, case.base))
+        {"corpus": [case.base.to_json() for case in cases], "digest": "digest-v4"},
+        ensure_ascii=False), encoding="utf-8")
+    for case in cases:
+        run = _fixture_run(case)
+        for arm in ("C", "I", "C2"):
+            records.append_row(records.run_file(run_dir, run_id, "<run>.arms.jsonl"),
+                               arm_record(replace(run.base, arm=arm), meta, case.base))
     if not with_v5:
         return run_dir
     (run_dir / "corpus.v5.json").write_text(json.dumps(
-        {"corpus": [case_v5_to_json(case)], "digest": "digest-v5"}, ensure_ascii=False),
-        encoding="utf-8")
-    records.append_row(records.run_file(run_dir, run_id, "<run>.arms.v5.jsonl"),
-                       records.arm_v5_record(run, meta, case.base))
-    for hop in observe(case, run, None, None).hops:
-        records.append_row(records.run_file(run_dir, run_id, "<run>.hops.jsonl"),
-                           records.hop_observation_to_json(hop))
+        {"corpus": [case_v5_to_json(case) for case in cases], "digest": "digest-v5"},
+        ensure_ascii=False), encoding="utf-8")
     judge = records.run_file(run_dir, run_id, "<run>.judge.jsonl")
     records.append_row(judge, records.calibration_stamp_to_json(STAMP))
+    spend = 0.0
+    for case in cases:
+        run = _fixture_run(case)
+        records.append_row(records.run_file(run_dir, run_id, "<run>.arms.v5.jsonl"),
+                           records.arm_v5_record(run, meta, case.base))
+        for hop in observe(case, run, None, None).hops:
+            records.append_row(records.run_file(run_dir, run_id, "<run>.hops.jsonl"),
+                               records.hop_observation_to_json(hop))
+        records.append_row(records.run_file(run_dir, run_id, "<run>.triples.jsonl"),
+                           _triple_row(case))
+        records.append_row(judge, records.judge_row_to_json(records.JudgeRow(
+            case_id=case.base.id, repeat=0, input_sha256="a" * 64,
+            verdict=JudgeVerdict(label="верно", reason="«Иванова»", judged_by="model",
+                                 cost_usd=0.01))))
+        spend += 0.12
+    # ONE verdict the residual gate decided before the model was asked. It is
+    # written here because the report must be seen counting it APART from the
+    # model's (T11) — a fixture with only model verdicts cannot tell the two
+    # counts apart.
     records.append_row(judge, records.judge_row_to_json(records.JudgeRow(
-        case_id="c-0001", repeat=0, input_sha256="a" * 64,
-        verdict=JudgeVerdict(label="верно", reason="«Иванова»", judged_by="model", cost_usd=0.01))))
+        case_id=FIXTURE_BEHAVIOURS[0][0], repeat=0, input_sha256="b" * 64,
+        verdict=JudgeVerdict(label="неверно", reason="подмена в ответе",
+                             judged_by="residual_gate", cost_usd=0.0))))
+    records.run_file(run_dir, run_id, "<run>.spend.tsv").write_text(
+        f"agent/{FIXTURE_BEHAVIOURS[0][0]}/0\t{spend:.6f}\ncumulative_usd\t{spend:.6f}\n",
+        encoding="utf-8")
+    (run_dir / f"{run_id}.meta.json").write_text(json.dumps(
+        {"run_id": run_id, "benchmark": "agentpii5", "model": contracts.AGENT_MODEL,
+         "judge_model": contracts.JUDGE_MODEL, "tier": "nano", "repeats": 1,
+         "digest": "digest-v5", "ceiling_usd": CEILING_USD, "spent_usd": spend,
+         "prompt_sha256": PROMPT_SHA}, ensure_ascii=False), encoding="utf-8")
     return run_dir
 
 
@@ -166,7 +225,7 @@ def test_v4_block_byte_equal() -> list[str]:
     with tempfile.TemporaryDirectory() as tmp:
         v5_dir, v4_dir = _built(Path(tmp))
         lines = report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS)
-        own, _scored, _cases = v4_half(v5_dir, f"v5 run {run_id_of(v5_dir)}")
+        own = v4_half(v5_dir, f"v5 run {run_id_of(v5_dir)}").block
         start = lines.index(V4_BLOCK_START)
         end = lines.index(V4_BLOCK_END)
         block = lines[start:end]
@@ -182,28 +241,317 @@ def test_v4_block_byte_equal() -> list[str]:
         return problems
 
 
-def test_every_axis_prints() -> list[str]:
-    """C-080. Every axis of `contracts.AXES` buckets the observations and every
-    bucket renders. An axis that raised would silently drop a slice."""
+def _level_line(block: Sequence[str], label: str) -> str:
+    found = [line for line in block if line.startswith("   " + label)]
+    if len(found) != 1:
+        raise AssertionError(f"v4 printed {len(found)} lines for level {label!r}")
+    return found[0]
+
+
+def _with_verdict(line: str, old: str, new: str) -> str:
+    """The same level line with another TOST verdict, in v4's own column.
+
+    `bench/agentpii4/report.py::render` writes `f"{verdict:15} ["`, so the
+    verdict is the 15-wide field before the TOST interval; swapping it in place
+    keeps every other column byte for byte and the parser is then read on a
+    line v4 could really have printed."""
+    stamp = old.ljust(15) + " ["
+    if stamp not in line:
+        raise AssertionError(f"{old!r} is not the verdict of {line!r}")
+    return line.replace(stamp, new.ljust(15) + " [", 1)
+
+
+def test_level_table_reads_every_verdict() -> list[str]:
+    """#6 / F2.1 / C-066. v4 prints three TOST verdicts and two of them carry a
+    space; the parser read the first token, so «НЕ эквивалентно» and «нет
+    данных» were dropped and the side-by-side level table could only ever show
+    levels that AGREED — the one table whose job is to show where the gateway
+    moved the agent.
+
+    The fixture run really does print «НЕ эквивалентно» (one case: the 1/n
+    resolution floor makes the interval two points wide), so the table has six
+    rows with the fix and none without it."""
     with tempfile.TemporaryDirectory() as tmp:
-        v5_dir, _v4_dir = _built(Path(tmp))
-        _block, scored, _cases = v4_half(v5_dir, "x")
-        observations = v5_observations(v5_dir, scored)
+        v5_dir, v4_dir = _built(Path(tmp))
+        block = list(v4_half(v5_dir, "x").block)
         problems: list[str] = []
-        for axis in contracts.AXES:
-            buckets = by_axis(observations, axis)
-            if not buckets:
-                problems.append(f"{axis}: no buckets at all")
-            for name, rows in buckets.items():
-                if not render_line(METRIC_FUNCTIONS["form_hOUT"](rows)):
-                    problems.append(f"{axis}/{name}: rendered nothing")
+        rows = level_rows(block)
+        if len(rows) != len(contracts.V4_LEVELS):
+            return [f"only {len(rows)} of {len(contracts.V4_LEVELS)} levels parsed: "
+                    f"{[row.label for row in rows]}"]
+        printed = {row.label: row.tost_verdict for row in rows}
+        at_line = {_level_line(block, label): label for _level, label in contracts.V4_LEVELS}
+
+        def _swap(verdict: str) -> list[str]:
+            return [_with_verdict(line, printed[at_line[line]], verdict) if line in at_line else line
+                    for line in block]
+
+        # Each of the three verdicts v4 can print, on v4's own line.
+        for verdict in ("НЕ эквивалентно", "эквивалентно", "нет данных"):
+            got = {row.tost_verdict for row in level_rows(_swap(verdict))}
+            if got != {verdict}:
+                problems.append(f"a block printing {verdict!r} parsed as {got}")
+        # A verdict v4 never prints is a REFUSAL, not a dropped row: silence is
+        # what let the two real ones disappear.
+        try:
+            level_rows(_swap("почти эквивалентно"))
+            problems.append("an unreadable level line was silently dropped")
+        except ReportError:
+            pass
+        # And the table is PRINTED: the defect was visible as an empty table.
+        lines = report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS)
+        table = lines[lines.index("--- уровни v4: этот прогон рядом с базовым ---"):]
+        for _level, label in contracts.V4_LEVELS:
+            if not any(one.startswith("   " + label) for one in table[:8]):
+                problems.append(f"the side-by-side level table has no row for {label!r}")
+        return problems
+
+
+def test_missing_hops_file_is_refused() -> list[str]:
+    """#5 / F2.2. A run directory without `<run>.hops.jsonl` used to yield
+    observations with no hops at all: every hop line went «н/п» and `residual`
+    — the critical-defect line — printed a clean 1/1 over them. Reading the
+    file «if it exists» is what made a missing measurement look like a clean
+    one."""
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        records.run_file(v5_dir, RUN_ID, "<run>.hops.jsonl").unlink()
+        try:
+            report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS)
+        except ReportError as error:
+            return [] if "hops.jsonl" in str(error) else [f"unclear refusal: {error}"]
+        return ["a run with no hops file was reported on as a clean run"]
+
+
+def test_hopless_observation_is_excluded_and_counted() -> list[str]:
+    """#5, the other half: the file is THERE and a (case, repeat) has no rows
+    in it — a run that died between the arm write and the hop write. That
+    observation is excluded, the count is printed and the report is НЕПОЛНЫЙ;
+    counting it as clean is how ten hopless observations printed `residual`
+    1/1."""
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        _drop_hops(v5_dir, FIXTURE_BEHAVIOURS[1][0])
+        problems: list[str] = []
+        half = v5_observations(v5_dir, v4_half(v5_dir, "x").scored)
+        if [one.case.base.id for one in half.observations] != [FIXTURE_BEHAVIOURS[0][0]]:
+            problems.append(f"the hopless observation was kept: "
+                            f"{[one.case.base.id for one in half.observations]}")
+        if half.hopless != (f"{FIXTURE_BEHAVIOURS[1][0]}|0",):
+            problems.append(f"the hole is not named: {half.hopless}")
+        # An EMPTY registry on purpose: the mark asserted here is the one the
+        # HOLE sets, and a metric that another module has broken today would
+        # otherwise set it too and this test would pass on the wrong reason.
+        lines = report_lines(v5_dir, v4_dir, {})
+        if contracts.INCOMPLETE_REPORT_MARK not in lines[0]:
+            problems.append(f"a run with a hole in it was not marked: {lines[0]!r}")
+        if not any("НАБЛЮДЕНИЯ ИСКЛЮЧЕНЫ: 1" in one for one in lines):
+            problems.append("the count of excluded observations is not printed")
+        return problems
+
+
+def _drop_hops(run_dir: Path, case_id: str) -> None:
+    rows = records.read_rows(records.run_file(run_dir, RUN_ID, "<run>.hops.jsonl"))
+    kept = [row for row in rows if row.get("case_id") != case_id]
+    records.run_file(run_dir, RUN_ID, "<run>.hops.jsonl").write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in kept), encoding="utf-8")
+
+
+def test_stopped_arm_is_not_a_hole() -> list[str]:
+    """The other cause of an empty `hops` tuple: the arm ended in an
+    `EXCLUDED_TERMINATION`, so `observe` was never called on it. v4's own block
+    already counts it under «исключено»; marking the report НЕПОЛНЫЙ for it
+    would put the word on every real run and teach the reader to scroll past
+    the one thing it is for."""
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        stopped_id = FIXTURE_BEHAVIOURS[1][0]
+        path = records.run_file(v5_dir, RUN_ID, "<run>.arms.v5.jsonl")
+        rows = records.read_rows(path)
+        for row in rows:
+            if row.get("case_id") == stopped_id:
+                row["termination"] = "timeout"
+        path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+                        encoding="utf-8")
+        _drop_hops(v5_dir, stopped_id)
+        problems: list[str] = []
+        half = v5_observations(v5_dir, v4_half(v5_dir, "x").scored)
+        if half.hopless:
+            problems.append(f"an arm that never finished was called a hole: {half.hopless}")
+        if half.stopped != (f"{stopped_id}|0 (timeout)",):
+            problems.append(f"the stopped arm is not counted: {half.stopped}")
+        if [one.case.base.id for one in half.observations] != [FIXTURE_BEHAVIOURS[0][0]]:
+            problems.append("a run with nothing observed was scored anyway")
+        # The empty registry, for the reason the hole test gives: this asserts
+        # the mark is NOT set, and a refused metric elsewhere would set it.
+        lines = report_lines(v5_dir, v4_dir, {})
+        if contracts.INCOMPLETE_REPORT_MARK in lines[0]:
+            problems.append("a run whose only hole is an excluded arm was marked НЕПОЛНЫЙ")
+        if not any("плечо не доиграло: 1" in one for one in lines):
+            problems.append("the count of unfinished arms is not printed")
+        return problems
+
+
+def test_forged_calibration_stamp_is_recomputed() -> list[str]:
+    """#7 / F2.3. The stamp's `calibrated` flag is written by whoever wrote the
+    row. With κ=0.21, n=7, another judge model and another prompt hash the
+    report printed «откалиброван» and no incompleteness mark at all."""
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        judge_path = records.run_file(v5_dir, RUN_ID, "<run>.judge.jsonl")
+        rows = records.read_rows(judge_path)
+        rows[0] = records.calibration_stamp_to_json(CalibrationStamp(
+            judge_model=contracts.AGENT_MODEL, prompt_sha256="0" * 64, n=7, raw_agreement=0.40,
+            kappa=0.21, per_type_kappa={"NAME": 0.10}, repeat_disagreement=0.9, calibrated=True))
+        judge_path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+                              encoding="utf-8")
+        problems: list[str] = []
+        side = side_by_side(v5_dir, v4_dir, METRIC_FUNCTIONS)
+        if side.judge.calibrated:
+            problems.append("a stamp that lies about itself was believed")
+        if not side.incomplete:
+            problems.append("a report with an uncalibrated judge was not marked НЕПОЛНЫЙ")
+        lines = report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS)
+        if "НЕ ОТКАЛИБРОВАН" not in lines[1]:
+            problems.append(f"the header still says the judge is calibrated: {lines[1]!r}")
+        reasons = "\n".join(one for one in lines if "калибровка не принята" in one)
+        for wanted in ("судья", "промпт", "размеченных", "сырое согласие", "κ 0.21",
+                       "κ по типам", "расхождение повторов"):
+            if wanted not in reasons:
+                problems.append(f"the refusal does not say {wanted!r}: {reasons!r}")
+        # The other side: the honest stamp of the fixture must clear every bar,
+        # or «is it uncalibrated» would pass on a report that can never be
+        # calibrated.
+        if calibration_problems(STAMP, PROMPT_SHA):
+            problems.append(f"the honest stamp was refused: {calibration_problems(STAMP, PROMPT_SHA)}")
+        # …and the prompt hash is the RUN's, not the stamp's own claim.
+        if not calibration_problems(STAMP, "e" * 64):
+            problems.append("a calibration of another prompt was accepted")
+        return problems
+
+
+def test_cost_section_is_printed() -> list[str]:
+    """G-cost / F2.4. A `--report` replay printed no price at all although
+    `<run>.triples.jsonl` and `<run>.spend.tsv` hold every number v4's
+    `_cost_lines` needs. The judge's spend gets its own line, and a missing
+    file is a printed refusal — «потрачено $0.00» reads as a free run."""
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        problems: list[str] = []
+        lines = report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS)
+        text = "\n".join(lines)
+        triples = records.read_rows(records.run_file(v5_dir, RUN_ID, "<run>.triples.jsonl"))
+        spent = sum(float(one["cost_usd"]) for one in triples)  # type: ignore[arg-type]
+        judge = sum(float(one["judge"]["cost_usd"]) for one in triples)  # type: ignore[index]
+        if "0. ЦЕНА" not in text:
+            problems.append("the report prints no price at all")
+        elif text.index("0. ЦЕНА") > text.index(V4_BLOCK_START):
+            problems.append("the price is printed after v4's block, not before it")
+        if f"потрачено ${spent:.2f} из ${CEILING_USD:.2f}" not in text:
+            problems.append(f"the spent/ceiling line does not carry the files' numbers "
+                            f"(${spent:.2f} / ${CEILING_USD:.2f})")
+        if f"судья: ${judge:.2f}" not in text:
+            problems.append("the judge's spend is not on its own line")
+        if f"spend.tsv: ${spent:.2f}" not in text:
+            problems.append("the ledger's own total is not printed beside it")
+        # The negative: no triples file → a refusal, never a zero.
+        records.run_file(v5_dir, RUN_ID, "<run>.triples.jsonl").unlink()
+        refused = "\n".join(cost_lines(v5_dir))
+        if "н/д" not in refused or "triples.jsonl" not in refused:
+            problems.append(f"a missing triples file did not refuse: {refused!r}")
+        if "потрачено $0.00" in refused:
+            problems.append("a missing triples file printed a free run")
+        return problems
+
+
+def test_behaviour_blocks_are_printed() -> list[str]:
+    """C-043 / C-046 / C-047 / F2.5. v4's levels and taxonomy were scored
+    corpus-wide only, so a family's own claim — `same_tool_other_target`'s
+    `other_person` count — appeared in no table. One v4 block per behaviour,
+    rendered by v4's own `render` over the subset, and `answer_real` by
+    behaviour printed among the slices."""
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        lines = report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS)
+        text = "\n".join(lines)
+        problems: list[str] = []
+        for _case_id, behaviour in FIXTURE_BEHAVIOURS:
+            marker = f"--- v4 по поведению: {behaviour} ---"
+            if marker not in text:
+                problems.append(f"no v4 block for behaviour {behaviour!r}")
+                continue
+            # It is v4's WHOLE render over the subset, not a level line lifted
+            # out of it: the taxonomy table is where `same_tool_other_target`'s
+            # `other_person` count lives, and that count is the family's own
+            # claim (C-043).
+            after = text[text.index(marker):]
+            if "4. ТАКСОНОМИЯ ПО ПОЛЯМ" not in after[:after.index("\n---")
+                                                     if "\n---" in after else len(after)]:
+                problems.append(f"{behaviour}: the block carries no taxonomy table")
+        # A behaviour the corpus does not carry must NOT get an empty block —
+        # otherwise «one block per behaviour» would pass on eleven empty ones.
+        if "--- v4 по поведению: rag ---" in text:
+            problems.append("a behaviour with no case in the corpus got a block")
+        if "   answer_real/behaviour:" not in text:
+            problems.append("answer_real is not printed by behaviour")
+        start, end = lines.index(V4_BLOCK_START), lines.index(V4_BLOCK_END)
+        at = [index for index, one in enumerate(lines) if one.startswith("--- v4 по поведению:")]
+        if at and not all(start < index < end for index in at):
+            problems.append("the per-behaviour blocks are outside v4's fence, where their "
+                            "«эквивалентно» would read as our claim")
+        return problems
+
+
+def test_every_axis_prints() -> list[str]:
+    """C-080 / F2.6. Every axis of `contracts.AXES`, for every line the gate
+    let through, in the PRINTED report. The old check called `by_axis` and
+    `render_line` itself and never looked at the report, so the slices could
+    exist only in memory — and eight of the nine axes did."""
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        side = side_by_side(v5_dir, v4_dir, METRIC_FUNCTIONS)
+        text = "\n".join(report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS))
+        problems: list[str] = []
+        for name in sorted(side.v5_lines):
+            for axis in contracts.AXES:
+                if f"   {name}/{axis}: " not in text:
+                    problems.append(f"{name}/{axis}: not printed")
+        if problems:
+            return problems[:6]
+        # The negative: an axis nobody buckets by must not be found by the same
+        # search, or «is every axis there» would pass on any text.
+        if "   leak/несуществующая_ось: " in text:
+            problems.append("the search accepts an axis the report never printed")
+        return problems
+
+
+def test_pregate_verdicts_are_counted_apart() -> list[str]:
+    """T11 / F2.7. `judged_by == "residual_gate"` is a «неверно» the
+    deterministic gate produced before the model was asked. Counted in the
+    histogram it credits the judge with verdicts it never gave; counted inside
+    the κ the report certifies it measures the gate's agreement with itself."""
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        parts = read_parts(v5_dir, v4_dir)
+        problems: list[str] = []
+        if parts.judge.pregate != 1:
+            problems.append(f"the pre-gate verdict was not counted apart: {parts.judge.pregate}")
+        if parts.judge.labels != {"верно": len(FIXTURE_BEHAVIOURS)}:
+            problems.append(f"the model's histogram carries the gate's verdict: {parts.judge.labels}")
+        text = "\n".join(report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS))
+        if "отказано до судьи (подмена стояла в ответе): 1" not in text:
+            problems.append("the pre-gate count has no row of its own")
+        if "отказано до судьи: 1" not in text:
+            problems.append("the pre-gate count is not printed beside κ")
+        if "неверно 1" in text:
+            problems.append("the gate's «неверно» is still inside the judge's histogram")
         return problems
 
 
 def test_differs_histogram() -> list[str]:
     """C-181. Per feature, how many hops named it. The report says «падеж и
     регистр»; a bare «нет» sends nobody anywhere."""
-    case = _fixture_case()
+    case = _fixture_case("c-0001", "single")
     hop = case.hops[1]
     shouted = _obs(case, _run("c-0001"), (_seen(case, hop, "NAME", "ОРЛОВ ИВАН", "Орлов Иван"),))
     counts = differs_histogram((shouted,), "NAME")
@@ -273,7 +621,7 @@ def test_side_by_side_sections() -> list[str]:
         lines = report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS)
         text = "\n".join(lines)
         problems: list[str] = []
-        order = [V4_BLOCK_START, V4_BLOCK_END, "2. ЛИНИИ v5", "3. ФОРМА",
+        order = ["0. ЦЕНА", V4_BLOCK_START, V4_BLOCK_END, "2. ЛИНИИ v5", "3. ФОРМА",
                  "4. ЧУВСТВИТЕЛЬНОСТЬ", "5. СУДЬЯ", "6. ОТКАЗЫ ГЕЙТА", "7. ПРИМЕРЫ"]
         found = [text.find(marker) for marker in order]
         if -1 in found:
@@ -308,7 +656,16 @@ def main() -> int:
         ("run_dir_carries_the_agents_turns", test_run_dir_carries_the_agents_turns),
         ("line_rendering", test_line_rendering),
         ("v4_block_byte_equal", test_v4_block_byte_equal),
+        ("level_table_reads_every_verdict", test_level_table_reads_every_verdict),
+        ("missing_hops_file_is_refused", test_missing_hops_file_is_refused),
+        ("hopless_observation_is_excluded_and_counted",
+         test_hopless_observation_is_excluded_and_counted),
+        ("stopped_arm_is_not_a_hole", test_stopped_arm_is_not_a_hole),
+        ("forged_calibration_stamp_is_recomputed", test_forged_calibration_stamp_is_recomputed),
+        ("cost_section_is_printed", test_cost_section_is_printed),
+        ("behaviour_blocks_are_printed", test_behaviour_blocks_are_printed),
         ("every_axis_prints", test_every_axis_prints),
+        ("pregate_verdicts_are_counted_apart", test_pregate_verdicts_are_counted_apart),
         ("differs_histogram", test_differs_histogram),
         ("leak_and_coverage_both_present", test_leak_and_coverage_both_present),
         ("no_effect_claims_outside_v4_block", test_no_effect_claims_outside_v4_block),

@@ -12,9 +12,11 @@ WHY FORM IS NOT HERE. `form_match` decides case, spelling and separators
 deterministically, per type, with a printable feature set (spec §1.1). A model
 asked about both would trade one against the other — it would forgive a wrong
 record because the spelling looked right, and it would never say which of the
-two it actually judged. `_FORBIDDEN_IN_RUBRIC` is checked AT IMPORT, so a
-helpful sentence about spelling cannot be added to the rubric without the
-module refusing to load.
+two it actually judged. `form_words_in` is run AT IMPORT over the rubric
+MINUS its own «чего ты не судишь» clause, so a helpful sentence about spelling
+cannot be added without the module refusing to load — and the clause that
+FORBIDS judging form may go on naming склонение and заглавные буквы, which a
+flat substring list could not allow (it also fired on «инФОРМАция»).
 
 СУДЬЯ СЛЕП К ПОДМЕНАМ ПО УСТРОЙСТВУ. `JudgeInput` has no field for them, so
 there is nothing to pass; and `build_prompt` re-checks every section this
@@ -22,10 +24,19 @@ module writes against the substitutes the run actually minted (v3's
 `assert_blind`) and raises `OracleLeak` when one stands there. The check runs
 on the production path rather than in a test only: a test proves the guard
 works today, the guard is what keeps it working after the next helpful edit.
-The ANSWER section is exempt — a substitute standing in the restored answer is
+
+TWO SECTIONS ARE NOT GUARDED THE SAME WAY, AND THE DIFFERENCE IS THE WHOLE
+POINT. The ANSWER is exempt — a substitute standing in the restored answer is
 a `residual`, which `residual_pregate` has already turned into «неверно»
 before a dollar is spent, and tripping the guard on it would crash a paid run
-over a defect the instrument is built to measure.
+over a defect the instrument is built to measure. THE DIALOGUE is the same
+defect one turn earlier (the engine does not restore a lower-cased substitute,
+and the corpus's chat/sloppy/voice registers mint exactly those), so raising
+there discarded three paid arms and killed the whole run — `masked_dialogue`
+therefore replaces such a substitute with `RESIDUAL_MARKER` and COUNTS it:
+the judge stays blind, question 4 keeps its context, and the occurrence is a
+number on disk instead of a traceback. The question and the oracle sections
+are still hard errors — a substitute there is ours and nobody else's.
 
 КАЖДЫЙ ВЕРДИКТ НЕСЁТ ЦИТАТУ. A verdict whose quote does not stand in the
 answer is asked once more, stricter, and then recorded as `judged_by="none"`
@@ -132,21 +143,52 @@ _QUOTE_RULE: str = (
     "Верни строго JSON по схеме и ничего больше."
 )
 
+# The ONE sentence of the rubric that is allowed to name form, because it
+# forbids judging it. Named as a constant rather than written inline so the
+# import-time guard can subtract exactly this text before looking for form
+# words: a guard that cannot tell «не суди склонение» from «суди склонение»
+# either forbids the clause that protects the rubric or lets the instruction
+# through, and both readings were wrong.
+_NOT_JUDGED: str = ("ЧЕГО ТЫ НЕ СУДИШЬ: как значение записано — склонение, заглавные "
+                    "буквы, разделители, порядок слов, цифры или слова. Это меряет другой "
+                    "прибор, и твоя метка о том не говорит ничего.")
+
 RUBRIC: str = (
     "Ты проверяешь ответ агента клиенту. Четыре вопроса, и больше ничего:\n"
     + "\n".join(f"{number}. {text}" for number, text in enumerate(RUBRIC_QUESTIONS, 1))
-    + "\n\nЧЕГО ТЫ НЕ СУДИШЬ: как значение записано — склонение, заглавные "
-      "буквы, разделители, порядок слов, цифры или слова. Это меряет другой "
-      "прибор, и твоя метка о том не говорит ничего.\n\n"
+    + "\n\n" + _NOT_JUDGED + "\n\n"
     + _LABEL_RULES + "\n\n" + _QUOTE_RULE
 )
 
-# Words that would make this a judge of FORM. Checked at import over the rubric
-# and the headings, because the rule «the judge does not grade spelling» is
-# worth exactly as much as the mechanism that keeps it true.
-_FORBIDDEN_IN_RUBRIC: tuple[str, ...] = ("падеж", "регистр", "формат", "форма")
-_SAID = [word for word in _FORBIDDEN_IN_RUBRIC
-         if word in (RUBRIC + " " + " ".join(HEADINGS)).casefold()]
+# Stems of the words that would make this a judge of FORM — the comparator's
+# vocabulary, including the synonyms a helpful editor reaches for first
+# (склонение, написание, орфография, нотация) which the old four-stem list did
+# not hold. Matched at a WORD START only: the flat `"форма" in text` test fired
+# on «информация» and so forbade an ordinary word, which is how a guard becomes
+# something people edit around.
+#
+# «запись» is deliberately NOT here although it means «spelling» in one reading:
+# the rubric's own first question is «ТА ЛИ ЗАПИСЬ» about the CRM record, and a
+# guard that refused that would refuse the rubric it exists to protect.
+FORM_WORDS: tuple[str, ...] = (
+    "падеж", "склонен", "склонени", "просклон", "написани", "орфограф", "нотаци",
+    "формат", "регистр", "форма", "форме", "форму", "формы", "заглавн", "строчн",
+    "разделител", "пунктуац", "транслит")
+
+
+def form_words_in(text: str) -> tuple[str, ...]:
+    """The `FORM_WORDS` that stand in `text` at a word start, in order.
+
+    A function rather than a comprehension at import, so the test can show the
+    guard FIRING on a rubric that grades spelling — a guard nobody has ever
+    seen refuse anything is a comment.
+    """
+    folded = text.casefold()
+    return tuple(stem for stem in FORM_WORDS
+                 if re.search(rf"(?<![а-яёa-z]){re.escape(stem)}", folded) is not None)
+
+
+_SAID = form_words_in(RUBRIC.replace(_NOT_JUDGED, "") + " " + " ".join(HEADINGS))
 if _SAID:
     raise RuntimeError(
         f"рубрика судьи называет форму: {_SAID} — форму меряет сравнитель "
@@ -282,16 +324,91 @@ def residual_pregate(restored_answer: str, substitutes_minted: tuple[str, ...]) 
 
     Thin on purpose: the protocol has two arguments and the real run has a
     third (the case's real parts, so the customer's own city inside a minted
-    address is not counted as ours). `pregate_with` is what the harness uses.
+    address is not counted as ours). `harness.judge_triple` calls
+    `residual_pregate_of` with `harness.real_parts_of(case)`; the closure that
+    used to bind them here was reachable from nothing and is gone (F3.6) —
+    a second spelling of the call is a second thing to keep equal.
     """
     return residual_pregate_of(restored_answer, substitutes_minted, ())
 
 
-def pregate_with(real_parts: tuple[str, ...]) -> object:
-    """A `ResidualPregate` that knows this case's real parts."""
-    def gate(restored_answer: str, substitutes_minted: tuple[str, ...]) -> JudgeVerdict | None:
-        return residual_pregate_of(restored_answer, substitutes_minted, real_parts)
-    return gate
+# --- a substitute still standing in an EARLIER turn -----------------------------------
+
+# What the judge reads in place of a substitute the restorer left standing in
+# an intermediate turn. Neutral on purpose: «[подмена]» names the mechanism the
+# judge must not know about, and an empty string would silently change the
+# sentence it stood in.
+RESIDUAL_MARKER: str = "[нераскрытая подмена]"
+
+
+def _whitespace_pattern(value: str) -> str:
+    """`value` as a regex matching it across any whitespace run.
+
+    `assert_blind` compares under `_squeeze` (whitespace collapsed, casefolded),
+    so a mask written with `re.escape(value)` alone would leave «Пахомова\\nОльга»
+    standing and the guard would still raise — the masking must catch exactly
+    what the guard catches or it is decoration.
+    """
+    return r"\s+".join(re.escape(word) for word in value.split())
+
+
+def real_parts_in(literals: Sequence[str]) -> tuple[str, ...]:
+    """The customer's own parts, read off the oracle the judge is shown.
+
+    `harness.real_parts_of` reads them off `case.base.pii`, which is the fuller
+    list; `build_prompt` never sees the case, and widening its signature to
+    carry them would put the case into a function whose whole job is to hold
+    one prompt. The oracle IS the real values of this answer, so the parts of
+    it are the customer's own by construction; a part of some third person the
+    oracle never named is then masked out of the dialogue, which costs the
+    judge one word of context and never costs it blindness.
+    """
+    out: set[str] = set()
+    for literal in literals:
+        for kind in PIECE_TYPES:
+            for role, part in parts_of(kind, literal).items():
+                if role not in EXEMPT_ROLES and len(part) >= MIN_PIECE and not part.isdigit():
+                    out.add(part.casefold())
+    return tuple(sorted(out))
+
+
+def mask_residual_turns(turns: Sequence[DialogueTurn], substitutes_minted: Sequence[str],
+                        real_parts: Sequence[str]) -> tuple[tuple[DialogueTurn, ...], int]:
+    """Every minted substitute still standing in a turn replaced by the marker,
+    and HOW MANY turns carried one.
+
+    The whole substitute is replaced WITHOUT word boundaries — that is
+    `assert_blind`'s own rule, and matching it exactly is what makes the guard
+    hold by construction rather than by luck. A PIECE is replaced only as a
+    whole word (the pre-gate's rule): «Дар» inside «дарим» is not a substitute
+    the customer reads, and masking it would eat ordinary Russian out of the
+    context question 4 is asked about.
+    """
+    pieces = substitute_pieces(tuple(substitutes_minted), tuple(real_parts))
+    out: list[DialogueTurn] = []
+    flagged = 0
+    for turn in turns:
+        text = turn.text
+        for surface in substitutes_minted:
+            if surface.strip():
+                text = re.sub(_whitespace_pattern(surface), RESIDUAL_MARKER, text,
+                              flags=re.IGNORECASE)
+        for piece in pieces:
+            text = re.sub(rf"(?<!\w){_whitespace_pattern(piece)}(?!\w)", RESIDUAL_MARKER, text,
+                          flags=re.IGNORECASE)
+        if text != turn.text:
+            flagged += 1
+        out.append(DialogueTurn(role=turn.role, text=text))
+    return tuple(out), flagged
+
+
+def masked_dialogue(request: JudgeInput,
+                    substitutes_minted: tuple[str, ...]) -> tuple[tuple[DialogueTurn, ...], int]:
+    """The dialogue as `build_prompt` will print it, and the turn count the
+    harness records. ONE function for both, so the number on disk and the text
+    the judge read can never describe different masking."""
+    return mask_residual_turns(request.dialogue_context, substitutes_minted,
+                               real_parts_in(request.oracle_literals))
 
 
 # --- what the judge reads -------------------------------------------------------------
@@ -381,10 +498,15 @@ def build_prompt(request: JudgeInput, substitutes_minted: tuple[str, ...]) -> st
     it. The answer is JSON-wrapped: a reply is arbitrary text from a model that
     may itself have been steered, and a delimiter it can close is not a
     delimiter.
+
+    The dialogue goes through `masked_dialogue` FIRST: a substitute the
+    restorer left in an earlier turn is a `residual` to be counted, not a
+    reason to discard three paid arms (F3.2). Everything else still raises.
     """
     listing = "\n".join(f"{number}. {value}" for number, value
                         in enumerate(request.oracle_literals, 1)) or "— (записи нет)"
-    dialogue = "\n".join(f"{turn.role}: {turn.text}" for turn in request.dialogue_context) or "— (пусто)"
+    turns, _ = masked_dialogue(request, substitutes_minted)
+    dialogue = "\n".join(f"{turn.role}: {turn.text}" for turn in turns) or "— (пусто)"
     question = f"{QUESTION_HEADING}:\n{request.customer_question}"
     section_dialogue = f"{DIALOGUE_HEADING}:\n{dialogue}"
     section_oracle = f"{ORACLE_HEADING}:\n{listing}"
@@ -482,25 +604,24 @@ async def _ask(prompt: str, label: str, config: JudgeConfig) -> tuple[dict[str, 
     return None, spent, why
 
 
-async def judge_answer(config: JudgeConfig, request: JudgeInput,
-                       substitutes_minted: tuple[str, ...]) -> JudgeVerdict:
-    """One verdict about one restored answer. Ask once; if the quote does not
-    stand, ask once more with the quote rule sharpened; then record
-    `judged_by="none"`.
+async def judge_prompt(config: JudgeConfig, request: JudgeInput, prompt: str) -> JudgeVerdict:
+    """One verdict about one restored answer, given the prompt the caller
+    already built. Ask once; if the quote does not stand, ask once more with
+    the quote rule sharpened; then record `judged_by="none"`.
 
     The second ask is not a second opinion — the question is identical. A third
     would be bargaining with the judge until it says something countable.
 
-    THE THIRD ARGUMENT IS NOT A LEAK, IT IS THE GUARD. The brief writes
-    `judge_answer(config, request)`; `JudgeInput` has no field for the minted
-    substitutes BY DESIGN, and `build_prompt` cannot check what it was not
-    given. Passing the list here keeps the check on the production path; the
-    `contracts.Judge` protocol is satisfied by the closure `judge_with` binds.
+    THE PROMPT IS AN ARGUMENT because the caller needs its hash:
+    `harness.judge_triple` writes `input_sha256` of the prompt the model was
+    ACTUALLY sent, and a second `build_prompt` call for the hash is a second
+    string that can drift from the first — it also used to raise `OracleLeak`
+    for a case the pre-gate had already decided, which is how one leak killed a
+    run that owed nothing to the judge at all.
     """
     if not request.restored_answer.strip():
         return JudgeVerdict(label="", reason="ответа нет — нечего судить",
                             judged_by="none", cost_usd=0.0)
-    prompt = build_prompt(request, substitutes_minted)
     label = f"{request.case_id}/judge"
     raw, cost, why = await _ask(prompt, label, config)
     if raw is not None:
@@ -523,12 +644,22 @@ async def judge_answer(config: JudgeConfig, request: JudgeInput,
     return unjudged
 
 
-def judge_with(config: JudgeConfig, substitutes_minted: tuple[str, ...]) -> object:
-    """A `contracts.Judge` (`async (JudgeInput) -> JudgeVerdict`) bound to one
-    case's minted substitutes."""
-    async def ask(request: JudgeInput) -> JudgeVerdict:
-        return await judge_answer(config, request, substitutes_minted)
-    return ask
+async def judge_answer(config: JudgeConfig, request: JudgeInput,
+                       substitutes_minted: tuple[str, ...]) -> JudgeVerdict:
+    """`judge_prompt` for a caller that does not need the prompt itself — the
+    shape ruling R-38 fixed, and what `calibration.ask_repeats` asks K times.
+
+    THE THIRD ARGUMENT IS NOT A LEAK, IT IS THE GUARD. `JudgeInput` has no
+    field for the minted substitutes BY DESIGN, and `build_prompt` cannot check
+    what it was not given; passing the list here keeps the check on the paid
+    path. (`judge_with`, the closure that used to bind it, was called from
+    nothing and is gone — F3.6: an adapter reachable from no caller is a
+    docstring, not a seam.)
+    """
+    if not request.restored_answer.strip():
+        return JudgeVerdict(label="", reason="ответа нет — нечего судить",
+                            judged_by="none", cost_usd=0.0)
+    return await judge_prompt(config, request, build_prompt(request, substitutes_minted))
 
 
 def _trace(path: Path | None, request: JudgeInput, verdict: JudgeVerdict) -> None:

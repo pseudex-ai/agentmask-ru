@@ -107,8 +107,26 @@ reader_ignores_v5_key`). `HopObservation` rows carry `hop` as a dict and
   hold; «частично» — right record, but incomplete or a question left
   unanswered; «неверно» — wrong record, or a context violation; «выдумал» —
   a value absent from oracle and dialogue. The prompt must not contain the
-  words «падеж», «регистр», «формат», «форма» (test).
+  words of FORM — `judge.FORM_WORDS` matched at a word start by
+  `form_words_in`, over the rubric MINUS its own «чего ты не судишь» clause
+  (the one sentence allowed to name form, because it forbids judging it). The
+  old flat four-stem `in` test both missed the synonyms (склонение, написание,
+  орфография, нотация) and fired on «инФОРМАция» (F3.6).
 - `prompt_sha256() -> str`: sha256 of the rubric + section headings text.
+- `judge_prompt(config, request, prompt) -> JudgeVerdict` (async) does the
+  asking, given the prompt the caller built — `harness.judge_triple` builds it
+  once and hashes THAT into `input_sha256`, so the hash is of the string the
+  model was sent and a pre-gated case no longer pays a second build (F3.2).
+  `judge_answer(config, request, substitutes_minted)` is `judge_prompt` with
+  the build in front (R-38's shape, what `calibration.ask_repeats` calls).
+  `judge_with` and `pregate_with` are DELETED: no caller ever spelled them
+  (F3.6), and `test_judge.test_no_unreachable_adapters` walks the package with
+  `ast` so the next one cannot be added quietly.
+- `build_prompt` masks the DIALOGUE through `masked_dialogue` before
+  `assert_blind` sees it: a substitute the restorer left in an EARLIER turn is
+  replaced by `RESIDUAL_MARKER` and counted (`JudgeOutcome.turn_residual`),
+  because raising there killed the whole paid run over the very defect the
+  instrument measures (F3.2). The question and the oracle sections still raise.
 - `judge_answer(config: JudgeConfig, request: JudgeInput) -> JudgeVerdict`
   (async): fresh hermetic SDK session (`tools=[]`, `setting_sources=[]`,
   `max_budget_usd=config.query_cap_usd`, model `config.model`), parse the
@@ -127,8 +145,35 @@ reader_ignores_v5_key`). `HopObservation` rows carry `hop` as a dict and
 - CLI: `export --run <dir> --out sheet.jsonl` (one JSON per line, with
   `restored_answer`, `oracle_literals`, `dialogue_context` so the labeller
   sees what the judge sees), `import --sheet sheet.jsonl --out
-  <CALIBRATION_FILE>` (refuses a row whose `human_label` is not in
+  <CALIBRATION_FILE> --run <dir>` (refuses a row whose `human_label` is not in
   `JUDGE_LABELS`), `stamp --file <CALIBRATION_FILE>`.
+
+### §calibration — the procedure, end to end (round 1: F3.3, F3.4, F3.5)
+
+```bash
+cd prototype && source .venv/bin/activate
+# 1. THE BLIND SHEET. No judge_label, no judge_reason: the human and the judge
+#    must be two independent raters, and a labeller shown the verdict first is
+#    not one. Answers the residual PRE-GATE decided are not drawn at all —
+#    their verdict is a `str.casefold() in`, not the model's.
+python3 -m bench.agentpii5.calibration export \
+    --run bench/runs/<date>/v5-live-<tier> --out /tmp/sheet.jsonl \
+    --judge-model claude-sonnet-5 --holdout "$(<holdout ids, comma separated>)"
+# 1b. THE STABILITY SUB-SAMPLE, if it is being measured: K-1 MORE REAL judge
+#     calls per answer (§8.5 «K=3 повтора»), spent on their own ledger beside
+#     the sheet. Without this `repeat_disagreement` is structurally 0.0.
+python3 -m bench.agentpii5.calibration export … --repeats 3 --ceiling 2.0
+# 2. The human fills `human_label` in place (верно / частично / неверно / выдумал).
+# 3. THE JOIN. Verdicts come from <run>.judge.jsonl by (case, repeat) AND the
+#    answer's sha256 — a run re-judged or re-restored since the export is
+#    refused by name rather than joined to a text nobody labelled. The stamp is
+#    recomputed and written as ROW 0 of that run's <run>.judge.jsonl, which is
+#    where `report.judge_half` looks: this is the ONLY way a report stops
+#    saying «НЕ ОТКАЛИБРОВАН». Exit code 1 when a threshold does not hold.
+python3 -m bench.agentpii5.calibration import \
+    --sheet /tmp/sheet.jsonl --out bench/agentpii5/calibration/<model>.<hash12>.jsonl \
+    --run bench/runs/<date>/v5-live-<tier>
+```
 - `agreement(records) -> float` (raw), `kappa(records) -> float` (Cohen's κ
   over the four labels, implemented here — no sklearn), `per_type_kappa`
   (only types with ≥ `per_type_min_examples`), `repeat_check(records) ->
@@ -157,8 +202,12 @@ reader_ignores_v5_key`). `HopObservation` rows carry `hop` as a dict and
   call, and for arm I the `ArmRunV5`. For `case.streaming` and arm I:
   restore the raw reply ALSO through `pseudex.redact.StreamDetokenizer` fed
   in chunks of 17 characters (a prime, so no boundary aligns with a token)
-  and set `stream_mismatch = (chunked != whole)`; the whole-text result is
-  the `reply`.
+  and set `stream_mismatch = (chunked != whole)`. **THE CHUNKED RESULT IS THE
+  `reply`** (F3.1, superseding R-46): it is the text the streaming customer
+  read, and `form_hOUT` / `answer_real` / `residual` / the judge all grade
+  `base.reply`. `answer_leg` makes that choice in one named place and
+  `with_streamed_answer` lays the same text over `turn_replies[-1]`, so the
+  record holds one answer and not two.
 - `run_triple_v5`: as v4's `run_triple` — C first, then I ∥ C′ — with
   `seed_backend_v5(case)` per arm and `RealGateway` replaced by
   `GatewayV5`; then `observe` (import `bench.agentpii5.observe`) on the I
@@ -220,7 +269,11 @@ reader_ignores_v5_key`). `HopObservation` rows carry `hop` as a dict and
   (`testkit.load_dev_bundle()`) and an in-memory vault, mint a substitute,
   restore a reply whole and in 17-char chunks; assert equality on a clean
   case and that a deliberately broken chunk feed sets `stream_mismatch` —
-  the instrument must be able to fail.
+  the instrument must be able to fail. Plus
+  `test_corpus_answer_is_what_the_client_read`, which runs the same leg over
+  the CORPUS's own streaming cases: the hand-written sentence agrees with
+  itself on every restoration, so only the corpus shows the ~4% of replies
+  where the two disagree — the replies F3.1 is about.
 
 ## What you must NOT touch
 

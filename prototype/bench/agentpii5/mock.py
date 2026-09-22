@@ -43,6 +43,7 @@ detector.
 import random
 import re
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 from bench.agentpii4.mock import Backend, CallLog, Record
 from bench.agentpii4.tools import CSV_HEADER, Refusal
@@ -60,6 +61,17 @@ NEW_TABLES: tuple[str, ...] = (
 # else's datum. Values reached through (table, id, path) are exact and are not
 # subject to this floor.
 MIN_TAGGED_VALUE: int = 3
+# The v4 tools whose v5 enrichment re-tags the whole result off the RECORD each
+# row came out of. `_retag`'s by-value guess must not run over them first: it
+# would consume the item into `_used` and the exact map would then answer "".
+# Both are the tools a case seeds SEVERAL near-identical rows of — a merge of
+# one person's two cards, three suggestions of one street — which is precisely
+# where by value is ambiguous and drops the tag.
+RECORD_TAGGED: tuple[str, ...] = ("crm_find_contact", "address_suggest")
+# The `contacts` columns `crm_find_contact` answers with, in amoCRM's order.
+# Named once: the row builder and the node builder must not drift apart.
+CONTACT_COLUMNS: tuple[str, ...] = (
+    "last_name", "first_name", "middle_name", "phone", "email", "birth_date")
 # The id prefix a ticket is minted under, so that `ticket_history` can read
 # back what `ticket_create` wrote — see `BackendV5._next_id` (ruling R-26).
 # `tools.ISSUE_ID_RE` is the reader; the two must agree, and this is the side
@@ -110,6 +122,33 @@ def card_grouped(value: str) -> str:
     if len(digits) != 16:
         return value
     return " ".join(digits[start:start + 4] for start in range(0, 16, 4))
+
+
+def canon_layout(city: str, street: str, house: str,
+                 flat: str) -> tuple[tuple[str, str], ...]:
+    """DaData's «г Самара, ул Луговая, д 10, кв 7» — no dots after the generic
+    abbreviations, comma-separated, the house marked «д» — as an alternation of
+    (text, column): "" for a literal, and the `addresses` column a value came
+    from for a value.
+
+    THE SPELLING IS ONE DEFINITION AND THE TAGGING IS ANOTHER. The same canon is
+    rendered from a record the mock holds (tagged exactly) and from parts the
+    agent sent (tagged by value, because there is no record); writing the
+    commas and the «ул » twice is how the two renderings start to differ.
+    """
+    pieces: list[tuple[str, str]] = []
+    if city:
+        pieces.extend((("г ", ""), (capitalised(city), "city")))
+    if street:
+        pieces.append(((", " if pieces else "") + "ул ", ""))
+        pieces.append((capitalised(street), "street"))
+    if house:
+        pieces.append(((", " if pieces else "") + "д ", ""))
+        pieces.append((str(house), "house"))
+    if flat:
+        pieces.append((", кв ", ""))
+        pieces.append((str(flat), "flat"))
+    return tuple(pieces)
 
 
 def capitalised(value: str) -> str:
@@ -349,7 +388,7 @@ class BackendV5(Backend):
         value = self._echo[forced.echo_item_id]
         head, tail = forced.message_template.split("{value}")
         message = self._compose(((head, ""), (value, ECHO_TAG_PREFIX + forced.echo_item_id),
-                                 (tail, "")))
+                                 (tail, "")), "")
         data: dict[str, object] = {"error": {"code": forced.code, "message": message.text}}
         node: dict[str, object] = {"error": {"code": forced.code, "message": message}}
         self._seq += 1
@@ -425,13 +464,23 @@ class BackendV5(Backend):
     def _piece(self, text: str) -> tuple[str, str]:
         return text, self._tag_for_value(text)
 
-    def _compose(self, pieces: Sequence[tuple[str, str]]) -> Slot:
-        """Assemble one string out of tagged and untagged pieces.
+    def _compose(self, pieces: Sequence[tuple[str, str]], whole: str) -> Slot:
+        """Assemble one string out of tagged and untagged pieces; `whole` is the
+        item the FINISHED string belongs to, or "" when it belongs to nobody.
 
         A `Slot` carries ONE tag for a whole JSON string and an address in a
         courier's notation carries three values inside one line, so the offsets
         are taken from v4's `Writer` as the string GROWS and lifted onto the
-        result in `_expand_prose`. Nothing is ever searched for afterwards."""
+        result in `_expand_prose`. Nothing is ever searched for afterwards.
+
+        `whole` EXISTS BECAUSE A COMPOSED STRING CAN ITSELF BE A SEEDED FIELD.
+        DaData's `suggestions[].value` is the address row's own `value` column
+        rendered in the directory's notation: the street inside it is one item
+        and the line is another, and before `whole` the line's item had no span
+        at all — the hop the corpus declared on `suggestions[].value` could
+        never be observed. The two spans overlap on purpose; that is the truth
+        about a street inside an address.
+        """
         writer = Writer()
         for text, tag in pieces:
             if not text:
@@ -439,7 +488,10 @@ class BackendV5(Backend):
             writer.put(text, tag)
         text, spans, _trace = writer.finish()
         outer = f"prose:{len(self._prose)}"
-        self._prose[outer] = tuple((tag, start, end) for tag, (start, end) in spans.items())
+        inner = [(tag, start, end) for tag, (start, end) in spans.items()]
+        if whole and text:
+            inner.append((whole, 0, len(text)))
+        self._prose[outer] = tuple(inner)
         return Slot(text, outer)
 
     def _expand_prose(self, log: CallLog) -> None:
@@ -467,21 +519,26 @@ class BackendV5(Backend):
     # --- addresses in the notation of each API -----------------------------
 
     def _canon_parts(self, city: str, street: str, house: str, flat: str) -> tuple[tuple[str, str], ...]:
-        """DaData: «г Самара, ул Луговая, д 10, кв 7» — no dots after the
-        generic abbreviations, comma-separated, the house marked «д»."""
-        pieces: list[tuple[str, str]] = []
-        if city:
-            pieces.extend((("г ", ""), self._piece(capitalised(city))))
-        if street:
-            pieces.append(((", " if pieces else "") + "ул ", ""))
-            pieces.append(self._piece(capitalised(street)))
-        if house:
-            pieces.append(((", " if pieces else "") + "д ", ""))
-            pieces.append(self._piece(str(house)))
-        if flat:
-            pieces.append((", кв ", ""))
-            pieces.append(self._piece(str(flat)))
-        return tuple(pieces)
+        """DaData's canon with the tag guessed from the VALUE — for the callers
+        that hold no record (`normalize_contact` normalises what the agent
+        sent, `delivery_quote` composes a pickup point)."""
+        return tuple((text, self._tag_for_value(text) if column else "")
+                     for text, column in canon_layout(city, street, house, flat))
+
+    def _canon_parts_of(self, record: Record, city: str, street: str, house: str,
+                        flat: str) -> tuple[tuple[str, str], ...]:
+        """The same canon, tagged from the RECORD the row came out of.
+
+        BY VALUE IS THE GUESS THAT FAILS EXACTLY WHERE THIS FAMILY LIVES. The
+        address fan-out seeds three rows of one street («Дзержинского 44»,
+        «44а», another city), so `_by_value` calls the street ambiguous and
+        drops it from both — and every hop the corpus declares on
+        `suggestions[].data.street` becomes a crossing no gateway could be
+        scored on. The (table, id, path) map has no such ambiguity and is what
+        `seed_item` built it for.
+        """
+        return tuple((text, self._tag_of(record, column) if column else "")
+                     for text, column in canon_layout(city, street, house, flat))
 
     def _courier_parts(self, city: str, street: str, house: str, flat: str) -> tuple[tuple[str, str], ...]:
         """CDEK / Boxberry track: «г. Ижевск, ул. Пушкина, д. 41, кв. 7» — the
@@ -519,7 +576,8 @@ class BackendV5(Backend):
             data, node, form = self._apply_new(tool, parsed)
         else:
             data, node = super()._apply(tool, parsed)
-            node = self._retag(node)
+            if tool not in RECORD_TAGGED:
+                node = self._retag(node)
             data, node, form = self._enrich(tool, parsed, data, node)
         self._last_form = form
         return data, node
@@ -560,7 +618,7 @@ class BackendV5(Backend):
         if tool == "courier_book":
             address_fields = parsed["address"]
             city, street, house, flat = self._address_fields(address_fields)   # type: ignore[arg-type]
-            address = self._compose(self._courier_parts(city, street, house, flat))
+            address = self._compose(self._courier_parts(city, street, house, flat), "")
             contact = parsed["contact"]
             name, phone = str(contact["name"]), str(contact["phone"])          # type: ignore[index]
             data["contact"] = {"name": name, "phone": phone}
@@ -572,12 +630,23 @@ class BackendV5(Backend):
             suggestions = data["suggestions"]
             if not isinstance(suggestions, list) or not suggestions:
                 return data, {"suggestions": []}, "empty"
+            # THE ROW NAMES ITS OWN RECORD AND IS NOT SEARCHED FOR. `fias_id` is
+            # the directory key DaData answers with and it is unique per seeded
+            # row, so the record a suggestion came out of is read off the
+            # suggestion rather than guessed from the street it prints.
+            by_fias = {str(record.fields.get("fias_id", "")): record
+                       for record in self._tables["addresses"].values()}
             nodes: list[object] = []
             for row in suggestions:
                 fields = dict(row["data"])                                     # type: ignore[index]
-                canon = self._compose(self._canon_parts(
-                    str(fields["city"]), str(fields["street"]), str(fields["house"]),
-                    str(fields.get("flat", ""))))
+                record = by_fias.get(str(fields.get("fias_id", "")))
+                if record is None:
+                    raise KeyError(f"address_suggest: suggestion "
+                                   f"{fields.get('fias_id')!r} belongs to no seeded row")
+                canon = self._compose(self._canon_parts_of(
+                    record, str(fields["city"]), str(fields["street"]),
+                    str(fields["house"]), str(fields.get("flat", ""))),
+                    self._tag_of(record, "value"))
                 row["value"] = canon.text                                      # type: ignore[index]
                 nodes.append({"value": canon,
                               "confidence": f"{float(row['confidence']):.2f}",  # type: ignore[index]
@@ -637,7 +706,30 @@ class BackendV5(Backend):
             return data, node, "single"
         if tool == "crm_find_contact":
             contacts = data["contacts"]
-            return data, node, "list" if isinstance(contacts, list) and contacts else "empty"
+            if not isinstance(contacts, list) or not contacts:
+                return data, {"contacts": []}, "empty"
+            # REBUILT OFF THE RECORDS, not off v4's by-value node. A support
+            # case that seeds one person TWICE (the merge families do, and so
+            # does every «я заведён два раза») makes every column of both cards
+            # ambiguous by value, and v4's tags then resolve to nothing at all
+            # — 45 revised cases whose whole tool result was untagged.
+            rows: list[object] = []
+            for row in contacts:
+                record = self._tables["contacts"][str(row["id"])]              # type: ignore[index]
+                built: dict[str, object] = {"id": row["id"]}                   # type: ignore[index]
+                for column in CONTACT_COLUMNS:
+                    built[column] = self._slot_of(record, column,
+                                                  str(row.get(column, "")))    # type: ignore[union-attr]
+                address = row.get("address") or {}                             # type: ignore[union-attr]
+                built["address"] = {
+                    "city": str(address.get("city", "")),                      # type: ignore[union-attr]
+                    "street": self._slot_of(record, "address.street",
+                                            str(address.get("street", ""))),   # type: ignore[union-attr]
+                    "house": self._slot_of(record, "address.house",
+                                           str(address.get("house", ""))),     # type: ignore[union-attr]
+                    "flat": str(address.get("flat", ""))} if address else {}   # type: ignore[union-attr]
+                rows.append(built)
+            return data, {"contacts": rows}, "list"
         if tool == "crm_upsert_contact":
             record = self._tables["contacts"][str(data["id"])]
             block = {name: str(record.fields.get(name, ""))
@@ -737,7 +829,7 @@ class BackendV5(Backend):
                 node["pickup_point"] = {"address": ""}
                 return data, node, "single"
             city, street, house, flat = self._address_fields(record.fields)
-            canon = self._compose(self._canon_parts(city, street, house, ""))
+            canon = self._compose(self._canon_parts(city, street, house, ""), "")
             data["pickup_point"] = {"address": canon.text}
             node["pickup_point"] = {"address": canon}
             return data, node, "single"
@@ -752,7 +844,7 @@ class BackendV5(Backend):
             if "address" in node:
                 block = data["address"]
                 canon = self._compose(self._canon_parts(
-                    "", str(block["street"]), str(block["house"]), ""))         # type: ignore[index]
+                    "", str(block["street"]), str(block["house"]), ""), "")     # type: ignore[index]
                 block["value"] = canon.text                                     # type: ignore[index]
                 node["address"]["value"] = canon                                # type: ignore[index]
             return data, node, "canon"
@@ -964,7 +1056,7 @@ class BackendV5(Backend):
             if record is None:
                 return ({"doc_id": parsed["doc_id"], "found": False},
                         {"doc_id": str(parsed["doc_id"]), "found": False}, "empty")
-            body = self._compose(self._document_pieces(record))
+            body = self._compose(self._document_pieces(record), "")
             head = {"doc_id": str(parsed["doc_id"]), "title": str(record.fields.get("title", "")),
                     "format": str(record.fields.get("format", "free_text"))}
             return {**head, "body": body.text}, {**head, "body": body}, "free_text"
@@ -990,8 +1082,37 @@ class BackendV5(Backend):
             return self._courier_status(str(parsed["claim_id"]))
         raise KeyError(tool)
 
+    def _retrieved(self, ranked: Sequence[tuple[float, Record]],
+                   count: int) -> tuple[tuple[float, Record], ...]:
+        """`ranked` padded to `count` out of the index: RANKING DECIDES THE
+        ORDER, NOT THE MEMBERSHIP.
+
+        `_ranked` drops every record with no word overlap, and that turned the
+        `rag` family's payload into a property of the model's phrasing: a query
+        of «фамилия имя» returned one chunk of five and 257 of the 350 declared
+        chunk hops simply did not happen — free credit on `leak`, and
+        `rag_masked` denominators that moved when the agent rephrased. A real
+        top-k retriever returns `k` and lets the score sort them.
+
+        WHAT STILL DECIDES MEMBERSHIP IS WHAT THE QUERY FOUND: nothing is
+        retrieved for a query that matched no seeded record at all, and the
+        padding is of the SAME KIND as the matches — prose notes beside prose
+        notes, index rows beside index rows. Padding across the two would make
+        `kb_search`'s `list` form unreachable in any index that also holds a
+        note, because text wins whenever both are present.
+        """
+        if not ranked:
+            return ()
+        prose = any("template" in record.fields for _score, record in ranked)
+        already = {record.id for _score, record in ranked}
+        rest = sorted((record for record in self._tables["kb_chunks"].values()
+                       if record.id not in already
+                       and ("template" in record.fields) == prose),
+                      key=lambda record: record.id)
+        return (tuple(ranked) + tuple((0.0, record) for record in rest))[:count]
+
     def _kb_search(self, query: str, count: int) -> tuple[dict[str, object], object, str]:
-        hits = self._ranked("kb_chunks", query, count)
+        hits = self._retrieved(self._ranked("kb_chunks", query, count), count)
         notes = [(score, record) for score, record in hits if "template" in record.fields]
         if notes:
             # A NOTE AND A CARD ARE BOTH IN THE INDEX, and Elasticsearch hands
@@ -1001,7 +1122,7 @@ class BackendV5(Backend):
             rows: list[dict[str, object]] = []
             nodes: list[object] = []
             for score, record in notes:
-                text = self._compose(self._template_pieces(record, None))
+                text = self._compose(self._template_pieces(record, None), "")
                 rows.append({"id": record.id, "score": round(score, 2), "text": text.text})
                 nodes.append({"id": record.id, "score": f"{score:.2f}", "text": text})
             return ({"query": query, "total": len(rows), "hits": rows},
@@ -1029,7 +1150,7 @@ class BackendV5(Backend):
             return {"path": path, "found": False}, {"path": path, "found": False}, "empty"
         fmt = str(record.fields.get("format", "txt"))
         if fmt != "csv":
-            body = self._compose(self._document_pieces(record))
+            body = self._compose(self._document_pieces(record), "")
             head = {"path": path, "format": fmt}
             return {**head, "text": body.text}, {**head, "text": body}, "free_text"
         rows_raw = record.fields.get("rows")
@@ -1222,7 +1343,7 @@ class BackendV5(Backend):
             if index:
                 pieces.append((" ", ""))
             pieces.extend(self._template_pieces(record, None))
-        history = self._compose(tuple(pieces))
+        history = self._compose(tuple(pieces), "")
         return ({"issue_id": issue_id, "events": len(events), "history": history.text},
                 {"issue_id": issue_id, "events": len(events), "history": history}, "free_text")
 
@@ -1232,7 +1353,7 @@ class BackendV5(Backend):
             return self._error("CLAIM_NOT_FOUND", claim_id)
         city, street, house, flat = self._address_fields(
             dict(record.fields.get("address") or {}))                          # type: ignore[arg-type]
-        address = self._compose(self._courier_parts(city, street, house, flat))
+        address = self._compose(self._courier_parts(city, street, house, flat), "")
         if str(record.fields.get("status", "")) == "failed":
             # CDEK NAMES THE ADDRESS IT COULD NOT DELIVER TO — an error body
             # carrying the real value, which is the form the family needs.
@@ -1246,6 +1367,249 @@ class BackendV5(Backend):
                  "recipient": {"name": self._slot_of(record, "contact.name", name),
                                "phone": self._slot_of(record, "contact.phone", phone)},
                  "address": address}, "nested")
+
+
+# --- driving a case's declared calls, offline -----------------------------------------
+
+# What a call needs BEYOND the values the hops declare: a page size, a day, a
+# record id the dialogue never carries. Listed rather than invented per call, so
+# a change of tool schema fails HERE instead of silently skipping the tool.
+CALL_FILLER: dict[str, dict[str, object]] = {
+    "calendar_free": {"date": "2026-09-05"},
+    "account_statement": {"client_id": "bc-1"},
+    "ticket_history": {"issue_id": "t-1"},
+    "doc_retrieve": {"doc_id": "doc-1"},
+}
+CALL_INTERVAL: dict[str, object] = {"from": "2026-09-05T10:00:00+03:00",
+                                    "to": "2026-09-05T14:00:00+03:00"}
+# How many chunks a case that declares no `RagSpec` asks the knowledge base for.
+# Every `rag` case declares one; this is for a case of another family that
+# happens to offer `kb_search`.
+KB_SEARCH_K: int = 3
+# amoCRM's search takes EXACTLY ONE key (`tools._find_parse`, «exactly_one_key»),
+# and the hops declare a leaf per identity field, so a driver that wrote all
+# three would be refused on every case that carries a phone AND a surname. The
+# order is the parser's own.
+FIND_QUERY_KEYS: tuple[str, ...] = ("phone", "email", "last_name")
+
+
+@dataclass(frozen=True)
+class RenderedCall:
+    """What ONE declared call DID when the real backend ran it: the form it
+    answered in, the case items its result actually tagged with the text each
+    one printed, and the refusal if the arguments did not parse.
+
+    `rendered` is the whole of the build-time proof: a `ReturnExpectation` that
+    names an item absent from it is a crossing the mock cannot produce, and a
+    hop declared on that crossing is a permanent miss no gateway could avoid.
+    """
+
+    tool_name: str
+    call_ordinal: int
+    form: str                                  # "" when the call was refused
+    refusal: str                               # "" when it parsed
+    rendered: tuple[tuple[str, str], ...]      # (item id, the text the result printed)
+
+
+def put_leaf(arguments: dict[str, object], path: str, value: str) -> None:
+    """Write one dotted leaf, growing the nested objects on the way."""
+    node = arguments
+    parts = path.split(".")
+    for part in parts[:-1]:
+        child = node.get(part)
+        if not isinstance(child, dict):
+            child = {}
+            node[part] = child
+        node = child
+    node[parts[-1]] = value
+
+
+# The `documents` columns that describe the FILE rather than the person in it.
+# Everything else is the form's own content and is what a parser is handed.
+DOCUMENT_STRUCTURE: tuple[str, ...] = ("path", "format", "title", "template", "rows")
+
+
+def document_words(case: CaseV5) -> str:
+    """The flat content columns of the case's seeded document, space-joined —
+    the text an agent pastes out of a filled form. "" when the case seeds no
+    document, and `form_parse` then refuses on an empty text, which is the
+    truth to report rather than a plausible body to invent."""
+    document = next((record for record in case.base.seed_records
+                     if record.table == "documents"), None)
+    if document is None:
+        return ""
+    return " ".join(str(value) for name, value in document.fields.items()
+                    if name not in DOCUMENT_STRUCTURE and isinstance(value, str) and value)
+
+
+def call_arguments(case: CaseV5, tool: str, ordinal: int,
+                   state: dict[str, str]) -> dict[str, object]:
+    """The call the case's own OUT hops describe, plus the filler that tool needs.
+
+    THE CASE'S OWN ARGUMENT VALUES, NEVER A PLAUSIBLE ONE. Every identity leaf
+    is filled from the item the hop names; only notations a PARSER DEMANDS are
+    applied (`parse_snils` takes «XXX-XXX-XXX YY» and nothing else), because a
+    driver that quietly repaired an argument would prove a loop the corpus does
+    not describe.
+
+    A MISSING PIECE OF STATE IS LEFT EMPTY, NOT INVENTED: the tool then refuses,
+    and the refusal is reported — which is the truth, that the chain's earlier
+    step did not hand its successor what it needed.
+    """
+    items = {item.id: item for item in case.base.pii}
+    arguments: dict[str, object] = {}
+    for hop in case.hops:
+        if hop.kind != "OUT" or hop.tool_name != tool or hop.call_ordinal != ordinal:
+            continue
+        item = items[hop.item_id]
+        value = item.canonical or item.value
+        if item.type == "SNILS" and len(digits_of(value)) == 11:
+            value = snils_spaced(value)
+        put_leaf(arguments, hop.path, value)
+    arguments.update(CALL_FILLER.get(tool, {}))
+    if tool == "kb_search":
+        # HOW MANY CHUNKS IS THE CASE'S DECLARATION, NOT A DEFAULT. `RagSpec.k`
+        # is what the corpus declares one IN hop per, and a driver that asked
+        # for three when the case declares five proves two thirds of a loop.
+        arguments["k"] = case.rag.k if case.rag is not None else KB_SEARCH_K
+    if tool == "crm_find_contact":
+        query = arguments.get("query")
+        if isinstance(query, dict):
+            chosen = [key for key in FIND_QUERY_KEYS if query.get(key)][:1]
+            arguments["query"] = {key: query[key] for key in chosen}
+    if tool == "courier_book":
+        contact = next((record for record in case.base.seed_records
+                        if record.table == "contacts"), None)
+        address = dict(contact.fields.get("address") or {}) if contact else {}
+        put_leaf(arguments, "address.locality", str(address.get("city", "ижевск")))
+        put_leaf(arguments, "address.building", str(address.get("house", "1")))
+        put_leaf(arguments, "address.porch", "")
+        put_leaf(arguments, "address.sflat", str(address.get("flat", "")))
+        arguments["interval"] = dict(CALL_INTERVAL)
+    if tool == "file_read":
+        document = next(record for record in case.base.seed_records
+                        if record.table == "documents")
+        arguments["path"] = str(document.fields["path"])
+    if tool == "form_parse":
+        # `form_parse` takes the TEXT of the document the agent is looking at.
+        # When an earlier declared call read it, that reading is what the agent
+        # pastes. A filled FORM has no reading tool — `_document_pieces` renders
+        # a template or CSV rows and a form is neither — so its own columns are
+        # the text, which is what `_form_parse` ranks documents by anyway.
+        text = state.get("document_text", "")
+        arguments["text"] = text if text else document_words(case)
+    if tool == "courier_status":
+        arguments["claim_id"] = state.get("claim_id", "")
+    if tool == "crm_upsert_contact" and "address" in str(arguments.get("contact", {})):
+        # `crm_upsert_contact` refuses an address without its city, and a bare
+        # city is not personal data, so no hop declares it — it is business
+        # filler like an amount or a page size.
+        contact = next((record for record in case.base.seed_records
+                        if record.table == "contacts"), None)
+        address = dict(contact.fields.get("address") or {}) if contact else {}
+        put_leaf(arguments, "contact.address.city", str(address.get("city", "ижевск")))
+        put_leaf(arguments, "contact.address.house", str(address.get("house", "1")))
+    return arguments
+
+
+def drive_returns(case: CaseV5) -> tuple[RenderedCall, ...]:
+    """Seed the real backend and make every call the case declares a return for.
+
+    IN THE ORDER THE RETURNS WERE DECLARED, because that order is the order the
+    chain needs — a claim id exists only after the booking that minted it. A
+    forced ordinal is still CALLED (the refusal has to be consumed for the next
+    attempt to be the next attempt) and nothing is asserted about it: the
+    `ForcedError`, not the return table, decides what it answers.
+
+    NO SHORTCUT READS THE CASE'S DECLARATION BACK. Every item id below came out
+    of `CallLog.result_spans`, which the renderer wrote; `case.returns` is only
+    ever the question, never the answer.
+    """
+    backend = seed_backend_v5(case)
+    state: dict[str, str] = {}
+    forced = {(one.tool_name, one.call_ordinal) for one in case.forced}
+    made: list[RenderedCall] = []
+    for expectation in case.returns:
+        for ordinal in range(expectation.call_ordinal + 1):
+            if (expectation.tool_name, ordinal) in forced:
+                # THE SCRIPTED REFUSAL IS A CALL THE CASE DECLARES HOPS ON: the
+                # error body echoes the offending value, and `retry_same_tool`
+                # puts an IN hop on `error.message` at exactly this ordinal.
+                # Driving it without recording it made every one of those 120
+                # hops look like a crossing the mock cannot render.
+                made.append(_record_call(
+                    backend, case, expectation.tool_name, ordinal, state))
+        made.append(_record_call(backend, case, expectation.tool_name,
+                                 expectation.call_ordinal, state))
+    return tuple(made)
+
+
+def _record_call(backend: BackendV5, case: CaseV5, tool: str, ordinal: int,
+                 state: dict[str, str]) -> RenderedCall:
+    """One call made and read back off `CallLog` — the whole of the evidence."""
+    log = backend.call(tool, call_arguments(case, tool, ordinal, state))
+    if log.refusal is not None:
+        return RenderedCall(tool, ordinal, "", f"{log.refusal.path}: {log.refusal.rule}", ())
+    result = log.result or {}
+    if tool == "courier_book":
+        state["claim_id"] = str(result.get("claim_id", ""))
+    if tool == "doc_retrieve":
+        state["document_text"] = str(result.get("body", ""))
+    if tool == "file_read":
+        state["document_text"] = str(result.get("text", ""))
+    rendered = tuple(
+        (tag[len(ECHO_TAG_PREFIX):] if tag.startswith(ECHO_TAG_PREFIX) else tag,
+         log.result_text[start:end])
+        for tag, (start, end) in sorted(log.result_spans.items()))
+    return RenderedCall(tool, ordinal, backend.form_of(log.seq), "", rendered)
+
+
+
+
+
+def render_problems(case: CaseV5) -> list[str]:
+    """Every way the case's declaration and the backend's rendering disagree.
+
+    THIS IS THE REFUSAL, not a report. A declared `result_item_ids` the backend
+    never tags, a `return_form` it does not answer in, an IN/tool hop with no
+    rendered span — each is a hop that would score as a gateway miss forever,
+    and 42% of the revised half's IN/tool hops were exactly that before the
+    corpus had to prove itself.
+    """
+    problems: list[str] = []
+    tag = case.base.id
+    by_call = {(one.tool_name, one.call_ordinal): one for one in drive_returns(case)}
+    for expectation in case.returns:
+        made = by_call.get((expectation.tool_name, expectation.call_ordinal))
+        if made is None:
+            problems.append(f"V01 {tag}: {expectation.tool_name}#"
+                            f"{expectation.call_ordinal} was never driven")
+            continue
+        if made.refusal:
+            problems.append(f"V01 {tag}: {expectation.tool_name}#"
+                            f"{expectation.call_ordinal} refused the call the hops "
+                            f"describe ({made.refusal})")
+            continue
+        if made.form != expectation.return_form:
+            problems.append(f"V02 {tag}: {expectation.tool_name}#"
+                            f"{expectation.call_ordinal} answered {made.form!r}, the case "
+                            f"declared {expectation.return_form!r}")
+        printed = {item_id for item_id, _text in made.rendered}
+        missing = [item_id for item_id in expectation.result_item_ids
+                   if item_id not in printed]
+        if missing:
+            problems.append(f"V03 {tag}: {expectation.tool_name}#"
+                            f"{expectation.call_ordinal} rendered none of {missing[:4]}")
+    for hop in case.hops:
+        if hop.kind != "IN" or hop.owner not in ("tool", "document"):
+            continue
+        made = by_call.get((hop.tool_name, hop.call_ordinal))
+        printed = {item_id for item_id, _text in made.rendered} if made else set()
+        if hop.item_id not in printed:
+            problems.append(f"V04 {tag}: IN hop {hop.hop_index} reads {hop.item_id} from "
+                            f"{hop.tool_name}#{hop.call_ordinal}, which renders no span "
+                            f"for it")
+    return problems
 
 
 def seed_backend_v5(case: CaseV5) -> BackendV5:

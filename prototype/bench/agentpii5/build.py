@@ -34,6 +34,7 @@ a reader think it could.
 NOTHING HERE IMPORTS `pseudex`.
 """
 import argparse
+import ast
 import json
 import sys
 from collections import Counter
@@ -44,6 +45,7 @@ from bench.agentpii4 import schema as v4, stats, validate as v4validate
 from bench.agentpii4.build import build_ladder, ladder_problems
 from bench.agentpii4.schema import Case, Ladder
 from bench.agentpii5 import contracts as c
+from bench.agentpii5 import mock
 from bench.agentpii5 import revise as revise_module
 from bench.agentpii5.contracts import CaseV5
 from bench.agentpii5.schema import (case_v5_from_json, case_v5_to_json, corpus_digest_v5,
@@ -61,6 +63,22 @@ PLAN: tuple[tuple[object, int], ...] = PLAN_A + PLAN_B
 # table's header and its arithmetic cannot disagree.
 MDE_RATE: float = 0.10
 MDE_DEFF: float = 2.1
+# The modules that BUILD a case and must therefore never search what they built.
+# `revise.py` writes 834 of the 1 594 and was outside v4's watched set; `build.py`
+# is here because a "quick check" added to the assembly would be the next one.
+WATCHED_V5: tuple[str, ...] = (str(HERE / "scenarios5"), str(HERE / "revise.py"),
+                               str(HERE / "build.py"))
+# The names a FINISHED string is bound to in this package: a message's text, a
+# rendered result, a document body, the phrase a loop was given. A builder that
+# asks one of them a question is recovering ground truth by search.
+SEARCHED_SURFACES: tuple[str, ...] = (
+    "content", "messages", "text", "result_text", "rendered", "body",
+    "confirm_phrase", "message_template")
+# The string methods that scan, and the `re` entry points. `replace` is absent
+# on purpose: rewriting a string one BUILT is how a register transform works.
+SCANNING_METHODS: tuple[str, ...] = ("find", "rfind", "index", "rindex",
+                                     "startswith", "endswith", "count")
+RE_SCANNERS: tuple[str, ...] = ("search", "match", "fullmatch", "finditer", "findall")
 
 
 def build_corpus(seed: int) -> list[CaseV5]:
@@ -98,24 +116,83 @@ def build_reporting(seed: int, allow_drop: bool) -> tuple[list[CaseV5], list[str
 # --- the proof that nothing searched a finished string ------------------------------
 
 def prove_no_search_v5(seed: int) -> tuple[list[CaseV5], list[str]]:
-    """v4's dynamic proof, widened to watch `scenarios5/` as well.
+    """v4's dynamic proof, widened to the v5 builders, PLUS a static one.
 
-    `v4validate.prove_no_search` watches a FIXED tuple of directories, and
-    `scenarios5/` is not in it — so running it unchanged would prove the property
-    of the half of the corpus that no longer needs proving and say nothing about
-    the half that does. The tuple is extended for the duration of the build and
-    restored afterwards; the alternative, editing `bench/agentpii4/validate.py`,
-    is a file this component does not own and a change every v4 run would then
-    carry.
+    TWO PROOFS, BECAUSE EACH IS BLIND WHERE THE OTHER LOOKS.
+    `v4validate.prove_no_search` traces `c_call` events for the names in its
+    `_SEARCHERS` table, so it sees `str.find` and `re.search` — and cannot see
+    the `in` operator, which compiles to a `COMPARE_OP` and never calls a
+    watched builtin at all. `revise.py` was outside the watched set entirely and
+    did exactly that: `item.value in case.messages[turn].content` decided
+    `LoopSpec.show_turn` for the whole `user_in_loop` family. So the watch is
+    widened to the modules that BUILD (`scenarios5/`, `revise.py`, `build.py`)
+    and a static pass reads their AST for containment as well.
     """
     watched = v4validate._WATCHED_DIRS                   # noqa: SLF001 - see the docstring
-    v4validate._WATCHED_DIRS = watched + (str(HERE / "scenarios5"),)  # noqa: SLF001
+    v4validate._WATCHED_DIRS = watched + WATCHED_V5      # noqa: SLF001
     try:
         cases, hits = v4validate.prove_no_search(lambda: _build_bases(seed))
     finally:
         v4validate._WATCHED_DIRS = watched               # noqa: SLF001
     del cases
-    return _last_built, hits
+    return _last_built, list(hits) + static_search_hits()
+
+
+def static_search_hits() -> list[str]:
+    """Every containment or scan of a FINISHED string in the watched builders.
+
+    A STATIC CHECK IS ENOUGH HERE BECAUSE THE SHAPE IS LITERAL. The forbidden
+    move is asking a finished message, result or rendered document whether it
+    contains a value the builder already knows it put there — `x in <that>`,
+    `<that>.find(x)`, `<that>.index(x)`, `<that>.startswith(x)`,
+    `re.search(..., <that>)`. Each is a syntactic shape over a name from
+    `SEARCHED_SURFACES`, and reading it off the AST needs no run.
+    """
+    hits: list[str] = []
+    for path in _watched_files():
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            surface = _searched_surface(node)
+            if surface:
+                hits.append(f"{path.name}:{node.lineno} searches {surface}")
+    return sorted(hits)
+
+
+def _watched_files() -> list[Path]:
+    """The modules that BUILD a case, so the static pass reads exactly what the
+    dynamic one traces."""
+    files = [Path(one) for one in WATCHED_V5 if one.endswith(".py")]
+    for directory in (one for one in WATCHED_V5 if not one.endswith(".py")):
+        files.extend(sorted(Path(directory).glob("*.py")))
+    return files
+
+
+def _searched_surface(node: ast.AST) -> str:
+    """The finished string this node searches, or "" when it searches none."""
+    if isinstance(node, ast.Compare) and any(
+            isinstance(operator, (ast.In, ast.NotIn)) for operator in node.ops):
+        return _surface_name(node.comparators[0])
+    if not isinstance(node, ast.Call):
+        return ""
+    function = node.func
+    if isinstance(function, ast.Attribute) and function.attr in SCANNING_METHODS:
+        return _surface_name(function.value)
+    if isinstance(function, ast.Attribute) and function.attr in RE_SCANNERS \
+            and isinstance(function.value, ast.Name) and function.value.id == "re":
+        return " ".join(filter(None, (_surface_name(one) for one in node.args)))
+    return ""
+
+
+def _surface_name(node: ast.AST) -> str:
+    """The `SEARCHED_SURFACES` name an expression ends in — `case.messages[t]
+    .content` ends in `content` — or "" for anything else."""
+    while isinstance(node, (ast.Subscript, ast.Call)):
+        node = node.value if isinstance(node, ast.Subscript) else node.func
+    if isinstance(node, ast.Attribute) and node.attr in SEARCHED_SURFACES:
+        return node.attr
+    if isinstance(node, ast.Name) and node.id in SEARCHED_SURFACES:
+        return node.id
+    return ""
 
 
 _last_built: list[CaseV5] = []
@@ -193,21 +270,52 @@ def mde_table(cases: Sequence[CaseV5]) -> list[str]:
 
 
 def form_disagreements(cases: Sequence[CaseV5]) -> list[str]:
-    """Return forms a tool does not declare — a corpus defect, not a gateway miss.
+    """Which tool the corpus expects which form from — and every form it does
+    NOT get.
 
-    Ruling R-17 puts the actual-versus-expected comparison in the harness, which
-    needs a run; what can be checked without one is that the declared form is a
-    form the tool has. `validate_v5` already refuses that per case, so this is
-    the CORPUS-level tally: which tools the corpus expects which forms from, so a
-    reader of the report can see at a glance where the approximation of
-    `revise.py` concentrates.
+    R-17 ASKED FOR ACTUAL-VERSUS-EXPECTED AND THERE WAS NO COMPARISON ANYWHERE:
+    flipping 1 215 of 1 594 cases to a wrong (but declared-by-the-tool) form
+    passed every rule. The actual form needs no live run — the backend is right
+    here — so `proof_problems` drives it and refuses the disagreement, and this
+    table is what the reader sees when nothing disagrees.
     """
     seen: Counter[str] = Counter()
     for case in cases:
         for expectation in case.returns:
             seen[f"{expectation.tool_name}:{expectation.return_form}"] += 1
-    return ["ожидаемые формы ответа: " + " · ".join(
+    return ["формы ответа (проверены на реальном моке): " + " · ".join(
         f"{label} {count}" for label, count in sorted(seen.items()))]
+
+
+def proof_problems(cases: Sequence[CaseV5]) -> list[str]:
+    """Every case whose declaration the real backend does not produce.
+
+    THE DECLARATION IS NOT EVIDENCE OF ITSELF. `has_result`, K03 and the whole
+    `leak` line are counted off DECLARED hops, and 42% of the revised half's
+    IN/tool hops were crossings the mock never renders — 132 cases claiming a
+    tool loop with nothing observable in it. So every case is seeded into a real
+    `BackendV5`, its declared calls are made with its own argument values, and a
+    hop whose span the result never carries is a corpus defect that cannot ship.
+    """
+    problems: list[str] = []
+    for case in cases:
+        problems.extend(mock.render_problems(case))
+    return problems
+
+
+def loop_table(cases: Sequence[CaseV5]) -> list[str]:
+    """How many `single` cases actually carry the minimal loop.
+
+    §8.2's row for «одиночный вызов» names FOUR obligatory hops (IN/user →
+    OUT/arg → IN/tool → OUT/answer), and the family is mostly v4 two-hop cases
+    that R-23's conversion downgraded into it. One number for the family would
+    read as «418 cases of the base shape»; these three say which is which.
+    """
+    singles = [case for case in cases if case.behaviour == "single"]
+    looped = [case for case in singles if case.has_result]
+    return [f"одиночные: {len(singles)} · с минимальной петлёй "
+            f"({c.MIN_HOPS_WITH_RESULT} перехода) {len(looped)} · "
+            f"двухходовых v4 {len(singles) - len(looped)}"]
 
 
 # --- the files ----------------------------------------------------------------------
@@ -228,8 +336,13 @@ def write_corpus(cases: Sequence[CaseV5], out: Path) -> str:
 
 
 def write_ladder(cases: Sequence[CaseV5], seed: int, out: Path,
-                 regenerate: bool) -> tuple[Ladder | None, list[str]]:
-    """The frozen ladder (K12), or nothing when one is already on disk.
+                 regenerate: bool) -> tuple[Ladder | None, list[str], list[str]]:
+    """The frozen ladder (K12), what to print, and what is WRONG with it.
+
+    THE PROBLEMS ARE A THIRD VALUE RATHER THAN A PREFIX IN THE PRINTED LINES.
+    `main` has to exit non-zero on them, and asking it to recognise its own
+    output by the word it starts with is one rename away from an exit 0 that
+    means nothing.
 
     KEPT, NOT REBUILT. The holdout is 20% drawn before any debug tier exists,
     and its whole value is that it was drawn before anyone looked. A build that
@@ -237,21 +350,53 @@ def write_ladder(cases: Sequence[CaseV5], seed: int, out: Path,
     had seen every debugging run of the week.
     """
     path = out / "ladder.json"
-    if path.exists() and not regenerate:
-        return None, [f"лестница оставлена как есть: {path} "
-                      f"(--regenerate-ladder чтобы пересобрать)"]
     bases = [case.base for case in cases]
+    if path.exists() and not regenerate:
+        # A FREEZE NOBODY HAS WATCHED FAIL IS NOT A FREEZE. The ladder names the
+        # corpus it was drawn from; keeping it beside a DIFFERENT corpus silently
+        # renames the holdout — rebuilding with another seed moved 162 of 319
+        # holdout ids onto other cases and printed «оставлена как есть», exit 0.
+        kept = json.loads(path.read_text(encoding="utf-8"))
+        digest = v4.corpus_digest(bases)
+        if str(kept.get("corpus_sha256", "")) != digest:
+            return None, [], [f"ЛЕСТНИЦА: {path} была снята с корпуса "
+                          f"{str(kept.get('corpus_sha256', ''))[:16]}, а записан "
+                          f"{digest[:16]}; --regenerate-ladder чтобы пересобрать "
+                          f"(холдаут увидит отладку) или верните прежний корпус"]
+        return None, [f"лестница оставлена как есть: {path} "
+                      f"(--regenerate-ladder чтобы пересобрать)"], []
     ladder = build_ladder(bases, seed)
+    if regenerate and path.exists():
+        # REGENERATION KEEPS THE HOLDOUT OF EVERY CASE THAT STILL EXISTS. The
+        # point of K12 is that the holdout was drawn before anybody looked; a
+        # redraw that moved an existing case in or out would hand back a holdout
+        # that had seen the week's debugging. New cases are distributed by the
+        # same seed and may land anywhere.
+        moved = _holdout_moved(json.loads(path.read_text(encoding="utf-8")), ladder,
+                               {case.id for case in bases})
+        if moved:
+            return ladder, [], [f"ЛЕСТНИЦА: {len(moved)} случаев сменили ярус при "
+                                f"пересборке: {sorted(moved)[:5]}"]
     broken = ladder_problems(bases, ladder)
     if broken:
-        return ladder, [f"ЛЕСТНИЦА: {line}" for line in broken]
+        return ladder, [], [f"ЛЕСТНИЦА: {line}" for line in broken]
     path.write_text(json.dumps({
         "version": ladder.version, "seed": ladder.seed,
         "corpus_sha256": ladder.corpus_sha256,
         "tiers": {name: list(ids) for name, ids in ladder.tiers.items()}},
         ensure_ascii=False, indent=1), encoding="utf-8")
     return ladder, ["лестница записана: " + " / ".join(
-        f"{name} {len(ids)}" for name, ids in ladder.tiers.items())]
+        f"{name} {len(ids)}" for name, ids in ladder.tiers.items())], []
+
+
+def _holdout_moved(kept: dict[str, object], ladder: Ladder,
+                   alive: set[str]) -> set[str]:
+    """Case ids that were in the old holdout and are not in the new one, or the
+    other way round — counting only cases the new corpus still carries."""
+    tiers = kept.get("tiers")
+    before = set(tiers.get("holdout", ())) if isinstance(tiers, dict) else set()
+    after = set(ladder.tiers.get("holdout", ()))
+    return ((before ^ after) & alive)
 
 
 def main() -> int:
@@ -272,6 +417,7 @@ def main() -> int:
     for case in cases:
         problems.extend(validate_v5(case))
     problems.extend(validate_corpus_v5(cases, tuple(REGISTRY_V5)))
+    problems.extend(proof_problems(cases))
 
     for identifier in dropped:
         print(f"НЕ РЕВИЗОВАН: {identifier}")
@@ -284,6 +430,8 @@ def main() -> int:
         for line in downgrades:
             print(f"  {line}")
     for line in coverage_table(cases):
+        print(line)
+    for line in loop_table(cases):
         print(line)
     for line in form_disagreements(cases):
         print(line)
@@ -299,11 +447,13 @@ def main() -> int:
         return 0
     out = Path(args.out)
     digest = write_corpus(cases, out)
-    ladder, lines = write_ladder(cases, args.seed, out, args.regenerate_ladder)
-    for line in lines:
+    ladder, lines, broken = write_ladder(cases, args.seed, out, args.regenerate_ladder)
+    for line in lines + broken:
         print(line)
-    if ladder is not None and ladder_problems([case.base for case in cases], ladder):
+    if broken:
+        print(f"ОТКАЗ: лестница ({len(broken)})", file=sys.stderr)
         return 1
+    del ladder
     # The round trip is checked on the file that was just written rather than in
     # a test alone: a corpus that cannot be read back is a corpus nobody can run.
     stored = json.loads((out / "corpus.v5.json").read_text(encoding="utf-8"))

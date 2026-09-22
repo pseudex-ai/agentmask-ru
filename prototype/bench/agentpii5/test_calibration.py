@@ -7,20 +7,31 @@ must calibrate and a sample that must not — because a `calibrated` that is
 True on everything is a certificate, and the spec's whole point is that an
 uncalibrated judge stops a report.
 """
+import asyncio
+import json
 import sys
 import tempfile
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
+from bench.agentpii4.records import ArmMeta
 from bench.agentpii5 import calibration as c
 from bench.agentpii5 import records as r
 from bench.agentpii5.contracts import (
-    CALIBRATION, CalibrationRecord, CalibrationStamp, HopObservation, RunObservation)
-from bench.agentpii5.fixtures import NAME_ITEM, PHONE_ITEM, _case, _hop, _run
+    CALIBRATION, ArmRunV5, CalibrationRecord, CalibrationStamp, CaseV5, HopObservation,
+    JudgeInput, JudgeVerdict, RunObservation)
+from bench.agentpii5.fixtures import (
+    NAME_ITEM, PHONE_ITEM, _case, _hop, _run, _with_replies, _with_subs)
+from bench.agentpii5.form import form_match
+from bench.agentpii5.schema import case_v5_to_json
 
 MODEL: str = "claude-sonnet-5"
 PROMPT: str = "a" * 64
+RUN_ID: str = "abc123"
+SUBSTITUTE: str = "Пахомова Ольга"
+# Three cases, so a sample can leave one out and the difference is visible.
+ANSWER_IDS: tuple[str, ...] = ("ans-0001", "ans-0002", "ans-0003")
 
 
 def _observation(case_id: str, repeat: int, behaviour: str, register: str,
@@ -72,7 +83,15 @@ def _records(count: int, pii_type: str, agree: int, label_a: str, label_b: str,
 
 def _stable_repeats(rows: list[CalibrationRecord], how_many: int,
                     disagreeing: int) -> list[CalibrationRecord]:
-    """K-1 more rows per answer for the stability sub-sample."""
+    """K-1 more rows per answer for the stability sub-sample.
+
+    HAND-WRITTEN LABELS, and they pin the ARITHMETIC of `repeat_check` only.
+    That the pipeline can produce a disagreeing group at all is a different
+    claim and is pinned by `test_repeats_are_real_judge_calls`, which asks a
+    scripted judge K times — before that existed, this fixture was the only
+    non-zero spread in the repository and the threshold could not fire on
+    anything a run produced.
+    """
     out: list[CalibrationRecord] = []
     for position, one in enumerate(rows[:how_many]):
         for index in range(1, CALIBRATION.repeats):
@@ -91,7 +110,7 @@ def test_sample_strata() -> list[str]:
     thresholds = replace(CALIBRATION, sample_size=24, per_stratum_min=2, holdout_share=0.25)
     population = _population()
     holdout = frozenset(one.case.base.id for one in population if one.case.base.id.endswith(("04", "05")))
-    sample = c.draw_sample(population, thresholds, 5150, holdout)
+    sample = c.draw_sample(population, thresholds, 5150, holdout, frozenset())
     if len(sample) != thresholds.sample_size:
         failures.append(f"выборка {len(sample)}, а не {thresholds.sample_size}")
     counts: dict[tuple[str, str, str], int] = {}
@@ -113,14 +132,14 @@ def test_sample_strata() -> list[str]:
         failures.append("в выборке повторяются sample_id")
     # Deterministic: the same seed draws the same rows, or a calibration could
     # not be re-derived from the file it was built from.
-    if c.draw_sample(population, thresholds, 5150, holdout) != sample:
+    if c.draw_sample(population, thresholds, 5150, holdout, frozenset()) != sample:
         failures.append("та же выборка при том же зерне вышла другой")
-    if c.draw_sample(population, thresholds, 6060, holdout) == sample:
+    if c.draw_sample(population, thresholds, 6060, holdout, frozenset()) == sample:
         failures.append("другое зерно дало ту же выборку — зерно ни на что не влияет")
     # The NEGATIVE: answers with no personal data cannot be stratified by type.
     empty = [replace(one, hops=()) for one in population]
     try:
-        c.draw_sample(empty, thresholds, 5150, frozenset())
+        c.draw_sample(empty, thresholds, 5150, frozenset(), frozenset())
         failures.append("выборка построена из ответов без ПД")
     except c.CalibrationError:
         pass
@@ -133,7 +152,7 @@ def test_repeats_never_duplicate_index_zero() -> list[str]:
     agreement they are not about — the export wrote exactly that until the
     range started at 1."""
     thresholds = replace(CALIBRATION, sample_size=24, per_stratum_min=2, repeat_sample=4)
-    sample = c.draw_sample(_population(), thresholds, 5150, frozenset())
+    sample = c.draw_sample(_population(), thresholds, 5150, frozenset(), frozenset())
     extra = c.draw_repeats(sample, thresholds, 5150)
     failures: list[str] = []
     if any(one.repeat_index == 0 for one in extra):
@@ -273,12 +292,16 @@ def test_recalibration_triggers() -> list[str]:
 
 def test_import_refuses_bad_label() -> list[str]:
     failures: list[str] = []
-    rows = _records(2, "NAME", 2, "верно", "неверно", "sheet")
+    # Blank judge labels: the exported sheet is BLIND (T9), and `read_sheet`
+    # refuses a row that carries the judge\'s verdict — see `test_sheet_is_blind`.
+    rows = [replace(one, judge_label="", judge_reason="")
+            for one in _records(2, "NAME", 2, "верно", "неверно", "sheet")]
     with tempfile.TemporaryDirectory() as tmp:
         sheet = Path(tmp) / "sheet.jsonl"
         for one in rows:
             row = r.calibration_record_to_json(one)
             row["restored_answer"] = "курьер приедет"          # dropped on import
+            row["answer_sha256"] = c.answer_digest("курьер приедет")
             r.append_row(sheet, row)
         parsed = c.read_sheet(sheet)
         if len(parsed) != 2 or parsed[0].human_label != "верно":
@@ -305,6 +328,309 @@ def test_import_refuses_bad_label() -> list[str]:
     return failures
 
 
+# --- a run directory, built from records alone (no engine, no model) --------------------
+
+def _run_dir(root: Path, gated_id: str) -> Path:
+    """The smallest directory `observations_of` accepts, with ONE answer decided
+    by the residual pre-gate.
+
+    Built from `records` writers rather than from `harness.drive_v5`: the
+    harness imports the engine and this module must not
+    (`test_no_pseudex`), so the run this file reads is written by the same
+    serialisers the real one is written by and by nothing else.
+    """
+    run_dir = root / "v5-live-nano"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    meta = ArmMeta("fixture", 1, 0, "sess", "success", False, None, (), "", 0.0)
+    cases = [_answer_case(case_id) for case_id in ANSWER_IDS]
+    (run_dir / "corpus.v5.json").write_text(json.dumps(
+        {"corpus": [case_v5_to_json(case) for case in cases], "digest": "digest-v5"},
+        ensure_ascii=False), encoding="utf-8")
+    judge = r.run_file(run_dir, RUN_ID, "<run>.judge.jsonl")
+    for case in cases:
+        run = _answer_run(case)
+        r.append_row(r.run_file(run_dir, RUN_ID, "<run>.arms.jsonl"),
+                     {"case_id": case.base.id, "repeat": 0, "arm": "I", "termination": "done"})
+        r.append_row(r.run_file(run_dir, RUN_ID, "<run>.arms.v5.jsonl"),
+                     r.arm_v5_record(run, meta, case.base))
+        r.append_row(r.run_file(run_dir, RUN_ID, "<run>.hops.jsonl"),
+                     r.hop_observation_to_json(HopObservation(
+                         case_id=case.base.id, repeat=0, hop=case.hops[0], declared=True,
+                         pii_type="NAME", produced=NAME_ITEM.value, reference=NAME_ITEM.value,
+                         status="observed", verdict=form_match("NAME", NAME_ITEM.value,
+                                                               NAME_ITEM.value))))
+        pregate = case.base.id == gated_id
+        r.append_row(judge, r.judge_row_to_json(r.JudgeRow(
+            case_id=case.base.id, repeat=0, input_sha256="a" * 64,
+            verdict=JudgeVerdict(
+                label="неверно" if pregate else "верно",
+                reason="подмена в ответе: «Пахомова»" if pregate else "запись та же · цитата: «Иванова»",
+                judged_by="residual_gate" if pregate else "model",
+                cost_usd=0.0 if pregate else 0.01))))
+    return run_dir
+
+
+def _answer_case(case_id: str) -> CaseV5:
+    """A case whose ANSWER carried a NAME — the only shape `draw_sample`
+    stratifies."""
+    hops = (_hop("OUT", "answer", "p1", 0, 0, "", -1, -1, ""),)
+    return _case(case_id, "single", ("Иванова Елена, +7 916 402-11-87",),
+                 (NAME_ITEM, PHONE_ITEM), hops)
+
+
+def _answer_run(case: CaseV5) -> ArmRunV5:
+    run = _with_subs(_run(case.base.id), {"p1": SUBSTITUTE})
+    return _with_replies(run, f"Передал {SUBSTITUTE}.",
+                         f"Передал {NAME_ITEM.value} по адресу.", "контроль")
+
+
+def test_sample_excludes_pregate_verdicts() -> list[str]:
+    """T11: a verdict the residual pre-gate gave is not the model\'s, and κ over
+    it measures a human agreeing with `str.casefold() in`.
+
+    Both numbers the report certifies («судья claude-sonnet-5, κ=…») are
+    statements about the MODEL that will judge the next run, so the answers it
+    was never asked about are out of the draw — not filtered afterwards, which
+    would leave the spec\'s 300 as 300-minus-however-many.
+    """
+    failures: list[str] = []
+    thresholds = replace(CALIBRATION, sample_size=24, per_stratum_min=2, holdout_share=0.0)
+    population = _population()
+    gated = frozenset((one.case.base.id, one.repeat) for one in population[:12])
+    sample = c.draw_sample(population, thresholds, 5150, frozenset(), gated)
+    drawn = {c._split_sample_id(one.sample_id) for one in sample}
+    if drawn & gated:
+        failures.append(f"в выборку попали ответы, решённые претгейтом: {sorted(drawn & gated)}")
+    # The NEGATIVE: without the exclusion those same answers ARE drawn, so the
+    # argument does work rather than describing a population that never had them.
+    open_draw = c.draw_sample(population, thresholds, 5150, frozenset(), frozenset())
+    if not {c._split_sample_id(one.sample_id) for one in open_draw} & gated:
+        failures.append("без исключения претгейтных ответов выборка всё равно их не взяла — "
+                        "проверка ни о чём")
+    # Everything gated is «калибровать не на чем», by name.
+    everything = frozenset((one.case.base.id, one.repeat) for one in population)
+    try:
+        c.draw_sample(population, thresholds, 5150, frozenset(), everything)
+        failures.append("выборка построена из одних претгейтных ответов")
+    except c.CalibrationError as refused:
+        if "претгейт" not in str(refused):
+            failures.append(f"отказ не называет претгейт: {refused}")
+    # And the reader that tells them apart reads `judged_by`, not the label.
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = _run_dir(Path(tmp), ANSWER_IDS[0])
+        verdicts = c.judge_verdicts_of(run_dir)
+        if c.gated_answers(verdicts) != frozenset({(ANSWER_IDS[0], 0)}):
+            failures.append(f"претгейтные ответы прогона прочитаны как {c.gated_answers(verdicts)}")
+        if len(verdicts) != len(ANSWER_IDS):
+            failures.append(f"вердиктов прогона прочитано {len(verdicts)}, а их {len(ANSWER_IDS)}")
+    return failures
+
+
+def test_sheet_is_blind() -> list[str]:
+    """T9: the labeller is handed the ANSWER, never the judge\'s verdict.
+
+    `sheet_rows` used to write `judge_label` and `judge_reason` — the latter
+    carrying the judge\'s verbatim quote and rationale — into the very row whose
+    `human_label` the human was about to fill. κ and raw agreement are agreement
+    between two INDEPENDENT raters, and both gate circulation.
+    """
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        run_dir = _run_dir(root, ANSWER_IDS[0])
+        thresholds = replace(CALIBRATION, sample_size=2, per_stratum_min=1, holdout_share=0.0)
+        gated = c.gated_answers(c.judge_verdicts_of(run_dir))
+        sample = c.draw_sample(c.observations_of(run_dir), thresholds, 5150, frozenset(), gated)
+        rows = c.sheet_rows(run_dir, sample, MODEL)
+        if not rows:
+            return ["лист разметки пуст — проверять нечего"]
+        for row in rows:
+            if row["judge_label"] or row["judge_reason"]:
+                failures.append(f"в листе разметки метка судьи: {row['judge_label']!r} "
+                                f"{row['judge_reason']!r}")
+            for key in ("restored_answer", "answer_sha256", "oracle_literals",
+                        "dialogue_context", "customer_question"):
+                if key not in row:
+                    failures.append(f"в листе нет того, что видел судья: {key}")
+            if "цитата" in json.dumps(row, ensure_ascii=False):
+                failures.append("в строку листа просочилась цитата судьи")
+            if row["answer_sha256"] != c.answer_digest(str(row["restored_answer"])):
+                failures.append("хэш ответа в листе не от того ответа")
+        # A filled sheet that CARRIES a judge label is refused: the blind rule
+        # survives the next helpful edit only if the reader enforces it.
+        sheet = root / "sheet.jsonl"
+        for row in rows:
+            r.append_row(sheet, {**row, "human_label": "верно"})
+        try:
+            if len(c.read_sheet(sheet)) != len(rows):
+                failures.append("слепой размеченный лист не прочитался")
+        except c.CalibrationError as refused:
+            # Reported, not raised: the likeliest cause is that `sheet_rows`
+            # started writing the judge's verdict again, which is the defect
+            # this check is about.
+            failures.append(f"лист, который экспортировал сам инструмент, не читается: {refused}")
+        sighted = root / "sighted.jsonl"
+        r.append_row(sighted, {**rows[0], "human_label": "верно", "judge_label": "верно"})
+        try:
+            c.read_sheet(sighted)
+            failures.append("лист с меткой судьи принят — κ мерила бы якорение")
+        except c.CalibrationError as refused:
+            if "judge_label" not in str(refused):
+                failures.append(f"отказ не называет поле: {refused}")
+    return failures
+
+
+class _ScriptedJudge:
+    """K answers, in order, per call — the judge a live run cannot script.
+
+    `repeat_disagreement` is a statement about the judge\'s OWN spread, so the
+    fixture that must make it non-zero is a judge that answers differently to
+    the same question; a fixture that hand-wrote the labels into the sheet (the
+    only non-zero spread in the repo before) proved the arithmetic and never
+    the pipeline.
+    """
+
+    def __init__(self, labels: tuple[str, ...]) -> None:
+        self._labels = labels
+        self.asked = 0
+
+    async def __call__(self, request: JudgeInput, minted: tuple[str, ...]) -> JudgeVerdict:
+        label = self._labels[self.asked % len(self._labels)]
+        self.asked += 1
+        if minted and any(surface in request.restored_answer for surface in minted):
+            return JudgeVerdict(label="", reason="подмена в ответе", judged_by="none",
+                                cost_usd=0.0)
+        return JudgeVerdict(label=label, reason=f"цитата: «{request.restored_answer[:10]}»",
+                            judged_by="model", cost_usd=0.001)
+
+
+def test_repeats_are_real_judge_calls() -> list[str]:
+    """T10: the K stability rows are K REAL verdicts, so `repeat_disagreement`
+    can be non-zero on something the pipeline produced.
+
+    The harness asks the judge once per (case, repeat); `sheet_rows` then looked
+    that ONE verdict up for every repeat row, so all K labels of an answer were
+    equal by construction and the threshold that refuses an unstable judge
+    could never fire. The spec asks for K=3 repeats (§8.5) — they are spent
+    here, in `export --repeats`.
+    """
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        run_dir = _run_dir(root, ANSWER_IDS[0])
+        thresholds = replace(CALIBRATION, sample_size=2, per_stratum_min=1, holdout_share=0.0,
+                             repeat_sample=2, repeats=3)
+        gated = c.gated_answers(c.judge_verdicts_of(run_dir))
+        sample = c.draw_sample(c.observations_of(run_dir), thresholds, 5150, frozenset(), gated)
+        repeats = c.draw_repeats(sample, thresholds, 5150)
+        unstable = _ScriptedJudge(("верно", "частично"))
+        verdicts = asyncio.run(c.ask_repeats(run_dir, repeats, unstable))
+        if unstable.asked != len(repeats):
+            failures.append(f"судью спросили {unstable.asked} раз на {len(repeats)} повторов")
+        if len(verdicts) != len(repeats):
+            failures.append(f"вердиктов {len(verdicts)}, повторов {len(repeats)}")
+        by_sample: dict[str, set[str]] = {}
+        for one in verdicts:
+            by_sample.setdefault(one.sample_id, set()).add(one.label)
+        if not any(len(labels) > 1 for labels in by_sample.values()):
+            failures.append("K вердиктов одного ответа совпали у НЕустойчивого судьи — "
+                            "метки всё ещё берутся из одного просмотра")
+        # …and the number the threshold reads follows from them.
+        shown = c.answers_of(run_dir)
+        labelled = tuple(replace(one, human_label="верно") for one in sample)
+        joined = c.join_judge_labels(labelled, c.judge_verdicts_of(run_dir), verdicts,
+                                     shown, shown)
+        spread = c.repeat_check(joined)
+        if spread <= 0.0:
+            failures.append(f"спред неустойчивого судьи {spread} — порог не может сработать")
+        # THE NEGATIVE: a judge that always says the same thing has spread 0.0,
+        # or the number above would be an artefact of the scripted fixture.
+        steady = _ScriptedJudge(("верно",))
+        same = asyncio.run(c.ask_repeats(run_dir, repeats, steady))
+        joined_steady = c.join_judge_labels(labelled, c.judge_verdicts_of(run_dir), same,
+                                            shown, shown)
+        if c.repeat_check(joined_steady) != 0.0:
+            failures.append("устойчивый судья получил ненулевой спред")
+        # The repeats file is written beside the sheet and read back verbatim.
+        path = c.repeats_path(root / "sheet.jsonl")
+        path.write_text("".join(json.dumps(c.repeat_verdict_to_json(one), ensure_ascii=False,
+                                           sort_keys=True) + "\n" for one in verdicts),
+                        encoding="utf-8")
+        if c.read_repeats(path) != verdicts:
+            failures.append("повторы судьи прочитались не теми, что записаны")
+        broken = root / "broken.repeats.jsonl"
+        r.append_row(broken, {**c.repeat_verdict_to_json(verdicts[0]), "repeat_index": 0})
+        try:
+            c.read_repeats(broken)
+            failures.append("повтор с индексом 0 принят — ответ посчитали бы дважды")
+        except c.CalibrationError:
+            pass
+    return failures
+
+
+def test_import_joins_and_stamps_the_run() -> list[str]:
+    """F3.5: a filled sheet becomes the run\'s own stamp.
+
+    Without this path a report is «НЕ ОТКАЛИБРОВАН» for ever — not because the
+    judge failed a threshold, but because nobody could tell the run otherwise:
+    the stamp lives in row 0 of `<run>.judge.jsonl` and only the harness ever
+    wrote it, always as «не откалиброван».
+    """
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        run_dir = _run_dir(root, ANSWER_IDS[0])
+        thresholds = replace(CALIBRATION, sample_size=2, per_stratum_min=1, holdout_share=0.0)
+        gated = c.gated_answers(c.judge_verdicts_of(run_dir))
+        sample = c.draw_sample(c.observations_of(run_dir), thresholds, 5150, frozenset(), gated)
+        filled = tuple(replace(one, human_label="верно", judge_model=MODEL,
+                               prompt_sha256=c.prompt_sha256()) for one in sample)
+        shown = c.answers_of(run_dir)
+        joined = c.join_judge_labels(filled, c.judge_verdicts_of(run_dir), (), shown, shown)
+        if any(not one.judge_label for one in joined):
+            failures.append("после стыковки остались строки без метки судьи")
+        if any(one.judge_reason == "" for one in joined):
+            failures.append("после стыковки потерялась причина вердикта")
+        # The run learns the number: row 0 of the judge file, verdicts intact.
+        before = len(r.read_rows(r.run_file(run_dir, RUN_ID, "<run>.judge.jsonl")))
+        c.write_stamp(run_dir, RUN_ID, c.stamp(joined, MODEL, c.prompt_sha256()))
+        rows = r.read_rows(r.run_file(run_dir, RUN_ID, "<run>.judge.jsonl"))
+        if "calibrated" not in rows[0]:
+            failures.append("штамп не встал нулевой строкой — report.judge_half его не найдёт")
+        if len(rows) != before + 1:
+            failures.append(f"штамп съел вердикты: было {before}, стало {len(rows)}")
+        c.write_stamp(run_dir, RUN_ID, c.stamp(joined, MODEL, c.prompt_sha256()))
+        if len(r.read_rows(r.run_file(run_dir, RUN_ID, "<run>.judge.jsonl"))) != before + 1:
+            failures.append("второй штамп добавил строку вместо замены")
+        # An answer that moved under the label is refused BY NAME: the human
+        # labelled a text, not a pair of ids.
+        moved = dict(shown)
+        moved[filled[0].sample_id] = c.answer_digest("другой ответ")
+        try:
+            c.join_judge_labels(filled, c.judge_verdicts_of(run_dir), (), shown, moved)
+            failures.append("стыковка приняла ответ, изменившийся после экспорта")
+        except c.CalibrationError as refused:
+            if "изменился" not in str(refused):
+                failures.append(f"отказ не называет причину: {refused}")
+        # A pre-gated answer must never reach the join either.
+        pregated = tuple(replace(one, sample_id=f"{ANSWER_IDS[0]}|0", case_id=ANSWER_IDS[0])
+                         for one in filled[:1])
+        try:
+            c.join_judge_labels(pregated, c.judge_verdicts_of(run_dir), (), shown, shown)
+            failures.append("в калибровку попал вердикт претгейта")
+        except c.CalibrationError:
+            pass
+        # And an answer the judge was never asked about.
+        unknown = tuple(replace(one, sample_id="нет-такого|0", case_id="нет-такого")
+                        for one in filled[:1])
+        try:
+            c.join_judge_labels(unknown, {}, (), shown, shown)
+            failures.append("в калибровку попала строка без вердикта прогона")
+        except c.CalibrationError:
+            pass
+    return failures
+
+
 def main() -> int:
     checks: tuple[tuple[str, Callable[[], list[str]]], ...] = (
         ("no_pseudex", test_no_pseudex),
@@ -315,6 +641,10 @@ def main() -> int:
         ("thresholds", test_thresholds),
         ("recalibration_triggers", test_recalibration_triggers),
         ("import_refuses_bad_label", test_import_refuses_bad_label),
+        ("sample_excludes_pregate_verdicts", test_sample_excludes_pregate_verdicts),
+        ("sheet_is_blind", test_sheet_is_blind),
+        ("repeats_are_real_judge_calls", test_repeats_are_real_judge_calls),
+        ("import_joins_and_stamps_the_run", test_import_joins_and_stamps_the_run),
     )
     failures: list[str] = []
     for name, check in checks:
