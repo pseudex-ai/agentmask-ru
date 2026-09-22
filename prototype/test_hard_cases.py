@@ -763,7 +763,14 @@ def test_a_dictated_phone_survives_a_deny_word(vault: Vault, detector: Detector)
 def main() -> int:
     testkit.load_dev_bundle()
     detector = Detector()
-    vault = Vault(os.path.join(tempfile.mkdtemp(), "hard.db"), "hard-cases")
+    # WITHIN A CONVERSATION, as every production path masks. The LOC substitute
+    # is shown in the customer's own form now (lower case, glued markers, no
+    # comma — `redact._token_for_text`), and an address the agent copies back
+    # verbatim is recovered through the conversation's `shown_forms`; the pattern
+    # handles the form a model rewrites it into. Outside a conversation a
+    # lower-case copy has no form-independent index to recover it — the same
+    # scoping `holds_minted_place`/`shown_forms` already carry.
+    vault = Vault(os.path.join(tempfile.mkdtemp(), "hard.db"), "hard-cases").for_conversation("hard")
 
     test_detection(detector)
     test_no_over_masking(detector)

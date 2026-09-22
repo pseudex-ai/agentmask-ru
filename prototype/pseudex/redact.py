@@ -225,7 +225,33 @@ def _token_for_text(span: Span, vault: Vault) -> str:
         # rewrite the token instead of using it.
         case = morph_places.detect_case(span.value)
         if case is None or case == "nomn":
-            return _agree_settlement(token, span.value)
+            # THE FORM IS THE CUSTOMER'S ON THE WAY IN. `in_form_of` lays the
+            # fake into the customer's own surface — lower case where he wrote
+            # lower case, «д69» glued where he glued it, no comma where he
+            # wrote none — the mirror of laying the real value into the agent's
+            # form on the way out. Shown a clean, capitalised, spaced fake, a
+            # rewriting model has nothing to normalise and copies it, so the
+            # tool receives the customer's raw string, never the model's own
+            # form; shown the customer's messy form, the model reformats it
+            # exactly as it would the real value, and the real value comes back
+            # in THAT form. This is the base positioning — we make the same
+            # presentation the customer did. Measured on the public rewriter
+            # agent (26 of 39 address round-trips). Oblique mentions keep the
+            # grammatical inflection below, prose reads on their agreement.
+            #
+            # FAIL-SAFE: the mirror must preserve the FAKE's identity. A
+            # numbered or two-word street («4-й Вешняковский», «Ольгина пруда»)
+            # can mis-align in `in_form_of` and leave the customer's real word
+            # or number standing — «черёмуховаяд 5-й Вешняковский», the real
+            # «Вешняковский» to the model. So the mirror is accepted only when
+            # its street+house+flat key equals the canonical fake's; otherwise
+            # the safe canonical fake is shown. Correctness over form: we never
+            # leak a real part to gain the customer's presentation.
+            agreed = _agree_settlement(token, span.value)
+            shown = morph_places.in_form_of(agreed, span.value)
+            if shown and place_key(shown) == place_key(agreed):
+                return shown
+            return agreed
         return morph_places.inflect_place(token, case)
     if span.entity_type != "NAME":
         return token

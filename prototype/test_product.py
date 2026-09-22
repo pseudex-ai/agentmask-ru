@@ -304,7 +304,17 @@ def test_masking_own_token_is_stable() -> None:
     content-cache hit. The token has to arrive inside different surrounding text,
     which is what a real agent turn does."""
     detector = Detector()
-    vault = Vault(":memory:", "echo")
+    # WITHIN A CONVERSATION, as every production path masks (proxy derives it,
+    # the sidecar takes conversation_id). The LOC substitute is now shown in the
+    # CUSTOMER's own form (`redact._token_for_text`: lower case, glued markers,
+    # no comma — the same presentation he used), so on the way back it is
+    # recognised through the conversation the same way `holds_minted_place` and
+    # `shown_forms` already are — a substitute comes back inside the dialogue it
+    # was handed to, a real person who happens to bear that address walks in from
+    # another. Outside a conversation the address re-mask guard cannot tell the
+    # two apart without leaking the real one, so it degrades to churn (not a PII
+    # leak — the real value is still masked); production never takes that path.
+    vault = Vault(":memory:", "echo").for_conversation("echo")
     # Address included on purpose: the LOC token is now a generated street with a
     # house number rather than a value from a flat list, so re-detection has a
     # real chance of carving it up differently — and a differently-carved span is
@@ -603,17 +613,21 @@ def test_directory_record_is_the_customers_address() -> None:
         path = os.path.join(tmp, "v.db")
         talk = Vault(path, "acme").for_conversation("d-1")
         seen = mask("курьера на луговая 10 это в самара", talk)
-        short = re.search(r"на (\S+ \S+ \d+) это", seen).group(1)
+        # Клиент написал «луговая 10» без типа улицы — подмена ЗЕРКАЛИТ это и
+        # тоже приходит голой, «мятная 10», а не «улица Мятная 10». Раньше здесь
+        # стоял `\S+ \S+ \d+` в расчёте на дописанное нами «улица»; мы больше
+        # ничего не дописываем, поэтому берём всё между «на» и «это».
+        short = re.search(r"на (.+?) это", seen).group(1)
         assert "самара" in seen and "луговая" not in seen, seen
 
         composed = f"Самара, {short}"
         assert mask(composed, talk) == composed, "the model's own composition is not re-minted"
         # ФОРМА КЛИЕНТА, БУКВА В БУКВУ. Клиент написал «луговая 10» — без типа
-        # улицы, строчными. Агент скопировал НАШУ подмену «улица Пихтовая 68»
-        # (тип улицы был наш, не его) и дописал «Самара,». Возвращается
-        # «Самара, луговая 10»: настоящая улица клиента в его форме — без
-        # «улица», строчными, — и агентское «Самара,». Никакой канонизации: мы
-        # ничего не добавляем и не чиним, `shown_forms` отдаёт дословную строку.
+        # улицы, строчными. Подмена показана в ТОЙ ЖЕ форме — «мятная 10», без
+        # «улица», строчными; агент копирует её и дописывает «Самара,».
+        # Возвращается «Самара, луговая 10»: настоящая улица клиента в его
+        # форме — и агентское «Самара,». Никакой канонизации: мы ничего не
+        # добавляем и не чиним, `shown_forms` отдаёт дословную строку.
         assert json.loads(unmask_arguments(json.dumps({"query": composed}, ensure_ascii=False), talk))["query"] \
             == "Самара, луговая 10", json.loads(unmask_arguments(json.dumps({"query": composed}, ensure_ascii=False), talk))["query"]
 
@@ -630,11 +644,22 @@ def test_directory_record_is_the_customers_address() -> None:
         exact, neighbour, elsewhere = masked
         # THE SETTLEMENT STAYS REAL — a city identifies nobody, and the model
         # must be able to match this record to the «Самара» it already holds.
-        assert exact["value"] == f"Самара, {short}", (exact["value"], short)
+        # The register is a FULL mention («г Самара, ул Луговая, д 10»); it is
+        # now masked in ITS OWN form, not shortened to the customer's «луговая
+        # 10» — but the SAME real street links to the same fake street and
+        # house, so the model still reads it as one place. Checked by the fake's
+        # street+house key, which is form-agnostic; exact string equality across
+        # a full form and a bare one no longer holds and should not.
+        assert "Самара" in exact["value"] and street_house_key(exact["value"]) == street_house_key(short), \
+            (exact["value"], short)
         assert exact["data"]["postal_code"] == "443000" and exact["data"]["region"] == "Самарская область"
-        assert exact["data"]["street"] == short.split()[1].lower() and exact["data"]["house"] == short.split()[-1]
+        # `short` is now the bare fake «мятная 10» (street first, house last),
+        # because the customer wrote it bare — not «улица Мятная 10».
+        assert exact["data"]["street"] == short.split()[0].lower() and exact["data"]["house"] == short.split()[-1]
         assert exact["data"]["city"] == "самара", exact
-        assert elsewhere["value"].startswith("Тольятти, ") and elsewhere["data"]["city"] == "тольятти", elsewhere
+        # Masked in its own full form now, so the real city stands inside it
+        # rather than at the head of a shortened one; it stays REAL either way.
+        assert "Тольятти" in elsewhere["value"] and elsewhere["data"]["city"] == "тольятти", elsewhere
         assert neighbour["value"] != exact["value"] and neighbour["data"]["house"] != exact["data"]["house"], \
             "the neighbour with a litera is another building"
         assert elsewhere["value"] != exact["value"], "the same street and house in another city is another place"
@@ -695,9 +720,14 @@ def test_directory_record_links_to_the_short_mention() -> None:
         answer = json.dumps({"suggestions": [{"value": record, "data": {"city": city}}]}, ensure_ascii=False)
         shown = json.loads(mask(answer, talk))["suggestions"][0]["value"]
         tokens = [row[0] for row in talk._conn.execute("SELECT token FROM tokens WHERE entity_type='LOC'").fetchall()]  # noqa: SLF001
-        assert shown.startswith(f"{city}, ") and shown[len(city) + 2:] in tokens[0] + tokens[0].replace("улица", "улица"), (seen, shown, tokens)
-        assert len({t.replace(f"{city}, ", "") for t in tokens}) == 1, ("one place, one substitute", tokens)
-        assert "к" not in record or ", корп. " in shown, ("the корпус rides in the substitute", shown)
+        # The record is masked in ITS OWN form now (full: «г Глазов, ул <fake>,
+        # д 45»), not shortened to «Глазов, <fake>» — but the same real street
+        # links to the same fake, so the city stays real and the fake place
+        # matches the token. Checked by street+house key (form-agnostic); the
+        # старая проверка ждала короткую каноническую форму, которой больше нет.
+        assert city in shown and street_house_key(shown) == street_house_key(tokens[0]), (seen, shown, tokens)
+        assert len({street_house_key(t) for t in tokens}) == 1, ("one place, one substitute", tokens)
+        assert "к" not in record or split_roles(shown).get("building"), ("the корпус rides in the substitute", shown)
     print("directory link OK — a surname-street keys with its street, the record reads nominative, the корпус stays")
 
 
@@ -892,7 +922,12 @@ def test_restored_ranges_are_closed_to_later_passes() -> None:
 
     detector = Detector()
     with tempfile.TemporaryDirectory() as tmp:
-        vault = Vault(os.path.join(tmp, "v.db"), "acme")
+        # WITHIN A CONVERSATION (production always is): a lower-case address is
+        # now shown in the customer's own form, and an exact echo of it is
+        # recovered through the conversation's `shown_forms` — the pattern only
+        # finds a capitalised street, by design (a lower-case restore window
+        # swallows prose).
+        vault = Vault(os.path.join(tmp, "v.db"), "acme").for_conversation("passes")
         texts = ["Клиент Алиев Рустам Ахмед оглы", "Иван Петров улица Ленина 5", "звоните Ивану Сергеевичу",
                  "новый адрес челюскинцев 159 квартира 183", "телефон 89162148803, карта 4276 1600 1234 5675"]
         for _ in range(25):
