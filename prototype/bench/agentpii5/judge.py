@@ -205,6 +205,33 @@ _STRICTER: str = ("\n\nВ прошлый раз цитата не совпала
                   "нет — верни метку, которую можешь процитировать.")
 
 
+# THE TEMPERATURE EVERY JUDGE CALL RUNS AT — DECLARED, BECAUSE THE TRANSPORT
+# HAS NO KNOB. The judge is asked through the Claude Code CLI
+# (`claude_agent_sdk.query`), and neither half of it accepts a temperature:
+# `ClaudeAgentOptions` has no such field (checked field by field) and the CLI
+# has no such flag (`claude --help`). So this constant is what the call
+# actually samples at — the API's own default — written down rather than left
+# implicit (R-56), for two reasons a calibration depends on. A stamp certifies
+# an INSTRUMENT, and an instrument whose temperature nobody wrote down is one
+# no later run can be compared to; and `calibration export --repeats K` runs
+# its K judgements in a second process, where «the same value the run uses»
+# can hold only through one shared constant. A config asking for anything else
+# is REFUSED by `_options` rather than quietly sampled at this value: a
+# benchmark that printed «судья при 0.0» while the CLI sampled at its default
+# would be lying about the instrument, and the refusal names the missing knob.
+JUDGE_TEMPERATURE: float = 1.0
+
+
+class TransportError(RuntimeError):
+    """The judge was asked for something the transport cannot deliver.
+
+    Its own class rather than `ValueError`: this says nothing about the
+    benchmark's logic and everything about the SDK underneath it, and a caller
+    that catches it is asking «can this machine do it», not «did I compute it
+    right».
+    """
+
+
 class OracleLeak(RuntimeError):
     """The judge prompt would have carried a substitute into the judge.
 
@@ -212,6 +239,23 @@ class OracleLeak(RuntimeError):
     blind judge with a sighted one stops instead of producing a number nobody
     can retract.
     """
+
+
+class LeakedPrompt(OracleLeak):
+    """A leak raised where the dialogue had ALREADY been read — so the count of
+    earlier turns that carried a substitute is known and must not be lost.
+
+    `run_triple_v5` records a leaked triple instead of dying over it (F3.2),
+    and the record it writes carries `turn_residual`. Re-raising the plain
+    `OracleLeak` left that number behind the stack frame that computed it, and
+    the row then said «0 earlier turns held a substitute» — a value that means
+    «nothing happened» and «nobody wrote it down» at once, which is the defect
+    class `records.TripleTotals` exists to refuse.
+    """
+
+    def __init__(self, message: str, turn_residual: int) -> None:
+        super().__init__(message)
+        self.turn_residual = turn_residual
 
 
 class Ledger(Protocol):
@@ -235,6 +279,11 @@ class JudgeConfig:
     query_cap_usd: float
     retries: int
     trace_path: Path | None
+    # EXPLICIT AT EVERY CONSTRUCTION SITE (R-56), never an SDK default: the
+    # calibration's K repeats and the run itself must ask at one temperature or
+    # `repeat_disagreement` measures two instruments. See `JUDGE_TEMPERATURE`
+    # for why the value is declared rather than set.
+    temperature: float
 
 
 # --- the blind guard ------------------------------------------------------------------
@@ -552,12 +601,27 @@ def parse_verdict(raw: dict[str, object], restored_answer: str, cost_usd: float)
                         judged_by="model", cost_usd=round(cost_usd, 6))
 
 
-def _options(model: str, cap_usd: float) -> ClaudeAgentOptions:
+def _options(model: str, cap_usd: float, temperature: float) -> ClaudeAgentOptions:
     """A fresh, hermetic session per verdict. `setting_sources=[]` — no
     CLAUDE.md, no project settings: this repository describes the gateway being
     measured, and a judge that reads it judges with the answer key open.
     `tools=[]` so it cannot reach the corpus another way; `cwd` a temp dir for
-    the same reason."""
+    the same reason.
+
+    `temperature` is CHECKED, not passed: the transport samples at
+    `JUDGE_TEMPERATURE` and exposes no way to change it, so the honest thing a
+    caller asking for another value can be given is a refusal naming the
+    reason. Accepting it silently would put a number in the calibration stamp
+    that the model never ran at.
+    """
+    if temperature != JUDGE_TEMPERATURE:
+        raise TransportError(
+            f"судью просят t={temperature}, а транспорт (Claude Code CLI через "
+            f"claude_agent_sdk.query) температуру не принимает: ни поля в "
+            f"ClaudeAgentOptions, ни флага у CLI — вызовы идут при "
+            f"t={JUDGE_TEMPERATURE}. Чтобы мерить при другой температуре, судью "
+            f"надо увести с CLI на Messages API; молча согласиться значит "
+            f"записать в штамп калибровки температуру, при которой не судили")
     env = {name: value for name, value in os.environ.items() if name != "CLAUDECODE"}
     return ClaudeAgentOptions(
         model=model, system_prompt=RUBRIC, setting_sources=[], tools=[], allowed_tools=[],
@@ -574,13 +638,19 @@ async def _ask(prompt: str, label: str, config: JudgeConfig) -> tuple[dict[str, 
     a run that has already paid for three arms, and the reason travels into the
     verdict's `reason` so it is on disk rather than in a log nobody reads.
     """
+    # THE SESSION IS BUILT BEFORE THE MONEY IS RESERVED, and outside the `try`
+    # below: that `except` exists for a transport that fails mid-call, and a
+    # config the transport cannot serve at all (a temperature it has no knob
+    # for) would otherwise be swallowed into a `judged_by="none"` verdict the
+    # run had already paid the reservation for.
+    options = _options(config.model, config.query_cap_usd, config.temperature)
     await config.ledger.reserve(config.query_cap_usd)
     spent = 0.0
     structured: object = None
     text: list[str] = []
     why = ""
     try:
-        async for message in query(prompt=prompt, options=_options(config.model, config.query_cap_usd)):
+        async for message in query(prompt=prompt, options=options):
             if isinstance(message, AssistantMessage):
                 for block in message.content:
                     if isinstance(block, TextBlock):
@@ -627,7 +697,7 @@ async def judge_prompt(config: JudgeConfig, request: JudgeInput, prompt: str) ->
     if raw is not None:
         verdict = parse_verdict(raw, request.restored_answer, cost)
         if verdict is not None:
-            _trace(config.trace_path, request, verdict)
+            _trace(config, request, verdict)
             return verdict
         why = "цитата не совпала с текстом ответа"
     second, cost_again, why_again = await _ask(prompt + _STRICTER, f"{label}/retry", config)
@@ -635,12 +705,12 @@ async def judge_prompt(config: JudgeConfig, request: JudgeInput, prompt: str) ->
     if second is not None:
         verdict = parse_verdict(second, request.restored_answer, total)
         if verdict is not None:
-            _trace(config.trace_path, request, verdict)
+            _trace(config, request, verdict)
             return verdict
         why_again = "цитата не совпала с текстом ответа и со второй попытки"
     unjudged = JudgeVerdict(label="", reason=f"судья не дал счётного вердикта: {why} · {why_again}",
                             judged_by="none", cost_usd=round(total, 6))
-    _trace(config.trace_path, request, unjudged)
+    _trace(config, request, unjudged)
     return unjudged
 
 
@@ -662,16 +732,23 @@ async def judge_answer(config: JudgeConfig, request: JudgeInput,
     return await judge_prompt(config, request, build_prompt(request, substitutes_minted))
 
 
-def _trace(path: Path | None, request: JudgeInput, verdict: JudgeVerdict) -> None:
+def _trace(config: JudgeConfig, request: JudgeInput, verdict: JudgeVerdict) -> None:
     """A verdict beside its evidence, appended. A trace without the quote would
-    undo, one file over, the rule this module is built around."""
-    if path is None:
+    undo, one file over, the rule this module is built around.
+
+    THE WHOLE CONFIG, not the path alone: the row also says which model and
+    which temperature produced the verdict (R-56). A trace that named neither
+    could not answer «was this line judged by the instrument the stamp
+    certifies» — the question a re-judged run exists to ask.
+    """
+    if config.trace_path is None:
         return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as sink:
+    config.trace_path.parent.mkdir(parents=True, exist_ok=True)
+    with config.trace_path.open("a", encoding="utf-8") as sink:
         sink.write(json.dumps({"case_id": request.case_id, "label": verdict.label,
                                "judged_by": verdict.judged_by, "reason": verdict.reason,
-                               "cost_usd": verdict.cost_usd,
+                               "cost_usd": verdict.cost_usd, "model": config.model,
+                               "temperature": config.temperature,
                                "prompt_sha256": prompt_sha256()}, ensure_ascii=False) + "\n")
 
 

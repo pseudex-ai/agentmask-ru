@@ -1,0 +1,114 @@
+== wave1/fix1: done 7, not done 0
+   Q: FIX-2 (F2.9), the shape I chose for `SideBySide.excluded_observations`, since one field had to cover the two lines `render` prints from `parts.half`: a tuple of "case_id|repeat (reason)", where a HOLE carries `contracts.EXCLUDED_NO_HOPS` ("
+   Q: I deliberately did NOT add a `<run>.meta.json` reader to records.py, although F2.9 allows one: every records reader refuses a missing field by name, while `report.meta_of` must tolerate an absent file and let each caller print its own refus
+   Q: FIX-3 (F3.7): `reply_whole` is `stream_verdict(raw, vault)[1]` on a streaming case and "" otherwise (today `answer_leg` computes `whole` and throws it away); `turn_residual` is `JudgeOutcome.turn_residual`, which is known only after `judge_
+   Q: F4.14 wording: I applied «`build` proves it (`mock.render_problems`) and `toolresult_masked` scores it» verbatim in spirit to `ReturnExpectation`, where it is exactly right. For `ForcedError` I could not: `toolresult_masked`'s denominator i
+== wave1/fix4: done 6, not done 0
+   Q: contracts.py, GENERATOR_A_BEHAVIOURS (BLOCKING NOTHING, but the constant now lies). R-50 made `single` an AUTHORED family and it is in `PLAN_A`; the constant still lists six. EXACT PROPOSAL — replace lines 195-200 with:
+
+GENERATOR_A_BEHAVIO
+   Q: contracts.py, F4.14/F4.6 — no change needed. I re-read both docstrings: `ReturnExpectation` already says «NOTHING AT RUN TIME ASSERTS THAT: `build` proves it (`mock.render_problems` — V02 on the form, V03 on the items, V04 on the IN/tool ho
+   Q: metrics.py / revise.py — TWO FOLDS FOR «THE SAME VALUE», and the corpus's is the stricter one. `metrics.role_matches` compares PHONE on the LAST 10 digits, so «+79097723484» (what the result printed) and «9097723484» (what `expected_leaf_va
+   Q: contracts.BEHAVIOUR_SHARES — K02's share arm is RELATIVE and no rule scales with the corpus. `retry_same_tool` and `memory_anaphora` sat exactly on their floor of 120; round 2 added 142 authored cases (R-49's chain top-up + R-50's `single`)
+== wave2/fix2: done 4, not done 0
+   Q: F2.11 closure, for the architect: `report.gate`'s separation comparison is deleted and `report.py` no longer reads `contracts.FIXTURE_MIN_SEPARATION`. ONE reader remains before R-55's deletion can land — `bench/agentpii5/test_fixtures.py:77
+   Q: Answer to wave 1's open question on the shape of `SideBySide.excluded_observations`: ONE field is enough, do not split it. I read the two halves back with `report._holes` / `report._stopped`, which test the row's suffix against `contracts.E
+   Q: Confirmed wave 1's other choice: no `RunMeta` reader in `records.py`. `report.meta_of` takes the NAME from `records.run_file(..., "<run>.meta.json")` and reads the body with `json`, because the file's absence is legitimate and each caller r
+   Q: For FIX-3, so the wave-2 halves do not disagree: the report now DEMANDS both `judge_cost_usd` and `turn_residual` on EVERY row of `<run>.triples.jsonl` (`records.triple_totals_from_json`), including a `status: refused` one — a missing key i
+== wave2/fix3: done 7, not done 0
+   Q: TEMPERATURE, THE HONEST LIMIT (R-56). The transport cannot take one: `ClaudeAgentOptions` has no `temperature` field (checked field by field on the installed SDK) and the Claude Code CLI has no such flag (`claude --help`). I therefore made 
+   Q: FOR FIX-1 (contracts.py): the calibration stamp should carry the temperature it certifies — proposal: `CalibrationStamp` gains `temperature: float` («температура, при которой судили: штамп заверяет ПРИБОР, а прибор без записанной температур
+   Q: FOR FIX-1 (contracts.py, `ArmRunV5.turn_residual` wording): the docstring says «how many of the agent's EARLIER turns still carried a minted substitute», but the number comes from `judge.masked_dialogue` → `mask_residual_turns`, which walks
+   Q: FOR FIX-2 (report.py): `reply_whole` now exists on every streaming record, and nothing reads it. The natural consumer is the `stream_fidelity` line — printing, for the cases where it fires, the two LENGTHS (never the values, the same rule `
+
+===== THE METRICS AND THE OBSERVER CAN LIE — observe.py, metrics.p
+  closed: 25 | still_open: 5 | new: {'blocker': 4, 'major': 2, 'minor': 3}
+   STILL OPEN F1.7 — «`toolresult_masked` (and `rag_masked`, `doc_masked`) denominator is «results the mock happened to tag». Derive it from the case's declared `returns[].result_item_ids`» : The order was applied to `toolresult_masked` ONLY. `rag_masked` (metrics.py:854) still builds its population from `record.spans_real` through `_rag_chunks` (metrics.py:830) and does `if not spans: continue`, so a chunk the case DECLARES in `case.rag.chunk_ids`
+   STILL OPEN F1.3 second clause — «add `unmasked` to `contracts.HOP_STATUSES`; records round-trips it; every metric that reads OUT hops treats `unmasked` as a MISS in the denominator, never a hit, never dropped» : The status exists and round-trips, but the clause is enforced nowhere. Of the 17 metrics with fixtures, `form_hOUT` is the ONLY one whose fixtures contain a hop with status `unmasked`. So each other metric's reading of the new status is unpinned, and the readi
+   STILL OPEN F1.15 — «Do the same audit for every other name in `PUBLIC_METRIC_NAMES`: a MetricSpec whose wording describes one quantity while the code measures another is a finding; fix the wording to the code» : `rewrite_ratio_v5` and `shared_block_answer` were renamed and their specs made honest, but `end_to_end` was not audited. Its docstring (metrics.py:376-380) states «including the ones the gateway never masked and the ones the agent never wrote. A passthrough sc
+   STILL OPEN F1.18 — «OUT/tool_arg `residual` is read from the engine's own `call.residual`. Decide it in the observer …; the engine's flag may be PRINTED BESIDE IT, never be the verdict» : The first half is done (`_out_status`, observe.py:592, decides from the written/restored leaf). The second half is not: `observe.engine_residual` (observe.py:307) is defined and called by nothing in the package, while its own docstring says «`_out_status` deci
+   STILL OPEN F1.13 — «a fixture per named clause … the taxonomy table must be able to fail» : `doc_extracted`'s adversarial («the real value of another row», fixtures.py:1104-1121) cannot separate «did THIS item's value arrive» from «did A value of the case arrive»: the wrong row's person (`OTHER_NAME`) is not among `case.base.pii`, so both readings pr
+   [blocker] A derived form of a substitute (transliteration, initials) is `unmasked` — so `residual`, the critical-defect  @ observe.py:592
+   [blocker] The form comparator has a floor no gateway can reach: `name_order` returns the non-abstaining «other» and `nam @ form.py:217
+   [blocker] `answer_real` cannot be earned: 93.9% of CORRECT declined answers are scored wrong — the whole-canonical compa @ metrics.py:608
+   [blocker] `doc_masked` prints 100% clean on a document whose every real value reached the model; `rag_masked` empties it @ metrics.py:918
+   [major] `leak` scores a leaked value as protected on every memory hop: `carried_substitute` accepts a substitute the m @ observe.py:571
+   [major] The refuse-to-report gate's own evidence is one degenerate mutation; a real mutation sweep finds 5 of 20 plaus @ report.py:910
+  held: "The round-1 metric fixes are genuinely pinned, and that is the strongest thing I found. A twenty-mutant sweep that reverts each order to the implementation it replaced (metrics-r2/mutate.py, mutate2.py) is refused by the gate in fifteen cases — leak counting `absent` as protection, residual counting `absent` as clean, form_hOUT counting or dropping `unmasked`, toolresult_masked keyed on what the 
+===== THE CORPUS AND ITS GROUND TRUTH (schema.py, revise.py, build
+  closed: 11 | still_open: 3 | new: {'blocker': 1, 'major': 3, 'minor': 5}
+   STILL OPEN F4.5 — «kb_search must return the case's chunks for any query that carries the customer's query_item_ids values, matching by seeded identity, not by a topic word» : Only the k-PADDING half landed (`mock._retrieved`, mock.py:1085). MEMBERSHIP is still decided by `_ranked` (mock.py:993), a word-overlap substring test over the record's joined field values, and it returns () for a query that matched nothing — so `_kb_search` 
+   STILL OPEN F4.2 — «a transition is declared only when the argument value the OUT hop expects is a value the source result actually renders (F4.1's proof gives that)» : The build-time proof gives no such thing. `render_problems`' V04 (mock.py:1603-1611) checks only that the source result carries SOME tagged span for the item id; nothing compares the rendered text with what the target leaf expects, and nothing checks `hop.path
+   STILL OPEN F4.7 — «`user_in_loop` declares a `MemorySpec` for the value shown at `show_turn` and recalled at `confirm_turn` so `memory_consistency` has a population there» : Applied only to the REVISED half. `revise._memory_specs` (revise.py:319) adds the spec to the 45 `long_clinic-*` cases; the AUTHORED family `scenarios5/user_in_loop.py` never calls `builder.remember(...)` (the only caller in scenarios5/ is memory_anaphora.py:1
+   [blocker] chain_value's denominator is 22.4% free-text leaves where `produced` is the WHOLE prose field, judged byte-exa @ metrics.py:219
+   [major] user_in_loop's `patient.first_name` is sourced from the SURNAME hop: 10 cross-item transitions, 8 unhittable b @ user_in_loop.py:141
+   [major] 40 of 85 user_in_loop cases declare IN/memory hops and no MemorySpec, so the memory lines have no population t @ user_in_loop.py:136
+   [major] `returned_as_item` re-guesses the chain's ground truth with `parts_of` instead of reading the source hop's cor @ metrics.py:160
+  held: "The build-time proof itself is real and I could not smuggle past it: it seeds a real `BackendV5`, drives the declared calls with the case's own OUT-hop values and reads `CallLog.result_spans` back — a phantom `result_item_ids`, a wrong `return_form`, an IN hop moved to another call and a cross-identity `source_hop` were all refused, each with its own negative test already in the suite. The build 
+===== THE HARNESS, THE JUDGE AND THE STREAMING LEG (harness.py, ju
+  closed: 9 | still_open: 1 | new: {'blocker': 2, 'major': 5, 'minor': 2}
+   STILL OPEN F3.2 — «(whole or ≥ MIN_PIECE piece — the same scan as F1.4)» : The marker path works, but the scan is NOT F1.4's. F1.4/the observer split a value under its OWN type (`observe.pieces_of`, observe.py:155-160) and subtract `metrics.GRAMMAR_WORDS` (metrics.py:89-91, built from GENERIC_STEMS/ABBREVIATIONS/MARKER_WORDS) and `GE
+   [blocker] The entire restoration leg runs on the BASE vault while masking ran on the conversation VIEW — 33.8% of masked @ harness.py:463
+   [blocker] `masked_dialogue` masks the customer's OWN city and street type out of the customer's own message — `turn_resi @ judge.py:436
+   [major] The residual pre-gate refuses honest answers on a generic street word, a month name and half a city — a publis @ judge.py:344
+   [major] The «blind» calibration sheet shows the human the UNMASKED dialogue the judge never read — κ compares two rate @ calibration.py:501
+   [major] `BudgetExhausted` from the judge's reservation escapes `run_triple_v5`: the run dies and the triple's three pa @ harness.py:723
+   [major] The K calibration repeats mask their prompt with a NARROWER substitute list than the run did, so `repeat_disag @ calibration.py:573
+   [major] `--resume` with the default `--out` puts two run ids in one directory; every reader takes the alphabetically f @ harness.py:1034
+  held: "What held, under attack rather than by reading. (1) BLINDNESS OF THE JUDGE PROMPT. I minted substitutes through the real production path on 400+ corpus cases with `testkit.load_dev_bundle()`, hunted 25 GENUINE residuals (a minted substitute the engine's own restorer leaves standing) and grepped every built prompt under `assert_blind`'s own `_squeeze` for every minted substitute: zero hits, zero `
+
+VERIFIED:
+  [CONFIRMED -> major] STILL OPEN F1.7 — «`toolresult_masked` (and `rag_masked`, `doc_masked`) denominator is «results the 
+      CONFIRMED (with one half of the claim corrected). Order F1.7 (prototype/bench/agentpii5/FIXES.md:73-77) names three lines; only toolresult_masked was moved to the declaration. Nothing supersedes it: RULINGS.md R-01…R-56 never touch rag_mask
+  [refuted -> minor] STILL OPEN F1.3 second clause — «add `unmasked` to `contracts.HOP_STATUSES`; records round-trips it;
+      The central claim — «the clause is enforced nowhere» — is false, and I refuted it with a probe the finding never ran. Flipping one OUT hop from `observed` to `unmasked` in each metric's `one` fixture (scratch /Users/igor/.claude/jobs/4e5fce
+  [CONFIRMED -> minor] STILL OPEN F1.15 — «Do the same audit for every other name in `PUBLIC_METRIC_NAMES`: a MetricSpec wh
+      CONFIRMED by my own reproduction through the production observer (/Users/igor/.claude/jobs/4e5fce9b/tmp/e2e-r2/e2e_passthrough.py): on a run where the tool received the real value of every declared OUT/tool_arg leaf, a passthrough gateway (
+  [refuted -> not_a_defect] STILL OPEN F1.18 — «OUT/tool_arg `residual` is read from the engine's own `call.residual`. Decide it
+      REFUTED as titled — F1.18 is closed, not still open. The order (FIXES.md:136-139) has one binding clause and one permissive one: «Decide it in the observer from the written leaf vs the minted substitutes …; the engine's flag MAY be printed 
+  [refuted -> not_a_defect] STILL OPEN F1.13 — «a fixture per named clause … the taxonomy table must be able to fail»
+      REFUTED. The reproduction reproduces (mutate2.py: doc_extracted mutant GREEN) and the facts hold — fixtures.py:1104-1121 uses OTHER_NAME «Смирнова Анна», which is not among the case items (p1 NAME, p2 PHONE; _doc_case at fixtures.py:1053-10
+  [CONFIRMED -> major] A derived form of a substitute (transliteration, initials) is `unmasked` — so `residual`, the critic
+      CONFIRMED by independent reproduction. (1) observe.py:182 `needles_of` emits only whole-surface / word-stem / digit-signature / date-fold needles, so a transliterated or squeezed-initials rendering of a minted substitute matches nothing; ob
+  [CONFIRMED -> blocker] The form comparator has a floor no gateway can reach: `name_order` returns the non-abstaining «other
+      Reproduced independently and it survives refutation. form_match (form.py:790) is fed two DIFFERENT lexemes on the production path — observe.py:614 _out_call passes produced=restored (real value), reference=written (substitute), and observe.
+  [CONFIRMED -> blocker] `answer_real` cannot be earned: 93.9% of CORRECT declined answers are scored wrong — the whole-canon
+      CONFIRMED with corrections to its magnitudes. `_answer_hop_right` (prototype/bench/agentpii5/metrics.py:608) compares the produced ANSWER SPAN against the item's WHOLE canonical via `value_repaired`; `leaf_spec` (metrics.py:131) returns Non
+  [CONFIRMED -> major] `doc_masked` prints 100% clean on a document whose every real value reached the model; `rag_masked` 
+      CONFIRMED as an unexecuted half of an explicit order, with the claimed live frequency REFUTED.
+
+Reproduced myself (cd /Users/igor/Projects/Obscura/prototype && source .venv/bin/activate && PYTHONPATH=. python3 /Users/igor/.claude/jobs/4e5fc
+  [CONFIRMED -> minor] `leak` scores a leaked value as protected on every memory hop: `carried_substitute` accepts a substi
+      Code defect CONFIRMED, claimed impact REFUTED. Reproduced independently (scratch /Users/igor/.claude/jobs/4e5fce9b/tmp/verify-memleak-r2/own.py, hand-built records, no model/network, nothing under prototype/ edited): _in_memory (observe.py:
+  [CONFIRMED -> major] The refuse-to-report gate's own evidence is one degenerate mutation; a real mutation sweep finds 5 o
+      CONFIRMED, with two corrections that change how it should be written up.
+
+WHAT I REPRODUCED
+`selftest` (/Users/igor/Projects/Obscura/prototype/bench/agentpii5/report.py:910-926) breaks all 29 metrics with one constant — `lambda _observation
+  [CONFIRMED -> major] STILL OPEN F4.5 — «kb_search must return the case's chunks for any query that carries the customer's
+      CONFIRMED — order F4.5 (FIXES.md:267-272, «matching by seeded identity, not by a topic word») is only half landed. Only the k-padding half exists (mock.py:1085 `_retrieved`); MEMBERSHIP is still mock.py:993 `_ranked`, a lowercased `word in 
+
+UNVERIFIED TAIL: 14
+  [major] STILL OPEN F4.2 — «a transition is declared only when the argument value the OUT hop expects is a value the so
+  [major] STILL OPEN F4.7 — «`user_in_loop` declares a `MemorySpec` for the value shown at `show_turn` and recalled at `
+  [blocker] chain_value's denominator is 22.4% free-text leaves where `produced` is the WHOLE prose field, judged byte-exa
+  [major] user_in_loop's `patient.first_name` is sourced from the SURNAME hop: 10 cross-item transitions, 8 unhittable b
+  [major] 40 of 85 user_in_loop cases declare IN/memory hops and no MemorySpec, so the memory lines have no population t
+  [major] `returned_as_item` re-guesses the chain's ground truth with `parts_of` instead of reading the source hop's cor
+  [major] STILL OPEN F3.2 — «(whole or ≥ MIN_PIECE piece — the same scan as F1.4)»
+  [blocker] The entire restoration leg runs on the BASE vault while masking ran on the conversation VIEW — 33.8% of masked
+  [blocker] `masked_dialogue` masks the customer's OWN city and street type out of the customer's own message — `turn_resi
+  [major] The residual pre-gate refuses honest answers on a generic street word, a month name and half a city — a publis
+  [major] The «blind» calibration sheet shows the human the UNMASKED dialogue the judge never read — κ compares two rate
+  [major] `BudgetExhausted` from the judge's reservation escapes `run_triple_v5`: the run dies and the triple's three pa
+  [major] The K calibration repeats mask their prompt with a NARROWER substitute list than the run did, so `repeat_disag
+  [major] `--resume` with the default `--out` puts two run ids in one directory; every reader takes the alphabetically f
+
+SPEC GAPS: {'partial': 6, 'evidenced': 9, 'missing': 1}
+  [partial] §8.2 table / C-041, C-137 §8.2 the SHARE column of the case table (single 15%, chain 15%, retry 10%, memory 10%, par — MOVED BUT NOT CLOSED. R-50/F4.11 landed the authored `single` family (scenarios5/single.py, 100 cases, pinned by test_generator_a.py:133 `_single_problems` and the negative at test_generator_a.py:566 
+  [partial] §8.2 registers / C-148 §8.2 registers: voice ≈45%, chat 25%, sloppy 15%, clean 10% — UNCHANGED, and both divergences stay knowing rather than hidden: chat is 30% not the spec's 25% (R-09 folded the unassigned 5% remainder), and the 10% clean target holds only over the 902 v5-AUTHORED 
+  [partial] §8.3 / C-168 §8.3 «Переносимые публичные — с их знаменателями как в score.py» — MOSTLY CLOSED, ONE NAME LEFT. The deliberate widenings are now stated in the spec text itself — `leak`/`coverage` say «IN hops shown to the model (observed ∪ leaked)», `round_trip`/`end_to_end` say «l
+  [partial] §4.2, §6 Д3, wiki/BENCHMARK.md §5 Д3 / C-064 Д3 / §4.2 coverage is element-wise — a surviving PIECE is a leak the leak line calls a suc — UNCHANGED — no round-1 or round-2 order touched it. On the branch that carries most of the corpus (build --check: user 1714 and memory 166 IN hops against tool 1345 and document 122), `coverage` asks 
+  [partial] §8.2 header / C-133 §8.2 corpus size target ≈1200–1500 — UNCHANGED IN SUBSTANCE, now explicitly ruled. The band was widened past the spec's stated ceiling so the authored `single` family and the provable `sequential_chain` top-up would fit without trimming 
+  [missing] §8.5 §8.5 «Пере-калибровка при смене модели судьи, промпта или ≥ 20% корпуса» — NEW, AND THE THIRD CLAUSE OF THE RULE IS THE ONE NOBODY CAN CHECK. The model and prompt clauses are enforced on the real path (report.py:426 and :431, against contracts.JUDGE_MODEL and the run's own <
+  [partial] §8.3 / §4.4 «инструмент, который не может провалиться, — не инструмент» C-168's test must be able to FAIL on a public denominator that drifted — NEW, and it is why the §8.3 residue above stayed invisible. The test's docstring says «every public total asserted against the population score.py names», and for seven of the nine lines it separates.

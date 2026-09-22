@@ -236,7 +236,8 @@ def _v5_block(run: ArmRunV5) -> dict[str, object]:
             "mentions": [mention_to_json(one) for one in run.mentions],
             "turn_replies": list(run.turn_replies),
             "call_turns": list(run.call_turns), "request_count": run.request_count,
-            "stream_mismatch": run.stream_mismatch}
+            "stream_mismatch": run.stream_mismatch, "reply_whole": run.reply_whole,
+            "turn_residual": run.turn_residual}
 
 
 def _scrubbed_v5_block(block: dict[str, object]) -> dict[str, object]:
@@ -255,6 +256,11 @@ def _scrubbed_v5_block(block: dict[str, object]) -> dict[str, object]:
     # `--report` reads it to say how far a run got; the text goes. Dropping the
     # list to `[]` would have said the agent never spoke.
     out["turn_replies"] = [SCRUB_MARKER for _ in _rows(block, "turn_replies", "ArmRunV5")]
+    # `reply_whole` is the agent's own text and goes the way `reply_raw` does;
+    # `turn_residual` is a COUNT of turns that held a substitute and stays, so
+    # a scrubbed run still answers «did a fake stand in an earlier turn» — the
+    # question `residual` asks of it, and one that needs no corpus value.
+    out["reply_whole"] = SCRUB_MARKER
     return out
 
 
@@ -289,7 +295,9 @@ def arm_v5_from_record(record: dict[str, object]) -> ArmRunV5:
         turn_replies=tuple(str(reply) for reply in replies),
         call_turns=tuple(int(turn) for turn in turns),
         request_count=_whole(block, "request_count", kind),
-        stream_mismatch=_flag(block, "stream_mismatch", kind))
+        stream_mismatch=_flag(block, "stream_mismatch", kind),
+        reply_whole=_text(block, "reply_whole", kind),
+        turn_residual=_whole(block, "turn_residual", kind))
 
 
 def _as_object(value: object, kind: str, key: str) -> dict[str, object]:
@@ -416,6 +424,54 @@ def calibration_stamp_from_json(row: dict[str, object]) -> CalibrationStamp:
         kappa=_amount(row, "kappa", kind), per_type_kappa=kappas,
         repeat_disagreement=_amount(row, "repeat_disagreement", kind),
         calibrated=_flag(row, "calibrated", kind))
+
+
+# --- the triple row ------------------------------------------------------------
+
+TRIPLE_KIND: str = "triple"
+
+
+@dataclass(frozen=True)
+class TripleTotals:
+    """What a `<run>.triples.jsonl` row carries beyond v4's own fields.
+
+    Two numbers, one writer, one reader, because both were being read with
+    `row.get(key) or 0`: `judge_cost_usd` is what the JUDGE drew from the
+    shared ledger for this triple (the report prints it apart from the arms'
+    share, and a triple file copied from a run that never wrote it read as a
+    free judge), and `turn_residual` is how many of the agent's earlier turns
+    still carried a minted substitute when the judge prompt was built. A
+    default of zero for either is the v4 defect class this benchmark exists
+    to avoid — a number that means «nothing happened» and «nobody wrote it
+    down» at once.
+    """
+
+    judge_cost_usd: float
+    turn_residual: int
+
+
+def triple_totals_to_json(totals: TripleTotals) -> dict[str, object]:
+    """The two keys, ready to be merged into the triple row the harness builds.
+
+    Rounded where the ledger rounds, so the file and the ledger cannot
+    disagree by a cent.
+    """
+    return {"judge_cost_usd": round(totals.judge_cost_usd, 6),
+            "turn_residual": totals.turn_residual}
+
+
+def triple_totals_from_json(row: dict[str, object]) -> TripleTotals:
+    """The two numbers off a triple row, refused by name when either is missing
+    or is not a number. Negative is refused too: a judge that earned money and
+    a run whose earlier turns held minus two substitutes are both writer bugs,
+    and a report that printed them would be arguing with its own arithmetic."""
+    cost = _amount(row, "judge_cost_usd", TRIPLE_KIND)
+    residual = _whole(row, "turn_residual", TRIPLE_KIND)
+    if cost < 0.0:
+        raise RecordError(f"{TRIPLE_KIND}.judge_cost_usd: a judge cannot spend {cost}")
+    if residual < 0:
+        raise RecordError(f"{TRIPLE_KIND}.turn_residual: {residual} turns cannot hold a substitute")
+    return TripleTotals(judge_cost_usd=cost, turn_residual=residual)
 
 
 # --- §8 the run directory -----------------------------------------------------

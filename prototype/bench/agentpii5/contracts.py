@@ -221,11 +221,13 @@ ANAPHORA_KINDS: tuple[str, ...] = ("none", "pronoun", "same_address", "same_phon
 # and a band of zero would refuse every real build while a band of ten points
 # would let a family vanish. Three points is where a 120-case family can still
 # be missed by at most a third of its MDE budget.
-# Spec §8.2 says «≈ 1 200–1 500»; the kept 834 plus the table's per-family
-# floors (BEHAVIOUR_FLOORS below) add to ≥ 1 514, so the upper end is 1 700 —
-# recorded as a deviation. The band is a sanity check on authoring effort; the
-# floors and MDEs are what bound the claim.
-CORPUS_SIZE_BAND_V5: tuple[int, int] = (1200, 1700)
+# Spec §8.2 says «≈ 1 200–1 500»; the kept 834 revised cases plus the table's
+# per-family floors (BEHAVIOUR_FLOORS below) add to ≥ 1 514, and R-51 widens the
+# upper end to 1 800 so the authored `single` family and the provable
+# `sequential_chain` top-up fit without trimming a family: K01 is a sanity bound
+# on the corpus, never a target families are cut to. The floors and MDEs are
+# what bound the claim.
+CORPUS_SIZE_BAND_V5: tuple[int, int] = (1200, 1800)
 # ±10pp per family needs 120 (TIER_SIZES["small"]); the §8.2 table gives some
 # families fewer (same_tool_other_target 50). The FLOORS are the table's own
 # counts, no ceiling — `single` and `sequential_chain` exceed theirs because
@@ -273,9 +275,13 @@ class ReturnExpectation:
     """What ONE call of a tool returns in this case, so the IN/tool hops can be
     declared and the mock knows which return form to render. `result_item_ids`
     are the `PiiItem`s (seed locus) the result carries; the mock renders exactly
-    those, in `return_form`, and the harness asserts the rendered text contains
-    every one of them — a result that silently dropped a value would score the
-    gateway on a hop that never happened."""
+    those, in `return_form`. NOTHING AT RUN TIME ASSERTS THAT: `build` proves it
+    (`mock.render_problems` — V02 on the form, V03 on the items, V04 on the
+    IN/tool hop that reads them) and `toolresult_masked` scores it, whose
+    denominator is this declaration. The docstring used to promise an assertion
+    in the harness that no line of the harness made, and 42 % of the revised
+    half's IN/tool hops were crossings the mock never rendered — each one a hop
+    that would have scored as a gateway miss for ever."""
 
     tool_name: str
     call_ordinal: int
@@ -290,7 +296,11 @@ class ForcedError:
     `error_with_value` body that echoes `PiiItem.canonical` of `echo_item_id`
     — what the tool's parser accepted, never the spoken surface of a dictated
     number — (as the real API echoes the offending field), whatever the
-    arguments; `retry_form` compares against that canonical. The
+    arguments. `build` proves the echo renders (`mock.render_problems` V04 on
+    the IN hop `retry_same_tool` puts on `error.message`) and the IN-hop lines
+    (`leak`, `form_hIN`) score it; `retry_form` asks the OTHER question —
+    whether every attempt of the retry wore the agent's own form — and compares
+    no canonical, which is what this docstring used to promise. The
     next call of that tool is parsed normally. `code` is the documented rule
     name the message carries. Without this the retry depends on the agent
     making a mistake, and a case whose provocation is a coin toss has an
@@ -1102,6 +1112,20 @@ class ArmRunV5:
     # product defect of the streaming leg, counted apart, never folded into
     # the form lines (spec §3.7). False for non-streaming cases.
     stream_mismatch: bool
+    # THE OTHER HALF OF `stream_mismatch` (R-47). The run is SCORED on the
+    # chunked restoration — the text the streaming customer actually reads —
+    # and this is the whole-text restoration of the same reply, kept beside it
+    # so `stream_fidelity` names a disagreement a reader can then look at. ""
+    # on a non-streaming case: there the two restorations are one string, and
+    # storing it twice would invite a reader to compare a field with itself.
+    reply_whole: str
+    # How many of the agent's EARLIER turns still carried a minted substitute
+    # when the judge's prompt was built (`harness.masked_dialogue`) — the
+    # defect `residual` counts in the answer, one turn sooner. It lived on the
+    # triple row alone, where no metric could read it, so a substitute the
+    # customer saw in turn 2 and not in the final answer was counted nowhere;
+    # `residual` now takes `> 0` as a miss of the observation.
+    turn_residual: int
 
 
 @dataclass(frozen=True)
@@ -1372,7 +1396,28 @@ class SideBySide:
     v5_by_axis: dict[str, dict[str, dict[str, Line]]]   # metric → axis → bucket → Line
     v5_refused: dict[str, str]
     judge_labels: dict[str, int]     # JUDGE_LABELS → count over answers with PII
+    # Verdicts the DETERMINISTIC pre-gate produced (`judged_by ==
+    # "residual_gate"`), counted apart from `judge_labels`: folding them in
+    # credits the model with verdicts it never gave and measures the gate's
+    # agreement with itself. Printed on the judge line of the header.
+    judge_pregate: int
+    # Every (case, repeat) the v5 population LOST, as "case_id|repeat
+    # (reason)". Two reasons and they are not the same fact: a HOLE
+    # (`EXCLUDED_NO_HOPS` — the case declares hops, the arm finished, and no
+    # hop row is on disk) makes `incomplete` True, because `residual` once
+    # printed 1/1 over ten observations whose hops it had never read; an arm
+    # that stopped carries its own termination and does not, because v4's own
+    # block already prints it under «исключено». The report reads them HERE
+    # rather than from the half it assembled from, so a `SideBySide` that has
+    # been written to a file still names its own holes.
+    excluded_observations: tuple[str, ...]
     incomplete: bool
+
+
+# The reason word an `excluded_observations` row carries when the observation
+# is a HOLE rather than an arm that stopped. A constant, so the writer and any
+# reader cannot disagree about which half of the list makes a report НЕПОЛНЫЙ.
+EXCLUDED_NO_HOPS: str = "нет хопов"
 
 
 # --- §8 run layout: what a v5 run directory holds ---------------------------------------
@@ -1393,6 +1438,7 @@ RUN_FILES: dict[str, str] = {
     "<run>.spend.tsv": "the SpendLedger file (agent + judge), v4 format",
     "<run>.report.txt": "the side-by-side (SideBySide rendered), header first",
     "<run>.gate.json": "GateVerdict per metric — the proof the report was allowed to print",
+    "<run>.meta.json": "what the run itself was: {run_id, benchmark, model, judge_model, tier, repeats, digest, ceiling_usd, spent_usd, prompt_sha256, finished} — written by `harness.main`. The report needs two of them and can get them nowhere else: the CEILING the run was given (a cost line without it says «spent $12 of an unknown ceiling») and the `prompt_sha256` a calibration stamp must match, because a calibration of another prompt certifies another instrument. A run that wrote no meta file is read as a run whose ceiling and prompt are unknown — never as a free run under the right prompt",
 }
 CALIBRATION_FILE: str = "bench/agentpii5/calibration/<judge_model>.<prompt_sha256[:12]>.jsonl"
 

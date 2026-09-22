@@ -312,6 +312,31 @@ def test_r15_summary_acts() -> list[str]:
     return failures
 
 
+def test_acting_owners_come_from_contracts() -> list[str]:
+    """F4.13: R15's «the agent acted» owners are `contracts.ACTING_OUT_OWNERS`
+    itself, not a copy of it.
+
+    WHY IDENTITY AND NOT EQUALITY. `metrics._transitions` decides what a chain
+    is by the same tuple, and a local copy here would be equal on the day it was
+    written and one edit away from the corpus and the metric disagreeing about
+    which OUT hops are acts. Equality would pass over exactly that drift until
+    somebody changed one of the two.
+    """
+    problems: list[str] = []
+    if s.ACTING_OUT_OWNERS is not c.ACTING_OUT_OWNERS:
+        problems.append(f"schema restates the acting owners ({s.ACTING_OUT_OWNERS}) instead "
+                        f"of importing them from contracts ({c.ACTING_OUT_OWNERS})")
+    # THE NEGATIVE: a copy with the same contents, which equality would accept
+    # and this check must not. Built through a list because `tuple(x)` hands
+    # back `x` itself for a tuple — the copy has to be a real one for the
+    # demonstration to mean anything.
+    copy = tuple(list(c.ACTING_OUT_OWNERS))
+    if copy != c.ACTING_OUT_OWNERS or copy is c.ACTING_OUT_OWNERS:
+        problems.append("an equal copy of the owners could not be built, so this check "
+                        "was never shown telling a copy from the original")
+    return problems
+
+
 def test_r16() -> list[str]:
     missing = _expect(replace(VALID, behaviour="memory_anaphora"), "R16")
     said = VALID.hops[0].item_id
@@ -1043,7 +1068,8 @@ CHECKS: tuple[object, ...] = (
     test_r04, test_r04_turn, test_r05, test_r05_undeclared_return, test_r06, test_r07,
     test_r07_min_hops,
     test_r08, test_r08_ordinal, test_r09, test_r10, test_r10_two_slots, test_r11, test_r12,
-    test_r13, test_r14, test_r15, test_r15_summary_acts, test_r16, test_r17, test_r18,
+    test_r13, test_r14, test_r15, test_r15_summary_acts,
+    test_acting_owners_come_from_contracts, test_r16, test_r17, test_r18,
     test_r18_records_are_seed_records, test_r18_extracted_items_belong_to_those_records, test_r19,
     test_r19_reads_the_registry_when_it_exists, test_r20, test_r21, test_r21_the_other_way,
     test_synthetic_corpus_is_quiet, test_k01, test_k02_floor_not_ceiling, test_k03, test_k04,

@@ -620,6 +620,32 @@ def full_name(person: Person) -> str:
                                       person.patronymic[0]) if part)
 
 
+def stored_name(drawn: Drawn, ctx: Ctx) -> Rendered:
+    """A name as a BACKEND holds it: nominative, clean, undamaged.
+
+    NOT `common.name`, which renders in the CASE's register. A knowledge-base
+    note and a scanned form are written by the customer's own systems, not
+    dictated by the caller — a chunk carrying «иванов пётр» because the call was
+    `voice_raw` would measure the register twice and the backend never.
+
+    HERE RATHER THAN IN `plan_b` (R-25's rule, applied on its second caller).
+    Generator_b wrote it first; the `single` family of generator_a needs the same
+    notation, and a second copy would be a second opinion about how a backend
+    spells a name — the two halves of the corpus would then disagree about what
+    an IN/tool hop is measuring.
+    """
+    return pools.render_name(drawn.person, ("surname", "given"), "nom", "clean", "none",
+                             ctx.rng)
+
+
+def stored_phone(drawn: Drawn) -> Rendered:
+    """A phone as a backend COLUMN holds it: «+79164021187». The prose renders
+    it through `mock.PROSE_NOTATION` as «+7 (916) 402-11-87», and that
+    disagreement between the column and the page is the IN hop."""
+    value = f"+7{drawn.phone}"
+    return Rendered(value, value, False, {"digits": drawn.phone})
+
+
 def grouped_card(digits: str) -> str:
     """A card as a bank's own screen prints it: four groups of four — the
     notation the RESULT carries and no caller register produces."""

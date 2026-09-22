@@ -9,12 +9,19 @@ all four open it.
 
 THE IMPORTS OF THE FOUR MODULES SIT AT THE BOTTOM, and this is now the only
 file in the package that does it: `PLAN_B` must name the modules, and the four
-modules import `caller_card`, `find_the_caller`, `city_for` and the stored-form
-renderers BY NAME from here — helpers that are this half's and belong in no
-shared file. One of the two edges has to close after the other. `plan_a` lost
-its copy of the exception when its helpers moved to `common` (R-25); these will
-follow when a second consumer for them exists, and not before, because moving
-a helper with one caller into a shared module buys nothing.
+modules import `caller_card`, `find_the_caller`, `city_for`, `stored_street` and
+`plain_column` BY NAME from here — helpers that are still this half's alone. One
+of the two edges has to close after the other. `plan_a` lost its copy of the
+exception when its helpers moved to `common` (R-25); these will follow when a
+second consumer for them exists, and not before, because moving a helper with
+one caller into a shared module buys nothing.
+
+`stored_name` AND `stored_phone` HAVE MOVED (R-25's rule, on their second
+caller). generator_a's `single` family needed the same «as a backend holds it»
+notation, and a second copy would be a second opinion about how a backend spells
+a name — the two halves of the corpus would then disagree about what an IN/tool
+hop measures. They live in `common` and are re-exported here, so the two family
+modules that call them did not move with them.
 
 WHY THE HOP CONSTRUCTORS COME FROM `common`. `user_hop`, `tool_hop`, `arg_hop`
 and `answer_hop` are the same four moves in both halves of the corpus, and a
@@ -34,7 +41,8 @@ from bench.agentpii5.contracts import Hop, ReturnExpectation
 from bench.agentpii5.scenarios5 import common as c
 from bench.agentpii5.scenarios5.common import CaseBuilderV5
 from bench.agentpii5.scenarios5.common import (  # noqa: F401 - re-exported for the families
-    answer_hop, arg_hop, extra_people, minted, told, tool_hop, user_hop)
+    answer_hop, arg_hop, extra_people, minted, stored_name, stored_phone, told, tool_hop,
+    user_hop)
 
 # How many cases each family of this half builds — the §8.2 floors minus what
 # the revised v4 corpus already supplies. `user_in_loop` is the only one topped
@@ -42,7 +50,13 @@ from bench.agentpii5.scenarios5.common import (  # noqa: F401 - re-exported for 
 # 85 exactly. The other three are families v4 never had, so their whole count is
 # authored here.
 LOOP_COUNT: int = 40
-MEMORY_COUNT: int = 120
+# SIX MORE THAN THE FLOOR, and the six are K02's share arm rather than a wish:
+# the family sat exactly on 120, round 2 added 142 authored cases to the corpus
+# (R-49's chain top-up and R-50's `single` family), and 120 of 1 736 is 6.9%
+# against a floor of 7%. The §8.2 table is a floor with no ceiling, so the family
+# keeps its share instead of the corpus being kept small for a number written
+# before the two rulings. `plan_a.RETRY_COUNT` moved for the same reason.
+MEMORY_COUNT: int = 126
 RAG_COUNT: int = 100
 DOCUMENT_COUNT: int = 100
 
@@ -150,26 +164,6 @@ def conversation_id(behaviour: str, index: int) -> str:
 
 def city_for(ctx: c.Ctx) -> str:
     return ctx.rng.choice(list(pools.CORPUS_CITIES))
-
-
-def stored_name(drawn: c.Drawn, ctx: c.Ctx) -> pools.Rendered:
-    """A name as a BACKEND holds it: nominative, clean, undamaged.
-
-    NOT `common.name`, which renders in the CASE's register. A knowledge-base
-    note and a scanned form are written by the customer's own systems, not
-    dictated by the caller — a chunk carrying «иванов пётр» because the call was
-    `voice_raw` would measure the register twice and the backend never.
-    """
-    return pools.render_name(drawn.person, ("surname", "given"), "nom", "clean", "none",
-                             ctx.rng)
-
-
-def stored_phone(drawn: c.Drawn) -> pools.Rendered:
-    """A phone as a backend COLUMN holds it: «+79164021187». The prose renders
-    it through `mock.PROSE_NOTATION` as «+7 (916) 402-11-87», and that
-    disagreement between the column and the page is the IN hop."""
-    value = f"+7{drawn.phone}"
-    return pools.Rendered(value, value, False, {"digits": drawn.phone})
 
 
 def stored_street(drawn: c.Drawn) -> pools.Rendered:

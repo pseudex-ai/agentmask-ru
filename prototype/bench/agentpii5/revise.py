@@ -53,7 +53,7 @@ nothing there searches either.
 NOTHING HERE IMPORTS `pseudex`.
 """
 import json
-from collections.abc import Sequence
+from collections.abc import Container, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -73,6 +73,13 @@ V4_CORPUS: Path = Path(__file__).resolve().parent.parent / "agentpii4" / "corpus
 # where most speech cases live; one in three of ~250 eligible puts the count
 # comfortably over without making streaming the default reading of a voice case.
 STREAMING_EVERY: int = 3
+# Why a case left `sequential_chain` under R-49. Named rather than written into
+# the branch because `build.py --check` counts the downgrades BY REASON, and
+# «no argument is fed by another tool's result» (v4 offered no second tool that
+# reads anything) and this one (the only hand-over was a write of a value the
+# customer had just stated) are two different facts about the corpus.
+MUTATING_REASON: str = ("the only hand-over fed a MUTATING tool, whose argument is the "
+                        "value the customer stated (R-49)")
 
 
 @dataclass(frozen=True)
@@ -170,7 +177,8 @@ def _finish(case: Case, reads: dict[str, list[tuple[PiiItem, str]]], forms: dict
     """The proven declaration plus the behaviour it can carry."""
     declared = _declare(case, reads, forms, rendered, streaming)
     behaviour, downgraded, reason, pick, branch, loop = _behaviour_of(
-        case, declared.behaviour, declared.hops, declared.loop, reads)
+        case, declared.behaviour, declared.hops, declared.loop, reads,
+        _said_over_chained(case, reads))
     return (CaseV5(base=declared.base, behaviour=behaviour, hops=declared.hops,
                    returns=declared.returns, forced=(), memory=declared.memory,
                    pick=pick, branch=branch, loop=loop if behaviour == "user_in_loop" else None,
@@ -435,10 +443,11 @@ def _arguments(case: Case, in_hop: dict[str, int],
     return out
 
 
-def _argument_item(case: Case, field: FieldSpec, in_hop: dict[str, int],
+def _argument_item(case: Case, field: FieldSpec, in_hop: Container[str],
                    read_by: dict[str, str], tool: str) -> PiiItem | None:
     """The value that fills one leaf: a result of a DIFFERENT tool if the case
-    has one for the primary identity, else what was said.
+    has one for the primary identity, else what was said — and the other way
+    round on a MUTATING tool.
 
     THE LEAF'S ROLE DECIDES, NOT ONLY ITS TYPE. `expected_leaf_value` is "" for
     an item that carries no part for the role, and such an item cannot be the
@@ -451,18 +460,90 @@ def _argument_item(case: Case, field: FieldSpec, in_hop: dict[str, int],
     `lookup_list` families and the same person's other address in others, so the
     only safe reading is the exact one, plus the suffixes the primary itself
     carries.
+
+    `said` WINS ON A MUTATING TOOL (R-49). A write is what the customer asked
+    for: «запишите новый телефон …» puts the value of the MESSAGE into
+    `crm_upsert_contact.contact.phone`, while the earlier lookup returned the
+    OLD one. Declaring the update's argument as fed by that result claims a
+    hand-over the case contradicts — the agent that does what the customer asked
+    would miss `chain_value` on every one of those hops, and the agent that
+    satisfied it would have written the stale value back into the record. A read
+    keeps the chain preference: there the result IS where the argument comes
+    from, which is what `sequential_chain` measures.
     """
     primary = case.expects.primary_identity
-    candidates = [item for item in case.pii
-                  if item.type == field.pii_type and item.id in in_hop
-                  and _same_person(case, item.identity, primary)
-                  and expected_leaf_value(item, field)]
-    chained = [item for item in candidates
-               if read_by.get(item.id, "") not in ("", tool)]
+    candidates = _candidates(case, field, in_hop, primary)
+    said = _said_of(candidates)
+    if said and _is_mutating(tool):
+        return said[0]
+    chained = _chained_of(candidates, read_by, tool)
     if chained:
         return chained[0]
-    said = [item for item in candidates if item.where.kind == "message"]
     return said[0] if said else None
+
+
+def _candidates(case: Case, field: FieldSpec, in_hop: Container[str],
+                primary: str) -> list[PiiItem]:
+    """Every item of the case that could BE the value of this leaf: the right
+    type, the right person, a part for the leaf's role, and an IN hop it can be
+    sourced from."""
+    return [item for item in case.pii
+            if item.type == field.pii_type and item.id in in_hop
+            and _same_person(case, item.identity, primary)
+            and expected_leaf_value(item, field)]
+
+
+def _chained_of(candidates: Sequence[PiiItem], read_by: dict[str, str],
+                tool: str) -> list[PiiItem]:
+    """The candidates another tool's result brings back."""
+    return [item for item in candidates if read_by.get(item.id, "") not in ("", tool)]
+
+
+def _said_of(candidates: Sequence[PiiItem]) -> list[PiiItem]:
+    """The candidates the customer themselves put into a message."""
+    return [item for item in candidates if item.where.kind == "message"]
+
+
+def _is_mutating(tool: str) -> bool:
+    """Does this tool WRITE? Read off the registry's own `mutating` flag rather
+    than a list of names here: a second list would be a second opinion about
+    what a write is, and the one the model is shown is the registry's."""
+    spec = REGISTRY_V5.get(tool)
+    return spec is not None and spec.base.mutating
+
+
+def _said_over_chained(case: Case, reads: dict[str, list[tuple[PiiItem, str]]]) -> bool:
+    """Did R-49 take at least one leaf of this case off a chain?
+
+    ASKED SO THE DOWNGRADE CAN NAME ITS REASON. A `sequential_chain` case whose
+    ONLY transition was an update fed by the lookup that found the old value
+    leaves the family, and «no argument is fed by another tool's result» would
+    read as «v4 offered no second tool» — two different facts under one line in
+    `build --check`.
+    """
+    read_by = {item.id: tool for tool, pairs in reads.items() for item, _leaf in pairs}
+    hopped = _hopped_ids(case, reads)
+    primary = case.expects.primary_identity
+    for tool in case.expects.reachable_tools:
+        spec = REGISTRY_V5.get(tool)
+        if spec is None or not spec.base.mutating:
+            continue
+        for field in spec.base.fields:
+            if field.kind != "identity" or not field.pii_type:
+                continue
+            candidates = _candidates(case, field, hopped, primary)
+            if _chained_of(candidates, read_by, tool) and _said_of(candidates):
+                return True
+    return False
+
+
+def _hopped_ids(case: Case, reads: dict[str, list[tuple[PiiItem, str]]]) -> set[str]:
+    """The items `_declare` gives an IN hop to — what the customer said and what
+    a tool reads back. The same membership `_declare`'s `in_hop` holds, derived
+    from the same two sources so the two cannot disagree about which item an
+    argument may be sourced from."""
+    return ({item.id for item in case.pii if item.where.kind == "message"}
+            | {item.id for pairs in reads.values() for item, _leaf in pairs})
 
 
 def _same_person(case: Case, identity: str, primary: str) -> bool:
@@ -487,7 +568,7 @@ def _same_person(case: Case, identity: str, primary: str) -> bool:
 # --- the behaviour, claimed only with its structure ---------------------------------
 
 def _behaviour_of(case: Case, behaviour: str, hops: Sequence[Hop], loop: LoopSpec | None,
-                  reads: dict[str, list[tuple[PiiItem, str]]]
+                  reads: dict[str, list[tuple[PiiItem, str]]], said_over_chained: bool
                   ) -> tuple[str, str, str, PickSpec | None, BranchSpec | None,
                              LoopSpec | None]:
     """The behaviour this case can actually exhibit, and why it is not the
@@ -495,7 +576,8 @@ def _behaviour_of(case: Case, behaviour: str, hops: Sequence[Hop], loop: LoopSpe
     if behaviour == "sequential_chain":
         if _chains(hops):
             return behaviour, "", "", None, None, None
-        return "single", behaviour, "no argument is fed by another tool's result", \
+        return "single", behaviour, (MUTATING_REASON if said_over_chained
+                                     else "no argument is fed by another tool's result"), \
             None, None, None
     if behaviour == "fanout_pick":
         pick = _pick_spec(case, reads)

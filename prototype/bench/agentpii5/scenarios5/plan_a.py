@@ -37,18 +37,35 @@ from bench.agentpii5.scenarios5.common import (  # noqa: F401 - re-exported for 
     told, tool_hop, user_hop)
 from bench.agentpii5.scenarios5 import (  # noqa: I001 - see the docstring on the order
     branching, fanout_pick, parallel, retry_same_tool, same_tool_other_target,
-    sequential_chain)
+    sequential_chain, single)
 
 # How many cases each family of this half builds. The §8.2 floors minus what the
-# revised v4 corpus already supplies: `sequential_chain` (319 revised),
-# `fanout_pick` (117) and `branching` (35) are topped up, the other three come
-# only from here.
-RETRY_COUNT: int = 120
+# revised v4 corpus already supplies: `sequential_chain` (149 revised after
+# R-49), `fanout_pick` (117), `branching` (35) and `single` are topped up, the
+# other three come only from here.
+#
+# THREE COUNTS MOVED IN ROUND 2 AND EACH ONE IS A RULING, NOT A PREFERENCE.
+# `CHAIN_COUNT` grew because R-49 took 85 revised cases out of the chain family
+# (an update's argument is the value the customer just stated, never the lookup's
+# stale one), and a family at 189 of a floor of 180 has no margin to lose the
+# next honest case to; 70 puts it above the floor by more than a fifth with every
+# transition proven by the mock at build.
+# `SINGLE_COUNT` is R-50: the revised corpus supplies the COUNT of the base loop
+# and not its SHAPE — 379 of its 463 cases are v4's two-hop lookup — so the
+# four-hop loop is authored here.
+# `RETRY_COUNT` and `MEMORY_COUNT` (in `plan_b`) grew by six each because K02's
+# share arm is RELATIVE: the two families sat exactly on their floor of 120, the
+# corpus grew by 142 authored cases under the two rulings above, and 120/1736 is
+# 6.9% against a floor of 7%. §8.2's table is a floor and not a ceiling, so the
+# honest move is to keep the two families at their share rather than to keep the
+# corpus small enough for a number that was written before the rulings.
+RETRY_COUNT: int = 126
 OTHER_TARGET_COUNT: int = 50
-CHAIN_COUNT: int = 40
+CHAIN_COUNT: int = 70
 PARALLEL_COUNT: int = 100
 FANOUT_COUNT: int = 40
 BRANCHING_COUNT: int = 50
+SINGLE_COUNT: int = 100
 
 PLAN_A: tuple[tuple[object, int], ...] = (
     (retry_same_tool, RETRY_COUNT),
@@ -57,4 +74,5 @@ PLAN_A: tuple[tuple[object, int], ...] = (
     (parallel, PARALLEL_COUNT),
     (fanout_pick, FANOUT_COUNT),
     (branching, BRANCHING_COUNT),
+    (single, SINGLE_COUNT),
 )

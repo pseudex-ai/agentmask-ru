@@ -49,9 +49,10 @@ from bench.agentpii5.fixtures import (
     _with_replies,
     _with_subs,
 )
-from bench.agentpii5.metrics import METRIC_FUNCTIONS
+from bench.agentpii5.metrics import AXIS_NOTE, METRIC_FUNCTIONS, prints_on_axis
 from bench.agentpii5.observe import observe
 from bench.agentpii5.report import (
+    BESIDE,
     V4_BLOCK_END,
     V4_BLOCK_START,
     ReportError,
@@ -103,17 +104,27 @@ FIXTURE_BEHAVIOURS: tuple[tuple[str, str], ...] = (
     ("c-0001", "single"), ("c-0002", "retry_same_tool"))
 
 
+JUDGE_USD = 0.01
+
+
 def _triple_row(case: CaseV5) -> dict[str, object]:
     """One `<run>.triples.jsonl` row in the shape `harness.run_triple_v5`
     writes: the cost section is computed from these fields and from nothing
-    else, so a fixture that invented its own shape would pin the wrong file."""
+    else, so a fixture that invented its own shape would pin the wrong file.
+
+    The two totals are written through `records.triple_totals_to_json` and not
+    as literals here (F2.12 / R-54): the report reads them through that
+    module's reader, and a fixture that spelled the keys itself would go on
+    passing the day the writer renamed one."""
     return {"case_id": case.base.id, "repeat": 0, "kind": case.base.kind,
             "behaviour": case.behaviour, "register": case.base.register,
             "cluster": case.base.cluster, "cap_usd": 0.06, "cost_usd": 0.12,
             "status": "complete", "reason": "",
             "arms": {arm: {"termination": "done", "cost_usd": 0.04, "calls": 1, "reason": ""}
                      for arm in ("C", "I", "C2")},
-            "judge": {"label": "верно", "judged_by": "model", "cost_usd": 0.01}}
+            "judge": {"label": "верно", "judged_by": "model", "cost_usd": JUDGE_USD},
+            **records.triple_totals_to_json(
+                records.TripleTotals(judge_cost_usd=JUDGE_USD, turn_residual=0))}
 
 
 def build_run(root: Path, run_id: str, with_v5: bool) -> Path:
@@ -165,7 +176,7 @@ def build_run(root: Path, run_id: str, with_v5: bool) -> Path:
     records.run_file(run_dir, run_id, "<run>.spend.tsv").write_text(
         f"agent/{FIXTURE_BEHAVIOURS[0][0]}/0\t{spend:.6f}\ncumulative_usd\t{spend:.6f}\n",
         encoding="utf-8")
-    (run_dir / f"{run_id}.meta.json").write_text(json.dumps(
+    records.run_file(run_dir, run_id, "<run>.meta.json").write_text(json.dumps(
         {"run_id": run_id, "benchmark": "agentpii5", "model": contracts.AGENT_MODEL,
          "judge_model": contracts.JUDGE_MODEL, "tier": "nano", "repeats": 1,
          "digest": "digest-v5", "ceiling_usd": CEILING_USD, "spent_usd": spend,
@@ -442,7 +453,10 @@ def test_cost_section_is_printed() -> list[str]:
         text = "\n".join(lines)
         triples = records.read_rows(records.run_file(v5_dir, RUN_ID, "<run>.triples.jsonl"))
         spent = sum(float(one["cost_usd"]) for one in triples)  # type: ignore[arg-type]
-        judge = sum(float(one["judge"]["cost_usd"]) for one in triples)  # type: ignore[index]
+        # Through the reader the report itself uses (F2.12): a test that read
+        # the nested field would keep passing the day the writer dropped the
+        # top-level one, which is the whole defect.
+        judge = sum(records.triple_totals_from_json(one).judge_cost_usd for one in triples)
         if "0. ЦЕНА" not in text:
             problems.append("the report prints no price at all")
         elif text.index("0. ЦЕНА") > text.index(V4_BLOCK_START):
@@ -638,6 +652,171 @@ def test_side_by_side_sections() -> list[str]:
         return problems
 
 
+def _rewrite_triples(run_dir: Path, drop: str) -> None:
+    """The triples file again, without one key on the FIRST row. The others
+    keep it, so what is being read is «this row is short», not «the file is»."""
+    path = records.run_file(run_dir, RUN_ID, "<run>.triples.jsonl")
+    rows = records.read_rows(path)
+    rows[0].pop(drop)
+    path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+                    encoding="utf-8")
+
+
+def test_judge_cost_read_through_records() -> list[str]:
+    """F2.12 / R-54. The judge's spend used to be `row.get("judge_cost_usd")`,
+    then the nested `judge.cost_usd`, then 0.0 — and «судья: $0.00» is also
+    what a run with no judge prints. It is now `records.triple_totals_from_
+    json`, which refuses the missing field BY NAME.
+
+    The negative is the exact shape the fallback forgave: a row that has lost
+    the top-level key while KEEPING the nested `judge.cost_usd`. Under the old
+    reader it printed the nested number and looked right."""
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        problems: list[str] = []
+        rows = records.read_rows(records.run_file(v5_dir, RUN_ID, "<run>.triples.jsonl"))
+        want = sum(records.triple_totals_from_json(row).judge_cost_usd for row in rows)
+        if f"судья: ${want:.2f}" not in "\n".join(cost_lines(v5_dir)):
+            problems.append(f"the judge's spend is not the reader's number (${want:.2f})")
+        _rewrite_triples(v5_dir, "judge_cost_usd")
+        nested = records.read_rows(records.run_file(v5_dir, RUN_ID, "<run>.triples.jsonl"))[0]
+        if not isinstance(nested.get("judge"), dict):
+            problems.append("the fixture lost the nested judge row — the negative proves nothing")
+        try:
+            cost_lines(v5_dir)
+            problems.append("a triple with no judge_cost_usd was read from the nested field")
+        except ReportError as error:
+            if "judge_cost_usd" not in str(error):
+                problems.append(f"the refusal does not name the field: {error}")
+        return problems
+
+
+def test_turn_residual_is_demanded_too() -> list[str]:
+    """R-54 puts BOTH totals on the triple row and one reader validates both:
+    a file that carries the price but not `turn_residual` is not the file the
+    report thinks it is, and reading only the half this section needs would
+    let the other half rot until the line that prints it goes silent."""
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, _v4_dir = _built(Path(tmp))
+        _rewrite_triples(v5_dir, "turn_residual")
+        try:
+            cost_lines(v5_dir)
+        except ReportError as error:
+            return [] if "turn_residual" in str(error) else [f"unclear refusal: {error}"]
+        return ["a triple row with no turn_residual was accepted"]
+
+
+def test_excluded_observations_are_on_the_side() -> list[str]:
+    """F2.9. The holes and the arms that stopped are ONE field of the
+    `SideBySide`, each row carrying its reason — so a `SideBySide` read back
+    from a file still names its own holes instead of trusting whoever
+    assembled it. `EXCLUDED_NO_HOPS` is what makes the report НЕПОЛНЫЙ; a
+    termination does not."""
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        hole_id = FIXTURE_BEHAVIOURS[1][0]
+        _drop_hops(v5_dir, hole_id)
+        problems: list[str] = []
+        side = side_by_side(v5_dir, v4_dir, METRIC_FUNCTIONS)
+        if side.excluded_observations != (f"{hole_id}|0 ({contracts.EXCLUDED_NO_HOPS})",):
+            problems.append(f"the hole is not on the side by side: {side.excluded_observations}")
+        if not side.incomplete:
+            problems.append("a hole did not make the report НЕПОЛНЫЙ")
+        if side.judge_pregate != read_parts(v5_dir, v4_dir).judge.pregate:
+            problems.append(f"the pre-gate count is not carried: {side.judge_pregate}")
+        # The other reason, on a fresh copy: an arm that STOPPED is listed with
+        # its own termination and does NOT mark the report. Without this half,
+        # «a hole marks it» would pass on a report that marks everything.
+        other, other_v4 = _built(Path(tmp) / "stopped")
+        path = records.run_file(other, RUN_ID, "<run>.arms.v5.jsonl")
+        rows = records.read_rows(path)
+        for row in rows:
+            if row.get("case_id") == hole_id:
+                row["termination"] = "timeout"
+        path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+                        encoding="utf-8")
+        _drop_hops(other, hole_id)
+        stopped = side_by_side(other, other_v4, METRIC_FUNCTIONS)
+        if stopped.excluded_observations != (f"{hole_id}|0 (timeout)",):
+            problems.append(f"the stopped arm is not on the side by side: "
+                            f"{stopped.excluded_observations}")
+        if stopped.incomplete:
+            problems.append("an arm that stopped marked the report НЕПОЛНЫЙ")
+        return problems
+
+
+def _section_two(lines: list[str]) -> list[str]:
+    return lines[lines.index("2. ЛИНИИ v5 — абсолютные доли, интервал Клоппера–Пирсона, "
+                             "«сертифицирует ≥» вместо 100%"):
+                 lines.index("3. ФОРМА И СРЕЗЫ — каждая напечатанная линия по каждой оси; "
+                             "ось одна за раз, никогда две скрещенные")]
+
+
+def test_out_absent_is_printed_beneath_form_hOUT() -> list[str]:  # noqa: N802 - the metric's name
+    """F2.10. `out_absent` counts the declared OUT hops the agent never wrote —
+    exactly what `form_hOUT` leaves out of its denominator. Four sections
+    apart, `form_hOUT` reads as a form result on every declared hop.
+
+    The negative is another diagnostic: `rewrite_ratio_v5` must NOT sit under
+    `form_hOUT` and must be below the diagnostics header, or «the line after
+    form_hOUT is a diagnostic» would pass on any ordering at all."""
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        section = _section_two(report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS))
+        problems: list[str] = []
+        at = {name: [index for index, one in enumerate(section)
+                     if one.strip().startswith(name + " ")]
+              for name in ("form_hOUT", "out_absent", "rewrite_ratio_v5")}
+        for name, found in at.items():
+            if len(found) != 1:
+                problems.append(f"{name} is printed {len(found)} times in section 2")
+        if problems:
+            return problems
+        if at["out_absent"][0] != at["form_hOUT"][0] + 1:
+            problems.append(f"out_absent is not the line under form_hOUT: {at}")
+        header = [index for index, one in enumerate(section) if "диагностика" in one][0]
+        if at["out_absent"][0] > header:
+            problems.append("out_absent is still printed in the diagnostics block")
+        if at["rewrite_ratio_v5"][0] < header:
+            problems.append("a diagnostic with no line to qualify was lifted out of the block")
+        if BESIDE.get("form_hOUT") != "out_absent":
+            problems.append(f"BESIDE no longer pairs the two: {BESIDE}")
+        return problems
+
+
+def test_axis_note_where_a_line_may_not_be_sliced() -> list[str]:
+    """F2.10. An observation-level line sliced by a HOP axis counts the same
+    answer once per bucket and the buckets add up to more units than the
+    corpus holds. `metrics.prints_on_axis` is the one place that says so; the
+    report prints `metrics.AXIS_NOTE` instead of the row, because a slice that
+    silently disappears reads as a slice that was clean — and the cells are
+    not computed at all, since a number that exists gets printed eventually.
+
+    Both sides on the same axis: `residual` carries the note, `leak` carries
+    buckets."""
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        side = side_by_side(v5_dir, v4_dir, METRIC_FUNCTIONS)
+        text = "\n".join(report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS))
+        problems: list[str] = []
+        if prints_on_axis("residual", "pii_type") or not prints_on_axis("leak", "pii_type"):
+            return ["metrics no longer holds residual off the hop axes and leak on them"]
+        if f"   residual/pii_type: {AXIS_NOTE}" not in text:
+            problems.append("an observation-level line was sliced by a hop axis without the note")
+        if "pii_type" in side.v5_by_axis["residual"]:
+            problems.append("the buckets nobody may print were computed anyway")
+        if f"   leak/pii_type: {AXIS_NOTE}" in text:
+            problems.append("a hop-sliceable line got the note instead of its buckets")
+        if "pii_type" not in side.v5_by_axis["leak"]:
+            problems.append("leak lost its hop-axis buckets")
+        # A non-hop axis is printed for BOTH: the note is about the axis, not
+        # about the metric.
+        for name in ("residual", "leak"):
+            if f"   {name}/register: {AXIS_NOTE}" in text:
+                problems.append(f"{name} got the note on an observation axis")
+        return problems
+
+
 def test_baseline_without_v5_files_is_refused() -> list[str]:
     """A v5 report needs the v5 corpus. Asked for one on a v4-only directory it
     must say so, not quietly report on nothing."""
@@ -670,6 +849,11 @@ def main() -> int:
         ("leak_and_coverage_both_present", test_leak_and_coverage_both_present),
         ("no_effect_claims_outside_v4_block", test_no_effect_claims_outside_v4_block),
         ("side_by_side_sections", test_side_by_side_sections),
+        ("judge_cost_read_through_records", test_judge_cost_read_through_records),
+        ("turn_residual_is_demanded_too", test_turn_residual_is_demanded_too),
+        ("excluded_observations_are_on_the_side", test_excluded_observations_are_on_the_side),
+        ("out_absent_is_printed_beneath_form_hOUT", test_out_absent_is_printed_beneath_form_hOUT),
+        ("axis_note_where_a_line_may_not_be_sliced", test_axis_note_where_a_line_may_not_be_sliced),
         ("baseline_without_v5_files_is_refused", test_baseline_without_v5_files_is_refused),
     )
     failures: list[str] = []

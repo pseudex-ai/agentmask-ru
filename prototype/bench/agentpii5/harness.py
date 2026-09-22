@@ -44,7 +44,7 @@ import time
 import traceback
 import uuid
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
@@ -74,8 +74,8 @@ from bench.agentpii5.contracts import (
     CalibrationStamp, CaseV5, HopObservation, JudgeRow, JudgeVerdict,
     MentionRecord, ToolResultRecord)
 from bench.agentpii5.judge import (
-    JudgeConfig, OracleLeak, build_prompt, judge_input, judge_prompt, masked_dialogue,
-    prompt_sha256, residual_pregate_of)
+    JUDGE_TEMPERATURE, JudgeConfig, LeakedPrompt, OracleLeak, build_prompt, judge_input,
+    judge_prompt, masked_dialogue, prompt_sha256, residual_pregate_of)
 from bench.agentpii5.mock import BackendV5, seed_backend_v5
 from bench.agentpii5.observe import observe
 from bench.agentpii5.schema import case_v5_from_json, case_v5_to_json, corpus_digest_v5
@@ -264,9 +264,31 @@ def stream_verdict(raw: str, vault: Vault) -> tuple[str, str, bool]:
     return chunked, whole, chunked != whole
 
 
+@dataclass(frozen=True)
+class AnswerLeg:
+    """What one restoration of the final reply produced.
+
+    THREE VALUES RATHER THAN TWO, because `reply_whole` used to be computed
+    here and dropped on the floor (R-54): `stream_fidelity` says THAT the two
+    restorations disagreed, and a reader who then asks WHICH TEXT the customer
+    lost had nothing on disk to look at — the whole-text leg was restored a
+    second time, for a `len()` in a log line, and never kept.
+
+    `reply` is what the run SCORES, `reply_whole` is the whole-text
+    restoration of a streaming reply ("" on an ordinary case, where the two
+    restorations are one string and keeping it twice would invite a reader to
+    compare a field with itself), `mismatch` is `ArmRunV5.stream_mismatch`.
+    """
+
+    reply: str
+    reply_whole: str
+    mismatch: bool
+
+
 def answer_leg(raw_reply: str, streaming: bool, vault: Vault,
-               restore: Callable[[str], str]) -> tuple[str, bool]:
-    """The restored answer the run SCORES, and the streaming leg's verdict.
+               restore: Callable[[str], str]) -> AnswerLeg:
+    """The restored answer the run SCORES, the diagnostic beside it, and the
+    streaming leg's verdict.
 
     ONE function for the choice, and a function rather than four lines inside
     `run_arm_v5`, for the reason `with_control_reply` is one: the choice lives
@@ -279,11 +301,11 @@ def answer_leg(raw_reply: str, streaming: bool, vault: Vault,
     chunked one.
     """
     if not raw_reply:
-        return "", False
+        return AnswerLeg(reply="", reply_whole="", mismatch=False)
     if not streaming:
-        return restore(raw_reply), False
+        return AnswerLeg(reply=restore(raw_reply), reply_whole="", mismatch=False)
     chunked, whole, mismatch = stream_verdict(raw_reply, vault)
-    return chunked, mismatch
+    return AnswerLeg(reply=chunked, reply_whole=whole, mismatch=mismatch)
 
 
 def with_streamed_answer(turns: tuple[str, ...], answer: str) -> tuple[str, ...]:
@@ -438,16 +460,20 @@ async def run_arm_v5(case: CaseV5, arm: str, repeat: int, gateway: GatewayV5,
         raise HarnessError(f"{case.base.id}/{arm}: поток закончился без ResultMessage")
     worst = failed or result
     raw_reply = next((one for one in reversed(replies) if one.strip()), "")
-    reply, mismatch = answer_leg(raw_reply, case.streaming, gateway.vault, gateway.restore_text)
-    if mismatch:
+    leg = answer_leg(raw_reply, case.streaming, gateway.vault, gateway.restore_text)
+    reply = leg.reply
+    if leg.mismatch:
         # NAMED ON THE RUN LOG, not only counted: `stream_mismatch` says THAT
         # the two restorations disagreed; the run log says WHICH case, so an
         # operator can ask for the two texts. The lengths, never the values —
         # a restored answer is the customer's own data and the console of a
-        # 1 594-case run is not the place for it.
+        # 1 594-case run is not the place for it. The lengths come off the ONE
+        # restoration `answer_leg` already did: restoring the reply a third
+        # time for a log line is how the two numbers in one message could come
+        # from two different restorations.
         print(f"  СТРИМ РАЗОШЁЛСЯ {case.base.id}|{repeat}: клиент прочитал "
               f"{len(reply)} знаков, целиком восстановилось "
-              f"{len(unmask_text(raw_reply, gateway.vault))}", file=sys.stderr, flush=True)
+              f"{len(leg.reply_whole)}", file=sys.stderr, flush=True)
     base = ArmRun(case_id=case.base.id, arm=arm, repeat=repeat, calls=tuple(calls),
                   state=backend.snapshot(), reply=reply,
                   termination=v4_harness._termination(worst),
@@ -465,7 +491,15 @@ async def run_arm_v5(case: CaseV5, arm: str, repeat: int, gateway: GatewayV5,
                    tool_results=gateway.tool_records(), mentions=gateway.mentions(),
                    turn_replies=turn_replies,
                    call_turns=tuple(call_turns), request_count=gateway.request_index,
-                   stream_mismatch=mismatch)
+                   stream_mismatch=leg.mismatch, reply_whole=leg.reply_whole,
+                   # NOT KNOWN YET, and zero here is the honest placeholder: how
+                   # many earlier turns still carried a substitute is decided
+                   # when the judge's prompt is built, three arms later, and
+                   # `run_triple_v5` lays it over this record with
+                   # `with_turn_residual`. Guessing it here would mean masking
+                   # the dialogue twice, once for a number and once for the
+                   # judge, and two spellings of one scan is how they drift.
+                   turn_residual=0)
     return ArmOutcomeV5(v4_harness.ArmOutcome(base, meta), run)
 
 
@@ -495,7 +529,8 @@ def _empty_run(case: CaseV5, repeat: int) -> ArmRunV5:
     base = ArmRun(case_id=case.base.id, arm="I", repeat=repeat, calls=(), state=(), reply="",
                   termination="harness_error", cost_usd=0.0, substitutes={}, masked_spans={})
     return ArmRunV5(base=base, reply_raw="", control_reply="", tool_results=(), mentions=(),
-                    turn_replies=(), call_turns=(), request_count=0, stream_mismatch=False)
+                    turn_replies=(), call_turns=(), request_count=0, stream_mismatch=False,
+                    reply_whole="", turn_residual=0)
 
 
 # --- one triple ---------------------------------------------------------------------------
@@ -508,8 +543,9 @@ class JudgeOutcome:
     minted substitute when the prompt was built — the same defect `residual`
     counts in the answer, one turn sooner. It travels beside the row rather
     than inside it because `JudgeRow` is normative (R-02) and belongs to
-    another owner; the harness writes the number onto the triple until
-    `ArmRunV5` grows a field for it.
+    another owner; `run_triple_v5` lays it onto the I arm's record
+    (`with_turn_residual`) and onto the triple row (`triple_totals`), which is
+    where the metric and the report read it (R-54).
     """
 
     row: JudgeRow
@@ -533,7 +569,16 @@ async def judge_triple(case: CaseV5, run: ArmRunV5, gateway: GatewayV5,
     request = judge_input(case, run)
     minted = minted_substitutes(gateway)
     _, turn_residual = masked_dialogue(request, minted)
-    prompt = build_prompt(request, minted)
+    try:
+        prompt = build_prompt(request, minted)
+    except OracleLeak as leak:
+        # THE COUNT SURVIVES THE LEAK (R-54). What `build_prompt` still refuses
+        # is a substitute in the QUESTION or the ORACLE — ours, and worth
+        # stopping the judging over — but the dialogue has already been read by
+        # then, so how many earlier turns carried a substitute is KNOWN. Losing
+        # it with the stack frame made the leaked triple's row say «0», which
+        # cannot be told from «no earlier turn held one».
+        raise LeakedPrompt(str(leak), turn_residual) from leak
     refused = residual_pregate_of(request.restored_answer, minted, real_parts_of(case))
     verdict = refused if refused is not None else (
         await judge_prompt(config, request, prompt) if config is not None
@@ -591,10 +636,32 @@ def with_control_reply(run: ArmRunV5, control_reply: str) -> ArmRunV5:
     literal inside `run_triple_v5`, because that function needs a live model
     and this claim can then be pinned offline.
     """
-    return ArmRunV5(base=run.base, reply_raw=run.reply_raw, control_reply=control_reply,
-                    tool_results=run.tool_results, mentions=run.mentions,
-                    turn_replies=run.turn_replies, call_turns=run.call_turns,
-                    request_count=run.request_count, stream_mismatch=run.stream_mismatch)
+    # `replace`, NOT a field-by-field rebuild. The rebuild was here, and when
+    # `ArmRunV5` grew `reply_whole` and `turn_residual` (R-54) it did not drop
+    # them loudly — it dropped them by not mentioning them, which is the defect
+    # class this benchmark exists to refuse. `replace` carries every field the
+    # record has and fails on a field it does not.
+    return replace(run, control_reply=control_reply)
+
+
+def with_turn_residual(run: ArmRunV5, turn_residual: int) -> ArmRunV5:
+    """How many earlier turns still carried a substitute, laid onto the record.
+
+    THE NUMBER IS KNOWN THREE ARMS LATE. `masked_dialogue` counts it while the
+    judge's prompt is built, long after `run_arm_v5` has finished — so it
+    cannot be a field the arm sets, and it lived on the triple row instead,
+    where `residual` (a per-observation metric that reads `ArmRunV5`) could not
+    reach it: a substitute the customer read in turn 2 and not in the final
+    answer was counted by nothing (R-54).
+
+    A named function rather than a literal inside `run_triple_v5`, for the
+    reason `with_control_reply` is one: that function needs a live model, and a
+    claim only a paid run can check is a claim nobody checks.
+    """
+    if turn_residual < 0:
+        raise HarnessError(f"{run.base.case_id}|{run.base.repeat}: нераскрытых подмен в ходах "
+                           f"{turn_residual} — отрицательным это число не бывает")
+    return replace(run, turn_residual=turn_residual)
 
 
 async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
@@ -610,8 +677,10 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
         # that charged only the arms against its ceiling under-counted what the
         # measurement had already cost (`_resume` reads `cost_usd`). Both
         # numbers are written: the total is what bounds the run, the judge's
-        # own share is what the report prints on its cost line (F2.4).
-        "judge_cost_usd": 0.0, "turn_residual": 0,
+        # own share is what the report prints on its cost line (F2.4). Through
+        # records' OWN writer (R-54), because the report reads them through
+        # records' reader and a row spelled here by hand is a second schema.
+        **r.triple_totals_to_json(triple_totals(None, 0)),
         "status": "refused", "reason": "", "arms": {}, "judge": {}}
     try:
         await ledger.reserve(cap * 3)
@@ -624,7 +693,7 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
     hops: tuple[HopObservation, ...] = ()
     judged: JudgeRow | None = None
     spent = 0.0
-    judge_spent = 0.0
+    turn_residual = 0
     try:
         control = await v4_harness._guarded_arm(
             case.base, "C", repeat, PassThrough(case.base), seed_backend_v5(case), model, cap, run_id)
@@ -652,34 +721,63 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
             hops = observe(case, gateway_run, None, None).hops
             try:
                 outcome = await judge_triple(case, gateway_run, gateway, config)
-            except OracleLeak as leak:
+            except LeakedPrompt as leak:
                 # A LEAK IS RECORDED, NEVER A REASON TO THROW AWAY THREE PAID
                 # ARMS. `masked_dialogue` has removed the reachable half of this
                 # (a substitute standing in an earlier turn); what is left is a
                 # substitute in the QUESTION or the ORACLE, which is ours and
                 # is worth stopping the triple over — but not the run. The
-                # verdict is `none`, so it counts nowhere, and the reason names
-                # the leak on disk instead of in a traceback nobody kept.
+                # verdict is `none`, so it counts nowhere, the reason names the
+                # leak on disk instead of in a traceback nobody kept, and the
+                # turn count the build had already measured rides on the
+                # exception (`LeakedPrompt`) rather than being replaced by a
+                # zero nobody can tell from silence.
                 print(f"[judge] {case.base.id}|{repeat}: {leak}", file=sys.stderr, flush=True)
                 outcome = JudgeOutcome(
                     row=JudgeRow(case_id=case.base.id, repeat=repeat, input_sha256="",
                                  verdict=JudgeVerdict(label="", reason=f"OracleLeak: {leak}",
                                                       judged_by="none", cost_usd=0.0)),
-                    turn_residual=0)
+                    turn_residual=leak.turn_residual)
             judged = outcome.row
-            judge_spent = judged.verdict.cost_usd
-            triple["turn_residual"] = outcome.turn_residual
+            turn_residual = outcome.turn_residual
+            # THE RECORD, NOT ONLY THE ROW (R-54): `residual` is a
+            # per-observation metric and reads `ArmRunV5`, so a count that
+            # lived on the triple row alone was a count no line could reach.
+            gateway_run = with_turn_residual(gateway_run, turn_residual)
             triple["judge"] = {"label": judged.verdict.label, "judged_by": judged.verdict.judged_by,
                                "cost_usd": judged.verdict.cost_usd}
     finally:
         await ledger.settle(f"agent/{case.base.id}/{repeat}", cap * 3, spent)
-        triple["cost_usd"] = charged(spent, judge_spent)
-        triple["judge_cost_usd"] = round(judge_spent, 6)
+        # ONE PLACE COMPUTES THE JUDGE'S SHARE, and both readers take it from
+        # there: the triple's own `judge_cost_usd` column and the `cost_usd`
+        # that bounds a resumed run. They were two expressions over the same
+        # verdict, which is how a rounding of one and not the other becomes a
+        # ceiling nobody can reconcile.
+        totals = triple_totals(judged, turn_residual)
+        triple.update(r.triple_totals_to_json(totals))
+        triple["cost_usd"] = charged(spent, totals.judge_cost_usd)
         triple["arms"] = {one.run.arm: {"termination": one.run.termination,
                                         "cost_usd": round(one.run.cost_usd, 6),
                                         "calls": len(one.run.calls), "reason": one.meta.reason}
                           for one in outcomes}
     return TripleResult(outcomes, gateway_run, hops, judged, triple)
+
+
+def triple_totals(judged: JudgeRow | None, turn_residual: int) -> r.TripleTotals:
+    """The two numbers a triple row carries beyond v4's own — from the verdict
+    itself, in one place.
+
+    `judge_cost_usd` is the sum of what THIS triple's judging cost, and a
+    triple holds exactly one verdict (`<run>.judge.jsonl` is keyed by (case,
+    repeat) — a second row under one key is lost by its own reader), so the
+    sum is that verdict's `cost_usd` and never a second tally kept beside it.
+    A triple whose judge never ran (`--no-judge`, a refused reservation, a
+    control that excluded the triple before the I arm) spent nothing, which is
+    a measured zero and not an absent field: `records.triple_totals_from_json`
+    refuses the row where the key is missing.
+    """
+    return r.TripleTotals(judge_cost_usd=0.0 if judged is None else judged.verdict.cost_usd,
+                          turn_residual=turn_residual)
 
 
 def charged(arms_usd: float, judge_usd: float) -> float:
@@ -762,6 +860,36 @@ def write_corpus(run_dir: Path, cases: Sequence[CaseV5], digest: str) -> None:
     (run_dir / "corpus.v5.json").write_text(json.dumps(
         {"corpus": [case_v5_to_json(case) for case in cases], "digest": digest},
         ensure_ascii=False), encoding="utf-8")
+
+
+BENCHMARK: str = "agentpii5"
+
+
+def write_meta(run_dir: Path, run_id: str, model: str, judge_model: str, tier: str,
+               repeats: int, digest: str, ceiling_usd: float, spent_usd: float) -> Path:
+    """What the run itself was (`RUN_FILES["<run>.meta.json"]`, F1.22).
+
+    A NAMED WRITER rather than a literal inside `main`, for the reason
+    `stamp_judge_file` is one: the report needs two of these fields and can get
+    them nowhere else — the CEILING the run was given (a cost line without it
+    says «spent $12 of an unknown ceiling») and the `prompt_sha256` a
+    calibration stamp must match — and a file written only by a paid run is a
+    file whose absence no test can notice.
+
+    `benchmark`, the prompt hash and the finish time are NOT parameters: they
+    are facts about the process that is writing, and a caller allowed to pass
+    the hash could stamp a run with the hash of another rubric — which is the
+    one thing the field exists to prevent.
+    """
+    path = r.run_file(run_dir, run_id, "<run>.meta.json")
+    path.write_text(json.dumps(
+        {"run_id": run_id, "benchmark": BENCHMARK, "model": model,
+         "judge_model": judge_model, "tier": tier, "repeats": repeats, "digest": digest,
+         "ceiling_usd": ceiling_usd, "spent_usd": round(spent_usd, 6),
+         "prompt_sha256": prompt_sha256(),
+         "finished": datetime.now(timezone.utc).isoformat()},
+        ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
 
 
 def stamp_judge_file(run_dir: Path, run_id: str, stamp: CalibrationStamp) -> None:
@@ -916,11 +1044,17 @@ def main() -> int:
     # `test_harness.test_ledger_shared` asserts.
     ledger = v3_judge.SpendLedger(r.run_file(out, run_id, "<run>.spend.tsv"),
                                   max(0.0, args.ceiling - resumed))
+    # THE TEMPERATURE IS NAMED, NOT INHERITED (R-56). It is the module constant
+    # rather than a flag, because `calibration export --repeats K` is a second
+    # process and «the repeats run at the same temperature as the run» can only
+    # hold by construction — a flag is a value a human retypes, and a judge
+    # calibrated at one temperature certifies an instrument that ran at another.
     config = None if args.no_judge else JudgeConfig(
         model=args.judge_model, ledger=ledger, query_cap_usd=QUERY_CAP_USD, retries=RETRIES,
-        trace_path=out / f"{run_id}.judge.trace.jsonl")
+        trace_path=out / f"{run_id}.judge.trace.jsonl", temperature=JUDGE_TEMPERATURE)
     print(f"прогон {run_id} · агент {args.model} · судья "
-          f"{'—' if args.no_judge else args.judge_model} · промпт {prompt_sha256()[:12]} · "
+          f"{'—' if args.no_judge else args.judge_model} (t={JUDGE_TEMPERATURE}) · "
+          f"промпт {prompt_sha256()[:12]} · "
           f"{len(cases)} случаев × K={args.repeats} × 3 плеча · потолок ${args.ceiling:.2f}",
           flush=True)
     started = time.time()
@@ -928,13 +1062,18 @@ def main() -> int:
                                    triple_runner(detector, ledger, config, args.model, run_id),
                                    out, run_id, args.concurrency, already))
     spent = sum(float(one["cost_usd"]) for one in triples)
-    judged = sum(float(one.get("judge_cost_usd") or 0.0) for one in triples)
-    residual_turns = sum(int(one.get("turn_residual") or 0) for one in triples)
+    # THROUGH RECORDS' READER, never `row.get(key) or 0` (R-54): that spelling
+    # reads a triple written by an older harness — one that recorded no judge
+    # share at all — as a run with a free judge, and the two readings are
+    # indistinguishable in the printed line.
+    totals = [r.triple_totals_from_json(one) for one in triples]
+    judged = sum(one.judge_cost_usd for one in totals)
+    residual_turns = sum(one.turn_residual for one in totals)
     # THE JUDGE'S SHARE ON ITS OWN LINE: it draws on the same ledger as the
     # arms, so a header that printed one number invited the reading «the agent
-    # cost all of this». `turn_residual` is here for the same reason — the
-    # record has no field for it yet, and a count printed nowhere is a count
-    # nobody acts on.
+    # cost all of this». `turn_residual` is beside it because a substitute the
+    # customer read in an earlier turn is the same defect as one in the answer,
+    # and the operator is owed the count before the report is built.
     print(f"\nпотрачено ${spent:.2f} из ${args.ceiling:.2f} "
           f"(судья ${judged:.2f}) за {time.time() - started:.0f}s · "
           f"нераскрытых подмен в ходах: {residual_turns}")
@@ -944,13 +1083,9 @@ def main() -> int:
         judge_model="" if args.no_judge else args.judge_model, prompt_sha256=prompt_sha256(),
         n=0, raw_agreement=0.0, kappa=0.0, per_type_kappa={}, repeat_disagreement=1.0,
         calibrated=False))
-    (out / f"{run_id}.meta.json").write_text(json.dumps(
-        {"run_id": run_id, "benchmark": "agentpii5", "model": args.model,
-         "judge_model": "" if args.no_judge else args.judge_model, "tier": tier_name,
-         "repeats": args.repeats, "digest": digest, "ceiling_usd": args.ceiling,
-         "spent_usd": round(spent, 6), "prompt_sha256": prompt_sha256(),
-         "finished": datetime.now(timezone.utc).isoformat()},
-        ensure_ascii=False, indent=2), encoding="utf-8")
+    write_meta(out, run_id, model=args.model,
+               judge_model="" if args.no_judge else args.judge_model, tier=tier_name,
+               repeats=args.repeats, digest=digest, ceiling_usd=args.ceiling, spent_usd=spent)
     for line in finish_run(out, Path(args.baseline) if args.baseline else out):
         print(line)
     print(f"\nкаталог прогона: {out}")

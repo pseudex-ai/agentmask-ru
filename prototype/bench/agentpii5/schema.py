@@ -48,8 +48,11 @@ RAG_TOOLS: tuple[str, ...] = ("kb_search", "doc_retrieve")
 # The OUT owners that count as «the agent acted» in R15 (ruling R-31, and
 # contracts' R15 text). `answer` is deliberately absent: showing the value
 # again is what the agent already did at `show_turn`, and a loop whose whole
-# act is a second sentence tested nothing.
-ACTING_OUT_OWNERS: tuple[str, ...] = ("tool_arg", "template", "summary")
+# act is a second sentence tested nothing. IMPORTED, never restated (F4.13):
+# `metrics._transitions` decides what a chain is by the same tuple, and two
+# copies of it would be one drift away from the corpus and the metric
+# disagreeing about which OUT hops are acts.
+ACTING_OUT_OWNERS: tuple[str, ...] = c.ACTING_OUT_OWNERS
 
 
 def has_result(hops: Sequence[Hop]) -> bool:

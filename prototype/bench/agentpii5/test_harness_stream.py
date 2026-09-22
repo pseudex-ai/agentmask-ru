@@ -17,7 +17,10 @@ half runs over the CORPUS's own streaming cases, because the first half's
 hand-written sentence agreed with itself on every restoration and so could not
 see the defect F3.1 closes: the run used to score the whole-text restoration,
 a text the streaming customer never receives, and on the corpus the two
-restorations disagree on a few percent of replies.
+restorations disagree on a few percent of replies. Both texts are KEPT (R-54,
+`ArmRunV5.reply_whole`): `stream_fidelity` says THAT they disagreed, and the
+reader who then asks WHICH text the customer lost had nothing on disk to look
+at while the whole-text leg was restored for a `len()` and thrown away.
 """
 import json
 from collections.abc import Callable
@@ -86,6 +89,12 @@ def test_chunked_answer() -> list[str]:
         failures.append("stream_verdict вернул вторым не то, что даёт unmask_text")
     if mismatch:
         failures.append("на чистом случае stream_mismatch выставлен — прибор кричит без повода")
+    # R-54: the whole-text restoration is KEPT beside the scored one, so a
+    # reader whom `stream_fidelity` told «две реставрации разошлись» has the
+    # other text to look at. It used to be computed here and dropped.
+    leg = answer_leg(raw, True, vault, _never)
+    if leg.reply_whole != whole:
+        failures.append(f"плечо ответа не сохранило целое восстановление: {leg.reply_whole!r}")
     # A substitute MUST straddle a boundary, or the carry was never exercised
     # and «совпало» would mean «нечего было переносить».
     if not any(at < len(subs[0]) + raw.index(subs[0]) and raw.index(subs[0]) < at
@@ -139,9 +148,15 @@ def test_corpus_answer_is_what_the_client_read() -> list[str]:
             reply = template.format(subs[0], subs[-1])
             checked += 1
             read, kept, mismatch = stream_verdict(reply, vault)
-            scored, flagged = answer_leg(reply, True, vault, _never)
+            leg = answer_leg(reply, True, vault, _never)
+            scored, flagged = leg.reply, leg.mismatch
             if scored != read or flagged != mismatch:
                 failures.append(f"{case.base.id}: плечо ответа вернуло не вердикт потока")
+            if leg.reply_whole != kept:
+                failures.append(f"{case.base.id}: в записи не то целое восстановление")
+            if (leg.reply != leg.reply_whole) != mismatch:
+                failures.append(f"{case.base.id}: два текста записи расходятся не тогда, "
+                                f"когда об этом говорит stream_mismatch")
             if mismatch != (read != kept):
                 failures.append(f"{case.base.id}: stream_mismatch не равен «куски != целое»")
             if not mismatch:

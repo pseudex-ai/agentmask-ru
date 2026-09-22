@@ -75,7 +75,7 @@ from bench.agentpii5.contracts import (
     SideBySide,
 )
 from bench.agentpii5.fixtures import FIXTURES
-from bench.agentpii5.metrics import METRIC_FUNCTIONS, by_axis
+from bench.agentpii5.metrics import AXIS_NOTE, METRIC_FUNCTIONS, by_axis, prints_on_axis
 from bench.agentpii5.schema import case_v5_from_json
 
 # The v4 half is fenced so a reader — and `test_no_effect_claims_outside_v4_
@@ -102,12 +102,13 @@ _LEVEL_LINE = re.compile(
     r"(?P<verdict>" + "|".join(_TOST_VERDICTS) + r")\s+\[\s*(?P<tl>[+-][\d.]+),\s*(?P<th>[+-][\d.]+)\]\s+"
     r"(?P<p>[\d.]+)\s+\((?P<b>\d+),(?P<c>\d+)\)\s+"
     r"(?P<icc_case>[-\d.]+)\s+(?P<icc_value>[-\d.]+)\s+(?P<deff>[\d.]+)\s*$")
-# `<run>.meta.json` is written by `harness.main` beside the RUN_FILES entries
-# and is not one of them, so it is named here rather than through
-# `records.run_file` (which refuses a name `contracts.RUN_FILES` does not
-# declare). It carries the two numbers this report cannot otherwise know: the
-# ceiling the run was given and the sha256 of the judge prompt it used.
-META_FILE = "{run_id}.meta.json"
+# `out_absent` is DIAGNOSTIC, and it is the one diagnostic that must not be
+# read on its own page: it counts the declared OUT hops the agent never wrote,
+# which is exactly what `form_hOUT` leaves out of its denominator. Printed with
+# the other diagnostics, four sections down, `form_hOUT` reads as a form result
+# on every declared hop (F2.10). A mapping and not a hard-coded pair of lines
+# so a second such pair is one row here rather than a second special case.
+BESIDE: dict[str, str] = {"form_hOUT": "out_absent"}
 
 
 class ReportError(ValueError):
@@ -123,13 +124,20 @@ def gate(metric: Metric, fixtures: Sequence[Fixture]) -> GateVerdict:
     `contracts.FIXTURE_KINDS`, whatever that tuple holds. NEVER raises on a
     wrong metric: a wrong metric is the finding, and a gate that crashed on it
     would take the whole report down instead of printing the one line that
-    matters."""
+    matters.
+
+    THERE IS NO SEPARATION COMPARISON ANY MORE (R-55). It read «one minus zero
+    ≥ FIXTURE_MIN_SEPARATION» after the exact-fraction check had already
+    refused every fixture that printed anything but its declared x/n, and
+    `fixtures.py` declares the `zero` fixture at 0/n and the `one` fixture at
+    n/n — so the branch could not fire, and a check that cannot go red is
+    decoration in the one place of v5 that decides whether numbers are printed
+    at all."""
     name = fixtures[0].metric if fixtures else "?"
     kinds = {fixture.kind for fixture in fixtures}
     missing = [kind for kind in contracts.FIXTURE_KINDS if kind not in kinds]
     if missing:
         return GateVerdict(name, False, f"нет фикстур: {', '.join(missing)}")
-    seen: dict[str, float] = {}
     for fixture in fixtures:
         try:
             line = metric(fixture.input)
@@ -138,10 +146,6 @@ def gate(metric: Metric, fixtures: Sequence[Fixture]) -> GateVerdict:
         if (line.hits, line.total) != (fixture.expected_hits, fixture.expected_total):
             return GateVerdict(name, False, f"{fixture.name}: напечатала {line.hits}/{line.total}, "
                                             f"ждали {fixture.expected_hits}/{fixture.expected_total}")
-        seen[fixture.kind] = line.rate
-    if seen["one"] - seen["zero"] < contracts.FIXTURE_MIN_SEPARATION:
-        return GateVerdict(name, False, f"не разделяет: zero {seen['zero']:.2f}, one {seen['one']:.2f} "
-                                        f"(нужно ≥ {contracts.FIXTURE_MIN_SEPARATION})")
     return GateVerdict(name, True, "")
 
 
@@ -388,8 +392,15 @@ class JudgeHalf:
 def meta_of(run_dir: Path, run_id: str) -> dict[str, object]:
     """`<run>.meta.json`, or {} when the run wrote none. Every caller prints a
     refusal for the field it wanted — the file is not required to READ a run,
-    but nothing it carries may be replaced by a default."""
-    path = run_dir / META_FILE.format(run_id=run_id)
+    but nothing it carries may be replaced by a default.
+
+    The NAME comes from `contracts.RUN_FILES` through `records.run_file`, not
+    from a format string here (F2.9): a second spelling of a run file is one
+    rename away from a report that looks for a file no run writes. The BODY is
+    read with `json` and not through a `records` reader on purpose — every
+    reader there refuses a missing field by name, and this file's absence is a
+    legitimate state each caller reports in its own words."""
+    path = records.run_file(run_dir, run_id, "<run>.meta.json")
     if not path.exists():
         return {}
     raw = json.loads(path.read_text(encoding="utf-8"))
@@ -491,26 +502,21 @@ def _triple_cost(triple: dict[str, object], path: Path) -> float:
     return float(value)
 
 
-def _judge_spend(triple: dict[str, object]) -> float:
-    """What the judge cost on one triple.
+def _judge_spend(triple: dict[str, object], path: Path) -> float:
+    """What the judge cost on one triple, through `records`' own reader.
 
-    `harness.run_triple_v5` writes it twice: `judge_cost_usd` on the triple
-    (what a resumed run charges against its ceiling) and `judge.cost_usd` on
-    the verdict. The top-level field WINS, because it is the one the ceiling
-    is computed from; the nested one is read for a run directory written
-    before that field existed, so replaying it prints the judge's spend
-    instead of a zero indistinguishable from a free judge. Zero is the right
-    answer for a triple with no judge at all — a `--no-judge` run, or one
-    refused by the ceiling before any arm played."""
-    lifted = triple.get("judge_cost_usd")
-    if isinstance(lifted, (int, float)) and not isinstance(lifted, bool):
-        return float(lifted)
-    nested = triple.get("judge")
-    if isinstance(nested, dict):
-        value = nested.get("cost_usd")
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return float(value)
-    return 0.0
+    F2.12 / R-54. This used to read `judge_cost_usd` with `.get`, fall back to
+    the nested `judge.cost_usd` and then to 0.0 — so a triples file carrying
+    neither printed «судья: $0.00», which is also what a run with no judge at
+    all prints, and the two are not the same fact. `records.triple_totals_from_
+    json` refuses a missing, non-numeric or negative field BY NAME, so the
+    reader and `harness.run_triple_v5`'s writer cannot drift apart: the harness
+    writes both keys on every triple it produces, including a refused one, and
+    their absence means this is not the file the report thinks it is."""
+    try:
+        return records.triple_totals_from_json(triple).judge_cost_usd
+    except records.RecordError as error:
+        raise ReportError(f"{path}: тройка {triple.get('case_id')!r} — {error}") from error
 
 
 def cost_lines(run_dir: Path) -> tuple[str, ...]:
@@ -539,7 +545,7 @@ def cost_lines(run_dir: Path) -> tuple[str, ...]:
     refused = [one for one in triples if one.get("status") == "refused"]
     excluded = [one for one in triples if one.get("status") == "excluded"]
     spent = sum(_triple_cost(one, triples_path) for one in triples)
-    judge = sum(_judge_spend(one) for one in triples)
+    judge = sum(_judge_spend(one, triples_path) for one in triples)
     ceiling = meta.get("ceiling_usd")
     out = [head,
            f"   троек: полных {len(complete)} · исключено {len(excluded)} · "
@@ -601,6 +607,25 @@ def read_parts(v5_run_dir: Path, v4_run_dir: Path) -> ReportParts:
                        cost=cost_lines(v5_run_dir))
 
 
+def _holes(excluded: Sequence[str]) -> tuple[str, ...]:
+    """The rows of `SideBySide.excluded_observations` that are HOLES.
+
+    The reason word is `contracts.EXCLUDED_NO_HOPS` and it is read back from
+    the row rather than kept in a second field: the `SideBySide` is written to
+    `<run>.report.txt` and read by whoever holds it, and two fields that have
+    to stay in step are one drift away from a report that prints a hole in one
+    section and a clean population in the next."""
+    mark = f"({contracts.EXCLUDED_NO_HOPS})"
+    return tuple(row for row in excluded if row.endswith(mark))
+
+
+def _stopped(excluded: Sequence[str]) -> tuple[str, ...]:
+    """The complement of `_holes` — the arms that ended in an
+    `EXCLUDED_TERMINATION`, each carrying its own termination."""
+    mark = f"({contracts.EXCLUDED_NO_HOPS})"
+    return tuple(row for row in excluded if not row.endswith(mark))
+
+
 def assemble(parts: ReportParts, functions: dict[str, Metric]) -> SideBySide:
     """The `SideBySide` of parts already read.
 
@@ -618,11 +643,18 @@ def assemble(parts: ReportParts, functions: dict[str, Metric]) -> SideBySide:
             lines[name] = functions[name](observations)
         else:
             refused[name] = verdict.why
+    # ONLY the axes a line may be printed on (F2.10). An observation-level line
+    # sliced by a HOP axis counts the same answer once per bucket, so the
+    # buckets add up to more units than the corpus holds; `metrics.
+    # prints_on_axis` is where that rule lives and this loop obeys it instead
+    # of restating it. Computing the cells anyway and hiding them at render
+    # time would leave a number in the `SideBySide` that nobody may print —
+    # and a number that exists gets printed eventually.
     axes: dict[str, dict[str, dict[str, Line]]] = {}
     for name in sorted(lines):
         axes[name] = {axis: {bucket: functions[name](rows)
                              for bucket, rows in sorted(by_axis(observations, axis).items())}
-                      for axis in contracts.AXES}
+                      for axis in contracts.AXES if prints_on_axis(name, axis)}
     blocked = [name for name in refused if name not in contracts.DIAGNOSTIC_METRIC_NAMES]
     stamp = parts.judge.stamp
     empty_stamp = CalibrationStamp(judge_model="—", prompt_sha256="", n=0, raw_agreement=0.0,
@@ -633,6 +665,15 @@ def assemble(parts: ReportParts, functions: dict[str, Metric]) -> SideBySide:
     # screen it reaches, and the header cannot say «откалиброван» because a row
     # on disk claimed it (finding #7).
     judged = empty_stamp if stamp is None else replace(stamp, calibrated=not parts.judge.problems)
+    # ONE list for the two ways the v5 population loses a (case, repeat), with
+    # the reason spelled in the row (F2.9). A hole carries `EXCLUDED_NO_HOPS`
+    # and is what makes the report НЕПОЛНЫЙ — finding #5 was `residual`
+    # printing 1/1 over observations whose hops had never been read; an arm
+    # that stopped carries its own termination and does not, because v4's own
+    # block already counts it under «исключено» and marking every real run
+    # НЕПОЛНЫЙ teaches the reader to scroll past the word.
+    excluded = tuple(f"{name} ({contracts.EXCLUDED_NO_HOPS})"
+                     for name in parts.half.hopless) + parts.half.stopped
     # `SideBySide` carries NO `v4_extra` (ruling R-35). `v4_leak`,
     # `v4_seed_coverage` and `v4_overmask` are printed by v4's own block,
     # verbatim, a few lines above; re-deriving them here would be a second
@@ -646,7 +687,8 @@ def assemble(parts: ReportParts, functions: dict[str, Metric]) -> SideBySide:
         agent_model=contracts.AGENT_MODEL, judge=judged,
         v4_levels=level_rows(parts.v5.block), v5_lines=lines, v5_by_axis=axes,
         v5_refused=refused, judge_labels=parts.judge.labels,
-        incomplete=bool(blocked) or bool(parts.judge.problems) or bool(parts.half.hopless))
+        judge_pregate=parts.judge.pregate, excluded_observations=excluded,
+        incomplete=bool(blocked) or bool(parts.judge.problems) or bool(_holes(excluded)))
 
 
 def side_by_side(v5_run_dir: Path, v4_run_dir: Path,
@@ -695,7 +737,7 @@ def render(side: SideBySide, parts: ReportParts, dump: int) -> list[str]:
         f"агент {side.agent_model} · судья {judge.judge_model} "
         f"(κ={judge.kappa:.2f}, согласие={judge.raw_agreement:.2f}, "
         f"{'откалиброван' if judge.calibrated else 'НЕ ОТКАЛИБРОВАН'}; "
-        f"отказано до судьи: {parts.judge.pregate})",
+        f"отказано до судьи: {side.judge_pregate})",
         f"корпус v5 {side.corpus_digest_v5[:12] or '—'} · корпус v4 {side.corpus_digest_v4[:12] or '—'}",
         ""]
     out += list(parts.cost)
@@ -716,12 +758,20 @@ def render(side: SideBySide, parts: ReportParts, dump: int) -> list[str]:
     out += ["", V4_BLOCK_END, ""]
 
     out += ["2. ЛИНИИ v5 — абсолютные доли, интервал Клоппера–Пирсона, «сертифицирует ≥» вместо 100%"]
-    for name in _printing_order(side.v5_lines):
-        if name not in contracts.DIAGNOSTIC_METRIC_NAMES:
-            out.append("   " + render_line(side.v5_lines[name]))
-    out += ["", "   диагностика — печатается, но не является критерием успеха"]
+    # A diagnostic named in `BESIDE` is printed under the line it qualifies and
+    # NOT again in the diagnostics block: `out_absent` under `form_hOUT` (F2.10).
+    beside_printed: set[str] = set()
     for name in _printing_order(side.v5_lines):
         if name in contracts.DIAGNOSTIC_METRIC_NAMES:
+            continue
+        out.append("   " + render_line(side.v5_lines[name]))
+        companion = BESIDE.get(name)
+        if companion is not None and companion in side.v5_lines:
+            out.append("   " + render_line(side.v5_lines[companion]))
+            beside_printed.add(companion)
+    out += ["", "   диагностика — печатается, но не является критерием успеха"]
+    for name in _printing_order(side.v5_lines):
+        if name in contracts.DIAGNOSTIC_METRIC_NAMES and name not in beside_printed:
             out.append("   " + render_line(side.v5_lines[name]))
 
     out += ["", "3. ФОРМА И СРЕЗЫ — каждая напечатанная линия по каждой оси; "
@@ -746,7 +796,7 @@ def render(side: SideBySide, parts: ReportParts, dump: int) -> list[str]:
     # The pre-gate row is SEPARATE and says so. A «неверно» the residual gate
     # decided is not the model's verdict, and folding it into the histogram
     # credits the judge with work it never did (T11).
-    out.append(f"   отказано до судьи (подмена стояла в ответе): {parts.judge.pregate} — "
+    out.append(f"   отказано до судьи (подмена стояла в ответе): {side.judge_pregate} — "
                f"решено детерминированно, вне κ")
     for problem in parts.judge.problems:
         out.append(f"   калибровка не принята: {problem}")
@@ -756,15 +806,19 @@ def render(side: SideBySide, parts: ReportParts, dump: int) -> list[str]:
         out += [f"   {name}: {why}" for name, why in sorted(side.v5_refused.items())]
     else:
         out.append("   нет")
-    if parts.half.hopless:
-        out.append(f"   НАБЛЮДЕНИЯ ИСКЛЮЧЕНЫ: {len(parts.half.hopless)} — случай объявляет хопы, "
+    # Both counts are read off `side.excluded_observations`, never off the half
+    # this report happened to assemble from (F2.9): a `SideBySide` written to a
+    # file must still be able to name its own holes.
+    holes = _holes(side.excluded_observations)
+    stopped = _stopped(side.excluded_observations)
+    if holes:
+        out.append(f"   НАБЛЮДЕНИЯ ИСКЛЮЧЕНЫ: {len(holes)} — случай объявляет хопы, "
                    f"плечо доиграло, а строк в <run>.hops.jsonl нет: "
-                   + " · ".join(parts.half.hopless[:dump])
-                   + (" …" if len(parts.half.hopless) > dump else ""))
-    if parts.half.stopped:
-        out.append(f"   плечо не доиграло: {len(parts.half.stopped)} — наблюдать нечего, "
-                   f"v4 считает их в «исключено»: " + " · ".join(parts.half.stopped[:dump])
-                   + (" …" if len(parts.half.stopped) > dump else ""))
+                   + " · ".join(holes[:dump]) + (" …" if len(holes) > dump else ""))
+    if stopped:
+        out.append(f"   плечо не доиграло: {len(stopped)} — наблюдать нечего, "
+                   f"v4 считает их в «исключено»: " + " · ".join(stopped[:dump])
+                   + (" …" if len(stopped) > dump else ""))
 
     out += ["", f"7. ПРИМЕРЫ (до {dump} на класс)"]
     out += _examples(parts.half.observations, dump)
@@ -783,6 +837,13 @@ def _axis_rows(side: SideBySide) -> list[str]:
     for name in _printing_order(side.v5_by_axis):
         cells = side.v5_by_axis[name]
         for axis in contracts.AXES:
+            # `metrics.prints_on_axis` is the ONE place that says which line may
+            # be sliced by which axis; the note is printed instead of the row so
+            # the reader sees a rule and not a line that quietly disappeared —
+            # a slice that vanishes reads as a slice that was clean (F2.10).
+            if not prints_on_axis(name, axis):
+                out.append(f"   {name}/{axis}: {AXIS_NOTE}")
+                continue
             bucket_lines = cells.get(axis, {})
             out.append(f"   {name}/{axis}: " + (" · ".join(
                 f"{bucket} {line.hits}/{line.total}"

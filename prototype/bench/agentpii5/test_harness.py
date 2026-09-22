@@ -27,6 +27,7 @@ from pathlib import Path
 from bench.agentpii3.live import judge as v3_judge
 from bench.agentpii4 import harness as v4_harness
 from bench.agentpii4.compare import ArmRun, ObservedCall
+from bench.agentpii4.gateway import HarnessError
 from bench.agentpii4.records import ArmMeta
 from bench.agentpii5 import harness as h
 from bench.agentpii5 import records as r
@@ -35,7 +36,7 @@ from bench.agentpii5.contracts import (
     HopObservation, JudgeRow, JudgeVerdict, MentionRecord, ToolResultRecord)
 from bench.agentpii5.fixtures import NAME_ITEM, PHONE_ITEM, _case, _hop
 from bench.agentpii5.form import form_match
-from bench.agentpii5.judge import JudgeConfig, prompt_sha256
+from bench.agentpii5.judge import JUDGE_TEMPERATURE, JudgeConfig, prompt_sha256
 
 RUN_ID: str = "abc123"
 REAL_NAME: str = NAME_ITEM.value
@@ -78,7 +79,8 @@ def _gateway_run(case: CaseV5) -> ArmRunV5:
                     mentions=(MentionRecord(item_id="p1", msg=0, result_seq=-1,
                                             substitute=SUBSTITUTE, request_index=1),),
                     turn_replies=(f"Нашёл {REAL_NAME}.",),
-                    call_turns=(0,), request_count=2, stream_mismatch=False)
+                    call_turns=(0,), request_count=2, stream_mismatch=False,
+                    reply_whole="", turn_residual=0)
 
 
 def _canned(case: CaseV5) -> h.TripleResult:
@@ -96,9 +98,15 @@ def _canned(case: CaseV5) -> h.TripleResult:
     judged = JudgeRow(case_id=case.base.id, repeat=0, input_sha256="0" * 64,
                       verdict=JudgeVerdict(label="верно", reason="запись та же · цитата: «Нашёл»",
                                            judged_by="model", cost_usd=0.02))
+    # The two totals through the WRITER the harness uses (`h.triple_totals` →
+    # `r.triple_totals_to_json`), never spelled here: a canned row that carries
+    # different keys from the live one tests the reader against a fixture
+    # nobody writes, which is how the report came to read `row.get(key) or 0`.
     triple = {"case_id": case.base.id, "repeat": 0, "kind": case.base.kind,
               "behaviour": case.behaviour, "register": case.base.register,
-              "cluster": case.base.cluster, "cap_usd": 0.5, "cost_usd": 0.03,
+              "cluster": case.base.cluster, "cap_usd": 0.5,
+              "cost_usd": h.charged(0.01, judged.verdict.cost_usd),
+              **r.triple_totals_to_json(h.triple_totals(judged, 0)),
               "status": "complete", "reason": "", "arms": {}, "judge": {}}
     return h.TripleResult(outcomes, run, hops, judged, triple)
 
@@ -144,7 +152,8 @@ def test_ledger_shared() -> list[str]:
     with tempfile.TemporaryDirectory() as tmp:
         ledger = v3_judge.SpendLedger(Path(tmp) / "spend.tsv", 0.0)
         config = JudgeConfig(model="claude-sonnet-5", ledger=ledger,
-                             query_cap_usd=QUERY_CAP_USD, retries=RETRIES, trace_path=None)
+                             query_cap_usd=QUERY_CAP_USD, retries=RETRIES, trace_path=None,
+                             temperature=JUDGE_TEMPERATURE)
         if config.ledger is not ledger:
             failures.append("у судьи своя копия потолка")
         # A ceiling of zero admits nothing, so the triple is RECORDED as refused
@@ -189,6 +198,9 @@ def test_run_files_written() -> list[str]:
             judge_model="claude-sonnet-5", prompt_sha256=prompt_sha256(), n=0,
             raw_agreement=0.0, kappa=0.0, per_type_kappa={}, repeat_disagreement=1.0,
             calibrated=False))
+        h.write_meta(run_dir, RUN_ID, model="claude-haiku-4-5-20251001",
+                     judge_model="claude-sonnet-5", tier="nano", repeats=1,
+                     digest="deadbeef", ceiling_usd=12.0, spent_usd=0.03)
         h.finish_run(run_dir, run_dir)
         for name in RUN_FILES:
             path = r.run_file(run_dir, RUN_ID, name)
@@ -331,7 +343,7 @@ def _run_with_turns(case: CaseV5, turns: tuple[str, ...], answer: str) -> ArmRun
     return ArmRunV5(base=base, reply_raw=answer, control_reply=run.control_reply,
                     tool_results=(), mentions=run.mentions, turn_replies=turns,
                     call_turns=run.call_turns, request_count=run.request_count,
-                    stream_mismatch=False)
+                    stream_mismatch=False, reply_whole="", turn_residual=0)
 
 
 def test_residual_in_an_earlier_turn_is_measured() -> list[str]:
@@ -413,24 +425,44 @@ def test_a_judge_leak_never_discards_the_arms() -> list[str]:
     """
     failures: list[str] = []
     here = Path(__file__).resolve().parent
-    if not _handles(here / "harness.py", "run_triple_v5", "OracleLeak"):
-        failures.append("run_triple_v5 не ловит OracleLeak — одна утечка снова убьёт прогон")
+    # `LeakedPrompt`, not the bare `OracleLeak`: `judge_triple` wraps every
+    # leak of the build into it (asserted below), and the narrower name is what
+    # carries the turn count into the recorded row (R-54). A handler on the
+    # parent class would catch the same leaks and read a zero.
+    if not _handles(here / "harness.py", "run_triple_v5", "LeakedPrompt"):
+        failures.append("run_triple_v5 не ловит LeakedPrompt — одна утечка снова убьёт прогон")
+    if not issubclass(h.LeakedPrompt, h.OracleLeak):
+        failures.append("LeakedPrompt перестал быть утечкой — перехват сузился молча")
     # The walk must be able to say «нет», or the check above passes on anything.
     with tempfile.TemporaryDirectory() as tmp:
         naked = Path(tmp) / "naked.py"
-        naked.write_text("def run_triple_v5() -> None:\n    \"\"\"OracleLeak\"\"\"\n    pass\n",
+        naked.write_text("def run_triple_v5() -> None:\n    \"\"\"LeakedPrompt\"\"\"\n    pass\n",
                          encoding="utf-8")
-        if _handles(naked, "run_triple_v5", "OracleLeak"):
+        if _handles(naked, "run_triple_v5", "LeakedPrompt"):
             failures.append("обход ast принял упоминание в строке документации за перехват")
-    # And the leak is still LOUD where it is ours: the oracle list.
+    # And the leak is still LOUD where it is ours: the oracle list. It arrives
+    # as a `LeakedPrompt` CARRYING the count the build had already measured —
+    # the dialogue is read before the sections are checked, so «сколько ходов
+    # несли подмену» is known even on a triple nobody will judge.
     case = _fixture_case()
-    faked = _run_with_turns(case, (f"Нашёл {REAL_NAME}.",), f"Готово, {REAL_NAME}.")
+    faked = _run_with_turns(case, (f"Нашёл {REAL_NAME}.", f"Готово, {REAL_NAME}."),
+                            f"Готово, {REAL_NAME}.")
     try:
         asyncio.run(h.judge_triple(case, faked, _MintedOnly((REAL_NAME,)),  # type: ignore[arg-type]
                                    None))
         failures.append("подмена, совпавшая с оракулом, не подняла OracleLeak")
-    except h.OracleLeak:
-        pass
+    except h.LeakedPrompt as leak:
+        # TWO, and the number is the fixture's: here the «minted substitute» is
+        # the real name itself, so it stands both in the customer's message and
+        # in the agent's kept turn, and `masked_dialogue` masks a turn of each.
+        # What matters is that a count MEASURED before the refusal reaches the
+        # handler — a zero would be indistinguishable from «ни один ход не нёс
+        # подмену».
+        if leak.turn_residual != 2:
+            failures.append(f"утечка унесла с собой {leak.turn_residual} нераскрытых подмен "
+                            f"в ходах, а их в диалоге фикстуры два")
+    except h.OracleLeak as bare:
+        failures.append(f"утечка сборки промпта пришла без счётчика ходов: {bare}")
     return failures
 
 
@@ -463,9 +495,145 @@ def test_the_judge_spend_is_charged_to_the_run() -> list[str]:
         ledger = v3_judge.SpendLedger(Path(tmp) / "spend.tsv", 0.0)
         refused = asyncio.run(h.run_triple_v5(_fixture_case(), 0, None, ledger, None,  # type: ignore[arg-type]
                                               "claude-haiku-4-5-20251001", RUN_ID))
-        for key in ("cost_usd", "judge_cost_usd", "turn_residual"):
-            if key not in refused.triple:
-                failures.append(f"в строке тройки нет поля {key}")
+        if "cost_usd" not in refused.triple:
+            failures.append("в строке тройки нет поля cost_usd")
+        # Through records' READER, which refuses a missing or non-numeric
+        # field by name: a refused triple that simply lacked the two columns
+        # read as «судья был бесплатным», and the report could not tell that
+        # from «судью не звали».
+        try:
+            r.triple_totals_from_json(refused.triple)
+        except r.RecordError as broken:
+            failures.append(f"отказанная тройка не несёт итогов: {broken}")
+    return failures
+
+
+def _calls(source: Path, function: str, callee: str) -> bool:
+    """Does `function` in `source` call `callee`? Walked with `ast`.
+
+    A text scan would find the name in the docstring that explains why the call
+    is there — the one place it is guaranteed to appear whether or not the call
+    survived an edit. Same reason as `_handles`, one question over.
+    """
+    tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name != function:
+            continue
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Call):
+                name = getattr(inner.func, "id", "") or getattr(inner.func, "attr", "")
+                if name == callee:
+                    return True
+    return False
+
+
+def test_turn_residual_reaches_the_record() -> list[str]:
+    """R-54: the count of earlier turns that held a substitute lands on
+    `ArmRunV5`, not only on the triple row.
+
+    `residual` is a per-observation line and reads the arm record; while the
+    number lived on the triple alone, a substitute the customer read in turn 2
+    and never in the final answer was counted by nothing at all — the run
+    printed a clean `residual` for a conversation that showed a fake.
+    """
+    failures: list[str] = []
+    case = _fixture_case()
+    run = _gateway_run(case)
+    laid = h.with_turn_residual(run, 2)
+    if laid.turn_residual != 2:
+        failures.append(f"на запись легло {laid.turn_residual} вместо 2")
+    for field in ("reply_raw", "control_reply", "turn_replies", "call_turns", "request_count",
+                  "stream_mismatch", "reply_whole"):
+        if getattr(laid, field) != getattr(run, field):
+            failures.append(f"проставление нераскрытых подмен изменило {field}")
+    if laid.base is not run.base:
+        failures.append("проставление нераскрытых подмен подменило запись v4")
+    # It SURVIVES THE FILE, or the metric reads a zero the run never wrote.
+    restored = r.arm_v5_from_record(r.arm_v5_record(laid, _meta(), case.base))
+    if restored.turn_residual != 2:
+        failures.append(f"в файле нераскрытых подмен {restored.turn_residual}, а было 2")
+    # The NEGATIVE: an honest run keeps its zero, so «2» above reads the value
+    # and not the presence of a field.
+    if r.arm_v5_from_record(r.arm_v5_record(run, _meta(), case.base)).turn_residual != 0:
+        failures.append("честный прогон приехал в файл с ненулевым счётчиком")
+    # A count cannot be negative, and a writer bug is refused by name rather
+    # than written into a record the report would have to argue with.
+    try:
+        h.with_turn_residual(run, -1)
+        failures.append("отрицательное число нераскрытых подмен приняли молча")
+    except HarnessError:
+        pass
+    # And `run_triple_v5` is what lays it on: the number is known only after
+    # the judge prompt is built, three arms in, and a live model is the only
+    # way to reach that line for real.
+    here = Path(__file__).resolve().parent
+    if not _calls(here / "harness.py", "run_triple_v5", "with_turn_residual"):
+        failures.append("run_triple_v5 не проставляет нераскрытые подмены на запись плеча I")
+    with tempfile.TemporaryDirectory() as tmp:
+        naked = Path(tmp) / "naked.py"
+        naked.write_text("def run_triple_v5() -> None:\n"
+                         "    \"\"\"with_turn_residual\"\"\"\n    pass\n", encoding="utf-8")
+        if _calls(naked, "run_triple_v5", "with_turn_residual"):
+            failures.append("обход ast принял упоминание в строке документации за вызов")
+    return failures
+
+
+def test_the_triple_carries_both_totals() -> list[str]:
+    """R-54: `judge_cost_usd` and `turn_residual` are written by records' own
+    writer and read back by its reader — never `row.get(key) or 0`.
+
+    One place computes the judge's share (`triple_totals`), and both readers
+    take it from there: the column the report prints and the `cost_usd` that
+    bounds a resumed run. Two expressions over one verdict is how a rounding
+    of one and not the other becomes a ceiling nobody can reconcile.
+    """
+    failures: list[str] = []
+    judged = JudgeRow(case_id="c-0001", repeat=0, input_sha256="0" * 64,
+                      verdict=JudgeVerdict(label="верно", reason="цитата: «Нашёл»",
+                                           judged_by="model", cost_usd=0.02))
+    totals = h.triple_totals(judged, 1)
+    if totals.judge_cost_usd != 0.02 or totals.turn_residual != 1:
+        failures.append(f"итоги тройки посчитаны как {totals}")
+    read = r.triple_totals_from_json(r.triple_totals_to_json(totals))
+    if read != totals:
+        failures.append(f"итоги тройки не пережили запись и чтение: {read} != {totals}")
+    # The NEGATIVE the field exists for: no judge is a MEASURED zero, and a row
+    # that simply lacks the key is refused rather than read as a free judge.
+    if h.triple_totals(None, 0).judge_cost_usd != 0.0:
+        failures.append("тройка без вердикта насчитала судье расход")
+    try:
+        r.triple_totals_from_json({"turn_residual": 0})
+        failures.append("строку без judge_cost_usd прочитали как бесплатного судью")
+    except r.RecordError:
+        pass
+    return failures
+
+
+def test_the_answer_leg_keeps_the_whole_restoration() -> list[str]:
+    """R-54, the half that is engine-free: an ORDINARY case has one
+    restoration, and `reply_whole` stays empty.
+
+    The streaming half — where the two restorations really differ and the
+    record must keep both — needs the engine and lives in
+    `test_harness_stream`; here the point is that a non-streaming case does
+    not put its answer on disk twice, which is what invites a reader to
+    compare a field with itself.
+    """
+    failures: list[str] = []
+    leg = h.answer_leg(f"Нашёл {SUBSTITUTE}.", False, None,  # type: ignore[arg-type]
+                       lambda text: text.replace(SUBSTITUTE, REAL_NAME))
+    if leg.reply != f"Нашёл {REAL_NAME}.":
+        failures.append(f"обычный случай восстановлен не целиком: {leg.reply!r}")
+    if leg.reply_whole != "" or leg.mismatch:
+        failures.append(f"обычный случай записал вторую копию ответа: {leg!r}")
+    silent = h.answer_leg("", False, None,  # type: ignore[arg-type]
+                          lambda text: text.replace(SUBSTITUTE, REAL_NAME))
+    if silent != h.AnswerLeg(reply="", reply_whole="", mismatch=False):
+        failures.append(f"молчавший агент получил ответ: {silent!r}")
+    # The NEGATIVE: the restorer must actually have been called, or «восстановлено»
+    # above would hold for a leg that returned the raw text.
+    if leg.reply == f"Нашёл {SUBSTITUTE}.":
+        failures.append("ответ уехал с подменой — восстановитель не звали")
     return failures
 
 
@@ -480,6 +648,10 @@ def main() -> int:
         ("residual_in_an_earlier_turn_is_measured", test_residual_in_an_earlier_turn_is_measured),
         ("a_judge_leak_never_discards_the_arms", test_a_judge_leak_never_discards_the_arms),
         ("the_judge_spend_is_charged_to_the_run", test_the_judge_spend_is_charged_to_the_run),
+        ("turn_residual_reaches_the_record", test_turn_residual_reaches_the_record),
+        ("the_triple_carries_both_totals", test_the_triple_carries_both_totals),
+        ("the_answer_leg_keeps_the_whole_restoration",
+         test_the_answer_leg_keeps_the_whole_restoration),
     )
     failures: list[str] = []
     for name, check in checks:

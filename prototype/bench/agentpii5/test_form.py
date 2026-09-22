@@ -530,12 +530,20 @@ def main() -> int:
         # missing extractor raises a KeyError three checks after the one
         # written to name it, and aborting there would hide every check
         # behind it. The cause is printed with its frame, never swallowed.
+        #
+        # THE FAILURE IS APPENDED, NOT ASSIGNED, and that is not style:
+        # `e2e/lint_tests.py` decides whether a broad `except` records or
+        # swallows by looking for a `check`/`append`/`fail` call or a `raise`
+        # INSIDE the handler, and a rule that read the comment instead would
+        # be no rule at all — the handler that cost us a paying customer's 403
+        # also had a comment naming the real reason.
+        found: list[str] = []
         try:
             found = test(form)
-        except Exception as error:                      # noqa: BLE001 - reported, not hidden
+        except Exception as error:                      # noqa: BLE001 - appended below, never hidden
             frame = traceback.extract_tb(error.__traceback__)[-1]
-            found = [f"raised {type(error).__name__}: {error} "
-                     f"at {Path(frame.filename).name}:{frame.lineno}"]
+            found.append(f"raised {type(error).__name__}: {error} "
+                         f"at {Path(frame.filename).name}:{frame.lineno}")
         print(f"  {test.__name__:42} {'ok' if not found else 'FAIL'}")
         failures.extend(f"{test.__name__}: {one}" for one in found)
     print(f"form: {len(PAIRS)} pairs, {len(form.FEATURE_EXTRACTORS)} extractors")

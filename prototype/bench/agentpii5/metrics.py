@@ -34,8 +34,8 @@ from collections.abc import Sequence
 from dataclasses import replace
 
 from bench.agentpii4.parts import parts_of
-from bench.agentpii4.schema import PiiItem
-from bench.agentpii4.tools import flatten
+from bench.agentpii4.schema import Locus, PiiItem
+from bench.agentpii4.tools import FieldSpec, flatten
 from bench.agentpii5 import contracts
 from bench.agentpii5.contracts import (
     HopObservation,
@@ -68,7 +68,7 @@ from bench.agentpii5.observe import (
     substitute_surfaces,
     survives_in,
 )
-from bench.agentpii5.tools import spec_v5_for
+from bench.agentpii5.tools import expected_leaf_value, spec_v5_for
 
 # Twelve cue words — «the customer named the field». The `cue` axis asks
 # whether detection leans on a nearby label, and a longer list would make every
@@ -128,15 +128,38 @@ def value_matches(pii_type: str, produced: str, target: str) -> bool:
     return fold(produced.strip()) == fold(target.strip())
 
 
-def leaf_role(tool_name: str, path: str) -> str:
-    """The PART of a value this tool leaf asks for: `contact.last_name` wants
-    the surname, `address.building` the house number, `patient.birth_date` the
-    ISO date. "" when the leaf takes the whole value, or when no `FieldSpec`
-    describes it."""
+def leaf_spec(tool_name: str, path: str) -> FieldSpec | None:
+    """The `FieldSpec` that describes this tool leaf — the registry's own
+    statement of what the leaf asks for (`contact.last_name` the surname,
+    `address.building` the house number, `patient.birth_date` the ISO date).
+    None for an answer hop, which names no tool, and for a leaf no spec
+    describes; both take the WHOLE value."""
     if not tool_name or not path:
-        return ""
-    spec = spec_v5_for(tool_name, path)
-    return spec.role if spec is not None else ""
+        return None
+    return spec_v5_for(tool_name, path)
+
+
+# The locus of a value that came back from a TOOL rather than out of the
+# corpus. `returned_as_item` needs one to build a `PiiItem`, and no comparison
+# ever reads it — the alternative was a second rule for «the value a leaf
+# expects», which is the thing R-53 removed.
+_RETURNED_LOCUS: Locus = Locus(kind="seed", msg=-1, start=-1, end=-1, record="", path="")
+
+
+def returned_as_item(pii_type: str, returned: str) -> PiiItem:
+    """What tool A actually returned, read as an item.
+
+    ONE DEFINITION OF «THE VALUE A LEAF EXPECTS» (`tools.expected_leaf_value`,
+    ruling R-53) serves both the corpus's own item and the chain's hand-over,
+    and it takes an item — so the hand-over's target becomes one. Split with
+    `parts_of`, the one splitter this benchmark owns, so the chain cannot
+    disagree with the corpus about what the surname of a name is. The id and
+    the identity stay empty on purpose: this value belongs to no population
+    that counts identities, and giving it one would let it be mistaken for a
+    corpus item."""
+    return PiiItem(id="", type=pii_type, identity="", value=returned, canonical=returned,
+                   parts=parts_of(pii_type, returned), where=_RETURNED_LOCUS,
+                   duty="required", spoken=False, stale=False)
 
 
 def role_matches(pii_type: str, produced: str, target: str) -> bool:
@@ -166,17 +189,21 @@ def role_matches(pii_type: str, produced: str, target: str) -> bool:
     return fold(produced.strip()) == fold(target.strip())
 
 
-def leaf_value_ok(pii_type: str, role: str, produced: str, whole: str,
-                  parts: dict[str, str]) -> bool:
+def leaf_value_ok(item: PiiItem, tool_name: str, path: str, produced: str) -> bool:
     """Did the leaf receive the value asked of it: its PART when the tool asks
     for a part, the whole value when it asks for the whole.
 
-    `whole` and `parts` are two readings of ONE target and the caller supplies
-    both, because they come from different places: for `round_trip` /
-    `end_to_end` the target is the item (its `canonical` and the parts the
-    corpus BUILT it from — a LOC canonical is the street alone while its parts
-    carry house, flat and city, so splitting the canonical would lose them),
-    and for `chain_value` it is what tool A actually returned, split here.
+    A THIN CALLER OF `tools.expected_leaf_value` (R-53). What a leaf expects is
+    the registry's business and it is decided there, once; this function only
+    compares, and the comparison is per type — digits with digits, an ISO date
+    with an ISO date (`role_matches`). Two definitions of the expected value
+    would have to stay equal for ever, and the one that drifted would move
+    every value line at once.
+
+    The target is an ITEM, which is also how the chain's hand-over reaches
+    here (`returned_as_item`): the corpus item carries the parts the corpus
+    BUILT it from — a LOC canonical is the street alone while its parts carry
+    house, flat and city, so splitting the canonical instead would lose them.
 
     A role the target has NO part for is a MISS and a corpus defect: the case
     tells the agent to put a patronymic into `contact.middle_name` for a
@@ -187,14 +214,14 @@ def leaf_value_ok(pii_type: str, role: str, produced: str, whole: str,
     (`fx_end_to_end_adversarial`): making it a silent hit would be the v4
     defect «a triple with nothing to compare passed all five levels» with the
     parts table in its hand, and it would come back invisibly."""
-    if not role:
-        return value_matches(pii_type, produced, whole)
-    return role_matches(pii_type, produced, parts.get(role, ""))
+    spec = leaf_spec(tool_name, path)
+    if spec is None or not spec.role:
+        return value_matches(item.type, produced, item.canonical or item.value)
+    return role_matches(item.type, produced, expected_leaf_value(item, spec))
 
 
 def _item_value_ok(hop: HopObservation, item: PiiItem) -> bool:
-    return leaf_value_ok(item.type, leaf_role(hop.hop.tool_name, hop.hop.path),
-                         hop.produced, item.canonical, dict(item.parts))
+    return leaf_value_ok(item, hop.hop.tool_name, hop.hop.path, hop.produced)
 
 
 def value_repaired(pii_type: str, produced: str, target: str) -> bool:
@@ -221,10 +248,10 @@ def _item_value_repaired(hop: HopObservation, item: PiiItem) -> bool:
     """`value_repaired`, asked of the leaf's own part. Without the role the
     diagnostic would answer a different question from the line it explains,
     and the two would stop differing by «what normalisation costs»."""
-    role = leaf_role(hop.hop.tool_name, hop.hop.path)
-    if not role:
-        return value_repaired(item.type, hop.produced, item.canonical)
-    target = dict(item.parts).get(role, "")
+    spec = leaf_spec(hop.hop.tool_name, hop.hop.path)
+    if spec is None or not spec.role:
+        return value_repaired(item.type, hop.produced, item.canonical or item.value)
+    target = expected_leaf_value(item, spec)
     if role_matches(item.type, hop.produced, target):
         return True
     # A declined part («Ивановой» for «Иванова») is the value repaired, not
@@ -620,9 +647,8 @@ def chain_value(observations: Sequence[RunObservation]) -> Line:
     for one, hop, source in rows:
         left, right = _item_of(one, hop.hop.item_id), _item_of(one, source.hop.item_id)
         same_identity = left is not None and right is not None and left.identity == right.identity
-        arrived = leaf_value_ok(hop.pii_type, leaf_role(hop.hop.tool_name, hop.hop.path),
-                                hop.produced, source.reference,
-                                parts_of(hop.pii_type, source.reference))
+        arrived = leaf_value_ok(returned_as_item(hop.pii_type, source.reference),
+                                hop.hop.tool_name, hop.hop.path, hop.produced)
         hits += 1 if (hop.status == "observed" and same_identity and arrived) else 0
     return _line("chain_value", hits, len(rows))
 
@@ -944,12 +970,22 @@ def residual(observations: Sequence[RunObservation]) -> Line:
     so no fake reached the consumer. That failure is `leak`'s to report, and
     making this line fire on it would mean two lines for one defect and a
     `residual` number that no longer means what it says. Everywhere a FORM or
-    a VALUE is asked of an OUT hop, `unmasked` is a miss."""
+    a VALUE is asked of an OUT hop, `unmasked` is a miss.
+
+    AN EARLIER TURN COUNTS TOO (R-54). `ArmRunV5.turn_residual` is how many of
+    the agent's own earlier turns still held a minted substitute when the judge
+    prompt was built — the customer read those turns, and a fake that stood in
+    turn 2 and not in the final answer reached a human just as surely. The
+    number was written on the triple row, where no metric could read it, so the
+    defect was counted nowhere; here it is a miss of the observation, in the
+    same term as the answer, because it is the same defect one turn sooner."""
     rows = [hop for _one, hop in _hops(observations, "OUT") if hop.status != "absent"]
     hits = sum(1 for hop in rows if hop.status != "residual")
     for one in observations:
-        clean = not any(hop.hop.kind == "OUT" and hop.hop.owner == "answer" and hop.status == "residual"
-                        for hop in one.hops) and not residual_answer_items(one.case, one.run)
+        clean = (not any(hop.hop.kind == "OUT" and hop.hop.owner == "answer"
+                         and hop.status == "residual" for hop in one.hops)
+                 and not residual_answer_items(one.case, one.run)
+                 and one.run.turn_residual == 0)
         hits += 1 if clean else 0
     return _line("residual", hits, len(rows) + len(observations))
 

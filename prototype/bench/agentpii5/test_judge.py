@@ -70,7 +70,7 @@ def _run_with_turns(turn_replies: tuple[str, ...]) -> ArmRunV5:
     return ArmRunV5(base=base, reply_raw=f"Курьер приедет к {SUBSTITUTE}.",
                     control_reply="", tool_results=(result,), mentions=(),
                     turn_replies=turn_replies, call_turns=(1,), request_count=2,
-                    stream_mismatch=False)
+                    stream_mismatch=False, reply_whole="", turn_residual=0)
 
 
 def test_dialogue_carries_the_agents_turns() -> list[str]:
@@ -400,6 +400,84 @@ def test_no_unreachable_adapters() -> list[str]:
     return failures
 
 
+def _judge_config_temperatures(source: Path) -> tuple[str, ...]:
+    """How every `JudgeConfig(...)` call in `source` spells its temperature.
+
+    Walked with `ast` and reported as SOURCE, not as a value: the claim is that
+    the run and the K calibration repeats ask at ONE temperature, and two
+    literals that happen to be equal today are two values tomorrow. A call with
+    no `temperature` keyword is reported as `"<нет>"` rather than skipped —
+    silence is the failure this check exists for.
+    """
+    tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+    spellings: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = getattr(node.func, "id", "") or getattr(node.func, "attr", "")
+        if name != "JudgeConfig":
+            continue
+        keyword = next((one for one in node.keywords if one.arg == "temperature"), None)
+        spellings.append("<нет>" if keyword is None else ast.unparse(keyword.value))
+    return tuple(spellings)
+
+
+def test_one_temperature_for_run_and_repeats() -> list[str]:
+    """R-56: the temperature is explicit, and the repeats ask at the run's.
+
+    `calibration export --repeats K` is a SECOND PROCESS: it spends K−1 more
+    judge calls whose spread becomes `repeat_disagreement`, the threshold that
+    refuses an unstable judge. «The same temperature as the run» can therefore
+    hold only through one shared constant — a flag is a value a human retypes,
+    and a spread measured at another temperature describes another instrument.
+    So both construction sites must name `JUDGE_TEMPERATURE` itself.
+    """
+    here = Path(__file__).resolve().parent
+    failures: list[str] = []
+    for name in ("harness.py", "calibration.py"):
+        spellings = _judge_config_temperatures(here / name)
+        if not spellings:
+            failures.append(f"{name}: ни одного JudgeConfig — проверка смотрит не туда")
+        for spelling in spellings:
+            if "JUDGE_TEMPERATURE" not in spelling:
+                failures.append(f"{name}: JudgeConfig(temperature={spelling}) — не общая "
+                                f"константа, прогон и повторы разъедутся молча")
+    # The walk must be able to say «нет», or «все зовут константу» is a
+    # statement about the scanner.
+    with tempfile.TemporaryDirectory() as tmp:
+        naked = Path(tmp) / "naked.py"
+        naked.write_text("JudgeConfig(model='m', temperature=0.0)\n"
+                         "JudgeConfig(model='m')\n", encoding="utf-8")
+        found = _judge_config_temperatures(naked)
+        if found != ("0.0", "<нет>"):
+            failures.append(f"обход прочитал температуры как {found}")
+    return failures
+
+
+def test_temperature_the_transport_cannot_deliver_is_refused() -> list[str]:
+    """A temperature we cannot set is a temperature we must not accept.
+
+    The judge is asked through the Claude Code CLI, which takes no temperature
+    — neither a field of `ClaudeAgentOptions` nor a flag. Quietly building the
+    options anyway would put a number in the calibration stamp that the model
+    never ran at; the refusal names the transport instead.
+    """
+    failures: list[str] = []
+    options = judge._options("claude-sonnet-5", 0.05, judge.JUDGE_TEMPERATURE)
+    if options.model != "claude-sonnet-5" or options.max_budget_usd != 0.05:
+        failures.append("сессия судьи собрана не с моделью и потолком вызова")
+    if any(field == "temperature" for field in options.__dataclass_fields__):
+        failures.append("у ClaudeAgentOptions появилось поле temperature — отказ ниже "
+                        "больше не нужен, температуру надо ПЕРЕДАВАТЬ")
+    try:
+        judge._options("claude-sonnet-5", 0.05, 0.0)
+        failures.append("температуру, которой транспорт не умеет, приняли молча")
+    except judge.TransportError as refused:
+        if "0.0" not in str(refused) or "CLI" not in str(refused):
+            failures.append(f"отказ не называет ни запрошенную температуру, ни транспорт: {refused}")
+    return failures
+
+
 def test_prompt_hashes_what_was_sent() -> list[str]:
     """`judge_prompt` takes the prompt the caller built, so the hash on disk is
     of the string the model was actually given (F3.2).
@@ -445,6 +523,9 @@ def main() -> int:
         ("prompt_sha_changes_with_rubric", test_prompt_sha_changes_with_rubric),
         ("judged_by_none_carries_no_label", test_judged_by_none_carries_no_label),
         ("no_unreachable_adapters", test_no_unreachable_adapters),
+        ("one_temperature_for_run_and_repeats", test_one_temperature_for_run_and_repeats),
+        ("temperature_the_transport_cannot_deliver_is_refused",
+         test_temperature_the_transport_cannot_deliver_is_refused),
         ("prompt_hashes_what_was_sent", test_prompt_hashes_what_was_sent),
         ("dialogue_carries_the_agents_turns", test_dialogue_carries_the_agents_turns),
         ("agents_turns_are_restored", test_agents_turns_are_restored),

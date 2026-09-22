@@ -123,8 +123,34 @@ def _behaviour_problems(behaviour: str, cases: Sequence[CaseV5]) -> list[str]:
         if behaviour == "same_tool_other_target":
             if len(_targets_of_one_tool(case)) < 2:
                 problems.append(f"{tag}: no tool carries OUT hops of two identities")
+        if behaviour == "single":
+            problems.extend(_single_problems(case))
     if behaviour == "branching":
         problems.extend(_branch_family_problems(cases))
+    return problems
+
+
+def _single_problems(case: CaseV5) -> list[str]:
+    """§8.2's «одиночный вызов: базовый, 4 перехода», as a check (C-041, C-137).
+
+    TWO CLAIMS, AND THE SECOND IS WHAT MAKES THE FAMILY A BASELINE. The four
+    MINIMAL_LOOP pairs must all be there — a case that says a value and writes it
+    into a call without reading anything back is v4's two-hop shape, which is
+    exactly what the authored family exists to stop being the whole denominator.
+    And there must be ONE call: a second `ReturnExpectation` would make the case
+    another family's (a chain, a fan-out) wearing this family's name, and the
+    base loop's whole point is that nothing else is going on in it.
+    """
+    problems: list[str] = []
+    pairs = {(hop.kind, hop.owner) for hop in case.hops}
+    missing = [pair for pair in c.MINIMAL_LOOP if pair not in pairs]
+    if missing:
+        problems.append(f"{case.base.id}: the base loop is missing {missing}")
+    if not case.has_result:
+        problems.append(f"{case.base.id}: an authored single case that reaches no result")
+    if len(case.returns) != 1:
+        problems.append(f"{case.base.id}: {len(case.returns)} declared returns; the base "
+                        f"loop is ONE call")
     return problems
 
 
@@ -349,9 +375,17 @@ def test_plan_a_matches_the_floors() -> list[str]:
     """`PLAN_A` tops the revised v4 corpus up to §8.2, and names real modules."""
     problems: list[str] = []
     planned = {getattr(module, "BEHAVIOUR"): count for module, count in PLAN_A}
-    if set(planned) != set(c.GENERATOR_A_BEHAVIOURS):
+    # `single` IS PLANNED HERE AND THE CONSTANT DOES NOT SAY SO YET. R-50 made
+    # the base loop an AUTHORED family: the revised v4 corpus supplies the
+    # family's count and not its shape (379 of its 463 cases are v4's two-hop
+    # lookup), so `scenarios5/single.py` writes the four-hop loop a hundred
+    # times. `contracts.GENERATOR_A_BEHAVIOURS` still lists six because
+    # `contracts.py` belongs to another owner this round; the union below is
+    # what the plan must cover, and it stays a strict equality so a
+    # generator_b family appearing in PLAN_A is still a failure.
+    if set(planned) != set(c.GENERATOR_A_BEHAVIOURS) | {"single"}:
         problems.append(f"PLAN_A covers {sorted(planned)}, not "
-                        f"{sorted(c.GENERATOR_A_BEHAVIOURS)}")
+                        f"{sorted(set(c.GENERATOR_A_BEHAVIOURS) | {'single'})}")
     for behaviour, count in planned.items():
         if count <= 0:
             problems.append(f"{behaviour} is planned at {count}")
@@ -434,7 +468,7 @@ def test_import_orders() -> list[str]:
              f"import {first}; from bench.agentpii5.scenarios5.plan_a import PLAN_A, spaced_snils; "
              f"print(len(PLAN_A))"],
             capture_output=True, text=True, cwd=str(v4validate._HERE.parent.parent))  # noqa: SLF001
-        if done.returncode != 0 or done.stdout.strip() != "6":
+        if done.returncode != 0 or done.stdout.strip() != str(len(PLAN_A)):
             problems.append(f"importing {first} first: rc={done.returncode} "
                             f"out={done.stdout.strip()!r} err={done.stderr.strip()[-200:]!r}")
     return problems
@@ -521,6 +555,18 @@ def test_checks_can_fail() -> list[str]:
                    for one in branch]
     must_report("behaviour/branching-empty-probe",
                 _behaviour_problems("branching", never_empty))
+
+    # A `single` case with its result leg cut out — v4's two-hop shape, which is
+    # what the authored family exists not to be — and one that makes two calls.
+    base = _first_case("single")
+    two_hop = tuple(hop for hop in base.hops
+                    if not (hop.kind == "IN" and hop.owner == "tool"))
+    renumbered_single = tuple(replace(hop, hop_index=index, source_hop=min(hop.source_hop, 0))
+                              for index, hop in enumerate(two_hop))
+    must_report("behaviour/single-minimal-loop",
+                _behaviour_problems("single", [_broken(base, renumbered_single)]))
+    must_report("behaviour/single-one-call",
+                _behaviour_problems("single", [replace(base, returns=base.returns * 2)]))
 
     # Quotas: a corpus with no ИНН, and one where a new tool is unreachable.
     no_inn = [one for one in CORPUS if not any(item.type == "INN" for item in one.base.pii)]

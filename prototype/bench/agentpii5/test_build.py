@@ -24,6 +24,7 @@ import ast
 import json
 import sys
 import tempfile
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -31,14 +32,19 @@ from pathlib import Path
 from bench.agentpii4.schema import case_from_json
 from bench.agentpii5 import build as b
 from bench.agentpii5 import contracts as c
+from bench.agentpii5 import revise as revise_module
 from bench.agentpii5.contracts import CaseV5
 from bench.agentpii5.schema import case_v5_from_json, corpus_digest_v5, validate_corpus_v5
 from bench.agentpii5.tools import REGISTRY_V5
 
 SEED: int = b.SEED
-# Built once. The corpus is 1 594 cases and the whole assembly takes a second;
-# doing it in six checks would make the suite slow enough to stop being run.
-CASES: list[CaseV5] = b.build_corpus(SEED)
+# Built once, THROUGH THE REPORTING PATH. The corpus is 1 736 cases and the whole
+# assembly takes a second; doing it in six checks would make the suite slow
+# enough to stop being run. `build_reporting` is the same build plus the
+# downgrades counted by reason — what `chain_table` prints — so taking it here
+# costs nothing and lets the printed table be checked against the real counter
+# rather than against one made up for the test.
+CASES, DOWNGRADES, _DROPPED = b.build_reporting(SEED, False)
 
 
 def test_corpus_size_and_plan() -> list[str]:
@@ -114,11 +120,11 @@ def test_holdout_frozen() -> list[str]:
     problems: list[str] = []
     with tempfile.TemporaryDirectory() as folder:
         out = Path(folder)
-        ladder, _lines, broken = b.write_ladder(CASES, SEED, out, True)
+        ladder, _lines, broken = b.write_ladder(CASES, SEED, out, True, False)
         if ladder is None or broken:
             return [f"the first build wrote no ladder: {broken}"]
         first = (out / "ladder.json").read_bytes()
-        again, lines, broken = b.write_ladder(CASES, SEED, out, False)
+        again, lines, broken = b.write_ladder(CASES, SEED, out, False, False)
         if again is not None:
             problems.append("a second build rebuilt the ladder without the flag")
         if broken:
@@ -133,7 +139,7 @@ def test_holdout_frozen() -> list[str]:
         # freeze above would otherwise be the freeze of a function that never
         # writes, and this is the write it declines to make.
         shrunk = CASES[: len(CASES) // 2]
-        _ladder, _lines, broken = b.write_ladder(shrunk, SEED, out, True)
+        _ladder, _lines, broken = b.write_ladder(shrunk, SEED, out, True, False)
         if not broken:
             problems.append("--regenerate-ladder on half the corpus moved the holdout "
                             "without saying so")
@@ -155,10 +161,10 @@ def test_a_changed_corpus_refuses_the_kept_ladder() -> list[str]:
     problems: list[str] = []
     with tempfile.TemporaryDirectory() as folder:
         out = Path(folder)
-        b.write_ladder(CASES, SEED, out, True)
+        b.write_ladder(CASES, SEED, out, True, False)
         mutated = [replace(CASES[0], base=replace(CASES[0].base, now="2031-01-01T00:00:00+03:00"))]
         mutated.extend(CASES[1:])
-        kept, _lines, broken = b.write_ladder(mutated, SEED, out, False)
+        kept, _lines, broken = b.write_ladder(mutated, SEED, out, False, False)
         if kept is not None:
             problems.append("a changed corpus rebuilt the ladder by itself")
         if not broken:
@@ -167,7 +173,7 @@ def test_a_changed_corpus_refuses_the_kept_ladder() -> list[str]:
             problems.append(f"the refusal does not name the way out: {broken[0]}")
         # …and the refusal is about the DIGEST, not about any change: the same
         # cases are accepted again.
-        _kept, _lines, still = b.write_ladder(CASES, SEED, out, False)
+        _kept, _lines, still = b.write_ladder(CASES, SEED, out, False, False)
         if still:
             problems.append(f"the unchanged corpus was refused too: {still}")
     return problems
@@ -180,9 +186,9 @@ def test_regeneration_keeps_the_holdout() -> list[str]:
     problems: list[str] = []
     with tempfile.TemporaryDirectory() as folder:
         out = Path(folder)
-        b.write_ladder(CASES, SEED, out, True)
+        b.write_ladder(CASES, SEED, out, True, False)
         first = json.loads((out / "ladder.json").read_text(encoding="utf-8"))
-        _ladder, _lines, broken = b.write_ladder(CASES, SEED, out, True)
+        _ladder, _lines, broken = b.write_ladder(CASES, SEED, out, True, False)
         if broken:
             problems.append(f"an identical corpus moved its own holdout: {broken}")
         # The negative: a ladder whose holdout was drawn from ANOTHER corpus must
@@ -194,9 +200,20 @@ def test_regeneration_keeps_the_holdout() -> list[str]:
         foreign["tiers"] = tiers
         (out / "ladder.json").write_text(json.dumps(foreign, ensure_ascii=False),
                                          encoding="utf-8")
-        _ladder, _lines, broken = b.write_ladder(CASES, SEED, out, True)
+        _ladder, _lines, broken = b.write_ladder(CASES, SEED, out, True, False)
         if not broken:
             problems.append(f"a holdout missing {moved_out} was accepted as frozen")
+        # …AND THE ONE TIME IT MAY MOVE (R-52). The assertion that no live run
+        # has read this ladder yet is the only thing that lets the same movement
+        # through, and it has to SAY how many cases changed tier — a redraw that
+        # moved a fifth of the corpus quietly is the failure the refusal above
+        # exists for.
+        _ladder, lines, broken = b.write_ladder(CASES, SEED, out, True, True)
+        if broken:
+            problems.append(f"the assertion did not let the one allowed redraw through: "
+                            f"{broken}")
+        if not any("сменили ярус" in line for line in lines):
+            problems.append("the allowed redraw did not report the movement it made")
     return problems
 
 
@@ -205,7 +222,7 @@ def test_holdout_is_disjoint() -> list[str]:
     problems: list[str] = []
     with tempfile.TemporaryDirectory() as folder:
         out = Path(folder)
-        ladder, _lines, _broken = b.write_ladder(CASES, SEED, out, True)
+        ladder, _lines, _broken = b.write_ladder(CASES, SEED, out, True, False)
         if ladder is None:
             return ["no ladder was written"]
         held = set(ladder.tiers["holdout"])
@@ -228,12 +245,14 @@ def test_check_prints_shares() -> list[str]:
     family."""
     problems: list[str] = []
     lines = (b.coverage_table(CASES) + b.mde_table(CASES) + b.form_disagreements(CASES)
-             + b.loop_table(CASES))
+             + b.loop_table(CASES) + b.chain_table(CASES, DOWNGRADES)
+             + b.downgrade_lines(DOWNGRADES))
     text = "\n".join(lines)
     for needed in ("поведение:", "регистр (весь корпус):", "регистр (написано в v5):",
                    "с результатом инструмента:", "потоковых:", "владельцы переходов:",
                    "явный conversation_id:", "формы ответа (проверены на реальном моке):",
-                   "одиночные:", "MDE по семьям"):
+                   "одиночные:", "цепочки:", "написано в v5", "ушло по R-49",
+                   "MDE по семьям"):
         if needed not in text:
             problems.append(f"--check prints no {needed!r}")
     for behaviour in c.BEHAVIOURS:
@@ -242,6 +261,61 @@ def test_check_prints_shares() -> list[str]:
     for kind in c.MIN_CASES_BY_TYPE:
         if f"{kind}: несут" not in text:
             problems.append(f"no case count for type {kind}")
+    return problems
+
+
+def test_the_authored_and_the_revised_halves_are_counted_apart() -> list[str]:
+    """R-50 and R-49 in the printed tables: `single` and `sequential_chain` are
+    each a family the revised corpus supplies part of, and one number for either
+    would be read as a claim about a shape most of it does not have.
+
+    THE NUMBERS ARE CHECKED AGAINST THE CORPUS, not against a literal. A table
+    that printed «написано в v5 100» while the plan built ninety would be a table
+    nobody could use, and a literal here would have to be edited every time the
+    plan does.
+    """
+    problems: list[str] = []
+    text = "\n".join(b.loop_table(CASES) + b.chain_table(CASES, DOWNGRADES))
+    for behaviour in ("single", "sequential_chain"):
+        authored = sum(1 for case in CASES
+                       if case.behaviour == behaviour and not case.revised_from_v4)
+        revised = sum(1 for case in CASES
+                      if case.behaviour == behaviour and case.revised_from_v4)
+        if f"написано в v5 {authored}" not in text:
+            problems.append(f"{behaviour}: the table does not print «написано в v5 "
+                            f"{authored}»")
+        if f"ревизия v4 {revised}" not in text:
+            problems.append(f"{behaviour}: the table does not print «ревизия v4 {revised}»")
+    left = sum(count for label, count in DOWNGRADES.items()
+               if label.endswith(revise_module.MUTATING_REASON))
+    if not left:
+        problems.append("no case left sequential_chain under R-49; either the rule is gone "
+                        "or the v4 corpus stopped carrying an update fed by a lookup")
+    if f"ушло по R-49 (аргумент мутирующего вызова — сказанное клиентом) {left}" not in text:
+        problems.append(f"the chain table does not print the R-49 departures ({left})")
+    # THE NEGATIVE: with no downgrades reported the line must not claim any.
+    if "клиентом) 0" not in "\n".join(b.chain_table(CASES, Counter())):
+        problems.append("an empty downgrade counter still printed R-49 departures")
+    return problems
+
+
+def test_regenerating_the_ladder_needs_the_assertion() -> list[str]:
+    """R-52: the holdout may be redrawn only while nobody has run against it, and
+    the caller has to SAY so — `--regenerate-ladder` is what to do, not what is
+    true.
+
+    BOTH ANSWERS, because a refusal that has only ever been watched refusing
+    could be a function that returns a string unconditionally.
+    """
+    problems: list[str] = []
+    refusal = b.ladder_refusal(True, False)
+    if "--unfrozen-before-first-run" not in refusal:
+        problems.append(f"redrawing without the assertion was not refused by name: "
+                        f"{refusal!r}")
+    if b.ladder_refusal(True, True):
+        problems.append("the assertion did not let the redraw through")
+    if b.ladder_refusal(False, False):
+        problems.append("an ordinary build was refused a ladder it does not redraw")
     return problems
 
 
@@ -323,6 +397,8 @@ def test_widened_watch_is_restored() -> list[str]:
 
 
 CHECKS: tuple[Callable[[], list[str]], ...] = (
+    test_the_authored_and_the_revised_halves_are_counted_apart,
+    test_regenerating_the_ladder_needs_the_assertion,
     test_a_changed_corpus_refuses_the_kept_ladder, test_regeneration_keeps_the_holdout,
     test_static_proof_sees_containment, test_every_case_proves_its_declaration,
     test_corpus_size_and_plan, test_corpus_rules,

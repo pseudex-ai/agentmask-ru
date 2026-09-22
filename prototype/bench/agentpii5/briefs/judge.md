@@ -119,9 +119,24 @@ reader_ignores_v5_key`). `HopObservation` rows carry `hop` as a dict and
   model was sent and a pre-gated case no longer pays a second build (F3.2).
   `judge_answer(config, request, substitutes_minted)` is `judge_prompt` with
   the build in front (R-38's shape, what `calibration.ask_repeats` calls).
-  `judge_with` and `pregate_with` are DELETED: no caller ever spelled them
-  (F3.6), and `test_judge.test_no_unreachable_adapters` walks the package with
-  `ast` so the next one cannot be added quietly.
+  `judge_with` and `pregate_with` are DELETED — **R-48 retires the adapter half
+  of R-38**: no caller ever spelled them (F3.6), the harness calls
+  `judge_answer` / `judge_prompt` directly, and
+  `test_judge.test_no_unreachable_adapters` walks the package with `ast` so the
+  next one cannot be added quietly.
+- `JudgeConfig.temperature: float` is EXPLICIT at every construction site
+  (**R-56**), and the site names the module constant `JUDGE_TEMPERATURE` rather
+  than a number: `calibration export --repeats K` runs in a second process, and
+  «the K repeats ask at the run's temperature» — the premise under
+  `repeat_disagreement` — can hold only through one shared constant.
+  `test_judge.test_one_temperature_for_run_and_repeats` reads both files with
+  `ast` and refuses a literal. The value is DECLARED, not set: the transport is
+  the Claude Code CLI (`claude_agent_sdk.query`), which takes no temperature —
+  no field on `ClaudeAgentOptions`, no flag on the CLI — so `_options` REFUSES
+  any other value (`TransportError`) instead of sampling at its default while
+  the stamp claims otherwise. Measuring at another temperature means moving the
+  judge off the CLI onto the Messages API; that is a transport change, not a
+  field.
 - `build_prompt` masks the DIALOGUE through `masked_dialogue` before
   `assert_blind` sees it: a substitute the restorer left in an EARLIER turn is
   replaced by `RESIDUAL_MARKER` and counted (`JudgeOutcome.turn_residual`),
@@ -203,11 +218,27 @@ python3 -m bench.agentpii5.calibration import \
   restore the raw reply ALSO through `pseudex.redact.StreamDetokenizer` fed
   in chunks of 17 characters (a prime, so no boundary aligns with a token)
   and set `stream_mismatch = (chunked != whole)`. **THE CHUNKED RESULT IS THE
-  `reply`** (F3.1, superseding R-46): it is the text the streaming customer
-  read, and `form_hOUT` / `answer_real` / `residual` / the judge all grade
-  `base.reply`. `answer_leg` makes that choice in one named place and
-  `with_streamed_answer` lays the same text over `turn_replies[-1]`, so the
-  record holds one answer and not two.
+  `reply`** (F3.1; **R-47 supersedes R-46**): it is the text the streaming
+  customer read, and `form_hOUT` / `answer_real` / `residual` / the judge all
+  grade `base.reply`. `answer_leg` makes that choice in one named place,
+  returns the whole-text restoration beside it as `AnswerLeg.reply_whole` —
+  kept on the record as `ArmRunV5.reply_whole` (**R-54**), because
+  `metrics.stream_fidelity` says THAT the two disagreed and a reader then has
+  to see WHICH text the customer lost — and `with_streamed_answer` lays the
+  scored text over `turn_replies[-1]`, so the record holds one ANSWER and one
+  diagnostic beside it, never two answers.
+- `ArmRunV5.turn_residual` (**R-54**) is laid onto the I record by
+  `harness.with_turn_residual` inside `run_triple_v5`: the count is known only
+  when the judge's prompt is built, three arms in, and while it lived on the
+  triple row alone `residual` — a per-observation line that reads the arm
+  record — could not reach it. The triple row carries it too, together with
+  `judge_cost_usd` (= the sum of that triple's `judge.cost_usd`, computed in
+  ONE place, `harness.triple_totals`), and both are written and read through
+  `records.triple_totals_to_json` / `_from_json`, never `row.get(key) or 0`. A
+  triple whose prompt build still refuses (a substitute in the QUESTION or the
+  ORACLE — ours) carries the count out on the exception itself
+  (`judge.LeakedPrompt`), because the dialogue has been read by then and a zero
+  written there cannot be told from «ни один ход не нёс подмену».
 - `run_triple_v5`: as v4's `run_triple` — C first, then I ∥ C′ — with
   `seed_backend_v5(case)` per arm and `RealGateway` replaced by
   `GatewayV5`; then `observe` (import `bench.agentpii5.observe`) on the I

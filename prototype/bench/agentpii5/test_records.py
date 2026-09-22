@@ -80,7 +80,8 @@ def _arm_v5(case_id: str) -> ArmRunV5:
         mentions=(MentionRecord(item_id="p1", msg=-1, result_seq=0,
                                 substitute="Пахомова Ольга", request_index=2),),
         turn_replies=("Секунду, ищу.", "Нашёл Елену Иванову."),
-        call_turns=(1,), request_count=3, stream_mismatch=False)
+        call_turns=(1,), request_count=3, stream_mismatch=False,
+        reply_whole="Нашёл Елену Иванову.", turn_residual=1)
 
 
 def _hop() -> Hop:
@@ -222,6 +223,10 @@ def test_scrub_blanks_a_licensed_case() -> list[str]:
         return [f"a licensed case kept its values: {block}"]
     if block["request_count"] != 3 or block["stream_mismatch"] is not False:
         return ["the scrub dropped the counts it does not need to drop"]
+    if block["reply_whole"] != r.SCRUB_MARKER:
+        return [f"a licensed case kept the whole-text restoration: {block['reply_whole']!r}"]
+    if block["turn_residual"] != 1:
+        return ["the scrub dropped turn_residual, which is a count and carries no value"]
     return []
 
 
@@ -275,7 +280,7 @@ def test_merged_done_wins() -> list[str]:
                              substitutes={}, masked_spans={})
         broken = ArmRunV5(base=broken_base, reply_raw="", control_reply="", tool_results=(),
                           mentions=(), turn_replies=(), call_turns=(), request_count=0,
-                          stream_mismatch=False)
+                          stream_mismatch=False, reply_whole="", turn_residual=0)
         # The failure sorts FIRST by file name and the retry second, and then
         # the other way round: «prefer done» must not be «prefer the later file».
         r.append_row(run_dir / "111.arms.v5.jsonl", r.arm_v5_record(broken, _meta(), case))
@@ -374,6 +379,32 @@ def test_malformed_rows_are_refused() -> list[str]:
     failures += _refused(
         lambda: r.arm_v5_from_record({**arm, r.V5_KEY: {**block, "turn_replies": ["ok", 2]}}),
         "turn_replies", "an ArmRunV5 whose turn replies are not all text")
+    # R-54's two fields, each with its own negative: the whole-text restoration
+    # a streaming case is NOT scored on, and the count of earlier turns that
+    # still held a substitute. A row missing either is a harness that wrote a
+    # v5 record without them, and `residual` would then certify every
+    # observation of that run as clean.
+    failures += _refused(
+        lambda: r.arm_v5_from_record({**arm, r.V5_KEY: {key: value for key, value in block.items()
+                                                        if key != "reply_whole"}}),
+        "'reply_whole'", "an ArmRunV5 without the whole-text restoration")
+    failures += _refused(
+        lambda: r.arm_v5_from_record({**arm, r.V5_KEY: {**block, "turn_residual": "1"}}),
+        "turn_residual", "an ArmRunV5 whose turn_residual is a string")
+
+    totals = r.triple_totals_to_json(r.TripleTotals(judge_cost_usd=0.0031, turn_residual=2))
+    if r.triple_totals_from_json(_through_json(totals)) != r.TripleTotals(0.0031, 2):
+        failures.append(f"TripleTotals: round trip differs ({totals})")
+    failures += _refused(
+        lambda: r.triple_totals_from_json({key: value for key, value in totals.items()
+                                           if key != "judge_cost_usd"}),
+        "'judge_cost_usd'", "a triple row without the judge's share")
+    failures += _refused(lambda: r.triple_totals_from_json({**totals, "turn_residual": None}),
+                         "turn_residual", "a triple row whose turn_residual is null")
+    failures += _refused(lambda: r.triple_totals_from_json({**totals, "judge_cost_usd": "0.01"}),
+                         "judge_cost_usd", "a triple row whose judge cost is text")
+    failures += _refused(lambda: r.triple_totals_from_json({**totals, "judge_cost_usd": -0.01}),
+                         "judge_cost_usd", "a triple row where the judge earned money")
     return failures
 
 

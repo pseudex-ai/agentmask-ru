@@ -134,7 +134,8 @@ def _run(case_id: str) -> ArmRunV5:
     base = ArmRun(case_id=case_id, arm="I", repeat=0, calls=(), state=(), reply="",
                   termination="done", cost_usd=0.0, substitutes={}, masked_spans={})
     return ArmRunV5(base=base, reply_raw="", control_reply="", tool_results=(), mentions=(),
-                    turn_replies=(), call_turns=(), request_count=1, stream_mismatch=False)
+                    turn_replies=(), call_turns=(), request_count=1, stream_mismatch=False,
+                    reply_whole="", turn_residual=0)
 
 
 def _with_subs(run: ArmRunV5, subs: dict[str, str]) -> ArmRunV5:
@@ -163,6 +164,14 @@ def _with_calls(run: ArmRunV5, calls: tuple[ObservedCall, ...], turns: tuple[int
 
 def _with_mentions(run: ArmRunV5, mentions: tuple[MentionRecord, ...]) -> ArmRunV5:
     return replace(run, mentions=mentions)
+
+
+def _with_turn_residual(run: ArmRunV5, turns: int) -> ArmRunV5:
+    """How many of the agent's EARLIER turns still held a substitute when the
+    judge prompt was built. A helper of its own because the number belongs to
+    the run and not to any hop: the customer read those turns, and no hop
+    observation records what stood in them."""
+    return replace(run, turn_residual=turns)
 
 
 def _with_results(run: ArmRunV5, results: tuple[ToolResultRecord, ...]) -> ArmRunV5:
@@ -1145,11 +1154,21 @@ def _residual_fixtures() -> tuple[Fixture, Fixture, Fixture]:
     stray = _obs(stray_case, _with_replies(_with_subs(_run("fx-res-4"), {"p1": FAKE_NAME}),
                                            stray_reply, stray_reply, ""),
                  (_seen(stray_case, IN_USER, "NAME", FAKE_NAME, REAL_NAME),))
+    # FOURTH CLAUSE (R-54): the FINAL answer is clean and an EARLIER turn was
+    # not — the customer read «Пахомова Ольга» in turn 2 and a correct name in
+    # turn 3. `turn_residual` counted it on the triple row, where no metric
+    # could reach it, and this line printed 1/1: the critical-defect metric
+    # certifying a run in which a fake reached a human.
+    earlier_case = _plain_case("fx-res-5", (IN_USER,))
+    earlier = _obs(earlier_case,
+                   _with_turn_residual(_with_replies(_run("fx-res-5"), "", REAL_NAME, ""), 1),
+                   (_seen(earlier_case, IN_USER, "NAME", FAKE_NAME, REAL_NAME),))
     return (_fx("residual", "zero", "", (leaked,), 0, 2),
             _fx("residual", "one", "", (clean,), 2, 2),
             _fx("residual", "adversarial",
-                "a substitute in the answer; an absent leaf is not a clean one; an undeclared item still leaks",
-                (echoed, idle, stray), 2, 5))
+                "a substitute in the answer; an absent leaf is not a clean one; an undeclared "
+                "item still leaks; a clean answer after a turn that was not",
+                (echoed, idle, stray, earlier), 2, 6))
 
 
 FIXTURES: dict[str, tuple[Fixture, Fixture, Fixture]] = {

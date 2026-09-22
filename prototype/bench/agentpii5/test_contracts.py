@@ -218,6 +218,29 @@ def main() -> int:
     if "record_ids" not in r18:
         failures.append("R-30: R18 does not read record_ids")
 
+    # 8bis. the round-2 rulings that changed a SHAPE (R-51, R-54, F1.22)
+    if c.CORPUS_SIZE_BAND_V5 != (1200, 1800):
+        failures.append(f"R-51: the corpus band is {c.CORPUS_SIZE_BAND_V5}, ruled (1200, 1800)")
+    # The two fields are read by DIFFERENT readers (`stream_fidelity` and
+    # `residual`), so the TYPE is pinned beside the name: a `turn_residual`
+    # written as text would count as a miss on «0» just as loudly as on «3».
+    arm_fields = c.ArmRunV5.__dataclass_fields__
+    for field_name, want in (("reply_whole", str), ("turn_residual", int)):
+        if field_name not in arm_fields:
+            failures.append(f"R-54: ArmRunV5 must carry {field_name}")
+        elif arm_fields[field_name].type is not want:
+            failures.append(f"R-54: ArmRunV5.{field_name} is {arm_fields[field_name].type}, "
+                            f"and {want.__name__} is what its reader counts")
+    if "<run>.meta.json" not in c.RUN_FILES:
+        failures.append("F1.22: <run>.meta.json is a run file, not a name report.py invents")
+    side_fields = c.SideBySide.__dataclass_fields__
+    for field_name in ("judge_pregate", "excluded_observations"):
+        if field_name not in side_fields:
+            failures.append(f"F1.22: SideBySide must carry {field_name} — the report reads its "
+                            f"own holes off the object, not off the half it was built from")
+    if not c.EXCLUDED_NO_HOPS:
+        failures.append("F1.22: the hole marker of excluded_observations must be a word")
+
     # 9. every rule string is unique and numbered
     for rules, prefix in ((c.V5_CASE_RULES, "R"), (c.V5_CORPUS_RULES, "K"), (c.VERTICAL_RULES, "V")):
         ids = [rule.split()[0] for rule in rules]

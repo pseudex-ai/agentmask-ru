@@ -278,6 +278,84 @@ def test_a_declared_transition_is_attainable() -> list[str]:
     return problems
 
 
+def test_a_write_takes_the_value_the_customer_stated() -> list[str]:
+    """R-49: the argument of a MUTATING call is what the customer just said, not
+    what the earlier lookup returned.
+
+    THE REPRODUCTION THIS PINS. «запишите новый телефон …» puts the value of the
+    MESSAGE into `crm_upsert_contact.contact.phone`, while the lookup that found
+    the card returned the OLD one; declaring the update as fed by that result
+    claims a hand-over the dialogue contradicts, and no arm can satisfy both — an
+    agent that does what the customer asked misses `chain_value` on every such
+    hop, and one that satisfies it has written the stale value back into the
+    customer's record. 85 revised cases lost their only transition this way and
+    left `sequential_chain` honestly.
+    """
+    problems: list[str] = []
+    for case in REVISED:
+        items = {item.id: item for item in case.base.pii}
+        for hop in case.hops:
+            if hop.kind != "OUT" or not hop.tool_name or not r._is_mutating(hop.tool_name):
+                continue                                 # noqa: SLF001 - the rule itself
+            item = items[hop.item_id]
+            if item.where.kind == "message":
+                continue
+            spec = spec_v5_for(hop.tool_name, hop.path)
+            if spec is None:
+                continue
+            said = [one for one in case.base.pii if one.where.kind == "message"
+                    and one.type == item.type and one.identity == item.identity
+                    and expected_leaf_value(one, spec)]
+            if said:
+                problems.append(f"{case.base.id}: hop {hop.hop_index} writes a result into "
+                                f"{hop.tool_name}.{hop.path} while the customer stated "
+                                f"{said[0].id} for it")
+    # THE NEGATIVE: the same candidates and the same leaf type, once for a tool
+    # that WRITES and once for one that READS. The rule is the only thing that
+    # can make the two answers differ — without it both are the chained item,
+    # which is exactly the state this check exists to refuse.
+    probe = _both_ways("crm_upsert_contact", "contact.phone", "bank_client_find", "phone")
+    if probe is None:
+        problems.append("no revised case offers a phone both said and read back; the "
+                        "negative for R-49 was not exercised")
+    else:
+        write_item, read_item = probe
+        if write_item.where.kind != "message":
+            problems.append(f"a MUTATING leaf took {write_item.where.kind!r}, not what "
+                            f"the customer said")
+        if read_item.where.kind != "seed":
+            problems.append(f"a READ leaf took {read_item.where.kind!r}; the chain "
+                            f"preference is gone from the read path too")
+    return problems[:6]
+
+
+def _both_ways(write_tool: str, write_leaf: str, read_tool: str,
+               read_leaf: str) -> tuple[object, object] | None:
+    """The item a write leaf and a read leaf take on the FIRST v4 case that
+    offers both a said and a read-back value for them."""
+    for case in V4_CASES:
+        reads = r._readers(case)                         # noqa: SLF001 - the rule itself
+        read_by = {item.id: tool for tool, pairs in reads.items() for item, _leaf in pairs}
+        hopped = r._hopped_ids(case, reads)              # noqa: SLF001
+        write_spec = spec_v5_for(write_tool, write_leaf)
+        read_spec = spec_v5_for(read_tool, read_leaf)
+        if write_spec is None or read_spec is None:
+            return None
+        candidates = r._candidates(case, write_spec, hopped,       # noqa: SLF001
+                                   case.expects.primary_identity)
+        if not (r._chained_of(candidates, read_by, write_tool)     # noqa: SLF001
+                and r._said_of(candidates)):                       # noqa: SLF001
+            continue
+        chosen_write = r._argument_item(case, write_spec, hopped, read_by,   # noqa: SLF001
+                                        write_tool)
+        chosen_read = r._argument_item(case, read_spec, hopped, read_by,     # noqa: SLF001
+                                       read_tool)
+        if chosen_write is None or chosen_read is None:
+            continue
+        return chosen_write, chosen_read
+    return None
+
+
 def test_the_loop_family_declares_its_memory() -> list[str]:
     """`user_in_loop` shows a value and the customer confirms it without saying
     it again — a recall by anaphora, and the family declared none (C-048), so
@@ -335,6 +413,7 @@ def test_singles_that_reach_a_result_carry_the_minimal_loop() -> list[str]:
 
 CHECKS: tuple[Callable[[], list[str]], ...] = (
     test_every_declared_crossing_is_rendered, test_a_declared_transition_is_attainable,
+    test_a_write_takes_the_value_the_customer_stated,
     test_the_loop_family_declares_its_memory,
     test_singles_that_reach_a_result_carry_the_minimal_loop,
     test_messages_byte_identical, test_nothing_is_dropped, test_455_get_loop, test_k10,

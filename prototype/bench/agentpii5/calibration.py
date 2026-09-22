@@ -65,7 +65,8 @@ from bench.agentpii5 import records as r
 from bench.agentpii5.contracts import (
     CALIBRATION, JUDGE_LABELS, QUERY_CAP_USD, RETRIES, CalibrationRecord, CalibrationStamp,
     CalibrationThresholds, JudgeInput, JudgeVerdict, RunObservation)
-from bench.agentpii5.judge import JudgeConfig, judge_answer, judge_input, prompt_sha256
+from bench.agentpii5.judge import (
+    JUDGE_TEMPERATURE, JudgeConfig, judge_answer, judge_input, prompt_sha256)
 from bench.agentpii5.schema import case_v5_from_json
 
 # Where a calibration file lives, derived from `contracts.CALIBRATION_FILE`
@@ -758,11 +759,16 @@ def _spend_repeats(run_dir: Path, sample: Sequence[CalibrationRecord], seed: int
     # fewer repeats than the spec's three when the ceiling is the binding
     # constraint — and `stamp()` then reads the spread it actually measured.
     thresholds = replace(CALIBRATION, repeats=repeats)
+    # THE SAME TEMPERATURE THE RUN ASKED AT (R-56), and the same constant
+    # rather than the same number: these K judgements are what
+    # `repeat_disagreement` measures, and a spread measured at one temperature
+    # certifies nothing about a run judged at another.
     config = JudgeConfig(
         model=judge_model,
         ledger=v3_judge.SpendLedger(sheet.with_name(f"{sheet.stem}.spend.tsv"), ceiling_usd),
         query_cap_usd=QUERY_CAP_USD, retries=RETRIES,
-        trace_path=sheet.with_name(f"{sheet.stem}.judge.trace.jsonl"))
+        trace_path=sheet.with_name(f"{sheet.stem}.judge.trace.jsonl"),
+        temperature=JUDGE_TEMPERATURE)
 
     async def ask(request: JudgeInput, minted: tuple[str, ...]) -> JudgeVerdict:
         return await judge_answer(config, request, minted)
@@ -785,7 +791,10 @@ def main() -> int:
         description="Лист СЛЕПОЙ: метки судьи в нём нет, она пристыковывается при "
                     "import из <run>.judge.jsonl. С --repeats K > 1 судью спрашивают "
                     "ещё K-1 раз о каждом ответе подвыборки на устойчивость — это "
-                    "ЖИВЫЕ вызовы, они стоят денег и требуют --judge-model и --ceiling.")
+                    "ЖИВЫЕ вызовы, они стоят денег и требуют --judge-model и --ceiling. "
+                    "Температура повторов — та же константа, при которой судил прогон "
+                    "(judge.JUDGE_TEMPERATURE), флага для неё нет намеренно: разброс, "
+                    "измеренный при другой температуре, описывает другой прибор.")
     export.add_argument("--run", required=True, type=Path)
     export.add_argument("--out", required=True, type=Path)
     export.add_argument("--seed", type=int, default=5150)
@@ -826,6 +835,7 @@ def main() -> int:
             extra = _spend_repeats(args.run, sample, args.seed, args.repeats,
                                    args.judge_model, args.ceiling, args.out)
             print(f"повторы судьи: {repeats_path(args.out)} · вердиктов {len(extra)} · "
+                  f"t={JUDGE_TEMPERATURE} (как в прогоне) · "
                   f"потрачено ${sum(one.cost_usd for one in extra):.4f}")
         return 0
     if args.command == "import":

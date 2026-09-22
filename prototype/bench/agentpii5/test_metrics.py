@@ -40,8 +40,11 @@ from bench.agentpii5.metrics import (
     HOP_SLICEABLE,
     METRIC_FUNCTIONS,
     by_axis,
+    leaf_value_ok,
     prints_on_axis,
+    returned_as_item,
 )
+from bench.agentpii5.tools import REGISTRY_V5, expected_leaf_value
 
 NAME = _item("p1", "NAME", REAL_NAME, REAL_NAME, "i1", _in_message(0, 0, len(REAL_NAME)))
 PHONE = _item("p2", "PHONE", REAL_PHONE, REAL_PHONE, "i1", _in_message(0, 15, 27))
@@ -323,6 +326,92 @@ def test_leaf_value_is_the_part() -> list[str]:
     return problems
 
 
+# One sample value per PII type the registry's leaves ask for, in the notation
+# a CRM stores. Written out rather than taken from a case, because this check
+# has to hold for every (tool, path) of the registry and not for the types one
+# corpus happens to carry.
+LEAF_SAMPLES: dict[str, str] = {
+    "NAME": "Иванова Елена Сергеевна",
+    "PHONE": "+79164021187",
+    "LOC": "Ижевск, улица Клубная, 85, кв. 12",
+    "DOB": "14.03.1987",
+    "EMAIL": "elena@example.ru",
+    "CARD": "4276380123456789",
+    "SNILS": "112-233-445 95",
+    "INN": "165712345678",
+    "PASSPORT": "9402 123456",
+    "PLATE": "А123ВС18",
+}
+# Another person's value of each type — the same shape, a different datum.
+OTHER_SAMPLES: dict[str, str] = {
+    "NAME": "Пахомова Ольга Петровна",
+    "PHONE": "+79990001122",
+    "LOC": "Самара, улица Луговая, 10, кв. 3",
+    "DOB": "02.11.1974",
+    "EMAIL": "olga@example.com",
+    "CARD": "5536913812345670",
+    "SNILS": "998-877-665 44",
+    "INN": "770112345678",
+    "PASSPORT": "1122 334455",
+    "PLATE": "В456СТ77",
+}
+
+
+def test_leaf_value_has_one_definition() -> list[str]:
+    """R-53. `tools.expected_leaf_value` decides what a leaf expects and
+    `metrics.leaf_value_ok` only compares — over EVERY (tool, path) of
+    `REGISTRY_V5`, not over the handful a fixture exercises.
+
+    The two used to be written twice (`parts.get(role)` here, `item.parts.get(
+    spec.role)` there) and two rules that must stay equal are one edit away
+    from disagreeing about every value line at once. The negative is in the
+    same loop: another person's value of the same type must NOT satisfy the
+    leaf, or the check would pass on a function that returns True."""
+    problems: list[str] = []
+    for tool, spec in sorted(REGISTRY_V5.items()):
+        for field in spec.base.fields:
+            sample = LEAF_SAMPLES.get(field.pii_type)
+            if sample is None:
+                continue
+            item = _item("p1", field.pii_type, sample, sample, "i1", _in_seed("s1", "f"))
+            wanted = expected_leaf_value(item, field)
+            if not wanted:
+                # The item carries no part for this role (an `entrance` a
+                # plain address does not have): the leaf is unsatisfiable and
+                # `leaf_value_ok` must say so rather than wave it through.
+                if leaf_value_ok(item, tool, field.path, sample):
+                    problems.append(f"{tool}.{field.path}: no part for role {field.role!r} and "
+                                    f"the metric accepted the whole value")
+                continue
+            if not leaf_value_ok(item, tool, field.path, wanted):
+                problems.append(f"{tool}.{field.path}: tools says the leaf expects {wanted!r} and "
+                                f"the metric scores it as the wrong value")
+            other = _item("p2", field.pii_type, OTHER_SAMPLES[field.pii_type],
+                          OTHER_SAMPLES[field.pii_type], "i2", _in_seed("s2", "f"))
+            intruder = expected_leaf_value(other, field)
+            if intruder and leaf_value_ok(item, tool, field.path, intruder):
+                problems.append(f"{tool}.{field.path}: another person's {field.pii_type} "
+                                f"({intruder!r}) satisfied this leaf")
+    return problems
+
+
+def test_chain_target_is_read_as_an_item() -> list[str]:
+    """The hand-over's target is a STRING — what tool A returned — and it goes
+    through the same definition by being read as an item. A chain leaf that
+    asks for a part must therefore be satisfied by that part of the returned
+    value, and by nothing else."""
+    returned = "Иванова Елена Сергеевна"
+    item = returned_as_item("NAME", returned)
+    problems: list[str] = []
+    if not leaf_value_ok(item, "crm_upsert_contact", "contact.last_name", "Иванова"):
+        problems.append("the surname of the returned value did not satisfy contact.last_name")
+    if leaf_value_ok(item, "crm_upsert_contact", "contact.last_name", returned):
+        problems.append("the WHOLE returned name satisfied a surname leaf")
+    if item.identity or item.id:
+        problems.append("a returned value must carry no identity — it is in no such population")
+    return problems
+
+
 def test_memory_stability_is_not_stability() -> list[str]:
     """The two were ONE function under two names — identical bodies, identical
     answers on every fixture in the package — and a report printing one number
@@ -357,6 +446,8 @@ def main() -> int:
         ("axes_split_hops_not_observations", test_axes_split_hops_not_observations),
         ("hop_axis_totals_sum", test_hop_axis_totals_sum),
         ("leaf_value_is_the_part", test_leaf_value_is_the_part),
+        ("leaf_value_has_one_definition", test_leaf_value_has_one_definition),
+        ("chain_target_is_read_as_an_item", test_chain_target_is_read_as_an_item),
         ("memory_stability_is_not_stability", test_memory_stability_is_not_stability),
     )
     failures: list[str] = []

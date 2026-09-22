@@ -89,9 +89,14 @@ def build_corpus(seed: int) -> list[CaseV5]:
     return cases
 
 
-def build_reporting(seed: int, allow_drop: bool) -> tuple[list[CaseV5], list[str], list[str]]:
-    """`build_corpus` plus what had to be approximated: the cases, the downgrade
-    lines, and the v4 ids that could not be revised.
+def build_reporting(seed: int, allow_drop: bool) -> tuple[list[CaseV5], Counter[str], list[str]]:
+    """`build_corpus` plus what had to be approximated: the cases, the downgrades
+    COUNTED BY REASON, and the v4 ids that could not be revised.
+
+    THE COUNTER RATHER THAN THE PRINTED LINES, because two readers need it: the
+    table `main` prints, and `chain_table`, which reports how many cases left
+    `sequential_chain` under R-49 by name. Formatting it here and parsing it back
+    there would make a printed string the data structure.
 
     `allow_drop` is the ONE path that continues past an unrevisable v4 case, and
     it leaves K10 red on purpose — a corpus that is 833 of 834 is not the v4
@@ -109,8 +114,12 @@ def build_reporting(seed: int, allow_drop: bool) -> tuple[list[CaseV5], list[str
         if one.downgraded_from)
     for module, count in PLAN:
         cases.extend(module.build(seed, count))          # type: ignore[attr-defined]
-    lines = [f"{count:>5} · {label}" for label, count in sorted(downgrades.items())]
-    return cases, lines, dropped
+    return cases, downgrades, dropped
+
+
+def downgrade_lines(downgrades: Counter[str]) -> list[str]:
+    """The downgrade table, one line per reason, most-reported first by name."""
+    return [f"{count:>5} · {label}" for label, count in sorted(downgrades.items())]
 
 
 # --- the proof that nothing searched a finished string ------------------------------
@@ -304,18 +313,43 @@ def proof_problems(cases: Sequence[CaseV5]) -> list[str]:
 
 
 def loop_table(cases: Sequence[CaseV5]) -> list[str]:
-    """How many `single` cases actually carry the minimal loop.
+    """How many `single` cases actually carry the minimal loop, and who wrote
+    them.
 
     §8.2's row for «одиночный вызов» names FOUR obligatory hops (IN/user →
-    OUT/arg → IN/tool → OUT/answer), and the family is mostly v4 two-hop cases
-    that R-23's conversion downgraded into it. One number for the family would
-    read as «418 cases of the base shape»; these three say which is which.
+    OUT/arg → IN/tool → OUT/answer), and the revised half of the family is mostly
+    v4 two-hop cases that R-23's conversion downgraded into it. One number would
+    read as «563 cases of the base shape»; these four say which is which — and
+    the authored count is the one R-50 added, because a share read off the total
+    would credit the family with a shape 379 of its cases do not have.
     """
     singles = [case for case in cases if case.behaviour == "single"]
+    authored = [case for case in singles if not case.revised_from_v4]
+    revised = [case for case in singles if case.revised_from_v4]
     looped = [case for case in singles if case.has_result]
-    return [f"одиночные: {len(singles)} · с минимальной петлёй "
+    return [f"одиночные: {len(singles)} · написано в v5 {len(authored)} · "
+            f"ревизия v4 {len(revised)} · с минимальной петлёй "
             f"({c.MIN_HOPS_WITH_RESULT} перехода) {len(looped)} · "
             f"двухходовых v4 {len(singles) - len(looped)}"]
+
+
+def chain_table(cases: Sequence[CaseV5], downgrades: Counter[str]) -> list[str]:
+    """What R-49 cost the chain family and what was written to replace it.
+
+    THE TWO NUMBERS BELONG TOGETHER. R-49 says the argument of a MUTATING call
+    is the value the customer just stated, never the stale one the earlier lookup
+    returned — so the cases whose only hand-over was that kind leave
+    `sequential_chain` honestly. Printing the departures without the top-up would
+    read as a family that shrank; printing the total alone would hide that 85 of
+    its transitions were never attainable.
+    """
+    left = sum(count for label, count in downgrades.items()
+               if label.endswith(revise_module.MUTATING_REASON))
+    family = [case for case in cases if case.behaviour == "sequential_chain"]
+    authored = sum(1 for case in family if not case.revised_from_v4)
+    return [f"цепочки: {len(family)} · написано в v5 {authored} · "
+            f"ревизия v4 {len(family) - authored} · ушло по R-49 (аргумент "
+            f"мутирующего вызова — сказанное клиентом) {left}"]
 
 
 # --- the files ----------------------------------------------------------------------
@@ -336,7 +370,7 @@ def write_corpus(cases: Sequence[CaseV5], out: Path) -> str:
 
 
 def write_ladder(cases: Sequence[CaseV5], seed: int, out: Path,
-                 regenerate: bool) -> tuple[Ladder | None, list[str], list[str]]:
+                 regenerate: bool, unfrozen: bool) -> tuple[Ladder | None, list[str], list[str]]:
     """The frozen ladder (K12), what to print, and what is WRONG with it.
 
     THE PROBLEMS ARE A THIRD VALUE RATHER THAN A PREFIX IN THE PRINTED LINES.
@@ -348,6 +382,15 @@ def write_ladder(cases: Sequence[CaseV5], seed: int, out: Path,
     and its whole value is that it was drawn before anyone looked. A build that
     silently redrew it every time the corpus grew would hand back a holdout that
     had seen every debugging run of the week.
+
+    `unfrozen` IS THE ONE TIME THE HOLDOUT MAY MOVE (R-52), and it is an
+    assertion about the world rather than a switch: adding a family and topping
+    another one up changes v4's per-family draw, so 476 existing cases change
+    tier — refusing that would freeze the ladder of a corpus nobody has run
+    against yet, while accepting it silently at any later moment would hand back
+    a holdout that had seen the debugging. The caller states which of the two it
+    is in, the movement is PRINTED, and every regeneration without the assertion
+    is refused exactly as before.
     """
     path = out / "ladder.json"
     bases = [case.base for case in cases]
@@ -366,6 +409,7 @@ def write_ladder(cases: Sequence[CaseV5], seed: int, out: Path,
         return None, [f"лестница оставлена как есть: {path} "
                       f"(--regenerate-ladder чтобы пересобрать)"], []
     ladder = build_ladder(bases, seed)
+    lines: list[str] = []
     if regenerate and path.exists():
         # REGENERATION KEEPS THE HOLDOUT OF EVERY CASE THAT STILL EXISTS. The
         # point of K12 is that the holdout was drawn before anybody looked; a
@@ -374,9 +418,13 @@ def write_ladder(cases: Sequence[CaseV5], seed: int, out: Path,
         # same seed and may land anywhere.
         moved = _holdout_moved(json.loads(path.read_text(encoding="utf-8")), ladder,
                                {case.id for case in bases})
-        if moved:
+        if moved and not unfrozen:
             return ladder, [], [f"ЛЕСТНИЦА: {len(moved)} случаев сменили ярус при "
                                 f"пересборке: {sorted(moved)[:5]}"]
+        if moved:
+            lines.append(f"лестница пересобрана: {len(moved)} случаев сменили ярус "
+                         f"(--unfrozen-before-first-run: живого прогона по прежней "
+                         f"лестнице не было, R-52)")
     broken = ladder_problems(bases, ladder)
     if broken:
         return ladder, [], [f"ЛЕСТНИЦА: {line}" for line in broken]
@@ -385,8 +433,30 @@ def write_ladder(cases: Sequence[CaseV5], seed: int, out: Path,
         "corpus_sha256": ladder.corpus_sha256,
         "tiers": {name: list(ids) for name, ids in ladder.tiers.items()}},
         ensure_ascii=False, indent=1), encoding="utf-8")
-    return ladder, ["лестница записана: " + " / ".join(
+    return ladder, lines + ["лестница записана: " + " / ".join(
         f"{name} {len(ids)}" for name, ids in ladder.tiers.items())], []
+
+
+def ladder_refusal(regenerate: bool, unfrozen: bool) -> str:
+    """Why this run may not redraw the holdout, or "" when it may.
+
+    R-52 LET THE LADDER MOVE ONCE, AND ONCE IS A CLAIM SOMEBODY HAS TO MAKE. The
+    holdout's whole value is that it was drawn before anybody looked; after the
+    first live run a redraw hands back twenty per cent of the corpus that has
+    seen the week's debugging, and `--regenerate-ladder` alone cannot tell the
+    two situations apart — the flag says WHAT to do and not what is true. So the
+    caller asserts the fact, and the assertion is a separate word a script cannot
+    acquire by copying yesterday's command line.
+
+    A FUNCTION RATHER THAN THREE LINES INSIDE `main`, so both answers can be
+    exercised: a refusal nobody has watched hold and give way is a refusal
+    nobody has measured.
+    """
+    if regenerate and not unfrozen:
+        return ("ОТКАЗ: --regenerate-ladder требует --unfrozen-before-first-run "
+                "(R-52: лестницу можно пересобрать, только пока по ней не было "
+                "ни одного живого прогона)")
+    return ""
 
 
 def _holdout_moved(kept: dict[str, object], ladder: Ladder,
@@ -404,13 +474,20 @@ def main() -> int:
     parser.add_argument("--check", action="store_true",
                         help="validate and print, write nothing")
     parser.add_argument("--regenerate-ladder", action="store_true",
-                        help="redraw the holdout; it has seen every debug run since")
+                        help="redraw the holdout; needs --unfrozen-before-first-run")
+    parser.add_argument("--unfrozen-before-first-run", action="store_true",
+                        help="the assertion R-52 asks for: no live run has read this "
+                             "ladder yet, so redrawing it hides no debugging")
     parser.add_argument("--allow-drop", action="store_true",
                         help="continue past an unrevisable v4 case, leaving K10 red")
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--out", default=str(HERE))
     args = parser.parse_args()
 
+    refusal = ladder_refusal(args.regenerate_ladder, args.unfrozen_before_first_run)
+    if refusal:
+        print(refusal, file=sys.stderr)
+        return 1
     cases, downgrades, dropped = build_reporting(args.seed, args.allow_drop)
     _, hits = prove_no_search_v5(args.seed)
     problems: list[str] = []
@@ -427,11 +504,13 @@ def main() -> int:
         print(problem)
     if downgrades:
         print("понижено до `single` (структура семьи отсутствует):")
-        for line in downgrades:
+        for line in downgrade_lines(downgrades):
             print(f"  {line}")
     for line in coverage_table(cases):
         print(line)
     for line in loop_table(cases):
+        print(line)
+    for line in chain_table(cases, downgrades):
         print(line)
     for line in form_disagreements(cases):
         print(line)
@@ -447,7 +526,8 @@ def main() -> int:
         return 0
     out = Path(args.out)
     digest = write_corpus(cases, out)
-    ladder, lines, broken = write_ladder(cases, args.seed, out, args.regenerate_ladder)
+    ladder, lines, broken = write_ladder(cases, args.seed, out, args.regenerate_ladder,
+                                         args.unfrozen_before_first_run)
     for line in lines + broken:
         print(line)
     if broken:
