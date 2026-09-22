@@ -242,6 +242,10 @@ DOB_ITEM = _item("p3", "DOB", "14.03.1987", "14.03.1987", "i1", _in_message(0, 0
 LOC_ITEM = _item("p4", "LOC", "Ижевск, улица Клубная, 85", "Ижевск, улица Клубная, 85", "i1",
                  _in_seed("s1", "address"))
 OTHER_ITEM = _item("p9", "NAME", OTHER_NAME, OTHER_NAME, "i2", _in_seed("s2", "name"))
+# The SECOND ROW of a two-record document, as an item of the case. `record_count`
+# counts people (R-30), so a CSV with two rows declares two of them — and
+# `doc_extracted`'s trap only bites when the wrong value belongs to one.
+ROW_TWO_ITEM = _item("p8", "NAME", OTHER_NAME, OTHER_NAME, "i2", _in_seed("s1", "manager"))
 
 IN_USER = _hop("IN", "user", "p1", 0, 0, "", -1, -1, "")
 OUT_ARG = _hop("OUT", "tool_arg", "p1", 1, 0, "crm_upsert_contact", 0, -1, "contact.name")
@@ -431,18 +435,30 @@ def _end_to_end_fixtures() -> tuple[Fixture, Fixture, Fixture]:
     surname = _hop("OUT", "tool_arg", "p1", 3, 0, "crm_upsert_contact", 0, -1, "contact.last_name")
     patronymic = _hop("OUT", "tool_arg", "p1", 4, 0, "crm_upsert_contact", 0, -1,
                       "contact.middle_name")
+    #   5. a leaf the gateway never masked: the agent wrote the REAL value, so
+    #      the tool DID receive it — and it is a MISS, because the model read
+    #      it too. The docstring of this line used to promise the opposite
+    #      («a passthrough scores 100% here»), which is the reading F1.3 made
+    #      false and the one `report --selftest`'s `end_to_end_unmasked_is_a_hit`
+    #      mutant takes: with no `unmasked` leaf in any fixture the gate could
+    #      not tell that mutant from the shipped line.
+    unmasked_leaf = _hop("OUT", "tool_arg", "p1", 5, 0, "crm_upsert_contact", 2, -1,
+                         "contact.name")
     both = _case("fx-e2e-2", "parallel", ("…",), (NAME_ITEM, PHONE_ITEM),
-                 (OUT_ARG, second, surname, patronymic))
+                 (OUT_ARG, second, surname, patronymic, unmasked_leaf))
     mixed = _obs(both, _run("fx-e2e-2"),
                  (_seen(both, OUT_ARG, "NAME", REAL_NAME, FAKE_NAME),
                   _unseen(both, second, "PHONE", "", "", "absent"),
                   _seen(both, surname, "NAME", "Смирнова", "Пахомова"),
-                  _seen(both, patronymic, "NAME", "Сергеевна", "Олеговна")))
+                  _seen(both, patronymic, "NAME", "Сергеевна", "Олеговна"),
+                  _unseen(both, unmasked_leaf, "NAME", REAL_NAME, REAL_NAME, "unmasked")))
     return (_fx("end_to_end", "zero", "", (missing,), 0, 1),
             _fx("end_to_end", "one", "", (arrived,), 1, 1),
             _fx("end_to_end", "adversarial",
-                "absent stays in the denominator; a wrong part and an unsatisfiable role are misses",
-                (mixed,), 1, 4))
+                "absent stays in the denominator; a wrong part, an unsatisfiable role and a "
+                "leaf the gateway never masked are misses — a metric counting `unmasked` as a "
+                "hit prints 2/5",
+                (mixed,), 1, 5))
 
 
 def _overmask_fixtures() -> tuple[Fixture, Fixture, Fixture]:
@@ -471,13 +487,27 @@ def _consistency_fixtures() -> tuple[Fixture, Fixture, Fixture]:
     # agree with, so it is not in the population at all; a metric that counted
     # every item would print 1/2 and every case with a value said once would
     # drag the line down.
+    # SECOND CLAUSE: the phone read TWICE inside one and the same crossing —
+    # two tool-result mentions, which the harness writes with `msg == -1`
+    # (`harness.push_call`) — under two different substitutes. The question
+    # this line asks is «one value, one substitute ACROSS MESSAGES», so an item
+    # the model met in one place is outside the population however many
+    # mentions that place produced. A metric counting MENTIONS instead of
+    # distinct messages prints 1/2 here, and nothing in the package used to
+    # separate the two readings («consistency_by_mention_count», `report
+    # --selftest`).
     single = one + (MentionRecord("p2", 0, -1, "+79990001122", 0),)
+    result_only = one + (MentionRecord("p2", -1, 0, "+79990001122", 0),
+                         MentionRecord("p2", -1, 1, "+79990009988", 0))
     return (_fx("consistency", "zero", "",
                 (_obs(case, _with_mentions(_run("fx-cons"), two), ()),), 0, 1),
             _fx("consistency", "one", "",
                 (_obs(case, _with_mentions(_run("fx-cons"), one), ()),), 1, 1),
-            _fx("consistency", "adversarial", "one mention is not a population",
-                (_obs(case, _with_mentions(_run("fx-cons"), single), ()),), 1, 1))
+            _fx("consistency", "adversarial",
+                "one mention is not a population; and two mentions inside ONE crossing are not "
+                "two messages — a metric keyed on the mention count prints 1/2",
+                (_obs(case, _with_mentions(_run("fx-cons"), single), ()),
+                 _obs(case, _with_mentions(_run("fx-cons"), result_only), ())), 2, 2))
 
 
 def _stability_fixtures() -> tuple[Fixture, Fixture, Fixture]:
@@ -565,10 +595,21 @@ def _form_in_fixtures() -> tuple[Fixture, Fixture, Fixture]:
     # ADVERSARIAL. Identical letters, another case class. A comparator folding
     # the strings before comparing would print 1/1 — and «ПАХОМОВА ОЛЬГА» in a
     # CRM field the customer reads is precisely the failure the line exists for.
-    shouted = _obs(case, run, (_seen(case, IN_USER, "NAME", FAKE_MALE.upper(), FAKE_MALE),))
+    # SECOND CLAUSE: an IN hop that LEAKED. There is no substitute, so there is
+    # no form to compare and the hop is OUTSIDE this line's population
+    # (`contracts.METRICS`: «IN hops observed (not leaked)»); `leak` and
+    # `coverage` are where a leak is counted. Nothing in the package carried a
+    # leaked IN hop, so the mutant that puts leaked hops into the denominator
+    # AS HITS printed 1/2 where the shipped line prints 0/1 and the gate could
+    # not tell them apart («form_hIN_leaked_is_a_hit», `report --selftest`).
+    leaked = _obs(case, run, (_seen(case, IN_USER, "NAME", FAKE_MALE.upper(), FAKE_MALE),
+                              _unseen(case, IN_USER, "NAME", "", REAL_NAME, "leaked")))
     zero, one = _form_pair("form_hIN", IN_USER)
     return (zero, one,
-            _fx("form_hIN", "adversarial", "same letters, other case class", (shouted,), 0, 1))
+            _fx("form_hIN", "adversarial",
+                "same letters, other case class; and a LEAKED hop, which is in no population "
+                "here — a metric counting a leaked hop as a form hit prints 1/2",
+                (leaked,), 0, 1))
 
 
 def _form_out_fixtures() -> tuple[Fixture, Fixture, Fixture]:
@@ -600,12 +641,27 @@ def _out_absent_fixtures() -> tuple[Fixture, Fixture, Fixture]:
     # «failed to write», so it is outside the denominator: a metric counting
     # every OUT hop would print 1/2 and an agent that improvised an extra call
     # would look more obedient than one that did not.
+    # SECOND CLAUSE: a declared but OPTIONAL hop the agent DID write. It is a
+    # declared OUT hop, so it belongs in the denominator — `Hop.optional` says
+    # the agent MAY skip it, not that the benchmark stops counting it. Nothing
+    # in the package carried `optional=True` before this line, so the mutant
+    # that drops optional hops from the total («out_absent_optional_dropped»,
+    # `report --selftest`) printed the same number as the shipped metric.
+    retry = replace(_hop("OUT", "tool_arg", "p1", 2, 0, "crm_upsert_contact", 1, -1,
+                         "contact.name"), optional=True)
+    with_optional = _case("fx-oa-2", "retry_same_tool", ("…",), (NAME_ITEM, PHONE_ITEM),
+                          (OUT_ARG, retry))
     extra = _extra_seen(case, OUT_ARG, "NAME", REAL_NAME, FAKE_NAME)
     mixed = _obs(case, run, (_unseen(case, OUT_ARG, "NAME", "", "", "absent"), extra))
+    optional = _obs(with_optional, _run("fx-oa-2"),
+                    (_unseen(with_optional, OUT_ARG, "NAME", "", "", "absent"),
+                     _seen(with_optional, retry, "NAME", REAL_NAME, FAKE_NAME)))
     return (_fx("out_absent", "zero", "", (wrote,), 0, 1),
             _fx("out_absent", "one", "", (skipped,), 1, 1),
-            _fx("out_absent", "adversarial", "an undeclared crossing is not a skipped one",
-                (mixed,), 1, 1))
+            _fx("out_absent", "adversarial",
+                "an undeclared crossing is not a skipped one; a declared OPTIONAL hop the agent "
+                "DID write stays in the denominator — a metric dropping optional hops prints 2/2",
+                (mixed, optional), 2, 3))
 
 
 def _stream_fidelity_fixtures() -> tuple[Fixture, Fixture, Fixture]:
@@ -1000,11 +1056,22 @@ def _rag_masked_fixtures() -> tuple[Fixture, Fixture, Fixture]:
         twice_text.replace(REAL_NAME, FAKE_NAME, 1), {"p1": twice_span},
         ((twice_span[0], twice_span[1], FAKE_NAME, "NAME"),), False),))
     repeated = _rag_case("fx-rag-3", (mine,), ("s1",), ("i2",))
+    # THIRD CLAUSE (F1.7). The chunk the case DECLARES came back rendered RAW,
+    # tagged by nothing. `if not spans: continue` dropped it from the
+    # denominator, so a retrieval leg that put the customer's name into the
+    # model's context printed «н/п» — «the chunk never came back» and «the
+    # chunk came back unmasked» were one state.
+    untagged_case = _rag_case("fx-rag-4", (mine,), ("s1",), ("i2",))
+    untagged = _with_results(_run("fx-rag-4"), (_result(
+        "kb_search", 0, 0, "chunks", text, text, {}, (), False),))
     return (_fx("rag_masked", "zero", "", (_obs(one_chunk, leaky, ()),), 0, 1),
             _fx("rag_masked", "one", "", (_obs(one_chunk, clean, ()),), 1, 1),
             _fx("rag_masked", "adversarial",
-                "two identities in one chunk, one masked; and a second, untagged rendering",
-                (_obs(two_people, mixed, ()), _obs(repeated, twice, ())), 0, 2))
+                "two identities in one chunk, one masked; a second, untagged rendering; "
+                "and a DECLARED chunk returned with no tag at all — a metric keyed on what "
+                "the mock tagged prints 0/2 and calls the third «not applicable»",
+                (_obs(two_people, mixed, ()), _obs(repeated, twice, ()),
+                 _obs(untagged_case, untagged, ())), 0, 3))
 
 
 def _rag_identity_fixtures() -> tuple[Fixture, Fixture, Fixture]:
@@ -1094,11 +1161,21 @@ def _doc_masked_fixtures() -> tuple[Fixture, Fixture, Fixture]:
     clipped = _with_results(_run("fx-dm-3"), (_result(
         "file_read", 0, 0, "list", text, _masked_text(text, clip_pieces),
         {"p1": name_span, "p2": phone_span}, clip_pieces, False),))
+    # THIRD CLAUSE (F1.7). The document came back rendered RAW, tagged by
+    # nothing: `all(_record_clean(...))` iterated an empty `spans_real` and
+    # printed a perfect hit for a document whose every real value reached the
+    # model — v4's «all() over an empty list», on the document family.
+    raw_case = _doc_case("fx-dm-4", "csv", (), ())
+    untagged = _with_results(_run("fx-dm-4"), (_result(
+        "file_read", 0, 0, "list", text, text, {}, (), False),))
     return (_fx("doc_masked", "zero", "", (_obs(case, row_leak, ()),), 0, 1),
             _fx("doc_masked", "one", "", (_obs(case, whole, ()),), 1, 1),
             _fx("doc_masked", "adversarial",
-                "scan noise walked past the mask; and a piece one character short covers nothing",
-                (_obs(scan, bypassed, ()), _obs(short, clipped, ())), 0, 2))
+                "scan noise walked past the mask; a piece one character short covers nothing; "
+                "and a document returned with NO tags at all — a metric verdicting over "
+                "`spans_real` alone prints 1/3 and certifies the untagged one as clean",
+                (_obs(scan, bypassed, ()), _obs(short, clipped, ()),
+                 _obs(raw_case, untagged, ())), 0, 3))
 
 
 def _doc_extracted_fixtures() -> tuple[Fixture, Fixture, Fixture]:
@@ -1112,7 +1189,16 @@ def _doc_extracted_fixtures() -> tuple[Fixture, Fixture, Fixture]:
     # asked «did a real value arrive» rather than «did THIS item's value
     # arrive» would print 1/1, and a CSV import would quietly shuffle a
     # thousand customers.
-    wrong_row = _obs(case, run, (_seen(case, extract, "NAME", OTHER_NAME, FAKE_NAME),))
+    #
+    # ROW TWO'S PERSON IS A DECLARED ITEM OF THE CASE, and that is the whole
+    # trap. While `OTHER_NAME` was carried by no item, the two readings the
+    # note distinguishes — «did A value of the case arrive» and «did THIS
+    # item's value arrive» — printed the same 0/1, so the loosest of them
+    # passed the gate (`report --selftest` mutant `doc_extracted_any_real`).
+    # A document declaring `record_count=2` has an item per row, which is
+    # exactly the shuffled-CSV failure the note describes.
+    two_rows = replace(case, base=replace(case.base, pii=(NAME_ITEM, PHONE_ITEM, ROW_TWO_ITEM)))
+    wrong_row = _obs(two_rows, run, (_seen(two_rows, extract, "NAME", OTHER_NAME, FAKE_NAME),))
     return (_fx("doc_extracted", "zero", "", (fake,), 0, 1),
             _fx("doc_extracted", "one", "", (real,), 1, 1),
             _fx("doc_extracted", "adversarial", "the real value of another row",

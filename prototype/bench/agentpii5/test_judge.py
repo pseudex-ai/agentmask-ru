@@ -512,6 +512,117 @@ def test_judged_by_none_carries_no_label() -> list[str]:
     return failures
 
 
+# --- G3.2 / G3.3: what the piece hunt must NOT call ours ------------------------------
+
+# The customer's own address, as the corpus writes one, and the substitute the
+# engine mints for it: same city, same generic word, different street. Taken
+# from `chain-000` / `lookup_list-012` of the real corpus rather than invented,
+# because the shape of the collision (a two-word city, a marker-less generic) is
+# what the old whole-part comparison could not subtract.
+REAL_ADDRESS: str = "нижний новгород переулок барышникова 7кв111"
+MINTED_ADDRESS: str = "нижний новгород переулок озёрный 3кв62"
+# A DOB dictated aloud. `parts_of` splits it as a street («декабря») and as a
+# name («двадцать» / «третьего»), which is how a month name entered the hunt.
+MINTED_SPOKEN_DOB: str = "двадцать третьего декабря восемьдесят второго года"
+
+
+def test_the_pregate_spares_ordinary_russian() -> list[str]:
+    """G3.3: a generic street word, a month name and half a city are not ours.
+
+    All three were measured on the corpus through the production masking path:
+    «улица» was the commonest piece of all (48 occurrences over 250 cases), and
+    «нижний» / «второго» published «неверно» on 12 of 489 honest answers that
+    merely repeated back what the customer had dictated. A pre-gate that fires
+    on «улица» is a published false defect of the product, bought for free.
+    """
+    failures: list[str] = []
+    generic = judge.substitute_pieces(("улица тополиная 5",), ())
+    if "улица" in generic:
+        failures.append(f"родовое слово адреса осталось нашей частью: {generic}")
+    # THE NEGATIVE for the same split: the street name IS ours, so the absence
+    # above is a subtraction and not an empty split.
+    if "тополиная" not in generic:
+        failures.append(f"разбор не дал ни одной части — проверка ни о чём: {generic}")
+    dated = judge.substitute_pieces((MINTED_SPOKEN_DOB,), ())
+    if "декабря" in dated:
+        failures.append(f"название месяца осталось нашей частью: {dated}")
+    if "третьего" not in dated:
+        failures.append(f"устная дата не дала ни одной части — проверка ни о чём: {dated}")
+    own = judge.substitute_pieces((MINTED_ADDRESS,), (REAL_ADDRESS,))
+    if "нижний" in own or "новгород" in own:
+        failures.append(f"половина города клиента осталась нашей частью: {own}")
+    bare = judge.substitute_pieces((MINTED_ADDRESS,), ())
+    if "нижний" not in bare or "новгород" not in bare:
+        failures.append(f"без настоящего адреса те же части не появились — вычитание "
+                        f"нечего было делать: {bare}")
+    honest = f"Готово, курьер приедет: {REAL_ADDRESS}. Ждите звонка."
+    if judge.residual_pregate_of(honest, (MINTED_ADDRESS,), (REAL_ADDRESS,)) is not None:
+        failures.append("претгейт отказал честному ответу на собственном адресе клиента")
+    # …and the SAME answer without the real list is refused, so the subtraction
+    # is what spares it rather than the answer being harmless.
+    if judge.residual_pregate_of(honest, (MINTED_ADDRESS,), ()) is None:
+        failures.append("без настоящего адреса тот же ответ прошёл — претгейт молчит всегда")
+    # THE GATE STILL FIRES on a piece that is really ours: the fake street word
+    # stands in the answer as a whole word and nothing about it is the
+    # customer's, grammar or a month.
+    leaked = judge.residual_pregate_of(f"Курьер приедет: {MINTED_ADDRESS}.",
+                                       (MINTED_ADDRESS,), (REAL_ADDRESS,))
+    if leaked is None or leaked.judged_by != "residual_gate":
+        failures.append("подмена целиком в ответе перестала останавливать судью")
+    vocabulary = judge.own_vocabulary((REAL_ADDRESS,))
+    for word in ("улица", "декабря", "нижний", "новгород", "переулок"):
+        if word not in vocabulary:
+            failures.append(f"слово {word!r} не попало в вычитаемый словарь")
+    if "озерный" in vocabulary or "тополиная" in vocabulary:
+        failures.append("в вычитаемый словарь попало название подменной улицы")
+    return failures
+
+
+def test_the_customers_own_turn_is_never_masked() -> list[str]:
+    """G3.2: a `user` turn is the case's own text and can carry no substitute.
+
+    `masked_dialogue` used to eat the customer's own city and the generic word
+    out of the customer's own sentence — 17.5 % of CLEAN runs over 400 corpus
+    cases got `turn_residual > 0` and the judge lost the words question 4 is
+    asked about. The oracle alone could not spare them: `oracle_literals` keeps
+    only items whose identity equals the primary one, and every address of this
+    corpus hangs off a sub-identity (`p0.home`, `p0.new`).
+    """
+    failures: list[str] = []
+    said = f"записывайте {REAL_ADDRESS}"
+    clean = (DialogueTurn(role="user", text=said),
+             DialogueTurn(role="assistant", text="Секунду, проверяю."))
+    request = JudgeInput(case_id="c-0001", restored_answer="Готово.",
+                         oracle_literals=(REAL, "+7 916 402-11-87"),
+                         dialogue_context=clean, customer_question=said)
+    turns, flagged = judge.masked_dialogue(request, (MINTED_ADDRESS,))
+    if flagged:
+        failures.append(f"на чистом прогоне насчитано {flagged} нераскрытых подмен")
+    if turns[0].text != said:
+        failures.append(f"собственная реплика клиента искажена: {turns[0].text!r}")
+    # THE NEGATIVE, twice. Without the dialogue's own real turns the very same
+    # scan eats the sentence — so the subtraction does the work…
+    eaten, eaten_flags = judge.mask_residual_turns(clean, (MINTED_ADDRESS,), ())
+    if eaten[0].text == said or not eaten_flags:
+        failures.append("без настоящих строк реплика клиента уцелела — вычитание "
+                        "нечего было делать")
+    # …and a substitute the restorer really left in the AGENT's turn is still
+    # replaced and still counted.
+    leaked = (DialogueTurn(role="user", text=said),
+              DialogueTurn(role="assistant", text=f"Секунду, смотрю карточку {MINTED_ADDRESS}."))
+    request = JudgeInput(case_id="c-0001", restored_answer="Готово.",
+                         oracle_literals=(REAL, "+7 916 402-11-87"),
+                         dialogue_context=leaked, customer_question=said)
+    turns, flagged = judge.masked_dialogue(request, (MINTED_ADDRESS,))
+    if flagged != 1:
+        failures.append(f"подмена в ходе агента насчитана {flagged} раз вместо одного")
+    if judge.RESIDUAL_MARKER not in turns[1].text or MINTED_ADDRESS in turns[1].text:
+        failures.append(f"подмена в ходе агента доехала до судьи: {turns[1].text!r}")
+    if turns[0].text != said:
+        failures.append("маскирование хода агента задело реплику клиента")
+    return failures
+
+
 def main() -> int:
     checks: tuple[tuple[str, Callable[[], list[str]]], ...] = (
         ("no_pseudex", test_no_pseudex),
@@ -529,6 +640,8 @@ def main() -> int:
         ("prompt_hashes_what_was_sent", test_prompt_hashes_what_was_sent),
         ("dialogue_carries_the_agents_turns", test_dialogue_carries_the_agents_turns),
         ("agents_turns_are_restored", test_agents_turns_are_restored),
+        ("the_pregate_spares_ordinary_russian", test_the_pregate_spares_ordinary_russian),
+        ("the_customers_own_turn_is_never_masked", test_the_customers_own_turn_is_never_masked),
     )
     failures: list[str] = []
     for name, check in checks:

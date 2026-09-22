@@ -38,7 +38,14 @@ from bench.agentpii5.fixtures import (
     _with_results,
     _with_subs,
 )
-from bench.agentpii5.observe import ObserveError, answer_spans, observe
+from bench.agentpii5.observe import (
+    ObserveError,
+    answer_spans,
+    carried_substitute,
+    carries_any,
+    observe,
+    turn_request,
+)
 
 NAME = _item("p1", "NAME", REAL_NAME, REAL_NAME, "i1", _in_message(0, 0, len(REAL_NAME)))
 PHONE = _item("p2", "PHONE", REAL_PHONE, REAL_PHONE, "i1", _in_message(0, 20, 32))
@@ -251,6 +258,100 @@ def test_memory_hop_reads_what_the_harness_records() -> list[str]:
     return problems
 
 
+def test_derived_forms_are_needles() -> list[str]:
+    """A substitute the agent TRANSLITERATED or squeezed to INITIALS is still
+    the substitute, and `residual` must say so.
+
+    Before this, `needles_of` knew four shapes and none of them was Latin, so
+    «Pakhomova Olga» and «П.О.» matched nothing, `_out_status` answered
+    `unmasked`, and `residual` — the line whose whole job is «a fake reached
+    the consumer» — printed the leaf CLEAN with the fake standing in the
+    customer's CRM. The corpus keeps 54 `derive` cases and 14 of them ask the
+    agent for exactly these two forms, so this is the ordinary case of a
+    declared family, not a corner."""
+    arg = _hop("OUT", "tool_arg", "p1", 0, 0, "crm_upsert_contact", 0, -1, "contact.name")
+    case = _case("obs-derived", "derive", (REAL_NAME,), (NAME,), (arg,))
+    problems: list[str] = []
+    for label, written in (("cyrillic", FAKE_NAME), ("translit", "Pakhomova Olga"),
+                           ("translit, other table", "Pahomova Olga"),
+                           ("squeezed initials", "П.О."), ("latin initials", "P.O.")):
+        survived = _with_masked(_with_subs(_with_calls(
+            _with_replies(_run("obs-derived"), "ок", "ок", "ок"),
+            (_call("crm_upsert_contact", {"contact": {"name": written}},
+                   {"contact": {"name": written}}, {}, "", 0),), (0,)),
+            {"p1": FAKE_NAME}), {0: ((0, len(REAL_NAME)),)})
+        got = _one(case, survived).hops[0]
+        if got.status != "residual":
+            problems.append(f"{label}: a fake left in the tool argument read {got.status!r}, "
+                            f"not `residual`")
+        restored = _with_masked(_with_subs(_with_calls(
+            _with_replies(_run("obs-derived"), "ок", "ок", "ок"),
+            (_call("crm_upsert_contact", {"contact": {"name": written}},
+                   {"contact": {"name": REAL_NAME}}, {}, "", 0),), (0,)),
+            {"p1": FAKE_NAME}), {0: ((0, len(REAL_NAME)),)})
+        if _one(case, restored).hops[0].status != "observed":
+            problems.append(f"{label}: a CORRECT derived-form round trip read "
+                            f"{_one(case, restored).hops[0].status!r}, not `observed`")
+    # AND THE NEEDLE MUST NOT INVENT ONE. Bare «ПО» is a preposition and an
+    # abbreviation; the customer's own name transliterated is the customer's,
+    # not a surviving fake; and another person entirely matches nothing.
+    for text in ("Отправлено ПО почте", "Записал Ivanova Elena в CRM", "Записал Сидорова Петра"):
+        if carries_any("NAME", (FAKE_NAME,), text, frozenset({"иван", "elen", "ivan", "елен",
+                                                              "ие", "ie"})):
+            problems.append(f"the derived needles fired on {text!r}, where no fake stands")
+    return problems
+
+
+def test_memory_reads_only_what_the_model_had_seen() -> list[str]:
+    """A tool result the model has not read yet cannot carry a substitute into
+    an earlier turn.
+
+    `carried_substitute` took every tool-result mention (`msg == -1`)
+    unconditionally, so a substitute first shown at request 9 was «carried
+    into turn 4» and `leak` counted as PROTECTION a value the model had not
+    been shown. The bound is the request the recall turn itself rode in
+    (`turn_request`), which is the same clock the harness writes."""
+    recall = _hop("IN", "memory", "p1", 1, 4, "", -1, -1, "")
+    case = _case("obs-mem2", "memory_anaphora", ("…", "…"), (NAME,), (recall,))
+    pushed = {0: ((0, len(REAL_NAME)),), 4: ()}
+
+    def run_with(result_turn: int, mention_request: int, turn_request_index: int):
+        """The record a LIVE run writes: `harness.push_call` appends the
+        mention and the `ToolResultRecord` together, so the result's own turn
+        is on disk beside the substitute it showed."""
+        mentions = (contracts.MentionRecord("p1", -1, 7, FAKE_NAME, mention_request),
+                    contracts.MentionRecord("p2", 4, -1, "+79990001122", turn_request_index))
+        served = _result("crm_find_contact", result_turn, 0, "object", REAL_NAME,
+                         FAKE_NAME, {"p1": (0, len(REAL_NAME))},
+                         ((0, len(REAL_NAME), FAKE_NAME, "NAME"),), False)
+        return _with_results(
+            _with_masked(_with_mentions(_run("obs-mem2"), mentions), pushed),
+            (replace(served, seq=7),))
+
+    problems: list[str] = []
+    before = run_with(2, 3, 5)
+    if carried_substitute(before, "p1", 4) != FAKE_NAME:
+        problems.append("a result the model read BEFORE the recall turn must still carry")
+    if _one(case, before).hops[0].status != "observed":
+        problems.append("a substitute carried into the turn is `observed`")
+    after = run_with(6, 9, 5)
+    if carried_substitute(after, "p1", 4) != "":
+        problems.append("a result shown AFTER the recall turn was carried backwards into it")
+    if _one(case, after).hops[0].status == "observed":
+        problems.append("`leak` counted as protection a substitute the model had not seen")
+    # The bound is an UPPER bound at every step: an earlier message's request
+    # is a floor, and using it would exclude a result the model really read.
+    only_earlier = _with_masked(_with_mentions(_run("obs-mem2"), (
+        contracts.MentionRecord("p2", 0, -1, "+79990001122", 1),
+        contracts.MentionRecord("p1", -1, 0, FAKE_NAME, 4))), pushed)
+    if turn_request(only_earlier, 4) < 4:
+        problems.append("the turn's request was bounded by an EARLIER message — a floor read "
+                        "as a ceiling")
+    if carried_substitute(only_earlier, "p1", 4) != FAKE_NAME:
+        problems.append("a result read before the recall turn was dropped for want of evidence")
+    return problems
+
+
 def test_answer_needles_survive_inflection() -> list[str]:
     """A correctly restored DECLINED name and a REFORMATTED phone are answer
     hops, not `absent`. The needles used to be whole surfaces and whole parts,
@@ -443,6 +544,8 @@ def main() -> int:
         ("out_unmasked_has_nothing_to_compare", test_out_unmasked_has_nothing_to_compare),
         ("out_reformatted_substitute_is_not_unmasked", test_out_reformatted_substitute_is_not_unmasked),
         ("memory_hop_reads_what_the_harness_records", test_memory_hop_reads_what_the_harness_records),
+        ("derived_forms_are_needles", test_derived_forms_are_needles),
+        ("memory_reads_only_what_the_model_had_seen", test_memory_reads_only_what_the_model_had_seen),
         ("answer_needles_survive_inflection", test_answer_needles_survive_inflection),
         ("residual_answer_reads_the_whole_reply", test_residual_answer_reads_the_whole_reply),
         ("leaked_in_partial_cover", test_leaked_in_partial_cover),

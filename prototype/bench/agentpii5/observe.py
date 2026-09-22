@@ -60,10 +60,12 @@ from bench.agentpii5.contracts import (
     FormVerdict,
     Hop,
     HopObservation,
+    MentionRecord,
     RunObservation,
     ToolResultRecord,
 )
 from bench.agentpii5.form import form_match
+from bench.agentpii5.form_tables import CYRILLIC_TO_LATIN
 from bench.agentpii5.tools import REGISTRY_V5, spec_v5_for
 
 # A piece of a substitute short enough to stand inside an unrelated word is not
@@ -113,6 +115,20 @@ _ISO_DATE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 # Only «.» and «/»: a space would let «+7 916 402…» read as a date and put a
 # phone's digits into the date fold.
 _RU_DATE = re.compile(r"(\d{1,2})[./](\d{1,2})[./](\d{4})")
+# A word CHARACTER, for the boundaries the initials needle stands between: the
+# same class `_WORD` is built from, so «П.О.» inside «СП.О.» is not a match.
+_WORD_CHAR = r"[^\W\d_]"
+# Types whose value a model rewrites in another ALPHABET or squeezes to
+# initials. NAME only, and deliberately: `contracts.FORM_FEATURES` declares
+# `script` and `initials` for NAME alone, the engine ships the leg for names
+# (`pseudex.translit.align`, `prototype/test_derived_forms.py`), and a
+# transliterated STREET needle would fire on ordinary Latin text in an address
+# field without any derived form being there.
+DERIVED_TYPES: frozenset[str] = frozenset({"NAME"})
+# Two letters is the shortest squeezed initials a needle may carry: one letter
+# («П.») stands in front of a third of the Russian alphabet's worth of names
+# and in the middle of ordinary abbreviations.
+MIN_INITIALS = 2
 
 
 class ObserveError(ValueError):
@@ -179,6 +195,49 @@ def date_folds(text: str) -> tuple[tuple[int, int, str], ...]:
     return tuple(sorted(out))
 
 
+def latin_prefixes(word: str, length: int) -> tuple[str, ...]:
+    """Every Latin rendering of the first `length` characters of a Cyrillic
+    word, under the alternatives of `form_tables.CYRILLIC_TO_LATIN`.
+
+    A PREFIX and not the whole word, for the same reason the Cyrillic needle
+    is a stem: a model writes «Pakhomovoy» for the dative and «Pakhomova» for
+    the nominative, and a whole-word match would see neither. The expansion
+    stops as soon as `length` characters are reached, so the number of
+    renderings stays in the dozens whatever the word."""
+    out = {""}
+    for char in word.casefold():
+        if all(len(one) >= length for one in out):
+            break
+        renderings = CYRILLIC_TO_LATIN.get(char)
+        if renderings is None:
+            return ()
+        out = {one + rendering for one in out for rendering in renderings}
+    return tuple(sorted(one[:length] for one in out if len(one) >= length))
+
+
+def initials_of(pii_type: str, surface: str) -> tuple[str, ...]:
+    """The squeezed initials a model writes for this value: «Пахомова Ольга» →
+    «ПО», and the Latin «PO» beside it.
+
+    The surname-plus-given pair is emitted for a three-part name too, because
+    «И.Е.» is what a model squeezes «Иванова Елена Петровна» to at least as
+    often as «И.Е.П.». Fewer than `MIN_INITIALS` letters is not a needle."""
+    if pii_type not in DERIVED_TYPES:
+        return ()
+    words = [word for word in _WORD.findall(surface) if word]
+    heads = [word[0] for word in words]
+    out: set[str] = set()
+    for count in (len(heads), 2):
+        if count < MIN_INITIALS or count > len(heads):
+            continue
+        cyrillic = "".join(heads[:count])
+        out.add(cyrillic.casefold())
+        latin = [latin_prefixes(head, 1) for head in heads[:count]]
+        if all(latin):
+            out.add("".join(one[0] for one in latin))
+    return tuple(sorted(out))
+
+
 def needles_of(pii_type: str, surface: str) -> tuple[tuple[str, str], ...]:
     """(kind, needle) pairs that say «this value stood here», in the shapes a
     MODEL writes it — not only the one the gateway minted.
@@ -186,9 +245,21 @@ def needles_of(pii_type: str, surface: str) -> tuple[tuple[str, str], ...]:
     v1 of this observer looked for whole surfaces and whole parts, so a
     correctly restored «Пахомовой Ольге» (dative) and a reformatted «+7 (999)
     000-11-22» both read `absent`: two of the three registers the corpus is
-    built from write exactly that way. The four kinds are the four ways a
+    built from write exactly that way. The six kinds are the six ways a
     Russian value survives being rewritten — verbatim, declined (a word stem),
-    renotated (a digit signature), reformatted (a date fold)."""
+    renotated (a digit signature), reformatted (a date fold), TRANSLITERATED
+    and SQUEEZED TO INITIALS.
+
+    THE LAST TWO ARE NOT AN EXTRA: without them a substitute the agent wrote
+    as «Pakhomova Olga» or «П.О.» matched nothing, `_out_status` called the
+    leaf `unmasked`, and `residual` — the line whose whole job is «a fake
+    reached the consumer» — printed the leaf CLEAN while the fake sat in the
+    customer's CRM. The same blindness scored a CORRECT derived-form round
+    trip a miss on `form_hOUT`, `end_to_end` and `round_trip`, on the very
+    axis `contracts.FORM_FEATURES["NAME"]` declares (`script` with three
+    published tables, `initials`) and the engine ships (`pseudex.translit`).
+    The renderings come from this package's own letter table, never from
+    `pseudex`."""
     out: list[tuple[str, str]] = [("whole", surface)]
     if pii_type in DIGIT_TYPES:
         digits = digits_of(surface)
@@ -203,6 +274,15 @@ def needles_of(pii_type: str, surface: str) -> tuple[tuple[str, str], ...]:
         if role in GENERIC_ROLES or len(value) < MIN_PIECE:
             continue
         out.append(("stem", fold(value)[:MIN_PIECE]))
+        if pii_type in DERIVED_TYPES:
+            # The Latin prefixes ride as `stem` needles ON PURPOSE: `own_stems`
+            # collects the stems of the customer's OWN values and
+            # `survives_in` skips them, so a real name the agent transliterated
+            # cannot be reported as a surviving substitute. A separate kind
+            # would need its own copy of that exemption, and a second copy is
+            # how the two come to disagree.
+            out += [("stem", prefix) for prefix in latin_prefixes(value, MIN_PIECE)]
+    out += [("initials", letters) for letters in initials_of(pii_type, surface)]
     return tuple(out)
 
 
@@ -217,7 +297,23 @@ def _needle_spans(kind: str, needle: str, text: str) -> list[tuple[int, int]]:
     if kind == "digits":
         return [(match.start(), match.end()) for match in _NUMBER_RUN.finditer(text)
                 if needle in digits_of(match.group())]
+    if kind == "initials":
+        return [(match.start(), match.end()) for match in _initials_re(needle).finditer(text)]
     return [(start, end) for start, end, iso in date_folds(text) if iso == needle]
+
+
+@lru_cache(maxsize=512)
+def _initials_re(needle: str) -> re.Pattern[str]:
+    """«П.О.», «П. О.», «П.О» — and nothing without a dot.
+
+    A DOT AFTER EVERY LETTER BUT THE LAST, and word boundaries on both sides.
+    Bare «ПО» is a preposition, a two-letter abbreviation and half the
+    capitalised acronyms in a Russian reply; a needle that matched it would
+    invent a surviving substitute in ordinary prose, which is the one thing
+    `residual` must never do."""
+    body = r"\s*".join(re.escape(char) + r"\s*\." for char in needle[:-1])
+    body += r"\s*" + re.escape(needle[-1]) + r"\s*\.?"
+    return re.compile(rf"(?<!{_WORD_CHAR}){body}(?!{_WORD_CHAR})", re.IGNORECASE)
 
 
 def occurrences_of(pii_type: str, surface: str, text: str) -> tuple[tuple[int, int], ...]:
@@ -239,10 +335,13 @@ def own_stems(case: CaseV5) -> frozenset[str]:
     out: set[str] = set()
     for item in case.base.pii:
         for surface in (item.value, item.canonical):
-            out.update(needle for kind, needle in needles_of(item.type, surface) if kind == "stem")
+            out.update(needle for kind, needle in needles_of(item.type, surface)
+                       if kind in ("stem", "initials"))
         for role, value in item.parts.items():
             if role not in GENERIC_ROLES and len(value) >= MIN_PIECE:
                 out.add(fold(value)[:MIN_PIECE])
+                if item.type in DERIVED_TYPES:
+                    out.update(latin_prefixes(value, MIN_PIECE))
     return frozenset(out)
 
 
@@ -254,7 +353,11 @@ def survives_in(pii_type: str, surface: str, text: str, own: frozenset[str]) -> 
     fake phone never wears the real one's digits and a fake name never spells
     the real one."""
     for kind, needle in needles_of(pii_type, surface):
-        if kind == "stem" and needle in own:
+        # `initials` joins `stem` in the exemption: «И.Е.» is the customer's
+        # own initials as much as the substitute's when the two share their
+        # first letters, and evidence both values support is evidence of
+        # neither.
+        if kind in ("stem", "initials") and needle in own:
             continue
         if _needle_spans(kind, needle, text):
             return True
@@ -551,6 +654,36 @@ def _in_tool(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem) 
     return _observed(case, repeat, hop, True, item.type, piece[2], reference)
 
 
+def turn_request(run: ArmRunV5, turn: int) -> int:
+    """The model REQUEST the recall turn rode in, read off the record.
+
+    `MentionRecord.request_index` is the only clock the harness writes, and a
+    message mention carries the request its message was pushed in
+    (`harness.GatewayV5._note_message_mentions`). A mention of ANY item in the
+    turn's own message gives the request exactly; failing that, the FIRST
+    later message bounds it from above, one request short of itself; failing
+    that the run's own request count does.
+
+    EVERY FALLBACK IS AN UPPER BOUND, never a lower one. An earlier message's
+    request is a floor, not a ceiling — using it would exclude a tool result
+    the model really did read before the recall turn and turn a protected
+    value into a leak, which is the mirror of the defect this bound exists to
+    remove."""
+    exact = [mention.request_index for mention in run.mentions if mention.msg == turn]
+    if exact:
+        return max(exact)
+    later = [mention.request_index for mention in run.mentions if mention.msg > turn]
+    if later:
+        return min(later) - 1
+    # NOTHING BOUNDS IT, so nothing is excluded: the ceiling is the highest
+    # request the record knows of. `request_count` alone would be that ceiling
+    # on a real run (no mention can ride a request the run never made) and a
+    # FALSE one on a hand-built record whose counter was left at its default —
+    # a bound that fires on the instrument's own fixtures is a bound that will
+    # fire on a live run for the same kind of reason.
+    return max([run.request_count] + [mention.request_index for mention in run.mentions])
+
+
 def carried_substitute(run: ArmRunV5, item_id: str, turn: int) -> str:
     """The substitute the transcript carries INTO `turn` for this item.
 
@@ -558,14 +691,46 @@ def carried_substitute(run: ArmRunV5, item_id: str, turn: int) -> str:
     it is pushed (`harness.GatewayV5._push` → `_note_message_mentions`), so
     «what the model reads at turn 7» is «the last substitute it was shown at
     or before turn 7» — there is no per-request re-recording, and asking for
-    one is what made every memory hop read `leaked`. Mentions from a tool
-    result carry `msg == -1` and count: the model read them too.
-    """
-    before = [mention for mention in run.mentions
-              if mention.item_id == item_id and (mention.msg < 0 or mention.msg <= turn)]
+    one is what made every memory hop read `leaked`.
+
+    A TOOL RESULT COUNTS, AND ONLY IF THE MODEL HAD ALREADY READ IT. Mentions
+    from a result carry `msg == -1`, which used to mean «accept
+    unconditionally» — so a substitute first shown at request 9 was «carried
+    into turn 4», and `leak` scored as protection a value the model had not
+    yet been shown.
+
+    THE RESULT'S OWN TURN DECIDES IT. `harness.push_call` writes the mention
+    and the `ToolResultRecord` together, and the record carries the turn the
+    call was made in, so «had the model read it» is answered exactly and not
+    by arithmetic on request counters. `turn_request` is the fallback for a
+    mention whose record is missing, and with no evidence at all nothing is
+    excluded — inventing a bound would turn a substitute the model did read
+    into a leak, which is the mirror of the defect this bound removes."""
+    limit = turn_request(run, turn)
+    before: list[MentionRecord] = []
+    for mention in run.mentions:
+        if mention.item_id != item_id:
+            continue
+        if mention.msg >= 0:
+            if mention.msg <= turn:
+                before.append(mention)
+            continue
+        at = _result_turn(run, mention.result_seq)
+        if (turn >= at) if at is not None else (mention.request_index <= limit):
+            before.append(mention)
     if not before:
         return ""
     return max(before, key=lambda mention: (mention.request_index, mention.msg)).substitute
+
+
+def _result_turn(run: ArmRunV5, result_seq: int) -> int | None:
+    """The turn a tool result was served in, or None when the run kept no
+    record for it — which a live record never does (`harness.push_call` writes
+    the two in one breath) and a hand-built one may."""
+    for record in run.tool_results:
+        if record.seq == result_seq:
+            return record.turn
+    return None
 
 
 def _in_memory(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem) -> HopObservation:

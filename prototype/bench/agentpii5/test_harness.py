@@ -18,6 +18,7 @@ WHAT IS ACTUALLY PROVEN HERE.
 """
 import ast
 import asyncio
+import inspect
 import json
 import sys
 import tempfile
@@ -637,6 +638,163 @@ def test_the_answer_leg_keeps_the_whole_restoration() -> list[str]:
     return failures
 
 
+# --- G3.5 / G3.7: the run survives its own ceiling, and one directory holds one run ---
+
+class _RefusingLedger:
+    """A ledger with no room left: `reserve` raises, `settle` still books.
+
+    A class because a ledger is a connector to state the run shares, and this
+    is the smallest one that can say «нет» — the real `SpendLedger` would need
+    a file and a ceiling arranged so that three arms fit and the judge does not,
+    which is an arrangement the test would then be about.
+    """
+
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+        self.settled: list[str] = []
+
+    async def reserve(self, cap_usd: float) -> None:
+        raise self._error
+
+    async def settle(self, label: str, cap_usd: float, actual_usd: float) -> float:
+        self.settled.append(label)
+        return 0.0
+
+
+class _Minted:
+    """The only thing `judge_triple` asks a gateway for: what it minted.
+
+    `GatewayV5` itself imports the engine, and this module may not
+    (`test_only_harness_imports_pseudex`), so the seam is taken at the one
+    method — `harness.minted_substitutes` calls `substitutes()` and nothing
+    else.
+    """
+
+    def __init__(self, values: tuple[str, ...]) -> None:
+        self._values = values
+
+    def substitutes(self) -> tuple[str, ...]:
+        return self._values
+
+
+def _run_with_an_earlier_turn(case: CaseV5) -> ArmRunV5:
+    """A run whose INTERMEDIATE turn still carries the substitute, so
+    `turn_residual` is 1 and can be shown to survive the budget refusal."""
+    run = _gateway_run(case)
+    return ArmRunV5(**{**run.__dict__,
+                       "turn_replies": (f"Секунду, смотрю карточку {SUBSTITUTE}.",
+                                        f"Нашёл {REAL_NAME}.")})
+
+
+def _call_lines(function: Callable[..., object], name: str) -> list[int]:
+    """The lines of `function`'s own source where `name(...)` is called."""
+    tree = ast.parse(inspect.getsource(function).lstrip())
+    return sorted(node.lineno for node in ast.walk(tree)
+                  if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                  and node.func.id == name)
+
+
+def test_a_refused_judge_budget_never_kills_the_triple() -> list[str]:
+    """G3.5: the judge reserves from the SAME ledger as the arms, and the
+    refusal used to escape every handler on the way out.
+
+    `judge._ask` reserves AFTER C, I and C′ have finished and been charged;
+    `BudgetExhausted` travelled out of `judge_prompt`, out of `judge_triple`,
+    past `run_triple_v5` (whose handlers are the OUTER reservation and
+    `LeakedPrompt`) and out of `drive_v5`, which has none — three paid arms
+    unrecorded and the whole run dead. The verdict is now `judged_by="none"`,
+    which counts nowhere, and the triple row says WHY.
+
+    NO MODEL IS REACHED IN EITHER DIRECTION: the refusal happens at the
+    reservation, before the transport is touched, which is also why the
+    negative below uses a different exception rather than a granting ledger.
+    """
+    failures: list[str] = []
+    case = _fixture_case()
+    run = _run_with_an_earlier_turn(case)
+    gateway = _Minted((SUBSTITUTE,))
+    config = JudgeConfig(model="claude-sonnet-5", trace_path=None,
+                         ledger=_RefusingLedger(v3_judge.BudgetExhausted("потолок $0.00 исчерпан")),
+                         query_cap_usd=QUERY_CAP_USD, retries=RETRIES,
+                         temperature=JUDGE_TEMPERATURE)
+    try:
+        outcome = asyncio.run(h.judge_triple(case, run, gateway, config))  # type: ignore[arg-type]
+    except v3_judge.BudgetExhausted as escaped:
+        # REPORTED, NEVER RE-RAISED: an escape here is the defect itself, and
+        # letting it out of the check would kill the suite the way it killed the
+        # run — the remaining checks would never say anything.
+        return [f"отказ потолка вышел из judge_triple и снова убьёт прогон: {escaped}"]
+    if outcome.row.verdict.judged_by != "none" or outcome.row.verdict.label != "":
+        failures.append(f"отказ потолка дал счётный вердикт: {outcome.row.verdict}")
+    if h.JUDGE_SKIPPED_BUDGET not in outcome.row.verdict.reason:
+        failures.append(f"причина не называет потолок: {outcome.row.verdict.reason!r}")
+    if outcome.row.verdict.cost_usd != 0.0:
+        failures.append("несостоявшийся вызов судьи чего-то стоил")
+    if not outcome.row.input_sha256:
+        failures.append("отказ потолка унёс хэш промпта — переджудить нечем")
+    if outcome.turn_residual != 1:
+        failures.append(f"отказ потолка унёс счётчик ходов: {outcome.turn_residual}")
+    summary = h.judge_summary(outcome.row.verdict)
+    if h.JUDGE_SKIPPED_BUDGET not in str(summary.get("reason")):
+        failures.append(f"строка тройки не говорит, почему судьи не было: {summary}")
+    if set(summary) != {"label", "judged_by", "cost_usd", "reason"}:
+        failures.append(f"строка тройки сменила форму: {sorted(summary)}")
+    # THE NEGATIVE: the catch is for a ceiling, not for everything. A ledger
+    # that fails for any other reason must still stop the run — `BudgetExhausted`
+    # IS a `RuntimeError`, so a lazy `except RuntimeError` would pass silently.
+    broken = JudgeConfig(model="claude-sonnet-5", trace_path=None,
+                         ledger=_RefusingLedger(RuntimeError("журнал трат не открылся")),
+                         query_cap_usd=QUERY_CAP_USD, retries=RETRIES,
+                         temperature=JUDGE_TEMPERATURE)
+    try:
+        asyncio.run(h.judge_triple(case, run, gateway, broken))  # type: ignore[arg-type]
+        failures.append("поломка журнала трат проглочена как отказ потолка")
+    except RuntimeError as failure:
+        if isinstance(failure, v3_judge.BudgetExhausted):
+            failures.append("негатив поднял тот же самый отказ — проверка ни о чём")
+    return failures
+
+
+def test_a_resume_refuses_a_shared_run_directory() -> list[str]:
+    """G3.7: two run ids in one directory, and every reader takes the first.
+
+    `report.run_id_of` and `calibration._run_id` both pick
+    `sorted(glob("*.arms.jsonl"))[0]`, while `records.merged_v5_records` globs
+    EVERY file — so a `--resume` that wrote a fresh uuid into the resumed
+    directory (the default `--out` is the same path) left the new run's hops,
+    judge file and meta read by nothing and its arm rows merged in as hopless.
+    """
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = Path(tmp) / "v5-live-nano"
+        if h.foreign_run_ids(run_dir, RUN_ID) != ():
+            failures.append("несуществующий каталог объявлен занятым")
+        run_dir.mkdir(parents=True)
+        if h.foreign_run_ids(run_dir, RUN_ID) != ():
+            failures.append("пустой каталог объявлен занятым")
+        (run_dir / f"{RUN_ID}.arms.jsonl").write_text("{}\n", encoding="utf-8")
+        if h.foreign_run_ids(run_dir, RUN_ID) != ():
+            failures.append("собственный прогон прочитан как чужой")
+        (run_dir / "0000-older.arms.jsonl").write_text("{}\n", encoding="utf-8")
+        found = h.foreign_run_ids(run_dir, RUN_ID)
+        if found != ("0000-older",):
+            failures.append(f"чужой прогон в каталоге не найден: {found}")
+    # The refusal must happen BEFORE `write_corpus`, which overwrites the
+    # resumed run's own snapshot of the corpus — the file `--report` replays
+    # against. Read off `main`'s own source, because driving `main` needs a
+    # corpus, a ladder and a model.
+    guard = _call_lines(h.main, "foreign_run_ids")
+    snapshot = _call_lines(h.main, "write_corpus")
+    if not guard:
+        failures.append("main не спрашивает про чужой прогон вообще")
+    elif not snapshot:
+        failures.append("в main нет записи снимка корпуса — сравнивать не с чем")
+    elif guard[0] > snapshot[0]:
+        failures.append(f"проверка каталога ({guard[0]}) стоит после снимка корпуса "
+                        f"({snapshot[0]}) — снимок продолжаемого прогона уже перезаписан")
+    return failures
+
+
 def main() -> int:
     checks: tuple[tuple[str, Callable[[], list[str]]], ...] = (
         ("only_harness_imports_pseudex", test_only_harness_imports_pseudex),
@@ -652,6 +810,10 @@ def main() -> int:
         ("the_triple_carries_both_totals", test_the_triple_carries_both_totals),
         ("the_answer_leg_keeps_the_whole_restoration",
          test_the_answer_leg_keeps_the_whole_restoration),
+        ("a_refused_judge_budget_never_kills_the_triple",
+         test_a_refused_judge_budget_never_kills_the_triple),
+        ("a_resume_refuses_a_shared_run_directory",
+         test_a_resume_refuses_a_shared_run_directory),
     )
     failures: list[str] = []
     for name, check in checks:

@@ -193,11 +193,16 @@ V4_KIND_FOR_BEHAVIOUR: dict[str, str] = {
     "document": "container",                 # personal data inside a file payload
 }
 GENERATOR_A_BEHAVIOURS: tuple[str, ...] = (
-    "retry_same_tool", "same_tool_other_target", "sequential_chain", "parallel",
+    "single", "retry_same_tool", "same_tool_other_target", "sequential_chain", "parallel",
     "fanout_pick", "branching")
 GENERATOR_B_BEHAVIOURS: tuple[str, ...] = ("user_in_loop", "memory_anaphora", "rag", "document")
-# `single` is not generated anew: the revised v4 corpus supplies it (§8.2 row
-# «одиночный вызов» = 180, and v4 already carries more one-call cases than that).
+# `single` IS generated anew (R-50), and the constant says so now. The revised
+# v4 corpus supplies the family's COUNT — §8.2's row «одиночный вызов» = 180
+# and v4 carries far more one-call cases than that — but not its SHAPE: 379 of
+# its 463 revised cases are v4's two-hop lookup, with no seeded record to read
+# back, so the four-hop base loop is authored a hundred times in
+# `scenarios5/single.py` and `build.py --check` prints authored / revised /
+# two-hop apart so the share is read for what it is.
 # What a v4 family becomes when revised (spec §3.6, §8.2 «остальные — ревизию»).
 # The revision keeps the case's messages and items byte-identical and ADDS the
 # behaviour and the hops; generator_b may refine one case's behaviour by hand
@@ -756,6 +761,14 @@ FEATURE_LABELS: dict[tuple[str, str], tuple[str, ...]] = {
 # LOC.city_present CANNOT be isolated from city_position (an absent city is
 # also a position): the per-feature isolation check accepts {city_present,
 # city_position} for either one.
+# `order` = «other» joined the list in round 3 for the same reason `script` =
+# «none» is in it: `name_order` returns `other` when the suffix shapes do not
+# spell one of the four readings, which is the extractor saying «I cannot read
+# the roles of these words», not «the roles are unusual». 47 of 346 NAME
+# canonicals in the corpus read `other` — every given name in -ин/-ий/-ая/-ой
+# (Ирина, Марина, Дмитрий, Аркадий) is surname-shaped — so comparing `other`
+# as a reading made a PERFECT restoration a form MISS whenever the real value
+# and the minted substitute fell on opposite sides of the guess.
 FORM_ABSTAIN: dict[tuple[str, str], str] = {
     ("NAME", "gram_case"): "unknown",
     ("LOC", "generic_position"): "none",
@@ -764,6 +777,42 @@ FORM_ABSTAIN: dict[tuple[str, str], str] = {
     ("EMAIL", "case_class"): "none",
     ("PLATE", "case_class"): "none",
     ("NAME", "script"): "none",
+    ("NAME", "order"): "other",
+}
+# LEXEME-DEPENDENT FEATURES, and why a label is not enough for them.
+#
+# `form_match` is handed two DIFFERENT LEXEMES on the OUT leg — `observe.
+# _out_call` passes produced = the real value and reference = the substitute
+# the agent wrote — so a feature whose label is a reading of the WORDS rather
+# than of the WRITING cannot be compared label to label: the two strings may
+# wear the same form and still read differently, and a perfect gateway is
+# scored a miss for a difference it cannot remove. Measured: a perfect gateway
+# over 200 corpus cases printed form_hOUT 76.3% (NAME.gram_case 96 misses,
+# NAME.order 57), and the answer line 74.3%.
+#
+# Each key here names a feature whose COMPARISON is a function rather than
+# label equality; `form.FEATURE_COMPARATORS` holds exactly these keys and
+# `test_form` pins the two sets equal, so a comparator can never be added
+# without the reason being written down, nor a reason without a comparator.
+# The value is that reason, printed by nothing and read by whoever asks why a
+# feature stopped being compared the ordinary way.
+FORM_LEXEME_READINGS: dict[tuple[str, str], str] = {
+    ("NAME", "gram_case"): (
+        "pymorphy3 gives «Соколова» {nomn, gent, accs} and «Ткачук» all six, and the TOP parse "
+        "among equally scored readings is arbitrary — «Громова» reads gent, «Титова» accs, "
+        "«Марина» nomn, from one and the same set. Two strings therefore wear the same case "
+        "whenever their possible-case sets INTERSECT, and differ only when no reading puts them "
+        "in one case; «Иванов Пётр» {nomn} against «Иванову Петру» {accs, datv} is still a "
+        "difference, which is the defect the feature exists for (known-issues Б24)."),
+    ("NAME", "order"): (
+        "the roles are guessed from suffixes, so two names written in the same order can read "
+        "differently; `other` abstains through FORM_ABSTAIN, and a pair whose part COUNTS differ "
+        "abstains here — «Иванов Пётр» against «Пахомова» is a difference `parts` already names, "
+        "and counting it twice would make one violation two."),
+    ("NAME", "initials"): (
+        "«П.О.» is one part and «Иванова Елена» is two: whether initials were squeezed is not "
+        "comparable across two strings of different part counts, and `parts` names that "
+        "difference once."),
 }
 # The transliteration tables `script` must tell apart; written from their
 # published standards, never from `pseudex/translit.py` (the engine's own
@@ -804,6 +853,17 @@ class FeatureExtractor(Protocol):
     test asserts the dict's keys equal the pairs `FORM_FEATURES` enumerates."""
 
     def __call__(self, text: str) -> str: ...
+
+
+class FeatureComparator(Protocol):
+    """Do these two strings wear the same value of ONE lexeme-dependent
+    feature. Registered in `form.FEATURE_COMPARATORS` for exactly the keys of
+    `FORM_LEXEME_READINGS`, and consulted by `form_match` INSTEAD of comparing
+    the two labels — never beside it, because two rules for one feature is how
+    a difference comes to be counted twice. The extractor stays: the report's
+    histogram still prints one label per string."""
+
+    def __call__(self, produced: str, reference: str) -> bool: ...
 
 
 # --- §5 metrics (spec §4, §8.3) -------------------------------------------------------
@@ -887,12 +947,12 @@ METRICS: tuple[MetricSpec, ...] = (
     # while the code counted hops would be a denominator nobody could check.
     MetricSpec("leak", "IN hops the gateway ALTERED before the model saw them", "IN hops shown to the model (observed ∪ leaked; `absent` was shown to nobody)", "hop", "public", False),
     MetricSpec("coverage", "IN hops of which NO piece survived (city / generic word / marker are not PII)", "IN hops shown to the model (observed ∪ leaked)", "hop", "public", False),
-    MetricSpec("typed", "IN/tool hops the gateway typed as the declared type", "IN/tool hops with a declared type and an exposed type", "hop", "public", False),
-    MetricSpec("round_trip", "OUT/tool_arg leaves the tool received as the real value of THAT leaf (absolute, not paired)", "OUT/tool_arg leaves of items altered on the way in", "leaf", "public", False),
-    MetricSpec("round_trip_repaired", "the same, counting a value that arrived REPAIRED", "OUT/tool_arg leaves of items altered on the way in", "leaf", "public", True),
-    MetricSpec("end_to_end", "OUT/tool_arg leaves the tool received as the real value of THAT leaf", "all declared OUT/tool_arg leaves", "leaf", "public", False),
+    MetricSpec("typed", "IN/tool and IN/document hops the gateway typed as the declared type (DOB and DATE are ONE answer)", "IN/tool and IN/document hops whose slot a replaced piece covers, so a type was exposed", "hop", "public", False),
+    MetricSpec("round_trip", "OUT/tool_arg leaves the gateway RESTORED to the real value of THAT leaf (absolute, not paired); a leaf it never masked (`unmasked`) is a miss, and so is one the agent never wrote", "OUT/tool_arg leaves of items altered on the way in", "leaf", "public", False),
+    MetricSpec("round_trip_repaired", "the same, counting a value that arrived REPAIRED (the same `unmasked` and `absent` misses)", "OUT/tool_arg leaves of items altered on the way in", "leaf", "public", True),
+    MetricSpec("end_to_end", "declared OUT/tool_arg leaves the gateway RESTORED to the real value of THAT leaf — a leaf that carried no substitute (`unmasked`) is a MISS, so a passthrough scores 0 here and not 100 (F1.3)", "all declared OUT/tool_arg leaves", "leaf", "public", False),
     MetricSpec("overmask", "negatives NOT altered", "all negatives", "negative", "public", False),
-    MetricSpec("consistency", "items whose every mention carried ONE substitute", "items mentioned in more than one message", "item", "public", False),
+    MetricSpec("consistency", "items whose every mention carried ONE substitute", "items the model met in more than one PLACE — distinct `MentionRecord.msg`, where every tool result is the one place `msg == -1`", "item", "public", False),
     MetricSpec("stability", "items whose substitute did not change between requests", "items mentioned in more than one request", "item", "public", False),
     # NOT THE PUBLIC QUANTITIES, AND THE NAMES SAY SO (`_v5` / `_answer`).
     # `agentmask_ru.align.rewrite_ratio` is the share of characters changed
@@ -909,7 +969,7 @@ METRICS: tuple[MetricSpec, ...] = (
     MetricSpec("form_hOUT", "OUT hops where form_match == same", "OUT hops the agent WROTE (observed ∪ unmasked; `absent` is printed beside the line by `out_absent`)", "hop", "v5_new", False),
     MetricSpec("out_absent", "declared OUT hops the agent never wrote", "all declared OUT hops", "hop", "v5_new", True),
     MetricSpec("toolresult_masked", "declared tool results where no real value reached the model", "results the case DECLARES personal data in (`returns[].result_item_ids`) and the agent obtained", "result", "v5_new", False),
-    MetricSpec("answer_real", "answers where every declared datum is the REAL value in the agent's form", "answers the case declares an OUT/answer hop for", "answer", "v5_new", False),
+    MetricSpec("answer_real", "answers where every REQUIRED datum is the real value — any inflection of the part(s) the answer names — in the agent's form, and no substitute is left anywhere in the reply", "answers the case declares an OUT/answer hop for", "answer", "v5_new", False),
     MetricSpec("chain_value", "A→B transitions where the real value in B equals the real value from A", "all A→B transitions", "transition", "v5_new", False),
     MetricSpec("chain_form", "A→B transitions with form_match == same on OUT(B)", "all A→B transitions", "transition", "v5_new", False),
     MetricSpec("multi_all_out", "turns where EVERY OUT argument is right in value and form", "turns with N ≥ 2 OUT hops", "turn", "v5_new", False),
@@ -917,9 +977,9 @@ METRICS: tuple[MetricSpec, ...] = (
     MetricSpec("retry_form", "retries where OUT form matched the agent's form on EVERY attempt", "retries of one tool", "retry", "v5_new", False),
     MetricSpec("memory_consistency", "values a `MemorySpec` names, mentioned in > 1 turn with ONE substitute", "values a `MemorySpec` names", "value", "v5_new", False),
     MetricSpec("memory_stability", "substitutes of `MemorySpec` values unchanged between requests of the conversation", "substitutes of `MemorySpec` values seen in > 1 request", "substitute", "v5_new", False),
-    MetricSpec("rag_masked", "chunks with PII where no real value reached the model", "chunks with PII", "chunk", "v5_new", False),
+    MetricSpec("rag_masked", "declared chunks where no real value reached the model; a declared value the chunk rendered UNTAGGED is a miss", "chunks the case DECLARES personal data in (`RagSpec.chunk_ids`) and the retriever returned", "chunk", "v5_new", False),
     MetricSpec("rag_identity_kept", "foreign identities in chunks kept apart from the customer", "foreign identities in chunks", "identity", "v5_new", False),
-    MetricSpec("doc_masked", "documents where every real value was masked", "documents", "document", "v5_new", False),
+    MetricSpec("doc_masked", "documents where every real value was masked, UNTAGGED ones included", "documents the agent actually read (one the read never reached is outside it, the way an absent result is)", "document", "v5_new", False),
     MetricSpec("doc_extracted", "extracted items that reached the tool as the REAL value", "items the agent extracted", "extracted", "v5_new", False),
     MetricSpec("residual", "answers and argument leaves WITHOUT a substitute in them", "all answers, and every OUT leaf the agent WROTE (`absent` is neither)", "leaf", "v5_new", False),
     # THE STREAMING LEG, WHICH NOTHING READ. `ArmRunV5.stream_mismatch` was

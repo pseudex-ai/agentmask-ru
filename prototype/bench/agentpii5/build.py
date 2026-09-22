@@ -251,6 +251,17 @@ def coverage_table(cases: Sequence[CaseV5]) -> list[str]:
     owners = Counter(owner for case in cases for owner in {hop.owner for hop in case.hops})
     lines.append("владельцы переходов: " + " · ".join(
         f"{name} {owners.get(name, 0)}" for name in c.HOP_OWNERS))
+    # THE TWO MEMORY LINES HAVE NO OTHER POPULATION. `memory_consistency` and
+    # `memory_stability` iterate `case.memory`, so a case that declares an
+    # IN/memory hop and no `MemorySpec` crosses the turn and is scored by
+    # nothing — 40 of 85 `user_in_loop` cases were in that state and no printed
+    # number showed it. The shortfall is named, not just the total.
+    remembered = sum(1 for case in cases if case.memory)
+    crossing = [case for case in cases
+                if any(hop.kind == "IN" and hop.owner == "memory" for hop in case.hops)]
+    silent = sum(1 for case in crossing if not case.memory)
+    lines.append(f"случаев с MemorySpec: {remembered} · переходов через память в "
+                 f"{len(crossing)} случаях · из них без MemorySpec: {silent}")
     explicit = sum(1 for case in cases if case.base.conversation_id)
     lines.append(f"явный conversation_id: {explicit} · выведенный: {total - explicit}")
     distinct, counted = v4validate.find_distinct_share([case.base for case in cases])

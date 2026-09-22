@@ -22,7 +22,7 @@ from bench.agentpii4.schema import (Case, Expectation, Locus, Message, PiiItem, 
 from bench.agentpii4.tools import CSV_HEADER
 from bench.agentpii5.contracts import (ECHO_TAG_PREFIX, CaseV5, ForcedError, Hop,
                                        ReturnExpectation)
-from bench.agentpii5.scenarios5 import retry_same_tool
+from bench.agentpii5.scenarios5 import rag, retry_same_tool, user_in_loop
 from bench.agentpii5.mock import (BackendV5, render_problems, seed_backend_v5,
                                   snils_spaced)
 from bench.agentpii5.tools import ISSUE_ID_RE, REGISTRY_V5, generic_paths
@@ -627,6 +627,90 @@ def test_retrieval_does_not_depend_on_the_wording() -> list[str]:
     return problems
 
 
+def _declined(query: str) -> str:
+    """The same words as a Russian agent writes them after «по клиенту» — one
+    dative ending per word. Not a morphology engine: the point is only that the
+    surface differs from the nominative the corpus drove."""
+    return " ".join(word + "у" for word in query.split())
+
+
+def test_retrieval_is_by_seeded_identity() -> list[str]:
+    """The index answers about a PERSON, in whatever form the query names them.
+
+    THE REPRODUCTION THIS PINS (corpus-r2/rag_query.py, F4.5): on rag-010
+    «ерохин пётр» retrieved all five declared chunks and «Ерохину Петру» — the
+    dative an agent writes after «по клиенту» — retrieved nothing at all; the
+    customer's own phone retrieved nothing either. The declared `chunks` form
+    came back `empty`, every declared chunk hop went `absent`, and
+    `toolresult_masked` counted the call anyway and scored a miss. The old pin
+    could not see it: it only ever asked the exact nominative surface.
+    """
+    problems: list[str] = []
+    asked = 0
+    for case in rag.build(SEED, 20):
+        # `doc_retrieve` takes a document id and not a query: the wording is
+        # not a question one can ask of it, and asking it anyway would make
+        # this check pass on an error body.
+        if case.rag is None or case.rag.tool_name != "kb_search":
+            continue
+        items = {item.id: item for item in case.base.pii}
+        declared = [hop.item_id for hop in case.hops
+                    if hop.kind == "IN" and hop.tool_name == case.rag.tool_name]
+        said = items[case.rag.query_item_ids[0]]
+        phone = next((item.canonical or item.value for item in case.base.pii
+                      if item.type == "PHONE" and item.where.kind == "seed"), "")
+        for label, query in (("nominative", said.canonical or said.value),
+                             ("declined", _declined(said.canonical or said.value)),
+                             ("the customer's phone", phone)):
+            if not query:
+                continue
+            asked += 1
+            backend = seed_backend_v5(case)
+            log = backend.call(case.rag.tool_name, {"query": query, "k": case.rag.k})
+            tagged = {tag[len(ECHO_TAG_PREFIX):] if tag.startswith(ECHO_TAG_PREFIX) else tag
+                      for tag in (log.result_spans or {})}
+            missing = [one for one in declared if one not in tagged]
+            if missing:
+                problems.append(f"{case.base.id}: {label} query {query!r} lost "
+                                f"{missing[:3]} of the declared chunk hops")
+    # THE NEGATIVE: a query that names nobody the index knows still retrieves
+    # nothing, so «everything, always» is not what replaced the word test.
+    nothing = seeded_world().call("kb_search", {"query": "щщщ ыыы ююю", "k": 3})
+    if json.loads(nothing.result_text)["total"] != 0:
+        problems.append("a query naming nobody retrieved chunks anyway")
+    if asked < 6:
+        problems.append(f"only {asked} queries were asked: a check that exercised no "
+                        f"kb_search case would pass on anything")
+    return problems
+
+
+def test_render_problems_refuses_a_cross_item_handover() -> list[str]:
+    """V05: a declared A→B hand-over must be one a COPY of A's result can make.
+
+    THE REPRODUCTION THIS PINS (corpus-r2/cross_item.py, F4.2): ten
+    `user_in_loop` transitions fed `clinic_book.patient.first_name` from the IN
+    hop that carries the SURNAME, so `chain_value` compared the restored given
+    name against the rendered surname and no string could satisfy both the tool
+    and the metric. V04 could not see it — the source DOES render a span for
+    its own item — and `build --check` was clean.
+    """
+    problems: list[str] = []
+    case = user_in_loop.build(SEED, 1)[0]
+    if render_problems(case):
+        problems.append(f"a provable case was refused: {render_problems(case)[0]}")
+    given = next(hop for hop in case.hops
+                 if hop.kind == "OUT" and hop.path == "patient.first_name")
+    surname = next(hop for hop in case.hops
+                   if hop.kind == "IN" and hop.owner == "tool"
+                   and hop.path == "contacts[].last_name")
+    crossed = replace(case, hops=tuple(
+        replace(one, source_hop=surname.hop_index) if one is given else one
+        for one in case.hops))
+    if not any(problem.startswith("V05") for problem in render_problems(crossed)):
+        problems.append("a leaf fed by another datum of the same person was accepted")
+    return problems
+
+
 def test_render_problems_refuses_an_unprovable_case() -> list[str]:
     """`render_problems` is the build-time refusal, shown failing on each of the
     three ways a declaration can be fiction.
@@ -660,7 +744,9 @@ def test_render_problems_refuses_an_unprovable_case() -> list[str]:
 
 
 CHECKS = (test_retrieval_does_not_depend_on_the_wording,
+          test_retrieval_is_by_seeded_identity,
           test_render_problems_refuses_an_unprovable_case,
+          test_render_problems_refuses_a_cross_item_handover,
           test_no_pseudex, test_forced_error, test_error_echoes_value,
           test_slot_tags_are_item_ids, test_ids_by_writes_only, test_snapshot_typed,
           test_each_form_renders, test_shape_check_can_fail,

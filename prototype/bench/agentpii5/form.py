@@ -194,6 +194,77 @@ def name_gram_case(text: str) -> str:
     return max(set(votes), key=lambda case: (votes.count(case), -votes.index(case)))
 
 
+def _phrase_cases(text: str) -> frozenset[str]:
+    """Every grammatical case that could put THIS phrase in one case.
+
+    Per word, the set of `_GRAM_CASES` its parses carry; over the phrase, the
+    INTERSECTION, because a run of words is in one case or in none. Words that
+    carry no case at all (an initial, a Latin rendering, a digit) do not
+    narrow it — they are silent, not universal denials.
+
+    The set and not the top parse, because the top parse among equally scored
+    readings is arbitrary: «Громова» reads `gent`, «Титова» `accs`, «Марина»
+    `nomn`, and all three carry {nomn, gent, accs}. `name_gram_case` still
+    prints one label for the report's histogram; the COMPARISON is made here
+    (`contracts.FORM_LEXEME_READINGS`)."""
+    out: frozenset[str] | None = None
+    for word in _words(text):
+        for piece in word.split("-"):
+            letters = _letters(piece)
+            if len(letters) < 2 or not all(_is_cyrillic(char) for char in letters):
+                continue
+            cases = _word_cases(piece)
+            if cases is None:
+                continue
+            out = cases if out is None else (out & cases)
+    return frozenset() if out is None else out
+
+
+def _word_cases(piece: str) -> frozenset[str] | None:
+    """The cases ONE word can be in, or None when it cannot say.
+
+    The parses the analyser tags as a personal name (`Surn` / `Name` / `Patr`)
+    are preferred over the rest: «Иванову» is the dative of a surname and the
+    dative of a place name at once, and a reading of the place is a reading of
+    another word.
+
+    A word the table reads as SURNAME-SHAPED and the analyser knows under no
+    name tag is SILENT, and that is the whole reason this helper exists.
+    pymorphy3 has no surname «Седых», «Долгих», «Мещеряков»: it parses them as
+    the genitive plural of «седой», «долгий», «мещеряк» — oblique-only sets
+    with no nominative in them — so a perfect restoration of a nominative
+    surname against a nominative minted one scored a case DIFFERENCE. The
+    analyser is evidence about the word it recognised, and here it recognised
+    a different word."""
+    parses = _ANALYZER.parse(piece)
+    named = [parse for parse in parses
+             if any(tag in parse.tag for tag in ("Surn", "Name", "Patr"))]
+    chosen = named or parses
+    cases = frozenset(str(parse.tag.case) for parse in chosen
+                      if parse.tag.case is not None and str(parse.tag.case) in _GRAM_CASES)
+    if not cases:
+        return None
+    if not named and _surname_shaped(piece):
+        return None
+    return cases
+
+
+def name_gram_case_same(produced: str, reference: str) -> bool:
+    """Could the two strings be in ONE grammatical case.
+
+    Two DIFFERENT lexemes, so the labels are not comparable (the reason is
+    written out in `contracts.FORM_LEXEME_READINGS`). A side that reads no
+    case at all abstains — a Latin rendering and a bare initial have no
+    Russian case, which is the same judgement `FORM_ABSTAIN`'s `unknown`
+    makes. Disjoint sets are a real difference: «Иванов Пётр» {nomn} against
+    «Иванову Петру» {accs, datv} is the nominative-for-the-tool defect
+    (`docs/known-issues.md` Б24) and stays a miss."""
+    left, right = _phrase_cases(produced), _phrase_cases(reference)
+    if not left or not right:
+        return True
+    return bool(left & right)
+
+
 def _surname_shaped(core: str) -> bool:
     letters = _letters(core)
     if not letters:
@@ -241,6 +312,32 @@ def name_initials(text: str) -> str:
     if count == 0:
         return "none"
     return "given" if count == 1 else "given_patronymic"
+
+
+def _part_count(text: str) -> int:
+    return len(text.split())
+
+
+def name_order_same(produced: str, reference: str) -> bool:
+    """Did the two strings put the surname in the same place.
+
+    Abstains on `other` (through the label in `contracts.FORM_ABSTAIN`) and on
+    a pair whose part COUNTS differ — «Иванов Пётр» against «Пахомова» is a
+    difference `parts` already names, and naming it twice would make one
+    violation two features wide."""
+    if _part_count(produced) != _part_count(reference):
+        return True
+    left, right = name_order(produced), name_order(reference)
+    abstain = FORM_ABSTAIN[("NAME", "order")]
+    return left == right or abstain in (left, right)
+
+
+def name_initials_same(produced: str, reference: str) -> bool:
+    """Were initials squeezed the same way. Not comparable across part counts:
+    «П.О.» is one part and «Иванова Елена» two, and `parts` says so once."""
+    if _part_count(produced) != _part_count(reference):
+        return True
+    return name_initials(produced) == name_initials(reference)
 
 
 def name_script(text: str) -> str:
@@ -777,6 +874,17 @@ FEATURE_EXTRACTORS: dict[tuple[str, str], contracts.FeatureExtractor] = {
 }
 
 
+# The lexeme-dependent features, one comparator each. The keys are EXACTLY
+# `contracts.FORM_LEXEME_READINGS`'s — `test_form.test_comparators_match_the_
+# declared_readings` pins the two sets equal, so a comparator without a written
+# reason, or a reason without a comparator, is red.
+FEATURE_COMPARATORS: dict[tuple[str, str], contracts.FeatureComparator] = {
+    ("NAME", "gram_case"): name_gram_case_same,
+    ("NAME", "order"): name_order_same,
+    ("NAME", "initials"): name_initials_same,
+}
+
+
 def features_of(type: str, text: str) -> dict[str, str]:
     """Every feature of `type`, labelled — what the report's histogram
     (C-181) counts and what a failing hop is explained with."""
@@ -799,6 +907,16 @@ def form_match(type: str, produced: str, reference: str) -> FormVerdict:
                          f"declared types are {sorted(contracts.FORM_FEATURES)}")
     differs: set[str] = set()
     for feature in features:
+        # A LEXEME-DEPENDENT feature is decided by its comparator and by
+        # nothing else. Falling back to the labels when the comparator says
+        # «same» would restore the floor the comparator exists to remove, and
+        # falling back the other way would report a difference the comparator
+        # has already ruled unreadable.
+        comparator = FEATURE_COMPARATORS.get((type, feature))
+        if comparator is not None:
+            if not comparator(produced, reference):
+                differs.add(feature)
+            continue
         extractor = FEATURE_EXTRACTORS[(type, feature)]
         left = extractor(produced)
         right = extractor(reference)

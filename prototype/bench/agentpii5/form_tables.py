@@ -45,6 +45,27 @@ TRANSLIT_SIGNATURES: tuple[tuple[str, tuple[tuple[tuple[str, str], ...], ...]], 
                    (("fin", "y"),))),
 )
 
+# The Cyrillic letter → every Latin rendering the three tables above (and the
+# «common» habit a model falls into) write for it. NOT a fourth standard and
+# not a preference: it is the ALPHABET of the three, read backwards, and it is
+# used only to build the LATIN PREFIXES of a value (`observe.latin_prefixes`)
+# so a transliterated substitute can be recognised. A single table would have
+# to be chosen, and choosing one is exactly the mistake `CLAUDE.md` records —
+# «a benchmark's own convention is a fourth convention»: the control arm of the
+# v4 run wrote «Kuznetsov Dmitry» and «Kuznetsov Dmitriy» in ONE run. The
+# alternatives are per letter, so the widening is by SYLLABLE and never by
+# edit distance — another person's name still matches nothing.
+CYRILLIC_TO_LATIN: dict[str, tuple[str, ...]] = {
+    "а": ("a",), "б": ("b",), "в": ("v",), "г": ("g",), "д": ("d",),
+    "е": ("e", "ye", "je"), "ё": ("e", "yo", "jo", "io"), "ж": ("zh", "j"),
+    "з": ("z",), "и": ("i",), "й": ("y", "i", "j"), "к": ("k",), "л": ("l",),
+    "м": ("m",), "н": ("n",), "о": ("o",), "п": ("p",), "р": ("r",), "с": ("s",),
+    "т": ("t",), "у": ("u",), "ф": ("f",), "х": ("kh", "h", "x"),
+    "ц": ("ts", "c", "cz"), "ч": ("ch",), "ш": ("sh",), "щ": ("shch", "shh", "sch"),
+    "ъ": ("", "'"), "ы": ("y", "i"), "ь": ("", "'"), "э": ("e", "e'"),
+    "ю": ("yu", "iu", "ju"), "я": ("ya", "ia", "ja"),
+}
+
 # --- NAME ------------------------------------------------------------------------------
 
 # Surname suffixes, Cyrillic, with the oblique endings a substitute reaches the

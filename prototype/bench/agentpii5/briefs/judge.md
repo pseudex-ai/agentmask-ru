@@ -86,13 +86,21 @@ reader_ignores_v5_key`). `HopObservation` rows carry `hop` as a dict and
 
 - `residual_pregate(restored_answer, substitutes_minted) -> JudgeVerdict |
   None`: casefold both; a whole substitute, or a piece of ≥ 4 characters
-  from `bench.agentpii4.parts.parts_of` (types NAME/LOC/PASSPORT; skip
-  pieces that are also real parts — pass the real parts as the harness
-  does for `_pieces` in v4's gateway, via an extra `real_parts:
-  tuple[str, ...]` parameter on your concrete function and a thin adapter
-  matching the `ResidualPregate` protocol) found in the answer → `JudgeVerdict(
-  "неверно", reason=f"подмена в ответе: «{piece}»", judged_by="residual_gate",
-  cost_usd=0.0)`; else `None`.
+  from `bench.agentpii4.parts.parts_of` (types NAME/LOC/PASSPORT) found in the
+  answer → `JudgeVerdict("неверно", reason=f"подмена в ответе: «{piece}»",
+  judged_by="residual_gate", cost_usd=0.0)`; else `None`. The real values reach
+  the concrete function through an extra `real_values: tuple[str, ...]`
+  parameter (`harness.real_parts_of` fills it), and a thin adapter matches the
+  `ResidualPregate` protocol.
+- **A PIECE MADE ONLY OF ORDINARY RUSSIAN IS NOT OURS** (G3.3).
+  `own_vocabulary` builds the words a piece may consist of without being
+  evidence: every WORD of the customer's own values, `metrics.GRAMMAR_WORDS`
+  (the generic address vocabulary `metrics._surviving_piece` already
+  subtracts) and `form_tables.MONTH_WORDS`. Word granularity, not the whole
+  part — «Нижний Новгород» is one real part and «нижний» is how the splitter
+  cuts a minted address. Measured before the subtraction: «улица» was the
+  commonest piece on the corpus (48 occurrences over 250 cases) and 2.5 % of
+  honest echo answers were published «неверно».
 - `build_prompt(request: JudgeInput) -> str`: Russian, named sections in
   this order — «ВОПРОС КЛИЕНТА», «ДИАЛОГ (как его видит клиент)» (each
   `DialogueTurn` as `role: text`), «НАСТОЯЩИЕ ЗНАЧЕНИЯ ЗАПИСИ (оракул)»
@@ -142,6 +150,14 @@ reader_ignores_v5_key`). `HopObservation` rows carry `hop` as a dict and
   replaced by `RESIDUAL_MARKER` and counted (`JudgeOutcome.turn_residual`),
   because raising there killed the whole paid run over the very defect the
   instrument measures (F3.2). The question and the oracle sections still raise.
+- **THE SCAN SUBTRACTS THE CUSTOMER'S OWN WORDS, AND THE DIALOGUE CARRIES
+  THEM** (G3.2). `masked_dialogue` hands `own_vocabulary` the oracle AND the
+  text of every turn that is real by construction (`REAL_DIALOGUE_ROLES`: a
+  `user` turn is the case's own text, a `tool` turn is `text_real`). The oracle
+  alone is not enough — `oracle_literals` keeps only the primary identity, and
+  every address of this corpus hangs off a sub-identity — so the customer's own
+  city and «переулок» were masked out of the customer's own sentence on 17.5 %
+  of CLEAN runs, inflating `turn_residual` and starving question 4.
 - `judge_answer(config: JudgeConfig, request: JudgeInput) -> JudgeVerdict`
   (async): fresh hermetic SDK session (`tools=[]`, `setting_sources=[]`,
   `max_budget_usd=config.query_cap_usd`, model `config.model`), parse the

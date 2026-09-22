@@ -31,7 +31,7 @@ four owners is what gives the rarer owners a denominator in a second behaviour
 NOTHING HERE IMPORTS `pseudex`, AND NOTHING HERE SEARCHES A FINISHED STRING.
 """
 from bench.agentpii4.schema import Case
-from bench.agentpii5.contracts import LoopSpec
+from bench.agentpii5.contracts import LoopSpec, MemorySpec
 from bench.agentpii5.scenarios5 import common as c
 from bench.agentpii5.scenarios5.plan_b import (answer_hop, arg_hop, caller_card, city_for,
                                                conversation_id, find_the_caller, memory_hop,
@@ -103,6 +103,27 @@ def _ask(builder: c.CaseBuilderV5, ctx: c.Ctx, drawn: c.Drawn, identity: str,
                                  "ph": ("PHONE", identity, "required", False)})
 
 
+def _remember(builder: c.CaseBuilderV5, item_ids: tuple[str, ...], show_turn: int,
+              confirm_turn: int) -> None:
+    """The `MemorySpec` per value that crosses the confirming turn.
+
+    WITHOUT IT THE FAMILY FEEDS NEITHER MEMORY LINE. `memory_consistency` and
+    `memory_stability` iterate `case.memory` and nothing else, so 40 of 85
+    cases declared IN/memory hops and contributed nothing to the two lines the
+    shape exists to exercise — the gap F4.7 closed on the revised half only.
+
+    THE ANAPHORA IS `same_person` FOR EVERY VALUE, and that is what the phrase
+    actually does: «да это я» / «ага это моя карточка» names the PERSON, and
+    the birth date and the street are recalled through that one reference
+    rather than by a pronoun of their own. Labelling the street `same_address`
+    would claim the customer said «на тот адрес», which no phrase of
+    `CONFIRM_PHRASES` does — and R16 reads the label, so a label chosen for
+    coverage would make the anaphora table a decoration.
+    """
+    for item_id in item_ids:
+        builder.remember(MemorySpec(item_id, show_turn, confirm_turn, "same_person"))
+
+
 def _confirm(builder: c.CaseBuilderV5) -> tuple[int, str]:
     """Turn two: the agreement, with nothing in it the agent could re-read."""
     phrase = CONFIRM_PHRASES[builder.ctx.index % len(CONFIRM_PHRASES)]
@@ -125,6 +146,16 @@ def _clinic(ctx: c.Ctx) -> Case:
     builder.declare_hop(user_hop(said["ph"], 1, ask_turn))
     surname_hop, _next = find_the_caller(builder, card, said["ph"], ask_turn, 1)
     birth_hop = surname_hop + 1
+    # THE GIVEN NAME IS READ FROM ITS OWN LEAF. `FIND_LEAVES` declares IN hops
+    # for the surname and the birth date only, so `patient.first_name` used to
+    # be sourced from the SURNAME hop: ten transitions where the chain compared
+    # the restored given name against the rendered surname and no string could
+    # satisfy both the tool and the metric. The result already renders it (it
+    # is in the `ReturnExpectation`), so the hop costs nothing but the
+    # declaration — and V05 now refuses the cross-item version at build time.
+    given_hop = builder.next_hop_index()
+    builder.declare_hop(tool_hop(card["first_name"], given_hop, ask_turn,
+                                 "crm_find_contact", 0, "contacts[].first_name"))
     shown = builder.next_hop_index()
     builder.declare_hop(answer_hop(card["last_name"], shown, ask_turn, surname_hop, False))
     builder.declare_hop(answer_hop(card["birth_date"], shown + 1, ask_turn, birth_hop, False))
@@ -132,18 +163,21 @@ def _clinic(ctx: c.Ctx) -> Case:
 
     confirm_turn, phrase = _confirm(builder)
     # The value crosses the confirming turn inside the model's context, not
-    # inside a message: two IN/memory hops, one per leaf it is about to use.
+    # inside a message: one IN/memory hop per leaf it is about to use.
     remembered = shown + 2
     builder.declare_hop(memory_hop(card["last_name"], remembered, confirm_turn, surname_hop))
     builder.declare_hop(memory_hop(card["birth_date"], remembered + 1, confirm_turn, birth_hop))
-    builder.declare_hop(arg_hop(card["last_name"], remembered + 2, confirm_turn, "clinic_book",
+    builder.declare_hop(memory_hop(card["first_name"], remembered + 2, confirm_turn, given_hop))
+    builder.declare_hop(arg_hop(card["last_name"], remembered + 3, confirm_turn, "clinic_book",
                                 0, "patient.last_name", remembered, ""))
-    builder.declare_hop(arg_hop(card["first_name"], remembered + 3, confirm_turn, "clinic_book",
-                                0, "patient.first_name", surname_hop, ""))
-    builder.declare_hop(arg_hop(card["birth_date"], remembered + 4, confirm_turn, "clinic_book",
+    builder.declare_hop(arg_hop(card["first_name"], remembered + 4, confirm_turn, "clinic_book",
+                                0, "patient.first_name", remembered + 2, ""))
+    builder.declare_hop(arg_hop(card["birth_date"], remembered + 5, confirm_turn, "clinic_book",
                                 0, "patient.birth_date", remembered + 1, ""))
-    builder.declare_hop(arg_hop(said["ph"], remembered + 5, confirm_turn, "clinic_book",
+    builder.declare_hop(arg_hop(said["ph"], remembered + 6, confirm_turn, "clinic_book",
                                 0, "phone", 1, ""))
+    _remember(builder, (card["last_name"], card["birth_date"], card["first_name"]),
+              ask_turn, confirm_turn)
     builder.set_loop(LoopSpec("crm_find_contact", ask_turn, confirm_turn, phrase, "clinic_book"))
     return builder.build(BEHAVIOUR)
 
@@ -169,6 +203,7 @@ def _sms(ctx: c.Ctx) -> Case:
                                 "number", 1, ""))
     builder.declare_hop(arg_hop(card["last_name"], shown + 3, confirm_turn, "notify_sms", 0,
                                 "text", shown + 1, ""))
+    _remember(builder, (card["last_name"],), ask_turn, confirm_turn)
     builder.set_loop(LoopSpec("crm_find_contact", ask_turn, confirm_turn, phrase, "notify_sms"))
     return builder.build(BEHAVIOUR)
 
@@ -202,6 +237,7 @@ def _template(ctx: c.Ctx) -> Case:
                                 "variables.name", surname_hop, ""))
     builder.declare_hop(arg_hop(card["address.street"], shown + 5, confirm_turn,
                                 "send_template", 0, "variables.address", shown + 2, ""))
+    _remember(builder, (card["address.street"],), ask_turn, confirm_turn)
     builder.set_loop(LoopSpec("crm_find_contact", ask_turn, confirm_turn, phrase,
                               "send_template"))
     return builder.build(BEHAVIOUR)
@@ -244,6 +280,7 @@ def _handover(ctx: c.Ctx) -> Case:
                                 "phone", 1, ""))
     builder.declare_hop(arg_hop(card["last_name"], shown + 6, confirm_turn, "ticket_create", 0,
                                 "subject", shown + 1, ""))
+    _remember(builder, (card["last_name"], card["birth_date"]), ask_turn, confirm_turn)
     builder.set_loop(LoopSpec("crm_find_contact", ask_turn, confirm_turn, phrase,
                               "ticket_create"))
     return builder.build(BEHAVIOUR)

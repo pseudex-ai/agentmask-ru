@@ -1,7 +1,7 @@
 {
  "version": 5,
  "cases": 1736,
- "digest": "e59affa62a84bc83faa86f338227a5f5fd21383266b72d05fe8e4a5ec2b32a79",
+ "digest": "e64b8c390194175d8e6b592b9bf0d663b73b203f128fd68fb64b1e2cedb90a3b",
  "corpus": [
   {
    "base": {
@@ -1036369,27 +1036369,40 @@
      "optional": false
     },
     {
-     "kind": "OUT",
-     "owner": "answer",
-     "item_id": "i1",
+     "kind": "IN",
+     "owner": "tool",
+     "item_id": "i2",
      "hop_index": 5,
      "turn": 1,
-     "tool_name": "",
-     "call_ordinal": -1,
+     "tool_name": "crm_find_contact",
+     "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
-     "path": "",
+     "source_hop": -1,
+     "path": "contacts[].first_name",
      "optional": false
     },
     {
      "kind": "OUT",
      "owner": "answer",
-     "item_id": "i6",
+     "item_id": "i1",
      "hop_index": 6,
      "turn": 1,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
+     "source_hop": 3,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "OUT",
+     "owner": "answer",
+     "item_id": "i6",
+     "hop_index": 7,
+     "turn": 1,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
      "source_hop": 4,
      "path": "",
      "optional": false
@@ -1036398,7 +1036411,7 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i1",
-     "hop_index": 7,
+     "hop_index": 8,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
@@ -1036411,12 +1036424,25 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i6",
-     "hop_index": 8,
+     "hop_index": 9,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
      "source_hop": 4,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "IN",
+     "owner": "memory",
+     "item_id": "i2",
+     "hop_index": 10,
+     "turn": 2,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
+     "source_hop": 5,
      "path": "",
      "optional": false
     },
@@ -1036424,12 +1036450,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i1",
-     "hop_index": 9,
+     "hop_index": 11,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 7,
+     "source_hop": 8,
      "path": "patient.last_name",
      "optional": false
     },
@@ -1036437,12 +1036463,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i2",
-     "hop_index": 10,
+     "hop_index": 12,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
+     "source_hop": 10,
      "path": "patient.first_name",
      "optional": false
     },
@@ -1036450,12 +1036476,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i6",
-     "hop_index": 11,
+     "hop_index": 13,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 8,
+     "source_hop": 9,
      "path": "patient.birth_date",
      "optional": false
     },
@@ -1036463,7 +1036489,7 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i9",
-     "hop_index": 12,
+     "hop_index": 14,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
@@ -1036488,7 +1036514,26 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i2",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1037168,7 +1037213,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1037852,7 +1037904,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i7",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1038552,7 +1038611,20 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1039146,27 +1039218,40 @@
      "optional": false
     },
     {
-     "kind": "OUT",
-     "owner": "answer",
-     "item_id": "i1",
+     "kind": "IN",
+     "owner": "tool",
+     "item_id": "i2",
      "hop_index": 5,
      "turn": 1,
-     "tool_name": "",
-     "call_ordinal": -1,
+     "tool_name": "crm_find_contact",
+     "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
-     "path": "",
+     "source_hop": -1,
+     "path": "contacts[].first_name",
      "optional": false
     },
     {
      "kind": "OUT",
      "owner": "answer",
-     "item_id": "i6",
+     "item_id": "i1",
      "hop_index": 6,
      "turn": 1,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
+     "source_hop": 3,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "OUT",
+     "owner": "answer",
+     "item_id": "i6",
+     "hop_index": 7,
+     "turn": 1,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
      "source_hop": 4,
      "path": "",
      "optional": false
@@ -1039175,7 +1039260,7 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i1",
-     "hop_index": 7,
+     "hop_index": 8,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
@@ -1039188,12 +1039273,25 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i6",
-     "hop_index": 8,
+     "hop_index": 9,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
      "source_hop": 4,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "IN",
+     "owner": "memory",
+     "item_id": "i2",
+     "hop_index": 10,
+     "turn": 2,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
+     "source_hop": 5,
      "path": "",
      "optional": false
     },
@@ -1039201,12 +1039299,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i1",
-     "hop_index": 9,
+     "hop_index": 11,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 7,
+     "source_hop": 8,
      "path": "patient.last_name",
      "optional": false
     },
@@ -1039214,12 +1039312,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i2",
-     "hop_index": 10,
+     "hop_index": 12,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
+     "source_hop": 10,
      "path": "patient.first_name",
      "optional": false
     },
@@ -1039227,12 +1039325,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i6",
-     "hop_index": 11,
+     "hop_index": 13,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 8,
+     "source_hop": 9,
      "path": "patient.birth_date",
      "optional": false
     },
@@ -1039240,7 +1039338,7 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i9",
-     "hop_index": 12,
+     "hop_index": 14,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
@@ -1039265,7 +1039363,26 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i2",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1039952,7 +1040069,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1040608,7 +1040732,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i7",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1041336,7 +1041467,20 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1041930,27 +1042074,40 @@
      "optional": false
     },
     {
-     "kind": "OUT",
-     "owner": "answer",
-     "item_id": "i1",
+     "kind": "IN",
+     "owner": "tool",
+     "item_id": "i2",
      "hop_index": 5,
      "turn": 1,
-     "tool_name": "",
-     "call_ordinal": -1,
+     "tool_name": "crm_find_contact",
+     "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
-     "path": "",
+     "source_hop": -1,
+     "path": "contacts[].first_name",
      "optional": false
     },
     {
      "kind": "OUT",
      "owner": "answer",
-     "item_id": "i6",
+     "item_id": "i1",
      "hop_index": 6,
      "turn": 1,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
+     "source_hop": 3,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "OUT",
+     "owner": "answer",
+     "item_id": "i6",
+     "hop_index": 7,
+     "turn": 1,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
      "source_hop": 4,
      "path": "",
      "optional": false
@@ -1041959,7 +1042116,7 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i1",
-     "hop_index": 7,
+     "hop_index": 8,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
@@ -1041972,12 +1042129,25 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i6",
-     "hop_index": 8,
+     "hop_index": 9,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
      "source_hop": 4,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "IN",
+     "owner": "memory",
+     "item_id": "i2",
+     "hop_index": 10,
+     "turn": 2,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
+     "source_hop": 5,
      "path": "",
      "optional": false
     },
@@ -1041985,12 +1042155,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i1",
-     "hop_index": 9,
+     "hop_index": 11,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 7,
+     "source_hop": 8,
      "path": "patient.last_name",
      "optional": false
     },
@@ -1041998,12 +1042168,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i2",
-     "hop_index": 10,
+     "hop_index": 12,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
+     "source_hop": 10,
      "path": "patient.first_name",
      "optional": false
     },
@@ -1042011,12 +1042181,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i6",
-     "hop_index": 11,
+     "hop_index": 13,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 8,
+     "source_hop": 9,
      "path": "patient.birth_date",
      "optional": false
     },
@@ -1042024,7 +1042194,7 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i9",
-     "hop_index": 12,
+     "hop_index": 14,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
@@ -1042049,7 +1042219,26 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i2",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1042743,7 +1042932,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1043441,7 +1043637,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i7",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1044113,7 +1044316,20 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1044693,27 +1044909,40 @@
      "optional": false
     },
     {
-     "kind": "OUT",
-     "owner": "answer",
-     "item_id": "i1",
+     "kind": "IN",
+     "owner": "tool",
+     "item_id": "i2",
      "hop_index": 5,
      "turn": 1,
-     "tool_name": "",
-     "call_ordinal": -1,
+     "tool_name": "crm_find_contact",
+     "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
-     "path": "",
+     "source_hop": -1,
+     "path": "contacts[].first_name",
      "optional": false
     },
     {
      "kind": "OUT",
      "owner": "answer",
-     "item_id": "i6",
+     "item_id": "i1",
      "hop_index": 6,
      "turn": 1,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
+     "source_hop": 3,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "OUT",
+     "owner": "answer",
+     "item_id": "i6",
+     "hop_index": 7,
+     "turn": 1,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
      "source_hop": 4,
      "path": "",
      "optional": false
@@ -1044722,7 +1044951,7 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i1",
-     "hop_index": 7,
+     "hop_index": 8,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
@@ -1044735,12 +1044964,25 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i6",
-     "hop_index": 8,
+     "hop_index": 9,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
      "source_hop": 4,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "IN",
+     "owner": "memory",
+     "item_id": "i2",
+     "hop_index": 10,
+     "turn": 2,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
+     "source_hop": 5,
      "path": "",
      "optional": false
     },
@@ -1044748,12 +1044990,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i1",
-     "hop_index": 9,
+     "hop_index": 11,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 7,
+     "source_hop": 8,
      "path": "patient.last_name",
      "optional": false
     },
@@ -1044761,12 +1045003,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i2",
-     "hop_index": 10,
+     "hop_index": 12,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
+     "source_hop": 10,
      "path": "patient.first_name",
      "optional": false
     },
@@ -1044774,12 +1045016,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i6",
-     "hop_index": 11,
+     "hop_index": 13,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 8,
+     "source_hop": 9,
      "path": "patient.birth_date",
      "optional": false
     },
@@ -1044787,7 +1045029,7 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i9",
-     "hop_index": 12,
+     "hop_index": 14,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
@@ -1044812,7 +1045054,26 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i2",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1045485,7 +1045746,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1046225,7 +1046493,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i7",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1046897,7 +1047172,20 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1047477,27 +1047765,40 @@
      "optional": false
     },
     {
-     "kind": "OUT",
-     "owner": "answer",
-     "item_id": "i1",
+     "kind": "IN",
+     "owner": "tool",
+     "item_id": "i2",
      "hop_index": 5,
      "turn": 1,
-     "tool_name": "",
-     "call_ordinal": -1,
+     "tool_name": "crm_find_contact",
+     "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
-     "path": "",
+     "source_hop": -1,
+     "path": "contacts[].first_name",
      "optional": false
     },
     {
      "kind": "OUT",
      "owner": "answer",
-     "item_id": "i6",
+     "item_id": "i1",
      "hop_index": 6,
      "turn": 1,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
+     "source_hop": 3,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "OUT",
+     "owner": "answer",
+     "item_id": "i6",
+     "hop_index": 7,
+     "turn": 1,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
      "source_hop": 4,
      "path": "",
      "optional": false
@@ -1047506,7 +1047807,7 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i1",
-     "hop_index": 7,
+     "hop_index": 8,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
@@ -1047519,12 +1047820,25 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i6",
-     "hop_index": 8,
+     "hop_index": 9,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
      "source_hop": 4,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "IN",
+     "owner": "memory",
+     "item_id": "i2",
+     "hop_index": 10,
+     "turn": 2,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
+     "source_hop": 5,
      "path": "",
      "optional": false
     },
@@ -1047532,12 +1047846,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i1",
-     "hop_index": 9,
+     "hop_index": 11,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 7,
+     "source_hop": 8,
      "path": "patient.last_name",
      "optional": false
     },
@@ -1047545,12 +1047859,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i2",
-     "hop_index": 10,
+     "hop_index": 12,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
+     "source_hop": 10,
      "path": "patient.first_name",
      "optional": false
     },
@@ -1047558,12 +1047872,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i6",
-     "hop_index": 11,
+     "hop_index": 13,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 8,
+     "source_hop": 9,
      "path": "patient.birth_date",
      "optional": false
     },
@@ -1047571,7 +1047885,7 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i9",
-     "hop_index": 12,
+     "hop_index": 14,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
@@ -1047596,7 +1047910,26 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i2",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1048241,7 +1048574,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1048967,7 +1049307,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i7",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1049681,7 +1050028,20 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1050296,27 +1050656,40 @@
      "optional": false
     },
     {
-     "kind": "OUT",
-     "owner": "answer",
-     "item_id": "i1",
+     "kind": "IN",
+     "owner": "tool",
+     "item_id": "i2",
      "hop_index": 5,
      "turn": 1,
-     "tool_name": "",
-     "call_ordinal": -1,
+     "tool_name": "crm_find_contact",
+     "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
-     "path": "",
+     "source_hop": -1,
+     "path": "contacts[].first_name",
      "optional": false
     },
     {
      "kind": "OUT",
      "owner": "answer",
-     "item_id": "i6",
+     "item_id": "i1",
      "hop_index": 6,
      "turn": 1,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
+     "source_hop": 3,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "OUT",
+     "owner": "answer",
+     "item_id": "i6",
+     "hop_index": 7,
+     "turn": 1,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
      "source_hop": 4,
      "path": "",
      "optional": false
@@ -1050325,7 +1050698,7 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i1",
-     "hop_index": 7,
+     "hop_index": 8,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
@@ -1050338,12 +1050711,25 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i6",
-     "hop_index": 8,
+     "hop_index": 9,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
      "source_hop": 4,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "IN",
+     "owner": "memory",
+     "item_id": "i2",
+     "hop_index": 10,
+     "turn": 2,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
+     "source_hop": 5,
      "path": "",
      "optional": false
     },
@@ -1050351,12 +1050737,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i1",
-     "hop_index": 9,
+     "hop_index": 11,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 7,
+     "source_hop": 8,
      "path": "patient.last_name",
      "optional": false
     },
@@ -1050364,12 +1050750,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i2",
-     "hop_index": 10,
+     "hop_index": 12,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
+     "source_hop": 10,
      "path": "patient.first_name",
      "optional": false
     },
@@ -1050377,12 +1050763,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i6",
-     "hop_index": 11,
+     "hop_index": 13,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 8,
+     "source_hop": 9,
      "path": "patient.birth_date",
      "optional": false
     },
@@ -1050390,7 +1050776,7 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i9",
-     "hop_index": 12,
+     "hop_index": 14,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
@@ -1050415,7 +1050801,26 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i2",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1051074,7 +1051479,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1051800,7 +1052212,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i7",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1052472,7 +1052891,20 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1053066,27 +1053498,40 @@
      "optional": false
     },
     {
-     "kind": "OUT",
-     "owner": "answer",
-     "item_id": "i1",
+     "kind": "IN",
+     "owner": "tool",
+     "item_id": "i2",
      "hop_index": 5,
      "turn": 1,
-     "tool_name": "",
-     "call_ordinal": -1,
+     "tool_name": "crm_find_contact",
+     "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
-     "path": "",
+     "source_hop": -1,
+     "path": "contacts[].first_name",
      "optional": false
     },
     {
      "kind": "OUT",
      "owner": "answer",
-     "item_id": "i6",
+     "item_id": "i1",
      "hop_index": 6,
      "turn": 1,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
+     "source_hop": 3,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "OUT",
+     "owner": "answer",
+     "item_id": "i6",
+     "hop_index": 7,
+     "turn": 1,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
      "source_hop": 4,
      "path": "",
      "optional": false
@@ -1053095,7 +1053540,7 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i1",
-     "hop_index": 7,
+     "hop_index": 8,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
@@ -1053108,12 +1053553,25 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i6",
-     "hop_index": 8,
+     "hop_index": 9,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
      "source_hop": 4,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "IN",
+     "owner": "memory",
+     "item_id": "i2",
+     "hop_index": 10,
+     "turn": 2,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
+     "source_hop": 5,
      "path": "",
      "optional": false
     },
@@ -1053121,12 +1053579,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i1",
-     "hop_index": 9,
+     "hop_index": 11,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 7,
+     "source_hop": 8,
      "path": "patient.last_name",
      "optional": false
     },
@@ -1053134,12 +1053592,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i2",
-     "hop_index": 10,
+     "hop_index": 12,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
+     "source_hop": 10,
      "path": "patient.first_name",
      "optional": false
     },
@@ -1053147,12 +1053605,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i6",
-     "hop_index": 11,
+     "hop_index": 13,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 8,
+     "source_hop": 9,
      "path": "patient.birth_date",
      "optional": false
     },
@@ -1053160,7 +1053618,7 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i9",
-     "hop_index": 12,
+     "hop_index": 14,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
@@ -1053185,7 +1053643,26 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i2",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1053872,7 +1054349,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1054584,7 +1055068,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i7",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1055319,7 +1055810,20 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1055927,27 +1056431,40 @@
      "optional": false
     },
     {
-     "kind": "OUT",
-     "owner": "answer",
-     "item_id": "i1",
+     "kind": "IN",
+     "owner": "tool",
+     "item_id": "i2",
      "hop_index": 5,
      "turn": 1,
-     "tool_name": "",
-     "call_ordinal": -1,
+     "tool_name": "crm_find_contact",
+     "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
-     "path": "",
+     "source_hop": -1,
+     "path": "contacts[].first_name",
      "optional": false
     },
     {
      "kind": "OUT",
      "owner": "answer",
-     "item_id": "i6",
+     "item_id": "i1",
      "hop_index": 6,
      "turn": 1,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
+     "source_hop": 3,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "OUT",
+     "owner": "answer",
+     "item_id": "i6",
+     "hop_index": 7,
+     "turn": 1,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
      "source_hop": 4,
      "path": "",
      "optional": false
@@ -1055956,7 +1056473,7 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i1",
-     "hop_index": 7,
+     "hop_index": 8,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
@@ -1055969,12 +1056486,25 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i6",
-     "hop_index": 8,
+     "hop_index": 9,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
      "source_hop": 4,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "IN",
+     "owner": "memory",
+     "item_id": "i2",
+     "hop_index": 10,
+     "turn": 2,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
+     "source_hop": 5,
      "path": "",
      "optional": false
     },
@@ -1055982,12 +1056512,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i1",
-     "hop_index": 9,
+     "hop_index": 11,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 7,
+     "source_hop": 8,
      "path": "patient.last_name",
      "optional": false
     },
@@ -1055995,12 +1056525,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i2",
-     "hop_index": 10,
+     "hop_index": 12,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
+     "source_hop": 10,
      "path": "patient.first_name",
      "optional": false
     },
@@ -1056008,12 +1056538,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i6",
-     "hop_index": 11,
+     "hop_index": 13,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 8,
+     "source_hop": 9,
      "path": "patient.birth_date",
      "optional": false
     },
@@ -1056021,7 +1056551,7 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i9",
-     "hop_index": 12,
+     "hop_index": 14,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
@@ -1056046,7 +1056576,26 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i2",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1056719,7 +1057268,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1057417,7 +1057973,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i7",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1058103,7 +1058666,20 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1058669,27 +1059245,40 @@
      "optional": false
     },
     {
-     "kind": "OUT",
-     "owner": "answer",
-     "item_id": "i1",
+     "kind": "IN",
+     "owner": "tool",
+     "item_id": "i2",
      "hop_index": 5,
      "turn": 1,
-     "tool_name": "",
-     "call_ordinal": -1,
+     "tool_name": "crm_find_contact",
+     "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
-     "path": "",
+     "source_hop": -1,
+     "path": "contacts[].first_name",
      "optional": false
     },
     {
      "kind": "OUT",
      "owner": "answer",
-     "item_id": "i6",
+     "item_id": "i1",
      "hop_index": 6,
      "turn": 1,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
+     "source_hop": 3,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "OUT",
+     "owner": "answer",
+     "item_id": "i6",
+     "hop_index": 7,
+     "turn": 1,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
      "source_hop": 4,
      "path": "",
      "optional": false
@@ -1058698,7 +1059287,7 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i1",
-     "hop_index": 7,
+     "hop_index": 8,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
@@ -1058711,12 +1059300,25 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i6",
-     "hop_index": 8,
+     "hop_index": 9,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
      "source_hop": 4,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "IN",
+     "owner": "memory",
+     "item_id": "i2",
+     "hop_index": 10,
+     "turn": 2,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
+     "source_hop": 5,
      "path": "",
      "optional": false
     },
@@ -1058724,12 +1059326,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i1",
-     "hop_index": 9,
+     "hop_index": 11,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 7,
+     "source_hop": 8,
      "path": "patient.last_name",
      "optional": false
     },
@@ -1058737,12 +1059339,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i2",
-     "hop_index": 10,
+     "hop_index": 12,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
+     "source_hop": 10,
      "path": "patient.first_name",
      "optional": false
     },
@@ -1058750,12 +1059352,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i6",
-     "hop_index": 11,
+     "hop_index": 13,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 8,
+     "source_hop": 9,
      "path": "patient.birth_date",
      "optional": false
     },
@@ -1058763,7 +1059365,7 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i9",
-     "hop_index": 12,
+     "hop_index": 14,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
@@ -1058788,7 +1059390,26 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i2",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1059461,7 +1060082,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1060201,7 +1060829,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i7",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1060901,7 +1061536,20 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1061481,27 +1062129,40 @@
      "optional": false
     },
     {
-     "kind": "OUT",
-     "owner": "answer",
-     "item_id": "i1",
+     "kind": "IN",
+     "owner": "tool",
+     "item_id": "i2",
      "hop_index": 5,
      "turn": 1,
-     "tool_name": "",
-     "call_ordinal": -1,
+     "tool_name": "crm_find_contact",
+     "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
-     "path": "",
+     "source_hop": -1,
+     "path": "contacts[].first_name",
      "optional": false
     },
     {
      "kind": "OUT",
      "owner": "answer",
-     "item_id": "i6",
+     "item_id": "i1",
      "hop_index": 6,
      "turn": 1,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
+     "source_hop": 3,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "OUT",
+     "owner": "answer",
+     "item_id": "i6",
+     "hop_index": 7,
+     "turn": 1,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
      "source_hop": 4,
      "path": "",
      "optional": false
@@ -1061510,7 +1062171,7 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i1",
-     "hop_index": 7,
+     "hop_index": 8,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
@@ -1061523,12 +1062184,25 @@
      "kind": "IN",
      "owner": "memory",
      "item_id": "i6",
-     "hop_index": 8,
+     "hop_index": 9,
      "turn": 2,
      "tool_name": "",
      "call_ordinal": -1,
      "parallel_group": "",
      "source_hop": 4,
+     "path": "",
+     "optional": false
+    },
+    {
+     "kind": "IN",
+     "owner": "memory",
+     "item_id": "i2",
+     "hop_index": 10,
+     "turn": 2,
+     "tool_name": "",
+     "call_ordinal": -1,
+     "parallel_group": "",
+     "source_hop": 5,
      "path": "",
      "optional": false
     },
@@ -1061536,12 +1062210,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i1",
-     "hop_index": 9,
+     "hop_index": 11,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 7,
+     "source_hop": 8,
      "path": "patient.last_name",
      "optional": false
     },
@@ -1061549,12 +1062223,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i2",
-     "hop_index": 10,
+     "hop_index": 12,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 3,
+     "source_hop": 10,
      "path": "patient.first_name",
      "optional": false
     },
@@ -1061562,12 +1062236,12 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i6",
-     "hop_index": 11,
+     "hop_index": 13,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": 8,
+     "source_hop": 9,
      "path": "patient.birth_date",
      "optional": false
     },
@@ -1061575,7 +1062249,7 @@
      "kind": "OUT",
      "owner": "tool_arg",
      "item_id": "i9",
-     "hop_index": 12,
+     "hop_index": 14,
      "turn": 2,
      "tool_name": "clinic_book",
      "call_ordinal": 0,
@@ -1061600,7 +1062274,26 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i2",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1062273,7 +1062966,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1062985,7 +1063685,14 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i7",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {
@@ -1063713,7 +1064420,20 @@
     }
    ],
    "forced": [],
-   "memory": [],
+   "memory": [
+    {
+     "item_id": "i1",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    },
+    {
+     "item_id": "i6",
+     "first_turn": 1,
+     "recall_turn": 2,
+     "anaphora": "same_person"
+    }
+   ],
    "pick": null,
    "branch": null,
    "loop": {

@@ -75,6 +75,16 @@ from bench.agentpii4.parts import parts_of
 from bench.agentpii4.schema import message_text
 from bench.agentpii5.contracts import (
     ECHO_TAG_PREFIX, JUDGE_LABELS, ArmRunV5, CaseV5, DialogueTurn, JudgeInput, JudgeVerdict)
+from bench.agentpii5.form_tables import MONTH_WORDS
+# THE OBSERVER'S OWN SUBTRACTION, IMPORTED RATHER THAN RESTATED. `GRAMMAR_WORDS`
+# and `fold` are what `metrics._surviving_piece` and `observe.own_stems` already
+# use to tell «the generic word of an address» from «a value»; a second copy
+# here would be a second vocabulary to keep equal, and the first divergence
+# would be a pre-gate refusing what the residual line calls clean. Neither
+# module imports the engine (`contracts.PSEUDEX_ALLOWED_MODULES`) and neither
+# imports this one, so the edge is one-way.
+from bench.agentpii5.metrics import GRAMMAR_WORDS
+from bench.agentpii5.observe import fold
 
 # The roles of a substitute that are NOT ours to flag. The settlement inside a
 # minted address is the customer's own city (vault `_settlement_of`), and
@@ -317,8 +327,56 @@ def assert_blind(sections: Sequence[str], framing: Sequence[str],
 
 # --- the residual pre-gate ------------------------------------------------------------
 
+# A WORD, for the subtraction below. `\w+` and not a split on spaces: «омск,»
+# and «омск» are one word, and a trailing comma is what an address written into
+# a sentence carries.
+_WORD = re.compile(r"\w+")
+
+
+def _words(text: str) -> tuple[str, ...]:
+    """The words of a string, folded the way the observer folds them.
+
+    `observe.fold` (casefold plus ё→е) rather than `str.casefold`, because the
+    engine mints «берёзовая» where the corpus wrote «березовая» and a
+    subtraction that told them apart would leave half of the corpus's streets
+    hunting themselves.
+    """
+    return tuple(match.group() for match in _WORD.finditer(fold(text)))
+
+
+def own_vocabulary(real_values: Sequence[str]) -> frozenset[str]:
+    """Every word a piece may be made of WITHOUT being evidence of OUR substitute.
+
+    Three sources, and each one closed a false «неверно» measured on this
+    corpus through the production masking path:
+
+      * THE CUSTOMER'S OWN VALUES, WORD BY WORD. «Нижний Новгород» is one real
+        part and «нижний» is how the splitter cuts a minted address, so a
+        whole-part comparison left half a city hunting itself — 12 of 489
+        honest echo answers refused, and the same word masked out of the
+        judge's context.
+      * `metrics.GRAMMAR_WORDS` — the generic address vocabulary the observer
+        already subtracts (`metrics._surviving_piece`). «улица» was the single
+        commonest piece on the corpus (48 occurrences over 250 cases), and
+        masking it ate the customer's own sentence out of question 4.
+      * `form_tables.MONTH_WORDS` — a spoken DOB substitute splits as a name
+        («двадцать третьего декабря …»), and a month name is ordinary Russian
+        that an honest answer about any OTHER date carries.
+
+    WORD GRANULARITY, not the whole part, and that is the half F3.2's order
+    called «the same scan as F1.4»: the piece is one word while the real part
+    may be two, so equality could never subtract it. The reverse direction
+    needs no rule — a piece ALL of whose words are the customer's own is
+    dropped by the same test.
+    """
+    out: set[str] = set(GRAMMAR_WORDS) | set(MONTH_WORDS)
+    for value in real_values:
+        out.update(_words(value))
+    return frozenset(out)
+
+
 def substitute_pieces(substitutes_minted: Sequence[str],
-                      real_parts: Sequence[str]) -> tuple[str, ...]:
+                      real_values: Sequence[str]) -> tuple[str, ...]:
     """The parts of the minted substitutes whose survival is a leak of ours.
 
     A substitute is split under each of `PIECE_TYPES` and the parts are unioned:
@@ -326,35 +384,45 @@ def substitute_pieces(substitutes_minted: Sequence[str],
     as a name is cheap while guessing the type wrong is not — a piece that is
     not really a piece still has to stand as a whole word in the answer before
     anything is decided.
+
+    A part made ENTIRELY of `own_vocabulary` words is not ours and is dropped:
+    the customer's own city, the generic street word, a month.
     """
-    real = {part.casefold() for part in real_parts if part}
+    own = own_vocabulary(real_values)
     out: set[str] = set()
     for surface in substitutes_minted:
         if not surface.strip():
             continue
         for kind in PIECE_TYPES:
             for role, part in parts_of(kind, surface).items():
-                folded = part.casefold()
-                if (role not in EXEMPT_ROLES and len(part) >= MIN_PIECE
-                        and not part.isdigit() and folded not in real):
-                    out.add(folded)
+                if role in EXEMPT_ROLES or len(part) < MIN_PIECE or part.isdigit():
+                    continue
+                words = _words(part)
+                if words and all(word in own for word in words):
+                    continue
+                out.add(part.casefold())
     return tuple(sorted(out))
 
 
 def residual_pregate_of(restored_answer: str, substitutes_minted: tuple[str, ...],
-                        real_parts: tuple[str, ...]) -> JudgeVerdict | None:
+                        real_values: tuple[str, ...]) -> JudgeVerdict | None:
     """«неверно» before the model is asked, or None — ask the judge.
 
     A substitute standing in the answer the CUSTOMER reads is the defect the
     product exists to prevent, and it is decided by the same rule `residual`
     counts — deterministically, for free, and without giving the judge a list
     of fakes to hunt (which would end its blindness).
+
+    `real_values` are the customer's own strings (whole values and parts); a
+    piece made only of their words, of the generic address vocabulary or of a
+    month is not ours — `own_vocabulary` says why, and the gate published a
+    false «неверно» on 2.5 % of honest echo answers before it did.
     """
     folded = restored_answer.casefold()
     for surface in substitutes_minted:
         if surface.strip() and surface.casefold() in folded:
             return _refused(surface)
-    for piece in substitute_pieces(substitutes_minted, real_parts):
+    for piece in substitute_pieces(substitutes_minted, real_values):
         # A whole WORD, never a fragment: «Дар» inside «дарим» is not a name the
         # customer reads, and a gate that fires on it would report the product
         # broken on ordinary prose.
@@ -389,6 +457,15 @@ def residual_pregate(restored_answer: str, substitutes_minted: tuple[str, ...]) 
 # sentence it stood in.
 RESIDUAL_MARKER: str = "[нераскрытая подмена]"
 
+# The turns of the dialogue that are REAL BY CONSTRUCTION. A `user` turn is the
+# case's own text (`dialogue_context` copies `message_text`) and a `tool` turn
+# is `ToolResultRecord.text_real` — what the mock produced BEFORE the gateway
+# masked it for the model. Neither can carry a substitute of ours, so their
+# words ARE the customer's own and are subtracted from the piece hunt. Only an
+# `assistant` turn is restored model output, which is where a residual stands —
+# that is also what `contracts.ArmRunV5.turn_residual` says the number counts.
+REAL_DIALOGUE_ROLES: frozenset[str] = frozenset({"user", "tool"})
+
 
 def _whitespace_pattern(value: str) -> str:
     """`value` as a regex matching it across any whitespace run.
@@ -401,28 +478,8 @@ def _whitespace_pattern(value: str) -> str:
     return r"\s+".join(re.escape(word) for word in value.split())
 
 
-def real_parts_in(literals: Sequence[str]) -> tuple[str, ...]:
-    """The customer's own parts, read off the oracle the judge is shown.
-
-    `harness.real_parts_of` reads them off `case.base.pii`, which is the fuller
-    list; `build_prompt` never sees the case, and widening its signature to
-    carry them would put the case into a function whose whole job is to hold
-    one prompt. The oracle IS the real values of this answer, so the parts of
-    it are the customer's own by construction; a part of some third person the
-    oracle never named is then masked out of the dialogue, which costs the
-    judge one word of context and never costs it blindness.
-    """
-    out: set[str] = set()
-    for literal in literals:
-        for kind in PIECE_TYPES:
-            for role, part in parts_of(kind, literal).items():
-                if role not in EXEMPT_ROLES and len(part) >= MIN_PIECE and not part.isdigit():
-                    out.add(part.casefold())
-    return tuple(sorted(out))
-
-
 def mask_residual_turns(turns: Sequence[DialogueTurn], substitutes_minted: Sequence[str],
-                        real_parts: Sequence[str]) -> tuple[tuple[DialogueTurn, ...], int]:
+                        real_values: Sequence[str]) -> tuple[tuple[DialogueTurn, ...], int]:
     """Every minted substitute still standing in a turn replaced by the marker,
     and HOW MANY turns carried one.
 
@@ -433,7 +490,7 @@ def mask_residual_turns(turns: Sequence[DialogueTurn], substitutes_minted: Seque
     the customer reads, and masking it would eat ordinary Russian out of the
     context question 4 is asked about.
     """
-    pieces = substitute_pieces(tuple(substitutes_minted), tuple(real_parts))
+    pieces = substitute_pieces(tuple(substitutes_minted), tuple(real_values))
     out: list[DialogueTurn] = []
     flagged = 0
     for turn in turns:
@@ -455,9 +512,29 @@ def masked_dialogue(request: JudgeInput,
                     substitutes_minted: tuple[str, ...]) -> tuple[tuple[DialogueTurn, ...], int]:
     """The dialogue as `build_prompt` will print it, and the turn count the
     harness records. ONE function for both, so the number on disk and the text
-    the judge read can never describe different masking."""
-    return mask_residual_turns(request.dialogue_context, substitutes_minted,
-                               real_parts_in(request.oracle_literals))
+    the judge read can never describe different masking.
+
+    THE REAL STRINGS ARE HANDED OVER WHOLE, AND THERE ARE TWO SOURCES OF THEM.
+
+    The oracle used to be split by `parts_of` first, which dropped the `city`
+    role (`EXEMPT_ROLES`) and cut «Нижний Новгород» into nothing the piece test
+    could match. And the oracle ALONE is not the customer's own values:
+    `oracle_literals` keeps items whose `identity` equals the primary one, so
+    every sub-identity (`p0.home`, `p0.new` — the addresses) is outside it, and
+    the customer's own city and the generic word «переулок» were masked out of
+    the customer's own sentence on 17.5 % of clean runs — inflating
+    `turn_residual` and starving question 4 of the very context it asks about.
+
+    `build_prompt` never sees the case, but it does not need to: the REAL
+    turns of the dialogue are the customer's own words by construction
+    (`REAL_DIALOGUE_ROLES`), so they are handed to `own_vocabulary` beside the
+    oracle. Widening the oracle itself would change what the judge is asked
+    about; this changes only what is subtracted from the hunt.
+    """
+    real = (*request.oracle_literals,
+            *(turn.text for turn in request.dialogue_context
+              if turn.role in REAL_DIALOGUE_ROLES))
+    return mask_residual_turns(request.dialogue_context, substitutes_minted, real)
 
 
 # --- what the judge reads -------------------------------------------------------------

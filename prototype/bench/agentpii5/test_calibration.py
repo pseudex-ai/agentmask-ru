@@ -17,10 +17,11 @@ from pathlib import Path
 
 from bench.agentpii4.records import ArmMeta
 from bench.agentpii5 import calibration as c
+from bench.agentpii5 import judge
 from bench.agentpii5 import records as r
 from bench.agentpii5.contracts import (
     CALIBRATION, ArmRunV5, CalibrationRecord, CalibrationStamp, CaseV5, HopObservation,
-    JudgeInput, JudgeVerdict, RunObservation)
+    JudgeInput, JudgeVerdict, MentionRecord, RunObservation, ToolResultRecord)
 from bench.agentpii5.fixtures import (
     NAME_ITEM, PHONE_ITEM, _case, _hop, _run, _with_replies, _with_subs)
 from bench.agentpii5.form import form_match
@@ -330,7 +331,8 @@ def test_import_refuses_bad_label() -> list[str]:
 
 # --- a run directory, built from records alone (no engine, no model) --------------------
 
-def _run_dir(root: Path, gated_id: str) -> Path:
+def _run_dir(root: Path, gated_id: str,
+             run_of: Callable[[CaseV5], ArmRunV5]) -> Path:
     """The smallest directory `observations_of` accepts, with ONE answer decided
     by the residual pre-gate.
 
@@ -338,6 +340,10 @@ def _run_dir(root: Path, gated_id: str) -> Path:
     harness imports the engine and this module must not
     (`test_no_pseudex`), so the run this file reads is written by the same
     serialisers the real one is written by and by nothing else.
+
+    `run_of` is explicit at every call site rather than defaulted, because the
+    sheet and the K repeats are about WHICH substitutes a record carries, and a
+    default would have every check but one silently read the same record.
     """
     run_dir = root / "v5-live-nano"
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -348,7 +354,7 @@ def _run_dir(root: Path, gated_id: str) -> Path:
         ensure_ascii=False), encoding="utf-8")
     judge = r.run_file(run_dir, RUN_ID, "<run>.judge.jsonl")
     for case in cases:
-        run = _answer_run(case)
+        run = run_of(case)
         r.append_row(r.run_file(run_dir, RUN_ID, "<run>.arms.jsonl"),
                      {"case_id": case.base.id, "repeat": 0, "arm": "I", "termination": "done"})
         r.append_row(r.run_file(run_dir, RUN_ID, "<run>.arms.v5.jsonl"),
@@ -417,7 +423,7 @@ def test_sample_excludes_pregate_verdicts() -> list[str]:
             failures.append(f"отказ не называет претгейт: {refused}")
     # And the reader that tells them apart reads `judged_by`, not the label.
     with tempfile.TemporaryDirectory() as tmp:
-        run_dir = _run_dir(Path(tmp), ANSWER_IDS[0])
+        run_dir = _run_dir(Path(tmp), ANSWER_IDS[0], _answer_run)
         verdicts = c.judge_verdicts_of(run_dir)
         if c.gated_answers(verdicts) != frozenset({(ANSWER_IDS[0], 0)}):
             failures.append(f"претгейтные ответы прогона прочитаны как {c.gated_answers(verdicts)}")
@@ -437,7 +443,7 @@ def test_sheet_is_blind() -> list[str]:
     failures: list[str] = []
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        run_dir = _run_dir(root, ANSWER_IDS[0])
+        run_dir = _run_dir(root, ANSWER_IDS[0], _answer_run)
         thresholds = replace(CALIBRATION, sample_size=2, per_stratum_min=1, holdout_share=0.0)
         gated = c.gated_answers(c.judge_verdicts_of(run_dir))
         sample = c.draw_sample(c.observations_of(run_dir), thresholds, 5150, frozenset(), gated)
@@ -517,7 +523,7 @@ def test_repeats_are_real_judge_calls() -> list[str]:
     failures: list[str] = []
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        run_dir = _run_dir(root, ANSWER_IDS[0])
+        run_dir = _run_dir(root, ANSWER_IDS[0], _answer_run)
         thresholds = replace(CALIBRATION, sample_size=2, per_stratum_min=1, holdout_share=0.0,
                              repeat_sample=2, repeats=3)
         gated = c.gated_answers(c.judge_verdicts_of(run_dir))
@@ -579,7 +585,7 @@ def test_import_joins_and_stamps_the_run() -> list[str]:
     failures: list[str] = []
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        run_dir = _run_dir(root, ANSWER_IDS[0])
+        run_dir = _run_dir(root, ANSWER_IDS[0], _answer_run)
         thresholds = replace(CALIBRATION, sample_size=2, per_stratum_min=1, holdout_share=0.0)
         gated = c.gated_answers(c.judge_verdicts_of(run_dir))
         sample = c.draw_sample(c.observations_of(run_dir), thresholds, 5150, frozenset(), gated)
@@ -631,6 +637,107 @@ def test_import_joins_and_stamps_the_run() -> list[str]:
     return failures
 
 
+# --- G3.4 / G3.6: the sheet and the repeats read what the RUN's judge read ------------
+
+# One substitute per place the record keeps them. `base.substitutes` is the
+# only one `minted_of` used to read; the other two are how the model met a
+# second spelling in a later message and a value inside a TOOL RESULT.
+MENTIONED: str = "Пахомовой Ольге"
+IN_RESULT: str = "Кудрявцев Пётр"
+
+
+def _leaky_run(case: CaseV5) -> ArmRunV5:
+    """A run whose INTERMEDIATE turn carries all three substitutes.
+
+    The restorer leaving a lower-cased or inflected substitute standing in an
+    earlier turn is the ordinary case on this corpus's chat/sloppy/voice
+    registers — `judge.masked_dialogue` replaces it with `RESIDUAL_MARKER` and
+    counts it, and the human's sheet must show the same marker or κ compares
+    two different tasks.
+    """
+    run = _with_subs(_run(case.base.id), {"p1": SUBSTITUTE})
+    run = _with_replies(run, f"Передал {SUBSTITUTE}.",
+                        f"Передал {NAME_ITEM.value} по адресу.", "контроль")
+    result = ToolResultRecord(
+        tool_name="crm_find_contact", seq=1, call_ordinal=0, turn=1, return_form="single",
+        text_real=NAME_ITEM.value, text_masked=IN_RESULT,
+        spans_real={"p1": (0, len(NAME_ITEM.value))},
+        pieces=((0, len(NAME_ITEM.value), IN_RESULT, "NAME"),), forced=False)
+    earlier = (f"Секунду: {SUBSTITUTE}, {MENTIONED}, {IN_RESULT}.", run.turn_replies[0])
+    return replace(run, turn_replies=earlier, tool_results=(result,),
+                   mentions=(MentionRecord(item_id="p1", msg=1, result_seq=-1,
+                                           substitute=MENTIONED, request_index=1),))
+
+
+def test_minted_of_is_the_runs_own_list() -> list[str]:
+    """G3.6: the K repeats masked their prompt with a NARROWER list than the run.
+
+    `minted_of` read `base.substitutes` alone — one surface per DECLARED item —
+    while the run judged with everything the gateway minted. On 67 of 400
+    corpus cases the two lists differed, and on 6 of them a repeat's prompt KEPT
+    a substitute the run's prompt had masked out: `repeat_disagreement` then
+    measured the mask instead of the judge, which is the one thing that number
+    must not do.
+    """
+    failures: list[str] = []
+    case = _answer_case(ANSWER_IDS[0])
+    observation = RunObservation(case=case, repeat=0, hops=(), run=_leaky_run(case),
+                                 ic=None, cc=None)
+    minted = c.minted_of(observation)
+    for surface, where in ((SUBSTITUTE, "base.substitutes"), (MENTIONED, "mentions"),
+                           (IN_RESULT, "tool_results")):
+        if surface not in minted:
+            failures.append(f"подмена из {where} не попала в список прогона: {minted}")
+    if list(minted) != sorted(minted):
+        failures.append(f"список не отсортирован — порядок замен станет вторым списком: {minted}")
+    # THE NEGATIVE: the old reading really was narrower, so the widening does
+    # work rather than describing a record that never held the other two.
+    narrow = tuple(value[0] for value in observation.run.base.substitutes.values() if value[0])
+    if set(minted) <= set(narrow):
+        failures.append("широкий список не шире прежнего — проверка ни о чём")
+    return failures
+
+
+def test_the_sheet_shows_the_masked_dialogue() -> list[str]:
+    """G3.4: κ is agreement between two raters ON ONE TASK.
+
+    The judge never sees a substitute the restorer left in an earlier turn —
+    `build_prompt` goes through `masked_dialogue` — while the «blind» sheet
+    printed the raw turn, so the human read a fake name where the judge read
+    «[нераскрытая подмена]» and answered a different question about the
+    context (rubric question 4).
+    """
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = _run_dir(Path(tmp), ANSWER_IDS[0], _leaky_run)
+        thresholds = replace(CALIBRATION, sample_size=2, per_stratum_min=1, holdout_share=0.0)
+        gated = c.gated_answers(c.judge_verdicts_of(run_dir))
+        sample = c.draw_sample(c.observations_of(run_dir), thresholds, 5150, frozenset(), gated)
+        rows = c.sheet_rows(run_dir, sample, MODEL)
+        if not rows:
+            return ["лист разметки пуст — проверять нечего"]
+        shown = "\n".join(str(turn["text"]) for row in rows
+                           for turn in row["dialogue_context"])   # type: ignore[union-attr]
+        for surface in (SUBSTITUTE, MENTIONED, IN_RESULT):
+            if surface in shown:
+                failures.append(f"в листе разметки стоит подмена {surface!r}, "
+                                f"а судья читал маркер")
+        if judge.RESIDUAL_MARKER not in shown:
+            failures.append("в листе разметки нет маркера — маскирование не применялось")
+        # THE NEGATIVE: the UNMASKED dialogue — what the sheet used to carry —
+        # really does hold those substitutes, so their absence above is the
+        # masking and not an empty dialogue.
+        observations = {(one.case.base.id, one.repeat): one for one in c.observations_of(run_dir)}
+        raw: list[str] = []
+        for row in rows:
+            case_id, repeat = c._split_sample_id(str(row["sample_id"]))
+            one = observations[(case_id, repeat)]
+            raw += [turn.text for turn in c.judge_input(one.case, one.run).dialogue_context]
+        if SUBSTITUTE not in "\n".join(raw):
+            failures.append("незамаскированный диалог не содержит подмены — негатив ни о чём")
+    return failures
+
+
 def main() -> int:
     checks: tuple[tuple[str, Callable[[], list[str]]], ...] = (
         ("no_pseudex", test_no_pseudex),
@@ -645,6 +752,8 @@ def main() -> int:
         ("sheet_is_blind", test_sheet_is_blind),
         ("repeats_are_real_judge_calls", test_repeats_are_real_judge_calls),
         ("import_joins_and_stamps_the_run", test_import_joins_and_stamps_the_run),
+        ("minted_of_is_the_runs_own_list", test_minted_of_is_the_runs_own_list),
+        ("the_sheet_shows_the_masked_dialogue", test_the_sheet_shows_the_masked_dialogue),
     )
     failures: list[str] = []
     for name, check in checks:

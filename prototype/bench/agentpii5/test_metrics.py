@@ -39,6 +39,7 @@ from bench.agentpii5.metrics import (
     HOP_AXES,
     HOP_SLICEABLE,
     METRIC_FUNCTIONS,
+    answer_value_ok,
     by_axis,
     leaf_value_ok,
     prints_on_axis,
@@ -357,6 +358,54 @@ OTHER_SAMPLES: dict[str, str] = {
 }
 
 
+def test_answer_is_scored_on_what_it_NAMED() -> list[str]:  # noqa: N802 - the claim is the name
+    """An answer carries the PART it needs, declined — and that is the value.
+
+    `_answer_hop_right` demanded the item's WHOLE canonical, byte for byte
+    through `value_repaired`: the F1.1 defect the tool leg was rid of, left
+    standing on the answer leg, where it is worse. «Передал Ивановой» for
+    «Иванова Елена Петровна» and «Курьер поедет на Клубную 85» for «Ижевск,
+    улица Клубная, 85, кв 14» are CORRECT answers, and over the corpus's own
+    797 required answer hops 530 of them — 66% — were scored wrong. A line a
+    perfect gateway cannot earn measures nothing.
+
+    THE OTHER HALF IS WHAT KEEPS IT ABLE TO FAIL: another person's value, in
+    the same declension, in the same span, is a WRONG value, and a partial
+    mention of this person's is not."""
+    person = _item("p1", "NAME", "Иванова Елена Петровна", "Иванова Елена Петровна", "i1",
+                   _in_message(0, 0, 22))
+    address = _item("p4", "LOC", "Ижевск, улица Клубная, 85, кв 14",
+                    "Ижевск, улица Клубная, 85, кв 14", "i1", _in_message(0, 0, 31))
+    stranger = _item("p9", "NAME", "Пахомова Ольга", "Пахомова Ольга", "i2", _in_seed("s2", "name"))
+    phone = _item("p2", "PHONE", "+79164021187", "+79164021187", "i1", _in_message(0, 0, 12))
+    case = _case("m-ans", "single", ("…",), (person, address, stranger, phone), ())
+    one = _obs(case, _run("m-ans"), ())
+    problems: list[str] = []
+    right = (("the whole name", person, "Иванова Елена Петровна"),
+             ("surname and given, declined", person, "Ивановой Елене"),
+             ("the surname alone, declined", person, "Ивановой"),
+             ("the given name alone, declined", person, "Елене"),
+             ("the street and house, no city", address, "Клубную 85"),
+             ("the street alone", address, "Клубную"),
+             ("the phone renotated", phone, "8 (916) 402-11-87"))
+    for label, item, produced in right:
+        if not answer_value_ok(one, item, produced):
+            problems.append(f"a correct answer naming {label} was scored WRONG: {produced!r}")
+    wrong = (("another person, same declension", person, "Пахомовой Ольге"),
+             ("another person's surname", person, "Пахомовой"),
+             ("another person's street", address, "Лесную 12"),
+             ("another phone", phone, "8 (999) 000-11-22"),
+             ("nothing at all", person, "   "))
+    for label, item, produced in wrong:
+        if answer_value_ok(one, item, produced):
+            problems.append(f"a wrong answer ({label}) was scored RIGHT: {produced!r}")
+    # A span that carries this person AND a stranger is not this person's
+    # value: the two stand in different places and one of them is not ours.
+    if answer_value_ok(one, person, "Ивановой Елене и Пахомовой Ольге"):
+        problems.append("a span carrying a stranger beside the customer was scored right")
+    return problems
+
+
 def test_leaf_value_has_one_definition() -> list[str]:
     """R-53. `tools.expected_leaf_value` decides what a leaf expects and
     `metrics.leaf_value_ok` only compares — over EVERY (tool, path) of
@@ -446,6 +495,7 @@ def main() -> int:
         ("axes_split_hops_not_observations", test_axes_split_hops_not_observations),
         ("hop_axis_totals_sum", test_hop_axis_totals_sum),
         ("leaf_value_is_the_part", test_leaf_value_is_the_part),
+        ("answer_is_scored_on_what_it_NAMED", test_answer_is_scored_on_what_it_NAMED),
         ("leaf_value_has_one_definition", test_leaf_value_has_one_definition),
         ("chain_target_is_read_as_an_item", test_chain_target_is_read_as_an_item),
         ("memory_stability_is_not_stability", test_memory_stability_is_not_stability),

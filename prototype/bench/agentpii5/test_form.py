@@ -71,9 +71,15 @@ def _pairs() -> tuple[Pair, ...]:
         ("NAME", "Иванов-Петров Пётр", "Иванов Пётр", frozenset({"hyphen_particle"})),
         # A particle is written lower case in Russian, so it moves
         # `case_class` too — the expectation says so rather than being
-        # loosened to «differs somehow».
+        # loosened to «differs somehow». `order` is NOT in the set any more:
+        # `name_order` reads «фон Иванов Пётр» as roles [G, S, G], which is
+        # none of the four readings, so it answers `other` — «I cannot read
+        # these roles» — and a label neither string supports is not evidence
+        # (R-05, now enforced for `order` through `contracts.FORM_ABSTAIN` and
+        # `form.name_order_same`). The particle is still named, once, by
+        # `hyphen_particle`.
         ("NAME", "фон Иванов Пётр", "Иванов Пётр Сергеевич",
-         frozenset({"hyphen_particle", "order", "case_class"})),
+         frozenset({"hyphen_particle", "case_class"})),
         # --- PHONE
         ("PHONE", "+7 916 123-45-67", "+7 916 123-45-67", frozenset()),
         ("PHONE", "+7 916 123-45-67", "8 916 123-45-67", frozenset({"prefix"})),
@@ -401,6 +407,77 @@ def test_unknown_type_raises(form: ModuleType) -> list[str]:
     return failures
 
 
+def test_lexeme_dependent_features_have_a_floor_of_one(form: ModuleType) -> list[str]:
+    """A PERFECT gateway must be able to print 100%.
+
+    `observe._out_call` hands the comparator two DIFFERENT LEXEMES — the real
+    value it restored and the substitute the agent wrote — so a feature that
+    reads the WORDS instead of the WRITING invents a difference no gateway can
+    remove. Measured before this test existed: a perfect gateway over 200
+    corpus cases printed `form_hOUT` 76.3% and `answer_real` 74.3%, with
+    NAME.gram_case (96) and NAME.order (57) as the whole of the gap.
+
+    The four pairs are the reviewer's own reproduction (`form_floor.py`): a
+    real value and a format-preserving mint of it, written identically. Each
+    must be `same`. And the same features must still SEE a real violation —
+    the four rows after them — or the fix would be «stop measuring»."""
+    failures: list[str] = []
+    perfect = (("Иванова Елена", "Лебедева Ирина"),
+               ("Битюков Олег", "Аленчиев Аркадий"),
+               ("Кузнецов Дмитрий", "Букин Сергей"),
+               ("Громова Марина", "Полякова Валентина"),
+               ("Васильев Иван", "Юдин Валерий"),
+               ("соколова", "ткачук"),
+               ("Иванов Пётр Сергеевич", "Бойко Кристина Семёновна"))
+    for real, minted in perfect:
+        verdict = form.form_match("NAME", real, minted)
+        if not verdict.same:
+            failures.append(f"a perfect restoration {real!r} of the mint {minted!r} "
+                            f"scored a form MISS on {sorted(verdict.differs)}")
+    still_fires = (("Иванов Пётр", "Пахомову Ольгу", "gram_case"),
+                   ("Иванов Пётр", "Ольга Пахомова", "order"),
+                   ("Иванова Елена", "Пахомова О.", "initials"),
+                   ("Иванова Елена", "Пахомова", "parts"))
+    for real, written, feature in still_fires:
+        verdict = form.form_match("NAME", real, written)
+        if feature not in verdict.differs:
+            failures.append(f"{feature} stopped seeing {real!r} against {written!r}: "
+                            f"differs={sorted(verdict.differs)}")
+    # A part-count difference is named ONCE. `order` and `initials` abstain
+    # there because `parts` already carries it, and a violation reported by
+    # three features reads as three.
+    verdict = form.form_match("NAME", "Иванова Елена", "Пахомова")
+    if verdict.differs != frozenset({"parts"}):
+        failures.append(f"a part-count difference was named by {sorted(verdict.differs)}, "
+                        f"not by `parts` alone")
+    return failures
+
+
+def test_comparators_match_the_declared_readings(form: ModuleType) -> list[str]:
+    """Exactly the features `contracts.FORM_LEXEME_READINGS` gives a reason for
+    have a comparator, and every one of them is a real feature of its type.
+
+    Two registries that can drift are one registry too many: a comparator
+    added without a written reason is a feature that silently stopped being
+    compared, and a reason without a comparator is a promise nothing keeps."""
+    failures: list[str] = []
+    declared = set(contracts.FORM_LEXEME_READINGS)
+    written = set(form.FEATURE_COMPARATORS)
+    for key in sorted(declared - written):
+        failures.append(f"{key[0]}.{key[1]} is declared lexeme-dependent and has no comparator")
+    for key in sorted(written - declared):
+        failures.append(f"{key[0]}.{key[1]} has a comparator and no reason in "
+                        f"contracts.FORM_LEXEME_READINGS")
+    for kind, feature in sorted(declared):
+        if feature not in contracts.FORM_FEATURES.get(kind, ()):
+            failures.append(f"{kind}.{feature} is not a feature of {kind}")
+        if not contracts.FORM_LEXEME_READINGS[(kind, feature)].strip():
+            failures.append(f"{kind}.{feature} carries an empty reason")
+    if "FEATURE_COMPARATORS.get(" not in Path(form.__file__ or "").read_text(encoding="utf-8"):
+        failures.append("form_match does not consult FEATURE_COMPARATORS")
+    return failures
+
+
 def test_abstain_is_closed_and_one_sided(form: ModuleType) -> list[str]:
     """The features that abstain, and the proof that abstaining does not hide
     a difference the same feature CAN see. A wildcard nobody bounded is how a
@@ -515,6 +592,8 @@ _TESTS = (
     test_by_fields_sentinel,
     test_unknown_type_raises,
     test_abstain_is_closed_and_one_sided,
+    test_lexeme_dependent_features_have_a_floor_of_one,
+    test_comparators_match_the_declared_readings,
     test_corner_labels,
     test_letterless_abstains,
     test_features_of_covers_the_type,

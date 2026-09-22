@@ -21,6 +21,7 @@ from bench.agentpii5.contracts import Line, Metric
 from bench.agentpii5.fixtures import FIXTURES
 from bench.agentpii5.metrics import METRIC_FUNCTIONS
 from bench.agentpii5.report import (
+    MUTANTS,
     gate,
     gate_all,
     report_lines,
@@ -112,11 +113,12 @@ def test_missing_fixtures_are_a_refusal() -> list[str]:
 
 def test_gate_demands_every_declared_kind() -> list[str]:
     """F2.8 / C-089. The gate demands one fixture per kind in
-    `contracts.FIXTURE_KINDS` — the TUPLE, never a list re-typed here. FIX-1
-    may add a fourth kind (`clause`, for the per-clause fixtures the review
-    found missing); the day it lands, a metric shipping only the first three
-    must be refused by name, and this check is what makes that automatic
-    rather than a line somebody remembers to add.
+    `contracts.FIXTURE_KINDS` — the TUPLE, never a list re-typed here. Round 3
+    added its per-clause fixtures INSIDE the existing `adversarial` inputs
+    rather than as a fourth kind, so the tuple is unchanged; the day a fourth
+    kind does land, a metric shipping only the first three must be refused by
+    name, and this check is what makes that automatic rather than a line
+    somebody remembers to add.
 
     Driven by dropping each declared kind in turn from a REAL metric's
     fixtures: a gate that accepted the short set would be printing a metric on
@@ -139,6 +141,38 @@ def test_gate_demands_every_declared_kind() -> list[str]:
     return problems
 
 
+def test_mutants_are_real_and_registered() -> list[str]:
+    """The mutation registry is evidence only if each mutant is a DIFFERENT
+    metric from the one it imitates.
+
+    `selftest` demands a red for every entry of `report.MUTANTS`; a mutant
+    that printed the shipped metric's own numbers would be refused for the
+    same reason the real metric is not, and the registry would certify
+    nothing. So each one is required to print a different fraction on at least
+    one of its metric's own fixtures — the inputs the gate actually judges it
+    on — and to name a metric that has fixtures at all."""
+    problems: list[str] = []
+    if not MUTANTS:
+        problems.append("the mutation registry is empty: `selftest` is back to one constant")
+    for name, label, mutant in MUTANTS:
+        fixtures = FIXTURES.get(name)
+        shipped = METRIC_FUNCTIONS.get(name)
+        if not fixtures or shipped is None:
+            problems.append(f"{name}: mutant «{label}» names a metric with no fixtures")
+            continue
+        differs = [one.name for one in fixtures
+                   if (mutant(one.input).hits, mutant(one.input).total)
+                   != (shipped(one.input).hits, shipped(one.input).total)]
+        if not differs:
+            problems.append(f"{name}: mutant «{label}» prints what the real metric prints on "
+                            f"every fixture — it is the same metric, not a mutation")
+        if gate(mutant, fixtures).printable:
+            problems.append(f"{name}: mutant «{label}» passed the gate")
+    if len({name for name, _label, _mutant in MUTANTS}) != len(MUTANTS):
+        problems.append("two mutants under one metric name — the registry reads as fewer")
+    return problems
+
+
 def test_selftest_passes() -> list[str]:
     """C-091. Every metric, replaced by a constant, must be refused; every real
     one must be printable. The `e2e/audit_gates.py --selftest` shape."""
@@ -152,6 +186,7 @@ def main() -> int:
         ("gate_never_raises", test_gate_never_raises),
         ("missing_fixtures_are_a_refusal", test_missing_fixtures_are_a_refusal),
         ("gate_demands_every_declared_kind", test_gate_demands_every_declared_kind),
+        ("mutants_are_real_and_registered", test_mutants_are_real_and_registered),
         ("selftest_passes", test_selftest_passes),
     )
     failures: list[str] = []

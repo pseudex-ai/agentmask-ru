@@ -75,6 +75,7 @@ from bench.agentpii5.contracts import (
     SideBySide,
 )
 from bench.agentpii5.fixtures import FIXTURES
+from bench.agentpii5 import metrics as metric_bodies
 from bench.agentpii5.metrics import AXIS_NOTE, METRIC_FUNCTIONS, by_axis, prints_on_axis
 from bench.agentpii5.schema import case_v5_from_json
 
@@ -907,22 +908,132 @@ def render_side_by_side(v5_run_dir: Path, v4_run_dir: Path) -> list[str]:
 
 # --- the selftest ------------------------------------------------------------------------
 
+# --- the mutation registry -----------------------------------------------------------
+# A CONSTANT 1/1 IS THE WEAKEST WITNESS A GATE CAN HAVE, and for one round it
+# was the only one: `selftest` broke all 29 metrics the same way, every one
+# failed the `zero` fixture BY CONSTRUCTION, and «сломанных отказано: 29 из 29»
+# answered nothing. A twenty-mutant sweep written as the implementations each
+# ruling replaced found FIVE the fixtures could not tell from the shipped
+# metric — and every one of them was a reachable, plausible reading of an
+# order, not a typo. The five are registered here, each naming the clause it
+# takes away, so the sanction is permanent: a fixture clause deleted tomorrow
+# makes `report --selftest` red instead of making a published number quietly
+# laxer. C-091 (the checklist row that specified the constant) is updated to
+# this shape.
+#
+# A MUTANT MUST BE NON-EQUIVALENT AND IT MUST BE PLAUSIBLE. These five are the
+# previous implementation or the lazy reading of an order, not a random edit:
+# an edit no engineer would make proves nothing about the fixtures.
+
+
+def _mutant_end_to_end(observations: Sequence[RunObservation]) -> Line:
+    """`unmasked` counted as a hit — the reading `end_to_end`'s own docstring
+    asked for before F1.3 («a passthrough scores 100% here»)."""
+    hits = 0
+    total = 0
+    for one, hop in metric_bodies._owned(observations, "OUT", ("tool_arg",)):
+        if not hop.declared:
+            continue
+        total += 1
+        item = metric_bodies._item_of(one, hop.hop.item_id)
+        hits += 1 if (hop.status == "unmasked"
+                      or (hop.status == "observed" and item is not None
+                          and metric_bodies._item_value_ok(hop, item))) else 0
+    return Line("end_to_end", hits, total)
+
+
+def _mutant_out_absent(observations: Sequence[RunObservation]) -> Line:
+    """Optional hops dropped from the denominator — «the agent may skip it» read
+    as «the benchmark stops counting it»."""
+    rows = [hop for _one, hop in metric_bodies._hops(observations, "OUT")
+            if hop.declared and not hop.hop.optional]
+    return Line("out_absent", sum(1 for hop in rows if hop.status == "absent"), len(rows))
+
+
+def _mutant_consistency(observations: Sequence[RunObservation]) -> Line:
+    """Population keyed on the number of MENTIONS instead of on distinct
+    messages, so an item read twice inside one crossing joins it."""
+    hits = 0
+    total = 0
+    for one in observations:
+        for item in one.case.base.pii:
+            mentions = metric_bodies._mentions_of(one, item.id)
+            if len(mentions) < 2:
+                continue
+            total += 1
+            hits += 1 if len({mention.substitute for mention in mentions}) == 1 else 0
+    return Line("consistency", hits, total)
+
+
+def _mutant_doc_extracted(observations: Sequence[RunObservation]) -> Line:
+    """«Did A real value of the case arrive» instead of «did THIS item's»: the
+    shuffled-CSV failure, scored as a success."""
+    hits = 0
+    total = 0
+    for one in observations:
+        if one.case.document is None:
+            continue
+        for item_id in one.case.document.extracted_item_ids:
+            total += 1
+            hop = next((other for other in one.hops
+                        if other.declared and other.hop.kind == "OUT"
+                        and other.hop.item_id == item_id), None)
+            arrived = hop is not None and hop.status == "observed" and any(
+                metric_bodies.value_matches(item.type, hop.produced, item.canonical)
+                for item in one.case.base.pii)
+            hits += 1 if arrived else 0
+    return Line("doc_extracted", hits, total)
+
+
+def _mutant_form_hIN(observations: Sequence[RunObservation]) -> Line:  # noqa: N802 - metric name
+    """A LEAKED hop counted as a form hit — the value the gateway never touched
+    paying for the axis that measures what it did touch."""
+    rows = [hop for _one, hop in metric_bodies._hops(observations, "IN")
+            if hop.status in ("observed", "leaked")]
+    return Line("form_hIN", sum(1 for hop in rows
+                                if hop.status == "leaked"
+                                or (hop.verdict is not None and hop.verdict.same)), len(rows))
+
+
+MUTANTS: tuple[tuple[str, str, Metric], ...] = (
+    ("end_to_end", "`unmasked` leaf is a HIT (the pre-F1.3 reading)", _mutant_end_to_end),
+    ("out_absent", "optional hops dropped from the denominator", _mutant_out_absent),
+    ("consistency", "population = items with 2 MENTIONS, not 2 messages", _mutant_consistency),
+    ("doc_extracted", "any real value of the case counts, not THIS item's", _mutant_doc_extracted),
+    ("form_hIN", "a leaked hop is a form hit", _mutant_form_hIN),
+)
+
+
 def selftest() -> int:
-    """Break every metric in the same way and demand a red for each, then run
-    the real ones and demand a green for each. The shape of
-    `e2e/audit_gates.py --selftest`: a gate nobody has watched fail is a gate
-    that has never been shown to work."""
+    """Break every metric and demand a red for each, then run the real ones and
+    demand a green for each. The shape of `e2e/audit_gates.py --selftest`: a
+    gate nobody has watched fail is a gate that has never been shown to work.
+
+    TWO SWEEPS, AND THE SECOND IS THE ONE THAT MEANS SOMETHING. The constant
+    `Line(name, 1, 1)` fails every `zero` fixture by construction; the
+    registered mutants are the implementations the rulings replaced, and each
+    one PASSED this gate until the fixture clause beside it was written."""
     broken: dict[str, Metric] = {
         name: (lambda _observations, _name=name: Line(_name, 1, 1)) for name in METRIC_FUNCTIONS}
     failures: list[str] = []
     for name, verdict in gate_all(broken).items():
         if verdict.printable:
             failures.append(f"{name}: постоянная метрика 1/1 прошла гейт — гейт не может покраснеть")
+    survivors: list[str] = []
+    for name, label, mutant in MUTANTS:
+        fixtures = FIXTURES.get(name)
+        if not fixtures:
+            survivors.append(f"{name}: мутант «{label}» не с чем сверить — нет фикстур")
+            continue
+        if gate(mutant, fixtures).printable:
+            survivors.append(f"{name}: мутант «{label}» прошёл гейт — не хватает пункта в фикстуре")
+    failures.extend(survivors)
     for name, verdict in gate_all(METRIC_FUNCTIONS).items():
         if not verdict.printable:
             failures.append(f"{name}: настоящая метрика отказана — {verdict.why}")
     passed_broken = sum(1 for one in failures if "постоянная" in one)
     print(f"  сломанных отказано: {len(METRIC_FUNCTIONS) - passed_broken} из {len(METRIC_FUNCTIONS)}")
+    print(f"  мутантов отказано: {len(MUTANTS) - len(survivors)} из {len(MUTANTS)}")
     print("report --selftest: PASS" if not failures
           else "report --selftest: FAIL\n  " + "\n  ".join(failures))
     return 1 if failures else 0

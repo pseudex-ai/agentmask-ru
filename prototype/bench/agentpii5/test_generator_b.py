@@ -205,6 +205,39 @@ def test_anaphora_not_written() -> list[str]:
     return problems
 
 
+def _memory_spec_problems(cases: list[CaseV5]) -> list[str]:
+    """Every value that crosses a turn inside the model's context, against the
+    `MemorySpec`s that name one. Shared by the check and by its negative, so
+    the two cannot answer different questions."""
+    problems: list[str] = []
+    for case in cases:
+        crossed = {hop.item_id for hop in case.hops
+                   if hop.kind == "IN" and hop.owner == "memory"}
+        named = {spec.item_id for spec in case.memory}
+        missing = sorted(crossed - named)
+        if missing:
+            problems.append(f"{case.base.id}: IN/memory hops on {missing[:3]} that no "
+                            f"MemorySpec names")
+    return problems
+
+
+def test_memory_hops_declare_a_spec() -> list[str]:
+    """A value carried across a turn in the model's context is named by a
+    `MemorySpec`, or the two memory lines cannot see it.
+
+    THE REPRODUCTION THIS PINS (corpus-r2/family_audit.py): 40 of 85
+    `user_in_loop` cases declared IN/memory hops and no spec, and
+    `memory_consistency` / `memory_stability` iterate `case.memory` and nothing
+    else — so the family whose whole subject is a value surviving a confirming
+    turn contributed nothing to either line, and no printed number showed it.
+    """
+    problems = _memory_spec_problems(ALL_CASES)
+    stripped = replace(BUILT["user_in_loop"][0], memory=())
+    if not _memory_spec_problems([stripped]):
+        problems.append("a case whose memory hops no MemorySpec names was accepted")
+    return problems
+
+
 def test_memory_cases_are_long() -> list[str]:
     """K14's third clause: ≥ 3 MemorySpecs over ≥ 2 identities and ≥ 5 user
     turns. Every case of the family, not five of them."""
@@ -476,8 +509,8 @@ CHECKS: tuple[Callable[[], list[str]], ...] = (
     test_rag_identities_are_distinct_people,
     test_no_pseudex, test_build_each_family, test_case_ids_are_unique, test_registers,
     test_no_search, test_loop_confirm_has_no_value, test_loop_acts_after_the_confirmation,
-    test_anaphora_not_written, test_memory_cases_are_long, test_rag_foreign_identities,
-    test_rag_query_is_declared, test_document_formats, test_document_paths_are_readable,
+    test_anaphora_not_written, test_memory_hops_declare_a_spec, test_memory_cases_are_long,
+    test_rag_foreign_identities, test_rag_query_is_declared, test_document_formats, test_document_paths_are_readable,
     test_type_quotas, test_owners_this_half_supplies, test_plate_spoken_parses,
     test_declared_returns_are_tagged)
 

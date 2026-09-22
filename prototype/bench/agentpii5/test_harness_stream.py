@@ -27,11 +27,14 @@ from collections.abc import Callable
 from pathlib import Path
 
 from bench.agentpii3 import score
+from bench.agentpii4.schema import message_text
 from bench.agentpii5.harness import (
-    STREAM_CHUNK, answer_leg, restore_stream, stream_verdict, with_streamed_answer)
+    STREAM_CHUNK, GatewayV5, answer_leg, restore_stream, stream_verdict, with_streamed_answer)
 from bench.agentpii5.schema import case_v5_from_json
+from pseudex.audit import AuditLog
 from pseudex.detect_all import Detector
-from pseudex.redact import StreamDetokenizer, unmask_text
+from pseudex.maskcache import MaskCache
+from pseudex.redact import StreamDetokenizer, unmask_arguments, unmask_text
 from pseudex.vault import Vault
 from testkit import load_dev_bundle
 
@@ -47,6 +50,11 @@ TEMPLATES: tuple[str, ...] = (
     "Клиент {0}, контакт {1}, доставка оформлена.",
     "{0}\n{1}\nвсё верно?")
 CORPUS: str = "corpus.v5.json"
+# How many corpus cases `test_restoration_runs_on_the_conversation_view` masks.
+# Enough that its negative cannot miss: over the whole corpus the base vault and
+# the conversation view disagree about 43.5 % of minted substitutes, so sixty
+# cases is dozens of chances to see it — and the check refuses to pass on none.
+SCOPE_CASES: int = 60
 
 
 def _minted(text: str, detector: Detector, vault: Vault) -> tuple[str, ...]:
@@ -191,10 +199,89 @@ def test_corpus_answer_is_what_the_client_read() -> list[str]:
     return failures
 
 
+def test_restoration_runs_on_the_conversation_view() -> list[str]:
+    """G3.1: the gateway masks through the conversation VIEW and must restore
+    through the SAME object.
+
+    `RealGateway` masks with `MaskContext(vault=self._view)` — the conversation
+    scope — and v4 restored through `self._base`, the unscoped vault. Production
+    restores through the view too (`service._scoped` →
+    `vault.for_conversation(conversation_id)`), and a LINKED row is written
+    under a CONVERSATION-scoped canonical, so the base vault cannot resolve it:
+    458 of 1 260 substitutes minted over this corpus came back STANDING. Every
+    value metric of the gateway arm was then scoring a restoration the product
+    never performs — a fake reaching the tool, and an answer the residual
+    pre-gate calls «неверно».
+
+    THE NEGATIVE IS THE OLD OBJECT ITSELF: the base vault handed to the
+    constructor is still there, and the check refuses to pass unless it can be
+    shown leaving a substitute standing on at least one case.
+    """
+    load_dev_bundle()
+    detector = Detector()
+    here = Path(__file__).resolve().parent
+    raw = json.loads((here / CORPUS).read_text(encoding="utf-8"))
+    cases = [case_v5_from_json(one) for one in raw["corpus"][:SCOPE_CASES]]
+    failures: list[str] = []
+    masked_messages = 0
+    base_lost = 0
+    tool_lost = 0
+    for case in cases:
+        base = Vault(":memory:", "agentpii5")
+        gateway = GatewayV5(case, detector, base, AuditLog(":memory:"), MaskCache(256))
+        gateway.push_system(case.base.messages[0].content)
+        gateway.tools()
+        if gateway.vault is base:
+            # RETURNED, not `break`: with the wrong object every counter below
+            # says «нечего проверять», and three lines of noise under the one
+            # real cause is how a reader learns to skim a failure list.
+            return [f"{case.base.id}: gateway.vault — это базовое хранилище, "
+                    f"а маскировали видом разговора"]
+        for index, message in enumerate(case.base.messages):
+            if message.role != "user":
+                continue
+            served = gateway.push_user(index)
+            original = message_text(case.base, index)
+            if served == original:
+                continue
+            masked_messages += 1
+            if gateway.restore_text(served) != original:
+                failures.append(f"{case.base.id}: сообщение не восстановилось тем же видом:\n"
+                                f"   было  {original!r}\n   стало {gateway.restore_text(served)!r}")
+            if unmask_text(served, base) != original:
+                base_lost += 1
+        written = [surface for surface in gateway.substitutes() if surface.strip()]
+        if not written:
+            continue
+        # THE TOOL LEG, where a surviving substitute is the product's headline
+        # defect: the agent writes back what it read.
+        arguments = {"name": written[0], "note": " ".join(written)}
+        restored, residual = gateway.restore_arguments(arguments)
+        if residual:
+            failures.append(f"{case.base.id}: в аргумент инструмента уехала подмена: {residual}")
+        through_base = json.loads(unmask_arguments(json.dumps(arguments, ensure_ascii=False), base))
+        if through_base != restored:
+            tool_lost += 1
+    if masked_messages == 0:
+        failures.append(f"на {len(cases)} случаях корпуса движок ничего не замаскировал — "
+                        f"проверка ни о чём")
+    if base_lost == 0:
+        failures.append(f"базовое хранилище восстановило ВСЁ на {masked_messages} сообщениях — "
+                        f"негатив не сработал, и «восстановили видом» ничего не доказывает")
+    if tool_lost == 0:
+        failures.append("аргументы инструмента через базовое хранилище вышли теми же — "
+                        "негатив ни о чём")
+    print(f"    сообщений замаскировано: {masked_messages} · базовое хранилище потеряло "
+          f"{base_lost} · аргументов разошлось: {tool_lost}")
+    return failures
+
+
 def main() -> int:
     checks: tuple[tuple[str, Callable[[], list[str]]], ...] = (
         ("chunked_answer", test_chunked_answer),
         ("corpus_answer_is_what_the_client_read", test_corpus_answer_is_what_the_client_read),
+        ("restoration_runs_on_the_conversation_view",
+         test_restoration_runs_on_the_conversation_view),
     )
     failures: list[str] = []
     for name, check in checks:

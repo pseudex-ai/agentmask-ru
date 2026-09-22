@@ -88,6 +88,11 @@ from pseudex.vault import Vault
 from testkit import load_dev_bundle
 
 _ORG = "agentpii5"
+# What a triple's row says when the run's ceiling refused the judge's call. A
+# constant, because three readers must say the same words: the verdict's
+# `reason` in `<run>.judge.jsonl`, the `judge.reason` of the triple row, and
+# `test_harness`'s check that the arms survived it.
+JUDGE_SKIPPED_BUDGET: str = "судья пропущен (потолок)"
 # A PRIME, so no chunk boundary can align with a token, a separator or a word
 # by construction. 16 would split «+7 900 000-00-00» the same way on every
 # phone in the corpus and a carry bug would hide behind the regularity.
@@ -138,6 +143,26 @@ class GatewayV5(RealGateway):
     def __init__(self, case: CaseV5, detector: Detector, vault: Vault, audit: AuditLog,
                  cache: MaskCache) -> None:
         super().__init__(case.base, detector, vault, audit, cache)
+        # ВОССТАНАВЛИВАЕМ ТЕМ ЖЕ VIEW, КОТОРЫМ МАСКИРОВАЛИ (G3.1). v4 masks
+        # through `_view` (`MaskContext(vault=self._view)`) and restores through
+        # `_base`; production restores through the view too
+        # (`service._scoped` → `vault.for_conversation(conversation_id)`), and a
+        # LINKED row is written under a CONVERSATION-scoped canonical
+        # (CLAUDE.md «The conversation scope»), so the base vault cannot resolve
+        # it. Measured on this corpus through `testkit.load_dev_bundle()`: 548
+        # of 1260 minted substitutes restore differently through the two
+        # objects and 458 the base vault leaves STANDING — a fake reaching the
+        # tool, an answer the pre-gate calls «неверно», and every value metric
+        # of the gateway arm scoring a restoration production never performs.
+        #
+        # The ONE attribute every v4 restorer reads is rebound, rather than
+        # `vault` / `restore_text` / `restore_arguments` being overridden here:
+        # a copy of `restore_arguments`'s body (the JSON walk, `residual_tokens`,
+        # the piece fallback) would drift from v4's the first time v4 changed
+        # it, and v5 never edits v4. The object is the SAME `_view` the masking
+        # used — obtained once per conversation, never a second
+        # `for_conversation` call, which would be a second scope to keep equal.
+        self._base = self._view
         self._case5 = case
         self._requests = 0
         self._mentions: list[MentionRecord] = []
@@ -218,13 +243,24 @@ class GatewayV5(RealGateway):
 
 
 def real_parts_of(case: CaseV5) -> tuple[str, ...]:
-    """The customer's OWN parts — never counted as a substitute of ours.
+    """The customer's OWN strings — never counted as a substitute of ours.
 
     The settlement inside a minted address is real (vault `_settlement_of`), so
     without this the pre-gate would call every reply that names the customer's
     own town «неверно».
+
+    THE WHOLE VALUE AS WELL AS THE PARTS, because `judge.own_vocabulary` reads
+    WORDS off these strings and a part list carries none of the words a value
+    has outside its parts: a spoken date's only part is `iso`, so «двадцать
+    шестое ноября восемьдесят второго года» contributed nothing and the gate
+    refused honest answers on «второго» and «седьмого» — the customer's own
+    words, which a minted spoken date shares by arithmetic. The canonical is
+    here for the other direction: it carries the nominative («таисия») that
+    the inflected surface («таисию») does not.
     """
-    return tuple(sorted({part for item in case.base.pii for part in item.parts.values() if part}))
+    return tuple(sorted({value for item in case.base.pii
+                         for value in (*item.parts.values(), item.value, item.canonical)
+                         if value}))
 
 
 def minted_substitutes(gateway: RealGateway) -> tuple[str, ...]:
@@ -580,10 +616,37 @@ async def judge_triple(case: CaseV5, run: ArmRunV5, gateway: GatewayV5,
         # cannot be told from «no earlier turn held one».
         raise LeakedPrompt(str(leak), turn_residual) from leak
     refused = residual_pregate_of(request.restored_answer, minted, real_parts_of(case))
-    verdict = refused if refused is not None else (
-        await judge_prompt(config, request, prompt) if config is not None
-        else JudgeVerdict(label="", reason="судья выключен (--no-judge)",
-                          judged_by="none", cost_usd=0.0))
+    if refused is not None:
+        verdict = refused
+    elif config is None:
+        verdict = JudgeVerdict(label="", reason="судья выключен (--no-judge)",
+                               judged_by="none", cost_usd=0.0)
+    else:
+        try:
+            verdict = await judge_prompt(config, request, prompt)
+        except v3_judge.BudgetExhausted as exhausted:
+            # A CEILING REACHED IS NOT A REASON TO LOSE THREE PAID ARMS. The
+            # judge reserves from the SAME ledger as the arms, INSIDE
+            # `judge._ask`, long after C, I and C′ have finished and been
+            # charged; the refusal used to travel out of `judge_prompt`,
+            # `judge_triple` and `run_triple_v5` — whose only handlers are the
+            # OUTER reservation and `LeakedPrompt` — and out of `drive_v5`,
+            # which has none, killing the whole run. Caught HERE rather than
+            # around `judge_triple`, because `turn_residual` and the prompt's
+            # hash are already measured at this point and an outer catch would
+            # replace both with a zero nobody can tell from silence.
+            # THE PRICE, STATED: a verdict abandoned between its two asks
+            # loses the FIRST ask's cost from `judge_cost_usd`. The ledger
+            # itself is right (`judge._ask` settles in a `finally`), so the
+            # ceiling still holds inside the run; only a later `--resume`
+            # under-charges itself by at most `QUERY_CAP_USD`. Preserving it
+            # would mean catching inside `judge_prompt`, and that module may
+            # not import `BudgetExhausted` at all — v3's judge drags `pseudex`
+            # in through `score` (judge.py's `Ledger` Protocol says why).
+            print(f"[judge] {case.base.id}|{run.base.repeat}: {JUDGE_SKIPPED_BUDGET}: "
+                  f"{exhausted}", file=sys.stderr, flush=True)
+            verdict = JudgeVerdict(label="", reason=f"{JUDGE_SKIPPED_BUDGET}: {exhausted}",
+                                   judged_by="none", cost_usd=0.0)
     return JudgeOutcome(
         row=JudgeRow(case_id=case.base.id, repeat=run.base.repeat,
                      input_sha256=input_sha256(prompt), verdict=verdict),
@@ -744,8 +807,7 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
             # per-observation metric and reads `ArmRunV5`, so a count that
             # lived on the triple row alone was a count no line could reach.
             gateway_run = with_turn_residual(gateway_run, turn_residual)
-            triple["judge"] = {"label": judged.verdict.label, "judged_by": judged.verdict.judged_by,
-                               "cost_usd": judged.verdict.cost_usd}
+            triple["judge"] = judge_summary(judged.verdict)
     finally:
         await ledger.settle(f"agent/{case.base.id}/{repeat}", cap * 3, spent)
         # ONE PLACE COMPUTES THE JUDGE'S SHARE, and both readers take it from
@@ -761,6 +823,23 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
                                         "calls": len(one.run.calls), "reason": one.meta.reason}
                           for one in outcomes}
     return TripleResult(outcomes, gateway_run, hops, judged, triple)
+
+
+def judge_summary(verdict: JudgeVerdict) -> dict[str, object]:
+    """What the TRIPLE row says about the judge.
+
+    THE REASON RIDES HERE TOO, not only in `<run>.judge.jsonl`. A verdict with
+    an empty label reads the same in the triples file whether the judge was
+    switched off, refused to quote, or was never asked because the run's
+    ceiling was reached (`JUDGE_SKIPPED_BUDGET`) — and the triples file is what
+    an operator opens when a run cost less than it should have.
+
+    A named function rather than a literal inside `run_triple_v5`, for the
+    reason `with_control_reply` and `charged` are ones: that function needs a
+    live model, and a claim only a paid run can check is a claim nobody checks.
+    """
+    return {"label": verdict.label, "judged_by": verdict.judged_by,
+            "cost_usd": verdict.cost_usd, "reason": verdict.reason}
 
 
 def triple_totals(judged: JudgeRow | None, turn_residual: int) -> r.TripleTotals:
@@ -956,6 +1035,30 @@ def _ladder(path: Path) -> Ladder:
                   tiers={name: tuple(ids) for name, ids in dict(raw["tiers"]).items()})
 
 
+def foreign_run_ids(run_dir: Path, run_id: str) -> tuple[str, ...]:
+    """Run ids already written into `run_dir` that are not `run_id`.
+
+    EVERY READER OF A RUN DIRECTORY TAKES ONE RUN ID, AND TAKES IT BY NAME
+    ORDER: `report.run_id_of` and `calibration._run_id` both pick
+    `sorted(glob("*.arms.jsonl"))[0]`. `--resume <dir>` with no `--out` writes
+    into the DEFAULT directory — `runs/<today>/v5-live-<tier>`, normally the
+    very directory being resumed — under a FRESH uuid, so two ids end up side
+    by side. The readers then take the alphabetically first: the new run's
+    hops, judge file and meta are on disk and read by nothing, while its arm
+    rows ARE merged in (`records.merged_v5_records` globs every file), so every
+    case of the new run reads as hopless and the report is a mixture of two
+    measurements under one header.
+
+    A pure reader rather than a raise, so `test_harness` can drive it without
+    a temp run: `main` prints and exits 2.
+    """
+    if not run_dir.exists():
+        return ()
+    suffix = ".arms.jsonl"
+    return tuple(sorted({path.name[: -len(suffix)] for path in run_dir.glob(f"*{suffix}")}
+                        - {run_id}))
+
+
 def _resume(source: Path) -> tuple[frozenset[tuple[str, int]], float]:
     """Triples already finished CLEANLY in that directory: kept, and their cost
     charged against the ceiling so it bounds the WHOLE measurement."""
@@ -1034,6 +1137,15 @@ def main() -> int:
     out = Path(args.out) if args.out else (here.parent / "runs" / datetime.now().strftime("%Y-%m-%d")
                                            / f"v5-live-{tier_name}")
     out.mkdir(parents=True, exist_ok=True)
+    # BEFORE `write_corpus`, which would overwrite the resumed run's own
+    # snapshot of the corpus — the file `--report` replays against.
+    foreign = foreign_run_ids(out, run_id) if args.resume else ()
+    if foreign:
+        print(f"{out} уже содержит прогон(ы) {', '.join(foreign)}: второй идентификатор в "
+              f"одном каталоге читатели не различают (report.run_id_of и calibration._run_id "
+              f"берут первый по имени). Продолжение пишите в СВОЙ каталог: "
+              f"--resume {args.resume} --out <новый каталог>", file=sys.stderr)
+        return 2
     write_corpus(out, cases, digest)
     already, resumed = _resume(Path(args.resume)) if args.resume else (frozenset(), 0.0)
     if args.resume:

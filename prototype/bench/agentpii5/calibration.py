@@ -66,7 +66,7 @@ from bench.agentpii5.contracts import (
     CALIBRATION, JUDGE_LABELS, QUERY_CAP_USD, RETRIES, CalibrationRecord, CalibrationStamp,
     CalibrationThresholds, JudgeInput, JudgeVerdict, RunObservation)
 from bench.agentpii5.judge import (
-    JUDGE_TEMPERATURE, JudgeConfig, judge_answer, judge_input, prompt_sha256)
+    JUDGE_TEMPERATURE, JudgeConfig, judge_answer, judge_input, masked_dialogue, prompt_sha256)
 from bench.agentpii5.schema import case_v5_from_json
 
 # Where a calibration file lives, derived from `contracts.CALIBRATION_FILE`
@@ -474,12 +474,12 @@ def sheet_rows(run_dir: Path, sample: Sequence[CalibrationRecord],
     of them, and a record that carried them would put the customer's values
     into the calibration file for ever.
 
-    THE SHEET IS BUILT BY `judge_input`, NOT BESIDE IT. κ measures a human
-    against the judge, so the two must have read the SAME thing — including the
-    agent's own earlier turns (`ArmRunV5.turn_replies`, ruling R-40), which
-    reach the sheet because they reach `dialogue_context`. A second builder
-    here would be a second thing to keep equal, and the first divergence would
-    be a κ nobody could explain.
+    THE SHEET IS BUILT BY `judge_input` AND `masked_dialogue`, NOT BESIDE THEM.
+    κ measures a human against the judge, so the two must have read the SAME
+    thing — including the agent's own earlier turns (`ArmRunV5.turn_replies`,
+    ruling R-40) AND the marker that stands where the restorer left a substitute
+    (`judge.RESIDUAL_MARKER`). A second builder here would be a second thing to
+    keep equal, and the first divergence would be a κ nobody could explain.
     """
     runs = {(one.case.base.id, one.repeat): one for one in observations_of(run_dir)}
     out: list[dict[str, object]] = []
@@ -489,6 +489,16 @@ def sheet_rows(run_dir: Path, sample: Sequence[CalibrationRecord],
         if observation is None:
             raise CalibrationError(f"{record.sample_id}: строки выборки нет в прогоне {run_dir}")
         request = judge_input(observation.case, observation.run)
+        # THE HUMAN READS WHAT THE JUDGE READ, INCLUDING THE MASKING. The judge
+        # never sees a substitute the restorer left standing in an earlier turn
+        # — `build_prompt` goes through `masked_dialogue`, which replaces it
+        # with `RESIDUAL_MARKER` — while this sheet used to print the raw turn.
+        # κ is agreement between two raters on ONE task, and a rater shown a
+        # fake name where the other saw «[нераскрытая подмена]» is answering a
+        # different question about the context (rubric question 4). The same
+        # `minted_of` list the K repeats use, so the sheet and the repeats
+        # cannot mask differently either.
+        turns, _flagged = masked_dialogue(request, minted_of(observation))
         row = r.calibration_record_to_json(CalibrationRecord(
             sample_id=record.sample_id, case_id=record.case_id, pii_types=record.pii_types,
             family=record.family, register=record.register, holdout=record.holdout,
@@ -498,8 +508,7 @@ def sheet_rows(run_dir: Path, sample: Sequence[CalibrationRecord],
         row["restored_answer"] = request.restored_answer
         row["answer_sha256"] = answer_digest(request.restored_answer)
         row["oracle_literals"] = list(request.oracle_literals)
-        row["dialogue_context"] = [{"role": turn.role, "text": turn.text}
-                                   for turn in request.dialogue_context]
+        row["dialogue_context"] = [{"role": turn.role, "text": turn.text} for turn in turns]
         row["customer_question"] = request.customer_question
         out.append(row)
     return out
@@ -537,16 +546,39 @@ class RepeatAsk(Protocol):
 
 
 def minted_of(observation: RunObservation) -> tuple[str, ...]:
-    """The substitutes the run minted for this case, off the arm's own record.
+    """Every substitute THIS RUN's record says the model read — the widest list
+    the files carry, and the same one for the sheet and for the K repeats.
 
-    The harness strips the real settlement out of an address before handing the
-    list to the pre-gate (`harness.minted_substitutes`); that needs the engine
-    and this module may not import it. The list is used HERE only as the
-    blindness guard's haystack, where a longer string is the stricter test —
-    the failure mode the stripping prevents (calling the customer's own city
-    ours) belongs to the gate, not to the guard.
+    THREE SOURCES, NOT ONE. `base.substitutes` holds one surface per DECLARED
+    item; the model also read the second spelling of a substitute in a later
+    message (`mentions`) and every substitute a TOOL RESULT carried
+    (`tool_results[].pieces`), including values of people the case declares no
+    item for. Reading only the first was measurably narrower than the list the
+    run judged with — on 67 of 400 corpus cases, and on 6 of them a repeat's
+    prompt KEPT a substitute the run's prompt had masked out. The K repeats
+    then measured the mask rather than the judge, which is exactly what
+    `repeat_disagreement` must not do.
+
+    SORTED, because `judge.mask_residual_turns` replaces the whole surfaces in
+    list order and the run's own list (`harness.minted_substitutes`) is sorted:
+    two orders over one set is a difference that shows up only where one
+    substitute is a prefix of another.
+
+    IT IS STILL NOT THE RUN'S LIST BYTE FOR BYTE, AND THE RESIDUE IS NAMED.
+    The harness strips the real settlement out of a COMMA-BEARING address
+    (`harness.minted_substitutes`); that needs the engine and this module may
+    not import it, so an address minted as «Омск, переулок …» is carried here
+    whole and its stripped form standing alone in a turn is masked by the
+    PIECE rule rather than as a whole surface. The run's own list cannot be
+    reproduced exactly from the files because no field of `ArmRunV5` holds it
+    — writing it there is the harness's change to make, not this module's.
     """
-    return tuple(value[0] for value in observation.run.base.substitutes.values() if value[0])
+    out: set[str] = {value[0] for value in observation.run.base.substitutes.values() if value[0]}
+    out |= {mention.substitute for mention in observation.run.mentions
+            if mention.substitute.strip()}
+    out |= {piece[2] for record in observation.run.tool_results for piece in record.pieces
+            if piece[2].strip()}
+    return tuple(sorted(out))
 
 
 async def ask_repeats(run_dir: Path, repeats: Sequence[CalibrationRecord],

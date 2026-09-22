@@ -60,6 +60,7 @@ from bench.agentpii5.observe import (
     fold,
     items_by_id,
     needles_of,
+    occurrences_of,
     own_stems,
     pieces_of,
     result_for_hop,
@@ -315,9 +316,11 @@ def coverage(observations: Sequence[RunObservation]) -> Line:
 
 
 def typed(observations: Sequence[RunObservation]) -> Line:
-    """Did the gateway also call it the right type. Only over results where it
-    EXPOSED a type: `DOB` and `DATE` are one answer (a birth date is a date),
-    and a maskers that exposes nothing gets `Line(0, 0)` and «н/п», never 0%."""
+    """Did the gateway also call it the right type. Over IN/tool AND IN/document
+    hops — a document is a result the model reads like any other — and only
+    where a replaced piece covers the slot, so a type was actually exposed:
+    `DOB` and `DATE` are one answer (a birth date is a date), and a masker that
+    exposes nothing gets `Line(0, 0)` and «н/п», never 0%."""
     hits = 0
     total = 0
     for one, hop in _owned(observations, "IN", ("tool", "document")):
@@ -350,10 +353,19 @@ def _altered_with_parameter(observations: Sequence[RunObservation]) -> list[tupl
 
 
 def round_trip(observations: Sequence[RunObservation]) -> Line:
-    """The tool received the REAL canonical value. Absolute, not a comparison
+    """The leaf received the REAL value ASKED OF IT. Absolute, not a comparison
     of arms: v4 could say «the gateway arm wrote what the control wrote» and
-    both could be wrong. Equality to `canonical` only — a repaired value is
-    counted by `round_trip_repaired` and nowhere else (§4.4 «без фолбэков»)."""
+    both could be wrong.
+
+    THE LEAF'S OWN PART, not the whole canonical (`leaf_value_ok`, R-53):
+    `contact.last_name` is right when it holds the surname and
+    `patient.birth_date` when it holds the ISO date, and comparing either with
+    the whole canonical topped a PERFECT gateway out at 76.8%. Notation is
+    folded per type there and nothing else is: a value that arrived REPAIRED
+    (the nominative of a declined name) is counted by `round_trip_repaired`
+    and nowhere else (§4.4 «без фолбэков»). A leaf the gateway never masked
+    (`unmasked`) and one the agent never wrote (`absent`) are misses inside the
+    denominator."""
     rows = _altered_with_parameter(observations)
     hits = sum(1 for _one, hop, item in rows
                if hop.status == "observed" and _item_value_ok(hop, item))
@@ -371,10 +383,22 @@ def round_trip_repaired(observations: Sequence[RunObservation]) -> Line:
 
 
 def end_to_end(observations: Sequence[RunObservation]) -> Line:
-    """«The agent still works»: the tool got the real value, over ALL declared
-    tool arguments — including the ones the gateway never masked and the ones
-    the agent never wrote. A passthrough scores 100% here, and that is the
-    point: this line and `leak` are the two halves of the product's promise."""
+    """«The agent still works»: the gateway restored the real value at the
+    leaf, over ALL declared tool arguments — the ones the agent never wrote
+    (`absent`) and the ones it never masked (`unmasked`) included, both as
+    MISSES.
+
+    A PASSTHROUGH SCORES 0 HERE, NOT 100, and this docstring used to say the
+    opposite. F1.3 made an OUT leaf carrying no substitute `unmasked`, and
+    every form and value line counts that as a miss inside the denominator —
+    so «the tool got the real value» stopped being the question: the question
+    is whether the gateway PUT it there. Measured on the production observer:
+    a gateway that masks nothing prints 0/2 (`report --selftest`'s
+    `end_to_end` mutant is that old promise, written out).
+
+    The consequence is stated rather than hidden: this line and `leak` are no
+    longer independent halves of the promise — one masking failure now shows
+    in both, and a reader comparing them must read them as one picture."""
     hits = 0
     total = 0
     for one, hop in _owned(observations, "OUT", ("tool_arg",)):
@@ -403,7 +427,14 @@ def overmask(observations: Sequence[RunObservation]) -> Line:
 
 def consistency(observations: Sequence[RunObservation]) -> Line:
     """One value, one substitute, across MESSAGES. The model has to believe the
-    second mention is the same person, and it cannot if the gateway re-minted."""
+    second mention is the same person, and it cannot if the gateway re-minted.
+
+    THE POPULATION IS DISTINCT PLACES, NOT MENTIONS. `MentionRecord.msg` is the
+    message index, and every tool result carries `msg == -1`
+    (`harness.push_call`), so an item the model met only inside tool results is
+    in ONE place however many results printed it — `stability` is the line that
+    asks about repeats across requests. Counting mentions instead would put a
+    value said once into a population named «mentioned more than once»."""
     hits = 0
     total = 0
     for one in observations:
@@ -584,11 +615,15 @@ def answer_real(observations: Sequence[RunObservation]) -> Line:
     no personal datum at all scored a hit: v4's «all() over an empty list»,
     reborn on the answer leg.
 
-    THE VALUE TEST IS `value_repaired`, NOT BYTE EQUALITY, and that is not
-    leniency. A Russian answer DECLINES the name («передал Ивановой Елене»)
-    and re-notates the phone; demanding the canonical would score a correct
-    answer wrong. Whether the answer wears the AGENT's form is the verdict's
-    question, and it is asked right beside it."""
+    THE VALUE TEST IS `answer_value_ok`, NOT EQUALITY WITH THE CANONICAL, and
+    that is not leniency — the whole-canonical comparison could not be earned.
+    A Russian answer DECLINES the name («передал Ивановой Елене»), names the
+    street without the city and re-notates the phone; the needles the observer
+    already owns say whether the value is there, and another person's value in
+    the same span says it is the wrong one. Only the REQUIRED hops are judged:
+    an optional answer hop is one the case does not oblige the agent to make.
+    Whether the answer wears the AGENT's form is the verdict's question, and it
+    is asked right beside it."""
     hits = 0
     total = 0
     for one in observations:
@@ -605,10 +640,54 @@ def answer_real(observations: Sequence[RunObservation]) -> Line:
     return _line("answer_real", hits, total)
 
 
+def _occurrences(item: PiiItem, text: str) -> tuple[tuple[int, int], ...]:
+    """Where this item's value stands in `text`, in every shape `needles_of`
+    knows — verbatim, declined, renotated, refolded."""
+    return tuple(span for surface in (item.canonical, item.value) if surface
+                 for span in occurrences_of(item.type, surface, text))
+
+
+def answer_value_ok(one: RunObservation, item: PiiItem, produced: str) -> bool:
+    """Did the ANSWER carry THIS item's value.
+
+    NOT the whole canonical, byte for byte — that rule is the F1.1 defect the
+    tool leg was rid of, left standing here, and it is worse on this leg. A
+    Russian answer names the PART it needs and declines it: «Передал
+    Ивановой» for «Иванова Елена Петровна», «Курьер поедет на Клубную 85» for
+    «Ижевск, улица Клубная, 85, кв 14». Measured over the corpus's own 797
+    required answer hops, 530 (66%) of ORDINARILY DECLINED correct answers
+    failed the old comparison, and a perfect gateway could not earn the line.
+
+    THE RULE IS THE OBSERVER'S OWN NEEDLES (`observe.needles_of`) — the word
+    stem, the digit signature, the date fold — asked of the item's canonical
+    and of its surface. A PARTIAL mention is not a wrong value: naming the
+    street without the city, or the surname without the given name, is what
+    the answer was asked for, and the corpus cannot demand information the
+    reply never carried (AgentPII-RU v1's ground-truth bug, `CLAUDE.md`).
+
+    A MENTION OF ANOTHER PERSON'S VALUE IS a wrong value, and that is the half
+    that keeps the line able to fail. «Another person» is an item of the case
+    with a DIFFERENT identity whose value stands where this item's does not —
+    the position matters because two identities may share a given name, and a
+    correct answer must not be called wrong for the name it got right."""
+    if not produced.strip():
+        return False
+    mine = _occurrences(item, produced)
+    if not mine:
+        return False
+    for other in one.case.base.pii:
+        if other.id == item.id or other.identity == item.identity:
+            continue
+        for span in _occurrences(other, produced):
+            if not any(one_span[0] < span[1] and span[0] < one_span[1] for one_span in mine):
+                return False
+    return True
+
+
 def _answer_hop_right(one: RunObservation, hop: HopObservation) -> bool:
     item = _item_of(one, hop.hop.item_id)
     return (hop.status == "observed" and hop.verdict is not None and hop.verdict.same
-            and item is not None and value_repaired(item.type, hop.produced, item.canonical))
+            and item is not None and answer_value_ok(one, item, hop.produced))
 
 
 def _transitions(observations: Sequence[RunObservation]) -> list[tuple[RunObservation, HopObservation, HopObservation]]:
@@ -851,20 +930,82 @@ def _tagged_item(items: dict[str, PiiItem], tag: str) -> PiiItem | None:
     return items.get(tag.removeprefix(contracts.ECHO_TAG_PREFIX))
 
 
+def _chunk_items(one: RunObservation, chunk_id: str) -> list[PiiItem]:
+    """The case's own items that this chunk RENDERS — the seed record's items,
+    read off the corpus declaration (`Locus.record`) and never off the mock's
+    tags. The declaration is the point: a chunk the mock rendered with no tag
+    at all must still be a unit, or «the retriever leaked» and «the retriever
+    was never called» print the same number."""
+    return [item for item in one.case.base.pii
+            if item.where.kind == "seed" and item.where.record == chunk_id]
+
+
+def _obtained(records: Sequence[ToolResultRecord],
+              declared: Sequence[PiiItem]) -> list[ToolResultRecord]:
+    """The results that actually carry this chunk or document: a tagged slot
+    for one of its declared items, or one of their real values standing in the
+    text the model read.
+
+    THE SECOND HALF IS WHAT SEPARATES «rendered untagged» FROM «never
+    returned». Without it the two are one state, and F1.7's rule — a declared
+    value the result renders untagged is a MISS, a declared result the agent
+    never obtained is outside the denominator — cannot be applied at all."""
+    return [record for record in records
+            if any(span_of_item(record, item.id) is not None
+                   or _surviving_piece(item.type, item.value, record.text_masked)
+                   for item in declared)]
+
+
 def rag_masked(observations: Sequence[RunObservation]) -> Line:
     """Retrieval chunks where no real value reached the model — including the
     values of OTHER people the retriever happened to return. A chunk with two
-    identities and one of them masked is a miss, not a half."""
+    identities and one of them masked is a miss, not a half.
+
+    THE DENOMINATOR IS WHAT THE CASE DECLARES (F1.7, the half that had been
+    applied to `toolresult_masked` only). `if not spans: continue` made «the
+    chunk came back untagged» indistinguishable from «the chunk never came
+    back», so a declared chunk the mock rendered RAW — the customer's name in
+    the model's context, tagged by nothing — left the denominator entirely and
+    the line printed «н/п» for a retrieval leg that leaked."""
     hits = 0
     total = 0
     for one in observations:
+        if one.case.rag is None:
+            continue
         items = items_by_id(one.case)
-        for record, _chunk_id, spans in _rag_chunks(one):
-            if not spans:
+        results = [record for record in one.run.tool_results
+                   if record.tool_name == one.case.rag.tool_name]
+        for chunk_id in one.case.rag.chunk_ids:
+            declared = _chunk_items(one, chunk_id)
+            if not declared:
+                continue
+            obtained = _obtained(results, declared)
+            if not obtained:
                 continue
             total += 1
-            hits += 1 if all(_span_masked(record, _type_at(record, items, span), span)
-                             for span in spans) else 0
+            good = True
+            for record in obtained:
+                for item in declared:
+                    span = span_of_item(record, item.id)
+                    if span is None:
+                        # Declared, returned, and tagged by nothing: the value
+                        # is in the text the model read, so it is a MISS — the
+                        # `all([]) == True` v4 defect, on the retrieval leg.
+                        if _surviving_piece(item.type, item.value, record.text_masked):
+                            good = False
+                        continue
+                    if not _span_masked(record, item.type, span):
+                        good = False
+                # Every OTHER tagged slot of this chunk counts too: the
+                # retriever returns whole rows and a foreign person in one is
+                # exactly what this line must not forgive.
+                for tag, span in record.spans_real.items():
+                    owner = _tagged_item(items, tag)
+                    if owner is None or owner.where.record != chunk_id:
+                        continue
+                    if not _span_masked(record, owner.type, span):
+                        good = False
+            hits += 1 if good else 0
     return _line("rag_masked", hits, total)
 
 
@@ -918,17 +1059,44 @@ def rag_identity_kept(observations: Sequence[RunObservation]) -> Line:
 def doc_masked(observations: Sequence[RunObservation]) -> Line:
     """Documents where every real value was masked. One document is one unit:
     a CSV whose fourth row leaked is a leaked document, and a per-row rate would
-    let a hundred clean rows pay for it."""
+    let a hundred clean rows pay for it.
+
+    THE VERDICT IS WHAT THE CASE DECLARES (F1.7, the half that had been applied
+    to `toolresult_masked` only). `all(_record_clean(...))` iterates
+    `record.spans_real`, so a document the mock rendered with NO tags iterated
+    nothing and scored a perfect hit — v4's «all() over an empty list», on the
+    document family, and reachable today: the agent reads a wrong path,
+    `mock._file_read` answers `{"found": false}`, the record carries no tag,
+    and «every real value of this document was masked» is printed about a
+    document nobody read.
+
+    So a declared value that reached the model UNTAGGED is now a miss, and a
+    document the agent never obtained leaves the denominator instead of
+    scoring one — the same two rules `toolresult_masked` follows, with
+    `doc_extracted` printing the zero beside an unread document."""
     hits = 0
     total = 0
     for one in observations:
-        if one.case.document is None:
+        document = one.case.document
+        if document is None:
+            continue
+        items = items_by_id(one.case)
+        declared = [item for item in one.case.base.pii
+                    if (item.where.kind == "seed" and item.where.record in document.record_ids)
+                    or item.id in document.extracted_item_ids]
+        records = [record for record in one.run.tool_results
+                   if record.tool_name == document.read_tool]
+        obtained = _obtained(records, declared or list(one.case.base.pii))
+        if not obtained:
             continue
         total += 1
-        items = items_by_id(one.case)
-        records = [record for record in one.run.tool_results
-                   if record.tool_name == one.case.document.read_tool]
-        good = bool(records) and all(_record_clean(record, items) for record in records)
+        good = all(_record_clean(record, items) for record in obtained)
+        for record in obtained:
+            for item in declared or one.case.base.pii:
+                if span_of_item(record, item.id) is not None:
+                    continue
+                if _surviving_piece(item.type, item.value, record.text_masked):
+                    good = False
         hits += 1 if good else 0
     return _line("doc_masked", hits, total)
 
