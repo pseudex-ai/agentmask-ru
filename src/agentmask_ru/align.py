@@ -265,6 +265,91 @@ def surviving_pieces(value: str, substitute: str) -> list[str]:
     return [piece for piece in _PIECE.findall(norm(value)) if piece in folded]
 
 
+# The words of an address that identify NOBODY: the generic type word. A street
+# is «Ленина» or «Мира»; «улица» in front of it is grammar, not identity, and a
+# masker that leaves «улица» standing has leaked no personal data. The short
+# markers («д», «кв») are already below the three-letter `_PIECE` floor.
+_ADDRESS_GENERIC = frozenset(norm(w) for w in (
+    "улица", "переулок", "проспект", "бульвар", "шоссе", "проезд", "набережная",
+    "аллея", "линия", "микрорайон", "тупик", "квартал", "площадь", "проулок",
+    # the abbreviations a real address uses in place of the words above; below
+    # three letters («пр», «ш», «б-р») they fall under the `_PIECE` floor already.
+    "пер", "просп", "пркт", "бул", "бульв", "наб", "мкр", "туп", "проул", "кв-л",
+    # structural markers written in full — the customer writes «дом»/«квартира»,
+    # the substitute now mirrors that form, and the WORD carries no identity
+    # (the number does, and it is masked). Below three letters («д», «к») they
+    # are under the `_PIECE` floor.
+    "дом", "квартира", "корпус", "корп", "строение", "стр", "литера", "лит",
+    "подъезд", "офис", "помещение", "пом", "владение",
+))
+
+_CITY_TOKENS: frozenset[str] | None = None
+
+
+def _city_tokens() -> frozenset[str]:
+    """Every word of every city name in the benchmark's own city pool, folded.
+
+    A bare settlement is not personal data — the benchmark's ground truth says
+    so (a lone city is refused, `place_name` recall is meant to be ~0), and the
+    law it models agrees (152-ФЗ, GDPR Recital 26: a city identifies no one).
+    So a settlement left standing in the substitute is not a coverage leak, and
+    the pool the addresses were BUILT from is exactly the list to recognise it.
+    """
+    global _CITY_TOKENS
+    if _CITY_TOKENS is None:
+        import json  # noqa: PLC0415
+        from pathlib import Path  # noqa: PLC0415
+        toks: set[str] = set()
+        try:
+            pool = json.loads((Path(__file__).resolve().parents[2]
+                               / "pools" / "wikidata_cities.json").read_text(encoding="utf-8"))
+            for row in pool.get("items", []):
+                for token in _PIECE.findall(norm(row.get("name", ""))):
+                    toks.add(token)
+        except (OSError, ValueError, KeyError):
+            pass
+        _CITY_TOKENS = frozenset(toks)
+    return _CITY_TOKENS
+
+
+def _leading_city_pieces(value: str) -> set[str]:
+    """The pieces of a LEADING settlement in `value`, or nothing.
+
+    Only the head is a candidate, and only when the value does not open with a
+    type word: «улица Восход» is a street called Восход, never a city, even if
+    a town «Восход» exists. «Нижний Новгород, …» and «Набережные Челны …» are
+    two-word cities, so the head is taken greedily while its words are known
+    city words."""
+    pieces = _PIECE.findall(norm(value))
+    if not pieces or pieces[0] in _ADDRESS_GENERIC:
+        return set()
+    cities = _city_tokens()
+    if pieces[0] not in cities:
+        return set()
+    out: set[str] = set()
+    for piece in pieces[:3]:
+        if piece in cities:
+            out.add(piece)
+        else:
+            break
+    return out
+
+
+def address_identity_survives(value: str, substitute: str) -> bool:
+    """A piece of the address's IDENTIFYING part survived into the substitute.
+
+    Coverage of an address is over the street, the house and the flat — the
+    part that points to a door. The settlement and the generic type word do
+    not, so their survival is not a leak; counting it as one scored the
+    masker's own documented, lawful policy («город остаётся настоящим») as a
+    failure and drove ADDRESS coverage far below the truth."""
+    survived = surviving_pieces(value, substitute)
+    if not survived:
+        return False
+    non_pii = _ADDRESS_GENERIC | _leading_city_pieces(value)
+    return any(piece not in non_pii for piece in survived)
+
+
 def rewrite_ratio(original: str, masked: str, protected: list[tuple[int, int]]) -> float:
     """Share of characters changed outside the protected spans."""
     inside = set()

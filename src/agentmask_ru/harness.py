@@ -17,7 +17,8 @@ import re
 from dataclasses import asdict, dataclass, field
 
 from agentmask_ru.adapters.base import Masker, MaskedView, TurnResult
-from agentmask_ru.align import digits_of, is_number_like, norm, project_many, rewrite_ratio
+from agentmask_ru.align import (address_identity_survives, digits_of, is_number_like,
+                                 norm, project_many, rewrite_ratio)
 from agentmask_ru.parts import cut_address, cut_name
 from agentmask_ru.person import looks_like_person, same_person
 from agentmask_ru.rewrite import rewrite
@@ -264,7 +265,12 @@ def run_case(masker: Masker, case: Case, policy: str, seed: int) -> CaseObservat
                     projected = project_many(case.messages[message_index]["content"], shown,
                                              [(i.start, i.end) for i in here])
                     for item, substitute in zip(here, projected):
-                        seen_by_item[item.id] = (substitute.text, substitute.altered, substitute.covered, substitute.shared)
+                        covered = substitute.covered
+                        if item.type == "ADDRESS" and substitute.altered and not covered:
+                            # Coverage of an address is over the door-pointing
+                            # part; a kept settlement or type word is not a leak.
+                            covered = not address_identity_survives(item.value, substitute.text)
+                        seen_by_item[item.id] = (substitute.text, substitute.altered, covered, substitute.shared)
                         if turn == user_turns[0]:
                             first_substitutes[item.id] = substitute.text
                 for item in case.pii:
