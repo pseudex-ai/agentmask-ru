@@ -64,8 +64,45 @@ Or fold it into the existing resolve response: extend `resolve-agent-slug` to al
 - `async_post_call_success_hook` (NEW): `POST /unmask {org_id, response}` → mutate response so the engine/MCP tools get real values.
 - Streaming unmask: phase 2.
 
+### 5.1 `conversation_id` on the way back — optional, and worth sending
+
+`POST /unmask {org_id, response}` as written above works and stays working. But
+the same body takes an optional `conversation_id`, and a callback that sends it
+gets strictly more back.
+
+**What it buys.** A WHOLE substitute resolves either way — it is unique, and
+only the dialogue it was handed to could have written it. The difference is a
+FRAGMENT: a `street` field with no house number, a house number on its own, a
+date, the last four digits of a phone or a СНИЛС. Those strings are not unique —
+«Полевая», «35», «15.05.2025» look the same in every dialogue — so the engine
+will only answer one when it can tell WHOSE it is. `conversation_id` tells it:
+the answer comes from the dialogue that minted the substitute, every time.
+
+**What happens without it.** The request stands in no dialogue, so a fragment is
+answered only when the whole vault holds exactly ONE candidate for it. One
+dialogue talking about that street → it resolves, as today. Two dialogues of the
+same org holding a substitute on the same street → the engine refuses rather
+than guessing, because guessing would put one customer's real address into
+another customer's tool call.
+
+**A refusal is never silent.** What did not resolve comes back in
+`residual_tokens` (and as the count in the `X-Pseudex-Residual` header), with the
+substitute named. The status is still 200 and the JSON is still well formed, so
+that list is the only way the callback can tell a restored value from a fake that
+reached the tool — treat a non-empty `residual_tokens` as "do not execute this
+tool call yet".
+
+Same id as `/mask` (the one the callback already passes there, or nothing at all
+on both legs), and the same field on `/unmask_arguments` and `/unmask_chunk`.
+
+**`pseudonym_scope` travels with it.** If the callback declares
+`pseudonym_scope: "customer"` on `/mask` (an agent with long-term memory that
+recalls substitutes across dialogues), it must declare it on `/unmask*` too, or
+the value is minted account-wide and restored per dialogue. The body wins over
+`PSEUDEX_PSEUDONYM_SCOPE`; an unknown value is a 400, never a silent fallback.
+
 ## 6. HTTP client (matches Diva pattern)
-`PseudexClient` = `httpx.AsyncClient` with timeout + bounded retries on transient errors (pattern: `src/domain/ai/core/.../api_client.py`). `PSEUDEX_URL` env. Methods: `mask(org_id, agent_id, messages)`, `unmask(org_id, response)`, `stats(org_id, agent_id)`. Wrapped by `PseudexService` (reads `Agent.pii_config`, decides to mask) and dependency-injected into routers like other services.
+`PseudexClient` = `httpx.AsyncClient` with timeout + bounded retries on transient errors (pattern: `src/domain/ai/core/.../api_client.py`). `PSEUDEX_URL` env. Methods: `mask(org_id, agent_id, messages, conversation_id=None)`, `unmask(org_id, response, conversation_id=None)` (§5.1 — the id is optional and worth passing; `unmask` also returns `residual_tokens`), `stats(org_id, agent_id)`. Wrapped by `PseudexService` (reads `Agent.pii_config`, decides to mask) and dependency-injected into routers like other services.
 
 ## 7. Full API surface (what the front will consume later)
 | Purpose | Method + path | Auth |

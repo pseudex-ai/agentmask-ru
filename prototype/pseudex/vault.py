@@ -418,20 +418,43 @@ _VALUE_SQL_BOTH = "entity_type, canonical, original"
 # «35», «15.05.2025» выглядят одинаково у всех, — поэтому владельца ищут
 # только среди строк СВОЕГО разговора.
 #
-# ПУСТАЯ ОБЛАСТЬ — ЭТО НЕ «ЛЮБАЯ». Раньше при пустой области условие
-# ВЫБРАСЫВАЛОСЬ целиком, и каждый из четырёх поисков отвечал по всему
+# ПУСТАЯ ОБЛАСТЬ — ЭТО НЕ «ЛЮБАЯ», НО И НЕ «НИ ОДНА». Раньше при пустой области
+# условие ВЫБРАСЫВАЛОСЬ целиком, и каждый из четырёх поисков отвечал по всему
 # заказчику. На плече маскирования области всегда есть (её выводит
 # `conversation_key`), а вот `/unmask`, `/unmask_chunk` и `/unmask_arguments`
 # выводить её не из чего — и сужение выключалось ровно там, где значение
-# ОТДАЮТ: диалог B получал в поле `street` настоящий адрес диалога A. Теперь
-# пустая область не совпадает ни с одним `minted_in`, то есть отвечают только
-# строки БЕЗ него — записанные до появления столбца или прямым `Vault` без
-# разговора, для которых сравнивать действительно не с чем.
+# ОТДАЮТ: диалог B получал в поле `street` настоящий адрес диалога A, чужой дом,
+# чужую дату и последние четыре цифры настоящего телефона и СНИЛС (Б28).
+#
+# ЗАКРЫТЬ ЭТО ОТКАЗОМ НЕЛЬЗЯ: документированный клиент сайдкара
+# (`docs/integration-diva-backend-api.md`, `POST /unmask {org_id, response}`)
+# `conversation_id` не шлёт вовсе, и «нет разговора — нет ответа» молча ломает
+# работающую интеграцию на четырёх классах фрагментов сразу. Поэтому плечо без
+# названного разговора спрашивает ВЕСЬ ВОЛТ и отвечает ТОЛЬКО при единственном
+# кандидате (`_fragment_scope`); двусмысленность — отказ с видимым остатком.
+# Это тот же принцип единственного кандидата, на котором стоит сама область
+# разговора (CLAUDE.md, «The conversation scope»): у заказчика с одним диалогом
+# про эту улицу отвечать по-прежнему есть чем, а два диалога с одной улицей
+# больше не путаются. Целая подмена уникальна и резолвится всегда — её мог
+# назвать только тот, кому мы её отдали, и она идёт мимо этих поисков.
+#
 # Две записи одного условия, потому что один запрос идёт по `tokens` напрямую,
 # а три — через JOIN с алиасом `k`. Собирать вторую из первой заменой строки
 # значило бы прятать имя таблицы в вызове.
 _MINTED_HERE_JOINED = " AND (k.minted_in=? OR k.minted_in IS NULL OR k.minted_in='')"
 _MINTED_HERE = " AND (minted_in=? OR minted_in IS NULL OR minted_in='')"
+# Сколько владельцев одной основы улицы стоит читать, чтобы ответить «один или
+# несколько» (`_place_key_owners`). Больше полусотни — это уже «несколько» при
+# любом продолжении списка, и оба вызывающих поворачивают в безопасную сторону:
+# единственного кандидата нет, остаток виден.
+_PLACE_OWNER_CAP = 50
+# Сколько владельцев ещё имеет смысл спрашивать «а это не одно ли место»
+# (`_one_identity`). Цепочку `extends` строит только короткое упоминание и
+# выросший из него полный адрес — это две строки, изредка три; десяток владельцев
+# одной основы — это десяток мест при любом прочтении. Потолок не косметический:
+# у запроса `_one_identity` нет индекса по `extends`, поэтому он перебирает все
+# строки заказчика, и задавать его на каждый кандидат ответа нельзя.
+_ONE_IDENTITY_CAP = 4
 
 _SPOKEN_WORD = re.compile(r"[А-Яа-яЁё]{2,}")
 # Типы, у которых канонизация даёт САМО ЗНАЧЕНИЕ в нормальной форме, а не ключ
@@ -2635,6 +2658,132 @@ class Vault:
         ).fetchone()
         return row is not None
 
+    def _fragment_scope(self, clause: str) -> tuple[str, tuple[str, ...]]:
+        """`clause` и его параметр — или пустое условие, когда разговора никто
+        не назвал. `clause` уже выбран вызывающим: `_MINTED_HERE_JOINED` для
+        запроса через JOIN с алиасом `k`, `_MINTED_HERE` для запроса по
+        `tokens` напрямую.
+
+        ДВА РЕЖИМА, И ВТОРОЙ ПЛАТИТ ЕДИНСТВЕННЫМ КАНДИДАТОМ. Есть разговор —
+        спрашиваем только его строки (плюс строки без `minted_in`: том,
+        записанный до появления столбца, сравнивать не с чем). Нет разговора —
+        спрашиваем весь волт, и ответ принимается, только если кандидат ровно
+        один. Требование единственности не новое: каждый из четырёх поисков
+        предъявляет его и внутри разговора, потому что и там фрагмент может
+        принадлежать двум подменам сразу. Полный разбор — у `_MINTED_HERE_JOINED`
+        выше.
+        """
+        if not self._conversation:
+            return "", ()
+        return clause, (self._conversation,)
+
+    def _place_key_owners(self, name_key: str) -> tuple[set[str], bool]:
+        """Адресные подмены заказчика, которые носят ВСЕ основы этого ключа, и
+        было ли чтение обрезано потолком.
+
+        ВОПРОС ЗАДАН ПО ОСНОВАМ, А НЕ ПО КЛЮЧУ, и это не мелочь: вырожденный
+        ключ «каштановый|» принадлежит голой улице, а полный адрес того же
+        названия ключуется «каштановый|60186» и по ключу не нашёлся бы — притом
+        что слово «Каштановая» в поле `street` одинаково принадлежит обоим. Счёт
+        по ключу назвал бы такого заказчика однозначным и отдал бы улицу первого
+        диалога агенту второго, то есть ровно то раскрытие, ради запрета
+        которого правило и написано. Основы лежат в `token_parts` — тот же
+        индекс, которым отвечает `place_owner_by_street`, и тот же ответ: по
+        одному точечному запросу на основу, независимо от размера волта.
+
+        ОСНОВА БЕЗ ВЛАДЕЛЬЦЕВ ПРОПУСКАЕТСЯ, а не обнуляет ответ: город в подмене
+        НАСТОЯЩИЙ и поэтому в `token_parts` не индексируется (см. чеканку), так
+        что у ключа «каштановый|самара|» основа «самара» не найдёт ничего. Она и
+        не должна: наше в этой строке — название улицы, и спрашивать надо о нём.
+
+        ПОТОЛОК ЕСТЬ, И ОН НАЗЫВАЕТ СЕБЯ. Оба вызывающих спрашивают ровно одно:
+        кандидат ОДИН или их несколько. У заказчика, где одну основу носят сотни
+        подмен, ответ известен на пятьдесят первой, а полная выборка стоила бы
+        размера волта на каждом вызове. Но обрезанное чтение — это «не знаю», а
+        не «столько и есть»: `token_parts` держит и части ИМЁН, поэтому первые
+        полсотни строк основы «ленин» могут оказаться людьми, а единственная
+        улица — за краем. Поэтому потолок возвращается вторым значением, и оба
+        вызывающих поворачивают от него в безопасную сторону — единственного
+        кандидата нет, остаток виден.
+
+        ДВА ЗАПРОСА, А НЕ ОДИН JOIN, И ЭТО РАЗНИЦА В ШЕСТЬСОТ РАЗ. У совмещённого
+        запроса (как у `place_owner`) SQLite выбирает ведущей таблицей `tokens` и
+        идёт по `idx_tokens_namekey (customer=?)`, то есть перебирает ВСЕ строки
+        заказчика: 55 мс на 60 000 строк за одну основу. Разделённый запрос
+        читает `token_parts` покрывающим индексом (customer, part) и добирает тип
+        точечно по (customer, token) — 0.09 мс. Этот вопрос задаётся на каждый
+        кандидат ответа, поэтому план здесь важнее краткости.
+        """
+        stems = [part for part in name_key.split("|") if part]
+        if not stems:
+            return set(), False
+        truncated = False
+        with self._lock:
+            owners: set[str] | None = None
+            for stem in stems:
+                named = [row[0] for row in self._conn.execute(
+                    "SELECT token FROM token_parts WHERE customer=? AND part=? LIMIT ?",
+                    (self._customer, stem, _PLACE_OWNER_CAP + 1),
+                ).fetchall()]
+                truncated = truncated or len(named) > _PLACE_OWNER_CAP
+                if not named:
+                    continue
+                found = {row[0] for row in self._conn.execute(
+                    "SELECT token FROM tokens WHERE customer=? AND entity_type='LOC' "
+                    f"AND token IN ({','.join('?' * len(named))})",
+                    (self._customer, *named),
+                ).fetchall()}
+                if not found:
+                    continue
+                owners = found if owners is None else (owners & found)
+                if not owners:
+                    return set(), truncated
+        return (owners or set()), truncated
+
+    def _sole_place_owner(self, name_key: str) -> bool:
+        """Ровно одна адресная подмена этого заказчика носит это название —
+        условие, на котором плечо без названного разговора получает ответ.
+
+        Несколько строк, которые НА САМОМ ДЕЛЕ одно место (короткое упоминание и
+        выросший из него полный адрес), — это один кандидат; цепочку `extends`
+        строит только этот код и только внутри разговора."""
+        owners, truncated = self._place_key_owners(name_key)
+        if truncated or not owners:
+            return False
+        if len(owners) == 1:
+            return True
+        if len(owners) > _ONE_IDENTITY_CAP:
+            return False
+        with self._lock:
+            return self._one_identity(owners) is not None
+
+    def place_key_is_ambiguous(self, name_key: str) -> bool:
+        """Этот ключ носят НЕСКОЛЬКО наших подмен сразу — значит пофрагментный
+        поиск по нему отказывает КОМУ УГОДНО, включая тот диалог, который одну
+        из этих строк и чеканил.
+
+        ВТОРАЯ ПОЛОВИНА ВИДИМОСТИ, И ОНА НЕ ПРО ОБЛАСТЬ. `refusable_place_keys`
+        показывает отказ по ЧУЖОМУ ДИАЛОГУ; этот — отказ по ДВУСМЫСЛЕННОСТИ, и
+        ключ там несёт цифры, поэтому первый вопрос о нём молчит. Без второго
+        «двусмысленность — отказ с ВИДИМЫМ остатком» было бы наполовину правдой:
+        в инструмент уходил фейк при 200 и пустом списке.
+
+        Спрошено по всему заказчику и точечными запросами: у сгруппированного
+        запроса «какие основы вообще двусмысленны» цена растёт с размером волта
+        (замер: 83 мс на 60 000 строк), а здесь — с числом кандидатов в ответе,
+        как и у всякого другого поиска на этом плече."""
+        owners, truncated = self._place_key_owners(name_key)
+        if not owners:
+            # Ни одной нашей адресной строки — это слово заказчика, а не наше.
+            # Предупреждение, которое кричит на обычном тексте, никто не читает.
+            return False
+        if truncated or len(owners) > _ONE_IDENTITY_CAP:
+            return True
+        if len(owners) < 2:
+            return False
+        with self._lock:
+            return self._one_identity(owners) is None
+
     def place_owner(self, candidate: str) -> str | None:
         """Адресная подмена, ЧАСТЬЮ которой является этот фрагмент.
 
@@ -2657,7 +2806,9 @@ class Vault:
         # только тот, кому мы её отдали. ФРАГМЕНТ не уникален — «Полевая 35»
         # выглядит одинаково у всех, — и без области диалог B получал адрес,
         # отчеканенный в диалоге A. Это ровно то раскрытие, ради запрета
-        # которого область и заведена.
+        # которого область и заведена. Плечо, разговора не назвавшее, спрашивает
+        # весь волт и платит за это единственным кандидатом ниже.
+        scope, scope_args = self._fragment_scope(_MINTED_HERE_JOINED)
         with self._lock:
             owners: list[set[str]] = []
             for part in parts:
@@ -2665,8 +2816,8 @@ class Vault:
                     "SELECT t.token FROM token_parts AS t "
                     "JOIN tokens AS k ON k.customer=t.customer AND k.token=t.token "
                     "WHERE t.customer=? AND t.part=? AND k.entity_type='LOC'"
-                    + _MINTED_HERE_JOINED,
-                    (self._customer, part, self._conversation),
+                    + scope,
+                    (self._customer, part, *scope_args),
                 ).fetchall()
                 if not rows:
                     return None
@@ -2699,6 +2850,7 @@ class Vault:
         stems, numbers = morph_places.signature_parts(candidate)
         if numbers or not stems:
             return None
+        scope, scope_args = self._fragment_scope(_MINTED_HERE_JOINED)
         with self._lock:
             owners: list[set[str]] = []
             for part in stems:
@@ -2706,8 +2858,8 @@ class Vault:
                     "SELECT t.token FROM token_parts AS t "
                     "JOIN tokens AS k ON k.customer=t.customer AND k.token=t.token "
                     "WHERE t.customer=? AND t.part=? AND k.entity_type='LOC'"
-                    + _MINTED_HERE_JOINED,
-                    (self._customer, part, self._conversation),
+                    + scope,
+                    (self._customer, part, *scope_args),
                 ).fetchall()
                 if not rows:
                     return None
@@ -2715,6 +2867,14 @@ class Vault:
             common = set.intersection(*owners)
             if len(common) < 2:
                 return next(iter(common)) if common else None
+            # «ПОЗДНЕЕ УПОМИНАНИЕ ПОБЕЖДАЕТ» — ПРАВИЛО ОДНОГО РАЗГОВОРА. Оно
+            # разбирает исправленный адрес: две строки на одной фейковой улице,
+            # и поздняя — то написание, на котором заказчик остановился. Между
+            # РАЗНЫМИ диалогами «позже» не значит ничего, кроме «кто-то другой
+            # говорил последним», поэтому плечо без названного разговора видит
+            # здесь двух кандидатов и отказывает.
+            if not self._conversation:
+                return None
             rows = self._conn.execute(
                 "SELECT rowid, token, canonical FROM tokens WHERE customer=? AND entity_type='LOC' "
                 f"AND token IN ({','.join('?' * len(common))}) ORDER BY rowid",
@@ -2732,13 +2892,18 @@ class Vault:
         lookup: two dialogues may well hold substitutes on one date."""
         if not reading:
             return None
+        scope, scope_args = self._fragment_scope(_MINTED_HERE_JOINED)
         with self._lock:
+            # DISTINCT, А НЕ ПРОСТО LIMIT: три одинаковых строки исчерпывали
+            # предел и прятали четвёртую, с ДРУГОЙ датой, — то есть «кандидат
+            # один» говорилось про усечённый список. Отдельные значения
+            # различаются в трёх первых строках или их заведомо больше одного.
             rows = self._conn.execute(
-                "SELECT k.entity_type, k.canonical, k.original FROM token_parts AS t "
+                "SELECT DISTINCT k.entity_type, k.canonical, k.original FROM token_parts AS t "
                 "JOIN tokens AS k ON k.customer=t.customer AND k.token=t.token "
                 "WHERE t.customer=? AND t.part=? AND k.entity_type IN ('DOB','DATE')"
-                + _MINTED_HERE_JOINED + " LIMIT 3",
-                (self._customer, reading, self._conversation),
+                + scope + " LIMIT 3",
+                (self._customer, reading, *scope_args),
             ).fetchall()
         values = {_pick_value(row[0], row[1], row[2], for_tool) for row in rows}
         return next(iter(values)) if len(values) == 1 else None
@@ -2766,13 +2931,14 @@ class Vault:
         digits = "".join(ch for ch in fragment if ch.isdigit())
         if len(digits) < 2:
             return None
+        scope, scope_args = self._fragment_scope(_MINTED_HERE)
         with self._lock:
             rows = self._conn.execute(
                 "SELECT token, digits, entity_type, canonical, original "
                 "FROM tokens WHERE customer=? AND digits IS NOT NULL "
                 "AND length(digits) > ? AND instr(digits, ?) > 0"
-                + _MINTED_HERE,
-                (self._customer, len(digits), digits, self._conversation),
+                + scope,
+                (self._customer, len(digits), digits, *scope_args),
             ).fetchall()
         # THE CUE NARROWS THE QUESTION. «контрольное число 77» is the END of a
         # СНИЛС, «серия 4509» the START of a passport, «последние четыре цифры
@@ -3685,17 +3851,22 @@ class Vault:
         minted with no marker IS the whole substitute — and a rule that closed
         the key and left the token open would close half a door.
 
-        NO CONVERSATION IS NOT EVERY CONVERSATION. A restoring leg that names
-        none — `/unmask`, `/unmask_chunk`, `/unmask_arguments` without
-        `conversation_id`, where there is no transcript to derive one from —
-        stands in no dialogue, so it is not the one that minted this row and it
-        does not read it. That is the same answer `shown_forms` already gives an
-        unscoped view, and the OPPOSITE of `is_minted_token`, deliberately: on
-        the masking leg the permissive reading only risks re-masking our own
-        echo, while here it hands one dialogue's real street to another's tool.
-        A host that wants the wide answer says so — by naming the conversation,
-        or by declaring agent memory (`with_pseudonym_scope`), exactly as
-        `is_minted_token` takes the same declaration.
+        NO CONVERSATION IS NOT EVERY CONVERSATION — IT IS THE SINGLE CANDIDATE.
+        A restoring leg that names none — `/unmask`, `/unmask_chunk`,
+        `/unmask_arguments` without `conversation_id`, where there is no
+        transcript to derive one from — stands in no dialogue, so it cannot
+        claim to be the one that minted this row. Reading it anyway is how one
+        dialogue's real street reached another's tool (Б28). Refusing it
+        outright is not the answer either: the documented sidecar client
+        (`docs/integration-diva-backend-api.md`) sends no `conversation_id` at
+        all, and a silent no would break a working integration. So such a leg
+        gets the answer only when the customer has exactly ONE fake street by
+        this name (`_sole_place_owner`) — the same single-candidate rule the
+        conversation scope itself is built on, applied one level wider.
+
+        A host that wants the wide answer regardless says so — by naming the
+        conversation, or by declaring agent memory (`with_pseudonym_scope`),
+        exactly as `is_minted_token` takes the same declaration.
 
         The price is the trade `#conversation-scope` already records: a bare
         street named in one dialogue and asked about in another no longer
@@ -3708,7 +3879,13 @@ class Vault:
             return False
         if any(character.isdigit() for character in name_key):
             return False
-        return bool(minted_in) and minted_in != self._conversation
+        if not minted_in:
+            # Строка тома, записанного до появления столбца: сравнивать не с чем,
+            # и правило её не касается ни в одном режиме.
+            return False
+        if self._conversation:
+            return minted_in != self._conversation
+        return not self._sole_place_owner(name_key)
 
     def resolve_name_keys(self, keys: set[str]) -> dict[str, str]:
         """Resolve NAME tokens the model INFLECTED, by case-invariant key.

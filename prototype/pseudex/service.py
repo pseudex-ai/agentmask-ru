@@ -2,26 +2,33 @@
 LiteLLM callback). We do NOT call the provider; the host does. We only transform
 text + keep the per-org vault + audit. Runs in the customer's contour.
 
-  POST /mask          {org_id, messages, tools, conversation_id?}
+  POST /mask          {org_id, messages, tools, conversation_id?, pseudonym_scope?}
                                                    -> {messages, tools}  (audited)
-  POST /unmask        {org_id, response, conversation_id?}     -> {response}
-  POST /unmask_arguments {org_id, arguments[], conversation_id?} -> {arguments[]}   (streamed tool calls)
-  POST /unmask_chunk  {org_id, delta, carry, flush, conversation_id?} -> {text, carry}  (SSE leg)
+  POST /unmask        {org_id, response, conversation_id?, pseudonym_scope?}     -> {response}
+  POST /unmask_arguments {org_id, arguments[], conversation_id?, pseudonym_scope?} -> {arguments[]}   (streamed tool calls)
+  POST /unmask_chunk  {org_id, delta, carry, flush, conversation_id?, pseudonym_scope?} -> {text, carry}  (SSE leg)
+  POST /spans         {org_id, texts}              -> offsets for highlighting
+  GET  /usage?org_id=...                           -> counts + recent (for UI)
+  GET  /license                                    -> lease state, for monitoring
 
   `conversation_id` on the way back is the SAME id the host gave /mask (or
   derived the same way from the messages), and the restoring legs SHOULD send
   it. Without it the request stands in no dialogue: a WHOLE substitute still
   resolves — it is unique, and only the dialogue it was handed to could have
-  written it — while everything a dialogue decided does not. That is what it
-  was shown (the verbatim literal, the customer's own spelling) and every
-  answer built from a FRAGMENT: a street with no number, a schema field
-  holding part of an address, a date or a group of digits cut out of a longer
-  value. Those come back as the SUBSTITUTE, and the call says so in
-  `residual_tokens` / `X-Pseudex-Residual` rather than resolving them against
-  another dialogue's data.
-  POST /spans         {org_id, texts}              -> offsets for highlighting
-  GET  /usage?org_id=...                           -> counts + recent (for UI)
-  GET  /license                                    -> lease state, for monitoring
+  written it — while an answer built from a FRAGMENT (a street with no number,
+  a schema field holding part of an address, a date or a group of digits cut
+  out of a longer value) is given only when the whole vault holds exactly ONE
+  candidate for it. Where it holds two, the fragment comes back as the
+  SUBSTITUTE and the call says so in `residual_tokens` /
+  `X-Pseudex-Residual` rather than resolving it against another dialogue's
+  data. Naming the conversation is therefore strictly better, and never
+  required.
+
+  `pseudonym_scope` («conversation» | «customer») is the SAME declaration on
+  both legs and defaults to `PSEUDEX_PSEUDONYM_SCOPE`. A host whose agent has
+  memory declares it on /mask and MUST declare it here too: the two legs
+  disagreeing would mean substitutes minted account-wide and restored per
+  dialogue. The body wins over the environment, exactly as on /mask.
 
 Vault is keyed per org_id and persistent, so the host can run many workers/pods
 and still share one consistent token map (the in-process approach can't).
@@ -367,7 +374,7 @@ def _minted_in(texts: list, vault: Vault, for_tool: bool = False) -> set:
 
 
 def _audit_detok(org_id: str, actor: str, before: dict, residual: list,
-                 conversation_id: str) -> None:
+                 conversation_id: str, pseudonym_scope: str) -> None:
     """Record that a detok call disclosed real values — counts only, never values
     (pentest B1). `resolved` = the number of minted tokens the call actually resolved
     (present in the input response, gone from the residual), so a call carrying many
@@ -379,7 +386,7 @@ def _audit_detok(org_id: str, actor: str, before: dict, residual: list,
     # that were not drawn from one vault — a substitute another dialogue minted
     # would be «present before» and never «residual», i.e. reported as a value
     # this call disclosed when it disclosed nothing.
-    vault = _scoped(org_id, conversation_id)
+    vault = _scoped(org_id, conversation_id, pseudonym_scope)
     before_tokens: set = set()
     for text, for_tool in _response_parts(before):
         before_tokens |= _minted_in([text], vault, for_tool)
@@ -631,10 +638,10 @@ async def mask(request: Request) -> JSONResponse:
     # scope` states the whole trade. An unknown value is a 400 rather than a
     # silent fallback: a host that misspells the field must not believe it asked
     # for a scope it did not get.
-    pseudonym_scope = str(body.get("pseudonym_scope", "")) or _PSEUDONYM_SCOPE
-    if pseudonym_scope not in PSEUDONYM_SCOPES:
-        return JSONResponse(
-            {"error": f"pseudonym_scope must be one of {list(PSEUDONYM_SCOPES)}"}, status_code=400)
+    pseudonym_scope = _requested_scope(body)
+    refused = _bad_scope(pseudonym_scope)
+    if refused:
+        return refused
     # ЗНАЧЕНИЯ, КОТОРЫЕ ХОСТ ОБЪЯВЛЯЕТ СВОИМИ: имя ассистента, адрес компании.
     # Список, а не строка: разделять их запятой нельзя — адрес сам её содержит.
     # Пусто по умолчанию, и тогда поведение движка не меняется ни в одном байте.
@@ -683,8 +690,13 @@ async def unmask(request: Request) -> JSONResponse:
     # Detokenization is indexed lookups now, but still SQLite I/O per answer —
     # offload so it never blocks the loop.
     conversation_id = str(body.get("conversation_id", ""))
+    pseudonym_scope = _requested_scope(body)
+    refused = _bad_scope(pseudonym_scope)
+    if refused:
+        return refused
     result = await anyio.to_thread.run_sync(
-        _unmask_for, response, org_id, conversation_id, limiter=_MASK_LIMITER
+        _unmask_for, response, org_id, conversation_id, pseudonym_scope,
+        limiter=_MASK_LIMITER
     )
     # WHAT DID NOT COME BACK. Detokenization is best-effort by construction: a
     # model that reorders or shortens a substitute produces a string that
@@ -695,9 +707,10 @@ async def unmask(request: Request) -> JSONResponse:
     # A LIST, not a boolean, and the values are OUR substitutes: naming them
     # discloses nothing about the customer's data, and the caller needs them to
     # decide what to do — refuse the tool call, retry, or ask the model again.
-    residual = _residual_for(result, org_id, conversation_id)
+    residual = _residual_for(result, org_id, conversation_id, pseudonym_scope)
     await anyio.to_thread.run_sync(
-        _audit_detok, org_id, _detok_actor(body), response, residual, conversation_id
+        _audit_detok, org_id, _detok_actor(body), response, residual, conversation_id,
+        pseudonym_scope
     )
     payload: dict[str, object] = {"response": result}
     if residual:
@@ -750,8 +763,13 @@ async def unmask_arguments_endpoint(request: Request) -> JSONResponse:
     if not isinstance(arguments, list) or not all(isinstance(a, str) for a in arguments):
         return JSONResponse({"error": "arguments must be a list of strings"},
                             status_code=400)
+    pseudonym_scope = _requested_scope(body)
+    refused = _bad_scope(pseudonym_scope)
+    if refused:
+        return refused
     restored, residual, disclosed = await anyio.to_thread.run_sync(
-        _unmask_arguments_for, arguments, org_id, str(body.get("conversation_id", "")), limiter=_MASK_LIMITER
+        _unmask_arguments_for, arguments, org_id, str(body.get("conversation_id", "")),
+        pseudonym_scope, limiter=_MASK_LIMITER
     )
     await anyio.to_thread.run_sync(
         AUDIT.record_detok, org_id, _detok_actor(body), disclosed, len(residual)
@@ -810,9 +828,14 @@ async def unmask_chunk(request: Request) -> JSONResponse:
     carry = body.get("carry", "")
     if not isinstance(delta, str) or not isinstance(carry, str):
         return JSONResponse({"error": "delta and carry must be strings"}, status_code=400)
+    pseudonym_scope = _requested_scope(body)
+    refused = _bad_scope(pseudonym_scope)
+    if refused:
+        return refused
     result = await anyio.to_thread.run_sync(
         _unmask_chunk_leg, delta, carry, org_id, bool(body.get("flush", False)),
-        _detok_actor(body), str(body.get("conversation_id", "")), limiter=_MASK_LIMITER,
+        _detok_actor(body), str(body.get("conversation_id", "")), pseudonym_scope,
+        limiter=_MASK_LIMITER,
     )
     if result is _RATE_LIMITED:
         return JSONResponse({"error": "detok rate limit exceeded"}, status_code=429)
@@ -825,21 +848,51 @@ def _spans_for_texts(texts: list[object], org_id: str) -> list[list[dict[str, ob
     return [_spans_for(text, vault) if isinstance(text, str) else [] for text in texts]
 
 
-def _scoped(org_id: str, conversation_id: str) -> Vault:
-    """The org's vault, in the conversation the host named — see the module
-    docstring on `conversation_id` for the way back."""
+def _scoped(org_id: str, conversation_id: str, pseudonym_scope: str = "") -> Vault:
+    """The org's vault, in the conversation the host named and at the pseudonym
+    scope it declared — see the module docstring for both.
+
+    THE SCOPE IS A PROPERTY OF THE VALUE, NOT OF THE LEG. `with_pseudonym_scope`
+    used to be applied on the masking leg alone, so a customer who configured
+    account-wide pseudonyms got account-wide MINTING and conversation-scoped
+    RESTORING: the substitute an agent recalled from its memory store was
+    recognised on the way in and refused on the way back, which is the one
+    combination that helps nobody. One declaration, both legs."""
     vault = _vault(org_id)
-    return vault.for_conversation(conversation_id) if conversation_id else vault
+    if conversation_id:
+        vault = vault.for_conversation(conversation_id)
+    return vault.with_pseudonym_scope(pseudonym_scope or _PSEUDONYM_SCOPE)
 
 
-def _unmask_arguments_for(arguments: list[str],
-                          org_id: str, conversation_id: str = "") -> tuple[list[str], list[str], int]:
+def _requested_scope(body: dict) -> str:
+    """The pseudonym scope of THIS request: the body over the environment.
+
+    The caller's own word is the more specific statement — a host running one
+    engine for several agents can have memory on one of them — and `/mask`
+    already reads the field this way, so the way back has to read it the same or
+    a host that sets it per request gets two different answers about one value.
+    """
+    return str(body.get("pseudonym_scope", "")) or _PSEUDONYM_SCOPE
+
+
+def _bad_scope(scope: str) -> JSONResponse | None:
+    """400 rather than a silent fallback: a host that misspells the field must
+    not believe it asked for a scope it did not get. Same rule as /mask."""
+    if scope in PSEUDONYM_SCOPES:
+        return None
+    return JSONResponse(
+        {"error": f"pseudonym_scope must be one of {list(PSEUDONYM_SCOPES)}"},
+        status_code=400)
+
+
+def _unmask_arguments_for(arguments: list[str], org_id: str, conversation_id: str = "",
+                          pseudonym_scope: str = "") -> tuple[list[str], list[str], int]:
     """Vault resolved inside the worker thread — see _mask_request. Returns the
     restored arguments, the residual (substitutes that failed to resolve — a fake
     reaching the tool), and the count of real values DISCLOSED (minted tokens in the
     input arguments, gone from the output), which is what the F2 value-based rate
     limit and audit count — many values in one argument count as many, not one."""
-    vault = _scoped(org_id, conversation_id)
+    vault = _scoped(org_id, conversation_id, pseudonym_scope)
     restored = [unmask_arguments(raw, vault) for raw in arguments]
     residual: list[str] = []
     for text in restored:
@@ -849,14 +902,14 @@ def _unmask_arguments_for(arguments: list[str],
     return restored, residual, disclosed
 
 
-def _unmask_for(response: dict[str, object], org_id: str,
-                conversation_id: str = "") -> dict[str, object]:
+def _unmask_for(response: dict[str, object], org_id: str, conversation_id: str = "",
+                pseudonym_scope: str = "") -> dict[str, object]:
     """Vault resolved inside the worker thread — see _mask_request."""
-    return unmask_response(response, _scoped(org_id, conversation_id))
+    return unmask_response(response, _scoped(org_id, conversation_id, pseudonym_scope))
 
 
 def _residual_for(response: dict[str, object], org_id: str,
-                  conversation_id: str) -> list[str]:
+                  conversation_id: str, pseudonym_scope: str) -> list[str]:
     """Substitutes still standing in an already-detokenized answer.
 
     Walks the same text the caller will read, so what it reports is exactly what
@@ -869,7 +922,7 @@ def _residual_for(response: dict[str, object], org_id: str,
     would resolve what the restore refused and report NOTHING for the one case
     the refusal exists to make visible.
     """
-    vault = _scoped(org_id, conversation_id)
+    vault = _scoped(org_id, conversation_id, pseudonym_scope)
     found: list[str] = []
     for text, for_tool in _response_parts(response):
         found.extend(residual_tokens(text, vault, for_tool))
@@ -907,7 +960,7 @@ _RATE_LIMITED = object()  # sentinel: this org is over its per-minute detok VALU
 
 
 def _unmask_chunk_leg(delta: str, carry: str, org_id: str, flush: bool, actor: str,
-                      conversation_id: str = ""):
+                      conversation_id: str = "", pseudonym_scope: str = ""):
     """Streaming detok on the worker thread, behind a minted-token gate (pentest F1). The
     minted tokens in the input (`before`) are computed ONCE — if there are none, the chunk
     cannot disclose a value, so it skips the shared-audit rate SUM and the audit; an
@@ -918,7 +971,7 @@ def _unmask_chunk_leg(delta: str, carry: str, org_id: str, flush: bool, actor: s
     gone from the EMITTED text was disclosed; a token still standing there is a fake that
     reached the caller; one carried to new_carry is split across the boundary, not yet
     emitted, so it is neither."""
-    vault = _scoped(org_id, conversation_id)
+    vault = _scoped(org_id, conversation_id, pseudonym_scope)
     before = _minted_in([carry, delta], vault)
     if not before:
         return unmask_stream_chunk(delta, carry, vault, flush)

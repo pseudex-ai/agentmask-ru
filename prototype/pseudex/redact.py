@@ -2265,16 +2265,23 @@ def _refused_candidates(candidates: set[str], vault: Vault) -> set[str]:
     (`_restore_inflected_spans`), so what is reported is what was refused rather
     than a second guess at it.
 
-    THE VAULT IS ASKED BEFORE THE MORPHOLOGY IS RUN. `refusable_place_keys` is
-    one indexed read and is empty for every customer who has no bare street
-    from another dialogue — which is the ordinary case, and the one that must
-    not pay for this. A candidate carrying a DIGIT can never match: a key with
-    digits names one address and is answered customer-wide by design."""
+    TWO REASONS A ROW STAYS SILENT, AND BOTH HAVE TO BE REPORTED. It may belong
+    to another dialogue (`refusable_place_keys`), or it may be one of SEVERAL
+    substitutes wearing this street name, in which case every fragment lookup
+    refuses whoever asks — including a leg that named no conversation, where the
+    single-candidate rule is the whole permission (`place_key_is_ambiguous`,
+    Б28). The first was reported and the second was not, so «двусмысленность —
+    отказ с ВИДИМЫМ остатком» was half true.
+
+    A CANDIDATE CARRYING A DIGIT IS ASKED NEITHER QUESTION: a key with digits
+    names one address and is answered customer-wide by design, and a house
+    number is a part of half the substitutes a customer has. What is left is one
+    indexed read for the whole call plus one point query per surviving
+    candidate, so the cost tracks the length of the answer and not the size of
+    the vault — the property every other lookup on this leg keeps."""
     if not candidates:
         return set()
     refusable = vault.refusable_place_keys()
-    if not refusable:
-        return set()
     refused: set[str] = set()
     for candidate in candidates:
         if any(character.isdigit() for character in candidate):
@@ -2283,7 +2290,7 @@ def _refused_candidates(candidates: set[str], vault: Vault) -> set[str]:
             key = place_key(candidate)
         except Exception:  # noqa: BLE001 - morphology must never break a response
             continue
-        if key in refusable:
+        if key in refusable or vault.place_key_is_ambiguous(key):
             refused.add(candidate)
     return refused
 

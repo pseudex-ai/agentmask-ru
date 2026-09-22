@@ -15,8 +15,10 @@ the owner; see the report.
 
 Run:  python3 test_detok_security.py
 """
+import contextlib
 import json
 import os
+import secrets
 import sys
 import tempfile
 from pathlib import Path
@@ -207,16 +209,55 @@ def test_unmask_chunk_audited_and_limited() -> None:
         service._BOUND_ORG = ""
 
 
+@contextlib.contextmanager
+def _forced_street(street: str):
+    """Pin the fake street the pool draws, so two dialogues collide ON PURPOSE.
+
+    The draw is random, so a test that waited for the collision would catch the
+    defect about once in forty runs — which is a test that does not exist."""
+    real = secrets.choice
+
+    def choice(seq):
+        seq = list(seq)
+        return street if street in seq else real(seq)
+
+    secrets.choice = choice
+    try:
+        yield
+    finally:
+        secrets.choice = real
+
+
+def _mint_bare_street(org: str, conversation: str, said: str) -> str:
+    """The fake a dialogue is shown for a BARE street — no house, no flat, so
+    the row it writes has the degenerate key. Minted the way the masking leg
+    mints it, because this file stands up no licence server and `/mask` is the
+    one endpoint that needs one; everything asserted below is the RESTORING
+    side, over HTTP."""
+    vault = service._vault(org).for_conversation(conversation)
+    shown = mask_text(said, vault, Detector().detect(said))
+    return shown.split("набережную", 1)[1].strip().rstrip(".,")
+
+
 async def _unnamed_conversation_calls() -> None:
-    """THE RESTORING LEGS HONOUR THE SCOPE EVEN WHEN NOBODY NAMES IT.
+    """A LEG THAT NAMES NO CONVERSATION GETS THE SINGLE CANDIDATE, NOT ALL OF THEM.
 
     `/mask` derives a conversation from the transcript when the host sends no
     `conversation_id` — there is one to derive from. The restoring legs have no
     transcript, so they used to run on the bare customer vault, and the rule
     that keeps one dialogue's bare street out of another's tool
     (`Vault._answers_another_dialogue`) read an empty scope as «nothing to
-    compare» and stood down. The disclosure was therefore open exactly where
-    the value is HANDED BACK, on all three legs at once.
+    compare» and stood down: dialogue B's agent got dialogue A's REAL street
+    (Б28). The disclosure was open exactly where the value is HANDED BACK, on
+    all three legs at once.
+
+    REFUSING OUTRIGHT IS NOT THE FIX, AND THAT IS WHY THIS TEST HAS TWO HALVES.
+    The documented sidecar client (`docs/integration-diva-backend-api.md`,
+    `POST /unmask {org_id, response}`) sends no `conversation_id` at all, so «no
+    dialogue, no answer» silently breaks a working integration. The rule is the
+    one the conversation scope itself stands on: exactly one candidate in the
+    whole vault → answer; two → refuse. So a customer with ONE dialogue about
+    this street keeps working, and a customer with two no longer confuses them.
 
     And the refusal has to be AUDIBLE: D-067 prices the narrowing as «the
     street comes back as a residual token, visibly, instead of answering with
@@ -224,35 +265,49 @@ async def _unnamed_conversation_calls() -> None:
     `residual_tokens` is that silence.
     """
     service._BOUND_ORG = ""
-    org = "unnamed-conv-org"
     gw = {"Authorization": f"Bearer {os.environ['PSEUDEX_GATEWAY_TOKEN']}"}
     transport = httpx.ASGITransport(app=service.app)
-    # A BARE STREET — no house, no flat — is the row with a degenerate key. It
-    # is minted in dialogue A the way the masking leg mints it (this file does
-    # not stand up a licence server, and /mask is the one endpoint that needs
-    # one); everything asserted below is the RESTORING side, over HTTP.
     said = "подъезжаем на набережную Ольгина"
-    minting = service._vault(org).for_conversation("conv-A")
-    detector = Detector()
-    shown = mask_text(said, minting, detector.detect(said))
-    fake = shown.split("набережную", 1)[1].strip().rstrip(".,")
+
+    # ONE CANDIDATE: one dialogue ever spoke of this street.
+    alone = "unnamed-one-candidate"
+    with _forced_street("Каштановой"):
+        only = _mint_bare_street(alone, "conv-A", said)
+    # TWO CANDIDATES: a second dialogue of the same customer is shown a fake
+    # street with the SAME name (its own address carries a house, so the two
+    # rows are two different places wearing one street word).
+    both = "unnamed-two-candidates"
+    with _forced_street("Каштановой"):
+        fake = _mint_bare_street(both, "conv-A", said)
+        second = "адрес изобильная 60 кв 186"
+        mask_text(second, service._vault(both).for_conversation("conv-B"),
+                  Detector().detect(second))
+
     async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+        sole = await client.post("/unmask_arguments", headers=gw, json={
+            "org_id": alone,
+            "arguments": [json.dumps({"street": only}, ensure_ascii=False)]})
         # The agent of ANOTHER dialogue writes that street into a tool argument.
         argument = json.dumps({"street": fake}, ensure_ascii=False)
         nameless = await client.post("/unmask_arguments", headers=gw,
-                                     json={"org_id": org, "arguments": [argument]})
+                                     json={"org_id": both, "arguments": [argument]})
         named = await client.post("/unmask_arguments", headers=gw,
-                                  json={"org_id": org, "conversation_id": "conv-A",
+                                  json={"org_id": both, "conversation_id": "conv-A",
                                         "arguments": [argument]})
         answer = {"choices": [{"message": {"content": f"везём на {fake}"}}]}
         nameless_answer = await client.post("/unmask", headers=gw,
-                                            json={"org_id": org, "response": answer})
+                                            json={"org_id": both, "response": answer})
         chunk = await client.post("/unmask_chunk", headers=gw, json={
-            "org_id": org, "delta": f"везём на {fake}", "carry": "", "flush": True})
+            "org_id": both, "delta": f"везём на {fake}", "carry": "", "flush": True})
+
+    lone = sole.json()
+    check("Ольгина" in lone["arguments"][0] and not lone.get("residual_tokens"),
+          "a client that names no conversation still gets the single candidate",
+          f"{lone}")
 
     body = nameless.json()
     check("Ольгина" not in body["arguments"][0] and fake in body["arguments"][0],
-          "/unmask_arguments with no conversation does not answer with another dialogue's street",
+          "/unmask_arguments with no conversation refuses when two dialogues own the street",
           f"{body['arguments'][0]}")
     check(body.get("residual_tokens") == [fake]
           and nameless.headers.get("X-Pseudex-Residual") == "1",
@@ -266,7 +321,7 @@ async def _unnamed_conversation_calls() -> None:
     answered = nameless_answer.json()
     text = answered["response"]["choices"][0]["message"]["content"]
     check("Ольгина" not in text and fake in text,
-          "/unmask with no conversation does not answer with another dialogue's street",
+          "/unmask with no conversation refuses the ambiguous street too",
           text)
     check(answered.get("residual_tokens") == [fake],
           "…and /unmask reports it as residual too", f"{answered.get('residual_tokens')}")
@@ -283,6 +338,76 @@ def test_unnamed_conversation_is_not_every_conversation() -> None:
         service._BOUND_ORG = ""
 
 
+async def _restoring_leg_takes_the_declared_scope() -> None:
+    """ONE DECLARATION, BOTH LEGS — `pseudonym_scope` on the way BACK.
+
+    `PSEUDEX_PSEUDONYM_SCOPE=customer` and `Vault.with_pseudonym_scope` were
+    applied on the masking leg only, and no `/unmask*` body accepted the field
+    at all. A host whose agent has memory therefore minted account-wide and
+    restored per dialogue — the one combination that helps nobody: the
+    substitute the agent recalled was recognised on the way in and refused on
+    the way out.
+
+    Asserted on the shape the declaration is FOR: a bare street minted in
+    dialogue A, asked about by a dialogue that minted nothing of its own — the
+    agent recalling it out of its memory store. At `conversation` scope it is
+    refused (and visibly so); at `customer` scope, declared in the body, the
+    same call answers. And the body beats the environment, exactly as on
+    `/mask` — that is what lets one engine serve an agent with memory next to
+    one without.
+    """
+    service._BOUND_ORG = ""
+    gw = {"Authorization": f"Bearer {os.environ['PSEUDEX_GATEWAY_TOKEN']}"}
+    transport = httpx.ASGITransport(app=service.app)
+    org = "declared-memory-org"
+    said = "подъезжаем на набережную Ольгина"
+    with _forced_street("Каштановой"):
+        fake = _mint_bare_street(org, "conv-A", said)
+        second = "адрес изобильная 60 кв 186"
+        mask_text(second, service._vault(org).for_conversation("conv-B"),
+                  Detector().detect(second))
+    argument = json.dumps({"street": fake}, ensure_ascii=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+        default = await client.post("/unmask_arguments", headers=gw, json={
+            "org_id": org, "conversation_id": "conv-Z", "arguments": [argument]})
+        declared = await client.post("/unmask_arguments", headers=gw, json={
+            "org_id": org, "conversation_id": "conv-Z", "arguments": [argument],
+            "pseudonym_scope": "customer"})
+        answered = await client.post("/unmask", headers=gw, json={
+            "org_id": org, "conversation_id": "conv-Z", "pseudonym_scope": "customer",
+            "response": {"choices": [{"message": {"content": f"везём на {fake}"}}]}})
+        chunked = await client.post("/unmask_chunk", headers=gw, json={
+            "org_id": org, "conversation_id": "conv-Z", "pseudonym_scope": "customer",
+            "delta": f"везём на {fake}", "carry": "", "flush": True})
+        misspelt = await client.post("/unmask_arguments", headers=gw, json={
+            "org_id": org, "arguments": [argument], "pseudonym_scope": "tenant"})
+
+    check("Ольгина" not in default.json()["arguments"][0]
+          and default.json().get("residual_tokens") == [fake],
+          "conversation scope (the default) still refuses another dialogue's bare street",
+          f"{default.json()}")
+    check("Ольгина" in declared.json()["arguments"][0]
+          and not declared.json().get("residual_tokens"),
+          "…and a body that declares agent memory gets it on /unmask_arguments",
+          f"{declared.json()}")
+    check("Ольгина" in answered.json()["response"]["choices"][0]["message"]["content"],
+          "…on /unmask too",
+          f"{answered.json()}")
+    check("Ольгина" in chunked.json()["text"], "…and on /unmask_chunk",
+          f"{chunked.json()}")
+    check(misspelt.status_code == 400,
+          "a misspelt pseudonym_scope is a 400, never a silent fallback",
+          f"status={misspelt.status_code} body={misspelt.text}")
+
+
+def test_restoring_leg_takes_the_declared_scope() -> None:
+    import anyio
+    try:
+        anyio.run(_restoring_leg_takes_the_declared_scope)
+    finally:
+        service._BOUND_ORG = ""
+
+
 async def _proxy_leg_calls() -> None:
     """THE PROXY'S WAY BACK IS SCOPED TOO, AND BY ITS OWN TRANSCRIPT.
 
@@ -292,6 +417,13 @@ async def _proxy_leg_calls() -> None:
     minted under one transcript is not read under another, the fake stays where
     it stood, and the caller learns about it from `X-Pseudex-Residual`, which
     is the only channel an OpenAI-shaped answer leaves for it.
+
+    AND THE DECLARED PSEUDONYM SCOPE REACHES THIS LEG TOO. This shape carries
+    no body field for it — the envelope is OpenAI's — so the declaration is
+    `PSEUDEX_PSEUDONYM_SCOPE`, and it used to be read on the way IN only: a
+    customer who set it got account-wide minting and conversation-scoped
+    restoring. The last check is the same call under the same stub with the
+    setting on.
 
     The upstream is a stub: what is under test is the pair of legs around it,
     not the provider.
@@ -335,8 +467,13 @@ async def _proxy_leg_calls() -> None:
                                      json={"messages": first, "tools": [
                                          {"type": "function",
                                           "function": {"name": "dispatch"}}]})
+            proxy._PSEUDONYM_SCOPE = "customer"
+            declared = await client.post("/v1/chat/completions", headers=headers, json={
+                "messages": [{"role": "user", "content": "а куда ехать, напомни"}],
+                "tools": [{"type": "function", "function": {"name": "dispatch"}}]})
     finally:
         proxy._forward, proxy.LICENSE, proxy.metering.bill = saved
+        proxy._PSEUDONYM_SCOPE = "conversation"
 
     theirs = other.json()["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
     check("Ольгина" not in theirs and fake in theirs,
@@ -349,6 +486,10 @@ async def _proxy_leg_calls() -> None:
     check("Ольгина" in ours and "X-Pseudex-Residual" not in same.headers,
           "…while the transcript that minted it still gets the real street",
           f"{ours} residual={same.headers.get('X-Pseudex-Residual')}")
+    memory = declared.json()["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+    check("Ольгина" in memory and "X-Pseudex-Residual" not in declared.headers,
+          "…and a host that declared agent memory gets it on the proxy's way back",
+          f"{memory} residual={declared.headers.get('X-Pseudex-Residual')}")
 
 
 def test_proxy_response_leg_is_scoped() -> None:
@@ -385,6 +526,7 @@ def main() -> None:
     test_app_org_bind_and_audit()
     test_unmask_chunk_audited_and_limited()
     test_unnamed_conversation_is_not_every_conversation()
+    test_restoring_leg_takes_the_declared_scope()
     test_proxy_response_leg_is_scoped()
     test_name_trawl_visible()
     failed = [n for ok, n, _ in RESULTS if not ok]

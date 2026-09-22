@@ -698,7 +698,15 @@ async def chat_completions(request: Request):
     # substitute resolved against the customer's whole vault (Б23), a verbatim
     # copy could not be handed the customer's literal string (Б24). Same
     # derivation, same key, on both legs.
-    vault = _get_vault(tenant.customer_id).for_conversation(conversation_key(body["messages"]))
+    #
+    # AND AT THE SAME PSEUDONYM SCOPE. `_context` declares it on the way in; the
+    # way back built a vault without it, so a customer running
+    # `PSEUDEX_PSEUDONYM_SCOPE=customer` — an agent with memory — got
+    # account-wide minting and conversation-scoped restoring. One setting, both
+    # legs, or the setting is a promise only half kept.
+    vault = (_get_vault(tenant.customer_id)
+             .for_conversation(conversation_key(body["messages"]))
+             .with_pseudonym_scope(_PSEUDONYM_SCOPE))
 
     # CPU-heavy morphology runs off the event loop under a capacity limiter, so a
     # burst QUEUES instead of thrashing every core. FAIL-CLOSED is preserved: any
