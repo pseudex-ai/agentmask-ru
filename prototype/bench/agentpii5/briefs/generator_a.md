@@ -1,5 +1,7 @@
 # Brief — component `generator_a` (owner code **GA**)
 
+> **Read `bench/agentpii5/RULINGS.md` before this brief** — the architect's rulings on the questions the first builders raised; where a ruling and this brief disagree, the ruling wins.
+
 You write six NEW case families of the v5 corpus, one per behaviour of
 `contracts.GENERATOR_A_BEHAVIOURS`: `retry_same_tool`,
 `same_tool_other_target`, `sequential_chain`, `parallel`, `fanout_pick`,

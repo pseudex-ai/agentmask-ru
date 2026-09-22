@@ -1,5 +1,7 @@
 # Brief — component `judge` (owner code **J**) — the judge AND the live glue
 
+> **Read `bench/agentpii5/RULINGS.md` before this brief** — the architect's rulings on the questions the first builders raised; where a ruling and this brief disagree, the ruling wins.
+
 You build the LIVE half of v5: the calibrated judge (`judge.py`,
 `calibration.py`), the run glue that reuses v4's three-arm harness and adds
 what the v5 metrics read (`harness.py`), and the serialisers of every v5
@@ -164,7 +166,14 @@ reader_ignores_v5_key`). `HopObservation` rows carry `hop` as a dict and
   `JudgeInput` (restored answer; `oracle_literals` = canonicals of the
   primary identity's items + every seed item a result returned;
   `dialogue_context` = user messages as written + tool results RESTORED
-  (`text_real`) + assistant turns restored; `customer_question` = the last
+  (`text_real`) + the agent's own earlier turns, RESTORED, read off
+  `ArmRunV5.turn_replies` (**ruling R-40**: question 4 asks whether the
+  answer took the dialogue into account, and on `memory_anaphora` /
+  `user_in_loop` it was the AGENT that established what «ему» points at —
+  judging that against the user's messages alone asked about context the
+  judge was never shown. RESTORED because the judge must never see a
+  substitute, and the LAST non-empty turn is left out because it is the
+  evidence and has its own section); `customer_question` = the last
   user message), run `residual_pregate` with the minted substitutes (from
   `gateway.substitutes()` minus real settlements, as v4's `_judge_request`
   does with `strip_leading_city`), then `judge_answer` unless `--no-judge`.

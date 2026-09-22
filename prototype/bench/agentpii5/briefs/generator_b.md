@@ -1,5 +1,7 @@
 # Brief — component `generator_b` (owner code **GB**)
 
+> **Read `bench/agentpii5/RULINGS.md` before this brief** — the architect's rulings on the questions the first builders raised; where a ruling and this brief disagree, the ruling wins.
+
 You own the corpus SPINE of v5 and four new families. Spine: `schema.py`
 (`CaseV5` validation, corpus validation, JSON round trip, digest),
 `scenarios5/common.py` (the concrete `CaseBuilderV5` implementing

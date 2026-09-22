@@ -1,0 +1,782 @@
+"""Every v5 metric as ONE pure function of observations, and nothing else.
+
+A metric here takes `Sequence[RunObservation]` and returns one `Line` — two
+counters, never a rate. The rate, the Clopper–Pearson interval and the «this
+certifies ≥ f%» line are properties of `contracts.Line`, so no caller can
+round a number differently from another caller, and «100%» is never printed
+for a finite sample.
+
+WHAT A METRIC MAY READ. The observations, and only them: the case's
+declarations, the hops `observe.py` produced, and the arm's own records. It
+may NOT read `ic` / `cc` — the v4 paired verdicts. That is not tidiness. v4
+compared arm I with arm C and the comparison CANCELS form: two live models
+normalise a name the same way, so a gateway that hands the agent «Иванову
+Петру» scores equal to a control that never saw a substitute. The v5 form axis
+exists because the check runs INSIDE arm I (spec §1), and a metric that peeked
+at `ic` would quietly restore the defect v5 was built to remove
+(`test_metrics.test_form_lines_ignore_controls`).
+
+COUNTERS, NOT RATES; AND `Line(name, 0, 0)` FOR «NOT APPLICABLE». A metric
+whose population is empty returns a zero-total line and the report prints
+«н/п». Printing 0% instead would say the gateway failed something it was never
+asked to do, which is the cheapest way to make a report unreadable.
+
+EVERY DENOMINATOR IS DECLARED BY THE CASE, NOT BY THE AGENT — except the form
+lines, which count undeclared crossings too. A denominator the agent can
+shrink by acting less is the v4 D3 defect («did the arm act at all») in a new
+coat: an absent required hop is a MISS here, never a smaller total.
+
+Run the test: cd prototype && source .venv/bin/activate
+                && python3 -m bench.agentpii5.test_metrics
+"""
+import difflib
+from collections.abc import Sequence
+from dataclasses import replace
+
+from bench.agentpii4.parts import parts_of
+from bench.agentpii4.schema import PiiItem
+from bench.agentpii4.tools import flatten
+from bench.agentpii5 import contracts
+from bench.agentpii5.contracts import (
+    HopObservation,
+    Line,
+    MentionRecord,
+    Metric,
+    RunObservation,
+    ToolResultRecord,
+)
+from bench.agentpii5.form_tables import (
+    GENERIC_ABBREVIATIONS,
+    GENERIC_STEMS,
+    MARKER_WORDS,
+)
+from bench.agentpii5.observe import (
+    answer_spans,
+    calls_of_turn,
+    covering_piece,
+    fold,
+    items_by_id,
+    pieces_of,
+    result_for_hop,
+    span_of_item,
+    substitute_surfaces,
+)
+
+# Twelve cue words — «the customer named the field». The `cue` axis asks
+# whether detection leans on a nearby label, and a longer list would make every
+# message cued and the axis a constant. Matched as a prefix so «телефона»,
+# «адресу», «родился» all count; `CUE_WINDOW` is the engine's own 60-character
+# window, used here as a definition of «nearby», never imported from it.
+CUE_WORDS: tuple[str, ...] = (
+    "тел", "телефон", "адрес", "улиц", "дом", "кв", "снилс", "инн", "паспорт", "карт",
+    "почт", "родил")
+CUE_WINDOW = 60
+# A reply that rewrote more than 30% of the control's is flagged. The public
+# harness's own threshold (`Scores.rewrite_flagged`), kept identical so the two
+# numbers can be read side by side.
+REWRITE_RATIO_FLOOR = 0.7
+# Words that are grammar, not identity: a surviving «улица» or «д.» in a masked
+# tool result is not a leak, and counting it as one would make `coverage`
+# refuse every address the mock renders with its generic word.
+GRAMMAR_WORDS: frozenset[str] = frozenset(
+    (*GENERIC_STEMS, *GENERIC_ABBREVIATIONS, *MARKER_WORDS))
+
+
+# --- shared readers --------------------------------------------------------------------
+
+def _line(name: str, hits: int, total: int) -> Line:
+    return Line(name=name, hits=hits, total=total)
+
+
+def _hops(observations: Sequence[RunObservation], kind: str) -> list[tuple[RunObservation, HopObservation]]:
+    return [(one, hop) for one in observations for hop in one.hops if hop.hop.kind == kind]
+
+
+def _owned(observations: Sequence[RunObservation], kind: str,
+           owners: tuple[str, ...]) -> list[tuple[RunObservation, HopObservation]]:
+    return [(one, hop) for one, hop in _hops(observations, kind) if hop.hop.owner in owners]
+
+
+def _declared_hop(one: RunObservation, index: int) -> HopObservation | None:
+    return next((hop for hop in one.hops if hop.declared and hop.hop.hop_index == index), None)
+
+
+def _item_of(one: RunObservation, item_id: str) -> PiiItem | None:
+    return items_by_id(one.case).get(item_id)
+
+
+def value_matches(pii_type: str, produced: str, target: str) -> bool:
+    """Did the consumer receive THE value, byte for byte.
+
+    LOC is the one exception, and it is not leniency: an address is carried by
+    several fields and joined with `FIELD_SEP`, so the string can never equal a
+    one-line canonical. The roles are compared instead — street, house, flat —
+    and the city is left out because a tool that stores the city in its own
+    field is not a different address."""
+    if pii_type == "LOC":
+        left, right = parts_of("LOC", produced.replace(contracts.FIELD_SEP, ", ")), parts_of("LOC", target)
+        roles = [role for role in ("street", "house", "flat") if role in right]
+        return bool(roles) and all(fold(left.get(role, "")) == fold(right[role]) for role in roles)
+    return fold(produced.strip()) == fold(target.strip())
+
+
+def value_repaired(pii_type: str, produced: str, target: str) -> bool:
+    """The value arrived REPAIRED rather than as written: the canonical date
+    notation, the nominative of a name, the digits of a phone. Diagnostic only
+    (`round_trip_repaired`); the promise the product makes is `round_trip`, and
+    folding the two would let a normalisation that costs the reader the verbatim
+    text be bought back by the same line that measures it."""
+    if value_matches(pii_type, produced, target):
+        return True
+    if pii_type in ("DOB", "DATE"):
+        return bool(parts_of("DOB", produced)) and parts_of("DOB", produced) == parts_of("DOB", target)
+    if pii_type == "NAME":
+        left, right = parts_of("NAME", produced), parts_of("NAME", target)
+        roles = sorted(set(left) & set(right))
+        return bool(roles) and all(fold(left[role])[:4] == fold(right[role])[:4] for role in roles)
+    if pii_type == "PHONE":
+        left, right = parts_of("PHONE", produced), parts_of("PHONE", target)
+        return bool(left.get("digits")) and left.get("digits") == right.get("digits")
+    return False
+
+
+def _surviving_piece(pii_type: str, reference: str, masked: str) -> bool:
+    """A piece of the real value still standing in what the model read."""
+    folded = fold(masked)
+    return any(fold(piece) in folded and fold(piece) not in GRAMMAR_WORDS
+               for piece in pieces_of(pii_type, reference))
+
+
+def _mentions_of(one: RunObservation, item_id: str) -> list[MentionRecord]:
+    return [mention for mention in one.run.mentions if mention.item_id == item_id]
+
+
+def _results_with_pii(one: RunObservation) -> list[ToolResultRecord]:
+    return [record for record in one.run.tool_results if record.spans_real]
+
+
+# --- §4.2 the public lines -------------------------------------------------------------
+
+def leak(observations: Sequence[RunObservation]) -> Line:
+    """Values the gateway ALTERED before the model saw them, over every value
+    it was shown. Type-blind by construction — «the datum was protected» — and
+    never summed with `coverage`, which asks the harder question."""
+    rows = _hops(observations, "IN")
+    return _line("leak", sum(1 for _one, hop in rows if hop.status != "leaked"), len(rows))
+
+
+def coverage(observations: Sequence[RunObservation]) -> Line:
+    """Values of which NO piece survived. The number `leak` cannot give: a
+    «Кузнецов Дмитрий» detected as «Дмитрий» is a leak of the surname that the
+    leak line calls a success. City, generic word and markers are exempt — they
+    are place references and grammar, not the person."""
+    hits = 0
+    total = 0
+    for one, hop in _hops(observations, "IN"):
+        if hop.status not in ("observed", "leaked"):
+            continue
+        total += 1
+        if hop.status != "observed":
+            continue
+        if hop.hop.owner in ("tool", "document"):
+            record = result_for_hop(one.run, hop.hop)
+            masked = record.text_masked if record is not None else ""
+            hits += 0 if _surviving_piece(hop.pii_type, hop.reference, masked) else 1
+        else:
+            item = _item_of(one, hop.hop.item_id)
+            spans = one.run.base.masked_spans.get(item.where.msg, ()) if item is not None else ()
+            inside = item is not None and any(
+                start <= item.where.start and item.where.end <= end for start, end in spans)
+            hits += 1 if inside else 0
+    return _line("coverage", hits, total)
+
+
+def typed(observations: Sequence[RunObservation]) -> Line:
+    """Did the gateway also call it the right type. Only over results where it
+    EXPOSED a type: `DOB` and `DATE` are one answer (a birth date is a date),
+    and a maskers that exposes nothing gets `Line(0, 0)` and «н/п», never 0%."""
+    hits = 0
+    total = 0
+    for one, hop in _owned(observations, "IN", ("tool", "document")):
+        record = result_for_hop(one.run, hop.hop)
+        span = span_of_item(record, hop.hop.item_id) if record is not None else None
+        piece = covering_piece(record, span) if record is not None and span is not None else None
+        if piece is None:
+            continue
+        total += 1
+        pair = {piece[3], hop.pii_type}
+        hits += 1 if piece[3] == hop.pii_type or pair == {"DOB", "DATE"} else 0
+    return _line("typed", hits, total)
+
+
+def _altered_with_parameter(observations: Sequence[RunObservation]) -> list[tuple[RunObservation, HopObservation, PiiItem]]:
+    """Items the gateway altered on the way IN and a tool consumes on the way
+    OUT. The public denominator, and the reason it is not «all items»:
+    restoring a value nobody masked is not an achievement."""
+    out: list[tuple[RunObservation, HopObservation, PiiItem]] = []
+    for one in observations:
+        altered = {hop.hop.item_id for hop in one.hops
+                   if hop.hop.kind == "IN" and hop.hop.owner == "user" and hop.status == "observed"}
+        for hop in one.hops:
+            if not (hop.declared and hop.hop.kind == "OUT" and hop.hop.owner == "tool_arg"):
+                continue
+            item = _item_of(one, hop.hop.item_id)
+            if item is not None and item.id in altered:
+                out.append((one, hop, item))
+    return out
+
+
+def round_trip(observations: Sequence[RunObservation]) -> Line:
+    """The tool received the REAL canonical value. Absolute, not a comparison
+    of arms: v4 could say «the gateway arm wrote what the control wrote» and
+    both could be wrong. Equality to `canonical` only — a repaired value is
+    counted by `round_trip_repaired` and nowhere else (§4.4 «без фолбэков»)."""
+    rows = _altered_with_parameter(observations)
+    hits = sum(1 for _one, hop, item in rows
+               if hop.status == "observed" and value_matches(item.type, hop.produced, item.canonical))
+    return _line("round_trip", hits, len(rows))
+
+
+def round_trip_repaired(observations: Sequence[RunObservation]) -> Line:
+    """DIAGNOSTIC. The same population counting a value that arrived repaired.
+    The gap between this line and `round_trip` is exactly what the engine's
+    normalisation costs a reader who wanted the text verbatim."""
+    rows = _altered_with_parameter(observations)
+    hits = sum(1 for _one, hop, item in rows
+               if hop.status == "observed" and value_repaired(item.type, hop.produced, item.canonical))
+    return _line("round_trip_repaired", hits, len(rows))
+
+
+def end_to_end(observations: Sequence[RunObservation]) -> Line:
+    """«The agent still works»: the tool got the real value, over ALL declared
+    tool arguments — including the ones the gateway never masked and the ones
+    the agent never wrote. A passthrough scores 100% here, and that is the
+    point: this line and `leak` are the two halves of the product's promise."""
+    hits = 0
+    total = 0
+    for one, hop in _owned(observations, "OUT", ("tool_arg",)):
+        if not hop.declared:
+            continue
+        total += 1
+        item = _item_of(one, hop.hop.item_id)
+        hits += 1 if (hop.status == "observed" and item is not None
+                      and value_matches(item.type, hop.produced, item.canonical)) else 0
+    return _line("end_to_end", hits, total)
+
+
+def overmask(observations: Sequence[RunObservation]) -> Line:
+    """Negatives that survived. Recall without precision is bought by one line
+    that masks everything, so this line is scored as hard as `leak`."""
+    hits = 0
+    total = 0
+    for one in observations:
+        for negative in one.case.base.negatives:
+            total += 1
+            spans = one.run.base.masked_spans.get(negative.msg, ())
+            covered = any(start < negative.end and negative.start < end for start, end in spans)
+            hits += 0 if covered else 1
+    return _line("overmask", hits, total)
+
+
+def consistency(observations: Sequence[RunObservation]) -> Line:
+    """One value, one substitute, across MESSAGES. The model has to believe the
+    second mention is the same person, and it cannot if the gateway re-minted."""
+    hits = 0
+    total = 0
+    for one in observations:
+        for item in one.case.base.pii:
+            mentions = _mentions_of(one, item.id)
+            if len({mention.msg for mention in mentions}) < 2:
+                continue
+            total += 1
+            hits += 1 if len({mention.substitute for mention in mentions}) == 1 else 0
+    return _line("consistency", hits, total)
+
+
+def stability(observations: Sequence[RunObservation]) -> Line:
+    """The substitute did not change between REQUESTS. A growing transcript
+    re-sends the first message every turn; a substitute that moves turns one
+    person into several in the model's context."""
+    hits = 0
+    total = 0
+    for one in observations:
+        for item in one.case.base.pii:
+            mentions = _mentions_of(one, item.id)
+            if len({mention.request_index for mention in mentions}) < 2:
+                continue
+            total += 1
+            hits += 1 if len({mention.substitute for mention in mentions}) == 1 else 0
+    return _line("stability", hits, total)
+
+
+def rewrite_ratio(observations: Sequence[RunObservation]) -> Line:
+    """DIAGNOSTIC. How often the gateway arm's reply is a different TEXT from
+    the control's. Counted from `ArmRunV5.control_reply`, never from `ic`: the
+    v4 verdicts are None on every fixture by contract, and a diagnostic that
+    can only fire on a live run is a diagnostic the gate must refuse."""
+    hits = 0
+    total = 0
+    for one in observations:
+        control, gateway = one.run.control_reply, one.run.base.reply
+        if not control or not gateway:
+            continue
+        total += 1
+        hits += 1 if difflib.SequenceMatcher(None, control, gateway).ratio() < REWRITE_RATIO_FLOOR else 0
+    return _line("rewrite_ratio", hits, total)
+
+
+def shared_block(observations: Sequence[RunObservation]) -> Line:
+    """DIAGNOSTIC. Answer spans the alignment could not assign to ONE item —
+    «Кудрявцевой Диане» rewritten as one block. Not a defect on its own; it is
+    the warning that every per-item number over those spans is an attribution,
+    and the report says so rather than letting a reader assume otherwise."""
+    hits = 0
+    total = 0
+    for one in observations:
+        for span in answer_spans(one.case, one.run):
+            total += 1
+            hits += 1 if len(set(span.item_ids)) > 1 else 0
+    return _line("shared_block", hits, total)
+
+
+# --- §4.3 the v5 lines -----------------------------------------------------------------
+
+def form_hIN(observations: Sequence[RunObservation]) -> Line:  # noqa: N802 - the metric's name
+    """Did the SUBSTITUTE wear the source's form. Declared and undeclared hops
+    both: a crossing is a crossing whether or not the case foresaw it."""
+    rows = [hop for _one, hop in _hops(observations, "IN") if hop.status == "observed"]
+    return _line("form_hIN", sum(1 for hop in rows if hop.verdict is not None and hop.verdict.same), len(rows))
+
+
+def form_hOUT(observations: Sequence[RunObservation]) -> Line:  # noqa: N802 - the metric's name
+    """Did the REAL value come back in the AGENT's form — the form read off the
+    agent's own output, never a canonical the benchmark chose."""
+    rows = [hop for _one, hop in _hops(observations, "OUT") if hop.status == "observed"]
+    return _line("form_hOUT", sum(1 for hop in rows if hop.verdict is not None and hop.verdict.same), len(rows))
+
+
+def toolresult_masked(observations: Sequence[RunObservation]) -> Line:
+    """Tool results where not one real value reached the model. The leg v4 could
+    not score at all: its `ArmRun` kept no result text, so a mock that answered
+    with the customer's real phone was invisible to every level."""
+    hits = 0
+    total = 0
+    for one in observations:
+        for record in _results_with_pii(one):
+            total += 1
+            hits += 1 if all(covering_piece(record, span) is not None
+                             for span in record.spans_real.values()) else 0
+    return _line("toolresult_masked", hits, total)
+
+
+def answer_real(observations: Sequence[RunObservation]) -> Line:
+    """Answers where every datum is the REAL value in the agent's own form.
+    One observation is one answer: an answer with four data and one substitute
+    left in it is not 3/4 right, it is wrong, and the customer sees it."""
+    hits = 0
+    total = 0
+    for one in observations:
+        rows = [hop for hop in one.hops
+                if hop.declared and hop.hop.kind == "OUT" and hop.hop.owner == "answer"]
+        if not rows:
+            continue
+        total += 1
+        required = [hop for hop in rows if not hop.hop.optional]
+        good = all(hop.status == "observed" and hop.verdict is not None and hop.verdict.same
+                   for hop in required)
+        hits += 1 if good and not any(hop.status == "residual" for hop in rows) else 0
+    return _line("answer_real", hits, total)
+
+
+def _transitions(observations: Sequence[RunObservation]) -> list[tuple[RunObservation, HopObservation, HopObservation]]:
+    """A→B: a declared OUT hop whose `source_hop` points at an IN/tool hop of
+    ANOTHER tool. «Another» is the whole content of the chain family — a tool
+    fed its own result back would be measuring nothing."""
+    out: list[tuple[RunObservation, HopObservation, HopObservation]] = []
+    for one in observations:
+        for hop in one.hops:
+            if not (hop.declared and hop.hop.kind == "OUT" and hop.hop.source_hop != -1):
+                continue
+            source = _declared_hop(one, hop.hop.source_hop)
+            if source is None or source.hop.kind != "IN" or source.hop.owner != "tool":
+                continue
+            if source.hop.tool_name == hop.hop.tool_name:
+                continue
+            out.append((one, hop, source))
+    return out
+
+
+def chain_value(observations: Sequence[RunObservation]) -> Line:
+    """Did the value survive the hand-over: the real value B received equals the
+    real value A returned, and the two hops are the SAME identity. Identity is
+    checked because a chain that carried another person's value of the same type
+    looks identical on the value axis and is the worst failure the product has."""
+    rows = _transitions(observations)
+    hits = 0
+    for one, hop, source in rows:
+        left, right = _item_of(one, hop.hop.item_id), _item_of(one, source.hop.item_id)
+        same_identity = left is not None and right is not None and left.identity == right.identity
+        hits += 1 if (hop.status == "observed" and same_identity
+                      and value_matches(hop.pii_type, hop.produced, source.reference)) else 0
+    return _line("chain_value", hits, len(rows))
+
+
+def chain_form(observations: Sequence[RunObservation]) -> Line:
+    """Same population, the other question: did B receive it in the AGENT's
+    form. A tool's canon leaking through the agent into the next tool is the
+    failure this line exists to name."""
+    rows = _transitions(observations)
+    hits = sum(1 for _one, hop, _source in rows
+               if hop.status == "observed" and hop.verdict is not None and hop.verdict.same)
+    return _line("chain_form", hits, len(rows))
+
+
+def _multi_turns(observations: Sequence[RunObservation]) -> list[tuple[RunObservation, int, list[HopObservation]]]:
+    out: list[tuple[RunObservation, int, list[HopObservation]]] = []
+    for one in observations:
+        turns: dict[int, list[HopObservation]] = {}
+        for hop in one.hops:
+            if (hop.declared and hop.hop.kind == "OUT" and hop.hop.owner == "tool_arg"
+                    and not hop.hop.optional):
+                turns.setdefault(hop.hop.turn, []).append(hop)
+        for turn, rows in sorted(turns.items()):
+            if len(rows) >= 2:
+                out.append((one, turn, rows))
+    return out
+
+
+def multi_all_out(observations: Sequence[RunObservation]) -> Line:
+    """Turns where EVERY argument is right in value and in form. ORDER IS NOT A
+    CONDITION: a model that books the second parcel first has not broken the
+    customer's data, and scoring the permutation would make the line a measure
+    of the model's taste rather than of the gateway."""
+    rows = _multi_turns(observations)
+    hits = 0
+    for one, _turn, hops in rows:
+        good = True
+        for hop in hops:
+            item = _item_of(one, hop.hop.item_id)
+            if not (hop.status == "observed" and hop.verdict is not None and hop.verdict.same
+                    and item is not None and value_matches(item.type, hop.produced, item.canonical)):
+                good = False
+        hits += 1 if good else 0
+    return _line("multi_all_out", hits, len(rows))
+
+
+def multi_consistency(observations: Sequence[RunObservation]) -> Line:
+    """Turns where one value got ONE substitute across all the calls of the
+    turn. Read off what the agent WROTE, so a second substitute the gateway
+    minted for the second call is visible even when both calls parse."""
+    hits = 0
+    total = 0
+    for one in observations:
+        turns = sorted({turn for turn in one.run.call_turns})
+        for turn in turns:
+            calls = calls_of_turn(one.run, turn)
+            if len(calls) < 2:
+                continue
+            total += 1
+            good = True
+            for item in one.case.base.pii:
+                spellings = substitute_surfaces(one.run, item.id)
+                seen = {spelling for _index, call in calls for spelling in spellings
+                        if spelling and any(spelling in text for text in _written_texts(call.written))}
+                if len(seen) > 1:
+                    good = False
+            hits += 1 if good else 0
+    return _line("multi_consistency", hits, total)
+
+
+def _written_texts(written: dict[str, object]) -> list[str]:
+    return [value for value in flatten(written).values() if isinstance(value, str)]
+
+
+def _retries(observations: Sequence[RunObservation]) -> list[tuple[RunObservation, int, str, list[HopObservation]]]:
+    """(observation, turn, tool) where the tool was called twice in one turn and
+    something REFUSED the earlier attempt — a scripted `ForcedError` or the
+    mock's own refusal. Without that condition a model that simply called twice
+    would be counted as a retry and the family's denominator would be the
+    model's mood."""
+    out: list[tuple[RunObservation, int, str, list[HopObservation]]] = []
+    for one in observations:
+        for turn in sorted({turn for turn in one.run.call_turns}):
+            calls = calls_of_turn(one.run, turn)
+            names = {call.name for _index, call in calls}
+            for name in sorted(names):
+                attempts = [call for _index, call in calls if call.name == name]
+                if len(attempts) < 2:
+                    continue
+                forced = any(error.tool_name == name for error in one.case.forced)
+                refused = any(call.refusal_rule for call in attempts[:-1])
+                if not (forced or refused):
+                    continue
+                hops = [hop for hop in one.hops
+                        if hop.declared and hop.hop.kind == "OUT" and hop.hop.tool_name == name
+                        and hop.hop.turn == turn]
+                out.append((one, turn, name, hops))
+    return out
+
+
+def retry_form(observations: Sequence[RunObservation]) -> Line:
+    """Retries where the form matched the agent's own on EVERY attempt —
+    including the attempt where the agent changed its mind and wrote «8 916…»
+    after «+7 916…». Following the agent is the promise; following the first
+    attempt only is a gateway that stopped listening."""
+    rows = _retries(observations)
+    hits = sum(1 for _one, _turn, _name, hops in rows
+               if hops and all(hop.status == "observed" and hop.verdict is not None
+                               and hop.verdict.same for hop in hops))
+    return _line("retry_form", hits, len(rows))
+
+
+def memory_consistency(observations: Sequence[RunObservation]) -> Line:
+    """A value mentioned at turn 1 and needed at turn 7 kept ONE substitute.
+    An anaphoric recall says no value, so it leaves no mention: the item still
+    counts once, judged on the mentions it does have."""
+    hits = 0
+    total = 0
+    for one in observations:
+        for spec in one.case.memory:
+            total += 1
+            seen = {mention.substitute for mention in _mentions_of(one, spec.item_id)}
+            hits += 1 if len(seen) == 1 else 0
+    return _line("memory_consistency", hits, total)
+
+
+def memory_stability(observations: Sequence[RunObservation]) -> Line:
+    """The substitute did not change between requests of ONE conversation. A
+    new conversation is a new observation and a new substitute there is the
+    conversation scope working, never a miss — which is why the population is
+    per observation and never pooled across them."""
+    hits = 0
+    total = 0
+    for one in observations:
+        for item in one.case.base.pii:
+            mentions = _mentions_of(one, item.id)
+            if len({mention.request_index for mention in mentions}) < 2:
+                continue
+            total += 1
+            hits += 1 if len({mention.substitute for mention in mentions}) == 1 else 0
+    return _line("memory_stability", hits, total)
+
+
+def _rag_chunks(one: RunObservation) -> list[tuple[ToolResultRecord, str, list[tuple[int, int]]]]:
+    """(record, chunk id, spans) for each chunk the case's `RagSpec` names. A
+    chunk is a SEED RECORD rendered into the result, so its spans are the slots
+    of the items that record carries — the mock's own tags, never a split of the
+    text by eye."""
+    if one.case.rag is None:
+        return []
+    items = items_by_id(one.case)
+    out: list[tuple[ToolResultRecord, str, list[tuple[int, int]]]] = []
+    for record in one.run.tool_results:
+        if record.tool_name != one.case.rag.tool_name:
+            continue
+        for chunk_id in one.case.rag.chunk_ids:
+            spans = [span for tag, span in sorted(record.spans_real.items())
+                     if _tagged_item(items, tag) is not None
+                     and _tagged_item(items, tag).where.record == chunk_id]
+            out.append((record, chunk_id, spans))
+    return out
+
+
+def _tagged_item(items: dict[str, PiiItem], tag: str) -> PiiItem | None:
+    return items.get(tag.removeprefix(contracts.ECHO_TAG_PREFIX))
+
+
+def rag_masked(observations: Sequence[RunObservation]) -> Line:
+    """Retrieval chunks where no real value reached the model — including the
+    values of OTHER people the retriever happened to return. A chunk with two
+    identities and one of them masked is a miss, not a half."""
+    hits = 0
+    total = 0
+    for one in observations:
+        for record, _chunk_id, spans in _rag_chunks(one):
+            if not spans:
+                continue
+            total += 1
+            hits += 1 if all(covering_piece(record, span) is not None for span in spans) else 0
+    return _line("rag_masked", hits, total)
+
+
+def rag_identity_kept(observations: Sequence[RunObservation]) -> Line:
+    """Foreign identities in the chunks kept APART from the customer.
+
+    Two ways to fail, and both are checked: the foreign person's real value
+    reaching a tool argument written for the customer, and the customer's own
+    substitute standing where the foreign value stood — the gateway deciding
+    two people are one."""
+    hits = 0
+    total = 0
+    for one in observations:
+        if one.case.rag is None:
+            continue
+        items = items_by_id(one.case)
+        customer = one.case.base.expects.primary_identity
+        own_subs = {spelling for item in one.case.base.pii if item.identity == customer
+                    for spelling in substitute_surfaces(one.run, item.id) if spelling}
+        out_values = [hop.produced for hop in one.hops
+                      if hop.hop.kind == "OUT" and (_item_of(one, hop.hop.item_id) is not None
+                                                    and _item_of(one, hop.hop.item_id).identity == customer)]
+        for identity in one.case.rag.foreign_identities:
+            total += 1
+            foreign = [item for item in one.case.base.pii if item.identity == identity]
+            bled = any(fold(item.value) in fold(text) for item in foreign for text in out_values if text)
+            merged = False
+            for record in one.run.tool_results:
+                for tag, span in record.spans_real.items():
+                    owner = _tagged_item(items, tag)
+                    if owner is None or owner.identity != identity:
+                        continue
+                    piece = covering_piece(record, span)
+                    if piece is not None and piece[2] in own_subs:
+                        merged = True
+            hits += 0 if (bled or merged) else 1
+    return _line("rag_identity_kept", hits, total)
+
+
+def doc_masked(observations: Sequence[RunObservation]) -> Line:
+    """Documents where every real value was masked. One document is one unit:
+    a CSV whose fourth row leaked is a leaked document, and a per-row rate would
+    let a hundred clean rows pay for it."""
+    hits = 0
+    total = 0
+    for one in observations:
+        if one.case.document is None:
+            continue
+        total += 1
+        records = [record for record in one.run.tool_results
+                   if record.tool_name == one.case.document.read_tool]
+        good = bool(records) and all(covering_piece(record, span) is not None
+                                     for record in records for span in record.spans_real.values())
+        hits += 1 if good else 0
+    return _line("doc_masked", hits, total)
+
+
+def doc_extracted(observations: Sequence[RunObservation]) -> Line:
+    """Values the agent lifted OUT of the document and into the tool, counted
+    on whether the tool got the real one. The other half of `doc_masked`: a
+    document perfectly masked whose values never come back is useless."""
+    hits = 0
+    total = 0
+    for one in observations:
+        if one.case.document is None:
+            continue
+        for item_id in one.case.document.extracted_item_ids:
+            total += 1
+            item = _item_of(one, item_id)
+            hop = next((one_hop for one_hop in one.hops
+                        if one_hop.declared and one_hop.hop.kind == "OUT"
+                        and one_hop.hop.item_id == item_id
+                        and one_hop.hop.tool_name == one.case.document.extract_to_tool), None)
+            hits += 1 if (hop is not None and item is not None and hop.status == "observed"
+                          and value_matches(item.type, hop.produced, item.canonical)) else 0
+    return _line("doc_extracted", hits, total)
+
+
+def residual(observations: Sequence[RunObservation]) -> Line:
+    """A substitute that reached a tool or the customer. THE critical defect —
+    the tool's JSON is well formed, the status is 200, and a fake is now in the
+    customer's CRM. Counted per OUT leaf AND per answer, because an answer with
+    no declared hop still reaches a human."""
+    rows = _hops(observations, "OUT")
+    hits = sum(1 for _one, hop in rows if hop.status != "residual")
+    for one in observations:
+        clean = not any(hop.hop.kind == "OUT" and hop.hop.owner == "answer" and hop.status == "residual"
+                        for hop in one.hops)
+        hits += 1 if clean else 0
+    return _line("residual", hits, len(rows) + len(observations))
+
+
+METRIC_FUNCTIONS: dict[str, Metric] = {
+    "leak": leak, "coverage": coverage, "typed": typed, "round_trip": round_trip,
+    "round_trip_repaired": round_trip_repaired, "end_to_end": end_to_end, "overmask": overmask,
+    "consistency": consistency, "stability": stability, "rewrite_ratio": rewrite_ratio,
+    "shared_block": shared_block,
+    "form_hIN": form_hIN, "form_hOUT": form_hOUT, "toolresult_masked": toolresult_masked,
+    "answer_real": answer_real, "chain_value": chain_value, "chain_form": chain_form,
+    "multi_all_out": multi_all_out, "multi_consistency": multi_consistency,
+    "retry_form": retry_form, "memory_consistency": memory_consistency,
+    "memory_stability": memory_stability, "rag_masked": rag_masked,
+    "rag_identity_kept": rag_identity_kept, "doc_masked": doc_masked,
+    "doc_extracted": doc_extracted, "residual": residual,
+}
+
+
+# --- the axes --------------------------------------------------------------------------
+
+def _cue_bucket(one: RunObservation, hop: HopObservation) -> str:
+    item = _item_of(one, hop.hop.item_id)
+    if item is None or item.where.kind != "message" or item.where.msg < 0:
+        return "нет"
+    if item.where.msg >= len(one.case.base.messages):
+        return "нет"
+    text = fold(one.case.base.messages[item.where.msg].content)
+    window = text[max(0, item.where.start - CUE_WINDOW):item.where.end + CUE_WINDOW]
+    return "есть" if any(word in window for word in CUE_WORDS) else "нет"
+
+
+def _return_form_bucket(one: RunObservation, hop: HopObservation) -> str:
+    if hop.hop.kind == "IN" and hop.hop.owner in ("tool", "document"):
+        record = result_for_hop(one.run, hop.hop)
+        return record.return_form if record is not None else "—"
+    declared = [expect.return_form for expect in one.case.returns
+                if expect.tool_name == hop.hop.tool_name]
+    return declared[0] if declared else "—"
+
+
+def _hop_bucket(axis: str, one: RunObservation, hop: HopObservation) -> str:
+    if axis == "vertical":
+        return contracts.TOOL_VERTICAL.get(hop.hop.tool_name, "—")
+    if axis == "hop_owner":
+        return f"{hop.hop.kind}/{hop.hop.owner}"
+    if axis == "pii_type":
+        return hop.pii_type
+    if axis == "return_form":
+        return _return_form_bucket(one, hop)
+    return _cue_bucket(one, hop)
+
+
+HOP_AXES: tuple[str, ...] = ("vertical", "hop_owner", "pii_type", "return_form", "cue")
+
+
+def by_axis(observations: Sequence[RunObservation], axis: str) -> dict[str, list[RunObservation]]:
+    """One axis at a time, never two crossed — the public harness's rule, for
+    the public harness's reason: a cell of eight items has an interval wider
+    than any difference worth reading.
+
+    A HOP-level axis splits the HOPS, not the observations: the bucket gets a
+    copy of the observation carrying only its own hops, so `form_hOUT` by
+    `pii_type` counts NAME hops under NAME and nowhere else, while the run's
+    records stay reachable for the metrics that need them."""
+    if axis not in contracts.AXES:
+        raise ValueError(f"by_axis: {axis!r} is not one of contracts.AXES ({list(contracts.AXES)})")
+    buckets: dict[str, list[RunObservation]] = {}
+    if axis in HOP_AXES:
+        for one in observations:
+            split: dict[str, list[HopObservation]] = {}
+            for hop in one.hops:
+                split.setdefault(_hop_bucket(axis, one, hop), []).append(hop)
+            for name, rows in split.items():
+                buckets.setdefault(name, []).append(replace(one, hops=tuple(rows)))
+        return buckets
+    for one in observations:
+        if axis == "register":
+            name = one.case.base.register
+        elif axis == "family":
+            name = one.case.base.kind
+        elif axis == "behaviour":
+            name = one.case.behaviour
+        else:
+            name = "rare" if one.case.base.provenance.selection == "rare" else "authored"
+        buckets.setdefault(name, []).append(one)
+    return buckets
+
+
+def main() -> int:
+    from bench.agentpii5.test_metrics import main as run_tests
+    return run_tests()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

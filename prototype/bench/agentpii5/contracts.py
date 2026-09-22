@@ -166,6 +166,24 @@ BEHAVIOURS: tuple[str, ...] = (
     "rag",                     # query with PII → k chunks with PII, some of OTHER people
     "document",                # the agent reads a file (CSV / form / free text / scan) and extracts
 )
+
+# The v4 `Case.kind` a v5 family stamps on `base`: v4's `validate` refuses any
+# kind outside `v4.SCENARIO_KINDS`, so a behaviour name in `kind` fails R02 on
+# every case. The id and the random stream still carry the behaviour. Normative
+# here (ruling 2026-09-22); `scenarios5/common.py` imports it.
+V4_KIND_FOR_BEHAVIOUR: dict[str, str] = {
+    "single": "result_feed",                 # a result feeds the answer: the base loop
+    "retry_same_tool": "normalize",          # the service refuses the form, the agent rewrites it
+    "same_tool_other_target": "compare",     # two real records, told apart
+    "sequential_chain": "chain",             # lookup -> result -> next call
+    "parallel": "analytics",                 # several people addressed in one move
+    "fanout_pick": "lookup_list",            # a list of other people's records, one chosen
+    "branching": "prompt_rule",              # a rule in the prompt decides the call
+    "user_in_loop": "long_clinic",           # find, show, confirm, act
+    "memory_anaphora": "long_support",       # a long dialogue retold at the end
+    "rag": "search_rank",                    # top-k from a directory
+    "document": "container",                 # personal data inside a file payload
+}
 GENERATOR_A_BEHAVIOURS: tuple[str, ...] = (
     "retry_same_tool", "same_tool_other_target", "sequential_chain", "parallel",
     "fanout_pick", "branching")
@@ -220,7 +238,13 @@ BEHAVIOUR_SHARES: dict[str, float] = {
 }
 SHARE_TOLERANCE: float = 0.03
 # Registers: voice is voice_raw + voice_itn together (both are SPEECH_REGISTERS).
-REGISTER_SHARES: dict[str, float] = {"voice": 0.45, "chat": 0.25, "sloppy": 0.15, "clean": 0.10}
+# Sums to 1.00 (ruling 2026-09-22: the former 0.95 left 5% unassigned, and K04
+# read as four two-sided bands had no place for it; the remainder goes to chat).
+# K04 is a claim about what v5 AUTHORS: the 834 revised cases keep the registers
+# v4 measured (voice_raw 276, voice_itn 183, chat 250, sloppy 119, clean 6) and
+# no mix of new cases can move that block; the report prints the corpus-wide
+# register table beside it so nobody mistakes the authored share for the whole.
+REGISTER_SHARES: dict[str, float] = {"voice": 0.45, "chat": 0.30, "sloppy": 0.15, "clean": 0.10}
 # v4's validate_corpus caps clean at 5% (MAX_CLEAN_SHARE) and bands the corpus
 # at (330, 900); both are v4's numbers and v5 does NOT call v4's corpus-level
 # validator — it calls v4's per-CASE `validate` on `.base` and re-checks the
@@ -255,8 +279,10 @@ class ReturnExpectation:
 class ForcedError:
     """The mock's scripted refusal that makes `retry_same_tool` deterministic
     with a LIVE agent: on `call_ordinal` of `tool_name` the mock answers an
-    `error_with_value` body that echoes the real value of `echo_item_id`
-    (as the real API echoes the offending field), whatever the arguments; the
+    `error_with_value` body that echoes `PiiItem.canonical` of `echo_item_id`
+    — what the tool's parser accepted, never the spoken surface of a dictated
+    number — (as the real API echoes the offending field), whatever the
+    arguments; `retry_form` compares against that canonical. The
     next call of that tool is parsed normally. `code` is the documented rule
     name the message carries. Without this the retry depends on the agent
     making a mistake, and a case whose provocation is a coin toss has an
@@ -298,19 +324,56 @@ class RagSpec:
     query_item_ids: tuple[str, ...]
 
 
+# A CHUNK SEED IS A `template` COLUMN PLUS ONE FLAT COLUMN PER `{slot}`, and the
+# item's `Locus.path` is the BARE COLUMN NAME. Ruling R-28 supersedes R-12,
+# which described `{"text": …, "slots": {…}}` with `Locus.path == "slots.<key>"`:
+# the landed `mock.py` renders the template shape, and a seed written in the
+# other one comes back as a result with empty fields and no tags — a case that
+# measures nothing and reads as a gateway miss.
+#
+# `mock._template_pieces` splits the template on `{[a-z_]+}`, looks each slot up
+# in the row's OWN columns, renders it in that field's prose notation
+# (`mock.PROSE_NOTATION` writes a phone as «+7 (916) …», a СНИЛС with the ПФР
+# separators, a card in four groups) and tags the piece with
+# `_tag_of(record, field)`. So the offsets inside the rendered chunk are laid
+# down by the writer as it composes; nothing is searched for in a finished
+# string, which is the v1 defect this shape exists to prevent. The column keeps
+# the value the case declared and the prose may write it in another notation —
+# that disagreement IS the IN hop the family measures.
+#
+# A SLOT NAME IS `[a-z_]+`, and that is a rule of the corpus rather than a
+# detail of the splitter: a digit in it («{who2}») is not a slot
+# `mock._template_pieces` sees, so the template keeps it as literal text, the
+# column it names is never rendered, and every hop declared on it is a crossing
+# that never happened. A builder that wants two people in one chunk names them
+# `{who_a}` / `{who_b}`.
+
+
 @dataclass(frozen=True)
 class DocumentSpec:
     """A document the agent reads through a tool (`file_read`, `doc_retrieve`,
     `form_parse`) and extracts values from into `extract_to_tool`. `format`
     decides the rendering (`csv` rows, a `form` as nested fields, `free_text`,
-    `scan` = free text with OCR-shaped noise). `record_count` is how many
-    persons the document carries; `extracted_item_ids` are the items the agent
-    is expected to move into the tool — the OUT hops `doc_extracted` counts."""
+    `scan` = free text with OCR-shaped noise).
+
+    `record_count` COUNTS PEOPLE, `record_ids` COUNTS ROWS, AND THEY ARE NOT
+    THE SAME NUMBER (ruling R-30). A CSV is ONE `documents` row that holds
+    three people, so `len(record_ids)` may be well below `record_count`; the
+    equality R-11 first asked for would have refused the commonest document in
+    the corpus. `record_ids` names the seed records this document is rendered
+    from, and it exists so R18 can check «items of THOSE records» instead of
+    the weaker «some seed item», which passed a document claiming to extract a
+    value that lives in another record entirely.
+
+    `extracted_item_ids` are the items the agent is expected to move into
+    `extract_to_tool` — the OUT hops `doc_extracted` counts — and every one of
+    them must be an item of a record in `record_ids`."""
 
     doc_id: str
     read_tool: str
     format: str                      # DOCUMENT_FORMATS
-    record_count: int
+    record_count: int                # PEOPLE in the payload
+    record_ids: tuple[str, ...]      # the seed records rendered; ROWS, not people
     extract_to_tool: str
     extracted_item_ids: tuple[str, ...]
 
@@ -414,19 +477,19 @@ V5_CASE_RULES: tuple[str, ...] = (
     "R12 behaviour == 'sequential_chain' → ≥ 1 OUT hop with source_hop pointing at an IN/tool hop of a DIFFERENT tool_name",
     "R13 behaviour == 'fanout_pick' iff pick is set; pick.list_tool returns ≥ 2 candidate identities; target_identity in candidates; every candidate has a seed item of the same type as the target's matched value",
     "R14 behaviour == 'branching' iff branch is set; then_tool and else_tool both in base.tools and differ",
-    "R15 behaviour == 'user_in_loop' iff loop is set; show_turn < confirm_turn; confirm_phrase contains no item value; an OUT/answer hop at show_turn and an OUT/tool_arg hop after confirm_turn exist",
+    "R15 behaviour == 'user_in_loop' iff loop is set; show_turn < confirm_turn; confirm_phrase contains no item value; an OUT/answer hop at show_turn and an OUT hop with owner in ('tool_arg', 'template', 'summary') at or after confirm_turn exist (a handover — escalate_to_human, crm_add_note — acts through summary leaves and must count; Hop.turn is the user message that OPENS a turn, and the act that follows «да, это я» happens inside the turn that message opened)",
     "R16 behaviour == 'memory_anaphora' → memory non-empty; every MemorySpec has first_turn < recall_turn, anaphora in ANAPHORA_KINDS, and the item is NOT written again at recall_turn when anaphora != 'none'",
     "R17 behaviour == 'rag' iff rag is set; rag.k == len(chunk_ids); every chunk_id is a seed record; foreign_identities are identities of those seeds other than expects.primary_identity, ≥ 1 of them",
-    "R18 behaviour == 'document' iff document is set; format in DOCUMENT_FORMATS; record_count ≥ 1 (≥ 2 for csv); extracted_item_ids are seed items of the document's record(s); extract_to_tool in base.tools",
-    "R19 every ReturnExpectation names a tool in base.tools, a return_form in RETURN_FORMS declared by that tool's ToolSpecV5, and result_item_ids that are seed items",
+    "R18 behaviour == 'document' iff document is set; format in DOCUMENT_FORMATS; record_count ≥ 1 (≥ 2 for csv — it counts PEOPLE); every id in record_ids is a seed record of the case; extracted_item_ids are seed items OF THOSE RECORDS (ruling R-30: a CSV is one row holding several people, so len(record_ids) is not len(record_count)); extract_to_tool in base.tools",
+    "R19 every ReturnExpectation names a tool in base.tools, a return_form in RETURN_FORMS declared by that tool's ToolSpecV5 (a tool declares EVERY form it can return — a state-decided one like address_suggest canon/list is declared as both — and the case's return_form says which one THIS seeded state yields; the observer compares the mock's actual form with it), and result_item_ids that are seed items",
     "R20 streaming cases are register voice_raw or voice_itn",
     "R21 the items of every OUT hop with owner in ('template','summary') are named by TEMPLATE_FIELDS / SUMMARY_FIELDS of its tool",
 )
 V5_CORPUS_RULES: tuple[str, ...] = (
-    "K01 size in CORPUS_SIZE_BAND_V5",
+    "K01 size in CORPUS_SIZE_BAND_V5 and every case id unique (two cases under one id are one case counted twice in every share below)",
     "K02 every behaviour in BEHAVIOURS has ≥ BEHAVIOUR_FLOORS[behaviour] cases and a share ≥ BEHAVIOUR_SHARES[behaviour] - SHARE_TOLERANCE (a floor, no ceiling); build.py prints each family's MDE",
     "K03 share of has_result cases ≥ MIN_SHARE_WITH_RESULT",
-    "K04 register shares within SHARE_TOLERANCE of REGISTER_SHARES (voice = voice_raw + voice_itn)",
+    "K04 register shares of the v5-AUTHORED cases (revised_from_v4 == False) within SHARE_TOLERANCE of REGISTER_SHARES (voice = voice_raw + voice_itn); the revised 834 are reported beside, never mixed in",
     "K05 for each type in MIN_CASES_BY_TYPE: ≥ that many cases carry an item of the type (any locus)",
     "K06 for each type: item count ≥ V4_TYPE_ITEM_COUNTS[type]",
     "K07 every tool of REGISTRY_V5 is reachable in ≥ MIN_TYPE_DENOMINATOR cases",
@@ -434,7 +497,7 @@ V5_CORPUS_RULES: tuple[str, ...] = (
     "K09 both explicit and derived conversation ids occur",
     "K10 exactly V4_CORPUS_SIZE cases have revised_from_v4, and V4_CASES_WITH_RESULT of them have has_result",
     "K11 ≥ MIN_STREAMING_CASES streaming cases",
-    "K12 holdout tier = HOLDOUT_SHARE of the corpus, frozen in the ladder before any debug run",
+    "K12 holdout tier = HOLDOUT_SHARE of the corpus, frozen in the ladder before any debug run (enforced by build.py and test_build.test_holdout_frozen — validate_corpus_v5 sees a list of cases, not a ladder, and says so in its docstring)",
     "K13 every owner in HOP_OWNERS is declared by ≥ MIN_TYPE_DENOMINATOR cases; every IN owner other than 'user' and every OUT owner other than 'tool_arg' also by ≥ MIN_TYPE_DENOMINATOR cases of ≥ 2 behaviours",
     "K14 every DOCUMENT_FORMATS value occurs in ≥ MIN_TYPE_DENOMINATOR document cases; every ANAPHORA_KINDS value other than 'none' in ≥ MIN_TYPE_DENOMINATOR memory cases; ≥ MIN_TYPE_DENOMINATOR memory cases carry ≥ 3 MemorySpecs and ≥ 2 identities across ≥ 5 user turns",
     "K15 ≥ MIN_TYPE_DENOMINATOR cases declare a ReturnExpectation whose result_item_ids hold ≥ 2 items of ONE identity (many records of one person)",
@@ -468,7 +531,7 @@ RETURN_FORMS: tuple[str, ...] = (
     "single",            # one record
     "list",              # several records; the agent must choose / match
     "nested",            # an object with typed sub-fields (address by fields, recipient{name, phone})
-    "error_with_value",  # an error body that echoes the real value in its text
+    "error_with_value",  # an error body that echoes the real value in its text; a documented parse REFUSAL whose message names the offending argument is recorded as this form too (Refusal.as_error) — the model reads the value either way
     "empty",             # not found / no rows — a 200 with nothing
     "canon",             # a normaliser's canonical form («г Самара, ул Луговая, д 10», «+7 (916) …»)
     "free_text",         # prose carrying values (ticket history, a document)
@@ -619,18 +682,18 @@ FORM_TYPES: tuple[str, ...] = tuple(FORM_FEATURES)
 # expect, and so two extractors written by two people cannot disagree about
 # what «title case» means.
 FEATURE_LABELS: dict[tuple[str, str], tuple[str, ...]] = {
-    ("NAME", "case_class"): ("lower", "title", "upper", "mixed"),
+    ("NAME", "case_class"): ("lower", "title", "upper", "mixed", "none"),
     ("NAME", "gram_case"): ("nomn", "gent", "datv", "accs", "ablt", "loct", "unknown"),
     ("NAME", "order"): ("F-I-O", "I-F", "I-O-F", "single", "other"),
     ("NAME", "parts"): ("1", "2", "3", "4+"),
     ("NAME", "initials"): ("none", "given", "given_patronymic"),
-    ("NAME", "script"): ("cyrillic", "latin:gost", "latin:icao", "latin:bgn", "latin:unknown", "mixed"),
+    ("NAME", "script"): ("cyrillic", "latin:gost", "latin:icao", "latin:bgn", "latin:unknown", "mixed", "none"),
     ("NAME", "hyphen_particle"): ("none", "hyphen", "particle", "both"),
-    ("PHONE", "prefix"): ("plus7", "eight", "seven", "bare"),
+    ("PHONE", "prefix"): ("plus7", "eight", "seven", "bare", "other"),
     ("PHONE", "grouping"): ("3-3-2-2", "3-3-4", "solid", "other"),
     ("PHONE", "separators"): ("none", "space", "hyphen", "dot", "mixed"),
     ("PHONE", "parens"): ("yes", "no"),
-    ("LOC", "case_class"): ("lower", "title", "upper", "mixed"),
+    ("LOC", "case_class"): ("lower", "title", "upper", "mixed", "none"),
     ("LOC", "generic"): ("none", "full:*", "abbr:*"),
     ("LOC", "generic_position"): ("before", "after", "none"),
     ("LOC", "house_marker"): ("none", "d_dot_space", "d_dot_nospace", "d_nodot", "dom", "other"),
@@ -650,16 +713,39 @@ FEATURE_LABELS: dict[tuple[str, str], tuple[str, ...]] = {
     ("DATE", "padding"): ("padded", "unpadded"),
     ("DATE", "year_len"): ("2", "4", "none"),
     ("DATE", "month_form"): ("number", "word_nominative", "word_genitive"),
-    ("EMAIL", "case_class"): ("lower", "upper", "mixed"),
+    ("EMAIL", "case_class"): ("lower", "upper", "mixed", "none"),
     ("CARD", "grouping"): ("4x4", "solid", "other"),
-    ("CARD", "separator"): ("space", "hyphen", "none"),
+    ("CARD", "separator"): ("space", "hyphen", "none", "other"),
     ("SNILS", "separators"): ("canonical", "solid", "other"),
     ("INN", "length"): ("10", "12", "other"),
     ("INN", "separators"): ("none", "space", "other"),
     ("PASSPORT", "series_number_split"): ("2-2-6", "4-6", "solid", "other"),
-    ("PLATE", "case_class"): ("lower", "upper", "mixed"),
+    ("PLATE", "case_class"): ("lower", "upper", "mixed", "none"),
     ("PLATE", "spaces"): ("yes", "no"),
     ("PLATE", "region_sep"): ("space", "none", "other"),
+}
+
+# ABSTAIN (ruling 2026-09-22 on the comparator's question): `form_match` adds a
+# feature to `differs` iff a != b AND neither side carries the feature's abstain
+# label. The brief's own acceptance pairs demand it — («Ivanov Petr», «Иванов
+# Пётр») must differ in {script} only, and a Latin rendering has no Russian
+# case; («Ленина 14», «ул. Ленина 14») in {generic} only, and an address without
+# a generic word has no position for it. A string with no letters has no case
+# class and no script either: the label is «none» and the feature abstains,
+# rather than two letterless strings «agreeing» on a claim neither supports.
+# PHONE.prefix and CARD.separator gained «other» so a string matching none of
+# the named shapes is a label, not a silent fall-through to the last branch.
+# LOC.city_present CANNOT be isolated from city_position (an absent city is
+# also a position): the per-feature isolation check accepts {city_present,
+# city_position} for either one.
+FORM_ABSTAIN: dict[tuple[str, str], str] = {
+    ("NAME", "gram_case"): "unknown",
+    ("LOC", "generic_position"): "none",
+    ("NAME", "case_class"): "none",
+    ("LOC", "case_class"): "none",
+    ("EMAIL", "case_class"): "none",
+    ("PLATE", "case_class"): "none",
+    ("NAME", "script"): "none",
 }
 # The transliteration tables `script` must tell apart; written from their
 # published standards, never from `pseudex/translit.py` (the engine's own
@@ -760,7 +846,13 @@ class MetricSpec:
 # 1/n floor and `comparable`, printed by `bench.agentpii4.report.render` on
 # `.base` cases. Listed so the checklist and the side-by-side can name them.
 V4_LEVEL_NAMES: tuple[str, ...] = tuple(name for name, _label in V4_LEVELS)
-V4_EXTRA_LINES: tuple[str, ...] = ("v4_leak", "v4_seed_coverage", "v4_overmask")
+# There is NO `V4_EXTRA_LINES` and no `SideBySide.v4_extra` (ruling R-35).
+# v4 computes `v4_leak`, `v4_seed_coverage` and `v4_overmask` inside
+# `bench.agentpii4.report.render` and exposes them through no function, so the
+# only honest way to print them is to embed v4's own block byte for byte —
+# which the v5 report does. Any second source of those three numbers would be a
+# re-derivation, and two derivations that must agree are one drift away from a
+# report contradicting itself on the same page.
 
 METRICS: tuple[MetricSpec, ...] = (
     # §4.1 — the paired levels, by name only (see V4_LEVEL_NAMES)
@@ -893,7 +985,10 @@ class MentionRecord:
 # that item's id, and the echoed value of a `ForcedError` with
 # `ECHO_TAG_PREFIX + item id`; a slot that renders a value the case does not
 # label (a slot time, an order id) carries no tag. The observer resolves an
-# IN/tool hop by `spans_real[item_id]` and nothing else.
+# IN/tool hop by `spans_real[item_id]` and nothing else. ONE tag per item per
+# result — the FIRST rendering (an account statement prints the holder on every
+# row); leak checks (`toolresult_masked`) read the whole text, so a second
+# rendering can never hide a leak, and no metric counts occurrences.
 ECHO_TAG_PREFIX: str = "echo:"
 
 
@@ -926,7 +1021,9 @@ class AnswerSpan:
     the reply AS THE CUSTOMER READS IT (`restored`). Derived by the observer
     from `reply_raw` vs `reply` with a pure sequence alignment (difflib
     opcodes), never by the engine: an OUT/answer hop exists for every raw
-    span that contains a substitute the run minted."""
+    span that contains a substitute the run minted. NOT persisted in the arms
+    file — the observer derives it on every read; a stored copy would be a
+    second value that could drift from `reply_raw` (ruling 2026-09-22)."""
 
     item_id: str
     raw_start: int
@@ -952,6 +1049,19 @@ class ArmRunV5:
     control_reply: str
     tool_results: tuple[ToolResultRecord, ...]
     mentions: tuple[MentionRecord, ...]
+    # THE JUDGE SEES THE AGENT'S OWN EARLIER WORDS (ruling R-40). One RESTORED
+    # reply per turn, in turn order, as the harness collected them; `""` for a
+    # turn the agent answered with no text, and a tuple shorter than the
+    # dialogue for an arm that died mid-run. `judge.dialogue_context` emits
+    # them as `role="assistant"` turns, so question 4 («учёл ли контекст») on
+    # `memory_anaphora` / `user_in_loop` is judged against what the agent
+    # actually said rather than against the user's messages alone — the judge
+    # was otherwise asked whether a reply used context it was never shown.
+    # RESTORED, never raw: the judge must not see a substitute (spec §5), and a
+    # raw turn would put one in front of it. The LAST non-empty entry is the
+    # final answer, which the judge gets as EVIDENCE in its own section; the
+    # dialogue leaves it out so the answer is not quoted to the judge twice.
+    turn_replies: tuple[str, ...]
     call_turns: tuple[int, ...]      # the turn each call in base.calls happened in, same order
     request_count: int               # model requests the arm made (for `stability`)
     # `streaming` cases only: the reply restored chunk by chunk through the
@@ -1019,8 +1129,8 @@ class Observer(Protocol):
 JUDGE_LABELS: tuple[str, ...] = ("верно", "частично", "неверно", "выдумал")
 # Owner's decision: Sonnet judges, Haiku holds the dialogue. The ids are what
 # the harness passes to the SDK; a run prints both in its header.
-JUDGE_MODEL: str = "claude-sonnet-5"
-# The dated id is the canonical one the SDK resolves; the bare alias moved
+JUDGE_MODEL: str = "claude-sonnet-5"   # Claude 5 ids carry no date; this IS the canonical id
+# Haiku 4.5's dated id is the canonical one the SDK resolves; the bare alias moved
 # under our feet once already (bench/agentpii3/live/judge.py pins a sonnet-4-6
 # id nobody meant to keep).
 AGENT_MODEL: str = "claude-haiku-4-5-20251001"
@@ -1058,12 +1168,31 @@ class JudgeVerdict:
     """One of JUDGE_LABELS with a reason that QUOTES the answer (v3's rule: a
     verdict without a quote that stands in the text is discarded, not
     counted). `judged_by == "residual_gate"` marks a `неверно` decided before
-    the model was asked."""
+    the model was asked. `judged_by == "none"` ⇔ `label == ""`: no quote stood
+    in the text, the answer is NOT counted, and a reader refuses any other
+    combination (a non-empty label beside «none» would be a verdict that
+    counts and does not count at once)."""
 
-    label: str
+    label: str                       # JUDGE_LABELS, or "" iff judged_by == "none"
     reason: str
     judged_by: str                   # JUDGED_BY
     cost_usd: float
+
+
+@dataclass(frozen=True)
+class JudgeRow:
+    """One line of `<run>.judge.jsonl`: the verdict plus WHAT it judged. The
+    protocol returns a verdict and nothing else; the file needs the answer the
+    verdict is about, and `input_sha256` (of the JudgeInput as `build_prompt`
+    fed it) is what makes a re-judged run comparable to the previous one — the
+    same answer judged under a different prompt is a different measurement,
+    and the hash is the only evidence of that on disk. Normative here (ruling
+    2026-09-22); `records.py` reads and writes it."""
+
+    case_id: str
+    repeat: int
+    input_sha256: str
+    verdict: JudgeVerdict
 
 
 class ResidualPregate(Protocol):
@@ -1196,7 +1325,6 @@ class SideBySide:
     agent_model: str
     judge: CalibrationStamp
     v4_levels: tuple[LevelRow, ...]  # exactly V4_LEVEL_NAMES, in order
-    v4_extra: dict[str, Line]        # V4_EXTRA_LINES
     v5_lines: dict[str, Line]        # printable metrics, by name
     v5_by_axis: dict[str, dict[str, dict[str, Line]]]   # metric → axis → bucket → Line
     v5_refused: dict[str, str]
@@ -1218,7 +1346,7 @@ RUN_FILES: dict[str, str] = {
     "<run>.arms.v5.jsonl": "one `ArmRunV5` record per I arm (key = case_id|I|repeat)",
     "<run>.triples.jsonl": "v4's per-triple status/cost/judge rows",
     "<run>.hops.jsonl": "one HopObservation per hop per (case, repeat), as `observe` produced it",
-    "<run>.judge.jsonl": "one JudgeVerdict per answer with the JudgeInput's sha256",
+    "<run>.judge.jsonl": "row 0 is the CalibrationStamp (calibration_stamp_to_json — a row carrying `calibrated`), then one JudgeRow per answer with the JudgeInput's sha256 (ruling 2026-09-22: the report marks itself НЕПОЛНЫЙ without the stamp, so the stamp travels with the verdicts it certifies)",
     "<run>.spend.tsv": "the SpendLedger file (agent + judge), v4 format",
     "<run>.report.txt": "the side-by-side (SideBySide rendered), header first",
     "<run>.gate.json": "GateVerdict per metric — the proof the report was allowed to print",

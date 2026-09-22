@@ -1,5 +1,7 @@
 # Brief — component `metrics` (owner code **M**)
 
+> **Read `bench/agentpii5/RULINGS.md` before this brief** — the architect's rulings on the questions the first builders raised; where a ruling and this brief disagree, the ruling wins.
+
 You build the PURE measuring half of v5: `observe.py` (records → hop
 observations), `metrics.py` (every metric as a function returning one
 `Line`), `fixtures.py` (three can-fail fixtures per metric), `report.py` (the
@@ -122,7 +124,7 @@ said otherwise.
 | `overmask` | hits: negatives not covered by any span in `run.base.masked_spans[msg]` / total: `case.base.negatives` |
 | `consistency` | per item with ≥ 2 `MentionRecord`s in DIFFERENT messages: hit iff all substitutes equal / total: such items |
 | `stability` | per item with mentions in ≥ 2 `request_index` values: hit iff the substitute is the same across requests / total: such items |
-| `rewrite_ratio` | diagnostic: hits: observations where `difflib.SequenceMatcher(None, C reply, I reply).ratio() < 0.7` / total: observations with `ic` present and both replies non-empty (C reply from the v4 record the harness stores in `ic`-side file; if unavailable, `Line(…,0,0)`) |
+| `rewrite_ratio` | diagnostic: hits: observations where `difflib.SequenceMatcher(None, C reply, I reply).ratio() < 0.7` / total: observations where BOTH `run.control_reply` and `run.base.reply` are non-empty — `ic` is NOT a condition (**ruling R-33**, and the rule this row first carried is superseded: `ic` is `None` on every fixture, so the denominator was 0/0 everywhere and the gate refused the metric for ever. A diagnostic that can never fire is decorative, which is the v4 defect class this benchmark exists to avoid. The C reply is copied onto the I record by `harness.with_control_reply` — the triple is the only place that holds both arms.) |
 | `shared_block` | diagnostic: hits: OUT/answer spans attributed to > 1 item / total: OUT/answer spans |
 | `form_hIN` | hits: IN hops `observed` with `verdict.same` / total: IN hops `observed` |
 | `form_hOUT` | hits: OUT hops `observed` with `verdict.same` / total: OUT hops `observed` |

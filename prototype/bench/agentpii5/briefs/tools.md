@@ -1,5 +1,7 @@
 # Brief — component `tools` (owner code **T**)
 
+> **Read `bench/agentpii5/RULINGS.md` before this brief** — the architect's rulings on the questions the first builders raised; where a ruling and this brief disagree, the ruling wins.
+
 You build the v5 tool registry and the v5 mock backend: 31 v4 tools revised +
 12 new tools across 11 verticals, each with a declared return form, and a mock
 that renders the REAL value strictly in each API's own format (that is what

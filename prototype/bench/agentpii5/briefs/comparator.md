@@ -1,5 +1,7 @@
 # Brief — component `comparator` (owner code **F**)
 
+> **Read `bench/agentpii5/RULINGS.md` before this brief** — the architect's rulings on the questions the first builders raised; where a ruling and this brief disagree, the ruling wins.
+
 You build `form_match(type, produced, reference) -> FormVerdict`: the
 deterministic check «is the FORM of one string the form of another», per PII
 type, with the exact feature names of `docs/tz-agentpii5.md` §8.4. It is the

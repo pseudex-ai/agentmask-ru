@@ -184,7 +184,29 @@ def main() -> int:
     if set(c.JUDGE_LABELS) != {"верно", "частично", "неверно", "выдумал"}:
         failures.append("judge labels drifted from spec §8.5")
 
-    # 8. every rule string is unique and numbered
+    # 8. the Phase-3 rulings that changed a SHAPE, pinned so a revert is red
+    doc_fields = tuple(c.DocumentSpec.__dataclass_fields__)
+    if "record_ids" not in doc_fields:
+        failures.append("R-30: DocumentSpec must carry record_ids (the seed rows it renders)")
+    if "turn_replies" not in c.ArmRunV5.__dataclass_fields__:
+        failures.append("R-40: ArmRunV5 must carry turn_replies (the judge reads them)")
+    # R-35: v4 computes these three inside its own `render` and exposes them
+    # through no function, so a v5 field for them could only be a re-derivation.
+    if hasattr(c, "V4_EXTRA_LINES"):
+        failures.append("R-35: V4_EXTRA_LINES is dropped; v4's block prints those three")
+    if "v4_extra" in c.SideBySide.__dataclass_fields__:
+        failures.append("R-35: SideBySide.v4_extra is dropped")
+    # R-31: a handover acts through a summary leaf, so R15's text must name the
+    # three acting owners rather than tool_arg alone.
+    r15 = next(rule for rule in c.V5_CASE_RULES if rule.startswith("R15"))
+    for owner in ("tool_arg", "template", "summary"):
+        if owner not in r15:
+            failures.append(f"R-31: R15 does not name the acting owner {owner!r}")
+    r18 = next(rule for rule in c.V5_CASE_RULES if rule.startswith("R18"))
+    if "record_ids" not in r18:
+        failures.append("R-30: R18 does not read record_ids")
+
+    # 9. every rule string is unique and numbered
     for rules, prefix in ((c.V5_CASE_RULES, "R"), (c.V5_CORPUS_RULES, "K"), (c.VERTICAL_RULES, "V")):
         ids = [rule.split()[0] for rule in rules]
         if len(set(ids)) != len(ids) or any(not one.startswith(prefix) for one in ids):
