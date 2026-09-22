@@ -150,3 +150,5 @@ Not in root `docs/`: `storefront/docs/tz-site.md` and `storefront/docs/tz-site-s
 | `research/2026-09-14-devops-audit.md` | the CI/CD pipeline against first sources: three empty policies | D-043 |
 | `research/2026-09-14-legal-launch-audit.md` | legal audit of the storefront before sales: two code defects | D-044 |
 | `research/2026-09-17-yandex-offline-conversions.md` | Metrika conversions from the server, not the page; the consent question | D-047 |
+| `research/2026-09-20-release-and-version-lifecycle.md` | release + versions research behind D-051…D-064 | D-051 |
+| `research/2026-09-22-toolresult-derisk.md` | де-риск направления v5: плечо tool_result — где форма-сохраняющий уникально нужен (noop течёт, placeholder непрозрачен, мы отдаём пригодное + форму) | — |
