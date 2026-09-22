@@ -498,3 +498,11 @@ any claim.
 **Rejected:** reusing `past_due` for the unpaid new signup — it means «served and stopped paying», and the watchdog, digest, console and the «service stopped» letter all read it that way. A server-side default plan for a form without one — a form without a plan is broken, not «Старт».
 **Price:** the free path carries no paid intent any more (the cabinet suggests the first paid plan); `test_billing_lifecycle` now walks the paid path (pending → invoice → paid → key).
 **Related:** sprint-cabinet-and-pricing §6–§8 · `storefront/test_paywall.py` · `storefront/test_signup_forms.py`
+
+### D-066 · 2026-09-22 · A mature eval harness for v5 is its own track, after article #1
+**Status:** active (planned; no implementation yet)
+**Context:** v5 (`bench/agentpii5/`) is being hardened by review and fix rounds into a mature instrument; the harness that runs it is still a script with `main()`. The owner's point: a benchmark this mature needs an equally mature, convenient harness — run modes, resume, budgets, run-vs-run comparison, cases as data, calibration as a procedure, provider layer, machine-readable reports, a live stand — or runs stay rare, costly and irreproducible.
+**Decision:** a separate track, started AFTER article #1 is published (the article does not depend on it), with its own ТЗ; the feature list is in `docs/tz-roadmap-from-oss.md` §4bis.
+**Rejected:** folding it into v5's build (v5 is data + metrics; the harness is scaffolding around it — mixing them would make every harness change a benchmark change); pulling the public `agentmask-ru` harness in (it lives its own life as the article asset).
+**Price:** until then, v5 runs stay manual (`harness.main`, one tier per invocation, comparison only against v4).
+**Related:** docs/tz-agentpii5.md · docs/tz-roadmap-from-oss.md §4bis · wiki/BENCHMARK.md
