@@ -15,9 +15,10 @@ from dataclasses import replace
 from bench.agentpii3.schema import Negative
 from bench.agentpii4.compare import LevelVerdict, PairVerdict
 from bench.agentpii5 import contracts
-from bench.agentpii5.contracts import Hop, MemorySpec, MentionRecord, RagSpec
+from bench.agentpii5.contracts import Hop, HopObservation, MentionRecord, RagSpec
 from bench.agentpii5.fixtures import (
     FAKE_NAME,
+    FIXTURES,
     OTHER_NAME,
     REAL_NAME,
     REAL_PHONE,
@@ -562,25 +563,118 @@ def test_a_free_leaf_is_satisfied_when_the_value_survives() -> list[str]:
     return problems
 
 
-def test_memory_stability_is_not_stability() -> list[str]:
-    """The two were ONE function under two names — identical bodies, identical
-    answers on every fixture in the package — and a report printing one number
-    twice tells a reader there are two pieces of evidence. `memory_stability`
-    counts the items a `MemorySpec` names; `stability` counts them all."""
-    mentions = (MentionRecord("p1", 0, -1, FAKE_NAME, 0), MentionRecord("p1", 0, -1, OTHER_NAME, 1))
-    plain = _case("m-ms-1", "single", ("…",), (NAME,), ())
-    remembered = replace(plain, base=replace(plain.base, id="m-ms-2"),
-                         memory=(MemorySpec(item_id="p1", first_turn=0, recall_turn=2,
-                                            anaphora="none"),))
+def test_memory_stability_is_gone() -> list[str]:
+    """J1.2. The line is REMOVED, and the removal is pinned rather than
+    remembered.
+
+    It asked whether a `MemorySpec` value's substitute changed between
+    requests, and its population was empty on the whole corpus: 619 of 619
+    memory specs have every mention in ONE request, because a `MentionRecord`
+    is written once per message and a `MemorySpec` recall is anaphoric — it
+    spells no value. It printed 0/0 for the perfect gateway and for every one
+    of the 23 wrong gateways, so it could not go red, and H1.4's rule («a
+    public line that can only print «н/п» is worse than no line») decides it.
+    The check runs in three places at once because a name left in any ONE of
+    them comes back as a line the report tries to print."""
     problems: list[str] = []
-    for label, case, want_stab, want_mem in (("no memory spec", plain, 1, 0),
-                                             ("memory spec", remembered, 1, 1)):
-        one = _obs(case, _with_mentions(_run(case.base.id), mentions), ())
-        stab = METRIC_FUNCTIONS["stability"]((one,))
-        mem = METRIC_FUNCTIONS["memory_stability"]((one,))
-        if stab.total != want_stab or mem.total != want_mem:
-            problems.append(f"{label}: stability {stab.total}, memory_stability {mem.total}; "
-                            f"expected {want_stab} and {want_mem}")
+    if "memory_stability" in METRIC_FUNCTIONS:
+        problems.append("memory_stability is registered again — its population is empty by "
+                        "construction (J1.2)")
+    if "memory_stability" in contracts.METRIC_NAMES:
+        problems.append("memory_stability is declared in contracts.METRICS again")
+    if "memory_stability" in FIXTURES:
+        problems.append("memory_stability has fixtures again — they build by hand the only "
+                        "population the line can ever have")
+    # The other side of the assertion: `stability` and `memory_consistency` —
+    # the two lines that DO ask this question, of populations that exist — are
+    # still here, or «the name is gone» would pass on an empty registry.
+    for survivor in ("stability", "memory_consistency"):
+        if survivor not in METRIC_FUNCTIONS:
+            problems.append(f"{survivor} went with it: the question is no longer asked at all")
+    return problems
+
+
+def test_answer_real_excludes_an_answer_that_obliges_nothing() -> list[str]:
+    """J1.1 — v4's «all() over an empty list», on the leg the customer reads.
+
+    A case may declare answer hops and oblige none of them; `required` is then
+    empty, `all([])` is True, and a reply the gateway never touched has no
+    substitute to be residual either. The pre-J1.1 body counted that a HIT, so
+    a FULL PASSTHROUGH printed 720/1357 = 53.1% on the line named «the answer
+    carries the real value». Such a case is outside the denominator, and
+    `answer_optional_only` prints how many were left out."""
+    optional = replace(_hop("OUT", "answer", "p1", 0, 0, "", -1, -1, ""), optional=True)
+    required = _hop("OUT", "answer", "p1", 1, 0, "", -1, -1, "")
+    problems: list[str] = []
+
+    lax = _case("m-ar-lax", "single", ("…",), (NAME,), (optional,))
+    passthrough = _obs(lax, _run("m-ar-lax"), (HopObservation(
+        case_id="m-ar-lax", repeat=0, hop=optional, declared=True, pii_type="NAME",
+        produced=REAL_NAME, reference=REAL_NAME, status="unmasked", verdict=None),))
+    line = METRIC_FUNCTIONS["answer_real"]((passthrough,))
+    if (line.hits, line.total) != (0, 0):
+        problems.append(f"an answer that obliges nothing printed {line.hits}/{line.total}: "
+                        f"a passthrough must not be able to score on it")
+    excluded = METRIC_FUNCTIONS["answer_optional_only"]((passthrough,))
+    if (excluded.hits, excluded.total) != (1, 1):
+        problems.append(f"the exclusion was not printed: answer_optional_only "
+                        f"{excluded.hits}/{excluded.total}")
+
+    # The other side: a case that DOES oblige a hop is judged, so «excluded»
+    # cannot have become «excluded always».
+    strict = _case("m-ar-strict", "single", ("…",), (NAME,), (required,))
+    honest = _obs(strict, _run("m-ar-strict"),
+                  (_seen(strict, required, "NAME", REAL_NAME, REAL_NAME),))
+    judged = METRIC_FUNCTIONS["answer_real"]((honest,))
+    if (judged.hits, judged.total) != (1, 1):
+        problems.append(f"a required answer hop is no longer judged: {judged.hits}/{judged.total}")
+    if METRIC_FUNCTIONS["answer_optional_only"]((honest,)).hits != 0:
+        problems.append("a case with a required hop was counted as an exclusion")
+    # And an answer nobody declared is in NEITHER population: the corpus asks
+    # the agent to name nothing, so there is no answer to judge and none to
+    # exclude.
+    silent = _obs(_case("m-ar-none", "single", ("…",), (NAME,), ()), _run("m-ar-none"), ())
+    if METRIC_FUNCTIONS["answer_optional_only"]((silent,)).total != 0:
+        problems.append("a case with no answer hop at all entered the exclusion population")
+    return problems
+
+
+def test_spoken_axis_tells_dictated_from_written() -> list[str]:
+    """J1.3 / Б27. `form_hIN` prints 94.31% for a PERFECT gateway and the whole
+    residue is dictated values: our engine mints a WRITTEN fake for a value the
+    customer said aloud, so the substitute cannot wear the source's form. That
+    is an ENGINE finding (`docs/known-issues.md` Б27), and without the slice
+    the caption reads as an instrument defect.
+
+    The bucket is `PiiItem.spoken` — what the corpus says about the SOURCE —
+    and it is a HOP axis, so a case carrying one dictated and one written value
+    splits into two buckets that add up to the whole line."""
+    written_item = _item("p1", "NAME", REAL_NAME, REAL_NAME, "i1", _in_message(0, 0, 13))
+    said = replace(_item("p2", "NAME", "Орлов Иван", "Орлов Иван", "i2", _in_message(0, 20, 30)),
+                   spoken=True)
+    written_hop = _hop("IN", "user", "p1", 0, 0, "", -1, -1, "")
+    said_hop = _hop("IN", "user", "p2", 1, 0, "", -1, -1, "")
+    case = _case("m-spoken", "single", ("…",), (written_item, said), (written_hop, said_hop))
+    one = _obs(case, _run("m-spoken"),
+               (_seen(case, written_hop, "NAME", FAKE_NAME, REAL_NAME),
+                _seen(case, said_hop, "NAME", "Пахомова Ольга", "Орлов Иван")))
+    problems: list[str] = []
+    if "spoken" not in contracts.AXES:
+        problems.append("`spoken` is not an axis: the residue of form_hIN cannot be read")
+    if "spoken" not in HOP_AXES:
+        problems.append("`spoken` is not a HOP axis: it would split observations, not hops")
+    buckets = by_axis((one,), "spoken")
+    if sorted(buckets) != ["написано", "продиктовано"]:
+        problems.append(f"the buckets are {sorted(buckets)}, expected written and dictated")
+        return problems
+    for bucket, expected in (("написано", "p1"), ("продиктовано", "p2")):
+        got = sorted(hop.hop.item_id for row in buckets[bucket] for hop in row.hops)
+        if got != [expected]:
+            problems.append(f"{bucket}: hops {got}, expected [{expected!r}]")
+    whole = METRIC_FUNCTIONS["form_hIN"]((one,)).total
+    parts = sum(METRIC_FUNCTIONS["form_hIN"](rows).total for rows in buckets.values())
+    if parts != whole:
+        problems.append(f"form_hIN by spoken: buckets total {parts}, the line totals {whole}")
     return problems
 
 
@@ -599,7 +693,10 @@ def main() -> int:
         ("answer_is_scored_on_what_it_NAMED", test_answer_is_scored_on_what_it_NAMED),
         ("leaf_value_has_one_definition", test_leaf_value_has_one_definition),
         ("chain_target_is_read_as_an_item", test_chain_target_is_read_as_an_item),
-        ("memory_stability_is_not_stability", test_memory_stability_is_not_stability),
+        ("memory_stability_is_gone", test_memory_stability_is_gone),
+        ("answer_real_excludes_an_answer_that_obliges_nothing",
+         test_answer_real_excludes_an_answer_that_obliges_nothing),
+        ("spoken_axis_tells_dictated_from_written", test_spoken_axis_tells_dictated_from_written),
         ("coverage_of_a_value_no_message_carried", test_coverage_of_a_value_no_message_carried),
         ("consistency_counts_a_tool_result_as_a_place",
          test_consistency_counts_a_tool_result_as_a_place),

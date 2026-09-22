@@ -324,7 +324,10 @@ class MemorySpec:
     (spec §3.3). `anaphora` names how the recall is phrased: `none` repeats the
     value, the others refer to it without saying it («ему», «на тот адрес»,
     «тот же телефон», the person by role). `memory_consistency` counts the
-    item, `memory_stability` counts its substitute across the two requests."""
+    item — and it is the ONLY line over this population, because an anaphoric
+    recall spells no value: the substitute is read in one message and one
+    request, which is what left `memory_stability` 0/0 and got it removed
+    (J1.2, the removal comment in `METRICS`)."""
 
     item_id: str
     first_turn: int
@@ -1192,18 +1195,51 @@ METRICS: tuple[MetricSpec, ...] = (
     MetricSpec("rewrite_ratio_v5", "cases whose gateway-arm REPLY is a different text from the control's (not the public message-level ratio)", "cases with both replies", "case", "public", True),
     MetricSpec("shared_block_answer", "ANSWER spans the alignment could not assign to one item (not the public per-item `unattributable`)", "answer spans", "answer", "public", True),
     # §4.3 / §8.3 — new in v5
-    MetricSpec("form_hIN", "IN hops where form_match == same", "IN hops observed (not leaked)", "hop", "v5_new", False),
+    # THE RESIDUE OF THIS LINE IS AN ENGINE FINDING AND THE SPEC SAYS SO. A
+    # perfect gateway earns 10812/10812 on the values the customer WROTE and
+    # 250/918 on the ones the customer DICTATED, because our engine shows a
+    # WRITTEN fake for a spoken value and the IN form then cannot mirror its
+    # source (`docs/known-issues.md` Б27, the voice track's work, not this
+    # benchmark's). The `spoken` axis is where a reader sees that, so the
+    # sub-100 figure is never read as an instrument defect.
+    MetricSpec("form_hIN", "IN hops where form_match == same", "IN hops observed (not leaked); read on the `spoken` axis — the whole residue is dictated values against written substitutes (Б27), an ENGINE finding", "hop", "v5_new", False),
     MetricSpec("form_hOUT", "OUT hops where form_match == same", "OUT hops the agent WROTE (observed ∪ unmasked; `absent` is printed beside the line by `out_absent`)", "hop", "v5_new", False),
     MetricSpec("out_absent", "declared OUT hops the agent never wrote", "all declared OUT hops", "hop", "v5_new", True),
     MetricSpec("toolresult_masked", "declared tool results where no real value reached the model", "results the case DECLARES personal data in (`returns[].result_item_ids`) and the agent obtained", "result", "v5_new", False),
-    MetricSpec("answer_real", "answers where every REQUIRED datum is the real value — any inflection of the part(s) the answer names — in the agent's form, and no substitute is left anywhere in the reply", "answers the case declares an OUT/answer hop for", "answer", "v5_new", False),
+    MetricSpec("answer_real", "answers where every REQUIRED datum is the real value — any inflection of the part(s) the answer names — in the agent's form, and no substitute is left anywhere in the reply", "answers the case declares a REQUIRED OUT/answer hop for; an answer with nothing to require is outside it and counted by `answer_optional_only`", "answer", "v5_new", False),
+    # THE V4 DISEASE, CAUGHT IN A NEW PLACE (J1.1). `all([])` is True, and 720
+    # of the 1357 answers the corpus declares an answer hop for declare no
+    # REQUIRED one — so a full passthrough scored 53.1% on the line named «the
+    # answer carries the real value». An answer with nothing to require is
+    # outside the denominator, and the count is PRINTED beside the line rather
+    # than left implicit, because a denominator that quietly shrank is the
+    # defect this pair exists to make visible. DIAGNOSTIC because no gateway
+    # can move it: it counts what the CORPUS obliges, fixed before any arm
+    # runs, so it is the caption of `answer_real`'s rate and never a result of
+    # its own.
+    MetricSpec("answer_optional_only", "answers whose case declares answer hops and obliges NONE of them — what `answer_real`'s denominator leaves out", "answers the case declares an OUT/answer hop for", "answer", "v5_new", True),
     MetricSpec("chain_value", "A→B transitions where the real value in B equals the real value from A", "all A→B transitions", "transition", "v5_new", False),
     MetricSpec("chain_form", "A→B transitions with form_match == same on OUT(B)", "all A→B transitions", "transition", "v5_new", False),
     MetricSpec("multi_all_out", "turns where EVERY OUT argument is right in value and form", "turns with N ≥ 2 OUT hops", "turn", "v5_new", False),
     MetricSpec("multi_consistency", "turns where one value → one substitute across all its calls", "turns with N ≥ 2 calls", "turn", "v5_new", False),
     MetricSpec("retry_form", "retries where OUT form matched the agent's form on EVERY attempt", "retries of one tool", "retry", "v5_new", False),
     MetricSpec("memory_consistency", "values a `MemorySpec` names, mentioned in > 1 turn with ONE substitute", "values a `MemorySpec` names", "value", "v5_new", False),
-    MetricSpec("memory_stability", "substitutes of `MemorySpec` values unchanged between requests of the conversation", "substitutes of `MemorySpec` values seen in > 1 request", "substitute", "v5_new", False),
+    # `memory_stability` WAS HERE AND IS REMOVED (J1.2). Its population was
+    # «substitutes of `MemorySpec` values seen in > 1 request», and it is
+    # EMPTY BY CONSTRUCTION, not by accident: a `MentionRecord` is written
+    # once per message, when the message is first pushed (`harness.
+    # GatewayV5._note_message_mentions`), and a `MemorySpec` recall is
+    # anaphoric — «ему», «на тот адрес» — so the value is spelled in exactly
+    # one message and read in exactly one request. Measured over the whole
+    # corpus with the perfect-gateway probe: all 619 memory specs have their
+    # mentions in ONE request (and in ONE place, so a `places` variant is
+    # empty too), the line printed 0/0, and not one of the 23 wrong gateways
+    # could move it. The two repairs available were both dead ends: a real
+    # per-request record is the harness's to write and would say what
+    # `stability` already says of every item; a per-PLACE population is
+    # `memory_consistency` (619/619, moved by WG23) under a second name. H1.4's
+    # rule decides it — «a public line that can only print «н/п» is worse than
+    # no line» — so the line is gone rather than shipped unearnable.
     MetricSpec("rag_masked", "declared chunks where no real value reached the model; a declared value the chunk rendered UNTAGGED is a miss", "chunks the case DECLARES personal data in (`RagSpec.chunk_ids`) and the retriever returned", "chunk", "v5_new", False),
     MetricSpec("rag_identity_kept", "foreign identities in chunks kept apart from the customer", "foreign identities in chunks", "identity", "v5_new", False),
     MetricSpec("doc_masked", "documents where every real value was masked, UNTAGGED ones included", "documents the agent actually read (one the read never reached is outside it, the way an absent result is)", "document", "v5_new", False),
@@ -1224,8 +1260,16 @@ DIAGNOSTIC_METRIC_NAMES: tuple[str, ...] = tuple(spec.name for spec in METRICS i
 # «агрегаты»). One axis at a time, never two crossed — the public rule, for
 # the same reason (cells of eight items have intervals wider than any
 # difference worth reading).
+# `spoken` IS A HOP AXIS AND IT EXISTS FOR ONE READING (J1.3, Б27). A perfect
+# gateway prints `form_hIN` 94.31% and every point of the residue is a value
+# the customer DICTATED against the WRITTEN substitute the engine mints for it:
+# written 10812/10812, spoken 250/918. Without the slice the caption reads as
+# an instrument defect and somebody goes looking for the bug; with it the
+# number names the engine finding it is. The bucket is `PiiItem.spoken` — what
+# the corpus says about the SOURCE, never a guess off the surface.
 AXES: tuple[str, ...] = (
-    "register", "name_tier", "cue", "family", "behaviour", "vertical", "hop_owner", "pii_type", "return_form")
+    "register", "name_tier", "cue", "family", "behaviour", "vertical", "hop_owner", "pii_type",
+    "return_form", "spoken")
 
 # --- the REFUSE-TO-REPORT gate (spec §4.4, §8.3) --------------------------------------
 # The discipline of `e2e/audit_gates.py`: a check that cannot go red is

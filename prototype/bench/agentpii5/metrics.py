@@ -494,9 +494,10 @@ def stability(observations: Sequence[RunObservation]) -> Line:
     """The substitute did not change between REQUESTS, over EVERY item of the
     corpus. A growing transcript re-sends the first message every turn; a
     substitute that moves turns one person into several in the model's
-    context. `memory_stability` asks the same question of the items a
-    `MemorySpec` names — a different population, and the reason the two lines
-    are two lines (they were one function under two names)."""
+    context. It is now the ONLY line asking that question: `memory_stability`
+    asked it of the items a `MemorySpec` names and that population is empty by
+    construction, so it was removed (J1.2, the comment below
+    `memory_consistency`)."""
     hits = 0
     total = 0
     for one in observations:
@@ -556,7 +557,17 @@ def shared_block_answer(observations: Sequence[RunObservation]) -> Line:
 
 def form_hIN(observations: Sequence[RunObservation]) -> Line:  # noqa: N802 - the metric's name
     """Did the SUBSTITUTE wear the source's form. Declared and undeclared hops
-    both: a crossing is a crossing whether or not the case foresaw it."""
+    both: a crossing is a crossing whether or not the case foresaw it.
+
+    READ IT ON THE `spoken` AXIS, AND THE WHOLE RESIDUE IS AN ENGINE FINDING.
+    The perfect-gateway probe prints 10 812/10 812 on the values the customer
+    WROTE and 250/918 on the ones the customer DICTATED — 94.31% overall — and
+    the difference is not a gateway that lost a form: our engine mints a
+    WRITTEN fake for a spoken value («восемь девятьсот шестнадцать…» → «+7 916
+    …»), so the substitute cannot wear the source's form and `form_match` is
+    right to say so. That is `docs/known-issues.md` Б27 and it belongs to the
+    voice track; the slice is here so the caption is never read as an
+    instrument defect (J1.3)."""
     rows = [hop for _one, hop in _hops(observations, "IN") if hop.status == "observed"]
     return _line("form_hIN", sum(1 for hop in rows if hop.verdict is not None and hop.verdict.same), len(rows))
 
@@ -671,7 +682,51 @@ def answer_real(observations: Sequence[RunObservation]) -> Line:
     the same span says it is the wrong one. Only the REQUIRED hops are judged:
     an optional answer hop is one the case does not oblige the agent to make.
     Whether the answer wears the AGENT's form is the verdict's question, and it
-    is asked right beside it."""
+    is asked right beside it.
+
+    AN ANSWER WITH NOTHING TO REQUIRE IS OUTSIDE THE DENOMINATOR (J1.1). It is
+    v4's «all() over an empty list» once more: `required` was empty for 720 of
+    the 1357 answers the corpus declares an answer hop for, `all([])` is True,
+    the residual clause has nothing to find in a reply that was never masked —
+    and a FULL PASSTHROUGH scored 53.1% on the line named «the answer carries
+    the real value». Skipping the case is the only honest reading: the corpus
+    obliges the agent to name nothing, so there is nothing to be right about.
+    The count is not swallowed — `answer_optional_only` prints it beside this
+    line, and a substitute left in such a reply is still counted by
+    `residual`, whose population is every answer."""
+    hits = 0
+    total = 0
+    for one in observations:
+        rows = [hop for hop in one.hops
+                if hop.declared and hop.hop.kind == "OUT" and hop.hop.owner == "answer"]
+        required = [hop for hop in rows if not hop.hop.optional]
+        if not required:
+            continue
+        total += 1
+        good = all(_answer_hop_right(one, hop) for hop in required)
+        left_over = any(hop.status == "residual" for hop in rows) or bool(
+            residual_answer_items(one.case, one.run))
+        hits += 1 if good and not left_over else 0
+    return _line("answer_real", hits, total)
+
+
+def answer_optional_only(observations: Sequence[RunObservation]) -> Line:
+    """DIAGNOSTIC, printed BESIDE `answer_real`: answers whose case declares
+    OUT/answer hops and obliges none of them.
+
+    It is the number `answer_real` leaves out of its denominator, and it is
+    printed for the same reason `out_absent` is — a denominator that shrinks
+    without saying so is how «all() over an empty list» survived v4. An answer
+    the case declares no hop for at all is in NEITHER population: the case is
+    not asking the agent to name anything, so there is no answer to judge and
+    none to exclude.
+
+    IT IS A FACT ABOUT THE CORPUS AND NO GATEWAY CAN MOVE IT, deliberately.
+    `out_absent` shifts when the AGENT skips a declared hop; this counts what
+    the CASE obliges, which is fixed before any arm runs (720 of 1357 on the
+    current corpus). That is what makes it a caption rather than a result, and
+    it is why it is DIAGNOSTIC: read as a score it would say nothing, read
+    beside `answer_real` it says which answers the rate above it is over."""
     hits = 0
     total = 0
     for one in observations:
@@ -681,11 +736,8 @@ def answer_real(observations: Sequence[RunObservation]) -> Line:
             continue
         total += 1
         required = [hop for hop in rows if not hop.hop.optional]
-        good = all(_answer_hop_right(one, hop) for hop in required)
-        left_over = any(hop.status == "residual" for hop in rows) or bool(
-            residual_answer_items(one.case, one.run))
-        hits += 1 if good and not left_over else 0
-    return _line("answer_real", hits, total)
+        hits += 0 if required else 1
+    return _line("answer_optional_only", hits, total)
 
 
 def _occurrences(item: PiiItem, text: str) -> tuple[tuple[int, int], ...]:
@@ -929,30 +981,19 @@ def memory_consistency(observations: Sequence[RunObservation]) -> Line:
     return _line("memory_consistency", hits, total)
 
 
-def memory_stability(observations: Sequence[RunObservation]) -> Line:
-    """The substitute of a value the case asks the agent to REMEMBER did not
-    change between requests of one conversation. A new conversation is a new
-    observation and a new substitute there is the conversation scope working,
-    never a miss — which is why the population is per observation and never
-    pooled across them.
-
-    ITS OWN POPULATION: the items a `MemorySpec` names. This function and
-    `stability` were one body under two names — same code, same counters, same
-    fixtures' answers — and a report printing one number twice under two
-    headings tells a reader there are two pieces of evidence. `stability` asks
-    it of EVERY item of the corpus; this line asks it of the values a long
-    dialogue has to carry, which is the family the line was written for, and
-    where a re-mint between requests actually costs the agent its memory."""
-    hits = 0
-    total = 0
-    for one in observations:
-        for spec in one.case.memory:
-            mentions = _mentions_of(one, spec.item_id)
-            if len({mention.request_index for mention in mentions}) < 2:
-                continue
-            total += 1
-            hits += 1 if len({mention.substitute for mention in mentions}) == 1 else 0
-    return _line("memory_stability", hits, total)
+# `memory_stability` STOOD HERE AND IS REMOVED (J1.2). It asked whether the
+# substitute of a value the case asks the agent to REMEMBER changed between
+# requests, and its population was empty on the whole corpus — 619 of 619
+# memory specs have all their mentions in ONE request, because a
+# `MentionRecord` is written once per message (`harness.GatewayV5.
+# _note_message_mentions`) and a `MemorySpec` recall is anaphoric, so the
+# value is spelled once. It printed 0/0 for the perfect gateway and 0/0 for
+# every one of the 23 wrong gateways: nothing could make it red. The
+# alternatives were a second name for `memory_consistency` (the per-PLACE
+# population, 619/619) or a record only the harness can write; the rule from
+# H1.4 decides — a public line that can only print «н/п» is worse than no
+# line. `stability` still asks the question of EVERY item of the corpus
+# (306 in population), which is where the evidence actually is.
 
 
 def _rag_chunks(one: RunObservation) -> list[tuple[ToolResultRecord, str, list[tuple[int, int]]]]:
@@ -1256,10 +1297,11 @@ METRIC_FUNCTIONS: dict[str, Metric] = {
     "shared_block_answer": shared_block_answer,
     "form_hIN": form_hIN, "form_hOUT": form_hOUT, "out_absent": out_absent,
     "toolresult_masked": toolresult_masked,
-    "answer_real": answer_real, "chain_value": chain_value, "chain_form": chain_form,
+    "answer_real": answer_real, "answer_optional_only": answer_optional_only,
+    "chain_value": chain_value, "chain_form": chain_form,
     "multi_all_out": multi_all_out, "multi_consistency": multi_consistency,
     "retry_form": retry_form, "memory_consistency": memory_consistency,
-    "memory_stability": memory_stability, "rag_masked": rag_masked,
+    "rag_masked": rag_masked,
     "rag_identity_kept": rag_identity_kept, "doc_masked": doc_masked,
     "doc_extracted": doc_extracted, "residual": residual, "stream_fidelity": stream_fidelity,
 }
@@ -1303,6 +1345,22 @@ def _cue_bucket(one: RunObservation, hop: HopObservation) -> str:
     return "есть" if any(word in window for word in CUE_WORDS) else "нет"
 
 
+def _spoken_bucket(one: RunObservation, hop: HopObservation) -> str:
+    """Was the value this hop carries one the customer DICTATED or one they
+    WROTE — `PiiItem.spoken`, the corpus's own statement about the source.
+
+    Read off the item and never off the surface: a dictated «сто сорок три»
+    already reached the tool leg as digits, and guessing the register back from
+    a string would bucket the engine's own canonicalisation as speech. An item
+    the observation cannot resolve goes to «—» rather than to either side, so a
+    bucket is never inflated by a lookup failure (`_return_form_bucket` does
+    the same)."""
+    item = _item_of(one, hop.hop.item_id)
+    if item is None:
+        return "—"
+    return "продиктовано" if item.spoken else "написано"
+
+
 def _return_form_bucket(one: RunObservation, hop: HopObservation) -> str:
     if hop.hop.kind == "IN" and hop.hop.owner in ("tool", "document"):
         record = result_for_hop(one.run, hop.hop)
@@ -1321,10 +1379,12 @@ def _hop_bucket(axis: str, one: RunObservation, hop: HopObservation) -> str:
         return hop.pii_type
     if axis == "return_form":
         return _return_form_bucket(one, hop)
+    if axis == "spoken":
+        return _spoken_bucket(one, hop)
     return _cue_bucket(one, hop)
 
 
-HOP_AXES: tuple[str, ...] = ("vertical", "hop_owner", "pii_type", "return_form", "cue")
+HOP_AXES: tuple[str, ...] = ("vertical", "hop_owner", "pii_type", "return_form", "cue", "spoken")
 
 
 def by_axis(observations: Sequence[RunObservation], axis: str) -> dict[str, list[RunObservation]]:

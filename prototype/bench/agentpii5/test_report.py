@@ -784,6 +784,42 @@ def test_out_absent_is_printed_beneath_form_hOUT() -> list[str]:  # noqa: N802 -
         return problems
 
 
+def test_answer_optional_only_is_printed_beneath_answer_real() -> list[str]:
+    """J1.1. `answer_real` stopped judging the answers a case obliges nothing
+    in — 720 of the 1357 the corpus declares an answer hop for — and a
+    denominator that shrinks without saying so is the defect this pair exists
+    to make visible. So the count is printed on the very next line, the way
+    `out_absent` is, and not four sections down among the diagnostics where the
+    rate above it would read as a rate over every declared answer.
+
+    The negative is the same as `out_absent`'s: a diagnostic with no line to
+    qualify (`rewrite_ratio_v5`) must stay BELOW the diagnostics header, or «the
+    line after answer_real is a diagnostic» would pass on any ordering."""
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        section = _section_two(report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS))
+        problems: list[str] = []
+        at = {name: [index for index, one in enumerate(section)
+                     if one.strip().startswith(name + " ")]
+              for name in ("answer_real", "answer_optional_only", "rewrite_ratio_v5")}
+        for name, found in at.items():
+            if len(found) != 1:
+                problems.append(f"{name} is printed {len(found)} times in section 2")
+        if problems:
+            return problems
+        if at["answer_optional_only"][0] != at["answer_real"][0] + 1:
+            problems.append(f"answer_optional_only is not the line under answer_real: {at}")
+        header = [index for index, one in enumerate(section) if "диагностика" in one][0]
+        if at["answer_optional_only"][0] > header:
+            problems.append("answer_optional_only is printed in the diagnostics block, where the "
+                            "reader cannot see which denominator answer_real used")
+        if at["rewrite_ratio_v5"][0] < header:
+            problems.append("a diagnostic with no line to qualify was lifted out of the block")
+        if BESIDE.get("answer_real") != "answer_optional_only":
+            problems.append(f"BESIDE no longer pairs the two: {BESIDE}")
+        return problems
+
+
 def test_axis_note_where_a_line_may_not_be_sliced() -> list[str]:
     """F2.10. An observation-level line sliced by a HOP axis counts the same
     answer once per bucket and the buckets add up to more units than the
@@ -853,6 +889,8 @@ def main() -> int:
         ("turn_residual_is_demanded_too", test_turn_residual_is_demanded_too),
         ("excluded_observations_are_on_the_side", test_excluded_observations_are_on_the_side),
         ("out_absent_is_printed_beneath_form_hOUT", test_out_absent_is_printed_beneath_form_hOUT),
+        ("answer_optional_only_is_printed_beneath_answer_real",
+         test_answer_optional_only_is_printed_beneath_answer_real),
         ("axis_note_where_a_line_may_not_be_sliced", test_axis_note_where_a_line_may_not_be_sliced),
         ("baseline_without_v5_files_is_refused", test_baseline_without_v5_files_is_refused),
     )

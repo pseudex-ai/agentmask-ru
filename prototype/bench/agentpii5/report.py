@@ -108,8 +108,11 @@ _LEVEL_LINE = re.compile(
 # which is exactly what `form_hOUT` leaves out of its denominator. Printed with
 # the other diagnostics, four sections down, `form_hOUT` reads as a form result
 # on every declared hop (F2.10). A mapping and not a hard-coded pair of lines
-# so a second such pair is one row here rather than a second special case.
-BESIDE: dict[str, str] = {"form_hOUT": "out_absent"}
+# so a second such pair is one row here rather than a second special case — and
+# J1.1 is that second pair: `answer_optional_only` counts the answers
+# `answer_real` stopped judging (720 of 1357 oblige nothing), and read four
+# sections apart the reader cannot tell which denominator the rate belongs to.
+BESIDE: dict[str, str] = {"form_hOUT": "out_absent", "answer_real": "answer_optional_only"}
 
 
 class ReportError(ValueError):
@@ -996,8 +999,32 @@ def _mutant_form_hIN(observations: Sequence[RunObservation]) -> Line:  # noqa: N
                                 or (hop.verdict is not None and hop.verdict.same)), len(rows))
 
 
+def _mutant_answer_real(observations: Sequence[RunObservation]) -> Line:
+    """The pre-J1.1 body: every case with an answer hop is in the denominator,
+    so `all([])` over a case that obliges nothing is a HIT. It is v4's «all()
+    over an empty list», and on the real corpus it handed a full passthrough
+    720 of 1357 — 53.1% on the line named «the answer carries the real
+    value»."""
+    hits = 0
+    total = 0
+    for one in observations:
+        rows = [hop for hop in one.hops
+                if hop.declared and hop.hop.kind == "OUT" and hop.hop.owner == "answer"]
+        if not rows:
+            continue
+        total += 1
+        required = [hop for hop in rows if not hop.hop.optional]
+        good = all(metric_bodies._answer_hop_right(one, hop) for hop in required)
+        left_over = any(hop.status == "residual" for hop in rows) or bool(
+            metric_bodies.residual_answer_items(one.case, one.run))
+        hits += 1 if good and not left_over else 0
+    return Line("answer_real", hits, total)
+
+
 MUTANTS: tuple[tuple[str, str, Metric], ...] = (
     ("end_to_end", "`unmasked` leaf is a HIT (the pre-F1.3 reading)", _mutant_end_to_end),
+    ("answer_real", "a case that obliges nothing is still in the denominator (all() over an "
+                    "empty list)", _mutant_answer_real),
     ("out_absent", "optional hops dropped from the denominator", _mutant_out_absent),
     ("consistency", "a tool result is not a place: population keyed on `msg` alone", _mutant_consistency),
     ("doc_extracted", "any real value of the case counts, not THIS item's", _mutant_doc_extracted),

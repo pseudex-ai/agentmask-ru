@@ -43,7 +43,7 @@ def _spec_features() -> dict[str, tuple[str, ...]]:
 def _spec_metrics() -> tuple[str, ...]:
     """§4.1 levels, §4.2 public, §4.3/§8.3 new — copied by hand.
 
-    FOUR NAMES DIFFER FROM THE SPEC'S TABLE, AND EACH DIFFERENCE IS A DECISION.
+    SIX NAMES DIFFER FROM THE SPEC'S TABLE, AND EACH DIFFERENCE IS A DECISION.
     `rewrite_ratio_v5` / `shared_block_answer` carry the version because they
     are NOT the public quantities of those names (a message-level change ratio
     and a per-item attribution failure); printing two different numbers under
@@ -51,14 +51,21 @@ def _spec_metrics() -> tuple[str, ...]:
     public harness. `out_absent` is the count `form_hOUT`'s denominator leaves
     out, and `stream_fidelity` is the one reader of `stream_mismatch`, which
     the harness wrote on every streaming case and nothing consumed.
+
+    ROUND 5 MOVED TWO MORE. `answer_optional_only` is `out_absent`'s twin — the
+    answers `answer_real` stopped judging when J1.1 took «all() over an empty
+    list» out of its denominator, printed so the shrink is visible. And
+    `memory_stability` is GONE: its population is empty by construction on any
+    corpus whose memory recall is anaphoric, so the line could only ever print
+    «н/п» (J1.2, the removal comment in `contracts.METRICS`).
     """
     return (
         "action", "tools", "keys", "state", "values", "verbatim",
         "leak", "coverage", "typed", "round_trip", "round_trip_repaired", "end_to_end",
         "overmask", "consistency", "stability", "rewrite_ratio_v5", "shared_block_answer",
         "form_hIN", "form_hOUT", "out_absent",
-        "toolresult_masked", "answer_real", "chain_value", "chain_form",
-        "multi_all_out", "multi_consistency", "retry_form", "memory_consistency", "memory_stability",
+        "toolresult_masked", "answer_real", "answer_optional_only", "chain_value", "chain_form",
+        "multi_all_out", "multi_consistency", "retry_form", "memory_consistency",
         "rag_masked", "rag_identity_kept", "doc_masked", "doc_extracted", "residual",
         "stream_fidelity",
     )

@@ -251,6 +251,11 @@ IN_USER = _hop("IN", "user", "p1", 0, 0, "", -1, -1, "")
 OUT_ARG = _hop("OUT", "tool_arg", "p1", 1, 0, "crm_upsert_contact", 0, -1, "contact.name")
 IN_TOOL = _hop("IN", "tool", "p1", 2, 0, "crm_find_contact", 0, -1, "contacts[].name")
 OUT_ANSWER = _hop("OUT", "answer", "p1", 3, 0, "", -1, -1, "")
+# An answer hop the case does NOT oblige the agent to make. `_hop` builds every
+# hop required, so the optional one is written once here: J1.1's fixtures turn
+# on the difference and a second `replace(..., optional=True)` in two places
+# would be two declarations of one fact.
+OPTIONAL_ANSWER = replace(OUT_ANSWER, optional=True)
 
 
 def _plain_case(case_id: str, hops: tuple[Hop, ...]) -> CaseV5:
@@ -765,11 +770,57 @@ def _answer_real_fixtures() -> tuple[Fixture, Fixture, Fixture]:
     other_case = _plain_case("fx-ar-2", (OUT_ANSWER,))
     wrong_person = _obs(other_case, _run("fx-ar-2"),
                         (_seen(other_case, OUT_ANSWER, "NAME", OTHER_NAME, OTHER_NAME),))
+    # ADVERSARIAL, THIRD CLAUSE — THE V4 DISEASE ON THIS LEG (J1.1). The case
+    # declares ONE answer hop and obliges none of it; the gateway masked
+    # nothing, so the hop is `unmasked`, nothing is residual and there is no
+    # substitute in the reply. `required` is empty, `all([])` is True, and the
+    # pre-J1.1 body counted this a HIT — which is how a full passthrough
+    # printed 53.1% over the real corpus (720 of 1357 answers declare no
+    # required hop). Outside the denominator, so the fixture's total stays 2
+    # and a metric that keeps the old reading prints 1/3.
+    optional_case = _plain_case("fx-ar-3", (OPTIONAL_ANSWER,))
+    passthrough = _obs(optional_case, _run("fx-ar-3"),
+                       (_unseen(optional_case, OPTIONAL_ANSWER, "NAME",
+                                REAL_NAME, REAL_NAME, "unmasked"),))
     return (_fx("answer_real", "zero", "", (left,), 0, 1),
             _fx("answer_real", "one", "", (good,), 1, 1),
             _fx("answer_real", "adversarial",
-                "the real value in a foreign form, and another person's in the right one",
-                (canon, wrong_person), 0, 2))
+                "the real value in a foreign form, another person's in the right one, and a "
+                "PASSTHROUGH on a case that obliges nothing — the old body printed 1/3",
+                (canon, wrong_person, passthrough), 0, 2))
+
+
+def _answer_optional_only_fixtures() -> tuple[Fixture, Fixture, Fixture]:
+    """The count `answer_real` leaves out of its denominator, as its own line.
+
+    `out_absent` is the precedent and the reason: a denominator that shrinks
+    without saying so is exactly how «all() over an empty list» survived v4,
+    and a reader cannot tell 637 judged answers from 1357 unless the 720 are
+    printed."""
+    required_case = _plain_case("fx-aoo-req", (OUT_ANSWER,))
+    required = _obs(required_case, _run("fx-aoo-req"),
+                    (_seen(required_case, OUT_ANSWER, "NAME", REAL_NAME, REAL_NAME),))
+    optional_case = _plain_case("fx-aoo-opt", (OPTIONAL_ANSWER,))
+    optional = _obs(optional_case, _run("fx-aoo-opt"),
+                    (_seen(optional_case, OPTIONAL_ANSWER, "NAME", REAL_NAME, REAL_NAME),))
+    # ADVERSARIAL, TWO CLAUSES. (1) a case with NO answer hop at all: it is in
+    # neither population — the corpus asks the agent to name nothing, so there
+    # is no answer to judge and none to exclude — and a metric counting «no
+    # required hop» over every observation would print 2/3. (2) a case with one
+    # optional AND one required hop: `answer_real` judges it, so it is not an
+    # exclusion, and a metric asking «is any hop optional» would print 3/3.
+    silent = _obs(_plain_case("fx-aoo-none", ()), _run("fx-aoo-none"), ())
+    mixed_hop = _hop("OUT", "answer", "p2", 4, 0, "", -1, -1, "")
+    mixed_case = _plain_case("fx-aoo-mix", (OPTIONAL_ANSWER, mixed_hop))
+    mixed = _obs(mixed_case, _run("fx-aoo-mix"),
+                 (_seen(mixed_case, OPTIONAL_ANSWER, "NAME", REAL_NAME, REAL_NAME),
+                  _seen(mixed_case, mixed_hop, "PHONE", REAL_PHONE, REAL_PHONE)))
+    return (_fx("answer_optional_only", "zero", "", (required,), 0, 1),
+            _fx("answer_optional_only", "one", "", (optional,), 1, 1),
+            _fx("answer_optional_only", "adversarial",
+                "an answer nobody declared is in neither population (a wrong metric prints 2/3), "
+                "and one optional hop beside a required one is not an exclusion (3/3)",
+                (optional, silent, mixed), 1, 2))
 
 
 def _chain_case(case_id: str, out_item: str, items: tuple[PiiItem, ...]) -> tuple[CaseV5, Hop, Hop]:
@@ -979,39 +1030,14 @@ def _memory_consistency_fixtures() -> tuple[Fixture, Fixture, Fixture]:
                 (_obs(pronoun, anaphoric, ()),), 1, 1))
 
 
-def _memory_stability_fixtures() -> tuple[Fixture, Fixture, Fixture]:
-    """ITS OWN POPULATION — the items a `MemorySpec` names. `stability` and
-    this line were one function under two names and their fixtures answered
-    identically on every input in the package, so the gate could not tell them
-    apart either. These cases carry a `MemorySpec`; `stability`'s carry none,
-    which is what makes the two lines two measurements."""
-    spec = MemorySpec(item_id="p1", first_turn=0, recall_turn=4, anaphora="none")
-    case = replace(_plain_case("fx-ms", ()), memory=(spec,))
-    moved = _with_mentions(_run("fx-ms"), (MentionRecord("p1", 0, -1, FAKE_NAME, 0),
-                                           MentionRecord("p1", 0, -1, OTHER_NAME, 2)))
-    kept = _with_mentions(_run("fx-ms"), (MentionRecord("p1", 0, -1, FAKE_NAME, 0),
-                                          MentionRecord("p1", 0, -1, FAKE_NAME, 2)))
-    # ADVERSARIAL. TWO conversations, each with its own stable substitute, and
-    # the two substitutes differ. That is the conversation scope doing the one
-    # thing that makes the single-candidate rule safe. A metric that pooled the
-    # mentions across observations would print 0/2 and the report would name
-    # the product's central safety property as a defect.
-    other_case = replace(case, base=replace(case.base, id="fx-ms-2", conversation_id="conv-2"))
-    second = _with_mentions(_run("fx-ms-2"), (MentionRecord("p1", 0, -1, OTHER_NAME, 0),
-                                              MentionRecord("p1", 0, -1, OTHER_NAME, 2)))
-    # SECOND CLAUSE: an item the case does NOT ask the agent to remember, read
-    # in two requests with two substitutes. `stability` counts it and fails;
-    # this line does not, because its population is the `MemorySpec` items —
-    # the difference that makes it a second measurement rather than a second
-    # printing of the first.
-    plain = _obs(_plain_case("fx-ms-3", ()),
-                 _with_mentions(_run("fx-ms-3"), (MentionRecord("p1", 0, -1, FAKE_NAME, 0),
-                                                  MentionRecord("p1", 0, -1, OTHER_NAME, 2))), ())
-    return (_fx("memory_stability", "zero", "", (_obs(case, moved, ()),), 0, 1),
-            _fx("memory_stability", "one", "", (_obs(case, kept, ()),), 1, 1),
-            _fx("memory_stability", "adversarial",
-                "a new conversation is a new substitute, and an item nobody must remember is not counted",
-                (_obs(case, kept, ()), _obs(other_case, second, ()), plain), 2, 2))
+# `_memory_stability_fixtures` STOOD HERE AND IS REMOVED WITH ITS METRIC
+# (J1.2). The fixtures were sound — a `MemorySpec` item read in two requests
+# with two substitutes, a second conversation that is not a failure, an item
+# nobody must remember — and that is precisely what made them misleading: they
+# built by hand the only population the line could ever have. On the real
+# corpus all 619 memory specs have their mentions in ONE request, so the line
+# printed 0/0 there and no wrong gateway could move it. A fixture population
+# the corpus cannot produce is a gate that only ever tests the fixture.
 
 
 def _rag_case(case_id: str, items: tuple[PiiItem, ...], chunks: tuple[str, ...],
@@ -1276,13 +1302,13 @@ FIXTURES: dict[str, tuple[Fixture, Fixture, Fixture]] = {
     "stream_fidelity": _stream_fidelity_fixtures(),
     "toolresult_masked": _toolresult_masked_fixtures(),
     "answer_real": _answer_real_fixtures(),
+    "answer_optional_only": _answer_optional_only_fixtures(),
     "chain_value": _chain_value_fixtures(),
     "chain_form": _chain_form_fixtures(),
     "multi_all_out": _multi_all_out_fixtures(),
     "multi_consistency": _multi_consistency_fixtures(),
     "retry_form": _retry_form_fixtures(),
     "memory_consistency": _memory_consistency_fixtures(),
-    "memory_stability": _memory_stability_fixtures(),
     "rag_masked": _rag_masked_fixtures(),
     "rag_identity_kept": _rag_identity_fixtures(),
     "doc_masked": _doc_masked_fixtures(),
