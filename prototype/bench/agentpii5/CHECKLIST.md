@@ -206,7 +206,7 @@ Every test named here is a script with `main()` run as
 | C-186 | §8.5 models | Sonnet judge, Haiku dialogue; budget by `QUERY_CAP_USD` and `SpendLedger` as in v4 | `harness.py` uses `bench.agentpii3.live.judge.SpendLedger` and `contracts.QUERY_CAP_USD`; `test_harness.test_ledger_shared` | J |
 | C-187 | §8.5 recalibrate | re-calibrate on a change of judge model, prompt, or ≥ 20% of the corpus | `CalibrationStamp.prompt_sha256`/`judge_model` must equal the run's; `calibration.is_current(stamp, judge_model, prompt_sha256, corpus_digest, previous_digest, changed_share)`; `test_calibration.test_recalibration_triggers` | J |
 | C-188 | task | v5 lives in `bench/agentpii5/`, imports v4, never edits it; nothing under `public/` | C-001, C-109 | C, R |
-| C-189 | task | a v5 run directory holds every file in `contracts.RUN_FILES`, and v4's `compare_runs.py`/`autopsy.py` read it unchanged | `harness.py` writes all of `RUN_FILES`; `test_records.test_v4_readers_accept_v5_run` runs `bench.agentpii4.autopsy._load_run` on a fixture run dir | J |
+| C-189 | task | a v5 run directory holds every file in `contracts.RUN_FILES`, and v4's `compare_runs.py`/`autopsy.py` read it unchanged | `harness.finish_run` writes all of `RUN_FILES` — the text half through `report.render_side_by_side`, the two machine-readable ones (`<run>.report.json`, `<run>.public.json`, ТЗ harness §5.1/§5.3) through `reportjson.write_side_by_side`, and it is ONE function so a `--report` replay produces the same set as a live run; `test_harness.test_run_files_written` walks `RUN_FILES` against a finished fixture directory; `test_records.test_v4_readers_accept_v5_run` runs `bench.agentpii4.autopsy._load_run` on it | J |
 | C-190 | task | the final report prints v4 levels (unchanged) beside the v5 additions so the GO run can compare | `report.render(side: SideBySide, …) -> list[str]`, reached through `report.render_side_by_side(v5_run_dir, v4_run_dir)` (ruling R-34: `gate_all`, `side_by_side` and `report_lines` take the metric registry explicitly, so the gate's own test can register a broken metric and watch the report refuse it); `test_report.test_side_by_side_sections` asserts the v4 block precedes the v5 block and both name the same run ids | M |
 | C-191 | task | only the live glue imports `pseudex` | BOTH HALVES OF THE IMPORT TEST (ruling R-38), in `test_harness.test_only_harness_imports_pseudex`: the MODULES that import the engine are exactly `PSEUDEX_ALLOWED_MODULES == ("bench.agentpii5.harness",)`, and the TESTS that do are exactly `["test_harness_stream"]` — the stream test must run the real restoration leg in process, and stating it is what stops that list growing quietly; plus the negative fixture that shows `harness.pseudex_importers` can FIND a leaky file, and every component test's own `test_no_pseudex` for its own modules | all |
 
@@ -229,3 +229,43 @@ Every test named here is a script with `main()` run as
 | C-205 | §8.3 | the acceptance bounds are CHECKED on the corpus the claim is about | `python3 -m bench.agentpii5.test_perfect --tier max` — the same eight checks over all 1736 cases, ~2 min 15 s, and the run to make before any number of this benchmark is quoted (named in `perfect.py`'s docstring, which prints the numbers and judges nothing). The file was pinned to `medium` alone for five rounds, where `answer_real` read 101/101 while `max` read 636/637 and only a scratch file ever saw it: a bound tested on a slice of the corpus it is a claim about is a bound with a blind spot. `medium` stays the default (cheap enough for every change, and the smallest tier on which all three corrections bite); `max` is measured to keep every check load-bearing — the three corrections and the four wrong gateways bite there too, so it is the whole test and not a weakened subset | M |
 
 **Count: 205 items.**
+
+---
+
+## Харнесс — отдельный список (H-01…H-22)
+
+Эти строки НЕ входят в счёт 205: CHECKLIST — конформанс `docs/tz-agentpii5.md`
+(что мерит прибор), а харнесс — второй трек с собственным ТЗ
+(`docs/tz-bench-harness.md`, решение D-066: прогон стоит дёшево, сравнение
+честно, повтор возможен). Прибор при этом не двинулся: ни одна метрика, запись
+прогона, лестница и корпус не изменили смысла — `test_perfect --tier max` и
+`report --selftest` зелёные до и после.
+
+| id | пункт | требование | чем закрыт |
+|---|---|---|---|
+| H-01 | §1.1 | оценка цены и времени ДО запуска, интервалом, с названным основанием | `runinfo.estimate`/`pick_basis`; `test_runinfo.the_estimate_names_its_basis`, `…_scales_with_the_selection`, `…_is_compared_with_the_fact`; `test_harness.the_dry_run_spends_nothing_and_writes_nothing` (каталога и строки реестра после `--dry-run` нет) |
+| H-02 | §1.2 | реестр прогонов, аддитивный, пишется и при прерывании | `runinfo.RunRecord`/`append_run`/`read_runs`; `test_runinfo.the_registry_is_additive`, `…_a_row_refuses_a_missing_field`; `test_harness.the_registry_row_is_written_on_both_ends` |
+| H-03 | §1.3 | метка и заметка: в meta, в реестре, в шапке отчёта; обязательны выше `nano` | `test_harness.the_label_is_demanded_before_a_dollar` (и отказ на ключе и на значении корпуса в метке); `test_report.the_header_names_the_run_and_the_tree` |
+| H-04 | §1.4 | обрыв провайдера — повтор с отступом, потом `terminated: transport`, прогон идёт дальше | `harness.run_with_retries`/`transport_triple`; `test_harness.a_transport_break_does_not_kill_the_run`, `…_the_retry_waits_between_attempts`; `test_report.transport_breaks_are_counted_apart` (отдельная строка цены при replay) |
+| H-05 | §2.1 | любой прогон против любого, отказ на разных корпусах без `--across-corpora` | `compare.compare_dirs`; `test_compare.neither_side_is_the_baseline`, `…_different_corpora_are_refused`, `…_equal_corpora_are_not_refused` |
+| H-06 | §2.2 | diff «случай × строка», отсортированный по ухудшению | `compare --cases`; `test_compare.cases_table_is_sorted_by_worsening`, `…_unchanged_cells_stay_out_of_the_table`, `…_population_change_is_not_a_value_change` |
+| H-07 | §2.3 | один случай одной командой, без модели и трат; две ленты рядом | `microscope.tapes`; `test_microscope` (16 проверок, включая `two_tapes_and_the_difference_block` и `the_tape_is_read_and_not_recomputed`) |
+| H-08 | §2.4 | значимость различия ДВУХ ПРОГОНОВ, с полом 1/n и без заявления об эквивалентности | `compare.difference`; `test_compare.identical_runs_are_indistinguishable_with_the_floor`, `…_a_real_difference_is_significant`, `…_no_equivalence_claim` |
+| H-09 | §3.1 | «положил файл в ярус» без правки харнесса | `build.build_planned`/`plan_table`/`ladder_coverage`, рецепт в `README.md` §1; `test_build` (план — данные, `--check` доказывает рендер моком) |
+| H-10 | §3.2 | первый живой прогон по holdout штампует лестницу; дальше состав — отказ | `build.stamp_holdout_touched`/`touched_refusal`; `test_harness.the_holdout_is_stamped_before_the_first_call` (отметка стоит ДО первого вызова: прерванный прогон уже показал холдаут) |
+| H-11 | §3.3 | дубли id (отказ), мёртвый груз и дубли по составу (счёт) — в сборке И в отчёте | `build.waste_table`; `test_report.the_corpus_waste_is_printed` (включая дубль id, которого словарь по id не видит) |
+| H-12 | §4.1 | один слой провайдеров; точные id моделей и цены — в `meta.json` и `runs.json` | `provider.resolve_provider`/`resolve_model`/`run_block`; `test_provider` (11 проверок); `test_harness.the_record_names_what_answered_and_what_masked` |
+| H-13 | §4.2 | прогон против движка по HTTP | **ЧАСТИЧНО.** Клиентский путь написан и проверен (`provider.HttpGateway`, `probe_gateway`; `test_provider.gateway_is_the_clients_own_path`, `…_http_gateway_speaks_the_four_endpoints`; `test_repro.an_http_gateway_run_repeats_over_http`), плечо его не зовёт: `--gateway` ОТКАЗЫВАЕТ вместо тихого прогона в процессе (`test_harness.the_record_names_what_answered_and_what_masked`). Названо в `README.md` §«Чего сегодня нет» |
+| H-14 | §4.3 | кеш ответов модели для повторного скоринга | **ЧАСТИЧНО.** `provider.AnswerCache`/`recording`/`replaying`/`replies_of_run` написаны и проверены (`test_provider.cache_never_substitutes_a_live_call`, `…_a_finished_run_rescores_with_no_call`); харнесс их не зовёт — пересчёт по готовым записям сегодня делает `run --report`, пересчёт ПЛЕЧЕЙ не делает никто |
+| H-15 | §5.1 | машинный JSON рядом с markdown, одна версионированная схема | `reportjson.write_side_by_side`, строки `<run>.report.json`/`<run>.public.json` в `contracts.RUN_FILES`; `test_reportjson`; `test_harness.run_files_written` |
+| H-16 | §5.2 | тренд по датам и регресс между прогонами | `trend.trend_rows`/`regressions`; `test_trend` (5 проверок, включая «прогон без отчёта всё равно строка») |
+| H-17 | §5.3 | публичная подстрока — по явному списку, отдельным файлом | `reportjson.public`/`PUBLIC_TOP_LEVEL`/`PUBLIC_LINES`; `test_reportjson.public_is_an_allowlist`, `…_public_carries_no_value_of_the_corpus`; `test_cli.report_public_goes_to_the_public_writer` |
+| H-18 | §6.1 | отказ на грязном дереве и на чужом корпусе; `--dirty-ok` пишется в запись | `build.run_provenance`/`start_refusals`/`worktree_line`; `test_harness.a_live_run_is_tied_to_a_commit_and_a_corpus` (и что обе проверки стоят ДО бандла) |
+| H-19 | §6.2 | пороги приёмки в CI: `medium` на каждый push, `max` — ночью | **НЕ ЗАКРЫТО ЗДЕСЬ:** `.github/workflows/` — не файл этого трека. Точная строфа для `gates.yml` передана владельцу; `test_perfect --tier max` и `report --selftest` гоняются руками (`README.md` §Проверки) |
+| H-20 | §7.1 | стоп-кран по цене на случай, вдвое выше ожидаемой | `runinfo.brake_verdict`, `harness.DrivePolicy`; `test_harness.the_cost_brake_stops_the_run`; `test_runinfo.the_brake_fires_only_past_the_floor_and_the_factor` |
+| H-21 | §7.2 | карантин случаев, нестабильных у ВСЕХ плеч в трёх прогонах подряд | `quarantine.unstable_cases`/`report`; `test_quarantine` (9 проверок, включая `nothing_here_writes`: пометка — решение человека) |
+| H-22 | §7.3 | `repro <id>` печатает одну команду и называет недостающее | `repro.plan`/`render`; `test_repro` (7 проверок, включая «ни одного ЗНАЧЕНИЯ переменной окружения») |
+
+Дверь ко всем командам — `python3 -m bench.agentpii5 --help`; каждая команда в
+списке, и список сверяется с каталогом (`test_cli.every_module_with_a_main_is_named`).
+Рецепты — `bench/agentpii5/README.md`.

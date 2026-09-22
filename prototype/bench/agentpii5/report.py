@@ -61,7 +61,7 @@ from bench.agentpii4 import stats
 from bench.agentpii4.autopsy import _load_run
 from bench.agentpii4.report import Scored
 from bench.agentpii4.schema import EXCLUDED_TERMINATIONS, Case
-from bench.agentpii5 import contracts, records
+from bench.agentpii5 import build, contracts, records, runinfo
 from bench.agentpii5.contracts import (
     CalibrationStamp,
     CaseV5,
@@ -311,18 +311,27 @@ class V5Half:
     stopped: tuple[str, ...]
 
 
+def v5_corpus(run_dir: Path) -> tuple[CaseV5, ...]:
+    """The run's own v5 corpus, AS A LIST, in the order it was written.
+
+    The list and not only the dict, because §3.3 asks the report to print the
+    duplicate ids of the corpus it ran on — and in a dict keyed by id a
+    duplicate is not a count of two, it is a case that silently disappeared.
+    A zero that cannot be anything else is worse than no line."""
+    corpus_path = run_dir / "corpus.v5.json"
+    if not corpus_path.exists():
+        raise ReportError(f"{run_dir}: no corpus.v5.json — a v5 report needs the v5 corpus")
+    return tuple(case_v5_from_json(row)
+                 for row in json.loads(corpus_path.read_text(encoding="utf-8"))["corpus"])
+
+
 def v5_cases(run_dir: Path) -> dict[str, CaseV5]:
     """The run's own v5 corpus, keyed by the BASE case id.
 
     `case_v5_to_json` nests the v4 case under "base" so the two corpus files
     carry the same bytes for the v4 half; reading the id off the outer row
     would key every case under None."""
-    corpus_path = run_dir / "corpus.v5.json"
-    if not corpus_path.exists():
-        raise ReportError(f"{run_dir}: no corpus.v5.json — a v5 report needs the v5 corpus")
-    loaded = [case_v5_from_json(row)
-              for row in json.loads(corpus_path.read_text(encoding="utf-8"))["corpus"]]
-    return {case.base.id: case for case in loaded}
+    return {case.base.id: case for case in v5_corpus(run_dir)}
 
 
 def v5_observations(run_dir: Path, scored: Sequence[Scored]) -> V5Half:
@@ -551,9 +560,17 @@ def cost_lines(run_dir: Path) -> tuple[str, ...]:
     spent = sum(_triple_cost(one, triples_path) for one in triples)
     judge = sum(_judge_spend(one, triples_path) for one in triples)
     ceiling = meta.get("ceiling_usd")
+    # §1.4: СНЯТЫЕ ОБРЫВОМ ПРОВАЙДЕРА — ОТДЕЛЬНОЙ СТРОКОЙ. Прогон живьём печатает
+    # это число сам и кладёт его в реестр, но `--report` по старому каталогу
+    # видит только файлы: без этой строки прогон с тридцатью обрывами читается
+    # как прогон с тридцатью дефектами агента. Считается по подстроке, которую
+    # пишет `harness.transport_triple`, а не по догадке о форме причины.
+    transport = [one for one in triples
+                 if runinfo.TRANSPORT_TERMINATED in str(one.get("reason") or "")]
     out = [head,
            f"   троек: полных {len(complete)} · исключено {len(excluded)} · "
            f"не допущено потолком {len(refused)}",
+           f"   снято обрывом провайдера: {len(transport)} — исключены из знаменателей",
            f"   потрачено ${spent:.2f} из " + (f"${float(ceiling):.2f}" if isinstance(ceiling, (int, float))
                                                else f"неизвестного потолка (нет {run_id}.meta.json)"),
            f"   судья: ${judge:.2f} — внутри потраченного, не сверх него"]
@@ -597,15 +614,22 @@ class ReportParts:
     judge: JudgeHalf
     behaviour_of: dict[str, str]
     cost: tuple[str, ...]
+    # The corpus AS WRITTEN, for the waste table of §3.3. The observations carry
+    # cases too, but only the ones a run produced an observation for — and a case
+    # no line counts (the dead weight the table exists to name) is exactly the
+    # case that has no observation.
+    corpus: tuple[CaseV5, ...]
 
 
 def read_parts(v5_run_dir: Path, v4_run_dir: Path) -> ReportParts:
     """Both run directories, read once, in the order a reader would."""
     v5 = v4_half(v5_run_dir, f"v5 run {run_id_of(v5_run_dir)}")
     v4 = v4_half(v4_run_dir, f"v4 baseline {run_id_of(v4_run_dir)}")
-    cases = v5_cases(v5_run_dir)
+    corpus = v5_corpus(v5_run_dir)
+    cases = {case.base.id: case for case in corpus}
     half = observations_of(v5_run_dir, v5.scored, cases)
     return ReportParts(v5_dir=v5_run_dir, v4_dir=v4_run_dir, v5=v5, v4=v4, half=half,
+                       corpus=corpus,
                        judge=judge_half(v5_run_dir),
                        behaviour_of={case_id: case.behaviour for case_id, case in cases.items()},
                        cost=cost_lines(v5_run_dir))
@@ -736,15 +760,28 @@ def render(side: SideBySide, parts: ReportParts, dump: int) -> list[str]:
     before them (v4 prints it first too) and the report's own holes named."""
     mark = f"  {contracts.INCOMPLETE_REPORT_MARK}" if side.incomplete else ""
     judge = side.judge
+    # §1.3: МЕТКА И ЗАМЕТКА В ШАПКЕ. Распечатка отчёта уезжает к тому, кто
+    # разбирает прогон, отдельно от `runs.json` и от каталога, и «прогон от
+    # 23.09» через месяц не значит ничего. Молчание печатается как «—», а не
+    # пропускается: строки, которой нет, читатель не заметит.
+    meta = meta_of(parts.v5_dir, run_id_of(parts.v5_dir))
     out: list[str] = [
         f"AgentPII-RU v5 — {side.v5_run} против {side.v4_run}{mark}",
         f"агент {side.agent_model} · судья {judge.judge_model} "
         f"(κ={judge.kappa:.2f}, согласие={judge.raw_agreement:.2f}, "
         f"{'откалиброван' if judge.calibrated else 'НЕ ОТКАЛИБРОВАН'}; "
         f"отказано до судьи: {side.judge_pregate})",
+        f"метка: {meta.get('label') or '—'} · заметка: {meta.get('note') or '—'}",
+        f"дерево: {meta.get('worktree') or 'неизвестно'}",
         f"корпус v5 {side.corpus_digest_v5[:12] or '—'} · корпус v4 {side.corpus_digest_v4[:12] or '—'}",
         ""]
     out += list(parts.cost)
+    # §3.3: МУСОР КОРПУСА — В ОТЧЁТЕ, А НЕ ТОЛЬКО В СБОРКЕ. `build --check`
+    # видит корпус в дереве; отчёт видит тот, по которому ПРОГНАЛИ, и это
+    # единственное место, где «случай, которого не считает ни одна строка»
+    # встречается с ценой, которую за него заплатили.
+    out += ["", "0bis. КОРПУС ЭТОГО ПРОГОНА — что в нём не работает (ТЗ §3.3)"]
+    out += [f"   {line}" for line in build.waste_table(list(parts.corpus))]
     out += ["", V4_BLOCK_START, ""]
     out += list(parts.v5.block)
     out += ["", "--- базовый прогон v4 ---", ""]

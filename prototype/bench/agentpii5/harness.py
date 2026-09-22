@@ -38,12 +38,14 @@ import ast
 import asyncio
 import hashlib
 import json
+import os
+import random
 import sys
 import tempfile
 import time
 import traceback
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -66,11 +68,15 @@ from bench.agentpii4.gateway import HarnessError, PassThrough, RealGateway
 from bench.agentpii4.mock import CallLog
 from bench.agentpii4.records import ArmMeta, arm_record
 from bench.agentpii4.schema import ARMS, EXCLUDED_TERMINATIONS, Ladder, tier
+from bench.agentpii5 import build as corpus_build
+from bench.agentpii5 import provider
 from bench.agentpii5 import records as r
 from bench.agentpii5 import report as v5_report
+from bench.agentpii5 import reportjson
+from bench.agentpii5 import runinfo
 from bench.agentpii5.calibration import write_stamp
 from bench.agentpii5.contracts import (
-    AGENT_MODEL, ECHO_TAG_PREFIX, JUDGE_MODEL, QUERY_CAP_USD, RETRIES, ArmRunV5,
+    AGENT_MODEL, BENCHMARK, ECHO_TAG_PREFIX, JUDGE_MODEL, QUERY_CAP_USD, RETRIES, ArmRunV5,
     CalibrationStamp, CaseV5, HopObservation, JudgeRow, JudgeVerdict,
     MentionRecord, ToolResultRecord)
 from bench.agentpii5.judge import (
@@ -88,6 +94,12 @@ from pseudex.vault import Vault
 from testkit import load_dev_bundle
 
 _ORG = "agentpii5"
+# ЧЕРЕЗ ЧТО ЭТОТ ФАЙЛ НА САМОМ ДЕЛЕ ЗОВЁТ МОДЕЛЬ. `claude_agent_sdk` говорит с
+# Anthropic; `provider.py` знает три провайдера, и пока плечо не ходит через
+# `provider.call_model`, любой другой — это запись о модели, которая не
+# отвечала. Константа названа здесь, рядом с импортом SDK, а не в `provider`:
+# провайдер — свойство ЭТОГО пути к модели, а не таблицы провайдеров.
+SDK_PROVIDER: str = "anthropic"
 # What a triple's row says when the run's ceiling refused the judge's call. A
 # constant, because three readers must say the same words: the verdict's
 # `reason` in `<run>.judge.jsonl`, the `judge.reason` of the triple row, and
@@ -892,9 +904,103 @@ def triple_runner(detector: Detector, ledger: v3_judge.SpendLedger, config: Judg
 
 # --- driving, and writing every file the report reads ---------------------------------------
 
+class TransportExhausted(HarnessError):
+    """`policy.attempts` попыток подряд оборвались на транспорте.
+
+    Отдельный класс, а не `HarnessError` с текстом: драйвер обязан отличить
+    «провайдер оборвался N раз» (случай снимается, прогон идёт дальше — §1.4)
+    от «наш дефект» (исключение летит наружу и прогон падает), и различать их
+    по подстроке в сообщении — это тот самый разбор текста, который перестаёт
+    работать при первой же правке формулировки.
+    """
+
+
+@dataclass(frozen=True)
+class DrivePolicy:
+    """Что драйвер делает с обрывом провайдера (§1.4) и с уехавшей ценой (§7.1).
+
+    `pause` и `jitter` — ПАРАМЕТРЫ, а не `asyncio.sleep` и `random.random`
+    внутри: проверка отступа, которая честно спит 2, 4 и 8 секунд, добавляет
+    четырнадцать секунд к каждому прогону батареи, и её через неделю выключат.
+    `expected_per_case_usd` — точка оценки §1.1, делённая на тройки; ноль
+    означает «оценки не было», и тогда стоп-кран не вооружён (см.
+    `runinfo.brake_verdict`), а не срабатывает наугад.
+    """
+
+    attempts: int
+    pause: Callable[[float], Awaitable[None]]
+    jitter: Callable[[], float]
+    expected_per_case_usd: float
+
+
+@dataclass(frozen=True)
+class DriveResult:
+    """Что драйвер знает по окончании и чего нет в файлах прогона.
+
+    `transport_terminated` и `stopped` попадают в строку реестра и в
+    последние строки на экране: прогон, остановленный стоп-краном, и прогон,
+    доехавший до конца, различаются только здесь — числа в `<run>.triples.jsonl`
+    у них одинаково честные и одинаково неполные.
+    """
+
+    triples: list[dict[str, object]]
+    transport_terminated: int
+    stopped: str
+
+
+def transport_triple(case: CaseV5, repeat: int, attempts: int, error: str) -> dict[str, object]:
+    """Строка тройки для случая, снятого обрывом провайдера (§1.4).
+
+    ФОРМА СТРОКИ — ТА ЖЕ, что у `run_triple_v5`, и статус взят из уже
+    существующего словаря (`excluded`): тогда отчёт исключает случай из
+    знаменателей тем же кодом, которым исключает плечо, не доигравшее до конца,
+    а новое слово в статусе пришлось бы учить каждому читателю тройки.
+    Причина называет `runinfo.TRANSPORT_TERMINATED`, так что «сколько снял
+    провайдер» считается по одной подстроке, а не по догадке.
+
+    `cost_usd` — ноль: деньги, которые успели списаться до обрыва, уже в
+    `<run>.spend.tsv` (леджер оседает в `finally`), и отчёт печатает журнал
+    рядом с суммой троек — расхождение видно, а выдуманное число в строке
+    тройки не видно никак.
+    """
+    return {"case_id": case.base.id, "repeat": repeat, "kind": case.base.kind,
+            "behaviour": case.behaviour, "register": case.base.register,
+            "cluster": case.base.cluster, "cap_usd": round(v4_harness.cap_usd(case.base) * 3, 6),
+            "cost_usd": 0.0, **r.triple_totals_to_json(triple_totals(None, 0)),
+            "status": "excluded",
+            "reason": f"{runinfo.TRANSPORT_TERMINATED}: {error} (попыток {attempts})",
+            "arms": {}, "judge": {}}
+
+
+async def run_with_retries(run_one: TripleRunner, case: CaseV5, repeat: int,
+                           policy: DrivePolicy) -> TripleResult:
+    """Одна тройка с повтором на обрыве провайдера — экспоненциальный отступ с
+    джиттером, `policy.attempts` попыток, потом `TransportExhausted`.
+
+    `except Exception` здесь НЕ глотает ничего: всё, что не признано обрывом
+    транспорта (`runinfo.is_transport_error` — закрытая таблица имён классов),
+    поднимается дальше немедленно. Повторять наш собственный дефект три раза с
+    отступом значит трижды подождать перед тем же отказом и спрятать причину
+    за словом «транспорт».
+    """
+    last = ""
+    for attempt in range(1, policy.attempts + 1):
+        try:
+            return await run_one(case, repeat)
+        except Exception as error:
+            if not runinfo.is_transport_error(error):
+                raise
+            last = f"{type(error).__name__}: {error}"
+            print(f"  ОБРЫВ {case.base.id}|{repeat} попытка {attempt}/{policy.attempts}: {last}",
+                  file=sys.stderr, flush=True)
+            if attempt < policy.attempts:
+                await policy.pause(runinfo.backoff_seconds(attempt, policy.jitter()))
+    raise TransportExhausted(last)
+
+
 async def drive_v5(cases: Sequence[CaseV5], repeats: int, run_one: TripleRunner,
                    run_dir: Path, run_id: str, concurrency: int,
-                   already: frozenset[tuple[str, int]]) -> list[dict[str, object]]:
+                   already: frozenset[tuple[str, int]], policy: DrivePolicy) -> DriveResult:
     """Every triple, written BEFORE the next one starts (v4's rule: a shell
     timeout during the next triple must not cost this one's result)."""
     limiter = asyncio.Semaphore(max(1, concurrency))
@@ -912,11 +1018,32 @@ async def drive_v5(cases: Sequence[CaseV5], repeats: int, run_one: TripleRunner,
     triples: list[dict[str, object]] = []
     total = len(jobs)
     done = 0
+    spent = 0.0
+    transport = 0
+    stopped = ""
 
     async def worker(case: CaseV5, repeat: int) -> None:
-        nonlocal done
+        nonlocal done, spent, transport, stopped
         async with limiter:
-            result = await run_one(case, repeat)
+            # СТОП-КРАН ПРОВЕРЯЕТСЯ ПЕРЕД ЗАХВАТОМ, а не после: `asyncio.gather`
+            # поставил в очередь все задания сразу, и единственный момент, когда
+            # заданию можно не начинаться, — до первого вызова модели.
+            if stopped:
+                return
+            try:
+                result = await run_with_retries(run_one, case, repeat, policy)
+            except TransportExhausted as gone:
+                # §1.4: случай снят, ПРОГОН ИДЁТ ДАЛЬШЕ. Строка тройки пишется
+                # обязательно — случай, о котором не написано ничего, читается
+                # как случай, который не выбирали.
+                transport += 1
+                row = transport_triple(case, repeat, policy.attempts, str(gone))
+                r.append_row(triples_sink, row)
+                triples.append(row)
+                done += 1
+                print(f"  [{done}/{total}] {case.base.id}|{repeat} "
+                      f"{runinfo.TRANSPORT_TERMINATED} — {gone}", flush=True)
+                return
             for one in result.outcomes:
                 r.append_row(arms_sink, arm_record(one.run, one.meta, by_id[case.base.id].base))
             if result.gateway_run is not None:
@@ -931,13 +1058,22 @@ async def drive_v5(cases: Sequence[CaseV5], repeats: int, run_one: TripleRunner,
             r.append_row(triples_sink, result.triple)
             triples.append(result.triple)
             done += 1
+            spent += float(result.triple["cost_usd"])
             judge = dict(result.triple.get("judge") or {})       # type: ignore[arg-type]
             print(f"  [{done}/{total}] {case.base.id}|{repeat} {result.triple['status']} "
                   f"${float(result.triple['cost_usd']):.4f} хопов {len(result.hops)} "
                   f"судья={judge.get('label') or '—'}", flush=True)
+            # §7.1: средняя цена случая против ожидаемой. Считается ПОСЛЕ записи
+            # строк этой тройки — тройка, за которую уже заплачено, обязана
+            # остаться на диске, чем бы ни кончился прогон.
+            refused = runinfo.brake_verdict(done, spent, policy.expected_per_case_usd,
+                                            f"{case.base.id}|{repeat}")
+            if refused and not stopped:
+                stopped = refused
+                print(f"\n{refused}", file=sys.stderr, flush=True)
 
     await asyncio.gather(*(worker(case, repeat) for case, repeat in jobs))
-    return triples
+    return DriveResult(triples=triples, transport_terminated=transport, stopped=stopped)
 
 
 def write_corpus(run_dir: Path, cases: Sequence[CaseV5], digest: str) -> None:
@@ -951,11 +1087,10 @@ def write_corpus(run_dir: Path, cases: Sequence[CaseV5], digest: str) -> None:
         ensure_ascii=False), encoding="utf-8")
 
 
-BENCHMARK: str = "agentpii5"
-
-
 def write_meta(run_dir: Path, run_id: str, model: str, judge_model: str, tier: str,
-               repeats: int, digest: str, ceiling_usd: float, spent_usd: float) -> Path:
+               repeats: int, digest: str, ceiling_usd: float, spent_usd: float,
+               label: str, note: str, started: str, wall_s: float,
+               extra: dict[str, object]) -> Path:
     """What the run itself was (`RUN_FILES["<run>.meta.json"]`, F1.22).
 
     A NAMED WRITER rather than a literal inside `main`, for the reason
@@ -969,15 +1104,38 @@ def write_meta(run_dir: Path, run_id: str, model: str, judge_model: str, tier: s
     are facts about the process that is writing, and a caller allowed to pass
     the hash could stamp a run with the hash of another rubric — which is the
     one thing the field exists to prevent.
+
+    `extra` IS a parameter, and the difference is who owns the fact. The
+    provenance of the tree (§6.1), the provider with its prices (§4.1) and what
+    the gateway arm ran against (§4.2) are produced by `build` and `provider`
+    before the run starts; this function may not recompute them without becoming
+    a second opinion about the commit a run is tied to. It merges rather than
+    nests so `report.meta_of` keeps reading one flat object, and a key that
+    collides with one of the named fields is a refusal — silently overwriting
+    `run_id` from a caller's dict is exactly the shape that makes a run file
+    describe another run.
+
+    МЕТКА И ЗАМЕТКА (§1.3) ЖИВУТ ЗДЕСЬ ЖЕ, а не только в реестре: `runs.json`
+    можно потерять вместе с репозиторием, а каталог прогона уезжает к тому, кто
+    его разбирает, и «прогон от 23.09» без метки не значит ничего уже через
+    месяц. `started` и `wall_s` — потому что оценка времени следующего прогона
+    (§1.1) строится по факту предыдущего, а `finished` в одиночку длительности
+    не даёт.
     """
     path = r.run_file(run_dir, run_id, "<run>.meta.json")
-    path.write_text(json.dumps(
-        {"run_id": run_id, "benchmark": BENCHMARK, "model": model,
-         "judge_model": judge_model, "tier": tier, "repeats": repeats, "digest": digest,
-         "ceiling_usd": ceiling_usd, "spent_usd": round(spent_usd, 6),
-         "prompt_sha256": prompt_sha256(),
-         "finished": datetime.now(timezone.utc).isoformat()},
-        ensure_ascii=False, indent=2), encoding="utf-8")
+    written: dict[str, object] = {
+        "run_id": run_id, "benchmark": BENCHMARK, "model": model,
+        "judge_model": judge_model, "tier": tier, "repeats": repeats, "digest": digest,
+        "ceiling_usd": ceiling_usd, "spent_usd": round(spent_usd, 6),
+        "label": label, "note": note, "started": started, "wall_s": round(wall_s, 1),
+        "prompt_sha256": prompt_sha256(),
+        "finished": datetime.now(timezone.utc).isoformat()}
+    collisions = sorted(set(extra) & set(written))
+    if collisions:
+        raise HarnessError(f"write_meta: {collisions} уже описаны самим прогоном — "
+                           f"блок, переписывающий их, сделал бы файл описанием другого прогона")
+    written.update(extra)
+    path.write_text(json.dumps(written, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
 
 
@@ -997,13 +1155,26 @@ def stamp_judge_file(run_dir: Path, run_id: str, stamp: CalibrationStamp) -> Non
 
 
 def finish_run(run_dir: Path, baseline: Path) -> list[str]:
-    """The side-by-side, which writes `<run>.report.txt` and `<run>.gate.json`.
+    """The side-by-side and the two machine-readable halves beside it:
+    `<run>.report.txt`, `<run>.gate.json`, `<run>.report.json`, `<run>.public.json`.
 
     `baseline` defaults to the run itself at the call site: the v4 block of a v5
     run IS a v4 report of v4-shaped files, so a run with no baseline still
     prints one — beside itself, which is honest and visibly useless.
+
+    ONE FUNCTION WRITES ALL FOUR, and that is why the JSON is here rather than
+    at the end of `main`: `--report` rebuilds a finished directory through this
+    same call, and a JSON produced only by a live run would go stale the first
+    time anybody replayed a report. The two assemblies (`report` builds one,
+    `reportjson` another) read the same files with the same registry and cannot
+    disagree; threading one `SideBySide` through both would move the decision of
+    where `<run>.report.txt` lives out of `report.py` and into this module,
+    which is the drift the file names exist to prevent.
     """
-    return v5_report.render_side_by_side(run_dir, baseline)
+    lines = v5_report.render_side_by_side(run_dir, baseline)
+    written = reportjson.write_side_by_side(run_dir, baseline)
+    return lines + ["", f"машинный отчёт: {written.report.name} (ТЗ §5.1)",
+                    f"публичная подстрока: {written.public.name} (ТЗ §5.3)"]
 
 
 # --- the ast walk that keeps this module the only importer ----------------------------------
@@ -1070,6 +1241,79 @@ def foreign_run_ids(run_dir: Path, run_id: str) -> tuple[str, ...]:
                         - {run_id}))
 
 
+def ladder_digest(path: Path) -> str:
+    """`corpus_sha256` лестницы — для строки реестра.
+
+    Отсутствующий файл — пустая строка, а НЕ отказ: реестр ПОМЕЧАЕТ прогон,
+    а отказывать прогону из-за несовпадения дайджеста — это §6.1 дисциплины и
+    другой файл. Заводить здесь второе место, где прогон может не начаться,
+    значит иметь два правила о том, когда числа привязываются к коммиту.
+    """
+    if not path.exists():
+        return ""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise HarnessError(f"{path}: лестница — не объект, а {type(raw).__name__}")
+    return str(raw.get("corpus_sha256") or "")
+
+
+@dataclass(frozen=True)
+class RunContext:
+    """Всё, что о прогоне известно ДО первого доллара.
+
+    Существует ради одного: строка реестра пишется из ДВУХ мест — из конца
+    прогона и из обработчика падения (§1.2: «при завершении И при прерывании»),
+    и пятнадцать одинаковых аргументов, выписанных дважды, расходятся на первой
+    же правке. Здесь они выписаны один раз, а различаются только те пять,
+    которые к моменту записи и правда разные.
+    """
+
+    run_id: str
+    run_dir: Path
+    runs_path: Path
+    started_at: str
+    tier: str
+    cases: int
+    repeats: int
+    model: str
+    judge_model: str
+    concurrency: int
+    digest: str
+    ladder_digest: str
+    label: str
+    note: str
+    ceiling_usd: float
+    # §6.1 ОДНОЙ СТРОКОЙ, ИЗВЕСТНОЙ ДО ПЕРВОГО ДОЛЛАРА (`build.worktree_line`).
+    # Раньше реестр читал её из `meta.json` — и получал пусто на прерванном
+    # прогоне, потому что `meta.json` пишется в конце, а прерванный конца не
+    # видит. Именно у прерванного прогона вопрос «к какому дереву его привязать»
+    # и стоит: он потратил деньги и объяснить их больше нечем.
+    worktree: str
+
+
+def register_run(context: RunContext, state: str, triples_done: int, transport_terminated: int,
+                 spent_usd: float, wall_s: float, verdict: str) -> None:
+    """Одна строка в `runs.json` (§1.2), из объекта, собранного до старта."""
+    runinfo.append_run(context.runs_path, runinfo.RunRecord(
+        run_id=context.run_id, benchmark=BENCHMARK, started=context.started_at,
+        finished=runinfo.utc_now(), state=state, tier=context.tier, cases=context.cases,
+        repeats=context.repeats, triples_done=triples_done,
+        transport_terminated=transport_terminated, model=context.model,
+        judge_model=context.judge_model, concurrency=context.concurrency,
+        corpus_digest=context.digest, ladder_digest=context.ladder_digest,
+        label=context.label, note=context.note, ceiling_usd=context.ceiling_usd,
+        spent_usd=spent_usd, wall_s=wall_s, verdict=verdict, worktree=context.worktree,
+        run_dir=str(context.run_dir)))
+
+
+def written_triples(run_dir: Path, run_id: str) -> list[dict[str, object]]:
+    """Тройки, уже лежащие на диске. То, что читает обработчик прерывания:
+    строки писались по одной перед следующей тройкой, поэтому файл — это и есть
+    всё, за что прогон успел заплатить."""
+    path = r.run_file(run_dir, run_id, "<run>.triples.jsonl")
+    return r.read_rows(path) if path.exists() else []
+
+
 def _resume(source: Path) -> tuple[frozenset[tuple[str, int]], float]:
     """Triples already finished CLEANLY in that directory: kept, and their cost
     charged against the ceiling so it bounds the WHOLE measurement."""
@@ -1114,6 +1358,25 @@ def main() -> int:
     parser.add_argument("--report", default="", help="пересобрать отчёт из файлов: без модели и без трат")
     parser.add_argument("--resume", default="", help="каталог прерванного прогона")
     parser.add_argument("--baseline", default="", help="каталог прогона v4 для колонки сравнения")
+    parser.add_argument("--label", default="",
+                        help="метка прогона: обязательна для всего, что дороже nano")
+    parser.add_argument("--note", default="", help="свободная заметка прогона")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="оценка случаев, вызовов, токенов, цены и времени; ничего не тратится")
+    parser.add_argument("--runs", default=str(runinfo.RUNS_PATH),
+                        help="реестр прогонов (runs.json)")
+    parser.add_argument("--retries", type=int, default=runinfo.RETRY_ATTEMPTS,
+                        help="попыток на случай при обрыве провайдера")
+    parser.add_argument("--dirty-ok", action="store_true",
+                        help="прогон нельзя привязать к коммиту; это записано "
+                             "в meta.json и в реестре")
+    parser.add_argument("--provider", default="",
+                        help=f"{', '.join(provider.PROVIDERS)}; пусто — {provider.PROVIDER_ENV} "
+                             f"или anthropic")
+    parser.add_argument("--gateway", default="",
+                        help="http://host:port — путь клиента; пусто = шлюз в процессе")
+    parser.add_argument("--image-digest", default="",
+                        help="дайджест образа за --gateway, для сравнения версий")
     args = parser.parse_args()
 
     if args.report:
@@ -1140,6 +1403,94 @@ def main() -> int:
         tier_name = args.tier
     if not cases:
         print("выборка пуста", file=sys.stderr)
+        return 2
+
+    # §1.1 ОЦЕНКА СТРОИТСЯ ДО ВСЕГО, что стоит денег или времени: до бандла, до
+    # модели, до каталога прогона. `--dry-run` возвращается отсюда, и тогда на
+    # диске не появляется ничего — каталог прогона, созданный «просто посмотреть»,
+    # потом читается как прогон, которого не было.
+    judge_name = "" if args.no_judge else args.judge_model
+    plan = runinfo.estimate(
+        runinfo.demand_of(cases, args.repeats),
+        runinfo.pick_basis(runinfo.read_runs(Path(args.runs)), BENCHMARK, tier_name,
+                           args.model, judge_name),
+        sum(v4_harness.cap_usd(case.base) * 3 for case in cases) * args.repeats,
+        args.concurrency)
+    if args.dry_run:
+        for line in runinfo.estimate_lines(plan):
+            print(line)
+        return 0
+
+    # §1.3: метка обязательна выше nano — и проверяется ДО трат, потому что
+    # «допишу потом» после прогона на $50 не случается.
+    if runinfo.label_required(tier_name) and not args.label:
+        print(f"ярус {tier_name} дороже {runinfo.FREE_TIER}: нужна --label «зачем этот прогон» "
+              f"(через месяц «прогон от {datetime.now().strftime('%d.%m')}» не значит ничего)",
+              file=sys.stderr)
+        return 2
+    # МЕТКА — ЕДИНСТВЕННАЯ ДВЕРЬ, через которую в файл, лежащий в репозитории
+    # вечно, может приехать ключ или настоящее значение: её пишет человек по
+    # памяти. Отказ до прогона, а не вычистка после.
+    values = runinfo.corpus_values(cases)
+    for field, text in (("--label", args.label), ("--note", args.note)):
+        try:
+            runinfo.refuse_secrets(text, field)
+            runinfo.refuse_corpus_values(text, field, values)
+        except runinfo.RunInfoError as refused:
+            print(str(refused), file=sys.stderr)
+            return 2
+
+    # §4.1 и §4.2: ЧЕМ ОТВЕЧАЛИ И ПРОТИВ ЧЕГО МАСКИРОВАЛИ — до бандла, потому
+    # что неизвестная цена и неизвестный шлюз обесценивают числа прогона, а не
+    # портятся по ходу. Ни одного сетевого запроса здесь нет: `parse_gateway`
+    # разбирает строку, `run_block` читает ИМЕНА переменных окружения.
+    try:
+        chosen = provider.resolve_provider(args.provider, os.environ)
+        choices = [provider.resolve_model(chosen, "agent", args.model)]
+        if not args.no_judge:
+            choices.append(provider.resolve_model(chosen, "judge", args.judge_model))
+        target = provider.parse_gateway(
+            args.gateway or os.environ.get(provider.GATEWAY_ENV, ""), args.image_digest)
+    except provider.ProviderError as refused:
+        print(str(refused), file=sys.stderr)
+        return 2
+    # ЗАПИСЬ НЕ ИМЕЕТ ПРАВА НАЗЫВАТЬ ТО, ЧЕГО НЕ БЫЛО. Плечи идут через
+    # `claude_agent_sdk` (Anthropic) и через шлюз В ЭТОМ ЖЕ ПРОЦЕССЕ; пока это
+    # так, прогон с чужим провайдером или с адресом контейнера приписал бы свои
+    # числа модели, которая не отвечала, и образу, который ничего не маскировал.
+    # Отказ, а не молчаливое «как раньше»: `provider.HttpGateway` и
+    # `probe_gateway` уже написаны и ждут ровно одной правки — плеча,
+    # которое их позовёт.
+    if chosen.name != SDK_PROVIDER:
+        print(f"провайдер {chosen.name!r} объявлен, а плечи зовут модель через "
+              f"claude_agent_sdk ({SDK_PROVIDER}): запись назвала бы модель, которая не "
+              f"отвечала. Уберите --provider/{provider.PROVIDER_ENV} или дождитесь плеча "
+              f"через provider.call_model (ТЗ §4.1)", file=sys.stderr)
+        return 2
+    if target.mode != "inprocess":
+        print(f"--gateway {target.base_url}: плечо шлюза строит GatewayV5 в этом процессе, "
+              f"и прогон записал бы свои числа на счёт чужого контейнера. Клиентский путь "
+              f"есть (provider.HttpGateway), плеча, которое его зовёт, — нет (ТЗ §4.2)",
+              file=sys.stderr)
+        return 2
+    if args.image_digest and target.mode == "inprocess":
+        print("--image-digest без --gateway: в процессе маскирует исходное дерево, "
+              "а не образ — дайджест в записи был бы неправдой", file=sys.stderr)
+        return 2
+    for one in choices:
+        if one.price is None:
+            print(f"ВНИМАНИЕ {one.role}: {one.unpriced_reason}", file=sys.stderr)
+
+    # §6.1: ГРЯЗНОЕ ДЕРЕВО И ЧУЖОЙ КОРПУС — тоже до бандла и до модели. Числа,
+    # которые не к чему привязать, стоят ровно столько же денег, сколько
+    # привязанные.
+    ladder_path = Path(args.ladder)
+    provenance = corpus_build.run_provenance(cases, ladder_path, corpus_build.REPO,
+                                             args.dirty_ok)
+    refusals = corpus_build.start_refusals(provenance)
+    if refusals:
+        for refusal in refusals:
+            print(refusal, file=sys.stderr)
         return 2
 
     load_dev_bundle()
@@ -1184,12 +1535,54 @@ def main() -> int:
     print(f"прогон {run_id} · агент {args.model} · судья "
           f"{'—' if args.no_judge else args.judge_model} (t={JUDGE_TEMPERATURE}) · "
           f"промпт {prompt_sha256()[:12]} · "
-          f"{len(cases)} случаев × K={args.repeats} × 3 плеча · потолок ${args.ceiling:.2f}",
-          flush=True)
+          f"{len(cases)} случаев × K={args.repeats} × 3 плеча · потолок ${args.ceiling:.2f}"
+          + (f" · метка «{args.label}»" if args.label else ""), flush=True)
+    for line in runinfo.estimate_lines(plan):
+        print(line, flush=True)
+    # ОЖИДАНИЕ НА СЛУЧАЙ ДЛЯ СТОП-КРАНА — точка оценки, делённая на тройки.
+    # Ноль, когда оценки не было: кран не вооружён, и это сказано вслух, а не
+    # срабатывает наугад на первом же прогоне новой пары моделей.
+    expected = (plan.usd_point / plan.demand.triples
+                if plan.basis.kind != "reserve_only" and plan.demand.triples else 0.0)
+    brake_line = ("не вооружён (оценки нет)" if expected <= 0.0 else
+                  f"${expected * runinfo.COST_BRAKE_FACTOR:.4f} на случай в среднем")
+    print(f"стоп-кран по цене: {brake_line}", flush=True)
+    context = RunContext(
+        run_id=run_id, run_dir=out, runs_path=Path(args.runs), started_at=runinfo.utc_now(),
+        tier=tier_name, cases=len(cases), repeats=args.repeats, model=args.model,
+        judge_model=judge_name, concurrency=args.concurrency, digest=digest,
+        ladder_digest=ladder_digest(ladder_path), label=args.label, note=args.note,
+        ceiling_usd=args.ceiling, worktree=corpus_build.worktree_line(provenance))
+    # §3.2: ХОЛДАУТ ШТАМПУЕТСЯ ДО ПЕРВОГО ВЫЗОВА, а не по завершении. Прогон,
+    # прерванный на середине, УЖЕ показал эти случаи модели; отметка, которую
+    # ставит только дошедший до конца, оставила бы холдаут «нетронутым» после
+    # того, как по нему отладились. Первое касание — то, которое считается:
+    # `stamp_holdout_touched` возвращает уже стоящую отметку и ничего не пишет.
+    if corpus_build.touches_holdout(ladder_path, [case.base.id for case in cases]):
+        touch = corpus_build.stamp_holdout_touched(ladder_path, run_id, context.started_at)
+        print(f"холдаут прочитан живым прогоном {touch.touched_by[:12]} от "
+              f"{touch.touched_at}: состав ярусов больше не перерисовывается (R-52, п.10)",
+              flush=True)
+    policy = DrivePolicy(attempts=max(1, args.retries), pause=asyncio.sleep,
+                         jitter=random.random, expected_per_case_usd=expected)
     started = time.time()
-    triples = asyncio.run(drive_v5(cases, args.repeats,
-                                   triple_runner(detector, ledger, config, args.model, run_id),
-                                   out, run_id, args.concurrency, already))
+    try:
+        outcome = asyncio.run(drive_v5(cases, args.repeats,
+                                       triple_runner(detector, ledger, config, args.model, run_id),
+                                       out, run_id, args.concurrency, already, policy))
+    except BaseException as broken:
+        # §1.2: СТРОКА ПИШЕТСЯ И ПРИ ПРЕРЫВАНИИ. Прогон, о котором реестр
+        # молчит, неотличим от прогона, которого не было, — а он потратил
+        # деньги. Считается по тому, что успело лечь на диск, и исключение
+        # летит дальше: прерванный прогон не притворяется завершённым.
+        partial = written_triples(out, run_id)
+        register_run(context, state="interrupted", triples_done=len(partial),
+                     transport_terminated=0,
+                     spent_usd=sum(float(one.get("cost_usd") or 0.0) for one in partial),
+                     wall_s=time.time() - started,
+                     verdict=f"прогон прерван: {type(broken).__name__}: {broken}")
+        raise
+    triples = outcome.triples
     spent = sum(float(one["cost_usd"]) for one in triples)
     # THROUGH RECORDS' READER, never `row.get(key) or 0` (R-54): that spelling
     # reads a triple written by an older harness — one that recorded no judge
@@ -1203,9 +1596,21 @@ def main() -> int:
     # cost all of this». `turn_residual` is beside it because a substitute the
     # customer read in an earlier turn is the same defect as one in the answer,
     # and the operator is owed the count before the report is built.
+    wall_s = time.time() - started
     print(f"\nпотрачено ${spent:.2f} из ${args.ceiling:.2f} "
-          f"(судья ${judged:.2f}) за {time.time() - started:.0f}s · "
+          f"(судья ${judged:.2f}) за {wall_s:.0f}s · "
           f"нераскрытых подмен в ходах: {residual_turns}")
+    # §1.4: снятые обрывом — отдельной строкой, а не внутри «исключено»: это
+    # единственная строка отчётности, отличающая «провайдер оборвался» от
+    # «плечо не доиграло», и без неё прогон с тридцатью обрывами читается как
+    # прогон с тридцатью дефектами агента.
+    if outcome.transport_terminated:
+        print(f"снято обрывом провайдера ({runinfo.TRANSPORT_TERMINATED}): "
+              f"{outcome.transport_terminated} — из знаменателей исключены")
+    # §1.1: оценка против факта. Без этой строки никто не узнает, что оценка
+    # врёт вдвое, а следующий прогон построится на ней же.
+    for line in runinfo.actual_lines(plan, spent, wall_s):
+        print(line)
     # НЕ ОТКАЛИБРОВАН until a calibration file says otherwise: silence about
     # the judge is «неизвестно», never «годен».
     stamp_judge_file(out, run_id, CalibrationStamp(
@@ -1214,10 +1619,27 @@ def main() -> int:
         calibrated=False))
     write_meta(out, run_id, model=args.model,
                judge_model="" if args.no_judge else args.judge_model, tier=tier_name,
-               repeats=args.repeats, digest=digest, ceiling_usd=args.ceiling, spent_usd=spent)
+               repeats=args.repeats, digest=digest, ceiling_usd=args.ceiling, spent_usd=spent,
+               label=args.label, note=args.note, started=context.started_at, wall_s=wall_s,
+               extra={"worktree": context.worktree,
+                      "provenance": corpus_build.provenance_json(provenance),
+                      **provider.run_block(chosen, choices, target, os.environ)})
+    # Шапку отчёта рисует `report.render`, и с этого захода она печатает метку,
+    # заметку и состояние дерева сама — из `meta.json`, который лежит рядом с
+    # отчётом и уезжает вместе с ним. Второй строки здесь больше нет: два места,
+    # печатающие одно, расходятся ровно тогда, когда одно из них правят.
     for line in finish_run(out, Path(args.baseline) if args.baseline else out):
         print(line)
+    # §1.2: строка реестра — ПОСЛЕ отчёта, потому что вердикт полноты читается
+    # из `<run>.gate.json`, который пишет отчёт.
+    verdict = runinfo.verdict_of(out, run_id)
+    if outcome.stopped:
+        verdict = f"{verdict}; остановлен стоп-краном по цене"
+    register_run(context, state="interrupted" if outcome.stopped else "finished",
+                 triples_done=len(triples), transport_terminated=outcome.transport_terminated,
+                 spent_usd=spent, wall_s=wall_s, verdict=verdict)
     print(f"\nкаталог прогона: {out}")
+    print(f"реестр: {args.runs} · строка {run_id[:12]}")
     return 0
 
 

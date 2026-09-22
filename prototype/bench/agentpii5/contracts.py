@@ -1758,6 +1758,12 @@ EXCLUDED_NO_HOPS: str = "нет хопов"
 # (v4 records). A v5 run writes those two EXACTLY as v4 does, from `.base`, and
 # adds its own files beside them. Then the baseline comparison is v4's own
 # tool run on two directories, and nothing in v5 can flatter itself.
+# The benchmark's own name, in ONE place. It is written into every registry row
+# (`runinfo.RunRecord.benchmark`) and into `<run>.report.json`, and those two
+# files are read side by side by `trend`; two spellings of it would be two
+# benchmarks in one table, discovered by a reader of the trend.
+BENCHMARK: str = "agentpii5"
+
 RUN_FILES: dict[str, str] = {
     "corpus.json": "the v4-shaped corpus snapshot: {\"corpus\": [case.base.to_json() …], \"digest\": …}",
     "corpus.v5.json": "the v5 corpus snapshot: {\"corpus\": [case_v5_to_json(case) …], \"digest\": …}",
@@ -1769,7 +1775,9 @@ RUN_FILES: dict[str, str] = {
     "<run>.spend.tsv": "the SpendLedger file (agent + judge), v4 format",
     "<run>.report.txt": "the side-by-side (SideBySide rendered), header first",
     "<run>.gate.json": "GateVerdict per metric — the proof the report was allowed to print",
-    "<run>.meta.json": "what the run itself was: {run_id, benchmark, model, judge_model, tier, repeats, digest, ceiling_usd, spent_usd, prompt_sha256, finished} — written by `harness.main`. The report needs two of them and can get them nowhere else: the CEILING the run was given (a cost line without it says «spent $12 of an unknown ceiling») and the `prompt_sha256` a calibration stamp must match, because a calibration of another prompt certifies another instrument. A run that wrote no meta file is read as a run whose ceiling and prompt are unknown — never as a free run under the right prompt",
+    "<run>.meta.json": "what the run itself was: {run_id, benchmark, model, judge_model, tier, repeats, digest, ceiling_usd, spent_usd, prompt_sha256, started, finished, wall_s, label, note, worktree, provenance, provider, gateway} — written by `harness.main`. `label`/`note` are the run's own words (ТЗ §1.3) and `started`/`wall_s` are what the NEXT run's time estimate is built from; `worktree` is the one-line state of the tree (§6.1) the registry row copies verbatim, `provenance` the commit and digests behind it, `provider` and `gateway` what answered and what was masked against (§4.1, §4.2). The report needs two of them and can get them nowhere else: the CEILING the run was given (a cost line without it says «spent $12 of an unknown ceiling») and the `prompt_sha256` a calibration stamp must match, because a calibration of another prompt certifies another instrument. A run that wrote no meta file is read as a run whose ceiling and prompt are unknown — never as a free run under the right prompt",
+    "<run>.report.json": "the same report as DATA (ТЗ §5.1): one versioned schema with every metric line as {hits, total, rate, interval}, the slices, the v4 levels, the cost, the digests and the models — written by `reportjson.write` beside the text, so a trend, an article or a diff of two runs never re-parses `<run>.report.txt` (a line whose spacing changed took the trend with it)",
+    "<run>.public.json": "the substring of the above that may be shown outside (ТЗ §5.3), built by an ALLOWLIST (`reportjson.PUBLIC_TOP_LEVEL` / `PUBLIC_LINES`) and never by deletion: a field added to the private report is absent here until somebody names it. Carries no case id and no value from the corpus",
 }
 CALIBRATION_FILE: str = "bench/agentpii5/calibration/<judge_model>.<prompt_sha256[:12]>.jsonl"
 

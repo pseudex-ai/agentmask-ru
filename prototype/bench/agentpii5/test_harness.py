@@ -18,11 +18,14 @@ WHAT IS ACTUALLY PROVEN HERE.
 """
 import ast
 import asyncio
+import contextlib
 import inspect
+import io
 import json
 import sys
 import tempfile
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 from bench.agentpii3.live import judge as v3_judge
@@ -30,8 +33,10 @@ from bench.agentpii4 import harness as v4_harness
 from bench.agentpii4.compare import ArmRun, ObservedCall
 from bench.agentpii4.gateway import HarnessError
 from bench.agentpii4.records import ArmMeta
+from bench.agentpii5 import build as corpus_build
 from bench.agentpii5 import harness as h
 from bench.agentpii5 import records as r
+from bench.agentpii5 import runinfo
 from bench.agentpii5.contracts import (
     PSEUDEX_ALLOWED_MODULES, QUERY_CAP_USD, RETRIES, RUN_FILES, ArmRunV5, CaseV5,
     HopObservation, JudgeRow, JudgeVerdict, MentionRecord, ToolResultRecord)
@@ -110,6 +115,79 @@ def _canned(case: CaseV5) -> h.TripleResult:
               **r.triple_totals_to_json(h.triple_totals(judged, 0)),
               "status": "complete", "reason": "", "arms": {}, "judge": {}}
     return h.TripleResult(outcomes, run, hops, judged, triple)
+
+
+async def _no_pause(seconds: float) -> None:
+    """Отступ БЕЗ ожидания.
+
+    `DrivePolicy.pause` — параметр именно для этого: честный отступ в 2, 4 и 8
+    секунд добавляет четырнадцать секунд к каждому прогону батареи, и проверку
+    повторов через неделю выключат. Кривая отступа проверяется отдельно и
+    чисто (`test_runinfo.test_the_backoff_grows_and_is_fully_jittered`).
+    """
+    return None
+
+
+def _policy(attempts: int, expected_per_case_usd: float) -> h.DrivePolicy:
+    """Политика драйвера для проверки: без сна, с полным джиттером."""
+    return h.DrivePolicy(attempts=attempts, pause=_no_pause, jitter=lambda: 1.0,
+                         expected_per_case_usd=expected_per_case_usd)
+
+
+def _corpus_file(root: Path, cases: tuple[CaseV5, ...]) -> Path:
+    """Снимок корпуса в форме, которую читает `harness.main` (`corpus.v5.json`)."""
+    path = root / "corpus.v5.json"
+    path.write_text(json.dumps(
+        {"corpus": [h.case_v5_to_json(case) for case in cases], "digest": "d" * 64},
+        ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def _main(argv: list[str]) -> tuple[int, str]:
+    """`harness.main` с подменённым `sys.argv` — и весь его вывод строкой.
+
+    `main` читает `sys.argv` сам (argparse без параметра), поэтому другого
+    способа проверить ФЛАГ, а не функцию под ним, нет; а проверять флаги через
+    функции под ними — это ровно тот класс проверок, который зеленеет, когда
+    флаг перестали пробрасывать.
+    """
+    saved = sys.argv
+    out = io.StringIO()
+    err = io.StringIO()
+    try:
+        sys.argv = ["harness"] + argv
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = h.main()
+    finally:
+        sys.argv = saved
+    return code, out.getvalue() + err.getvalue()
+
+
+def _attr_call_lines(function: Callable[..., object], module: str, name: str) -> list[int]:
+    """Строки, где внутри `function` вызывается `module.name(...)`.
+
+    `_call_lines` читает только голые имена, а вся обвязка прогона зовётся
+    через модуль (`runinfo.label_required`), и порядок вызовов в `main` — это
+    то, что здесь и проверяется: оценка и метка обязаны стоять ДО бандла.
+    """
+    tree = ast.parse(inspect.getsource(function).lstrip())
+    return sorted(node.lineno for node in ast.walk(tree)
+                  if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                  and node.func.attr == name and isinstance(node.func.value, ast.Name)
+                  and node.func.value.id == module)
+
+
+def _handler_calls(function: Callable[..., object], name: str) -> bool:
+    """Зовётся ли `name(...)` из обработчика исключения внутри `function`."""
+    tree = ast.parse(inspect.getsource(function).lstrip())
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ExceptHandler):
+            continue
+        for inner in ast.walk(node):
+            if (isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name)
+                    and inner.func.id == name):
+                return True
+    return False
 
 
 def test_only_harness_imports_pseudex() -> list[str]:
@@ -192,7 +270,8 @@ def test_run_files_written() -> list[str]:
         run_dir = Path(tmp) / "v5-live-nano"
         run_dir.mkdir()
         h.write_corpus(run_dir, [case], "deadbeef")
-        asyncio.run(h.drive_v5([case], 1, runner, run_dir, RUN_ID, 1, frozenset()))
+        asyncio.run(h.drive_v5([case], 1, runner, run_dir, RUN_ID, 1, frozenset(),
+                               _policy(1, 0.0)))
         ledger = v3_judge.SpendLedger(r.run_file(run_dir, RUN_ID, "<run>.spend.tsv"), 1.0)
         asyncio.run(ledger.settle("agent/c-0001/0", 0.5, 0.03))
         h.stamp_judge_file(run_dir, RUN_ID, h.CalibrationStamp(
@@ -201,7 +280,9 @@ def test_run_files_written() -> list[str]:
             calibrated=False))
         h.write_meta(run_dir, RUN_ID, model="claude-haiku-4-5-20251001",
                      judge_model="claude-sonnet-5", tier="nano", repeats=1,
-                     digest="deadbeef", ceiling_usd=12.0, spent_usd=0.03)
+                     digest="deadbeef", ceiling_usd=12.0, spent_usd=0.03,
+                     label="проверка писателя", note="", started="2026-09-23T10:00:00+00:00",
+                     wall_s=42.0, extra={"worktree": "чисто abc123456789 (main)"})
         h.finish_run(run_dir, run_dir)
         for name in RUN_FILES:
             path = r.run_file(run_dir, RUN_ID, name)
@@ -307,7 +388,8 @@ def test_baseline_flag_reads_v4_dir() -> list[str]:
         for run_dir in (own, other):
             run_dir.mkdir()
             h.write_corpus(run_dir, [case], "deadbeef")
-            asyncio.run(h.drive_v5([case], 1, runner, run_dir, RUN_ID, 1, frozenset()))
+            asyncio.run(h.drive_v5([case], 1, runner, run_dir, RUN_ID, 1, frozenset(),
+                                   _policy(1, 0.0)))
         lines = h.finish_run(own, other)
         header = "\n".join(lines[:12])
         if other.name not in header and str(other) not in "\n".join(lines):
@@ -832,6 +914,421 @@ def test_a_resume_refuses_a_shared_run_directory() -> list[str]:
     return failures
 
 
+# --- §1.4 обрыв провайдера, §7.1 стоп-кран, §1.1 оценка, §1.3 метка, §1.2 реестр ----------
+
+def test_a_transport_break_does_not_kill_the_run() -> list[str]:
+    """§1.4: случай, на котором провайдер оборвался N раз, СНИМАЕТСЯ, а прогон
+    идёт дальше — и снятый случай остаётся строкой на диске.
+
+    Случай, о котором не написано ничего, читается как случай, который не
+    выбирали, и тогда «прогон на 120 случаях» тихо становится прогоном на 118.
+    """
+    failures: list[str] = []
+    good = _fixture_case()
+    bad = replace(good, base=replace(good.base, id="c-0002"))
+    attempts: list[tuple[str, int]] = []
+
+    async def runner(one: CaseV5, repeat: int) -> h.TripleResult:
+        attempts.append((one.base.id, repeat))
+        if one.base.id == bad.base.id:
+            raise ConnectionError("соединение сброшено провайдером")
+        return _canned(one)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = Path(tmp) / "v5"
+        run_dir.mkdir()
+        h.write_corpus(run_dir, [good, bad], "deadbeef")
+        result = asyncio.run(h.drive_v5([good, bad], 1, runner, run_dir, RUN_ID, 1,
+                                        frozenset(), _policy(3, 0.0)))
+        if result.transport_terminated != 1:
+            failures.append(f"снятых обрывом {result.transport_terminated}, ожидался один")
+        tries = [one for one in attempts if one[0] == bad.base.id]
+        if len(tries) != 3:
+            failures.append(f"попыток на оборвавшемся случае {len(tries)}, ожидались 3")
+        rows = r.read_rows(r.run_file(run_dir, RUN_ID, "<run>.triples.jsonl"))
+        by_id = {str(row["case_id"]): row for row in rows}
+        if set(by_id) != {good.base.id, bad.base.id}:
+            failures.append(f"в троек-файле {sorted(by_id)}, ожидались оба случая")
+        gone = by_id.get(bad.base.id, {})
+        if str(gone.get("status")) != "excluded":
+            failures.append(f"снятый случай записан со статусом {gone.get('status')!r} — "
+                            f"отчёт не исключит его из знаменателей")
+        if runinfo.TRANSPORT_TERMINATED not in str(gone.get("reason")):
+            failures.append(f"причина не называет обрыв: {gone.get('reason')!r}")
+        # Строка снятого случая читается ТЕМ ЖЕ читателем, что и живая: форма
+        # записи не изменилась, иначе отчёт упадёт на первом же обрыве.
+        try:
+            r.triple_totals_from_json(gone)
+        except r.RecordError as broken:
+            failures.append(f"строка снятого случая не читается records: {broken}")
+        # И живой случай доехал целиком.
+        if len(r.read_rows(r.run_file(run_dir, RUN_ID, "<run>.arms.jsonl"))) != 3:
+            failures.append("плечи живого случая не записаны — обрыв соседа стоил ему прогона")
+
+    # НЕГАТИВ: НЕ обрыв транспорта прогон РОНЯЕТ. Повторять свой дефект три
+    # раза с отступом значит трижды подождать перед тем же отказом.
+    async def broken_runner(one: CaseV5, repeat: int) -> h.TripleResult:
+        raise ValueError("наш дефект, а не провайдер")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = Path(tmp) / "v5"
+        run_dir.mkdir()
+        h.write_corpus(run_dir, [good], "deadbeef")
+        try:
+            asyncio.run(h.drive_v5([good], 1, broken_runner, run_dir, RUN_ID, 1,
+                                   frozenset(), _policy(3, 0.0)))
+            failures.append("ValueError не уронил прогон — наш дефект будет назван транспортом")
+        except ValueError:
+            pass
+    return failures
+
+
+def test_the_retry_waits_between_attempts() -> list[str]:
+    """Повтор — с ОТСТУПОМ: три попытки подряд без паузы бьют в тот же
+    перегруженный провайдер и называются повтором."""
+    failures: list[str] = []
+    case = _fixture_case()
+    waits: list[float] = []
+
+    async def pause(seconds: float) -> None:
+        waits.append(seconds)
+
+    async def runner(one: CaseV5, repeat: int) -> h.TripleResult:
+        raise ConnectionError("сброс")
+
+    policy = h.DrivePolicy(attempts=3, pause=pause, jitter=lambda: 1.0,
+                           expected_per_case_usd=0.0)
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = Path(tmp) / "v5"
+        run_dir.mkdir()
+        asyncio.run(h.drive_v5([case], 1, runner, run_dir, RUN_ID, 1, frozenset(), policy))
+    if len(waits) != 2:
+        failures.append(f"пауз {len(waits)}, ожидались две (между тремя попытками)")
+    elif not waits[0] < waits[1]:
+        failures.append(f"отступ не растёт между попытками: {waits}")
+    return failures
+
+
+def test_the_cost_brake_stops_the_run() -> list[str]:
+    """§7.1: средняя цена случая выше ожидаемой вдвое — прогон стоит, и сказано,
+    на каком случае и с какими числами."""
+    failures: list[str] = []
+    cases = [replace(_fixture_case(), base=replace(_fixture_case().base, id=f"c-{index:04d}"))
+             for index in range(6)]
+
+    def expensive(one: CaseV5) -> h.TripleResult:
+        canned = _canned(one)
+        triple = dict(canned.triple)
+        triple["cost_usd"] = 1.0
+        return h.TripleResult(canned.outcomes, canned.gateway_run, canned.hops,
+                              canned.judge, triple)
+
+    async def runner(one: CaseV5, repeat: int) -> h.TripleResult:
+        return expensive(one)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = Path(tmp) / "v5"
+        run_dir.mkdir()
+        h.write_corpus(run_dir, cases, "deadbeef")
+        result = asyncio.run(h.drive_v5(cases, 1, runner, run_dir, RUN_ID, 1, frozenset(),
+                                        _policy(1, 0.10)))
+        if not result.stopped:
+            failures.append("кран не сработал: шесть случаев по $1 при ожидаемых $0.10")
+        elif "c-000" not in result.stopped:
+            failures.append(f"отказ не называет случай: {result.stopped}")
+        if len(result.triples) >= len(cases):
+            failures.append(f"после срабатывания крана отработали все {len(result.triples)} троек")
+        if len(result.triples) < runinfo.BRAKE_MIN_CASES:
+            failures.append(f"кран сработал раньше пола в {runinfo.BRAKE_MIN_CASES} случаев")
+        # ОПЛАЧЕННОЕ ОСТАЁТСЯ НА ДИСКЕ: кран проверяется ПОСЛЕ записи строк.
+        rows = r.read_rows(r.run_file(run_dir, RUN_ID, "<run>.triples.jsonl"))
+        if len(rows) != len(result.triples):
+            failures.append(f"в файле {len(rows)} троек, драйвер насчитал {len(result.triples)}")
+
+    # НЕГАТИВ: без оценки кран НЕ вооружён — первый прогон новой пары моделей
+    # не должен умирать оттого, что сравнивать не с чем.
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = Path(tmp) / "v5"
+        run_dir.mkdir()
+        h.write_corpus(run_dir, cases, "deadbeef")
+        result = asyncio.run(h.drive_v5(cases, 1, runner, run_dir, RUN_ID, 1, frozenset(),
+                                        _policy(1, 0.0)))
+        if result.stopped or len(result.triples) != len(cases):
+            failures.append("невооружённый кран остановил прогон")
+    return failures
+
+
+def test_the_dry_run_spends_nothing_and_writes_nothing() -> list[str]:
+    """§1.1: `--dry-run` печатает оценку и НЕ создаёт ни каталога прогона, ни
+    строки реестра. Каталог, созданный «просто посмотреть», потом читается как
+    прогон, которого не было."""
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        corpus = _corpus_file(root, (_fixture_case(),))
+        out = root / "run"
+        runs = root / "runs.json"
+        # `--ceiling 0 --no-judge` — РЕМЕНЬ, а не часть проверки: если завтра
+        # отвалится сама ветка `--dry-run`, этот вызов пойдёт в живой прогон, а
+        # проверка не имеет права позвать модель даже сломавшись. С нулевым
+        # потолком ни одна тройка не допускается к резерву.
+        argv = [str(corpus), "--ids", "c-0001", "--out", str(out), "--runs", str(runs),
+                "--ceiling", "0", "--no-judge"]
+        code, printed = _main(argv + ["--dry-run"])
+        if code != 0:
+            failures.append(f"--dry-run вернул {code}: {printed[:200]}")
+        for wanted in ("ОЦЕНКА", "основание:", "вызовов модели", "токенов промпта"):
+            if wanted not in printed:
+                failures.append(f"оценка не напечатала {wanted!r}")
+        if out.exists():
+            failures.append(f"--dry-run создал каталог прогона {out}")
+        if runs.exists():
+            failures.append("--dry-run записал строку в реестр")
+        # ПАРНЫЙ КОНТРОЛЬ: тот же вызов без флага до оценки не останавливается,
+        # а идёт дальше и упирается в требование метки (§1.3) — значит нулём
+        # вернула именно ветка `--dry-run`, а не общий отказ.
+        code, printed = _main(argv)
+        if code != 2 or "--label" not in printed:
+            failures.append(f"без --dry-run тот же вызов дал {code}: {printed[:200]}")
+    return failures
+
+
+def test_the_label_is_demanded_before_a_dollar() -> list[str]:
+    """§1.3: метка обязательна выше nano, и спрашивается ДО бандла и модели —
+    «допишу потом» после прогона на $50 не случается."""
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        corpus = _corpus_file(root, (_fixture_case(),))
+        # Тот же ремень: проверка требования метки не имеет права позвать модель,
+        # если само требование завтра исчезнет.
+        argv = [str(corpus), "--ids", "c-0001", "--out", str(root / "run"),
+                "--runs", str(root / "runs.json"), "--ceiling", "0", "--no-judge"]
+        code, printed = _main(argv)
+        if code != 2:
+            failures.append(f"прогон без метки начался (код {code})")
+        if "--label" not in printed:
+            failures.append(f"отказ не называет флаг: {printed[:200]}")
+        # КЛЮЧ И ЗНАЧЕНИЕ ИЗ КОРПУСА В МЕТКЕ — тоже отказ, до трат.
+        code, printed = _main(argv + ["--label", f"проверил {REAL_NAME}"])
+        if code != 2 or "корпус" not in printed:
+            failures.append(f"метка с настоящим значением прошла: {code} {printed[:200]}")
+        code, printed = _main(argv + ["--label", "ключ sk-ant-api03-" + "z" * 20])
+        if code != 2 or "ключ" not in printed:
+            failures.append(f"метка с ключом прошла: {code} {printed[:200]}")
+    # И ПОРЯДОК: и оценка, и требование метки стоят до `load_dev_bundle`.
+    bundle = _call_lines(h.main, "load_dev_bundle")
+    label = _attr_call_lines(h.main, "runinfo", "label_required")
+    plan = _attr_call_lines(h.main, "runinfo", "estimate")
+    if not bundle:
+        failures.append("main не грузит бандл вообще — проверка порядка бессмысленна")
+    elif not label or not plan:
+        failures.append(f"main не зовёт оценку ({plan}) или требование метки ({label})")
+    elif not (plan[0] < bundle[0] and label[0] < bundle[0]):
+        failures.append(f"оценка ({plan[0]}) или метка ({label[0]}) стоят после бандла "
+                        f"({bundle[0]}) — деньги уже потрачены")
+    return failures
+
+
+def test_the_registry_row_is_written_on_both_ends() -> list[str]:
+    """§1.2: строка пишется при завершении И при прерывании, и состояние
+    рабочего дерева (§6.1) едет в неё из объекта прогона.
+
+    РАНЬШЕ ОНО ЧИТАЛОСЬ ИЗ `meta.json`, и это работало ровно на одном из двух
+    концов: `meta.json` пишется в конце прогона, а у прерванного конца нет —
+    так что именно тот прогон, который потратил деньги и не объяснил их
+    ничем другим, записывался с пустым деревом. Теперь строку знает `RunContext`
+    ещё до первого доллара, и оба конца пишут одно и то же."""
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = Path(tmp) / "v5"
+        run_dir.mkdir()
+        runs = Path(tmp) / "runs.json"
+        context = h.RunContext(
+            run_id=RUN_ID, run_dir=run_dir, runs_path=runs,
+            started_at="2026-09-23T10:00:00+00:00", tier="nano", cases=1, repeats=1,
+            model="claude-haiku-4-5-20251001", judge_model="claude-sonnet-5", concurrency=2,
+            digest="deadbeef", ladder_digest="c0ffee", label="проверка реестра", note="",
+            ceiling_usd=12.0, worktree="грязно abc123456789 (main): 7 файлов — "
+                                       "к коммиту не привязан")
+        # ПРЕРВАННЫЙ ПРОГОН — И `meta.json` ЕЩЁ НЕ СУЩЕСТВУЕТ.
+        h.register_run(context, state="interrupted", triples_done=1, transport_terminated=2,
+                       spent_usd=0.5, wall_s=30.0, verdict="прогон прерван: KeyboardInterrupt")
+        rows = runinfo.read_runs(runs)
+        if len(rows) != 1 or rows[0].state != "interrupted":
+            failures.append(f"прерванный прогон не записан: {rows}")
+        elif rows[0].transport_terminated != 2:
+            failures.append(f"строка потеряла числа: {rows[0]}")
+        elif "к коммиту не привязан" not in rows[0].worktree:
+            failures.append(f"прерванный прогон записан без состояния дерева: "
+                            f"{rows[0].worktree!r} — а он потратил деньги")
+        # И ТА ЖЕ СТРОКА ЛОЖИТСЯ В `meta.json` ЗАВЕРШЁННОГО: один источник, два файла.
+        second = RUN_ID.replace("1", "2")
+        h.write_meta(run_dir, second, model=context.model, judge_model=context.judge_model,
+                     tier="nano", repeats=1, digest="deadbeef", ceiling_usd=12.0,
+                     spent_usd=0.5, label=context.label, note="", started=context.started_at,
+                     wall_s=30.0, extra={"worktree": context.worktree})
+        meta_path = r.run_file(run_dir, second, "<run>.meta.json")
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        if meta.get("label") != context.label:
+            failures.append("метка не доехала до meta.json")
+        if meta.get("worktree") != context.worktree:
+            failures.append(f"состояние дерева не доехало до meta.json: {meta.get('worktree')!r}")
+        h.register_run(replace(context, run_id=second), state="finished",
+                       triples_done=1, transport_terminated=0, spent_usd=0.5, wall_s=30.0,
+                       verdict="полный")
+        rows = runinfo.read_runs(runs)
+        if len(rows) != 2:
+            failures.append(f"вторая строка не дописана: {len(rows)}")
+        elif rows[1].worktree != context.worktree:
+            failures.append(f"реестр и meta.json разошлись о дереве: {rows[1].worktree!r}")
+        elif rows[0].state != "interrupted":
+            failures.append("первая строка изменилась при дописывании второй")
+        # ПОЛЕ, КОТОРОЕ ПРОГОН ОПИСЫВАЕТ САМ, ЧЕРЕЗ `extra` НЕ ПЕРЕПИСЫВАЕТСЯ.
+        try:
+            h.write_meta(run_dir, second, model=context.model, judge_model=context.judge_model,
+                         tier="nano", repeats=1, digest="deadbeef", ceiling_usd=12.0,
+                         spent_usd=0.5, label=context.label, note="",
+                         started=context.started_at, wall_s=30.0, extra={"run_id": "чужой"})
+            failures.append("extra переписал run_id — файл описывал бы другой прогон")
+        except HarnessError as refused:
+            if "run_id" not in str(refused):
+                failures.append(f"отказ не называет поле: {refused}")
+    # И ОБА КОНЦА ЕСТЬ В `main`: одна запись в обработчике падения, одна — в конце.
+    if not _handler_calls(h.main, "register_run"):
+        failures.append("main не пишет строку реестра при прерывании — потративший деньги "
+                        "прогон исчезнет из истории")
+    if len(_call_lines(h.main, "register_run")) < 2:
+        failures.append("в main один вызов register_run: один из двух концов не покрыт")
+    return failures
+
+
+# Метка, по которой проверка отличает «флага нет» от «флаг есть и отказал».
+# Голое имя флага для этого не годится: сам отказ §6.1 называет `--dirty-ok`
+# в тексте, и проверка на подстроку зеленела бы на правильном поведении.
+ARGPARSE_REFUSED: str = "argparse отверг флаг"
+
+
+def _live(root: Path, extra: list[str]) -> tuple[int, str]:
+    """`main` на фикстурном корпусе с меткой — то есть после ворот §1.3 и до
+    любых трат. `--ceiling 0 --no-judge` — ремень: если завтра отвалится ворота,
+    которую проверяют, вызов не имеет права позвать модель."""
+    corpus = _corpus_file(root, (_fixture_case(),))
+    argv = [str(corpus), "--ids", "c-0001", "--out", str(root / "run"),
+            "--runs", str(root / "runs.json"), "--ceiling", "0", "--no-judge",
+            "--label", "проверка ворот"]
+    try:
+        return _main(argv + extra)
+    except SystemExit as exited:
+        # argparse выходит так на НЕИЗВЕСТНОМ флаге — то есть флаг не объявлен,
+        # и это отдельный дефект от «объявлен, но ничего не делает».
+        return int(exited.code or 0), f"{ARGPARSE_REFUSED}: {extra}"
+
+
+def test_a_live_run_is_tied_to_a_commit_and_a_corpus() -> list[str]:
+    """§6.1 (пункт 18): живой прогон не стартует на грязном дереве или на
+    корпусе, которого лестница не знает, и обе проверки стоят ДО бандла.
+
+    Фикстурный корпус лестнице заведомо чужой — это и есть вторая половина
+    §6.1, у которой НЕТ флага: `--dirty-ok` снимает «дерево грязное», потому
+    что там числа всего лишь не к чему привязать, и не снимает «корпус не тот»,
+    потому что там ярус назовёт случаи из другого корпуса и прогон измерит
+    выборку, которую никто не выбирал."""
+    failures: list[str] = []
+    # ПОРЯДОК ЧИТАЕТСЯ ПЕРВЫМ, И ЭТО НЕ КОСМЕТИКА: обе проверки стоят до бандла,
+    # то есть до первой потраченной секунды, — а если их нет вовсе, гонять
+    # прогон дальше нельзя, он уйдёт грузить движок и звать модель.
+    bundle = _call_lines(h.main, "load_dev_bundle")
+    gathered = _attr_call_lines(h.main, "corpus_build", "run_provenance")
+    refused = _attr_call_lines(h.main, "corpus_build", "start_refusals")
+    if not gathered or not refused:
+        return [f"main не собирает происхождение прогона ({gathered}) "
+                f"или не читает отказы ({refused}) — §6.1 не закрыт"]
+    if not bundle:
+        failures.append("main не грузит бандл — проверка порядка бессмысленна")
+    elif not (gathered[0] < bundle[0] and refused[0] < bundle[0]):
+        failures.append(f"происхождение ({gathered[0]}) или отказы ({refused[0]}) "
+                        f"стоят после бандла ({bundle[0]})")
+    with tempfile.TemporaryDirectory() as tmp:
+        code, printed = _live(Path(tmp), [])
+        if code != 2 or "корпус" not in printed:
+            failures.append(f"прогон на чужом корпусе начался: {code} {printed[:300]}")
+        code, printed = _live(Path(tmp), ["--dirty-ok"])
+        if code != 2 or "корпус" not in printed:
+            failures.append(f"--dirty-ok снял отказ по корпусу: {code} {printed[:300]}")
+        if ARGPARSE_REFUSED in printed:
+            failures.append("флаг --dirty-ok не объявлен в харнессе")
+    return failures
+
+
+def test_the_holdout_is_stamped_before_the_first_call() -> list[str]:
+    """§3.2 (пункт 10): прогон, ВЫБОРКА которого задевает holdout, ставит
+    отметку в лестницу — и ставит её до первого вызова модели.
+
+    Прерванный на середине прогон УЖЕ показал эти случаи модели; отметка,
+    которую ставит только дошедший до конца, оставила бы холдаут «нетронутым»
+    после того, как по нему отладились."""
+    failures: list[str] = []
+    touches = _attr_call_lines(h.main, "corpus_build", "touches_holdout")
+    stamps = _attr_call_lines(h.main, "corpus_build", "stamp_holdout_touched")
+    driven = _call_lines(h.main, "drive_v5")
+    if not touches or not stamps:
+        failures.append(f"main не спрашивает про холдаут ({touches}) "
+                        f"и не ставит отметку ({stamps})")
+    elif not driven:
+        failures.append("main не зовёт drive_v5 — проверка порядка бессмысленна")
+    elif not (touches[0] < driven[0] and stamps[0] < driven[0]):
+        failures.append(f"отметка ({stamps[0]}) стоит после прогона ({driven[0]}): "
+                        f"прерванный прогон оставит холдаут «нетронутым»")
+    # И ОНА СТАВИТСЯ ПО ВЫБОРКЕ, А НЕ ПО ИМЕНИ ЯРУСА: `--ids` может назвать
+    # случай холдаута рукой, а `--tier max` — это весь корпус.
+    with tempfile.TemporaryDirectory() as tmp:
+        ladder = Path(tmp) / "ladder.json"
+        ladder.write_text(json.dumps({"tiers": {"nano": ["c-0002"], "holdout": ["c-0001"]}}),
+                          encoding="utf-8")
+        if not corpus_build.touches_holdout(ladder, ["c-0001"]):
+            failures.append("случай холдаута, названный руками, не считается касанием")
+        if corpus_build.touches_holdout(ladder, ["c-0002"]):
+            failures.append("прогон мимо холдаута считается касанием")
+    return failures
+
+
+def test_the_record_names_what_answered_and_what_masked() -> list[str]:
+    """§4.1 и §4.2 (пункты 12 и 13): прогон записывает провайдера с ценами и то,
+    чем был шлюз, — и ОТКАЗЫВАЕТСЯ записывать то, чего не было.
+
+    Плечи зовут модель через `claude_agent_sdk` и строят шлюз в этом же
+    процессе. Пока это так, чужой провайдер или адрес контейнера в записи — это
+    числа, приписанные модели, которая не отвечала, и образу, который ничего не
+    маскировал. Клиентский путь написан (`provider.HttpGateway`), плеча, которое
+    его зовёт, — нет, и об этом сказано вслух, а не молчанием."""
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        code, printed = _live(root, ["--provider", "openrouter"])
+        if code != 2 or "claude_agent_sdk" not in printed:
+            failures.append(f"чужой провайдер прошёл: {code} {printed[:300]}")
+        code, printed = _live(root, ["--gateway", "http://localhost:8000"])
+        if code != 2 or "HttpGateway" not in printed:
+            failures.append(f"--gateway прошёл молча: {code} {printed[:300]}")
+        code, printed = _live(root, ["--image-digest", "sha256:" + "0" * 64])
+        if code != 2 or "--image-digest" not in printed:
+            failures.append(f"дайджест образа без шлюза прошёл: {code} {printed[:300]}")
+        code, printed = _live(root, ["--provider", "unknown-cloud"])
+        if code != 2 or "unknown-cloud" not in printed:
+            failures.append(f"несуществующий провайдер не назван: {code} {printed[:300]}")
+        # ПАРНЫЙ КОНТРОЛЬ: со своим провайдером тот же вызов проходит эти ворота
+        # и упирается в следующие (§6.1) — значит ворота отказывают по делу,
+        # а не всегда.
+        code, printed = _live(root, ["--provider", "anthropic"])
+        if code != 2 or "корпус" not in printed:
+            failures.append(f"со своим провайдером прогон встал не на §6.1: {printed[:300]}")
+    if not _attr_call_lines(h.main, "provider", "run_block"):
+        failures.append("блок провайдера не доезжает до meta.json: main не зовёт "
+                        "provider.run_block")
+    return failures
+
+
 def main() -> int:
     checks: tuple[tuple[str, Callable[[], list[str]]], ...] = (
         ("only_harness_imports_pseudex", test_only_harness_imports_pseudex),
@@ -851,6 +1348,19 @@ def main() -> int:
          test_a_refused_judge_budget_never_kills_the_triple),
         ("a_resume_refuses_a_shared_run_directory",
          test_a_resume_refuses_a_shared_run_directory),
+        ("a_transport_break_does_not_kill_the_run", test_a_transport_break_does_not_kill_the_run),
+        ("the_retry_waits_between_attempts", test_the_retry_waits_between_attempts),
+        ("the_cost_brake_stops_the_run", test_the_cost_brake_stops_the_run),
+        ("the_dry_run_spends_nothing_and_writes_nothing",
+         test_the_dry_run_spends_nothing_and_writes_nothing),
+        ("the_label_is_demanded_before_a_dollar", test_the_label_is_demanded_before_a_dollar),
+        ("the_registry_row_is_written_on_both_ends", test_the_registry_row_is_written_on_both_ends),
+        ("a_live_run_is_tied_to_a_commit_and_a_corpus",
+         test_a_live_run_is_tied_to_a_commit_and_a_corpus),
+        ("the_holdout_is_stamped_before_the_first_call",
+         test_the_holdout_is_stamped_before_the_first_call),
+        ("the_record_names_what_answered_and_what_masked",
+         test_the_record_names_what_answered_and_what_masked),
     )
     failures: list[str] = []
     for name, check in checks:

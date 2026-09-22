@@ -29,7 +29,27 @@ WHAT `--check` PRINTS AND WHY EACH LINE IS THERE. Every corpus rule; the shares
 per behaviour, register and type; the cases that reach a tool result; the INN and
 PLATE counts v4 had none of; the streaming count; and each family's MDE, because
 a family under 120 cases cannot claim ±10pp and a table of sizes alone would let
-a reader think it could.
+a reader think it could. Plus what the corpus carries and nothing can read —
+the plan it was assembled from, the cases no metric line counts and the cases
+that duplicate another by content (§3.3 of the ТЗ).
+
+ADDING CASES IS FIVE STEPS AND NONE OF THEM IS «EDIT THE HARNESS» (§3.1).
+
+  1. write `scenarios5/<family>.py` with `build(seed, count) -> list[CaseV5]`;
+  2. add `(<family>, <count>)` to `PLAN_A` or `PLAN_B` — the plan is DATA, and
+     `plan_table` prints one line per entry, so a family that landed is visible
+     without reading any code;
+  3. `python3 -m bench.agentpii5.build --check` — it proves every corpus rule,
+     that no builder SEARCHED a finished string for a value it had just put
+     there, and that the REAL mock renders every hop the new cases declare
+     (`proof_problems`); it writes nothing;
+  4. `python3 -m bench.agentpii5.build` — writes both corpus files and refreshes
+     the ladder's stamp when every tier still holds the same case ids (R-57);
+  5. the new ids are in no tier until the ladder is drawn again, which
+     `ladder_coverage` says out loud. Before the FIRST live run on the holdout
+     that is `--regenerate-ladder --unfrozen-before-first-run` (R-52); after it
+     (`holdout_touched_at` in `ladder.json`) it is a refusal, and which cases a
+     grown corpus puts in the holdout is the owner's decision, not a flag's.
 
 NOTHING HERE IMPORTS `pseudex`.
 """
@@ -37,9 +57,11 @@ import argparse
 import ast
 import hashlib
 import json
+import subprocess
 import sys
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from bench.agentpii4 import schema as v4, stats, validate as v4validate
@@ -82,11 +104,27 @@ SCANNING_METHODS: tuple[str, ...] = ("find", "rfind", "index", "rindex",
 RE_SCANNERS: tuple[str, ...] = ("search", "match", "fullmatch", "finditer", "findall")
 
 
+def build_planned(seed: int, plan: Sequence[tuple[object, int]]) -> list[CaseV5]:
+    """Every case a PLAN asks for, in the plan's order.
+
+    THE ONE PLACE THE PLAN IS CONSUMED, and it takes the plan as an argument
+    (item 9). §3.1 promises that a new family is a file plus a line in the plan
+    with no edit to the harness — a promise nothing could check while the loop
+    read the module global, because a check would have had to ASSIGN to
+    `build.PLAN` and leave the next one running against its edit. Both callers
+    below pass `PLAN`; a check passes its own two-line plan and watches the same
+    function build it.
+    """
+    cases: list[CaseV5] = []
+    for module, count in plan:
+        cases.extend(module.build(seed, count))          # type: ignore[attr-defined]
+    return cases
+
+
 def build_corpus(seed: int) -> list[CaseV5]:
     """The whole v5 corpus: the revised 834, then every planned family."""
     cases: list[CaseV5] = list(revise_module.revise(revise_module.load_v4_corpus()))
-    for module, count in PLAN:
-        cases.extend(module.build(seed, count))          # type: ignore[attr-defined]
+    cases.extend(build_planned(seed, PLAN))
     return cases
 
 
@@ -113,8 +151,7 @@ def build_reporting(seed: int, allow_drop: bool) -> tuple[list[CaseV5], Counter[
     downgrades: Counter[str] = Counter(
         f"{one.downgraded_from} → single · {one.reason}" for one in revisions
         if one.downgraded_from)
-    for module, count in PLAN:
-        cases.extend(module.build(seed, count))          # type: ignore[attr-defined]
+    cases.extend(build_planned(seed, PLAN))
     return cases, downgrades, dropped
 
 
@@ -443,6 +480,502 @@ def chain_leaf_table(cases: Sequence[CaseV5]) -> list[str]:
             + " · ".join(f"{leaf} {count}" for leaf, count in sorted(free.items()))]
 
 
+# --- the plan is data, and the ladder says so (item 9) -------------------------------
+
+def plan_table(cases: Sequence[CaseV5], plan: Sequence[tuple[object, int]]) -> list[str]:
+    """One line per plan entry: the family's own module name and how many cases
+    it was asked for.
+
+    THE PLAN IS DATA AND THIS IS THE PROOF. §3.1 promises that a new family is a
+    file in `scenarios5/` plus a line in the plan and NO edit to the harness, and
+    nothing printed that: the only way to see whether a family had landed was to
+    read `PLAN_A` and count behaviours by hand, which is exactly the reading a
+    person adding cases cannot do yet. The disagreement line is the one that
+    earns the table — a family whose `build` returns fewer cases than the plan
+    asks for shifts every share below it, and the totals alone add up either way.
+
+    THE PLAN IS A PARAMETER rather than the module global, so a check can hand
+    this function another plan without assigning to `build.PLAN`: a test that
+    edits a module global leaves the next test running against its edit.
+    """
+    authored = [case for case in cases if not case.revised_from_v4]
+    requested = sum(count for _module, count in plan)
+    lines = [f"план: {len(plan)} семей · заказано {requested} случаев · "
+             f"написано в v5 {len(authored)} · ревизия v4 {len(cases) - len(authored)}"]
+    for module, count in plan:
+        lines.append(f"  {_plan_name(module):<26} {count:>5}")
+    if requested != len(authored):
+        lines.append(f"  ! план просит {requested} случаев, а написано {len(authored)}: "
+                     f"семья строит не то число, которое у неё просят")
+    return lines
+
+
+def _plan_name(module: object) -> str:
+    """The family's own module name, never a label beside it in the plan: a
+    second spelling of a family's name is a second thing to keep equal."""
+    name = getattr(module, "__name__", "")
+    return str(name).rsplit(".", 1)[-1] if name else repr(module)
+
+
+def ladder_coverage(cases: Sequence[CaseV5], path: Path) -> list[str]:
+    """Which of these cases the ladder already places, and what the ones it does
+    not are waiting for (item 9, step 5).
+
+    A `--check` THAT SAYS NOTHING ABOUT THE LADDER LEAVES THE LAST STEP TO
+    FOLKLORE. Everything else about a dropped-in family is printed — it is built,
+    validated, rendered by the real mock — and then the run picks cases BY TIER
+    and the new ones are in none, so a family can be in the corpus and in no run
+    for weeks without a line saying so. The answer is different on the two sides
+    of the first live run and both are printed here rather than left to be
+    remembered: before it the redraw is R-52's one allowed move, after it the
+    holdout has seen a run and which cases a grown corpus puts in it is the
+    owner's decision (item 10).
+    """
+    if not path.exists():
+        return [f"лестница: {path.name} ещё не нарисована — первая сборка её нарисует"]
+    kept = json.loads(path.read_text(encoding="utf-8"))
+    tiers = kept.get("tiers")
+    if not isinstance(tiers, dict):
+        return [f"лестница: {path.name} не несёт ярусов"]
+    placed: set[str] = set()
+    for identifiers in tiers.values():
+        placed.update(str(one) for one in identifiers)          # type: ignore[union-attr]
+    present = {case.base.id for case in cases}
+    fresh = sorted(present - placed)
+    gone = sorted(placed - present)
+    lines = [f"лестница: {path.name} · в ярусах {len(placed)} случаев · "
+             f"в корпусе {len(present)}"]
+    if gone:
+        lines.append(f"  лестница называет {len(gone)} случаев, которых в корпусе нет: "
+                     f"{gone[:3]}")
+    if not fresh:
+        lines.append("  новых случаев нет: каждый случай корпуса лежит в ярусе")
+        return lines
+    touch = holdout_touch(path)
+    lines.append(f"  новых случаев вне ярусов: {len(fresh)} ({fresh[:3]}) — "
+                 f"ни один прогон их не возьмёт")
+    if touch is None:
+        lines.append("  разложить их: --regenerate-ladder --unfrozen-before-first-run "
+                     "(живого прогона по этой лестнице ещё не было, R-52)")
+    else:
+        lines.append(f"  разложить их нечем: холдаут уже видел живой прогон "
+                     f"({touch.touched_by} от {touch.touched_at}); новый состав ярусов — "
+                     f"решение владельца, не флаг")
+    return lines
+
+
+# --- what the corpus carries and nothing can read (item 11) --------------------------
+
+# WHICH DECLARATION LICENSES WHICH LINE. A denominator is built at run time out
+# of observations, so no file can say what a case WILL be counted by; but every
+# term except the two below is licensed by something the case DECLARES — a hop,
+# a negative, an answer expectation, a document, a RAG passage, a memory span, a
+# forced error, the streaming flag, a value said in two places. So the mapping is
+# a table of predicates over the case, and a case none of them fires on is one
+# that nothing can count however well the run goes.
+#
+# THE TWO LINES LEFT OUT ARE THE ONES THAT COUNT EVERY OBSERVATION. `residual`
+# adds one term per arm run (an answer reaches a human whether or not the case
+# declared a hop) and `rewrite_ratio_v5` compares the two replies of any triple;
+# both count a case that declares nothing at all, so including them would make
+# «dead weight» a class with no members and this check a printout.
+DEAD_WEIGHT_EXEMPT: tuple[str, ...] = ("residual", "rewrite_ratio_v5")
+DENOMINATORS: tuple[tuple[str, Callable[[CaseV5], bool]], ...] = (
+    ("leak/coverage/typed/form_hIN", lambda case: any(hop.kind == "IN" for hop in case.hops)),
+    ("form_hOUT/out_absent/end_to_end", lambda case: any(hop.kind == "OUT" for hop in case.hops)),
+    ("chain_value/chain_form", lambda case: bool(transitions_of(case))),
+    ("overmask", lambda case: bool(case.base.negatives)),
+    ("answer_real/answer_optional_only", lambda case: bool(case.returns)),
+    ("doc_masked/doc_extracted", lambda case: case.document is not None),
+    ("rag_masked/rag_identity_kept", lambda case: case.rag is not None),
+    ("memory_consistency", lambda case: bool(case.memory)),
+    ("retry_form", lambda case: bool(case.forced)),
+    ("stream_fidelity", lambda case: case.streaming),
+    # `consistency` and `stability` ask about a value the model met TWICE, and a
+    # declaration can promise that in exactly two ways: the same value carried by
+    # two items, or a value the case's tool result echoes back. Anything finer
+    # needs the run.
+    ("consistency/stability", lambda case: _met_twice(case)),
+)
+
+
+def _met_twice(case: CaseV5) -> bool:
+    """Can this case's declaration put one value in two places at all."""
+    surfaces = [(item.type, item.value) for item in case.base.pii]
+    return len(set(surfaces)) != len(surfaces) or bool(surfaces and case.has_result)
+
+
+def denominator_lines(case: CaseV5) -> tuple[str, ...]:
+    """Every metric line this case's DECLARATION can put a term into, apart from
+    the two that count every observation (`DEAD_WEIGHT_EXEMPT`)."""
+    return tuple(label for label, licensed in DENOMINATORS if licensed(case))
+
+
+def dead_weight(cases: Sequence[CaseV5]) -> tuple[str, ...]:
+    """The ids of cases no metric line can count.
+
+    A COUNT AND A LIST, NEVER A REFUSAL (§3.3). A case that feeds no denominator
+    costs three arms of model time and moves no number, which is waste and not a
+    defect of the corpus's claims — and a build that refused it would refuse the
+    very first draft of a new family, which is when the author most needs the
+    other tables. The `--check` output names them so the corpus stops growing by
+    accident; removing one is a person's decision.
+    """
+    return tuple(case.base.id for case in cases if not denominator_lines(case))
+
+
+def content_key(case: CaseV5) -> str:
+    """A case's CONTENT as one hash: its family and the values it carries.
+
+    THE HASH RATHER THAN THE VALUES, because this key is printed and a printed
+    key would put the corpus's personal data into a log. Sorted, so two cases
+    that carry the same people in another order are one content; the family is
+    in the key because the same values in `single` and in `sequential_chain` are
+    two different measurements and neither duplicates the other.
+    """
+    payload = json.dumps({"behaviour": case.behaviour,
+                          "values": sorted([item.type, item.value] for item in case.base.pii)},
+                         ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def content_duplicates(cases: Sequence[CaseV5]) -> tuple[tuple[str, ...], ...]:
+    """Groups of case ids that carry the SAME family and the same values.
+
+    CASES WITH NO VALUES AT ALL ARE LEFT OUT and that is not an exemption: they
+    share a key with every other valueless case of their family, so including
+    them would report one enormous «duplicate» group that says nothing about
+    duplication. Whether a valueless case earns its place is `dead_weight`'s
+    question, and it is the one that would notice.
+    """
+    groups: dict[str, list[str]] = {}
+    for case in cases:
+        if not case.base.pii:
+            continue
+        groups.setdefault(content_key(case), []).append(case.base.id)
+    return tuple(tuple(sorted(ids)) for _key, ids in sorted(groups.items()) if len(ids) > 1)
+
+
+def duplicate_ids(cases: Sequence[CaseV5]) -> tuple[str, ...]:
+    """Ids carried by more than one case — `validate_corpus_v5`'s K01 refuses
+    them, and this names them in the same table as the other two wastes so a
+    reader sees one section rather than a refusal in one place and counts in
+    another."""
+    seen: Counter[str] = Counter(case.base.id for case in cases)
+    return tuple(sorted(identifier for identifier, count in seen.items() if count > 1))
+
+
+def waste_table(cases: Sequence[CaseV5]) -> list[str]:
+    """The three wastes of §3.3: duplicate ids (a refusal elsewhere), cases no
+    line counts, and cases duplicating another by content."""
+    doubled = duplicate_ids(cases)
+    dead = dead_weight(cases)
+    duplicates = content_duplicates(cases)
+    lines = [f"дубли id: {len(doubled)}"
+             + (f" {list(doubled[:5])} (K01 отказывает)" if doubled else "")]
+    lines.append(f"мёртвый груз (ни одна строка метрик не считает): {len(dead)}"
+                 + (f" {list(dead[:5])}" if dead else ""))
+    lines.append("  считались объявления: " + " · ".join(label for label, _ in DENOMINATORS)
+                 + f" (не в счёт: {', '.join(DEAD_WEIGHT_EXEMPT)} — они считают любой прогон)")
+    lines.append(f"дубли по составу (семья и значения): {len(duplicates)} групп, "
+                 f"{sum(len(group) for group in duplicates)} случаев")
+    for group in duplicates[:5]:
+        lines.append(f"  {list(group)}")
+    return lines
+
+
+# --- the holdout's first touch (item 10) ---------------------------------------------
+
+# The two keys the ladder gains when a LIVE run first reads the holdout. Named
+# constants because three readers need them (the build, the harness that stamps,
+# the report that quotes the date) and a string literal in three places is three
+# chances to write `holdout_touched` and never find a stamp again.
+HOLDOUT_TOUCHED_AT: str = "holdout_touched_at"
+HOLDOUT_TOUCHED_BY: str = "holdout_touched_by"
+
+
+@dataclass(frozen=True)
+class HoldoutTouch:
+    """When the holdout was first read by a live run, and by which run."""
+
+    touched_at: str
+    touched_by: str
+
+
+def _touch_of(kept: dict[str, object]) -> HoldoutTouch | None:
+    """The stamp a ladder file carries, or None. BOTH keys or neither: half a
+    stamp is a date nobody can trace to a run, and reading it as «touched» would
+    freeze the corpus on a typo."""
+    at = str(kept.get(HOLDOUT_TOUCHED_AT, ""))
+    by = str(kept.get(HOLDOUT_TOUCHED_BY, ""))
+    return HoldoutTouch(touched_at=at, touched_by=by) if at and by else None
+
+
+def _with_touch(payload: dict[str, object], kept: dict[str, object]) -> dict[str, object]:
+    """A ladder about to be written, carrying over the stamp the file already
+    had.
+
+    EVERY WRITE OF `ladder.json` REBUILDS THE WHOLE OBJECT — the refresh and the
+    redraw both — so a stamp written by a live run would be dropped by the next
+    honest repair of a case, and the freeze would silently go back to being a
+    human's word. The two keys are copied rather than the whole file merged: a
+    stale `tiers` or `corpus_sha256` surviving a rewrite is the failure this
+    module exists to prevent.
+    """
+    touch = _touch_of(kept)
+    if touch is None:
+        return payload
+    return {**payload, HOLDOUT_TOUCHED_AT: touch.touched_at,
+            HOLDOUT_TOUCHED_BY: touch.touched_by}
+
+
+def holdout_touch(path: Path) -> HoldoutTouch | None:
+    """The stamp of `ladder.json`, or None — including when there is no ladder
+    yet, because a ladder nobody drew is a holdout nobody ran against."""
+    if not path.exists():
+        return None
+    return _touch_of(json.loads(path.read_text(encoding="utf-8")))
+
+
+def touches_holdout(path: Path, case_ids: Sequence[str]) -> bool:
+    """Would a run over these cases read the holdout.
+
+    THE SELECTION, NOT THE TIER NAME. `--tier max` is the whole corpus and
+    `--ids` can name a holdout case by hand; a stamp keyed on the word
+    «holdout» would leave both of them unstamped, and the freeze would then
+    protect a holdout that had already been run against.
+    """
+    if not path.exists():
+        return False
+    tiers = json.loads(path.read_text(encoding="utf-8")).get("tiers")
+    if not isinstance(tiers, dict):
+        return False
+    held = {str(one) for one in tiers.get("holdout", ())}
+    return bool(held & set(case_ids))
+
+
+def stamp_holdout_touched(path: Path, run_id: str, when: str) -> HoldoutTouch:
+    """Record that a live run has read the holdout, and return the stamp IN
+    FORCE (item 10).
+
+    THE FIRST TOUCH IS THE ONE THAT COUNTS, so a second call returns the first
+    stamp and writes nothing: the question the field answers is «has the holdout
+    seen a run», and a field that moved to the latest run would let a reader
+    think the holdout was fresh until yesterday.
+
+    ADDITIVE, KEY BY KEY, over the file as it is — never a rewrite from a parsed
+    `Ladder`. A writer that rebuilt the file would drop `tier_sha256` (R-57's
+    evidence) on the way through, and the stamp exists precisely so that later
+    readers can tell what happened to the tiers.
+
+    THE TIME IS A PARAMETER. A stamp written from `datetime.now()` inside cannot
+    be checked by a test without freezing a clock, and the caller — a run that
+    knows its own start — has the honest value anyway.
+    """
+    kept = json.loads(path.read_text(encoding="utf-8"))
+    existing = _touch_of(kept)
+    if existing is not None:
+        return existing
+    if not run_id or not when:
+        raise ValueError(f"stamp_holdout_touched: a stamp needs both a run and a date, "
+                         f"got run_id={run_id!r} when={when!r}")
+    kept[HOLDOUT_TOUCHED_AT] = when
+    kept[HOLDOUT_TOUCHED_BY] = run_id
+    path.write_text(json.dumps(kept, ensure_ascii=False, indent=1), encoding="utf-8")
+    return HoldoutTouch(touched_at=when, touched_by=run_id)
+
+
+def touched_refusal(path: Path, regenerate: bool) -> str:
+    """Why the holdout may not be redrawn at all once a live run has read it, or
+    "" when it still may (item 10).
+
+    R-52 LET THE LADDER MOVE ONCE AND THE ASSERTION WAS A HUMAN'S WORD. That was
+    right while nothing on disk knew whether a run had happened; once the first
+    live run stamps the ladder, `--unfrozen-before-first-run` is a claim the file
+    itself contradicts, and a flag that can assert a falsehood is not a check. So
+    the refusal is mechanical from the first touch onwards, and it is a REFUSAL
+    rather than a warning because the thing on the other side of it — twenty per
+    cent of the corpus that has now seen the debugging — is not something a
+    printed warning can undo.
+    """
+    if not regenerate:
+        return ""
+    touch = holdout_touch(path)
+    if touch is None:
+        return ""
+    return (f"ОТКАЗ: по этой лестнице был живой прогон ({touch.touched_by} от "
+            f"{touch.touched_at}), холдаут больше не перерисовывается — "
+            f"--unfrozen-before-first-run утверждал бы неправду (R-52, пункт 10). "
+            f"Новый состав ярусов для выросшего корпуса — решение владельца")
+
+
+# --- a run that can be tied to a commit (item 18) ------------------------------------
+
+REPO: Path = HERE.parents[2]
+# How many dirty paths travel into `meta.json`. The whole list is the evidence
+# and the count is the verdict; a tree with three hundred touched files would
+# otherwise put three hundred paths into every run record, and a reader who
+# needs them all has the count and the commit to go look.
+DIRTY_PATHS_IN_META: int = 20
+
+
+class WorktreeUnreadable(RuntimeError):
+    """git could not say what commit this tree is at.
+
+    A NAMED ERROR RATHER THAN AN EMPTY COMMIT. «No commit» and «git is not
+    installed» and «this is not a checkout» would all read as a run that simply
+    has no provenance, and the run record would then carry a blank field that
+    looks like a run nobody could tie to a commit for the ordinary reason.
+    Carries git's own stderr, because the ordinary cause is a directory that is
+    not the repository and the message has to say which one.
+    """
+
+
+def _git(repo: Path, arguments: Sequence[str]) -> str:
+    """One READ-ONLY git question. Nothing here writes: the build and the run
+    are readers of the tree, and a benchmark that committed, stashed or checked
+    anything out on its way to a number would be changing the thing it measures.
+    """
+    finished = subprocess.run(["git", "-C", str(repo), *arguments],
+                              capture_output=True, text=True, check=False)
+    if finished.returncode != 0:
+        raise WorktreeUnreadable(f"git {' '.join(arguments)} in {repo}: exit "
+                                 f"{finished.returncode}, {finished.stderr.strip()!r}")
+    return finished.stdout
+
+
+@dataclass(frozen=True)
+class RunProvenance:
+    """What a run can be tied to: the tree, the corpus and the ladder.
+
+    ONE OBJECT RATHER THAN SIX ARGUMENTS, because the same six facts go into
+    three places — the refusal that stops a live run, `meta.json`, and the
+    registry row — and a second assembly of them is a second chance for the
+    record to disagree with the refusal.
+    """
+
+    commit: str
+    branch: str
+    dirty: tuple[str, ...]           # `git status --porcelain` lines: status and path
+    dirty_ok: bool
+    cases: int
+    corpus_sha256: str               # the v4 digest the ladder is drawn against
+    corpus_v5_sha256: str
+    ladder_corpus_sha256: str
+    ladder_tier_sha256: tuple[tuple[str, str], ...]
+    holdout_touched_at: str
+    holdout_touched_by: str
+
+
+def worktree_state(repo: Path) -> tuple[str, str, tuple[str, ...]]:
+    """The commit, the branch and every path that differs from it.
+
+    UNTRACKED FILES COUNT AS DIRT. A new module the run imports is exactly the
+    change no commit describes, and `--porcelain` reports it as `??`; asking for
+    tracked modifications alone would call the tree clean with the new code in it.
+    """
+    commit = _git(repo, ("rev-parse", "HEAD")).strip()
+    branch = _git(repo, ("rev-parse", "--abbrev-ref", "HEAD")).strip()
+    dirty = tuple(line.rstrip() for line in
+                  _git(repo, ("status", "--porcelain")).splitlines() if line.strip())
+    return commit, branch, dirty
+
+
+def corpus_stamp(cases: Sequence[CaseV5]) -> tuple[str, str]:
+    """Both digests of the SAME list of cases: v4's (what the ladder is pinned
+    to) and v5's. Recomputed from the cases, never read off a file's own header —
+    a stamp that describes the file it sits in is a stamp that can lie."""
+    return v4.corpus_digest([case.base for case in cases]), corpus_digest_v5(cases)
+
+
+def run_provenance(cases: Sequence[CaseV5], ladder_path: Path, repo: Path,
+                   dirty_ok: bool) -> RunProvenance:
+    """Everything a finished run needs to be traceable, gathered before it starts."""
+    commit, branch, dirty = worktree_state(repo)
+    v4_digest, v5_digest = corpus_stamp(cases)
+    kept = json.loads(ladder_path.read_text(encoding="utf-8")) if ladder_path.exists() else {}
+    tier_hashes = kept.get("tier_sha256")
+    touch = _touch_of(kept)
+    return RunProvenance(
+        commit=commit, branch=branch, dirty=dirty, dirty_ok=dirty_ok, cases=len(cases),
+        corpus_sha256=v4_digest, corpus_v5_sha256=v5_digest,
+        ladder_corpus_sha256=str(kept.get("corpus_sha256", "")),
+        ladder_tier_sha256=tuple(sorted((str(name), str(value)) for name, value
+                                        in (tier_hashes or {}).items()))
+        if isinstance(tier_hashes, dict) else (),
+        holdout_touched_at=touch.touched_at if touch else "",
+        holdout_touched_by=touch.touched_by if touch else "")
+
+
+def provenance_json(provenance: RunProvenance) -> dict[str, object]:
+    """The provenance block for `meta.json` and the registry row (§6.1).
+
+    `tied_to_commit` IS THE FIELD A READER ACTUALLY WANTS and it is computed
+    here, once: a reader left to infer it from `dirty` and `dirty_ok` will
+    eventually infer it differently in the report and in the registry, and then
+    one file will call a run reproducible while the other does not.
+    """
+    return {"commit": provenance.commit, "branch": provenance.branch,
+            "dirty": len(provenance.dirty),
+            "dirty_paths": list(provenance.dirty[:DIRTY_PATHS_IN_META]),
+            "dirty_ok": provenance.dirty_ok,
+            "tied_to_commit": not provenance.dirty,
+            "cases": provenance.cases,
+            "corpus_sha256": provenance.corpus_sha256,
+            "corpus_v5_sha256": provenance.corpus_v5_sha256,
+            "ladder_corpus_sha256": provenance.ladder_corpus_sha256,
+            "ladder_tier_sha256": {name: value for name, value in provenance.ladder_tier_sha256},
+            HOLDOUT_TOUCHED_AT: provenance.holdout_touched_at,
+            HOLDOUT_TOUCHED_BY: provenance.holdout_touched_by}
+
+
+def worktree_line(provenance: RunProvenance) -> str:
+    """Состояние дерева ОДНОЙ строкой — то самое поле `worktree`, которое реестр
+    (§1.2) печатает колонкой в списке прогонов.
+
+    Строка, а не словарь, потому что список прогонов читают глазами; полный
+    перечень путей лежит рядом, в `provenance` внутри `meta.json`. Считается
+    ЗДЕСЬ, из того же объекта, что и `provenance_json`: реестр и отчёт, пришедшие
+    к «привязан к коммиту» каждый своей дорогой, однажды разойдутся — и спорить
+    будут два файла об одном прогоне.
+    """
+    if not provenance.commit:
+        return "неизвестно"
+    if not provenance.dirty:
+        return f"чисто {provenance.commit[:12]} ({provenance.branch})"
+    return (f"грязно {provenance.commit[:12]} ({provenance.branch}): "
+            f"{len(provenance.dirty)} файлов — к коммиту не привязан")
+
+
+def start_refusals(provenance: RunProvenance) -> tuple[str, ...]:
+    """Why a LIVE run must not start (§6.1), in the order a reader can act on.
+
+    THE TWO REFUSALS ARE NOT THE SAME KIND OF THING, and only one of them has a
+    flag. A dirty tree makes the numbers untieable to a commit — bad, and
+    sometimes worth it, so `--dirty-ok` exists and says in the record that this
+    run cannot be tied to one. A corpus that disagrees with the ladder makes the
+    numbers untieable to ANYTHING: the tier names case ids drawn from another
+    corpus, so the run measures a selection nobody chose, and no flag makes that
+    worth paying for. Rebuild the corpus or restore the ladder.
+    """
+    refusals: list[str] = []
+    if provenance.corpus_sha256 != provenance.ladder_corpus_sha256:
+        refusals.append(
+            f"ОТКАЗ: корпус {provenance.corpus_sha256[:12]} против лестницы "
+            f"{provenance.ladder_corpus_sha256[:12] or '—'}: ярус назовёт случаи, "
+            f"нарисованные по другому корпусу. Пересоберите корпус "
+            f"(python3 -m bench.agentpii5.build) или верните прежнюю лестницу; "
+            f"--dirty-ok этого не снимает")
+    if provenance.dirty and not provenance.dirty_ok:
+        instrument = [line for line in provenance.dirty if line[3:].startswith("prototype/")]
+        refusals.append(
+            f"ОТКАЗ: рабочее дерево грязное — {len(provenance.dirty)} файлов "
+            f"({len(instrument)} под prototype/), прогон не привязать к коммиту "
+            f"{provenance.commit[:12] or '—'}: {[line for line in provenance.dirty[:3]]}. "
+            f"Закоммитьте или --dirty-ok (и тогда это записано в meta.json и в реестре)")
+    return tuple(refusals)
+
+
 # --- the files ----------------------------------------------------------------------
 
 def write_corpus(cases: Sequence[CaseV5], out: Path) -> str:
@@ -498,14 +1031,28 @@ def write_ladder(cases: Sequence[CaseV5], seed: int, out: Path,
                       f"(--regenerate-ladder чтобы пересобрать)"], []
     ladder = build_ladder(bases, seed)
     lines: list[str] = []
+    kept_raw: dict[str, object] = (json.loads(path.read_text(encoding="utf-8"))
+                                   if path.exists() else {})
     if regenerate and path.exists():
         # REGENERATION KEEPS THE HOLDOUT OF EVERY CASE THAT STILL EXISTS. The
         # point of K12 is that the holdout was drawn before anybody looked; a
         # redraw that moved an existing case in or out would hand back a holdout
         # that had seen the week's debugging. New cases are distributed by the
         # same seed and may land anywhere.
-        moved = _holdout_moved(json.loads(path.read_text(encoding="utf-8")), ladder,
-                               {case.id for case in bases})
+        moved = _holdout_moved(kept_raw, ladder, {case.id for case in bases})
+        # …AND ONCE A LIVE RUN HAS READ THIS LADDER, `unfrozen` IS A CLAIM THE
+        # FILE ITSELF CONTRADICTS (item 10). R-52's assertion was a human's word
+        # because nothing on disk knew whether a run had happened; the stamp
+        # knows, so from the first touch the movement is refused whatever the
+        # caller asserts. Checked here as well as in `main` because `write_ladder`
+        # is the only thing that writes the file, and a rule that lives in the
+        # caller is a rule the next caller has to remember.
+        touch = _touch_of(kept_raw)
+        if moved and touch is not None:
+            return ladder, [], [
+                f"ЛЕСТНИЦА: {len(moved)} случаев сменили бы ярус, а по этой лестнице "
+                f"уже был живой прогон ({touch.touched_by} от {touch.touched_at}): "
+                f"холдаут не перерисовывается (R-52, пункт 10)"]
         if moved and not unfrozen:
             return ladder, [], [f"ЛЕСТНИЦА: {len(moved)} случаев сменили ярус при "
                                 f"пересборке: {sorted(moved)[:5]}"]
@@ -516,12 +1063,12 @@ def write_ladder(cases: Sequence[CaseV5], seed: int, out: Path,
     broken = ladder_problems(bases, ladder)
     if broken:
         return ladder, [], [f"ЛЕСТНИЦА: {line}" for line in broken]
-    path.write_text(json.dumps({
+    path.write_text(json.dumps(_with_touch({
         "version": ladder.version, "seed": ladder.seed,
         "corpus_sha256": ladder.corpus_sha256,
         "tiers": {name: list(ids) for name, ids in ladder.tiers.items()},
         "tier_sha256": {name: tier_sha256(list(ids)) for name, ids in ladder.tiers.items()}},
-        ensure_ascii=False, indent=1), encoding="utf-8")
+        kept_raw), ensure_ascii=False, indent=1), encoding="utf-8")
     return ladder, lines + ["лестница записана: " + " / ".join(
         f"{name} {len(ids)}" for name, ids in ladder.tiers.items())], []
 
@@ -586,12 +1133,12 @@ def _refresh_stamp(kept: dict[str, object], bases: Sequence[Case], seed: int, di
     problems = ladder_problems(list(bases), fresh)
     if problems:
         return None, [], [f"ЛЕСТНИЦА: {line}" for line in problems]
-    path.write_text(json.dumps({
+    path.write_text(json.dumps(_with_touch({
         "version": kept.get("version", fresh.version), "seed": kept.get("seed", seed),
         "corpus_sha256": digest,
         "tiers": {name: list(ids) for name, ids in tiers.items()},
         "tier_sha256": {name: tier_sha256(list(ids)) for name, ids in tiers.items()}},
-        ensure_ascii=False, indent=1), encoding="utf-8")
+        kept), ensure_ascii=False, indent=1), encoding="utf-8")
     lines = [f"штамп лестницы обновлён: корпус {str(kept.get('corpus_sha256', ''))[:12]} → "
              f"{digest[:12]}, состав ярусов тот же"]
     for name, (moved, size) in movement.items():
@@ -632,6 +1179,31 @@ def _holdout_moved(kept: dict[str, object], ladder: Ladder,
     return ((before ^ after) & alive)
 
 
+def print_provenance(out: Path, dirty_ok: bool) -> int:
+    """`build --provenance`: the block a live run must write and the refusals it
+    must obey, computed from the FILES a run would read (§6.1).
+
+    A MODE OF ITS OWN RATHER THAN A LINE OF `--check`, because the question is
+    about the tree and the ladder rather than about the corpus, and answering it
+    must not cost the fifteen seconds of an assembly. It is also the only place
+    where the refusal can be watched without a live run: the harness calls
+    `start_refusals` before it spends a cent, and a refusal nobody can exercise
+    offline is a refusal nobody has measured.
+    """
+    corpus = out / "corpus.v5.json"
+    if not corpus.exists():
+        print(f"ОТКАЗ: {corpus} не существует — собирать нечего", file=sys.stderr)
+        return 1
+    stored = json.loads(corpus.read_text(encoding="utf-8"))
+    cases = [case_v5_from_json(row) for row in stored["corpus"]]
+    provenance = run_provenance(cases, out / "ladder.json", REPO, dirty_ok)
+    print(json.dumps(provenance_json(provenance), ensure_ascii=False, indent=1))
+    refusals = start_refusals(provenance)
+    for line in refusals:
+        print(line, file=sys.stderr)
+    return 1 if refusals else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true",
@@ -643,11 +1215,20 @@ def main() -> int:
                              "ladder yet, so redrawing it hides no debugging")
     parser.add_argument("--allow-drop", action="store_true",
                         help="continue past an unrevisable v4 case, leaving K10 red")
+    parser.add_argument("--provenance", action="store_true",
+                        help="печатает происхождение прогона (коммит, ветка, дайджесты, "
+                             "штамп холдаута) и отказы §6.1 — по файлам, ничего не собирая")
+    parser.add_argument("--dirty-ok", action="store_true",
+                        help="разрешить грязное дерево: прогон будет помечен как "
+                             "непривязываемый к коммиту")
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--out", default=str(HERE))
     args = parser.parse_args()
 
-    refusal = ladder_refusal(args.regenerate_ladder, args.unfrozen_before_first_run)
+    if args.provenance:
+        return print_provenance(Path(args.out), args.dirty_ok)
+    refusal = (ladder_refusal(args.regenerate_ladder, args.unfrozen_before_first_run)
+               or touched_refusal(Path(args.out) / "ladder.json", args.regenerate_ladder))
     if refusal:
         print(refusal, file=sys.stderr)
         return 1
@@ -682,6 +1263,12 @@ def main() -> int:
     for line in form_disagreements(cases):
         print(line)
     for line in mde_table(cases):
+        print(line)
+    for line in plan_table(cases, PLAN):
+        print(line)
+    for line in waste_table(cases):
+        print(line)
+    for line in ladder_coverage(cases, Path(args.out) / "ladder.json"):
         print(line)
     if hits or problems or dropped:
         print(f"ОТКАЗ: {len(hits)} поисков, {len(problems)} проблем, "

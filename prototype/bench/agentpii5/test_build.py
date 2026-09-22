@@ -28,6 +28,7 @@ from collections import Counter
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 from bench.agentpii4.schema import case_from_json
 from bench.agentpii5 import build as b
@@ -38,6 +39,7 @@ from bench.agentpii5.contracts import CaseV5, Hop
 from bench.agentpii5.metrics import leaf_value_ok, returned_as_item
 from bench.agentpii5.schema import case_v5_from_json, corpus_digest_v5, validate_corpus_v5
 from bench.agentpii5.scenarios5 import common
+from bench.agentpii5.test_perfect import ACCEPTANCE_TIER
 from bench.agentpii5.tools import REGISTRY_V5, spec_v5_for
 
 SEED: int = b.SEED
@@ -633,6 +635,413 @@ def test_widened_watch_is_restored() -> list[str]:
     return [] if before == after else [f"watch list left as {after}"]
 
 
+# --- «положил файл — попал в ярус» (пункт 9) -----------------------------------------
+
+def _dropped_family(template: CaseV5) -> SimpleNamespace:
+    """A scenario family written the way §3.1 says to write one: a module with
+    `build(seed, count)` and nothing else.
+
+    BUILT FROM A REAL CASE rather than from a stub, because the claim under test
+    is that a family added to the plan reaches the corpus — and a stub that
+    `validate_v5` would refuse could reach it and prove nothing.
+    """
+    def build(seed: int, wanted: int) -> list[CaseV5]:
+        del seed
+        return [replace(template, base=replace(template.base, id=f"dropin-{index:03d}"))
+                for index in range(wanted)]
+    return SimpleNamespace(__name__="bench.agentpii5.scenarios5.dropin", build=build)
+
+
+def test_a_family_dropped_into_the_plan_is_built_and_printed() -> list[str]:
+    """PUNKT 9: a file in `scenarios5/` and a line in the plan, with no edit to
+    the harness.
+
+    THE PLAN IS CONSUMED IN ONE PLACE AND IT TAKES THE PLAN AS AN ARGUMENT, so
+    this check hands `build_planned` its own two-line plan and watches the same
+    function the real build runs. Reading `PLAN` from the module global was the
+    alternative and it makes the property uncheckable: a check would have to
+    ASSIGN to `build.PLAN`, and a test that edits a module global leaves every
+    later check running against its edit.
+    """
+    problems: list[str] = []
+    template = next(case for case in CASES if not case.revised_from_v4)
+    family = _dropped_family(template)
+    plan = ((family, 3),)
+    built = b.build_planned(SEED, plan)
+    if [case.base.id for case in built] != ["dropin-000", "dropin-001", "dropin-002"]:
+        problems.append(f"the plan built {[case.base.id for case in built]}")
+    text = "\n".join(b.plan_table(built, plan))
+    if "dropin" not in text:
+        problems.append(f"the plan table does not name the family that landed: {text!r}")
+    if "заказано 3" not in text:
+        problems.append(f"the plan table does not print what was asked for: {text!r}")
+    # A family that builds fewer cases than it is asked for moves every share
+    # below it, and the totals add up either way — so the disagreement is a line.
+    short = "\n".join(b.plan_table(built[:2], plan))
+    if "!" not in short:
+        problems.append(f"a family that built 2 of 3 was not flagged: {short!r}")
+    # …and the real plan's own table names every family of the real corpus.
+    real = "\n".join(b.plan_table(CASES, b.PLAN))
+    for module, _count in b.PLAN:
+        if b._plan_name(module) not in real:                 # noqa: SLF001 - the name is the test
+            problems.append(f"the plan table leaves out {b._plan_name(module)}")  # noqa: SLF001
+    return problems
+
+
+def test_a_case_outside_every_tier_is_named_by_the_check() -> list[str]:
+    """PUNKT 9, step 5: a case in the corpus and in no tier is taken by no run,
+    and `--check` has to say so — with a different answer on the two sides of
+    the first live run (пункт 10)."""
+    problems: list[str] = []
+    template = next(case for case in CASES if not case.revised_from_v4)
+    with tempfile.TemporaryDirectory() as folder:
+        out = Path(folder)
+        ladder, _lines, broken = b.write_ladder(CASES, SEED, out, True, False)
+        if ladder is None or broken:
+            return [f"the ladder was not written: {broken}"]
+        path = out / "ladder.json"
+        settled = "\n".join(b.ladder_coverage(CASES, path))
+        if "новых случаев нет" not in settled:
+            problems.append(f"a corpus every tier holds was not called settled: {settled!r}")
+        grown = list(CASES) + b.build_planned(SEED, ((_dropped_family(template), 2),))
+        text = "\n".join(b.ladder_coverage(grown, path))
+        if "новых случаев вне ярусов: 2" not in text:
+            problems.append(f"the two new cases were not named as tierless: {text!r}")
+        if "--unfrozen-before-first-run" not in text:
+            problems.append(f"the check does not say how to place them: {text!r}")
+        lost = "\n".join(b.ladder_coverage(CASES[:-3], path))
+        if "лестница называет 3 случаев, которых в корпусе нет" not in lost:
+            problems.append(f"three cases the corpus lost were not named: {lost!r}")
+        # AFTER THE FIRST LIVE RUN THE ANSWER IS ANOTHER ONE, and printing the
+        # redraw flag there would be telling a reader to assert a falsehood.
+        b.stamp_holdout_touched(path, "run-ladder-coverage", "2026-09-23T10:00:00+00:00")
+        after = "\n".join(b.ladder_coverage(grown, path))
+        if "--unfrozen-before-first-run" in after or "решение владельца" not in after:
+            problems.append(f"a touched ladder still advertises the redraw: {after!r}")
+        missing = "\n".join(b.ladder_coverage(CASES, out / "no-such-ladder.json"))
+        if "ещё не нарисована" not in missing:
+            problems.append(f"a missing ladder was not reported as missing: {missing!r}")
+    return problems
+
+
+# --- мёртвый груз и дубли по составу (пункт 11) --------------------------------------
+
+def test_dead_weight_and_content_duplicates_are_counted() -> list[str]:
+    """PUNKT 11: a case no metric line can count, and a case that duplicates
+    another by family and values.
+
+    BOTH HALVES OF EACH. A `dead_weight` that only ever returns () could be a
+    function that returns () — so a case declaring NOTHING is built and must be
+    named — and every predicate of the table must fire on the real corpus, or it
+    is a line in the table that counts nothing and lets dead weight through.
+    """
+    problems: list[str] = []
+    template = CASES[0]
+    mute = replace(template, hops=(), returns=(), memory=(), forced=(), pick=None,
+                   branch=None, loop=None, rag=None, document=None, has_result=False,
+                   streaming=False,
+                   base=replace(template.base, id="mute-000", pii=(), negatives=()))
+    if b.denominator_lines(mute):
+        problems.append(f"a case declaring nothing feeds {b.denominator_lines(mute)}")
+    if "mute-000" not in b.dead_weight([template, mute]):
+        problems.append("the case no line counts was not named as dead weight")
+    if b.dead_weight([template]):
+        problems.append(f"a real corpus case was called dead weight: {b.dead_weight([template])}")
+    for label, licensed in b.DENOMINATORS:
+        if not any(licensed(case) for case in CASES):
+            problems.append(f"no case of the corpus licenses {label!r}: the predicate "
+                            f"counts nothing and lets dead weight through")
+    for name in b.DEAD_WEIGHT_EXEMPT:
+        if name in {label for label, _licensed in b.DENOMINATORS}:
+            problems.append(f"{name} counts every observation and is in the table: "
+                            f"dead weight would be a class with no members")
+    twin = replace(template, base=replace(template.base, id="twin-000"))
+    other = next(case for case in CASES
+                 if case.behaviour == template.behaviour
+                 and b.content_key(case) != b.content_key(template))
+    groups = b.content_duplicates([template, twin, other])
+    if groups != ((template.base.id, "twin-000"),) and groups != (("twin-000", template.base.id),):
+        problems.append(f"the content duplicate was not found alone: {groups}")
+    if b.content_duplicates([template, other]):
+        problems.append("two cases carrying different values were called duplicates")
+    # A family is part of the identity: the same people in another family is a
+    # different measurement and duplicates nothing.
+    elsewhere = replace(twin, behaviour="rag" if template.behaviour != "rag" else "document")
+    if b.content_duplicates([template, elsewhere]):
+        problems.append("the same values in another family were called a duplicate")
+    if b.duplicate_ids([template, twin]):
+        problems.append("two distinct ids were reported as duplicated")
+    if b.duplicate_ids([template, template]) != (template.base.id,):
+        problems.append("one id carried by two cases was not reported")
+    # …and the printed table carries what the corpus really holds today.
+    text = "\n".join(b.waste_table(CASES))
+    groups = b.content_duplicates(CASES)
+    if f"дубли по составу (семья и значения): {len(groups)} групп" not in text:
+        problems.append(f"the waste table does not print the corpus's own groups: {text!r}")
+    if f"мёртвый груз (ни одна строка метрик не считает): {len(b.dead_weight(CASES))}" not in text:
+        problems.append(f"the waste table does not print the dead weight: {text!r}")
+    # A PRINTED KEY MUST NOT BE A PRINTED VALUE: the table names ids and hashes,
+    # never the people a case carries.
+    for item in template.base.pii:
+        if item.value and item.value in text:
+            problems.append(f"the waste table prints a corpus value ({item.type})")
+    return problems
+
+
+# --- холдаут, тронутый живым прогоном (пункт 10) -------------------------------------
+
+def test_the_first_live_run_stamps_the_holdout() -> list[str]:
+    """PUNKT 10: the first live run that reads the holdout writes the date and
+    its own id into `ladder.json`, and the FIRST stamp is the one that stays."""
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as folder:
+        out = Path(folder)
+        ladder, _lines, broken = b.write_ladder(CASES, SEED, out, True, False)
+        if ladder is None or broken:
+            return [f"the ladder was not written: {broken}"]
+        path = out / "ladder.json"
+        if b.holdout_touch(path) is not None:
+            problems.append("a freshly drawn ladder claims a live run has read it")
+        if b.holdout_touch(out / "no-such-ladder.json") is not None:
+            problems.append("a ladder that does not exist claims a touch")
+        held = list(ladder.tiers["holdout"])
+        debugged = [one for one in ladder.tiers["nano"] if one not in set(held)]
+        if not b.touches_holdout(path, held[:1]):
+            problems.append("a run over a holdout case was not seen as touching it")
+        if b.touches_holdout(path, debugged[:1]):
+            problems.append("a run over a debug case was read as touching the holdout")
+        if not b.touches_holdout(path, [case.base.id for case in CASES]):
+            problems.append("--tier max does not count as touching the holdout")
+        stamp = b.stamp_holdout_touched(path, "run-first", "2026-09-23T10:00:00+00:00")
+        if stamp != b.HoldoutTouch("2026-09-23T10:00:00+00:00", "run-first"):
+            problems.append(f"the stamp returned {stamp}")
+        if b.holdout_touch(path) != stamp:
+            problems.append("the stamp was not written into the file")
+        again = b.stamp_holdout_touched(path, "run-second", "2026-09-24T10:00:00+00:00")
+        if again != stamp:
+            problems.append(f"a second run overwrote the first touch: {again}")
+        kept = json.loads(path.read_text(encoding="utf-8"))
+        if kept.get(b.HOLDOUT_TOUCHED_BY) != "run-first":
+            problems.append("the file remembers the second run, not the first")
+        if "tier_sha256" not in kept or set(kept["tiers"]) != set(ladder.tiers):
+            problems.append("stamping the ladder dropped what was in it")
+    return problems
+
+
+def test_a_touched_ladder_refuses_every_redraw() -> list[str]:
+    """PUNKT 10: from the first touch on, a change of holdout membership is a
+    REFUSAL — `--unfrozen-before-first-run` asserts something the file itself
+    contradicts.
+
+    BOTH SIDES, because a refusal that has only been watched refusing could be a
+    function that refuses always: the same redraw goes through on an untouched
+    ladder (R-52, which stands until the stamp appears).
+    """
+    problems: list[str] = []
+    shrunk = CASES[: len(CASES) - 200]
+    with tempfile.TemporaryDirectory() as folder:
+        out = Path(folder)
+        b.write_ladder(CASES, SEED, out, True, False)
+        path = out / "ladder.json"
+        if b.touched_refusal(path, True):
+            problems.append("an untouched ladder refused the one allowed redraw")
+        _ladder, lines, broken = b.write_ladder(shrunk, SEED, out, True, True)
+        if broken or not any("сменили ярус" in line for line in lines):
+            problems.append(f"R-52's redraw was refused before any touch: {broken}")
+    with tempfile.TemporaryDirectory() as folder:
+        out = Path(folder)
+        b.write_ladder(CASES, SEED, out, True, False)
+        path = out / "ladder.json"
+        b.stamp_holdout_touched(path, "run-first", "2026-09-23T10:00:00+00:00")
+        before = path.read_bytes()
+        refusal = b.touched_refusal(path, True)
+        if "run-first" not in refusal or "ОТКАЗ" not in refusal:
+            problems.append(f"the redraw was not refused by name: {refusal!r}")
+        if b.touched_refusal(path, False):
+            problems.append("an ordinary build was refused because of the stamp")
+        _ladder, _lines, broken = b.write_ladder(shrunk, SEED, out, True, True)
+        if not broken:
+            problems.append("the assertion moved a holdout a live run had already read")
+        elif "живой прогон" not in broken[0]:
+            problems.append(f"the refusal does not name the run: {broken[0]}")
+        if path.read_bytes() != before:
+            problems.append("a refused redraw wrote the file anyway")
+    return problems
+
+
+def test_a_stamp_refresh_keeps_the_touch() -> list[str]:
+    """PUNKT 10 against R-57: a repair that moves bytes and no case ids refreshes
+    the stamp — and must carry the touch through, or the freeze quietly goes back
+    to being a human's word one honest repair later."""
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as folder:
+        out = Path(folder)
+        b.write_ladder(CASES, SEED, out, True, False)
+        path = out / "ladder.json"
+        touch = b.stamp_holdout_touched(path, "run-first", "2026-09-23T10:00:00+00:00")
+        repaired = [replace(case, base=replace(case.base, note=case.base.note + " "))
+                    for case in CASES]
+        _again, lines, broken = b.write_ladder(repaired, SEED, out, False, False)
+        if broken:
+            problems.append(f"a byte-only change was refused after the touch: {broken}")
+        if not any("штамп лестницы обновлён" in line for line in lines):
+            problems.append(f"the stamp was not refreshed: {lines}")
+        if b.holdout_touch(path) != touch:
+            problems.append(f"the refresh dropped the touch: {b.holdout_touch(path)}")
+        # …and a redraw that MOVES nobody is allowed even after the touch, and
+        # keeps the stamp too: the refusal is about movement, not about writing.
+        _ladder, _lines, broken = b.write_ladder(repaired, SEED, out, True, True)
+        if broken:
+            problems.append(f"a redraw that moves nobody was refused: {broken}")
+        if b.holdout_touch(path) != touch:
+            problems.append("a redraw that moved nobody dropped the touch")
+    return problems
+
+
+# --- грязное дерево и чужой корпус (пункт 18) ----------------------------------------
+
+def _provenance(dirty: tuple[str, ...], dirty_ok: bool, ladder_digest: str) -> b.RunProvenance:
+    """A provenance with everything but the two facts under test held fixed."""
+    return b.RunProvenance(
+        commit="0123456789abcdef0123456789abcdef01234567", branch="main", dirty=dirty,
+        dirty_ok=dirty_ok, cases=3, corpus_sha256="aaaa", corpus_v5_sha256="bbbb",
+        ladder_corpus_sha256=ladder_digest, ladder_tier_sha256=(("holdout", "cccc"),),
+        holdout_touched_at="", holdout_touched_by="")
+
+
+def test_a_live_run_refuses_a_dirty_tree_and_a_foreign_corpus() -> list[str]:
+    """PUNKT 18: the two refusals, and the ONE of them a flag may clear.
+
+    A dirty tree makes the numbers untieable to a commit — sometimes worth it,
+    so `--dirty-ok` exists and says so in the record. A corpus that disagrees
+    with the ladder makes them untieable to anything: the tier names ids drawn
+    from another corpus, so the run measures a selection nobody chose.
+    """
+    problems: list[str] = []
+    clean = _provenance((), False, "aaaa")
+    if b.start_refusals(clean):
+        problems.append(f"a clean tree on its own corpus was refused: {b.start_refusals(clean)}")
+    dirty = _provenance((" M prototype/pseudex/vault.py", "?? prototype/x.py"), False, "aaaa")
+    refusals = b.start_refusals(dirty)
+    if len(refusals) != 1 or "грязное" not in refusals[0]:
+        problems.append(f"a dirty tree was not refused: {refusals}")
+    elif "2 файлов" not in refusals[0] or "(2 под prototype/)" not in refusals[0]:
+        problems.append(f"the refusal does not count the dirt: {refusals[0]}")
+    allowed = _provenance((" M prototype/pseudex/vault.py",), True, "aaaa")
+    if b.start_refusals(allowed):
+        problems.append(f"--dirty-ok did not let the run start: {b.start_refusals(allowed)}")
+    foreign = _provenance((), True, "zzzz")
+    refusals = b.start_refusals(foreign)
+    if len(refusals) != 1 or "лестниц" not in refusals[0]:
+        problems.append(f"a corpus the ladder was not drawn from was accepted: {refusals}")
+    elif "--dirty-ok этого не снимает" not in refusals[0]:
+        problems.append(f"the refusal does not say the flag will not clear it: {refusals[0]}")
+    both = _provenance((" M x",), False, "zzzz")
+    if len(b.start_refusals(both)) != 2:
+        problems.append(f"two problems were reported as {len(b.start_refusals(both))}")
+    # WHAT THE RECORD SAYS: the run either can be tied to a commit or cannot,
+    # decided once here rather than inferred by each reader.
+    record = b.provenance_json(allowed)
+    if record["tied_to_commit"] is not False or record["dirty_ok"] is not True:
+        problems.append(f"a run on a dirty tree is recorded as tied to a commit: {record}")
+    if record["dirty"] != 1 or record["dirty_paths"] != [" M prototype/pseudex/vault.py"]:
+        problems.append(f"the record does not carry the dirt: {record}")
+    if b.provenance_json(clean)["tied_to_commit"] is not True:
+        problems.append("a clean run is not recorded as tied to its commit")
+    for key in ("commit", "branch", "corpus_sha256", "corpus_v5_sha256",
+                "ladder_corpus_sha256", b.HOLDOUT_TOUCHED_AT):
+        if key not in record:
+            problems.append(f"the record carries no {key}")
+    # И ТА ЖЕ ОДНА СТРОКА, которую колонкой печатает реестр и шапка отчёта. Она
+    # считается ЗДЕСЬ, из того же объекта: реестр и отчёт, пришедшие к «привязан
+    # к коммиту» каждый своей дорогой, однажды разойдутся — и спорить будут два
+    # файла об одном прогоне.
+    line = b.worktree_line(allowed)
+    if "0123456789ab" not in line or "к коммиту не привязан" not in line:
+        problems.append(f"строка о грязном дереве не называет ни коммит, ни вывод: {line!r}")
+    if "чисто" not in b.worktree_line(clean):
+        problems.append(f"чистое дерево описано как {b.worktree_line(clean)!r}")
+    if b.worktree_line(replace(clean, commit="")) != "неизвестно":
+        problems.append("дерево, о котором git промолчал, описано словом, а не «неизвестно»")
+    return problems
+
+
+def test_the_provenance_is_read_off_the_real_tree() -> list[str]:
+    """PUNKT 18: the commit, the branch and the corpus digest come from git and
+    from the cases — not from a header a file writes about itself.
+
+    THE ONE THING THIS ALSO PROVES: the corpus this build assembles is the one
+    the committed ladder was drawn from. A disagreement here is exactly the
+    refusal a live run would hit, found at test time instead of at spend time.
+    """
+    problems: list[str] = []
+    commit, branch, _dirty = b.worktree_state(b.REPO)
+    if len(commit) != 40 or not branch:
+        problems.append(f"git answered commit={commit!r} branch={branch!r}")
+    provenance = b.run_provenance(CASES, b.HERE / "ladder.json", b.REPO, True)
+    if provenance.corpus_sha256 != provenance.ladder_corpus_sha256:
+        problems.append(f"the built corpus {provenance.corpus_sha256[:12]} is not the one "
+                        f"ladder.json was drawn from ({provenance.ladder_corpus_sha256[:12]})")
+    if provenance.cases != len(CASES) or not provenance.ladder_tier_sha256:
+        problems.append(f"the provenance does not describe the corpus: {provenance.cases}")
+    v4_digest, v5_digest = b.corpus_stamp(CASES)
+    if (v4_digest, v5_digest) != (provenance.corpus_sha256, provenance.corpus_v5_sha256):
+        problems.append("the provenance's digests are not the corpus's own")
+    # A tree git cannot answer for is named, never read as «no provenance»: the
+    # two would be one blank field in the run record.
+    with tempfile.TemporaryDirectory() as folder:
+        try:
+            b.worktree_state(Path(folder))
+            problems.append("a directory that is not a checkout answered as one")
+        except b.WorktreeUnreadable as error:
+            if folder not in str(error):
+                problems.append(f"the error does not name the directory: {error}")
+    return problems
+
+
+# --- пороги приёмки в CI (пункт 19) --------------------------------------------------
+
+def test_the_acceptance_test_runs_on_every_push() -> list[str]:
+    """PUNKT 19: `test_perfect` on the acceptance tier is a step of the engine
+    job in `.github/workflows/checks.yml`.
+
+    A THRESHOLD NOBODY RUNS IS A THRESHOLD NOBODY HAS. The instrument's own
+    acceptance — a right gateway clears every bound, four wrong ones fail them —
+    lived in a file people ran by hand, which is exactly the state the golden and
+    dirty sets were in when work landed unguarded for weeks. The check reads the
+    workflow's ENGINE job rather than the whole file: a step in the storefront
+    job would run in a virtualenv that has no corpus and no `bench` package, and
+    grepping the file as a whole would call that green.
+    """
+    problems: list[str] = []
+    path = b.REPO / ".github" / "workflows" / "checks.yml"
+    if not path.exists():
+        return [f"{path} does not exist"]
+    text = path.read_text(encoding="utf-8")
+    start = text.find("\n  engine:")
+    end = text.find("\n  storefront:")
+    if start < 0 or end < start:
+        return [f"{path} has no engine job to read"]
+    # THE COMMANDS, NOT THE PROSE. The step's own comment explains why the whole
+    # corpus is the nightly's and names `--tier max`; a check over the raw block
+    # would read that sentence as the command it warns against.
+    engine = "\n".join(line for line in text[start:end].splitlines()
+                       if not line.strip().startswith("#"))
+    if "bench.agentpii5.test_perfect" not in engine:
+        problems.append("the engine job does not run the instrument's acceptance test")
+    if "--tier max" in engine:
+        problems.append("the whole corpus (~2 min) is asked for on every push; "
+                        "`--tier max` belongs to the nightly run")
+    if "python -m bench.agentpii5.test_perfect" not in engine:
+        problems.append("the acceptance test is not run as a module from prototype/")
+    # …and the tier it runs at is the one the file itself calls the acceptance
+    # tier, so renaming the default cannot leave CI running another corpus slice.
+    if ACCEPTANCE_TIER != "medium":
+        problems.append(f"the acceptance tier moved to {ACCEPTANCE_TIER!r}; the workflow's "
+                        f"comment and the nightly split say medium")
+    return problems
+
+
 CHECKS: tuple[Callable[[], list[str]], ...] = (
     test_the_authored_and_the_revised_halves_are_counted_apart,
     test_regenerating_the_ladder_needs_the_assertion,
@@ -645,6 +1054,15 @@ CHECKS: tuple[Callable[[], list[str]], ...] = (
     test_every_extracted_item_has_a_hop, test_free_text_transitions_can_be_won_and_lost,
     test_no_item_carries_a_placeholder_surface,
     test_stamp_refreshes_only_when_membership_holds,
+    test_a_family_dropped_into_the_plan_is_built_and_printed,
+    test_a_case_outside_every_tier_is_named_by_the_check,
+    test_dead_weight_and_content_duplicates_are_counted,
+    test_the_first_live_run_stamps_the_holdout,
+    test_a_touched_ladder_refuses_every_redraw,
+    test_a_stamp_refresh_keeps_the_touch,
+    test_a_live_run_refuses_a_dirty_tree_and_a_foreign_corpus,
+    test_the_provenance_is_read_off_the_real_tree,
+    test_the_acceptance_test_runs_on_every_push,
     test_widened_watch_is_restored)
 
 

@@ -30,7 +30,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from bench.agentpii4.records import ArmMeta, arm_record
-from bench.agentpii5 import contracts, records
+from bench.agentpii5 import contracts, records, runinfo
 from bench.agentpii5.contracts import CalibrationStamp, CaseV5, JudgeVerdict, Line
 from bench.agentpii5.fixtures import (
     FAKE_NAME,
@@ -127,6 +127,14 @@ def _triple_row(case: CaseV5) -> dict[str, object]:
                 records.TripleTotals(judge_cost_usd=JUDGE_USD, turn_residual=0))}
 
 
+# Что прогон сказал о себе сам (§1.3) и к чему он привязан (§6.1). В фикстуре
+# они не декорация: шапка отчёта — единственное место, где эти три факта
+# встречают числа, ради которых прогон делали.
+LABEL: str = "после правки адресов"
+NOTE: str = "перепроверить ярус large"
+WORKTREE: str = "чисто abc123456789 (main)"
+
+
 def build_run(root: Path, run_id: str, with_v5: bool) -> Path:
     """One run directory on disk. `with_v5` False writes the v4 half only —
     that directory is the BASELINE, and a baseline carrying v5 files would be a
@@ -177,9 +185,10 @@ def build_run(root: Path, run_id: str, with_v5: bool) -> Path:
         f"agent/{FIXTURE_BEHAVIOURS[0][0]}/0\t{spend:.6f}\ncumulative_usd\t{spend:.6f}\n",
         encoding="utf-8")
     records.run_file(run_dir, run_id, "<run>.meta.json").write_text(json.dumps(
-        {"run_id": run_id, "benchmark": "agentpii5", "model": contracts.AGENT_MODEL,
+        {"run_id": run_id, "benchmark": contracts.BENCHMARK, "model": contracts.AGENT_MODEL,
          "judge_model": contracts.JUDGE_MODEL, "tier": "nano", "repeats": 1,
          "digest": "digest-v5", "ceiling_usd": CEILING_USD, "spent_usd": spend,
+         "label": LABEL, "note": NOTE, "worktree": WORKTREE,
          "prompt_sha256": PROMPT_SHA}, ensure_ascii=False), encoding="utf-8")
     return run_dir
 
@@ -476,6 +485,89 @@ def test_cost_section_is_printed() -> list[str]:
         if "потрачено $0.00" in refused:
             problems.append("a missing triples file printed a free run")
         return problems
+
+
+def test_the_header_names_the_run_and_the_tree() -> list[str]:
+    """§1.3 и §6.1: метка, заметка и состояние дерева — в шапке отчёта.
+
+    Распечатка уезжает к тому, кто разбирает прогон, отдельно от `runs.json` и
+    от каталога; «прогон от 23.09» через месяц не значит ничего. Молчание
+    печатается словом, а не пропуском строки: строки, которой нет, читатель не
+    заметит и прочтёт отсутствие метки как её ненужность."""
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        head = "\n".join(report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS)[:8])
+        for what, value in (("метка", LABEL), ("заметка", NOTE), ("дерево", WORKTREE)):
+            if value not in head:
+                problems.append(f"шапка не называет {what}: {head!r}")
+        # НЕГАТИВ: прогон без меток печатает «—» и «неизвестно», а не молчит.
+        meta_path = records.run_file(v5_dir, RUN_ID, "<run>.meta.json")
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        for key in ("label", "note", "worktree"):
+            meta.pop(key)
+        meta_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+        head = "\n".join(report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS)[:8])
+        if "метка: — · заметка: —" not in head:
+            problems.append(f"безымянный прогон не сказал, что он безымянный: {head!r}")
+        if "дерево: неизвестно" not in head:
+            problems.append(f"прогон без §6.1 прочитан как прогон с чистым деревом: {head!r}")
+    return problems
+
+
+def test_transport_breaks_are_counted_apart() -> list[str]:
+    """§1.4: случаи, снятые обрывом провайдера, — отдельной строкой цены.
+
+    Живой прогон печатает это число сам, но `--report` по чужому каталогу видит
+    только файлы: без строки прогон с тридцатью обрывами читается как прогон с
+    тридцатью дефектами агента. Они ОСТАЮТСЯ и внутри «исключено» — из
+    знаменателей их исключает тот же код, что и плечо, не доигравшее до конца."""
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, _ = _built(Path(tmp))
+        text_clean = "\n".join(cost_lines(v5_dir))
+        if "снято обрывом провайдера: 0" not in text_clean:
+            problems.append(f"прогон без обрывов не сказал, что их ноль: {text_clean!r}")
+        triples = records.run_file(v5_dir, RUN_ID, "<run>.triples.jsonl")
+        rows = records.read_rows(triples)
+        broken = dict(rows[0])
+        broken["case_id"] = "c-transport"
+        broken["status"] = "excluded"
+        broken["reason"] = f"{runinfo.TRANSPORT_TERMINATED}: ConnectionError (попыток 3)"
+        records.append_row(triples, broken)
+        printed = "\n".join(cost_lines(v5_dir))
+        if "снято обрывом провайдера: 1" not in printed:
+            problems.append(f"обрыв не сосчитан: {printed!r}")
+        if f"исключено {sum(1 for one in rows if one.get('status') == 'excluded') + 1}" \
+                not in printed:
+            problems.append(f"обрыв выпал из общего «исключено»: {printed!r}")
+    return problems
+
+
+def test_the_corpus_waste_is_printed() -> list[str]:
+    """§3.3: отчёт печатает мусор ТОГО корпуса, по которому прогнали — дубли
+    id, мёртвый груз и дубли по составу.
+
+    Читается СПИСОК корпуса, а не словарь по id: в словаре дубль не «два», а
+    случай, который молча исчез, и напечатанный из него ноль ничего бы не
+    значил."""
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        printed = "\n".join(report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS))
+        for wanted in ("дубли id: 0", "мёртвый груз", "дубли по составу"):
+            if wanted not in printed:
+                problems.append(f"отчёт не печатает «{wanted}»")
+        # ДУБЛЬ ID, ПОЛОЖЕННЫЙ В КОРПУС ПРОГОНА: словарь его не увидит.
+        corpus_path = v5_dir / "corpus.v5.json"
+        loaded = json.loads(corpus_path.read_text(encoding="utf-8"))
+        loaded["corpus"].append(loaded["corpus"][0])
+        corpus_path.write_text(json.dumps(loaded, ensure_ascii=False), encoding="utf-8")
+        printed = "\n".join(report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS))
+        if "дубли id: 1" not in printed:
+            problems.append("дубль id в корпусе прогона не напечатан: отчёт читает "
+                            "словарь по id, где дубля не бывает по построению")
+    return problems
 
 
 def test_behaviour_blocks_are_printed() -> list[str]:
@@ -878,6 +970,9 @@ def main() -> int:
         ("stopped_arm_is_not_a_hole", test_stopped_arm_is_not_a_hole),
         ("forged_calibration_stamp_is_recomputed", test_forged_calibration_stamp_is_recomputed),
         ("cost_section_is_printed", test_cost_section_is_printed),
+        ("the_header_names_the_run_and_the_tree", test_the_header_names_the_run_and_the_tree),
+        ("transport_breaks_are_counted_apart", test_transport_breaks_are_counted_apart),
+        ("the_corpus_waste_is_printed", test_the_corpus_waste_is_printed),
         ("behaviour_blocks_are_printed", test_behaviour_blocks_are_printed),
         ("every_axis_prints", test_every_axis_prints),
         ("pregate_verdicts_are_counted_apart", test_pregate_verdicts_are_counted_apart),
