@@ -145,6 +145,7 @@ Not in root `docs/`: `storefront/docs/tz-site.md` and `storefront/docs/tz-site-s
 | `research/2026-09-15-ram-extraction-hardening.md` | raising the price of RAM extraction of the tuning for a customer-local root | D-045 |
 | `research/2026-09-14-pentest-client-greybox.md` | full grey-box pentest, a client with root on their own hardware | D-045 |
 | `research/2026-09-14-security-redteam.md` | the red team, live report (A1/A2/A3) | D-045 |
+| `research/2026-09-22-instance-liveness-and-slots.md` | Б26 to the line: why a dead container holds its plan slot 16–24 h and why the 300 s release cooldown is tied to nothing — both are proxies for ONE unnamed quantity, «how long a lease keeps working after we stop hearing from it» (`ttl+grace` = 72 h). Ten measured reproductions against a local devserver (the cooldown never binds: 12/h against the 3/h release budget; an idle instance DOES heartbeat every 120 s; 32 containers fit under one `instance_id`; a 16-worker start plan is refused on its THIRD restart in a day). Three clocks named and numbered (T_alive 600 s, T_turnover 3/h, T_offline 72 h), the threat table trick-by-trick, an eight-step plan marked server-only / engine-needed, and the four refusal texts | — |
 
 ### DevOps and legal launch
 
