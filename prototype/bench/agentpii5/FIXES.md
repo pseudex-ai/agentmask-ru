@@ -511,3 +511,108 @@ counts printed; `e2e/lint_tests.py bench/agentpii5` 0; wiki 0; only
 `harness.py`/`test_harness_stream.py` import pseudex; v4/pseudex/public
 untouched. Then I re-run the two sharpest skeptics on the touched lines only,
 and the benchmark STOPS for the owner's GO.
+
+---
+
+# Round 4 orders (2026-09-23) — the layer under the metrics, and then the run
+
+Round 3 closed its three blockers and MEASURED the result: for a perfect
+gateway over the real corpus, `form_hOUT` 76.3 → 87.3 %, `answer_real`
+74.3 → 87.8 %, and over the OUT hops that carried a substitute at all 99.4 %,
+with NAME.gram_case and NAME.order misses at zero. Eleven of the 29 lines now
+reach exactly 100 % for a right gateway AND fall for a wrong one.
+
+Then the skeptic found the next layer, and every new blocker is in ONE place:
+**the string machinery every leak/residual line rests on — `observe.pieces_of`,
+`observe.needles_of`, `metrics._surviving_piece` — was never specified.** It is
+folk matching: parts of a value are taken from v3's address splitter, a LOC's
+only word needle is a 4-character prefix of an alphabetically sorted blob, a
+value cannot be found in a text that IS the value, and a substitute surviving
+in a leaf the tool schema DECOMPOSES is invisible. Evidence:
+`review/2026-09-22-round3-digest.txt` (+ `-full.json`); reproductions under
+`/Users/igor/.claude/jobs/4e5fce9b/tmp/*-r3/`.
+
+**So round 4 does not patch lines. It specifies the layer once and rebuilds
+the dependents on it.** Then the benchmark stops for the owner's GO.
+
+## FIX-1 — the needle layer, specified
+Owns: `contracts.py`, `observe.py`, `metrics.py`, `fixtures.py`, `form.py`,
+`form_tables.py`, `report.py`, and their tests.
+
+- **H1.1 (blocker) ONE definition of «does this value survive in this text».**
+  Write it in `contracts.py` as a named contract and implement it once: given a
+  TYPE, a value and a text, decide (a) whole-value presence, (b) presence of an
+  identifying PIECE. What a «piece» is comes from the type, not from a
+  splitter written for addresses: a NAME's parts, a LOC's street/house/flat
+  roles, a PHONE's digit signature, a DATE's fold, a CARD/SNILS/INN digit run,
+  an EMAIL's local part and domain — each with the minimum length that makes
+  it identifying, each stated. Rules that must hold and be pinned: a text that
+  IS the value contains it; a value inside a longer text is found; a generic
+  word («улица», «дом», a month name) is not an identifying piece; the
+  customer's own renderings are exempt through one path, not three.
+  `_surviving_piece`, `pieces_of`, `needles_of`, `carries_any`, `survives_in`
+  all become callers of it. This is the fix for the three confirmed blockers.
+- **H1.2 (blocker)** A substitute surviving in a DECOMPOSED leaf (the tool
+  schema splits the value across fields) must be visible to `residual`, and
+  such a leaf must be able to be `observed`: decide per LEAF using the leaf's
+  own role (`tools.expected_leaf_value` already names it), never the whole
+  surface.
+- **H1.3 (major)** `coverage` credits 70 IN/memory hops it can never credit
+  (a seed-locus item has `msg == -1`, `masked_spans` has nothing to say):
+  decide a memory hop's coverage from the mention the transcript carries, or
+  leave those hops outside the denominator — and print which.
+- **H1.4 (major)** `consistency`'s population is EMPTY on this corpus by
+  construction (only message-locus items ever get a `MentionRecord`): either
+  the harness records a mention wherever a substitute is SHOWN (a tool result
+  is a place a value is shown — FIX-3's call), or the line is honest about
+  what it counts. A public line that can only print «н/п» is worse than no
+  line: say which one it is, in the MetricSpec.
+- **H1.5 (major)** `doc_extracted` counts 50 of 375 declared items the corpus
+  gives the agent nowhere to put — coordinate with FIX-4 (its `extract_to_tool`
+  must have a field per declared item, or the item is not declared).
+- **H1.6 (major, from FIX-4's G4.5)** `metrics.returned_as_item` re-guesses a
+  hand-over's role from the STRING with `parts_of`; read the SOURCE hop's own
+  corpus declaration instead (the corpus says which role the result rendered).
+- **H1.7 (blocker, from FIX-4's G4.3)** `chain_value` judges 22.4 % of its
+  transitions — the free-text leaves (`notify_sms.text`, `escalate_to_human.summary`,
+  `ticket_create.text/subject`, `email_send.body`) — by byte equality against a
+  WHOLE prose field. A free leaf is satisfied when the expected value SURVIVES
+  in it (H1.1's contract); if that makes the transition vacuous for a given
+  leaf, the corpus must not declare it (tell FIX-4 which).
+
+## FIX-3 — the harness half nobody confirmed
+Owns: `harness.py`, `judge.py`, `calibration.py` and their tests.
+- **H3.1** The round-3 confirm lens for the harness/judge/corpus DIED on an API
+  error and never ran, so G3.1…G3.7 are IMPLEMENTED BUT UNCONFIRMED. Re-attack
+  your own round-3 work the way the metrics lens did: drive real corpus cases
+  through `GatewayV5` offline with `testkit.load_dev_bundle()` and establish by
+  EVIDENCE — masking and restoration use one vault view; a residual substitute
+  in an earlier turn is counted and never reaches the judge; the streaming case
+  is scored on the chunked text; the K repeats are independent; the sheet is
+  blind; `BudgetExhausted` does not kill a finished triple. Report each as
+  «confirmed by <what you ran>» or as a defect with a reproduction.
+- **H3.2** If H1.4 needs a mention wherever a substitute is SHOWN (tool
+  results, documents, RAG chunks), that is your record to write — decide with
+  FIX-1 and say what you did.
+
+## FIX-4 — the corpus leftovers
+Owns: `schema.py`, `build.py`, `revise.py`, `scenarios5/*.py`, `tools.py`,
+`mock.py`, the corpus files and their tests.
+- **H4.1** The 50 `doc_extracted` items with nowhere to go (H1.5): give the
+  document family's `extract_to_tool` a field per declared item, or stop
+  declaring them. Prove it at build time the way `render_problems` proves the
+  rest.
+- **H4.2** The free-text chain transitions (H1.7): after FIX-1's contract
+  lands, any transition that is still vacuous is a corpus defect — drop it and
+  print the count.
+- **H4.3** Re-run your own G4.1/G4.2 probes once the dust settles and confirm
+  the declared crossings are still attainable; the ladder stays frozen (R-52).
+
+## Definition of done for round 4
+Every `python3 -m bench.agentpii5.test_*` PASS; `report --selftest` refuses
+every registered mutant; `build --check` clean; `e2e/lint_tests.py` 0; wiki 0;
+v4/pseudex/public untouched. Plus the number that decides whether the run is
+worth paying for: **a perfect-gateway probe over the whole corpus prints ≥ 99 %
+on every value and form line, and the mutant sweep still kills every wrong
+gateway.** Then I write the GO brief for the owner: tier, cost, what the run
+answers, and the v4 comparison.
