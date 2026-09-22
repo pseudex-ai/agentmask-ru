@@ -94,13 +94,30 @@ reader_ignores_v5_key`). `HopObservation` rows carry `hop` as a dict and
   `ResidualPregate` protocol.
 - **A PIECE MADE ONLY OF ORDINARY RUSSIAN IS NOT OURS** (G3.3).
   `own_vocabulary` builds the words a piece may consist of without being
-  evidence: every WORD of the customer's own values, `metrics.GRAMMAR_WORDS`
-  (the generic address vocabulary `metrics._surviving_piece` already
-  subtracts) and `form_tables.MONTH_WORDS`. Word granularity, not the whole
-  part — «Нижний Новгород» is one real part and «нижний» is how the splitter
-  cuts a minted address. Measured before the subtraction: «улица» was the
-  commonest piece on the corpus (48 occurrences over 250 cases) and 2.5 % of
-  honest echo answers were published «неверно».
+  evidence: every WORD of the customer's own values plus
+  `form_tables.GENERIC_WORDS` — the ONE generic vocabulary (address words and
+  months) that `metrics._surviving_piece` and `observe.own_stems` subtract
+  (contracts §4bis, rule N4; this module used to union two of its halves by
+  hand). Word granularity, not the whole part — «Нижний Новгород» is one real
+  part and «нижний» is how the splitter cuts a minted address. Measured before
+  the subtraction: «улица» was the commonest piece on the corpus (48
+  occurrences over 250 cases) and 2.5 % of honest echo answers were published
+  «неверно».
+- **AND EVERY WORD OF THE SUBSTITUTE IS A CANDIDATE PIECE** (round 4). The
+  splitters do not cut a long address into words: `parts.address_parts` joins
+  the words it cannot type into ONE alphabetically sorted `street` blob («орел
+  рябиновый»), which stands in no answer and not in the address itself. Over
+  120 corpus cases driven through the production masking path, on answers
+  carrying the minted address minus its leading REAL city — the commonest way a
+  model retells an address — and still carrying a fake word of it: 10 of 109
+  passed the gate, 90.8 % → 100 %; a fake WORD standing alone, 94.8 % → 99.1 %;
+  1 914 honest sentences refused, before and after: none. A word carries the
+  same filters as a part (≥ 4 characters, not a digit run, not
+  `own_vocabulary`, not a word the splitter typed into an EXEMPT role).
+  **STILL A SECOND READER, AND IT SHOULD NOT STAY ONE**: a fake PHONE written
+  in another notation is caught by `observe.survives_in` (digit signature) and
+  not by this gate; converging the two is a contract question of round 4, not
+  a rule to spell a third time here.
 - `build_prompt(request: JudgeInput) -> str`: Russian, named sections in
   this order — «ВОПРОС КЛИЕНТА», «ДИАЛОГ (как его видит клиент)» (each
   `DialogueTurn` as `role: text`), «НАСТОЯЩИЕ ЗНАЧЕНИЯ ЗАПИСИ (оракул)»
@@ -240,9 +257,17 @@ python3 -m bench.agentpii5.calibration import \
   returns the whole-text restoration beside it as `AnswerLeg.reply_whole` —
   kept on the record as `ArmRunV5.reply_whole` (**R-54**), because
   `metrics.stream_fidelity` says THAT the two disagreed and a reader then has
-  to see WHICH text the customer lost — and `with_streamed_answer` lays the
-  scored text over `turn_replies[-1]`, so the record holds one ANSWER and one
-  diagnostic beside it, never two answers.
+  to see WHICH text the customer lost.
+  **EVERY TURN, NOT ONLY THE ANSWER** (round 4): a streaming case is delivered
+  chunk by chunk from its FIRST turn, so `turn_restorer(case, gateway)` picks
+  the leg once and `restored_turn_replies` uses it for all of them. The final
+  turn is then the scored answer by construction — one function, one string —
+  instead of `with_streamed_answer` (deleted) copying it over afterwards.
+  Measured on 250 intermediate replies built from the corpus's own streaming
+  cases: 4 differ between the two restorations, and in one of them a minted
+  substitute still stands in the CHUNKED text while the whole-text leg
+  resolved it — a residual the customer saw, in a turn the judge read
+  differently and `turn_residual` did not count.
 - `ArmRunV5.turn_residual` (**R-54**) is laid onto the I record by
   `harness.with_turn_residual` inside `run_triple_v5`: the count is known only
   when the judge's prompt is built, three arms in, and while it lived on the

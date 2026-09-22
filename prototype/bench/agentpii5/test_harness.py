@@ -453,15 +453,18 @@ def test_a_judge_leak_never_discards_the_arms() -> list[str]:
                                    None))
         failures.append("подмена, совпавшая с оракулом, не подняла OracleLeak")
     except h.LeakedPrompt as leak:
-        # TWO, and the number is the fixture's: here the «minted substitute» is
-        # the real name itself, so it stands both in the customer's message and
-        # in the agent's kept turn, and `masked_dialogue` masks a turn of each.
-        # What matters is that a count MEASURED before the refusal reaches the
-        # handler — a zero would be indistinguishable from «ни один ход не нёс
-        # подмену».
-        if leak.turn_residual != 2:
+        # ONE, and the number is the fixture's: here the «minted substitute» is
+        # the real name itself, so it stands in the customer's message AND in
+        # the agent's kept turn. Both are masked — the judge reads a substitute
+        # nowhere — and only the agent's is COUNTED, because `turn_residual`
+        # says «the agent's earlier turns» and a user turn inside it would
+        # publish a defect of the gateway that the gateway never had. What
+        # matters besides is that a count MEASURED before the refusal reaches
+        # the handler: a zero would be indistinguishable from «ни один ход не
+        # нёс подмену».
+        if leak.turn_residual != 1:
             failures.append(f"утечка унесла с собой {leak.turn_residual} нераскрытых подмен "
-                            f"в ходах, а их в диалоге фикстуры два")
+                            f"в ходах, а в диалоге фикстуры её несёт один ход агента")
     except h.OracleLeak as bare:
         failures.append(f"утечка сборки промпта пришла без счётчика ходов: {bare}")
     return failures
@@ -694,6 +697,29 @@ def _call_lines(function: Callable[..., object], name: str) -> list[int]:
                   and node.func.id == name)
 
 
+def _guarded_by(function: Callable[..., object], name: str) -> list[str]:
+    """The conditions a call of `name` inside `function` hangs off.
+
+    An `if`/`else` EXPRESSION around the call and an `if` STATEMENT containing
+    it are the two ways to make a guard fire on one path only, and the defect
+    this reads for was the first of them (`foreign_run_ids(...) if args.resume
+    else ()`). Read off the source rather than by driving `main`, which needs a
+    corpus, a ladder and a model — the same reason `_call_lines` exists.
+    """
+    def calls(node: ast.AST) -> bool:
+        return any(isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name)
+                   and inner.func.id == name for inner in ast.walk(node))
+
+    tree = ast.parse(inspect.getsource(function).lstrip())
+    out: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.IfExp) and calls(node):
+            out.append(ast.unparse(node.test))
+        elif isinstance(node, ast.If) and any(calls(one) for one in node.body):
+            out.append(ast.unparse(node.test))
+    return out
+
+
 def test_a_refused_judge_budget_never_kills_the_triple() -> list[str]:
     """G3.5: the judge reserves from the SAME ledger as the arms, and the
     refusal used to escape every handler on the way out.
@@ -792,6 +818,17 @@ def test_a_resume_refuses_a_shared_run_directory() -> list[str]:
     elif guard[0] > snapshot[0]:
         failures.append(f"проверка каталога ({guard[0]}) стоит после снимка корпуса "
                         f"({snapshot[0]}) — снимок продолжаемого прогона уже перезаписан")
+    # ON EVERY RUN, NOT ONLY ON `--resume`. The default `--out` is
+    # `runs/<today>/v5-live-<tier>` for any run of that tier on that day, so two
+    # ORDINARY runs share it without either saying `--resume` — and the guard
+    # used to be `foreign_run_ids(out, run_id) if args.resume else ()`, which
+    # fires on the path the defect was found on rather than on the path it
+    # lives on. Reproduced with the reviewer's own script (`g37_repro.py`):
+    # «main's guard on a NON-resume run sees: () -> refuses? False».
+    conditions = _guarded_by(h.main, "foreign_run_ids")
+    if conditions:
+        failures.append(f"проверка каталога висит на условии {conditions} — "
+                        f"обычный прогон в тот же каталог её не увидит")
     return failures
 
 

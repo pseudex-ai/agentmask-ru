@@ -603,9 +603,15 @@ def test_the_customers_own_turn_is_never_masked() -> list[str]:
     # THE NEGATIVE, twice. Without the dialogue's own real turns the very same
     # scan eats the sentence — so the subtraction does the work…
     eaten, eaten_flags = judge.mask_residual_turns(clean, (MINTED_ADDRESS,), ())
-    if eaten[0].text == said or not eaten_flags:
+    if eaten[0].text == said:
         failures.append("без настоящих строк реплика клиента уцелела — вычитание "
                         "нечего было делать")
+    # …and even when it IS eaten, the customer's own turn is not «the agent's
+    # earlier turn»: the count is what `ArmRunV5.turn_residual` promises and
+    # `residual` scores, so a user turn inside it would publish a defect of the
+    # gateway that the gateway never had.
+    if eaten_flags:
+        failures.append(f"реплика клиента засчитана нераскрытой подменой агента: {eaten_flags}")
     # …and a substitute the restorer really left in the AGENT's turn is still
     # replaced and still counted.
     leaked = (DialogueTurn(role="user", text=said),
@@ -620,6 +626,81 @@ def test_the_customers_own_turn_is_never_masked() -> list[str]:
         failures.append(f"подмена в ходе агента доехала до судьи: {turns[1].text!r}")
     if turns[0].text != said:
         failures.append("маскирование хода агента задело реплику клиента")
+    return failures
+
+
+# A minted address as the spoken and «sloppy» registers write one: no commas,
+# the customer's real city in front (the vault keeps the settlement), a fake
+# street. `parts.address_parts` lumps the words it cannot type into ONE `street`
+# role joined ALPHABETICALLY — «орел рябиновый» — a string that occurs neither
+# in the answer nor in the address itself, and the name splitter types the city
+# as a surname and the generic word as a given name. So the only piece the old
+# rule produced matched nothing.
+MINTED_SPOKEN_ADDRESS: str = "орёл проспект рябиновый 100 кв 102"
+REAL_SPOKEN_ADDRESS: str = "орёл проспект вишнёвый 7 кв 3"
+
+
+def test_a_fake_street_without_its_city_is_refused() -> list[str]:
+    """The commonest way a model retells an address it was given: without the
+    city.
+
+    Measured on 120 corpus cases through the production masking path, over the
+    answers that carry the minted surface minus its leading real city AND still
+    carry a fake word of it: 10 of 109 passed the gate (90.8 % → 100 %), because
+    no piece of a long address survives the splitters. A word of the substitute
+    is a part of it, and carries the same filters.
+    """
+    failures: list[str] = []
+    minted, real = (MINTED_SPOKEN_ADDRESS,), (REAL_SPOKEN_ADDRESS,)
+    leaked = judge.residual_pregate_of("Курьер приедет: проспект рябиновый 100 кв 102.",
+                                       minted, real)
+    if leaked is None or leaked.judged_by != "residual_gate":
+        failures.append("подменная улица без города прошла претгейт")
+    # THE NEGATIVE that says the rule is a rule and not «refuse everything»:
+    # the same sentence shapes with the customer's own city, the generic word
+    # and the flat — every word of the substitute that is not ours — pass.
+    for honest in ("Курьер приедет на тот же проспект в орёл, квартира та же.",
+                   "Город орёл подтверждён, дом и квартира прежние.",
+                   f"Записал: {REAL_SPOKEN_ADDRESS}."):
+        if judge.residual_pregate_of(honest, minted, real) is not None:
+            failures.append(f"честный ответ отказан: {honest!r}")
+    # …and the piece that does the work is the WORD, not the splitter's blob:
+    # the blob carries a space and can never stand as one word in an answer.
+    pieces = judge.substitute_pieces(minted, real)
+    if "рябиновый" not in pieces:
+        failures.append(f"слово подменной улицы не стало частью: {pieces}")
+    if not any(" " in piece for piece in pieces):
+        failures.append(f"разбор перестал давать склеенную часть — негатив ни о чём: {pieces}")
+    return failures
+
+
+def test_a_tool_echo_is_masked_and_not_counted() -> list[str]:
+    """A `tool` turn CAN carry our substitute, and it is not the agent's turn.
+
+    `REAL_DIALOGUE_ROLES` said a tool result «cannot carry a substitute of
+    ours», and that is true of what the MOCK invents and false of what it
+    echoes: a leaf the restorer left with a fake in it comes back inside
+    `ToolResultRecord.text_real` (`ECHO_TAG_PREFIX`), so the string in the turn
+    is our own mint repeated. Two things must then hold at once — the judge
+    still reads the marker (blindness has no exceptions), and the count stays
+    the agent's, because `residual` reads `turn_residual` as «the agent's
+    earlier turns» and that leak already has a line with its name on it: the
+    OUT hop of the call that wrote it.
+    """
+    failures: list[str] = []
+    echoed = f"карточка: {MINTED_ADDRESS}"
+    turns, flagged = judge.mask_residual_turns(
+        (DialogueTurn(role="tool", text=echoed),), (MINTED_ADDRESS,), (REAL_ADDRESS,))
+    if MINTED_ADDRESS in turns[0].text or judge.RESIDUAL_MARKER not in turns[0].text:
+        failures.append(f"эхо инструмента довезло подмену до судьи: {turns[0].text!r}")
+    if flagged:
+        failures.append(f"эхо инструмента засчитано нераскрытой подменой агента: {flagged}")
+    # THE POSITIVE for the same string: in the AGENT's turn it is counted, so
+    # the zero above is the ROLE and not a scan that found nothing.
+    _, agent_flags = judge.mask_residual_turns(
+        (DialogueTurn(role="assistant", text=echoed),), (MINTED_ADDRESS,), (REAL_ADDRESS,))
+    if agent_flags != 1:
+        failures.append(f"та же строка в ходе агента насчитана {agent_flags} раз вместо одного")
     return failures
 
 
@@ -642,6 +723,9 @@ def main() -> int:
         ("agents_turns_are_restored", test_agents_turns_are_restored),
         ("the_pregate_spares_ordinary_russian", test_the_pregate_spares_ordinary_russian),
         ("the_customers_own_turn_is_never_masked", test_the_customers_own_turn_is_never_masked),
+        ("a_fake_street_without_its_city_is_refused",
+         test_a_fake_street_without_its_city_is_refused),
+        ("a_tool_echo_is_masked_and_not_counted", test_a_tool_echo_is_masked_and_not_counted),
     )
     failures: list[str] = []
     for name, check in checks:

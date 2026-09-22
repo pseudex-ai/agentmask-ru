@@ -75,15 +75,16 @@ from bench.agentpii4.parts import parts_of
 from bench.agentpii4.schema import message_text
 from bench.agentpii5.contracts import (
     ECHO_TAG_PREFIX, JUDGE_LABELS, ArmRunV5, CaseV5, DialogueTurn, JudgeInput, JudgeVerdict)
-from bench.agentpii5.form_tables import MONTH_WORDS
-# THE OBSERVER'S OWN SUBTRACTION, IMPORTED RATHER THAN RESTATED. `GRAMMAR_WORDS`
-# and `fold` are what `metrics._surviving_piece` and `observe.own_stems` already
-# use to tell «the generic word of an address» from «a value»; a second copy
-# here would be a second vocabulary to keep equal, and the first divergence
-# would be a pre-gate refusing what the residual line calls clean. Neither
-# module imports the engine (`contracts.PSEUDEX_ALLOWED_MODULES`) and neither
-# imports this one, so the edge is one-way.
-from bench.agentpii5.metrics import GRAMMAR_WORDS
+# THE ONE GENERIC VOCABULARY, IMPORTED RATHER THAN RESTATED (contracts §4bis,
+# rule N4). `GENERIC_WORDS` and `fold` are what `metrics._surviving_piece` and
+# `observe.own_stems` already use to tell «the generic word of an address» from
+# «a value»; this module used to union `metrics.GRAMMAR_WORDS` with
+# `form_tables.MONTH_WORDS` by hand, which is the same set spelled a second
+# time — and the first divergence would be a pre-gate refusing what the
+# residual line calls clean. Neither module imports the engine
+# (`contracts.PSEUDEX_ALLOWED_MODULES`) and neither imports this one, so the
+# edge is one-way.
+from bench.agentpii5.form_tables import GENERIC_WORDS
 from bench.agentpii5.observe import fold
 
 # The roles of a substitute that are NOT ours to flag. The settlement inside a
@@ -347,7 +348,7 @@ def _words(text: str) -> tuple[str, ...]:
 def own_vocabulary(real_values: Sequence[str]) -> frozenset[str]:
     """Every word a piece may be made of WITHOUT being evidence of OUR substitute.
 
-    Three sources, and each one closed a false «неверно» measured on this
+    Two sources, and each one closed a false «неверно» measured on this
     corpus through the production masking path:
 
       * THE CUSTOMER'S OWN VALUES, WORD BY WORD. «Нижний Новгород» is one real
@@ -355,13 +356,13 @@ def own_vocabulary(real_values: Sequence[str]) -> frozenset[str]:
         whole-part comparison left half a city hunting itself — 12 of 489
         honest echo answers refused, and the same word masked out of the
         judge's context.
-      * `metrics.GRAMMAR_WORDS` — the generic address vocabulary the observer
-        already subtracts (`metrics._surviving_piece`). «улица» was the single
-        commonest piece on the corpus (48 occurrences over 250 cases), and
-        masking it ate the customer's own sentence out of question 4.
-      * `form_tables.MONTH_WORDS` — a spoken DOB substitute splits as a name
-        («двадцать третьего декабря …»), and a month name is ordinary Russian
-        that an honest answer about any OTHER date carries.
+      * `form_tables.GENERIC_WORDS` — the one generic vocabulary the observer
+        already subtracts (`metrics._surviving_piece`, `observe.own_stems`):
+        the address words AND the months. «улица» was the single commonest
+        piece on the corpus (48 occurrences over 250 cases) and masking it ate
+        the customer's own sentence out of question 4; a spoken DOB substitute
+        splits as a name («двадцать третьего декабря …»), and a month name is
+        ordinary Russian that an honest answer about any OTHER date carries.
 
     WORD GRANULARITY, not the whole part, and that is the half F3.2's order
     called «the same scan as F1.4»: the piece is one word while the real part
@@ -369,10 +370,27 @@ def own_vocabulary(real_values: Sequence[str]) -> frozenset[str]:
     needs no rule — a piece ALL of whose words are the customer's own is
     dropped by the same test.
     """
-    out: set[str] = set(GRAMMAR_WORDS) | set(MONTH_WORDS)
+    out: set[str] = set(GENERIC_WORDS)
     for value in real_values:
         out.update(_words(value))
     return frozenset(out)
+
+
+def _exempt_words(surface: str) -> frozenset[str]:
+    """The words of a substitute that some splitter typed as an EXEMPT role.
+
+    A word is dropped by `own_vocabulary` when the customer's own values carry
+    it, and the settlement inside a minted address usually IS one of them. Not
+    always: an address minted for a person the case declares no item for (a
+    neighbouring row of a RAG chunk) keeps a real settlement that stands in no
+    `real_values` string, and hunting it would refuse an honest answer naming
+    an ordinary Russian city. Reading the exemption off the SPLITTER rather
+    than off a city list of ours is what `EXEMPT_ROLES` already means one line
+    up; this applies it to the word rule below as well.
+    """
+    return frozenset(word for kind in PIECE_TYPES
+                     for role, part in parts_of(kind, surface).items()
+                     if role in EXEMPT_ROLES for word in _words(part))
 
 
 def substitute_pieces(substitutes_minted: Sequence[str],
@@ -387,20 +405,53 @@ def substitute_pieces(substitutes_minted: Sequence[str],
 
     A part made ENTIRELY of `own_vocabulary` words is not ours and is dropped:
     the customer's own city, the generic street word, a month.
+
+    AND EVERY WORD OF THE SUBSTITUTE IS A CANDIDATE PART, because the splitters
+    do not cut a long address into words at all. `parts.address_parts` lumps
+    every word it cannot type into ONE `street` role and joins it ALPHABETICALLY
+    («орёл проспект рябиновый 100 кв 102» → «орёл рябиновый»), a string that
+    occurs neither in the answer nor in the address itself; the name splitter
+    returns nothing for six words. Measured on 120 corpus cases through the
+    production masking path, over answers carrying the minted address MINUS its
+    leading real city — the commonest way a model retells an address it was
+    given — and still carrying a fake word of it: 10 of 109 passed the gate
+    (90.8 % → 100 % caught), and a single fake WORD standing alone went 94.8 %
+    → 99.1 %. A word carries the same filters as a part (length, digits,
+    `own_vocabulary`, the exempt roles) and is hunted as a whole word, so the
+    customer's own city, «улица» and a month remain invisible to it; 1 914
+    honest sentences over 150 corpus cases are refused as before, which is
+    none.
+
+    THIS IS THE SECOND READER OF «did this value survive», AND IT SHOULD NOT
+    STAY ONE. `observe.survives_in` answers the same question with the needles
+    the metrics use (stems per word, digit signature, date fold) and round 4 is
+    re-specifying it as the package's one definition (H1.1). What this reader
+    still cannot see is what no SPLIT can reach: a fake PHONE, CARD or СНИЛС
+    written in another notation — «+7 943 239-11-74» retold as «8 943 239 11
+    74» — whose whole surface no longer matches and whose parts are digit runs
+    the filters drop. Those reach the customer past this gate and are caught by
+    `residual`, which asks the needles. The convergence is in
+    `contract_questions` rather than done here, because that function is
+    another owner's and its signature is being rewritten while this one runs.
     """
     own = own_vocabulary(real_values)
     out: set[str] = set()
     for surface in substitutes_minted:
         if not surface.strip():
             continue
+        exempt = _exempt_words(surface)
+        candidates: set[str] = set(_WORD.findall(surface))
         for kind in PIECE_TYPES:
             for role, part in parts_of(kind, surface).items():
-                if role in EXEMPT_ROLES or len(part) < MIN_PIECE or part.isdigit():
-                    continue
-                words = _words(part)
-                if words and all(word in own for word in words):
-                    continue
-                out.add(part.casefold())
+                if role not in EXEMPT_ROLES:
+                    candidates.add(part)
+        for part in candidates:
+            if len(part) < MIN_PIECE or part.isdigit():
+                continue
+            words = _words(part)
+            if words and all(word in own or word in exempt for word in words):
+                continue
+            out.add(part.casefold())
     return tuple(sorted(out))
 
 
@@ -457,13 +508,20 @@ def residual_pregate(restored_answer: str, substitutes_minted: tuple[str, ...]) 
 # sentence it stood in.
 RESIDUAL_MARKER: str = "[нераскрытая подмена]"
 
-# The turns of the dialogue that are REAL BY CONSTRUCTION. A `user` turn is the
-# case's own text (`dialogue_context` copies `message_text`) and a `tool` turn
-# is `ToolResultRecord.text_real` — what the mock produced BEFORE the gateway
-# masked it for the model. Neither can carry a substitute of ours, so their
-# words ARE the customer's own and are subtracted from the piece hunt. Only an
-# `assistant` turn is restored model output, which is where a residual stands —
-# that is also what `contracts.ArmRunV5.turn_residual` says the number counts.
+# The turns of the dialogue whose WORDS are the customer's own. A `user` turn is
+# the case's own text (`dialogue_context` copies `message_text`) and a `tool`
+# turn is `ToolResultRecord.text_real` — what the mock produced BEFORE the
+# gateway masked it for the model; so their words are handed to
+# `own_vocabulary` beside the oracle instead of being hunted as pieces of ours.
+#
+# «REAL BY CONSTRUCTION» IS TRUE OF THE WORDS AND NOT OF EVERY STRING. A tool
+# result can echo what the agent sent it (`ECHO_TAG_PREFIX`), so a substitute
+# the restorer failed to take out of a tool argument comes BACK inside
+# `text_real` and stands in a `tool` turn — the mock is repeating our own fake,
+# not the customer. It is still masked (the judge may never read a substitute),
+# and it is NOT counted: `contracts.ArmRunV5.turn_residual` says «the agent's
+# EARLIER turns», `residual` reads it as one, and that leak already has a line
+# with its name on it — the OUT hop of the call that carried it.
 REAL_DIALOGUE_ROLES: frozenset[str] = frozenset({"user", "tool"})
 
 
@@ -489,6 +547,14 @@ def mask_residual_turns(turns: Sequence[DialogueTurn], substitutes_minted: Seque
     whole word (the pre-gate's rule): «Дар» inside «дарим» is not a substitute
     the customer reads, and masking it would eat ordinary Russian out of the
     context question 4 is asked about.
+
+    MASKED EVERYWHERE, COUNTED ONLY WHERE THE AGENT SPOKE. Every turn is masked
+    because the judge may read a substitute nowhere; the count is what
+    `ArmRunV5.turn_residual` promises and `residual` scores — «how many of the
+    agent's EARLIER turns still carried one» — so a `tool` turn echoing our own
+    fake back (`ECHO_TAG_PREFIX`) or a `user` turn whose own words collided
+    with a mint is masked and not counted. The echo is not invisible: it is the
+    OUT hop of the call that wrote it, where `residual` names it by the leaf.
     """
     pieces = substitute_pieces(tuple(substitutes_minted), tuple(real_values))
     out: list[DialogueTurn] = []
@@ -502,7 +568,7 @@ def mask_residual_turns(turns: Sequence[DialogueTurn], substitutes_minted: Seque
         for piece in pieces:
             text = re.sub(rf"(?<!\w){_whitespace_pattern(piece)}(?!\w)", RESIDUAL_MARKER, text,
                           flags=re.IGNORECASE)
-        if text != turn.text:
+        if text != turn.text and turn.role not in REAL_DIALOGUE_ROLES:
             flagged += 1
         out.append(DialogueTurn(role=turn.role, text=text))
     return tuple(out), flagged

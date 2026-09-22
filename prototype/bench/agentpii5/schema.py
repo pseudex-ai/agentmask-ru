@@ -290,7 +290,8 @@ def validate_v5(case: CaseV5) -> list[str]:
         problems.append(f"R18 {tag}: behaviour {case.behaviour!r} with "
                         f"document {'set' if case.document is not None else 'unset'}")
     if case.document is not None:
-        problems.extend(_document_problems(tag, base, items, seed_ids, case.document))
+        problems.extend(_document_problems(tag, base, items, seed_ids, case.document,
+                                           case.hops))
 
     # R19 the declared returns
     declared = _declared_return_forms()
@@ -462,8 +463,20 @@ def _rag_problems(tag: str, base: Case, items: dict[str, PiiItem], seed_ids: set
 
 
 def _document_problems(tag: str, base: Case, items: dict[str, PiiItem], seed_ids: set[str],
-                       document: DocumentSpec) -> list[str]:
+                       document: DocumentSpec, hops: Sequence[Hop]) -> list[str]:
     """R18's body.
+
+    AN EXTRACTED ITEM WITH NOWHERE TO PUT IT IS A DENOMINATOR NO GATEWAY CAN
+    EARN (H4.1). `doc_extracted` counts one OUT hop into `extract_to_tool` per
+    `extracted_item_ids` entry, and two families named a value the case gives
+    the agent no field for — a NAME in a protocol whose extraction tool is
+    `bank_client_find` (ИНН xor phone) and in a scan whose tool is
+    `vehicle_check` (plate only). Fifty of 375 items were in the denominator
+    and unhittable, so the line's ceiling was 86.7% and read as a gateway
+    defect. The alternative — inventing a name parameter for the two tools —
+    was rejected: the schemas mirror real APIs (`tools.BANK_CLIENT_FIND.source`),
+    and a benchmark that widens a tool so its own declaration comes true is
+    measuring itself.
 
     «SEED ITEMS OF THE DOCUMENT'S RECORDS» IS NOW CHECKED AGAINST THE RECORDS
     (ruling R-30). `DocumentSpec.record_ids` names the rows the document is
@@ -507,6 +520,11 @@ def _document_problems(tag: str, base: Case, items: dict[str, PiiItem], seed_ids
             problems.append(f"R18 {tag}: extracted item {item_id} lives in record "
                             f"{item.where.record!r}, which the document does not render "
                             f"({document.record_ids})")
+        elif not any(hop.kind == "OUT" and hop.item_id == item_id
+                     and hop.tool_name == document.extract_to_tool for hop in hops):
+            problems.append(f"R18 {tag}: extracted item {item_id} has no OUT hop into "
+                            f"{document.extract_to_tool!r}; `doc_extracted` would hold it "
+                            f"in the denominator with nowhere for the agent to write it")
     return problems
 
 

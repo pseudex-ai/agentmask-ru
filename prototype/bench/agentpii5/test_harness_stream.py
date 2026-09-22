@@ -29,7 +29,8 @@ from pathlib import Path
 from bench.agentpii3 import score
 from bench.agentpii4.schema import message_text
 from bench.agentpii5.harness import (
-    STREAM_CHUNK, GatewayV5, answer_leg, restore_stream, stream_verdict, with_streamed_answer)
+    STREAM_CHUNK, GatewayV5, answer_leg, restore_stream, restored_turn_replies, stream_verdict,
+    turn_restorer)
 from bench.agentpii5.schema import case_v5_from_json
 from pseudex.audit import AuditLog
 from pseudex.detect_all import Detector
@@ -175,13 +176,17 @@ def test_corpus_answer_is_what_the_client_read() -> list[str]:
                 failures.append(f"{case.base.id}: оценивается не то, что клиент прочитал")
             if scored == unmask_text(reply, vault):
                 failures.append(f"{case.base.id}: оценивается целое восстановление")
-            # …and the record's last turn says the same, or the judge's context
-            # and the report's answer would be two different texts.
-            turns = with_streamed_answer(("Секунду, ищу.", unmask_text(reply, vault)), scored)
+            # …and EVERY turn of the record says the same, the final one and
+            # the intermediate ones alike: the streaming customer reads the
+            # first turn in chunks too, and the whole-text restoration of an
+            # earlier turn is a text nobody was served — the judge's context
+            # and `turn_residual` both read it.
+            restore = turn_restorer(case, _StreamOnly(vault))
+            turns = restored_turn_replies(("Секунду, ищу.", reply), restore)
             if turns[-1] != scored:
                 failures.append(f"{case.base.id}: в реплики хода уехало целое восстановление")
-            if turns[0] != "Секунду, ищу.":
-                failures.append(f"{case.base.id}: подмена последнего хода задела промежуточный")
+            if turns[0] != restore_stream("Секунду, ищу.", vault, STREAM_CHUNK):
+                failures.append(f"{case.base.id}: промежуточный ход восстановлен не потоком")
     print(f"    расхождений потока и целого: {disagreed} из {checked} "
           f"({100 * disagreed / max(1, checked):.1f}%)")
     if disagreed == 0:
@@ -192,11 +197,24 @@ def test_corpus_answer_is_what_the_client_read() -> list[str]:
         # neighbourhood of the value is what drives it) before deleting this.
         failures.append(f"на {checked} ответах корпуса куски и целое ни разу не разошлись — "
                         f"проверка F3.1 ничего не увидела")
-    # The tuple the record keeps is unchanged when the agent said nothing: a
-    # replaced answer must not invent a turn.
-    if with_streamed_answer((), "ответ") != ():
-        failures.append("подмена последнего хода придумала реплику на пустом прогоне")
     return failures
+
+
+class _StreamOnly:
+    """A stand-in gateway whose WHOLE-TEXT restorer raises.
+
+    `turn_restorer` chooses the leg once per case, and a streaming case must
+    never take the whole-text one — for an INTERMEDIATE turn either. Proven by
+    the absence of a call rather than by comparing two strings: the two
+    restorations agree on most replies, so an equality check would pass on a
+    harness that restored every earlier turn whole.
+    """
+
+    def __init__(self, vault: Vault) -> None:
+        self.vault = vault
+
+    def restore_text(self, text: str) -> str:
+        raise AssertionError(f"стриминговый случай позвал целое восстановление на {text[:40]!r}")
 
 
 def test_restoration_runs_on_the_conversation_view() -> list[str]:

@@ -35,6 +35,8 @@ from bench.agentpii5.fixtures import (
     _with_results,
     _with_subs,
 )
+from bench.agentpii5.contracts import DocumentSpec
+from bench.agentpii5.observe import observe
 from bench.agentpii5.metrics import (
     HOP_AXES,
     HOP_SLICEABLE,
@@ -450,7 +452,8 @@ def test_chain_target_is_read_as_an_item() -> list[str]:
     asks for a part must therefore be satisfied by that part of the returned
     value, and by nothing else."""
     returned = "Иванова Елена Сергеевна"
-    item = returned_as_item("NAME", returned)
+    source = _item("s1", "NAME", returned, returned, "i1", _in_seed("r1", "name"))
+    item = returned_as_item(source, returned)
     problems: list[str] = []
     if not leaf_value_ok(item, "crm_upsert_contact", "contact.last_name", "Иванова"):
         problems.append("the surname of the returned value did not satisfy contact.last_name")
@@ -458,6 +461,104 @@ def test_chain_target_is_read_as_an_item() -> list[str]:
         problems.append("the WHOLE returned name satisfied a surname leaf")
     if item.identity or item.id:
         problems.append("a returned value must carry no identity — it is in no such population")
+    # H1.6. THE ROLES COME FROM THE SOURCE'S DECLARATION, NEVER FROM THE
+    # STRING. `parts_of` reads a surname off its SUFFIX, and «заболотный»
+    # wears none: re-guessing called a correct hand-over the wrong value on
+    # four transitions of the committed corpus, and the class grows with every
+    # regeneration that draws a name the suffix table does not know.
+    plain = replace(_item("s2", "NAME", "заболотный", "заболотный", "i1", _in_seed("r1", "name")),
+                    parts={"surname": "заболотный"})
+    if not leaf_value_ok(returned_as_item(plain, "заболотный"),
+                         "clinic_book", "patient.last_name", "заболотный"):
+        problems.append("a surname with no surname suffix failed its own leaf")
+    return problems
+
+
+def test_coverage_of_a_value_no_message_carried() -> list[str]:
+    """H1.3. A seed value has `Locus(kind='seed', msg=-1)`, so «was its message
+    span masked» is a question about nothing: `masked_spans.get(-1)` is `()`
+    and the hop was a forced miss whatever the gateway did — 70 declared hops
+    of the corpus, and a perfect gateway's ceiling at 11660/11730. It is
+    decided the way the hop was OBSERVED instead: no piece of the real value
+    may survive in what the model actually read."""
+    seed = _item("p5", "NAME", REAL_NAME, REAL_NAME, "i1", _in_seed("s1", "name"))
+    hop = _hop("IN", "memory", "p5", 0, 3, "", -1, -1, "")
+    case = _case("m-seed", "memory_anaphora", ("а", "б", "в", "г"), (seed,), (hop,))
+    problems: list[str] = []
+    for label, substitute, want in (("a fake was carried", FAKE_NAME, 1),
+                                    ("the REAL value was carried", REAL_NAME, 0)):
+        run = _with_mentions(_with_masked(_with_subs(_run("m-seed"), {"p5": substitute}),
+                                          {0: (), 1: (), 2: (), 3: ()}),
+                             (MentionRecord("p5", 0, -1, substitute, 1),))
+        got = METRIC_FUNCTIONS["coverage"]((observe(case, run, None, None),))
+        if (got.hits, got.total) != (want, 1):
+            problems.append(f"seed coverage, {label}: {got.hits}/{got.total}, wanted {want}/1")
+    return problems
+
+
+def test_consistency_counts_a_tool_result_as_a_place() -> list[str]:
+    """H1.4. Every tool-result mention carries `msg == -1`, so a population
+    keyed on `msg` alone folded EVERY result into one place — and since no
+    corpus item is both said in a message and echoed by a tool, the line had an
+    EMPTY population on all 1 736 cases and could print nothing but «н/п». A
+    public line that can only print «н/п» is the instrument that cannot fail."""
+    case = _case("m-cons", "single", (REAL_NAME,), (NAME,), ())
+    two_results = (MentionRecord("p1", -1, 0, FAKE_NAME, 1),
+                   MentionRecord("p1", -1, 1, OTHER_NAME, 2))
+    one_result = (MentionRecord("p1", -1, 0, FAKE_NAME, 1),
+                  MentionRecord("p1", -1, 1, FAKE_NAME, 2))
+    problems: list[str] = []
+    for label, mentions, want in (("two substitutes", two_results, (0, 1)),
+                                  ("one substitute", one_result, (1, 1))):
+        got = METRIC_FUNCTIONS["consistency"]((
+            _obs(case, _with_mentions(_run("m-cons"), mentions), ()),))
+        if (got.hits, got.total) != want:
+            problems.append(f"{label} across two tool results: {got.hits}/{got.total}, "
+                            f"wanted {want[0]}/{want[1]}")
+    return problems
+
+
+def test_doc_extracted_counts_what_the_case_asks_for() -> list[str]:
+    """H1.5. Two families name an extracted item the corpus gives the agent
+    NOWHERE to put — no OUT hop into `extract_to_tool` at all — so 50 of 375
+    items could not be hits whatever the gateway or the agent did and the
+    ceiling was 86.7 %, which is exactly what a perfect gateway printed. A
+    denominator with an unreachable floor in it is the mirror of v4's D1."""
+    item = _item("p6", "NAME", REAL_NAME, REAL_NAME, "i1", _in_seed("d1", "name"))
+    document = DocumentSpec(doc_id="d1", read_tool="file_read", format="free_text",
+                            record_count=1, record_ids=("d1",),
+                            extract_to_tool="crm_upsert_contact", extracted_item_ids=("p6",))
+    problems: list[str] = []
+    case = replace(_case("m-doc", "document", ("файл",), (item,), ()), document=document)
+    got = METRIC_FUNCTIONS["doc_extracted"]((_obs(case, _run("m-doc"), ()),))
+    if got.total != 0:
+        problems.append(f"an item the case declares no extraction hop for is in the "
+                        f"denominator: {got.hits}/{got.total}")
+    hop = _hop("OUT", "tool_arg", "p6", 0, 0, "crm_upsert_contact", 0, -1, "contact.last_name")
+    asked = replace(_case("m-doc-2", "document", ("файл",), (item,), (hop,)), document=document)
+    empty = METRIC_FUNCTIONS["doc_extracted"]((_obs(asked, _run("m-doc-2"), ()),))
+    if (empty.hits, empty.total) != (0, 1):
+        problems.append(f"a declared extraction the agent never made must be a MISS in the "
+                        f"denominator, got {empty.hits}/{empty.total}")
+    return problems
+
+
+def test_a_free_leaf_is_satisfied_when_the_value_survives() -> list[str]:
+    """H1.7. `notify_sms.text` is PROSE the agent composes around the value —
+    «Здравствуйте, Миллер Валерий! Ваш заказ принят.» — and byte equality with
+    the whole canonical is False by construction: 210 of `chain_value`'s 938
+    declared transitions (22.4 %) landed on such a leaf and no gateway could
+    earn them. It stays able to fail: another value, or none."""
+    item = _item("p7", "NAME", "Миллер Валерий", "Миллер Валерий", "i1",
+                 _in_message(0, 0, 14))
+    problems: list[str] = []
+    if not leaf_value_ok(item, "notify_sms", "text",
+                         "Здравствуйте, Миллер Валерий! Ваш заказ принят."):
+        problems.append("a free leaf carrying the value did not satisfy it")
+    if leaf_value_ok(item, "notify_sms", "text", "Здравствуйте! Ваш заказ принят."):
+        problems.append("a free leaf carrying NO value satisfied it")
+    if leaf_value_ok(item, "notify_sms", "text", "Здравствуйте, Сидоров Пётр!"):
+        problems.append("a free leaf carrying ANOTHER value satisfied it")
     return problems
 
 
@@ -499,6 +600,13 @@ def main() -> int:
         ("leaf_value_has_one_definition", test_leaf_value_has_one_definition),
         ("chain_target_is_read_as_an_item", test_chain_target_is_read_as_an_item),
         ("memory_stability_is_not_stability", test_memory_stability_is_not_stability),
+        ("coverage_of_a_value_no_message_carried", test_coverage_of_a_value_no_message_carried),
+        ("consistency_counts_a_tool_result_as_a_place",
+         test_consistency_counts_a_tool_result_as_a_place),
+        ("doc_extracted_counts_what_the_case_asks_for",
+         test_doc_extracted_counts_what_the_case_asks_for),
+        ("a_free_leaf_is_satisfied_when_the_value_survives",
+         test_a_free_leaf_is_satisfied_when_the_value_survives),
     )
     failures: list[str] = []
     for name, check in checks:

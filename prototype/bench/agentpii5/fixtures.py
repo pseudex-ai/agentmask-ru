@@ -487,15 +487,16 @@ def _consistency_fixtures() -> tuple[Fixture, Fixture, Fixture]:
     # agree with, so it is not in the population at all; a metric that counted
     # every item would print 1/2 and every case with a value said once would
     # drag the line down.
-    # SECOND CLAUSE: the phone read TWICE inside one and the same crossing —
-    # two tool-result mentions, which the harness writes with `msg == -1`
-    # (`harness.push_call`) — under two different substitutes. The question
-    # this line asks is «one value, one substitute ACROSS MESSAGES», so an item
-    # the model met in one place is outside the population however many
-    # mentions that place produced. A metric counting MENTIONS instead of
-    # distinct messages prints 1/2 here, and nothing in the package used to
-    # separate the two readings («consistency_by_mention_count», `report
-    # --selftest`).
+    # SECOND CLAUSE: the phone printed in TWO DIFFERENT TOOL RESULTS under two
+    # different substitutes. Every result mention carries `msg == -1`
+    # (`harness.push_call`), so a population keyed on `msg` alone folds both
+    # results into ONE place, leaves the item out and prints 1/1 — and, because
+    # no corpus item is both said in a message and echoed by a tool, that
+    # reading left `consistency` with an EMPTY population on all 1 736 cases: a
+    # public line that could print nothing but «н/п». A result is a place
+    # (contracts §4bis is the neighbouring lesson: one definition, stated), so
+    # the item is in the population and it is a MISS. `report.MUTANTS` carries
+    # the `msg`-only reading and this fixture is what refuses it.
     single = one + (MentionRecord("p2", 0, -1, "+79990001122", 0),)
     result_only = one + (MentionRecord("p2", -1, 0, "+79990001122", 0),
                          MentionRecord("p2", -1, 1, "+79990009988", 0))
@@ -504,10 +505,10 @@ def _consistency_fixtures() -> tuple[Fixture, Fixture, Fixture]:
             _fx("consistency", "one", "",
                 (_obs(case, _with_mentions(_run("fx-cons"), one), ()),), 1, 1),
             _fx("consistency", "adversarial",
-                "one mention is not a population; and two mentions inside ONE crossing are not "
-                "two messages — a metric keyed on the mention count prints 1/2",
+                "one mention is not a population; and two tool results under two substitutes are "
+                "two places — a metric keyed on `msg` alone folds them into one and prints 2/2",
                 (_obs(case, _with_mentions(_run("fx-cons"), single), ()),
-                 _obs(case, _with_mentions(_run("fx-cons"), result_only), ())), 2, 2))
+                 _obs(case, _with_mentions(_run("fx-cons"), result_only), ())), 2, 3))
 
 
 def _stability_fixtures() -> tuple[Fixture, Fixture, Fixture]:

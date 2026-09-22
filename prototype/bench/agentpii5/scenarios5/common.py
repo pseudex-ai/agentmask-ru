@@ -40,7 +40,7 @@ from bench.agentpii5.contracts import (BranchSpec, CaseV5, DocumentSpec, ForcedE
 from bench.agentpii5.contracts import (
     V4_KIND_FOR_BEHAVIOUR as contracts_v4_kind_for_behaviour)
 from bench.agentpii5.schema import has_result, validate_v5
-from bench.agentpii5.tools import spec_v5_for
+from bench.agentpii5.tools import csv_row_path, field_at, spec_v5_for
 
 # The date the whole corpus calls today. NOT a v5 constant of its own: v4's
 # `CaseBuilder.build()` stamps `Case.now` from v4's `NOW`, so a v5 system
@@ -490,15 +490,39 @@ def minted(builder: CaseBuilderV5, before: int) -> tuple[PiiItem, ...]:
     return tuple(builder.v4.pii[before:])
 
 
+# What a written surface may never be. A column that resolved to nothing used to
+# reach the corpus as the string «None», and it is not an odd-looking value: it
+# is a NEEDLE. `needles_of('NAME', 'None')` yields the stem «none», which every
+# `own_stems` exemption then honours and which `occurrences_of` finds in the
+# literal word «None» anywhere in a reply — so an answer that mentioned it read
+# as «the agent wrote the real value».
+PLACEHOLDER_SURFACES: tuple[str, ...] = ("", "none", "null")
+
+
 def seeded(builder: CaseBuilderV5, record_id: str, table: str, fields: dict[str, object],
            typed_paths: dict[str, tuple[str, str, Rendered]]) -> dict[str, str]:
     """One backend row, and the {field path: item id} map its consumers need.
 
     The map is keyed by PATH because that is what a `ReturnExpectation`, an
     IN/tool hop and `seed_backend_v5`'s tag binding are all written against.
+
+    THE WRITTEN SURFACE IS RE-READ THROUGH `field_at` (round 4). v4's `seed`
+    stores `str(_seed_field(fields, path))`, which is the same string for every
+    flat column and the string «None» for an indexed one; re-reading is
+    therefore a no-op everywhere except where v4 could not walk, and it is done
+    for EVERY item rather than for the ones that look wrong, because a rule
+    that only repairs what it recognises is a rule that stops recognising.
     """
     before = len(builder.v4.pii)
     builder.seed(record_id, table, fields, typed_paths)
+    for position in range(before, len(builder.v4.pii)):
+        item = builder.v4.pii[position]
+        surface = str(field_at(fields, item.where.path))
+        if surface.strip().lower() in PLACEHOLDER_SURFACES:
+            raise pools.BuildError(f"seed {table}/{record_id} column {item.where.path!r} "
+                                   f"holds {surface!r}; a written surface is what the record "
+                                   f"says, never a placeholder")
+        builder.v4.pii[position] = replace(item, value=surface)
     return {item.where.path: item.id for item in minted(builder, before)}
 
 
@@ -782,17 +806,17 @@ def csv_row_fields(drawn: Drawn) -> dict[str, str]:
 
 def csv_row_typed(index: int, drawn: Drawn,
                   identity: str) -> dict[str, tuple[str, str, Rendered]]:
-    """…and its items, keyed by the path the mock tags by: `rows[i].<column>`."""
+    """…and its items, keyed by the path the mock tags by (`csv_row_path`)."""
     row = csv_row_fields(drawn)
     return {
-        f"rows[{index}].last_name": _name_column(drawn.person, "surname", identity),
-        f"rows[{index}].first_name": _name_column(drawn.person, "given", identity),
-        f"rows[{index}].phone": ("PHONE", identity, Rendered(
+        csv_row_path(str(index), "last_name"): _name_column(drawn.person, "surname", identity),
+        csv_row_path(str(index), "first_name"): _name_column(drawn.person, "given", identity),
+        csv_row_path(str(index), "phone"): ("PHONE", identity, Rendered(
             row["phone"], row["phone"], False, {"digits": drawn.phone})),
-        f"rows[{index}].email": ("EMAIL", identity, Rendered(
+        csv_row_path(str(index), "email"): ("EMAIL", identity, Rendered(
             row["email"], row["email"], False, {"local": drawn.email_local,
                                                 "domain": drawn.email_domain})),
-        f"rows[{index}].birth_date": ("DOB", identity, Rendered(
+        csv_row_path(str(index), "birth_date"): ("DOB", identity, Rendered(
             row["birth_date"], row["birth_date"], False, {"iso": row["birth_date"]})),
     }
 
@@ -813,10 +837,18 @@ def form_document_typed(drawn: Drawn, ctx: Ctx, series: str, number: str,
                         identity: str) -> dict[str, tuple[str, str, Rendered]]:
     """…and the items of those columns. `city` carries NO item: a bare city
     identifies nobody, the engine refuses bare cities on purpose, and an item on
-    one would be a permanent miss the gateway is right to produce."""
+    one would be a permanent miss the gateway is right to produce.
+
+    `house` CARRIES NO ITEM EITHER, FOR THE SAME REASON (round 4). «19» on its
+    own names nobody, no gateway masks it, and the ground truth loses nothing
+    because the STREET item's parts already carry the house (`rendered_address`
+    splits the whole address). Declared as an item it did worse than sit there:
+    its two-character surface is a needle, and «19» stands inside «1977-01-07»
+    and «7931», so `doc_masked` read the form's own birth date as the house
+    number surviving unmasked and printed 92 of 100 for a gateway that had
+    done everything right."""
     iso = iso_date(drawn.dob)
     separated = spaced_snils(snils_digits)
-    house = f"{drawn.address.house}{drawn.address.letter}"
     rendered_address = pools.render_address(drawn.address, "clean", ctx.rng, False)
     return {
         "last_name": _name_column(drawn.person, "surname", identity),
@@ -831,7 +863,6 @@ def form_document_typed(drawn: Drawn, ctx: Ctx, series: str, number: str,
                                               {"digits": snils_digits})),
         "street": ("LOC", f"{identity}.home", Rendered(
             drawn.address.street, drawn.address.street, False, dict(rendered_address.parts))),
-        "house": ("LOC", f"{identity}.home", Rendered(house, house, False, {"house": house})),
     }
 
 

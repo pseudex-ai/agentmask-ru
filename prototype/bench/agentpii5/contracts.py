@@ -866,6 +866,233 @@ class FeatureComparator(Protocol):
     def __call__(self, produced: str, reference: str) -> bool: ...
 
 
+# --- §4bis THE NEEDLE LAYER: one definition of «does this value survive in
+#     this text» (round 4, H1.1) --------------------------------------------------------
+#
+# WHY THIS SECTION EXISTS AT ALL. Six of the lines below — `coverage`,
+# `toolresult_masked`, `rag_masked`, `doc_masked`, `residual` and, through the
+# OUT status, every form and value line — rest on ONE question: is this value,
+# or an identifying piece of it, still standing in this text? Until round 4
+# that question had THREE answers living in two files, and the WEAKEST of the
+# three guarded the leak lines:
+#
+#   * `observe.needles_of` — notation-aware (digit signatures, date folds, word
+#     stems, transliteration, initials);
+#   * `observe.pieces_of` + `metrics._surviving_piece` — a plain folded
+#     SUBSTRING test over parts that `parts_of` had already NORMALISED, so it
+#     asked for a string that does not occur in the value itself;
+#   * a per-caller guess at which part of a value a tool leaf holds.
+#
+# Each was measured, and each failed in the gateway's favour: `_surviving_piece`
+# could not find a value in a text that IS the value for 12.7 % of the corpus's
+# written surfaces (every PLATE, 88.6 % of SNILS, 84.6 % of CARD, 29.5 % of
+# LOC); a LOC's only word needle was the four-character prefix of an
+# ALPHABETICALLY SORTED blob, so 22.6 % of addresses carried a needle for the
+# CITY and none for the street; and a substitute standing in a leaf the tool
+# schema DECOMPOSES («address.building» = «79») matched no needle of the whole
+# value, so that leaf read `unmasked` for ever — un-earnable by a right gateway
+# and un-failable by a wrong one at once.
+#
+# THE SIX RULES, each pinned by a test of `test_observe.py`:
+#
+#   N1. A TEXT THAT IS THE VALUE CONTAINS IT. `survives(type, v, v)` is true
+#       for every type. This is what a substring test over normalised parts
+#       could not do, and it is the cheapest possible tripwire on the layer.
+#   N2. A VALUE INSIDE A LONGER TEXT IS FOUND, in the shapes a MODEL writes it:
+#       verbatim, declined (a word stem), renotated (a digit signature),
+#       refolded (a date), transliterated, squeezed to initials, respaced.
+#   N3. A PIECE IS TYPED, NEVER SPLIT BY A RULE WRITTEN FOR ANOTHER TYPE.
+#       `IDENTIFYING_ROLES` says, per type, which roles of the value are
+#       evidence it stood somewhere; `PIECE_MIN_CHARS` / `PIECE_MIN_DIGITS` say
+#       how much of one is enough to identify rather than to coincide.
+#   N4. A GENERIC WORD IS NOT AN IDENTIFYING PIECE. The settlement, the generic
+#       street word, the mail domain, the grammatical gender belong to
+#       everybody (`GENERIC_PIECE_ROLES`), and so does the address vocabulary
+#       and every month name (`form_tables.GENERIC_WORDS`). A surviving
+#       «улица», «дом» or «марта» is grammar, not a leak.
+#   N5. THE CUSTOMER'S OWN RENDERINGS ARE EXEMPT THROUGH ONE PATH. Exactly one
+#       parameter — `exempt` — carries them, and both readings pass their own
+#       set through it: the residual side passes the stems of the customer's
+#       real values, the leak side passes nothing (its needles are built from
+#       the REAL value and every generic role is already gone by N4).
+#   N6. A DECOMPOSED LEAF IS JUDGED BY ITS OWN ROLE. When a tool schema splits
+#       a value across fields, the question asked of one leaf is about the part
+#       that leaf holds (`PartSurvival`), never about needles of the whole
+#       value — no needle of a whole address can live in «79».
+
+# The shapes a value survives being rewritten in. Closed, because a metric
+# that could not name the shape it matched on could not be argued with.
+#   whole     — the surface itself, case- and ё-folded
+#   stem      — the first `PIECE_MIN_CHARS` letters of one role, at a word start
+#   digits    — the type's digit signature, inside one number run whatever its
+#               separators
+#   date      — the ISO fold of a date, whatever notation wrote it
+#   initials  — «П.О.», the squeeze a model writes a name to
+#   squeezed  — the surface with every separator dropped, for the one type
+#               whose notation carries no other robust needle (see
+#               SQUEEZED_TYPES)
+NEEDLE_KINDS: tuple[str, ...] = ("whole", "stem", "digits", "date", "initials", "squeezed")
+
+# WHAT A PIECE OF A VALUE IS, BY TYPE. The roles named here are the ones whose
+# survival in free text is evidence that THIS value stood there; a role not
+# named is either generic (N4) or too short to identify (a house number, a
+# passport series — every street has a 79 and the leaf that holds one is judged
+# by N6 instead).
+IDENTIFYING_ROLES: dict[str, tuple[str, ...]] = {
+    "NAME": ("surname", "given", "patronymic"),
+    "LOC": ("street",),
+    "EMAIL": ("local",),
+    "PHONE": ("digits",),
+    "CARD": ("digits",),
+    "SNILS": ("digits",),
+    "INN": ("digits",),
+    "PASSPORT": ("digits",),
+    "DOB": ("iso",),
+    "DATE": ("iso",),
+    # Every part `parts_of` reads off a plate is one to three characters — a
+    # letter, three digits, a letter pair, a region — so a plate has no piece
+    # that identifies on its own and the whole is matched instead, respacing
+    # included (SQUEEZED_TYPES). Leaving the tuple empty and saying why is the
+    # point: a silent absence read as «no needles» is how the fake plate came
+    # to be invisible to `residual` for three rounds.
+    "PLATE": (),
+}
+# Roles that belong to EVERYBODY, so a needle built from one proves nothing
+# about which value stood in a string: the settlement (a place reference every
+# Russian city shares), the grammatical gender, the mail domain, the street's
+# generic word. ONE list, where there used to be two that disagreed —
+# `observe.EXEMPT_ROLES` (what is not a LEAK) left `domain` in while the
+# comment beside it said a surviving «yandex.ru» is not a leak.
+GENERIC_PIECE_ROLES: frozenset[str] = frozenset({"city", "gender", "domain", "street_type"})
+# A piece of a value short enough to stand inside an unrelated word is not
+# evidence that the value was there. Four characters is v4's own floor in
+# `residual` detection and the public harness's; a shorter one matched «Лев»
+# inside «Лебедева» and attributed one person's answer span to another.
+PIECE_MIN_CHARS: int = 4
+# ...AND A RUSSIAN ENDING TAKES ONE OF THEM. A stem is a prefix that must
+# survive declension, so for a word of exactly `PIECE_MIN_CHARS` letters the
+# four-character prefix is the WHOLE word and «Анну» stops matching «Анна» — a
+# four-letter given name written in another case read `unmasked`, and
+# `residual` was blind to a fake standing in a tool argument for no reason but
+# the length of the name. Three characters is the floor for those, and the
+# floor on the WORD stays four: a three-letter word is too common to identify
+# anybody, while the third letter of a four-letter one still does.
+STEM_MIN_CHARS: int = 3
+# The same floor for a digit signature: three digits occur in every order
+# number in the corpus.
+PIECE_MIN_DIGITS: int = 4
+# Two letters is the shortest squeezed initials a needle may carry: one letter
+# («П.») stands in front of a third of the Russian alphabet's worth of names.
+MIN_INITIALS: int = 2
+# «+7 999…» and «8 999…» are one number said twice, so the signature is the
+# last ten digits — `pseudex.vault`'s own canonicalisation rule, arrived at
+# here independently (this package never imports the engine).
+PHONE_SIGNATURE_DIGITS: int = 10
+# Types whose identity is a DIGIT SIGNATURE and never a spelling: the model
+# reformats «+79990001122» as «8 999 000-11-22» and a letters-and-stems test
+# finds nothing at all.
+DIGIT_PIECE_TYPES: frozenset[str] = frozenset({"PHONE", "CARD", "SNILS", "INN", "PASSPORT"})
+# A date is neither: «14.03.1987» and «1987-03-14» share no substring at all.
+DATE_PIECE_TYPES: frozenset[str] = frozenset({"DOB", "DATE"})
+# Types whose value a model rewrites in another ALPHABET or squeezes to
+# initials. NAME only, and deliberately: `FORM_FEATURES` declares `script` and
+# `initials` for NAME alone, and a transliterated STREET needle would fire on
+# ordinary Latin text in an address field with no derived form present.
+DERIVED_PIECE_TYPES: frozenset[str] = frozenset({"NAME"})
+# The one type matched with every separator dropped. A plate is a letter, three
+# digits, a letter pair and a region: the four groups cannot form by accident
+# across a word boundary, which is why the squeeze is safe HERE and is not
+# offered to types whose squeeze would weld two neighbouring words into a
+# needle. Without it a gateway that left the fake plate in the tool argument
+# RESPACED was invisible to all 29 lines while the same fake written verbatim
+# was caught — the critical-defect line defeated by inserting spaces.
+SQUEEZED_TYPES: frozenset[str] = frozenset({"PLATE"})
+
+
+@dataclass(frozen=True)
+class Needle:
+    """One shape of one value, and the role it is evidence for.
+
+    `role` is "" for a needle built from the WHOLE value (`whole`, `squeezed`)
+    and for `initials`, which spans the parts rather than naming one. It is the
+    role's own name for `stem`, `digits` and `date`, so `Survival.pieces` can
+    say WHICH piece survived and a caller can ask for one role alone (N6)."""
+
+    kind: str                        # NEEDLE_KINDS
+    role: str                        # a key of the value's parts, or ""
+    text: str                        # what is looked for, folded where the kind folds
+
+
+@dataclass(frozen=True)
+class Survival:
+    """The answer to N1–N5 for one (value, text) pair.
+
+    `whole` — the value itself stands there. `pieces` — the roles whose
+    identifying piece stands there. `spans` — where, in the text's own offsets,
+    so a caller that needs positions (the answer alignment, «is another
+    person's value standing where this one's is not») reads them from the same
+    pass rather than running a second, different search."""
+
+    whole: bool
+    pieces: frozenset[str]
+    spans: tuple[tuple[int, int], ...]
+
+    @property
+    def found(self) -> bool:
+        return self.whole or bool(self.pieces)
+
+
+class ValueNeedles(Protocol):
+    """`needles_of(pii_type, surface, parts)` → the needles of one value.
+
+    `parts` is the value's roles: the ones the CORPUS declared when the caller
+    holds the item, the ones `parts_of` read off the surface when it holds only
+    a string. The difference is not cosmetic — `parts_of` lumps every word of
+    an address it cannot type into ONE alphabetically sorted `street` blob, so
+    a declared «улица Клубная» in Ижевск yields the street, while the same
+    address parsed from a comma-less surface yields «клубная ижевск». Both are
+    split PER WORD here (N3), and the declared path additionally knows which
+    word is the city and drops it (N4)."""
+
+    def __call__(self, pii_type: str, surface: str,
+                 parts: dict[str, str]) -> tuple[Needle, ...]: ...
+
+
+class ValueSurvival(Protocol):
+    """`survival(needles, text, exempt)` → `Survival`.
+
+    IT TAKES THE NEEDLES, not the value, so the two readers of the layer meet
+    in ONE search: the corpus's own item (whose roles are declared) and a bare
+    substitute surface (whose roles are parsed) differ in how their needles are
+    BUILT and in nothing else.
+
+    `exempt` is the ONE path of N5: needle texts that prove nothing because
+    another value of the same conversation already carries them. Nothing else
+    filters, and no caller may pre-filter on its own — three filters is how the
+    layer came to disagree with itself."""
+
+    def __call__(self, needles: Sequence[Needle], text: str,
+                 exempt: frozenset[str]) -> Survival: ...
+
+
+class LeafSurvival(Protocol):
+    """`leaf_holds(pii_type, surfaces, minted, real, text)` → does this
+    ONE-VALUE tool leaf hold a piece of the SUBSTITUTE rather than the
+    customer's own datum (N6)?
+
+    Asked of a TOOL LEAF and never of free prose: a leaf is a short string the
+    schema names for one part of one value, so «79» may be read there as a
+    house number and could not be read that way in a sentence.
+    `tools.expected_leaf_value` names the customer's own value for the leaf;
+    this says whether what stands in it is that, the fake, or neither.
+    `surfaces` are the spellings of the substitute the run recorded and
+    `minted` its roles (`ArmRun.substitutes[item][1]`) — a spoken substitute
+    has roles in the record that no splitter can read back off its surface."""
+
+    def __call__(self, pii_type: str, surfaces: Sequence[str], minted: dict[str, str],
+                 real: str, text: str) -> bool: ...
+
+
 # --- §5 metrics (spec §4, §8.3) -------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -946,13 +1173,13 @@ METRICS: tuple[MetricSpec, ...] = (
     # the public harness counts it once per case. A spec that said «items»
     # while the code counted hops would be a denominator nobody could check.
     MetricSpec("leak", "IN hops the gateway ALTERED before the model saw them", "IN hops shown to the model (observed ∪ leaked; `absent` was shown to nobody)", "hop", "public", False),
-    MetricSpec("coverage", "IN hops of which NO piece survived (city / generic word / marker are not PII)", "IN hops shown to the model (observed ∪ leaked)", "hop", "public", False),
+    MetricSpec("coverage", "IN hops of which NO piece survived — by the span the gateway replaced where the value stood in a MESSAGE, by what the model read where it did not (a seed value stood in no message, so «was its span masked» is a question about nothing); city / generic word / marker are not PII", "IN hops shown to the model (observed ∪ leaked)", "hop", "public", False),
     MetricSpec("typed", "IN/tool and IN/document hops the gateway typed as the declared type (DOB and DATE are ONE answer)", "IN/tool and IN/document hops whose slot a replaced piece covers, so a type was exposed", "hop", "public", False),
     MetricSpec("round_trip", "OUT/tool_arg leaves the gateway RESTORED to the real value of THAT leaf (absolute, not paired); a leaf it never masked (`unmasked`) is a miss, and so is one the agent never wrote", "OUT/tool_arg leaves of items altered on the way in", "leaf", "public", False),
     MetricSpec("round_trip_repaired", "the same, counting a value that arrived REPAIRED (the same `unmasked` and `absent` misses)", "OUT/tool_arg leaves of items altered on the way in", "leaf", "public", True),
     MetricSpec("end_to_end", "declared OUT/tool_arg leaves the gateway RESTORED to the real value of THAT leaf — a leaf that carried no substitute (`unmasked`) is a MISS, so a passthrough scores 0 here and not 100 (F1.3)", "all declared OUT/tool_arg leaves", "leaf", "public", False),
     MetricSpec("overmask", "negatives NOT altered", "all negatives", "negative", "public", False),
-    MetricSpec("consistency", "items whose every mention carried ONE substitute", "items the model met in more than one PLACE — distinct `MentionRecord.msg`, where every tool result is the one place `msg == -1`", "item", "public", False),
+    MetricSpec("consistency", "items whose every mention carried ONE substitute", "items the model met in more than one PLACE — a distinct (`msg`, `result_seq`) pair, so a message is a place and so is EACH tool result; keying on `msg` alone made every result one place and left the population empty on the whole corpus", "item", "public", False),
     MetricSpec("stability", "items whose substitute did not change between requests", "items mentioned in more than one request", "item", "public", False),
     # NOT THE PUBLIC QUANTITIES, AND THE NAMES SAY SO (`_v5` / `_answer`).
     # `agentmask_ru.align.rewrite_ratio` is the share of characters changed
@@ -980,7 +1207,7 @@ METRICS: tuple[MetricSpec, ...] = (
     MetricSpec("rag_masked", "declared chunks where no real value reached the model; a declared value the chunk rendered UNTAGGED is a miss", "chunks the case DECLARES personal data in (`RagSpec.chunk_ids`) and the retriever returned", "chunk", "v5_new", False),
     MetricSpec("rag_identity_kept", "foreign identities in chunks kept apart from the customer", "foreign identities in chunks", "identity", "v5_new", False),
     MetricSpec("doc_masked", "documents where every real value was masked, UNTAGGED ones included", "documents the agent actually read (one the read never reached is outside it, the way an absent result is)", "document", "v5_new", False),
-    MetricSpec("doc_extracted", "extracted items that reached the tool as the REAL value", "items the agent extracted", "extracted", "v5_new", False),
+    MetricSpec("doc_extracted", "extracted items that reached the tool as the REAL value", "extracted items the case DECLARES an OUT hop into `extract_to_tool` for; an item it asks nobody to carry is outside the denominator rather than a forced miss", "extracted", "v5_new", False),
     MetricSpec("residual", "answers and argument leaves WITHOUT a substitute in them", "all answers, and every OUT leaf the agent WROTE (`absent` is neither)", "leaf", "v5_new", False),
     # THE STREAMING LEG, WHICH NOTHING READ. `ArmRunV5.stream_mismatch` was
     # written by the harness on all 84 streaming cases and consumed by no

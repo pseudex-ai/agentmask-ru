@@ -564,14 +564,32 @@ def minted_of(observation: RunObservation) -> tuple[str, ...]:
     two orders over one set is a difference that shows up only where one
     substitute is a prefix of another.
 
-    IT IS STILL NOT THE RUN'S LIST BYTE FOR BYTE, AND THE RESIDUE IS NAMED.
-    The harness strips the real settlement out of a COMMA-BEARING address
-    (`harness.minted_substitutes`); that needs the engine and this module may
-    not import it, so an address minted as «Омск, переулок …» is carried here
-    whole and its stripped form standing alone in a turn is masked by the
-    PIECE rule rather than as a whole surface. The run's own list cannot be
-    reproduced exactly from the files because no field of `ArmRunV5` holds it
-    — writing it there is the harness's change to make, not this module's.
+    IT IS STILL NOT THE RUN'S LIST BYTE FOR BYTE, AND THE RESIDUE IS MEASURED.
+    Rebuilt from these three sources on 395 corpus cases and compared with
+    `harness.minted_substitutes` of the same live gateway, the two lists differ
+    on 10.3 % of cases. Two classes, and the SIZE of each is why this docstring
+    is not a shrug:
+
+      * THE CITY STRIP (the bulk). The harness strips the real settlement out
+        of a COMMA-BEARING address; that needs the engine and this module may
+        not import it, so «Омск, переулок …» is carried whole here and its
+        stripped form standing alone in a turn is masked by the PIECE rule
+        rather than as a whole surface.
+      * A SUBSTITUTE NO RECORD HOLDS — 6 of 395 cases (1.5 %). The gateway
+        mints for every span the detector finds in a message, and these three
+        sources see only what the CASE declares (`base.substitutes`, `mentions`)
+        plus what a tool result carried: a fake for an undeclared person
+        («котов», «василисы») or for an address the register wrote without its
+        city is in the run's list and in none of the files. The sheet then
+        shows the human a fake where the judge read `RESIDUAL_MARKER`, which is
+        the very thing G3.4 closed for the other masking.
+
+    NEITHER CLASS CAN BE CLOSED FROM HERE: no field of `ArmRunV5` holds the
+    run's own list, and reproducing the strip would mean a second settlement
+    detector in the benchmark. The exact proposal — `ArmRunV5.minted:
+    tuple[str, ...]`, written by `harness.run_arm_v5` from
+    `minted_substitutes(gateway)`, read here instead of the reconstruction —
+    is in this round's contract questions.
     """
     out: set[str] = {value[0] for value in observation.run.base.substitutes.values() if value[0]}
     out |= {mention.substitute for mention in observation.run.mentions

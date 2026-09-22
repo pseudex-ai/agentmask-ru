@@ -407,6 +407,30 @@ def test_unknown_type_raises(form: ModuleType) -> list[str]:
     return failures
 
 
+def test_an_unknown_word_says_nothing_about_its_case(form: ModuleType) -> list[str]:
+    """pymorphy3 answers about a word it does not know by GUESSING from the
+    ending, out of a table that does not contain the word.
+
+    It reads «удфгей» as {gent, accs} and «сергей» as {nomn}, so two strings
+    wearing the same form were scored a case DIFFERENCE by a prediction
+    neither supports — 117 of the form misses on a 600-case slice. A parse
+    with `is_known` false is that prediction; a dictionary parse is a reading.
+    This is the complete statement of the rule the «Седых» abstention already
+    makes, and the defect the feature exists for must still fire: «Иванову
+    Петру» against «Иванов Пётр», both known, is a real case difference."""
+    failures: list[str] = []
+    for produced, reference in (("сергей", "удфгей"), ("заболотный", "лоембмтный"),
+                                ("максим", "торсим")):
+        verdict = form.form_match("NAME", produced, reference)
+        if not verdict.same:
+            failures.append(f"a GUESS about {reference!r} scored a difference against "
+                            f"{produced!r}: {sorted(verdict.differs)}")
+    real = form.form_match("NAME", "Иванов Пётр", "Иванову Петру")
+    if "gram_case" not in real.differs:
+        failures.append("a real case difference between two KNOWN names stopped firing")
+    return failures
+
+
 def test_lexeme_dependent_features_have_a_floor_of_one(form: ModuleType) -> list[str]:
     """A PERFECT gateway must be able to print 100%.
 
@@ -592,6 +616,7 @@ _TESTS = (
     test_by_fields_sentinel,
     test_unknown_type_raises,
     test_abstain_is_closed_and_one_sided,
+    test_an_unknown_word_says_nothing_about_its_case,
     test_lexeme_dependent_features_have_a_floor_of_one,
     test_comparators_match_the_declared_readings,
     test_corner_labels,

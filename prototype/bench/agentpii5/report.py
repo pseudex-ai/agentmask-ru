@@ -951,14 +951,15 @@ def _mutant_out_absent(observations: Sequence[RunObservation]) -> Line:
 
 
 def _mutant_consistency(observations: Sequence[RunObservation]) -> Line:
-    """Population keyed on the number of MENTIONS instead of on distinct
-    messages, so an item read twice inside one crossing joins it."""
+    """Population keyed on `MentionRecord.msg` alone, so every tool result is
+    ONE place however many results printed the value — the reading that left
+    the line with an empty population on the whole corpus."""
     hits = 0
     total = 0
     for one in observations:
         for item in one.case.base.pii:
             mentions = metric_bodies._mentions_of(one, item.id)
-            if len(mentions) < 2:
+            if len({mention.msg for mention in mentions}) < 2:
                 continue
             total += 1
             hits += 1 if len({mention.substitute for mention in mentions}) == 1 else 0
@@ -998,7 +999,7 @@ def _mutant_form_hIN(observations: Sequence[RunObservation]) -> Line:  # noqa: N
 MUTANTS: tuple[tuple[str, str, Metric], ...] = (
     ("end_to_end", "`unmasked` leaf is a HIT (the pre-F1.3 reading)", _mutant_end_to_end),
     ("out_absent", "optional hops dropped from the denominator", _mutant_out_absent),
-    ("consistency", "population = items with 2 MENTIONS, not 2 messages", _mutant_consistency),
+    ("consistency", "a tool result is not a place: population keyed on `msg` alone", _mutant_consistency),
     ("doc_extracted", "any real value of the case counts, not THIS item's", _mutant_doc_extracted),
     ("form_hIN", "a leaked hop is a form hit", _mutant_form_hIN),
 )

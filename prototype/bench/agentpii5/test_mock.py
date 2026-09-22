@@ -154,10 +154,13 @@ def seeded_world() -> BackendV5:
                                     "template": "Заявитель {name}, телефон {phone}."})
     backend.seed_document("doc-2", {
         "path": "/mnt/in/clients.csv", "format": "csv", "title": "Импорт",
-        "rows": [{"last_name": "Громова", "first_name": "Марина", "phone": PHONE,
-                  "email": EMAIL, "birth_date": "1987-03-14"},
-                 {"last_name": "Букин", "first_name": "Сергей", "phone": "+79261234567",
-                  "email": "bukin@mail.ru", "birth_date": "1979-11-02"}]})
+        # The rows are keyed by the ordinal, never a list: v4's seed validator
+        # walks «.» alone and a path through a list resolves to None
+        # (`tools.csv_row_path`).
+        "rows": {"0": {"last_name": "Громова", "first_name": "Марина", "phone": PHONE,
+                       "email": EMAIL, "birth_date": "1987-03-14"},
+                 "1": {"last_name": "Букин", "first_name": "Сергей", "phone": "+79261234567",
+                       "email": "bukin@mail.ru", "birth_date": "1979-11-02"}}})
     backend.seed_document("doc-3", {"path": "/mnt/in/scan.txt", "format": "scan",
                                     "title": "Скан договора", "name": "Громова Марина",
                                     "phone": PHONE,

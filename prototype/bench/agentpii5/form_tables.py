@@ -160,3 +160,21 @@ MONTH_OTHER: frozenset[str] = frozenset({
     "июлю", "августу", "сентябрю", "октябрю", "ноябрю", "декабрю",
 })
 MONTH_WORDS: frozenset[str] = MONTH_NOMINATIVE | MONTH_GENITIVE | MONTH_OTHER
+
+# --- the one generic vocabulary (contracts §4bis, rule N4) -----------------------------
+
+# Words that are GRAMMAR, not identity — the union of everything above that a
+# value may wear without the word saying whose value it is. A surviving «улица»
+# in a masked address, a «д.» in a tool leaf, a «марта» in a restored date:
+# none of the three is evidence that a particular person's datum stood there,
+# and counting one as a piece made `coverage` refuse every address the mock
+# renders with its generic word.
+#
+# ONE UNION, BUILT HERE. It used to be assembled in `metrics.GRAMMAR_WORDS`
+# (address words only) and again in `judge.py` (those plus the months), so the
+# leak lines and the judge's own subtraction could disagree about whether a
+# month name identifies anybody. The months belong in it for the same reason
+# the street words do: `parts_of("DOB", …)` never returns one, but a LOC blob
+# or a free-text leaf can carry «марта» as an ordinary word.
+GENERIC_WORDS: frozenset[str] = frozenset(
+    (*GENERIC_STEMS, *GENERIC_ABBREVIATIONS, *MARKER_WORDS, *MONTH_WORDS))

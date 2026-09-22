@@ -364,11 +364,18 @@ def _seed_item() -> PiiItem:
 
 def _document_case(document: DocumentSpec) -> CaseV5:
     """`VALID` with a second seed record, so «the records this document
-    renders» is a choice rather than the only record there is."""
+    renders» is a choice rather than the only record there is — and an OUT hop
+    into `extract_to_tool` for every extracted item, which H4.1's rule demands
+    and which a well-formed document family writes anyway."""
     other = SeedRecord(id="other", table="documents", fields={"path": "/upload/x.csv"},
                        pii_ids=())
     base = replace(VALID.base, seed_records=VALID.base.seed_records + (other,))
-    return replace(VALID, base=base, behaviour="document", document=document)
+    hops = list(VALID.hops)
+    for item_id in document.extracted_item_ids:
+        hops.append(Hop("OUT", "template", item_id, len(hops), VALID.hops[0].turn,
+                        document.extract_to_tool, 0, "", -1, "text", False))
+    return replace(VALID, base=base, behaviour="document", document=document,
+                   hops=tuple(hops))
 
 
 def test_r18() -> list[str]:
@@ -405,6 +412,29 @@ def test_r18_extracted_items_belong_to_those_records() -> list[str]:
     stranger = DocumentSpec("d1", "crm_find_contact", "free_text", 1, ("other",),
                             "notify_sms", (item.id,))
     return _expect(_document_case(stranger), "R18")
+
+
+def test_r18_extracted_item_has_somewhere_to_go() -> list[str]:
+    """H4.1: `doc_extracted` counts one OUT hop into `extract_to_tool` per
+    extracted item, so an item the case gives the agent no field for sits in
+    the denominator for ever — 50 of 375 did, and the line's ceiling was 86.7%
+    with nothing wrong with the gateway. The positive atom first: the same
+    document WITH the hop is quiet, so the rule is not «R18 refuses every
+    document»."""
+    item = _seed_item()
+    good = DocumentSpec("d1", "crm_find_contact", "free_text", 1, (item.where.record,),
+                        "notify_sms", (item.id,))
+    failures = ([f"a document whose extraction has a hop was refused: {problems[:4]}"]
+                if (problems := s.validate_v5(_document_case(good))) else [])
+    nowhere = replace(_document_case(good), hops=VALID.hops)
+    failures += _expect(nowhere, "R18")
+    # The hop exists but writes into ANOTHER tool: `doc_extracted` reads
+    # `tool_name == extract_to_tool` and would not see it either.
+    elsewhere = list(VALID.hops) + [Hop("OUT", "tool_arg", item.id, len(VALID.hops),
+                                        VALID.hops[0].turn, "crm_find_contact", 0, "", -1,
+                                        "query.last_name", False)]
+    failures += _expect(replace(_document_case(good), hops=tuple(elsewhere)), "R18")
+    return failures
 
 
 def test_r19() -> list[str]:
@@ -1003,6 +1033,69 @@ def test_prose_seed() -> list[str]:
     return problems
 
 
+def test_seed_surface_is_the_column() -> list[str]:
+    """A seed item's WRITTEN SURFACE is what its column holds — for a nested
+    CSV row as much as for a flat one — and a column holding nothing is
+    refused rather than written out as «None».
+
+    310 items shipped with the surface «None» because v4's `_seed_field` walks
+    «.» alone and answers a path it cannot walk with None, which v4's own
+    validator then demanded the item equal. The surface is not cosmetic: it is
+    what `needles_of` indexes, so «none» became an own-stem exemption of every
+    document case and matched the literal word in any reply."""
+    builder = _fresh_builder()
+    drawn = common.draw(builder.ctx, city="Самара", with_flat=True, with_entrance=False,
+                        with_type=True, foreign=False)
+    fields: dict[str, object] = {"rows": {"0": common.csv_row_fields(drawn)}}
+    typed = common.csv_row_typed(0, drawn, "p1")
+    ids = common.seeded(builder, "doc-1", "documents", fields, typed)
+    problems: list[str] = []
+    if set(ids) != set(typed):
+        problems.append(f"the seed returned paths {sorted(ids)}, not {sorted(typed)}")
+    for item in builder.v4.pii:
+        if item.where.kind != "seed":
+            continue
+        want = str(common.field_at(fields, item.where.path))
+        if item.value != want:
+            problems.append(f"{item.id}: surface {item.value!r}, column holds {want!r}")
+        if item.value.strip().lower() in common.PLACEHOLDER_SURFACES:
+            problems.append(f"{item.id}: placeholder surface {item.value!r} reached the case")
+    # THE NEGATIVE: a column that holds nothing is a refusal, not a surface.
+    empty = _fresh_builder()
+    try:
+        common.seeded(empty, "doc-2", "documents", {"rows": {"0": {"last_name": ""}}},
+                      {"rows.0.last_name": ("NAME", "p1", pools.Rendered(
+                          "", "морозов", False, {"surname": "морозов"}))})
+        problems.append("a column holding nothing was written out as a surface")
+    except BuildError:
+        pass
+    # THE SECOND NEGATIVE: the LIST shape the rows used to have. v4's validator
+    # walks «.» alone, so the surface it demands is the string «None» and the
+    # one this package writes is the cell — the case cannot be built at all,
+    # which is how the mapping earns its place.
+    listed = _fresh_builder()
+    listed_drawn = common.draw(listed.ctx, city="Самара", with_flat=True, with_entrance=False,
+                               with_type=True, foreign=False)
+    common.seeded(listed, "doc-3", "documents",
+                  {"rows": [common.csv_row_fields(listed_drawn)]},
+                  {"rows[0].last_name": common.csv_row_typed(
+                      0, listed_drawn, "p1")[common.csv_row_path("0", "last_name")]})
+    draft = listed.draft()
+    draft.say("здравствуйте загрузите первого клиента")
+    draft.value("ph", common.phone(listed.ctx, listed_drawn.phone))
+    turn = listed.user(draft, {"ph": ("PHONE", "p1", "required", False)})
+    said = [item for item in listed.v4.pii if item.where.kind == "message"][0]
+    listed.declare_hop(Hop("IN", "user", said.id, 0, turn, "", -1, "", -1, "", False))
+    try:
+        listed.build("single")
+        problems.append("a case whose CSV rows are a LIST was built; v4's own validator "
+                        "resolves such a path to None and would demand it as the surface")
+    except InvalidCase as error:
+        if "R02" not in str(error) or "seed field" not in str(error):
+            problems.append(f"the list shape was refused for another reason: {error}")
+    return problems
+
+
 def test_v4_kind_table() -> list[str]:
     """Every behaviour wears a v4 kind, and only kinds v4 knows.
 
@@ -1070,7 +1163,8 @@ CHECKS: tuple[object, ...] = (
     test_r08, test_r08_ordinal, test_r09, test_r10, test_r10_two_slots, test_r11, test_r12,
     test_r13, test_r14, test_r15, test_r15_summary_acts,
     test_acting_owners_come_from_contracts, test_r16, test_r17, test_r18,
-    test_r18_records_are_seed_records, test_r18_extracted_items_belong_to_those_records, test_r19,
+    test_r18_records_are_seed_records, test_r18_extracted_items_belong_to_those_records,
+    test_r18_extracted_item_has_somewhere_to_go, test_r19,
     test_r19_reads_the_registry_when_it_exists, test_r20, test_r21, test_r21_the_other_way,
     test_synthetic_corpus_is_quiet, test_k01, test_k02_floor_not_ceiling, test_k03, test_k04,
     test_k05, test_k06, test_k07, test_k08, test_k09, test_k10, test_k11, test_k13,
@@ -1078,7 +1172,8 @@ CHECKS: tuple[object, ...] = (
     test_json_round_trip, test_has_result,
     test_registers_v5_mix, test_plate, test_plate_spoken_parses, test_system_prompt_v5,
     test_builder_guards, test_builder_refuses_an_invalid_case, test_prose_seed,
-    test_v4_kind_table, test_clean_register_case, test_no_pseudex,
+    test_seed_surface_is_the_column, test_v4_kind_table, test_clean_register_case,
+    test_no_pseudex,
 )
 
 

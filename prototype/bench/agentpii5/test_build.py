@@ -32,12 +32,34 @@ from pathlib import Path
 from bench.agentpii4.schema import case_from_json
 from bench.agentpii5 import build as b
 from bench.agentpii5 import contracts as c
+from bench.agentpii5 import mock
 from bench.agentpii5 import revise as revise_module
-from bench.agentpii5.contracts import CaseV5
+from bench.agentpii5.contracts import CaseV5, Hop
+from bench.agentpii5.metrics import leaf_value_ok, returned_as_item
 from bench.agentpii5.schema import case_v5_from_json, corpus_digest_v5, validate_corpus_v5
-from bench.agentpii5.tools import REGISTRY_V5
+from bench.agentpii5.scenarios5 import common
+from bench.agentpii5.tools import REGISTRY_V5, spec_v5_for
 
 SEED: int = b.SEED
+# The sentence an agent writes around a value it was handed. Any prose does;
+# what matters is that the value is INSIDE something else, which is the whole
+# difference between the free branch and byte equality.
+PROSE: str = "Здравствуйте, {value}! Ваш заказ принят, курьер приедет завтра."
+# Another person's value per type, two candidates each so one can be rejected
+# for sharing a word with the right answer. «ленина» is a street of half the
+# corpus, and a fixed decoy that collides with the case's own value reports a
+# vacuous transition where there is none.
+DECOYS: dict[str, tuple[str, str]] = {
+    "NAME": ("Шестаков Аркадий Феофанович", "Юрганова Ядвига Эдуардовна"),
+    "LOC": ("щербаковская", "тюфелева"),
+    "PHONE": ("+7 (901) 222-33-44", "+7 (902) 555-66-77"),
+    "EMAIL": ("zzz@example.org", "qqq@example.net"),
+    "DOB": ("1901-02-03", "1902-03-04"),
+    "INN": ("520832613767", "771234567890"),
+    "CARD": ("2200233420297500", "4276380012345678"),
+    "SNILS": ("168-408-927 05", "112-233-445 95"),
+    "PLATE": ("Х501УН36", "А997ММ63"),
+    "PASSPORT": ("6942 551133", "4510 123456")}
 # Built once, THROUGH THE REPORTING PATH. The corpus is 1 736 cases and the whole
 # assembly takes a second; doing it in six checks would make the suite slow
 # enough to stop being run. `build_reporting` is the same build plus the
@@ -154,24 +176,34 @@ def test_a_changed_corpus_refuses_the_kept_ladder() -> list[str]:
     The freeze above only ever saw a corpus that had not changed. Rebuilding
     with another seed into a directory holding today's ladder printed «лестница
     оставлена как есть» and exited 0 while 162 of 319 holdout ids named a
-    DIFFERENT case — a holdout frozen against nothing. The refusal names both
-    digests, and `--regenerate-ladder` is refused in turn if it would move a
+    DIFFERENT case — a holdout frozen against nothing. The refusal names the
+    movement, and `--regenerate-ladder` is refused in turn if it would move a
     case that still exists between tiers.
+
+    UNDER R-57 THE REFUSAL IS ABOUT MEMBERSHIP, NOT ABOUT THE HASH. A corpus
+    that changed only in bytes — a surface repaired, a column renamed — leaves
+    every tier holding the same case ids, and `build` refreshes the stamp and
+    prints the proof; a corpus whose draw would move even one id is refused and
+    the file is left alone.
     """
     problems: list[str] = []
     with tempfile.TemporaryDirectory() as folder:
         out = Path(folder)
         b.write_ladder(CASES, SEED, out, True, False)
-        mutated = [replace(CASES[0], base=replace(CASES[0].base, now="2031-01-01T00:00:00+03:00"))]
-        mutated.extend(CASES[1:])
-        kept, _lines, broken = b.write_ladder(mutated, SEED, out, False, False)
+        before = (out / "ladder.json").read_bytes()
+        # A corpus that lost two hundred cases: the draw moves ids between tiers,
+        # which is the movement the freeze exists for.
+        shrunk = CASES[: len(CASES) - 200]
+        kept, _lines, broken = b.write_ladder(shrunk, SEED, out, False, False)
         if kept is not None:
             problems.append("a changed corpus rebuilt the ladder by itself")
         if not broken:
-            problems.append("a corpus with another digest kept the ladder silently")
-        elif "--regenerate-ladder" not in broken[0]:
-            problems.append(f"the refusal does not name the way out: {broken[0]}")
-        # …and the refusal is about the DIGEST, not about any change: the same
+            problems.append("a corpus whose tiers moved kept the ladder silently")
+        elif "СДВИНУЛСЯ" not in broken[0]:
+            problems.append(f"the refusal does not name the movement: {broken[0]}")
+        if (out / "ladder.json").read_bytes() != before:
+            problems.append("a refused refresh wrote the file anyway")
+        # …and the refusal is about the MOVEMENT, not about any change: the same
         # cases are accepted again.
         _kept, _lines, still = b.write_ladder(CASES, SEED, out, False, False)
         if still:
@@ -386,6 +418,211 @@ def test_every_case_proves_its_declaration() -> list[str]:
     return problems
 
 
+def test_no_value_is_beyond_both_ways_of_scoring_it() -> list[str]:
+    """V06 (R-58): a value below the identifying floor that no result tags can
+    be scored by neither a span nor a needle, so it would sit in a denominator
+    nothing can move.
+
+    THE CORPUS CARRIES NO SUCH VALUE — and that is why the negative is BUILT
+    rather than found. The one class it had, the filled form's house number,
+    was removed from the declaration in the same round («19» names nobody and
+    stood inside «1977-01-07», which cost `doc_masked` eight cases of a perfect
+    gateway); a rule with nothing left to refuse in the corpus is exactly the
+    rule that has to be shown refusing something, or the next family to seed a
+    house number nobody reads brings the defect back in silence."""
+    problems: list[str] = []
+    if b.proof_problems(CASES):
+        problems.append(f"the built corpus does not prove itself: {b.proof_problems(CASES)[0]}")
+    if any(not mock.identifies_on_its_own(item.value)
+           for case in CASES for item in case.base.pii):
+        problems.append("a value below the identifying floor reached the corpus; V06 lets it "
+                        "through only while some result tags it, and that is a trap to look at")
+    case = next(one for one in CASES if any(item.where.kind == "seed" for item in one.base.pii))
+    seed = next(item for item in case.base.pii if item.where.kind == "seed")
+    # THE NEGATIVE, IN TWO INDEPENDENT HALVES. Short AND untagged is refused;
+    # each half alone is not, so the rule cannot be passing by accident of
+    # either condition.
+    for value, tagged, want in (("19", False, True), ("19", True, False),
+                                (seed.value, False, False)):
+        items = tuple(replace(item, value=value) if item.id == seed.id else item
+                      for item in case.base.pii)
+        records = case.base.seed_records if tagged else tuple(
+            replace(record, pii_ids=tuple(one for one in record.pii_ids if one != seed.id))
+            if record.id == seed.where.record else record
+            for record in case.base.seed_records)
+        doctored = replace(case, base=replace(case.base, pii=items, seed_records=records))
+        fired = [line for line in b.proof_problems([doctored]) if line.startswith("V06")]
+        if bool(fired) != want:
+            problems.append(f"V06 on value={value!r} tagged={tagged}: "
+                            f"{'fired' if fired else 'silent'}, expected "
+                            f"{'a refusal' if want else 'silence'}")
+    return problems
+
+
+def test_every_extracted_item_has_a_hop() -> list[str]:
+    """H4.1 over the BUILT corpus, not over a fixture: `doc_extracted`'s
+    denominator is `extracted_item_ids` and its numerator needs an OUT hop into
+    `extract_to_tool`, so an item with no such hop is a case the line cannot
+    ever credit. Fifty of 375 were exactly that — the ceiling was 86.7% and
+    nothing printed it. The table is checked against the corpus rather than
+    against a literal, so a family that grows cannot make the row stale."""
+    problems: list[str] = []
+    declared = 0
+    for case in CASES:
+        document = case.document
+        if document is None:
+            continue
+        declared += len(document.extracted_item_ids)
+        for item_id in document.extracted_item_ids:
+            if not any(hop.kind == "OUT" and hop.item_id == item_id
+                       and hop.tool_name == document.extract_to_tool for hop in case.hops):
+                problems.append(f"{case.base.id}: extracted {item_id} has no OUT hop into "
+                                f"{document.extract_to_tool}")
+    if not declared:
+        problems.append("no case extracts anything; the check measures nothing")
+    text = "\n".join(b.document_table(CASES))
+    if f"извлечения из документов: {declared} (переходов под них {declared})" not in text:
+        problems.append(f"the document table does not print {declared} extractions "
+                        f"with {declared} hops: {text!r}")
+    return problems
+
+
+def test_stamp_refreshes_only_when_membership_holds() -> list[str]:
+    """R-57: the freeze protects MEMBERSHIP, not a hash.
+
+    A repair that moves a case's bytes moves `corpus_sha256` and moves nobody
+    between tiers; pinning the ladder to the byte hash made every such repair a
+    choice between a stale stamp and reaching for the redraw flag, whose name
+    («no live run has read this ladder») is an assertion a repair has no
+    business making. So the stamp is refreshed in place with the proof printed
+    per tier; the half that makes the refresh mean anything — a corpus whose
+    membership DOES move is refused and the file left alone — is
+    `test_a_changed_corpus_refuses_the_kept_ladder`."""
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as folder:
+        out = Path(folder)
+        ladder, _lines, broken = b.write_ladder(CASES, SEED, out, True, True)
+        if ladder is None or broken:
+            return [f"the first build wrote no ladder: {broken}"]
+        first = json.loads((out / "ladder.json").read_text(encoding="utf-8"))
+        if "tier_sha256" not in first:
+            problems.append("the written ladder carries no per-tier membership hash")
+        # The SAME cases with one byte moved: every id stays, the digest does not.
+        repaired = [replace(case, base=replace(case.base, note=case.base.note + " "))
+                    for case in CASES]
+        _again, lines, broken = b.write_ladder(repaired, SEED, out, False, False)
+        refreshed = json.loads((out / "ladder.json").read_text(encoding="utf-8"))
+        if broken:
+            problems.append(f"a byte-only change was refused its own ladder: {broken}")
+        if refreshed["corpus_sha256"] != b.v4.corpus_digest([case.base for case in repaired]):
+            problems.append("the refreshed stamp is not the new corpus digest")
+        if refreshed["tiers"] != first["tiers"]:
+            problems.append("the refresh moved a tier")
+        if refreshed.get("tier_sha256") != first.get("tier_sha256"):
+            problems.append("the refresh changed a membership hash while keeping the ids")
+        holdout = len(first["tiers"]["holdout"])
+        if not any(f"холдаут не сдвинулся: 0 из {holdout}" in line for line in lines):
+            problems.append(f"the refresh printed no proof per tier: {lines}")
+        for tier in sorted(first["tiers"]):
+            if tier == "holdout":
+                continue
+            if not any(line.strip().startswith(f"{tier} не сдвинулся: 0") for line in lines):
+                problems.append(f"no proof line for tier {tier}")
+        if refreshed.get("tier_sha256", {}).get("holdout") != b.tier_sha256(
+                first["tiers"]["holdout"]):
+            problems.append("the id-set hash is not the hash of the ids beside it")
+        # AND THE SECOND REFRESH IS A NO-OP: the stamp now matches the corpus,
+        # so the ordinary «оставлена как есть» branch runs and writes nothing.
+        _kept, again, still = b.write_ladder(repaired, SEED, out, False, False)
+        if still or not any("оставлена как есть" in line for line in again):
+            problems.append(f"the refreshed ladder was not simply kept: {again} {still}")
+    return problems
+
+
+def _is_free_leaf(hop: Hop) -> bool:
+    """Does this OUT hop land in a field the agent writes PROSE into."""
+    spec = spec_v5_for(hop.tool_name, hop.path) if hop.tool_name and hop.path else None
+    return spec is not None and not spec.role and spec.kind == "free"
+
+
+def _decoy(pii_type: str, reference: str) -> str:
+    """Another person's value of the same type, sharing no word with this one."""
+    candidates = DECOYS.get(pii_type)
+    if candidates is None:
+        raise KeyError(f"no decoy declared for {pii_type!r}; a type the corpus carries "
+                       f"and this check cannot falsify is a check that passes by absence")
+    for candidate in candidates:
+        words = [word for word in candidate.lower().split() if len(word) > 3]
+        if not any(word[:4] in reference.lower() for word in words):
+            return candidate
+    raise ValueError(f"every {pii_type} decoy shares a word with {reference!r}")
+
+
+def test_free_text_transitions_can_be_won_and_lost() -> list[str]:
+    """H4.2: every hand-over that lands in PROSE is earnable by a gateway that
+    does the right thing AND failable by one that does not.
+
+    210 of the 938 declared transitions (22.4 %) put the value into a field the
+    agent composes a sentence around, and `leaf_value_ok` compared the whole
+    prose field byte for byte with the canonical — False by construction, so
+    `chain_value` charged the gateway for 22 % of its own denominator. The rule
+    is now containment, and a containment rule can fail the other way: a leaf
+    so permissive that another person's value also passes measures nothing. So
+    both halves are asserted per transition, and a transition that failed
+    either would be a corpus defect to drop — none does.
+
+    THE DECOY IS A VALUE OF THE SAME TYPE THAT SHARES NO WORD WITH THE RIGHT
+    ONE, checked rather than assumed: the first decoy list collided with the
+    corpus's own “ленина” and the check reported four vacuous transitions that
+    were nothing of the kind."""
+    problems: list[str] = []
+    seen = 0
+    for case in CASES:
+        pairs = [(hop, source) for hop, source in b.transitions_of(case)
+                 if _is_free_leaf(hop)]
+        if not pairs:
+            continue
+        rendered = {(call.tool_name, call.call_ordinal): dict(call.rendered)
+                    for call in mock.drive_returns(case)}
+        items = {item.id: item for item in case.base.pii}
+        for hop, source in pairs:
+            reference = rendered.get((source.tool_name, source.call_ordinal), {}).get(
+                source.item_id)
+            if reference is None:
+                problems.append(f"{case.base.id}: hop {hop.hop_index} sources a result that "
+                                f"renders nothing — V04's job, and it did not fire")
+                continue
+            seen += 1
+            target = returned_as_item(items[source.item_id], reference)
+            item = items[hop.item_id]
+            right = PROSE.format(value=reference)
+            wrong = PROSE.format(value=_decoy(item.type, reference))
+            if not leaf_value_ok(target, hop.tool_name, hop.path, right):
+                problems.append(f"{case.base.id}: {hop.tool_name}.{hop.path} cannot be won — "
+                                f"prose carrying {reference!r} scored a miss")
+            if leaf_value_ok(target, hop.tool_name, hop.path, wrong):
+                problems.append(f"{case.base.id}: {hop.tool_name}.{hop.path} cannot be lost — "
+                                f"prose carrying another person's value scored a hit")
+    if not seen:
+        problems.append("no transition lands in a free-text leaf; the check measures nothing")
+    text = "\n".join(b.chain_leaf_table(CASES))
+    if f"в свободный текст {seen}" not in text:
+        problems.append(f"the chain-leaf table does not print {seen} free-text transitions: "
+                        f"{text!r}")
+    return problems
+
+
+def test_no_item_carries_a_placeholder_surface() -> list[str]:
+    """Over the BUILT corpus: not one item's written surface is «None», «null»
+    or empty. 310 were «None» — and the surface is what the needle layer
+    indexes, so the stem «none» sat in every document case's own-stem
+    exemption and matched the literal word anywhere in a reply."""
+    bad = [f"{case.base.id}/{item.id} ({item.type}) = {item.value!r}"
+           for case in CASES for item in case.base.pii
+           if item.value.strip().lower() in common.PLACEHOLDER_SURFACES]
+    return [f"{len(bad)} items carry a placeholder surface: {bad[:4]}"] if bad else []
+
+
 def test_widened_watch_is_restored() -> list[str]:
     """The watch list is put back. A module-level tuple left extended would make
     every later v4 run watch a directory v4 does not own."""
@@ -404,6 +641,10 @@ CHECKS: tuple[Callable[[], list[str]], ...] = (
     test_corpus_size_and_plan, test_corpus_rules,
     test_v4_view_loads, test_v5_round_trip, test_holdout_frozen, test_holdout_is_disjoint,
     test_check_prints_shares, test_no_search_in_any_generator,
+    test_no_value_is_beyond_both_ways_of_scoring_it,
+    test_every_extracted_item_has_a_hop, test_free_text_transitions_can_be_won_and_lost,
+    test_no_item_carries_a_placeholder_surface,
+    test_stamp_refreshes_only_when_membership_holds,
     test_widened_watch_is_restored)
 
 

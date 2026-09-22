@@ -1,7 +1,7 @@
 {
  "version": 2,
  "seed": 4,
- "corpus_sha256": "621e904f5437492b330adf8c41c2b2e4718bd00ed876359b4bbb4ff2a27cd89c",
+ "corpus_sha256": "313313019b32dc6eba6eb2a49b4a66db380c9b39fa6ee688be9dcb0f8bd12910",
  "tiers": {
   "nano": [
    "branching-048",
@@ -3148,5 +3148,13 @@
    "validate-034",
    "validate-035"
   ]
+ },
+ "tier_sha256": {
+  "nano": "1b16b96012dbbb32ac031420c818c4dd9400a74e78c89ad53fa4c341a8ed16e2",
+  "small": "b2a65c655b77d3c94168f74e02f7a956b25b3b336a5b9ce49158c421c15ef03a",
+  "medium": "71caa36bb9346a6bb41c2b963141925d44637307da6b568f193cc9e65986a1bf",
+  "large": "b3135aba4ccc965e88c55c56f88c5aa96d924d676910618b8e6494cc1107f46e",
+  "holdout": "47fe55f7ad518a49c67e2c7691b5d86d887d7b1d80e93b5829e0dfb877a38bed",
+  "max": "f0f6dd85c7681384ce34c800b01b2c2f6c47c4b1c81245f51727d216454c5e33"
  }
 }

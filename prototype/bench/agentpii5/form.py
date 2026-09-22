@@ -235,8 +235,20 @@ def _word_cases(piece: str) -> frozenset[str] | None:
     with no nominative in them — so a perfect restoration of a nominative
     surname against a nominative minted one scored a case DIFFERENCE. The
     analyser is evidence about the word it recognised, and here it recognised
-    a different word."""
-    parses = _ANALYZER.parse(piece)
+    a different word.
+
+    A WORD THE ANALYSER DOES NOT KNOW IS SILENT FOR THE SAME REASON, and this
+    is the complete statement of the rule above rather than a second one.
+    pymorphy3 answers about an unknown string by GUESSING from its ending, out
+    of a table that does not contain the word: it reads «удфгей» as
+    {gent, accs} and «сергей» as {nomn}, so two strings wearing the same form
+    were scored a case difference by a prediction neither supports. A parse
+    with `is_known` false is that prediction; a dictionary parse is a reading.
+    Nothing a live run produces is affected where it matters — a substitute is
+    minted from a pool of real names and a real value is a real name, both
+    known — and the defect the feature exists for («Иванову Петру» against
+    «Иванов Пётр», known both, {datv, accs} against {nomn}) is untouched."""
+    parses = [parse for parse in _ANALYZER.parse(piece) if parse.is_known]
     named = [parse for parse in parses
              if any(tag in parse.tag for tag in ("Surn", "Name", "Patr"))]
     chosen = named or parses

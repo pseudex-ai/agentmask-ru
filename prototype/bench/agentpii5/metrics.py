@@ -45,29 +45,23 @@ from bench.agentpii5.contracts import (
     RunObservation,
     ToolResultRecord,
 )
-from bench.agentpii5.form_tables import (
-    GENERIC_ABBREVIATIONS,
-    GENERIC_STEMS,
-    MARKER_WORDS,
-)
+from bench.agentpii5.form_tables import GENERIC_WORDS
 from bench.agentpii5.observe import (
-    DIGIT_TYPES,
-    PHONE_SIGNATURE_DIGITS,
     answer_spans,
     calls_of_turn,
     covering_piece,
-    digits_of,
     fold,
+    item_survives_in,
     items_by_id,
-    needles_of,
     occurrences_of,
     own_stems,
-    pieces_of,
+    part_matches,
     result_for_hop,
     span_of_item,
     residual_answer_items,
     substitute_surfaces,
     survives_in,
+    value_needles,
 )
 from bench.agentpii5.tools import expected_leaf_value, spec_v5_for
 
@@ -86,9 +80,13 @@ CUE_WINDOW = 60
 REWRITE_RATIO_FLOOR = 0.7
 # Words that are grammar, not identity: a surviving «улица» or «д.» in a masked
 # tool result is not a leak, and counting it as one would make `coverage`
-# refuse every address the mock renders with its generic word.
-GRAMMAR_WORDS: frozenset[str] = frozenset(
-    (*GENERIC_STEMS, *GENERIC_ABBREVIATIONS, *MARKER_WORDS))
+# refuse every address the mock renders with its generic word. THE NAME IS KEPT
+# AND THE SET IS NOT SECOND: it is `form_tables.GENERIC_WORDS`, the one
+# vocabulary rule N4 of contracts §4bis reads, re-exported here because
+# `judge.py` subtracts the same words from its own evidence and two sets that
+# must stay equal are one drift away from the judge and the leak lines
+# disagreeing about whether «марта» identifies anybody.
+GRAMMAR_WORDS: frozenset[str] = GENERIC_WORDS
 
 
 # --- shared readers --------------------------------------------------------------------
@@ -147,47 +145,39 @@ def leaf_spec(tool_name: str, path: str) -> FieldSpec | None:
 _RETURNED_LOCUS: Locus = Locus(kind="seed", msg=-1, start=-1, end=-1, record="", path="")
 
 
-def returned_as_item(pii_type: str, returned: str) -> PiiItem:
+def returned_as_item(source: PiiItem, returned: str) -> PiiItem:
     """What tool A actually returned, read as an item.
 
     ONE DEFINITION OF «THE VALUE A LEAF EXPECTS» (`tools.expected_leaf_value`,
     ruling R-53) serves both the corpus's own item and the chain's hand-over,
-    and it takes an item — so the hand-over's target becomes one. Split with
-    `parts_of`, the one splitter this benchmark owns, so the chain cannot
-    disagree with the corpus about what the surname of a name is. The id and
+    and it takes an item — so the hand-over's target becomes one. The id and
     the identity stay empty on purpose: this value belongs to no population
     that counts identities, and giving it one would let it be mistaken for a
-    corpus item."""
-    return PiiItem(id="", type=pii_type, identity="", value=returned, canonical=returned,
-                   parts=parts_of(pii_type, returned), where=_RETURNED_LOCUS,
-                   duty="required", spoken=False, stale=False)
+    corpus item.
+
+    THE ROLES COME FROM THE SOURCE HOP'S OWN DECLARATION, NEVER FROM THE
+    STRING. Splitting the returned surface with `parts_of` re-guessed which
+    word is a surname from its SUFFIX, and the guess is wrong for every
+    surname that does not wear one: `leaf_value_ok` on `patient.last_name`
+    called «заболотный» and «миллер» the wrong value while «букин» passed by
+    accident of its ending — four transitions of the committed corpus, and the
+    class grows with any regeneration that draws a non-suffix-shaped name. The
+    corpus BUILT the item from its parts and states which role the result
+    rendered; reading them is free and cannot be wrong the way a suffix can."""
+    return replace(source, id="", identity="", value=returned, canonical=returned,
+                   parts=dict(source.parts), where=_RETURNED_LOCUS)
 
 
 def role_matches(pii_type: str, produced: str, target: str) -> bool:
     """Did THIS LEAF receive its own part of the value.
 
-    The part is stored in the type's own canonical notation — a PHONE's part
-    is ten digits, a DOB's is ISO — and the TOOL asks for its notation, which
-    is another one: `contact.phone` parses «+7…», `patient.birth_date` parses
-    ISO. Comparing the two strings byte for byte therefore says «wrong value»
-    about a leaf that is right, and it did: a PERFECT gateway topped out at
-    76.8% on `round_trip`, `end_to_end`, `multi_all_out`, `doc_extracted` and
-    `chain_value`, because every value metric compared a per-leaf hop with the
-    WHOLE canonical. Both sides go through `parts_of`, the one splitter this
-    benchmark owns, so the comparison is of digits with digits and of an ISO
-    date with an ISO date. The FORM the leaf wears is `form_hOUT`'s question
-    and is not folded in here."""
-    if not produced or not target:
-        return False
-    if pii_type in DIGIT_TYPES:
-        left, right = digits_of(produced), digits_of(target)
-        if pii_type == "PHONE":
-            left, right = left[-PHONE_SIGNATURE_DIGITS:], right[-PHONE_SIGNATURE_DIGITS:]
-        return bool(left) and left == right
-    if pii_type in ("DOB", "DATE"):
-        left, right = parts_of("DOB", produced).get("iso", ""), parts_of("DOB", target).get("iso", "")
-        return bool(left) and left == right
-    return fold(produced.strip()) == fold(target.strip())
+    A THIN CALLER OF `observe.part_matches` (contracts §4bis). The comparison
+    of two renderings of one part belongs to the needle layer — `leaf_holds`
+    asks it of a substitute and this line asks it of the real value, and two
+    copies of «is this the same part written another way» is exactly the
+    shape of the defect round 4 removed. The FORM the leaf wears is
+    `form_hOUT`'s question and is not folded in here."""
+    return part_matches(pii_type, produced, target)
 
 
 def leaf_value_ok(item: PiiItem, tool_name: str, path: str, produced: str) -> bool:
@@ -214,8 +204,22 @@ def leaf_value_ok(item: PiiItem, tool_name: str, path: str, produced: str) -> bo
     why the verdict stays pinned by a fixture
     (`fx_end_to_end_adversarial`): making it a silent hit would be the v4
     defect «a triple with nothing to compare passed all five levels» with the
-    parts table in its hand, and it would come back invisibly."""
+    parts table in its hand, and it would come back invisibly.
+
+    A FREE LEAF IS SATISFIED WHEN THE VALUE SURVIVES IN IT. `notify_sms.text`,
+    `ticket_create.text`, `escalate_to_human.summary` and `email_send.body`
+    are PROSE the agent composes around the value — «Здравствуйте, Миллер
+    Валерий! Ваш заказ принят.» — and byte equality with the whole canonical
+    is False by construction there: 210 of `chain_value`'s 938 declared
+    transitions (22.4 %) landed on such a leaf and could not be earned by any
+    gateway. The question that fits a value with prose around it is the needle
+    layer's (contracts §4bis, N1–N2), and it is the same one `answer_real`
+    asks of the reply, which is the same shape of text. It can still fail: a
+    leaf holding another value, an empty leaf, or one where the substitute was
+    never restored carries no needle of the expected value."""
     spec = leaf_spec(tool_name, path)
+    if spec is not None and spec.kind == "free":
+        return item_survives_in(item, item.canonical or item.value, produced)
     if spec is None or not spec.role:
         return value_matches(item.type, produced, item.canonical or item.value)
     return role_matches(item.type, produced, expected_leaf_value(item, spec))
@@ -262,13 +266,6 @@ def _item_value_repaired(hop: HopObservation, item: PiiItem) -> bool:
     return fold(hop.produced.strip())[:4] == fold(target)[:4]
 
 
-def _surviving_piece(pii_type: str, reference: str, masked: str) -> bool:
-    """A piece of the real value still standing in what the model read."""
-    folded = fold(masked)
-    return any(fold(piece) in folded and fold(piece) not in GRAMMAR_WORDS
-               for piece in pieces_of(pii_type, reference))
-
-
 def _mentions_of(one: RunObservation, item_id: str) -> list[MentionRecord]:
     return [mention for mention in one.run.mentions if mention.item_id == item_id]
 
@@ -293,7 +290,20 @@ def coverage(observations: Sequence[RunObservation]) -> Line:
     """Values of which NO piece survived. The number `leak` cannot give: a
     «Кузнецов Дмитрий» detected as «Дмитрий» is a leak of the surname that the
     leak line calls a success. City, generic word and markers are exempt — they
-    are place references and grammar, not the person."""
+    are place references and grammar, not the person (contracts §4bis, N4).
+
+    THREE POPULATIONS, ONE QUESTION, AND THE THIRD USED TO BE UNANSWERABLE.
+    A value the model met inside a TOOL RESULT is judged on the text it read;
+    a value SAID IN A MESSAGE is judged on whether its own span was replaced —
+    the message is on disk and the span check is the strongest evidence there
+    is. A value that stood in NO message — a seed the mock returns, recalled
+    at turn 7 — has `Locus(kind='seed', msg=-1)`, so `masked_spans.get(-1)`
+    was `()` and `inside` was False WHATEVER the gateway did: 70 declared
+    hops of the corpus (40 NAME, 20 DOB, 10 LOC) were a forced miss and a
+    perfect gateway's ceiling was 11660/11730. «Was its message span masked»
+    is a question about nothing for a value no message carried, so the hop is
+    decided the way it was OBSERVED: no piece of the real value may survive in
+    the substitute the transcript carried into that turn."""
     hits = 0
     total = 0
     for one, hop in _hops(observations, "IN"):
@@ -302,16 +312,25 @@ def coverage(observations: Sequence[RunObservation]) -> Line:
         total += 1
         if hop.status != "observed":
             continue
+        item = _item_of(one, hop.hop.item_id)
+        if item is None:
+            continue
         if hop.hop.owner in ("tool", "document"):
             record = result_for_hop(one.run, hop.hop)
             masked = record.text_masked if record is not None else ""
-            hits += 0 if _surviving_piece(hop.pii_type, hop.reference, masked) else 1
-        else:
-            item = _item_of(one, hop.hop.item_id)
-            spans = one.run.base.masked_spans.get(item.where.msg, ()) if item is not None else ()
-            inside = item is not None and any(
-                start <= item.where.start and item.where.end <= end for start, end in spans)
+            hits += 0 if item_survives_in(item, hop.reference, masked) else 1
+        elif item.where.kind == "message" and item.where.msg >= 0:
+            spans = one.run.base.masked_spans.get(item.where.msg, ())
+            inside = any(start <= item.where.start and item.where.end <= end
+                         for start, end in spans)
             hits += 1 if inside else 0
+        else:
+            # The CANONICAL, because a seed value has no written surface: 310
+            # items of the corpus carry the literal string «None» as `value`
+            # while their canonical is the datum (a `str(None)` that survived
+            # the build — reported to the corpus owner), and asking about
+            # «None» would ask about nothing.
+            hits += 0 if item_survives_in(item, item.canonical or item.value, hop.produced) else 1
     return _line("coverage", hits, total)
 
 
@@ -425,22 +444,46 @@ def overmask(observations: Sequence[RunObservation]) -> Line:
     return _line("overmask", hits, total)
 
 
-def consistency(observations: Sequence[RunObservation]) -> Line:
-    """One value, one substitute, across MESSAGES. The model has to believe the
-    second mention is the same person, and it cannot if the gateway re-minted.
+def _places_of(mentions: Sequence[MentionRecord]) -> set[tuple[int, int]]:
+    """The distinct PLACES the model met a value in: a message by its index, a
+    tool result by its sequence number.
 
-    THE POPULATION IS DISTINCT PLACES, NOT MENTIONS. `MentionRecord.msg` is the
-    message index, and every tool result carries `msg == -1`
-    (`harness.push_call`), so an item the model met only inside tool results is
-    in ONE place however many results printed it — `stability` is the line that
-    asks about repeats across requests. Counting mentions instead would put a
-    value said once into a population named «mentioned more than once»."""
+    THE RESULT IS A PLACE, AND SAYING OTHERWISE EMPTIED THE LINE. The harness
+    writes `msg == -1` for every tool-result mention (`harness.push_call`), so
+    a population keyed on `msg` alone collapsed every result the model ever
+    read into ONE place — and since no corpus item is BOTH said in a message
+    and echoed by a tool, `consistency` had an EMPTY population on all 1 736
+    cases and could print nothing but «н/п». A line that can only print «н/п»
+    is the instrument that cannot fail, which is the one thing this benchmark
+    refuses. A value printed in two different tool results was met in two
+    places by any reading of the word.
+
+    COUNTING MENTIONS INSTEAD WOULD PRINT THE SAME NUMBER, and that is a
+    property of the RECORD rather than a second rule: the harness writes at
+    most one mention per item per message and `contracts` allows one tag per
+    item per result («the FIRST rendering»), so a place holds one mention. The
+    place is still what is counted, because a record that ever wrote two
+    mentions for one place would otherwise put a value the model met ONCE into
+    a population named «met more than once»."""
+    return {(mention.msg, mention.result_seq) for mention in mentions}
+
+
+def consistency(observations: Sequence[RunObservation]) -> Line:
+    """One value, one substitute, across the PLACES the model met it — the
+    messages it was said in and the tool results that printed it. The model has
+    to believe the second mention is the same person, and it cannot if the
+    gateway re-minted.
+
+    THE POPULATION IS DISTINCT PLACES, NOT MENTIONS: counting mentions would
+    put a value said once into a population named «met more than once».
+    `stability` asks the neighbouring question of REQUESTS, and
+    `multi_consistency` of the calls of one turn."""
     hits = 0
     total = 0
     for one in observations:
         for item in one.case.base.pii:
             mentions = _mentions_of(one, item.id)
-            if len({mention.msg for mention in mentions}) < 2:
+            if len(_places_of(mentions)) < 2:
                 continue
             total += 1
             hits += 1 if len({mention.substitute for mention in mentions}) == 1 else 0
@@ -545,7 +588,7 @@ def out_absent(observations: Sequence[RunObservation]) -> Line:
     return _line("out_absent", sum(1 for hop in rows if hop.status == "absent"), len(rows))
 
 
-def _span_masked(record: ToolResultRecord, pii_type: str, span: tuple[int, int]) -> bool:
+def _span_masked(record: ToolResultRecord, item: PiiItem, span: tuple[int, int]) -> bool:
     """The slot was replaced AND no piece of what stood there survives anywhere
     in the text the model read.
 
@@ -554,17 +597,22 @@ def _span_masked(record: ToolResultRecord, pii_type: str, span: tuple[int, int])
     whole text, so a second rendering can never hide a leak», and the code
     read the tagged span only. A statement that prints the holder on every row
     tags row one; the rest of the customer's name went to the model with a
-    clean bill of health."""
+    clean bill of health.
+
+    THE ITEM AND NOT ITS TYPE, because the piece test is `observe.
+    item_survives_in` and that asks the corpus's own roles (contracts §4bis,
+    N4): a declared settlement is dropped by name, which a split of the
+    rendered surface could not do."""
     if covering_piece(record, span) is None:
         return False
-    return not _surviving_piece(pii_type, record.text_real[span[0]:span[1]], record.text_masked)
+    return not item_survives_in(item, record.text_real[span[0]:span[1]], record.text_masked)
 
 
 def _record_clean(record: ToolResultRecord, items: dict[str, PiiItem]) -> bool:
     """Every TAGGED slot of this result was masked, pieces included."""
     for tag, span in record.spans_real.items():
         owner = _tagged_item(items, tag)
-        if owner is None or not _span_masked(record, owner.type, span):
+        if owner is None or not _span_masked(record, owner, span):
             return False
     return True
 
@@ -598,7 +646,7 @@ def toolresult_masked(observations: Sequence[RunObservation]) -> Line:
             total += 1
             declared = all(
                 item_id in items and span_of_item(record, item_id) is not None
-                and _span_masked(record, items[item_id].type, span_of_item(record, item_id))
+                and _span_masked(record, items[item_id], span_of_item(record, item_id))
                 for item_id in expect.result_item_ids)
             hits += 1 if declared and _record_clean(record, items) else 0
     return _line("toolresult_masked", hits, total)
@@ -726,8 +774,9 @@ def chain_value(observations: Sequence[RunObservation]) -> Line:
     for one, hop, source in rows:
         left, right = _item_of(one, hop.hop.item_id), _item_of(one, source.hop.item_id)
         same_identity = left is not None and right is not None and left.identity == right.identity
-        arrived = leaf_value_ok(returned_as_item(hop.pii_type, source.reference),
-                                hop.hop.tool_name, hop.hop.path, hop.produced)
+        arrived = right is not None and leaf_value_ok(
+            returned_as_item(right, source.reference),
+            hop.hop.tool_name, hop.hop.path, hop.produced)
         hits += 1 if (hop.status == "observed" and same_identity and arrived) else 0
     return _line("chain_value", hits, len(rows))
 
@@ -779,8 +828,8 @@ def same_substitute(pii_type: str, left: str, right: str) -> bool:
     one substitute read twice; «Смирнова Анна» is a second mint."""
     if fold(left.strip()) == fold(right.strip()):
         return True
-    own = {needle for kind, needle in needles_of(pii_type, left) if kind != "whole"}
-    theirs = {needle for kind, needle in needles_of(pii_type, right) if kind != "whole"}
+    own = {needle.text for needle in value_needles(pii_type, left) if needle.role}
+    theirs = {needle.text for needle in value_needles(pii_type, right) if needle.role}
     return bool(own & theirs)
 
 
@@ -952,7 +1001,7 @@ def _obtained(records: Sequence[ToolResultRecord],
     never obtained is outside the denominator — cannot be applied at all."""
     return [record for record in records
             if any(span_of_item(record, item.id) is not None
-                   or _surviving_piece(item.type, item.value, record.text_masked)
+                   or item_survives_in(item, item.value, record.text_masked)
                    for item in declared)]
 
 
@@ -991,10 +1040,10 @@ def rag_masked(observations: Sequence[RunObservation]) -> Line:
                         # Declared, returned, and tagged by nothing: the value
                         # is in the text the model read, so it is a MISS — the
                         # `all([]) == True` v4 defect, on the retrieval leg.
-                        if _surviving_piece(item.type, item.value, record.text_masked):
+                        if item_survives_in(item, item.value, record.text_masked):
                             good = False
                         continue
-                    if not _span_masked(record, item.type, span):
+                    if not _span_masked(record, item, span):
                         good = False
                 # Every OTHER tagged slot of this chunk counts too: the
                 # retriever returns whole rows and a foreign person in one is
@@ -1003,7 +1052,7 @@ def rag_masked(observations: Sequence[RunObservation]) -> Line:
                     owner = _tagged_item(items, tag)
                     if owner is None or owner.where.record != chunk_id:
                         continue
-                    if not _span_masked(record, owner.type, span):
+                    if not _span_masked(record, owner, span):
                         good = False
             hits += 1 if good else 0
     return _line("rag_masked", hits, total)
@@ -1095,7 +1144,7 @@ def doc_masked(observations: Sequence[RunObservation]) -> Line:
             for item in declared or one.case.base.pii:
                 if span_of_item(record, item.id) is not None:
                     continue
-                if _surviving_piece(item.type, item.value, record.text_masked):
+                if item_survives_in(item, item.value, record.text_masked):
                     good = False
         hits += 1 if good else 0
     return _line("doc_masked", hits, total)
@@ -1104,13 +1153,41 @@ def doc_masked(observations: Sequence[RunObservation]) -> Line:
 def doc_extracted(observations: Sequence[RunObservation]) -> Line:
     """Values the agent lifted OUT of the document and into the tool, counted
     on whether the tool got the real one. The other half of `doc_masked`: a
-    document perfectly masked whose values never come back is useless."""
+    document perfectly masked whose values never come back is useless.
+
+    THE POPULATION IS THE EXTRACTION THE CASE DECLARES A HOP FOR, not every id
+    in `extracted_item_ids`. Two families name an extracted item the corpus
+    gives the agent NOWHERE to put — `document-050` i8 into `bank_client_find`
+    and `document-075` i8 into `vehicle_check`, 25 cases each — so 50 of 375
+    items had no declared OUT hop into `extract_to_tool` and could not be hits
+    whatever the gateway or the agent did: a ceiling of 86.7 %, which is
+    exactly what a perfect gateway printed. A denominator with an unreachable
+    floor in it is the mirror of v4's D1 («nothing to compare passed»): it
+    cannot be earned instead of cannot be failed, and both make the number
+    mean something other than what it says.
+
+    IT STAYS ABLE TO FAIL, and that is why the declared HOP and not the
+    declared item is the unit: the hop is the case's own statement that this
+    value must reach that tool, and an agent that never wrote it leaves the
+    hop `absent` — inside the denominator, counted as a miss, exactly like
+    every other declared OUT hop. What left is only the item the corpus asks
+    nobody to carry. The corpus owner is asked to make the two agree
+    (`build --check`: an extracted item with no arg hop into `extract_to_tool`
+    is a corpus defect); when they do, this denominator is the other one."""
     hits = 0
     total = 0
     for one in observations:
         if one.case.document is None:
             continue
         for item_id in one.case.document.extracted_item_ids:
+            # THE CASE'S OWN DECLARATION decides the denominator, never the
+            # hops the observer emitted: an OPTIONAL hop the agent skipped is
+            # not emitted at all, so counting emitted hops would let the agent
+            # shrink the total by doing less — the v4 D3 defect.
+            if not any(hop.kind == "OUT" and hop.item_id == item_id
+                       and hop.tool_name == one.case.document.extract_to_tool
+                       for hop in one.case.hops):
+                continue
             total += 1
             item = _item_of(one, item_id)
             hop = next((one_hop for one_hop in one.hops

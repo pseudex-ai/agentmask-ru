@@ -344,22 +344,33 @@ def answer_leg(raw_reply: str, streaming: bool, vault: Vault,
     return AnswerLeg(reply=chunked, reply_whole=whole, mismatch=mismatch)
 
 
-def with_streamed_answer(turns: tuple[str, ...], answer: str) -> tuple[str, ...]:
-    """The last spoken turn replaced by what the STREAMING customer read.
+def turn_restorer(case: CaseV5, gateway: RealGateway) -> Callable[[str], str]:
+    """ONE restoration leg for EVERY turn of one case.
 
-    `restored_turn_replies` restores every turn whole, which is right for the
-    intermediate ones (they were not streamed to anyone by this harness) and
-    wrong for the final one: `observe`'s answer leg, the judge's evidence and
-    the report all read the answer, and two spellings of it in one record is a
-    number nobody can reproduce. A run whose agent said nothing keeps its empty
-    tuple — there is no turn to replace and inventing one would fabricate a
-    reply.
+    A `streaming` case is delivered chunk by chunk from the first turn, not
+    from the last: the sidecar's per-field contract applies to every
+    `delta.content` the agent produces. The harness used to restore the final
+    reply through the chunk contract (F3.1) and every EARLIER turn whole — so
+    the judge read, and `turn_residual` counted, intermediate turns nobody was
+    served. Measured on 250 intermediate replies built from the corpus's own
+    streaming cases through the production masking path: 4 differ between the
+    two restorations and in ONE of them a minted substitute still stands in the
+    chunked text while the whole-text leg resolved it — a residual the customer
+    saw and the record denied.
+
+    The final turn is then the chunked restoration BY CONSTRUCTION rather than
+    by a second pass over it (`with_streamed_answer`, deleted): `answer_leg`
+    and this leg apply the same function to the same string, so the record
+    cannot hold two answers.
     """
-    spoken = [position for position, text in enumerate(turns) if text.strip()]
-    if not spoken:
-        return turns
-    return tuple(answer if position == spoken[-1] else text
-                 for position, text in enumerate(turns))
+    if not case.streaming:
+        return gateway.restore_text
+    vault = gateway.vault
+
+    def chunked(text: str) -> str:
+        return restore_stream(text, vault, STREAM_CHUNK)
+
+    return chunked
 
 
 # --- one gateway arm ----------------------------------------------------------------------
@@ -520,9 +531,7 @@ async def run_arm_v5(case: CaseV5, arm: str, repeat: int, gateway: GatewayV5,
                    session_id=sid, subtype=str(worst.subtype), is_error=bool(worst.is_error),
                    api_error_status=worst.api_error_status,
                    errors=tuple(str(one) for one in (worst.errors or ())), reason="", cap_usd=cap)
-    turn_replies = restored_turn_replies(replies, gateway.restore_text)
-    if case.streaming and reply:
-        turn_replies = with_streamed_answer(turn_replies, reply)
+    turn_replies = restored_turn_replies(replies, turn_restorer(case, gateway))
     run = ArmRunV5(base=base, reply_raw=raw_reply, control_reply="",
                    tool_results=gateway.tool_records(), mentions=gateway.mentions(),
                    turn_replies=turn_replies,
@@ -678,13 +687,14 @@ def restored_turn_replies(raw_replies: Sequence[str],
     `with_control_reply` is one: that function needs a live model and this
     claim has to be pinnable offline (`test_harness`).
 
-    The LAST non-empty entry is the same text `raw_reply` is taken from, so it
-    restores to the final answer. On a `streaming` case `run_arm_v5` then lays
-    the CHUNKED restoration over that entry (`with_streamed_answer`), because
-    the whole-text restoration of the final turn is a text nobody was served
-    and the record must hold one answer, not two. The dialogue the judge sees
-    drops the last non-empty turn either way: the answer is evidence and has
-    its own section.
+    WHICH restoration is the caller's to choose (`turn_restorer`): a streaming
+    case is read chunk by chunk from its first turn, and this function must not
+    know two ways to restore a string. The LAST non-empty entry is the same
+    text `raw_reply` is taken from, so under one leg it restores to the same
+    final answer `answer_leg` scored — the record holds one answer because one
+    function produced both, not because a second pass copied it over. The
+    dialogue the judge sees drops the last non-empty turn either way: the
+    answer is evidence and has its own section.
     """
     return tuple(restore(text) if text.strip() else "" for text in raw_replies)
 
@@ -1040,10 +1050,11 @@ def foreign_run_ids(run_dir: Path, run_id: str) -> tuple[str, ...]:
 
     EVERY READER OF A RUN DIRECTORY TAKES ONE RUN ID, AND TAKES IT BY NAME
     ORDER: `report.run_id_of` and `calibration._run_id` both pick
-    `sorted(glob("*.arms.jsonl"))[0]`. `--resume <dir>` with no `--out` writes
-    into the DEFAULT directory — `runs/<today>/v5-live-<tier>`, normally the
-    very directory being resumed — under a FRESH uuid, so two ids end up side
-    by side. The readers then take the alphabetically first: the new run's
+    `sorted(glob("*.arms.jsonl"))[0]`. Any run with no `--out` writes into the
+    DEFAULT directory — `runs/<today>/v5-live-<tier>` — under a FRESH uuid, so
+    two ids end up side by side whenever one tier is run twice in a day: a
+    `--resume` into the directory being resumed (how this was found) and two
+    ordinary runs alike. The readers then take the alphabetically first: the new run's
     hops, judge file and meta are on disk and read by nothing, while its arm
     rows ARE merged in (`records.merged_v5_records` globs every file), so every
     case of the new run reads as hopless and the report is a mixture of two
@@ -1139,12 +1150,18 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     # BEFORE `write_corpus`, which would overwrite the resumed run's own
     # snapshot of the corpus — the file `--report` replays against.
-    foreign = foreign_run_ids(out, run_id) if args.resume else ()
+    # ON EVERY RUN, NOT ONLY ON `--resume`. The default `--out` is
+    # `runs/<today>/v5-live-<tier>`, which two ordinary runs of one tier on one
+    # day share without either of them saying `--resume` — and then every
+    # reader takes the alphabetically first id while `merged_v5_records` globs
+    # both. The guard was gated on the flag because that is the path the defect
+    # was FOUND on, which is not the same as the path it lives on.
+    foreign = foreign_run_ids(out, run_id)
     if foreign:
         print(f"{out} уже содержит прогон(ы) {', '.join(foreign)}: второй идентификатор в "
               f"одном каталоге читатели не различают (report.run_id_of и calibration._run_id "
-              f"берут первый по имени). Продолжение пишите в СВОЙ каталог: "
-              f"--resume {args.resume} --out <новый каталог>", file=sys.stderr)
+              f"берут первый по имени). Пишите в СВОЙ каталог: --out <новый каталог>",
+              file=sys.stderr)
         return 2
     write_corpus(out, cases, digest)
     already, resumed = _resume(Path(args.resume)) if args.resume else (frozenset(), 0.0)

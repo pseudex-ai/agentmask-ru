@@ -51,8 +51,9 @@ from functools import lru_cache
 
 from bench.agentpii4.compare import ObservedCall, PairVerdict
 from bench.agentpii4.parts import parts_of
+from bench.agentpii4.pools import BuildError, parse_numerals
 from bench.agentpii4.schema import PiiItem
-from bench.agentpii4.tools import flatten
+from bench.agentpii4.tools import FieldSpec, flatten
 from bench.agentpii5 import contracts
 from bench.agentpii5.contracts import (
     ArmRunV5,
@@ -61,23 +62,38 @@ from bench.agentpii5.contracts import (
     Hop,
     HopObservation,
     MentionRecord,
+    Needle,
     RunObservation,
+    Survival,
     ToolResultRecord,
 )
 from bench.agentpii5.form import form_match
-from bench.agentpii5.form_tables import CYRILLIC_TO_LATIN
-from bench.agentpii5.tools import REGISTRY_V5, spec_v5_for
+from bench.agentpii5.form_tables import CYRILLIC_TO_LATIN, GENERIC_WORDS
+from bench.agentpii5.tools import REGISTRY_V5, expected_leaf_value, spec_v5_for
 
-# A piece of a substitute short enough to stand inside an unrelated word is not
-# evidence that the substitute was there. Four characters is v4's own floor in
-# `residual` detection and the public harness's; a shorter one matched «Лев»
-# inside «Лебедева» and attributed one person's answer span to another.
-MIN_PIECE = 4
-# Roles `parts_of` returns that are NOT the personal datum: the settlement is a
-# place reference every Russian city shares (`docs/…` and v4's own rule), and
-# the generic word and the markers are grammar, not identity. Used by
-# `pieces_of` so `coverage` does not call a surviving «Ижевск» a leak.
-EXEMPT_ROLES: frozenset[str] = frozenset({"city", "gender"})
+# THE NEEDLE LAYER LIVES HERE AND NOWHERE ELSE (contracts §4bis, rules N1–N6).
+# The rules and every table they read are stated there; this file is their ONE
+# implementation, and `metrics.py` imports it rather than restating any part of
+# it — the round-3 defect was precisely that `metrics._surviving_piece` held a
+# second, weaker notion of a «piece» and it was the one guarding the leak lines.
+# The names below are local spellings of the contract's constants, never second
+# values: a copy that has to stay equal to another copy is the drift v3 taught
+# v4 to refuse.
+MIN_PIECE: int = contracts.PIECE_MIN_CHARS
+MIN_STEM: int = contracts.STEM_MIN_CHARS
+MIN_DIGITS: int = contracts.PIECE_MIN_DIGITS
+MIN_INITIALS: int = contracts.MIN_INITIALS
+PHONE_SIGNATURE_DIGITS: int = contracts.PHONE_SIGNATURE_DIGITS
+GENERIC_ROLES: frozenset[str] = contracts.GENERIC_PIECE_ROLES
+DIGIT_TYPES: frozenset[str] = contracts.DIGIT_PIECE_TYPES
+DATE_TYPES: frozenset[str] = contracts.DATE_PIECE_TYPES
+DERIVED_TYPES: frozenset[str] = contracts.DERIVED_PIECE_TYPES
+SQUEEZED_TYPES: frozenset[str] = contracts.SQUEEZED_TYPES
+# The kinds an `exempt` set may cancel (N5): a piece another value of the same
+# conversation also carries is evidence of neither. A whole surface, a digit
+# signature and a date fold are never cancelled — a fake phone does not wear the
+# real one's digits and a fake name does not spell the real one.
+EXEMPTABLE_KINDS: tuple[str, ...] = ("stem", "initials")
 # An `equal` run shorter than this INSIDE a rewritten region is noise, not
 # shared text: «ПАХОМОВА» → «ИВАНОВА» aligns as replace/«О»/replace because the
 # two words share one letter, and the raw spans that come out carry no whole
@@ -85,25 +101,8 @@ EXEMPT_ROLES: frozenset[str] = frozenset({"city", "gender"})
 # before anything reads them, and the floor is `MIN_PIECE` for the same reason
 # `MIN_PIECE` is four: below it a match is a coincidence.
 MIN_EQUAL_RUN = 4
-# Roles that belong to EVERYBODY, so a needle built from them proves nothing
-# about which value stood in a string: the settlement, the grammatical gender,
-# the mail domain («@yandex.ru»), the street's generic word. `EXEMPT_ROLES` is
-# the narrower list `coverage` uses (what is not a LEAK); this is the list the
-# ATTRIBUTION uses (what is not EVIDENCE) and it is wider — a surviving
-# «yandex.ru» is not a leak AND is not proof that a particular address was
-# written.
-GENERIC_ROLES: frozenset[str] = frozenset({"city", "gender", "domain", "street_type"})
-# Types whose identity is a DIGIT SIGNATURE and never a spelling: the model
-# reformats «+79990001122» as «8 999 000-11-22» and the letters-and-stems test
-# finds nothing at all. PHONE compares the last ten digits, because +7 and 8
-# are the same number said twice (`pseudex.vault`'s own canonicalisation rule,
-# arrived at here independently — this package never imports the engine).
-DIGIT_TYPES: frozenset[str] = frozenset({"PHONE", "CARD", "SNILS", "INN", "PASSPORT"})
-PHONE_SIGNATURE_DIGITS = 10
-# A date is neither: «14.03.1987» and «1987-03-14» share no substring at all.
-DATE_TYPES: frozenset[str] = frozenset({"DOB", "DATE"})
 
-# The three shapes a needle can be found in. `_WORD` is a run of LETTERS, so a
+# The shapes a needle is looked for in. `_WORD` is a run of LETTERS, so a
 # stem match is anchored at a word start and «Лев» inside «Лебедева» — the
 # attribution bug MIN_PIECE exists for — cannot come back through the stems.
 _WORD = re.compile(r"[^\W\d_]+", re.UNICODE)
@@ -118,17 +117,11 @@ _RU_DATE = re.compile(r"(\d{1,2})[./](\d{1,2})[./](\d{4})")
 # A word CHARACTER, for the boundaries the initials needle stands between: the
 # same class `_WORD` is built from, so «П.О.» inside «СП.О.» is not a match.
 _WORD_CHAR = r"[^\W\d_]"
-# Types whose value a model rewrites in another ALPHABET or squeezes to
-# initials. NAME only, and deliberately: `contracts.FORM_FEATURES` declares
-# `script` and `initials` for NAME alone, the engine ships the leg for names
-# (`pseudex.translit.align`, `prototype/test_derived_forms.py`), and a
-# transliterated STREET needle would fire on ordinary Latin text in an address
-# field without any derived form being there.
-DERIVED_TYPES: frozenset[str] = frozenset({"NAME"})
-# Two letters is the shortest squeezed initials a needle may carry: one letter
-# («П.») stands in front of a third of the Russian alphabet's worth of names
-# and in the middle of ordinary abbreviations.
-MIN_INITIALS = 2
+# Separators a value may be written with and still be the same value. Used ONLY
+# to build the `squeezed` needle of `contracts.SQUEEZED_TYPES` and to compare
+# one plate with another; a general squeeze would weld two neighbouring words
+# into a needle.
+_SEPARATORS = re.compile(r"[\s.\-–—_()]+")
 
 
 class ObserveError(ValueError):
@@ -168,16 +161,62 @@ def items_by_id(case: CaseV5) -> dict[str, PiiItem]:
     return {item.id: item for item in case.base.pii}
 
 
-def pieces_of(pii_type: str, surface: str) -> tuple[str, ...]:
-    """The pieces of a value whose survival is a leak — the typed parts minus
-    the exempt roles, minus anything shorter than `MIN_PIECE`."""
-    parts = parts_of(pii_type, surface)
-    return tuple(value for role, value in sorted(parts.items())
-                 if role not in EXEMPT_ROLES and len(value) >= MIN_PIECE)
+def squeeze(text: str) -> str:
+    """The text with every separator dropped, case- and ё-folded.
+
+    ONE reading of «the same value written with other spaces», used by the
+    `squeezed` needle of `contracts.SQUEEZED_TYPES` and by `part_matches` for
+    the same types. A gateway that left the fake plate in a tool argument
+    RESPACED was invisible to all 29 lines while the same fake written verbatim
+    was caught — the critical-defect line defeated by inserting spaces."""
+    return _indexable_fold(_SEPARATORS.sub("", text))
 
 
 def digits_of(text: str) -> str:
     return "".join(character for character in text if character.isdigit())
+
+
+@lru_cache(maxsize=4096)
+def _is_numeral_word(word: str) -> bool:
+    """Is this ONE word a Russian numeral the corpus's own decoder knows?
+
+    ASKED OF THE DECODER, never of a second table. `pools.parse_numerals` is
+    what the corpus SPELLS its dictated values with, and its `BuildError` is
+    its own answer to «this is not a numeral» — the one signal, caught for the
+    one question. A numeral list written here would be a second vocabulary
+    that has to stay equal to the first."""
+    try:
+        return bool(parse_numerals((word,)))
+    except BuildError:
+        return False
+
+
+def spoken_digits_of(text: str) -> str:
+    """The digits a DICTATED identifier spells out, or "" when it spells none.
+
+    THE SAME VALUE, SAID INSTEAD OF WRITTEN (contracts §4bis, N2). 45 % of the
+    corpus is the voice register, and a substitute the model READ as «восемь
+    девятьсот шестьдесят…» and wrote into a tool as «+79606226394» carries no
+    needle of the spoken surface at all: `digits_of` returns "" there, the
+    signature is empty, and the leaf reads `unmasked` — the gateway's own
+    restoration invisible to `residual`, `round_trip` and `retry_form` for no
+    reason but the notation the customer chose.
+
+    The LONGEST run of numeral words is decoded, because a dictated identifier
+    sits inside a sentence («мой телефон восемь девятьсот…») and
+    `parse_numerals` refuses a word it does not know rather than skipping it."""
+    best = ""
+    run: list[str] = []
+    for word in [fold(one) for one in _WORD.findall(text)] + [""]:
+        if word and _is_numeral_word(word):
+            run.append(word)
+            continue
+        if run:
+            digits = parse_numerals(tuple(run))
+            if len(digits) > len(best):
+                best = digits
+            run = []
+    return best
 
 
 def date_folds(text: str) -> tuple[tuple[int, int, str], ...]:
@@ -238,68 +277,189 @@ def initials_of(pii_type: str, surface: str) -> tuple[str, ...]:
     return tuple(sorted(out))
 
 
-def needles_of(pii_type: str, surface: str) -> tuple[tuple[str, str], ...]:
-    """(kind, needle) pairs that say «this value stood here», in the shapes a
-    MODEL writes it — not only the one the gateway minted.
+def stem_of(word: str) -> str:
+    """The prefix of ONE word that survives its declension (contracts §4bis).
+
+    `MIN_PIECE` characters, except for a word that HAS only `MIN_PIECE`: there
+    the four-character prefix is the whole word, so «Анну» stopped matching
+    «Анна» and a four-letter given name left in a tool argument in another case
+    read `unmasked` — `residual` blind to a fake for no reason but the length
+    of the name. The match is anchored at a word START (`_WORD`), which is what
+    keeps a short stem from coming back as the «Лев» inside «Лебедева» the
+    floor exists for."""
+    folded = fold(word)
+    if len(folded) > MIN_PIECE:
+        return folded[:MIN_PIECE]
+    return folded[:max(MIN_STEM, len(folded) - 1)]
+
+
+def identifying_words(value: str, generic: frozenset[str]) -> tuple[str, ...]:
+    """The words of ONE role that identify (contracts §4bis, N3 and N4).
+
+    PER WORD, never one prefix of the whole role, and that is the round-4 fix.
+    `parts_of` lumps every word of an address it cannot type into ONE
+    ALPHABETICALLY SORTED `street` blob — «можга школьная дом 64» → street
+    «можга школьная» — so the single four-character prefix of the join was
+    «можг», the CITY, and the street had no needle at all. Over the corpus's
+    2 770 LOC items, 626 (22.6 %) carried no needle matching their street and
+    294 carried one containing a space, which no word token can ever match.
+
+    A word shorter than `MIN_PIECE` is a coincidence, and a word of the generic
+    vocabulary («улица», «дом», a month name — `form_tables.GENERIC_WORDS`)
+    or of `generic` (the value's own settlement, when the caller knows it) is
+    grammar rather than identity. A street NAMED after a month loses its stem
+    needle and keeps its whole one; a needle that fired on «марта» would report
+    a leak in every restored date."""
+    out: list[str] = []
+    for word in _WORD.findall(value):
+        folded = fold(word)
+        if len(folded) < MIN_PIECE or folded in GENERIC_WORDS or folded in generic:
+            continue
+        out.append(word)
+    return tuple(out)
+
+
+def needles_of(pii_type: str, surface: str, parts: dict[str, str]) -> tuple[Needle, ...]:
+    """THE ONE BUILDER (contracts §4bis). Every needle of one value, in the
+    shapes a MODEL writes it — not only the one the gateway minted.
 
     v1 of this observer looked for whole surfaces and whole parts, so a
     correctly restored «Пахомовой Ольге» (dative) and a reformatted «+7 (999)
     000-11-22» both read `absent`: two of the three registers the corpus is
-    built from write exactly that way. The six kinds are the six ways a
-    Russian value survives being rewritten — verbatim, declined (a word stem),
-    renotated (a digit signature), reformatted (a date fold), TRANSLITERATED
-    and SQUEEZED TO INITIALS.
+    built from write exactly that way. `NEEDLE_KINDS` are the shapes a Russian
+    value survives being rewritten in — verbatim, respaced, declined,
+    renotated, refolded, TRANSLITERATED and SQUEEZED TO INITIALS — and the last
+    two are not an extra: without them a substitute the agent wrote as
+    «Pakhomova Olga» or «П.О.» matched nothing, `_out_status` called the leaf
+    `unmasked`, and `residual` printed the leaf CLEAN while the fake sat in the
+    customer's CRM.
 
-    THE LAST TWO ARE NOT AN EXTRA: without them a substitute the agent wrote
-    as «Pakhomova Olga» or «П.О.» matched nothing, `_out_status` called the
-    leaf `unmasked`, and `residual` — the line whose whole job is «a fake
-    reached the consumer» — printed the leaf CLEAN while the fake sat in the
-    customer's CRM. The same blindness scored a CORRECT derived-form round
-    trip a miss on `form_hOUT`, `end_to_end` and `round_trip`, on the very
-    axis `contracts.FORM_FEATURES["NAME"]` declares (`script` with three
-    published tables, `initials`) and the engine ships (`pseudex.translit`).
-    The renderings come from this package's own letter table, never from
-    `pseudex`."""
-    out: list[tuple[str, str]] = [("whole", surface)]
+    `parts` IS THE VALUE'S DECOMPOSITION AND THE CALLER SAYS WHERE IT CAME
+    FROM: `item_needles` passes the roles the CORPUS built the value from
+    (clean street, city named apart), `value_needles` passes what `parts_of`
+    read off an unknown string (the sorted blob). Both are split per word by
+    `identifying_words`; only the declared path can drop the settlement by
+    name, which is why the leak lines use it and the residual lines — which ask
+    about a SUBSTITUTE nobody declared — use the other and lean on `exempt`
+    (N5) for the customer's own words."""
+    if not surface:
+        return ()
+    out: list[Needle] = [Needle(kind="whole", role="", text=surface)]
+    if pii_type in SQUEEZED_TYPES:
+        squeezed = squeeze(surface)
+        if squeezed:
+            out.append(Needle(kind="squeezed", role="", text=squeezed))
     if pii_type in DIGIT_TYPES:
-        digits = digits_of(surface)
+        digits = digits_of(surface) or spoken_digits_of(surface)
         signature = digits[-PHONE_SIGNATURE_DIGITS:] if pii_type == "PHONE" else digits
-        if len(signature) >= MIN_PIECE:
-            out.append(("digits", signature))
+        if len(signature) >= MIN_DIGITS:
+            out.append(Needle(kind="digits", role="digits", text=signature))
         return tuple(out)
     if pii_type in DATE_TYPES:
-        out += [("date", iso) for _start, _end, iso in date_folds(surface)]
+        # The declared ISO joins the ones read off the surface, so a DICTATED
+        # date («пятое июня восемьдесят восьмого») still has a fold to be found
+        # by in a text that WRITES it. `date_folds` reads digits only.
+        folds = {iso for _start, _end, iso in date_folds(surface)}
+        declared = parts.get("iso", "")
+        if declared:
+            folds.add(declared)
+        out += [Needle(kind="date", role="iso", text=iso) for iso in sorted(folds)]
         return tuple(out)
-    for role, value in sorted(parts_of(pii_type, surface).items()):
-        if role in GENERIC_ROLES or len(value) < MIN_PIECE:
-            continue
-        out.append(("stem", fold(value)[:MIN_PIECE]))
-        if pii_type in DERIVED_TYPES:
-            # The Latin prefixes ride as `stem` needles ON PURPOSE: `own_stems`
-            # collects the stems of the customer's OWN values and
-            # `survives_in` skips them, so a real name the agent transliterated
-            # cannot be reported as a surviving substitute. A separate kind
-            # would need its own copy of that exemption, and a second copy is
-            # how the two come to disagree.
-            out += [("stem", prefix) for prefix in latin_prefixes(value, MIN_PIECE)]
-    out += [("initials", letters) for letters in initials_of(pii_type, surface)]
+    generic = frozenset(fold(word) for role, value in parts.items()
+                        if role in GENERIC_ROLES for word in _WORD.findall(value))
+    for role in contracts.IDENTIFYING_ROLES.get(pii_type, ()):
+        for word in identifying_words(parts.get(role, ""), generic):
+            out.append(Needle(kind="stem", role=role, text=stem_of(word)))
+            if pii_type in DERIVED_TYPES:
+                # The Latin prefixes ride as `stem` needles ON PURPOSE: the
+                # `exempt` set (N5) collects the stems of the customer's OWN
+                # values and `survival` skips them, so a real name the agent
+                # transliterated cannot be reported as a surviving substitute.
+                # A separate kind would need its own copy of that exemption,
+                # and a second copy is how the two come to disagree.
+                out += [Needle(kind="stem", role=role, text=prefix)
+                        for prefix in latin_prefixes(word, MIN_PIECE)]
+    out += [Needle(kind="initials", role="", text=letters)
+            for letters in initials_of(pii_type, surface)]
     return tuple(out)
 
 
-def _needle_spans(kind: str, needle: str, text: str) -> list[tuple[int, int]]:
-    if not needle:
+def value_needles(pii_type: str, surface: str) -> tuple[Needle, ...]:
+    """The needles of a bare STRING — a substitute the model read, something a
+    model wrote. The roles are read off the surface by `parts_of`, the one
+    splitter this benchmark owns."""
+    return needles_of(pii_type, surface, parts_of(pii_type, surface))
+
+
+def item_needles(item: PiiItem, surface: str) -> tuple[Needle, ...]:
+    """The needles of a CORPUS value: `surface` as the record rendered it, the
+    roles as the corpus BUILT them.
+
+    The corpus never parses its own surfaces (v4's `parts.py` says why), so the
+    declared roles name the street without the settlement and the settlement
+    apart — which is what lets N4 drop it. Parsing the same address back would
+    weld the two into one blob and make the city a needle for the street.
+
+    THE DECLARATION DESCRIBES THE ITEM'S OWN VALUE AND NOTHING ELSE. A record
+    that rendered exactly that value (separators and case aside) is described
+    by the corpus's roles; one that rendered something else — a declined form,
+    a second person's value in the same slot — is not, and reading the
+    declaration onto it would build the needles of one string and look for
+    them in another. `parts_of` is the only honest reading there, and it is
+    the one the substitute side uses for the same reason."""
+    parts = (dict(item.parts) if squeeze(surface) in (squeeze(item.value), squeeze(item.canonical))
+             else parts_of(item.type, surface))
+    return needles_of(item.type, surface, parts)
+
+
+def pieces_of(pii_type: str, surface: str) -> tuple[str, ...]:
+    """The identifying PIECES of a value — the needles that name a role. A thin
+    reader of `value_needles`, kept as a name because the pieces are what
+    «coverage» and the fixtures talk about; there is no second rule here."""
+    return tuple(sorted({needle.text for needle in value_needles(pii_type, surface)
+                         if needle.role}))
+
+
+def _squeezed_spans(needle: str, text: str) -> list[tuple[int, int]]:
+    """Where a `squeezed` needle stands in `text`, mapped back to the text's own
+    offsets. The map is built from the kept characters, so a match that begins
+    at squeezed position i begins at `at[i]` in the original."""
+    kept: list[str] = []
+    at: list[int] = []
+    for index, character in enumerate(text):
+        if not _SEPARATORS.fullmatch(character):
+            kept.append(_indexable_fold(character))
+            at.append(index)
+    folded = "".join(kept)
+    return [(at[start], at[start + len(needle) - 1] + 1)
+            for start, _end in _occurrences(folded, needle)]
+
+
+def _needle_spans(needle: Needle, text: str) -> list[tuple[int, int]]:
+    """Where ONE needle stands in `text`. Every kind of `NEEDLE_KINDS` has a
+    branch and an unknown kind RAISES — a silent «no match» for a shape
+    nobody implemented is how a needle comes to be declared and never looked
+    for."""
+    if not needle.text:
         return []
-    if kind == "whole":
-        return _occurrences(_indexable_fold(text), _indexable_fold(needle))
-    if kind == "stem":
+    if needle.kind == "whole":
+        return _occurrences(_indexable_fold(text), _indexable_fold(needle.text))
+    if needle.kind == "squeezed":
+        return _squeezed_spans(needle.text, text)
+    if needle.kind == "stem":
         return [(match.start(), match.end()) for match in _WORD.finditer(text)
-                if fold(match.group()).startswith(needle)]
-    if kind == "digits":
+                if fold(match.group()).startswith(needle.text)]
+    if needle.kind == "digits":
         return [(match.start(), match.end()) for match in _NUMBER_RUN.finditer(text)
-                if needle in digits_of(match.group())]
-    if kind == "initials":
-        return [(match.start(), match.end()) for match in _initials_re(needle).finditer(text)]
-    return [(start, end) for start, end, iso in date_folds(text) if iso == needle]
+                if needle.text in digits_of(match.group())]
+    if needle.kind == "initials":
+        return [(match.start(), match.end())
+                for match in _initials_re(needle.text).finditer(text)]
+    if needle.kind == "date":
+        return [(start, end) for start, end, iso in date_folds(text) if iso == needle.text]
+    raise ObserveError(
+        f"needle kind {needle.kind!r} has no way of being looked for; "
+        f"contracts.NEEDLE_KINDS is the closed list {list(contracts.NEEDLE_KINDS)}")
 
 
 @lru_cache(maxsize=512)
@@ -316,56 +476,193 @@ def _initials_re(needle: str) -> re.Pattern[str]:
     return re.compile(rf"(?<!{_WORD_CHAR}){body}(?!{_WORD_CHAR})", re.IGNORECASE)
 
 
+def survival(needles: Sequence[Needle], text: str, exempt: frozenset[str]) -> Survival:
+    """THE ONE ANSWER to «does this value survive in this text» (contracts
+    §4bis). Whole-value presence, identifying-piece presence and the spans,
+    from ONE pass over ONE needle set.
+
+    IT TAKES THE NEEDLES AND NOT THE VALUE, so the two readers of the layer —
+    `item_needles` for a value the corpus declared, `value_needles` for a
+    string nobody declared — meet here rather than each carrying its own copy
+    of the search.
+
+    `exempt` is the only filter (N5) and it cancels `EXEMPTABLE_KINDS` alone:
+    the customer's own stems on the residual side, nothing on the leak side,
+    where the needles are built from the real value and every generic role is
+    already gone. `whole` is true when a WHOLE-VALUE shape matched — the
+    surface, its squeeze, or its initials — because each of the three is the
+    value itself rather than a part of it."""
+    whole = False
+    pieces: set[str] = set()
+    spans: list[tuple[int, int]] = []
+    for needle in needles:
+        if needle.kind in EXEMPTABLE_KINDS and needle.text in exempt:
+            continue
+        hits = _needle_spans(needle, text)
+        if not hits:
+            continue
+        spans += hits
+        if needle.role:
+            pieces.add(needle.role)
+        else:
+            whole = True
+    return Survival(whole=whole, pieces=frozenset(pieces), spans=tuple(sorted(set(spans))))
+
+
 def occurrences_of(pii_type: str, surface: str, text: str) -> tuple[tuple[int, int], ...]:
     """Where `surface` stands in `text`, inflection and notation included."""
-    spans = [span for kind, needle in needles_of(pii_type, surface)
-             for span in _needle_spans(kind, needle, text)]
-    return tuple(sorted(set(spans)))
+    return survival(value_needles(pii_type, surface), text, frozenset()).spans
 
 
 def own_stems(case: CaseV5) -> frozenset[str]:
-    """Word stems the customer's OWN real values already carry.
+    """Word stems the customer's OWN real values already carry — the `exempt`
+    set of N5, built ONCE per case.
 
     A substitute may share a given name with the value it replaced — the
     engine mints from a pool, not from a disjoint alphabet — and the RESTORED
-    reply is full of real values. Without this filter «Пахомова Елена»
-    standing for «Иванова Елена» would make every correctly restored answer
-    read as a surviving substitute, and `residual`, the critical-defect line,
-    would fire on the product working."""
+    reply is full of real values. Without this filter «Пахомова Елена» standing
+    for «Иванова Елена» would make every correctly restored answer read as a
+    surviving substitute, and `residual`, the critical-defect line, would fire
+    on the product working.
+
+    EVERY ROLE, the generic ones included. A real settlement welded into a
+    parsed street blob is a word the customer's own address carries, and
+    leaving it out would make «Омск» standing in a restored reply read as a
+    piece of the fake address."""
     out: set[str] = set()
     for item in case.base.pii:
         for surface in (item.value, item.canonical):
-            out.update(needle for kind, needle in needles_of(item.type, surface)
-                       if kind in ("stem", "initials"))
-        for role, value in item.parts.items():
-            if role not in GENERIC_ROLES and len(value) >= MIN_PIECE:
-                out.add(fold(value)[:MIN_PIECE])
+            if not surface:
+                continue
+            for needles in (item_needles(item, surface), value_needles(item.type, surface)):
+                out.update(needle.text for needle in needles
+                           if needle.kind in EXEMPTABLE_KINDS)
+        for value in item.parts.values():
+            for word in _WORD.findall(value):
+                if len(fold(word)) < MIN_PIECE:
+                    continue
+                out.add(stem_of(word))
                 if item.type in DERIVED_TYPES:
-                    out.update(latin_prefixes(value, MIN_PIECE))
+                    out.update(latin_prefixes(word, MIN_PIECE))
     return frozenset(out)
 
 
 def survives_in(pii_type: str, surface: str, text: str, own: frozenset[str]) -> bool:
-    """Is `surface` — a SUBSTITUTE — still standing in `text`?
-
-    The stems the customer's own values carry are skipped (`own_stems`); the
-    whole surface, the digit signature and the date fold are not, because a
-    fake phone never wears the real one's digits and a fake name never spells
-    the real one."""
-    for kind, needle in needles_of(pii_type, surface):
-        # `initials` joins `stem` in the exemption: «И.Е.» is the customer's
-        # own initials as much as the substitute's when the two share their
-        # first letters, and evidence both values support is evidence of
-        # neither.
-        if kind in ("stem", "initials") and needle in own:
-            continue
-        if _needle_spans(kind, needle, text):
-            return True
-    return False
+    """Is `surface` — a SUBSTITUTE, whose decomposition nobody declared — still
+    standing in `text`?"""
+    return survival(value_needles(pii_type, surface), text, own).found
 
 
 def carries_any(pii_type: str, surfaces: Sequence[str], text: str, own: frozenset[str]) -> bool:
     return any(surface and survives_in(pii_type, surface, text, own) for surface in surfaces)
+
+
+def item_survives_in(item: PiiItem, surface: str, text: str) -> bool:
+    """Is a piece of the REAL value still standing in what the model read — the
+    leak question, asked of the corpus's own item so the roles are the declared
+    ones (N4: the settlement is named apart and dropped).
+
+    THIS REPLACES `metrics._surviving_piece`, which was a plain folded
+    SUBSTRING test over parts `parts_of` had already NORMALISED and therefore
+    asked for a string that does not occur in the value itself: over every
+    written surface of the corpus it failed on 329 of 329 plates, 156 of 176
+    СНИЛС, 148 of 175 cards and 29.5 % of addresses — the leak check under
+    six lines, unable to find a value in a text that IS the value. `exempt` is
+    empty here BY CONSTRUCTION: the needles come from the real value, so there
+    is no other value of the conversation whose renderings could cancel them."""
+    return survival(item_needles(item, surface), text, frozenset()).found
+
+
+def part_matches(pii_type: str, produced: str, target: str) -> bool:
+    """Two renderings of the SAME part, compared in the part's own notation.
+
+    The part is stored in the type's canonical notation — a PHONE's part is ten
+    digits, a DOB's is ISO — and the TOOL asks for its own: `contact.phone`
+    parses «+7…», `patient.birth_date` parses ISO. Comparing the two strings
+    byte for byte therefore says «wrong value» about a leaf that is right, and
+    it did: a PERFECT gateway topped out at 76.8 % on `round_trip`,
+    `end_to_end`, `multi_all_out`, `doc_extracted` and `chain_value`. A PLATE
+    is compared squeezed for the same reason: the spacing is `form_hOUT`'s
+    question, and charging the value line for it would make one defect two."""
+    if not produced or not target:
+        return False
+    if pii_type in DIGIT_TYPES:
+        left, right = digits_of(produced), digits_of(target)
+        if pii_type == "PHONE":
+            left, right = left[-PHONE_SIGNATURE_DIGITS:], right[-PHONE_SIGNATURE_DIGITS:]
+        return bool(left) and left == right
+    if pii_type in DATE_TYPES:
+        left = parts_of("DOB", produced).get("iso", "")
+        right = parts_of("DOB", target).get("iso", "")
+        return bool(left) and left == right
+    if pii_type in SQUEEZED_TYPES:
+        left, right = squeeze(produced), squeeze(target)
+        return bool(left) and left == right
+    return fold(produced.strip()) == fold(target.strip())
+
+
+# A leaf holding one character carries no evidence: «7» stands inside every
+# address of the corpus. Two is the floor for the containment reading below,
+# and the other two readings are exact comparisons that need no floor.
+MIN_LEAF_CONTAINED = 2
+
+
+def leaf_holds(pii_type: str, surfaces: Sequence[str], minted: dict[str, str], real: str,
+               text: str) -> bool:
+    """Does this ONE-VALUE tool leaf hold a piece of the SUBSTITUTE rather than
+    the customer's own datum (contracts §4bis, N6)?
+
+    THE LEAF, NOT THE WHOLE VALUE. `_out_status` used to ask `carries_any` of
+    the needles of the whole substitute, and no needle of a whole address can
+    live in `address.building` = «79»: a house or a flat number is below
+    `MIN_PIECE`, `city` and `street_type` are generic, and a digit-typed
+    value's signature is the WHOLE digit string. So a decomposed leaf read
+    `unmasked` for ever — un-earnable by a right gateway and un-failable by a
+    wrong one at once, the two halves of the same blindness: the SAME house
+    leaf printed `unmasked` for a gateway that restored it and for one that
+    left the fake standing.
+
+    THREE READINGS OF «a piece of the substitute», and they are one rule and
+    not a ladder: the leaf may hold the fake whole (the notation-aware
+    comparison), one of the fake's own parts (the same comparison, per part),
+    or a stretch of it that the fake's parts do not name — the settlement of an
+    address, which `parts_of` welds into the street blob. The customer's own
+    value for this leaf is excluded FIRST, so a correctly restored leaf can
+    never read as a residual however short its text.
+
+    `minted` IS THE RUN'S OWN RECORD of the substitute's roles
+    (`ArmRun.substitutes[item][1]`), read beside the parts of its surface and
+    not instead of them. A substitute the model read SPOKEN — «пятнадцать» for
+    the house — has a surface no splitter can take a house number out of,
+    while the record kept the roles the mint produced; asking only the surface
+    made those leaves `unmasked`, which is the same blindness one level down."""
+    if not text:
+        return False
+    if real and part_matches(pii_type, text, real):
+        return False
+    squeezed = squeeze(text)
+    if any(part_matches(pii_type, text, part) for part in minted.values()):
+        return True
+    for surface in surfaces:
+        if not surface:
+            continue
+        if part_matches(pii_type, text, surface):
+            return True
+        if any(part_matches(pii_type, text, part)
+               for part in parts_of(pii_type, surface).values()):
+            return True
+        if len(squeezed) >= MIN_LEAF_CONTAINED and squeezed in squeeze(surface):
+            return True
+    return False
+
+
+def minted_parts(run: ArmRunV5, item_id: str) -> dict[str, str]:
+    """The roles of the substitute AS THE RUN RECORDED THEM. Read rather than
+    re-derived: `compare.substitutes_for` writes them beside the surface, and a
+    spoken substitute («дом пятнадцать») has roles in the record that no
+    splitter can take back out of its surface."""
+    minted = run.base.substitutes.get(item_id)
+    return dict(minted[1]) if minted is not None else {}
 
 
 def substitute_surfaces(run: ArmRunV5, item_id: str) -> tuple[str, ...]:
@@ -754,7 +1051,30 @@ def _in_memory(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem
                  "leaked" if said else "absent")
 
 
-def _out_status(pii_type: str, surfaces: Sequence[str], written: str, restored: str,
+def _leaf_carries(item: PiiItem, spec: FieldSpec | None, surfaces: Sequence[str],
+                  minted: dict[str, str], text: str, own: frozenset[str]) -> bool:
+    """Does this leaf hold this item's substitute?
+
+    THE ONE PLACE the readings of contracts §4bis N6 are put together, so
+    `_out_status` and the undeclared-hop attribution can never disagree about
+    which question a leaf answers.
+
+    A leaf the schema names for one PART is asked both, and the union is not a
+    fallback: `leaf_holds` sees what no needle of a whole value can see (a
+    house number, a passport series, a settlement), and the needles see what no
+    part comparison can (the DERIVED forms — «Pakhomova Olga» in a name field,
+    «П.О.» squeezed into it — which are renderings of the whole name and of no
+    single part). Either is evidence that the fake stood in the leaf; dropping
+    the second cost the derived-form round trip its status, and dropping the
+    first is the blindness round 4 removed."""
+    if spec is not None and spec.role:
+        return (leaf_holds(item.type, surfaces, minted, expected_leaf_value(item, spec), text)
+                or carries_any(item.type, surfaces, text, own))
+    return carries_any(item.type, surfaces, text, own)
+
+
+def _out_status(item: PiiItem, spec: FieldSpec | None, surfaces: Sequence[str],
+                minted: dict[str, str], written: str, restored: str,
                 own: frozenset[str]) -> str:
     """The status of an OUT leaf, decided HERE and not by the engine's report.
 
@@ -766,10 +1086,20 @@ def _out_status(pii_type: str, surfaces: Sequence[str], written: str, restored: 
     and a benchmark that asks the defendant whether it left a fake in the
     customer's CRM is not measuring anything; the scan of the restored leaf
     is the same one `residual_answer_items` runs on the reply.
-    """
-    if not carries_any(pii_type, surfaces, written, own):
+
+    TWO QUESTIONS, ONE PER SHAPE OF LEAF (contracts §4bis, N6). A leaf the tool
+    schema names for ONE PART of a value — `address.building`, `person.series`,
+    `contact.first_name` — is asked `leaf_holds`: no needle of a whole address
+    can live in «79», so asking the whole value's needles made every decomposed
+    leaf `unmasked` for ever, un-earnable and un-failable at once (632 of 2 449
+    OUT leaves on a 400-case slice of the corpus, every LOC house, flat, city,
+    entrance and every PASSPORT series and number among them). A leaf that
+    carries the value WHOLE — a free-text SMS, a joined by-fields address — is
+    asked the needles, which is the question that fits a string with prose
+    around it."""
+    if not _leaf_carries(item, spec, surfaces, minted, written, own):
         return "unmasked"
-    return "residual" if carries_any(pii_type, surfaces, restored, own) else "observed"
+    return "residual" if _leaf_carries(item, spec, surfaces, minted, restored, own) else "observed"
 
 
 def _out_call(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem,
@@ -785,19 +1115,56 @@ def _out_call(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem,
         return None if hop.optional else _flat(case, repeat, hop, True, item.type, "", "", "absent")
     written = leaf_text(flatten(call.written), hop.tool_name, hop.path)
     restored = leaf_text(flatten(call.restored), hop.tool_name, hop.path)
-    status = _out_status(item.type, substitute_surfaces(run, item.id), written, restored, own)
+    status = _out_status(item, spec_v5_for(hop.tool_name, hop.path),
+                         substitute_surfaces(run, item.id), minted_parts(run, item.id),
+                         written, restored, own)
     if status == "observed":
         return _observed(case, repeat, hop, True, item.type, restored, written)
     return _flat(case, repeat, hop, True, item.type, restored, written, status)
+
+
+def _narrowed(text: str, hits: Sequence[tuple[int, int]]) -> str:
+    """The stretch of `text` one item's own occurrences cover, or "" when it
+    has none there."""
+    if not hits:
+        return ""
+    return text[min(start for start, _end in hits):max(end for _start, end in hits)]
+
+
+def answer_pair(run: ArmRunV5, item: PiiItem, span: AttributedSpan) -> tuple[str, str]:
+    """(what the customer received, what the agent wrote) for ONE item of ONE
+    rewritten region of the reply.
+
+    A SHARED REGION IS NARROWED TO THIS ITEM'S OWN TEXT. `answer_spans` keeps
+    the grouping rather than resolving it (`shared_block_answer` counts it),
+    and a region holding «+7 250 759-96-08. smumknko@example.ru» carries two
+    data: handing the comparator that whole string asked whether a PHONE's
+    grouping and separators are the same in a text that also holds an e-mail,
+    and the answer is a verdict about nothing — 254 of the form misses a
+    perfect gateway printed, on the only leg where the agent chooses how close
+    two values stand. Each side is narrowed by its OWN occurrences: the raw
+    side by the substitute's, the restored side by the real value's, because
+    the two strings are different lengths and no offset carries across.
+
+    Narrowing needs BOTH sides; when either cannot be located the whole region
+    is the honest reading, which is also what a single-item region gets."""
+    raw = run.reply_raw[span.raw_start:span.raw_end]
+    restored = run.base.reply[span.restored_start:span.restored_end]
+    if len(span.item_ids) < 2:
+        return restored, raw
+    wrote = _narrowed(raw, [one for surface in substitute_surfaces(run, item.id)
+                            for one in occurrences_of(item.type, surface, raw)])
+    got = _narrowed(restored, [one for surface in (item.canonical, item.value) if surface
+                               for one in occurrences_of(item.type, surface, restored)])
+    return (got, wrote) if wrote and got else (restored, raw)
 
 
 def _out_answer(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem,
                 spans: Sequence[AttributedSpan], residual: frozenset[str]) -> HopObservation | None:
     for span in spans:
         if item.id in span.item_ids:
-            return _observed(case, repeat, hop, True, item.type,
-                             run.base.reply[span.restored_start:span.restored_end],
-                             run.reply_raw[span.raw_start:span.raw_end])
+            produced, reference = answer_pair(run, item, span)
+            return _observed(case, repeat, hop, True, item.type, produced, reference)
     if item.id in residual:
         return _flat(case, repeat, hop, True, item.type, "", "", "residual")
     # The agent NAMED the person and wrote the real value: the gateway never
@@ -849,17 +1216,21 @@ def _extra_call_hops(case: CaseV5, run: ArmRunV5, repeat: int, declared: Sequenc
             # Matched with the ITEM's type, not the leaf's: the needle shapes
             # are a property of the value («is this a digit signature or a
             # word stem?»), and an agent that wrote a phone into a name field
-            # is exactly the crossing this branch exists to catch.
+            # is exactly the crossing this branch exists to catch. The leaf's
+            # own shape decides WHICH question is asked, exactly as in
+            # `_out_status`: an undeclared `address.flat` is found by the part
+            # it holds, never by a needle of the whole address.
             item_id = next((item.id for item in case.base.pii
-                            if carries_any(item.type, surfaces[item.id], written, own)), "")
+                            if _leaf_carries(item, spec, surfaces[item.id],
+                                             minted_parts(run, item.id), written, own)), "")
             hop = _synthetic("OUT", contracts.hop_owner_of_leaf(call.name, path),
                              item_id, turn, call.name, ordinal, path)
             # No item's substitute is in this leaf: the agent wrote something
             # the gateway never touched. It is still a crossing of the form
             # axis — and it has nothing to compare, so it is `unmasked`.
             status = ("unmasked" if not item_id
-                      else _out_status(items_by_id(case)[item_id].type, surfaces[item_id],
-                                       written, restored, own))
+                      else _out_status(items_by_id(case)[item_id], spec, surfaces[item_id],
+                                       minted_parts(run, item_id), written, restored, own))
             out.append(_observed(case, repeat, hop, False, spec.pii_type, restored, written)
                        if status == "observed"
                        else _flat(case, repeat, hop, False, spec.pii_type, restored, written, status))
@@ -869,6 +1240,7 @@ def _extra_call_hops(case: CaseV5, run: ArmRunV5, repeat: int, declared: Sequenc
 def _extra_answer_hops(case: CaseV5, run: ArmRunV5, repeat: int, declared: Sequence[Hop],
                        spans: Sequence[AttributedSpan]) -> list[HopObservation]:
     claimed = {hop.item_id for hop in declared if hop.kind == "OUT" and hop.owner == "answer"}
+    items = items_by_id(case)
     types = {item.id: item.type for item in case.base.pii}
     out: list[HopObservation] = []
     for span in spans:
@@ -876,9 +1248,8 @@ def _extra_answer_hops(case: CaseV5, run: ArmRunV5, repeat: int, declared: Seque
             if item_id in claimed or types.get(item_id) not in contracts.FORM_FEATURES:
                 continue
             hop = _synthetic("OUT", "answer", item_id, -1, "", -1, "")
-            out.append(_observed(case, repeat, hop, False, types[item_id],
-                                 run.base.reply[span.restored_start:span.restored_end],
-                                 run.reply_raw[span.raw_start:span.raw_end]))
+            produced, reference = answer_pair(run, items[item_id], span)
+            out.append(_observed(case, repeat, hop, False, types[item_id], produced, reference))
     return out
 
 

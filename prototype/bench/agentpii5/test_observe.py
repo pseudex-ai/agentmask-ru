@@ -40,11 +40,20 @@ from bench.agentpii5.fixtures import (
 )
 from bench.agentpii5.observe import (
     ObserveError,
+    Needle,
+    _needle_spans,
     answer_spans,
     carried_substitute,
     carries_any,
+    item_needles,
+    item_survives_in,
+    leaf_holds,
     observe,
+    own_stems,
+    stem_of,
+    survives_in,
     turn_request,
+    value_needles,
 )
 
 NAME = _item("p1", "NAME", REAL_NAME, REAL_NAME, "i1", _in_message(0, 0, len(REAL_NAME)))
@@ -533,6 +542,267 @@ def test_seed_item_has_no_message_span() -> list[str]:
         f"a seed item read from a tool result must be observed against its own text: {got}"]
 
 
+# --- contracts §4bis: the needle layer, rule by rule ------------------------------------
+
+# One value per type, in the notation the corpus writes it in. The list is the
+# closed `contracts.FORM_TYPES` minus nothing: a type left out of it would be a
+# type whose leak check nobody ever ran.
+_VALUES: tuple[tuple[str, str, dict[str, str]], ...] = (
+    ("NAME", "Иванова Елена Петровна",
+     {"surname": "Иванова", "given": "Елена", "patronymic": "Петровна"}),
+    ("LOC", "омск переулок барышникова 7кв111",
+     {"city": "омск", "street": "барышникова", "house": "7", "flat": "111"}),
+    ("PHONE", "+7 999 000-11-22", {"digits": "9990001122"}),
+    ("CARD", "2200 2334 2029 7500", {"digits": "2200233420297500"}),
+    ("SNILS", "168-408-927 05", {"digits": "16840892705"}),
+    ("INN", "500 100 732 259", {"digits": "500100732259"}),
+    ("PASSPORT", "6942 474016", {"series": "6942", "number": "474016"}),
+    ("DOB", "05.06.1988", {"iso": "1988-06-05"}),
+    ("DATE", "05.06.1988", {"iso": "1988-06-05"}),
+    ("EMAIL", "voronina96@gmail.com", {"local": "voronina96", "domain": "gmail.com"}),
+    ("PLATE", "А220ММ96",
+     {"letter": "А", "digits": "220", "pair": "ММ", "region": "96"}),
+)
+
+
+def _typed_item(pii_type: str, surface: str, parts: dict[str, str]):  # noqa: ANN202
+    """A fixture item with the roles the CORPUS would have built it from,
+    rather than the ones `parts_of` reads back off the surface — which is the
+    whole difference `item_needles` exists for (contracts §4bis, N3/N4)."""
+    return replace(_item("n1", pii_type, surface, surface, "i1",
+                         _in_message(0, 0, len(surface))), parts=parts)
+
+
+def test_a_text_that_is_the_value_contains_it() -> list[str]:
+    """N1, the layer's own tripwire. `metrics._surviving_piece` was a folded
+    SUBSTRING test over parts `parts_of` had already NORMALISED, so it asked
+    for a string that does not occur in the value itself: `pieces_of` returned
+    () for every plate, the bare digit run for a spaced card, the ISO fold for
+    a dotted date and an ALPHABETICALLY SORTED blob for a comma-less address.
+    Over every written surface of the corpus it failed on 329 of 329 plates,
+    156 of 176 СНИЛС and 29.5 % of addresses — the leak check under six
+    lines, blind to a value standing in the open."""
+    problems: list[str] = []
+    for pii_type, surface, parts in _VALUES:
+        if not item_survives_in(_typed_item(pii_type, surface, parts), surface, surface):
+            problems.append(f"{pii_type}: the value does not survive in ITSELF ({surface!r})")
+        if not survives_in(pii_type, surface, surface, frozenset()):
+            problems.append(f"{pii_type}: the substitute does not survive in ITSELF")
+    return problems
+
+
+def test_a_value_inside_a_longer_text_is_found() -> list[str]:
+    """N2, in the shapes a MODEL writes a value: verbatim inside prose,
+    renotated, respaced, dictated. Each pair is (what the value is, what the
+    text says), and the text is never the value."""
+    pairs: tuple[tuple[str, str, str, dict[str, str]], ...] = (
+        ("NAME", "Пахомова Ольга", "передал Пахомовой Ольге вчера", {}),
+        ("PHONE", "+79990001122", "звоните 8 (999) 000-11-22 после двух", {}),
+        ("PLATE", "А220ММ96", "номер А 22 0ММ 96 записан", {}),
+        ("DOB", "05.06.1988", "родился 1988-06-05 в Омске", {}),
+        ("CARD", "2200233420297500", "карта 2200 2334 2029 7500 списана", {}),
+        ("PHONE", "восемь девятьсот девяносто девять ноль ноль ноль одиннадцать двадцать два",
+         "записал +7 999 000-11-22 в CRM", {}),
+    )
+    problems: list[str] = []
+    for pii_type, surface, text, parts in pairs:
+        if not survives_in(pii_type, surface, text, frozenset()):
+            problems.append(f"{pii_type}: {surface!r} not found in {text!r}")
+        if surface in text:
+            problems.append(f"the {pii_type} pair is verbatim, so it proves nothing")
+    # AND IT MUST NOT INVENT ONE. Another person, another number, another day.
+    for pii_type, surface, text in (
+            ("NAME", "Пахомова Ольга", "передал Сидорову Петру"),
+            ("PHONE", "+79990001122", "звоните 8 (999) 000-11-23"),
+            ("PLATE", "А220ММ96", "номер А 22 1ММ 96"),
+            ("DOB", "05.06.1988", "родился 1988-06-06")):
+        if survives_in(pii_type, surface, text, frozenset()):
+            problems.append(f"{pii_type}: {surface!r} invented in {text!r}")
+    return problems
+
+
+def test_a_generic_word_is_not_an_identifying_piece() -> list[str]:
+    """N4. The settlement, the street's generic word, the markers and the month
+    names belong to everybody. A leak check that counted one would demand the
+    engine mask «улица» and would call a restored date a surviving value."""
+    address = "Ижевск, улица Клубная, 85, кв 14"
+    item = _typed_item("LOC", address, {"city": "ижевск", "street": "клубная",
+                                        "house": "85", "flat": "14"})
+    problems: list[str] = []
+    if item_survives_in(item, address, "Ижевск, улица Луговая, 10, кв 3"):
+        problems.append("a surviving city and generic word read as a surviving piece")
+    if not item_survives_in(item, address, "Самара, улица Клубная, 10"):
+        problems.append("the street is not an identifying piece")
+    for word in ("улица", "дом", "марта"):
+        if word in {needle.text for needle in item_needles(item, address)}:
+            problems.append(f"{word!r} is a needle")
+    # AND ON THE PARSED PATH, where it bites. `parts_of` lumps every word it
+    # cannot type into the street blob, region words and «область» included,
+    # and a street NAMED after a month («улица 8 Марта») puts a month word
+    # there: a needle built from either would report a leak in every address
+    # that names a region and in every restored date.
+    blob = "Ростовская область, г Ростов-на-дону, ул Дзержинского, д 44"
+    stems = {needle.text for needle in value_needles("LOC", blob) if needle.kind == "stem"}
+    if "обла" in stems:
+        problems.append(f"a region word is an identifying piece: {sorted(stems)}")
+    if "дзер" not in stems:
+        problems.append(f"the street lost its needle to the filter: {sorted(stems)}")
+    month = {needle.text for needle in value_needles("LOC", "улица 8 Марта, 12")
+             if needle.kind == "stem"}
+    if month:
+        problems.append(f"a month name is an identifying piece: {sorted(month)}")
+    return problems
+
+
+def test_the_street_gets_one_needle_per_word() -> list[str]:
+    """N3. `parts_of` lumps every word of an address it cannot type into ONE
+    alphabetically sorted `street` blob, so the single four-character prefix
+    was «можг» — the CITY — and the street had none. 626 of the corpus's
+    2 770 LOC items were in that state and 294 carried a needle with a SPACE in
+    it, which no word token can ever match."""
+    surface = "можга школьная дом 64 четвёртый подъезд квартира 35"
+    stems = {needle.text for needle in value_needles("LOC", surface) if needle.kind == "stem"}
+    problems: list[str] = []
+    if "школ" not in stems:
+        problems.append(f"the street has no stem needle: {sorted(stems)}")
+    if any(" " in stem for stem in stems):
+        problems.append(f"a needle with a space in it can never match a word: {sorted(stems)}")
+    return problems
+
+
+def test_one_exempt_path() -> list[str]:
+    """N5. The customer's OWN renderings are cancelled through `exempt` and
+    through nothing else: a stem the real value carries proves nothing, while a
+    whole surface and a digit signature are never cancelled — a fake phone does
+    not wear the real one's digits."""
+    case = _case("obs-exempt", "single", (REAL_NAME,), (NAME, PHONE), ())
+    own = own_stems(case)
+    problems: list[str] = []
+    if survives_in("NAME", "Пахомова Елена", "записал Елене", own):
+        problems.append("a given name the CUSTOMER carries read as a surviving fake")
+    if not survives_in("NAME", "Пахомова Елена", "записал Пахомовой", own):
+        problems.append("the fake's own surname was cancelled by the exemption")
+    if not survives_in("PHONE", "+79990001122", "8 999 000-11-22", own):
+        problems.append("a digit signature was cancelled by the exemption")
+    return problems
+
+
+def test_a_four_letter_name_survives_declension() -> list[str]:
+    """A Russian ending takes one character, so a four-character prefix of a
+    four-letter word is the WHOLE word: «Анну» stopped matching «Анна» and a
+    four-letter given name left in a tool argument in another case read
+    `unmasked`, with `residual` blind to it for no reason but the length."""
+    problems: list[str] = []
+    if not survives_in("NAME", "Анна", "записал Анну", frozenset()):
+        problems.append("a declined four-letter name is invisible")
+    if stem_of("Пахомова") != "пахо":
+        problems.append("a long word no longer takes the four-character stem")
+    if survives_in("NAME", "Анна", "записал Ольгу", frozenset()):
+        problems.append("the short stem invented a name that is not there")
+    return problems
+
+
+def test_a_decomposed_leaf_is_judged_by_its_own_role() -> list[str]:
+    """N6, the blocker, and it is TWO-SIDED. `_out_status` asked `carries_any`
+    of the needles of the WHOLE substitute, and no needle of a whole address
+    can live in `address.house` = «79»: a house number is below `MIN_PIECE`,
+    the settlement and the generic word are generic, and a digit-typed value's
+    signature is the whole digit string. The SAME leaf therefore printed
+    `unmasked` for a gateway that restored it and for one that left the fake
+    standing — un-earnable and un-failable at once. Three gateways, three
+    statuses, one leaf."""
+    item = _typed_item("LOC", "Ижевск, улица Клубная, 46",
+                       {"city": "ижевск", "street": "клубная", "house": "46"})
+    hop = _hop("OUT", "tool_arg", "n1", 0, 0, "crm_upsert_contact", 0, -1,
+               "contact.address.house")
+    case = _case("obs-house", "single", ("адрес",), (item,), (hop,))
+
+    def _status(written: str, restored: str) -> str:
+        run = _with_subs(_with_calls(_run("obs-house"), (_call(
+            "crm_upsert_contact", {"contact": {"address": {"house": written}}},
+            {"contact": {"address": {"house": restored}}}, {}, "", 0),), (0,)),
+            {"n1": "Самара, улица Луговая, 79"})
+        return _one(case, run).hops[0].status
+
+    problems: list[str] = []
+    for label, written, restored, want in (
+            ("restored", "79", "46", "observed"),
+            ("fake left standing", "79", "79", "residual"),
+            ("never masked", "46", "46", "unmasked")):
+        got = _status(written, restored)
+        if got != want:
+            problems.append(f"house leaf, {label}: read {got!r}, must be {want!r}")
+    if not leaf_holds("LOC", ("Самара, улица Луговая, 79",), {}, "46", "79"):
+        problems.append("the fake house is not read as a piece of the fake address")
+    if leaf_holds("LOC", ("Самара, улица Луговая, 79",), {}, "46", "46"):
+        problems.append("the customer's own house number read as a piece of the fake")
+    return problems
+
+
+def test_a_spoken_substitute_is_found_written() -> list[str]:
+    """45 % of the corpus is the voice register. A substitute the model READ as
+    «восемь девятьсот…» and wrote into a tool as digits carried no needle
+    of its spoken surface at all — `digits_of` is "" there — so the leaf read
+    `unmasked` and the gateway's own restoration was invisible to `residual`,
+    `round_trip` and `retry_form`."""
+    spoken = "восемь девятьсот девяносто девять ноль ноль ноль одиннадцать двадцать два"
+    problems: list[str] = []
+    if not survives_in("PHONE", spoken, "+7 999 000-11-22", frozenset()):
+        problems.append("a dictated substitute written back as digits is invisible")
+    if survives_in("PHONE", spoken, "+7 999 000-11-23", frozenset()):
+        problems.append("the spoken digits matched a DIFFERENT number")
+    return problems
+
+
+def test_an_unknown_needle_kind_raises() -> list[str]:
+    """`NEEDLE_KINDS` is closed and every kind has a way of being looked for. A
+    silent «no match» for a shape nobody implemented is how a needle comes to
+    be declared and never searched — which is the whole story of `pieces_of`."""
+    problems: list[str] = []
+    try:
+        _needle_spans(Needle(kind="rumour", role="", text="x"), "x")
+        problems.append("an unknown needle kind returned instead of raising")
+    except ObserveError:
+        pass
+    found = {needle.kind for _type, surface, parts in _VALUES
+             for needle in value_needles(_type, surface)}
+    missing = set(contracts.NEEDLE_KINDS) - found - {"initials"}
+    if missing:
+        problems.append(f"declared needle kinds nothing ever builds: {sorted(missing)}")
+    return problems
+
+
+def test_a_shared_answer_span_is_narrowed_to_one_item() -> list[str]:
+    """A rewritten region holding TWO data gives the form comparator a string
+    with an e-mail in it and asks whether a PHONE's grouping is the same — a
+    verdict about nothing, and 254 of the form misses a perfect gateway
+    printed. Each side is narrowed by its OWN occurrences."""
+    phone = _item("q1", "PHONE", REAL_PHONE, REAL_PHONE, "i1", _in_message(0, 0, 12))
+    mail = _item("q2", "EMAIL", "elena@mail.ru", "elena@mail.ru", "i1", _in_message(0, 13, 26))
+    hop = _hop("OUT", "answer", "q1", 0, 0, "", -1, -1, "")
+    other = _hop("OUT", "answer", "q2", 1, 0, "", -1, -1, "")
+    case = _case("obs-shared", "single", ("контакты",), (phone, mail), (hop, other))
+    run = _with_subs(_with_replies(_run("obs-shared"),
+                                   "Готово. +72507599608. smumknko@example.ru.",
+                                   f"Готово. {REAL_PHONE}. elena@mail.ru.",
+                                   "Готово."),
+                     {"q1": "+72507599608", "q2": "smumknko@example.ru"})
+    got = {one.hop.item_id: one for one in _one(case, run).hops if one.hop.owner == "answer"}
+    problems: list[str] = []
+    for item_id, wrong in (("q1", "@"), ("q2", "+7")):
+        one = got.get(item_id)
+        if one is None:
+            problems.append(f"{item_id}: no answer hop")
+            continue
+        if wrong in one.reference or wrong in one.produced:
+            problems.append(f"{item_id}: the other datum is still in the pair "
+                            f"({one.produced!r}, {one.reference!r})")
+        if one.verdict is None or not one.verdict.same:
+            problems.append(f"{item_id}: a correct answer read as a form miss "
+                            f"({one.verdict.differs if one.verdict else None})")
+    return problems
+
+
 def main() -> int:
     checks: tuple[tuple[str, Callable[[], list[str]]], ...] = (
         ("no_pseudex", test_no_pseudex),
@@ -554,6 +824,19 @@ def main() -> int:
         ("parent_path_joins_the_leaves_in_field_order",
          test_parent_path_joins_the_leaves_in_field_order),
         ("seed_item_has_no_message_span", test_seed_item_has_no_message_span),
+        ("a_text_that_is_the_value_contains_it", test_a_text_that_is_the_value_contains_it),
+        ("a_value_inside_a_longer_text_is_found", test_a_value_inside_a_longer_text_is_found),
+        ("a_generic_word_is_not_an_identifying_piece",
+         test_a_generic_word_is_not_an_identifying_piece),
+        ("the_street_gets_one_needle_per_word", test_the_street_gets_one_needle_per_word),
+        ("one_exempt_path", test_one_exempt_path),
+        ("a_four_letter_name_survives_declension", test_a_four_letter_name_survives_declension),
+        ("a_decomposed_leaf_is_judged_by_its_own_role",
+         test_a_decomposed_leaf_is_judged_by_its_own_role),
+        ("a_spoken_substitute_is_found_written", test_a_spoken_substitute_is_found_written),
+        ("an_unknown_needle_kind_raises", test_an_unknown_needle_kind_raises),
+        ("a_shared_answer_span_is_narrowed_to_one_item",
+         test_a_shared_answer_span_is_narrowed_to_one_item),
     )
     failures: list[str] = []
     for name, check in checks:

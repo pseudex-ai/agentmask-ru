@@ -35,6 +35,7 @@ NOTHING HERE IMPORTS `pseudex`.
 """
 import argparse
 import ast
+import hashlib
 import json
 import sys
 from collections import Counter
@@ -47,12 +48,12 @@ from bench.agentpii4.schema import Case, Ladder
 from bench.agentpii5 import contracts as c
 from bench.agentpii5 import mock
 from bench.agentpii5 import revise as revise_module
-from bench.agentpii5.contracts import CaseV5
+from bench.agentpii5.contracts import CaseV5, Hop
 from bench.agentpii5.schema import (case_v5_from_json, case_v5_to_json, corpus_digest_v5,
                                     validate_corpus_v5, validate_v5)
 from bench.agentpii5.scenarios5.plan_a import PLAN_A
 from bench.agentpii5.scenarios5.plan_b import PLAN_B
-from bench.agentpii5.tools import REGISTRY_V5
+from bench.agentpii5.tools import REGISTRY_V5, spec_v5_for
 
 HERE: Path = Path(__file__).resolve().parent
 SEED: int = 4
@@ -344,6 +345,33 @@ def loop_table(cases: Sequence[CaseV5]) -> list[str]:
             f"двухходовых v4 {len(singles) - len(looped)}"]
 
 
+def document_table(cases: Sequence[CaseV5]) -> list[str]:
+    """`doc_extracted`'s denominator, per format, with the hop behind it.
+
+    THE NUMBER IS PRINTED BECAUSE IT USED TO BE WRONG IN SILENCE (H4.1). Fifty
+    of 375 declared extractions had no OUT hop into `extract_to_tool` — a
+    denominator no agent could reach — and nothing in the build said so; the
+    line simply topped out at 86.7% and read as the gateway's failure. R18 now
+    refuses the shape, and this row is what a reader checks it against: every
+    extracted item is one OUT hop, so the two counts are equal by construction
+    and an inequality here would mean the rule stopped firing.
+    """
+    per_format: Counter[str] = Counter()
+    hops = 0
+    for case in cases:
+        document = case.document
+        if document is None:
+            continue
+        per_format[document.format] += len(document.extracted_item_ids)
+        hops += sum(1 for item_id in document.extracted_item_ids
+                    for hop in case.hops
+                    if hop.kind == "OUT" and hop.item_id == item_id
+                    and hop.tool_name == document.extract_to_tool)
+    total = sum(per_format.values())
+    return [f"извлечения из документов: {total} (переходов под них {hops}) · "
+            + " · ".join(f"{fmt} {count}" for fmt, count in sorted(per_format.items()))]
+
+
 def chain_table(cases: Sequence[CaseV5], downgrades: Counter[str]) -> list[str]:
     """What R-49 cost the chain family and what was written to replace it.
 
@@ -361,6 +389,58 @@ def chain_table(cases: Sequence[CaseV5], downgrades: Counter[str]) -> list[str]:
     return [f"цепочки: {len(family)} · написано в v5 {authored} · "
             f"ревизия v4 {len(family) - authored} · ушло по R-49 (аргумент "
             f"мутирующего вызова — сказанное клиентом) {left}"]
+
+
+def transitions_of(case: CaseV5) -> tuple[tuple[Hop, Hop], ...]:
+    """The hand-overs `chain_value` and `chain_form` score: an OUT hop that
+    ACTS, fed by an IN/tool hop of ANOTHER tool.
+
+    ONE DEFINITION, READ BY THREE PLACES — `metrics._transitions` scores them,
+    `mock._transition_problems` proves them, and `chain_leaf_table` counts
+    them. A fourth spelling of «what a chain is» is how the corpus and the
+    metric came to disagree about which leaves were in the denominator.
+    """
+    by_index = {hop.hop_index: hop for hop in case.hops}
+    pairs: list[tuple[Hop, Hop]] = []
+    for hop in case.hops:
+        if hop.kind != "OUT" or hop.source_hop == -1 or hop.owner not in c.ACTING_OUT_OWNERS:
+            continue
+        source = by_index.get(hop.source_hop)
+        if source is None or source.kind != "IN" or source.owner != "tool":
+            continue
+        if source.tool_name == hop.tool_name:
+            continue
+        pairs.append((hop, source))
+    return tuple(pairs)
+
+
+def chain_leaf_table(cases: Sequence[CaseV5]) -> list[str]:
+    """How many hand-overs land in a FREE-TEXT leaf, and how many were dropped
+    as vacuous.
+
+    H4.2 ASKED FOR A COUNT AND THE COUNT IS ZERO, WHICH IS WHY IT IS PRINTED.
+    210 of the 938 declared transitions (22.4 %) land in prose the agent
+    composes — «Здравствуйте, {value}! Ваш заказ принят.» — and byte equality
+    against a whole prose field made every one of them unearnable. The rule is
+    now containment (`metrics.leaf_value_ok`'s free branch), and each of the
+    210 was measured from BOTH sides: prose carrying the expected value is a
+    hit, prose carrying another person's value of the same type is a miss
+    (`test_build.test_free_text_transitions_can_be_won_and_lost`). Nothing was
+    vacuous, so nothing was dropped — and a reader who is told only «0 dropped»
+    cannot tell that from «nobody looked», which is why the class size stands
+    beside it.
+    """
+    free: Counter[str] = Counter()
+    total = 0
+    for case in cases:
+        for hop, _source in transitions_of(case):
+            total += 1
+            spec = spec_v5_for(hop.tool_name, hop.path) if hop.tool_name and hop.path else None
+            if spec is not None and not spec.role and spec.kind == "free":
+                free[f"{hop.tool_name}.{hop.path}"] += 1
+    return [f"переходы между инструментами: {total} · из них в свободный текст "
+            f"{sum(free.values())} (отброшено как пустых 0) · "
+            + " · ".join(f"{leaf} {count}" for leaf, count in sorted(free.items()))]
 
 
 # --- the files ----------------------------------------------------------------------
@@ -413,10 +493,7 @@ def write_ladder(cases: Sequence[CaseV5], seed: int, out: Path,
         kept = json.loads(path.read_text(encoding="utf-8"))
         digest = v4.corpus_digest(bases)
         if str(kept.get("corpus_sha256", "")) != digest:
-            return None, [], [f"ЛЕСТНИЦА: {path} была снята с корпуса "
-                          f"{str(kept.get('corpus_sha256', ''))[:16]}, а записан "
-                          f"{digest[:16]}; --regenerate-ladder чтобы пересобрать "
-                          f"(холдаут увидит отладку) или верните прежний корпус"]
+            return _refresh_stamp(kept, bases, seed, digest, path)
         return None, [f"лестница оставлена как есть: {path} "
                       f"(--regenerate-ladder чтобы пересобрать)"], []
     ladder = build_ladder(bases, seed)
@@ -442,10 +519,85 @@ def write_ladder(cases: Sequence[CaseV5], seed: int, out: Path,
     path.write_text(json.dumps({
         "version": ladder.version, "seed": ladder.seed,
         "corpus_sha256": ladder.corpus_sha256,
-        "tiers": {name: list(ids) for name, ids in ladder.tiers.items()}},
+        "tiers": {name: list(ids) for name, ids in ladder.tiers.items()},
+        "tier_sha256": {name: tier_sha256(list(ids)) for name, ids in ladder.tiers.items()}},
         ensure_ascii=False, indent=1), encoding="utf-8")
     return ladder, lines + ["лестница записана: " + " / ".join(
         f"{name} {len(ids)}" for name, ids in ladder.tiers.items())], []
+
+
+def tier_sha256(identifiers: Sequence[str]) -> str:
+    """A tier's MEMBERSHIP as one hash, order-independent.
+
+    IT IS WHAT THE FREEZE IS ABOUT (R-57). `corpus_sha256` moves whenever any
+    byte of any case moves — a column renamed, a surface repaired — and says
+    nothing about who is in the holdout. These say exactly that, so a reader
+    of a finished run can tell a STAMP REFRESH (the same ids under a new corpus
+    hash) from a REDRAW (other ids) after the fact, instead of taking the
+    build's word for it.
+    """
+    return hashlib.sha256("\n".join(sorted(identifiers)).encode("utf-8")).hexdigest()
+
+
+def _tier_movement(kept: dict[str, object], fresh: Ladder) -> dict[str, tuple[int, int]]:
+    """Per tier: how many case ids the draw would move, and how many it holds."""
+    tiers = kept.get("tiers")
+    before = tiers if isinstance(tiers, dict) else {}
+    moved: dict[str, tuple[int, int]] = {}
+    for name in sorted(set(before) | set(fresh.tiers)):
+        was = set(before.get(name, ()))                   # type: ignore[union-attr]
+        now = set(fresh.tiers.get(name, ()))
+        moved[name] = (len(was ^ now), len(was))
+    return moved
+
+
+def _refresh_stamp(kept: dict[str, object], bases: Sequence[Case], seed: int, digest: str,
+                   path: Path) -> tuple[Ladder | None, list[str], list[str]]:
+    """The corpus changed and the ladder did not: refresh `corpus_sha256` in
+    place, or refuse (R-57).
+
+    THE FREEZE PROTECTS MEMBERSHIP, NOT A HASH. A corpus whose every tier holds
+    the same case ids keeps K12's promise literally — the holdout still has not
+    seen the debugging — so pinning the ladder to a BYTE hash turned every
+    honest repair of a case into a choice between a stale stamp and reaching for
+    the redraw flag, and the flag's name is an assertion about the world that a
+    repair has no business making. So the draw is RUN, its membership compared
+    id by id, and the stamp is refreshed only when nothing moved. The proof is
+    printed per tier because a silent refresh is exactly the «оставлена как
+    есть, exit 0» this branch was written to stop.
+
+    A MOVEMENT OF ONE ID IS A REFUSAL, not a smaller refresh: at that point the
+    question is which cases the holdout should hold, and that is the owner's.
+    """
+    fresh = build_ladder(bases, seed)
+    movement = _tier_movement(kept, fresh)
+    shifted = {name: counts for name, counts in movement.items() if counts[0]}
+    if shifted:
+        return None, [], [
+            f"ЛЕСТНИЦА: {path} была снята с корпуса "
+            f"{str(kept.get('corpus_sha256', ''))[:16]}, а записан {digest[:16]}, и состав "
+            f"ярусов при этом СДВИНУЛСЯ ("
+            + " · ".join(f"{name} {moved} из {size}" for name, (moved, size) in shifted.items())
+            + "); штамп не обновляется, решение о новом холдауте — владельца "
+              "(--regenerate-ladder --unfrozen-before-first-run) или верните прежний корпус"]
+    tiers = kept.get("tiers")
+    if not isinstance(tiers, dict):
+        return None, [], [f"ЛЕСТНИЦА: {path} не несёт ярусов"]
+    problems = ladder_problems(list(bases), fresh)
+    if problems:
+        return None, [], [f"ЛЕСТНИЦА: {line}" for line in problems]
+    path.write_text(json.dumps({
+        "version": kept.get("version", fresh.version), "seed": kept.get("seed", seed),
+        "corpus_sha256": digest,
+        "tiers": {name: list(ids) for name, ids in tiers.items()},
+        "tier_sha256": {name: tier_sha256(list(ids)) for name, ids in tiers.items()}},
+        ensure_ascii=False, indent=1), encoding="utf-8")
+    lines = [f"штамп лестницы обновлён: корпус {str(kept.get('corpus_sha256', ''))[:12]} → "
+             f"{digest[:12]}, состав ярусов тот же"]
+    for name, (moved, size) in movement.items():
+        label = "холдаут" if name == "holdout" else name
+        lines.append(f"  {label} не сдвинулся: {moved} из {size}")
+    return None, lines, []
 
 
 def ladder_refusal(regenerate: bool, unfrozen: bool) -> str:
@@ -522,6 +674,10 @@ def main() -> int:
     for line in loop_table(cases):
         print(line)
     for line in chain_table(cases, downgrades):
+        print(line)
+    for line in document_table(cases):
+        print(line)
+    for line in chain_leaf_table(cases):
         print(line)
     for line in form_disagreements(cases):
         print(line)

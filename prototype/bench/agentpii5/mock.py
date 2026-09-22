@@ -48,13 +48,16 @@ from dataclasses import dataclass
 from bench.agentpii4.mock import Backend, CallLog, Record
 from bench.agentpii4.tools import CSV_HEADER, Refusal
 from bench.agentpii4.writer import Slot, Writer, serialise
-from bench.agentpii5.contracts import ACTING_OUT_OWNERS, ECHO_TAG_PREFIX, CaseV5, ForcedError
+from bench.agentpii5.contracts import (ACTING_OUT_OWNERS, ECHO_TAG_PREFIX,
+                                       PIECE_MIN_CHARS, PIECE_MIN_DIGITS, CaseV5,
+                                       ForcedError)
 # V05 (`_transition_problems`) asks the question the RUN will ask, so it asks it
 # with the run's own comparator rather than a second one written here: two folds
 # for «the same value» would have to stay equal for ever, and the one that
 # drifted would let the build prove a hand-over the metric then scores as broken.
 from bench.agentpii5.metrics import role_matches
-from bench.agentpii5.tools import NEW_REGISTRY, expected_leaf_value, spec_v5_for
+from bench.agentpii5.tools import (NEW_REGISTRY, csv_row_path, expected_leaf_value,
+                                   field_at, spec_v5_for)
 
 # The tables the twelve new tools read. v4's thirteen stay exactly as they are.
 NEW_TABLES: tuple[str, ...] = (
@@ -77,6 +80,11 @@ RECORD_TAGGED: tuple[str, ...] = ("crm_find_contact", "address_suggest")
 # Named once: the row builder and the node builder must not drift apart.
 CONTACT_COLUMNS: tuple[str, ...] = (
     "last_name", "first_name", "middle_name", "phone", "email", "birth_date")
+# The columns a CSV document carries, in `CSV_HEADER`'s order. Named once for
+# the same reason: `_document_pieces` renders them as prose and `_file_read`
+# answers them as a table, and a column present in one and not the other would
+# be an item tagged in one reading of the same file and untagged in the other.
+CSV_COLUMNS: tuple[str, ...] = ("last_name", "first_name", "phone", "email", "birth_date")
 # The id prefix a ticket is minted under, so that `ticket_history` can read
 # back what `ticket_create` wrote — see `BackendV5._next_id` (ruling R-26).
 # `tools.ISSUE_ID_RE` is the reader; the two must agree, and this is the side
@@ -189,6 +197,23 @@ def canon_layout(city: str, street: str, house: str,
     return tuple(pieces)
 
 
+def _csv_rows(record: Record) -> tuple[tuple[str, dict[str, object]], ...]:
+    """The people a CSV document carries, in row order, with the key each one
+    is tagged under.
+
+    A MAPPING KEYED BY THE ORDINAL RATHER THAN A LIST (`tools.csv_row_path`):
+    v4's seed validator walks «.» alone and a path through a list resolved to
+    None, which is how 310 items shipped with the written surface «None». The
+    order is the key read as a number, so a row can never be rendered under
+    another row's tag because two keys sorted as text.
+    """
+    rows = record.fields.get("rows")
+    if not isinstance(rows, dict):
+        raise KeyError(f"documents/{record.id}: neither a template nor rows to render")
+    return tuple((key, dict(value))                       # type: ignore[arg-type]
+                 for key, value in sorted(rows.items(), key=lambda pair: int(pair[0])))
+
+
 def capitalised(value: str) -> str:
     """«пушкина» → «Пушкина», «красная площадь» → «Красная площадь». NOT
     `title()`: ФИАС keeps «Красная площадь» with one capital, and a directory
@@ -258,25 +283,6 @@ def scan_noise(text: str, rng: random.Random) -> str:
             out[index] = latin.upper() if character.isupper() else latin
             return "".join(out)
     return "".join(out)
-
-
-def field_at(fields: dict[str, object], path: str) -> object:
-    """A seed field by its dotted path, arrays by index («rows[1].phone»)."""
-    value: object = fields
-    for step in path.split("."):
-        name, indexes = step, []
-        while name.endswith("]"):
-            head, _, raw = name[:-1].rpartition("[")
-            indexes.insert(0, int(raw))
-            name = head
-        if not isinstance(value, dict) or name not in value:
-            raise KeyError(f"seed path {path!r} does not exist: no {name!r} in {value!r}")
-        value = value[name]
-        for index in indexes:
-            if not isinstance(value, list) or index >= len(value):
-                raise KeyError(f"seed path {path!r} does not exist: no index {index}")
-            value = value[index]
-    return value
 
 
 class BackendV5(Backend):
@@ -1122,15 +1128,12 @@ class BackendV5(Backend):
         rng = random.Random(f"scan:{record.id}") if fmt == "scan" else None
         if "template" in record.fields:
             return self._template_pieces(record, rng)
-        rows = record.fields.get("rows")
-        if not isinstance(rows, list):
-            raise KeyError(f"documents/{record.id}: neither a template nor rows to render")
         pieces: list[tuple[str, str]] = [(CSV_HEADER, "")]
-        for index, row in enumerate(rows):
-            for key in ("last_name", "first_name", "phone", "email", "birth_date"):
+        for row_key, row in _csv_rows(record):
+            for key in CSV_COLUMNS:
                 pieces.append((" | " if key == "last_name" else ";", ""))
-                value = str(dict(row).get(key, ""))
-                pieces.append((value, self._tag_of(record, f"rows[{index}].{key}")))
+                value = str(row.get(key, ""))
+                pieces.append((value, self._tag_of(record, csv_row_path(row_key, key))))
         return tuple(pieces)
 
     def _calendar_slots(self, record: Record, date: str) -> tuple[str, ...]:
@@ -1255,16 +1258,12 @@ class BackendV5(Backend):
             body = self._compose(self._document_pieces(record), "")
             head = {"path": path, "format": fmt}
             return {**head, "text": body.text}, {**head, "text": body}, "free_text"
-        rows_raw = record.fields.get("rows")
-        if not isinstance(rows_raw, list):
-            raise KeyError(f"documents/{record.id}: a csv document with no rows")
         rows: list[dict[str, object]] = []
         nodes: list[object] = []
-        for index, row in enumerate(rows_raw):
-            values = {key: str(dict(row).get(key, ""))
-                      for key in ("last_name", "first_name", "phone", "email", "birth_date")}
+        for row_key, row in _csv_rows(record):
+            values = {key: str(row.get(key, "")) for key in CSV_COLUMNS}
             rows.append(dict(values))
-            nodes.append({key: self._slot_of(record, f"rows[{index}].{key}", value)
+            nodes.append({key: self._slot_of(record, csv_row_path(row_key, key), value)
                           for key, value in values.items()})
         head = {"path": path, "format": "csv", "header": CSV_HEADER}
         return {**head, "rows": rows}, {**head, "rows": nodes}, "list"
@@ -1711,7 +1710,62 @@ def render_problems(case: CaseV5) -> list[str]:
             problems.append(f"V04 {tag}: IN hop {hop.hop_index} reads {hop.item_id} from "
                             f"{hop.tool_name}#{hop.call_ordinal}, which renders no span "
                             f"for it")
+    problems.extend(_unscorable_problems(case, by_call))
     problems.extend(_transition_problems(case, by_call))
+    return problems
+
+
+def identifies_on_its_own(value: str) -> bool:
+    """Is this surface long enough to be LOOKED FOR at all?
+
+    The floors are `contracts`' own (`PIECE_MIN_CHARS`, `PIECE_MIN_DIGITS`),
+    read rather than restated: a house number «19» stands inside «1977-01-07»
+    and a two-letter stem stands inside half the dictionary, so a needle built
+    from one is evidence about nothing. R-58 makes the needle layer answer
+    False for such a value everywhere; this is the same question asked at BUILD
+    time, of the corpus.
+
+    WHEN THE NEEDLE LAYER EXPOSES «does this value carry a needle», THIS MUST
+    BECOME A CALLER OF IT (contract question to FIX-1). Today `needles_of`
+    always returns the `whole` needle, so asking it would give a rule that
+    cannot fire — a rule that cannot fail is the thing this package refuses to
+    ship, and two floors that must stay equal is the lesser of the two evils
+    for exactly one round.
+    """
+    compact = "".join(value.split())
+    digits = "".join(ch for ch in compact if ch.isdigit())
+    if compact and digits == compact:
+        return len(digits) >= PIECE_MIN_DIGITS
+    return len(value.strip()) >= PIECE_MIN_CHARS
+
+
+def _unscorable_problems(case: CaseV5,
+                         by_call: dict[tuple[str, int], RenderedCall]) -> list[str]:
+    """V06: no declared value may be beyond the reach of BOTH ways of scoring it.
+
+    A value is scored either by its SPAN — the message offsets a coverage check
+    reads, or the tag the mock puts on a rendered result — or, where no span
+    exists, by the needle layer asking whether it survived in the text. R-58
+    gives the needle a floor, so a SHORT value with no span anywhere can be
+    scored by neither: it would sit in a denominator that no gateway can move,
+    which is the defect `doc_extracted` had in another shape.
+
+    THE CORPUS CARRIES NONE TODAY — 22 short items, every one of them tagged by
+    a result a declared call renders — and that is precisely why the rule is
+    written now: the next family to seed a house number nobody reads would
+    reintroduce it silently.
+    """
+    tag = case.base.id
+    tagged = {item_id for made in by_call.values() for item_id, _text in made.rendered}
+    problems: list[str] = []
+    for item in case.base.pii:
+        if item.where.kind == "message" or item.id in tagged:
+            continue
+        if identifies_on_its_own(item.value):
+            continue
+        problems.append(f"V06 {tag}: seed item {item.id} ({item.type} {item.value!r}) is "
+                        f"below the identifying floor and no declared call renders it, so "
+                        f"neither a span nor a needle can score it")
     return problems
 
 

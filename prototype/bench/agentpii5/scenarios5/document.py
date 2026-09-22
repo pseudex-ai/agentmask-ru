@@ -145,7 +145,9 @@ def _csv_shape(ctx: c.Ctx) -> Case:
         "csv на несколько человек: агент читает файл и заводит одного из них", path)
     size = CSV_SIZES[ctx.index % len(CSV_SIZES)]
     people = extra_people(ctx, city, drawn, size)
-    fields: dict[str, object] = {"rows": [c.csv_row_fields(person) for person in people]}
+    fields: dict[str, object] = {
+        "rows": {str(position): c.csv_row_fields(person)
+                 for position, person in enumerate(people)}}
     typed: dict[str, tuple[str, str, pools.Rendered]] = {}
     for position, person in enumerate(people):
         typed.update(c.csv_row_typed(position, person, f"{identity}f{position}"))
@@ -166,25 +168,25 @@ def _csv_shape(ctx: c.Ctx) -> Case:
               "birth_date": "contact.birth_date"}
     read_hops: dict[str, int] = {}
     for column in imported:
-        builder.declare_hop(document_hop(rows[f"rows[0].{column}"], index, turn, "file_read",
-                                         0, f"rows[0].{column}"))
+        builder.declare_hop(document_hop(rows[c.csv_row_path(0, column)], index, turn, "file_read",
+                                         0, c.csv_row_path(0, column)))
         read_hops[column] = index
         index += 1
     for column in imported:
-        builder.declare_hop(arg_hop(rows[f"rows[0].{column}"], index, turn,
+        builder.declare_hop(arg_hop(rows[c.csv_row_path(0, column)], index, turn,
                                     "crm_upsert_contact", 0, leaves[column],
                                     read_hops[column], ""))
         index += 1
     builder.declare_hop(answer_hop(card["last_name"], index, turn, surname_hop, False))
     builder.expect_return(ReturnExpectation(
         "file_read", 0, "list",
-        tuple(rows[f"rows[{position}].{column}"]
+        tuple(rows[c.csv_row_path(position, column)]
               for position in range(size) for column in imported)))
     # ONE `documents` row holding `size` people: `record_count` counts the
     # people, `record_ids` the row (ruling R-30).
     builder.set_document(DocumentSpec(
         "doc-csv", "file_read", "csv", size, ("doc-csv",), "crm_upsert_contact",
-        tuple(rows[f"rows[0].{column}"] for column in imported)))
+        tuple(rows[c.csv_row_path(0, column)] for column in imported)))
     return builder.build(BEHAVIOUR)
 
 
@@ -272,9 +274,16 @@ def _text_shape(ctx: c.Ctx) -> Case:
     builder.expect_return(ReturnExpectation(
         "file_read", 0, "free_text",
         (act["who"], act["inn"], act["tel"], act["street"])))
+    # ONLY THE ИНН IS EXTRACTED, AND THE COUNTERPARTY'S NAME IS NOT (H4.1). The
+    # name IS read out of the file — its IN/document hop is declared above — but
+    # `bank_client_find` searches by ИНН xor phone and has no field for a name,
+    # so declaring it extracted put 25 items into `doc_extracted`'s denominator
+    # that no gateway and no agent could ever hit. `extracted_item_ids` is «the
+    # items the agent is expected to MOVE into the tool», not «the items the
+    # document carries»; R18 now refuses the difference.
     builder.set_document(DocumentSpec(
         "doc-text", "file_read", "free_text", 1, ("doc-text",), "bank_client_find",
-        (act["inn"], act["who"])))
+        (act["inn"],)))
     return builder.build(BEHAVIOUR)
 
 
@@ -319,9 +328,11 @@ def _scan_shape(ctx: c.Ctx) -> Case:
     builder.expect_return(ReturnExpectation(
         "file_read", 0, "free_text",
         (scan["who"], scan["tel"], scan["plate"], scan["street"])))
+    # The same as `_text_shape`: `vehicle_check` takes a plate and nothing else,
+    # so the applicant's name is READ from the scan and not EXTRACTED (H4.1).
     builder.set_document(DocumentSpec(
         "doc-scan", "file_read", "scan", 1, ("doc-scan",), "vehicle_check",
-        (scan["plate"], scan["who"])))
+        (scan["plate"],)))
     return builder.build(BEHAVIOUR)
 
 

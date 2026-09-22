@@ -54,6 +54,52 @@ Parsed = dict[str, object]
 PLATE_RE = re.compile(r"[АВЕКМНОРСТУХ]\d{3}[АВЕКМНОРСТУХ]{2}\d{2,3}")
 EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[a-z]{2,}")
 FILE_EXTENSIONS: tuple[str, ...] = (".txt", ".csv", ".docx")
+
+
+def field_at(fields: dict[str, object], path: str) -> object:
+    """A seed field by its dotted path, arrays by index («rows[1].phone»).
+
+    THE ONE WALKER OF A SEED PATH IN v5. The mock read tags with it while the
+    builder let v4's `_seed_field` (dots only, no index, and no way to say «I
+    could not») write the item's surface; the two disagreed on every CSV cell
+    and the disagreement shipped as the string «None». It raises where v4
+    returns None, which is the whole difference.
+    """
+    value: object = fields
+    for step in path.split("."):
+        name, indexes = step, []
+        while name.endswith("]"):
+            head, _, raw = name[:-1].rpartition("[")
+            indexes.insert(0, int(raw))
+            name = head
+        if not isinstance(value, dict) or name not in value:
+            raise KeyError(f"seed path {path!r} does not exist: no {name!r} in {value!r}")
+        value = value[name]
+        for index in indexes:
+            if not isinstance(value, list) or index >= len(value):
+                raise KeyError(f"seed path {path!r} does not exist: no index {index}")
+            value = value[index]
+    return value
+
+
+def csv_row_path(row_key: str, column: str) -> str:
+    """Where a CSV cell lives inside its `documents` seed row: `rows.<i>.<col>`.
+
+    IT LIVES BESIDE `CSV_HEADER` BECAUSE IT IS THE SAME KIND OF FACT — the
+    layout `file_read` answers a CSV in — and because it is the one string the
+    builder (`scenarios5.common.csv_row_typed`), the renderer (`mock`) and the
+    item's own `Locus.path` must spell identically; a tag spelled apart is a
+    tag nothing matches.
+
+    THE ROWS ARE A MAPPING KEYED BY THE ORDINAL, NOT A LIST, and that is v4's
+    constraint rather than a taste: `agentpii4.schema._seed_field` walks «.»
+    alone, so a path through a LIST resolved to None while v4's `validate`
+    demanded that the item's written surface EQUAL that None. The 310 CSV items
+    therefore shipped with the surface «None» — not merely odd-looking, but a
+    NEEDLE: the stem «none» entered every document case's own-stem exemption
+    and matched the literal word in any reply.
+    """
+    return f"rows.{row_key}.{column}"
 # The id prefix `Backend._store` allocates for each table, so a reader tool
 # refuses an id no writer could ever have minted. `clm` is `courier_book`'s.
 CLAIM_ID_RE = re.compile(r"clm-\d{1,6}")

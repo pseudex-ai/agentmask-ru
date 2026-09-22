@@ -1,7 +1,7 @@
 {
  "version": 4,
  "cases": 1736,
- "digest": "621e904f5437492b330adf8c41c2b2e4718bd00ed876359b4bbb4ff2a27cd89c",
+ "digest": "313313019b32dc6eba6eb2a49b4a66db380c9b39fa6ee688be9dcb0f8bd12910",
  "corpus": [
   {
    "id": "chain-000",
@@ -944459,22 +944459,22 @@
       "path": "/upload/clients-0.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "морозов",
         "first_name": "леонид",
         "phone": "+79037930215",
         "email": "morozov95@gmail.com",
         "birth_date": "1978-06-27"
        },
-       {
+       "1": {
         "last_name": "кукушкин",
         "first_name": "валерий",
         "phone": "+79501672319",
         "email": "kukushkin94@mail.ru",
         "birth_date": "1986-12-12"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -944650,7 +944650,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p0f0",
-     "value": "None",
+     "value": "морозов",
      "canonical": "морозов",
      "parts": {
       "surname": "морозов",
@@ -944662,7 +944662,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -944672,7 +944672,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p0f0",
-     "value": "None",
+     "value": "леонид",
      "canonical": "леонид",
      "parts": {
       "given": "леонид",
@@ -944684,7 +944684,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -944694,7 +944694,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p0f0",
-     "value": "None",
+     "value": "+79037930215",
      "canonical": "+79037930215",
      "parts": {
       "digits": "9037930215"
@@ -944705,7 +944705,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -944715,7 +944715,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p0f0",
-     "value": "None",
+     "value": "morozov95@gmail.com",
      "canonical": "morozov95@gmail.com",
      "parts": {
       "local": "morozov95",
@@ -944727,7 +944727,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -944737,7 +944737,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p0f0",
-     "value": "None",
+     "value": "1978-06-27",
      "canonical": "1978-06-27",
      "parts": {
       "iso": "1978-06-27"
@@ -944748,7 +944748,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -944758,7 +944758,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p0f1",
-     "value": "None",
+     "value": "кукушкин",
      "canonical": "кукушкин",
      "parts": {
       "surname": "кукушкин",
@@ -944770,7 +944770,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -944780,7 +944780,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p0f1",
-     "value": "None",
+     "value": "валерий",
      "canonical": "валерий",
      "parts": {
       "given": "валерий",
@@ -944792,7 +944792,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -944802,7 +944802,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p0f1",
-     "value": "None",
+     "value": "+79501672319",
      "canonical": "+79501672319",
      "parts": {
       "digits": "9501672319"
@@ -944813,7 +944813,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -944823,7 +944823,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p0f1",
-     "value": "None",
+     "value": "kukushkin94@mail.ru",
      "canonical": "kukushkin94@mail.ru",
      "parts": {
       "local": "kukushkin94",
@@ -944835,7 +944835,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -944845,7 +944845,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p0f1",
-     "value": "None",
+     "value": "1986-12-12",
      "canonical": "1986-12-12",
      "parts": {
       "iso": "1986-12-12"
@@ -944856,7 +944856,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -945236,29 +945236,29 @@
       "path": "/upload/clients-1.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "воронина",
         "first_name": "елена",
         "phone": "+79852669641",
         "email": "voronina86@list.ru",
         "birth_date": "2003-01-04"
        },
-       {
+       "1": {
         "last_name": "фомин",
         "first_name": "вячеслав",
         "phone": "+79512200638",
         "email": "fomin85@list.ru",
         "birth_date": "1970-02-12"
        },
-       {
+       "2": {
         "last_name": "захаров",
         "first_name": "владислав",
         "phone": "+79267716779",
         "email": "zaharov91@list.ru",
         "birth_date": "1980-01-06"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -945439,7 +945439,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p1f0",
-     "value": "None",
+     "value": "воронина",
      "canonical": "воронина",
      "parts": {
       "surname": "воронина",
@@ -945451,7 +945451,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -945461,7 +945461,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p1f0",
-     "value": "None",
+     "value": "елена",
      "canonical": "елена",
      "parts": {
       "given": "елена",
@@ -945473,7 +945473,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -945483,7 +945483,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p1f0",
-     "value": "None",
+     "value": "+79852669641",
      "canonical": "+79852669641",
      "parts": {
       "digits": "9852669641"
@@ -945494,7 +945494,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -945504,7 +945504,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p1f0",
-     "value": "None",
+     "value": "voronina86@list.ru",
      "canonical": "voronina86@list.ru",
      "parts": {
       "local": "voronina86",
@@ -945516,7 +945516,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -945526,7 +945526,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p1f0",
-     "value": "None",
+     "value": "2003-01-04",
      "canonical": "2003-01-04",
      "parts": {
       "iso": "2003-01-04"
@@ -945537,7 +945537,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -945547,7 +945547,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p1f1",
-     "value": "None",
+     "value": "фомин",
      "canonical": "фомин",
      "parts": {
       "surname": "фомин",
@@ -945559,7 +945559,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -945569,7 +945569,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p1f1",
-     "value": "None",
+     "value": "вячеслав",
      "canonical": "вячеслав",
      "parts": {
       "given": "вячеслав",
@@ -945581,7 +945581,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -945591,7 +945591,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p1f1",
-     "value": "None",
+     "value": "+79512200638",
      "canonical": "+79512200638",
      "parts": {
       "digits": "9512200638"
@@ -945602,7 +945602,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -945612,7 +945612,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p1f1",
-     "value": "None",
+     "value": "fomin85@list.ru",
      "canonical": "fomin85@list.ru",
      "parts": {
       "local": "fomin85",
@@ -945624,7 +945624,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -945634,7 +945634,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p1f1",
-     "value": "None",
+     "value": "1970-02-12",
      "canonical": "1970-02-12",
      "parts": {
       "iso": "1970-02-12"
@@ -945645,7 +945645,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -945655,7 +945655,7 @@
      "id": "i18",
      "type": "NAME",
      "identity": "p1f2",
-     "value": "None",
+     "value": "захаров",
      "canonical": "захаров",
      "parts": {
       "surname": "захаров",
@@ -945667,7 +945667,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].last_name"
+      "path": "rows.2.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -945677,7 +945677,7 @@
      "id": "i19",
      "type": "NAME",
      "identity": "p1f2",
-     "value": "None",
+     "value": "владислав",
      "canonical": "владислав",
      "parts": {
       "given": "владислав",
@@ -945689,7 +945689,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].first_name"
+      "path": "rows.2.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -945699,7 +945699,7 @@
      "id": "i20",
      "type": "PHONE",
      "identity": "p1f2",
-     "value": "None",
+     "value": "+79267716779",
      "canonical": "+79267716779",
      "parts": {
       "digits": "9267716779"
@@ -945710,7 +945710,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].phone"
+      "path": "rows.2.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -945720,7 +945720,7 @@
      "id": "i21",
      "type": "EMAIL",
      "identity": "p1f2",
-     "value": "None",
+     "value": "zaharov91@list.ru",
      "canonical": "zaharov91@list.ru",
      "parts": {
       "local": "zaharov91",
@@ -945732,7 +945732,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].email"
+      "path": "rows.2.email"
      },
      "duty": "required",
      "spoken": false,
@@ -945742,7 +945742,7 @@
      "id": "i22",
      "type": "DOB",
      "identity": "p1f2",
-     "value": "None",
+     "value": "1980-01-06",
      "canonical": "1980-01-06",
      "parts": {
       "iso": "1980-01-06"
@@ -945753,7 +945753,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].birth_date"
+      "path": "rows.2.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -946133,22 +946133,22 @@
       "path": "/upload/clients-2.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "битюкова",
         "first_name": "зинаида",
         "phone": "+79196556996",
         "email": "bityukova77@list.ru",
         "birth_date": "1972-06-12"
        },
-       {
+       "1": {
         "last_name": "фёдорова",
         "first_name": "юлия",
         "phone": "+79529340066",
         "email": "fedorova86@yandex.ru",
         "birth_date": "2003-03-27"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -946324,7 +946324,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p2f0",
-     "value": "None",
+     "value": "битюкова",
      "canonical": "битюкова",
      "parts": {
       "surname": "битюкова",
@@ -946336,7 +946336,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -946346,7 +946346,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p2f0",
-     "value": "None",
+     "value": "зинаида",
      "canonical": "зинаида",
      "parts": {
       "given": "зинаида",
@@ -946358,7 +946358,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -946368,7 +946368,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p2f0",
-     "value": "None",
+     "value": "+79196556996",
      "canonical": "+79196556996",
      "parts": {
       "digits": "9196556996"
@@ -946379,7 +946379,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -946389,7 +946389,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p2f0",
-     "value": "None",
+     "value": "bityukova77@list.ru",
      "canonical": "bityukova77@list.ru",
      "parts": {
       "local": "bityukova77",
@@ -946401,7 +946401,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -946411,7 +946411,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p2f0",
-     "value": "None",
+     "value": "1972-06-12",
      "canonical": "1972-06-12",
      "parts": {
       "iso": "1972-06-12"
@@ -946422,7 +946422,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -946432,7 +946432,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p2f1",
-     "value": "None",
+     "value": "фёдорова",
      "canonical": "фёдорова",
      "parts": {
       "surname": "фёдорова",
@@ -946444,7 +946444,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -946454,7 +946454,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p2f1",
-     "value": "None",
+     "value": "юлия",
      "canonical": "юлия",
      "parts": {
       "given": "юлия",
@@ -946466,7 +946466,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -946476,7 +946476,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p2f1",
-     "value": "None",
+     "value": "+79529340066",
      "canonical": "+79529340066",
      "parts": {
       "digits": "9529340066"
@@ -946487,7 +946487,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -946497,7 +946497,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p2f1",
-     "value": "None",
+     "value": "fedorova86@yandex.ru",
      "canonical": "fedorova86@yandex.ru",
      "parts": {
       "local": "fedorova86",
@@ -946509,7 +946509,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -946519,7 +946519,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p2f1",
-     "value": "None",
+     "value": "2003-03-27",
      "canonical": "2003-03-27",
      "parts": {
       "iso": "2003-03-27"
@@ -946530,7 +946530,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -946938,29 +946938,29 @@
       "path": "/upload/clients-3.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "заболотный",
         "first_name": "руслан",
         "phone": "+79520899099",
         "email": "zabolotnyy80@gmail.com",
         "birth_date": "1987-02-28"
        },
-       {
+       "1": {
         "last_name": "громова",
         "first_name": "марина",
         "phone": "+79296216226",
         "email": "gromova85@bk.ru",
         "birth_date": "1959-03-18"
        },
-       {
+       "2": {
         "last_name": "захаров",
         "first_name": "владислав",
         "phone": "+79778895688",
         "email": "zaharov73@yandex.ru",
         "birth_date": "1969-02-18"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -947141,7 +947141,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p3f0",
-     "value": "None",
+     "value": "заболотный",
      "canonical": "заболотный",
      "parts": {
       "surname": "заболотный",
@@ -947153,7 +947153,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -947163,7 +947163,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p3f0",
-     "value": "None",
+     "value": "руслан",
      "canonical": "руслан",
      "parts": {
       "given": "руслан",
@@ -947175,7 +947175,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -947185,7 +947185,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p3f0",
-     "value": "None",
+     "value": "+79520899099",
      "canonical": "+79520899099",
      "parts": {
       "digits": "9520899099"
@@ -947196,7 +947196,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -947206,7 +947206,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p3f0",
-     "value": "None",
+     "value": "zabolotnyy80@gmail.com",
      "canonical": "zabolotnyy80@gmail.com",
      "parts": {
       "local": "zabolotnyy80",
@@ -947218,7 +947218,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -947228,7 +947228,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p3f0",
-     "value": "None",
+     "value": "1987-02-28",
      "canonical": "1987-02-28",
      "parts": {
       "iso": "1987-02-28"
@@ -947239,7 +947239,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -947249,7 +947249,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p3f1",
-     "value": "None",
+     "value": "громова",
      "canonical": "громова",
      "parts": {
       "surname": "громова",
@@ -947261,7 +947261,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -947271,7 +947271,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p3f1",
-     "value": "None",
+     "value": "марина",
      "canonical": "марина",
      "parts": {
       "given": "марина",
@@ -947283,7 +947283,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -947293,7 +947293,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p3f1",
-     "value": "None",
+     "value": "+79296216226",
      "canonical": "+79296216226",
      "parts": {
       "digits": "9296216226"
@@ -947304,7 +947304,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -947314,7 +947314,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p3f1",
-     "value": "None",
+     "value": "gromova85@bk.ru",
      "canonical": "gromova85@bk.ru",
      "parts": {
       "local": "gromova85",
@@ -947326,7 +947326,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -947336,7 +947336,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p3f1",
-     "value": "None",
+     "value": "1959-03-18",
      "canonical": "1959-03-18",
      "parts": {
       "iso": "1959-03-18"
@@ -947347,7 +947347,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -947357,7 +947357,7 @@
      "id": "i18",
      "type": "NAME",
      "identity": "p3f2",
-     "value": "None",
+     "value": "захаров",
      "canonical": "захаров",
      "parts": {
       "surname": "захаров",
@@ -947369,7 +947369,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].last_name"
+      "path": "rows.2.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -947379,7 +947379,7 @@
      "id": "i19",
      "type": "NAME",
      "identity": "p3f2",
-     "value": "None",
+     "value": "владислав",
      "canonical": "владислав",
      "parts": {
       "given": "владислав",
@@ -947391,7 +947391,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].first_name"
+      "path": "rows.2.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -947401,7 +947401,7 @@
      "id": "i20",
      "type": "PHONE",
      "identity": "p3f2",
-     "value": "None",
+     "value": "+79778895688",
      "canonical": "+79778895688",
      "parts": {
       "digits": "9778895688"
@@ -947412,7 +947412,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].phone"
+      "path": "rows.2.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -947422,7 +947422,7 @@
      "id": "i21",
      "type": "EMAIL",
      "identity": "p3f2",
-     "value": "None",
+     "value": "zaharov73@yandex.ru",
      "canonical": "zaharov73@yandex.ru",
      "parts": {
       "local": "zaharov73",
@@ -947434,7 +947434,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].email"
+      "path": "rows.2.email"
      },
      "duty": "required",
      "spoken": false,
@@ -947444,7 +947444,7 @@
      "id": "i22",
      "type": "DOB",
      "identity": "p3f2",
-     "value": "None",
+     "value": "1969-02-18",
      "canonical": "1969-02-18",
      "parts": {
       "iso": "1969-02-18"
@@ -947455,7 +947455,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].birth_date"
+      "path": "rows.2.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -947877,22 +947877,22 @@
       "path": "/upload/clients-4.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "новиков",
         "first_name": "игорь",
         "phone": "+79192515189",
         "email": "novikov79@list.ru",
         "birth_date": "2002-06-08"
        },
-       {
+       "1": {
         "last_name": "битюков",
         "first_name": "олег",
         "phone": "+79038956699",
         "email": "bityukov73@list.ru",
         "birth_date": "1986-11-27"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -948068,7 +948068,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p4f0",
-     "value": "None",
+     "value": "новиков",
      "canonical": "новиков",
      "parts": {
       "surname": "новиков",
@@ -948080,7 +948080,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -948090,7 +948090,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p4f0",
-     "value": "None",
+     "value": "игорь",
      "canonical": "игорь",
      "parts": {
       "given": "игорь",
@@ -948102,7 +948102,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -948112,7 +948112,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p4f0",
-     "value": "None",
+     "value": "+79192515189",
      "canonical": "+79192515189",
      "parts": {
       "digits": "9192515189"
@@ -948123,7 +948123,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -948133,7 +948133,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p4f0",
-     "value": "None",
+     "value": "novikov79@list.ru",
      "canonical": "novikov79@list.ru",
      "parts": {
       "local": "novikov79",
@@ -948145,7 +948145,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -948155,7 +948155,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p4f0",
-     "value": "None",
+     "value": "2002-06-08",
      "canonical": "2002-06-08",
      "parts": {
       "iso": "2002-06-08"
@@ -948166,7 +948166,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -948176,7 +948176,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p4f1",
-     "value": "None",
+     "value": "битюков",
      "canonical": "битюков",
      "parts": {
       "surname": "битюков",
@@ -948188,7 +948188,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -948198,7 +948198,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p4f1",
-     "value": "None",
+     "value": "олег",
      "canonical": "олег",
      "parts": {
       "given": "олег",
@@ -948210,7 +948210,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -948220,7 +948220,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p4f1",
-     "value": "None",
+     "value": "+79038956699",
      "canonical": "+79038956699",
      "parts": {
       "digits": "9038956699"
@@ -948231,7 +948231,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -948241,7 +948241,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p4f1",
-     "value": "None",
+     "value": "bityukov73@list.ru",
      "canonical": "bityukov73@list.ru",
      "parts": {
       "local": "bityukov73",
@@ -948253,7 +948253,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -948263,7 +948263,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p4f1",
-     "value": "None",
+     "value": "1986-11-27",
      "canonical": "1986-11-27",
      "parts": {
       "iso": "1986-11-27"
@@ -948274,7 +948274,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -948654,29 +948654,29 @@
       "path": "/upload/clients-5.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "соколова",
         "first_name": "анна",
         "phone": "+79778524887",
         "email": "sokolova91@bk.ru",
         "birth_date": "1997-08-14"
        },
-       {
+       "1": {
         "last_name": "миллер",
         "first_name": "валерий",
         "phone": "+79624814207",
         "email": "miller74@yandex.ru",
         "birth_date": "1980-08-20"
        },
-       {
+       "2": {
         "last_name": "лебедев",
         "first_name": "максим",
         "phone": "+79260806866",
         "email": "lebedev77@yandex.ru",
         "birth_date": "1974-01-21"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -948857,7 +948857,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p5f0",
-     "value": "None",
+     "value": "соколова",
      "canonical": "соколова",
      "parts": {
       "surname": "соколова",
@@ -948869,7 +948869,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -948879,7 +948879,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p5f0",
-     "value": "None",
+     "value": "анна",
      "canonical": "анна",
      "parts": {
       "given": "анна",
@@ -948891,7 +948891,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -948901,7 +948901,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p5f0",
-     "value": "None",
+     "value": "+79778524887",
      "canonical": "+79778524887",
      "parts": {
       "digits": "9778524887"
@@ -948912,7 +948912,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -948922,7 +948922,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p5f0",
-     "value": "None",
+     "value": "sokolova91@bk.ru",
      "canonical": "sokolova91@bk.ru",
      "parts": {
       "local": "sokolova91",
@@ -948934,7 +948934,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -948944,7 +948944,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p5f0",
-     "value": "None",
+     "value": "1997-08-14",
      "canonical": "1997-08-14",
      "parts": {
       "iso": "1997-08-14"
@@ -948955,7 +948955,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -948965,7 +948965,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p5f1",
-     "value": "None",
+     "value": "миллер",
      "canonical": "миллер",
      "parts": {
       "surname": "миллер",
@@ -948977,7 +948977,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -948987,7 +948987,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p5f1",
-     "value": "None",
+     "value": "валерий",
      "canonical": "валерий",
      "parts": {
       "given": "валерий",
@@ -948999,7 +948999,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -949009,7 +949009,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p5f1",
-     "value": "None",
+     "value": "+79624814207",
      "canonical": "+79624814207",
      "parts": {
       "digits": "9624814207"
@@ -949020,7 +949020,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -949030,7 +949030,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p5f1",
-     "value": "None",
+     "value": "miller74@yandex.ru",
      "canonical": "miller74@yandex.ru",
      "parts": {
       "local": "miller74",
@@ -949042,7 +949042,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -949052,7 +949052,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p5f1",
-     "value": "None",
+     "value": "1980-08-20",
      "canonical": "1980-08-20",
      "parts": {
       "iso": "1980-08-20"
@@ -949063,7 +949063,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -949073,7 +949073,7 @@
      "id": "i18",
      "type": "NAME",
      "identity": "p5f2",
-     "value": "None",
+     "value": "лебедев",
      "canonical": "лебедев",
      "parts": {
       "surname": "лебедев",
@@ -949085,7 +949085,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].last_name"
+      "path": "rows.2.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -949095,7 +949095,7 @@
      "id": "i19",
      "type": "NAME",
      "identity": "p5f2",
-     "value": "None",
+     "value": "максим",
      "canonical": "максим",
      "parts": {
       "given": "максим",
@@ -949107,7 +949107,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].first_name"
+      "path": "rows.2.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -949117,7 +949117,7 @@
      "id": "i20",
      "type": "PHONE",
      "identity": "p5f2",
-     "value": "None",
+     "value": "+79260806866",
      "canonical": "+79260806866",
      "parts": {
       "digits": "9260806866"
@@ -949128,7 +949128,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].phone"
+      "path": "rows.2.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -949138,7 +949138,7 @@
      "id": "i21",
      "type": "EMAIL",
      "identity": "p5f2",
-     "value": "None",
+     "value": "lebedev77@yandex.ru",
      "canonical": "lebedev77@yandex.ru",
      "parts": {
       "local": "lebedev77",
@@ -949150,7 +949150,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].email"
+      "path": "rows.2.email"
      },
      "duty": "required",
      "spoken": false,
@@ -949160,7 +949160,7 @@
      "id": "i22",
      "type": "DOB",
      "identity": "p5f2",
-     "value": "None",
+     "value": "1974-01-21",
      "canonical": "1974-01-21",
      "parts": {
       "iso": "1974-01-21"
@@ -949171,7 +949171,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].birth_date"
+      "path": "rows.2.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -949551,22 +949551,22 @@
       "path": "/upload/clients-6.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "битюков",
         "first_name": "олег",
         "phone": "+79770891669",
         "email": "bityukov78@list.ru",
         "birth_date": "2001-08-09"
        },
-       {
+       "1": {
         "last_name": "васильев",
         "first_name": "иван",
         "phone": "+79502856945",
         "email": "vasilev71@gmail.com",
         "birth_date": "1960-01-07"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -949742,7 +949742,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p6f0",
-     "value": "None",
+     "value": "битюков",
      "canonical": "битюков",
      "parts": {
       "surname": "битюков",
@@ -949754,7 +949754,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -949764,7 +949764,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p6f0",
-     "value": "None",
+     "value": "олег",
      "canonical": "олег",
      "parts": {
       "given": "олег",
@@ -949776,7 +949776,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -949786,7 +949786,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p6f0",
-     "value": "None",
+     "value": "+79770891669",
      "canonical": "+79770891669",
      "parts": {
       "digits": "9770891669"
@@ -949797,7 +949797,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -949807,7 +949807,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p6f0",
-     "value": "None",
+     "value": "bityukov78@list.ru",
      "canonical": "bityukov78@list.ru",
      "parts": {
       "local": "bityukov78",
@@ -949819,7 +949819,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -949829,7 +949829,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p6f0",
-     "value": "None",
+     "value": "2001-08-09",
      "canonical": "2001-08-09",
      "parts": {
       "iso": "2001-08-09"
@@ -949840,7 +949840,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -949850,7 +949850,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p6f1",
-     "value": "None",
+     "value": "васильев",
      "canonical": "васильев",
      "parts": {
       "surname": "васильев",
@@ -949862,7 +949862,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -949872,7 +949872,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p6f1",
-     "value": "None",
+     "value": "иван",
      "canonical": "иван",
      "parts": {
       "given": "иван",
@@ -949884,7 +949884,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -949894,7 +949894,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p6f1",
-     "value": "None",
+     "value": "+79502856945",
      "canonical": "+79502856945",
      "parts": {
       "digits": "9502856945"
@@ -949905,7 +949905,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -949915,7 +949915,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p6f1",
-     "value": "None",
+     "value": "vasilev71@gmail.com",
      "canonical": "vasilev71@gmail.com",
      "parts": {
       "local": "vasilev71",
@@ -949927,7 +949927,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -949937,7 +949937,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p6f1",
-     "value": "None",
+     "value": "1960-01-07",
      "canonical": "1960-01-07",
      "parts": {
       "iso": "1960-01-07"
@@ -949948,7 +949948,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -950300,29 +950300,29 @@
       "path": "/upload/clients-7.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "павлова",
         "first_name": "тамара",
         "phone": "+79197670448",
         "email": "pavlova90@mail.ru",
         "birth_date": "1960-03-07"
        },
-       {
+       "1": {
         "last_name": "кукушкин",
         "first_name": "валерий",
         "phone": "+79058409822",
         "email": "kukushkin97@list.ru",
         "birth_date": "1969-08-26"
        },
-       {
+       "2": {
         "last_name": "заболотный",
         "first_name": "руслан",
         "phone": "+79514688015",
         "email": "zabolotnyy79@list.ru",
         "birth_date": "1964-04-02"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -950503,7 +950503,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p7f0",
-     "value": "None",
+     "value": "павлова",
      "canonical": "павлова",
      "parts": {
       "surname": "павлова",
@@ -950515,7 +950515,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -950525,7 +950525,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p7f0",
-     "value": "None",
+     "value": "тамара",
      "canonical": "тамара",
      "parts": {
       "given": "тамара",
@@ -950537,7 +950537,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -950547,7 +950547,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p7f0",
-     "value": "None",
+     "value": "+79197670448",
      "canonical": "+79197670448",
      "parts": {
       "digits": "9197670448"
@@ -950558,7 +950558,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -950568,7 +950568,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p7f0",
-     "value": "None",
+     "value": "pavlova90@mail.ru",
      "canonical": "pavlova90@mail.ru",
      "parts": {
       "local": "pavlova90",
@@ -950580,7 +950580,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -950590,7 +950590,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p7f0",
-     "value": "None",
+     "value": "1960-03-07",
      "canonical": "1960-03-07",
      "parts": {
       "iso": "1960-03-07"
@@ -950601,7 +950601,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -950611,7 +950611,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p7f1",
-     "value": "None",
+     "value": "кукушкин",
      "canonical": "кукушкин",
      "parts": {
       "surname": "кукушкин",
@@ -950623,7 +950623,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -950633,7 +950633,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p7f1",
-     "value": "None",
+     "value": "валерий",
      "canonical": "валерий",
      "parts": {
       "given": "валерий",
@@ -950645,7 +950645,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -950655,7 +950655,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p7f1",
-     "value": "None",
+     "value": "+79058409822",
      "canonical": "+79058409822",
      "parts": {
       "digits": "9058409822"
@@ -950666,7 +950666,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -950676,7 +950676,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p7f1",
-     "value": "None",
+     "value": "kukushkin97@list.ru",
      "canonical": "kukushkin97@list.ru",
      "parts": {
       "local": "kukushkin97",
@@ -950688,7 +950688,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -950698,7 +950698,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p7f1",
-     "value": "None",
+     "value": "1969-08-26",
      "canonical": "1969-08-26",
      "parts": {
       "iso": "1969-08-26"
@@ -950709,7 +950709,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -950719,7 +950719,7 @@
      "id": "i18",
      "type": "NAME",
      "identity": "p7f2",
-     "value": "None",
+     "value": "заболотный",
      "canonical": "заболотный",
      "parts": {
       "surname": "заболотный",
@@ -950731,7 +950731,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].last_name"
+      "path": "rows.2.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -950741,7 +950741,7 @@
      "id": "i19",
      "type": "NAME",
      "identity": "p7f2",
-     "value": "None",
+     "value": "руслан",
      "canonical": "руслан",
      "parts": {
       "given": "руслан",
@@ -950753,7 +950753,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].first_name"
+      "path": "rows.2.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -950763,7 +950763,7 @@
      "id": "i20",
      "type": "PHONE",
      "identity": "p7f2",
-     "value": "None",
+     "value": "+79514688015",
      "canonical": "+79514688015",
      "parts": {
       "digits": "9514688015"
@@ -950774,7 +950774,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].phone"
+      "path": "rows.2.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -950784,7 +950784,7 @@
      "id": "i21",
      "type": "EMAIL",
      "identity": "p7f2",
-     "value": "None",
+     "value": "zabolotnyy79@list.ru",
      "canonical": "zabolotnyy79@list.ru",
      "parts": {
       "local": "zabolotnyy79",
@@ -950796,7 +950796,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].email"
+      "path": "rows.2.email"
      },
      "duty": "required",
      "spoken": false,
@@ -950806,7 +950806,7 @@
      "id": "i22",
      "type": "DOB",
      "identity": "p7f2",
-     "value": "None",
+     "value": "1964-04-02",
      "canonical": "1964-04-02",
      "parts": {
       "iso": "1964-04-02"
@@ -950817,7 +950817,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].birth_date"
+      "path": "rows.2.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -951211,22 +951211,22 @@
       "path": "/upload/clients-8.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "ерохин",
         "first_name": "пётр",
         "phone": "+79276188674",
         "email": "erohin77@bk.ru",
         "birth_date": "1958-05-16"
        },
-       {
+       "1": {
         "last_name": "миллер",
         "first_name": "валерия",
         "phone": "+79054285872",
         "email": "miller72@list.ru",
         "birth_date": "1975-10-23"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -951402,7 +951402,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p8f0",
-     "value": "None",
+     "value": "ерохин",
      "canonical": "ерохин",
      "parts": {
       "surname": "ерохин",
@@ -951414,7 +951414,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -951424,7 +951424,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p8f0",
-     "value": "None",
+     "value": "пётр",
      "canonical": "пётр",
      "parts": {
       "given": "пётр",
@@ -951436,7 +951436,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -951446,7 +951446,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p8f0",
-     "value": "None",
+     "value": "+79276188674",
      "canonical": "+79276188674",
      "parts": {
       "digits": "9276188674"
@@ -951457,7 +951457,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -951467,7 +951467,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p8f0",
-     "value": "None",
+     "value": "erohin77@bk.ru",
      "canonical": "erohin77@bk.ru",
      "parts": {
       "local": "erohin77",
@@ -951479,7 +951479,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -951489,7 +951489,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p8f0",
-     "value": "None",
+     "value": "1958-05-16",
      "canonical": "1958-05-16",
      "parts": {
       "iso": "1958-05-16"
@@ -951500,7 +951500,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -951510,7 +951510,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p8f1",
-     "value": "None",
+     "value": "миллер",
      "canonical": "миллер",
      "parts": {
       "surname": "миллер",
@@ -951522,7 +951522,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -951532,7 +951532,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p8f1",
-     "value": "None",
+     "value": "валерия",
      "canonical": "валерия",
      "parts": {
       "given": "валерия",
@@ -951544,7 +951544,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -951554,7 +951554,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p8f1",
-     "value": "None",
+     "value": "+79054285872",
      "canonical": "+79054285872",
      "parts": {
       "digits": "9054285872"
@@ -951565,7 +951565,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -951575,7 +951575,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p8f1",
-     "value": "None",
+     "value": "miller72@list.ru",
      "canonical": "miller72@list.ru",
      "parts": {
       "local": "miller72",
@@ -951587,7 +951587,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -951597,7 +951597,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p8f1",
-     "value": "None",
+     "value": "1975-10-23",
      "canonical": "1975-10-23",
      "parts": {
       "iso": "1975-10-23"
@@ -951608,7 +951608,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -952002,29 +952002,29 @@
       "path": "/upload/clients-9.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "кукушкин",
         "first_name": "валерий",
         "phone": "+79298202109",
         "email": "kukushkin95@bk.ru",
         "birth_date": "1964-06-06"
        },
-       {
+       "1": {
         "last_name": "фёдорова",
         "first_name": "юлия",
         "phone": "+79269052075",
         "email": "fedorova70@list.ru",
         "birth_date": "1980-11-06"
        },
-       {
+       "2": {
         "last_name": "миллер",
         "first_name": "валерия",
         "phone": "+79639350674",
         "email": "miller73@bk.ru",
         "birth_date": "1965-04-02"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -952205,7 +952205,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p9f0",
-     "value": "None",
+     "value": "кукушкин",
      "canonical": "кукушкин",
      "parts": {
       "surname": "кукушкин",
@@ -952217,7 +952217,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -952227,7 +952227,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p9f0",
-     "value": "None",
+     "value": "валерий",
      "canonical": "валерий",
      "parts": {
       "given": "валерий",
@@ -952239,7 +952239,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -952249,7 +952249,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p9f0",
-     "value": "None",
+     "value": "+79298202109",
      "canonical": "+79298202109",
      "parts": {
       "digits": "9298202109"
@@ -952260,7 +952260,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -952270,7 +952270,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p9f0",
-     "value": "None",
+     "value": "kukushkin95@bk.ru",
      "canonical": "kukushkin95@bk.ru",
      "parts": {
       "local": "kukushkin95",
@@ -952282,7 +952282,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -952292,7 +952292,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p9f0",
-     "value": "None",
+     "value": "1964-06-06",
      "canonical": "1964-06-06",
      "parts": {
       "iso": "1964-06-06"
@@ -952303,7 +952303,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -952313,7 +952313,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p9f1",
-     "value": "None",
+     "value": "фёдорова",
      "canonical": "фёдорова",
      "parts": {
       "surname": "фёдорова",
@@ -952325,7 +952325,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -952335,7 +952335,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p9f1",
-     "value": "None",
+     "value": "юлия",
      "canonical": "юлия",
      "parts": {
       "given": "юлия",
@@ -952347,7 +952347,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -952357,7 +952357,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p9f1",
-     "value": "None",
+     "value": "+79269052075",
      "canonical": "+79269052075",
      "parts": {
       "digits": "9269052075"
@@ -952368,7 +952368,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -952378,7 +952378,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p9f1",
-     "value": "None",
+     "value": "fedorova70@list.ru",
      "canonical": "fedorova70@list.ru",
      "parts": {
       "local": "fedorova70",
@@ -952390,7 +952390,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -952400,7 +952400,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p9f1",
-     "value": "None",
+     "value": "1980-11-06",
      "canonical": "1980-11-06",
      "parts": {
       "iso": "1980-11-06"
@@ -952411,7 +952411,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -952421,7 +952421,7 @@
      "id": "i18",
      "type": "NAME",
      "identity": "p9f2",
-     "value": "None",
+     "value": "миллер",
      "canonical": "миллер",
      "parts": {
       "surname": "миллер",
@@ -952433,7 +952433,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].last_name"
+      "path": "rows.2.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -952443,7 +952443,7 @@
      "id": "i19",
      "type": "NAME",
      "identity": "p9f2",
-     "value": "None",
+     "value": "валерия",
      "canonical": "валерия",
      "parts": {
       "given": "валерия",
@@ -952455,7 +952455,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].first_name"
+      "path": "rows.2.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -952465,7 +952465,7 @@
      "id": "i20",
      "type": "PHONE",
      "identity": "p9f2",
-     "value": "None",
+     "value": "+79639350674",
      "canonical": "+79639350674",
      "parts": {
       "digits": "9639350674"
@@ -952476,7 +952476,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].phone"
+      "path": "rows.2.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -952486,7 +952486,7 @@
      "id": "i21",
      "type": "EMAIL",
      "identity": "p9f2",
-     "value": "None",
+     "value": "miller73@bk.ru",
      "canonical": "miller73@bk.ru",
      "parts": {
       "local": "miller73",
@@ -952498,7 +952498,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].email"
+      "path": "rows.2.email"
      },
      "duty": "required",
      "spoken": false,
@@ -952508,7 +952508,7 @@
      "id": "i22",
      "type": "DOB",
      "identity": "p9f2",
-     "value": "None",
+     "value": "1965-04-02",
      "canonical": "1965-04-02",
      "parts": {
       "iso": "1965-04-02"
@@ -952519,7 +952519,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].birth_date"
+      "path": "rows.2.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -952899,22 +952899,22 @@
       "path": "/upload/clients-10.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "соколова",
         "first_name": "анна",
         "phone": "+79612134311",
         "email": "sokolova84@yandex.ru",
         "birth_date": "1989-10-19"
        },
-       {
+       "1": {
         "last_name": "лебедева",
         "first_name": "ирина",
         "phone": "+79855089536",
         "email": "lebedeva75@yandex.ru",
         "birth_date": "1992-10-07"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -953090,7 +953090,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p10f0",
-     "value": "None",
+     "value": "соколова",
      "canonical": "соколова",
      "parts": {
       "surname": "соколова",
@@ -953102,7 +953102,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -953112,7 +953112,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p10f0",
-     "value": "None",
+     "value": "анна",
      "canonical": "анна",
      "parts": {
       "given": "анна",
@@ -953124,7 +953124,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -953134,7 +953134,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p10f0",
-     "value": "None",
+     "value": "+79612134311",
      "canonical": "+79612134311",
      "parts": {
       "digits": "9612134311"
@@ -953145,7 +953145,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -953155,7 +953155,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p10f0",
-     "value": "None",
+     "value": "sokolova84@yandex.ru",
      "canonical": "sokolova84@yandex.ru",
      "parts": {
       "local": "sokolova84",
@@ -953167,7 +953167,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -953177,7 +953177,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p10f0",
-     "value": "None",
+     "value": "1989-10-19",
      "canonical": "1989-10-19",
      "parts": {
       "iso": "1989-10-19"
@@ -953188,7 +953188,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -953198,7 +953198,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p10f1",
-     "value": "None",
+     "value": "лебедева",
      "canonical": "лебедева",
      "parts": {
       "surname": "лебедева",
@@ -953210,7 +953210,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -953220,7 +953220,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p10f1",
-     "value": "None",
+     "value": "ирина",
      "canonical": "ирина",
      "parts": {
       "given": "ирина",
@@ -953232,7 +953232,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -953242,7 +953242,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p10f1",
-     "value": "None",
+     "value": "+79855089536",
      "canonical": "+79855089536",
      "parts": {
       "digits": "9855089536"
@@ -953253,7 +953253,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -953263,7 +953263,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p10f1",
-     "value": "None",
+     "value": "lebedeva75@yandex.ru",
      "canonical": "lebedeva75@yandex.ru",
      "parts": {
       "local": "lebedeva75",
@@ -953275,7 +953275,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -953285,7 +953285,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p10f1",
-     "value": "None",
+     "value": "1992-10-07",
      "canonical": "1992-10-07",
      "parts": {
       "iso": "1992-10-07"
@@ -953296,7 +953296,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -953662,29 +953662,29 @@
       "path": "/upload/clients-11.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "миллер",
         "first_name": "валерий",
         "phone": "+79050646467",
         "email": "miller85@bk.ru",
         "birth_date": "1970-02-19"
        },
-       {
+       "1": {
         "last_name": "битюкова",
         "first_name": "зинаида",
         "phone": "+79880110856",
         "email": "bityukova78@gmail.com",
         "birth_date": "1981-04-11"
        },
-       {
+       "2": {
         "last_name": "павлова",
         "first_name": "тамара",
         "phone": "+79895008191",
         "email": "pavlova71@yandex.ru",
         "birth_date": "1969-02-09"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -953865,7 +953865,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p11f0",
-     "value": "None",
+     "value": "миллер",
      "canonical": "миллер",
      "parts": {
       "surname": "миллер",
@@ -953877,7 +953877,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -953887,7 +953887,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p11f0",
-     "value": "None",
+     "value": "валерий",
      "canonical": "валерий",
      "parts": {
       "given": "валерий",
@@ -953899,7 +953899,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -953909,7 +953909,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p11f0",
-     "value": "None",
+     "value": "+79050646467",
      "canonical": "+79050646467",
      "parts": {
       "digits": "9050646467"
@@ -953920,7 +953920,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -953930,7 +953930,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p11f0",
-     "value": "None",
+     "value": "miller85@bk.ru",
      "canonical": "miller85@bk.ru",
      "parts": {
       "local": "miller85",
@@ -953942,7 +953942,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -953952,7 +953952,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p11f0",
-     "value": "None",
+     "value": "1970-02-19",
      "canonical": "1970-02-19",
      "parts": {
       "iso": "1970-02-19"
@@ -953963,7 +953963,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -953973,7 +953973,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p11f1",
-     "value": "None",
+     "value": "битюкова",
      "canonical": "битюкова",
      "parts": {
       "surname": "битюкова",
@@ -953985,7 +953985,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -953995,7 +953995,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p11f1",
-     "value": "None",
+     "value": "зинаида",
      "canonical": "зинаида",
      "parts": {
       "given": "зинаида",
@@ -954007,7 +954007,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -954017,7 +954017,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p11f1",
-     "value": "None",
+     "value": "+79880110856",
      "canonical": "+79880110856",
      "parts": {
       "digits": "9880110856"
@@ -954028,7 +954028,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -954038,7 +954038,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p11f1",
-     "value": "None",
+     "value": "bityukova78@gmail.com",
      "canonical": "bityukova78@gmail.com",
      "parts": {
       "local": "bityukova78",
@@ -954050,7 +954050,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -954060,7 +954060,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p11f1",
-     "value": "None",
+     "value": "1981-04-11",
      "canonical": "1981-04-11",
      "parts": {
       "iso": "1981-04-11"
@@ -954071,7 +954071,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -954081,7 +954081,7 @@
      "id": "i18",
      "type": "NAME",
      "identity": "p11f2",
-     "value": "None",
+     "value": "павлова",
      "canonical": "павлова",
      "parts": {
       "surname": "павлова",
@@ -954093,7 +954093,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].last_name"
+      "path": "rows.2.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -954103,7 +954103,7 @@
      "id": "i19",
      "type": "NAME",
      "identity": "p11f2",
-     "value": "None",
+     "value": "тамара",
      "canonical": "тамара",
      "parts": {
       "given": "тамара",
@@ -954115,7 +954115,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].first_name"
+      "path": "rows.2.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -954125,7 +954125,7 @@
      "id": "i20",
      "type": "PHONE",
      "identity": "p11f2",
-     "value": "None",
+     "value": "+79895008191",
      "canonical": "+79895008191",
      "parts": {
       "digits": "9895008191"
@@ -954136,7 +954136,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].phone"
+      "path": "rows.2.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -954146,7 +954146,7 @@
      "id": "i21",
      "type": "EMAIL",
      "identity": "p11f2",
-     "value": "None",
+     "value": "pavlova71@yandex.ru",
      "canonical": "pavlova71@yandex.ru",
      "parts": {
       "local": "pavlova71",
@@ -954158,7 +954158,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].email"
+      "path": "rows.2.email"
      },
      "duty": "required",
      "spoken": false,
@@ -954168,7 +954168,7 @@
      "id": "i22",
      "type": "DOB",
      "identity": "p11f2",
-     "value": "None",
+     "value": "1969-02-09",
      "canonical": "1969-02-09",
      "parts": {
       "iso": "1969-02-09"
@@ -954179,7 +954179,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].birth_date"
+      "path": "rows.2.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -954573,22 +954573,22 @@
       "path": "/upload/clients-12.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "кузнецов",
         "first_name": "дмитрий",
         "phone": "+79851833306",
         "email": "kuznecov86@mail.ru",
         "birth_date": "1970-08-03"
        },
-       {
+       "1": {
         "last_name": "павлова",
         "first_name": "тамара",
         "phone": "+79876864084",
         "email": "pavlova77@gmail.com",
         "birth_date": "2003-05-04"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -954764,7 +954764,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p12f0",
-     "value": "None",
+     "value": "кузнецов",
      "canonical": "кузнецов",
      "parts": {
       "surname": "кузнецов",
@@ -954776,7 +954776,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -954786,7 +954786,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p12f0",
-     "value": "None",
+     "value": "дмитрий",
      "canonical": "дмитрий",
      "parts": {
       "given": "дмитрий",
@@ -954798,7 +954798,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -954808,7 +954808,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p12f0",
-     "value": "None",
+     "value": "+79851833306",
      "canonical": "+79851833306",
      "parts": {
       "digits": "9851833306"
@@ -954819,7 +954819,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -954829,7 +954829,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p12f0",
-     "value": "None",
+     "value": "kuznecov86@mail.ru",
      "canonical": "kuznecov86@mail.ru",
      "parts": {
       "local": "kuznecov86",
@@ -954841,7 +954841,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -954851,7 +954851,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p12f0",
-     "value": "None",
+     "value": "1970-08-03",
      "canonical": "1970-08-03",
      "parts": {
       "iso": "1970-08-03"
@@ -954862,7 +954862,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -954872,7 +954872,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p12f1",
-     "value": "None",
+     "value": "павлова",
      "canonical": "павлова",
      "parts": {
       "surname": "павлова",
@@ -954884,7 +954884,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -954894,7 +954894,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p12f1",
-     "value": "None",
+     "value": "тамара",
      "canonical": "тамара",
      "parts": {
       "given": "тамара",
@@ -954906,7 +954906,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -954916,7 +954916,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p12f1",
-     "value": "None",
+     "value": "+79876864084",
      "canonical": "+79876864084",
      "parts": {
       "digits": "9876864084"
@@ -954927,7 +954927,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -954937,7 +954937,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p12f1",
-     "value": "None",
+     "value": "pavlova77@gmail.com",
      "canonical": "pavlova77@gmail.com",
      "parts": {
       "local": "pavlova77",
@@ -954949,7 +954949,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -954959,7 +954959,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p12f1",
-     "value": "None",
+     "value": "2003-05-04",
      "canonical": "2003-05-04",
      "parts": {
       "iso": "2003-05-04"
@@ -954970,7 +954970,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -955350,29 +955350,29 @@
       "path": "/upload/clients-13.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "новиков",
         "first_name": "игорь",
         "phone": "+79290313023",
         "email": "novikov98@gmail.com",
         "birth_date": "1986-12-27"
        },
-       {
+       "1": {
         "last_name": "миллер",
         "first_name": "валерий",
         "phone": "+79198764150",
         "email": "miller98@yandex.ru",
         "birth_date": "1968-05-27"
        },
-       {
+       "2": {
         "last_name": "кузнецов",
         "first_name": "дмитрий",
         "phone": "+79167291502",
         "email": "kuznecov95@list.ru",
         "birth_date": "2000-08-12"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -955553,7 +955553,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p13f0",
-     "value": "None",
+     "value": "новиков",
      "canonical": "новиков",
      "parts": {
       "surname": "новиков",
@@ -955565,7 +955565,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -955575,7 +955575,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p13f0",
-     "value": "None",
+     "value": "игорь",
      "canonical": "игорь",
      "parts": {
       "given": "игорь",
@@ -955587,7 +955587,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -955597,7 +955597,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p13f0",
-     "value": "None",
+     "value": "+79290313023",
      "canonical": "+79290313023",
      "parts": {
       "digits": "9290313023"
@@ -955608,7 +955608,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -955618,7 +955618,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p13f0",
-     "value": "None",
+     "value": "novikov98@gmail.com",
      "canonical": "novikov98@gmail.com",
      "parts": {
       "local": "novikov98",
@@ -955630,7 +955630,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -955640,7 +955640,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p13f0",
-     "value": "None",
+     "value": "1986-12-27",
      "canonical": "1986-12-27",
      "parts": {
       "iso": "1986-12-27"
@@ -955651,7 +955651,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -955661,7 +955661,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p13f1",
-     "value": "None",
+     "value": "миллер",
      "canonical": "миллер",
      "parts": {
       "surname": "миллер",
@@ -955673,7 +955673,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -955683,7 +955683,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p13f1",
-     "value": "None",
+     "value": "валерий",
      "canonical": "валерий",
      "parts": {
       "given": "валерий",
@@ -955695,7 +955695,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -955705,7 +955705,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p13f1",
-     "value": "None",
+     "value": "+79198764150",
      "canonical": "+79198764150",
      "parts": {
       "digits": "9198764150"
@@ -955716,7 +955716,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -955726,7 +955726,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p13f1",
-     "value": "None",
+     "value": "miller98@yandex.ru",
      "canonical": "miller98@yandex.ru",
      "parts": {
       "local": "miller98",
@@ -955738,7 +955738,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -955748,7 +955748,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p13f1",
-     "value": "None",
+     "value": "1968-05-27",
      "canonical": "1968-05-27",
      "parts": {
       "iso": "1968-05-27"
@@ -955759,7 +955759,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -955769,7 +955769,7 @@
      "id": "i18",
      "type": "NAME",
      "identity": "p13f2",
-     "value": "None",
+     "value": "кузнецов",
      "canonical": "кузнецов",
      "parts": {
       "surname": "кузнецов",
@@ -955781,7 +955781,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].last_name"
+      "path": "rows.2.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -955791,7 +955791,7 @@
      "id": "i19",
      "type": "NAME",
      "identity": "p13f2",
-     "value": "None",
+     "value": "дмитрий",
      "canonical": "дмитрий",
      "parts": {
       "given": "дмитрий",
@@ -955803,7 +955803,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].first_name"
+      "path": "rows.2.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -955813,7 +955813,7 @@
      "id": "i20",
      "type": "PHONE",
      "identity": "p13f2",
-     "value": "None",
+     "value": "+79167291502",
      "canonical": "+79167291502",
      "parts": {
       "digits": "9167291502"
@@ -955824,7 +955824,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].phone"
+      "path": "rows.2.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -955834,7 +955834,7 @@
      "id": "i21",
      "type": "EMAIL",
      "identity": "p13f2",
-     "value": "None",
+     "value": "kuznecov95@list.ru",
      "canonical": "kuznecov95@list.ru",
      "parts": {
       "local": "kuznecov95",
@@ -955846,7 +955846,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].email"
+      "path": "rows.2.email"
      },
      "duty": "required",
      "spoken": false,
@@ -955856,7 +955856,7 @@
      "id": "i22",
      "type": "DOB",
      "identity": "p13f2",
-     "value": "None",
+     "value": "2000-08-12",
      "canonical": "2000-08-12",
      "parts": {
       "iso": "2000-08-12"
@@ -955867,7 +955867,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].birth_date"
+      "path": "rows.2.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -956247,22 +956247,22 @@
       "path": "/upload/clients-14.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "букин",
         "first_name": "сергей",
         "phone": "+79299871251",
         "email": "bukin97@yandex.ru",
         "birth_date": "1984-06-01"
        },
-       {
+       "1": {
         "last_name": "миллер",
         "first_name": "валерий",
         "phone": "+79272610417",
         "email": "miller87@bk.ru",
         "birth_date": "1958-06-12"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -956438,7 +956438,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p14f0",
-     "value": "None",
+     "value": "букин",
      "canonical": "букин",
      "parts": {
       "surname": "букин",
@@ -956450,7 +956450,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -956460,7 +956460,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p14f0",
-     "value": "None",
+     "value": "сергей",
      "canonical": "сергей",
      "parts": {
       "given": "сергей",
@@ -956472,7 +956472,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -956482,7 +956482,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p14f0",
-     "value": "None",
+     "value": "+79299871251",
      "canonical": "+79299871251",
      "parts": {
       "digits": "9299871251"
@@ -956493,7 +956493,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -956503,7 +956503,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p14f0",
-     "value": "None",
+     "value": "bukin97@yandex.ru",
      "canonical": "bukin97@yandex.ru",
      "parts": {
       "local": "bukin97",
@@ -956515,7 +956515,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -956525,7 +956525,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p14f0",
-     "value": "None",
+     "value": "1984-06-01",
      "canonical": "1984-06-01",
      "parts": {
       "iso": "1984-06-01"
@@ -956536,7 +956536,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -956546,7 +956546,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p14f1",
-     "value": "None",
+     "value": "миллер",
      "canonical": "миллер",
      "parts": {
       "surname": "миллер",
@@ -956558,7 +956558,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -956568,7 +956568,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p14f1",
-     "value": "None",
+     "value": "валерий",
      "canonical": "валерий",
      "parts": {
       "given": "валерий",
@@ -956580,7 +956580,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -956590,7 +956590,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p14f1",
-     "value": "None",
+     "value": "+79272610417",
      "canonical": "+79272610417",
      "parts": {
       "digits": "9272610417"
@@ -956601,7 +956601,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -956611,7 +956611,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p14f1",
-     "value": "None",
+     "value": "miller87@bk.ru",
      "canonical": "miller87@bk.ru",
      "parts": {
       "local": "miller87",
@@ -956623,7 +956623,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -956633,7 +956633,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p14f1",
-     "value": "None",
+     "value": "1958-06-12",
      "canonical": "1958-06-12",
      "parts": {
       "iso": "1958-06-12"
@@ -956644,7 +956644,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -957024,29 +957024,29 @@
       "path": "/upload/clients-15.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "букин",
         "first_name": "сергей",
         "phone": "+79518990322",
         "email": "bukin86@gmail.com",
         "birth_date": "2001-04-27"
        },
-       {
+       "1": {
         "last_name": "полякова",
         "first_name": "валентина",
         "phone": "+79192358480",
         "email": "polyakova74@list.ru",
         "birth_date": "1980-01-19"
        },
-       {
+       "2": {
         "last_name": "павлова",
         "first_name": "тамара",
         "phone": "+79655990201",
         "email": "pavlova70@mail.ru",
         "birth_date": "1979-06-05"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -957227,7 +957227,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p15f0",
-     "value": "None",
+     "value": "букин",
      "canonical": "букин",
      "parts": {
       "surname": "букин",
@@ -957239,7 +957239,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -957249,7 +957249,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p15f0",
-     "value": "None",
+     "value": "сергей",
      "canonical": "сергей",
      "parts": {
       "given": "сергей",
@@ -957261,7 +957261,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -957271,7 +957271,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p15f0",
-     "value": "None",
+     "value": "+79518990322",
      "canonical": "+79518990322",
      "parts": {
       "digits": "9518990322"
@@ -957282,7 +957282,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -957292,7 +957292,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p15f0",
-     "value": "None",
+     "value": "bukin86@gmail.com",
      "canonical": "bukin86@gmail.com",
      "parts": {
       "local": "bukin86",
@@ -957304,7 +957304,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -957314,7 +957314,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p15f0",
-     "value": "None",
+     "value": "2001-04-27",
      "canonical": "2001-04-27",
      "parts": {
       "iso": "2001-04-27"
@@ -957325,7 +957325,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -957335,7 +957335,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p15f1",
-     "value": "None",
+     "value": "полякова",
      "canonical": "полякова",
      "parts": {
       "surname": "полякова",
@@ -957347,7 +957347,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -957357,7 +957357,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p15f1",
-     "value": "None",
+     "value": "валентина",
      "canonical": "валентина",
      "parts": {
       "given": "валентина",
@@ -957369,7 +957369,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -957379,7 +957379,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p15f1",
-     "value": "None",
+     "value": "+79192358480",
      "canonical": "+79192358480",
      "parts": {
       "digits": "9192358480"
@@ -957390,7 +957390,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -957400,7 +957400,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p15f1",
-     "value": "None",
+     "value": "polyakova74@list.ru",
      "canonical": "polyakova74@list.ru",
      "parts": {
       "local": "polyakova74",
@@ -957412,7 +957412,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -957422,7 +957422,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p15f1",
-     "value": "None",
+     "value": "1980-01-19",
      "canonical": "1980-01-19",
      "parts": {
       "iso": "1980-01-19"
@@ -957433,7 +957433,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -957443,7 +957443,7 @@
      "id": "i18",
      "type": "NAME",
      "identity": "p15f2",
-     "value": "None",
+     "value": "павлова",
      "canonical": "павлова",
      "parts": {
       "surname": "павлова",
@@ -957455,7 +957455,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].last_name"
+      "path": "rows.2.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -957465,7 +957465,7 @@
      "id": "i19",
      "type": "NAME",
      "identity": "p15f2",
-     "value": "None",
+     "value": "тамара",
      "canonical": "тамара",
      "parts": {
       "given": "тамара",
@@ -957477,7 +957477,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].first_name"
+      "path": "rows.2.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -957487,7 +957487,7 @@
      "id": "i20",
      "type": "PHONE",
      "identity": "p15f2",
-     "value": "None",
+     "value": "+79655990201",
      "canonical": "+79655990201",
      "parts": {
       "digits": "9655990201"
@@ -957498,7 +957498,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].phone"
+      "path": "rows.2.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -957508,7 +957508,7 @@
      "id": "i21",
      "type": "EMAIL",
      "identity": "p15f2",
-     "value": "None",
+     "value": "pavlova70@mail.ru",
      "canonical": "pavlova70@mail.ru",
      "parts": {
       "local": "pavlova70",
@@ -957520,7 +957520,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].email"
+      "path": "rows.2.email"
      },
      "duty": "required",
      "spoken": false,
@@ -957530,7 +957530,7 @@
      "id": "i22",
      "type": "DOB",
      "identity": "p15f2",
-     "value": "None",
+     "value": "1979-06-05",
      "canonical": "1979-06-05",
      "parts": {
       "iso": "1979-06-05"
@@ -957541,7 +957541,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].birth_date"
+      "path": "rows.2.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -957949,22 +957949,22 @@
       "path": "/upload/clients-16.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "битюков",
         "first_name": "олег",
         "phone": "+79096863301",
         "email": "bityukov92@bk.ru",
         "birth_date": "1995-09-06"
        },
-       {
+       "1": {
         "last_name": "васильев",
         "first_name": "иван",
         "phone": "+79525801390",
         "email": "vasilev92@gmail.com",
         "birth_date": "1973-02-12"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -958140,7 +958140,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p16f0",
-     "value": "None",
+     "value": "битюков",
      "canonical": "битюков",
      "parts": {
       "surname": "битюков",
@@ -958152,7 +958152,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -958162,7 +958162,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p16f0",
-     "value": "None",
+     "value": "олег",
      "canonical": "олег",
      "parts": {
       "given": "олег",
@@ -958174,7 +958174,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -958184,7 +958184,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p16f0",
-     "value": "None",
+     "value": "+79096863301",
      "canonical": "+79096863301",
      "parts": {
       "digits": "9096863301"
@@ -958195,7 +958195,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -958205,7 +958205,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p16f0",
-     "value": "None",
+     "value": "bityukov92@bk.ru",
      "canonical": "bityukov92@bk.ru",
      "parts": {
       "local": "bityukov92",
@@ -958217,7 +958217,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -958227,7 +958227,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p16f0",
-     "value": "None",
+     "value": "1995-09-06",
      "canonical": "1995-09-06",
      "parts": {
       "iso": "1995-09-06"
@@ -958238,7 +958238,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -958248,7 +958248,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p16f1",
-     "value": "None",
+     "value": "васильев",
      "canonical": "васильев",
      "parts": {
       "surname": "васильев",
@@ -958260,7 +958260,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -958270,7 +958270,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p16f1",
-     "value": "None",
+     "value": "иван",
      "canonical": "иван",
      "parts": {
       "given": "иван",
@@ -958282,7 +958282,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -958292,7 +958292,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p16f1",
-     "value": "None",
+     "value": "+79525801390",
      "canonical": "+79525801390",
      "parts": {
       "digits": "9525801390"
@@ -958303,7 +958303,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -958313,7 +958313,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p16f1",
-     "value": "None",
+     "value": "vasilev92@gmail.com",
      "canonical": "vasilev92@gmail.com",
      "parts": {
       "local": "vasilev92",
@@ -958325,7 +958325,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -958335,7 +958335,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p16f1",
-     "value": "None",
+     "value": "1973-02-12",
      "canonical": "1973-02-12",
      "parts": {
       "iso": "1973-02-12"
@@ -958346,7 +958346,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -958768,29 +958768,29 @@
       "path": "/upload/clients-17.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "полякова",
         "first_name": "валентина",
         "phone": "+79779584040",
         "email": "polyakova97@mail.ru",
         "birth_date": "1969-12-11"
        },
-       {
+       "1": {
         "last_name": "миллер",
         "first_name": "валерия",
         "phone": "+79510733565",
         "email": "miller70@gmail.com",
         "birth_date": "1966-11-26"
        },
-       {
+       "2": {
         "last_name": "новикова",
         "first_name": "наталья",
         "phone": "+79653976132",
         "email": "novikova92@bk.ru",
         "birth_date": "1970-04-10"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -958971,7 +958971,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p17f0",
-     "value": "None",
+     "value": "полякова",
      "canonical": "полякова",
      "parts": {
       "surname": "полякова",
@@ -958983,7 +958983,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -958993,7 +958993,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p17f0",
-     "value": "None",
+     "value": "валентина",
      "canonical": "валентина",
      "parts": {
       "given": "валентина",
@@ -959005,7 +959005,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -959015,7 +959015,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p17f0",
-     "value": "None",
+     "value": "+79779584040",
      "canonical": "+79779584040",
      "parts": {
       "digits": "9779584040"
@@ -959026,7 +959026,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -959036,7 +959036,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p17f0",
-     "value": "None",
+     "value": "polyakova97@mail.ru",
      "canonical": "polyakova97@mail.ru",
      "parts": {
       "local": "polyakova97",
@@ -959048,7 +959048,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -959058,7 +959058,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p17f0",
-     "value": "None",
+     "value": "1969-12-11",
      "canonical": "1969-12-11",
      "parts": {
       "iso": "1969-12-11"
@@ -959069,7 +959069,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -959079,7 +959079,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p17f1",
-     "value": "None",
+     "value": "миллер",
      "canonical": "миллер",
      "parts": {
       "surname": "миллер",
@@ -959091,7 +959091,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -959101,7 +959101,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p17f1",
-     "value": "None",
+     "value": "валерия",
      "canonical": "валерия",
      "parts": {
       "given": "валерия",
@@ -959113,7 +959113,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -959123,7 +959123,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p17f1",
-     "value": "None",
+     "value": "+79510733565",
      "canonical": "+79510733565",
      "parts": {
       "digits": "9510733565"
@@ -959134,7 +959134,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -959144,7 +959144,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p17f1",
-     "value": "None",
+     "value": "miller70@gmail.com",
      "canonical": "miller70@gmail.com",
      "parts": {
       "local": "miller70",
@@ -959156,7 +959156,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -959166,7 +959166,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p17f1",
-     "value": "None",
+     "value": "1966-11-26",
      "canonical": "1966-11-26",
      "parts": {
       "iso": "1966-11-26"
@@ -959177,7 +959177,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -959187,7 +959187,7 @@
      "id": "i18",
      "type": "NAME",
      "identity": "p17f2",
-     "value": "None",
+     "value": "новикова",
      "canonical": "новикова",
      "parts": {
       "surname": "новикова",
@@ -959199,7 +959199,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].last_name"
+      "path": "rows.2.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -959209,7 +959209,7 @@
      "id": "i19",
      "type": "NAME",
      "identity": "p17f2",
-     "value": "None",
+     "value": "наталья",
      "canonical": "наталья",
      "parts": {
       "given": "наталья",
@@ -959221,7 +959221,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].first_name"
+      "path": "rows.2.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -959231,7 +959231,7 @@
      "id": "i20",
      "type": "PHONE",
      "identity": "p17f2",
-     "value": "None",
+     "value": "+79653976132",
      "canonical": "+79653976132",
      "parts": {
       "digits": "9653976132"
@@ -959242,7 +959242,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].phone"
+      "path": "rows.2.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -959252,7 +959252,7 @@
      "id": "i21",
      "type": "EMAIL",
      "identity": "p17f2",
-     "value": "None",
+     "value": "novikova92@bk.ru",
      "canonical": "novikova92@bk.ru",
      "parts": {
       "local": "novikova92",
@@ -959264,7 +959264,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].email"
+      "path": "rows.2.email"
      },
      "duty": "required",
      "spoken": false,
@@ -959274,7 +959274,7 @@
      "id": "i22",
      "type": "DOB",
      "identity": "p17f2",
-     "value": "None",
+     "value": "1970-04-10",
      "canonical": "1970-04-10",
      "parts": {
       "iso": "1970-04-10"
@@ -959285,7 +959285,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].birth_date"
+      "path": "rows.2.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -959679,22 +959679,22 @@
       "path": "/upload/clients-18.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "фомин",
         "first_name": "вячеслав",
         "phone": "+79127703154",
         "email": "fomin74@mail.ru",
         "birth_date": "1987-06-19"
        },
-       {
+       "1": {
         "last_name": "тарасова",
         "first_name": "алла",
         "phone": "+79292848188",
         "email": "tarasova91@mail.ru",
         "birth_date": "1997-04-08"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -959870,7 +959870,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p18f0",
-     "value": "None",
+     "value": "фомин",
      "canonical": "фомин",
      "parts": {
       "surname": "фомин",
@@ -959882,7 +959882,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -959892,7 +959892,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p18f0",
-     "value": "None",
+     "value": "вячеслав",
      "canonical": "вячеслав",
      "parts": {
       "given": "вячеслав",
@@ -959904,7 +959904,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -959914,7 +959914,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p18f0",
-     "value": "None",
+     "value": "+79127703154",
      "canonical": "+79127703154",
      "parts": {
       "digits": "9127703154"
@@ -959925,7 +959925,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -959935,7 +959935,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p18f0",
-     "value": "None",
+     "value": "fomin74@mail.ru",
      "canonical": "fomin74@mail.ru",
      "parts": {
       "local": "fomin74",
@@ -959947,7 +959947,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -959957,7 +959957,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p18f0",
-     "value": "None",
+     "value": "1987-06-19",
      "canonical": "1987-06-19",
      "parts": {
       "iso": "1987-06-19"
@@ -959968,7 +959968,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -959978,7 +959978,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p18f1",
-     "value": "None",
+     "value": "тарасова",
      "canonical": "тарасова",
      "parts": {
       "surname": "тарасова",
@@ -959990,7 +959990,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -960000,7 +960000,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p18f1",
-     "value": "None",
+     "value": "алла",
      "canonical": "алла",
      "parts": {
       "given": "алла",
@@ -960012,7 +960012,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -960022,7 +960022,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p18f1",
-     "value": "None",
+     "value": "+79292848188",
      "canonical": "+79292848188",
      "parts": {
       "digits": "9292848188"
@@ -960033,7 +960033,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -960043,7 +960043,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p18f1",
-     "value": "None",
+     "value": "tarasova91@mail.ru",
      "canonical": "tarasova91@mail.ru",
      "parts": {
       "local": "tarasova91",
@@ -960055,7 +960055,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -960065,7 +960065,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p18f1",
-     "value": "None",
+     "value": "1997-04-08",
      "canonical": "1997-04-08",
      "parts": {
       "iso": "1997-04-08"
@@ -960076,7 +960076,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -960470,29 +960470,29 @@
       "path": "/upload/clients-19.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "новиков",
         "first_name": "игорь",
         "phone": "+79229212574",
         "email": "novikov75@gmail.com",
         "birth_date": "1966-07-18"
        },
-       {
+       "1": {
         "last_name": "заболотный",
         "first_name": "руслан",
         "phone": "+79898912856",
         "email": "zabolotnyy85@bk.ru",
         "birth_date": "1967-06-26"
        },
-       {
+       "2": {
         "last_name": "соколова",
         "first_name": "анна",
         "phone": "+79291033860",
         "email": "sokolova88@yandex.ru",
         "birth_date": "1958-11-24"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -960673,7 +960673,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p19f0",
-     "value": "None",
+     "value": "новиков",
      "canonical": "новиков",
      "parts": {
       "surname": "новиков",
@@ -960685,7 +960685,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -960695,7 +960695,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p19f0",
-     "value": "None",
+     "value": "игорь",
      "canonical": "игорь",
      "parts": {
       "given": "игорь",
@@ -960707,7 +960707,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -960717,7 +960717,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p19f0",
-     "value": "None",
+     "value": "+79229212574",
      "canonical": "+79229212574",
      "parts": {
       "digits": "9229212574"
@@ -960728,7 +960728,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -960738,7 +960738,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p19f0",
-     "value": "None",
+     "value": "novikov75@gmail.com",
      "canonical": "novikov75@gmail.com",
      "parts": {
       "local": "novikov75",
@@ -960750,7 +960750,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -960760,7 +960760,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p19f0",
-     "value": "None",
+     "value": "1966-07-18",
      "canonical": "1966-07-18",
      "parts": {
       "iso": "1966-07-18"
@@ -960771,7 +960771,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -960781,7 +960781,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p19f1",
-     "value": "None",
+     "value": "заболотный",
      "canonical": "заболотный",
      "parts": {
       "surname": "заболотный",
@@ -960793,7 +960793,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -960803,7 +960803,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p19f1",
-     "value": "None",
+     "value": "руслан",
      "canonical": "руслан",
      "parts": {
       "given": "руслан",
@@ -960815,7 +960815,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -960825,7 +960825,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p19f1",
-     "value": "None",
+     "value": "+79898912856",
      "canonical": "+79898912856",
      "parts": {
       "digits": "9898912856"
@@ -960836,7 +960836,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -960846,7 +960846,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p19f1",
-     "value": "None",
+     "value": "zabolotnyy85@bk.ru",
      "canonical": "zabolotnyy85@bk.ru",
      "parts": {
       "local": "zabolotnyy85",
@@ -960858,7 +960858,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -960868,7 +960868,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p19f1",
-     "value": "None",
+     "value": "1967-06-26",
      "canonical": "1967-06-26",
      "parts": {
       "iso": "1967-06-26"
@@ -960879,7 +960879,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -960889,7 +960889,7 @@
      "id": "i18",
      "type": "NAME",
      "identity": "p19f2",
-     "value": "None",
+     "value": "соколова",
      "canonical": "соколова",
      "parts": {
       "surname": "соколова",
@@ -960901,7 +960901,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].last_name"
+      "path": "rows.2.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -960911,7 +960911,7 @@
      "id": "i19",
      "type": "NAME",
      "identity": "p19f2",
-     "value": "None",
+     "value": "анна",
      "canonical": "анна",
      "parts": {
       "given": "анна",
@@ -960923,7 +960923,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].first_name"
+      "path": "rows.2.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -960933,7 +960933,7 @@
      "id": "i20",
      "type": "PHONE",
      "identity": "p19f2",
-     "value": "None",
+     "value": "+79291033860",
      "canonical": "+79291033860",
      "parts": {
       "digits": "9291033860"
@@ -960944,7 +960944,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].phone"
+      "path": "rows.2.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -960954,7 +960954,7 @@
      "id": "i21",
      "type": "EMAIL",
      "identity": "p19f2",
-     "value": "None",
+     "value": "sokolova88@yandex.ru",
      "canonical": "sokolova88@yandex.ru",
      "parts": {
       "local": "sokolova88",
@@ -960966,7 +960966,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].email"
+      "path": "rows.2.email"
      },
      "duty": "required",
      "spoken": false,
@@ -960976,7 +960976,7 @@
      "id": "i22",
      "type": "DOB",
      "identity": "p19f2",
-     "value": "None",
+     "value": "1958-11-24",
      "canonical": "1958-11-24",
      "parts": {
       "iso": "1958-11-24"
@@ -960987,7 +960987,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].birth_date"
+      "path": "rows.2.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -961381,22 +961381,22 @@
       "path": "/upload/clients-20.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "васильев",
         "first_name": "иван",
         "phone": "+79606094592",
         "email": "vasilev83@gmail.com",
         "birth_date": "1965-02-18"
        },
-       {
+       "1": {
         "last_name": "заболотный",
         "first_name": "руслан",
         "phone": "+79640219296",
         "email": "zabolotnyy77@mail.ru",
         "birth_date": "1961-07-06"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -961572,7 +961572,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p20f0",
-     "value": "None",
+     "value": "васильев",
      "canonical": "васильев",
      "parts": {
       "surname": "васильев",
@@ -961584,7 +961584,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -961594,7 +961594,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p20f0",
-     "value": "None",
+     "value": "иван",
      "canonical": "иван",
      "parts": {
       "given": "иван",
@@ -961606,7 +961606,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -961616,7 +961616,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p20f0",
-     "value": "None",
+     "value": "+79606094592",
      "canonical": "+79606094592",
      "parts": {
       "digits": "9606094592"
@@ -961627,7 +961627,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -961637,7 +961637,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p20f0",
-     "value": "None",
+     "value": "vasilev83@gmail.com",
      "canonical": "vasilev83@gmail.com",
      "parts": {
       "local": "vasilev83",
@@ -961649,7 +961649,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -961659,7 +961659,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p20f0",
-     "value": "None",
+     "value": "1965-02-18",
      "canonical": "1965-02-18",
      "parts": {
       "iso": "1965-02-18"
@@ -961670,7 +961670,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -961680,7 +961680,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p20f1",
-     "value": "None",
+     "value": "заболотный",
      "canonical": "заболотный",
      "parts": {
       "surname": "заболотный",
@@ -961692,7 +961692,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -961702,7 +961702,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p20f1",
-     "value": "None",
+     "value": "руслан",
      "canonical": "руслан",
      "parts": {
       "given": "руслан",
@@ -961714,7 +961714,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -961724,7 +961724,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p20f1",
-     "value": "None",
+     "value": "+79640219296",
      "canonical": "+79640219296",
      "parts": {
       "digits": "9640219296"
@@ -961735,7 +961735,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -961745,7 +961745,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p20f1",
-     "value": "None",
+     "value": "zabolotnyy77@mail.ru",
      "canonical": "zabolotnyy77@mail.ru",
      "parts": {
       "local": "zabolotnyy77",
@@ -961757,7 +961757,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -961767,7 +961767,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p20f1",
-     "value": "None",
+     "value": "1961-07-06",
      "canonical": "1961-07-06",
      "parts": {
       "iso": "1961-07-06"
@@ -961778,7 +961778,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -962172,29 +962172,29 @@
       "path": "/upload/clients-21.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "павлова",
         "first_name": "тамара",
         "phone": "+79264486786",
         "email": "pavlova93@mail.ru",
         "birth_date": "1994-07-13"
        },
-       {
+       "1": {
         "last_name": "тарасова",
         "first_name": "алла",
         "phone": "+79295897881",
         "email": "tarasova85@list.ru",
         "birth_date": "1984-06-15"
        },
-       {
+       "2": {
         "last_name": "захаров",
         "first_name": "владислав",
         "phone": "+79604136768",
         "email": "zaharov89@list.ru",
         "birth_date": "1990-06-15"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -962375,7 +962375,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p21f0",
-     "value": "None",
+     "value": "павлова",
      "canonical": "павлова",
      "parts": {
       "surname": "павлова",
@@ -962387,7 +962387,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -962397,7 +962397,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p21f0",
-     "value": "None",
+     "value": "тамара",
      "canonical": "тамара",
      "parts": {
       "given": "тамара",
@@ -962409,7 +962409,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -962419,7 +962419,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p21f0",
-     "value": "None",
+     "value": "+79264486786",
      "canonical": "+79264486786",
      "parts": {
       "digits": "9264486786"
@@ -962430,7 +962430,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -962440,7 +962440,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p21f0",
-     "value": "None",
+     "value": "pavlova93@mail.ru",
      "canonical": "pavlova93@mail.ru",
      "parts": {
       "local": "pavlova93",
@@ -962452,7 +962452,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -962462,7 +962462,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p21f0",
-     "value": "None",
+     "value": "1994-07-13",
      "canonical": "1994-07-13",
      "parts": {
       "iso": "1994-07-13"
@@ -962473,7 +962473,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -962483,7 +962483,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p21f1",
-     "value": "None",
+     "value": "тарасова",
      "canonical": "тарасова",
      "parts": {
       "surname": "тарасова",
@@ -962495,7 +962495,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -962505,7 +962505,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p21f1",
-     "value": "None",
+     "value": "алла",
      "canonical": "алла",
      "parts": {
       "given": "алла",
@@ -962517,7 +962517,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -962527,7 +962527,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p21f1",
-     "value": "None",
+     "value": "+79295897881",
      "canonical": "+79295897881",
      "parts": {
       "digits": "9295897881"
@@ -962538,7 +962538,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -962548,7 +962548,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p21f1",
-     "value": "None",
+     "value": "tarasova85@list.ru",
      "canonical": "tarasova85@list.ru",
      "parts": {
       "local": "tarasova85",
@@ -962560,7 +962560,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -962570,7 +962570,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p21f1",
-     "value": "None",
+     "value": "1984-06-15",
      "canonical": "1984-06-15",
      "parts": {
       "iso": "1984-06-15"
@@ -962581,7 +962581,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -962591,7 +962591,7 @@
      "id": "i18",
      "type": "NAME",
      "identity": "p21f2",
-     "value": "None",
+     "value": "захаров",
      "canonical": "захаров",
      "parts": {
       "surname": "захаров",
@@ -962603,7 +962603,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].last_name"
+      "path": "rows.2.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -962613,7 +962613,7 @@
      "id": "i19",
      "type": "NAME",
      "identity": "p21f2",
-     "value": "None",
+     "value": "владислав",
      "canonical": "владислав",
      "parts": {
       "given": "владислав",
@@ -962625,7 +962625,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].first_name"
+      "path": "rows.2.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -962635,7 +962635,7 @@
      "id": "i20",
      "type": "PHONE",
      "identity": "p21f2",
-     "value": "None",
+     "value": "+79604136768",
      "canonical": "+79604136768",
      "parts": {
       "digits": "9604136768"
@@ -962646,7 +962646,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].phone"
+      "path": "rows.2.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -962656,7 +962656,7 @@
      "id": "i21",
      "type": "EMAIL",
      "identity": "p21f2",
-     "value": "None",
+     "value": "zaharov89@list.ru",
      "canonical": "zaharov89@list.ru",
      "parts": {
       "local": "zaharov89",
@@ -962668,7 +962668,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].email"
+      "path": "rows.2.email"
      },
      "duty": "required",
      "spoken": false,
@@ -962678,7 +962678,7 @@
      "id": "i22",
      "type": "DOB",
      "identity": "p21f2",
-     "value": "None",
+     "value": "1990-06-15",
      "canonical": "1990-06-15",
      "parts": {
       "iso": "1990-06-15"
@@ -962689,7 +962689,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].birth_date"
+      "path": "rows.2.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -963083,22 +963083,22 @@
       "path": "/upload/clients-22.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "фёдорова",
         "first_name": "юлия",
         "phone": "+79257267923",
         "email": "fedorova74@list.ru",
         "birth_date": "1958-03-07"
        },
-       {
+       "1": {
         "last_name": "лебедева",
         "first_name": "ирина",
         "phone": "+79631683412",
         "email": "lebedeva95@mail.ru",
         "birth_date": "1963-01-27"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -963274,7 +963274,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p22f0",
-     "value": "None",
+     "value": "фёдорова",
      "canonical": "фёдорова",
      "parts": {
       "surname": "фёдорова",
@@ -963286,7 +963286,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -963296,7 +963296,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p22f0",
-     "value": "None",
+     "value": "юлия",
      "canonical": "юлия",
      "parts": {
       "given": "юлия",
@@ -963308,7 +963308,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -963318,7 +963318,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p22f0",
-     "value": "None",
+     "value": "+79257267923",
      "canonical": "+79257267923",
      "parts": {
       "digits": "9257267923"
@@ -963329,7 +963329,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -963339,7 +963339,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p22f0",
-     "value": "None",
+     "value": "fedorova74@list.ru",
      "canonical": "fedorova74@list.ru",
      "parts": {
       "local": "fedorova74",
@@ -963351,7 +963351,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -963361,7 +963361,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p22f0",
-     "value": "None",
+     "value": "1958-03-07",
      "canonical": "1958-03-07",
      "parts": {
       "iso": "1958-03-07"
@@ -963372,7 +963372,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -963382,7 +963382,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p22f1",
-     "value": "None",
+     "value": "лебедева",
      "canonical": "лебедева",
      "parts": {
       "surname": "лебедева",
@@ -963394,7 +963394,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -963404,7 +963404,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p22f1",
-     "value": "None",
+     "value": "ирина",
      "canonical": "ирина",
      "parts": {
       "given": "ирина",
@@ -963416,7 +963416,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -963426,7 +963426,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p22f1",
-     "value": "None",
+     "value": "+79631683412",
      "canonical": "+79631683412",
      "parts": {
       "digits": "9631683412"
@@ -963437,7 +963437,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -963447,7 +963447,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p22f1",
-     "value": "None",
+     "value": "lebedeva95@mail.ru",
      "canonical": "lebedeva95@mail.ru",
      "parts": {
       "local": "lebedeva95",
@@ -963459,7 +963459,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -963469,7 +963469,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p22f1",
-     "value": "None",
+     "value": "1963-01-27",
      "canonical": "1963-01-27",
      "parts": {
       "iso": "1963-01-27"
@@ -963480,7 +963480,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -963860,29 +963860,29 @@
       "path": "/upload/clients-23.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "воронина",
         "first_name": "елена",
         "phone": "+79629896582",
         "email": "voronina90@gmail.com",
         "birth_date": "1958-11-27"
        },
-       {
+       "1": {
         "last_name": "кукушкин",
         "first_name": "валерий",
         "phone": "+79508450587",
         "email": "kukushkin74@bk.ru",
         "birth_date": "1989-10-21"
        },
-       {
+       "2": {
         "last_name": "фомин",
         "first_name": "вячеслав",
         "phone": "+79622043707",
         "email": "fomin81@list.ru",
         "birth_date": "1974-09-04"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -964063,7 +964063,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p23f0",
-     "value": "None",
+     "value": "воронина",
      "canonical": "воронина",
      "parts": {
       "surname": "воронина",
@@ -964075,7 +964075,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -964085,7 +964085,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p23f0",
-     "value": "None",
+     "value": "елена",
      "canonical": "елена",
      "parts": {
       "given": "елена",
@@ -964097,7 +964097,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -964107,7 +964107,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p23f0",
-     "value": "None",
+     "value": "+79629896582",
      "canonical": "+79629896582",
      "parts": {
       "digits": "9629896582"
@@ -964118,7 +964118,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -964128,7 +964128,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p23f0",
-     "value": "None",
+     "value": "voronina90@gmail.com",
      "canonical": "voronina90@gmail.com",
      "parts": {
       "local": "voronina90",
@@ -964140,7 +964140,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -964150,7 +964150,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p23f0",
-     "value": "None",
+     "value": "1958-11-27",
      "canonical": "1958-11-27",
      "parts": {
       "iso": "1958-11-27"
@@ -964161,7 +964161,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -964171,7 +964171,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p23f1",
-     "value": "None",
+     "value": "кукушкин",
      "canonical": "кукушкин",
      "parts": {
       "surname": "кукушкин",
@@ -964183,7 +964183,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -964193,7 +964193,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p23f1",
-     "value": "None",
+     "value": "валерий",
      "canonical": "валерий",
      "parts": {
       "given": "валерий",
@@ -964205,7 +964205,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -964215,7 +964215,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p23f1",
-     "value": "None",
+     "value": "+79508450587",
      "canonical": "+79508450587",
      "parts": {
       "digits": "9508450587"
@@ -964226,7 +964226,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -964236,7 +964236,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p23f1",
-     "value": "None",
+     "value": "kukushkin74@bk.ru",
      "canonical": "kukushkin74@bk.ru",
      "parts": {
       "local": "kukushkin74",
@@ -964248,7 +964248,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -964258,7 +964258,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p23f1",
-     "value": "None",
+     "value": "1989-10-21",
      "canonical": "1989-10-21",
      "parts": {
       "iso": "1989-10-21"
@@ -964269,7 +964269,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -964279,7 +964279,7 @@
      "id": "i18",
      "type": "NAME",
      "identity": "p23f2",
-     "value": "None",
+     "value": "фомин",
      "canonical": "фомин",
      "parts": {
       "surname": "фомин",
@@ -964291,7 +964291,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].last_name"
+      "path": "rows.2.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -964301,7 +964301,7 @@
      "id": "i19",
      "type": "NAME",
      "identity": "p23f2",
-     "value": "None",
+     "value": "вячеслав",
      "canonical": "вячеслав",
      "parts": {
       "given": "вячеслав",
@@ -964313,7 +964313,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].first_name"
+      "path": "rows.2.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -964323,7 +964323,7 @@
      "id": "i20",
      "type": "PHONE",
      "identity": "p23f2",
-     "value": "None",
+     "value": "+79622043707",
      "canonical": "+79622043707",
      "parts": {
       "digits": "9622043707"
@@ -964334,7 +964334,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].phone"
+      "path": "rows.2.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -964344,7 +964344,7 @@
      "id": "i21",
      "type": "EMAIL",
      "identity": "p23f2",
-     "value": "None",
+     "value": "fomin81@list.ru",
      "canonical": "fomin81@list.ru",
      "parts": {
       "local": "fomin81",
@@ -964356,7 +964356,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].email"
+      "path": "rows.2.email"
      },
      "duty": "required",
      "spoken": false,
@@ -964366,7 +964366,7 @@
      "id": "i22",
      "type": "DOB",
      "identity": "p23f2",
-     "value": "None",
+     "value": "1974-09-04",
      "canonical": "1974-09-04",
      "parts": {
       "iso": "1974-09-04"
@@ -964377,7 +964377,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[2].birth_date"
+      "path": "rows.2.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -964757,22 +964757,22 @@
       "path": "/upload/clients-24.csv",
       "format": "csv",
       "title": "Выгрузка клиентов",
-      "rows": [
-       {
+      "rows": {
+       "0": {
         "last_name": "вольнов",
         "first_name": "евгений",
         "phone": "+79528466285",
         "email": "volnov75@list.ru",
         "birth_date": "1973-06-20"
        },
-       {
+       "1": {
         "last_name": "сергеев",
         "first_name": "кирилл",
         "phone": "+79256004740",
         "email": "sergeev83@bk.ru",
         "birth_date": "1965-12-03"
        }
-      ]
+      }
      },
      "pii_ids": [
       "i8",
@@ -964948,7 +964948,7 @@
      "id": "i8",
      "type": "NAME",
      "identity": "p24f0",
-     "value": "None",
+     "value": "вольнов",
      "canonical": "вольнов",
      "parts": {
       "surname": "вольнов",
@@ -964960,7 +964960,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].last_name"
+      "path": "rows.0.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -964970,7 +964970,7 @@
      "id": "i9",
      "type": "NAME",
      "identity": "p24f0",
-     "value": "None",
+     "value": "евгений",
      "canonical": "евгений",
      "parts": {
       "given": "евгений",
@@ -964982,7 +964982,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].first_name"
+      "path": "rows.0.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -964992,7 +964992,7 @@
      "id": "i10",
      "type": "PHONE",
      "identity": "p24f0",
-     "value": "None",
+     "value": "+79528466285",
      "canonical": "+79528466285",
      "parts": {
       "digits": "9528466285"
@@ -965003,7 +965003,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].phone"
+      "path": "rows.0.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -965013,7 +965013,7 @@
      "id": "i11",
      "type": "EMAIL",
      "identity": "p24f0",
-     "value": "None",
+     "value": "volnov75@list.ru",
      "canonical": "volnov75@list.ru",
      "parts": {
       "local": "volnov75",
@@ -965025,7 +965025,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].email"
+      "path": "rows.0.email"
      },
      "duty": "required",
      "spoken": false,
@@ -965035,7 +965035,7 @@
      "id": "i12",
      "type": "DOB",
      "identity": "p24f0",
-     "value": "None",
+     "value": "1973-06-20",
      "canonical": "1973-06-20",
      "parts": {
       "iso": "1973-06-20"
@@ -965046,7 +965046,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[0].birth_date"
+      "path": "rows.0.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -965056,7 +965056,7 @@
      "id": "i13",
      "type": "NAME",
      "identity": "p24f1",
-     "value": "None",
+     "value": "сергеев",
      "canonical": "сергеев",
      "parts": {
       "surname": "сергеев",
@@ -965068,7 +965068,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].last_name"
+      "path": "rows.1.last_name"
      },
      "duty": "required",
      "spoken": false,
@@ -965078,7 +965078,7 @@
      "id": "i14",
      "type": "NAME",
      "identity": "p24f1",
-     "value": "None",
+     "value": "кирилл",
      "canonical": "кирилл",
      "parts": {
       "given": "кирилл",
@@ -965090,7 +965090,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].first_name"
+      "path": "rows.1.first_name"
      },
      "duty": "required",
      "spoken": false,
@@ -965100,7 +965100,7 @@
      "id": "i15",
      "type": "PHONE",
      "identity": "p24f1",
-     "value": "None",
+     "value": "+79256004740",
      "canonical": "+79256004740",
      "parts": {
       "digits": "9256004740"
@@ -965111,7 +965111,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].phone"
+      "path": "rows.1.phone"
      },
      "duty": "required",
      "spoken": false,
@@ -965121,7 +965121,7 @@
      "id": "i16",
      "type": "EMAIL",
      "identity": "p24f1",
-     "value": "None",
+     "value": "sergeev83@bk.ru",
      "canonical": "sergeev83@bk.ru",
      "parts": {
       "local": "sergeev83",
@@ -965133,7 +965133,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].email"
+      "path": "rows.1.email"
      },
      "duty": "required",
      "spoken": false,
@@ -965143,7 +965143,7 @@
      "id": "i17",
      "type": "DOB",
      "identity": "p24f1",
-     "value": "None",
+     "value": "1965-12-03",
      "canonical": "1965-12-03",
      "parts": {
       "iso": "1965-12-03"
@@ -965154,7 +965154,7 @@
       "start": 0,
       "end": 0,
       "record": "doc-csv",
-      "path": "rows[1].birth_date"
+      "path": "rows.1.birth_date"
      },
      "duty": "required",
      "spoken": false,
@@ -965568,8 +965568,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -965906,27 +965905,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p25f0.home",
-     "value": "39",
-     "canonical": "39",
-     "parts": {
-      "house": "39"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p25",
      "value": "громова марина",
@@ -965949,7 +965927,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p25",
      "value": "восемь девятьсот пятьдесят пятьсот пятьдесят пяять шестьдесят шесть семьдесят семь",
@@ -966305,8 +966283,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -966643,27 +966620,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p26f0.home",
-     "value": "136",
-     "canonical": "136",
-     "parts": {
-      "house": "136"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p26",
      "value": "ерохин пётр",
@@ -966686,7 +966642,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p26",
      "value": "8 989 795 28 75",
@@ -967028,8 +966984,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -967366,27 +967321,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p27f0.home",
-     "value": "19",
-     "canonical": "19",
-     "parts": {
-      "house": "19"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p27",
      "value": "букин сергей",
@@ -967409,7 +967343,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p27",
      "value": "8-922-988-68-74",
@@ -967779,8 +967713,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -968117,27 +968050,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p28f0.home",
-     "value": "133а",
-     "canonical": "133а",
-     "parts": {
-      "house": "133а"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p28",
      "value": "миллер валерий",
@@ -968160,7 +968072,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p28",
      "value": "восемь девятьсот шеесят четыре триста девяно восемь четыреста восемьдесят девять семь",
@@ -968502,8 +968414,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -968840,27 +968751,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p29f0.home",
-     "value": "6",
-     "canonical": "6",
-     "parts": {
-      "house": "6"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p29",
      "value": "фёдорова юлия",
@@ -968883,7 +968773,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p29",
      "value": "89053728082",
@@ -969225,8 +969115,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -969563,27 +969452,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p30f0.home",
-     "value": "70",
-     "canonical": "70",
-     "parts": {
-      "house": "70"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p30",
      "value": "кузнецов дмитрий",
@@ -969606,7 +969474,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p30",
      "value": "89628889900",
@@ -969948,8 +969816,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -970286,27 +970153,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p31f0.home",
-     "value": "13",
-     "canonical": "13",
-     "parts": {
-      "house": "13"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p31",
      "value": "аленчиев аркадий",
@@ -970329,7 +970175,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p31",
      "value": "восем девятьсот пятьдесят пятьдесят три семьдесят восемь сорок девять три",
@@ -970657,8 +970503,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -970995,27 +970840,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p32f0.home",
-     "value": "63",
-     "canonical": "63",
-     "parts": {
-      "house": "63"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p32",
      "value": "громов артём",
@@ -971038,7 +970862,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p32",
      "value": "8-909-436-31-60",
@@ -971394,8 +971218,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -971732,27 +971555,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p33f0.home",
-     "value": "104",
-     "canonical": "104",
-     "parts": {
-      "house": "104"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p33",
      "value": "битюков олег",
@@ -971775,7 +971577,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p33",
      "value": "89773256763",
@@ -972131,8 +971933,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -972469,27 +972270,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p34f0.home",
-     "value": "160а",
-     "canonical": "160а",
-     "parts": {
-      "house": "160а"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p34",
      "value": "фомин вячеслав",
@@ -972512,7 +972292,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p34",
      "value": "8 989 912 79 09",
@@ -972882,8 +972662,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -973220,27 +972999,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p35f0.home",
-     "value": "54",
-     "canonical": "54",
-     "parts": {
-      "house": "54"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p35",
      "value": "соколова анна",
@@ -973263,7 +973021,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p35",
      "value": "+79777778899",
@@ -973619,8 +973377,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -973957,27 +973714,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p36f0.home",
-     "value": "60",
-     "canonical": "60",
-     "parts": {
-      "house": "60"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p36",
      "value": "миллер валерия",
@@ -974000,7 +973736,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p36",
      "value": "8 926 429 64 54",
@@ -974342,8 +974078,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -974680,27 +974415,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p37f0.home",
-     "value": "19",
-     "canonical": "19",
-     "parts": {
-      "house": "19"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p37",
      "value": "вольнов евгений",
@@ -974723,7 +974437,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p37",
      "value": "восемсь девятьсот восемьдесят пять триста сорок пяять девятьсот пясят девять девять",
@@ -975079,8 +974793,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -975417,27 +975130,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p38f0.home",
-     "value": "16",
-     "canonical": "16",
-     "parts": {
-      "house": "16"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p38",
      "value": "волынова евдокия",
@@ -975460,7 +975152,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p38",
      "value": "8-961-217-94-37",
@@ -975802,8 +975494,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -976140,27 +975831,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p39f0.home",
-     "value": "124",
-     "canonical": "124",
-     "parts": {
-      "house": "124"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p39",
      "value": "Васильев Иван",
@@ -976183,7 +975853,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p39",
      "value": "+7 929 603-26-05",
@@ -976581,8 +976251,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -976919,27 +976588,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p40f0.home",
-     "value": "20",
-     "canonical": "20",
-     "parts": {
-      "house": "20"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p40",
      "value": "букин сергей",
@@ -976962,7 +976610,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p40",
      "value": "8-916-402-11-87",
@@ -977290,8 +976938,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -977628,27 +977275,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p41f0.home",
-     "value": "5",
-     "canonical": "5",
-     "parts": {
-      "house": "5"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p41",
      "value": "громова марина",
@@ -977671,7 +977297,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p41",
      "value": "89629821773",
@@ -978027,8 +977653,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -978365,27 +977990,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p42f0.home",
-     "value": "13",
-     "canonical": "13",
-     "parts": {
-      "house": "13"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p42",
      "value": "лебедева ирина",
@@ -978408,7 +978012,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p42",
      "value": "+79872747113",
@@ -978722,8 +978326,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -979060,27 +978663,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p43f0.home",
-     "value": "29",
-     "canonical": "29",
-     "parts": {
-      "house": "29"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p43",
      "value": "сергеев кирилл",
@@ -979103,7 +978685,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p43",
      "value": "+79829814209",
@@ -979445,8 +979027,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -979783,27 +979364,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p44f0.home",
-     "value": "88",
-     "canonical": "88",
-     "parts": {
-      "house": "88"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p44",
      "value": "ерохин пётр",
@@ -979826,7 +979386,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p44",
      "value": "89198455047",
@@ -980168,8 +979728,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -980506,27 +980065,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p45f0.home",
-     "value": "33",
-     "canonical": "33",
-     "parts": {
-      "house": "33"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p45",
      "value": "битюкова зинаида",
@@ -980549,7 +980087,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p45",
      "value": "восемь девятьсот двадцать шесть сто двадцать три сорок пять шеесят семь",
@@ -980919,8 +980457,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -981257,27 +980794,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p46f0.home",
-     "value": "21",
-     "canonical": "21",
-     "parts": {
-      "house": "21"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p46",
      "value": "кузнецов дмитрий",
@@ -981300,7 +980816,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p46",
      "value": "восемь девятьсот семьдесят семь семьсот тридцать пять сто семьдесят четыре девять",
@@ -981642,8 +981158,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -981980,27 +981495,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p47f0.home",
-     "value": "66",
-     "canonical": "66",
-     "parts": {
-      "house": "66"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p47",
      "value": "Фомин Вячеслав",
@@ -982023,7 +981517,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p47",
      "value": "+7 961 406-07-08",
@@ -982393,8 +981887,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -982731,27 +982224,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p48f0.home",
-     "value": "194в",
-     "canonical": "194в",
-     "parts": {
-      "house": "194в"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p48",
      "value": "громова марина",
@@ -982774,7 +982246,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p48",
      "value": "89895235935",
@@ -983130,8 +982602,7 @@
       "i12",
       "i13",
       "i14",
-      "i15",
-      "i16"
+      "i15"
      ]
     }
    ],
@@ -983468,27 +982939,6 @@
     },
     {
      "id": "i16",
-     "type": "LOC",
-     "identity": "p49f0.home",
-     "value": "66",
-     "canonical": "66",
-     "parts": {
-      "house": "66"
-     },
-     "where": {
-      "kind": "seed",
-      "msg": -1,
-      "start": 0,
-      "end": 0,
-      "record": "doc-form",
-      "path": "house"
-     },
-     "duty": "required",
-     "spoken": false,
-     "stale": false
-    },
-    {
-     "id": "i17",
      "type": "NAME",
      "identity": "p49",
      "value": "лебедева ирина",
@@ -983511,7 +982961,7 @@
      "stale": false
     },
     {
-     "id": "i18",
+     "id": "i17",
      "type": "PHONE",
      "identity": "p49",
      "value": "89827360254",
