@@ -633,3 +633,66 @@ So before `chain_value`, `chain_form`, `form_hOUT` or `multi_all_out` are read
 as gateway numbers, the probe must compose ONE sentence per leaf carrying every
 hop that leaf declares. A readiness verdict taken on the uncorrected probe
 understates the instrument and would send us fixing what is not broken.
+
+---
+
+# Round 5 orders (2026-09-23) — the last four, then the GO brief
+
+The round-4 proof ran the perfect gateway over all 1736 cases and 23 wrong
+gateways: **21 lines print exactly 100 % for a right gateway**, `form_hOUT`
+99.59 %, `answer_real` 99.93 %, and every wrong gateway is caught by the line
+that names its defect (`report --selftest`: 29/29 constant mutants, 5/5
+registered). The verdict is `not_ready` on four items — three of them are
+captions and one is reproducibility; none would make a published number wrong.
+Evidence and the probe: `/Users/igor/.claude/jobs/4e5fce9b/tmp/proof-r4/`.
+
+**One of the four is NOT a defect and is not in these orders.** `form_hIN`
+prints 94.31 % for a perfect gateway and the entire residue is dictated values
+against written substitutes (written items 10812/10812 = 100 %; spoken 250/918;
+voice_raw 81.3 %, every other register 100 %). That is the instrument doing its
+job: our engine shows a WRITTEN fake for a value the customer DICTATED, so the
+IN form cannot mirror the source. It is an engine finding, recorded as such —
+`docs/known-issues.md` Б27 — and the report must SLICE `form_hIN` by
+written/dictated so the caption never reads as a metric defect. The engine side
+belongs to the voice/telephony track, not to this benchmark.
+
+## FIX-1 (metrics/observer/report)
+- **J1.1 (blocker — the v4 disease, back in a new place)** `answer_real`'s
+  denominator holds 720 of 1357 cases that declare NO required answer hop, so
+  `all([])` is True and a full passthrough scores 53.1 % on the line named «the
+  answer carries the real value». A case with no required answer hop is OUTSIDE
+  the denominator; the count of excluded cases is printed. Fixture: a
+  passthrough on such a case must not score.
+- **J1.2** `memory_stability` is structurally 0/0 — 0 of 619 memory-spec items
+  is ever shown in more than one place, and no wrong gateway can move it.
+  H1.4's own rule applies: either it gets a real population (say from what,
+  measured) or it is DROPPED from `V5_NEW_METRIC_NAMES` with the reason in the
+  removal comment. A line that can only print «н/п» is worse than no line.
+- **J1.3** `form_hIN` gains its written/dictated slice and its MetricSpec says
+  what the residue is, so nobody reads Б27 as an instrument defect.
+
+## FIX-A (the acceptance probe becomes part of the instrument) — a NEW owner, files listed
+Owns: `bench/agentpii5/perfect.py` (new), `bench/agentpii5/test_perfect.py`
+(new), and nothing else.
+- **J2.1 (blocker for trust, not for numbers)** The perfect-gateway probe lives
+  in `/tmp` and needed THREE corrections to become honest — two of them probe
+  bugs worth 12 points of `round_trip`/`end_to_end`/`multi_all_out`. So the
+  claim «a right gateway earns these numbers» cannot be re-checked by anyone.
+  Move it into the package: `perfect.py` simulates the right gateway over the
+  corpus (one mint per item worn in the surface's grammatical form; one
+  sentence per free leaf carrying every hop it declares; `request_index`
+  counted per push, as `GatewayV5._push` counts it — the three corrections are
+  the specification), and `test_perfect.py` runs it on a TIER (nano/small, so
+  it is seconds not minutes) and demands ≥ the thresholds the proof measured,
+  naming any line that falls. Read `/Users/igor/.claude/jobs/4e5fce9b/tmp/proof-r4/perfect5.py`
+  — it is the working version — and `sweep.py`/`sweep2.py` for the wrong
+  gateways; fold at least three of those (passthrough, normalizing the agent's
+  form, losing a substitute across turns) into the same test as the other half:
+  a right gateway earns it AND a wrong one cannot. This is the instrument's own
+  self-check and it is what makes every later change safe.
+
+## Definition of done for round 5
+19/19 tests, `report --selftest` green, `build --check` clean, lint 0, wiki 0;
+`python3 -m bench.agentpii5.test_perfect` PASS and red when a wrong gateway is
+substituted; `answer_real` unearnable by a passthrough. Then I write the GO
+brief: tier, cost, what the run answers, and the v4 comparison.
