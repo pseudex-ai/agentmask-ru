@@ -1,0 +1,213 @@
+# AgentPII-RU v5 — conformance checklist
+
+One line per requirement of `docs/tz-agentpii5.md` §0–§8 (every table row, every
+bullet). Each carries an acceptance a reviewer can verify MECHANICALLY: a file, a
+function, a constant, a test name or a shell command. The Phase-4 conformance
+reviewer walks this list top to bottom and marks each line PASS / FAIL / N/A
+with the evidence; a line without evidence is FAIL.
+
+Owners: **T** tools · **F** form comparator · **M** metrics (pure: observe,
+metrics, fixtures, report) · **GA** generator_a · **GB** generator_b (also
+`schema.py`, `scenarios5/common.py`, revision, build) · **J** judge + live glue
+(`judge.py`, `calibration.py`, `harness.py`, `records.py`) · **C** contracts
+(done) · **R** reviewer (a command run at review time).
+
+Paths are relative to `prototype/`. «contracts» = `bench/agentpii5/contracts.py`.
+Every test named here is a script with `main()` run as
+`python3 -m bench.agentpii5.<name>` from `prototype/` with the venv active.
+
+| id | spec | requirement | acceptance (mechanical) | owner |
+|---|---|---|---|---|
+| C-001 | §0.1 | v4 is the base, evolves, is not rebuilt | `git --no-pager diff --stat -- bench/agentpii4/` is empty at review; `bench/agentpii5/contracts.py` imports `bench.agentpii4.schema/tools/compare/report/stats` | C, R |
+| C-002 | §0.2 | v4's missed measurements exist as v5 lines: form, tool_result leg | `contracts.METRIC_NAMES` contains `form_hIN`, `form_hOUT`, `toolresult_masked`, `answer_real`; each has a function in `bench/agentpii5/metrics.py` registered in `METRIC_FUNCTIONS` | C, M |
+| C-003 | §0.3 | the agent is live; the CHECK is deterministic; no scripted agent in the benchmark run path | `bench/agentpii5/harness.py` never imports `bench.agentpii4.fake_agent`; `test_form.test_deterministic` runs `form_match` twice on every fixture pair and asserts equality | J, F |
+| C-004 | §0.4 | form is a chain of hops, each with an owner, ≥ 4 per loop | `contracts.Hop`, `contracts.MINIMAL_LOOP`, rule R07 in `schema.validate_v5`; `test_schema.test_r07_min_hops` | C, GB |
+| C-005 | §0.5 | tool_result is the base: ≥ 75% of cases reach IN/tool + OUT/answer | rule K03 (`MIN_SHARE_WITH_RESULT`) in `schema.validate_corpus_v5`; `build.py --check` prints the share | GB |
+| C-006 | §0.6 | tools are diverse, cover the verticals, each with its own return format | rules V01–V05 in `bench/agentpii5/tools.py::registry_problems()`; `test_tools.test_vertical_rules` | T |
+| C-007 | §0.7 | public metrics carried over, extended; many metrics | every name in `contracts.PUBLIC_METRIC_NAMES` and `V5_NEW_METRIC_NAMES` is a key of `metrics.METRIC_FUNCTIONS`; `test_metrics.test_every_metric_registered` | M |
+| C-008 | §0.8 | every metric has a test that it counts correctly | `bench/agentpii5/fixtures.py` holds three `Fixture`s per non-level metric; `test_fixtures.test_three_kinds_each` | M |
+| C-009 | §0.9 | judge: meaning + dialogue context; form by comparator; customer's view; calibrated | `contracts.JudgeInput` has no substitute field and no form field; `calibration.py::stamp()` returns `CalibrationStamp`; `test_judge.test_input_is_blind` | J |
+| C-010 | §1 table IN | IN hop: owner = the source; check `form(substitute) == form(source value)` | `observe.py`: an IN `HopObservation` has `produced` = the substitute the model read, `reference` = the source surface; `test_observe.test_in_orientation` | M |
+| C-011 | §1 table OUT | OUT hop: owner = the agent; check `form(real) == form(substitute as the agent wrote it)`, agent form READ off its output | `observe.py`: an OUT `HopObservation` has `produced` = restored leaf / restored answer span, `reference` = written leaf / raw answer span; `test_observe.test_out_orientation` | M |
+| C-012 | §1 sources | IN sources: user, tool, document/RAG chunk, memory | `contracts.IN_OWNERS == ("user","tool","document","memory")`; rule K13 coverage in `validate_corpus_v5`; `test_schema.test_k13` | C, GB |
+| C-013 | §1 consumers | OUT consumers: tool argument, answer, message to another agent/human (summary), template | `contracts.OUT_OWNERS`; `contracts.hop_owner_of_leaf`; `TEMPLATE_FIELDS`/`SUMMARY_FIELDS`; K13 | C, GB |
+| C-014 | §1 loop | minimal loop = IN-user → OUT-arg → IN-result → OUT-answer | `contracts.MINIMAL_LOOP`; R07; `revise.py` declares exactly this loop for each of the 455 v4 cases with seeds (`test_revise.test_455_get_loop`) | C, GB |
+| C-015 | §1 chain | chain lengthens: result A → IN → arg B → OUT («5th hop»); result B → IN → answer → OUT | `Hop.source_hop`; R12; `metrics.chain_value`, `metrics.chain_form` count transitions where `source_hop` points at an IN/tool hop of another tool; `test_metrics.test_chain_transitions` | C, M, GA |
+| C-016 | §1 multi | multi-call = many OUT-args and IN-results per turn | `Hop.call_ordinal`, `Hop.parallel_group`; R09; `metrics.multi_all_out`, `metrics.multi_consistency` | C, M, GA |
+| C-017 | §1 why | the check runs INSIDE arm I, not I↔C (I↔C cancels form) | `observe.py` reads only `ArmRunV5` of arm I; `test_metrics.test_form_lines_ignore_controls` builds a `RunObservation` with `ic=None, cc=None` and asserts every form line is unchanged | M |
+| C-018 | §1 engine state | v5 MEASURES first; engine fixes are the next plan | `git --no-pager diff --stat -- pseudex/` empty at review; only `harness.py` imports `pseudex` (`test_no_pseudex` in every component test, `PSEUDEX_ALLOWED_MODULES`) | R, all |
+| C-019 | §1.1 | `form_match(type, produced, reference) -> same \| differs(features)` with the reason | `bench/agentpii5/form.py::form_match` satisfies `contracts.FormMatcher`; returns `FormVerdict`; `test_form.test_verdict_consistency` (same ⇔ differs empty) | F |
+| C-020 | §1.1 NAME | NAME: case class, grammatical case, part order, initials/full, translit | subsumed by C-171 (`FORM_FEATURES["NAME"]`) | F |
+| C-021 | §1.1 PHONE | PHONE: prefix, grouping, separators, parens | subsumed by C-172 | F |
+| C-022 | §1.1 LOC | LOC: case, generic word (yes/no/abbr), д./кв. markers, commas, city–street order, by fields vs one string | subsumed by C-173 | F |
+| C-023 | §1.1 DOB/DATE | notation, separator, padding, short year, in words | subsumed by C-174 | F |
+| C-024 | §1.1 EMAIL | case | subsumed by C-175 | F |
+| C-025 | §1.1 ids | CARD/SNILS/INN/PASSPORT/PLATE: grouping, separators, spaces, case | subsumed by C-176…C-180 | F |
+| C-026 | §1.1 rule | the comparator is written independently of the engine — imports nothing from `pseudex/` | `test_form.test_no_pseudex`: import `bench.agentpii5.form`, assert no `sys.modules` key starts with `pseudex`; `grep -rn "pseudex" bench/agentpii5/form.py` finds only the docstring | F |
+| C-027 | §2 delivery | create, book, track, reschedule; result = address in the courier's normalisation | `TOOL_VERTICAL` lists 8 delivery tools; `courier_status` declares `nested` with `recipient{name,phone}`, `address`; `test_tools.test_courier_status_forms` | T |
+| C-028 | §2 directory | `address_suggest`, `normalize_contact`; result = canon («г Самара, ул Луговая, д 10», «+7 (916) …») | both declare `canon` in `return_forms` with `differs_from_user_form=True`; `test_tools.test_directory_canon` renders and asserts the exact canon shape | T |
+| C-029 | §2 clinic | book, slots, patient find; result = DOB ISO, СНИЛС with separators | clinic tools render `birth_date` as `YYYY-MM-DD`; `snils_verify` renders `XXX-XXX-XXX YY`; `test_tools.test_clinic_iso_snils` | T |
+| C-030 | §2 bank | create, refund, status, client_find; result = card in groups, INN, amounts | `bank_client_find` renders card as `XXXX XXXX XXXX XXXX` and INN 10/12 digits; `test_tools.test_bank_forms` | T |
+| C-031 | §2 support | find, create, escalate; result = history with real values in free text | `ticket_history` declares `free_text`; `test_tools.test_ticket_history_free_text` asserts ≥ 2 PII slots inside prose | T |
+| C-032 | §2 calendar | slots, book, reschedule; dates/times in different notations | `calendar_free` renders slots in ≥ 2 date notations across calls (seeded); `test_tools.test_calendar_notations` | T |
+| C-033 | §2 messaging | sms, email, template; substitution into a template (OUT in text) | `email_send` exists; `TEMPLATE_FIELDS` covers `send_template`, `notify_sms`, `email_send`; `test_observe.test_template_owner` | T, M |
+| C-034 | §2 government | passport_verify, doc_check; passport, СНИЛС, PLATE | `vehicle_check` (PLATE) and `snils_verify` exist with `error_with_value`/`empty`; `test_tools.test_government_forms` | T |
+| C-035 | §2 search/RAG | search, retrieve; N chunks with PII (IN ×N), query with PII (OUT) | `kb_search` declares `chunks` and renders `k` chunks each with ≥ 1 PII slot; `doc_retrieve` declares `free_text`; `test_tools.test_kb_search_chunks` | T |
+| C-036 | §2 files | read_file, import_csv, parse_form; PII inside a document (IN-document) | `file_read` (`free_text`/`list`), `form_parse` (`nested`), v4 `crm_import_csv` all in vertical `files`; `test_tools.test_file_forms` | T |
+| C-037 | §2 telephony | voice + streaming; IN-result in the voice register — a register and a transport, not a tool | `"telephony" not in contracts.VERTICALS`; K11 (`MIN_STREAMING_CASES`); `harness.py` runs `streaming` cases' answer leg through the sidecar chunk contract (`test_harness_stream.test_chunked_answer`) | C, GB, J |
+| C-038 | §2 forms | return forms: single · list · nested · error-with-real · empty · canon · form ≠ user's · free text with PII · document chunks | `contracts.RETURN_FORMS` (8) + `ToolSpecV5.differs_from_user_form`; `test_contracts` asserts 8 | C |
+| C-039 | §2 forms | every tool has at least one declared return form (spec §2 says «несколько», §8.1 «≥1»; the stricter per-vertical rules V01–V03 replace «several per tool») | V04 in `tools.registry_problems()`; `test_tools.test_every_tool_has_form` | T |
+| C-040 | §2 v4 | v4's 31 tools revised by the vertical table: each with a return form and ≥ 1 PII-bearing result | every `V4_TOOL_NAMES` entry in `REGISTRY_V5` has `vertical`, ≥ 1 `ReturnForm`, and `base.result_pii` non-empty (v4 leaves 22 of them empty); `test_tools.test_v4_tools_revised` | T |
+| C-041 | §3.1 single | single call: the base, 4 hops | `BEHAVIOUR_SHARES["single"] == 0.15`; revised cases with seeds carry the 4-hop loop; `test_revise.test_single_has_four_hops` | GB |
+| C-042 | §3.1 retry | retry of one tool: error result with real value in text (IN), form on EACH OUT-arg, consistency of the substitute across attempts | `ForcedError`; mock answers `error_with_value` on the forced ordinal (`test_mock.test_forced_error`); `metrics.retry_form`, `metrics.multi_consistency` | T, GA, M |
+| C-043 | §3.1 other target | one tool, different targets: two identities, no cross-contamination | R11; by-behaviour slice of `answer_real` and `form_hOUT` prints `same_tool_other_target`; v4 taxonomy `other_person` count for the family in the side-by-side (`report.py` taxonomy block by behaviour) | GA, M |
+| C-044 | §3.1 chain | sequential chain: result A → argument B (IN→OUT), accumulated state, answer over all | R12; `chain_value`, `chain_form`; `answer_real` counts every declared item of the case | GA, M |
+| C-045 | §3.1 parallel | N calls in one turn: N OUT at once, consistency, results arrive together, the answer integrates them | R09 (`parallel_group`); `multi_all_out`, `multi_consistency`; `observe.py` groups OUT hops by (turn, parallel_group) | GA, M |
+| C-046 | §3.1 fan-out | find N candidates → pick → act: list in IN, matching BY VALUE (where a placeholder goes blind) | `PickSpec`; R13; v4 `values` level + `answer_real` sliced by behaviour `fanout_pick`; `test_schema.test_r13` | GA, GB |
+| C-047 | §3.1 branching | found → update / not found → create: the agent's logic on substitutes equals the control's (v4 levels) | `BranchSpec`; R14; v4 levels sliced by behaviour in `report.py` (`by_axis("behaviour")` on the v4 block) | GA, M |
+| C-048 | §3.1 user in loop | find → show → confirm → act: memory across turns, OUT-answer, then OUT-arg from the confirmed value | `LoopSpec`; R15; `memory_consistency` counts the item; `test_schema.test_r15` | GB |
+| C-049 | §3.2 list | result as a list | `list` declared by ≥ 1 tool per vertical (V01) | T |
+| C-050 | §3.2 nested | result as a nested object (address by fields) | `courier_status`, `form_parse`, `crm_find_contact` declare `nested`/`single` with `address.{street,house}` sub-fields; `test_tools.test_nested_address` | T |
+| C-051 | §3.2 error/empty | error or empty result carrying the real value | V02; `ForcedError.message_template` carries `{value}`; `test_mock.test_error_echoes_value` | T |
+| C-052 | §3.2 template | template substitution | OUT hops with owner `template` (C-013); K13 | GB, M |
+| C-053 | §3.2 canon | canonical normalisation | C-028 | T |
+| C-054 | §3.2 free text | free text (ticket history) | C-031 | T |
+| C-055 | §3.2 many records | many records of one identity in one result | K15 in `validate_corpus_v5`; `account_statement` renders ≥ 2 rows of one person; `test_schema.test_k15` | T, GB |
+| C-056 | §3.3 memory | a value from turn 1 used at turn 7: consistency (one substitute), stability (not re-minted), no collisions with many values | `MemorySpec`; `memory_consistency`, `memory_stability`; K14 (≥ 3 MemorySpecs, ≥ 2 identities, ≥ 5 turns in ≥ 5 cases) | GB, M |
+| C-057 | §3.3 anaphora | «ему», «на тот адрес», «тот же телефон» — the agent resolves from context, the gateway keeps the substitute | `ANAPHORA_KINDS`; R16 (the value is NOT written at the recall turn); K14 | GB |
+| C-058 | §3.3 long | long context: many turns, many identities | K14 | GB |
+| C-059 | §3.3 summary | summary/escalation: retelling with PII to another agent/person — OUT with many values | OUT hops with owner `summary` on `escalate_to_human.summary` / `crm_add_note.text` / `ticket_create.text`; `form_hOUT` sliced by `hop_owner` prints `summary` | GB, M |
+| C-060 | §3.4 rag | query with PII (OUT-arg) → N chunks with PII (IN ×N, including other people's) → the agent answers/acts | `RagSpec`; R17; `rag_masked` over chunks; `kb_search` renders foreign identities' chunks | GB, T, M |
+| C-061 | §3.4 identities | a chunk with several identities: consistency and separation | `rag_identity_kept`: a foreign identity is «kept» iff none of its values appears in an OUT hop of the customer's items and none of the customer's substitutes appears where the foreign value stood; `test_metrics.test_rag_identity_kept` | M |
+| C-062 | §3.5 document | the agent reads a file (contract, form, CSV import, form): IN-document, extraction into a tool (OUT), answer | `DocumentSpec`; R18; `doc_masked`, `doc_extracted`; `file_read`/`form_parse`/`doc_retrieve` render the document | GB, T, M |
+| C-063 | §3.5 formats | CSV/table, free text, structured form, scan text with noise; many records in one document | `DOCUMENT_FORMATS` all four occur (K14); `record_count ≥ 2` for csv (R18); `test_schema.test_k14` | GB |
+| C-064 | §3.6 | v4's 22 families kept and given hops 3–4 | `V4_KIND_TO_BEHAVIOUR` covers `V4_SCENARIO_KINDS`; K10 (834 revised, 455 with `has_result`); `revise.py`; `test_revise.test_k10` | C, GB |
+| C-065 | §3.7 | voice ≈ 45% and streaming scenarios (SSE); IN-result in the voice register | K04 (voice share), K11, R20; `harness.py` streaming path (C-037) | GB, J |
+| C-066 | §4.1 | v4 paired levels `action/tools/keys/state/values/verbatim` + TOST δ=3pp, cluster bootstrap, 1/n floor, `comparable` — kept unchanged | `SideBySide.v4_levels` produced by `bench.agentpii4.report.render` on `.base` cases from the v4-shaped `arms.jsonl`; `test_report.test_v4_block_byte_equal` renders the same triples through v4 and through v5 and asserts identical text | M, J |
+| C-067 | §4.1 | leak by type and register | `V4_EXTRA_LINES` `v4_leak` + public `leak` sliced by `pii_type` and `register` | M |
+| C-068 | §4.1 | negatives (over-masking) | `overmask` line + `v4_overmask` | M |
+| C-069 | §4.2 | `leak` | `metrics.leak`: hits = items altered before the model saw them; total = all items shown | M |
+| C-070 | §4.2 | `coverage` — no piece survived; honest: city / generic word / marker are not PII | `metrics.coverage` uses `bench.agentpii4.parts.parts_of` to enumerate pieces and exempts `city`, generic words and markers; adversarial fixture: surname survived while given name masked → 0/1 | M |
+| C-071 | §4.2 | `typed` | `metrics.typed` over items whose `pieces` carry an `engine_type`; absent (not printed) when none do | M |
+| C-072 | §4.2 | `round_trip` — absolute, not only a comparison of arms | hits = altered items with a tool parameter whose restored leaf equals the item's canonical; total = altered items with a tool parameter | M |
+| C-073 | §4.2 | `round_trip_repaired` — diagnostic, never a success criterion | `MetricSpec.diagnostic == True`; `report.py` prints it under «диагностика» and never in the verdict line | M |
+| C-074 | §4.2 | `end_to_end` | total = ALL items with a tool parameter | M |
+| C-075 | §4.2 | `overmask` | total = negatives; hit = negative not covered by a masked span | M |
+| C-076 | §4.2 | `consistency` | second mention got the first mention's substitute (from `MentionRecord`s) | M |
+| C-077 | §4.2 | `stability` | first mention's substitute unchanged between requests (`request_index`) | M |
+| C-078 | §4.2 | `rewrite_ratio` | diagnostic Line: cases whose I reply rewrote > 30% of C's tokens (difflib ratio) | M |
+| C-079 | §4.2 | `shared_block` | diagnostic Line: items whose substitute cannot be attributed to one span | M |
+| C-080 | §4.2 slices | slices: registers / name tiers / cue / families / tool verticals | `contracts.AXES`; `report.by_axis(observations, axis)` for every axis; `test_report.test_every_axis_prints` | M |
+| C-081 | §4.3 | `form_<hop>` by type with the reason set; aggregates by hop, type, vertical, behaviour | `form_hIN`/`form_hOUT` Lines + `report.differs_histogram(type)`; axes `hop_owner`, `pii_type`, `vertical`, `behaviour` | M |
+| C-082 | §4.3 | `toolresult_masked` | C-154 | M |
+| C-083 | §4.3 | `answer_real` | C-155 | M |
+| C-084 | §4.3 | `chain_*` | C-156, C-157 | M |
+| C-085 | §4.3 | `multi_*` | C-158, C-159 | M |
+| C-086 | §4.3 | `memory_*` | C-161, C-162 | M |
+| C-087 | §4.3 | `doc_*` / `rag_*` | C-163…C-166 | M |
+| C-088 | §4.3 | `residual` — a substitute reached the tool or the answer = critical | C-167; `report.py` prints `residual` misses under «ДЕФЕКТ ПРОДУКТА» | M |
+| C-089 | §4.4 | every metric has fixtures on which it MUST be red/green (zero, one, adversarial) | `fixtures.py::FIXTURES: dict[str, tuple[Fixture, Fixture, Fixture]]` keyed by every non-level `METRIC_NAMES`; `test_fixtures.test_three_kinds_each` | M |
+| C-090 | §4.4 | the benchmark REFUSES to print a report if a metric does not separate on its fixtures | `report.gate_all()` → `GateVerdict` per metric; a non-diagnostic refusal sets `SideBySide.incomplete` and the header carries `INCOMPLETE_REPORT_MARK`; `test_report_gate.test_broken_metric_is_refused` registers a constant metric and asserts it is absent from `v5_lines` and present in `v5_refused` | M |
+| C-091 | §4.4 rule | an instrument that cannot fail is not an instrument | `report.py --selftest`: swaps every metric for `lambda obs: Line(name, 1, 1)` and asserts every one is refused (the `audit_gates --selftest` shape) | M |
+| C-092 | §4.4 rule | overlap ≠ coverage — both numbers | `leak` and `coverage` both printed, never summed; `test_report.test_leak_and_coverage_both_present` | M |
+| C-093 | §4.4 rule | ground truth = canonical of what was WRITTEN, from what the generator BUILT | R02 (v4 `validate` on `.base`: trace tiles every message); `bench.agentpii4.validate.prove_no_search` run over `scenarios5/` in `build.py --check` | GB, GA |
+| C-094 | §4.4 rule | no «came back as written» fallback | `round_trip` counts equality to `canonical` only; repaired values count only in `round_trip_repaired` (C-073) | M |
+| C-095 | §4.4 rule | «no effect» is claimed only by TOST | the string «эквивалентно» appears only inside the v4 block of `<run>.report.txt`; v5 Lines print interval + certification only; `test_report.test_no_effect_claims_outside_v4_block` | M |
+| C-096 | §5 | separation: form → comparator; meaning, completeness, context → judge | `judge.build_prompt(JudgeInput)` — signature takes no `FormVerdict`/`HopObservation`; rubric text contains no form words (`test_judge.test_rubric_has_no_form_rules` greps for «падеж», «регистр», «формат»)  | J |
+| C-097 | §5 | judges the RESTORED answer (customer's view) against the real oracle: matched the returned record, did not invent, answered the question, used context/memory | `JudgeInput.restored_answer`, `oracle_literals`, `dialogue_context`, `customer_question`; `test_judge.test_rubric_names_four_questions` | J |
+| C-098 | §5 | `residual` flag before the judge, so a substitute in the answer cannot fool it | `judge.residual_pregate` (`contracts.ResidualPregate`); `test_judge.test_residual_pregate_short_circuits` (a minted substitute in the answer → `неверно`, `judged_by == "residual_gate"`, no model call) | J |
+| C-099 | §5 | Sonnet judges, Haiku holds the dialogue | `harness.py` passes `contracts.JUDGE_MODEL` / `AGENT_MODEL`; run header prints both | J |
+| C-100 | §5 | calibration on a manual sample (agreement with a human by PII type and family), a confidence threshold, spread over repeats | `calibration.py`: `draw_sample`, `agreement`, `kappa`, `per_type`, `repeat_check`, `stamp`; `test_calibration` | J |
+| C-101 | §6 Д1 | form (hops) is measured | C-010…C-019, C-081 | M, F |
+| C-102 | §6 Д2 | tool_result → answer is the base | C-005, C-014 | GB |
+| C-103 | §6 Д3 | overlap ≠ coverage | C-092 | M |
+| C-104 | §6 Д4 | INN, PLATE in the corpus; clean share decided (10%) | K05, K04 | GB |
+| C-105 | §6 Д5 | voice / SSE | C-065 | GB, J |
+| C-106 | §6 Д6 | tool diversity | C-027…C-040 | T |
+| C-107 | §6 Д7 | memory / RAG / documents | C-056…C-063 | GB |
+| C-108 | §6 Д8 | metric correctness tests | C-089…C-091 | M |
+| C-109 | §7 | never published | `contracts.PUBLISHED is False`; `grep -rn "agentpii5" public/` is empty at review | R |
+| C-110 | §7 | no scripted agents in the benchmark (deterministic form only for tests) | C-003; scripted policies appear only under `test_*.py` and a `smoke.py` whose report is headed «СКРИПТОВЫЙ АГЕНТ» | J |
+| C-111 | §7 | no rebuild from scratch | C-001 | C |
+| C-112 | §7 | no engine fixes in this plan | C-018 | R |
+| C-113 | §8.1 rule | every tool: `source`, strict `parse` (bad argument → refusal like the real API), `result_pii`, a declared return form; the mock returns the real value STRICTLY in its API's format | V04, V05; `test_tools`: for every tool one accepted and one refused shape with the documented rule name (v4 `tools.main()` pattern) | T |
+| C-114 | §8.1 keep | all 31 v4 tools kept | `set(contracts.V4_TOOL_NAMES) <= set(tools.REGISTRY_V5)`; `test_tools.test_v4_kept` | T |
+| C-115 | §8.1 table | `kb_search(query, k)` — Elastic/Qdrant-like top-k; `chunks` (k chunks, incl. OTHER people); names, phones, addresses | `REGISTRY_V5["kb_search"]`: `vertical="search"`, forms ⊇ `("chunks","empty")`, result types `NAME, PHONE, LOC`; `test_tools.test_kb_search_chunks` | T |
+| C-116 | §8.1 table | `doc_retrieve(doc_id)` — document store; `free_text`; everything in the document | forms ⊇ `("free_text","empty")` | T |
+| C-117 | §8.1 table | `file_read(path)` — attachment (txt/csv/docx text); `free_text` / `list` (CSV rows); many records, scan noise | forms ⊇ `("free_text","list","empty")`; scan noise rendering seeded (`test_tools.test_file_read_scan_noise`) | T |
+| C-118 | §8.1 table | `form_parse(text)` — questionnaire parser; `nested`; ФИО, ДР, паспорт, СНИЛС, адрес | forms ⊇ `("nested","error_with_value")`, result types `NAME, DOB, PASSPORT, SNILS, LOC` | T |
+| C-119 | §8.1 table | `bank_client_find(inn\|phone)` — bank CRM; `single`/`list`; INN, card in groups, ФИО | forms ⊇ `("single","list","empty","error_with_value")`; result types `INN, CARD, NAME`; parse accepts exactly one of `inn`/`phone` (`exactly_one_key`) | T |
+| C-120 | §8.1 table | `account_statement(client_id)` — statement; `list`; amounts, requisites, ФИО | forms ⊇ `("list","empty")`; ≥ 2 rows of one person (C-055) | T |
+| C-121 | §8.1 table | `vehicle_check(plate)` — ГИБДД-like; `single`/`error_with_value`; PLATE, owner ФИО | forms ⊇ `("single","error_with_value")`; result types `PLATE, NAME`; parse validates the plate pattern `[АВЕКМНОРСТУХ]\d{3}[АВЕКМНОРСТУХ]{2}\d{2,3}` | T |
+| C-122 | §8.1 table | `snils_verify(snils)` — ПФР-like; `single`/`empty`; СНИЛС, ФИО, ДР | forms ⊇ `("single","empty","error_with_value")`; parse checks mod-101 (`snils_checksum`) | T |
+| C-123 | §8.1 table | `calendar_free(person, date)` — calendar; `list` of slots; name, dates in different notations | forms ⊇ `("list","empty")`; result types `NAME, DOB` (`DATE` is not a v4 item type — a slot date is not personal data; the notation variety is tested on the slot strings, C-032) | T |
+| C-124 | §8.1 table | `email_send(to, subject, body)` — SMTP-like; `single` (id); e-mail, body with PII | forms ⊇ `("single","error_with_value")`; `body`/`subject` in `TEMPLATE_FIELDS` | T |
+| C-125 | §8.1 table | `ticket_history(id)` — ticket history; `free_text`; real values in prose | forms ⊇ `("free_text","empty")` | T |
+| C-126 | §8.1 table | `courier_status(id)` — CDEK/Boxberry track; `nested` (recipient{name, phone}, address); courier-normalised address | forms ⊇ `("nested","error_with_value")` | T |
+| C-127 | §8.1 total | ≈ 43 tools, 11 verticals | `len(tools.REGISTRY_V5) == 43`; `set(TOOL_VERTICAL.values()) == set(VERTICALS)`; `test_tools.test_counts` | T |
+| C-128 | §8.1 total | every vertical has ≥ 1 tool with `list` | V01; `test_tools.test_vertical_rules` | T |
+| C-129 | §8.1 total | every vertical has ≥ 1 tool with `error_with_value`/`empty` | V02 | T |
+| C-130 | §8.1 total | every vertical has ≥ 1 tool whose result form differs from the user's | V03 (`differs_from_user_form`) | T |
+| C-131 | §8.1 total | telephony is a register + streaming, not a tool | C-037 | C |
+| C-132 | §8.2 stats | ≥ 120 cases per family for ±10pp (the table's own counts are the FLOORS; a family under 120 prints its wider MDE) | K02 (`BEHAVIOUR_FLOORS`, `MIN_CASES_FOR_10PP`); `build.py --check` prints `stats.mde_paired` per family | GB |
+| C-133 | §8.2 stats | whole corpus ≥ 600 for ±5pp (target 1 200–1 500) | K01 (`CORPUS_SIZE_BAND_V5`) | GB |
+| C-134 | §8.2 stats | holdout 20% set aside BEFORE debugging | K12; `build.py` writes `ladder.json` with `holdout` on the first build and refuses to change it without `--regenerate-ladder` (`test_build.test_holdout_frozen`) | GB |
+| C-135 | §8.2 stats | clusters ≥ 3 at ≥ 8 identities; ICC measured, not assumed | K08; ICC printed by the v4 block | GB |
+| C-136 | §8.2 row | total with a tool result ≥ 75% (≥ 900) with IN-result + OUT-answer | K03 | GB |
+| C-137 | §8.2 row | single 15% ≈ 180, 4 hops | `BEHAVIOUR_SHARES["single"]`; K02 | GB |
+| C-138 | §8.2 row | retry of one tool 10% ≈ 120: OUT ×2, IN-error | `BEHAVIOUR_SHARES["retry_same_tool"]`; R10 | GA |
+| C-139 | §8.2 row | sequential chain 15% ≈ 180: chain IN(A) → OUT(B) | `BEHAVIOUR_SHARES["sequential_chain"]`; R12 | GA, GB |
+| C-140 | §8.2 row | parallel 8% ≈ 100: OUT ×N at once | `BEHAVIOUR_SHARES["parallel"]`; R09 | GA |
+| C-141 | §8.2 row | fan-out → pick 8% ≈ 100: IN-list, matching | `BEHAVIOUR_SHARES["fanout_pick"]`; R13 | GA |
+| C-142 | §8.2 row | branching 7% ≈ 85: logic on substitutes | `BEHAVIOUR_SHARES["branching"]`; R14 | GA |
+| C-143 | §8.2 row | user in loop 7% ≈ 85: memory + OUT-answer + OUT-arg | `BEHAVIOUR_SHARES["user_in_loop"]`; R15 | GB |
+| C-144 | §8.2 row | memory/anaphora 10% ≈ 120: consistency, stability | `BEHAVIOUR_SHARES["memory_anaphora"]`; R16 | GB |
+| C-145 | §8.2 row | search/RAG 8% ≈ 100: IN-chunks ×k, foreign identities | `BEHAVIOUR_SHARES["rag"]`; R17 | GB |
+| C-146 | §8.2 row | documents/files 8% ≈ 100: IN-document, extraction | `BEHAVIOUR_SHARES["document"]`; R18 | GB |
+| C-147 | §8.2 row | one tool, different targets 4% ≈ 50: two identities | `BEHAVIOUR_SHARES["same_tool_other_target"]`; R11 | GA |
+| C-148 | §8.2 registers | voice ≈ 45%, chat 25%, sloppy 15%, clean 10% | K04 (`REGISTER_SHARES`, `SHARE_TOLERANCE`) | GB |
+| C-149 | §8.2 types | INN ≥ 60, PLATE ≥ 60 cases; other types not below v4 | K05, K06 (`MIN_CASES_BY_TYPE`, `V4_TYPE_ITEM_COUNTS`) | GB |
+| C-150 | §8.2 v4 | the 834 are kept; 455 with results get hops 3–4; the rest are revised | K10; `revise.py`; `test_revise.test_messages_byte_identical` (messages, items, seeds of every revised case equal v4's) | GB |
+| C-151 | §8.3 format | one format as public `score.py`: `Line(hits, total)` → rate, Clopper–Pearson, «certifies ≥» at 100% | `contracts.Line`; `report.render_line` prints `x/n (rate) [low, high]` and «сертифицирует ≥ f» when `certified` is set; `test_report.test_line_rendering` | C, M |
+| C-152 | §8.3 gate | no metric is printed without its fixtures | C-090 | M |
+| C-153 | §8.3 row | `form_h<IN\|OUT>[type]`: hits = e with `form_match == same`; total = e that crossed this hop. Fixtures: case failure · exact match · same string, other letter-case | `fixtures.FIXTURES["form_hIN"]` and `["form_hOUT"]` each: `zero` = a NAME hop where produced is in another grammatical case (differs ⊇ {gram_case}); `one` = produced == reference; `adversarial` = identical letters, other case class → 0/1 with differs == {case_class} | M |
+| C-154 | §8.3 row | `toolresult_masked`: hits = results where no real value reached the model; total = results with PII. Fixtures: real in result · all masked · real in error text | `FIXTURES["toolresult_masked"]`: `zero` = a result whose `pieces` miss one `spans_real` slot; `one` = every slot covered; `adversarial` = an `error_with_value` result (forced) whose echoed value is unmasked → 0/1 | M |
+| C-155 | §8.3 row | `answer_real`: hits = answers where every e is the real value in the agent's form; total = answers with PII. Fixtures: substitute in answer · real · real in a foreign form | `FIXTURES["answer_real"]`: `zero` = an OUT/answer hop with status `residual`; `one` = all OUT/answer hops observed and `same`; `adversarial` = real value present but `form_match` differs (e.g. canonical phone where the agent wrote «8 916…») → 0/1 | M |
+| C-156 | §8.3 row | `chain_value`: hits = A→B transitions where the real value in B equals the real value from A; total = all transitions. Fixtures: lost · kept · kept but ANOTHER value of the same type | `FIXTURES["chain_value"]`: `adversarial` = B carries a real value of the same type from a different item (other identity) → 0/1 | M |
+| C-157 | §8.3 row | `chain_form`: hits = transitions with `form_match == same` on OUT(B); total = transitions. Fixtures: tool's form leaked into B · agent's form · mixed | `FIXTURES["chain_form"]`: `zero` = B written in the tool result's canon while the agent wrote otherwise; `adversarial` = two-field value with one field in each form → 0/1 with differs non-empty | M |
+| C-158 | §8.3 row | `multi_all_out`: hits = turns where ALL OUT-args are right in value and form; total = turns with N ≥ 2. Fixtures: one of N broken · all right · N right, other order | `FIXTURES["multi_all_out"]`: `adversarial` = all N right, `call_ordinal` permuted relative to the declaration → 1/1 (order is NOT a failure; the fixture docstring says a metric that fails it is wrong) | M |
+| C-159 | §8.3 row | `multi_consistency`: hits = turns where one value → one substitute in all calls; total = turns with N ≥ 2. Fixtures: two substitutes · one · one across an error-retry | `FIXTURES["multi_consistency"]`: `adversarial` = a retry turn (forced error) with the same substitute on both attempts → 1/1 | M |
+| C-160 | §8.3 row | `retry_form`: hits = retries where OUT form matched the agent's form on EVERY attempt; total = retries. Fixtures: 1st right, 2nd wrong · both · the agent changed form on the 2nd and we followed | `FIXTURES["retry_form"]`: `adversarial` = attempt 1 «+7…», attempt 2 «8…», both restored in the agent's respective form → 1/1 | M |
+| C-161 | §8.3 row | `memory_consistency`: hits = values mentioned in > 1 turn with one substitute; total = such values. Fixtures: re-minted · one · anaphora without a substitute | `FIXTURES["memory_consistency"]`: `adversarial` = recall turn is a pronoun (no mention record at recall) → the value still counts once, with one substitute → 1/1 | M |
+| C-162 | §8.3 row | `memory_stability`: hits = substitutes unchanged between requests; total = substitutes. Fixtures: changed · unchanged · changed in a NEW conversation (normal) | `FIXTURES["memory_stability"]`: `adversarial` = two `RunObservation`s with different `conversation_id` and different substitutes → 1/1 per observation (not a failure) | M |
+| C-163 | §8.3 row | `rag_masked`: hits = chunks with PII where no real value reached the model; total = chunks. Fixtures: a foreign person's real value · all masked · two identities interleaved | `FIXTURES["rag_masked"]`: `adversarial` = one chunk with two persons, one masked one not → 0/1 | M |
+| C-164 | §8.3 row | `rag_identity_kept`: hits = foreign identities not mixed with the customer; total = foreign identities. Fixtures: mixed · separated · a shared phone | `FIXTURES["rag_identity_kept"]`: `adversarial` = customer and foreign person share a phone value (one item value, two identities) → kept iff the answer/arg carries the customer's name with it → fixture built so the answer names the foreign person → 0/1 | M |
+| C-165 | §8.3 row | `doc_masked`: hits = documents with every real value masked; total = documents. Fixtures: one CSV row leaked · all · scan noise bypassed the mask | `FIXTURES["doc_masked"]`: `adversarial` = a `scan` document where a noised value (Latin look-alike) is unmasked → 0/1 | M |
+| C-166 | §8.3 row | `doc_extracted`: hits = extracted e that reached the tool as the real value; total = extracted. Fixtures: substitute into the tool · real · real of the WRONG field | `FIXTURES["doc_extracted"]`: `adversarial` = a real value from another field/record of the document lands in the leaf → 0/1 | M |
+| C-167 | §8.3 row | `residual`: hits = answers/argument leaves WITHOUT a substitute; total = all. Fixtures: substitute went out · clean · substitute inside a tool error | `FIXTURES["residual"]`: `adversarial` = a substitute inside the mock's error text echoed by the agent into the answer → 0/1 | M |
+| C-168 | §8.3 public | public denominators as `score.py`: leak/coverage over all e; round_trip over altered-with-parameter; end_to_end over all with parameter; overmask over negatives; consistency/stability over observations with a second mention; typed over e with a declared type | `MetricSpec.total` wording for each; `test_metrics.test_public_denominators` builds one observation set and asserts each total | M |
+| C-169 | §8.3 public | `round_trip_repaired` — diagnostics only | C-073 | M |
+| C-170 | §8.4 rule | `form_match(type, produced, reference) -> same \| differs({features})`; every feature is boolean-comparable, extracted from the string, compared pairwise; no `pseudex` import | `form.py::FEATURE_EXTRACTORS: dict[tuple[str,str], FeatureExtractor]`; `test_form.test_extractor_keys_equal_contract` (`set(FEATURE_EXTRACTORS) == set(contracts.feature_pairs())`); `test_form.test_labels_closed` (every extractor output ∈ `FEATURE_LABELS`, `*` families by prefix) | F |
+| C-171 | §8.4 NAME | `case_class` · `gram_case` (pymorphy3 vote) · `order` · `parts` · `initials` · `script` · `hyphen_particle` | `test_form.test_name_features`: for each feature ≥ 1 pair labelled `same` and ≥ 1 pair whose `differs` is exactly `{feature}` | F |
+| C-172 | §8.4 PHONE | `prefix` (+7/8/7/bare) · `grouping` (3-3-2-2/3-3-4/solid) · `separators` · `parens` | `test_form.test_phone_features` (same shape as C-171) | F |
+| C-173 | §8.4 LOC | `case_class` · `generic` · `generic_position` · `house_marker` · `flat_marker` · `commas` · `city_present`/`city_position` · `by_fields` · `building_entrance_markers` | `test_form.test_loc_features`; `by_fields` decided by `FIELD_SEP` presence (`test_form.test_by_fields_sentinel`) | F |
+| C-174 | §8.4 DOB/DATE | `notation` · `separator` · `padding` · `year_len` · `month_form` | `test_form.test_date_features` for both `DOB` and `DATE` | F |
+| C-175 | §8.4 EMAIL | `case_class` | `test_form.test_email_features` | F |
+| C-176 | §8.4 CARD | `grouping` (4×4/solid) · `separator` | `test_form.test_card_features` | F |
+| C-177 | §8.4 SNILS | `separators` (XXX-XXX-XXX YY / solid) | `test_form.test_snils_features` | F |
+| C-178 | §8.4 INN | `length` (10/12) · `separators` | `test_form.test_inn_features` | F |
+| C-179 | §8.4 PASSPORT | `series_number_split` (XX XX XXXXXX / XXXX XXXXXX / solid) | `test_form.test_passport_features` | F |
+| C-180 | §8.4 PLATE | `case_class` · `spaces` · `region_sep` | `test_form.test_plate_features` | F |
+| C-181 | §8.4 verdict | the verdict prints the SET of differences («падеж и регистр»), never a bare «нет» | `FormVerdict.differs`; `report.differs_histogram` prints per type the count of each feature in `differs` over all hops; `test_report.test_differs_histogram` | F, M |
+| C-182 | §8.5 sample | 300 answers stratified by PII type × family × register, ≥ 20 per stratum where available, 20% from holdout; manual labels on `верно/частично/неверно/выдумал` | `calibration.draw_sample(observations, thresholds) -> tuple[CalibrationRecord,...]` with `human_label=""` to fill; `test_calibration.test_sample_strata` | J |
+| C-183 | §8.5 sees | the judge sees the RESTORED answer + real oracle + dialogue context; NOT the substitutes; does not judge form; `residual` flag decided before | `JudgeInput` (no substitute field); C-096; C-098 | J |
+| C-184 | §8.5 threshold | raw agreement ≥ 0.85 and κ ≥ 0.70 on the whole sample AND on every PII type with ≥ 20 examples; below → fix prompt/oracle, repeat; a report with an uncalibrated judge is not circulated internally | `calibration.stamp()` → `CalibrationStamp.calibrated`; `SideBySide.incomplete` when not calibrated; `test_calibration.test_thresholds` | J, M |
+| C-185 | §8.5 stability | K = 3 judge repeats on 50 random answers; disagreement > 10% → the judge is unfit | `calibration.repeat_check()`; `CalibrationStamp.repeat_disagreement`; `test_calibration.test_repeat_check` | J |
+| C-186 | §8.5 models | Sonnet judge, Haiku dialogue; budget by `QUERY_CAP_USD` and `SpendLedger` as in v4 | `harness.py` uses `bench.agentpii3.live.judge.SpendLedger` and `contracts.QUERY_CAP_USD`; `test_harness.test_ledger_shared` | J |
+| C-187 | §8.5 recalibrate | re-calibrate on a change of judge model, prompt, or ≥ 20% of the corpus | `CalibrationStamp.prompt_sha256`/`judge_model` must equal the run's; `calibration.is_current(stamp, judge_model, prompt_sha256, corpus_digest, previous_digest, changed_share)`; `test_calibration.test_recalibration_triggers` | J |
+| C-188 | task | v5 lives in `bench/agentpii5/`, imports v4, never edits it; nothing under `public/` | C-001, C-109 | C, R |
+| C-189 | task | a v5 run directory holds every file in `contracts.RUN_FILES`, and v4's `compare_runs.py`/`autopsy.py` read it unchanged | `harness.py` writes all of `RUN_FILES`; `test_records.test_v4_readers_accept_v5_run` runs `bench.agentpii4.autopsy._load_run` on a fixture run dir | J |
+| C-190 | task | the final report prints v4 levels (unchanged) beside the v5 additions so the GO run can compare | `report.render_side_by_side(SideBySide) -> list[str]`; `test_report.test_side_by_side_sections` asserts the v4 block precedes the v5 block and both name the same run ids | M |
+| C-191 | task | only the live glue imports `pseudex` | every component test has `test_no_pseudex`; `PSEUDEX_ALLOWED_MODULES == ("bench.agentpii5.harness",)`; `grep -rln "^from pseudex\|^import pseudex\|from pseudex" bench/agentpii5/` prints only `harness.py` | all |
+
+**Count: 191 items.**

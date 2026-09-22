@@ -152,7 +152,7 @@ marker-less streets (ГАР-vocabulary-gated) ∪ bare lower-case streets (four 
 ∪ spoken tails, merged into maximal spans with a core part required. Also the
 register-spelling repair of a mistyped street for the TOOL leg.
 - **API:** `register_spelling`, `repair_street`, `detect_address`
-- **Uses:** _morph_compat, assets, detect, fuzzy, morph, morph_places, names, spoken · **Used by:** assets, detect_all, redact, vault
+- **Uses:** _morph_compat, assets, detect, fuzzy, morph, morph_places, names, spoken · **Used by:** assets, detect_all, redact
 - **Tests:** test_hard_cases, test_unload_scrub, profile_deep · via detect_all → test_overmasking, test_persona_defects, test_product; `bench/voice/`, `bench/eval_gar_cut.py`, `make_addr_real.py`
 - **Docs:** `docs/gar-street-vocabulary.md`, `research/dd2-notes-B-ru-address.md`, `research/dd3-location-pii.md` · rules: INVARIANTS.md#address
 
@@ -259,7 +259,7 @@ addresses via `split_roles`); format-preserving, checksum-INVALID substitutes;
 the conversation scope (`for_conversation`, `with_pseudonym_scope`, `minted_in`);
 the digit-signature and translit reindexes; the collision guards at mint time.
 - **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `looks_dictated`, `name_key`, `fold_key`, `place_key`, `token_re`, `create_tables`, `create_indexes`, `Vault` (+ `VAULT_MIGRATIONS`)
-- **Uses:** address, assets, credentials, date_form, fuzzy, morph_names, morph_places, normalize, profiling, ru_pii, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, proxy, redact, service, schema (lazy)
+- **Uses:** assets, credentials, date_form, fuzzy, morph_names, morph_places, normalize, profiling, ru_pii, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, proxy, redact, service, schema (lazy)
 - **Tests:** vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_hard_cases, test_loop, test_names_morphology, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
 - **Docs:** `docs/tz-vault-encryption.md`, `docs/tz-name-gender-canonical.md`, `docs/how-it-works.md`, `research/2026-09-03-checksum-valid-substitutes.md` · rules: INVARIANTS.md#vault, INVARIANTS.md#collisions, INVARIANTS.md#conversation-scope
 
@@ -625,6 +625,7 @@ live**; v1–v3 stay for the numbers cited from them and are not developed.
 | `bench/agentpii2/` | `superseded by agentpii4` | v2: case schema and family taxonomy (families/, live/) | `bench/agentpii2/schema.py` | `docs/tz-agentpii2.md`, `bench/agentpii2/README.md` |
 | `bench/agentpii3/` | `superseded by agentpii4` | v3: полнота on speech-like agent traffic; mined dispatch calls and reference forms (`bench/agentpii3/mine_*.py`, `bench/agentpii3/mined/`); audit + crosscheck. **The 69.6% NAME полнота number cited in CLAUDE.md is from here** — kept for that number, not for new work | `bench/agentpii3/schema.py` | `docs/tz-agentpii3.md` |
 | `bench/agentpii4/` | `live` | v4 «шлюз не ломает агента»: three arms (control, control′, gateway) over a mock CRM; levels calls/fields/state; TOST at δ=3pp with cluster bootstrap; `autopsy`, `microscope`, `compare_runs`; fresh-seed corpora `bench/agentpii4/fresh5150/` … `bench/agentpii4/fresh8080/` | `bench/agentpii4/schema.py` | `docs/tz-agentpii4.md`, `bench/agentpii4/README.md`, `research/2026-09-05-agent-scenario-coverage.md`, `research/2026-09-06-benchmark-tiers.md`, `research/2026-09-07-benchmark-critics.md` |
+| `bench/agentpii5/` | `design` | v5 «tool-result-first, форма на каждом хопе, живой агент»: CONTRACTS only for now — `bench/agentpii5/contracts.py` (hops, CaseV5, ToolSpecV5, form_match features, metric Lines + the refuse-to-report gate, judge I/O, the v4-vs-v5 side-by-side), `bench/agentpii5/CHECKLIST.md` (191 conformance items), `bench/agentpii5/briefs/` (one brief per component); imports `bench/agentpii4/` and never edits it | `bench/agentpii5/contracts.py` | `docs/tz-agentpii5.md`, `wiki/BENCHMARK.md`, `research/2026-09-22-toolresult-derisk.md` |
 | `bench/agentrun/` | `live` | paired runs on BFCL tasks with injected Russian PII (`bench/inject_ru_pii.py`): did putting Pseudex in the path cost anything; `bench/agentrun/gpu/` + `bench/agentrun/GPU.md` for a local model | — | `bench/agentrun/GPU.md` |
 | `bench/gate/` | `frozen` | the ceiling of the dictionary gate: 600 hand-labelled OCCURRENCES pinned to a snapshot; the live detector re-runs and prints MOVEMENT | `bench/gate/labels.json` | `bench/gate/README.md` |
 | `bench/voice/` | `frozen` | real taxi-dispatch transcripts (RuDevices), addresses hand-labelled in two strata (400 marker-carrying + 250 of 4 805 number-only; weight the second 250/4805); `bench/voice/score.py` filters to LOC | `~/.cache/pseudex-bench/rudevices_addresses.json` | `bench/voice/README.md` |
