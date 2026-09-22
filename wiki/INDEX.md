@@ -101,6 +101,7 @@ Not in root `docs/`: `storefront/docs/tz-site.md` and `storefront/docs/tz-site-s
 | `research/2026-08-31-context-gate-over-pii-candidates.md` | a small context model as a GATE over PII candidates | D-035 |
 | `research/2026-08-19-provenance-linking-noise.md` | what to mask, how to link, how to survive noisy input | D-005, D-007 |
 | `research/2026-09-17-prose-case-homography.md` | prose case breaks on a gender-homographic substitute | D-046 |
+| `research/2026-09-22-compound-street-address.md` | what the rewriter's remaining 29 % on ADDRESS is actually made of after `915a365`: six classes with counts (the named compound-street fallback is 3 of ~25 and only 1 of those is a false alarm; the «~13 addresses» are the COVERAGE cost of Б16), the mechanism of each to the line, a six-step plan measured by monkeypatch (71.1 % → 83.2 % without touching detection, copier 89.4 % → 92.9 %, whole battery green), the regression battery with today's baselines, and the honest ceiling (≈94 % and what no step closes) | — |
 | `research/2026-08-16-secrets-detection-sota.md` | secret detection (keys, tokens, private keys): what production uses | D-033 |
 | `research/2026-09-03-checksum-valid-substitutes.md` | checksum-valid substitutes from human-impossible ranges | D-039 |
 | `research/dd2-notes-A-ru-ner.md` | local high-recall RU PERSON (ФИО) detection | D-048 |
