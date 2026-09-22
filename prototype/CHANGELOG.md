@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.17](https://github.com/Isk4R1oT/Obscura/compare/v0.3.16...v0.3.17) (2026-09-22)
+
+
+### Исправления
+
+* **redact:** адрес — форма агента, содержимое клиента, ни одного исправления ([1bc064d](https://github.com/Isk4R1oT/Obscura/commit/1bc064d12af4efedac9fa5e7b5aa9323a77712cc))
+* **redact:** Б24 — форма принадлежит агенту для КАЖДОГО типа, в обе стороны; именительный в инструмент больше не навязывается ([a2e7921](https://github.com/Isk4R1oT/Obscura/commit/a2e7921bd3f7b08a66fefae66b8da3430e054f39))
+* **redact:** дословно — значит дословно: волт помнит, что показали диалогу, и агент-копия получает строку клиента символ в символ; обратный путь в той же области разговора, что и прямой ([5af9356](https://github.com/Isk4R1oT/Obscura/commit/5af93564b565f47e82fb9883da46cebd73f2f5e9))
+* **redact:** подмена адреса показывается в ФОРМЕ КЛИЕНТА на входе ([915a365](https://github.com/Isk4R1oT/Obscura/commit/915a36523c53bdc7072e51e7233b9ff32d35081f))
+* **vault:** Б23 — кусок подмены разрешается только в диалоге, которому её показали; чужое слово клиента остаётся словом ([0fec1bc](https://github.com/Isk4R1oT/Obscura/commit/0fec1bce033b73f5460dc13adc4b37ff8be83a8c))
+
 ## [0.3.16](https://github.com/Isk4R1oT/Obscura/compare/v0.3.15...v0.3.16) (2026-09-21)
 
 
