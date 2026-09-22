@@ -816,6 +816,55 @@ def _occurrences(haystack: str, needle: str) -> list[tuple[int, int]]:
     return out
 
 
+def _restored_window(opcodes: Sequence[Opcode], index: int,
+                     window_start: int, window_end: int) -> tuple[int, int]:
+    """The restored half of a raw window, read off the RESTORED side's own
+    opcodes rather than off the raw side's arithmetic.
+
+    THE DEFECT THIS REPLACES. The widened window used to be carried across as
+    `new_start - (raw_start - window_start)` … `new_end + (window_end -
+    raw_end)`: the raw deltas applied to the replace's restored ends. Inside an
+    `equal` run that is exact, and it is blind to the one thing that has no raw
+    width at all — a PURE INSERTION. «+72360987654» → «+79037654321» aligns as
+    replace «236098»→«903», equal «7654», then `('replace', 19, 19, 16, 19)`:
+    three restored characters sitting on the window's right boundary with
+    nothing on the raw side to measure them by. The arithmetic stopped at the
+    end of the `equal` run and handed the comparator «+79037654» — a real value
+    the gateway had restored whole, truncated by the observer. 46 of
+    `form_hOUT`'s 65 corpus misses and its single `answer_real` miss were that
+    truncation, all charged to a gateway that had done everything right.
+
+    So each opcode is asked what it contributes: an `equal` run gives the
+    1:1 slice the window covers, a `replace` gives its restored half WHOLE (its
+    two sides have no per-character correspondence), and a zero-raw-width
+    opcode — the insertion — is taken when it stands anywhere in the window,
+    boundaries included, because no overlap test can ever reach it. The
+    opcode the window was built around seeds the result, so a window that
+    covers nothing else still answers with its own replace.
+    """
+    _tag, _raw_start, _raw_end, low, high = opcodes[index]
+    for tag, raw_start, raw_end, new_start, new_end in opcodes:
+        if raw_start == raw_end:
+            # An insertion belongs to the window it stands in, ON the boundary
+            # as much as inside it: a zero-width opcode carries no substitute
+            # of its own (`span[0] < raw_end and raw_start < span[1]` cannot
+            # hold when the two are equal), so the neighbouring window is the
+            # only place its text is ever accounted for.
+            if not window_start <= raw_start <= window_end:
+                continue
+            first, last = new_start, new_end
+        elif raw_start < window_end and window_start < raw_end:
+            if tag == "equal":
+                first = new_start + max(window_start - raw_start, 0)
+                last = new_start + min(window_end - raw_start, raw_end - raw_start)
+            else:
+                first, last = new_start, new_end
+        else:
+            continue
+        low, high = min(low, first), max(high, last)
+    return low, high
+
+
 def answer_spans(case: CaseV5, run: ArmRunV5) -> tuple[AttributedSpan, ...]:
     """Every rewritten region of the reply, with the items it carries.
 
@@ -824,10 +873,10 @@ def answer_spans(case: CaseV5, run: ArmRunV5) -> tuple[AttributedSpan, ...]:
     then WIDENED to hold the whole occurrence. Overlap rather than containment,
     because two names that share a suffix align as «ПАХОМ» / «ИВАНО» with «ОВА»
     left in an `equal` run: containment finds no substitute in the span and
-    every answer hop reads `absent`. The widening is safe in exactly the
-    stretch it uses — inside an `equal` run the two offsets move together, so
-    the restored side is widened by the same amounts and still names the same
-    text.
+    every answer hop reads `absent`. The widening is decided on the RAW side,
+    where the substitute's occurrences are; what it means on the restored side
+    is then read off the alignment by `_restored_window`, never computed from
+    the raw deltas — see its docstring for the truncation that cost.
 
     Several items may share one span; that is `shared_block`, kept rather than
     resolved, because an attribution nothing can inspect is one nobody checked.
@@ -842,7 +891,7 @@ def answer_spans(case: CaseV5, run: ArmRunV5) -> tuple[AttributedSpan, ...]:
               for item in case.base.pii}
     opcodes = merged_opcodes(run.reply_raw, run.base.reply)
     out: list[AttributedSpan] = []
-    for index, (tag, raw_start, raw_end, new_start, new_end) in enumerate(opcodes):
+    for index, (tag, raw_start, raw_end, _new_start, _new_end) in enumerate(opcodes):
         if tag != "replace":
             continue
         left = opcodes[index - 1][1] if index and opcodes[index - 1][0] == "equal" else raw_start
@@ -859,9 +908,10 @@ def answer_spans(case: CaseV5, run: ArmRunV5) -> tuple[AttributedSpan, ...]:
             window_start = max(left, min(window_start, min(span[0] for span in hits)))
             window_end = min(right, max(window_end, max(span[1] for span in hits)))
         if carried:
+            restored_start, restored_end = _restored_window(opcodes, index,
+                                                            window_start, window_end)
             out.append(AttributedSpan(window_start, window_end,
-                                      new_start - (raw_start - window_start),
-                                      new_end + (window_end - raw_end), tuple(carried)))
+                                      restored_start, restored_end, tuple(carried)))
     return _merge_overlapping(out)
 
 

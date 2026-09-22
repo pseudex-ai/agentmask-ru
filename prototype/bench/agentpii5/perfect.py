@@ -2,7 +2,17 @@
 
     cd prototype && source .venv/bin/activate
     python3 -m bench.agentpii5.perfect              # the acceptance tier, ~2 s
-    python3 -m bench.agentpii5.perfect --tier max   # the whole corpus, ~20 s
+    python3 -m bench.agentpii5.perfect --tier max   # the whole corpus, ~14 s
+
+THIS FILE PRINTS NUMBERS; IT JUDGES NOTHING. The floors those numbers must
+clear live in `test_perfect.BOUNDS`, and the command that CHECKS them on the
+corpus every published figure comes from is
+
+    python3 -m bench.agentpii5.test_perfect --tier max   # ~2 min 15 s
+
+which is the run to make before any number of this benchmark is quoted. Reading
+the table below and nodding is what left `answer_real` at 636/637 for five
+rounds with nothing in the repository able to say so.
 
 Every metric line of this benchmark answers «did the gateway do what the
 product promises». A line that a RIGHT gateway cannot earn is a broken line,

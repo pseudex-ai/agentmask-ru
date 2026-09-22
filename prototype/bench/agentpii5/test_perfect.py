@@ -1,6 +1,8 @@
 """THE ACCEPTANCE TEST OF THE INSTRUMENT ITSELF.
 
-    cd prototype && source .venv/bin/activate && python3 -m bench.agentpii5.test_perfect
+    cd prototype && source .venv/bin/activate
+    python3 -m bench.agentpii5.test_perfect              # tier medium, ~30 s
+    python3 -m bench.agentpii5.test_perfect --tier max   # the WHOLE corpus, ~2 min 15 s
 
 Two halves, and neither is worth anything alone:
 
@@ -13,17 +15,31 @@ And a third thing the round-4 proof taught: the three corrections that made the
 probe honest are themselves rules, so each is REVERTED here and the run must go
 red. A correction nobody can knock down is a correction nobody can trust.
 
-WHY `medium` (300 cases) AND NOT `small`. Runtime is not the constraint — one
-pass over the tier is under two seconds — the corrections are: reverting
-correction 1 moves NOTHING on `nano` or on `small` (measured), so a test on
-those tiers would certify a rule it cannot see. `medium` is the smallest tier
-on which all three corrections bite; the whole file is eight passes, ~15 s.
+WHY `medium` (300 cases) IS THE DEFAULT AND NOT `small`. Runtime is not the
+constraint — one pass over the tier is under two seconds — the corrections are:
+reverting correction 1 moves NOTHING on `nano` or on `small` (measured), so a
+test on those tiers would certify a rule it cannot see. `medium` is the
+smallest tier on which all three corrections bite; the whole file is eight
+passes, ~30 s.
+
+AND WHY THE DEFAULT IS NOT THE WHOLE STORY. Every number this benchmark
+publishes comes from `max` — all 1736 cases — and for five rounds nothing in
+the repository checked the floors there: `answer_real` was 101/101 on `medium`
+and 636/637 on `max`, and only a scratch script ever saw the second number. A
+bound that is only ever tested on a slice of the corpus it is a claim about is
+a bound with a blind spot, so `--tier max` runs the SAME eight checks over the
+whole corpus: all eight, not a weakened subset — the three corrections and the
+four wrong gateways were measured to bite there too. It is slow (~2 min 15 s,
+eight passes of ~13 s plus the corpus load) and it is the run to make before
+any number is quoted; `medium` stays the default so the file remains cheap
+enough for every change.
 
 OFFLINE BY CONSTRUCTION: no model, no network, no keys, no engine — the corpus,
 the tool registry and arithmetic.
 """
 from __future__ import annotations
 
+import argparse
 import contextlib
 import sys
 from collections.abc import Callable, Iterator, Sequence
@@ -33,9 +49,12 @@ from bench.agentpii4.tools import flatten
 from bench.agentpii5 import contracts, metrics, observe, perfect
 from bench.agentpii5.contracts import ArmRunV5, CaseV5, Line
 
-# The tier the whole file runs on. See the module docstring for why it is not
-# `small`: correction 1 is invisible below 300 cases.
+# The tier the file runs on when `--tier` says nothing. See the module docstring
+# for why it is not `small` (correction 1 is invisible below 300 cases) and why
+# `max` is a mode rather than the default (it is the corpus every published
+# number comes from, and it costs three minutes).
 ACCEPTANCE_TIER: str = "medium"
+TIERS: tuple[str, ...] = ("nano", "small", "medium", "large", "holdout", "max")
 
 
 @dataclass(frozen=True)
@@ -73,8 +92,14 @@ BOUNDS: dict[str, Bound] = {
     "consistency": Bound(1.0, None, _EARNED),
     "stability": Bound(1.0, None, _EARNED),
     "toolresult_masked": Bound(1.0, None, _EARNED),
-    "answer_real": Bound(1.0, None, "medium 1.0000; corpus 636/637 — one answer whose "
-                                    "required datum the probe's own prose cannot carry"),
+    "answer_real": Bound(1.0, None, "medium 1.0000, corpus 1.0000 (637/637) — NO residue. "
+                                    "The «one answer whose required datum the probe's own "
+                                    "prose cannot carry» this row used to name was never the "
+                                    "prose: the observer derived the restored window from the "
+                                    "RAW side's offsets and lost a pure insertion sitting on "
+                                    "its boundary, so the comparator was handed «+79037654» "
+                                    "for a phone the gateway had restored whole "
+                                    "(`observe._restored_window`, round 6)"),
     "chain_value": Bound(1.0, None, _EARNED),
     "chain_form": Bound(1.0, None, _EARNED),
     "multi_all_out": Bound(1.0, None, _EARNED),
@@ -90,10 +115,17 @@ BOUNDS: dict[str, Bound] = {
 
     # --- the form lines: the two that a right gateway cannot print whole
     "form_hOUT": Bound(0.99, None,
-                       "medium 0.9979, corpus 0.9959. The residue is leaves whose agent form "
-                       "the probe cannot reproduce, not a gateway defect; the floor is set "
-                       "below both so a real regression still shows (a gateway that "
-                       "normalises the form prints 0.72 here)"),
+                       "medium 0.9986 (2807/2811), corpus 0.9988 (15734/15753). ALL 19 corpus "
+                       "misses are ANSWER hops on a region the agent wrote as ONE phrase for "
+                       "2–10 data, which `answer_pair` then narrows per item (C-200): the raw "
+                       "side by the substitute's needles, the restored side by the real "
+                       "value's, and on a multi-part address or name the two needle sets do "
+                       "not land on the same parts — «Ауков, ул Фоеочая» against «Псковская "
+                       "область, г Псков, ул Рабочая». Measured: the UN-narrowed window "
+                       "compares `same` on all 19, so this is the narrowing's own cost and "
+                       "not a gateway defect. The floor sits below every tier (small 0.9974 "
+                       "is the weakest) so a real regression still shows — a gateway that "
+                       "normalises the form prints 0.72 here"),
     "form_hIN": Bound(0.80, None,
                       "medium 0.8121, small 0.8141, corpus 0.9431 — and the whole residue is "
                       "DICTATED values against WRITTEN substitutes (docs/known-issues.md Б27, "
@@ -124,8 +156,13 @@ BOUNDS: dict[str, Bound] = {
 
 @dataclass(frozen=True)
 class Probe:
-    """The corpus slice and what the right gateway prints on it, computed once."""
+    """The corpus slice and what the right gateway prints on it, computed once.
 
+    `tier` rides along so every message names the corpus it is about: a failure
+    that says «0/0 on tier medium» and one that says «0/0 on tier max» send a
+    reader to different places."""
+
+    tier: str
     cases: tuple[CaseV5, ...]
     perfect: dict[str, Line]
 
@@ -136,10 +173,10 @@ def measure(cases: Sequence[CaseV5], simulate: Callable[[CaseV5], ArmRunV5]) -> 
     return {name: metrics.METRIC_FUNCTIONS[name](seen) for name in perfect.SINGLE_ARM_METRICS}
 
 
-def build_probe() -> Probe:
+def build_probe(tier: str) -> Probe:
     cases = perfect.cases_of_tier(perfect.load_cases(perfect.CORPUS_PATH),
-                                  perfect.load_ladder(perfect.LADDER_PATH), ACCEPTANCE_TIER)
-    return Probe(cases=tuple(cases), perfect=measure(cases, perfect.simulate))
+                                  perfect.load_ladder(perfect.LADDER_PATH), tier)
+    return Probe(tier=tier, cases=tuple(cases), perfect=measure(cases, perfect.simulate))
 
 
 # --- the bounds a right gateway must clear ------------------------------------------
@@ -171,7 +208,7 @@ def test_no_line_is_empty(probe: Probe) -> list[str]:
     a skip. It is also what catches correction 3: numbering the results of one
     turn as one request empties `stability` outright.
     """
-    return [f"{name}: 0/0 on tier {ACCEPTANCE_TIER} — nothing to measure, nothing certified"
+    return [f"{name}: 0/0 on tier {probe.tier} — nothing to measure, nothing certified"
             for name, line in probe.perfect.items() if line.total == 0]
 
 
@@ -357,8 +394,14 @@ def test_no_engine_imported(probe: Probe) -> list[str]:
     return [f"the engine is imported: {sorted(bad)}"] if bad else []
 
 
-def main() -> int:
-    probe = build_probe()
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--tier", default=ACCEPTANCE_TIER, choices=TIERS,
+                        help="the corpus slice every check runs on; `max` is the whole "
+                             "corpus, which is where every published number comes from")
+    args = parser.parse_args(argv)
+    probe = build_probe(args.tier)
     checks: tuple[tuple[str, Callable[[Probe], list[str]]], ...] = (
         ("no_engine_imported", test_no_engine_imported),
         ("every_metric_has_a_bound", test_every_metric_has_a_bound),
@@ -375,9 +418,9 @@ def main() -> int:
         print(f"  {name}: {'PASS' if not problems else 'FAIL'}")
         failures += [f"{name}: {one}" for one in problems]
     bounded = sum(1 for bound in BOUNDS.values() if bound.floor is not None or bound.ceiling)
-    print(f"perfect: PASS ({len(probe.cases)} cases of tier {ACCEPTANCE_TIER}, "
+    print(f"perfect: PASS ({len(probe.cases)} cases of tier {probe.tier}, "
           f"{bounded} bounded lines, {len(WRONG_GATEWAYS)} wrong gateways caught)"
-          if not failures else "perfect: FAIL\n  " + "\n  ".join(failures))
+          if not failures else f"perfect: FAIL on tier {probe.tier}\n  " + "\n  ".join(failures))
     return 1 if failures else 0
 
 

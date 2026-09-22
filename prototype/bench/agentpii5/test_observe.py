@@ -48,6 +48,7 @@ from bench.agentpii5.observe import (
     item_needles,
     item_survives_in,
     leaf_holds,
+    merged_opcodes,
     observe,
     own_stems,
     stem_of,
@@ -159,6 +160,99 @@ def test_answer_alignment() -> list[str]:
     if not left or left[0].status != "residual":
         problems.append("a substitute the restoration never touched must be `residual`, "
                         f"got {[one.status for one in left]}")
+    return problems
+
+
+def test_an_insertion_on_the_boundary_is_not_lost() -> list[str]:
+    """THE RESTORED WINDOW IS READ OFF THE RESTORED SIDE'S OWN OPCODES.
+
+    «+72360987654» → «+79037654321» aligns as replace «236098»→«903», equal
+    «7654», then a PURE INSERTION «321» with nothing on the raw side to measure
+    it by. The window used to be carried across by the raw deltas — the two
+    lines replayed below — which stopped at the end of the `equal` run and
+    handed the comparator «+79037654»: a real value the gateway restored whole,
+    truncated by the observer, and then counted as a form miss. 46 of
+    `form_hOUT`'s 65 corpus misses and its single `answer_real` miss were this.
+
+    Three things are asserted, and the fixture is worthless without the third:
+    that the alignment really does put a zero-raw-width opcode on the window's
+    right boundary (otherwise this case has stopped being the case it was built
+    for), that the OLD arithmetic truncates it, and that the observer does not.
+    """
+    raw = "Готово. Пункт 1: +72360987654 — записано."
+    restored = "Готово. Пункт 1: +79037654321 — записано."
+    item = _item("q1", "PHONE", "+79037654321", "+79037654321", "i1", _in_message(0, 0, 12))
+    hop = _hop("OUT", "answer", "q1", 0, 0, "", -1, -1, "")
+    case = _case("obs-insert", "single", ("телефон",), (item,), (hop,))
+    run = _with_subs(_with_replies(_run("obs-insert"), raw, restored, "Готово."),
+                     {"q1": "+72360987654"})
+    problems: list[str] = []
+    opcodes = merged_opcodes(raw, restored)
+    spans = answer_spans(case, run)
+    if len(spans) != 1:
+        return [f"expected one answer span, got {len(spans)}: {spans}"]
+    span = spans[0]
+    insertions = [one for one in opcodes
+                  if one[0] == "replace" and one[1] == one[2] and one[1] == span.raw_end]
+    if not insertions:
+        problems.append("the alignment no longer puts a pure insertion on the window's right "
+                        f"boundary, so this fixture pins nothing: {opcodes}")
+    # The rule that was wrong, replayed: the replace's restored ends moved by
+    # the RAW widening. It is written out rather than named so the test fails
+    # if it ever stops being wrong on this input.
+    index = next(i for i, one in enumerate(opcodes) if one[0] == "replace" and one[1] < one[2])
+    _tag, opcode_raw_start, opcode_raw_end, new_start, new_end = opcodes[index]
+    by_raw_deltas = restored[new_start - (opcode_raw_start - span.raw_start):
+                             new_end + (span.raw_end - opcode_raw_end)]
+    if by_raw_deltas != "+79037654":
+        problems.append(f"the old arithmetic no longer truncates this input ({by_raw_deltas!r}), "
+                        "so the fixture has stopped exercising the defect")
+    got = [one for one in _one(case, run).hops if one.hop.owner == "answer"]
+    if len(got) != 1 or got[0].status != "observed":
+        problems.append(f"expected one observed answer hop, got {[one.status for one in got]}")
+    elif got[0].produced != "+79037654321" or got[0].reference != "+72360987654":
+        problems.append(f"the restored value comes back truncated: {got[0].produced!r} / "
+                        f"{got[0].reference!r}")
+    elif got[0].verdict is None or not got[0].verdict.same:
+        problems.append("a phone the gateway restored whole reads as a form miss: "
+                        f"{got[0].verdict.differs if got[0].verdict else None}")
+    return problems
+
+
+def test_the_widening_still_reaches_the_whole_occurrence() -> list[str]:
+    """AND THE OTHER HALF: the widening the fix must not take away.
+
+    «Кудрявцевой Диане» → «Кузнецовой Дарье» aligns into two replaces that hold
+    «дрявце» and «иан» — fragments of a name that the comparator can say
+    nothing about. The window is widened on the RAW side to the substitute's
+    whole occurrence, and the restored side must follow it across the `equal`
+    run between the two replaces. A fix for the insertion that derived the
+    restored window from the replace alone would pass the test above and hand
+    this one a syllable.
+    """
+    raw = "позвоню Кудрявцевой Диане завтра"
+    restored = "позвоню Кузнецовой Дарье завтра"
+    item = _item("p1", "NAME", "Кузнецова Дарья", "Кузнецова Дарья", "i1", _in_message(0, 0, 15))
+    hop = _hop("OUT", "answer", "p1", 0, 0, "", -1, -1, "")
+    case = _case("obs-widen", "single", ("звонок",), (item,), (hop,))
+    run = _with_mentions(_with_subs(_with_replies(_run("obs-widen"), raw, restored, ""),
+                                    {"p1": "Кудрявцева Диана"}),
+                         (contracts.MentionRecord("p1", 0, -1, "Кудрявцевой Диане", 0),))
+    problems: list[str] = []
+    bare = [(raw[one[1]:one[2]], restored[one[3]:one[4]]) for one in merged_opcodes(raw, restored)
+            if one[0] == "replace"]
+    if not bare or any(len(left) >= len("Кудрявцевой Диане") for left, _right in bare):
+        problems.append(f"the alignment no longer breaks the name into fragments ({bare}), "
+                        "so this fixture does not ask for the widening")
+    got = [one for one in _one(case, run).hops if one.hop.owner == "answer"]
+    if len(got) != 1 or got[0].status != "observed":
+        problems.append(f"expected one observed answer hop, got {[one.status for one in got]}")
+    elif got[0].produced != "Кузнецовой Дарье" or got[0].reference != "Кудрявцевой Диане":
+        problems.append(f"the widening no longer reaches the whole name: {got[0].produced!r} / "
+                        f"{got[0].reference!r}")
+    elif got[0].verdict is None or not got[0].verdict.same:
+        problems.append("a name the gateway restored in the agent's own case reads as a form "
+                        f"miss: {got[0].verdict.differs if got[0].verdict else None}")
     return problems
 
 
@@ -810,6 +904,10 @@ def main() -> int:
         ("out_orientation", test_out_orientation),
         ("template_owner", test_template_owner),
         ("answer_alignment", test_answer_alignment),
+        ("an_insertion_on_the_boundary_is_not_lost",
+         test_an_insertion_on_the_boundary_is_not_lost),
+        ("the_widening_still_reaches_the_whole_occurrence",
+         test_the_widening_still_reaches_the_whole_occurrence),
         ("residual_out", test_residual_out),
         ("out_unmasked_has_nothing_to_compare", test_out_unmasked_has_nothing_to_compare),
         ("out_reformatted_substitute_is_not_unmasked", test_out_reformatted_substitute_is_not_unmasked),
