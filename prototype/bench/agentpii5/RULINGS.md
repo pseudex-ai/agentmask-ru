@@ -286,3 +286,46 @@ on the integrators' questions:
 - `e2e/lint_tests.py` flags `test_form.py`'s keep-going runner («except
   глотает провал»): the exception is recorded and printed as a red check, not
   swallowed. Left for the Phase 4 reviewers to judge with the lint's own rule.
+
+---
+
+# After fix round 1 (2026-09-22 evening)
+
+- **R-47 supersedes R-46.** A streaming case is SCORED on the chunked
+  restoration — the text the streaming customer reads (F3.1); the whole-text
+  restoration is kept beside it (`ArmRunV5.reply_whole`, round 2) and
+  `stream_fidelity` is the line where the two disagreeing shows.
+- **R-48 retires the adapter half of R-38.** `judge_with` / `pregate_with`
+  are gone; the harness calls `judge_answer(config, request,
+  substitutes_minted)` directly and the docstrings say so.
+- **R-49 chain truth on a MUTATING tool.** When the customer states a NEW
+  value and the agent writes it into an update call, the source of that
+  argument is the customer's message, not the earlier result that held the
+  OLD value: such a hop is IN/user → OUT/tool_arg, never a chain transition.
+  `revise._arguments` lets `said` win over `chained` for mutating tools; the
+  cases that lose their only transition leave `sequential_chain` honestly,
+  and generator_a tops the family up above its floor with PROVABLE chains.
+- **R-50 the `single` family is AUTHORED.** §8.2 calls the single call «the
+  base, 4 hops»; 84 revised cases carry that loop, 379 are v4's two-hop shape.
+  generator_a gains a `single` family of 100 provable cases across ≥ 6
+  verticals and all registers.
+- **R-51 `CORPUS_SIZE_BAND_V5` widens to (1200, 1800).** The spec's «≈1200–
+  1500» was an estimate made before the 834 revised cases were kept whole;
+  K01 is a sanity bound on the corpus, not a target to trim families to.
+- **R-52 the ladder may move ONCE more.** «Frozen before any debug run» — no
+  live run has happened; round 2 regenerates the ladder once (the new and
+  topped-up families reshuffle v4's per-family draw), then its
+  `corpus_sha256` is the frozen one and `_holdout_moved` refuses every later
+  move. The digest is recorded in FIXES.md at the end of round 2.
+- **R-53 one definition of «the value a leaf expects»:**
+  `tools.expected_leaf_value(item, spec)`; `metrics` imports it, its local
+  `leaf_value_ok` becomes a thin caller.
+- **R-54 `turn_residual` and `reply_whole` live on `ArmRunV5`** (records
+  round-trips them); the triple row carries `judge_cost_usd` (= the sum of
+  that triple's `judge.cost_usd`) and `turn_residual` as well, validated by
+  records' triple reader. `residual` counts `turn_residual > 0` as a miss of
+  the observation.
+- **R-55 `FIXTURE_MIN_SEPARATION` is deleted** (report.gate's comparison is
+  unreachable — the fixtures pin both rates exactly); no decoration.
+- **R-56 `JudgeConfig.temperature: float`** is explicit (no SDK default) and
+  the K repeats run at the same value the run uses.

@@ -299,3 +299,87 @@ Every `python3 -m bench.agentpii5.test_*` PASS; `report --selftest` exit 0;
 untouched; every fix pinned by a negative test built from the reviewer's
 own reproduction; `python3 wiki/check.py` 0 findings. Round 2 = the three
 skeptics re-run against THIS list to confirm closure.
+
+---
+
+# Round 2 orders (2026-09-22, after round 1 — rulings R-47…R-56)
+
+Two waves: **wave 1** = FIX-1 + FIX-4 (the contract and the corpus land
+first); **wave 2** = FIX-2 + FIX-3 (their users). Then the skeptics re-run.
+Owners' file sets as in round 1, plus: FIX-1 also owns `test_form.py` and
+`form.py` this round; FIX-3 owns the CHECKLIST rows it changes.
+
+## FIX-1 (wave 1)
+- **F1.19 (first thing)** `CORPUS_SIZE_BAND_V5 = (1200, 1800)` (R-51) — one
+  line, so FIX-4's build can go green while you work.
+- **F1.20 (R-54)** `ArmRunV5.reply_whole: str` (the whole-text restoration on
+  a streaming case; "" otherwise) and `ArmRunV5.turn_residual: int` (how many
+  EARLIER turns still carried a minted substitute when the judge prompt was
+  built); `records.py` round-trips both with a negative each; the triple row
+  gains a validating reader/writer in `records.py` for `judge_cost_usd` and
+  `turn_residual` (a missing or non-numeric field is refused). `residual`'s
+  per-observation term counts `turn_residual > 0` as a miss; fixture.
+- **F1.21 (R-53)** `metrics` imports `tools.expected_leaf_value`; `leaf_value_ok`
+  becomes a caller of it; a test asserts the two never disagree over every
+  (tool, path) of `REGISTRY_V5` on a sample item per type.
+- **F1.22** `contracts.RUN_FILES` gains `"<run>.meta.json"` (run_id, benchmark,
+  model, judge_model, tier, repeats, digest, ceiling_usd, spent_usd,
+  prompt_sha256, finished — written by `harness.main`); `contracts.SideBySide`
+  gains `judge_pregate: int` and `excluded_observations: tuple[str, ...]`
+  (FIX-2 fills them in wave 2; until then `report.py`'s local copies stand).
+- **F1.23** `test_form.py`'s keep-going runner: make `e2e/lint_tests.py`
+  green on it (read the lint's rule; record the failure the way it
+  recognises) without losing the keep-going property.
+- **F1.24** Do NOT delete `FIXTURE_MIN_SEPARATION` yet (report.gate imports
+  it); FIX-2 removes the comparison in wave 2 and the architect deletes the
+  constant after.
+
+## FIX-4 (wave 1)
+- **F4.9 (R-49)** `revise._arguments`: `said` wins over `chained` on a
+  MUTATING tool; the cases that lose their only transition leave
+  `sequential_chain` (they keep `has_result`). Print the count in
+  `build --check`.
+- **F4.10 (R-49 top-up)** generator_a's `sequential_chain` family grows by
+  as many PROVABLE chains as keep the family ≥ its floor with ≥ 20 % margin,
+  across the six verticals; every transition proven by the mock at build.
+- **F4.11 (R-50)** A new authored family `scenarios5/single.py` — 100 cases,
+  ONE read tool whose result carries the customer's data, the answer uses it
+  (the 4-hop MINIMAL_LOOP), ≥ 6 verticals, all registers, ≥ 4 return forms,
+  every case provable; added to `PLAN_A`; `BEHAVIOUR_FLOORS["single"]` and
+  the share row read honestly (`build --check` prints authored / revised /
+  two-hop counts).
+- **F4.12 (R-52)** Regenerate the ladder ONCE with an explicit flag that
+  says why (`--regenerate-ladder --unfrozen-before-first-run` or the name you
+  choose); after it, `_holdout_moved` refuses as before; write the new
+  `corpus_sha256` into your final message.
+- **F4.13** `schema.py`: import `contracts.ACTING_OUT_OWNERS`, delete the
+  local copy.
+- **F4.14** `contracts` docstrings (F4.6): wording per your own proposal —
+  «`build` proves it (mock.render_problems) and `toolresult_masked` scores
+  it» — send FIX-1 the exact text in contract_questions (FIX-1 owns the file).
+
+## FIX-2 (wave 2)
+- **F2.9** Use `SideBySide.judge_pregate` / `excluded_observations` (drop the
+  report-local copies); read `<run>.meta.json` through `records` if FIX-1
+  gave it a reader, else through `json` with the RUN_FILES key.
+- **F2.10** `out_absent` printed directly beneath `form_hOUT`; the per-axis
+  loop uses `metrics.prints_on_axis(name, axis)` and prints
+  `metrics.AXIS_NOTE` for the rest.
+- **F2.11 (R-55)** Delete the unreachable separation comparison in
+  `report.gate` (and its test if any); tell the architect when done.
+- **F2.12** `judge_cost_usd` read from the triple through records' reader
+  (F1.20), never `row.get`.
+
+## FIX-3 (wave 2)
+- **F3.7 (R-54)** Populate `reply_whole` and `turn_residual` on the I arm's
+  `ArmRunV5`; keep `judge_cost_usd` on the triple equal to the sum of
+  `judge.cost_usd` by construction (one place computes it).
+- **F3.8 (R-56)** `JudgeConfig.temperature: float`, set explicitly where the
+  config is built; the K repeats use it.
+- **F3.9** CHECKLIST rows C-182 and C-037 per your own proposal; `briefs/judge.md`
+  notes R-47/R-48.
+
+## Definition of done for round 2
+As for round 1, plus: `build --check` prints the authored `single` count and
+the chain top-up; the ladder digest recorded; every `python3 -m
+bench.agentpii5.test_*` PASS; `e2e/lint_tests.py bench/agentpii5` clean.
