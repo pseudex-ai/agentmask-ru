@@ -383,3 +383,131 @@ Owners' file sets as in round 1, plus: FIX-1 also owns `test_form.py` and
 As for round 1, plus: `build --check` prints the authored `single` count and
 the chain top-up; the ladder digest recorded; every `python3 -m
 bench.agentpii5.test_*` PASS; `e2e/lint_tests.py bench/agentpii5` clean.
+
+---
+
+# Round 3 orders (2026-09-22 night) — the confirmed blockers, then STOP
+
+Round 2's re-review closed 45 orders and left 9 open, and its skeptics found
+**7 new defects that independent verifiers CONFIRMED** — three of them make a
+live run's numbers wrong, so the run waits for them. Evidence:
+`review/2026-09-22-round2-digest.txt` (+ `-full.json`); the reviewers'
+reproductions are under `/Users/igor/.claude/jobs/4e5fce9b/tmp/*-r2/`.
+
+**This is the last fix round before the owner's GO.** An order whose defect
+does not reproduce is reported, not implemented. An order that would change
+what a METRIC MEANS (not how it is computed) is a contract question, not a
+silent edit.
+
+## FIX-1 — the observer and the metrics (the three that make numbers wrong)
+- **G1.1 (blocker, CONFIRMED)** `answer_real` cannot be earned: `_answer_hop_right`
+  (metrics.py:608) compares an answer span with the item's WHOLE canonical,
+  and `leaf_spec` returns None for an answer hop, so 93.9 % of CORRECT
+  declined Russian answers score wrong. An OUT/answer hop is right when the
+  span carries the item's value in ANY inflection of the part(s) the answer
+  names — reuse the needle machinery of `observe.needles_of` (stems, digit
+  signature, date fold), never byte equality against the canonical. Fixture:
+  a correct declined answer (hit) and another person's value in the same
+  form (miss).
+- **G1.2 (blocker, CONFIRMED)** `form.py`'s comparator has a floor no gateway
+  can reach: `_out_call` feeds `produced=restored` (the real value) against
+  `reference=written` (the substitute) — two different lexemes — and
+  `name_order` / the parts features answer about the LEXEME, not the form.
+  Decide which features are lexeme-independent (case class, script,
+  separators, notation, grouping, markers…) and which are not (`order`,
+  `parts`, `initials` when the two names have different part counts), and
+  make the lexeme-dependent ones ABSTAIN when the pair's part counts differ,
+  with the reason in `contracts.FORM_ABSTAIN`'s comment. A gateway that
+  mirrors the agent's form perfectly must be able to print 100 %.
+- **G1.3 (major, CONFIRMED)** A derived form of a substitute (transliteration,
+  initials) reads `unmasked`, so `residual` — the critical-defect line — is
+  blind to it. Add translit and squeezed-initials needles (the package owns
+  string rules; `pseudex` is not importable) and pin with a fixture per form.
+- **G1.4 (major, CONFIRMED)** F1.7 was applied to `toolresult_masked` only:
+  `rag_masked` and `doc_masked` still build their population from what the
+  mock tagged (`record.spans_real`), so a declared chunk or document value
+  the mock left untagged is invisible. Same denominator rule as
+  `toolresult_masked`; fixtures per line.
+- **G1.5 (major, CONFIRMED)** The refuse-to-report gate's own evidence is one
+  degenerate mutant: a 20-mutant sweep leaves 5 alive. Add the surviving
+  mutants' clauses as fixtures (the reviewer's `mutate.py` / `mutate2.py`
+  name them) so the gate refuses each; `report --selftest` must fail on each
+  of the five when re-applied.
+- **G1.6 (minor, CONFIRMED)** `end_to_end`'s MetricSpec still describes a
+  quantity the code does not measure (F1.15's audit stopped at two names);
+  fix the wording to the code, then re-read every remaining PUBLIC name once
+  more. `leak`'s memory branch accepts a substitute the model never read
+  (`carried_substitute`, observe.py:571) — decide it from the mention the
+  transcript carries at that turn.
+- **G1.7** `doc_extracted`'s adversarial fixture cannot separate «this item's
+  value» from «a value of the case» (the wrong row's person is not among the
+  case items) — make the wrong value belong to a DECLARED item.
+
+## FIX-3 — the harness and the judge (verify first, both are unverified blockers)
+- **G3.1 (blocker claim)** «The restoration leg runs on the BASE vault while
+  masking ran on the conversation VIEW — 33.8 % of masked values cannot
+  restore» (harness.py:463). Reproduce it on the production path FIRST
+  (`testkit.load_dev_bundle()`, a corpus case with a derived conversation
+  id). If it reproduces: restore through the same VIEW the masking used —
+  one object, obtained once per conversation — and pin with a test that
+  fails on the base vault. If it does not: say so with the evidence and
+  change nothing.
+- **G3.2 (blocker claim)** `masked_dialogue` masks the customer's OWN city
+  and street generic out of the customer's own message, inflating
+  `turn_residual` and starving the judge (judge.py:436). Verify, then make
+  the residual scan subtract the customer's own parts and the generic
+  vocabulary the observer already subtracts (`metrics.GRAMMAR_WORDS`,
+  `GENERIC_STEMS`) — F3.2's order said «the same scan as F1.4» and this is
+  the half that was not done.
+- **G3.3 (major)** The residual pre-gate refuses honest answers on a generic
+  street word, a month name and half a city — same subtraction as G3.2; a
+  pre-gate that fires on «улица» would publish a false «неверно».
+- **G3.4 (major)** The calibration sheet shows the human the UNMASKED
+  dialogue the judge never read, so κ compares two different tasks: the
+  sheet carries exactly what `build_prompt` fed the judge.
+- **G3.5 (major)** `BudgetExhausted` from the judge's reservation escapes
+  `run_triple_v5` and kills the run with three finished arms unrecorded:
+  catch it, write the arms, mark the triple `judge: skipped (budget)`.
+- **G3.6 (major)** The K calibration repeats mask their prompt with a
+  narrower substitute list than the run did, so `repeat_disagreement`
+  measures the mask, not the judge: reuse the run's list.
+- **G3.7 (major)** `--resume` with the default `--out` puts two run ids in
+  one directory and every reader takes the alphabetically first: refuse a
+  resume whose `--out` already holds a different run id, or write into the
+  resumed run's own directory.
+
+## FIX-4 — the corpus (verify first where marked)
+- **G4.1 (major, CONFIRMED)** F4.5 is half done: `kb_search` MEMBERSHIP is
+  still a word-overlap test (`mock._ranked`), so a case's declared chunk hops
+  vanish when the live agent's query words differ. Membership by seeded
+  identity, as the order said; the k-padding half stays.
+- **G4.2 (major claim, verify)** F4.2: the build-time proof checks that the
+  source result carries SOME tagged span for the item, never that the
+  rendered text equals what the TARGET leaf expects. If it reproduces, make
+  `render_problems` compare the source's rendered span with
+  `tools.expected_leaf_value(item, target_spec)` under the same fold the
+  metric uses, and drop the transitions that cannot hold.
+- **G4.3 (blocker claim, verify)** `chain_value`'s denominator is 22.4 %
+  free-text leaves where `produced` is the WHOLE prose field judged byte-
+  exactly. If it reproduces: a free-text leaf is compared by containment of
+  the expected value's needles, not by equality — and if that makes the
+  transition meaningless, the case must not declare it.
+- **G4.4 (major)** `user_in_loop`: 40 of 85 cases declare IN/memory hops with
+  no `MemorySpec` (F4.7's second half), and `patient.first_name` is sourced
+  from the SURNAME hop (10 cross-item transitions, 8 unhittable). Declare the
+  spec, source each leaf from its own item.
+- **G4.5 (major)** `returned_as_item` re-guesses the chain's ground truth
+  with `parts_of` instead of reading the source hop's own corpus declaration.
+- **G4.6** `GENERATOR_A_BEHAVIOURS` still lists six families (the authored
+  `single` makes seven) — send FIX-1 the exact constant in contract_questions;
+  K02's share arm is relative and the corpus grew, so re-read the floors and
+  say whether any family now sits under its share for a reason that is not a
+  defect.
+
+## Definition of done for round 3
+Every `python3 -m bench.agentpii5.test_*` PASS; `report --selftest` exit 0 AND
+refuses each of the five surviving mutants; `build --check` clean with the
+counts printed; `e2e/lint_tests.py bench/agentpii5` 0; wiki 0; only
+`harness.py`/`test_harness_stream.py` import pseudex; v4/pseudex/public
+untouched. Then I re-run the two sharpest skeptics on the touched lines only,
+and the benchmark STOPS for the owner's GO.
