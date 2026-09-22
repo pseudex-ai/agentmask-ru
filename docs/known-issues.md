@@ -1576,3 +1576,39 @@ TTL остаётся терпимостью к НАШЕЙ аварии, осты
 только `POST /admin/release` с нашей стороны или сутки ожидания.
 **Что увидел бенчмарк:** замер строки Pseudex 22.09 упёрся в собственные
 мёртвые слоты после `docker compose down -v` (новый том = новый инстанс).
+## Б26bis · Единица бюджета — это ДОПУСК, вытеснивший чужой слот, а не освобождение (решение 23.09.2026)
+
+Both reviewers of the first licensing change found the same root defect from
+two directions: the budget — the one control that keeps the bypass ceiling
+where it is — is counted on the RELEASE side, so it does not count what it
+exists to limit.
+
+- silence counted as `COUNT(DISTINCT instance_id)`: a carousel alternating two
+  `PSEUDEX_INSTANCE_ID` values saturates at 2 and the budget stops binding at
+  all (the ceiling MOVED, and upward);
+- the honest half counted `COUNT(*)` over lease ROWS: one `docker stop` of a
+  4-worker container that had renewed three times spends the whole hourly
+  budget and then blocks its own redeploy — worse for the customer than today;
+- an instance reusing its own id recycles the 32-process ceiling every T_alive
+  without touching the budget at all.
+
+**The rule.** A unit is spent by an ADMISSION that displaces another instance's
+slot — release or silence, it does not matter which — and by nothing else.
+Counted at admission, in the same critical section that decides it, one unit
+per admission. Therefore, by construction: a graceful stop costs ZERO (nothing
+was admitted); a restart on the same volume costs zero (the instance holds its
+own slot); a carousel pays one unit per container it starts, whatever ids it
+cycles; N workers of one container cost one unit between them, because they
+are one admission of one instance.
+
+**And the ceiling must be re-measured the way the attack actually runs:** with
+REUSED ids, with a fixed-order fleet, with several workers per container — the
+first measurement used a fresh id per step and therefore could not see the
+saturation. The number to reproduce is E2's: 24 for an honest engine, 216 for a
+silent one, unchanged by this work.
+
+**The screens are part of the change.** `active_instances` no longer emits
+`cooling`, so every template whose only branch was `cooling` now asserts that a
+released container holds a slot. The customer cabinet and the operator console
+ship WITH the server change or the change does not ship: a screen that lies
+about who holds a slot is the defect we set out to fix.
