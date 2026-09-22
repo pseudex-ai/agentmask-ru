@@ -275,6 +275,12 @@ _ADDRESS_GENERIC = frozenset(norm(w) for w in (
     # the abbreviations a real address uses in place of the words above; below
     # three letters («пр», «ш», «б-р») they fall under the `_PIECE` floor already.
     "пер", "просп", "пркт", "бул", "бульв", "наб", "мкр", "туп", "проул", "кв-л",
+    # structural markers written in full — the customer writes «дом»/«квартира»,
+    # the substitute now mirrors that form, and the WORD carries no identity
+    # (the number does, and it is masked). Below three letters («д», «к») they
+    # are under the `_PIECE` floor.
+    "дом", "квартира", "корпус", "корп", "строение", "стр", "литера", "лит",
+    "подъезд", "офис", "помещение", "пом", "владение",
 ))
 
 _CITY_TOKENS: frozenset[str] | None = None
