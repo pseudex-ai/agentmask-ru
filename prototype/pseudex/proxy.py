@@ -748,37 +748,66 @@ async def chat_completions(request: Request):
         # this JSON, and an extra key is a field their client library did not
         # expect. A header is invisible to a parser and readable by anyone who
         # looks — which is exactly the audience for it.
-        residual = _residual_in(restored, vault)
+        residual = _residual_in(upstream, restored, vault)
         headers = {"X-Pseudex-Residual": str(len(residual))} if residual else None
         return JSONResponse(restored, headers=headers)
 
 
-def _residual_in(response: dict[str, object], vault) -> list[str]:
+def _residual_in(written: dict[str, object], restored: dict[str, object],
+                 vault) -> list[str]:
     """Substitutes still standing in an answer that has already been restored.
 
     When the model reorders or shortens a fake, nothing resolves and the FAKE
     reaches the customer's tool — with a 200 and an empty log. Every persona in
     the 18.08 run asked for a way to see that from their own code.
+
+    BOTH ANSWERS, PAIRED PART BY PART, exactly as the sidecar's `_residual_for`
+    does and for the same reason: asked of the restored half alone the signal
+    fires on a CORRECT restoration whenever a real value happens to look like
+    one of our substitutes (`redact.residual_tokens`). Detokenization changes
+    strings and never their number, so walking the two objects in step lines
+    the pairs up by construction.
     """
     found: list[str] = []
-    for choice in response.get("choices", []) or []:
+    for choice_index, choice in enumerate(restored.get("choices", []) or []):
         message = choice.get("message") if isinstance(choice, dict) else None
         if not isinstance(message, dict):
             continue
+        before_message = _message_at(written, choice_index)
         content = message.get("content")
         if isinstance(content, str):
-            found.extend(residual_tokens(content, vault))
-        for call in message.get("tool_calls", []) or []:
+            said = before_message.get("content")
+            found.extend(residual_tokens(said if isinstance(said, str) else content,
+                                         content, vault, False))
+        before_calls = before_message.get("tool_calls") or []
+        for call_index, call in enumerate(message.get("tool_calls", []) or []):
             arguments = (call.get("function") or {}).get("arguments") \
                 if isinstance(call, dict) else None
-            if isinstance(arguments, str):
-                # THE ARGUMENT LEG'S OWN WINDOWS. A lower-case street standing
-                # alone in a schema field is the shape that leaks, and the
-                # restoring side offers it only here (`_tool_windows`); a
-                # signal that looked for less than the restorer did would go
-                # quiet on exactly those.
-                found.extend(residual_tokens(arguments, vault, True))
+            if not isinstance(arguments, str):
+                continue
+            before_call = before_calls[call_index] if call_index < len(before_calls) else {}
+            asked = ((before_call.get("function") or {}).get("arguments")
+                     if isinstance(before_call, dict) else None)
+            # THE ARGUMENT LEG'S OWN WINDOWS. A lower-case street standing
+            # alone in a schema field is the shape that leaks, and the
+            # restoring side offers it only here (`_tool_windows`); a
+            # signal that looked for less than the restorer did would go
+            # quiet on exactly those.
+            found.extend(residual_tokens(asked if isinstance(asked, str) else arguments,
+                                         arguments, vault, True))
     return sorted(set(found))
+
+
+def _message_at(response: dict[str, object], index: int) -> dict:
+    """The message of one choice, or an empty one. The restored answer is built
+    from the upstream answer key by key, so the same index names the same
+    choice; an empty dict falls back to «the text is its own written form»,
+    which is what the signal did before it had two texts to compare."""
+    choices = response.get("choices", []) or []
+    if index >= len(choices) or not isinstance(choices[index], dict):
+        return {}
+    message = choices[index].get("message")
+    return message if isinstance(message, dict) else {}
 
 
 async def _selfcheck(org_id: str, text: str) -> dict[str, object]:

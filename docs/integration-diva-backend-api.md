@@ -85,12 +85,20 @@ same org holding a substitute on the same street → the engine refuses rather
 than guessing, because guessing would put one customer's real address into
 another customer's tool call.
 
-**A refusal is never silent.** What did not resolve comes back in
-`residual_tokens` (and as the count in the `X-Pseudex-Residual` header), with the
-substitute named. The status is still 200 and the JSON is still well formed, so
-that list is the only way the callback can tell a restored value from a fake that
-reached the tool — treat a non-empty `residual_tokens` as "do not execute this
-tool call yet".
+**A refusal is never silent, whatever the fragment was.** What did not resolve
+comes back in `residual_tokens` (and as the count in the `X-Pseudex-Residual`
+header), with the substitute named — a street, a house number, a date the agent
+renotated, a group of digits cut out of a longer value. The status is still 200
+and the JSON is still well formed, so that list is the only way the callback can
+tell a restored value from a fake that reached the tool — treat a non-empty
+`residual_tokens` as "do not execute this tool call yet".
+
+**And the list is about the substitute, never about the answer.** It names only
+strings the MODEL wrote that the engine could not resolve and that are therefore
+still standing in what you are reading. A value that was restored correctly never
+appears there, even when the customer's own street or name happens to look like a
+substitute minted for another dialogue. That is what makes "do not execute" a
+rule you can act on rather than a warning to weigh.
 
 Same id as `/mask` (the one the callback already passes there, or nothing at all
 on both legs), and the same field on `/unmask_arguments` and `/unmask_chunk`.
@@ -98,8 +106,14 @@ on both legs), and the same field on `/unmask_arguments` and `/unmask_chunk`.
 **`pseudonym_scope` travels with it.** If the callback declares
 `pseudonym_scope: "customer"` on `/mask` (an agent with long-term memory that
 recalls substitutes across dialogues), it must declare it on `/unmask*` too, or
-the value is minted account-wide and restored per dialogue. The body wins over
-`PSEUDEX_PSEUDONYM_SCOPE`; an unknown value is a 400, never a silent fallback.
+the value is minted account-wide and restored per dialogue. The declaration
+reaches FRAGMENTS as well, in two steps and in this order: the dialogue named in
+the request answers first and competes with nobody, and only when it has nothing
+to say is the whole account asked — under the same single-candidate rule as
+above. The order matters to you: without it, your own dialogue's address would
+stop resolving the moment another dialogue mentioned the same street. The body
+wins over `PSEUDEX_PSEUDONYM_SCOPE`; an unknown value is a 400, never a silent
+fallback.
 
 ## 6. HTTP client (matches Diva pattern)
 `PseudexClient` = `httpx.AsyncClient` with timeout + bounded retries on transient errors (pattern: `src/domain/ai/core/.../api_client.py`). `PSEUDEX_URL` env. Methods: `mask(org_id, agent_id, messages, conversation_id=None)`, `unmask(org_id, response, conversation_id=None)` (§5.1 — the id is optional and worth passing; `unmask` also returns `residual_tokens`), `stats(org_id, agent_id)`. Wrapped by `PseudexService` (reads `Agent.pii_config`, decides to mask) and dependency-injected into routers like other services.

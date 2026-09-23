@@ -408,6 +408,94 @@ def test_restoring_leg_takes_the_declared_scope() -> None:
         service._BOUND_ORG = ""
 
 
+async def _signal_names_every_refused_fragment() -> None:
+    """THE SIGNAL SPEAKS ABOUT WHAT THE AGENT WROTE, AND ABOUT EVERY CLASS OF IT.
+
+    Two halves, and both are what the customer's code reads off the wire.
+
+    IT MUST NOT CRY WOLF. `residual_tokens` asked the vault about the windows of
+    the ALREADY-RESTORED answer, and «several of my substitutes wear this street
+    name» is true of a REAL street that happens to share it — so a CORRECT
+    restoration came back with a non-empty `residual_tokens` and an
+    `X-Pseudex-Residual` header (5 of 50 dialogues of the documented client). We
+    publish that list as a reason to refuse a tool call; a list that fires on a
+    correct answer is worse than no list.
+
+    AND IT MUST NOT GO QUIET. Only the STREET refusal was reported. A house
+    number and a phone's digit tail refused in silence — 22 and 6 of the same
+    50 — because the question was never asked about them: a key carrying digits
+    was skipped as «answered customer-wide», which is a statement about the
+    SCOPE and not about whether the string is ours.
+    """
+    service._BOUND_ORG = ""
+    gw = {"Authorization": f"Bearer {os.environ['PSEUDEX_GATEWAY_TOKEN']}"}
+    transport = httpx.ASGITransport(app=service.app)
+    org = "residual-every-class"
+    detector = Detector()
+
+    def show(conversation: str, said: str) -> str:
+        vault = service._vault(org).for_conversation(conversation)
+        return mask_text(said, vault, detector.detect(said))
+
+    # Two dialogues are shown a fake street by the SAME name…
+    with _forced_street("Каштановой"):
+        show("conv-A", "адрес ольгина 14 кв 7")
+        show("conv-B", "адрес изобильная 60 кв 186")
+    # …and a third speaks of the REAL Каштановая. Its own answer is correct.
+    shown = show("conv-C", "адрес каштановая 77 кв 4, телефон +7 912 345-67-89")
+    fake_address = shown.split("адрес ", 1)[1].split(", телефон", 1)[0].strip()
+    fake_phone = shown.rsplit("телефон ", 1)[1].strip().rstrip(".")
+    house = next(word.strip(".,") for word in fake_address.split()
+                 if word.strip(".,").isdigit())
+    tail = "".join(character for character in fake_phone if character.isdigit())[-4:]
+
+    correct = {"choices": [{"message": {"content": None, "tool_calls": [
+        {"id": "c", "type": "function", "function": {
+            "name": "crm", "arguments": json.dumps({"address": fake_address},
+                                                   ensure_ascii=False)}}]}}]}
+    pieces = json.dumps({"house": house, "last_digits": tail}, ensure_ascii=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+        restored = await client.post("/unmask", headers=gw, json={
+            "org_id": org, "conversation_id": "conv-C", "response": correct})
+        refused = await client.post("/unmask_arguments", headers=gw, json={
+            "org_id": org, "conversation_id": "conv-Z", "arguments": [pieces]})
+        mine = await client.post("/unmask_arguments", headers=gw, json={
+            "org_id": org, "conversation_id": "conv-C", "arguments": [pieces]})
+
+    back = restored.json()
+    answer = back["response"]["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+    check("каштановая" in answer.lower() and "77" in answer,
+          "the dialogue that minted the address gets it back whole", answer)
+    check(not back.get("residual_tokens")
+          and restored.headers.get("X-Pseudex-Residual") is None,
+          "…with NO residual: the alarm is about the substitute, not the answer",
+          f"residual={back.get('residual_tokens')} "
+          f"header={restored.headers.get('X-Pseudex-Residual')}")
+
+    left = refused.json()
+    stood = json.loads(left["arguments"][0])
+    check(stood["house"] == house and stood["last_digits"] == tail,
+          "a house and a digit tail asked from another dialogue are refused",
+          f"{left['arguments'][0]}")
+    check(sorted(left.get("residual_tokens") or []) == sorted({house, tail}),
+          "…and BOTH are named in residual_tokens — no class refuses in silence",
+          f"residual={left.get('residual_tokens')} expected={sorted({house, tail})}")
+
+    ours = json.loads(mine.json()["arguments"][0])
+    check(ours["house"] == "77" and ours["last_digits"] == "6789"
+          and not mine.json().get("residual_tokens"),
+          "…while the dialogue that minted them still gets the real values",
+          f"{mine.json()}")
+
+
+def test_signal_names_every_refused_fragment() -> None:
+    import anyio
+    try:
+        anyio.run(_signal_names_every_refused_fragment)
+    finally:
+        service._BOUND_ORG = ""
+
+
 async def _proxy_leg_calls() -> None:
     """THE PROXY'S WAY BACK IS SCOPED TOO, AND BY ITS OWN TRANSCRIPT.
 
@@ -528,6 +616,7 @@ def main() -> None:
     test_unnamed_conversation_is_not_every_conversation()
     test_restoring_leg_takes_the_declared_scope()
     test_proxy_response_leg_is_scoped()
+    test_signal_names_every_refused_fragment()
     test_name_trawl_visible()
     failed = [n for ok, n, _ in RESULTS if not ok]
     print("=" * 60)

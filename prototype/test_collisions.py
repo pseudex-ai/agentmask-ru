@@ -407,12 +407,15 @@ def test_a_bare_street_answers_only_in_its_own_dialogue(detector: Detector) -> N
     # ВИДИМЫМ остатком вместо тихой чужой улицы»; пока `residual_tokens` не
     # знал об отказе, в инструмент уходил фейк при 200 и пустом списке, то есть
     # ровно та тишина, ради которой список и заведён.
+    written = json.loads(field)["street"]
     for asked in (vault, vault.for_conversation("conv-bare-Z")):
-        left = residual_tokens(json.loads(unmask_arguments(field, asked))["street"], asked, True)
+        left = residual_tokens(written, json.loads(unmask_arguments(field, asked))["street"],
+                               asked, True)
         assert left == ["Каштановая"], left
     # …и своему диалогу отвечать есть чем, поэтому остатка там нет.
     home = vault.for_conversation("conv-bare-A")
-    assert residual_tokens(json.loads(unmask_arguments(field, home))["street"], home, True) == []
+    assert residual_tokens(written, json.loads(unmask_arguments(field, home))["street"],
+                           home, True) == []
 
     # СТРОЧНАЯ УЛИЦА, СТОЯЩАЯ ОДНА, — ЭТО НИЖНЯЯ ПОЛОВИНА СИГНАЛА, И ЕЁ НИКТО
     # НЕ ПРОВЕРЯЛ. Заглавную «Каштановую» предлагает `_name_windows`, поэтому
@@ -426,10 +429,12 @@ def test_a_bare_street_answers_only_in_its_own_dialogue(detector: Detector) -> N
     for asked in (vault, vault.for_conversation("conv-bare-Z")):
         stood = json.loads(unmask_arguments(lower, asked))["street"]
         assert stood == "каштановая", stood
-        assert residual_tokens(stood, asked, True) == ["каштановая"], residual_tokens(stood, asked, True)
+        assert residual_tokens("каштановая", stood, asked, True) == ["каштановая"], \
+            residual_tokens("каштановая", stood, asked, True)
         # …И ГРАНИЦА ТОЖЕ ЗАКРЕПЛЕНА: в ПРОЗЕ это окно не предлагается ни
         # восстановлением, ни сигналом — иначе перед волтом встал бы абзац слов.
-        assert residual_tokens(stood, asked) == [], residual_tokens(stood, asked)
+        assert residual_tokens("каштановая", stood, asked, False) == [], \
+            residual_tokens("каштановая", stood, asked, False)
     # И ВТОРАЯ ПОЛОВИНА ПРАВИЛА: ЕДИНСТВЕННЫЙ КАНДИДАТ ОТВЕЧАЕТ. Отказ всему,
     # что не назвало разговора, молча ломает документированного клиента
     # сайдкара (`docs/integration-diva-backend-api.md`), который
@@ -445,7 +450,8 @@ def test_a_bare_street_answers_only_in_its_own_dialogue(detector: Detector) -> N
     assert "Каштановая" in alone_masked, alone_masked
     answered = json.loads(unmask_arguments(field, only))["street"]
     assert answered == "Ольгина", answered
-    assert residual_tokens(answered, only, True) == [], residual_tokens(answered, only, True)
+    assert residual_tokens("Каштановая", answered, only, True) == [], \
+        residual_tokens("Каштановая", answered, only, True)
 
     print("вырожденный ключ улицы OK — чужой диалог получает свою улицу, свой — первую; "
           "плечо без разговора — единственный кандидат, двусмысленность — видимый остаток "
@@ -463,10 +469,10 @@ def test_two_addresses_on_one_fake_street(detector: Detector) -> None:
     бы вместе с улицей ЧУЖОЙ НОМЕР ДОМА — та же выдача, что Б28, только другой
     дорогой.
 
-    И отказ должен быть СЛЫШЕН. Ключ этих строк несёт цифры, поэтому
-    `refusable_place_keys` про них молчит; отказ здесь — не по чужому диалогу, а
-    по двусмысленности, и его называет `place_key_is_ambiguous`. Без него в
-    инструмент уходил фейк при 200 и пустом списке.
+    И отказ должен быть СЛЫШЕН. Отказ здесь — не по чужому диалогу, а по
+    двусмысленности: улицу носят две наши подмены сразу, и ни одна из них не
+    единственная. Называет его `place_fragment_is_ours`, спрошенный о том, что
+    написал агент; без него в инструмент уходил фейк при 200 и пустом списке.
 
     Подмена тянется случайно, поэтому улица здесь закреплена, а не разыграна.
     """
@@ -502,7 +508,7 @@ def test_two_addresses_on_one_fake_street(detector: Detector) -> None:
         assert out["street"] == "Каштановая", (tag, out)
         assert out["house"] == house, (tag, out)
         assert "Ольгина" not in json.dumps(out, ensure_ascii=False), (tag, out)
-        left = residual_tokens(out["street"], asked, True)
+        left = residual_tokens("Каштановая", out["street"], asked, True)
         assert left == ["Каштановая"], (tag, left)
 
     # …и каждому своему диалогу волт по-прежнему отвечает СВОИМ адресом — с его
@@ -512,9 +518,207 @@ def test_two_addresses_on_one_fake_street(detector: Detector) -> None:
         out = json.loads(unmask_arguments(field, mine))
         assert out["street"] == "Ольгина", (conversation, out)
         assert out["house"] == real_house, (conversation, out)
-        assert residual_tokens(out["street"], mine, True) == []
+        assert residual_tokens("Каштановая", out["street"], mine, True) == []
     print("две подмены на одной улице OK — «поздняя побеждает» осталось правилом одного "
           "разговора; чужому и безымянному плечу — отказ с видимым остатком")
+
+
+def _forcing(*sticky: str):
+    """Вернуть замену `secrets.choice`, которая тянет ИМЕННО эти слова.
+
+    Подмена тянется случайно, а здесь важно, КАКОЕ название выпало двум
+    разговорам: без закрепления дефект ловился бы раз в сорок прогонов.
+    Вызывающий обязан вернуть настоящую функцию в `finally` — `secrets.choice`
+    общий на процесс.
+    """
+    import secrets  # noqa: PLC0415
+
+    real_choice = secrets.choice
+
+    def choice(seq):
+        seq = list(seq)
+        for want in sticky:
+            if want in seq:
+                return want
+        return real_choice(seq)
+
+    return choice
+
+
+def test_a_correct_restoration_raises_no_alarm(detector: Detector) -> None:
+    """ДВУСМЫСЛЕННОСТЬ — ПРО ПОДМЕНУ, А НЕ ПРО ВОССТАНОВЛЕННОЕ ЗНАЧЕНИЕ.
+
+    Сигнал остатка спрашивался по окнам УЖЕ ВОССТАНОВЛЕННОГО текста, а волт на
+    вопрос «эту основу носят несколько моих подмен?» отвечает одинаково и про
+    нашу подмену, и про НАСТОЯЩУЮ улицу заказчика, которой случайно досталось
+    то же название. Получалось «не исполняй вызов» на ПРАВИЛЬНОМ восстановлении
+    — 5 из 50 диалогов документированного клиента, — а сигнал, который кричит
+    зря, хуже молчания: мы сами пишем в документации, что непустой
+    `residual_tokens` есть основание отказаться от вызова инструмента.
+
+    Здесь это собрано руками: двум разговорам выпадает фейковая «Кленовая», а
+    третий говорит про НАСТОЯЩУЮ Кленовую. Его собственный адрес возвращается
+    целиком и верно — и именно про него поднималась тревога.
+    """
+    import secrets  # noqa: PLC0415
+
+    real_choice = secrets.choice
+    vault = Vault(":memory:", _ORG)
+    try:
+        secrets.choice = _forcing("Кленовой", "Кленовая")
+        mask_one("адрес ольгина 14", _context(detector, vault, "conv-alarm-A"))
+        mask_one("адрес изобильная 60", _context(detector, vault, "conv-alarm-B"))
+    finally:
+        secrets.choice = real_choice
+    owners = [row[0] for row in vault._conn.execute(
+        "SELECT token FROM tokens WHERE customer=? AND entity_type='LOC'", (_ORG,)).fetchall()]
+    assert sum("леновая" in token.lower() for token in owners) >= 2, owners
+
+    # А ТЕПЕРЬ НАСТОЯЩАЯ КЛЕНОВАЯ — улица заказчика, а не наша.
+    real_talk = _context(detector, vault, "conv-alarm-real")
+    masked = mask_one("адрес кленовая 77 кв 4", real_talk)
+    fake = masked.split("адрес ", 1)[1].strip()
+    assert "кленовая" not in fake.lower(), fake
+    asked = vault.for_conversation("conv-alarm-real")
+    written = json.dumps({"address": fake}, ensure_ascii=False)
+    restored = unmask_arguments(written, asked)
+    back = json.loads(restored)["address"]
+    assert "кленовая" in back.lower() and "77" in back, back
+    # Восстановление правильное — значит остатка нет. Вопрос задан о том, что
+    # НАПИСАЛ АГЕНТ, и написанное разрешилось, поэтому спрашивать больше не о чем.
+    assert residual_tokens(written, restored, asked, True) == [], \
+        residual_tokens(written, restored, asked, True)
+    print("ложная тревога OK — правильное восстановление не поднимает остаток, "
+          "даже когда настоящая улица носит имя двух наших подмен")
+
+
+def test_every_class_of_refused_fragment_is_visible(detector: Detector) -> None:
+    """ФРАГМЕНТ, КОТОРЫЙ НЕ РАЗРЕШИЛСЯ, ОБЯЗАН БЫТЬ НАЗВАН — ЛЮБОГО ТИПА.
+
+    Виден был только отказ по УЛИЦЕ. Номер дома и цифровой хвост отказывали
+    молча — 22 и 6 из 50 у документированного клиента, — потому что вопрос о
+    них не задавался вовсе: ключ с цифрами исключался как «отвечающий по всему
+    заказчику», а это про ОБЛАСТЬ, а не про то, наша ли это строка. Дата —
+    третий такой класс: агент переписывает её в свою нотацию, точная подмена
+    больше не совпадает, и владельца ищет `date_owner`.
+
+    Отказ здесь делает ЧУЖОЙ разговор: он детерминирован, в отличие от
+    случайного совпадения двух подмен, и это ровно тот отказ, который клиент
+    видит чаще всего.
+    """
+    vault = Vault(":memory:", _ORG)
+    # ДАТА СКАЗАНА СЛОВАМИ НАМЕРЕННО. Подмена цифровой даты — это цифровая
+    # дата, то есть ЦЕЛЫЙ токен, и она разрешается по всему заказчику по
+    # праву: назвать её мог только тот, кому мы её отдали. Фрагментом дата
+    # становится ровно тогда, когда агент переписывает СКАЗАННУЮ подмену
+    # цифрами — тогда точного токена нет, и отвечает `date_owner` по
+    # каноническому прочтению.
+    said = ("клиент по адресу ольгина 14 кв 7, телефон +7 912 345-67-89, "
+            "дата рождения четырнадцатого марта восемьдесят пятого года")
+    masked = mask_one(said, _context(detector, vault, "conv-vis-A"))
+    rows = {row[0]: row[1] for row in vault._conn.execute(
+        "SELECT entity_type, token FROM tokens WHERE customer=? AND minted_in=?",
+        (_ORG, "conv-vis-A")).fetchall()}
+    assert {"LOC", "PHONE", "DOB"} <= set(rows), (rows, masked)
+    house = next(word.strip(".,") for word in rows["LOC"].split()
+                 if word.strip(".,").isdigit())
+    tail = "".join(character for character in rows["PHONE"] if character.isdigit())[-4:]
+    spoken = [row[0] for row in vault._conn.execute(
+        "SELECT part FROM token_parts WHERE customer=? AND token=?",
+        (_ORG, rows["DOB"])).fetchall()]
+    day, month, year = next(part for part in spoken if part.count(".") == 2).split(".")
+    stranger = vault.for_conversation("conv-vis-Z")
+
+    cases = {
+        # дом без улицы: `place_owner` внутри чужого разговора не находит строку
+        "house": (house, "номер дома"),
+        # цифровой хвост: `digit_fragment_owner` — то же самое для цифр
+        "last_digits": (tail, "хвост телефона"),
+        # дата в ДРУГОЙ нотации: точная подмена больше не совпадает, отвечает
+        # `date_owner` по каноническому прочтению — и тоже отказывает
+        "birth_date": (f"{year}-{month}-{day}", "дата в нотации агента"),
+    }
+    for key, (value, what) in cases.items():
+        written = json.dumps({key: value}, ensure_ascii=False)
+        restored = unmask_arguments(written, stranger)
+        assert json.loads(restored)[key] == value, (what, restored)
+        left = residual_tokens(written, restored, stranger, True)
+        assert left == [value], (what, left)
+
+    # …И СВОЕМУ РАЗГОВОРУ ВСЕ ТРИ ОТВЕЧАЮТ, поэтому остатка там нет: проверка,
+    # которая не умеет молчать, ничего не измеряет.
+    home = vault.for_conversation("conv-vis-A")
+    for key, (value, what) in cases.items():
+        written = json.dumps({key: value}, ensure_ascii=False)
+        restored = unmask_arguments(written, home)
+        assert json.loads(restored)[key] != value, (what, restored)
+        assert residual_tokens(written, restored, home, True) == [], (what, restored)
+    print("видимость OK — дом, цифровой хвост и дата в чужой нотации отказывают "
+          "ВИДИМО, а своему разговору по-прежнему отвечают")
+
+
+def test_declared_memory_reaches_the_fragment_lookups(detector: Detector) -> None:
+    """ОБЪЯВЛЕННАЯ ПАМЯТЬ АГЕНТА — СНАЧАЛА СВОЙ РАЗГОВОР, ПОТОМ ВЕСЬ ЗАКАЗЧИК.
+
+    `with_pseudonym_scope("customer")` до фрагментных поисков не доходил вовсе:
+    целая подмена узнавалась по всему заказчику, а её ЧАСТЬ по-прежнему искалась
+    только в своём разговоре. Хост с памятью получал половину настройки.
+
+    Наивное расширение ломает того же хоста иначе, и это вторая половина
+    проверки: у двух разговоров одна фейковая улица, и «спрашиваем сразу весь
+    волт» дало бы двух кандидатов — СОБСТВЕННЫЙ адрес перестал бы разрешаться,
+    как только другой диалог упомянул ту же улицу. Поэтому шага два.
+    """
+    import secrets  # noqa: PLC0415
+
+    real_choice = secrets.choice
+    vault = Vault(":memory:", _ORG)
+    try:
+        secrets.choice = _forcing("Кедровой", "Кедровая")
+        # ПОЛНЫЕ АДРЕСА, А НЕ ГОЛАЯ УЛИЦА, И ЭТО УСЛОВИЕ ПРОВЕРКИ. Голая улица
+        # — это ЦЕЛЫЙ токен, а целую подмену объявленная память узнаёт и без
+        # фрагментных поисков (`_answers_another_dialogue`); спрашивать надо о
+        # том, что целым токеном не является.
+        mask_one("адрес ольгина 14 кв 7",
+                 _context(detector, vault, "conv-mem-A", "customer"))
+        mask_one("адрес изобильная 60 кв 186",
+                 _context(detector, vault, "conv-mem-C", "customer"))
+    finally:
+        secrets.choice = real_choice
+    field = json.dumps({"street": "Кедровая"}, ensure_ascii=False)
+
+    # ШАГ ПЕРВЫЙ. Свой разговор отвечает СВОИМ адресом и ни с кем не
+    # соревнуется — хотя ту же фейковую улицу носит и второй разговор.
+    for conversation, want in (("conv-mem-A", "ольгин"), ("conv-mem-C", "изобильн")):
+        mine = vault.for_conversation(conversation).with_pseudonym_scope("customer")
+        got = json.loads(unmask_arguments(field, mine))["street"]
+        assert want in got.lower(), (conversation, got)
+        assert residual_tokens("Кедровая", got, mine, True) == [], (conversation, got)
+
+    # ШАГ ВТОРОЙ. У диалога, который эту улицу не видел, дома ответа нет — и
+    # тогда спрашивается весь заказчик. Кандидатов двое, значит отказ, и он
+    # ВИДЕН: расширение не делает правило слабее, оно делает его вторым шагом.
+    stranger = vault.for_conversation("conv-mem-Z").with_pseudonym_scope("customer")
+    stood = json.loads(unmask_arguments(field, stranger))["street"]
+    assert stood == "Кедровая", stood
+    assert residual_tokens("Кедровая", stood, stranger, True) == ["Кедровая"], stood
+
+    # …А ТАМ, ГДЕ КАНДИДАТ ОДИН, второй шаг отвечает — ради этого он и заведён.
+    alone = Vault(":memory:", _ORG)
+    try:
+        secrets.choice = _forcing("Кедровой", "Кедровая")
+        mask_one("адрес ольгина 14 кв 7",
+                 _context(detector, alone, "conv-solo-A", "customer"))
+    finally:
+        secrets.choice = real_choice
+    elsewhere = alone.for_conversation("conv-solo-B").with_pseudonym_scope("customer")
+    answered = json.loads(unmask_arguments(field, elsewhere))["street"]
+    assert "ольгин" in answered.lower(), answered
+    # …и БЕЗ объявления памяти тот же вопрос из чужого разговора отказывает.
+    plain = alone.for_conversation("conv-solo-B")
+    assert json.loads(unmask_arguments(field, plain))["street"] == "Кедровая"
+    print("объявленная память OK — фрагмент отвечает сначала в своём разговоре, "
+          "потом единственным кандидатом по заказчику; двусмысленность видна")
 
 
 def main() -> int:
@@ -532,6 +736,9 @@ def main() -> int:
     test_b23_customer_word_equal_to_another_dialogue_substitute(detector)
     test_a_bare_street_answers_only_in_its_own_dialogue(detector)
     test_two_addresses_on_one_fake_street(detector)
+    test_a_correct_restoration_raises_no_alarm(detector)
+    test_every_class_of_refused_fragment_is_visible(detector)
+    test_declared_memory_reaches_the_fragment_lookups(detector)
     print("\nвсе проверки коллизий пройдены")
     return 0
 

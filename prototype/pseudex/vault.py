@@ -431,7 +431,7 @@ _VALUE_SQL_BOTH = "entity_type, canonical, original"
 # `conversation_id` не шлёт вовсе, и «нет разговора — нет ответа» молча ломает
 # работающую интеграцию на четырёх классах фрагментов сразу. Поэтому плечо без
 # названного разговора спрашивает ВЕСЬ ВОЛТ и отвечает ТОЛЬКО при единственном
-# кандидате (`_fragment_scope`); двусмысленность — отказ с видимым остатком.
+# кандидате (`_fragment_scopes`); двусмысленность — отказ с видимым остатком.
 # Это тот же принцип единственного кандидата, на котором стоит сама область
 # разговора (CLAUDE.md, «The conversation scope»): у заказчика с одним диалогом
 # про эту улицу отвечать по-прежнему есть чем, а два диалога с одной улицей
@@ -445,7 +445,7 @@ _MINTED_HERE_JOINED = " AND (k.minted_in=? OR k.minted_in IS NULL OR k.minted_in
 _MINTED_HERE = " AND (minted_in=? OR minted_in IS NULL OR minted_in='')"
 # Сколько владельцев одной основы улицы стоит читать, чтобы ответить «один или
 # несколько» (`_place_key_owners`). Больше полусотни — это уже «несколько» при
-# любом продолжении списка, и оба вызывающих поворачивают в безопасную сторону:
+# любом продолжении списка, и вызывающий поворачивает в безопасную сторону:
 # единственного кандидата нет, остаток виден.
 _PLACE_OWNER_CAP = 50
 # Сколько владельцев ещё имеет смысл спрашивать «а это не одно ли место»
@@ -455,6 +455,12 @@ _PLACE_OWNER_CAP = 50
 # у запроса `_one_identity` нет индекса по `extends`, поэтому он перебирает все
 # строки заказчика, и задавать его на каждый кандидат ответа нельзя.
 _ONE_IDENTITY_CAP = 4
+# Сколько строк стоит прочитать, чтобы ответить «этот кусок цифр вообще наш?»
+# (`digit_fragment_is_ours`). Отвечает первая подходящая, а подходят почти все
+# найденные: единственный отбор — совпадение длин настоящего и подменного
+# значения. Предел бережёт попадание; промах читает всё и стоит ровно того же,
+# что уже стоило восстановление (`digit_fragment_owner` по тому же куску).
+_DIGIT_FRAGMENT_PROBE = 16
 
 _SPOKEN_WORD = re.compile(r"[А-Яа-яЁё]{2,}")
 # Типы, у которых канонизация даёт САМО ЗНАЧЕНИЕ в нормальной форме, а не ключ
@@ -2658,11 +2664,12 @@ class Vault:
         ).fetchone()
         return row is not None
 
-    def _fragment_scope(self, clause: str) -> tuple[str, tuple[str, ...]]:
-        """`clause` и его параметр — или пустое условие, когда разговора никто
-        не назвал. `clause` уже выбран вызывающим: `_MINTED_HERE_JOINED` для
-        запроса через JOIN с алиасом `k`, `_MINTED_HERE` для запроса по
-        `tokens` напрямую.
+    def _fragment_scopes(self, clause: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
+        """Области, в которых этот фрагмент имеет право искаться, ПО ПОРЯДКУ:
+        сначала свой разговор, потом весь заказчик. `clause` уже выбран
+        вызывающим: `_MINTED_HERE_JOINED` для запроса через JOIN с алиасом `k`,
+        `_MINTED_HERE` для запроса по `tokens` напрямую; пустая пара условий —
+        это «весь волт», и отвечает он только при единственном кандидате.
 
         ДВА РЕЖИМА, И ВТОРОЙ ПЛАТИТ ЕДИНСТВЕННЫМ КАНДИДАТОМ. Есть разговор —
         спрашиваем только его строки (плюс строки без `minted_in`: том,
@@ -2672,10 +2679,24 @@ class Vault:
         предъявляет его и внутри разговора, потому что и там фрагмент может
         принадлежать двум подменам сразу. Полный разбор — у `_MINTED_HERE_JOINED`
         выше.
-        """
+
+        ОБЪЯВЛЕННАЯ ПАМЯТЬ АГЕНТА — ЭТО ВТОРОЙ ШАГ, А НЕ ДРУГОЙ ПЕРВЫЙ.
+        `with_pseudonym_scope("customer")` говорит, что хост носит подмены между
+        диалогами, и до этих поисков объявление не доходило вовсе: фрагмент
+        по-прежнему искался только в своём разговоре, то есть настройка держала
+        целую подмену и роняла её часть. Наивное расширение — «объявили память,
+        значит спрашиваем весь волт» — ломает того же хоста иначе: его
+        СОБСТВЕННЫЙ адрес перестал бы разрешаться, как только другой диалог
+        упомянул ту же улицу, потому что кандидатов стало двое. Поэтому шага
+        два: своя строка отвечает первой и ни с кем не соревнуется, а весь
+        заказчик спрашивается, только если дома ответа не нашлось, — и там
+        действует то же правило единственного кандидата, что и у плеча без
+        названного разговора."""
         if not self._conversation:
-            return "", ()
-        return clause, (self._conversation,)
+            return (("", ()),)
+        if self._pseudonym_scope == "customer":
+            return ((clause, (self._conversation,)), ("", ()))
+        return ((clause, (self._conversation,)),)
 
     def _place_key_owners(self, name_key: str) -> tuple[set[str], bool]:
         """Адресные подмены заказчика, которые носят ВСЕ основы этого ключа, и
@@ -2696,14 +2717,14 @@ class Vault:
         что у ключа «каштановый|самара|» основа «самара» не найдёт ничего. Она и
         не должна: наше в этой строке — название улицы, и спрашивать надо о нём.
 
-        ПОТОЛОК ЕСТЬ, И ОН НАЗЫВАЕТ СЕБЯ. Оба вызывающих спрашивают ровно одно:
+        ПОТОЛОК ЕСТЬ, И ОН НАЗЫВАЕТ СЕБЯ. Вызывающий спрашивает ровно одно:
         кандидат ОДИН или их несколько. У заказчика, где одну основу носят сотни
         подмен, ответ известен на пятьдесят первой, а полная выборка стоила бы
         размера волта на каждом вызове. Но обрезанное чтение — это «не знаю», а
         не «столько и есть»: `token_parts` держит и части ИМЁН, поэтому первые
         полсотни строк основы «ленин» могут оказаться людьми, а единственная
-        улица — за краем. Поэтому потолок возвращается вторым значением, и оба
-        вызывающих поворачивают от него в безопасную сторону — единственного
+        улица — за краем. Поэтому потолок возвращается вторым значением, и
+        вызывающий поворачивает от него в безопасную сторону — единственного
         кандидата нет, остаток виден.
 
         ДВА ЗАПРОСА, А НЕ ОДИН JOIN, И ЭТО РАЗНИЦА В ШЕСТЬСОТ РАЗ. У совмещённого
@@ -2714,7 +2735,11 @@ class Vault:
         точечно по (customer, token) — 0.09 мс. Этот вопрос задаётся на каждый
         кандидат ответа, поэтому план здесь важнее краткости.
         """
-        stems = [part for part in name_key.split("|") if part]
+        return self._loc_parts_owners([part for part in name_key.split("|") if part])
+
+    def _loc_parts_owners(self, stems: list[str]) -> tuple[set[str], bool]:
+        """Те же два запроса по списку частей, каким его даёт `signature_parts`
+        — см. `_place_key_owners`, откуда взяты и план, и потолок."""
         if not stems:
             return set(), False
         truncated = False
@@ -2757,33 +2782,6 @@ class Vault:
         with self._lock:
             return self._one_identity(owners) is not None
 
-    def place_key_is_ambiguous(self, name_key: str) -> bool:
-        """Этот ключ носят НЕСКОЛЬКО наших подмен сразу — значит пофрагментный
-        поиск по нему отказывает КОМУ УГОДНО, включая тот диалог, который одну
-        из этих строк и чеканил.
-
-        ВТОРАЯ ПОЛОВИНА ВИДИМОСТИ, И ОНА НЕ ПРО ОБЛАСТЬ. `refusable_place_keys`
-        показывает отказ по ЧУЖОМУ ДИАЛОГУ; этот — отказ по ДВУСМЫСЛЕННОСТИ, и
-        ключ там несёт цифры, поэтому первый вопрос о нём молчит. Без второго
-        «двусмысленность — отказ с ВИДИМЫМ остатком» было бы наполовину правдой:
-        в инструмент уходил фейк при 200 и пустом списке.
-
-        Спрошено по всему заказчику и точечными запросами: у сгруппированного
-        запроса «какие основы вообще двусмысленны» цена растёт с размером волта
-        (замер: 83 мс на 60 000 строк), а здесь — с числом кандидатов в ответе,
-        как и у всякого другого поиска на этом плече."""
-        owners, truncated = self._place_key_owners(name_key)
-        if not owners:
-            # Ни одной нашей адресной строки — это слово заказчика, а не наше.
-            # Предупреждение, которое кричит на обычном тексте, никто не читает.
-            return False
-        if truncated or len(owners) > _ONE_IDENTITY_CAP:
-            return True
-        if len(owners) < 2:
-            return False
-        with self._lock:
-            return self._one_identity(owners) is None
-
     def place_owner(self, candidate: str) -> str | None:
         """Адресная подмена, ЧАСТЬЮ которой является этот фрагмент.
 
@@ -2807,8 +2805,18 @@ class Vault:
         # выглядит одинаково у всех, — и без области диалог B получал адрес,
         # отчеканенный в диалоге A. Это ровно то раскрытие, ради запрета
         # которого область и заведена. Плечо, разговора не назвавшее, спрашивает
-        # весь волт и платит за это единственным кандидатом ниже.
-        scope, scope_args = self._fragment_scope(_MINTED_HERE_JOINED)
+        # весь волт и платит за это единственным кандидатом ниже; хост, который
+        # объявил память агента, спрашивает сначала свой разговор, потом весь
+        # волт — по тому же правилу (`_fragment_scopes`).
+        for scope, scope_args in self._fragment_scopes(_MINTED_HERE_JOINED):
+            found = self._place_owner_in(parts, scope, scope_args)
+            if found is not None:
+                return found
+        return None
+
+    def _place_fragment_owners(self, parts: list[str], scope: str,
+                               scope_args: tuple[str, ...]) -> set[str]:
+        """Адресные подмены, которые носят ВСЕ эти части, в одной области."""
         with self._lock:
             owners: list[set[str]] = []
             for part in parts:
@@ -2820,9 +2828,14 @@ class Vault:
                     (self._customer, part, *scope_args),
                 ).fetchall()
                 if not rows:
-                    return None
+                    return set()
                 owners.append({row[0] for row in rows})
-        common = set.intersection(*owners)
+        return set.intersection(*owners)
+
+    def _place_owner_in(self, parts: list[str], scope: str,
+                        scope_args: tuple[str, ...]) -> str | None:
+        """`place_owner` в ОДНОЙ области — см. там."""
+        common = self._place_fragment_owners(parts, scope, scope_args)
         if len(common) == 1:
             return next(iter(common))
         if not common:
@@ -2850,7 +2863,15 @@ class Vault:
         stems, numbers = morph_places.signature_parts(candidate)
         if numbers or not stems:
             return None
-        scope, scope_args = self._fragment_scope(_MINTED_HERE_JOINED)
+        for scope, scope_args in self._fragment_scopes(_MINTED_HERE_JOINED):
+            found = self._street_owner_in(stems, scope, scope_args)
+            if found is not None:
+                return found
+        return None
+
+    def _street_owner_in(self, stems: list[str], scope: str,
+                         scope_args: tuple[str, ...]) -> str | None:
+        """`place_owner_by_street` в ОДНОЙ области — см. там."""
         with self._lock:
             owners: list[set[str]] = []
             for part in stems:
@@ -2871,9 +2892,13 @@ class Vault:
             # разбирает исправленный адрес: две строки на одной фейковой улице,
             # и поздняя — то написание, на котором заказчик остановился. Между
             # РАЗНЫМИ диалогами «позже» не значит ничего, кроме «кто-то другой
-            # говорил последним», поэтому плечо без названного разговора видит
-            # здесь двух кандидатов и отказывает.
-            if not self._conversation:
+            # говорил последним», поэтому проход ПО ВСЕМУ ЗАКАЗЧИКУ видит здесь
+            # двух кандидатов и отказывает — и у плеча без названного разговора,
+            # и у второго шага объявленной памяти агента. Признак прохода —
+            # его собственные параметры области, а не поле вида: при
+            # `pseudonym_scope=customer` разговор назван, а второй проход всё
+            # равно стоит вне его.
+            if not scope_args:
                 return None
             rows = self._conn.execute(
                 "SELECT rowid, token, canonical FROM tokens WHERE customer=? AND entity_type='LOC' "
@@ -2892,7 +2917,15 @@ class Vault:
         lookup: two dialogues may well hold substitutes on one date."""
         if not reading:
             return None
-        scope, scope_args = self._fragment_scope(_MINTED_HERE_JOINED)
+        for scope, scope_args in self._fragment_scopes(_MINTED_HERE_JOINED):
+            values = self._date_values_in(reading, for_tool, scope, scope_args)
+            if len(values) == 1:
+                return next(iter(values))
+        return None
+
+    def _date_values_in(self, reading: str, for_tool: bool, scope: str,
+                        scope_args: tuple[str, ...]) -> set[str]:
+        """Настоящие даты, стоящие за этим прочтением, в ОДНОЙ области."""
         with self._lock:
             # DISTINCT, А НЕ ПРОСТО LIMIT: три одинаковых строки исчерпывали
             # предел и прятали четвёртую, с ДРУГОЙ датой, — то есть «кандидат
@@ -2905,8 +2938,7 @@ class Vault:
                 + scope + " LIMIT 3",
                 (self._customer, reading, *scope_args),
             ).fetchall()
-        values = {_pick_value(row[0], row[1], row[2], for_tool) for row in rows}
-        return next(iter(values)) if len(values) == 1 else None
+        return {_pick_value(row[0], row[1], row[2], for_tool) for row in rows}
 
     def digit_fragment_owner(self, fragment: str, entity_type: str | None = None,
                              position: str | None = None) -> tuple[str, str] | None:
@@ -2931,7 +2963,17 @@ class Vault:
         digits = "".join(ch for ch in fragment if ch.isdigit())
         if len(digits) < 2:
             return None
-        scope, scope_args = self._fragment_scope(_MINTED_HERE)
+        for scope, scope_args in self._fragment_scopes(_MINTED_HERE):
+            unique = self._digit_fragments_in(digits, entity_type, position, scope, scope_args)
+            if len(unique) == 1:
+                return next(iter(unique))
+        return None
+
+    def _digit_fragments_in(self, digits: str, entity_type: str | None,
+                            position: str | None, scope: str,
+                            scope_args: tuple[str, ...]) -> set[tuple[str, str]]:
+        """Настоящие цифры на месте этого куска, в ОДНОЙ области — см.
+        `digit_fragment_owner`."""
         with self._lock:
             rows = self._conn.execute(
                 "SELECT token, digits, entity_type, canonical, original "
@@ -2961,8 +3003,110 @@ class Vault:
                         or (position == "start" and start == 0)):
                     found.append((real[start:start + len(digits)], row_type))
                 start = token_digits.find(digits, start + 1)
-        unique = {pair for pair in found}
-        return next(iter(unique)) if len(unique) == 1 else None
+        return {pair for pair in found}
+
+    # ═══ THE REPORTING DIRECTION ═══════════════════════════════════════════
+    # Три вопроса выше отвечают «ЧЬЯ это подмена» и молчат, когда кандидатов
+    # несколько или единственный живёт в чужом разговоре. Это молчание и есть
+    # отказ: подмена остаётся стоять, и в инструмент уходит фейк при 200. Ниже
+    # — те же три запроса, заданные в обратную сторону: «наше ли это вообще»,
+    # без требования единственности, по всему заказчику. Диагностика, которая
+    # подчинялась бы области, о которой докладывает, не доложила бы ничего —
+    # отказ по ЧУЖОМУ диалогу самый частый из всех, — а наружу такой ответ
+    # отдаёт только «да/нет» про нашу же подмену, ни одного значения.
+    #
+    # ВОПРОС ЗАДАЁТСЯ О ТОМ, ЧТО НАПИСАЛ АГЕНТ, И ТОЛЬКО О НЁМ. Спрошенный о
+    # ВОССТАНОВЛЕННОМ тексте, он поднимает тревогу на правильном ответе:
+    # настоящая улица, случайно делящая основу с двумя нашими подменами,
+    # отвечает «да» — 5 ложных тревог на 50 диалогах документированного
+    # клиента. Кто спрашивает — `redact.residual_tokens`, и он же проверяет,
+    # что фрагмент ВСЁ ЕЩЁ СТОИТ в ответе: разрешившийся из ответа исчез.
+
+    def place_fragment_is_ours(self, candidate: str) -> bool:
+        """Хоть одна адресная подмена этого заказчика носит ВСЕ части этого
+        фрагмента — «наше это слово (или число), или клиентское».
+
+        Покрывает оба класса адресного фрагмента одним вопросом: название улицы
+        без дома и НОМЕР ДОМА без улицы. Второй до сих пор отказывал молча — 22
+        из 50 у документированного клиента, — потому что вопрос о нём вовсе не
+        задавался: ключ с цифрами исключался как «отвечающий по всему
+        заказчику», а это про ОБЛАСТЬ, а не про единственность."""
+        stems, numbers = morph_places.signature_parts(candidate)
+        parts = [*stems, *numbers]
+        if not parts:
+            return False
+        owners, truncated = self._loc_parts_owners(parts)
+        # ДВА ЗАПРОСА, А НЕ ОДИН JOIN, И ЭТО РАЗНИЦА В ШЕСТЬСОТ РАЗ. Совмещённый
+        # запрос `place_owner` идёт по `idx_tokens_namekey (customer=?)`, то есть
+        # перебирает ВСЕ строки заказчика: 55 мс на 60 000 строк за одну основу.
+        # Восстановление платит это один раз за ответ, а сигнал спрашивает на
+        # КАЖДЫЙ уцелевший кандидат — тем же планом он стоил бы вчетверо
+        # дороже всего восстановления (замер: 0.5 → 2.0 с на 60 000 строк).
+        #
+        # ОБРЕЗАННОЕ ЧТЕНИЕ — ЭТО «НЕ ЗНАЮ», И ЗДЕСЬ ОНО ЗНАЧИТ «ПОКАЖИ».
+        # Молчание — это фейк в инструменте при 200; лишняя строка в списке —
+        # повод перепроверить вызов. Та же безопасная сторона, в которую
+        # поворачивает от потолка `_sole_place_owner`.
+        return truncated or bool(owners)
+
+    def digit_fragment_is_ours(self, fragment: str) -> bool:
+        """Цифры этого куска стоят внутри цифр хоть одной подмены этого
+        заказчика — последние четыре цифры телефона, серия паспорта, группа
+        СНИЛС. Тот же отбор, что у `digit_fragment_owner` (кусок строго короче
+        значения, длины настоящего и подменного совпадают), без требования
+        единственности.
+
+        СВОЙ ЗАПРОС С ПРЕДЕЛОМ, А НЕ ЧУЖОЙ БЕЗ НЕГО. `instr` по подстроке не
+        ложится ни на один индекс, поэтому поиск куска — это перебор строк
+        заказчика; `digit_fragment_owner` платит его, потому что обязан увидеть
+        ВТОРОГО кандидата, чтобы отказать. Здесь достаточно первого, и предел
+        обрывает чтение на нём. Промах всё равно читает всё — но ровно столько
+        же читает и восстановление, которое уже спросило про этот же кусок."""
+        digits = "".join(ch for ch in fragment if ch.isdigit())
+        if len(digits) < 2:
+            return False
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT digits, entity_type, canonical, original FROM tokens "
+                "WHERE customer=? AND digits IS NOT NULL "
+                "AND length(digits) > ? AND instr(digits, ?) > 0 LIMIT ?",
+                (self._customer, len(digits), digits, _DIGIT_FRAGMENT_PROBE),
+            ).fetchall()
+        for token_digits, row_type, canonical, original in rows:
+            value = _pick_value(row_type, canonical or "", original or "", True)
+            real = "".join(ch for ch in value if ch.isdigit())
+            # Разной длины — смещение не переносится, и восстановление такую
+            # строку тоже пропускает; сообщать о ней было бы ложной тревогой.
+            if len(real) == len(token_digits):
+                return True
+        return False
+
+    def date_reading_is_ours(self, reading: str) -> bool:
+        """Хоть одна подмена даты этого заказчика индексирована под этим
+        прочтением. Дата — такой же фрагмент, как улица: агент переписывает её
+        в свою нотацию, точная подмена больше не совпадает, и без этого вопроса
+        отказ был бы так же нем.
+
+        ДВА ЗАПРОСА, А НЕ JOIN, ПО ТОЙ ЖЕ ПРИЧИНЕ, ЧТО У `place_fragment_is_ours`:
+        совмещённый запрос `date_owner` ведёт по `tokens` и перебирает все
+        строки заказчика — 63 мс на 60 000 строк, и спрашивается он на каждое
+        прочтение даты в ответе. Здесь — покрывающий индекс (customer, part) и
+        точечная проверка типа."""
+        if not reading:
+            return False
+        with self._lock:
+            named = [row[0] for row in self._conn.execute(
+                "SELECT token FROM token_parts WHERE customer=? AND part=? LIMIT ?",
+                (self._customer, reading, _PLACE_OWNER_CAP + 1),
+            ).fetchall()]
+            if not named:
+                return False
+            row = self._conn.execute(
+                "SELECT 1 FROM tokens WHERE customer=? AND entity_type IN ('DOB','DATE') "
+                f"AND token IN ({','.join('?' * len(named))}) LIMIT 1",
+                (self._customer, *named),
+            ).fetchone()
+        return row is not None
 
     def residual_of(self, candidate: str) -> str | None:
         """The minted token this leftover string is a piece of, if any.
@@ -3796,41 +3940,6 @@ class Vault:
                                                      for_tool))
         return found
 
-    def refusable_place_keys(self) -> set[str]:
-        """The place keys this customer HAS a row for and this dialogue may NOT
-        read — `_answers_another_dialogue` asked in the reporting direction.
-
-        THE REFUSAL HAS TO BE VISIBLE OR IT IS A SILENT SWAP. The restoring leg
-        skips such a row and leaves the substitute standing, so the FAKE goes to
-        the customer's tool inside a well-formed 200; `residual_tokens` is the
-        only way the caller can see that, and it could not see this one — the
-        row answers no lookup, so nothing in the detokenised text resolves to it
-        and nothing marks it as ours. Asked customer-wide on purpose: a
-        diagnostic that obeyed the scope it is reporting on would report
-        nothing.
-
-        ASKED ONCE, AND FIRST, BECAUSE IT IS THE CHEAP HALF. The keys come back
-        by one indexed read of a column; deciding whether a candidate string
-        HAS one of them costs morphology per candidate, and on ordinary traffic
-        there is nothing to decide — no customer has a bare-street row from
-        another dialogue, the set is empty, and the caller stops there.
-        `LIMIT` because this is a warning, not an index: a customer with
-        thousands of such rows is already a customer whose every bare street is
-        refused, and the first of them says so.
-        """
-        if self._pseudonym_scope == "customer":
-            return set()
-        with stage("vault.lookup.refusable"), self._lock:
-            rows = self._conn.execute(
-                "SELECT DISTINCT name_key, minted_in FROM tokens "
-                "WHERE customer=? AND entity_type='LOC' AND name_key IS NOT NULL "
-                "AND minted_in IS NOT NULL AND minted_in<>'' AND minted_in<>? "
-                "AND name_key NOT GLOB '*[0-9]*' LIMIT 500",
-                (self._customer, self._conversation),
-            ).fetchall()
-        return {row[0] for row in rows
-                if self._answers_another_dialogue("LOC", row[0], row[1])}
-
     def _answers_another_dialogue(self, entity_type: str, name_key: str | None,
                                   minted_in: str | None) -> bool:
         """A DEGENERATE PLACE KEY IS NOT UNIQUE, SO IT ANSWERS ONLY AT HOME.
@@ -3871,8 +3980,8 @@ class Vault:
         The price is the trade `#conversation-scope` already records: a bare
         street named in one dialogue and asked about in another no longer
         resolves and comes back as a residual token, VISIBLY
-        (`refusable_place_keys` → `residual_tokens`), instead of answering with
-        somebody else's street silently."""
+        (`place_fragment_is_ours` → `redact.residual_tokens`), instead of
+        answering with somebody else's street silently."""
         if entity_type != "LOC" or not name_key:
             return False
         if self._pseudonym_scope == "customer":

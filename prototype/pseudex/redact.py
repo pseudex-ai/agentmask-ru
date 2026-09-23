@@ -2195,8 +2195,9 @@ def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
     return out
 
 
-def residual_tokens(text: str, vault: Vault, for_tool: bool = False) -> list[str]:
-    """Minted tokens still standing in text that has already been detokenized.
+def residual_tokens(written: str, restored: str, vault: Vault,
+                    for_tool: bool) -> list[str]:
+    """Our substitutes the agent wrote that are STILL STANDING after restoration.
 
     THE SIGNAL EVERY PERSONA ASKED FOR, in the same words three times: «мне
     хватило бы заголовка X-Pseudex-Residual». When the model reorders a name,
@@ -2205,15 +2206,30 @@ def residual_tokens(text: str, vault: Vault, for_tool: bool = False) -> list[str
     in the log. Their code cannot find out, so they cannot fail closed on their
     own side.
 
-    A SUBSTITUTE THE VAULT REFUSED TO ANSWER IS THE SAME EVENT AND WAS THE ONE
-    THIS COULD NOT SEE. A bare street minted in another dialogue resolves to
-    nothing on purpose (`Vault._answers_another_dialogue`) — and because the row
-    answers no lookup, the leftover was ours to nobody: `detokenize_many` misses
-    it and `residual_of` is names-only. So the price D-067 names — «the street
-    comes back as a residual token, VISIBLY, instead of answering with somebody
-    else's street silently» — was only half true, and the half that was missing
-    is the half the caller can act on. `Vault.refusable_place_keys` asks the
-    same question the restoring leg asked, customer-wide.
+    TWO TEXTS, AND THE ORDER OF THE TWO QUESTIONS IS THE WHOLE FIX. Asked of the
+    RESTORED text alone this could not tell a leftover fake from a real value
+    that happens to look like one: a customer's own street sharing a stem with
+    two of our substitutes, a real «Анна» whose name is a word of somebody
+    else's fake. Both answered «ours» and both were reported — 5 false alarms in
+    50 dialogues of the documented client, on CORRECT restorations. We document
+    this signal as a reason to refuse a tool call, and a signal that cries wolf
+    is worse than none. So the candidates come from what the AGENT WROTE, and a
+    candidate is reported only if it is still there afterwards: a substitute
+    that resolved is gone from the answer by construction, and a real value is
+    never in the question.
+
+    THAT ORDER IS ALSO WHAT MAKES THE VAULT'S PART CHEAP. The «still standing»
+    test is string work over text already in hand, so the vault is asked only
+    about the few candidates that survived — on an answer where everything
+    resolved, which is the ordinary one, it is asked nothing at all.
+
+    A FRAGMENT REFUSES WHATEVER ITS TYPE, AND SO MUST THIS. A street with no
+    number, a house number with no street, a date the agent renotated, four
+    digits cut out of a phone — each is resolved by its own lookup, and each of
+    those lookups answers only when the candidate is unambiguous. Silence means
+    the substitute stays, so it is the same event four times over, and only the
+    street half was ever reported (`_refused_fragments` now asks all four —
+    house 22 of 50 and digit tail 6 of 50 went out silently before it did).
 
     `for_tool` OFFERS THE SAME WINDOWS THE RESTORING LEG OFFERED. A leftover
     this does not propose cannot be reported, and a lower-case street standing
@@ -2221,36 +2237,21 @@ def residual_tokens(text: str, vault: Vault, for_tool: bool = False) -> list[str
     windows would put a paragraph of words in front of the vault, which is why
     the restoring leg bounds them the same way (`_tool_windows`).
 
-    Read-only and cheap: the candidates are the same shapes `unmask_text` already
-    scans for, and each is one indexed lookup that MISSES for a real value and
-    HITS for a substitute we minted. A hit here means one thing only — this
-    string is ours, and it should not have survived.
+    Read-only and cheap: the candidates are the same shapes `unmask_text` scans
+    for, and each is one indexed lookup that MISSES for a real value and HITS
+    for a substitute we minted. A hit here means one thing only — this string is
+    ours, and it should not have survived.
     """
-    candidates = {match.group() for match in token_re().finditer(text)}
-    # A PHONE TOKEN IS WRITTEN THE CUSTOMER'S WAY (vault `_digits_in_customer_
-    # form`), so `TOKEN_RE`'s «+79…» shape no longer names it; every digit run
-    # is offered and the vault answers by signature.
-    candidates |= {match.group().strip() for match in _NUM_RUN.finditer(text)}
-    # A NAME the model REWROTE no longer matches any token, so `TOKEN_RE` alone
-    # would miss exactly the case this exists for. Capitalised runs are offered
-    # too, and the vault decides which of them are made of its own words.
-    windows = _name_windows(text)
-    candidates |= {surface for _start, _end, surface in windows}
-    if not candidates and not for_tool:
+    asked = _written_candidates(written, for_tool).standing_in(restored)
+    if not asked.any():
         return []
-    known = vault.detokenize_many(candidates)
-    residual = {value for value in candidates if value in known}
-    residual |= {value for value in candidates
+    known = vault.detokenize_many(asked.named)
+    residual = {value for value in asked.named if value in known}
+    residual |= {value for value in asked.named
                  if value not in known and vault.residual_of(value) is not None}
-    # THE REFUSAL IS ASKED OVER THE WINDOWS THE RESTORING LEG OFFERED, and the
-    # argument leg offers more of them — a lower-case street standing alone in a
-    # schema field is the shape that leaks. Only this question gets the wider
-    # set: the others (`detokenize_many`, `residual_of`) would pay morphology
-    # for every word of the field to answer about names, which the capitalised
-    # windows already cover.
-    asked = {surface for _start, _end, surface in
-             (windows + (_tool_windows(text) if for_tool else []))}
-    residual |= _refused_candidates(asked - residual, vault)
+    residual |= _refused_fragments((asked.named | asked.tool_words) - residual,
+                                   asked.address_fields - residual,
+                                   asked.cued_numbers - residual, vault)
     # MAXIMAL WINDOWS ONLY. «Римма Цветкова» is one leftover, not three; a caller
     # reading a count would otherwise see the same defect three times and could
     # not tell one damaged name from several.
@@ -2259,40 +2260,202 @@ def residual_tokens(text: str, vault: Vault, for_tool: bool = False) -> list[str
                              for other in residual))
 
 
-def _refused_candidates(candidates: set[str], vault: Vault) -> set[str]:
-    """Those of `candidates` whose place key names a row this dialogue may not
-    read. The SAME signature the restoring leg asks the vault with
-    (`_restore_inflected_spans`), so what is reported is what was refused rather
-    than a second guess at it.
+class _Candidates(NamedTuple):
+    """What the restoring leg offered the vault about one text, by QUESTION.
 
-    TWO REASONS A ROW STAYS SILENT, AND BOTH HAVE TO BE REPORTED. It may belong
-    to another dialogue (`refusable_place_keys`), or it may be one of SEVERAL
-    substitutes wearing this street name, in which case every fragment lookup
-    refuses whoever asks — including a leg that named no conversation, where the
-    single-candidate rule is the whole permission (`place_key_is_ambiguous`,
-    Б28). The first was reported and the second was not, so «двусмысленность —
-    отказ с ВИДИМЫМ остатком» was half true.
+    Four sets because four different questions are asked, and giving one set's
+    strings to another question is how this gets slow or noisy.
 
-    A CANDIDATE CARRYING A DIGIT IS ASKED NEITHER QUESTION: a key with digits
-    names one address and is answered customer-wide by design, and a house
-    number is a part of half the substitutes a customer has. What is left is one
-    indexed read for the whole call plus one point query per surviving
-    candidate, so the cost tracks the length of the answer and not the size of
-    the vault — the property every other lookup on this leg keeps."""
-    if not candidates:
-        return set()
-    refusable = vault.refusable_place_keys()
-    refused: set[str] = set()
+    `named` is what may be a whole substitute: the vault is asked to recognise
+    it (`detokenize_many`, `residual_of`) and, failing that, to say whether it
+    is a fragment of one. `tool_words` are the extra windows only a schema field
+    is short enough to offer — a lower-case street standing alone — and they get
+    the FRAGMENT question only: `residual_of` would pay morphology for every
+    word of the field to answer about names the capitalised windows already
+    cover (measured: twice the work of the whole signal).
+
+    `address_fields` and `cued_numbers` exist because a bare number means three
+    different things. A general «92» is somebody's quantity until proved
+    otherwise and is asked only the digit-signature question, with that leg's
+    own three-digit floor. The same «92» under a key the schema calls `house` is
+    an address part — that is how `_join_address_fields` reads it, from the ROLE
+    of the KEY and never from the shape of the value. And «последние цифры 92»
+    is a claimed fragment of an identifier, which is why `_restore_cued_numbers`
+    asks the vault about two digits there and nowhere else. Asking the widest
+    question of every number would fire on an order quantity that happens to sit
+    inside some substitute's digits, and a signal that cries wolf is worse than
+    none.
+    """
+
+    named: set[str]
+    tool_words: set[str]
+    address_fields: set[str]
+    cued_numbers: set[str]
+
+    def standing_in(self, restored: str) -> "_Candidates":
+        """The same four sets, keeping only what survived restoration."""
+        return _Candidates(*({value for value in group if _still_standing(value, restored)}
+                             for group in self))
+
+    def any(self) -> bool:
+        return any(bool(group) for group in self)
+
+
+def _written_candidates(text: str, for_tool: bool) -> _Candidates:
+    """Every string the restoring leg offered the vault about this text, by the
+    question it is offered to — see `_Candidates`."""
+    general = {match.group() for match in token_re().finditer(text)}
+    # A PHONE TOKEN IS WRITTEN THE CUSTOMER'S WAY (vault `_digits_in_customer_
+    # form`), so `TOKEN_RE`'s «+79…» shape no longer names it; every digit run
+    # is offered and the vault answers by signature.
+    general |= {match.group().strip() for match in _NUM_RUN.finditer(text)}
+    # A NAME the model REWROTE no longer matches any token, so `TOKEN_RE` alone
+    # would miss exactly the case this exists for. Capitalised runs are offered
+    # too, and the vault decides which of them are made of its own words.
+    general |= {surface for _start, _end, surface in _name_windows(text)}
+    # A NUMBER A CUE INTRODUCED — «последние четыре цифры 6359», «серия 4509»,
+    # «контрольное число 59». The restoring leg asks the vault about these down
+    # to TWO digits because the cue says what they are and where they sit
+    # (`_restore_cued_numbers`); nothing else proposed them, so in prose a
+    # refused digit tail went out in silence.
+    cued = {match.group("num").strip() for match in _CUE_NUMBER.finditer(text)
+            if not match.group("cue").lower().startswith(_HOUSE_CUES)}
+    if not for_tool:
+        return _Candidates(general, set(), set(), cued)
+    words = {surface for _start, _end, surface in _tool_windows(text)}
+    # AND THE LEAVES, BECAUSE THE RESTORING LEG WORKS ON LEAVES. `unmask_
+    # arguments` parses the object and restores each string leaf on its own, so
+    # a leaf that is nothing but a number — «92», «7359» — is asked there as a
+    # whole (`_WHOLE_NUMBER` in `_restore_reformatted_spans`), while in the
+    # serialised object it is far too short for `_NUM_RUN` and no window ever
+    # proposed it. That is why the house number and the phone's digit tail
+    # refused in silence.
+    fields: set[str] = set()
+    for key, leaf in _string_leaves(text):
+        value = leaf.strip()
+        if not value:
+            continue
+        if _WHOLE_NUMBER.fullmatch(value) or _DATE_SHAPE.match(value):
+            general.add(value)
+        if _role_of_field(key):
+            fields.add(value)
+    return _Candidates(general, words, fields, cued)
+
+
+def _string_leaves(raw: str) -> list[tuple[str, str]]:
+    """(key, value) for every string leaf of a tool call's arguments — the same
+    walk `unmask_arguments` restores by. Arguments that are not valid JSON are
+    one nameless leaf, exactly as they are there."""
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return [("", raw)]
+    out: list[tuple[str, str]] = []
+
+    def walk(node: object, key: str) -> None:
+        if isinstance(node, str):
+            out.append((key, node))
+        elif isinstance(node, list):
+            for item in node:
+                walk(item, key)
+        elif isinstance(node, dict):
+            for name, value in node.items():
+                walk(value, str(name))
+
+    walk(parsed, "")
+    return out
+
+
+def _still_standing(candidate: str, restored: str) -> bool:
+    """This exact string is still in the restored text, on word boundaries.
+
+    A substitute that resolved was replaced, so it is gone; one that was refused
+    is untouched, so it is there. The boundaries matter for numbers above all:
+    «92» inside «1992» is a different number, and reporting it would be the same
+    cry-wolf this whole ordering exists to stop.
+
+    `find` first, and the boundary test only where it hits, because the ordinary
+    answer is that everything resolved and nothing is here to check.
+    """
+    if not candidate:
+        return False
+    at = restored.find(candidate)
+    while at >= 0:
+        before = restored[at - 1] if at else ""
+        after = restored[at + len(candidate):at + len(candidate) + 1]
+        if not _joins_a_word(before) and not _joins_a_word(after):
+            return True
+        at = restored.find(candidate, at + 1)
+    return False
+
+
+def _joins_a_word(character: str) -> bool:
+    return bool(character) and (character.isalnum() or character == "_")
+
+
+def _refused_fragments(candidates: set[str], address_fields: set[str],
+                       cued_numbers: set[str], vault: Vault) -> set[str]:
+    """Those of these leftovers that are a FRAGMENT of one of our substitutes —
+    the four refusals the restoring leg made in silence, named.
+
+    THE QUESTION IS EXISTENCE, NOT IDENTITY, AND THAT IS THE POINT. Every
+    fragment lookup on the restoring leg («whose substitute is this piece?»)
+    answers only when the answer is unique and in reach; it had already said no
+    about each of these, so asking it again would report nothing. What is asked
+    here is the other half — «is this piece OURS at all?» — and combined with
+    «it is still standing» it says exactly what the caller needs to know: a fake
+    is in your tool call.
+
+    ONE QUESTION PER SHAPE, and each is the one the restoring leg asked of that
+    shape. A word is a street name; digits under an address-role key are a house
+    or a flat; a date-shaped value reads to the canonical the vault indexed a
+    spoken substitute under; a number a cue introduced is a claimed fragment of
+    an identifier and is asked down to two digits, exactly as
+    `_restore_cued_numbers` asks it; anything else with three or more digits is
+    asked of the digit signatures. Three digits is `_restore_reformatted_spans`'
+    own floor and it is there for the same reason: with no cue to say what a
+    number is, shorter than that it is a count, not a piece of a person.
+    """
+    refused = {candidate for candidate in address_fields
+               if _place_fragment_is_ours(candidate, vault)}
+    refused |= {candidate for candidate in cued_numbers
+                if vault.digit_fragment_is_ours(candidate)}
     for candidate in candidates:
-        if any(character.isdigit() for character in candidate):
-            continue
-        try:
-            key = place_key(candidate)
-        except Exception:  # noqa: BLE001 - morphology must never break a response
-            continue
-        if key in refusable or vault.place_key_is_ambiguous(key):
+        digits = "".join(character for character in candidate if character.isdigit())
+        if not digits:
+            if _place_fragment_is_ours(candidate, vault):
+                refused.add(candidate)
+        elif _DATE_SHAPE.match(candidate):
+            if _date_is_ours(candidate, vault):
+                refused.add(candidate)
+        elif len(digits) >= 3 and vault.digit_fragment_is_ours(digits):
             refused.add(candidate)
     return refused
+
+
+def _place_fragment_is_ours(candidate: str, vault: Vault) -> bool:
+    """`Vault.place_fragment_is_ours` behind the guard every other morphology
+    call on this leg carries: a diagnostic must never be the thing that turns a
+    restored answer into a 500."""
+    try:
+        return vault.place_fragment_is_ours(candidate)
+    except Exception:  # noqa: BLE001 - morphology must never break a response
+        return False
+
+
+def _date_is_ours(candidate: str, vault: Vault) -> bool:
+    """A date-shaped leftover the vault holds under one of its readings. The
+    SAME readings the restoring leg offered (`_date_readings` plus the canonical
+    of a month written in words), because a reading it never asked about is a
+    refusal that never happened."""
+    value = candidate.strip()
+    readings = [value, *_date_readings(value)]
+    if not _DATE_ANY.match(value):
+        canonical = _date_canonical(value)
+        if len(canonical) == 10:
+            readings.append(canonical)
+    return any(vault.date_reading_is_ours(reading)
+               for reading in readings if _DATE_ANY.match(reading))
 
 
 class StreamDetokenizer:

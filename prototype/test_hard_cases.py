@@ -531,8 +531,9 @@ def test_a_numbered_street_is_not_a_house(detector: Detector) -> None:
         back = json.loads(restored)
         if (back["house"] != "77" or back["flat"] != "113"
                 or "победиловск" not in back["street"].lower()
-                or residual_tokens(restored, talk)):
-            wrong.append((argument, restored, residual_tokens(restored, talk)))
+                or residual_tokens(argument, restored, talk, True)):
+            wrong.append((argument, restored,
+                          residual_tokens(argument, restored, talk, True)))
     check("поля street/house/flat возвращают настоящий адрес без остатка", not wrong, f"{wrong}")
 
 
@@ -620,9 +621,10 @@ def test_a_hyphen_glued_substitute_is_two_words(vault: Vault, detector: Detector
         rewritten = field.replace(" кв ", ", кв. ")
         agent = rewritten[:1].upper() + rewritten[1:]
         argument = json.dumps({"address": agent}, ensure_ascii=False)
-        back = json.loads(unmask_arguments(argument, talk))["address"]
+        restored = unmask_arguments(argument, talk)
+        back = json.loads(restored)["address"]
         if "седого" not in back.lower() or "39" not in back:
-            leaked.append((agent, back, residual_tokens(argument, talk)))
+            leaked.append((agent, back, residual_tokens(argument, restored, talk, True)))
     check("склеенная дефисом подмена разрешается, а не уезжает в инструмент",
           not leaked, f"{leaked}")
 

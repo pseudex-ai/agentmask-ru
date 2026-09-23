@@ -24,11 +24,23 @@ text + keep the per-org vault + audit. Runs in the customer's contour.
   data. Naming the conversation is therefore strictly better, and never
   required.
 
+  THAT LIST IS ABOUT WHAT THE MODEL WROTE, AND IT COVERS EVERY CLASS. It names
+  the substitutes the answer still carries — street, house number, renotated
+  date, digit tail alike — and never a value that came back correctly, however
+  much a customer's own street or name may look like a substitute minted
+  elsewhere. Both halves were once false and both were customer-visible: the
+  signal fired on correct restorations and stayed quiet on a refused house
+  number (`redact.residual_tokens`).
+
   `pseudonym_scope` («conversation» | «customer») is the SAME declaration on
   both legs and defaults to `PSEUDEX_PSEUDONYM_SCOPE`. A host whose agent has
   memory declares it on /mask and MUST declare it here too: the two legs
   disagreeing would mean substitutes minted account-wide and restored per
-  dialogue. The body wins over the environment, exactly as on /mask.
+  dialogue. It reaches the FRAGMENT lookups in two steps — the named dialogue
+  first, the whole account only when that has nothing to say — because a
+  one-step widening would stop a host's OWN address resolving as soon as
+  another dialogue mentioned the same street (`Vault._fragment_scopes`). The
+  body wins over the environment, exactly as on /mask.
 
 Vault is keyed per org_id and persistent, so the host can run many workers/pods
 and still share one consistent token map (the in-process approach can't).
@@ -357,10 +369,15 @@ def _detok_rate_ok(org_id: str) -> bool:
     return AUDIT.detok_values_since(org_id, time.time() - _DETOK_WINDOW) < _DETOK_MAX_PER_MIN
 
 
-def _minted_in(texts: list, vault: Vault, for_tool: bool = False) -> set:
+def _minted_in(texts: list, vault: Vault, for_tool: bool) -> set:
     """The minted tokens standing in these texts, by the SAME recognizer as the
     residual signal — so 'disclosed' is symmetric with 'residual': a token present
     in the INPUT and gone from the OUTPUT is a real value the call resolved.
+
+    EACH TEXT IS ITS OWN «WRITTEN» FORM, because nothing has been restored in it
+    yet: `residual_tokens` reads what the agent wrote and keeps what survived,
+    and here the two are one string — which is precisely «everything of ours
+    standing in it», the count this subtraction needs.
 
     `for_tool` travels with the leg, because the recognizer's windows do: the
     argument leg offers a lower-case field and the prose leg does not, and the
@@ -369,7 +386,7 @@ def _minted_in(texts: list, vault: Vault, for_tool: bool = False) -> set:
     found: set = set()
     for text in texts:
         if isinstance(text, str):
-            found.update(residual_tokens(text, vault, for_tool))
+            found.update(residual_tokens(text, text, vault, for_tool))
     return found
 
 
@@ -707,7 +724,7 @@ async def unmask(request: Request) -> JSONResponse:
     # A LIST, not a boolean, and the values are OUR substitutes: naming them
     # discloses nothing about the customer's data, and the caller needs them to
     # decide what to do — refuse the tool call, retry, or ask the model again.
-    residual = _residual_for(result, org_id, conversation_id, pseudonym_scope)
+    residual = _residual_for(response, result, org_id, conversation_id, pseudonym_scope)
     await anyio.to_thread.run_sync(
         _audit_detok, org_id, _detok_actor(body), response, residual, conversation_id,
         pseudonym_scope
@@ -895,8 +912,8 @@ def _unmask_arguments_for(arguments: list[str], org_id: str, conversation_id: st
     vault = _scoped(org_id, conversation_id, pseudonym_scope)
     restored = [unmask_arguments(raw, vault) for raw in arguments]
     residual: list[str] = []
-    for text in restored:
-        residual.extend(residual_tokens(text, vault, True))
+    for raw, text in zip(arguments, restored):
+        residual.extend(residual_tokens(raw, text, vault, True))
     residual = sorted(set(residual))
     disclosed = len(_minted_in(arguments, vault, True) - set(residual))
     return restored, residual, disclosed
@@ -908,14 +925,22 @@ def _unmask_for(response: dict[str, object], org_id: str, conversation_id: str =
     return unmask_response(response, _scoped(org_id, conversation_id, pseudonym_scope))
 
 
-def _residual_for(response: dict[str, object], org_id: str,
-                  conversation_id: str, pseudonym_scope: str) -> list[str]:
+def _residual_for(written: dict[str, object], restored: dict[str, object],
+                  org_id: str, conversation_id: str,
+                  pseudonym_scope: str) -> list[str]:
     """Substitutes still standing in an already-detokenized answer.
 
     Walks the same text the caller will read, so what it reports is exactly what
     would have reached their tool. Read-only: no token is minted and nothing is
     audited — a diagnostic that changes the vault would change the thing it is
     diagnosing.
+
+    BOTH ANSWERS, PAIRED PART BY PART. The question «is this ours» is asked of
+    what the MODEL wrote and confirmed against what the caller will read;
+    `_response_parts` walks the two objects in the same order because
+    detokenization changes strings and never their number or their legs, so the
+    pairs line up by construction. Asked of the restored half alone, the signal
+    fired on correct restorations — see `residual_tokens`.
 
     IN THE CONVERSATION THE RESTORE RAN IN, or it is diagnosing a different
     engine: `_unmask_for` resolves through `_scoped`, and a wider view here
@@ -924,8 +949,9 @@ def _residual_for(response: dict[str, object], org_id: str,
     """
     vault = _scoped(org_id, conversation_id, pseudonym_scope)
     found: list[str] = []
-    for text, for_tool in _response_parts(response):
-        found.extend(residual_tokens(text, vault, for_tool))
+    for (before, for_tool), (after, _leg) in zip(_response_parts(written),
+                                                 _response_parts(restored)):
+        found.extend(residual_tokens(before, after, vault, for_tool))
     return sorted(set(found))
 
 
@@ -972,14 +998,14 @@ def _unmask_chunk_leg(delta: str, carry: str, org_id: str, flush: bool, actor: s
     reached the caller; one carried to new_carry is split across the boundary, not yet
     emitted, so it is neither."""
     vault = _scoped(org_id, conversation_id, pseudonym_scope)
-    before = _minted_in([carry, delta], vault)
+    before = _minted_in([carry, delta], vault, False)
     if not before:
         return unmask_stream_chunk(delta, carry, vault, flush)
     if not _detok_rate_ok(org_id):
         return _RATE_LIMITED
     text, new_carry = unmask_stream_chunk(delta, carry, vault, flush)
-    emitted = _minted_in([text], vault)
-    pending = _minted_in([new_carry], vault)
+    emitted = _minted_in([text], vault, False)
+    pending = _minted_in([new_carry], vault, False)
     disclosed = len(before - emitted - pending)
     if disclosed or emitted:
         AUDIT.record_detok(org_id, actor, disclosed, len(emitted))
