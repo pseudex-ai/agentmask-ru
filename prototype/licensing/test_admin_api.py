@@ -599,10 +599,11 @@ check("и числа процессов: живых у работающего, �
       and _by_id["vol-dead"]["held_places"] >= 1,
       f"{[(k, v.get('live_processes'), v.get('held_places')) for k, v in _by_id.items()]}")
 
-# РЫЧАГ ПОДДЕРЖКИ — ЧЕРЕЗ РУЧКУ, А НЕ ЧЕРЕЗ МЕТОД. Место рабочего процесса
-# держится до конца окна аренды, и `POST /admin/release` — единственное, что
-# освобождает его досрочно; отказ по потолку процессов посылает клиента именно
-# сюда. Раз это обещано в отказе, проверяется оно через HTTP.
+# РЫЧАГ ПОДДЕРЖКИ — ЧЕРЕЗ РУЧКУ, А НЕ ЧЕРЕЗ МЕТОД. Место МОЛЧАЩЕГО ключа
+# держится до конца окна аренды (корректная остановка освобождает его сама), и
+# `POST /admin/release` — единственное, что освобождает такое место досрочно;
+# отказ по потолку процессов посылает клиента именно сюда. Раз это обещано в
+# отказе, проверяется оно через HTTP.
 _HELP_ORG, _HELP_ID = "helped", "vol-jam"
 help_key = admin.post("/admin/issue", json={"org_id": _HELP_ORG, "plan": "start"},
                       headers=ADMIN).json()["key"]
@@ -654,6 +655,31 @@ check("восемь редеплоев на ТОМ ЖЕ томе проходя�
 check("и не стоят ни одной единицы бюджета",
       server.STORE.turnover_last_hour("budget") == 0,
       f"перевыдач: {server.STORE.turnover_last_hour('budget')} (было 3 из 3)")
+# И ТО ЖЕ САМОЕ НА ТАРИФЕ, ГДЕ МЕСТ ВСЕГО ДВА, — ЗАМЕР, НАЗВАВШИЙ Б26quinquies.
+#
+# Восемь кругов выше проходили и тогда, когда честный уход места не освобождал:
+# на «старте» их 32, и до потолка круги просто не доходили. На пробном тарифе
+# (2 места, один воркер) тот же клиент запирался на ТРЕТЬЕМ `docker stop` — до
+# конца окна аренды, ~23 часа, чего в выпущенном 0.3.17 нет. Десять запусков
+# подряд, потому что «работает дважды» здесь и было дефектом.
+admin.post("/admin/plans", headers=ADMIN,
+           json={"code": "trial2", "max_instances": 1, "processes_per_instance": 2,
+                 "grant_size": 500, "quantum_min": 100, "quantum_max": 1000,
+                 "reserve_max": 2000, "actor": "ops:test"})
+trial_key = admin.post("/admin/issue", json={"org_id": "trial", "plan": "trial2"},
+                       headers=ADMIN).json()["key"]
+trial_codes = []
+for number in range(10):
+    process = generate_process_key().public
+    trial_codes.append(lease_as(trial_key, "vol-trial", process, version="0.3.17"))
+    if trial_codes[-1] != 200:
+        break
+    release_as(trial_key, "vol-trial", process)          # docker stop
+check("пробный тариф на два места: десять честных остановок подряд проходят",
+      trial_codes == [200] * 10, f"коды аренд: {trial_codes}")
+check("и ни одна не стоит единицы бюджета",
+      server.STORE.turnover_last_hour("trial") == 0,
+      f"перевыдач: {server.STORE.turnover_last_hour('trial')}")
 # ЧЕМ ТОГДА СВЯЗАН ТОТ ЖЕ ЦИКЛ У АТАКУЮЩЕГО: ТЕМ, ЧТО «УШЕДШИЙ» И
 # ПРОДОЛЖАЮЩИЙ РАБОТАТЬ СЛЫШЕН. Отпустивший слот процесс держит бандл до конца
 # аренды, и проверить его заявление нечем — но обслужить запрос сверх
@@ -718,10 +744,19 @@ check("продление отобранного ключа — 409 instance_lim
       stood_down.status_code == 409
       and stood_down.json().get("error") == "instance_limit",
       f"{stood_down.status_code} {stood_down.json().get('error')}")
-check("и отказ говорит, что место отдано и что делать",
-      "уже отдано" in stood_down.json().get("detail", "")
+check("и отказ говорит, ЧТО именно перешло к другому запуску и что делать",
+      "слот контейнера перешёл" in stood_down.json().get("detail", "")
       and "Перезапустите контейнер" in stood_down.json().get("detail", ""),
       stood_down.json().get("detail", "")[:130])
+# ОТДАН СЛОТ КОНТЕЙНЕРА, А НЕ МЕСТО ЭТОГО КЛЮЧА: место он держит сам до конца
+# окна аренды, потому что молчание мест не освобождает (Б26quinquies). Отказ,
+# который говорил «место уже отдано другому запуску», посылал клиента искать
+# чужой контейнер, которого нет.
+check("и не называет отданным место, которое этот же ключ и держит",
+      "место этого рабочего процесса уже отдано"
+      not in stood_down.json().get("detail", "")
+      and "держит до конца окна аренды" in stood_down.json().get("detail", ""),
+      stood_down.json().get("detail", "")[:200])
 check("этот код движок читает как ОТВЕТ, а не как наш сбой",
       "instance_limit" in _license_answer_codes,
       "иначе 409 ушёл бы в grace и контейнер работал бы ещё 72 ч")

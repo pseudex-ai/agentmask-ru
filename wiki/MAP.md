@@ -708,7 +708,7 @@ every state transition; the container-stopping check goes LAST) ·
 `test_auth_style` · `test_signup_forms` · `test_configurator_renders` and
 `test_ops_renders` (real browser) · `test_engine_release` (the advertised image comes from the registry: override → file → `latest`, reload on replace, the landing shows the same tag) · `test_seo` · `test_crawler_allowlist`
 (fail2ban allowlist) · `test_deploy_references` (SQL names in deploy scripts vs
-real tables) · `test_analytics` · `test_yandex_api` · `test_slots` (real browser: the cabinet, the customer card and the fleet count OCCUPIED slots and tell `active`/`silent`/`released` apart — Б26bis).
+real tables) · `test_analytics` · `test_yandex_api` · `test_slots` (real browser: the cabinet, the customer card and the fleet count OCCUPIED slots and tell `active`/`silent`/`released` apart — Б26bis) · `test_slots_stand` (not a check but a STAND: runs the real `licensing.devserver` under the engine's interpreter and captures the `/admin/instances` bodies `test_slots` renders, so no screen check rides on a hand-written response).
 
 Docs: `docs/sprint-cabinet-and-pricing.md`, `docs/billing-integrity.md`,
 `docs/metering-integrity.md`, `docs/tz-verticals-and-configurator.md` (design),

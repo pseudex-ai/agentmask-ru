@@ -697,17 +697,25 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   (Б26quater). The CONTAINER slot is held by the liveness mark
   (`ALIVE_SECONDS` = 600 s, all four marks written by the SERVER) — that was
   Б26: a dead container held the slot for 16–24 h and the refusal named a
-  container that did not exist. The PROCESS PLACE is held by the LEASE window:
-  a key occupies a place while ANY of its leases is still inside that window,
-  and neither silence nor `/v1/release` frees it earlier, because both are
-  statements about the future while the sealed bundle stays valid for
-  `ttl + grace`. Three passes moved the place onto the silence window and each
-  one multiplied the plan by `T_offline / T_alive`: measured, one admission bought 32 serving
-  processes against the baseline's one, and the ring «lease → `/v1/release`»
-  under ONE `instance_id` was bounded by nothing. The only early release of a
-  place is OURS, `POST /admin/release` (`released_by='admin'`) — we perform it,
-  so it needs no proof. Pins: `licensing/test_metering_attacks.py`,
-  `licensing/test_admin_api.py`.
+  container that did not exist. The PROCESS PLACE is held by the LEASE window —
+  SILENCE never frees it early, because a stopped engine and a patched one are
+  silent in exactly the same way. Three passes moved the place onto the silence
+  window and each one multiplied the plan by `T_offline / T_alive`: measured, one
+  admission bought 32 serving processes against the baseline's one. Pins:
+  `licensing/test_metering_attacks.py`, `licensing/test_admin_api.py`.
+- **A place freed by an HONEST release is free at once: to its own instance for
+  nothing and without limit, to another instance as a displacement that costs a
+  budget unit** (Б26quinquies). `/v1/release` is the one thing the customer can
+  SAY, and `docker stop` says it per worker; holding the place after it locked a
+  trial customer (2 places) out for ~23 h after two honest stops — a state the
+  released 0.3.17 does not have, i.e. a fix worse than the defect. The ring
+  «lease → release → lease» under one `instance_id` is therefore unbounded, and
+  it must be: the server cannot tell it from `docker compose up -d`. What bounds
+  it is the ECHO rule — a released process that keeps reporting or buying
+  capacity keeps its place, and a contract-3 engine cannot serve a request
+  without buying capacity. The other early release of a place is OURS,
+  `POST /admin/release` (`released_by='admin'`), which frees even a silent one.
+  Pins: `licensing/test_metering_attacks.py`, `licensing/test_admin_api.py`.
 - **A unit of the turnover budget is spent by an ADMISSION that displaced
   another container's slot, and by nothing else** (Б26bis, Б26ter). Not by a
   release (a `docker stop` of a 4-worker container that had renewed three times
