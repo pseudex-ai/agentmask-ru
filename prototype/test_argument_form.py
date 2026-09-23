@@ -19,7 +19,8 @@ import testkit
 testkit.load_dev_bundle()
 
 from pseudex.detect_all import Detector          # noqa: E402
-from pseudex.redact import mask_text, unmask_arguments, unmask_text  # noqa: E402
+from pseudex.redact import (mask_text, surviving_substitutes, unmask_arguments,  # noqa: E402
+                            unmask_text)
 from pseudex.vault import Vault                  # noqa: E402
 
 
@@ -266,6 +267,78 @@ def _rewritten_is_literal(detector) -> bool:
     return ok
 
 
+def _composed_by_fields(detector) -> bool:
+    """ЗНАЧЕНИЕ, РАЗЛОЖЕННОЕ СХЕМОЙ ПО ВСЕМ ЕЁ ПОЛЯМ, ВОЗВРАЩАЕТСЯ ЦЕЛИКОМ —
+    включая СЕРЕДИНУ (Б29).
+
+    Кусок признаётся нашим, только если он стоит в роли, которую подмена несла;
+    когда о вызове не известно ничего, единственная роль с именем — это КРАЙ
+    (серия — начало, хвост — конец). Но у внутренних групп СНИЛС и карты края
+    нет, а схема, разложившая значение по всем своим полям, называет каждое из
+    них: разбиение цифр подмены числами того же вызова встык и без остатка и
+    есть это имя. Без него середина уходила в инструмент ФЕЙКОМ и МОЛЧА."""
+    source = "снилс 112-233-445 95, карта 4276 1600 1234 5675"
+    vault = Vault(":memory:", "acme").for_conversation("c1")
+    masked = mask_text(source, vault, detector.detect(source))
+    snils = re.sub(r"\D", "", _substitute_of(masked, source, r"снилс ([\d\- ]{13,14})"))
+    card = re.sub(r"\D", "", _substitute_of(masked, source, r"карта ([\d ]{16,19})"))
+    failures = 0
+    for name, fields, want in (
+        # Контрольное число — две цифры, и оно НЕ возвращается ни здесь, ни на
+        # 0.3.17: `_FRAGMENT_DIGIT_FLOOR` отсекает двузначный кусок, потому что
+        # «12» — это количество. Оно стоит в вызове, чтобы разбиение покрыло все
+        # одиннадцать цифр, и в ожидании — чтобы цена была видна, а не спрятана.
+        ("СНИЛС группами", {"g1": snils[:3], "g2": snils[3:6], "g3": snils[6:9],
+                            "control": snils[9:]},
+         {"g1": "112", "g2": "233", "g3": "445", "control": snils[9:]}),
+        ("карта группами", {"g1": card[:4], "g2": card[4:8], "g3": card[8:12], "g4": card[12:]},
+         {"g1": "4276", "g2": "1600", "g3": "1234", "g4": "5675"}),
+    ):
+        raw = json.dumps(fields, ensure_ascii=False)
+        failures += not _check(name, json.loads(unmask_arguments(raw, vault)), want)
+    # А ЧИСЛО РЯДОМ С РАЗБИЕНИЕМ ПЛИТКОЙ НЕ СТАНОВИТСЯ: «серия + номер +
+    # количество» разбивают паспорт серией и номером, количество лишь оказалось
+    # рядом — и, спрошенное потом, получало настоящие цифры паспорта.
+    source = "паспорт 4509 123456"
+    vault = Vault(":memory:", "acme").for_conversation("c1")
+    masked = mask_text(source, vault, detector.detect(source))
+    passport = re.sub(r"\D", "", _substitute_of(masked, source, r"паспорт ([\d ]{10,11})"))
+    raw = json.dumps({"series": passport[:4], "number": passport[4:],
+                      "quantity": passport[2:6]}, ensure_ascii=False)
+    failures += not _check("количество рядом с разбиением", json.loads(unmask_arguments(raw, vault)),
+                           {"series": "4509", "number": "123456", "quantity": passport[2:6]})
+    return not failures
+
+
+def _refusal_is_named(detector) -> bool:
+    """ОТКАЗ ПО КУСКУ ОБЯЗАН БЫТЬ НАЗВАН (Б29).
+
+    Схема, просящая и телефон целиком, и его последние четыре цифры, получает в
+    хвостовом поле ФЕЙК: подмену агент написал в соседнем поле того же вызова и
+    там же получил настоящее значение, поэтому число рядом с ней шлюз обязан
+    считать числом ЗАКАЗЧИКА — иначе его собственное «количество», совпавшее с
+    краем подмены, молча уезжает в CRM цифрами чужого настоящего телефона.
+    Сторона размена выбрана сознательно; НЕНАЗВАННОЙ она быть не может —
+    заказчик не узнаёт о ней иначе никогда."""
+    source = "телефон +7 916 402-11-87, карта 4276 1600 1234 5675"
+    vault = Vault(":memory:", "acme").for_conversation("c1")
+    masked = mask_text(source, vault, detector.detect(source))
+    phone = _substitute_of(masked, source, r"телефон ([\d\s()+\-]{11,20})").strip()
+    card = _substitute_of(masked, source, r"карта ([\d ]{16,19})").strip()
+    failures = 0
+    for name, fields, tail in (
+        ("телефон и его хвост", {"phone": phone, "phone_last4": re.sub(r"\D", "", phone)[-4:]},
+         re.sub(r"\D", "", phone)[-4:]),
+        ("карта и её хвост", {"card": card, "last4": re.sub(r"\D", "", card)[-4:]},
+         re.sub(r"\D", "", card)[-4:]),
+    ):
+        raw = json.dumps(fields, ensure_ascii=False)
+        restored = unmask_arguments(raw, vault)
+        failures += not _check(f"{name}: остаток называет отказ",
+                               surviving_substitutes(raw, restored, vault, True), [tail])
+    return not failures
+
+
 def _iso(worded: str) -> str:
     """«19 июля 1975» → «1975-07-19», the way an agent rewrites a date for a `date` field."""
     from pseudex.vault import _date_canonical  # noqa: PLC0415
@@ -405,6 +478,8 @@ def main() -> int:
     failures += not _forms_follow(detector)
     failures += not _verbatim_is_literal(detector)
     failures += not _rewritten_is_literal(detector)
+    failures += not _composed_by_fields(detector)
+    failures += not _refusal_is_named(detector)
 
     # --- то, что полем схемы не является, трогать нельзя --------------------
     vault = Vault(":memory:", "acme").for_conversation("c1")

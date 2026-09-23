@@ -566,6 +566,96 @@ def _literals_of(vault: Vault) -> _Literals:
     return _Literals(forms, _as_written_rows(forms))
 
 
+def _call_texts(raw: str) -> tuple[str, ...]:
+    """Из чего состоит ОДИН вызов: сам текст и каждый его строковый лист.
+
+    ОДНО ОПРЕДЕЛЕНИЕ НА ВСЕ ТРИ ВХОДА (`unmask_text`, `unmask_arguments`,
+    `surviving_substitutes`), потому что восстановление и сигнал обязаны
+    считать вызовом одно и то же: разойдясь, они однажды доложили бы об отказе,
+    которого не было, или промолчали бы о состоявшемся. Лист нужен отдельно от
+    целого — поле, состоящее ИЗ ОДНОГО числа, узнаётся только как лист
+    (`_WHOLE_NUMBER`), а «123456» посреди JSON не узнаётся никак; проза своим
+    единственным листом является сама (`_string_leaves`)."""
+    return (raw, *(value for _key, value in _string_leaves(raw)))
+
+
+def _written_digits(texts: tuple[str, ...]) -> tuple[str, ...]:
+    """Числа, написанные агентом в этом вызове, — и ровно те, которые
+    восстановление считает ЗНАЧЕНИЯМИ, а не количествами.
+
+    Извлекаются теми же тремя правилами, которыми восстановление решает, что
+    перед ним значение: длинный прогон (`_NUM_RUN`), поле целиком из числа
+    (`_WHOLE_NUMBER`) и число под подсказкой (`_CUE_NUMBER`). Брать все группы
+    цифр подряд было бы неверно: «+7 939 222-76-19» распалось бы на пять чисел,
+    и одно из них совпало бы с количеством заказчика само собой — то есть
+    якорь подтверждал бы сам себя. Что с ними делает волт — `_tiling`."""
+    runs: set[str] = set()
+    for text in texts:
+        stripped = text.strip()
+        for match in _NUM_RUN.finditer(text):
+            runs.add(re.sub(r"\D", "", match.group()))
+        if stripped and _WHOLE_NUMBER.fullmatch(stripped):
+            runs.add(re.sub(r"\D", "", stripped))
+        for match in _CUE_NUMBER.finditer(text):
+            runs.add(re.sub(r"\D", "", match.group("num")))
+    return tuple(sorted(run for run in runs if run))
+
+
+def _call_view(texts: tuple[str, ...], vault: Vault) -> Vault:
+    """Вид волта, знающий, КАКИЕ ЧИСЛА агент написал в этом вызове — якорь, по
+    которому кусок пришивается к целой подмене за пределами разговора
+    (`Vault.with_written_digits`).
+
+    СЧИТАЕТСЯ РАЗ НА ВЫЗОВ, А НЕ НА ЛИСТ. `unmask_arguments` зовёт
+    восстановление для каждой строки объекта, и вопрос, заданный внутри, стоил
+    бы вызову с пятнадцатью полями пятнадцать запросов вместо одного — та же
+    цена, из-за которой раз на вызов читаются и `shown_forms`. Здесь это не
+    только цена: соседнее поле того же вызова — это ровно то, о чём вопрос, и
+    лист, разобранный в одиночку, ответа на него не содержит.
+    """
+    return vault.with_written_digits(_written_digits(texts))
+
+
+def _argument_view(texts: tuple[str, ...], vault: Vault) -> Vault:
+    """Тот же вид ПЛЮС вето: какие подмены агент написал в этом вызове целиком
+    (Б29, `Vault.with_spent_signatures`).
+
+    ВЕТО ЖИВЁТ НА ПЛЕЧЕ АРГУМЕНТА, И ТОЛЬКО НА НЁМ. Оно закрывает случай
+    «собственное число заказчика стоит рядом с подменой, написанной целиком», а
+    случай этот бывает там, где голое число — само по себе поле схемы: в
+    аргументе `_restore_reformatted_spans` читает лист, состоящий из одних
+    цифр, БЕЗ единого слова о том, чей он. В ПРОЗЕ такого входа нет — короткое
+    число трогается только под подсказкой, которая сама называет его нашим
+    («последние четыре цифры», «серия», «контрольное число»), то есть защищать
+    вето там нечего. Зато цена его там была прямая и ежедневная: «Телефон
+    +7 916 402-11-87 — последние четыре цифры 1187» уходил заказчику двумя
+    разными номерами в одной фразе, молча.
+
+    И ЭТО ЖЕ СВОДИТ ОБРАТНО ДВА ПЛЕЧА ОДНОГО ОТВЕТА. `unmask_stream_chunk`
+    зовёт `unmask_text` на каждый отдаваемый кусок, поэтому «весь вызов» на
+    потоке — это то, что успело выйти из carry, а в буфере — весь текст. Пока
+    вето читало прозу, один и тот же ответ модели приходил к заказчику с разным
+    хвостом в зависимости от того, буферизован он или нет; расхождение половин
+    продукта дороже любого выигрыша, за который его покупают.
+
+    Кандидатов в целые подмены предлагает ФОРМА, а нашими их называет ВОЛТ —
+    тот же порядок, что у восстановления целой подмены. Форм две, и обе
+    обязательны: `token_re` знает чеканенные написания, но телефон ловит только
+    слитным (`+79…`), а агент пишет его группами и через 8 — цифровой прогон
+    (`_NUM_RUN`) и есть та форма, которой целую переформатированную подмену
+    находит `_restore_reformatted_spans`.
+    """
+    anchored = _call_view(texts, vault)
+    written = frozenset(
+        match.group()
+        for text in texts
+        for pattern in (token_re(), _NUM_RUN)
+        for match in pattern.finditer(text))
+    if not written:
+        return anchored
+    return anchored.with_spent_signatures(anchored.whole_substitute_signatures(written))
+
+
 def unmask_text(text: str, vault: Vault, inflect: bool = True,
                 for_tool: bool = False) -> str:
     """Replace tokens with their real values, then catch numeric tokens the model
@@ -576,7 +666,8 @@ def unmask_text(text: str, vault: Vault, inflect: bool = True,
     size of the vault. The previous approach loaded every token the org had ever
     minted and substring-scanned the text once per token, which made an org with
     100k tokens pay 100k scans on every single response."""
-    return _unmask(text, vault, _literals_of(vault), inflect, for_tool)
+    return _unmask(text, _call_view(_call_texts(text), vault), _literals_of(vault),
+                   inflect, for_tool)
 
 
 def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
@@ -628,11 +719,56 @@ def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
 # with the customer, and the customer reads a house that is not theirs. The cue
 # is the licence; without one nothing here fires, and the window is one
 # adjacency, never a sentence.
+#
+# ОДНО СУЩЕСТВИТЕЛЬНОЕ МЕЖДУ ПОДСКАЗКОЙ И ЧИСЛОМ — И ТОЛЬКО ТО, ЧТО НАЗЫВАЕТ
+# НАШ ТИП (Б29). «Серия паспорта 0025» и «номер паспорта 123456» — это то, как
+# паспорт двумя полями звучит в ПРОЗЕ и в ПОТОКЕ, а окно требовало, чтобы
+# подсказка КАСАЛАСЬ числа: одно слово между ними — и восстановление про этот
+# кусок не спрашивало ВООБЩЕ, ни в одной области, включая названный разговор.
+# Треть всей стороны «наше не вернулось» стояла на этом, и на потоке молча.
+# РАСШИРЕНИЕ ОКНА — ЭТО ДВЕРЬ ДЛЯ НОВЫХ ЛОЖНЫХ ТРЕВОГ, поэтому внутрь пущен не
+# «любой [а-яё]+», а перечень `_CUE_DOCUMENTS`: «номер счёта», «номер заказа»,
+# «номер склада» — числа ЗАКАЗЧИКА, и они в окно по-прежнему не попадают.
+# «Дома» в перечне нет намеренно: адрес разбирает ветка `_HOUSE_CUES`, и
+# «номер дома» обязан остаться её словом, а не стать цифровым куском.
+# СУЩЕСТВИТЕЛЬНОЕ ВНУТРИ ПОДСКАЗКИ — ЭТО СЛОВО ЦЕЛИКОМ, А НЕ ЕГО НАЧАЛО (Б29).
+# Здесь стояло «карт\w*», «телефон\w*», и внутрь окна входили «номер картриджа»,
+# «номер картотеки», «номер телефонограммы» — числа заказчика, которых мы
+# никогда не подменяли: на базе эти фразы не трогались вовсе, а после
+# расширения окна на их место МОЛЧА вставали цифры настоящей карты клиента.
+# Поэтому перечислены ПАДЕЖНЫЕ ОКОНЧАНИЯ, а не «что угодно дальше»: у чужого
+# корня после «карт» стоит «ридж», а «ридж» окончанием не бывает. Перечень —
+# ровно наши четыре типа; «номер счёта», «номер заказа», «номер склада» в окно
+# по-прежнему не попадают, потому что их в нём нет.
+_CUE_DOCUMENTS = (
+    ("PHONE", r"телефон(?:а|у|ом|е|ы|ов|ам|ами|ах)?"),
+    ("CARD", r"карточк(?:а|и|е|у|ой|ам|ами|ах)?|карт(?:а|ы|е|у|ой|ою|ам|ами|ах)?"),
+    ("SNILS", r"снилс(?:а|у|ом|е)?"),
+    ("PASSPORT", r"паспорт(?:а|у|ом|е|ы|ов|ам|ами|ах)?"),
+)
+_CUE_DOCUMENT_RE = tuple(
+    (kind, re.compile(rf"(?i)(?<![\wа-яё])(?:{pattern})(?![\wа-яё])"))
+    for kind, pattern in _CUE_DOCUMENTS)
+_CUE_DOCUMENT_ALT = "|".join(pattern for _kind, pattern in _CUE_DOCUMENTS)
 _CUE_NUMBER = re.compile(
     r"(?i)(?<![\wа-яё])(?P<cue>(?:\*{4}\s?){2,3}|дом\w*|д\.|кв\.|кв(?=\s)|квартир\w*|подъезд\w*|корпус\w*|"
-    r"серия|серии|номер\w*|последн\w+\s+(?:[а-яё]+\s+){0,2}?цифр\w*(?:\s+[а-яё]+){0,2}|"
+    r"(?:серия|серии|номер\w*)(?:\s+(?:" + _CUE_DOCUMENT_ALT + r"))?|"
+    r"последн\w+\s+(?:[а-яё]+\s+){0,2}?цифр\w*(?:\s+[а-яё]+){0,2}|"
     r"контрольн\w+\s+числ\w*|заканчива\w+\s+на)\s*[:—–|-]?\s*(?:\*\*|`|«|\")?(?P<num>\d(?:[\d\s]{0,10}\d)?)(?![\d:])")
 _HOUSE_CUES = ("дом", "д.", "кв", "квартир", "подъезд", "корпус")
+
+
+def _cue_document(cue: str) -> str | None:
+    """Тип, названный существительным подсказки, или None, если его там нет.
+
+    Слово, а не подстрока, — и та же таблица, из которой собрано окно
+    (`_CUE_NUMBER`): два отдельно написанных перечня однажды разойдутся, и
+    разойдутся именно здесь — окно впустит существительное, которого чтение не
+    знает, а тогда тип не назван, и кусок спрашивается без сужения."""
+    for kind, pattern in _CUE_DOCUMENT_RE:
+        if pattern.search(cue):
+            return kind
+    return None
 
 
 def _cue_kind(cue: str) -> tuple[str | None, str | None]:
@@ -643,12 +779,17 @@ def _cue_kind(cue: str) -> tuple[str | None, str | None]:
     if cue.startswith("контрольн"):
         return "SNILS", "end"
     if cue.startswith("сери"):
-        return "PASSPORT", "start"
+        # Серия бывает только у паспорта; существительное её лишь подтверждает.
+        return _cue_document(cue) or "PASSPORT", "start"
+    if cue.startswith("номер"):
+        # «НОМЕР» САМ ПО СЕБЕ ТИПА НЕ НАЗЫВАЕТ, и голым он остаётся тем же
+        # неназванным куском, что и раньше. Тип здесь называет только
+        # существительное, а оно в окно пущено лишь из `_CUE_DOCUMENTS`.
+        document = _cue_document(cue)
+        return (document, "end") if document else (None, None)
     if cue.startswith("последн") or cue.startswith("заканчива"):
-        for word, kind in (("телефон", "PHONE"), ("карт", "CARD"), ("снилс", "SNILS"), ("паспорт", "PASSPORT")):
-            if word in cue:
-                return kind, "end"
-        return None, "end"
+        document = _cue_document(cue)
+        return (document, "end") if document else (None, "end")
     return None, None
 
 
@@ -677,7 +818,14 @@ def _restore_cued_numbers_spans(text: str, vault: Vault) -> list[tuple[int, int,
         cue = match.group("cue").lower()
         replacement: str | None = None
         if cue.startswith(_HOUSE_CUES):
-            token = vault.place_owner(number)
+            # РОЛЬ НАЗЫВАЕТ САМА ПОДСКАЗКА, И ОНА ЖЕ ЕДЕТ В ВОПРОС (Б29).
+            # Раньше роль выводилась из СОДЕРЖИМОГО найденной подмены — «в
+            # какой её части стоят эти цифры», — то есть владельца искали
+            # сперва, а роль подгоняли потом: «кв. 26» находило подмену, у
+            # которой 26 стоит в номере дома, и заказчик получал чужой дом
+            # под видом своей квартиры. Спрашивается то же слово, которым
+            # спрашивает сигнал (`_CUE_ROLES`), чтобы два ответа не разошлись.
+            token = vault.place_owner(number, _CUE_ROLES.get(cue[:2], "house"))
             if token is not None:
                 value, entity_type = vault.reveal(token)
                 if value and entity_type == "LOC":
@@ -691,9 +839,13 @@ def _restore_cued_numbers_spans(text: str, vault: Vault) -> list[tuple[int, int,
             if len(digits) < 2:
                 continue
             kind, position = _cue_kind(cue)
+            # НАЗВАННЫЙ ТИП ОТВЕЧАЕТ ИЛИ НЕ ОТВЕЧАЕТ НИКТО (Б29). Здесь стоял
+            # повтор без типа на промахе типизированного поиска, и он
+            # перечёркивал единственное, чем подсказка сужает вопрос: «номер
+            # паспорта 2549» отдавал хвост НАСТОЯЩЕЙ КАРТЫ — значение чужого
+            # типа, при 200 и пустом остатке. Свидетельство, которое можно
+            # отбросить, когда оно мешает, свидетельством не является.
             owner = vault.digit_fragment_owner(digits, kind, position)
-            if owner is None and kind is not None:
-                owner = vault.digit_fragment_owner(digits, None, position)
             if owner is not None:
                 replacement = _same_shape(number, owner[0])
         if replacement is not None and replacement != number:
@@ -1585,7 +1737,11 @@ def _place_fragment(surface: str, vault: Vault,
     ВОЗВРАЩАЕТСЯ РОВНО ТО, ЧТО НАЗВАЛИ: фраза, в которую дописали
     непроизнесённую квартиру, читается как чужая.
     """
-    token = vault.place_owner(surface)
+    # РОЛИ У ЦЕЛОЙ ФРАЗЫ НЕТ, И ЭТО НЕ УПУЩЕНИЕ. Сюда приходит «Лавандовая 135»
+    # — улица с домом сразу, — и назвать ОДНУ роль такому куску нечем. Основа
+    # улицы сама отличает адрес от адреса, поэтому голого числа здесь не
+    # бывает и отсеивать по роли нечего.
+    token = vault.place_owner(surface, "")
     if token is None:
         return None
     value, entity_type = vault.reveal(token, for_tool)
@@ -1897,16 +2053,20 @@ def unmask_arguments(raw: str, vault: Vault) -> str:
     the tool — the one outcome worse than imperfect text.
     """
     literals = _literals_of(vault)
+    # ВЕСЬ ВЫЗОВ, А НЕ ЛИСТ: подмена, написанная агентом целиком в поле `phone`,
+    # решает судьбу числа в поле `quantity` того же вызова (Б29). См.
+    # `_argument_view` — почему вето читает только это плечо.
+    call = _argument_view(_call_texts(raw), vault)
     try:
         parsed = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
-        return _unmask(raw, vault, literals, False, True)
+        return _unmask(raw, call, literals, False, True)
 
     def walk(node: object) -> object:
         if isinstance(node, str):
             # VERBATIM, NOT AGREED. A tool executes on the value; grammar is a
             # property of prose. See `_in_case_of`.
-            return _unmask(node, vault, literals, False, True)
+            return _unmask(node, call, literals, False, True)
         if isinstance(node, list):
             return [walk(item) for item in node]
         if isinstance(node, dict):
@@ -1924,7 +2084,7 @@ def unmask_arguments(raw: str, vault: Vault) -> str:
         return node
 
     return json.dumps(_join_initials_deep(
-        _join_addresses_deep(walk(parsed), parsed, vault, literals), parsed), ensure_ascii=False)
+        _join_addresses_deep(walk(parsed), parsed, call, literals), parsed), ensure_ascii=False)
 
 
 _INITIALS_LEAF = re.compile(r"^\s*([А-ЯЁ])\.?(?:\s?([А-ЯЁ])\.?)?\s*$")
@@ -2113,6 +2273,54 @@ def _join_address_fields(restored: object, original: object, vault: Vault,
     return out
 
 
+def _address_owners(evidence: dict[str, str], vault: Vault) -> set[str]:
+    """Адресные подмены, на которые указывают листья этой группы.
+
+    ДВА СПОСОБА СПРОСИТЬ, И ВЫБИРАЕТ МЕЖДУ НИМИ ОБЛАСТЬ, А НЕ ВКУС.
+
+    ЕСТЬ РАЗГОВОР — листья спрашиваются ПО ОДНОМУ, каждый своей ролью. В
+    строках одного диалога адресных подмен единицы, «какая наша подмена носит
+    этот дом» — осмысленный вопрос, и одинокое `{"house": "36"}` своему
+    диалогу отвечает.
+
+    НЕТ РАЗГОВОРА — листья спрашиваются ПАРАМИ, а одинокий лист не
+    спрашивается вовсе (Б29). По всему волту заказчика «носит ли какая-нибудь
+    наша подмена дом 7» отвечает «да» почти всегда, и на место складского дома
+    заказчика молча вставал дом ЧУЖОГО НАСТОЯЩЕГО адреса. Пара «название +
+    номер» спрашивает уже про АДРЕС: подмена обязана нести обе части сразу, и
+    вопрос перестаёт быть утверждением о наших строках.
+
+    ПАРАМИ, А НЕ ВСЕМИ ПОЛЯМИ РАЗОМ. У подмены нет подъезда — генератор его не
+    чеканит, — поэтому в `entrance` модель кладёт выдуманное число, у которого
+    владельца нет вовсе, и один такой лист отказом за всю группу не позволял
+    разрешить ничего. Пара, в которую он попал, молчит; пара «улица + дом»
+    отвечает.
+
+    В ПАРЕ ОБЯЗАНО БЫТЬ НАЗВАНИЕ. Два голых числа — это две догадки, а не
+    свидетельство: «дом 6» и «квартира 154» вместе назовут любую подмену, у
+    которой сошлись обе цифры, и ни одна из них не сказала, о какой улице речь.
+    """
+    if vault.fragment_scope_is_a_dialogue():
+        named = {vault.place_owner(value, _role_of_field(key))
+                 for key, value in evidence.items()}
+        named.discard(None)
+        return named
+    values = list(evidence.values())
+    paired: set[str] = set()
+    for first in range(len(values)):
+        for second in range(first + 1, len(values)):
+            pair = (values[first], values[second])
+            if not any(morph_places.signature_parts(value)[0] for value in pair):
+                continue
+            # РОЛЬ ПАРЫ НЕ НАЗЫВАЕТСЯ, И ЭТО НЕ УПУЩЕНИЕ: у пары «название +
+            # номер» роль не одна, а основа улицы сама отличает адрес от
+            # адреса — отсеивать по роли здесь нечего (`place_owner`).
+            token = vault.place_owner(f"{pair[0]} {pair[1]}", "")
+            if token is not None:
+                paired.add(token)
+    return paired
+
+
 def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
                       evidence: dict[str, str], vault: Vault,
                       literals: _Literals) -> dict[str, object]:
@@ -2126,8 +2334,13 @@ def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
     # мы получали бы отказ из-за одного такого поля и не разрешали ничего.
     # Поле без владельца просто молчит и остаётся как было; поля с владельцем
     # обязаны сойтись на ОДНОЙ подмене.
-    owners = {vault.place_owner(value) for value in evidence.values()}
-    owners.discard(None)
+    # КАЖДЫЙ ЛИСТ СПРАШИВАЕТСЯ СВОЕЙ РОЛЬЮ — той, которую назвала схема (Б29).
+    # Голое «41» под ключом `house` без роли находило любую подмену, у которой
+    # 41 стоит хоть где: складской дом заказчика молча уезжал в CRM номером
+    # чужого настоящего дома. Имя поля — единственное, что видит и модель,
+    # решая, что куда положить, поэтому оно же и спрашивает. А ЗА ПРЕДЕЛАМИ
+    # ДИАЛОГА роли мало и листья спрашиваются парами — см. `_address_owners`.
+    owners = _address_owners(evidence, vault)
     if not owners:
         # NO LEAF WITH A NUMBER NAMED AN OWNER — a `street` field alone, on a
         # street this conversation faked twice (a corrected house). The street
@@ -2135,6 +2348,19 @@ def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
         # every owner agrees on the real street.
         owners = {vault.place_owner_by_street(value) for value in evidence.values()}
         owners.discard(None)
+    if not owners:
+        # НИ ОДИН ЛИСТ НЕ НАЗВАЛ ВЛАДЕЛЬЦА — но, может быть, они вместе назвали
+        # подмену ЦЕЛИКОМ (Б29). Каждый лист поодиночке ищется как кусок, то
+        # есть в своём разговоре; у обратного прокси разговор выведен из
+        # транскрипта и никогда не равен тому, в котором подмена отчеканена,
+        # поэтому целый адрес, разложенный по полям схемы, пропадал молча.
+        # Занятая КАЖДАЯ роль подмены — это уже не кусок, и спрашивается она
+        # как целое. Спрашивается ПОСЛЕ листов, а не вместо них: внутри своего
+        # разговора листы отвечают и на неполный набор ролей.
+        whole = vault.place_owner_of_whole(tuple(
+            (_role_of_field(key), value) for key, value in evidence.items()))
+        if whole is not None:
+            owners = {whole}
     if len(owners) != 1:
         return restored
     owner = owners.pop()
@@ -2302,11 +2528,16 @@ def surviving_substitutes(written: str, restored: str, vault: Vault,
     asked = _written_candidates(written, for_tool).standing_in(restored)
     if not asked.any():
         return []
-    known = vault.detokenize_many(asked.named)
+    # ТОТ ЖЕ ВЫЗОВ И ТО ЖЕ ПЛЕЧО, ЧТО ВИДЕЛО ВОССТАНОВЛЕНИЕ (Б29). Вид выбирается
+    # по плечу, а не берётся один на оба: вето читает только аргумент
+    # (`_argument_view`), и сигнал, спросивший о прозе с вето, доложил бы об
+    # отказе, которого на этом плече не было.
+    call = (_argument_view if for_tool else _call_view)(_call_texts(written), vault)
+    known = call.detokenize_many(asked.named)
     residual = {value for value in asked.named if value in known}
     residual |= {value for value in asked.named
-                 if value not in known and vault.residual_of(value) is not None}
-    residual |= _pieces_of_ours(asked, residual, vault)
+                 if value not in known and call.residual_of(value) is not None}
+    residual |= _pieces_of_ours(asked, residual, call)
     return _maximal(residual)
 
 
