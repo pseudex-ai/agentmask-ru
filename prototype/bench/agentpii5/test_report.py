@@ -23,6 +23,7 @@ calibration stamp that was believed (#7), and the price that was never printed
 (G-cost). Each one asserts the defect's shape, not merely the fix's presence.
 """
 import json
+import re
 import sys
 import tempfile
 from collections.abc import Callable, Sequence
@@ -31,6 +32,8 @@ from pathlib import Path
 
 from bench.agentpii4.records import ArmMeta, arm_record
 from bench.agentpii5 import contracts, records, runinfo
+from bench.agentpii5.__main__ import COMMANDS
+from bench.agentpii5.build import HERE, REPO
 from bench.agentpii5.contracts import CalibrationStamp, CaseV5, JudgeVerdict, Line
 from bench.agentpii5.fixtures import (
     FAKE_NAME,
@@ -51,6 +54,7 @@ from bench.agentpii5.fixtures import (
 )
 from bench.agentpii5.metrics import AXIS_NOTE, METRIC_FUNCTIONS, prints_on_axis
 from bench.agentpii5.observe import observe
+from bench.agentpii5.provider import credential_names, resolve_provider
 from bench.agentpii5.report import (
     BESIDE,
     V4_BLOCK_END,
@@ -957,6 +961,118 @@ def test_baseline_without_v5_files_is_refused() -> list[str]:
         return ["a v4-only directory was reported on as a v5 run"]
 
 
+def test_the_full_tier_threshold_runs_nightly() -> list[str]:
+    """ПУНКТ 19, НОЧНАЯ ПОЛОВИНА: `test_perfect --tier max` — шаг ночного
+    прогона `.github/workflows/gates.yml`.
+
+    §6.2 has two halves and they are checked in the two files their owners
+    hold: the push half — `test_perfect` on the acceptance tier in
+    `checks.yml` — is pinned by `test_build.py`, which also refuses `--tier
+    max` there («two minutes on every commit» is the wait people learn to
+    skip). The nightly half had nothing at all, so the full-tier threshold was
+    a line in a spec: the whole corpus of 1736 cases was run by hand, whenever
+    somebody remembered.
+
+    THE COMMANDS, NOT THE PROSE, and the NIGHTLY job, not the file: a step in
+    the push slice would run the full tier on every commit the vault touches,
+    which is the wait the split exists to avoid, and grepping the whole file
+    would call that green.
+    """
+    problems: list[str] = []
+    path = REPO / ".github" / "workflows" / "gates.yml"
+    if not path.exists():
+        return [f"{path} does not exist"]
+    text = path.read_text(encoding="utf-8")
+    start = text.find("\n  full:")
+    if start < 0:
+        return [f"{path} has no full (nightly) job to read"]
+    after = re.compile(r"^  [a-z][\w-]*:$", re.M).search(text, start + 8)
+    job = text[start:after.start()] if after else text[start:]
+    block = "\n".join(line for line in job.splitlines()
+                      if not line.strip().startswith("#"))
+    if "bench.agentpii5.test_perfect" not in block:
+        problems.append("the nightly job does not run the instrument's acceptance test")
+    if "--tier max" not in block:
+        problems.append("the nightly job does not run the acceptance test at the full tier")
+    if "python -u -m bench.agentpii5.test_perfect --tier max" not in block:
+        problems.append("the full-tier threshold is not run as a module from prototype/")
+    # And the push slice stays cheap: the same command in the job that runs on
+    # every push to the vault paths would cost two and a half minutes there.
+    vault = text[text.find("\n  vault:"):start] if start > 0 else ""
+    if "test_perfect" in vault:
+        problems.append("the full-tier threshold was put into the push slice as well")
+    return problems
+
+
+README_RECIPES: tuple[str, ...] = (
+    "## 1. Добавить случаи", "## 2. Сделать прогон", "## 3. Сравнить два прогона",
+    "## 4. Повторить чужой прогон", "## 5. Посмотреть один случай")
+
+
+def _readme_calls(text: str) -> list[tuple[str, str]]:
+    """Every `python3 -m bench.agentpii5 …` line of the README as (kind, name).
+
+    `kind` is «команда» for the door and «модуль» for a direct call. Tokens that
+    are placeholders (`<команда>`, `$t`) or flags are not names and are skipped:
+    a recipe that shows the SHAPE of a call is not naming a command."""
+    out: list[tuple[str, str]] = []
+    for whole in text.splitlines():
+        # The inline comment is prose, not arguments: «--help  # список команд»
+        # would otherwise offer «#» as the command the line names.
+        line = whole.split("#")[0]
+        token = next((one for one in line.split() if one.startswith("bench.agentpii5")), "")
+        if not token or "python3 -m" not in line:
+            continue
+        if token == "bench.agentpii5":
+            rest = line.split()[line.split().index(token) + 1:]
+            name = next((one for one in rest
+                         if not one.startswith("-") and not one.startswith("<")), "")
+            if name:
+                out.append(("команда", name))
+            continue
+        module = token.split(".", 2)[2]
+        if "$" in module or not module:
+            continue
+        out.append(("модуль", module))
+    return out
+
+
+def test_the_readme_recipes_are_real() -> list[str]:
+    """ТЗ §8, LAST LINE: пять рецептов, которые можно вставить и выполнить.
+
+    A README is the one part of the harness nothing else checks, and the price
+    of a wrong line in it is a command that fails in somebody's terminal at the
+    moment they needed it. Four things are mechanical and are checked
+    mechanically: the five recipes exist, every command the README names is a
+    command the door (or the package) actually has, every file of
+    `contracts.RUN_FILES` is in the table of run files, and the ONE recipe that
+    needs a credential names the variables `provider` itself looks in — the
+    live run is the only command here that spends money, and «работает без
+    ключа» and «нужен ключ» must not be left to be discovered by running it.
+    """
+    problems: list[str] = []
+    path = HERE / "README.md"
+    if not path.exists():
+        return [f"{path} does not exist"]
+    text = path.read_text(encoding="utf-8")
+    for heading in README_RECIPES:
+        if heading not in text:
+            problems.append(f"the README lost the recipe {heading!r}")
+    known = {one.name for one in COMMANDS}
+    for kind, name in _readme_calls(text):
+        if kind == "команда" and name not in known:
+            problems.append(f"the README names a command the door does not have: {name!r}")
+        if kind == "модуль" and not (HERE / f"{name}.py").exists():
+            problems.append(f"the README names a module that does not exist: {name!r}")
+    for run_file in contracts.RUN_FILES:
+        if run_file not in text:
+            problems.append(f"the table of run files does not carry {run_file!r}")
+    for variable in credential_names(resolve_provider("", {})):
+        if variable not in text:
+            problems.append(f"the live-run recipe does not say it needs {variable}")
+    return problems
+
+
 def main() -> int:
     checks: tuple[tuple[str, Callable[[], list[str]]], ...] = (
         ("no_pseudex", test_no_pseudex),
@@ -971,6 +1087,8 @@ def main() -> int:
         ("forged_calibration_stamp_is_recomputed", test_forged_calibration_stamp_is_recomputed),
         ("cost_section_is_printed", test_cost_section_is_printed),
         ("the_header_names_the_run_and_the_tree", test_the_header_names_the_run_and_the_tree),
+        ("the_full_tier_threshold_runs_nightly", test_the_full_tier_threshold_runs_nightly),
+        ("the_readme_recipes_are_real", test_the_readme_recipes_are_real),
         ("transport_breaks_are_counted_apart", test_transport_breaks_are_counted_apart),
         ("the_corpus_waste_is_printed", test_the_corpus_waste_is_printed),
         ("behaviour_blocks_are_printed", test_behaviour_blocks_are_printed),

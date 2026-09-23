@@ -16,10 +16,14 @@ WHAT THE TAPE SHOWS, IN THE ORDER THE CONVERSATION HAPPENED:
   1. **What the model saw.** The message with the substitutes put in — built
      from `Case.messages` and `ArmRun.masked_spans`, that is, from what the
      gateway ACTUALLY replaced and not from what the corpus declared to be
-     personal data. The difference between those two is a LEAK, and it gets a
-     line of its own: a value that reached the model in the clear is exactly
-     the failure the product exists to prevent, and it is invisible in the
-     aggregates (a leaked value makes the arms AGREE).
+     personal data. A declared value NO replacement COVERS is a LEAK, and it
+     gets a line of its own: a value that reached the model in the clear is
+     exactly the failure the product exists to prevent, and it is invisible in
+     the aggregates (a leaked value makes the arms AGREE). Covers, never
+     equals: `covering_span` asks `metrics.coverage`'s own containment
+     question, because a gateway that replaced a WIDER span protected the
+     value, and a tape that called that a leak would contradict the number a
+     reader opened it to explain.
   2. **What came back to the model** — the tool results: what it read, and what
      actually stood there.
   3. **What it wrote** — the call arguments as written and as restored, the
@@ -214,14 +218,61 @@ def _items_in_message(case: CaseV5, index: int) -> list[PiiItem]:
             if item.where.kind == "message" and item.where.msg == index]
 
 
+def covering_span(spans: Sequence[tuple[int, int]],
+                  item: PiiItem) -> tuple[int, int] | None:
+    """The masked span that COVERS this item, by `metrics.coverage`'s own rule.
+
+    CONTAINMENT, NEVER EQUALITY, and the difference between the two is the
+    difference between «защищено» and «утекло». A gateway that recognised the
+    whole address replaced a span WIDER than the street the corpus declared
+    inside it — the ordinary case on Russian traffic, not an edge one — and a
+    tape that matched span to item by `(start, end)` equality found no item for
+    that replacement and no replacement for that item, so it printed a
+    substitution nobody claimed AND called a protected value a leak, in the
+    same message.
+
+    `metrics.coverage` asks `start <= item.start and item.end <= end`; the tape
+    asks it here in the same words. A microscope opened to explain a number
+    must not disagree with that number about the same run, and a tool that lies
+    about a leak is worse than no tool: it sends a reader hunting a defect the
+    run does not hold.
+    """
+    return next((one for one in spans
+                 if one[0] <= item.where.start and item.where.end <= one[1]), None)
+
+
+def _overlapping(spans: Sequence[tuple[int, int]], item: PiiItem) -> list[tuple[int, int]]:
+    """Masked spans that TOUCH this item without covering it — the half-masked
+    value. `coverage` counts it as a miss like any other, and the tape says
+    WHICH miss it is: «ничего не заменено» and «заменена половина» send a reader
+    to different places in the detector."""
+    return [one for one in spans if one[0] < item.where.end and item.where.start < one[1]]
+
+
+def _substitute_of(run: ArmRunV5, item: PiiItem) -> str:
+    """The surface the run minted for this item, or the marker.
+
+    An item the run minted nothing for is not rendered as an empty string: the
+    model read SOMETHING in that span, and an empty one would show a message
+    with a hole where the run records a replacement."""
+    surfaces = run.base.substitutes.get(item.id)
+    return surfaces[0] if surfaces else UNCLAIMED_SPAN
+
+
 def shown_message(case: CaseV5, run: ArmRunV5, index: int) -> tuple[str, list[str]]:
     """The message as the MODEL read it, and what to say about it.
 
-    Built by putting each substitute into the span the run says the gateway
-    replaced, right to left so an earlier replacement cannot move a later
+    Built by putting the substitutes of the items a masked span COVERS into
+    that span, right to left so an earlier replacement cannot move a later
     offset. A message carried by reference and never hydrated (a licensed
     source) has no text in the run directory, and that is said rather than
     rendered as an empty message.
+
+    A span WIDER than the value it covers cannot be rendered exactly — the run
+    records the substitutes per ITEM, never the text that stood in the span —
+    so the covered items' substitutes stand there and the note says the
+    replacement was wider. Approximate and labelled beats exact-looking and
+    wrong.
     """
     message = case.base.messages[index]
     if message.source is not None and not message.content:
@@ -229,22 +280,38 @@ def shown_message(case: CaseV5, run: ArmRunV5, index: int) -> tuple[str, list[st
     text = message.content
     spans = sorted(run.base.masked_spans.get(index, ()))
     items = _items_in_message(case, index)
-    by_span = {(item.where.start, item.where.end): item for item in items}
-    notes: list[str] = []
-    for start, end in reversed(spans):
-        item = by_span.get((start, end))
-        if item is None:
-            text = text[:start] + UNCLAIMED_SPAN + text[end:]
-            notes.append(f"замена [{start}:{end}] не совпала ни с одним объявленным значением")
-            continue
-        surface = run.base.substitutes.get(item.id)
-        shown = surface[0] if surface is not None else UNCLAIMED_SPAN
-        text = text[:start] + shown + text[end:]
-        notes.append(f"{item.id} {item.type} «{item.value}» → «{shown}»")
+    covered: dict[tuple[int, int], list[PiiItem]] = {span: [] for span in spans}
     for item in items:
-        if (item.where.start, item.where.end) not in set(spans):
-            notes.append(f"УТЕЧКА: {item.id} {item.type} «{item.value}» — модель прочитала "
-                         f"настоящее значение, гейтвей этот отрезок не заменял")
+        span = covering_span(spans, item)
+        if span is not None:
+            covered[span].append(item)
+    notes: list[str] = []
+    for span in reversed(spans):
+        start, end = span
+        inside = sorted(covered[span], key=lambda one: one.where.start)
+        if not inside:
+            text = text[:start] + UNCLAIMED_SPAN + text[end:]
+            notes.append(f"замена [{start}:{end}] не покрыла ни одного объявленного значения")
+            continue
+        text = text[:start] + " ".join(_substitute_of(run, one) for one in inside) + text[end:]
+        for one in inside:
+            wider = "" if (one.where.start, one.where.end) == span else (
+                f" (гейтвей заменил шире: [{start}:{end}] над "
+                f"[{one.where.start}:{one.where.end}])")
+            notes.append(f"{one.id} {one.type} «{one.value}» → "
+                         f"«{_substitute_of(run, one)}»{wider}")
+    for item in items:
+        if covering_span(spans, item) is not None:
+            continue
+        touching = _overlapping(spans, item)
+        if touching:
+            where = ", ".join(f"[{start}:{end}]" for start, end in touching)
+            notes.append(f"УТЕЧКА (частичная): {item.id} {item.type} «{item.value}» — замена "
+                         f"{where} пересекает значение, но не покрывает его: часть "
+                         f"настоящего значения осталась в тексте")
+            continue
+        notes.append(f"УТЕЧКА: {item.id} {item.type} «{item.value}» — модель прочитала "
+                     f"настоящее значение, гейтвей этот отрезок не заменял")
     return text, notes
 
 

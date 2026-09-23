@@ -94,7 +94,8 @@ def test_a_row_refuses_a_missing_field() -> list[str]:
     if runinfo.run_record_from_json(dict(row)) != _record(RUN_ID, "nano", "haiku", "sonnet",
                                                           3, 0.3, 30.0):
         failures.append("строка не пережила круг to_json → from_json")
-    for field in ("label", "spent_usd", "transport_terminated", "verdict"):
+    for field in ("label", "spent_usd", "transport_terminated", "verdict",
+                  "provider", "gateway"):
         broken = {key: value for key, value in row.items() if key != field}
         try:
             runinfo.run_record_from_json(broken)
@@ -110,6 +111,66 @@ def test_a_row_refuses_a_missing_field() -> list[str]:
         failures.append("число случаев строкой прочиталось как число")
     except runinfo.RunInfoError:
         pass
+    return failures
+
+
+def test_the_free_text_of_a_finished_run_is_scrubbed_not_refused() -> list[str]:
+    """Правило 2 модуля на ТОМ конце, где отказать нельзя.
+
+    `--label` и `--note` проверяются до прогона и отказом: он бесплатен. Вердикт
+    прерванного прогона — текст произвольного исключения, то есть всё, что
+    попало в сообщение об ошибке; отказ там стёр бы строку прогона, который уже
+    заплатил, а §1.2 требует, чтобы строка была. Значит вычистка — и она обязана
+    говорить о себе, потому что молчаливо правленный вердикт хуже отсутствующего.
+    """
+    failures: list[str] = []
+    values = runinfo.corpus_values([_two_turn_case("c-0001", 1)])   # type: ignore[list-item]
+    key = f"sk-ant-api03-{'z' * 24}"
+    text, removed = runinfo.scrub_free_text(f"401 от https://api?key={key} на {NAME_ITEM.value}",
+                                            values)
+    if key[:12] in text or "sk-ant-" in text:
+        failures.append(f"ключ пережил вычистку: {text!r}")
+    if NAME_ITEM.value.casefold() in text.casefold():
+        failures.append(f"значение корпуса пережило вычистку: {text!r}")
+    if runinfo.SCRUBBED_KEY not in text or not removed:
+        failures.append(f"вычистка молчит о себе: {text!r} {removed}")
+    if "401" not in text:
+        failures.append(f"вычистка съела текст до ключа: {text!r}")
+    # ЗНАЧЕНИЕ ОТДЕЛЬНО ОТ КЛЮЧА: без ключа режется только оно, остальное цело.
+    text, removed = runinfo.scrub_free_text(
+        f"прогон встал на {NAME_ITEM.value.upper()}, остальное цело", values)
+    if NAME_ITEM.value.casefold() in text.casefold():
+        failures.append(f"регистр спас значение от вычистки: {text!r}")
+    if "остальное цело" not in text or runinfo.SCRUBBED_VALUE not in text:
+        failures.append(f"вычистка значения переписала лишнее: {text!r}")
+    if not any("значений корпуса" in one for one in removed):
+        failures.append(f"перечень не называет, что вычищено: {removed}")
+    if any(NAME_ITEM.value.casefold() in one.casefold() for one in removed):
+        failures.append(f"перечень сам несёт значение: {removed}")
+    # ЛОЖНОЕ СРАБАТЫВАНИЕ ДОРОЖЕ ПРОПУСКА НА ЭТОМ КОНЦЕ: «tasks-19» несёт «sk-»,
+    # а вычистка применяется к путям и к имени ветки. Вычистка, стирающая честный
+    # вердикт, будет отключена через неделю.
+    for plain in ("полный", "/Users/x/tasks-19/run", "чисто abc123456789 (feature/task-7)"):
+        text, removed = runinfo.scrub_free_text(plain, values)
+        if text != plain or removed:
+            failures.append(f"честный текст вычищен: {plain!r} → {text!r} {removed}")
+        try:
+            runinfo.refuse_secrets(plain, "--label")
+        except runinfo.RunInfoError as refused:
+            failures.append(f"честная метка отказана: {plain!r} — {refused}")
+    # …И ЭТО ОДНО ПРАВИЛО НА ЗАКРЫТЫЙ СПИСОК ПОЛЕЙ, а машинные не трогаются.
+    row = _record(RUN_ID, "nano", "haiku", "sonnet", 3, 0.3, 30.0)
+    dirty = replace(row, verdict=f"НЕПОЛНЫЙ: {key}", note=NAME_ITEM.value,
+                    run_dir=f"/tmp/tasks-19/{RUN_ID}")
+    cleaned, reasons = runinfo.scrub_record(dirty, values)
+    if "sk-ant-" in cleaned.verdict or NAME_ITEM.value in cleaned.note:
+        failures.append(f"вычистка записи пропустила поле: {cleaned}")
+    if cleaned.run_dir != dirty.run_dir or cleaned.run_id != dirty.run_id:
+        failures.append(f"вычистка тронула машинное поле: {cleaned.run_dir!r}")
+    if not any(one.startswith("verdict:") for one in reasons):
+        failures.append(f"перечень не называет поле: {reasons}")
+    if runinfo.scrub_record(row, values)[1]:
+        failures.append("честная строка объявлена вычищенной")
     return failures
 
 
@@ -436,6 +497,8 @@ def main() -> int:
         ("a_row_refuses_a_missing_field", test_a_row_refuses_a_missing_field),
         ("neither_a_key_nor_a_corpus_value_reaches_the_registry",
          test_neither_a_key_nor_a_corpus_value_reaches_the_registry),
+        ("the_free_text_of_a_finished_run_is_scrubbed_not_refused",
+         test_the_free_text_of_a_finished_run_is_scrubbed_not_refused),
         ("list_and_show_name_what_the_registry_knows",
          test_list_and_show_name_what_the_registry_knows),
         ("the_estimate_names_its_basis", test_the_estimate_names_its_basis),

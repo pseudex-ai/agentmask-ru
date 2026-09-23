@@ -43,6 +43,7 @@ from bench.agentpii5.microscope import (
     tapes,
 )
 from bench.agentpii5.fixtures import FAKE_NAME, REAL_NAME
+from bench.agentpii5.metrics import coverage
 from bench.agentpii5.observe import observe
 from bench.agentpii5.test_compare import (
     CASE_IDS,
@@ -122,6 +123,81 @@ def test_an_unmasked_value_is_named_a_leak() -> list[str]:
             problems.append(f"the unmasked declared value is not named as a leak: {notes}")
         if "УТЕЧКА" not in _tape_text(a_dir, CASE):
             problems.append("the rendered tape does not print the leak")
+    return problems
+
+
+def _wide_arm(case: contracts.CaseV5) -> contracts.ArmRunV5:
+    """The gateway that masked MORE than the corpus declared.
+
+    The ordinary case on Russian traffic and the reason this check exists: the
+    detector finds «ул. Ленина, 14» whole and replaces a span that CONTAINS the
+    street the corpus declared inside it. Here the name's span [0:13] sits
+    inside a replacement of [0:15]; the PHONE at [15:27] is outside it and stays
+    the leak the fixture is built to show."""
+    run = good_arm(case)
+    return replace(run, base=replace(run.base, masked_spans={1: ((0, 15),)}))
+
+
+def _half_arm(case: contracts.CaseV5) -> contracts.ArmRunV5:
+    """The gateway that masked HALF the name — a replacement that touches the
+    value without covering it."""
+    run = good_arm(case)
+    return replace(run, base=replace(run.base, masked_spans={1: ((0, 8),)}))
+
+
+def test_a_wider_masked_span_is_not_a_leak() -> list[str]:
+    """THE MICROSCOPE MAY NOT CALL A PROTECTED VALUE A LEAK.
+
+    `metrics.coverage` asks containment — `start <= item.start and item.end <=
+    end` — so a value inside a wider replacement is PROTECTED and counted as a
+    hit. The tape matched span to item by `(start, end)` equality, so the same
+    run read as «замена, не совпавшая ни с одним объявленным значением» beside
+    «УТЕЧКА: модель прочитала настоящее значение» — two false statements about
+    one masked message, and a reader sent hunting a defect the run does not
+    hold.
+
+    The check pins the two to AGREE rather than restating the rule: the metric
+    is asked on the same run, and its verdict is the one the tape must match.
+    """
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        cases = [fixture_case(case_id, behaviour) for case_id, behaviour in CASE_IDS]
+        run_dir = build_run(root, "wideA0001", DIGEST, cases, _wide_arm, "шире объявленного")
+        case = next(one for one in cases if one.base.id == CASE)
+        line = coverage([observe(case, _wide_arm(case), None, None)])
+        if not line.total or line.hits != line.total:
+            problems.append(f"metrics.coverage does not call the wider replacement "
+                            f"protected — the fixture proves nothing: {line}")
+        tape = read_tape(run_dir, CASE, 0)
+        shown, notes = shown_message(tape.case, tape.run, 1)
+        if any(note.startswith("УТЕЧКА") and "p1" in note for note in notes):
+            problems.append(f"a value the metric counts as protected is called a leak: {notes}")
+        if any("не покрыла ни одного" in note for note in notes):
+            problems.append(f"the replacement that covers the name is called unclaimed: {notes}")
+        if REAL_NAME in shown or FAKE_NAME not in shown:
+            problems.append(f"the wider span is not rendered with the substitute: {shown!r}")
+        if not any("шире" in note and "p1" in note for note in notes):
+            problems.append(f"the note does not say the replacement was wider than the "
+                            f"declared value: {notes}")
+        # The other side, in the same run: the PHONE outside the replacement is
+        # still the leak the aggregates cannot see.
+        if not any(note.startswith("УТЕЧКА") and "p2" in note for note in notes):
+            problems.append(f"the value outside the replacement stopped being a leak: {notes}")
+        if "УТЕЧКА" not in _tape_text(run_dir, CASE):
+            problems.append("the rendered tape of the wider run prints no leak at all")
+        # And the third reading: a replacement that TOUCHES the value without
+        # covering it is a miss for `coverage` too, and the tape says which
+        # miss it is.
+        half = _half_arm(case)
+        half_line = coverage([observe(case, half, None, None)])
+        if half_line.hits:
+            problems.append(f"metrics.coverage counts a half-masked value as protected: "
+                            f"{half_line}")
+        _half_shown, half_notes = shown_message(case, half, 1)
+        if not any(note.startswith("УТЕЧКА (частичная)") and "p1" in note
+                   for note in half_notes):
+            problems.append(f"a half-masked value is not named as a partial leak: {half_notes}")
     return problems
 
 
@@ -421,6 +497,7 @@ def main() -> int:
         ("no_pseudex", test_no_pseudex),
         ("shows_the_message_the_model_read", test_shows_the_message_the_model_read),
         ("an_unmasked_value_is_named_a_leak", test_an_unmasked_value_is_named_a_leak),
+        ("a_wider_masked_span_is_not_a_leak", test_a_wider_masked_span_is_not_a_leak),
         ("shows_what_the_model_wrote_and_what_came_back",
          test_shows_what_the_model_wrote_and_what_came_back),
         ("shows_declared_hops_and_how_the_observer_read_them",

@@ -47,6 +47,17 @@ from bench.agentpii5.report import meta_of, run_id_of
 from bench.agentpii5.runinfo import RunInfoError, RunRecord, find_run, read_runs
 from bench.agentpii5.runinfo import RUNS_PATH
 
+# THE THREE SHAPES THE REGISTRY'S `worktree` FIELD ACTUALLY CARRIES, written
+# by `build.worktree_line` and by nothing else: «чисто <sha> (<branch>)»,
+# «грязно <sha> (<branch>): N файлов — к коммиту не привязан», «неизвестно».
+# This module used to test the field for a `"commit "` prefix NO writer emits,
+# so every run in the registry — a clean one above all — was told «числа этого
+# прогона не привязаны к коммиту». The discipline of §6.1 exists to make that
+# sentence rare; the repro printed it always, which is the same as printing it
+# never.
+WORKTREE_CLEAN: str = "чисто "
+WORKTREE_DIRTY: str = "грязно "
+
 HERE: Path = Path(__file__).resolve().parent
 PROTOTYPE: Path = HERE.parent.parent
 CORPUS_FILE: Path = HERE / "corpus.v5.json"
@@ -142,6 +153,30 @@ def _model_notes(meta: Mapping[str, object], record: RunRecord,
     return (tuple(environment), tuple(moved))
 
 
+def worktree_verdict(worktree: str) -> tuple[str, str]:
+    """What the run's tree says: (the line for the notes, the line for «что
+    изменилось» — empty when nothing did).
+
+    THREE STATES, THREE DIFFERENT ANSWERS, and only one of them is a warning.
+    A CLEAN tree is the state §6.1 is written to produce: the numbers ARE tied
+    to that commit, and the repeat can start by checking it out. A DIRTY tree
+    is the state `--dirty-ok` buys: the numbers belong to no commit, and a
+    repeat cannot restore what was in the working copy. An UNRECORDED tree —
+    `неизвестно`, or a run older than the field — is neither: nothing is known,
+    which is not «грязно» and is certainly not «чисто».
+    """
+    line = worktree.strip()
+    if line.startswith(WORKTREE_CLEAN):
+        return (f"дерево: {line} — числа привязаны к этому коммиту", "")
+    if line.startswith(WORKTREE_DIRTY):
+        return (f"дерево: {line}",
+                f"рабочее дерево прогона было грязным: {line} — числа этого прогона не "
+                f"привязаны к коммиту (§6.1), и повтор пойдёт на другом его состоянии")
+    return (f"дерево: {line or UNKNOWN}",
+            f"состояние рабочего дерева прогона: {line or UNKNOWN} — привязать его числа "
+            f"к коммиту нечем (§6.1)")
+
+
 def plan(record: RunRecord, corpus: Path, ladder: Path, version_file: Path,
          env: Mapping[str, str]) -> ReproPlan:
     """The whole answer for one run, from files only.
@@ -182,9 +217,9 @@ def plan(record: RunRecord, corpus: Path, ladder: Path, version_file: Path,
         moved.append(f"движок: прогон мерил {reported}, в дереве {tree_version}")
     if not reported:
         moved.append(f"версия движка прогона {UNKNOWN} — сверить не с чем")
-    if record.worktree and not record.worktree.startswith("commit "):
-        moved.append(f"рабочее дерево: {record.worktree} — числа этого прогона не привязаны "
-                     f"к коммиту (§6.1)")
+    tree_note, tree_moved = worktree_verdict(record.worktree)
+    if tree_moved:
+        moved.append(tree_moved)
 
     # The corpus a repeat should use: the run's OWN snapshot when the tree has
     # moved, the tree's otherwise. `write_corpus` put it there before the first
@@ -209,6 +244,7 @@ def plan(record: RunRecord, corpus: Path, ladder: Path, version_file: Path,
         f"заметка: {record.note or '—'}",
         f"движок: {where} · версия {reported or UNKNOWN} (в дереве "
         f"{tree_version or UNKNOWN})",
+        tree_note,
         f"сиды: лестница {record.ladder_digest[:12] or UNKNOWN}, корпус "
         f"{record.corpus_digest[:12] or UNKNOWN} — v5 не принимает --seed, "
         f"выборку задаёт лестница",

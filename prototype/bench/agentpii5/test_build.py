@@ -901,11 +901,18 @@ def test_a_stamp_refresh_keeps_the_touch() -> list[str]:
 # --- грязное дерево и чужой корпус (пункт 18) ----------------------------------------
 
 def _provenance(dirty: tuple[str, ...], dirty_ok: bool, ladder_digest: str) -> b.RunProvenance:
-    """A provenance with everything but the two facts under test held fixed."""
+    """A provenance with everything but the two facts under test held fixed.
+
+    The selection here IS its tier («nano» with the frozen hash), so the third
+    refusal stays silent and the two under test are the only ones that speak.
+    """
     return b.RunProvenance(
         commit="0123456789abcdef0123456789abcdef01234567", branch="main", dirty=dirty,
-        dirty_ok=dirty_ok, cases=3, corpus_sha256="aaaa", corpus_v5_sha256="bbbb",
-        ladder_corpus_sha256=ladder_digest, ladder_tier_sha256=(("holdout", "cccc"),),
+        dirty_ok=dirty_ok, tier="nano", cases=3, corpus_cases=30, corpus_sha256="aaaa",
+        corpus_v5_sha256="bbbb", selection_sha256="dddd",
+        ladder_corpus_sha256=ladder_digest,
+        ladder_tier_sha256=(("holdout", "cccc"), ("nano", "dddd")),
+        ladder_tier_names=("holdout", "nano"),
         holdout_touched_at="", holdout_touched_by="")
 
 
@@ -978,7 +985,7 @@ def test_the_provenance_is_read_off_the_real_tree() -> list[str]:
     commit, branch, _dirty = b.worktree_state(b.REPO)
     if len(commit) != 40 or not branch:
         problems.append(f"git answered commit={commit!r} branch={branch!r}")
-    provenance = b.run_provenance(CASES, b.HERE / "ladder.json", b.REPO, True)
+    provenance = b.run_provenance(CASES, CASES, "max", b.HERE / "ladder.json", b.REPO, True)
     if provenance.corpus_sha256 != provenance.ladder_corpus_sha256:
         problems.append(f"the built corpus {provenance.corpus_sha256[:12]} is not the one "
                         f"ladder.json was drawn from ({provenance.ladder_corpus_sha256[:12]})")
@@ -1000,6 +1007,67 @@ def test_the_provenance_is_read_off_the_real_tree() -> list[str]:
 
 
 # --- пороги приёмки в CI (пункт 19) --------------------------------------------------
+
+def test_every_tier_starts_and_a_foreign_selection_does_not() -> list[str]:
+    """PUNKT 18, the half that was inverted: a TIER is checked against the
+    membership the ladder froze for THAT TIER, and the corpus against the corpus.
+
+    THE BLOCKER THIS PINS. `run_provenance` used to be handed the tier selection
+    alone and digest it as «the corpus», so `start_refusals` compared the digest
+    of thirty cases with the digest of 1 736 — and refused every live run but
+    `--tier max`, with the words «корпус не тот», which was not what was wrong.
+    The first paid run would have died on it. Every tier of the real committed
+    ladder is walked here, because the defect was invisible on the one tier
+    (`max`) where the two digests coincide.
+    """
+    problems: list[str] = []
+    ladder_path = b.HERE / "ladder.json"
+    ladder = json.loads(ladder_path.read_text(encoding="utf-8"))
+    by_id = {case.base.id: case for case in CASES}
+    for name, identifiers in sorted(dict(ladder["tiers"]).items()):
+        selection = [by_id[one] for one in identifiers if one in by_id]
+        if len(selection) != len(identifiers):
+            problems.append(f"ярус {name}: лестница называет случаи, которых в корпусе нет")
+            continue
+        provenance = b.run_provenance(CASES, selection, name, ladder_path, b.REPO, True)
+        refusals = b.start_refusals(provenance)
+        if refusals:
+            problems.append(f"ярус {name} ({len(selection)} случаев) не стартует: {refusals[0]}")
+        if b.selection_is_the_tier(provenance) is not True:
+            problems.append(f"ярус {name} не признан своим замороженным составом")
+        if provenance.cases != len(selection) or provenance.corpus_cases != len(CASES):
+            problems.append(f"ярус {name}: выборка {provenance.cases} и корпус "
+                            f"{provenance.corpus_cases} записаны неверно")
+        if provenance.corpus_sha256 != provenance.ladder_corpus_sha256:
+            problems.append(f"ярус {name}: дайджест корпуса считается по выборке")
+    # …А ВЫБОРКА, КОТОРАЯ ЯРУСОМ НЕ ЯВЛЯЕТСЯ, ОТКАЗАНА — иначе проверка выше
+    # зеленела бы и на коде, который не проверяет ничего.
+    smallest = min(dict(ladder["tiers"]).items(), key=lambda pair: len(pair[1]))
+    trimmed = [by_id[one] for one in smallest[1][:-1]]
+    provenance = b.run_provenance(CASES, trimmed, smallest[0], ladder_path, b.REPO, True)
+    refusals = b.start_refusals(provenance)
+    if not refusals or "выборка яруса" not in refusals[0]:
+        problems.append(f"ярус без одного случая не отказан: {refusals}")
+    elif smallest[0] not in refusals[0]:
+        problems.append(f"отказ не называет ярус: {refusals[0]}")
+    if b.selection_is_the_tier(provenance) is not False:
+        problems.append("подменённый состав яруса признан замороженным")
+    # …и `--ids` — ТРЕТИЙ ответ, а не «нет»: замороженного состава, с которым
+    # сравнивать названные руками случаи, не существует.
+    named = b.run_provenance(CASES, trimmed, b.IDS_SELECTION, ladder_path, b.REPO, True)
+    if b.selection_is_the_tier(named) is not None:
+        problems.append("прогон по названным руками случаям сравнён с ярусом, которого у него нет")
+    if b.start_refusals(named):
+        problems.append(f"--ids отказан: {b.start_refusals(named)}")
+    record = b.provenance_json(named)
+    for key in ("tier", "cases", "corpus_cases", "selection_sha256", "selection_is_the_tier"):
+        if key not in record:
+            problems.append(f"запись прогона не несёт {key}")
+    if record.get("selection_is_the_tier") is not None:
+        problems.append(f"запись назвала выборку --ids ярусом: "
+                        f"{record.get('selection_is_the_tier')}")
+    return problems
+
 
 def test_the_acceptance_test_runs_on_every_push() -> list[str]:
     """PUNKT 19: `test_perfect` on the acceptance tier is a step of the engine
@@ -1062,6 +1130,7 @@ CHECKS: tuple[Callable[[], list[str]], ...] = (
     test_a_stamp_refresh_keeps_the_touch,
     test_a_live_run_refuses_a_dirty_tree_and_a_foreign_corpus,
     test_the_provenance_is_read_off_the_real_tree,
+    test_every_tier_starts_and_a_foreign_selection_does_not,
     test_the_acceptance_test_runs_on_every_push,
     test_widened_watch_is_restored)
 

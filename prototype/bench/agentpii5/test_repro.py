@@ -27,8 +27,9 @@ from dataclasses import replace
 from pathlib import Path
 
 from bench.agentpii5 import contracts
+from bench.agentpii5.build import RunProvenance, worktree_line
 from bench.agentpii5.provider import ADMIN_TOKEN_ENV, GATEWAY_TOKEN_ENV
-from bench.agentpii5.repro import ReproError, plan, render
+from bench.agentpii5.repro import UNKNOWN, ReproError, plan, render
 from bench.agentpii5.report import meta_of, run_id_of
 from bench.agentpii5.runinfo import RunInfoError, RunRecord, append_run, find_run, read_runs
 from bench.agentpii5.test_report import RUN_ID, build_run
@@ -89,6 +90,68 @@ def _run_with_meta(root: Path, extra: dict[str, object]) -> Path:
     return run_dir
 
 
+def _worktree(commit: str, dirty: tuple[str, ...]) -> str:
+    """The `worktree` string a RUN writes, produced BY THE WRITER.
+
+    `build.worktree_line` is the only thing that fills that field, so the test
+    spells none of its three shapes: it asks the writer for them. Restating
+    «чисто …» here would let the writer's wording and the reader's expectation
+    drift apart in silence — which is exactly what happened when `repro` tested
+    the field for a `"commit "` prefix nothing has ever written."""
+    return worktree_line(RunProvenance(
+        commit=commit, branch="main", dirty=dirty, dirty_ok=bool(dirty),
+        tier="medium", cases=2, corpus_cases=2, corpus_sha256=TREE_DIGEST,
+        corpus_v5_sha256=TREE_DIGEST, selection_sha256="sel", ladder_corpus_sha256=TREE_DIGEST,
+        ladder_tier_sha256=(), ladder_tier_names=("medium",), holdout_touched_at="",
+        holdout_touched_by=""))
+
+
+CLEAN_TREE = _worktree("ff426acf71af0000", ())
+DIRTY_TREE = _worktree("ff426acf71af0000", (" M prototype/bench/agentpii5/metrics.py",))
+UNKNOWN_TREE = _worktree("", ())
+
+
+def test_the_tree_is_read_as_the_run_wrote_it() -> list[str]:
+    """§6.1 IN THE REPEAT: three states of the working tree, three answers.
+
+    The check was `worktree.startswith("commit ")` — a prefix NO writer emits —
+    so every run in the registry, a clean one included, was told «числа этого
+    прогона не привязаны к коммиту». A warning printed on every run is a
+    warning printed on none: the reader who sees it under a run made from a
+    clean tree learns to scroll past it, and the one run where it is TRUE gets
+    the same line.
+    """
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        corpus, ladder, version = _tree(root, TREE_DIGEST, TREE_LADDER)
+        run_dir = _run_with_meta(root / "run", {"gateway": {
+            "mode": "inprocess", "base_url": None, "engine_version": TREE_VERSION,
+            "image_digest": None, "learned_from": None}})
+        built = {tree: plan(_record(run_dir, tree), corpus, ladder, version, {})
+                 for tree in (CLEAN_TREE, DIRTY_TREE, UNKNOWN_TREE)}
+
+        clean = built[CLEAN_TREE]
+        if any("дерев" in line for line in clean.moved):
+            problems.append(f"a clean tree is reported as moved: {clean.moved}")
+        if not any(CLEAN_TREE in line and "привязаны к этому коммиту" in line
+                   for line in clean.notes):
+            problems.append(f"a clean tree is not tied to its commit in the notes: "
+                            f"{clean.notes}")
+
+        dirty = built[DIRTY_TREE]
+        if not any(DIRTY_TREE in line and "не привязаны к коммиту" in line
+                   for line in dirty.moved):
+            problems.append(f"a dirty tree is not carried into the repeat: {dirty.moved}")
+
+        unknown = built[UNKNOWN_TREE]
+        if not any(UNKNOWN in line and "к коммиту" in line for line in unknown.moved):
+            problems.append(f"an unrecorded tree is not named as unknown: {unknown.moved}")
+        if any("грязн" in line for line in unknown.moved):
+            problems.append(f"an unrecorded tree is called dirty: {unknown.moved}")
+    return problems
+
+
 def test_no_pseudex() -> list[str]:
     bad = [name for name in sys.modules if name.split(".")[0] == contracts.FORBIDDEN_IMPORT_PREFIX]
     return [f"the engine is imported: {sorted(bad)}"] if bad else []
@@ -102,7 +165,7 @@ def test_the_run_is_named_by_the_registrys_own_matcher() -> list[str]:
     problems: list[str] = []
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        first = _record(root, "commit a")
+        first = _record(root, CLEAN_TREE)
         second = replace(first, run_id="6f3a91c2-0000-4000-8000-000000000002")
         registry = read_runs(_registry(root, [first, second]))
         if find_run(registry, first.run_id).run_id != first.run_id:
@@ -141,7 +204,7 @@ def test_the_command_repeats_the_run() -> list[str]:
         root = Path(tmp)
         corpus, ladder, version = _tree(root, TREE_DIGEST, TREE_LADDER)
         run_dir = _run_with_meta(root / "run", {})
-        registry = read_runs(_registry(root, [_record(run_dir, "commit abcdef1")]))
+        registry = read_runs(_registry(root, [_record(run_dir, CLEAN_TREE)]))
         built = plan(registry[0], corpus, ladder, version, {})
         command = built.command
         for needed in ("bench.agentpii5.harness", str(corpus), "--tier", "medium",
@@ -168,7 +231,7 @@ def test_no_value_of_the_environment_is_printed() -> list[str]:
         root = Path(tmp)
         corpus, ladder, version = _tree(root, TREE_DIGEST, TREE_LADDER)
         run_dir = _run_with_meta(root / "run", {})
-        registry = read_runs(_registry(root, [_record(run_dir, "commit abcdef1")]))
+        registry = read_runs(_registry(root, [_record(run_dir, CLEAN_TREE)]))
         env = {"ANTHROPIC_API_KEY": FAKE_KEY, "ANTHROPIC_AUTH_TOKEN": FAKE_KEY,
                GATEWAY_TOKEN_ENV: FAKE_KEY, ADMIN_TOKEN_ENV: FAKE_KEY}
         built = plan(registry[0], corpus, ladder, version, env)
@@ -191,7 +254,7 @@ def test_a_moved_corpus_is_named_and_the_command_follows_it() -> list[str]:
         root = Path(tmp)
         corpus, ladder, version = _tree(root, "digest-НОВЫЙ", "ladder-ДРУГАЯ")
         run_dir = _run_with_meta(root / "run", {})
-        registry = read_runs(_registry(root, [_record(run_dir, "commit abcdef1")]))
+        registry = read_runs(_registry(root, [_record(run_dir, CLEAN_TREE)]))
         built = plan(registry[0], corpus, ladder, version, {})
         moved = "\n".join(built.moved)
         if "корпус:" not in moved or TREE_DIGEST[:12] not in moved:
@@ -203,8 +266,8 @@ def test_a_moved_corpus_is_named_and_the_command_follows_it() -> list[str]:
                             f"{built.command}")
         # A dirty tree is its own line: §6.1 says such numbers cannot be
         # attached to a commit, and a repeat must inherit that warning.
-        dirty = plan(replace(registry[0], worktree="грязное дерево"), corpus, ladder, version, {})
-        if not any("грязное дерево" in one for one in dirty.moved):
+        dirty = plan(replace(registry[0], worktree=DIRTY_TREE), corpus, ladder, version, {})
+        if not any(DIRTY_TREE in one for one in dirty.moved):
             problems.append(f"a dirty tree is not carried into the repeat: {dirty.moved}")
         # An unpriced model is named with the file to edit, never silently.
         unknown = plan(replace(registry[0], model="qwen3-32b-instruct"),
@@ -225,7 +288,7 @@ def test_an_http_gateway_run_repeats_over_http() -> list[str]:
             "mode": "http", "base_url": "http://engine.local:8000",
             "engine_version": "0.3.18", "image_digest": "sha256:deadbeef",
             "learned_from": "GET /status"}})
-        registry = read_runs(_registry(root, [_record(run_dir, "commit abcdef1")]))
+        registry = read_runs(_registry(root, [_record(run_dir, CLEAN_TREE)]))
         built = plan(registry[0], corpus, ladder, version, {})
         if "--gateway http://engine.local:8000" not in built.command:
             problems.append(f"the command does not repeat over HTTP: {built.command}")
@@ -252,7 +315,7 @@ def test_nothing_moved_says_so() -> list[str]:
         run_dir = _run_with_meta(root / "run", {"gateway": {
             "mode": "inprocess", "base_url": None, "engine_version": TREE_VERSION,
             "image_digest": None, "learned_from": None}})
-        registry = read_runs(_registry(root, [_record(run_dir, "commit abcdef1")]))
+        registry = read_runs(_registry(root, [_record(run_dir, CLEAN_TREE)]))
         built = plan(registry[0], corpus, ladder, version, {})
         if built.moved:
             problems.append(f"an unchanged tree reported changes: {built.moved}")
@@ -267,6 +330,8 @@ def main() -> int:
         ("the_run_is_named_by_the_registrys_own_matcher",
          test_the_run_is_named_by_the_registrys_own_matcher),
         ("the_command_repeats_the_run", test_the_command_repeats_the_run),
+        ("the_tree_is_read_as_the_run_wrote_it",
+         test_the_tree_is_read_as_the_run_wrote_it),
         ("no_value_of_the_environment_is_printed", test_no_value_of_the_environment_is_printed),
         ("a_moved_corpus_is_named_and_the_command_follows_it",
          test_a_moved_corpus_is_named_and_the_command_follows_it),

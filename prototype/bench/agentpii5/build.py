@@ -858,11 +858,21 @@ class RunProvenance:
     branch: str
     dirty: tuple[str, ...]           # `git status --porcelain` lines: status and path
     dirty_ok: bool
-    cases: int
-    corpus_sha256: str               # the v4 digest the ladder is drawn against
-    corpus_v5_sha256: str
+    # ДВА РАЗНЫХ МНОЖЕСТВА СЛУЧАЕВ, И ИХ ПУТАНИЦА СТОИЛА БЫ ЖИВОГО ПРОГОНА.
+    # Лестница нарисована по ВСЕМУ корпусу и хранит его дайджест; прогон играет
+    # ВЫБОРКУ (ярус или `--ids`). Пока `corpus_sha256` считался по выборке,
+    # `start_refusals` сравнивал дайджест яруса с дайджестом корпуса и отказывал
+    # любому прогону, кроме `--tier max`, — с причиной «корпус не тот», которая
+    # неправда. Здесь они названы по отдельности и сравниваются каждое со своим.
+    tier: str                        # имя выборки: ярус лестницы или «ids»
+    cases: int                       # случаев в ВЫБОРКЕ — столько прогон сыграет
+    corpus_cases: int                # случаев во ВСЁМ корпусе
+    corpus_sha256: str               # v4-дайджест ВСЕГО корпуса: тот, по которому лестница
+    corpus_v5_sha256: str            # v5-дайджест ВСЕГО корпуса
+    selection_sha256: str            # `tier_sha256` идентификаторов ВЫБОРКИ
     ladder_corpus_sha256: str
     ladder_tier_sha256: tuple[tuple[str, str], ...]
+    ladder_tier_names: tuple[str, ...]   # какие ярусы лестница вообще рисует
     holdout_touched_at: str
     holdout_touched_by: str
 
@@ -888,23 +898,57 @@ def corpus_stamp(cases: Sequence[CaseV5]) -> tuple[str, str]:
     return v4.corpus_digest([case.base for case in cases]), corpus_digest_v5(cases)
 
 
-def run_provenance(cases: Sequence[CaseV5], ladder_path: Path, repo: Path,
-                   dirty_ok: bool) -> RunProvenance:
-    """Everything a finished run needs to be traceable, gathered before it starts."""
+IDS_SELECTION: str = "ids"
+# Ярус, равный всему корпусу — то, о чём отвечает `build --provenance`, у
+# которого выборки нет. Названо константой, чтобы совпадение с именем яруса в
+# лестнице было видимым решением, а не строкой, повторённой в двух файлах.
+WHOLE_CORPUS_TIER: str = "max"
+
+
+def run_provenance(corpus: Sequence[CaseV5], selection: Sequence[CaseV5], tier_name: str,
+                   ladder_path: Path, repo: Path, dirty_ok: bool) -> RunProvenance:
+    """Everything a finished run needs to be traceable, gathered before it starts.
+
+    THE WHOLE CORPUS AND THE SELECTION ARE BOTH PARAMETERS, and that is the
+    fix: `corpus` is what the ladder was drawn against (its digest is the one
+    `ladder.json` carries), `selection` is what this run will play. Handing one
+    list and digesting it as both made every tier but `max` refuse itself.
+    """
     commit, branch, dirty = worktree_state(repo)
-    v4_digest, v5_digest = corpus_stamp(cases)
+    v4_digest, v5_digest = corpus_stamp(corpus)
     kept = json.loads(ladder_path.read_text(encoding="utf-8")) if ladder_path.exists() else {}
     tier_hashes = kept.get("tier_sha256")
+    tiers = kept.get("tiers")
     touch = _touch_of(kept)
     return RunProvenance(
-        commit=commit, branch=branch, dirty=dirty, dirty_ok=dirty_ok, cases=len(cases),
+        commit=commit, branch=branch, dirty=dirty, dirty_ok=dirty_ok, tier=tier_name,
+        cases=len(selection), corpus_cases=len(corpus),
         corpus_sha256=v4_digest, corpus_v5_sha256=v5_digest,
+        selection_sha256=tier_sha256([case.base.id for case in selection]),
         ladder_corpus_sha256=str(kept.get("corpus_sha256", "")),
         ladder_tier_sha256=tuple(sorted((str(name), str(value)) for name, value
                                         in (tier_hashes or {}).items()))
         if isinstance(tier_hashes, dict) else (),
+        ladder_tier_names=tuple(sorted(str(name) for name in tiers))
+        if isinstance(tiers, dict) else (),
         holdout_touched_at=touch.touched_at if touch else "",
         holdout_touched_by=touch.touched_by if touch else "")
+
+
+def selection_is_the_tier(provenance: RunProvenance) -> bool | None:
+    """Is the played selection exactly the tier the ladder froze — or is the
+    question meaningless for this run?
+
+    `None` IS A THIRD ANSWER AND NOT A «NO». `--ids` names its cases by hand, so
+    there is no frozen membership to compare against, and a boolean would make
+    an honest hand-picked run look like a corrupted tier. Computed once, here,
+    because the refusal and the record both need it and two spellings of it
+    would eventually disagree.
+    """
+    if provenance.tier not in provenance.ladder_tier_names:
+        return None
+    return provenance.selection_sha256 == dict(provenance.ladder_tier_sha256).get(
+        provenance.tier, "")
 
 
 def provenance_json(provenance: RunProvenance) -> dict[str, object]:
@@ -920,9 +964,16 @@ def provenance_json(provenance: RunProvenance) -> dict[str, object]:
             "dirty_paths": list(provenance.dirty[:DIRTY_PATHS_IN_META]),
             "dirty_ok": provenance.dirty_ok,
             "tied_to_commit": not provenance.dirty,
+            "tier": provenance.tier,
             "cases": provenance.cases,
+            "corpus_cases": provenance.corpus_cases,
             "corpus_sha256": provenance.corpus_sha256,
             "corpus_v5_sha256": provenance.corpus_v5_sha256,
+            "selection_sha256": provenance.selection_sha256,
+            # `null` когда вопрос не имеет смысла (`--ids`) — и это ТРЕТИЙ ответ,
+            # а не «нет»: прогон по названным руками случаям честен, просто
+            # замороженного состава, с которым его сравнивать, не существует.
+            "selection_is_the_tier": selection_is_the_tier(provenance),
             "ladder_corpus_sha256": provenance.ladder_corpus_sha256,
             "ladder_tier_sha256": {name: value for name, value in provenance.ladder_tier_sha256},
             HOLDOUT_TOUCHED_AT: provenance.holdout_touched_at,
@@ -957,15 +1008,33 @@ def start_refusals(provenance: RunProvenance) -> tuple[str, ...]:
     numbers untieable to ANYTHING: the tier names case ids drawn from another
     corpus, so the run measures a selection nobody chose, and no flag makes that
     worth paying for. Rebuild the corpus or restore the ladder.
+
+    И ТРЕТЬЯ, КОТОРОЙ РАНЬШЕ НЕ БЫЛО, ПОТОМУ ЧТО ВТОРАЯ ЕЁ ИЗОБРАЖАЛА: выборка
+    против замороженного состава своего яруса. Дайджест корпуса отвечает на
+    вопрос «тот ли это корпус», дайджест яруса — на вопрос «те ли это случаи»,
+    и пока одно считалось вместо другого, оба были без ответа: сравнение
+    дайджеста ЯРУСА с дайджестом ВСЕГО корпуса отказывало каждому живому
+    прогону, кроме `--tier max`, называя ложную причину.
     """
     refusals: list[str] = []
     if provenance.corpus_sha256 != provenance.ladder_corpus_sha256:
         refusals.append(
-            f"ОТКАЗ: корпус {provenance.corpus_sha256[:12]} против лестницы "
-            f"{provenance.ladder_corpus_sha256[:12] or '—'}: ярус назовёт случаи, "
+            f"ОТКАЗ: корпус {provenance.corpus_sha256[:12]} ({provenance.corpus_cases} случаев) "
+            f"против лестницы {provenance.ladder_corpus_sha256[:12] or '—'}: ярус назовёт случаи, "
             f"нарисованные по другому корпусу. Пересоберите корпус "
             f"(python3 -m bench.agentpii5.build) или верните прежнюю лестницу; "
             f"--dirty-ok этого не снимает")
+    # `elif`, а не второй `if`: на чужом корпусе состав яруса заведомо другой, и
+    # вторая строка сказала бы то же самое другими словами — читателю осталось бы
+    # гадать, две ли это беды или одна.
+    elif selection_is_the_tier(provenance) is False:
+        refusals.append(
+            f"ОТКАЗ: выборка яруса {provenance.tier!r} — {provenance.cases} случаев, "
+            f"состав {provenance.selection_sha256[:12]}, а лестница заморозила "
+            f"{dict(provenance.ladder_tier_sha256).get(provenance.tier, '')[:12] or '—'}: "
+            f"прогон измерил бы выборку, которую никто не выбирал. Пересоберите лестницу "
+            f"(python3 -m bench.agentpii5.build --regenerate-ladder) или назовите случаи "
+            f"руками (--ids); --dirty-ok этого не снимает")
     if provenance.dirty and not provenance.dirty_ok:
         instrument = [line for line in provenance.dirty if line[3:].startswith("prototype/")]
         refusals.append(
@@ -1189,6 +1258,11 @@ def print_provenance(out: Path, dirty_ok: bool) -> int:
     where the refusal can be watched without a live run: the harness calls
     `start_refusals` before it spends a cent, and a refusal nobody can exercise
     offline is a refusal nobody has measured.
+
+    ОТВЕЧАЕТ ЗА ПРОГОН ПО ВСЕМУ КОРПУСУ (`--tier max`), и это сказано вслух: у
+    этого режима нет выборки, а выдумывать её значило бы печатать состав яруса,
+    который никто не собирался играть. Состав КОНКРЕТНОГО яруса сверяет харнесс
+    в момент старта — там выборка уже существует.
     """
     corpus = out / "corpus.v5.json"
     if not corpus.exists():
@@ -1196,7 +1270,8 @@ def print_provenance(out: Path, dirty_ok: bool) -> int:
         return 1
     stored = json.loads(corpus.read_text(encoding="utf-8"))
     cases = [case_v5_from_json(row) for row in stored["corpus"]]
-    provenance = run_provenance(cases, out / "ladder.json", REPO, dirty_ok)
+    provenance = run_provenance(cases, cases, WHOLE_CORPUS_TIER, out / "ladder.json",
+                                REPO, dirty_ok)
     print(json.dumps(provenance_json(provenance), ensure_ascii=False, indent=1))
     refusals = start_refusals(provenance)
     for line in refusals:

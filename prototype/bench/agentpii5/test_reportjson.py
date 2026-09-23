@@ -21,6 +21,7 @@ Each check goes red on a revert:
   * the cost in the JSON is the cost the text prints — they share the three
     atoms, and `cost_matches_the_run` pins the sum against the run's own meta.
 """
+import json
 import sys
 import tempfile
 from collections.abc import Callable
@@ -30,7 +31,8 @@ from bench.agentpii5 import contracts, records
 from bench.agentpii5.contracts import Line, Metric
 from bench.agentpii5.fixtures import FAKE_NAME, REAL_NAME, REAL_PHONE
 from bench.agentpii5.metrics import METRIC_FUNCTIONS
-from bench.agentpii5.report import assemble, read_parts, report_lines, run_id_of
+from bench.agentpii5.report import (
+    MODEL_NOT_RECORDED, assemble, meta_of, read_parts, report_lines, run_id_of)
 from bench.agentpii5.reportjson import (
     PUBLIC_JSON_NAME,
     REPORT_JSON_NAME,
@@ -52,6 +54,72 @@ BROKEN = "toolresult_masked"
 
 def _built(root: Path) -> tuple[Path, Path]:
     return build_run(root, RUN_ID, True), build_run(root, "baseline01", False)
+
+
+# A model id no constant of the package carries: the fixture's own `meta.json`
+# names `contracts.AGENT_MODEL`, so a run written with it cannot tell «читает
+# запись прогона» apart from «печатает константу».
+FIXTURE_MODEL = "claude-haiku-fixture-4-5-20260101"
+
+
+def _with_model(run_dir: Path, model: str | None) -> None:
+    """Rewrite the run's own `meta.json` with (or without) an agent model.
+
+    Over the file the fixture wrote, so everything else in it stays exactly
+    what a run writes — the report must read a REAL record, not one this test
+    invented from scratch."""
+    run_id = run_id_of(run_dir)
+    path = records.run_file(run_dir, run_id, "<run>.meta.json")
+    meta = dict(meta_of(run_dir, run_id))
+    if model is None:
+        meta.pop("model", None)
+    else:
+        meta["model"] = model
+    path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+
+
+def test_both_files_name_the_model_the_run_recorded() -> list[str]:
+    """ONE run, ONE answer to «какая модель отвечала».
+
+    `assemble` stamped `contracts.AGENT_MODEL` — the model the harness would
+    choose TODAY — into the markdown header while this document read the run's
+    own `meta.json`. A run made by any other model was then described by two
+    files that disagreed, and the one a reader believes is whichever they
+    opened first. Both now read the RUN RECORD, and a run that recorded no
+    model says so instead of being credited with today's constant.
+    """
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        _with_model(v5_dir, FIXTURE_MODEL)
+        parts = read_parts(v5_dir, v4_dir)
+        side = assemble(parts, METRIC_FUNCTIONS)
+        text = "\n".join(report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS))
+        document = build(parts, side)
+        agent = document["models"]["agent"]  # type: ignore[index]
+        if agent != FIXTURE_MODEL:
+            problems.append(f"the JSON does not name the model the run recorded: {agent!r}")
+        if FIXTURE_MODEL not in text:
+            problems.append("the markdown header does not name the model the run recorded")
+        if contracts.AGENT_MODEL in text:
+            problems.append("the markdown names the constant instead of the run's own model")
+        if agent not in text:
+            problems.append(f"report.txt and report.json disagree about the model: "
+                            f"{agent!r} is not in the markdown")
+        # The other half: a run that recorded NO model is not credited with
+        # one. «Не записано» and «claude-haiku-4-5» are not the same fact.
+        _with_model(v5_dir, None)
+        blind_parts = read_parts(v5_dir, v4_dir)
+        blind = build(blind_parts, assemble(blind_parts, METRIC_FUNCTIONS))
+        blind_text = "\n".join(report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS))
+        if blind["models"]["agent"] is not None:  # type: ignore[index]
+            problems.append(f"a run with no recorded model got one: "
+                            f"{blind['models']['agent']!r}")  # type: ignore[index]
+        if MODEL_NOT_RECORDED not in blind_text:
+            problems.append("the markdown does not say the model was not recorded")
+        if contracts.AGENT_MODEL in blind_text:
+            problems.append("a run with no recorded model is credited with today's constant")
+    return problems
 
 
 def test_no_pseudex() -> list[str]:
@@ -326,6 +394,8 @@ def test_the_two_names_are_run_files_of_the_contract() -> list[str]:
 def main() -> int:
     checks: tuple[tuple[str, Callable[[], list[str]]], ...] = (
         ("no_pseudex", test_no_pseudex),
+        ("both_files_name_the_model_the_run_recorded",
+         test_both_files_name_the_model_the_run_recorded),
         ("document_carries_every_printed_line", test_document_carries_every_printed_line),
         ("document_is_written_beside_the_markdown", test_document_is_written_beside_the_markdown),
         ("incomplete_is_explained", test_incomplete_is_explained),

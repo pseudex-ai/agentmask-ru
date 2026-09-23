@@ -83,6 +83,12 @@ from bench.agentpii5.schema import case_v5_from_json
 # block` — can tell v4's own sentences from ours without guessing.
 V4_BLOCK_START = "=== БЛОК v4 — его собственный отчёт, дословно ==="
 V4_BLOCK_END = "=== КОНЕЦ БЛОКА v4 ==="
+# What the header prints where the run's `meta.json` names no agent model.
+# NEVER `contracts.AGENT_MODEL`: that constant is what the harness would pick
+# TODAY, and printing it over a run that used another model is the report
+# stating a fact it does not hold — one report named two different agents for
+# one run, the markdown from the constant and the JSON from the record.
+MODEL_NOT_RECORDED: str = "не записано"
 # The discordance and design effect the by-behaviour MDE line assumes. Both are
 # v4's measured values on the 07.09 max run, named here so a reader can see the
 # assumption instead of inferring it from a number.
@@ -619,6 +625,12 @@ class ReportParts:
     # no line counts (the dead weight the table exists to name) is exactly the
     # case that has no observation.
     corpus: tuple[CaseV5, ...]
+    # `<run>.meta.json` of the v5 run, read ONCE here. Everything that answers
+    # «чем это гонялось» — the models, the tier, the label, the tree — comes
+    # from this dict, and the three readers that each opened the file for
+    # themselves (`assemble`, `render`, `reportjson.build`) are why one report
+    # could name two different agents for one run.
+    meta: dict[str, object]
 
 
 def read_parts(v5_run_dir: Path, v4_run_dir: Path) -> ReportParts:
@@ -629,7 +641,7 @@ def read_parts(v5_run_dir: Path, v4_run_dir: Path) -> ReportParts:
     cases = {case.base.id: case for case in corpus}
     half = observations_of(v5_run_dir, v5.scored, cases)
     return ReportParts(v5_dir=v5_run_dir, v4_dir=v4_run_dir, v5=v5, v4=v4, half=half,
-                       corpus=corpus,
+                       corpus=corpus, meta=meta_of(v5_run_dir, run_id_of(v5_run_dir)),
                        judge=judge_half(v5_run_dir),
                        behaviour_of={case_id: case.behaviour for case_id, case in cases.items()},
                        cost=cost_lines(v5_run_dir))
@@ -712,7 +724,7 @@ def assemble(parts: ReportParts, functions: dict[str, Metric]) -> SideBySide:
         v5_run=str(parts.v5_dir), v4_run=str(parts.v4_dir),
         corpus_digest_v5=_digest(parts.v5_dir / "corpus.v5.json"),
         corpus_digest_v4=_digest(parts.v4_dir / "corpus.json"),
-        agent_model=contracts.AGENT_MODEL, judge=judged,
+        agent_model=str(parts.meta.get("model") or ""), judge=judged,
         v4_levels=level_rows(parts.v5.block), v5_lines=lines, v5_by_axis=axes,
         v5_refused=refused, judge_labels=parts.judge.labels,
         judge_pregate=parts.judge.pregate, excluded_observations=excluded,
@@ -764,10 +776,10 @@ def render(side: SideBySide, parts: ReportParts, dump: int) -> list[str]:
     # разбирает прогон, отдельно от `runs.json` и от каталога, и «прогон от
     # 23.09» через месяц не значит ничего. Молчание печатается как «—», а не
     # пропускается: строки, которой нет, читатель не заметит.
-    meta = meta_of(parts.v5_dir, run_id_of(parts.v5_dir))
+    meta = parts.meta
     out: list[str] = [
         f"AgentPII-RU v5 — {side.v5_run} против {side.v4_run}{mark}",
-        f"агент {side.agent_model} · судья {judge.judge_model} "
+        f"агент {side.agent_model or MODEL_NOT_RECORDED} · судья {judge.judge_model} "
         f"(κ={judge.kappa:.2f}, согласие={judge.raw_agreement:.2f}, "
         f"{'откалиброван' if judge.calibrated else 'НЕ ОТКАЛИБРОВАН'}; "
         f"отказано до судьи: {side.judge_pregate})",

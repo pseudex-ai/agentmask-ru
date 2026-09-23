@@ -184,7 +184,10 @@ def build(parts: ReportParts, side: SideBySide) -> dict[str, object]:
     did not, the markdown and the JSON beside it would disagree."""
     run_dir = parts.v5_dir
     run_id = run_id_of(run_dir)
-    meta = meta_of(run_dir, run_id)
+    # THE RUN'S OWN RECORD, READ ONCE BY `read_parts`. Opening `meta.json` here
+    # a second time is how the markdown and this document came to disagree
+    # about which model answered: two readers, two answers, one run.
+    meta = parts.meta
     reasons = incomplete_reasons(side, parts)
     return {
         "schema": REPORT_JSON_VERSION,
@@ -203,7 +206,11 @@ def build(parts: ReportParts, side: SideBySide) -> dict[str, object]:
         "observations": len(parts.half.observations),
         "corpus_digest": side.corpus_digest_v5 or None,
         "corpus_digest_baseline": side.corpus_digest_v4 or None,
-        "models": {"agent": meta.get("model") or side.agent_model,
+        # ONE SOURCE FOR THE MODEL: the assembled report, which read it from
+        # `meta.json`. `null` when the run recorded none — the markdown prints
+        # «не записано» over the same empty string, and neither invents the
+        # constant the harness would use today.
+        "models": {"agent": side.agent_model or None,
                    "judge": meta.get("judge_model") or None},
         # Written by the provider layer when a run goes through it (item 12);
         # `null` on a run that predates it, never an invented price.

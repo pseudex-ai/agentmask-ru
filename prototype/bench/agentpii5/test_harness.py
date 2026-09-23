@@ -35,6 +35,7 @@ from bench.agentpii4.gateway import HarnessError
 from bench.agentpii4.records import ArmMeta
 from bench.agentpii5 import build as corpus_build
 from bench.agentpii5 import harness as h
+from bench.agentpii5 import provider
 from bench.agentpii5 import records as r
 from bench.agentpii5 import runinfo
 from bench.agentpii5.contracts import (
@@ -132,6 +133,44 @@ def _policy(attempts: int, expected_per_case_usd: float) -> h.DrivePolicy:
     """Политика драйвера для проверки: без сна, с полным джиттером."""
     return h.DrivePolicy(attempts=attempts, pause=_no_pause, jitter=lambda: 1.0,
                          expected_per_case_usd=expected_per_case_usd)
+
+
+def _finished_run(root: Path) -> Path:
+    """Готовый каталог прогона, написанный СОБСТВЕННЫМИ писателями харнесса.
+
+    Тот же путь, что у `test_run_files_written`: каталог, собранный руками из
+    выдуманных строк, проверял бы читателя против файла, которого никто не
+    пишет.
+    """
+    case = _fixture_case()
+
+    async def runner(one: CaseV5, repeat: int) -> h.TripleResult:
+        return _canned(one)
+
+    run_dir = root / "v5-live-nano"
+    run_dir.mkdir()
+    h.write_corpus(run_dir, [case], "deadbeef")
+    asyncio.run(h.drive_v5([case], 1, runner, run_dir, RUN_ID, 1, frozenset(), _policy(1, 0.0)))
+    ledger = v3_judge.SpendLedger(r.run_file(run_dir, RUN_ID, "<run>.spend.tsv"), 1.0)
+    asyncio.run(ledger.settle("agent/c-0001/0", 0.5, 0.03))
+    h.stamp_judge_file(run_dir, RUN_ID, h.CalibrationStamp(
+        judge_model="claude-sonnet-5", prompt_sha256=prompt_sha256(), n=0,
+        raw_agreement=0.0, kappa=0.0, per_type_kappa={}, repeat_disagreement=1.0,
+        calibrated=False))
+    h.write_meta(run_dir, RUN_ID, model="claude-haiku-4-5-20251001",
+                 judge_model="claude-sonnet-5", tier="nano", repeats=1, digest="deadbeef",
+                 ceiling_usd=12.0, spent_usd=0.03, label="готовый прогон", note="",
+                 started="2026-09-23T10:00:00+00:00", wall_s=42.0,
+                 extra={"worktree": "чисто abc123456789 (main)"})
+    h.finish_run(run_dir, run_dir)
+    return run_dir
+
+
+class _NeverCalled:
+    """Модель, до которой пересчёт не имеет права дотянуться."""
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        raise AssertionError("пересчёт позвал модель")
 
 
 def _corpus_file(root: Path, cases: tuple[CaseV5, ...]) -> Path:
@@ -261,29 +300,8 @@ def test_ledger_shared() -> list[str]:
 
 def test_run_files_written() -> list[str]:
     failures: list[str] = []
-    case = _fixture_case()
-
-    async def runner(one: CaseV5, repeat: int) -> h.TripleResult:
-        return _canned(one)
-
     with tempfile.TemporaryDirectory() as tmp:
-        run_dir = Path(tmp) / "v5-live-nano"
-        run_dir.mkdir()
-        h.write_corpus(run_dir, [case], "deadbeef")
-        asyncio.run(h.drive_v5([case], 1, runner, run_dir, RUN_ID, 1, frozenset(),
-                               _policy(1, 0.0)))
-        ledger = v3_judge.SpendLedger(r.run_file(run_dir, RUN_ID, "<run>.spend.tsv"), 1.0)
-        asyncio.run(ledger.settle("agent/c-0001/0", 0.5, 0.03))
-        h.stamp_judge_file(run_dir, RUN_ID, h.CalibrationStamp(
-            judge_model="claude-sonnet-5", prompt_sha256=prompt_sha256(), n=0,
-            raw_agreement=0.0, kappa=0.0, per_type_kappa={}, repeat_disagreement=1.0,
-            calibrated=False))
-        h.write_meta(run_dir, RUN_ID, model="claude-haiku-4-5-20251001",
-                     judge_model="claude-sonnet-5", tier="nano", repeats=1,
-                     digest="deadbeef", ceiling_usd=12.0, spent_usd=0.03,
-                     label="проверка писателя", note="", started="2026-09-23T10:00:00+00:00",
-                     wall_s=42.0, extra={"worktree": "чисто abc123456789 (main)"})
-        h.finish_run(run_dir, run_dir)
+        run_dir = _finished_run(Path(tmp))
         for name in RUN_FILES:
             path = r.run_file(run_dir, RUN_ID, name)
             if not path.exists():
@@ -1130,6 +1148,34 @@ def test_the_label_is_demanded_before_a_dollar() -> list[str]:
     return failures
 
 
+def _run_block() -> dict[str, object]:
+    """Тот же блок §4.1/§4.2, что собирает живой прогон — через собственный
+    писатель `provider.run_block`, не переписанный здесь руками: строка реестра
+    и `meta.json` обязаны нести ОДИН объект, и словарь, выписанный в проверке,
+    проверял бы схему, которой никто не пишет."""
+    chosen = provider.resolve_provider("anthropic", {})
+    choices = [provider.resolve_model(chosen, "agent", "claude-haiku-4-5-20251001"),
+               provider.resolve_model(chosen, "judge", "claude-sonnet-5")]
+    target = provider.parse_gateway("", "")
+    return provider.run_block(chosen, choices, target, {})
+
+
+def _context(run_dir: Path, runs: Path) -> h.RunContext:
+    """`RunContext` фикстуры — один конструктор на все проверки реестра: пять
+    мест, выписывающих двадцать полей, расходятся на первой же правке."""
+    block = _run_block()
+    return h.RunContext(
+        run_id=RUN_ID, run_dir=run_dir, runs_path=runs,
+        started_at="2026-09-23T10:00:00+00:00", tier="nano", cases=1, repeats=1,
+        model="claude-haiku-4-5-20251001", judge_model="claude-sonnet-5", concurrency=2,
+        digest="deadbeef", ladder_digest="c0ffee", label="проверка реестра", note="",
+        ceiling_usd=12.0, worktree="грязно abc123456789 (main): 7 файлов — "
+                                   "к коммиту не привязан",
+        provider=dict(block["provider"]),          # type: ignore[arg-type]
+        gateway=dict(block["gateway"]),            # type: ignore[arg-type]
+        corpus_values=frozenset({REAL_NAME, PHONE_ITEM.value}))
+
+
 def test_the_registry_row_is_written_on_both_ends() -> list[str]:
     """§1.2: строка пишется при завершении И при прерывании, и состояние
     рабочего дерева (§6.1) едет в неё из объекта прогона.
@@ -1144,13 +1190,7 @@ def test_the_registry_row_is_written_on_both_ends() -> list[str]:
         run_dir = Path(tmp) / "v5"
         run_dir.mkdir()
         runs = Path(tmp) / "runs.json"
-        context = h.RunContext(
-            run_id=RUN_ID, run_dir=run_dir, runs_path=runs,
-            started_at="2026-09-23T10:00:00+00:00", tier="nano", cases=1, repeats=1,
-            model="claude-haiku-4-5-20251001", judge_model="claude-sonnet-5", concurrency=2,
-            digest="deadbeef", ladder_digest="c0ffee", label="проверка реестра", note="",
-            ceiling_usd=12.0, worktree="грязно abc123456789 (main): 7 файлов — "
-                                       "к коммиту не привязан")
+        context = _context(run_dir, runs)
         # ПРЕРВАННЫЙ ПРОГОН — И `meta.json` ЕЩЁ НЕ СУЩЕСТВУЕТ.
         h.register_run(context, state="interrupted", triples_done=1, transport_terminated=2,
                        spent_usd=0.5, wall_s=30.0, verdict="прогон прерван: KeyboardInterrupt")
@@ -1195,11 +1235,275 @@ def test_the_registry_row_is_written_on_both_ends() -> list[str]:
             if "run_id" not in str(refused):
                 failures.append(f"отказ не называет поле: {refused}")
     # И ОБА КОНЦА ЕСТЬ В `main`: одна запись в обработчике падения, одна — в конце.
-    if not _handler_calls(h.main, "register_run"):
+    if not _handler_calls(h.main, "register_interrupted"):
         failures.append("main не пишет строку реестра при прерывании — потративший деньги "
                         "прогон исчезнет из истории")
-    if len(_call_lines(h.main, "register_run")) < 2:
-        failures.append("в main один вызов register_run: один из двух концов не покрыт")
+    if not _call_lines(h.main, "register_run"):
+        failures.append("main не пишет строку реестра по завершении")
+    if not _call_lines(h.register_interrupted, "register_run"):
+        failures.append("register_interrupted не доходит до реестра")
+    return failures
+
+
+def test_a_finished_run_is_rescored_by_a_new_observer_without_a_call() -> list[str]:
+    """§4.3 (пункт 14): `--replay` пересчитывает ХОПЫ готового прогона и
+    пересобирает отчёт — не позвав модель ни разу.
+
+    `--report` собирает отчёт из наблюдений, которые записал ТОТ прогон, так что
+    после правки наблюдателя он печатает старый прибор на новых метриках.
+    Пересчёт читает то, что уже лежит в `<run>.arms.v5.jsonl` (это и есть кеш
+    ответов в рабочей форме — `provider.replies_of_run`), и пишет хопы заново.
+    """
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = _finished_run(Path(tmp))
+        hops_path = r.run_file(run_dir, RUN_ID, "<run>.hops.jsonl")
+        before = r.read_rows(hops_path)
+        if not before:
+            return ["фикстура прогона без хопов — пересчёту нечего заменять"]
+        # СЛЕД СТАРОГО НАБЛЮДАТЕЛЯ: строка, которой новый не напишет. Без этого
+        # проверка зеленела бы и на пересчёте, который просто дописывает.
+        stale = dict(before[0])
+        stale["hop"] = {**dict(stale["hop"]), "hop_index": 99}      # type: ignore[arg-type]
+        r.append_row(hops_path, stale)
+        code, printed = _main(["--replay", str(run_dir)])
+        after = r.read_rows(hops_path)
+        if code != 0:
+            failures.append(f"пересчёт не прошёл: {code} {printed[-300:]}")
+        if len(after) != len(before):
+            failures.append(f"хопов {len(after)}, было {len(before)}: пересчёт дописал "
+                            f"поверх прежних наблюдений вместо того, чтобы их заменить")
+        if any(int(dict(row["hop"])["hop_index"]) == 99 for row in after):  # type: ignore[arg-type]
+            failures.append("наблюдение старого наблюдателя пережило пересчёт")
+        if "пересчёт наблюдателя" not in printed:
+            failures.append(f"пересчёт молчит о себе: {printed[:200]}")
+        if not r.run_file(run_dir, RUN_ID, "<run>.report.json").exists():
+            failures.append("пересчёт не пересобрал машинный отчёт")
+        # …И НИ ОДНОГО ВЫЗОВА: модель подменена объектом, который падает при
+        # первом же обращении, а реестр не получает строки — пересчёт не прогон.
+        saved = h.ClaudeSDKClient
+        runs_before = runinfo.read_runs(Path(tmp) / "runs.json")
+        try:
+            h.ClaudeSDKClient = _NeverCalled                        # type: ignore[assignment]
+            code, printed = _main(["--replay", str(run_dir),
+                                   "--runs", str(Path(tmp) / "runs.json")])
+        finally:
+            h.ClaudeSDKClient = saved                               # type: ignore[assignment]
+        if code != 0:
+            failures.append(f"пересчёт с подменённой моделью не прошёл: {printed[-300:]}")
+        if len(runinfo.read_runs(Path(tmp) / "runs.json")) != len(runs_before):
+            failures.append("пересчёт записал строку в реестр — история платных прогонов "
+                            "получила бы вторую строку на те же деньги")
+        # …и каталог, который прогоном не является, отказан по имени, а не
+        # пересчитан в ноль хопов.
+        empty = Path(tmp) / "не-прогон"
+        empty.mkdir()
+        try:
+            h.replay_run(empty, empty)
+            failures.append("пересчитан каталог, который прогоном не является")
+        except Exception as refused:
+            if str(empty) not in str(refused):
+                failures.append(f"отказ не называет каталог: {refused}")
+    # ПУТЬ БЕСПЛАТНЫЙ ПО ПОСТРОЕНИЮ: `main` возвращается до бандла и до модели,
+    # и живой прогон кеша не читает — `provider.replaying` зовётся только здесь.
+    replay = _call_lines(h.main, "replay_run")
+    bundle = _call_lines(h.main, "load_dev_bundle")
+    if not replay:
+        failures.append("main не зовёт replay_run: флаг --replay объявлен и ничего не делает")
+    elif not bundle or not all(one < bundle[0] for one in replay):
+        failures.append(f"пересчёт ({replay}) стоит после бандла ({bundle})")
+    if _attr_call_lines(h.main, "provider", "replaying"):
+        failures.append("живой прогон читает кеш ответов — он обязан звать модель")
+    if not _attr_call_lines(h.replay_run, "provider", "replies_of_run"):
+        failures.append("пересчёт не читает плечи прогона через provider.replies_of_run")
+    return failures
+
+
+def _guarded_span(function: Callable[..., object], handler: str) -> tuple[int, int]:
+    """Строки (от, до) тела того `try`, чей обработчик зовёт `handler`.
+
+    Именно ОБЛАСТЬ, а не наличие вызова: строка реестра писалась из обработчика,
+    который накрывал один `asyncio.run`, — то есть всё, что шло после него,
+    падало наружу без строки. «Вызов есть» на таком коде зеленеет.
+    """
+    tree = ast.parse(inspect.getsource(function).lstrip())
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        names = {inner.func.id for one in node.handlers for inner in ast.walk(one)
+                 if isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name)}
+        if handler in names:
+            return node.body[0].lineno, node.body[-1].end_lineno or node.body[-1].lineno
+    return (-1, -1)
+
+
+def test_a_run_that_paid_and_fell_over_still_leaves_a_row() -> list[str]:
+    """§1.2: строка пишется «при завершении И при прерывании» — что бы ни убило
+    прогон ПОСЛЕ того, как деньги потрачены.
+
+    ЗАЩИЩЁННАЯ ОБЛАСТЬ НАКРЫВАЛА ОДИН `asyncio.run`, а сборка отчёта, запись
+    `meta.json` и чтение вердикта шли за ней. Прогон, заплативший за все тройки
+    и упавший на последнем шаге, не оставлял в реестре ничего — и был неотличим
+    от прогона, которого не было. Проверяются обе половины: область накрывает
+    весь хвост, и запись действительно ложится, считаясь по тому, что на диске.
+    """
+    failures: list[str] = []
+    low, high = _guarded_span(h.main, "register_interrupted")
+    if low < 0:
+        return ["в main нет try, чей обработчик пишет строку реестра"]
+    # ПОСЛЕ ПЕРВОГО ДОЛЛАРА, а не вообще: `--report` пересобирает отчёт тем же
+    # `finish_run` в начале `main`, ничего не тратя, и требовать от него строки
+    # реестра значило бы записывать прогоны, которых не было.
+    drive = _call_lines(h.main, "drive_v5")
+    if not drive:
+        return ["main не зовёт drive_v5 — проверка области бессмысленна"]
+    paid = min(drive)
+    checked: list[tuple[str, list[int]]] = [
+        (name, [one for one in _call_lines(h.main, name) if one >= paid])
+        for name in ("drive_v5", "finish_run", "write_meta", "register_run")]
+    checked.append(("runinfo.verdict_of",
+                    [one for one in _attr_call_lines(h.main, "runinfo", "verdict_of")
+                     if one >= paid]))
+    for name, at in checked:
+        if not at:
+            failures.append(f"после трат main не зовёт {name} — проверка области бессмысленна")
+        elif not all(low <= one <= high for one in at):
+            failures.append(f"{name} ({at}) вне защищённой области ({low}–{high}): "
+                            f"падение на нём оставит прогон без строки реестра")
+    # …И ФУНКЦИОНАЛЬНО: строка ложится по тому, что успело лечь на диск.
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = Path(tmp) / "v5"
+        run_dir.mkdir()
+        runs = Path(tmp) / "runs.json"
+        context = _context(run_dir, runs)
+        r.append_row(r.run_file(run_dir, RUN_ID, "<run>.triples.jsonl"),
+                     {"case_id": "c-0001", "repeat": 0, "cost_usd": 0.25})
+        r.append_row(r.run_file(run_dir, RUN_ID, "<run>.triples.jsonl"),
+                     {"case_id": "c-0002", "repeat": 0, "cost_usd": 0.75})
+        h.register_interrupted(context, 0.0, ValueError("отчёт не собрался"))
+        rows = runinfo.read_runs(runs)
+        if len(rows) != 1:
+            failures.append(f"прогон, упавший после трат, не записан: {rows}")
+        else:
+            if rows[0].state != "interrupted":
+                failures.append(f"состояние {rows[0].state!r}, а прогон не доехал")
+            if rows[0].triples_done != 2 or abs(rows[0].spent_usd - 1.0) > 1e-9:
+                failures.append(f"строка не считает по диску: {rows[0].triples_done} троек, "
+                                f"${rows[0].spent_usd}")
+            if "ValueError" not in rows[0].verdict:
+                failures.append(f"вердикт не называет причину: {rows[0].verdict!r}")
+        # …и ВТОРАЯ попытка записи не подменяет собой настоящую причину падения:
+        # реестр аддитивен и дубль отвергает, а этот отказ глотается с объяснением.
+        h.register_interrupted(context, 0.0, ValueError("вторая беда"))
+        if len(runinfo.read_runs(runs)) != 1:
+            failures.append("вторая запись переписала реестр")
+    return failures
+
+
+def test_no_key_and_no_corpus_value_reaches_the_registry_after_the_money() -> list[str]:
+    """§1.2 и правило 2 `runinfo`: ни ключа, ни значения из корпуса в строке —
+    и когда текст приезжает туда УЖЕ ПОСЛЕ трат.
+
+    `--label` и `--note` проверялись до прогона и отказом. Вердикт — нет: у
+    прерванного прогона это текст произвольного исключения, то есть всё, что
+    попало в сообщение об ошибке. Реестр лежит в репозитории вечно, а отказать
+    на этом конце нельзя — отказ стёр бы строку прогона, который уже заплатил.
+    Значит вычистка, и вычистка, которая ГОВОРИТ о себе.
+    """
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = Path(tmp) / "v5"
+        run_dir.mkdir()
+        runs = Path(tmp) / "runs.json"
+        context = _context(run_dir, runs)
+        leaked = (f"HTTP 401 от https://api/v1?key=sk-ant-api03-{'z' * 24} "
+                  f"на случае с {REAL_NAME}")
+        h.register_interrupted(context, 0.0, RuntimeError(leaked))
+        rows = runinfo.read_runs(runs)
+        if len(rows) != 1:
+            return [f"строка не записана: {rows}"]
+        written = json.dumps(runinfo.run_record_to_json(rows[0]), ensure_ascii=False)
+        if "sk-ant-" in written:
+            failures.append(f"ключ доехал до реестра: {rows[0].verdict!r}")
+        if REAL_NAME.casefold() in written.casefold():
+            failures.append(f"значение из корпуса доехало до реестра: {rows[0].verdict!r}")
+        if runinfo.SCRUBBED_KEY not in rows[0].verdict:
+            failures.append(f"вычистка ключа молчит о себе: {rows[0].verdict!r}")
+        if "RuntimeError" not in rows[0].verdict:
+            failures.append(f"вычистка съела причину целиком: {rows[0].verdict!r}")
+        # ПАРНЫЙ КОНТРОЛЬ: обычный вердикт не трогается ни на символ, иначе
+        # вычистку однажды отключат за ложные срабатывания. «tasks-» несёт «sk-».
+        plain = replace(context, run_id=RUN_ID.replace("1", "2"),
+                        run_dir=Path(tmp) / "tasks-19" / "v5")
+        h.register_run(plain, state="finished", triples_done=1, transport_terminated=0,
+                       spent_usd=0.5, wall_s=30.0, verdict="полный")
+        rows = runinfo.read_runs(runs)
+        if rows[1].verdict != "полный" or "tasks-19" not in rows[1].run_dir:
+            failures.append(f"честная строка вычищена: {rows[1].verdict!r} {rows[1].run_dir!r}")
+        if rows[1].worktree != context.worktree:
+            failures.append(f"состояние дерева вычищено: {rows[1].worktree!r}")
+    # …И ЭТО ОДНО ПРАВИЛО НА ВСЕ СВОБОДНЫЕ ПОЛЯ, а не на два, набранных руками.
+    for name in ("label", "note", "verdict", "worktree"):
+        if name not in runinfo.FREE_TEXT_FIELDS:
+            failures.append(f"поле {name} не входит в вычистку")
+    if not _attr_call_lines(h.register_run, "runinfo", "scrub_record"):
+        failures.append("register_run пишет строку мимо вычистки")
+    return failures
+
+
+def test_the_registry_row_names_the_provider_and_its_prices() -> list[str]:
+    """§4.1 и §4.2: точные id моделей, цена за миллион токенов и то, чем был
+    шлюз, — В ОБОИХ файлах, а не только в `meta.json`.
+
+    Каталог прогона стирают, переносят и переименовывают; реестр остаётся в
+    репозитории. Строка, по которой нельзя переоценить прогон в сегодняшних
+    деньгах и нельзя сказать, что маскировало, через год не значит почти ничего.
+    И ключа в ней по-прежнему нет: в записи стоят ИМЕНА переменных окружения.
+    """
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = Path(tmp) / "v5"
+        run_dir.mkdir()
+        runs = Path(tmp) / "runs.json"
+        context = _context(run_dir, runs)
+        h.register_run(context, state="finished", triples_done=1, transport_terminated=0,
+                       spent_usd=0.5, wall_s=30.0, verdict="полный")
+        row = runinfo.read_runs(runs)[0]
+        if row.provider.get("provider") != "anthropic":
+            failures.append(f"строка не называет провайдера: {row.provider}")
+        models = row.provider.get("models")
+        priced = [one for one in (models if isinstance(models, list) else ())
+                  if isinstance(one, dict) and isinstance(one.get("price"), dict)]
+        if len(priced) != 2:
+            failures.append(f"цены обеих ролей не доехали: {models}")
+        if row.gateway.get("mode") != "inprocess":
+            failures.append(f"строка не называет шлюз: {row.gateway}")
+        printed = "\n".join(runinfo.show_lines(row))
+        if "claude-haiku-4-5-20251001" not in printed or "MTok" not in printed:
+            failures.append(f"runs show не печатает модель с ценой: {printed}")
+        if "inprocess" not in printed:
+            failures.append(f"runs show не печатает шлюз: {printed}")
+        # И ТОТ ЖЕ ОБЪЕКТ — В `meta.json`: два сборщика одного блока однажды
+        # разойдутся, и два файла об одном прогоне заспорят, что отвечало.
+        h.write_meta(run_dir, RUN_ID, model=context.model, judge_model=context.judge_model,
+                     tier="nano", repeats=1, digest="deadbeef", ceiling_usd=12.0,
+                     spent_usd=0.5, label=context.label, note="", started=context.started_at,
+                     wall_s=30.0, extra={"provider": context.provider,
+                                         "gateway": context.gateway})
+        meta = json.loads(r.run_file(run_dir, RUN_ID, "<run>.meta.json")
+                          .read_text(encoding="utf-8"))
+        if meta.get("provider") != row.provider or meta.get("gateway") != row.gateway:
+            failures.append("реестр и meta.json описывают разный провайдер")
+        # КЛЮЧ НЕ ЕДЕТ НИКУДА: в записи только ИМЕНА переменных.
+        written = json.dumps(runinfo.run_record_to_json(row), ensure_ascii=False)
+        if "ANTHROPIC_API_KEY" not in written:
+            failures.append("запись не называет переменную, из которой брать ключ")
+        if provider.credential_present(provider.PROVIDER_TABLE["anthropic"], {}) is not False:
+            failures.append("фикстура собрана с ключом в окружении")
+    # …и блок собирается ОДИН раз на два файла.
+    if len(_attr_call_lines(h.main, "provider", "run_block")) != 1:
+        failures.append("provider.run_block зовётся в main не один раз: два сборщика "
+                        "одного блока разойдутся")
     return failures
 
 
@@ -1311,6 +1615,15 @@ def test_the_record_names_what_answered_and_what_masked() -> list[str]:
         code, printed = _live(root, ["--gateway", "http://localhost:8000"])
         if code != 2 or "HttpGateway" not in printed:
             failures.append(f"--gateway прошёл молча: {code} {printed[:300]}")
+        # И ОТКАЗ НАЗЫВАЕТ ТО, ЧЕГО НЕ ХВАТАЕТ, А НЕ «плечо ещё не написано»:
+        # упирается пункт 13 в ответ ДВИЖКА (`/mask` не отдаёт применённые
+        # подмены), и читатель, которому сказали «нет плеча», пойдёт искать
+        # недостающий код здесь, где его нет.
+        for wanted in ("/mask", "pseudex/service.py", "/spans", "/unmask_chunk"):
+            if wanted not in printed:
+                failures.append(f"отказ по --gateway не называет {wanted}: {printed[:400]}")
+        if "плеча, которое его зовёт, — нет" in printed:
+            failures.append("отказ по --gateway всё ещё говорит, что не хватает нашего кода")
         code, printed = _live(root, ["--image-digest", "sha256:" + "0" * 64])
         if code != 2 or "--image-digest" not in printed:
             failures.append(f"дайджест образа без шлюза прошёл: {code} {printed[:300]}")
@@ -1355,6 +1668,14 @@ def main() -> int:
          test_the_dry_run_spends_nothing_and_writes_nothing),
         ("the_label_is_demanded_before_a_dollar", test_the_label_is_demanded_before_a_dollar),
         ("the_registry_row_is_written_on_both_ends", test_the_registry_row_is_written_on_both_ends),
+        ("a_run_that_paid_and_fell_over_still_leaves_a_row",
+         test_a_run_that_paid_and_fell_over_still_leaves_a_row),
+        ("no_key_and_no_corpus_value_reaches_the_registry_after_the_money",
+         test_no_key_and_no_corpus_value_reaches_the_registry_after_the_money),
+        ("the_registry_row_names_the_provider_and_its_prices",
+         test_the_registry_row_names_the_provider_and_its_prices),
+        ("a_finished_run_is_rescored_by_a_new_observer_without_a_call",
+         test_a_finished_run_is_rescored_by_a_new_observer_without_a_call),
         ("a_live_run_is_tied_to_a_commit_and_a_corpus",
          test_a_live_run_is_tied_to_a_commit_and_a_corpus),
         ("the_holdout_is_stamped_before_the_first_call",

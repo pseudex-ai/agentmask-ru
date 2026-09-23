@@ -15,9 +15,16 @@
    «прогон, о котором мы молчим» и «прогона не было» неразличимы через месяц.
 
 2. **В реестре нет ни ключа, ни значения из корпуса.** Метка и заметка —
-   свободный текст человека, то есть единственное место, куда живое значение
-   может приехать по недосмотру; `refuse_secrets` и `refuse_corpus_values`
-   отказывают ДО записи. Реестр лежит в репозитории и переживёт корпус.
+   свободный текст человека; `refuse_secrets` и `refuse_corpus_values`
+   отказывают ДО прогона, пока отказ ничего не стоит. Но свободный текст
+   приезжает в строку и ПОСЛЕ трат — вердикт отчёта, а у прерванного прогона
+   ещё и текст исключения, который несёт всё, что было в сообщении об ошибке
+   (адрес с ключом в строке запроса, значение, на котором упал разбор). Там
+   отказывать нельзя: отказ на этом конце стирает строку прогона, который уже
+   заплатил (§1.2 требует обратного). Поэтому те же два правила применяются
+   ВЫЧИСТКОЙ (`scrub_free_text`) к каждому свободному полю
+   (`FREE_TEXT_FIELDS`), и вычистка ГОВОРИТ о себе в тексте, а не молчит.
+   Реестр лежит в репозитории и переживёт корпус.
 
 3. **Оценка называет своё основание.** Число без основания («$14») читается
    как измерение; интервал с подписью «по последнему medium той же пары
@@ -32,9 +39,10 @@
 """
 import argparse
 import json
+import re
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -104,13 +112,29 @@ class RunRecord:
     verdict: str
     worktree: str
     run_dir: str
+    # §4.1 И §4.2 В РЕЕСТРЕ, А НЕ ТОЛЬКО В `meta.json`. ТЗ просит цены и шлюз в
+    # ОБОИХ файлах, и причина не в симметрии: `meta.json` лежит в каталоге
+    # прогона, который стирают, переносят и переименовывают, а реестр — то
+    # единственное, что остаётся в репозитории. Строка, по которой нельзя
+    # переоценить прогон в сегодняшних деньгах и нельзя сказать, что маскировало,
+    # через год стоит ровно столько же, сколько строка без метки.
+    #
+    # ЗНАЧЕНИЕ ПО УМОЛЧАНИЮ ЗДЕСЬ — ОСОЗНАННОЕ ИСКЛЮЧЕНИЕ. Блок собирает
+    # `provider.run_block`, и он есть у каждого ПЛАТНОГО прогона; фикстуры
+    # читателей реестра (`test_trend`, `test_repro`) строят строку без него, и
+    # требовать его от них значило бы выдумать провайдера там, где никакая модель
+    # не отвечала. Читатель (`run_record_from_json`) КЛЮЧ требует: строку на
+    # диске всегда пишет `run_record_to_json`, и пустой словарь в ней — это
+    # «прогон не назвал провайдера», а не «поле потерялось».
+    provider: dict[str, object] = field(default_factory=dict)
+    gateway: dict[str, object] = field(default_factory=dict)
 
 
 _FIELD_ORDER: tuple[str, ...] = (
     "run_id", "benchmark", "started", "finished", "state", "tier", "cases", "repeats",
     "triples_done", "transport_terminated", "model", "judge_model", "concurrency",
     "corpus_digest", "ladder_digest", "label", "note", "ceiling_usd", "spent_usd",
-    "wall_s", "verdict", "worktree", "run_dir")
+    "wall_s", "verdict", "worktree", "run_dir", "provider", "gateway")
 
 
 def run_record_to_json(record: RunRecord) -> dict[str, object]:
@@ -126,7 +150,8 @@ def run_record_to_json(record: RunRecord) -> dict[str, object]:
         "label": record.label, "note": record.note,
         "ceiling_usd": round(record.ceiling_usd, 6), "spent_usd": round(record.spent_usd, 6),
         "wall_s": round(record.wall_s, 1), "verdict": record.verdict,
-        "worktree": record.worktree, "run_dir": record.run_dir}
+        "worktree": record.worktree, "run_dir": record.run_dir,
+        "provider": dict(record.provider), "gateway": dict(record.gateway)}
     return {key: row[key] for key in _FIELD_ORDER}
 
 
@@ -169,6 +194,23 @@ def _amount(row: dict[str, object], key: str) -> float:
     return float(value)
 
 
+def _block(row: dict[str, object], key: str) -> dict[str, object]:
+    """Вложенный объект строки (`provider`, `gateway`) — или отказ по имени.
+
+    Ключ ТРЕБУЕТСЯ, хотя у поля есть значение по умолчанию: писатель строки один
+    (`run_record_to_json`), и он кладёт ключ всегда. Пустой словарь на диске
+    читается как «прогон не назвал провайдера»; отсутствующий ключ — как
+    писатель, который потерял поле, и это разные беды.
+    """
+    if key not in row:
+        raise RunInfoError(f"RunRecord: нет поля {key!r}; в строке {sorted(row)}")
+    value = row[key]
+    if not isinstance(value, dict):
+        raise RunInfoError(f"RunRecord.{key}: ожидался объект, найдено "
+                           f"{type(value).__name__} {value!r}")
+    return {str(name): inner for name, inner in value.items()}
+
+
 def run_record_from_json(row: dict[str, object]) -> RunRecord:
     """Обратно. Отказ по имени поля, никогда `row.get(key, "")`: строка,
     записанная сломанным харнессом, должна краснеть при чтении, а не читаться
@@ -189,7 +231,8 @@ def run_record_from_json(row: dict[str, object]) -> RunRecord:
         label=_text(row, "label"), note=_text(row, "note"),
         ceiling_usd=_amount(row, "ceiling_usd"), spent_usd=_amount(row, "spent_usd"),
         wall_s=_amount(row, "wall_s"), verdict=_text(row, "verdict"),
-        worktree=_text(row, "worktree"), run_dir=_text(row, "run_dir"))
+        worktree=_text(row, "worktree"), run_dir=_text(row, "run_dir"),
+        provider=_block(row, "provider"), gateway=_block(row, "gateway"))
 
 
 def read_runs(path: Path) -> tuple[RunRecord, ...]:
@@ -263,6 +306,42 @@ def list_lines(records: Sequence[RunRecord]) -> list[str]:
     return out
 
 
+UNKNOWN_BLOCK: str = "не записан"
+
+
+def provider_line(record: RunRecord) -> str:
+    """Провайдер и цены ОДНОЙ строкой для `runs show` (§4.1).
+
+    Читается из строки реестра, а не из `meta.json`: каталог прогона стирают и
+    переносят, реестр остаётся. Молчание — «не записан», никогда не «бесплатно»:
+    цена, которой нет, и цена, равная нулю, — это два разных прогона.
+    """
+    if not record.provider:
+        return UNKNOWN_BLOCK
+    models = record.provider.get("models")
+    priced: list[str] = []
+    for one in models if isinstance(models, list) else ():
+        if not isinstance(one, dict):
+            continue
+        price = one.get("price")
+        rate = (f"${price.get('input_usd_per_mtok')}/${price.get('output_usd_per_mtok')} за MTok"
+                if isinstance(price, dict) else "цена неизвестна")
+        priced.append(f"{one.get('role')} {one.get('model_id')} ({rate})")
+    named = " · ".join(priced) or "моделей нет"
+    return f"{record.provider.get('provider', UNKNOWN_BLOCK)} · {named}"
+
+
+def gateway_line(record: RunRecord) -> str:
+    """Чем был шлюз (§4.2). `неизвестно` у полей, о которых никто не спросил —
+    сравнение версий образа держится именно на них."""
+    if not record.gateway:
+        return UNKNOWN_BLOCK
+    mode = str(record.gateway.get("mode") or UNKNOWN_BLOCK)
+    version = record.gateway.get("engine_version") or "неизвестно"
+    digest = record.gateway.get("image_digest") or "неизвестно"
+    return f"{mode} · движок {version} · образ {digest}"
+
+
 def show_lines(record: RunRecord) -> list[str]:
     """`runs show <id>` — всё, что реестр знает об одном прогоне."""
     return [
@@ -271,6 +350,8 @@ def show_lines(record: RunRecord) -> list[str]:
         f"  ярус {record.tier} · случаев {record.cases} × K={record.repeats} · "
         f"троек завершено {record.triples_done} · параллельно {record.concurrency}",
         f"  агент {record.model} · судья {record.judge_model or '—'}",
+        f"  провайдер: {provider_line(record)}",
+        f"  шлюз: {gateway_line(record)}",
         f"  корпус {record.corpus_digest[:12] or '—'} · лестница {record.ladder_digest[:12] or '—'}",
         f"  потрачено ${record.spent_usd:.2f} из ${record.ceiling_usd:.2f}",
         f"  снято обрывом провайдера: {record.transport_terminated}",
@@ -295,13 +376,33 @@ KEY_MARKERS: tuple[str, ...] = (
 # у `contracts.PIECE_MIN_CHARS`, но это ДРУГОЕ решение о другом объекте, поэтому
 # число своё.
 VALUE_MIN_CHARS: int = 4
+# Маркер ищется НЕ ПОСЛЕ БУКВЫ ИЛИ ЦИФРЫ, и это не украшение. Голая подстрока
+# «sk-» стоит внутри слова «tasks-12», а вычистка применяется теперь и к путям
+# (`run_dir` в тексте вердикта) и к имени ветки — то есть к строкам, которые
+# такие куски содержат по делу. Ложное срабатывание здесь стирало бы вердикт
+# прогона, за который уже заплачено.
+_KEY_PATTERN: re.Pattern[str] = re.compile(
+    "(?<![0-9A-Za-zА-Яа-яЁё])(" + "|".join(re.escape(one) for one in KEY_MARKERS) + ")")
+
+
+def key_marker_at(text: str) -> tuple[int, str]:
+    """Где в тексте начинается опубликованный префикс ключа и какой это
+    префикс; `(-1, "")` — ни одного.
+
+    ОДНА ФУНКЦИЯ НА ДВА ОТВЕТА. `refuse_secrets` отказывает по ней до трат,
+    `scrub_free_text` режет по ней после — и если бы каждая искала сама, они
+    однажды разошлись бы в том, что считается ключом, а разойдясь, пропустили
+    бы его именно на том конце, где отказать уже нельзя.
+    """
+    match = _KEY_PATTERN.search(text)
+    return (-1, "") if match is None else (match.start(), match.group(1))
 
 
 def refuse_secrets(text: str, field: str) -> None:
     """Отказ, если в тексте виден ключ. Проверка по опубликованным префиксам."""
-    for marker in KEY_MARKERS:
-        if marker in text:
-            raise RunInfoError(f"{field}: похоже на ключ ({marker!r}) — в реестр не пишем")
+    at, marker = key_marker_at(text)
+    if at >= 0:
+        raise RunInfoError(f"{field}: похоже на ключ ({marker!r}) — в реестр не пишем")
 
 
 def refuse_corpus_values(text: str, field: str, values: frozenset[str]) -> None:
@@ -326,6 +427,73 @@ def corpus_values(cases: Sequence[CaseV5]) -> frozenset[str]:
     и «14» не значения, а `refuse_corpus_values` и так отсекает короткое."""
     return frozenset({item.value for case in cases for item in case.base.pii}
                      | {item.canonical for case in cases for item in case.base.pii})
+
+
+# --- то же самое ПОСЛЕ трат: вычистка вместо отказа -----------------------------------------
+
+# Поля строки реестра, куда приезжает свободный текст. Закрытый список, а не
+# «все строки подряд»: `run_id`, дайджесты и даты машинные, и вычистка по ним —
+# это шанс испортить идентификатор ради беды, которой там быть не может.
+# `verdict` в списке потому, что у прерванного прогона это ТЕКСТ ИСКЛЮЧЕНИЯ, то
+# есть всё, что попало в сообщение об ошибке; `worktree` — из-за имени ветки;
+# `model` и `judge_model` — потому что их набирает человек флагом.
+FREE_TEXT_FIELDS: tuple[str, ...] = (
+    "label", "note", "verdict", "worktree", "model", "judge_model")
+SCRUBBED_KEY: str = "[вычищен ключ и весь текст после него]"
+SCRUBBED_VALUE: str = "[вычищено значение корпуса]"
+
+
+def scrub_free_text(text: str, values: frozenset[str]) -> tuple[str, tuple[str, ...]]:
+    """Тот же текст без ключа и без значений корпуса, и ЧЕМ он отличается.
+
+    ПОЧЕМУ ЗДЕСЬ ВЫЧИСТКА, А НЕ ОТКАЗ. До прогона отказ бесплатен и правилен
+    (`refuse_secrets`, `refuse_corpus_values` на `--label`/`--note`). После
+    прогона тот же отказ стёр бы строку реестра — то есть прогон, который уже
+    потратил деньги, исчез бы из истории, а это ровно то, что §1.2 запрещает.
+    Так что текст правится, а не отвергается, и правка ВИДНА в самом тексте:
+    молчаливая вычистка — это вердикт, которому нельзя верить.
+
+    ОТ КЛЮЧА РЕЖЕТСЯ ВСЁ ДО КОНЦА СТРОКИ ТЕКСТА. Длина секрета неизвестна, он
+    бывает многострочным (PEM), и оставить «хвост на всякий случай» в файле,
+    который лежит в репозитории вечно, дороже, чем потерять конец фразы.
+    """
+    removed: list[str] = []
+    at, marker = key_marker_at(text)
+    out = text
+    if at >= 0:
+        out = text[:at] + SCRUBBED_KEY
+        removed.append(f"ключ ({marker!r})")
+    folded = out.casefold()
+    # Длинные вперёд: «Иванов Пётр» и «Иванов» оба в корпусе, и вычистка
+    # короткого первой оставила бы от длинного хвост.
+    found = sorted({value for value in values
+                    if len(value) >= VALUE_MIN_CHARS and value.casefold() in folded},
+                   key=len, reverse=True)
+    for value in found:
+        out = re.sub(re.escape(value), SCRUBBED_VALUE, out, flags=re.IGNORECASE)
+    if found:
+        # СКОЛЬКО, А НЕ КАКИЕ: причина едет в stderr и в логи прогона, и
+        # названное здесь значение было бы той же утечкой другой дорогой.
+        removed.append(f"значений корпуса: {len(found)}")
+    return out, tuple(removed)
+
+
+def scrub_record(record: RunRecord, values: frozenset[str]) -> tuple[RunRecord, tuple[str, ...]]:
+    """Строка реестра, из которой вычищено всё, чего в ней быть не может, и
+    перечень того, что вычищено и из какого поля.
+
+    ОДИН ПРОХОД ПО ЗАКРЫТОМУ СПИСКУ ПОЛЕЙ, а не по тем двум, которые набирает
+    человек: `--label` и `--note` были единственными проверяемыми, пока вердикт
+    прерванного прогона не начал носить текст произвольного исключения.
+    """
+    changed: dict[str, str] = {}
+    reasons: list[str] = []
+    for name in FREE_TEXT_FIELDS:
+        cleaned, removed = scrub_free_text(getattr(record, name), values)
+        if removed:
+            changed[name] = cleaned
+            reasons += [f"{name}: {one}" for one in removed]
+    return (replace(record, **changed) if changed else record), tuple(reasons)
 
 
 # --- §1.3 метка ------------------------------------------------------------------------------
