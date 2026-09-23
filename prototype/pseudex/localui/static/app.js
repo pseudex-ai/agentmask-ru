@@ -78,6 +78,20 @@ function releaseLine(release) {
   return { cls: 'amber', text: `доступна ${release.latest}` };
 }
 
+/* МЕСТО ТАРИФА ОДНОЙ СТРОКОЙ. Три исхода, и «неизвестно» — полноправный:
+ * сервер старше движка слотов не называет, а придуманный «слот 1» на экране
+ * означал бы, что оператор сверяет с кабинетом число, которого никто не
+ * говорил. */
+function slotLine(slot) {
+  if (!slot || slot.state === 'unknown') return ['место тарифа', 'неизвестно', ''];
+  if (slot.state === 'fenced') {
+    const held = slot.fenced?.current_epoch;
+    return ['место тарифа', `занято поколением ${held ?? '?'}`, 'amber'];
+  }
+  const of = slot.slot_count ? ` из ${slot.slot_count}` : '';
+  return ['место тарифа', `слот ${slot.slot_no}${of} · поколение ${slot.epoch}`, 'green'];
+}
+
 function duration(seconds) {
   if (seconds === null || seconds === undefined) return '—';
   if (seconds < 60) return `${Math.round(seconds)} с`;
@@ -215,6 +229,13 @@ function pillFor(status, engineDown) {
   if (engineDown) return { cls: 'bad', text: 'НЕ ОТВЕЧАЕТ' };
   const state = status?.license?.state;
   if (state === 'expired') return { cls: 'bad', text: 'МАСКИРОВАНИЕ ОСТАНОВЛЕНО' };
+  /* АРЕНДА СВЕЖАЯ — И ВСЁ РАВНО НЕ МАСКИРУЕТ. Купленная ёмкость кончилась:
+   * `state` про аренду, а не про обслуживание. `=== false` намеренно: старый
+   * движок поля не шлёт, и `undefined` не должен менять картинку. */
+  if (status?.license?.serving === false) return { cls: 'bad', text: 'МАСКИРОВАНИЕ ОСТАНОВЛЕНО' };
+  if (status?.license?.slot?.state === 'fenced') {
+    return { cls: 'warn', text: 'РАБОТАЕТ · МЕСТО ЗАНЯТО НОВЫМ ЗАПУСКОМ' };
+  }
   if (state === 'stale') {
     return { cls: 'warn', text: `РАБОТАЕТ · GRACE ${duration(status.license.grace_left_s).toUpperCase()}` };
   }
@@ -237,6 +258,18 @@ function bannerFor(status, engineDown) {
   if (license.state === 'expired') {
     return { cls: 'bad', tag: 'ЛИЦЕНЗИЯ ИСТЕКЛА',
       text: `Причина: ${license.code || 'аренда не продлевается'}. Новый трафик не маскируется и шлюз его не пропускает. Журнал и статистика остаются доступными — это ваши уже собранные данные.` };
+  }
+  /* ВЫТЕСНЕНИЕ — НЕ ПОЛОМКА, И БАННЕР ОБЯЗАН СКАЗАТЬ ИМЕННО ЭТО. Оператор
+   * читает его в момент, когда он уже напуган; «место занял более новый
+   * запуск» плюс «доработает сам» отвечают на оба вопроса сразу, а слово
+   * «лишние» отсюда убрано — шесть заходов подряд оно отправляло людей
+   * останавливать контейнер, которого нет. */
+  if (license.slot && license.slot.state === 'fenced') {
+    const left = license.slot.band_left;
+    return { cls: license.serving === false ? 'bad' : 'warn',
+      tag: license.serving === false ? 'ОСТАНОВЛЕН: МЕСТО ЗАНЯТО НОВЫМ ЗАПУСКОМ'
+                                     : 'МЕСТО ЗАНЯТО НОВЫМ ЗАПУСКОМ',
+      text: `${license.slot.remedy || ''}${license.serving === false ? '' : ` Осталось купленного: ${num(left)} запросов.`}` };
   }
   if (license.state === 'stale') {
     return { cls: 'warn', tag: 'АРЕНДА НЕ ПРОДЛЕВАЕТСЯ',
@@ -399,6 +432,11 @@ function Status({ status, engineDown, org, goSandbox, onBlocked }) {
             ['движок', engine.version || '—', ''],
             ['версия', releaseLine(engine.release)?.text || 'неизвестно', releaseLine(engine.release)?.cls || ''],
             ...(engine.release?.sunset_at ? [['обслуживается до', day(engine.release.sunset_at), 'amber']] : []),
+            /* МЕСТО ТАРИФА И ПОКОЛЕНИЕ ЭТОГО ЗАПУСКА. «Сервер не сказал» — это
+             * «неизвестно», а не «слот 1»: старый сервер слотов не называет, и
+             * придуманная единица на экране была бы ровно тем дефектом, из-за
+             * которого кабинет и консоль однажды разошлись во мнениях. */
+            slotLine(license.slot),
           ].map(([key, value, tone]) => html`
             <div class="kv"><span class="k">${key}</span><span class=${`v ${tone}`}>${value}</span></div>`)}
         </div>
@@ -952,6 +990,9 @@ function Subscription({ org }) {
               ['остаток grace', data?.state === 'expired' ? 'исчерпан' : duration(data?.grace_left_s), data?.state === 'expired' ? 'pink' : ''],
             ]),
             ['версия бандла', data?.bundle_version || '—', ''],
+            slotLine(data?.slot),
+            ...(data?.slot?.state === 'fenced'
+              ? [['осталось купленного', num(data?.slot?.band_left), 'amber']] : []),
             ['запросов за всё время', num(data?.requests_total), ''],
           ].map(([key, value, klass]) => html`
             <div class="kv lg"><span class="k">${key}</span><span class=${`v ${klass}`}>${value}</span></div>`)}

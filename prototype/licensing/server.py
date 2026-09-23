@@ -41,6 +41,7 @@ from licensing.store import (
     STATUS_SUSPENDED,
     STATUS_UNPAID,
     LicenseStore,
+    SlotRefused,
 )
 from pseudex import metrics as metrics_format
 from pseudex.bundle import (BundleError, is_recipient, nonce_wrap,
@@ -78,7 +79,7 @@ _DRIFT_TTL_CEILING_SECONDS = 7 * 86400
 
 # How often to drop leases too old to count in any window. `leases` gains ~3 rows
 # per worker per day (lease_id is fresh on every renewal, so INSERT replaces
-# nothing); `may_lease` already ignores the old ones, this only reclaims disk.
+# nothing); no decision reads them any more, this only reclaims disk.
 _PRUNE_INTERVAL_SECONDS = int(os.environ.get("PSEUDEX_PRUNE_INTERVAL_SECONDS", "3600"))
 
 
@@ -497,6 +498,19 @@ def _opaque(report: dict[str, object], field: str) -> str:
     return value
 
 
+def _tag(payload: dict[str, object], field: str) -> int | None:
+    """Целочисленный тег (слот, эпох) из тела — или `None`, если его не назвали.
+
+    Ноль здесь читался бы как ОТВЕТ («слот 0»), а не как молчание, и сравнение
+    с привязкой отфенсило бы каждый старый движок разом. `bool` отсекается
+    отдельно: в Python он подкласс `int`, и `True` прошло бы как единица.
+    """
+    value = payload.get(field)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
 def parse_usage_report(usage: object) -> dict[str, object] | None:
     """Разобрать отчёт о расходе или отказать с причиной.
 
@@ -632,6 +646,28 @@ async def release(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     return JSONResponse({"released": STORE.release_process(record.org_id, pubkey)})
 
 
+def _start_id(body: dict[str, object], instance_id: str) -> str:
+    """Какой СТАРТ контейнера это. Один старт — одно поколение — один эпох.
+
+    `entrypoint.sh` чеканит `PSEUDEX_START_ID` один раз до фан-аута, и все
+    воркеры одного контейнера присылают одно значение — по той же причине, по
+    которой там же чеканятся оба токена: N воркеров с N значениями на один порт
+    это N истин.
+
+    СТАРЫЙ ДВИЖОК ЕГО НЕ ШЛЁТ, И ЭТО НЕ ОТКАЗ. Сервер не требует поля никогда
+    (D-063): ошибка совместимости — это простой у клиента. Такой контейнер
+    ведётся в ТОЙ ЖЕ конструкции под синтетическим поколением
+    `legacy:<installation>`: все воркеры одной установки, через все её
+    перезапуски, — одно поколение, один слот, один эпох. Значит старый движок
+    не заперт (его перезапуск попадает в своё же поколение) и не получает
+    бесплатного трафика (каждый его воркер покупает ёмкость, как и сегодня).
+    """
+    declared = body.get("start_id")
+    if isinstance(declared, str) and declared:
+        return declared[:128]
+    return "legacy:" + instance_id
+
+
 @app.post("/v1/lease")
 async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     if _LOG_RAW_BODY:
@@ -702,37 +738,41 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
 
     instance_id = str(body.get("instance_id", ""))
     process_id = str(body.get("process_id", ""))
+    start_id = _start_id(body, instance_id)
 
-    # THE PLAN BOUNDARY, and the only one that can exist. It is decided here, on
-    # our side, from our own record of who leased recently — not from anything
-    # the container tells us about itself. Values and request rates are produced
-    # on the customer's hardware and can say whatever they are made to say; the
-    # number of containers asking us for leases cannot.
+    # ГРАНИЦА ТАРИФА ПЕРЕЕХАЛА С АРЕНДЫ НА ЁМКОСТЬ, И ЗДЕСЬ БОЛЬШЕ НЕТ ОТКАЗОВ.
     #
-    # 409, not 402/403: the subscription is fine and the key is valid. This is
-    # "you are running more containers than you bought", which is a different
-    # sentence and must not be read by the client as a payment failure — those
-    # bypass grace and stop everything.
-    # ПРОВЕРКА И ЗАПИСЬ — ОДНА КРИТИЧЕСКАЯ СЕКЦИЯ. Раньше это были два вызова
-    # с отпущенным между ними локом, и N одновременных аренд все видели место
-    # свободным. Идентификатор аренды готовится заранее, потому что решение и
-    # запись теперь неразделимы.
+    # Отказ на аренде отвечал на вопрос «жив ли предыдущий контейнер», которого
+    # не существует (§1.2), и приземлялся на честного клиента шесть заходов
+    # подряд — последний раз на выпущенном 0.3.17, отказывавшем на 6-м, 9-м и
+    # 3-м честном старте. Теперь старт контейнера — это ПОКОЛЕНИЕ на слоте,
+    # которое выдали мы; перезапуск лишь поднимает номер, и отказывать в нём
+    # нечему. Потолок принуждается тем, что на слоте ПОКУПАЕТ ёмкость ровно
+    # одно поколение — старшее (`/v1/meter`).
+    #
+    # ПРОВЕРКА И ЗАПИСЬ — ОДНА КРИТИЧЕСКАЯ СЕКЦИЯ, как и раньше: между
+    # отдельным решением и отдельной записью лок отпускается, и N
+    # одновременных аренд одного старта чеканили бы N эпохов. Идентификатор
+    # аренды готовится заранее, потому что решение и запись неразделимы.
     lease_id = "ls_" + secrets.token_urlsafe(16)
-    allowed, why_not = STORE.lease_if_allowed(
-        lease_id, record.org_id, record.plan, instance_id, process_id,
-        _TTL_SECONDS, pubkey=recipient, engine_version=engine_version,
-        lease_contract=lease_contract)
-    if not allowed:
+    try:
+        claim = STORE.lease_generation(
+            lease_id, record.org_id, record.plan, start_id, instance_id,
+            process_id, _TTL_SECONDS, pubkey=recipient,
+            engine_version=engine_version, lease_contract=lease_contract)
+    except SlotRefused as refusal:
+        # Недостижимо при варианте А (§6.1) и оставлено потому, что вариант В
+        # подключается заменой правила допуска, а не правкой этой ручки.
         _log.warning("lease refused for org=%s instance=%s: %s",
-                     record.org_id, instance_id, why_not)
-        return JSONResponse({"error": "instance_limit", "detail": why_not},
+                     record.org_id, instance_id, refusal)
+        return JSONResponse({"error": "instance_limit", "detail": str(refusal)},
                             status_code=409)
     # Counters are recorded AFTER the instance is admitted, not before. An
     # over-limit renewal is refused above (409) and must leave NO usage row: a
     # single valid key sending a fresh client-chosen instance_id each time would
     # otherwise INSERT an unbounded number of usage rows and inflate the
     # instance/missing counters, all past a cap that only bounds the `leases`
-    # table. An admitted instance loses nothing — `lease_if_allowed` persisted
+    # table. An admitted instance loses nothing — `lease_generation` persisted
     # its slot in the same critical section, so the "died mid-renewal is still
     # accounted for" intent holds for every instance that is actually serving.
     #
@@ -815,6 +855,14 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     # движками: они их проверят и проигнорируют. Без реестра блока нет — и
     # старый клиент, и новый читают его как «нечего сказать».
     payload["bundle_format"] = BUNDLE_FORMAT
+    # СЛОТ И ПОКОЛЕНИЕ — ПОД ПОДПИСЬЮ, как блок `version` (D-055): `sign_lease`
+    # покрывает каждый верхнеуровневый ключ, а выпущенный движок проверяет
+    # подпись по тому, что получил, и лишние поля игнорирует. Поэтому поля
+    # аддитивны и `lease_contract` остаётся 3 — форму ответа они не меняют
+    # (D-063).
+    payload["slot_no"] = claim["slot_no"]
+    payload["epoch"] = claim["epoch"]
+    payload["slot_count"] = claim["slot_count"]
     if registry_doc is not None:
         payload["version"] = registry.verdict(registry_doc, engine_version, _today())
     payload["report_secret_sha256"] = hashlib.sha256(report_secret).hexdigest()
@@ -836,8 +884,9 @@ async def lease(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     # только чтением таблицы leases. Ни бандла, ни секрета отчёта, ни ключа —
     # только кто, какой инстанс и на сколько; L15 проверяет, что в логе нет ПД,
     # и эта строка обязана его проходить.
-    _log.info("lease issued org=%s instance=%s plan=%s ttl=%s",
-              record.org_id, instance_id, record.plan, payload.get("ttl_seconds"))
+    _log.info("lease issued org=%s instance=%s plan=%s ttl=%s slot=%s epoch=%s",
+              record.org_id, instance_id, record.plan, payload.get("ttl_seconds"),
+              claim["slot_no"], claim["epoch"])
     return JSONResponse(payload)
 
 
@@ -906,9 +955,17 @@ async def meter(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     # ОТЧЁТ О РАСХОДЕ ЕДЕТ ТЕМ ЖЕ MAC, ЧТО И ВСЕГДА. Новых секретов нет:
     # `report_secret` уже запечатан на этот ключ процесса.
     acked: int | None = None
+    ack_slot: int | None = None
+    ack_epoch: int | None = None
     trust = "none"
     ack = body.get("ack")
     if isinstance(ack, dict):
+        # ФЕНСИНГ-ТОКЕН ВНУТРИ `ack`, ТО ЕСТЬ ПОД MAC ОТЧЁТА. Снаружи
+        # аутентифицированной нагрузки он был бы украшением: перехватчик
+        # переписал бы его, не тронув подписи. Поля необязательные — старый
+        # движок их не шлёт, и требовать их значило бы остановить флот.
+        ack_slot = _tag(ack, "slot_no")
+        ack_epoch = _tag(ack, "epoch")
         try:
             consumed = _counter(ack, "consumed")
         except ReportRejected as error:
@@ -934,28 +991,28 @@ async def meter(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     if STORE.metered_too_recently(record.org_id, pubkey, time.time()):
         return JSONResponse({"error": "too_fast", "detail": "one grant per second"},
                             status_code=429)
-    # ПОТОЛОК ПРИНУЖДАЕТСЯ И ЗДЕСЬ, ПОТОМУ ЧТО ЕДИНИЦА ПОТОЛКА — ПРОЦЕСС,
-    # КОТОРЫЙ МОЖЕТ МАСКИРОВАТЬ ТРАФИК (Б26sexies §1): запечатанный бандл И
-    # выданный квант. Отказывала только аренда — и кольцо «аренда → release →
-    # аренда» намалывало бандлы бесплатно, а потом покупало им ёмкость разом:
-    # 500 обслуживающих процессов при разрешённых 32, ноль единиц бюджета, ни
-    # одного отказа. Бандл без ёмкости не обслуживает никого, поэтому мелющее
-    # кольцо остаётся вопросом лимита частоты; вооружает его ЭТА ручка, и
-    # граница стоит на ней.
+    # ГРАНИЦА ТАРИФА СТОИТ ЗДЕСЬ, И ТОЛЬКО ЗДЕСЬ. Обслуживать без выданного
+    # нами кванта нельзя (`license.has_capacity`), поэтому покупка ёмкости —
+    # единственное место, где право обслуживать вообще проверяемо. Отказывает
+    # не потолок мест, а ЭПОХ: на слоте покупает старшее поколение, младшее
+    # получает `fenced`.
     #
-    # 409 `instance_limit`, а не новый код: он входит в `_ANSWER_CODES` КАЖДОГО
-    # выпущенного движка (`pseudex/license.py`), то есть читается как ОТВЕТ, а
-    # не как наш сбой, и grace к нему не применяется. Процесс доживает на уже
-    # купленном кванте и перестаёт маскировать, когда тот кончится, — ровно то,
-    # что требуется. Новый код выпущенные образы приняли бы за нашу аварию и
-    # обслуживали бы всё время грации.
-    quantum, why_not = STORE.meter_if_allowed(record.org_id, pubkey, record.plan,
-                                              acked, _TTL_SECONDS, time.time())
+    # ОТКАЗ ТОЛЬКО В НОВОЙ ЁМКОСТИ — И ФОРМА ОТВЕТА ЭТО ОБЕСПЕЧИВАЕТ, А НЕ
+    # ОБЕЩАЕТ. Здесь стояло `instance_limit`, и комментарий утверждал, что
+    # «процесс доживает на уже купленном кванте». Выпущенный движок делал
+    # обратное: `instance_limit ∈ _ANSWER_CODES` → `_terminal_code` → `_expire()`
+    # → бандл выгружен, `/mask` 503 в ту же секунду, оплаченный остаток сгорел
+    # (Б30). `fenced` вне `_ANSWER_CODES`, а 409 входит в `_GRACE_WORTHY_STATUS`
+    # — то есть ВЕСЬ выпущенный флот читает его как временный сбой и
+    # доцеживает полосу. Гасит поколение обычная `has_capacity()`, а не отказ.
+    quantum, fenced = STORE.meter_if_allowed(record.org_id, pubkey, record.plan,
+                                             acked, ack_slot, ack_epoch,
+                                             _TTL_SECONDS, time.time())
     if quantum is None:
-        _log.warning("capacity refused for org=%s pubkey=%s: %s",
-                     record.org_id, pubkey[:12], why_not)
-        return JSONResponse({"error": "instance_limit", "detail": why_not},
-                            status_code=409)
+        _log.warning("capacity fenced for org=%s pubkey=%s: slot=%s epoch=%s < %s",
+                     record.org_id, pubkey[:12], fenced.get("slot_no"),
+                     fenced.get("epoch"), fenced.get("current_epoch"))
+        return JSONResponse(fenced, status_code=409)
     payload: dict[str, object] = {
         "kind": "capacity",
         # Квант не может быть прочитан как лиза, а лиза как квант: тип внутри
@@ -991,27 +1048,44 @@ async def usage(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     except ReportRejected as error:
         return JSONResponse({"error": "report_rejected", "detail": str(error)},
                             status_code=400)
+    # ОТЧЁТ ПРИНИМАЕТСЯ ОТ ЛЮБОГО ЭПОХА — это счёт, он нужен нам целиком, и
+    # отвергать расход отфенсенного поколения значило бы не выставить ему то,
+    # что оно обслужило. А ОТМЕТКУ СЛОТА ДВИГАЕТ ТОЛЬКО ТЕКУЩИЙ: отметка
+    # ранжирует слоты при выборе, и отфенсенный сосед, продолжающий
+    # отчитываться, вечно выталкивал бы себя из головы очереди.
+    #
+    # СЛОТ БЕРЁТСЯ ИЗ НАШЕЙ ЗАПИСИ ОБ АРЕНДЕ, А НЕ ИЗ ТЕЛА ЗАПРОСА. Здесь
+    # стояли `body["slot_no"]` и `body["epoch"]` — поля ВЕРХНЕГО уровня,
+    # которые подпись отчёта не покрывает (она покрывает объект `usage`), и
+    # сервер не сверял их ни с чем: ключ, держащий слот 2, успешно двигал
+    # отметку слота 1 соседнего поколения. Отметка — единственный вход
+    # ранжирования 2c, поэтому подделка позволяла держать мёртвый слот
+    # «свежим» и заставлять пришедшее поколение вытеснить ЖИВОГО соседа
+    # вместо трупа — ровно тот вред, против которого §3bis.1 заменил MAX на
+    # MIN. Привязка — наша строка, и подделать её нечем; попутно её читает и
+    # ВЫПУЩЕННЫЙ флот, который этих полей не шлёт вовсе, так что его
+    # простаивающие контейнеры перестали быть «слышны» только на покупке.
+    STORE.touch_for_process(record.org_id, str(body.get("pubkey", "")),
+                            _TTL_SECONDS, time.time())
     return JSONResponse({"status": "recorded"})
 
 
 @admin_app.get("/admin/instances")
 async def admin_instances(request: Request) -> JSONResponse:
-    """Which containers hold a slot for this org, and since when."""
+    """Слоты тарифа этой организации: кто держит каждый и что на нём доцеживает.
+
+    ПО СЛОТАМ, ПОТОМУ ЧТО ПОТОЛОК СЧИТАЕТСЯ ПО НИМ. Прежняя форма отвечала
+    списком контейнеров с состояниями `active`/`silent`/`released` — то есть
+    суждением о том, жив ли контейнер, которого сервер вынести не может. Слов
+    `silent`, `reclaimed`, `held_places`, `live_processes`, `turnover_*`,
+    `alive_seconds` в ответе больше нет: механизмов, которые их считали, нет
+    тоже (§5).
+    """
     org_id = request.query_params.get("org_id", "")
     if not org_id:
         return JSONResponse({"error": "org_id required"}, status_code=400)
-    instances = STORE.active_instances(org_id, _TTL_SECONDS)
-    # «ЗАНЯТО» ОТДАЁТСЯ ЧИСЛОМ. Список теперь содержит и `silent`, и
-    # `released` — контейнеры, которые слот НЕ держат, — поэтому его длина
-    # перестала быть ответом на вопрос «сколько занято по тарифу», а именно
-    # так её читала витрина.
-    return JSONResponse({"org_id": org_id,
-                         "window_seconds": _TTL_SECONDS,
-                         "alive_seconds": STORE.ALIVE_SECONDS,
-                         "occupied": sum(1 for row in instances if row["occupies"]),
-                         "turnover_last_hour": STORE.turnover_last_hour(org_id),
-                         "turnover_budget": STORE.release_budget(STORE.org_plan(org_id)),
-                         "instances": instances})
+    return JSONResponse(STORE.slots_view(org_id, STORE.org_plan(org_id),
+                                         _TTL_SECONDS, time.time()))
 
 
 def _instances_by_version(fleet: list[dict]) -> dict[str, int]:
@@ -1093,14 +1167,36 @@ async def admin_anomalies(request: Request) -> JSONResponse:
 
 @admin_app.post("/admin/release")
 async def admin_release(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
-    """Free a slot held by a container that is no longer running."""
+    """Освободить слоты, которые держит установка, которой больше нет.
+
+    Та же ручка, та же аудитория, новая семантика: поднять эпох каждого слота
+    этой установки и снять держателя. Поколение на нём получит `fenced` на
+    следующей покупке и доцедит купленное — рычаг поддержки не гасит чужой
+    прод, он лишь перестаёт продавать ему НОВУЮ ёмкость.
+
+    `released` остаётся булевым ради вызывающих (витрина читает его как «что-то
+    сделали»), `slots` называет число — ноль значит «такой установки среди
+    держателей нет», и это не то же самое, что успех.
+
+    НЕОБЯЗАТЕЛЬНЫЙ `slot_no` — ЧТОБЫ ВОПРОС МОЖНО БЫЛО ЗАДАТЬ УЖЕ. Ручка
+    освобождала ВСЕ слоты установки, а на тарифе, где несколько контейнеров
+    подняты с одним `PSEUDEX_INSTANCE_ID` (E7, законная конфигурация),
+    обращение «застрял один контейнер» отфенсивало все. Поле необязательное:
+    без него поведение прежнее, и витрина, которая его не шлёт, не меняется.
+    """
     org_id = str(body.get("org_id", ""))
     instance_id = str(body.get("instance_id", ""))
     if not org_id or not instance_id:
         return JSONResponse({"error": "org_id and instance_id required"},
                             status_code=400)
-    released = STORE.release_instance(org_id, instance_id)
-    return JSONResponse({"released": released})
+    raw_slot = body.get("slot_no")
+    if raw_slot is not None and not isinstance(raw_slot, int):
+        # Разбирать строку здесь значило бы завести второе представление числа
+        # слота; форма тела — наша, и мягкость к ней стоит дороже отказа.
+        return JSONResponse({"error": "slot_no must be an integer"},
+                            status_code=400)
+    freed = STORE.release_instance(org_id, instance_id, raw_slot)
+    return JSONResponse({"released": freed > 0, "slots": freed})
 
 
 @admin_app.post("/admin/issue")
@@ -1277,13 +1373,13 @@ async def admin_fleet(request: Request) -> JSONResponse:
     Экран «все клиенты» строится из СВОЕГО списка организаций (витрина их и
     создала) плюс один такой запрос, а не из каталога лицензионного сервера.
 
-    ИНСТАНСЫ ЗДЕСЬ — ДЕРЖАЩИЕ СЛОТ, а не строки аренд, и это НЕ то же самое, что
-    отдаёт `/admin/usage`. Там `STORE.instances` — сырые строки таблицы аренд,
-    по строке на КАЖДУЮ выдачу, вместе с освобождёнными и с `LIMIT 100`: их
-    количество не считает контейнеры, оно упирается в сотню за сутки работы. На
-    экране флота колонка называется «занято по тарифу», поэтому здесь берётся
-    ровно то, чем этот потолок и принуждается, — `active_instances`, как в
-    `/admin/instances`.
+    ИНСТАНСЫ ЗДЕСЬ — ЗАНЯТЫЕ СЛОТЫ, а не строки аренд, и это НЕ то же самое,
+    что отдаёт `/admin/usage`. Там `STORE.instances` — сырые строки таблицы
+    аренд, по строке на КАЖДУЮ выдачу, вместе с освобождёнными и с `LIMIT 100`:
+    их количество не считает контейнеры, оно упирается в сотню за сутки работы.
+    На экране флота колонка называется «занято по тарифу», поэтому здесь
+    берётся ровно то, чем этот потолок и принуждается, — тот же `slots_view`,
+    что и в `/admin/instances`.
     """
     raw = request.query_params.get("org_ids", "")
     org_ids = [part.strip() for part in raw.split(",") if part.strip()]
@@ -1299,16 +1395,17 @@ async def admin_fleet(request: Request) -> JSONResponse:
     for org_id in org_ids:
         if org_id in seen:
             continue
-        listed = STORE.active_instances(org_id, _TTL_SECONDS)
+        view = STORE.slots_view(org_id, STORE.org_plan(org_id), _TTL_SECONDS,
+                                time.time())
         seen[org_id] = {"org_id": org_id,
                         "usage": STORE.usage_totals(org_id),
-                        # «ЗАНЯТО ПО ТАРИФУ» — ЧИСЛО, А НЕ ДЛИНА СПИСКА. В
-                        # списке теперь есть и `silent`, и `released`: слот они
-                        # не держат, а колонка на экране флота называется
-                        # именно «занято», и считать её длиной значило бы
-                        # показать оператору число больше тарифа.
-                        "occupied": sum(1 for row in listed if row["occupies"]),
-                        "instances": listed}
+                        # «ЗАНЯТО ПО ТАРИФУ» — ЧИСЛО СЕРВЕРА, А НЕ ДЛИНА
+                        # СПИСКА: в списке есть и свободные слоты, и считать
+                        # его длиной значило бы показать оператору число,
+                        # равное тарифу всегда.
+                        "occupied": view["occupied"],
+                        "slot_count": view["slot_count"],
+                        "slots": view["slots"]}
     return JSONResponse({"orgs": list(seen.values()),
                          "window_seconds": _TTL_SECONDS})
 

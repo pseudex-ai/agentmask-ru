@@ -939,7 +939,39 @@ def _read_status(body: str) -> list[tuple[str, str, str]]:
     if licence.get("state") == "stale" and grace is not None:
         out.append((WARN, f"аренда не продлевается, до остановки {grace} с",
                     "связь до лицензионного сервера или оплата"))
+    out += _read_slot(licence.get("slot") or {})
     return out
+
+
+def _read_slot(slot: dict) -> list[tuple[str, str, str]]:
+    """Место тарифа и поколение этого запуска — строкой и с действием.
+
+    ОТДЕЛЬНАЯ ФУНКЦИЯ, ПОТОМУ ЧТО ВЕРДИКТОВ ТРИ, А НЕ ДВА. Оператор, увидевший
+    «отфенсен», обязан понять без нас, что (а) это не поломка, (б) контейнер
+    доработает сам и (в) чинить надо только если контейнеров правда больше, чем
+    по тарифу. Одна строка «fenced» ответила бы на первый вопрос и создала бы
+    два новых.
+    """
+    state = slot.get("state")
+    if state == "fenced":
+        fenced = slot.get("fenced") or {}
+        band = slot.get("band_left")
+        left = "" if band is None else f", осталось купленного {band}"
+        return [(WARN,
+                 f"место занято более новым запуском: слот {slot.get('slot_no')}, "
+                 f"поколение {fenced.get('current_epoch')} вытеснило "
+                 f"{fenced.get('epoch')}{left}",
+                 slot.get("remedy") or "если это переразвёртывание — ничего "
+                                       "делать не нужно")]
+    if state == "holding":
+        count = slot.get("slot_count")
+        return [(OK, f"слот {slot.get('slot_no')}"
+                     + (f" из {count}" if count else "")
+                     + f", поколение {slot.get('epoch')}", "")]
+    # СЕРВЕР МОЛЧИТ — ЭТО «НЕИЗВЕСТНО», А НЕ «ВСЁ ХОРОШО». Старый сервер слотов
+    # не называет; печатать «слот 1» было бы придумыванием.
+    return [(WARN, "сервер лицензий не назвал слот и поколение",
+             "сервер старше движка — на нём потолок ещё принуждается отказами")]
 
 
 def main(argv: list[str] | None = None) -> int:

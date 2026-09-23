@@ -184,11 +184,11 @@ def fleet(request):
             "subscription": subscription,
             "plan": subscription.plan if subscription else None,
             # ЗАНЯТО — ЧИСЛО С СЕРВЕРА, И «НЕ СКАЗАЛ» — НЕ НОЛЬ. Длина списка
-            # перестала быть ответом: в нём теперь и молчащие, и отпущенные
-            # контейнеры, и колонка «контейнеры» показывала бы оператору число
-            # БОЛЬШЕ тарифа — превышение, которого нет. А ноль на месте
-            # неотвеченного вопроса читается как «никто не работает» — тот же
-            # экран, который врёт, только в другую сторону.
+            # перестала быть ответом: в нём теперь СЛОТЫ тарифа, включая
+            # свободные, и колонка «контейнеры» показывала бы оператору число,
+            # равное тарифу всегда. А ноль на месте неотвеченного вопроса
+            # читается как «никто не работает» — тот же экран, который врёт,
+            # только в другую сторону.
             "instances": occupied if isinstance(occupied, int) else None,
             "allowed": (limits.get(subscription.plan.code,
                                    subscription.plan.max_instances)
@@ -223,13 +223,12 @@ def customer(request, org_id: str):
     slot_view = slots.unknown()
     try:
         usage = licensing.usage(organization.id).get("usage", {}) or {}
-        # ИНСТАНСЫ БЕРУТСЯ У `/admin/instances`, А НЕ ИЗ ОТВЕТА `/admin/usage`.
-        # Оба поля называются `instances`, и это ловушка: у `/admin/usage` там
-        # сырые строки аренд (`instance_id`/`process_id`/`issued_at`, по строке
-        # на выдачу, с освобождёнными и с потолком в сотню), а таблица ниже
-        # рисует `state`, `occupies` и признак жизни — их там просто нет, так
-        # что колонка «состояние» молча зеленела бы у КАЖДОЙ строки, включая
-        # отпущенные слоты. Занятость числом есть только здесь же.
+        # СЛОТЫ БЕРУТСЯ У `/admin/instances`, А НЕ ИЗ ОТВЕТА `/admin/usage`.
+        # Поле `instances` есть в обоих ответах, и это ловушка: у `/admin/usage`
+        # там сырые строки аренд (`instance_id`/`process_id`/`issued_at`, по
+        # строке на выдачу, с освобождёнными и с потолком в сотню), а таблица
+        # ниже рисует слоты, поколения и время последней покупки ёмкости — их
+        # там просто нет. Занятость числом есть только здесь же.
         slot_view = slots.describe(licensing.instances(organization.id), time.time())
         detail = licensing.chains(organization.id)
         history = detail.get("history", []) or []

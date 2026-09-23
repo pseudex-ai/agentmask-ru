@@ -1,43 +1,47 @@
 """ЭКРАН, КОТОРЫЙ ВРЁТ ПРО СЛОТ, — ЭТО ТОТ ЖЕ ДЕФЕКТ, ЧТО И СЛОТ, КОТОРЫЙ ДЕРЖИТ ТРУП.
 
-Что здесь доказывается (Б26, Б26bis, Б26ter, Б26quater;
-`research/2026-09-22-instance-liveness-and-slots.md`):
+Что здесь доказывается (Б26, Б26bis … Б26sexies; ТЗ «слоты, поколения и
+фенсинг» §3.5, §9.4):
 
   * «занято» — это ЧИСЛО С СЕРВЕРА, а не длина списка. В ответе
-    `/admin/instances` есть и `silent`, и `released` — контейнеры, которые слот
-    НЕ держат; кабинет показывал бы «4 из 1 занято» человеку, у которого занят
-    один, а консоль — превышение тарифа, которого нет;
-  * КАЖДОЕ состояние клиента различимо на вид и названо своим именем: держит,
-    молчит, остановлен сам, МЕСТО ОТОБРАНО, упёрся в потолок рабочих процессов;
-  * отобранное место названо отобранным. Клиент, у которого мы забрали слот,
-    обязан прочитать, что это сделали МЫ и почему (он молчал дольше срока), —
-    а не «вы сами остановили контейнер»;
+    `/admin/instances` теперь есть и СВОБОДНЫЕ слоты; сложить его длиной значит
+    написать «4 из 4 занято» человеку, у которого работают два контейнера;
+  * состояние слота названо своим именем: занят, свободен, свободен и на нём
+    ДОЦЕЖИВАЕТ прежнее поколение. Последнее — не «остановлен»: сервер знает,
+    что это поколение больше не покупает ёмкость, и НЕ знает, работает ли оно;
+  * слово рядом с числом не спорит с числом. Экран писал «слот уже свободен,
+    поднимайте новый» в той же строке, где стояло «мест занято 32»;
   * молчание лицензионного сервера показано молчанием, а не нулём: «0 из 1
     занято» читается как ответ, и человек делает из него вывод, что
     контейнеров у него нет.
 
-ПОЧЕМУ ЭТА ПРОВЕРКА ПЕРЕПИСАНА ЦЕЛИКОМ (Б26quater, последний абзац).
+ЧЕГО ЗДЕСЬ БОЛЬШЕ НЕТ И ПОЧЕМУ. Состояний `silent` и `reclaimed`, чисел
+`held_places`/`live_processes`, бюджета перевыдач и обещания «слот освободится
+через N молчания» не осталось ни в одной проверке — вместе с механизмами,
+которые их считали. Каждый из них лечил свой дефект (Б26: труп держал слот
+сутки; Б26quater: поколение из 32 ключей переоткрывалось; Б26bis: бюджет был
+единственным ограничителем карусели), и каждый лечится теперь тем, что сервер
+не судит по молчанию вовсе: слот занимает поколение, которое выдали МЫ, а
+перезапуск лишь поднимает его номер.
 
-Предыдущая ездила на теле, написанном рукой: в нём стояло `released_by:
-"silence"` и `live_processes: 32` у отобранного места — поле, которого сервер
-тогда не отдавал вовсе, и число, которого он в этом состоянии не даёт.
-Проверка, собранная из полей, которых сервер никогда не присылает, провалиться
-не может: она охраняет фантазию автора, а не экран. Теперь ответы СНИМАЮТСЯ с
-настоящего `licensing.devserver` (`test_slots_stand.py`): организацию доводят
-до каждого состояния настоящими вызовами `/v1/lease`, `/v1/usage`,
-`/v1/release`, место у молчащего отбирают по-настоящему, в потолок рабочих
-процессов упираются по-настоящему — и экраны рисуются по снятым телам.
+ПОЧЕМУ ЭТА ПРОВЕРКА ЕЗДИТ НА СНЯТОМ ТЕЛЕ (Б26quater, последний абзац).
+Предыдущая ездила на теле, написанном рукой: в нём стояли поля, которых сервер
+не отдаёт, и числа, которых он в этом состоянии не даёт. Проверка, собранная из
+полей, которых сервер никогда не присылает, провалиться не может — она
+охраняет фантазию автора. Тела СНИМАЮТСЯ с настоящего `licensing.devserver`
+(`test_slots_stand.py`): организацию доводят до каждого состояния настоящими
+вызовами `/v1/lease`, `/v1/meter`, `/v1/release`, `/admin/release`, а 409
+`fenced` снимается тем же прогоном.
 
 ЧТО ОСТАЛОСЬ ЗАГЛУШКОЙ И ПОЧЕМУ. Тела отдаёт локальный HTTP-стенд, а не сам
-лицензионный сервер: занятость зависит от времени (при `ALIVE_SECONDS=3` живой
-контейнер замолкает раньше, чем браузер откроет вторую страницу), поэтому пять
-состояний удерживаются в кадре только снимком. Заглушка ничего не вычисляет:
-она отдаёт снятые байты по тому же пути и через тот же коннектор
-(`billing/licensing.py`), то есть цепочка «ответ ручки → коннектор → вьюха →
-шаблон» проверяется целиком. Два вырожденных случая — сервер не ответил и
-сервер ответил без чисел — получены ВЫЧИТАНИЕМ полей из настоящего тела: так
-выглядит ответ версии старше витрины или урезанный прокси, и подставить здесь
-ноль значило бы подписаться числом под тем, чего сервер не говорил.
+лицензионный сервер: снимок — это байты сервера в тот момент, когда все
+состояния существовали разом. Заглушка ничего не вычисляет, она отдаёт снятые
+байты по тому же пути и через тот же коннектор (`billing/licensing.py`), то
+есть цепочка «ответ ручки → коннектор → вьюха → шаблон» проверяется целиком.
+Два вырожденных случая — сервер не ответил и сервер ответил без чисел —
+получены ВЫЧИТАНИЕМ полей из настоящего тела: так выглядит ответ версии старше
+витрины, и подставить здесь ноль значило бы подписаться числом под тем, чего
+сервер не говорил.
 
 НАСТОЯЩИЙ БРАУЗЕР, как у остальных отрисовочных проверок витрины
 (`test_ops_renders.py`, `test_configurator_renders.py`): 200 и подстрока в HTML
@@ -49,7 +53,6 @@
 
     cd storefront && .venv/bin/python test_slots.py
 """
-
 import copy
 import json
 import os
@@ -70,12 +73,13 @@ _ENGINE = _ROOT.parent / "prototype"
 _WORK = Path(tempfile.mkdtemp(prefix="pseudex-slots-"))
 _DB = str(_WORK / "store.sqlite3")
 _CAPTURE_PATH = _WORK / "captured.json"
-# Две организации и два человека: тарифный потолок процессов считается по ВСЕЙ
-# организации, поэтому молчащий ключ соседнего контейнера занял бы место в тех
-# же тридцати двух и отказ пришёл бы по другой причине. Кабинет показывает
-# организацию по старшему членству, значит у второй организации свой вход.
-_SLOT_ORG, _CEIL_ORG = "slotco", "ceilco"
-_STAFF = {_SLOT_ORG: "slots@pseudex.local", _CEIL_ORG: "ceiling@pseudex.local"}
+# Две организации и два человека: одна на тарифе с запасом (там видно и
+# занятый слот, и свободный, и доцеживающее поколение), вторая на тарифе в ОДИН
+# слот — там и только там перезапуск вытесняет предыдущее поколение, потому что
+# свободного слота для него нет. Кабинет показывает организацию по старшему
+# членству, значит у второй организации свой вход.
+_SLOT_ORG, _FENCE_ORG = "slotco", "fenceco"
+_STAFF = {_SLOT_ORG: "slots@pseudex.local", _FENCE_ORG: "fenced@pseudex.local"}
 _STAFF_PASSWORD = "slots-render-password-not-a-secret"
 # Ключ TOTP шестнадцатеричным: не секрет — живёт ровно этот прогон, на локальном
 # порту, и нужен, чтобы тест посчитал код той же арифметикой, что и сервер.
@@ -136,25 +140,46 @@ CAPTURE: dict = {}
 _MODE = {"instances": "snapshot"}
 
 
+def _migrating(body: dict) -> dict:
+    """СРАЗУ ПОСЛЕ ПЛАТФОРМЕННОГО РЕЛИЗА: слотов не занято ни одного, а
+    контейнеры работают.
+
+    Миграция намеренно не назначает держателей — установка выпущенного движка
+    чеканится на каждый старт контейнера, поэтому усыновление отдавало слот
+    каждому мёртвому перезапуску и печатало «занято 4 из 4» клиенту с одним
+    контейнером. Обратная сторона: несколько часов занятость ниже фактической,
+    и «0 из 4» без единого слова читается как ОТВЕТ «у вас ничего не работает»
+    — догадка того же рода, только в другую сторону. Сервер называет число
+    установок, ещё не занявших слот; экран обязан его показать.
+    """
+    view = copy.deepcopy(body)
+    view["occupied"] = 0
+    view["pending_installations"] = 3
+    for row in view.get("slots", []):
+        row["holder"] = None
+        row["draining"] = []
+    return view
+
+
 def _thin(body: dict) -> dict:
     """ОТВЕТ БЕЗ ЧИСЕЛ — ВЫЧИТАНИЕМ ИЗ НАСТОЯЩЕГО, а не выдумкой.
 
-    Сервер ответил, но `occupied`, `live_processes`, `held_places` и бюджет
-    перевыдач не назвал, а у строки не назвал `occupies` и назвал состояние,
-    которого витрина не знает. Так выглядит ответ версии старше витрины,
-    урезанный прокси или сломанный на той стороне. `cooling` — не выдумка: это
-    то самое состояние, которое лицензионный сервер отдавал до этой работы, и
-    экран обязан НАЗВАТЬ его, а не подвести под знакомое.
+    Сервер ответил, но `occupied`, `slot_count`, счётчиков за сутки не назвал, а
+    у держателя не назвал ни воркеров, ни времени последней покупки. Так
+    выглядит ответ версии старше витрины, урезанный прокси или сломанный на той
+    стороне — и ровно так экраны и соврали: ноль пришёл не с сервера, а из
+    `get(key, 0)` витрины.
     """
     thin = copy.deepcopy(body)
-    for field in ("occupied", "turnover_last_hour", "turnover_budget"):
+    for field in ("occupied", "slot_count", "generations_24h",
+                  "epochs_unacked_24h", "slot_contention_24h",
+                  "processes_per_instance", "pending_installations"):
         thin.pop(field, None)
-    rows = thin.get("instances", [])[:1]
+    rows = [row for row in thin.get("slots", []) if row.get("holder")][:1]
     for row in rows:
-        for field in ("occupies", "live_processes", "held_places", "free_at"):
-            row.pop(field, None)
-        row["state"] = "cooling"
-    thin["instances"] = rows
+        for field in ("workers_heard", "last_purchase_at"):
+            row["holder"].pop(field, None)
+    thin["slots"] = rows
     return thin
 
 
@@ -170,10 +195,14 @@ def _shift(body: dict, captured_at: float) -> dict:
     """
     delta = time.time() - captured_at
     shifted = copy.deepcopy(body)
-    for row in shifted.get("instances", []):
-        for field in ("last_lease", "last_seen", "free_at"):
-            if isinstance(row.get(field), (int, float)):
-                row[field] = row[field] + delta
+    for row in shifted.get("slots", []):
+        holder = row.get("holder") or {}
+        for field in ("since", "last_heard_at", "last_purchase_at"):
+            if holder.get(field):
+                holder[field] = holder[field] + delta
+        for gone in row.get("draining", []):
+            if gone.get("fenced_at"):
+                gone["fenced_at"] = gone["fenced_at"] + delta
     return shifted
 
 
@@ -195,15 +224,16 @@ class _Stub(BaseHTTPRequestHandler):
             # `LicensingError` на любом не-200, и экран обязан сказать
             # «неизвестно», а не показать ноль.
             return 503, {"error": "down"}
-        if org_id == _CEIL_ORG:
-            captured = CAPTURE["ceiling"]
+        if org_id == _FENCE_ORG:
+            captured = CAPTURE["fenced"]
             return 200, _shift(captured["instances"], captured["instances_at"])
         captured = CAPTURE["slots"]
-        if mode == "echo":
-            return 200, _shift(captured["instances_after_echo"],
-                               captured["instances_after_echo_at"])
         body = _shift(captured["instances"], captured["instances_at"])
-        return 200, _thin(body) if mode == "thin" else body
+        if mode == "thin":
+            return 200, _thin(body)
+        if mode == "migrating":
+            return 200, _migrating(body)
+        return 200, body
 
     def do_GET(self) -> None:  # noqa: N802 — имя задано базовым классом
         path, _, query = self.path.partition("?")
@@ -214,7 +244,7 @@ class _Stub(BaseHTTPRequestHandler):
         if _MODE["instances"] == "down" and path != "/admin/plans":
             self._send(503, {"error": "down"})
             return
-        captured = CAPTURE["ceiling"] if org_id == _CEIL_ORG else CAPTURE["slots"]
+        captured = CAPTURE["fenced"] if org_id == _FENCE_ORG else CAPTURE["slots"]
         if path == "/admin/instances":
             self._send(*self._instances(org_id))
         elif path == "/admin/usage":
@@ -256,13 +286,18 @@ from billing.models import LicenseKey, Plan, Subscription
 from django_otp.plugins.otp_totp.models import TOTPDevice
 
 User = get_user_model()
-plan = Plan.objects.get(code=os.environ["PLAN_CODE"])
+# КАЖДОЙ ОРГАНИЗАЦИИ — ЕЁ ТАРИФ. Один общий давал кабинету «1 из 4 занято» там,
+# где сервер назвал один слот: экран печатал число ВИТРИНЫ вместо числа сервера,
+# и проверка ловила это как расхождение (Б26bis — число с сервера, а не своё).
+plans = {os.environ["SLOT_ORG"]: Plan.objects.get(code=os.environ["PLAN_CODE"]),
+         os.environ["FENCE_ORG"]: Plan.objects.get(code=os.environ["FENCE_PLAN_CODE"])}
+plan = plans[os.environ["SLOT_ORG"]]
 
 # ОДИН ЧЕЛОВЕК НА ОБА ЭКРАНА СВОЕЙ ОРГАНИЗАЦИИ. Кабинет открывается по членству,
 # консоль — по признаку сотрудника и второму фактору; один вход вместо двух
 # проверяет ровно то, что проверяется, и не заводит второй способ входа.
 for org_id, display, email in ((os.environ["SLOT_ORG"], "ООО Слот", os.environ["SLOT_EMAIL"]),
-                              (os.environ["CEIL_ORG"], "ООО Потолок", os.environ["CEIL_EMAIL"])):
+                              (os.environ["FENCE_ORG"], "ООО Фенс", os.environ["FENCE_EMAIL"])):
     staff = User.objects.create_user(email=email, password=os.environ["STAFF_PASSWORD"])
     staff.is_staff = staff.is_superuser = True
     staff.save()
@@ -271,7 +306,7 @@ for org_id, display, email in ((os.environ["SLOT_ORG"], "ООО Слот", os.en
     org = Organization.objects.create(id=org_id, display_name=display,
                                       legal_name=display, inn="7707083893")
     Membership.objects.create(user=staff, organization=org)
-    Subscription.objects.create(organization=org, plan=plan,
+    Subscription.objects.create(organization=org, plan=plans[org_id],
                                 state=Subscription.ACTIVE,
                                 trial_ends_at=timezone.now() - timedelta(days=1),
                                 current_period_end=timezone.now() + timedelta(days=30))
@@ -289,13 +324,14 @@ def _start_site(licensing_port: int, site_port: int) -> tuple[subprocess.Popen, 
         "PSEUDEX_ALLOWED_HOSTS": "127.0.0.1,localhost",
         "PSEUDEX_DB_PATH": _DB,
         "SLOT_ORG": _SLOT_ORG,
-        "CEIL_ORG": _CEIL_ORG,
+        "FENCE_ORG": _FENCE_ORG,
         "SLOT_EMAIL": _STAFF[_SLOT_ORG],
-        "CEIL_EMAIL": _STAFF[_CEIL_ORG],
+        "FENCE_EMAIL": _STAFF[_FENCE_ORG],
         # ТОТ ЖЕ ТАРИФ, ЧТО У ЛИЦЕНЗИОННОГО СЕРВЕРА: «занято 1 из 1» — это его
         # число рядом с нашим, и разные тарифы по две стороны экрана читались бы
         # как ошибка счёта.
         "PLAN_CODE": CAPTURE["slots"]["plan"],
+        "FENCE_PLAN_CODE": CAPTURE["fenced"]["plan"],
         "STAFF_PASSWORD": _STAFF_PASSWORD,
         "STAFF_TOTP_KEY": _STAFF_TOTP_KEY,
         "PSEUDEX_LICENSING_ADMIN_URL": f"http://127.0.0.1:{licensing_port}",
@@ -370,35 +406,58 @@ def _payload_checks() -> None:
     """Сначала — что в теле СЕРВЕРА есть ровно то, на чём стоит экран.
 
     Эта проверка и есть ответ на Б26quater: раньше здесь стояло тело, написанное
-    рукой, и `released_by` в нём был выдумкой автора. Если сервер перестанет
-    называть причину освобождения, падать обязано ЗДЕСЬ — с именем поля, — а не
-    в виде зелёной страницы, на которой отобранное место названо остановленным.
+    рукой, и поля в нём были выдумкой автора. Если сервер перестанет называть
+    держателя или остаток отфенсенного, падать обязано ЗДЕСЬ — с именем поля, —
+    а не в виде зелёной страницы, на которой доцеживающее поколение названо
+    остановленным.
     """
     slots = CAPTURE["slots"]
-    rows = {row["instance_id"]: row for row in slots["instances"]["instances"]}
-    check("снятое тело описывает все четыре состояния контейнера",
-          set(rows) == {slots["holding"], slots["silent"], slots["released"],
-                        slots["reclaimed"]}, ", ".join(sorted(rows)))
-    check("сервер НАЗЫВАЕТ причину освобождения, а не оставляет её экрану",
-          rows[slots["reclaimed"]].get("released_by") == "silence"
-          and rows[slots["released"]].get("released_by") == "process",
-          f"отобранный={rows[slots['reclaimed']].get('released_by')!r} "
-          f"остановленный={rows[slots['released']].get('released_by')!r}")
-    check("отобранное место и остановленный контейнер отличаются ТОЛЬКО причиной",
-          rows[slots["reclaimed"]]["state"] == rows[slots["released"]]["state"]
-          == "released",
-          "иначе состояние различает их само — тогда причина не нужна")
-    ceiling = CAPTURE["ceiling"]
-    refusal = ceiling["refusals"]["process_ceiling"]["detail"]
-    live = [int(number) for number in re.findall(r"\d+", refusal)]
-    row = ceiling["instances"]["instances"][0]
-    check("отказ по потолку процессов — настоящий и называет число живых процессов",
-          ceiling["refusals"]["process_ceiling"]["status"] == 409
-          and row["live_processes"] in live,
-          f"живых по строке {row['live_processes']}, числа отказа {live}")
-    check("сервер называет и занятые места под потолком тарифа",
-          isinstance(row.get("held_places"), int),
-          f"held_places={row.get('held_places')!r}")
+    body = slots["instances"]
+    by_number = {row["slot_no"]: row for row in body["slots"]}
+    held = {row["holder"]["installation_id"]: row for row in body["slots"]
+            if row["holder"]}
+    check("снятое тело описывает ЧЕТЫРЕ состояния слота",
+          len(body["slots"]) == 4
+          and set(held) == {slots["holding"], slots["released"]}
+          and any(row["draining"] for row in body["slots"])
+          and any(not row["holder"] and not row["draining"]
+                  for row in body["slots"]),
+          f"держат: {sorted(held)}; "
+          f"доцеживают: {[r['slot_no'] for r in body['slots'] if r['draining']]}")
+    check("занято — ЧИСЛО СЕРВЕРА, и оно не равно длине списка",
+          body["occupied"] == 2 and len(body["slots"]) == 4,
+          f"занято {body['occupied']} при {len(body['slots'])} строках")
+    check("сервер называет держателя поимённо: поколение, том, версия, покупка",
+          {"start_id", "installation_id", "engine_version", "since",
+           "workers_heard", "last_purchase_at", "released"}
+          <= set(held[slots["holding"]]["holder"]),
+          f"{sorted(held[slots['holding']]['holder'])}")
+    check("прощание ЗАПИСАНО и отличает остановленного от работающего",
+          held[slots["released"]]["holder"]["released"] is True
+          and held[slots["holding"]]["holder"]["released"] is False,
+          "и при этом СЛОТ остаётся за ним: решения `/v1/release` не читают")
+    drained = next(row for row in body["slots"] if row["draining"])
+    check("доцеживающее поколение названо со своим эпохом, причиной и остатком",
+          drained["draining"][0]["epoch"] < drained["epoch"]
+          and drained["draining"][0]["fenced_by"] == "admin"
+          and drained["draining"][0]["band_left_estimate"] > 0,
+          f"{drained['draining'][0]}")
+    refusal = slots["refusals"]["fenced_by_admin"]
+    check("отказ настоящий, 409 `fenced`, и называет РЫЧАГ, а не несуществующего соседа",
+          refusal["status"] == 409 and refusal["error"] == "fenced"
+          and "поддержка" in refusal["detail"]
+          and "занял более новый запуск" not in refusal["detail"],
+          refusal["detail"][:110])
+
+    fenced = CAPTURE["fenced"]
+    claim = fenced["refusals"]["fenced_by_claim"]
+    check("а перезапуск на полном тарифе фенсит предыдущее поколение, не отказывая аренде",
+          fenced["epochs"]["second"] == fenced["epochs"]["first"] + 1
+          and claim["status"] == 409 and claim["error"] == "fenced",
+          f"эпохи {fenced['epochs']}, отказ {claim['status']} {claim['error']}")
+    check("и код отказа НЕ `instance_limit` — иначе выпущенный флот гаснет, а не доцеживает",
+          claim["error"] != "instance_limit",
+          "instance_limit ∈ _ANSWER_CODES движка → _expire() в ту же секунду (Б30)")
 
 
 def _unit_checks() -> None:
@@ -415,107 +474,72 @@ def _unit_checks() -> None:
 
     captured = CAPTURE["slots"]
     body = captured["instances"]
-    # «СЕЙЧАС» — ЭТО МОМЕНТ СЪЁМКИ. Тело абсолютное, занятость относительная;
+    # «СЕЙЧАС» — ЭТО МОМЕНТ СЪЁМКИ. Тело абсолютное, сроки относительные;
     # считать его по часам этого прогона значило бы состарить снимок на время
     # работы стенда и мерить не то.
     now = captured["instances_at"]
     view = slotview.describe(body, now)
-    rows = {row["instance_id"]: row for row in view["rows"]}
+    rows = {row["slot_no"]: row for row in view["rows"]}
     check("занято берётся у сервера, а не из длины списка",
-          view["occupied"] == body["occupied"] == 1 and len(view["rows"]) == 4,
+          view["occupied"] == body["occupied"] == 2 and len(view["rows"]) == 4,
           f"occupied={view['occupied']} строк={len(view['rows'])}")
-    check("состояния доезжают как есть, а отобранное место названо отобранным",
-          rows[captured["holding"]]["state"] == "active"
-          and rows[captured["silent"]]["state"] == "silent"
-          and rows[captured["released"]]["state"] == "released"
-          and rows[captured["reclaimed"]]["state"] == "reclaimed",
-          str({name: row["state"] for name, row in rows.items()}))
-    check("слот держит только живой",
-          [row["holds"] for row in view["rows"]] == [True, False, False, False],
-          str([row["holds"] for row in view["rows"]]))
-    check("срок до самостоятельного освобождения назван только там, где сервер его назвал",
-          bool(rows[captured["holding"]]["frees_in"])
-          and not rows[captured["silent"]]["frees_in"],
-          f"живой={rows[captured['holding']]['frees_in']!r} "
-          f"молчащий={rows[captured['silent']]['frees_in']!r}")
-    check("срок молчания берётся из alive_seconds сервера, а не из константы",
-          view["alive_label"] == slotview.ago(body["alive_seconds"])
-          and view["alive_label"] != slotview.ago(600),
-          f"{view['alive_label']!r} при alive_seconds={body['alive_seconds']}")
-    check("рабочие процессы доезжают числом — это то, чем считается отказ по потолку",
-          rows[captured["holding"]]["live_processes"] == captured["workers"]["alive"],
-          f"живой={rows[captured['holding']]['live_processes']} "
-          f"воркеров подняли {captured['workers']['alive']}")
-    check("плашка собрана по occupies, а не по имени состояния",
-          rows[captured["holding"]]["pill"] == "ДЕРЖИТ СЛОТ"
-          and rows[captured["reclaimed"]]["pill"] == "МЕСТО ОТОБРАНО — СЛОТ СВОБОДЕН",
-          f"{rows[captured['holding']]['pill']!r} / "
-          f"{rows[captured['reclaimed']]['pill']!r}")
-
-    echoed = slotview.describe(captured["instances_after_echo"],
-                               captured["instances_after_echo_at"])
-    echo_row = {row["instance_id"]: row for row in echoed["rows"]}[captured["reclaimed"]]
-    check("отобранный контейнер, который снова отчитался, отмечен как ещё работающий",
-          echo_row["heard_recently"] is True
-          and rows[captured["reclaimed"]]["heard_recently"] is False,
-          f"после отчёта={echo_row['heard_recently']} "
-          f"до него={rows[captured['reclaimed']]['heard_recently']}")
-
-    ceiling = slotview.describe(CAPTURE["ceiling"]["instances"],
-                                CAPTURE["ceiling"]["instances_at"])
-    row = CAPTURE["ceiling"]["instances"]["instances"][0]
-    check("места под потолком тарифа складываются по строкам сервера",
-          ceiling.get("held_places") == row["held_places"]
-          and ceiling.get("live_processes") == row["live_processes"],
-          f"мест={ceiling.get('held_places', 'нет поля')} "
-          f"живых={ceiling.get('live_processes', 'нет поля')} "
-          f"при {row['held_places']}/{row['live_processes']} в строке сервера")
+    holding = next(row for row in view["rows"]
+                   if row["installation_id"] == captured["holding"])
+    freed = next(row for row in view["rows"] if row["draining"])
+    empty = next(row for row in view["rows"]
+                 if not row["held"] and not row["draining"])
+    check("занятый слот назван занятым, свободный — свободным",
+          holding["held"] is True and holding["pill"] == "ЗАНЯТ"
+          and empty["held"] is False and empty["pill"] == "СВОБОДЕН",
+          f"{holding['pill']!r} / {empty['pill']!r}")
+    check("пояснение собрано ЗДЕСЬ и несёт поколение, воркеров и покупку",
+          f"поколение {holding['epoch']}" in holding["note"]
+          and f"воркеров слышно {captured['workers']['live']}" in holding["note"]
+          and "ёмкость покупал" in holding["note"],
+          holding["note"])
+    check("доцеживающее поколение названо и его остаток подписан «до»",
+          freed["draining"] and freed["draining"][0]["band_left"] > 0
+          and freed["draining"][0]["fenced_by"] == "освободила поддержка",
+          f"{freed['draining']}")
+    check("слово рядом с числом не спорит с числом: свободный слот НЕ пустой",
+          freed["held"] is False and freed["pill"] == "СВОБОДЕН"
+          and freed["note"] == "свободен" and bool(freed["draining"]),
+          "слот свободен, и на нём доцеживает прежнее поколение — это две "
+          "разные вещи, и экран говорит обе")
 
     # ── ОТВЕТ БЕЗ ЧИСЕЛ. Поле, которого нет, — это «сервер не назвал».
     thin = slotview.describe(_thin(body), now)
     mute = thin["rows"][0]
     check("занятость, которой сервер не назвал, — не ноль",
-          thin["occupied"] is None, repr(thin["occupied"]))
-    check("бюджет перевыдач, которого сервер не назвал, — не ноль",
-          thin["turnover_last_hour"] is None and thin["turnover_budget"] is None,
-          f"{thin['turnover_last_hour']!r} из {thin['turnover_budget']!r}")
+          thin["occupied"] is None and thin["slot_count"] is None,
+          f"{thin['occupied']!r} из {thin['slot_count']!r}")
+    check("запусков за сутки, которых сервер не назвал, — не ноль",
+          thin["generations_24h"] is None and thin["contention"] is None,
+          f"{thin['generations_24h']!r}/{thin['contention']!r}")
     # ЧЕРЕЗ `.get`, А НЕ ПО КЛЮЧУ: витрина, которая поле ПОТЕРЯЛА, обязана
     # дать здесь красную строку с именем поля, а не KeyError посреди прогона.
-    check("процессы и места, которых сервер не назвал, — не ноль",
-          mute.get("live_processes", 0) is None and mute.get("held_places", 0) is None
-          and thin.get("live_processes", 0) is None
-          and thin.get("held_places", 0) is None,
-          f"строка={mute.get('live_processes', 'нет поля')!r}/"
-          f"{mute.get('held_places', 'нет поля')!r} "
-          f"итог={thin.get('live_processes', 'нет поля')!r}/"
-          f"{thin.get('held_places', 'нет поля')!r}")
-    check("занятость строки, которой сервер не назвал, не читается как «свободно»",
-          mute["holds"] is None and "ЗАНЯТОСТЬ НЕИЗВЕСТНА" in mute["pill"],
-          f"holds={mute['holds']!r} плашка={mute['pill']!r}")
-    check("незнакомое состояние НАЗВАНО, а не подведено под знакомое",
-          "cooling" in mute["pill"] and "СЛОТ СВОБОДЕН" not in mute["pill"],
-          mute["pill"])
-
-    # ПРИЧИНА ОСВОБОЖДЕНИЯ, КОТОРОЙ ВИТРИНА НЕ ЗНАЕТ. Значение из словаря самого
-    # сервера (`store.py::active_instances`: process | silence | admin), но
-    # `/admin/release` сегодня СТРОКИ УДАЛЯЕТ, поэтому снять `admin` с живого
-    # сервера нечем — ряд взят настоящий, подменено одно поле, и проверяется
-    # ровно одно: незнакомая причина не читается как «вы сами остановили».
-    foreign = copy.deepcopy(body)
-    for row in foreign["instances"]:
-        if row["instance_id"] == captured["released"]:
-            row["released_by"] = "admin"
-    freed = {row["instance_id"]: row
-             for row in slotview.describe(foreign, now)["rows"]}[captured["released"]]
-    check("причина освобождения, которой витрина не знает, названа, а не выдана за остановку",
-          "admin" in freed["pill"] and "ОСТАНОВЛЕН" not in freed["pill"],
-          freed["pill"])
+    check("воркеры, которых сервер не назвал, — не ноль",
+          mute.get("workers_heard", 0) is None
+          and "воркеров сервер не назвал" in mute.get("note", ""),
+          f"{mute.get('workers_heard', 'нет поля')!r}: {mute.get('note', '')}")
+    check("и покупка, которой не было, названа отсутствием, а не нулевой датой",
+          "ёмкость ещё не покупал" in mute["note"], mute["note"])
 
     silent = slotview.unknown()
     check("молчание сервера — это «неизвестно», а не ноль",
           silent["known"] is False and silent["occupied"] is None
           and silent["rows"] == [],
           f"known={silent['known']} occupied={silent['occupied']!r}")
+
+    # ── КАБИНЕТ И КОНСОЛЬ ЧИТАЮТ ОДНО И ТО ЖЕ. Плашку и пояснение собирает
+    # ОДНА функция, и это не экономия: два шаблона, ветвящихся каждый сам,
+    # писали про один контейнер «ОСТАНОВЛЕН» и «ОТПУЩЕН» (Б26bis).
+    fenced_view = slotview.describe(CAPTURE["fenced"]["instances"],
+                                    CAPTURE["fenced"]["instances_at"])
+    check("на полном тарифе занято равно числу слотов, и держатель один",
+          fenced_view["occupied"] == fenced_view["slot_count"] == 1
+          and len(fenced_view["rows"][0]["draining"]) == 1,
+          f"{fenced_view['occupied']} из {fenced_view['slot_count']}")
 
 
 def main() -> int:
@@ -540,7 +564,6 @@ def main() -> int:
     server, allowed = _start_site(licensing_port, site_port)
     base = f"http://127.0.0.1:{site_port}"
     admin_path = os.environ.get("PSEUDEX_ADMIN_PATH", "admin")
-    alive_label = ""
     try:
         with sync_playwright() as pw:
             browser = _launch(pw)
@@ -552,102 +575,86 @@ def main() -> int:
             check("вошёл паролем и кодом", "/login" not in page.url,
                   page.url.replace(base, ""))
 
-            # --- КАБИНЕТ: четыре состояния контейнера на снятом теле ----
-            #
-            # Пятое состояние клиента — упёрся в потолок рабочих процессов —
-            # живёт в другой организации и проверяется в конце файла: потолок
-            # считается по организации целиком.
+            # --- КАБИНЕТ: четыре состояния слота на снятом теле ---------
             page.goto(f"{base}/app/", wait_until="networkidle")
             body = page.inner_text("body")
             from billing import slots as slotview
-            alive_label = slotview.ago(captured["instances"]["alive_seconds"])
+            view = slotview.describe(captured["instances"],
+                                     captured["instances_at"])
+            holding = next(row for row in view["rows"]
+                           if row["installation_id"] == captured["holding"])
+            freed = next(row for row in view["rows"] if row["draining"])
             check("кабинет отрисован",
                   len(body) > 200 and "Traceback" not in body,
                   f"{len(body)} симв." + (f", ошибки: {errors[:2]}" if errors else ""))
+            # ЗАНЯТО — ЧИСЛО СЕРВЕРА, А НЕ ДЛИНА СПИСКА. В списке теперь есть и
+            # свободные слоты; сложить его длиной значило бы написать «4 из 4
+            # занято» человеку, у которого работают два контейнера.
             check("кабинет считает ЗАНЯТЫЕ слоты, а не строки списка",
-                  f"1 из {allowed} занято" in body
-                  and f"4 из {allowed} занято" not in body,
-                  f"в тексте: {'есть 1 из' if f'1 из {allowed}' in body else 'НЕТ'}; "
-                  f"{'ЕСТЬ 4 из' if f'4 из {allowed}' in body else 'нет 4 из'}")
-            check("держащий слот назван живым и со сроком",
-                  captured["holding"] in body and "ДЕРЖИТ СЛОТ" in body
-                  and "если замолчит" in body)
-            check("замолчавший контейнер назван молчащим, а слот его — свободным",
-                  captured["silent"] in body and "МОЛЧИТ — СЛОТ СВОБОДЕН" in body,
-                  "строка есть" if captured["silent"] in body else "строки нет")
-            check("остановленный САМ не показан работающим и не назван отобранным",
-                  captured["released"] in body and "ОСТАНОВЛЕН — СЛОТ СВОБОДЕН" in body
-                  and "остановлен сам" in body)
-            check("отобранное место названо отобранным, а не «вы сами остановили»",
-                  captured["reclaimed"] in body
-                  and "МЕСТО ОТОБРАНО — СЛОТ СВОБОДЕН" in body,
-                  "строка есть" if captured["reclaimed"] in body else "строки нет")
-            check("кабинет говорит, что будет с работающим контейнером, у которого забрали место",
-                  "на следующем продлении аренды он получит отказ" in body
-                  and "НА ТОМ ЖЕ ТОМЕ" in body)
-            # СЛОВО РЯДОМ С ЧИСЛОМ. Строка отобранного контейнера говорила «его
-            # МЕСТО занял другой контейнер», а под списком на том же экране
-            # стояло «мест под потолком тарифа занято N» — и N включало ровно
-            # эти места: молчание их не освобождает (Б26quinquies), другому
-            # запуску достался СЛОТ. Клиент читал совет, который его же число
-            # опровергает. То же у молчащего: «поднимайте новый» верно про слот
-            # и неверно про места, а отказывает по местам (Б26sexies).
-            taken_li = page.locator("li", has_text=captured["reclaimed"]).first.inner_text()
-            silent_li = page.locator("li", has_text=captured["silent"]).first.inner_text()
-            # Сдвиг времени на `held_places` не влияет — это счёт строк, а не
-            # срок, — поэтому число берётся с тела как снято.
-            held_total = slotview.describe(captured["instances"],
-                                           captured["instances_at"])["held_places"]
-            check("кабинет не называет отданным место, которое стоит в его же числе",
-                  "его место занял другой контейнер" not in taken_li
-                  and "СЛОТ занял другой контейнер" in taken_li
-                  and (held_total or 0) > 0,
-                  f"мест по экрану {held_total}; строка: {taken_li[:120]}")
-            check("и не обещает у молчащего свободных мест, которых молчание не освобождает",
-                  "МЕСТА его рабочих процессов молчание не освобождает" in silent_li,
-                  silent_li[:160])
-            check("а число мест под потолком стоит на том же экране, чтобы сверить",
-                  f"под потолком тарифа занято {held_total}" in body,
-                  f"мест {held_total}")
-            # ТЕ САМЫЕ ЧИСЛА, ПО КОТОРЫМ ОТКАЗЫВАЕТ ПОТОЛОК. Клиент читает в
-            # отказе «сейчас живых столько-то рабочих процессов» и до сих пор не
-            # мог сверить это число ни с одним своим экраном.
-            check("кабинет показывает живые процессы каждого контейнера",
-                  f"рабочих процессов {captured['workers']['alive']}" in body)
-            check("кабинет говорит, через сколько молчания слот освободится сам",
-                  f"{alive_label} молчания" in body,
-                  f"срок из alive_seconds сервера: {alive_label}")
-            check("кабинет говорит, что переразвёртывание на том же томе слот не теряет",
-                  "НА ТОМ ЖЕ ТОМЕ" in body and "pseudex-data:/data" in body)
-            turnover = captured["instances"]["turnover_last_hour"]
-            check("кабинет называет израсходованный бюджет перевыдач",
-                  f"{turnover} раз" in body
-                  and f"из {captured['instances']['turnover_budget']} допустимых" in body,
-                  f"перевыдач {turnover} из {captured['instances']['turnover_budget']}")
-            # ВЕТКА, КОТОРОЙ БОЛЬШЕ НЕТ, ПРОВЕРЯЕТСЯ ПО ИСХОДНИКУ, А НЕ ПО
-            # ЭКРАНУ: сервер больше не отдаёт `cooling`, поэтому ветка по нему
-            # на экране просто не сработает — и проверка, которая смотрит на
-            # отрисованное, пройдёт и на старом шаблоне. Утверждение здесь
-            # именно про шаблон: ветки по остыванию в витрине не осталось.
-            cooling = [str(path.relative_to(_ROOT))
-                       for path in (_ROOT / "templates").rglob("*.html")
-                       if "cooling" in path.read_text()]
-            check("ни один шаблон витрины не ветвится по «остывает»",
-                  not cooling, f"осталось в {cooling or 'нигде'}")
-
-            # --- ОТОБРАННЫЙ ЕЩЁ РАБОТАЕТ --------------------------------
-            #
-            # Второй снимок того же сервера, снятый после того, как отобранный
-            # контейнер прислал отчёт. Клиенту это меняет действие: его движок
-            # жив и встанет на следующем продлении.
-            _MODE["instances"] = "echo"
-            page.goto(f"{base}/app/", wait_until="networkidle")
-            echo = page.inner_text("body")
-            check("кабинет видит, что у отобранного контейнера движок ещё работает",
-                  "он ещё отчитывается" in echo and "он ещё отчитывается" not in body,
-                  "сказано только на втором снимке" if "он ещё отчитывается" in echo
-                  else "НЕ СКАЗАНО")
-            _MODE["instances"] = "snapshot"
+                  f"{view['occupied']} из {allowed} занято" in body
+                  and f"{len(view['rows'])} из {allowed} занято" not in body,
+                  f"занято {view['occupied']} при {len(view['rows'])} строках")
+            check("каждый слот назван номером и поколением",
+                  f"слот {holding['slot_no']}" in body
+                  and f"поколение {holding['epoch']}" in body,
+                  f"слот {holding['slot_no']}, поколение {holding['epoch']}")
+            check("занятый слот назван занятым, свободный — свободным",
+                  "ЗАНЯТ" in body and "СВОБОДЕН" in body)
+            check("держатель назван томом, версией движка и временем ПОКУПКИ ёмкости",
+                  captured["holding"] in body
+                  and CAPTURE["engine_version"] in body
+                  and "ёмкость покупал" in body,
+                  "покупка — это нижняя граница «живых», единственная, которую "
+                  "теорема нам оставляет")
+            check("воркеры названы числом сервера, а не догадкой экрана",
+                  f"воркеров слышно {captured['workers']['live']}" in body,
+                  f"воркеров {captured['workers']['live']}")
+            # СЛОВО РЯДОМ С ЧИСЛОМ. Экран писал «слот уже свободен, поднимайте
+            # новый» в той же строке, где стояло «мест занято 32». Здесь обе
+            # вещи говорятся и не спорят: слот свободен И на нём доцеживает
+            # прежнее поколение, у которого остался КУПЛЕННЫЙ остаток.
+            drained_li = page.locator(
+                "li", has_text=f"слот {freed['slot_no']}").first.inner_text()
+            check("про доцеживающее поколение сказано ОБЕ вещи и без противоречия",
+                  "СВОБОДЕН" in drained_li
+                  and "доработает на уже купленном" in drained_li
+                  and str(freed["draining"][0]["band_left"]) in drained_li,
+                  drained_li.replace("\n", " | ")[:160])
+            check("и оно НЕ названо остановленным — этого мы не знаем",
+                  "остановлен" not in drained_li.lower()
+                  or "остановится само" in drained_li,
+                  drained_li.replace("\n", " | ")[:160])
+            # ЧЕГО НА ЭКРАНЕ БОЛЬШЕ НЕТ И БЫТЬ НЕ ДОЛЖНО: обещания «слот
+            # освободится через N молчания» (это было суждение о том, жив ли
+            # контейнер) и бюджета перевыдач (его больше не существует).
+            check("кабинет не обещает освобождения по молчанию и не называет бюджет",
+                  "молчания" not in body and "перевыдач" not in body
+                  and "допустимых в час" not in body,
+                  "оба обещания сняты вместе с механизмами, которые их держали")
+            check("зато сказано, что перезапуск ничего не ждёт и не стоит",
+                  "Перезапуск контейнера ничего не стоит и ничего не ждёт" in body
+                  and "OOM" in body,
+                  "OOM-килл и docker stop идут одним путём")
+            check("и назван счётчик запусков за сутки — он ничего не запрещает",
+                  f"Запусков за сутки {view['generations_24h']}" in body,
+                  f"{view['generations_24h']}")
+            # ВЕТКИ УДАЛЁННЫХ СОСТОЯНИЙ — ПО ИСХОДНИКУ, А НЕ ПО ЭКРАНУ: сервер
+            # их больше не отдаёт, поэтому ветка по ним просто не сработает, и
+            # проверка отрисованного прошла бы и на старом шаблоне.
+            # КОММЕНТАРИЙ — НЕ ВЕТКА. Имена удалённых состояний в
+            # `{% comment %}` — это запись о том, что и почему ушло; удалять её
+            # ради зелёной проверки значило бы стереть память шести заходов
+            # (Б26 … Б26sexies). Проверяется РАЗМЕТКА, поэтому комментарии
+            # вырезаются, а всё остальное — включая любой `{% if %}` — нет.
+            _comment = re.compile(r"\{%\s*comment\s*%\}.*?\{%\s*endcomment\s*%\}",
+                                  re.DOTALL)
+            stale = sorted({f"{path.relative_to(_ROOT)}:{word}"
+                            for path in (_ROOT / "templates").rglob("*.html")
+                            for word in ("cooling", "reclaimed", "held_places",
+                                         "live_processes", "turnover")
+                            if word in _comment.sub("", path.read_text())})
+            check("ни один шаблон витрины не ветвится по удалённым состояниям",
+                  not stale, f"осталось: {stale}")
 
             # --- КОНСОЛЬ: карточка клиента ------------------------------
             page.goto(f"{base}/{admin_path}/ops/{_SLOT_ORG}/", wait_until="networkidle")
@@ -656,36 +663,35 @@ def main() -> int:
                   len(console) > 200 and "Traceback" not in console,
                   f"{len(console)} симв.")
             check("консоль показывает занято числом сервера",
-                  "занято сейчас" in console and console.count("ДЕРЖИТ СЛОТ") == 1,
-                  f"«ДЕРЖИТ СЛОТ» встречается {console.count('ДЕРЖИТ СЛОТ')} раз(а)")
-            check("консоль различает состояния и называет отобранное место",
-                  "МОЛЧИТ — СЛОТ СВОБОДЕН" in console
-                  and "ОСТАНОВЛЕН — СЛОТ СВОБОДЕН" in console
-                  and "МЕСТО ОТОБРАНО — СЛОТ СВОБОДЕН" in console)
-            check("консоль называет срок молчания и бюджет перевыдач",
-                  f"{alive_label} молчания" in console
-                  and f"{turnover} из {captured['instances']['turnover_budget']}" in console)
-            # СТРОКА ЖИВОГО ИНСТАНСА ЦЕЛИКОМ: «столбец есть» на этой странице
-            # проходило бы и на старом шаблоне (слово встречается в соседней
-            # таблице), а утверждается здесь именно то, что в строке инстанса
-            # стоят его живые процессы и версия его движка.
-            alive_row = page.locator("tr", has_text=captured["holding"]).first.inner_text()
-            check("в строке живого инстанса стоят его процессы и версия движка",
-                  str(captured["workers"]["alive"]) in alive_row
+                  f"занято {view['occupied']} из {view['slot_count']}" in console,
+                  f"занято {view['occupied']} из {view['slot_count']}")
+            # ОДНО СЛОВО ПРО ОДИН СЛОТ НА ОБОИХ ЭКРАНАХ. Поддержка и клиент
+            # смотрят на один слот и обязаны видеть одну плашку; различаться
+            # должно объяснение вокруг неё, а не имя состояния (Б26bis).
+            check("кабинет и консоль рисуют один слот ОДНОЙ плашкой",
+                  console.count("ЗАНЯТ") >= view["occupied"]
+                  and "ЗАНЯТ" in body and "СВОБОДЕН" in console,
+                  "плашку собирает billing/slots.py, а не два шаблона порознь")
+            alive_row = page.locator(
+                "tr", has_text=captured["holding"]).first.inner_text()
+            check("в строке слота стоят его том, воркеры и версия движка",
+                  captured["holding"] in alive_row
+                  and str(captured["workers"]["live"]) in alive_row
                   and CAPTURE["engine_version"] in alive_row,
                   alive_row.replace("\n", " | "))
-            taken_row = page.locator("tr", has_text=captured["reclaimed"]).first.inner_text()
-            check("в строке отобранного места сказано, что будет дальше",
-                  "409" in taken_row and "МЕСТО ОТОБРАНО" in taken_row,
-                  taken_row.replace("\n", " | "))
+            drained_row = page.locator(
+                "tr", has_text=str(freed["draining"][0]["start_id"])).first.inner_text()
+            check("в строке свободного слота сказано, что на нём доцеживает",
+                  "отфенсено" in drained_row and "встанет само" in drained_row,
+                  drained_row.replace("\n", " | ")[:160])
 
             # --- КОНСОЛЬ: флот ------------------------------------------
             page.goto(f"{base}/{admin_path}/ops/", wait_until="networkidle")
             fleet = page.inner_text("body")
-            check("флот показывает занятые слоты, а не длину списка аренд",
-                  f"1 / {allowed}" in fleet and f"4 / {allowed}" not in fleet,
-                  f"{'есть 1 /' if f'1 / {allowed}' in fleet else 'НЕТ 1 /'}; "
-                  f"{'ЕСТЬ 4 /' if f'4 / {allowed}' in fleet else 'нет 4 /'}")
+            check("флот показывает занятые слоты, а не длину списка",
+                  f"{view['occupied']} / {allowed}" in fleet
+                  and f"{len(view['rows'])} / {allowed}" not in fleet,
+                  f"{view['occupied']} / {allowed}")
 
             # --- СЕРВЕР ОТВЕТИЛ, НО ЧИСЕЛ НЕ НАЗВАЛ ---------------------
             #
@@ -698,29 +704,44 @@ def main() -> int:
             check("кабинет не подставляет ноль за не названную сервером занятость",
                   "не назвал занятость" in thin
                   and f"0 из {allowed} занято" not in thin,
-                  f"{'сказано' if 'не назвал занятость' in thin else 'НЕ СКАЗАНО'}; "
-                  f"{'ЕСТЬ ноль' if f'0 из {allowed} занято' in thin else 'нуля нет'}")
-            check("незнакомое состояние названо, а не покрашено в знакомое",
-                  "ЗАНЯТОСТЬ НЕИЗВЕСТНА" in thin and "cooling" in thin
-                  and "СЛОТ СВОБОДЕН" not in thin,
-                  "есть «свободен» на неизвестной занятости"
-                  if "СЛОТ СВОБОДЕН" in thin else "свободным не назван")
-            check("кабинет не подставляет ноль за не названные процессы",
-                  "рабочих процессов сервер не назвал" in thin
-                  and "рабочих процессов 0" not in thin)
+                  f"{'сказано' if 'не назвал занятость' in thin else 'НЕ СКАЗАНО'}")
+            check("кабинет не подставляет ноль за не названных воркеров",
+                  "воркеров сервер не назвал" in thin
+                  and "воркеров слышно 0" not in thin)
             page.goto(f"{base}/{admin_path}/ops/{_SLOT_ORG}/", wait_until="networkidle")
             thin_console = page.inner_text("body")
             mute_row = page.locator("tr", has_text=captured["holding"]).first
             # КЛЕТКА, А НЕ СТРОКА: «нуля в строке нет» прошло бы и на нуле —
-            # в той же строке стоит версия движка.
-            mute_processes = mute_row.locator("td").nth(2).inner_text().strip()
+            # в той же строке стоит номер слота.
+            mute_workers = mute_row.locator("td").nth(3).inner_text().strip()
             check("консоль пишет «не назвал» вместо нуля занятых",
                   "не назвал занятость" in thin_console
-                  and "занято по тарифу 0" not in thin_console)
-            check("в строке без чисел стоит прочерк, а не ноль процессов",
-                  mute_processes == "—"
-                  and "ЗАНЯТОСТЬ НЕИЗВЕСТНА" in mute_row.inner_text(),
-                  f"клетка процессов: {mute_processes!r}")
+                  and "занято 0 из" not in thin_console)
+            check("в строке без чисел стоит прочерк, а не ноль воркеров",
+                  mute_workers == "—", f"клетка воркеров: {mute_workers!r}")
+
+            # --- СРАЗУ ПОСЛЕ ПЛАТФОРМЕННОГО РЕЛИЗА ----------------------
+            #
+            # Занято ноль, а контейнеры работают: миграция не назначает
+            # держателей, потому что перезапуски выпущенного флота от живых
+            # контейнеров неотличимы. Голый ноль здесь — такая же догадка, как
+            # «занято 4 из 4» с призраками, и краснеет это снятием
+            # `pending_installations` из ответа или из витрины.
+            _MODE["instances"] = "migrating"
+            page.goto(f"{base}/app/", wait_until="networkidle")
+            migrating = page.inner_text("body")
+            check("кабинет объясняет ноль занятых сразу после релиза, а не молчит",
+                  "0 из" in migrating and "прошлого релиза" in migrating
+                  and "3 контейнер" in migrating,
+                  next((line for line in migrating.splitlines()
+                        if "прошлого релиза" in line), "НИ СЛОВА"))
+            page.goto(f"{base}/{admin_path}/ops/{_SLOT_ORG}/",
+                      wait_until="networkidle")
+            migrating_console = page.inner_text("body")
+            check("и консоль поддержки говорит то же самое теми же словами",
+                  "прошлого релиза" in migrating_console,
+                  next((line for line in migrating_console.splitlines()
+                        if "прошлого релиза" in line), "НИ СЛОВА"))
 
             # --- МОЛЧАНИЕ СЕРВЕРА — ЭТО «НЕИЗВЕСТНО» --------------------
             _MODE["instances"] = "down"
@@ -731,37 +752,42 @@ def main() -> int:
                   f"{len(offline)} симв.")
             check("молчание сервера показано молчанием, а не нулём занятых слотов",
                   "неизвестно" in offline and f"0 из {allowed} занято" not in offline,
-                  f"{'сказано' if 'неизвестно' in offline else 'НЕ СКАЗАНО'}; "
-                  f"{'ЕСТЬ ноль' if f'0 из {allowed} занято' in offline else 'нуля нет'}")
+                  f"{'сказано' if 'неизвестно' in offline else 'НЕ СКАЗАНО'}")
             page.goto(f"{base}/{admin_path}/ops/", wait_until="networkidle")
             offline_fleet = page.inner_text("body")
             check("флот на молчащем сервере пишет «?», а не ноль занятых",
                   f"? / {allowed}" in offline_fleet
                   and f"0 / {allowed}" not in offline_fleet,
-                  f"{'есть ?' if f'? / {allowed}' in offline_fleet else 'НЕТ ?'}; "
-                  f"{'ЕСТЬ ноль' if f'0 / {allowed}' in offline_fleet else 'нуля нет'}")
+                  f"{'есть ?' if f'? / {allowed}' in offline_fleet else 'НЕТ ?'}")
             _MODE["instances"] = "snapshot"
 
-            # --- ПОТОЛОК РАБОЧИХ ПРОЦЕССОВ ------------------------------
+            # --- ПОЛНЫЙ ТАРИФ: ПЕРЕЗАПУСК ВЫТЕСНЯЕТ ПРЕДЫДУЩЕЕ ----------
             #
-            # Другая организация и другой человек: контейнер, у которого 32
-            # живых воркера, и настоящий 409 на тридцать третьем. Клиент читает
-            # в отказе число — и обязан найти его на своём экране.
-            ceiling = CAPTURE["ceiling"]
-            _sign_in(page, base, admin_path, _STAFF[_CEIL_ORG])
+            # Другая организация и другой человек: тариф в ОДИН слот, где
+            # перезапуск и есть смена поколения. Клиент читает в отказе своего
+            # движка «место занял более новый запуск» — и обязан найти на своём
+            # экране и это поколение, и остаток предыдущего.
+            fenced = CAPTURE["fenced"]
+            _sign_in(page, base, admin_path, _STAFF[_FENCE_ORG])
             check("вошёл вторым человеком, второй организации",
                   "/login" not in page.url, page.url.replace(base, ""))
             page.goto(f"{base}/app/", wait_until="networkidle")
             full = page.inner_text("body")
-            row = ceiling["instances"]["instances"][0]
-            check("кабинет упёршегося в потолок показывает те же числа, что и отказ",
-                  f"рабочих процессов {row['live_processes']}" in full
-                  and str(row["live_processes"]) in
-                  ceiling["refusals"]["process_ceiling"]["detail"],
-                  f"живых {row['live_processes']}")
-            check("кабинет называет занятые места под потолком тарифа",
-                  f"под потолком тарифа занято {row['held_places']}" in full,
-                  f"мест {row['held_places']}")
+            fenced_view = slotview.describe(fenced["instances"],
+                                            fenced["instances_at"])
+            gone = fenced_view["rows"][0]["draining"][0]
+            check("кабинет показывает НОВОЕ поколение на том же слоте",
+                  f"поколение {fenced['epochs']['second']}" in full
+                  and "1 из 1 занято" in full,
+                  f"эпох {fenced['epochs']['second']}")
+            check("и отфенсенное предыдущее — с остатком, а не как остановленное",
+                  f"предыдущее поколение {gone['epoch']}" in full
+                  and "доработает на уже купленном" in full,
+                  f"остаток до {gone['band_left']}")
+            check("а отказ, который движок пишет в лог, называет то же событие",
+                  "занял более новый запуск" in
+                  fenced["refusals"]["fenced_by_claim"]["detail"],
+                  fenced["refusals"]["fenced_by_claim"]["detail"][:90])
 
             browser.close()
     finally:

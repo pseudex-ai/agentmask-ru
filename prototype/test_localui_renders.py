@@ -71,6 +71,29 @@ _DEPRECATED_STATUS = {
 }
 
 
+# МЕСТО ЭТОГО ЗАПУСКА ЗАНЯЛ БОЛЕЕ НОВЫЙ. Второе тело того же `/status`: экран
+# обязан сказать, что это не поломка, назвать поколение и остаток купленного.
+# Отдельным телом, а не полем в первом, потому что проверяется ВЫБОР баннера —
+# вытеснение должно победить «версия устаревает», иначе оператор прочитает про
+# обновление там, где речь о переразвёртывании.
+_FENCED_STATUS = json.loads(json.dumps(_DEPRECATED_STATUS))
+_FENCED_STATUS["license"]["serving"] = True
+_FENCED_STATUS["license"]["slot"] = {
+    "state": "fenced", "start_id": "s-old", "slot_no": 1, "epoch": 6,
+    "slot_count": 2, "band_left": 1840,
+    "fenced": {"slot_no": 1, "epoch": 6, "current_epoch": 7,
+               "holder_start_id": "s-new", "holder_since": 1788998400.0,
+               "detail": "", "since": 1788998400.0},
+    "remedy": "Место этого запуска занял более новый запуск того же тарифа "
+              "(поколение 7). Этот контейнер доработает на уже купленной "
+              "ёмкости и остановится сам.",
+}
+
+# Какое тело отдавать сейчас. Мутируемый словарь, потому что обработчик крутится
+# в другом потоке того же процесса и читает его на каждом запросе.
+_SERVED = {"status": _DEPRECATED_STATUS}
+
+
 class _FakeEngine(http.server.BaseHTTPRequestHandler):
     """Движок из одного экрана: `/status` с вердиктом, остальное — пусто.
     Заголовок Authorization не проверяется: что интерфейс ходит с НУЖНЫМ
@@ -78,7 +101,7 @@ class _FakeEngine(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 — имя задаёт http.server
         path = self.path.split("?", 1)[0]
-        body: object = _DEPRECATED_STATUS if path == "/status" else (
+        body: object = _SERVED["status"] if path == "/status" else (
             {"orgs": ["default"]} if path == "/orgs" else {})
         payload = json.dumps(body).encode("utf-8")
         self.send_response(200)
@@ -192,6 +215,37 @@ def main() -> None:
             check("баннер именно предупреждение, не остановка",
                   banner.count() and "warn" in (banner.get_attribute("class") or ""),
                   banner.get_attribute("class") if banner.count() else "нет баннера")
+
+            # ВЫТЕСНЕНИЕ НА ЭКРАНЕ. Оператор, увидевший его, обязан понять
+            # причину без нас: кто занял место, сколько контейнер ещё
+            # проработает и что делать. И это НЕ «версия устаревает» — баннер
+            # один, и выбрать он обязан тот, что про сейчас.
+            _SERVED["status"] = _FENCED_STATUS
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(1200)
+            fenced_head = page.inner_text("header")
+            fenced_banner = page.locator(".banner").first
+            fenced_text = fenced_banner.inner_text() if fenced_banner.count() else ""
+            check("плашка говорит, что место занято, а не «РАБОТАЕТ»",
+                  "МЕСТО ЗАНЯТО" in fenced_head, fenced_head[:200])
+            # Неразрывный пробел русской локали приводится к обычному: экран
+            # печатает «1 840» через U+00A0, и сравнение с обычным пробелом
+            # падало бы на верном тексте.
+            plain = fenced_text.replace(" ", " ")
+            check("баннер называет поколение и остаток купленного",
+                  "поколение 7" in plain and "1 840" in plain, plain[:300])
+            check("и он предупреждение, а не остановка: контейнер работает",
+                  "warn" in (fenced_banner.get_attribute("class") or ""),
+                  fenced_banner.get_attribute("class") if fenced_banner.count() else "нет")
+            check("вытеснение победило «версия устаревает» — баннер про сейчас",
+                  "ВЕРСИЯ УСТАРЕВАЕТ" not in fenced_text, fenced_text[:120])
+            licence_cell = page.inner_text("main")
+            check("в карточке лицензии — место тарифа с номером поколения",
+                  "место тарифа" in licence_cell and "занято поколением 7" in licence_cell,
+                  licence_cell[:400])
+            _SERVED["status"] = _DEPRECATED_STATUS
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(1200)
 
             # ЭКРАН «ВЕРСИИ»: циклы из подписанного блока аренды, состояние по
             # датам, свой цикл помечен, команда обновления с целевым минором.

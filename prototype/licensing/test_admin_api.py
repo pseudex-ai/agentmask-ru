@@ -19,6 +19,7 @@
 импорта, потому что сервер читает их на импорте.
 """
 
+import json
 import os
 import secrets
 import subprocess
@@ -41,7 +42,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from licensing import server  # noqa: E402
 from licensing.store import LicenseStore  # noqa: E402
-from pseudex.bundle import generate_process_key  # noqa: E402
+from pseudex.bundle import generate_process_key, mac_report  # noqa: E402
 # Что движок считает ОТВЕТОМ, а что нашим сбоем, — читается из самого движка,
 # а не переписывается сюда строкой: копия жила бы своей жизнью ровно до первой
 # правки в `pseudex/license.py`.
@@ -157,7 +158,7 @@ check("неразобранный отчёт на /v1/usage — это 400 с п
 # А НА /v1/lease — ОТБРАСЫВАЕТСЯ, И АРЕНДА ВЫДАЁТСЯ. Спор о биллинге не имеет
 # права останавливать конечного пользователя.
 # Своя организация: у "v" тариф «Старт» = один инстанс, и слот уже занят
-# мусорным циклом выше. Отказ там был бы работой `may_lease`, а не дефектом.
+# мусорным циклом выше. Отказ там был бы работой допуска, а не дефектом.
 renew_key = admin.post("/admin/issue", json={"org_id": "r", "plan": "start"},
                        headers=ADMIN).json()["key"]
 renewer = generate_process_key().public
@@ -303,7 +304,7 @@ check("отвергнутая правка НЕ ложится на диск",
       f"было={before_min} стало={server.STORE.plan_row('work')['quantum_min']}")
 
 # НОВЫЙ ТАРИФ ОБЯЗАН НАЗВАТЬ ВСЕ ПОЛЯ. Для неизвестного кода недостающие поля
-# сливались с нулями, и `known_plan` такой тариф признавал: `may_lease` считал
+# сливались с нулями, и `known_plan` такой тариф признавал: допуск считал
 # `ceiling = allowed * 0 = 0` и отказывал клиенту в ПЕРВОЙ ЖЕ аренде, а нулевой
 # `quantum_max` делал то же с ёмкостью. На паре 0/0 проверка «пол выше потолка»
 # не срабатывает, а диапазонная проверка в ручке видит только присланные поля.
@@ -451,22 +452,67 @@ check("детализация цепи без org_id отказывает",
       admin.get("/admin/chains", headers=ADMIN).status_code == 400)
 
 
-# --- ПОТОЛОК ИНСТАНСОВ: СЛОТ ДЕРЖИТ ТОЛЬКО ЖИВОЙ ------------------------
-# Проверено руками до первой правки: на тарифе «Старт» (один контейнер)
-# поднимались пять подряд — каждый освобождал свой слот сам и уступал место
-# следующему. Ограничителей на это стало два — остывание слота на 300 с и
-# бюджет освобождений, — и замер показал, что связывает ТОЛЬКО бюджет
-# (3 в час против 12 у остывания). Остывание снято; карусель упирается в
-# бюджет ровно там же, где упиралась бы с ним.
-print("\nПОТОЛОК ИНСТАНСОВ")
-carousel_key = admin.post("/admin/issue", json={"org_id": "carousel", "plan": "start"},
-                          headers=ADMIN).json()["key"]
+# --- СЛОТЫ, ПОКОЛЕНИЯ, ФЕНСИНГ — ЧЕРЕЗ HTTP, ПРОТИВ НАСТОЯЩЕГО СЕРВЕРА ---
+#
+# ВСЁ, ЧТО СТОЯЛО ЗДЕСЬ РАНЬШЕ, УДАЛЕНО ВМЕСТЕ С МЕХАНИЗМАМИ, КОТОРЫЕ ОНО
+# ПИНИЛО, и каждое удаление названо тем дефектом, который оно лечило:
+#
+#   «карусель контейнеров упирается в бюджет перевыдач» — бюджет лечил
+#     Б26bis/ter (единственный ограничитель темпа карусели). Свойство УТРАТИЛО
+#     СИЛУ: карусель — это поколения на ОДНОМ слоте, из которых покупает ровно
+#     одно, умножения нет, ограничивать темп нечего. Остаток кольца бюджет и не
+#     ограничивал никогда («молчащее кольцо не ограничено»), и его величина
+#     печатается ниже числом.
+#   «замолчавший 20 мин контейнер отдаёт слот новому», «про движок без пульса
+#     сказано честно», «кабинет показывает труп silent» — лечили Б26 (труп
+#     держал слот до суток). ЛЕЧИТСЯ ТЕПЕРЬ: занятость не решается вовсе;
+#     вернувшаяся установка забирает свой слот по свидетельству личности,
+#     чужая — по ранжированию. Держится проверками «десять перезапусков» и
+#     «раскатка» ниже.
+#   «эхо ухода посчитано ПО КЛЮЧАМ», «а ушедший и продолжающий покупать
+#     ёмкость слота не отдаёт» — лечили Б26sexies (кольцо покупало ёмкость
+#     отпущенными ключами). ЛЕЧИТСЯ: покупка мимо текущего эпоха невозможна.
+#   «продление отобранного ключа — 409 instance_limit» — лечило Б26ter
+#     (отобранный ключ продлевался вечно). Свойство УТРАТИЛО СИЛУ: отбирать
+#     нечего, на аренде отказов нет; эквивалент — «отфенсенный не покупает».
+#   «потолок мест рабочих процессов отказывает и называет срок» — лечило
+#     Б26quater. Свойство УТРАТИЛО СИЛУ: мест нет.
+print("\nСЛОТЫ И ПОКОЛЕНИЯ")
 
 
-def lease_as(key: str, instance: str, pubkey: str, version: str = "1.0.0") -> int:
-    return public.post("/v1/lease", json={
-        "key": key, "instance_id": instance, "pubkey": pubkey,
-        "engine_version": version}).status_code
+def issue(org: str, plan: str = "start") -> str:
+    return admin.post("/admin/issue", json={"org_id": org, "plan": plan},
+                      headers=ADMIN).json()["key"]
+
+
+def lease_as(key: str, start: str, instance: str, pubkey: str,
+             version: str = "0.3.18", nonce: str = "n"):
+    body = {"key": key, "instance_id": instance, "pubkey": pubkey,
+            "engine_version": version, "nonce": nonce + pubkey[:8]}
+    if start is not None:
+        body["start_id"] = start
+    return public.post("/v1/lease", json=body)
+
+
+def meter_as(key: str, pubkey: str, consumed: int | None = None,
+             slot_no: int | None = None, epoch: int | None = None):
+    # ОДИН КВАНТ В СЕКУНДУ НА КЛЮЧ (`MIN_METER_INTERVAL_SECONDS`) — это НАША
+    # полоса, а не потолок тарифа, и честный движок приходит раз в четыре
+    # минуты. Мерить сквозь неё значило бы мерить лимит частоты вместо
+    # фенсинга, поэтому проверка её пережидает, а не отключает.
+    body: dict = {"key": key, "pubkey": pubkey, "nonce": "m" + pubkey[:8]}
+    if consumed is not None or slot_no is not None:
+        ack: dict = {"consumed": consumed or 0}
+        if slot_no is not None:
+            ack["slot_no"] = slot_no
+        if epoch is not None:
+            ack["epoch"] = epoch
+        body["ack"] = ack
+    answer = public.post("/v1/meter", json=body)
+    if answer.status_code == 429:
+        time.sleep(1.05)
+        answer = public.post("/v1/meter", json=body)
+    return answer
 
 
 def release_as(key: str, instance: str, pubkey: str) -> int:
@@ -474,372 +520,907 @@ def release_as(key: str, instance: str, pubkey: str) -> int:
         "key": key, "instance_id": instance, "pubkey": pubkey}).status_code
 
 
-served = []
+def slots_of(org: str) -> dict:
+    return admin.get(f"/admin/instances?org_id={org}", headers=ADMIN).json()
+
+
+def new_key() -> str:
+    return generate_process_key().public
+
+
+# ── S-01. ОБЫЧНЫЙ СТАРТ: N ВОРКЕРОВ ОДНОГО СТАРТА — ОДНО ПОКОЛЕНИЕ ──────────
+# Если бы воркеры считались поколениями, контейнер на тарифе «Старт» фенсил бы
+# сам себя и был бы сломан по построению. Поэтому `PSEUDEX_START_ID` чеканится
+# один раз до фан-аута, а сервер обязан прочесть N аренд как один старт.
+normal = issue("normal")
+codes = [lease_as(normal, "S1", "vol-one", new_key()).json() for _ in range(6)]
+view = slots_of("normal")
+holder = view["slots"][0]["holder"]
+check("шесть воркеров одного старта — один слот, один эпох",
+      {(row["slot_no"], row["epoch"]) for row in codes} == {(1, 1)},
+      f"{sorted({(r['slot_no'], r['epoch']) for r in codes})}")
+check("и это ОДНО поколение, а не шесть", view["generations_24h"] == 1,
+      f"поколений за сутки {view['generations_24h']}")
+check("занято — число сервера, воркеры — отдельное число",
+      view["occupied"] == 1 and holder["workers_heard"] == 6,
+      f"занято {view['occupied']}, воркеров {holder['workers_heard']}")
+
+# ── S-02. ДЕСЯТЬ ПЕРЕЗАПУСКОВ ПОДРЯД ────────────────────────────────────────
+# ЧИСЛО ИЗ Б26sexies СТОИТ В ТЕКСТЕ ПРОВЕРКИ КАК БАЗА: выпущенный 0.3.17 на
+# этом же сценарии отказывал на 6-м, 9-м и 3-м честном старте. Десять — потому
+# что «работает дважды» здесь и было дефектом.
+restart = issue("restart")
+restarts = [lease_as(restart, f"R{n}", "vol-one", new_key()) for n in range(10)]
+view = slots_of("restart")
+check("десять перезапусков подряд — ни одного отказа (0.3.17 отказывал на 6/9/3)",
+      all(r.status_code == 200 for r in restarts),
+      f"коды {[r.status_code for r in restarts]}")
+check("и это десять поколений на ОДНОМ слоте, эпох 10",
+      view["slot_count"] == 1 and view["slots"][0]["epoch"] == 10
+      and view["generations_24h"] == 10,
+      f"слотов {view['slot_count']}, эпох {view['slots'][0]['epoch']}")
+
+# ── S-03. OOM-КИЛЛ == ПЕРЕЗАПУСК, БАЙТ В БАЙТ ──────────────────────────────
+# Один код с флагом «звать release или нет»; записи сервера обязаны различаться
+# ТОЛЬКО тем, что решения не читают. Пара, потому что по отдельности каждая
+# половина зелёная при сломанной второй.
+def two_restarts(org: str, say_goodbye: bool) -> dict:
+    key = issue(org)
+    first = new_key()
+    lease_as(key, "G1", "vol-one", first)
+    if say_goodbye:
+        release_as(key, "vol-one", first)
+    lease_as(key, "G2", "vol-one", new_key())
+    return slots_of(org)
+
+
+polite, killed = two_restarts("polite", True), two_restarts("killed", False)
+
+
+def decisive(view: dict) -> dict:
+    slot = view["slots"][0]
+    return {"epoch": slot["epoch"], "occupied": view["occupied"],
+            "installation": slot["holder"]["installation_id"],
+            "start_id": slot["holder"]["start_id"],
+            "generations": view["generations_24h"]}
+
+
+check("OOM и docker stop дают одинаковые записи во всём, что читает решение",
+      decisive(polite) == decisive(killed),
+      f"{decisive(polite)} vs {decisive(killed)}")
+check("и разница есть только в том, что решений не читает (released)",
+      polite["slots"][0]["holder"]["released"] is False
+      and killed["slots"][0]["holder"]["released"] is False,
+      "обе записи — про НОВОЕ поколение, прощание записано у предыдущего")
+
+# ── S-04. ПЕРЕКАТНОЕ ОБНОВЛЕНИЕ: ДВА ЖИВЫХ, ПОКУПАЕТ ОДИН ──────────────────
+# K8s удваивает однорепличный Deployment по умолчанию, поэтому два живых
+# контейнера на тарифе в один — штатно, при КАЖДОМ обновлении.
+rollout = issue("rollout")
+old_key, new_pod = new_key(), new_key()
+lease_as(rollout, "OLD", "vol-one", old_key)
+before = meter_as(rollout, old_key)
+lease_as(rollout, "NEW", "vol-one", new_pod)
+fenced = meter_as(rollout, old_key)
+fresh = meter_as(rollout, new_pod)
+check("на аренде раскатки ни одного 409", fresh.status_code == 200,
+      f"новый под -> {fresh.status_code}")
+check("старый под отфенсен на ПОКУПКЕ, а не на аренде",
+      before.status_code == 200 and fenced.status_code == 409
+      and fenced.json().get("error") == "fenced",
+      f"до {before.status_code}, после {fenced.status_code} "
+      f"{fenced.json().get('error')}")
+check("отказ называет ЧТО произошло и не советует останавливать несуществующее",
+      "занял более новый запуск" in fenced.json().get("detail", "")
+      and "лишний" not in fenced.json().get("detail", "").lower(),
+      fenced.json().get("detail", "")[:100])
+check("и несёт свой эпох, текущий и держателя — чтобы клиент мог это показать",
+      {"slot_no", "epoch", "current_epoch", "holder_start_id", "holder_since"}
+      <= set(fenced.json()),
+      f"{sorted(fenced.json())}")
+
+# ── S-16. ФОРМА ОТКАЗА — ЭТО ТРЕБОВАНИЕ К ВЫПУЩЕННОМУ ФЛОТУ (Б30) ──────────
+# Здесь стоял `instance_limit`, и комментарий сервера обещал, что «процесс
+# доживает на уже купленном кванте». Выпущенный движок делал обратное:
+# `instance_limit ∈ _ANSWER_CODES` → `_terminal_code` → `_expire()` → бандл
+# выгружен, `/mask` 503 в ту же секунду, оплаченный остаток сгорел.
+check("код отказа ВНЕ _ANSWER_CODES выпущенных движков — иначе флот гаснет, а не доцеживает",
+      "fenced" not in _license_answer_codes,
+      f"_ANSWER_CODES={sorted(_license_answer_codes)}")
+check("и едет как 409, который движок держит за временный сбой",
+      fenced.status_code == 409,
+      "неизвестный статус вне _GRACE_WORTHY_STATUS движок читает как LicenseError")
+import pathlib as _pathlib  # noqa: E402
+
+_server_source = _pathlib.Path("licensing/server.py").read_text(encoding="utf-8")
+_meter_block = _server_source[_server_source.index('@app.post("/v1/meter")'):
+                              _server_source.index('@app.post("/v1/usage")')]
+check("`/v1/meter` не выдаёт instance_limit ни на одном пути",
+      '"instance_limit"' not in _meter_block,
+      "греп по телу ручки + прогон выше")
+
+# ── S-09. ВСЁ, ЧТО МЫ ЗНАЕМ, — НАША ЗАПИСЬ ─────────────────────────────────
+# Клиент называет `instance_id` и `start_id` сам, поэтому он выбирает, КАКОЙ
+# слот занять; завести слот, понизить эпох или купить мимо текущего эпоха он не
+# может ничем.
+ours = issue("ours")
+mine = new_key()
+claim = lease_as(ours, "O1", "vol-one", mine).json()
+# ПЕРВЫЙ КВАНТ ПОКУПАЕТСЯ ЧЕСТНО, И ТОЛЬКО ПОТОМ ВРЁТ ТЕГ. Первый квант
+# процесса продаётся всегда, даже отфенсенному (иначе выпущенный движок,
+# покупающий его внутри `acquire()`, не поднялся бы вовсе), — значит соврать
+# в него нельзя и проверять на нём фенсинг бессмысленно.
+meter_as(ours, mine, consumed=0, slot_no=claim["slot_no"], epoch=claim["epoch"])
+liar = meter_as(ours, mine, consumed=5, slot_no=claim["slot_no"],
+                epoch=claim["epoch"] + 5)
+check("эпох в ack НОВЕЕ текущего — это не «ещё новее», это fenced",
+      liar.status_code == 409 and liar.json().get("error") == "fenced",
+      f"{liar.status_code} {liar.json().get('error')}")
+wrong_slot = meter_as(ours, mine, consumed=5, slot_no=claim["slot_no"] + 1,
+                      epoch=claim["epoch"])
+check("чужой slot_no в ack — тоже fenced, а не выдача по чужому тегу",
+      wrong_slot.status_code == 409, f"{wrong_slot.status_code}")
+honest = meter_as(ours, mine, consumed=5, slot_no=claim["slot_no"],
+                  epoch=claim["epoch"])
+check("а сошедшийся тег покупает как обычно", honest.status_code == 200,
+      f"{honest.status_code}")
+check("слотов ровно столько, сколько по тарифу — назвать лишний нечем",
+      len(slots_of("ours")["slots"]) == slots_of("ours")["slot_count"] == 1)
+
+# ── S-10. ГОНКА: СТО ОДНОВРЕМЕННЫХ АРЕНД ОДНОГО СТАРТА ─────────────────────
+# Между отдельным решением и отдельной записью лок отпускался, и замер прошлого
+# захода дал 71 гонку из 100, прошедшую потолок. Здесь чеканится ЭПОХ, и сто
+# воркеров одного старта обязаны получить один.
+import threading as _threading  # noqa: E402
+
+race_key = issue("race")
+race_results: list[int] = []
+race_lock = _threading.Lock()
+barrier = _threading.Barrier(50)
+
+
+def _race(number: int) -> None:
+    barrier.wait()
+    got = lease_as(race_key, "RACE", "vol-one", new_key()).json()
+    with race_lock:
+        race_results.append(got.get("epoch", -1))
+
+
+threads = [_threading.Thread(target=_race, args=(n,)) for n in range(50)]
+for thread in threads:
+    thread.start()
+for thread in threads:
+    thread.join()
+check("пятьдесят одновременных аренд одного старта — ровно один эпох",
+      set(race_results) == {1}, f"эпохи {sorted(set(race_results))}")
+
+# ── S-06. КОЛЬЦО: ОСТАТОК ПЕЧАТАЕТСЯ ЧИСЛОМ, А НЕ ОБЪЯВЛЯЕТСЯ ЗАКРЫТЫМ ─────
+# Конструкция делает обороты ВИДИМЫМИ и не делает их дороже: полоса на аренду —
+# `Q_min` тарифа, ровно как сегодня. Число печатается здесь, чтобы никто не
+# назвал этот класс закрытым (§8.1).
+ring = issue("ring")
+TURNS = 8
+for turn in range(TURNS):
+    process = new_key()
+    lease_as(ring, f"T{turn}", "vol-one", process)
+    meter_as(ring, process)
+    release_as(ring, "vol-one", process)
+view = slots_of("ring")
+usage = admin.get("/admin/usage?org_id=ring", headers=ADMIN).json().get("usage", {})
+granted = int(usage.get("capacity_granted", 0))
+check("кольцо видно ПОИМЁННО: эпох = числу оборотов, все без подтверждения",
+      view["slots"][0]["epoch"] == TURNS and view["generations_24h"] == TURNS
+      and view["epochs_unacked_24h"] == TURNS,
+      f"эпох {view['slots'][0]['epoch']}, без ack {view['epochs_unacked_24h']}")
+check(f"ОСТАТОК, НАЗВАННЫЙ ЧИСЛОМ: {granted} выданной ёмкости при нуле к начислению",
+      granted == 200 * TURNS and int(usage.get("capacity_billable", 0)) == 0,
+      f"granted={granted}, billable={usage.get('capacity_billable')} — "
+      f"это те же 200 за оборот, что и до слотов; закрывает договор, не техника")
+anomalies = admin.get("/admin/anomalies", headers=ADMIN).json().get("anomalies", [])
+ring_row = next((row for row in anomalies if row["org_id"] == "ring"), None)
+check("и организация попадает в аномалии с причиной про поколения без расхода",
+      ring_row is not None and ring_row["epochs_unacked"] == TURNS
+      and any("acknowledged nothing" in reason for reason in ring_row["reasons"]),
+      f"{ring_row['reasons'] if ring_row else 'её нет в отчёте'}")
+
+# ── S-07. КЛОН ТОМА: ДВА СТАРТА ОДНОЙ УСТАНОВКИ ЧЕРЕДУЮТСЯ НА ОДНОМ СЛОТЕ ──
+clone = issue("clone")
+first_key, second_key = new_key(), new_key()
+lease_as(clone, "C1", "vol-one", first_key)
+meter_as(clone, first_key)
+lease_as(clone, "C2", "vol-one", second_key)          # клон на второй машине
+meter_as(clone, second_key)                           # его первый квант — внутри acquire()
+first_fenced = meter_as(clone, first_key)
+lease_as(clone, "C1", "vol-one", first_key)           # перезаявка первого
+second_fenced = meter_as(clone, second_key)
+view = slots_of("clone")
+check("клон тома делит ОДИН слот, а не заводит второй инстанс",
+      view["slot_count"] == 1 and view["occupied"] == 1,
+      f"{view['occupied']} из {view['slot_count']}")
+check("и каждый покупает только пока держит: чередование, а не удвоение",
+      first_fenced.status_code == 409 and second_fenced.status_code == 409,
+      f"{first_fenced.status_code}/{second_fenced.status_code}")
+check("перезаявки видны числом — это вход аномалии slot_contention",
+      view["slot_contention_24h"] >= 1, f"{view['slot_contention_24h']}")
+
+# ── S-08. РОСТ С 2 ДО 20 ВОРКЕРОВ (E8 ИСЧЕЗАЕТ КАК КЛАСС) ─────────────────
+# E8: шестнадцать воркеров упирались в потолок МЕСТ на третьем перезапуске.
+# Мест нет — нечему кончаться.
+wide = issue("wide")
+first_wave = [lease_as(wide, "W1", "vol-one", new_key()) for _ in range(20)]
+second_wave = [lease_as(wide, "W2", "vol-one", new_key()) for _ in range(20)]
+view = slots_of("wide")
+check("двадцать воркеров и перезапуск на двадцать новых — ни одного отказа",
+      all(r.status_code == 200 for r in first_wave + second_wave),
+      f"отказов {sum(1 for r in first_wave + second_wave if r.status_code != 200)}")
+check("и старые двадцать ключей не считаются нигде",
+      view["slots"][0]["holder"]["workers_heard"] == 20
+      and view["slots"][0]["epoch"] == 2,
+      f"воркеров {view['slots'][0]['holder']['workers_heard']}")
+check("processes_per_instance — строка тарифа для экрана, не замок",
+      view["processes_per_instance"] == 32,
+      "печатается как «тариф рассчитан на 32», решений не принимает")
+
+# ── S-05. ОБРЫВ СЕТИ НА 72 Ч (§4.5) ────────────────────────────────────────
+# ЭТОТ СЦЕНАРИЙ — ЕДИНСТВЕННЫЙ, ГДЕ КЛИЕНТ НЕ ДЕЛАЕТ РОВНО НИЧЕГО, и проверять
+# «сервер не принял решения по молчанию» через «ничего не произошло» нельзя:
+# такая проверка не может упасть, а значит ничего не держит (§9). Поэтому
+# молчание здесь ЗАПУСКАЕТ ту работу, которая по молчанию и судила в шести
+# прошлых заходах, — окно аренды истекает, и по таблицам проходит чистка. Слот
+# обязан пережить и то и другое.
+outage = issue("outage")
+out_key = new_key()
+lease_as(outage, "O1", "vol-one", out_key)
+meter_as(outage, out_key)
+before_outage = slots_of("outage")["slots"][0]
+
+# 72 часа: аренда вышла из окна, отметку слота не двигали трое суток.
+_gone = time.time() - 72 * 3600
+server.STORE._conn.execute("UPDATE leases SET issued_at=? WHERE org_id=?",
+                           (_gone, "outage"))
+server.STORE._conn.execute("UPDATE generations SET last_lease_at=? WHERE org_id=?",
+                           (_gone, "outage"))
+server.STORE._conn.execute("UPDATE slots SET last_heard_at=? WHERE org_id=?",
+                           (_gone, "outage"))
+server.STORE._conn.commit()
+server.STORE.prune_leases(86400)
+
+after_outage = slots_of("outage")["slots"][0]
+check("трое суток молчания не двигают ни эпох, ни держателя — по молчанию "
+      "сервер не решает ничего",
+      after_outage["epoch"] == before_outage["epoch"]
+      and after_outage["holder"] is not None
+      and after_outage["holder"]["start_id"] == "O1",
+      f"эпох {before_outage['epoch']} -> {after_outage['epoch']}, "
+      f"держатель {after_outage['holder'] and after_outage['holder']['start_id']}")
+
+# ВОЗВРАТ. Аренда та же, поколение своё — эпох НЕ поднимается: это продление, а
+# не перезаявка. Краснеет, если чистка забрала строку поколения держателя.
+back = lease_as(outage, "O1", "vol-one", out_key, nonce="back")
+_back_view = slots_of("outage")
+check("возврат после обрыва — тот же эпох и ни одного отказа",
+      back.status_code == 200
+      and back.json()["epoch"] == before_outage["epoch"]
+      and _back_view["generations_24h"] == 1,
+      f"{back.status_code} эпох {back.json().get('epoch')} "
+      f"поколений {_back_view['generations_24h']}")
+check("и покупки возобновились с первого же кванта",
+      meter_as(outage, out_key).status_code == 200,
+      "иначе обрыв стоил бы клиенту слота, которого у него никто не забирал")
+
+# ЗАМЕНА НА НОВОМ ТОМЕ ВО ВРЕМЯ ОБРЫВА. Тариф в один слот, свободных нет —
+# ранжирование отдаёт слот тому, кого слышали раньше всех, то есть молчащему
+# O1. Вернувшийся O1 получает 409 на ПОКУПКЕ и 200 на аренде, перезаявляет и
+# забирает слот назад: два живых контейнера чередуются (§3bis.3), и ни один не
+# заперт. Краснеет при возврате порога «молчит дольше T» в любую из сторон.
+swap = issue("swap")
+old_vol, new_vol = new_key(), new_key()
+lease_as(swap, "SW-OLD", "vol-old", old_vol)
+meter_as(swap, old_vol)
+server.STORE._conn.execute("UPDATE slots SET last_heard_at=? WHERE org_id=?",
+                           (time.time() - 72 * 3600, "swap"))
+server.STORE._conn.commit()
+replacement = lease_as(swap, "SW-NEW", "vol-new", new_vol)
+check("замена на НОВОМ томе во время обрыва получает слот арендой, а не отказом",
+      replacement.status_code == 200 and replacement.json()["slot_no"] == 1
+      and replacement.json()["epoch"] == 2,
+      f"{replacement.status_code} слот {replacement.json().get('slot_no')} "
+      f"эпох {replacement.json().get('epoch')}")
+returned = meter_as(swap, old_vol)
+check("а вернувшийся из обрыва узнаёт об этом на ПОКУПКЕ, доцеживая купленное",
+      returned.status_code == 409 and returned.json()["error"] == "fenced",
+      f"{returned.status_code} {returned.json().get('error')}")
+reclaim = lease_as(swap, "SW-OLD", "vol-old", old_vol)
+swap_view = slots_of("swap")
+check("его перезаявка возвращает слот — ни один из двух не заперт",
+      reclaim.status_code == 200 and reclaim.json()["epoch"] == 3
+      and swap_view["slots"][0]["holder"]["start_id"] == "SW-OLD",
+      f"эпох {reclaim.json().get('epoch')}, держатель "
+      f"{swap_view['slots'][0]['holder']['start_id']}")
+check("а чередование названо числом, а не спрятано",
+      swap_view["slot_contention_24h"] >= 1,
+      f"slot_contention_24h {swap_view['slot_contention_24h']}")
+
+# ── S-11. ПРОКСИ И САЙДКАР — ОДНА ЛИЧНОСТЬ, ОДНИ ЗАПИСИ (§4.9) ─────────────
+# Слой лицензии не знает, какое плечо его вызвало, и проверяется это ДВАЖДЫ,
+# потому что разойтись эти два плеча уже успевали: `proxy.py` держал случайный
+# `instance_id`, пока сайдкар брал его из тома, и один `docker restart` запирал
+# клиента на сутки. Одинаковость конструкции — мехническая половина; вторая
+# половина в том, что сервер не читает из тела аренды ничего, чем плечи
+# отличаются.
+import ast as _ast
+
+
+def _license_kwargs(path: str) -> dict[str, str]:
+    tree = _ast.parse(Path(path).read_text(encoding="utf-8"))
+    for node in _ast.walk(tree):
+        if (isinstance(node, _ast.Call) and isinstance(node.func, _ast.Name)
+                and node.func.id == "LicenseClient"):
+            return {kw.arg or "": _ast.unparse(kw.value) for kw in node.keywords}
+    return {}
+
+
+_proxy_kwargs = _license_kwargs("pseudex/proxy.py")
+_service_kwargs = _license_kwargs("pseudex/service.py")
+_differ = sorted(name for name in set(_proxy_kwargs) | set(_service_kwargs)
+                 if _proxy_kwargs.get(name) != _service_kwargs.get(name))
+check("оба плеча собирают клиента лицензии ОДНИМ И ТЕМ ЖЕ выражением",
+      bool(_proxy_kwargs) and _proxy_kwargs == _service_kwargs,
+      f"расходятся: {_differ}" if _differ else
+      f"{len(_proxy_kwargs)} аргументов, включая instance_id и usage_provider")
+
+# И СЛОЙ ЛИЦЕНЗИИ НЕ ЗНАЕТ НИ ОДНОГО ПОНЯТИЯ ПЛЕЧА. `conversation_id` — область
+# ПОДМЕН (волт); попади оно сюда, слот стал бы функцией трафика.
+_license_source = Path("pseudex/license.py").read_text(encoding="utf-8")
+check("и не знает ни одного понятия шлюза — слот не функция трафика",
+      "conversation_id" not in _license_source and "org_id" not in _license_source,
+      "иначе одно плечо заводило бы поколения там, где другое продлевает")
+
+# ПОВЕДЕНЧЕСКАЯ ПОЛОВИНА: одна последовательность событий, разные плечи.
+# Отличие плеч в теле аренды не существует, и это проверяется тем, что сервер
+# на лишние поля не реагирует ни одной записью.
+legs = {}
+for leg, extra in (("sidecar", {}),
+                   ("proxy", {"conversation_id": "c-1", "org_id": "ignored"})):
+    org = f"leg-{leg}"
+    leg_key, leg_pub = issue(org), new_key()
+    body = {"key": leg_key, "instance_id": "vol-one", "pubkey": leg_pub,
+            "engine_version": "0.3.18", "nonce": "leg" + leg_pub[:8],
+            "start_id": "LEG", **extra}
+    public.post("/v1/lease", json=body)
+    meter_as(leg_key, leg_pub)
+    view = slots_of(org)
+    row = server.STORE._fetchone(
+        "SELECT slot_no, epoch FROM meter WHERE org_id=?", (org,))
+    legs[leg] = {"epoch": view["slots"][0]["epoch"], "occupied": view["occupied"],
+                 "generations": view["generations_24h"],
+                 "start_id": view["slots"][0]["holder"]["start_id"],
+                 "meter_tag": (int(row[0] or 0), int(row[1] or 0))}
+check("одна последовательность событий даёт одинаковые записи с обоих плеч",
+      legs["sidecar"] == legs["proxy"],
+      f"{legs['sidecar']} vs {legs['proxy']}")
+
+# ── ПОРЯДОК ПРЕДПОЧТЕНИЯ СЛОТОВ: СВОЙ РАНЬШЕ СВОБОДНОГО ───────────────────
+# ОТСТУПЛЕНИЕ ОТ БУКВЫ §3.2 ТЗ, И ВОТ ЧЕМ ОНО КУПЛЕНО. Там порядок a→b→c:
+# свободный слот, потом СВОЙ (та же установка), потом ранжирование. На тарифе
+# в один слот оба порядка совпадают — свободных не бывает, — и все девять
+# сценариев ТЗ написаны на нём. На тарифе с запасом буква давала экран, который
+# врёт: ОДИН контейнер, перезапущенный трижды, занимал три слота (каждый старт
+# брал очередной свободный, прежний оставался за мёртвым поколением), и кабинет
+# печатал «занято 3 из 3» клиенту с одним работающим контейнером — то есть
+# продавал апгрейд, которого не нужно. Это класс Б26bis дословно.
+#
+# Проверка краснеет при возврате буквы: `walked` станет [1, 2, 3].
+roomy_plan = "industrial"
+roomy = issue("roomy", roomy_plan)
+walked = [lease_as(roomy, f"K{n}", "vol-one", new_key()).json()["slot_no"]
+          for n in range(3)]
+roomy_view = slots_of("roomy")
+check("перезапуск ТОЙ ЖЕ установки возвращается на СВОЙ слот, а не берёт новый",
+      walked == [1, 1, 1], f"слоты {walked}")
+check("и занятость остаётся одна — столько контейнеров у клиента и есть",
+      roomy_view["occupied"] == 1 and roomy_view["slots"][0]["epoch"] == 3,
+      f"занято {roomy_view['occupied']} из {roomy_view['slot_count']}, "
+      f"поколение {roomy_view['slots'][0]['epoch']}")
+# А ЧУЖАЯ УСТАНОВКА ПРИ СВОБОДНЫХ СЛОТАХ БЕРЁТ СВОБОДНЫЙ, А НЕ ВЫТЕСНЯЕТ.
+# Иначе «свой раньше свободного» превратилось бы в «все на первый слот».
+other = lease_as(roomy, "K-other", "vol-two", new_key()).json()
+check("другая установка при свободных слотах занимает свободный",
+      other["slot_no"] == 2 and slots_of("roomy")["occupied"] == 2,
+      f"слот {other['slot_no']}")
+
+# ── ВОРКЕРЫ ОДНОГО СТАРТА НЕ ФЕНСЯТ ДРУГ ДРУГА ЧЕРЕЗ ПЕРЕЗАЯВКУ ───────────
+# Перезаявляет ОДИН воркер, а эпох поднимается у ВСЕГО поколения; привязки
+# братьев остаются на прежнем номере. Пока фенсинг судил по строке аренды
+# каждого ключа, контейнер, ДЕРЖАЩИЙ слот, темнел на всех воркерах, кроме
+# перезаявившего, — и отказ дословно называл его же старт «более новым
+# запуском». Раскатка K8s на одном PVC с двумя воркерами в поде попадала в это
+# штатно. Краснеет возвратом сверки на `binding["epoch"]`.
+siblings = issue("siblings")
+sib_one, sib_two = new_key(), new_key()
+lease_as(siblings, "POD", "vol-one", sib_one)
+lease_as(siblings, "POD", "vol-one", sib_two)
+meter_as(siblings, sib_one)                            # первый квант обоих воркеров
+meter_as(siblings, sib_two)
+lease_as(siblings, "OTHER", "vol-two", new_key())      # вытеснил поколение POD
+check("вытесненный воркер отфенсен", meter_as(siblings, sib_one).status_code == 409)
+lease_as(siblings, "POD", "vol-one", sib_one)          # ОДИН воркер перезаявил
+check("перезаявка одного воркера вернула слот всему поколению",
+      slots_of("siblings")["slots"][0]["holder"]["start_id"] == "POD")
+check("и БРАТ того же старта покупает, а не темнеет",
+      meter_as(siblings, sib_two).status_code == 200,
+      "фенсит поколение, а не строка аренды воркера")
+
+# ── ПУСТОЙ СЛОТ НЕ НАЗЫВАЕТ ДЕРЖАТЕЛЯ ─────────────────────────────────────
+# Понижение тарифа и возврат обратно снимают `retired`, но эпох уже поднят, а
+# держателя нет. Общий текст говорил «место занял более новый запуск того же
+# тарифа … слышали 0 с назад» про ПУСТОЙ слот — тот самый совет, который
+# опровергается собственным экраном клиента (Б26).
+empty = issue("emptyslot", "work")
+empty_keys = [new_key() for _ in range(4)]
+for number, process in enumerate(empty_keys):
+    lease_as(empty, f"E{number}", f"vol-{number}", process)
+    meter_as(empty, process)                           # первый квант — внутри acquire()
+admin.post("/admin/replan", json={"org_id": "emptyslot", "plan": "start"}, headers=ADMIN)
+admin.post("/admin/replan", json={"org_id": "emptyslot", "plan": "work"}, headers=ADMIN)
+orphan = meter_as(empty, empty_keys[2])
+check("отказ по слоту без держателя не выдумывает более новый запуск",
+      orphan.status_code == 409
+      and "занял более новый запуск" not in orphan.json().get("detail", ""),
+      orphan.json().get("detail", "")[:90])
+
+# ── ПОТОЛОК ЧАСТОТЫ РЕЖЕТ ИМЕННО ОТФЕНСЕННЫЙ ТРАФИК ───────────────────────
+# §3.4 ТЗ закладывает, что отфенсенный ВЫПУЩЕННЫЙ движок повторяет `/v1/meter`
+# каждый тик до продления (до восьми часов), и §7 переводит в это состояние
+# весь флот на время миграции. Потолок читал `meter.updated_at`, а его двигает
+# только УСПЕШНАЯ покупка — то есть резал кого угодно, кроме этого трафика.
+flood = issue("flood")
+flood_key = new_key()
+lease_as(flood, "F1", "vol-one", flood_key)
+meter_as(flood, flood_key)                             # первый квант — внутри acquire()
+time.sleep(1.05)                                       # потолок частоты — ровно секунда
+lease_as(flood, "F2", "vol-two", new_key())
+storm = [public.post("/v1/meter", json={"key": flood, "pubkey": flood_key,
+                                        "nonce": "f"}).status_code
+         for _ in range(20)]
+check("двадцать покупок отфенсенного подряд — не двадцать обращений к хранилищу",
+      storm.count(429) >= 18 and storm[0] == 409,
+      f"429 = {storm.count(429)}, первый {storm[0]}")
+
+# ── ОТМЕТКУ СЛОТА СТАВИМ МЫ, А НЕ ПОЛЯ ТЕЛА ОТЧЁТА ────────────────────────
+# `slot_no`/`epoch` лежали в `/v1/usage` ВЕРХНЕУРОВНЕВО, вне подписи отчёта, и
+# сервер не сверял их ни с чем: ключ, держащий слот 2, двигал отметку слота 1
+# соседнего поколения. Отметка — единственный вход ранжирования 2c, поэтому
+# подделка позволяла держать мёртвый слот «свежим» и заставлять пришедшее
+# поколение вытеснить ЖИВОГО соседа вместо трупа.
+spoof = issue("spoof", "work")
+spoof_one, spoof_two = new_key(), new_key()
+lease_as(spoof, "SP1", "vol-one", spoof_one)
+lease_as(spoof, "SP2", "vol-two", spoof_two)
+
+
+def _heard(org: str, slot_no: int) -> float:
+    row = server.STORE._fetchone(
+        "SELECT last_heard_at FROM slots WHERE org_id=? AND slot_no=?",
+        (org, slot_no))
+    return float(row[0] or 0.0)
+
+
+heard_before = _heard("spoof", 1)
+time.sleep(0.05)
+spoofed = public.post("/v1/usage", json={
+    "key": spoof, "instance_id": "vol-two", "pubkey": spoof_two,
+    "usage": {"requests": 1, "entities": {}}, "slot_no": 1, "epoch": 1})
+check("чужой ключ не двигает отметку слота, который держит не он",
+      spoofed.status_code == 200 and _heard("spoof", 1) == heard_before,
+      f"было {heard_before}, стало {_heard('spoof', 1)}")
+check("а свою отметку тот же отчёт двигает — без единого поля в теле",
+      _heard("spoof", 2) > heard_before,
+      "выпущенный флот этих полей не шлёт вовсе")
+
+# ── ОТОЗВАННЫЙ КЛЮЧ СТАРШЕГО ТАРИФА НЕ ДЕРЖИТ ЧИСЛО СЛОТОВ ────────────────
+# `org_plan` брал самый щедрый тариф среди ВСЕХ ключей организации без фильтра
+# по статусу: понижение отзывом ключа (или выдачей через /admin/issue мимо
+# /admin/replan) не доходило до потолка вовсе.
+downgraded = issue("downgraded", "industrial")
+row = server.STORE._fetchone(
+    "SELECT key_hash FROM keys WHERE org_id=? AND plan=?", ("downgraded", "industrial"))
+admin.post("/admin/revoke_key", json={"key_hash": row[0]}, headers=ADMIN)
+# И ПОТОЛОК ПЕРЕСЧИТЫВАЕТСЯ В МОМЕНТ ОТЗЫВА, А НЕ ЖДЁТ ЧЬЕЙ-ТО АРЕНДЫ. Строки
+# `slots` оставались от «Промышленного» до следующей аренды, и всё это время
+# экран отдавал двенадцать живых слотов при `slot_count` один — занятость,
+# способная превысить потолок, это тот же дефект Б26bis.
+straight_after = slots_of("downgraded")
+check("отзыв ключа сразу сводит живые слоты к новому тарифу",
+      len(straight_after["slots"]) == straight_after["slot_count"] == 1,
+      f"живых слотов {len(straight_after['slots'])} при "
+      f"slot_count {straight_after['slot_count']}")
+smaller = issue("downgraded", "start")
+after_revoke = lease_as(smaller, "D1", "vol-one", new_key()).json()
+check("отозванный ключ больше не задаёт число слотов",
+      after_revoke["slot_count"] == 1, f"slot_count {after_revoke['slot_count']}")
+
+# ── ОТФЕНСЕННОЕ ДО ПЕРВОЙ ПОКУПКИ НАЗВАНО НА ЭКРАНЕ ───────────────────────
+# `draining` фильтровался по `band_left_estimate > 0`, и поколение, у которого
+# соперник занял слот МЕЖДУ арендой и первым квантом, исчезало с экрана
+# целиком: контейнер поднялся, `/mask` отдаёт 503, а оператор не находит о нём
+# ни строчки. Именно нулевая полоса и значит «не обслуживает».
+coldstart = issue("coldstart")
+cold_key = new_key()
+lease_as(coldstart, "COLD", "vol-one", cold_key)
+lease_as(coldstart, "RIVAL", "vol-two", new_key())
+cold_view = slots_of("coldstart")["slots"][0]
+check("поколение с нулевой полосой названо в draining, а не пропало",
+      [row["start_id"] for row in cold_view["draining"]] == ["COLD"],
+      f"{cold_view['draining']}")
+
+# ── S-18. /v1/release НИЧЕГО НЕ РЕШАЕТ ────────────────────────────────────
+# Это единственное правило, которое разом выполняет Б26quinquies («честный уход
+# не стоит ничего») и требование конструкции («прощание не нужно»).
+quiet = issue("quiet")
+quiet_key = new_key()
+lease_as(quiet, "Q1", "vol-one", quiet_key)
+before_release = slots_of("quiet")["slots"][0]
+release_as(quiet, "vol-one", quiet_key)
+after_release = slots_of("quiet")["slots"][0]
+check("после /v1/release слот тот же, эпох тот же, держатель тот же",
+      before_release["epoch"] == after_release["epoch"]
+      and before_release["holder"]["start_id"] == after_release["holder"]["start_id"],
+      f"{before_release['epoch']} -> {after_release['epoch']}")
+check("но прощание ЗАПИСАНО — экран имеет право сказать «остановлен сам»",
+      after_release["holder"]["released"] is True)
+
+# ── S-19. /admin/release — РЫЧАГ ПОДДЕРЖКИ ────────────────────────────────
+lever = issue("lever")
+lever_key = new_key()
+lease_as(lever, "L1", "vol-one", lever_key)
+meter_as(lever, lever_key)                             # первый квант — внутри acquire()
+freed = admin.post("/admin/release", json={"org_id": "lever", "instance_id": "vol-one"},
+                   headers=ADMIN).json()
+after_lever = slots_of("lever")["slots"][0]
+lever_meter = meter_as(lever, lever_key)
+check("поддержка поднимает эпох и освобождает слот установки",
+      freed.get("slots") == 1 and after_lever["holder"] is None
+      and after_lever["epoch"] == 2, f"{freed}, эпох {after_lever['epoch']}")
+check("и держатель узнаёт об этом на ПОКУПКЕ, доцеживая купленное",
+      lever_meter.status_code == 409
+      and lever_meter.json().get("error") == "fenced",
+      f"{lever_meter.status_code}")
+missing = admin.post("/admin/release", json={"org_id": "lever", "instance_id": "нет"},
+                     headers=ADMIN).json()
+check("а «такой установки нет» — это ноль, а не успех",
+      missing.get("slots") == 0 and missing.get("released") is False, f"{missing}")
+
+# РЫЧАГ УМЕЕТ НАЗВАТЬ ОДИН СЛОТ, А НЕ ТОЛЬКО ВСЕ.
+#
+# Освобождались ВСЕ слоты установки, а установка у клиента одна на том: на
+# тарифе, где несколько контейнеров подняты с одним `PSEUDEX_INSTANCE_ID` (E7,
+# законная конфигурация), обращение «застрял один контейнер» отфенсивало все.
+# Поддержка не имела формы задать вопрос уже — и отвечала самым крупным из
+# доступных ей ответов.
+one = issue("onelever", "work")
+one_keys = []
+for number in range(3):
+    process = new_key()
+    lease_as(one, f"OL{number}", "shared-vol", process)   # ОДНА установка, три старта
+    meter_as(one, process)
+    one_keys.append(process)
+before_lever = slots_of("onelever")["occupied"]
+picked = slots_of("onelever")["slots"]
+target = next(row["slot_no"] for row in picked if row["holder"])
+spot = admin.post("/admin/release",
+                  json={"org_id": "onelever", "instance_id": "shared-vol",
+                        "slot_no": target}, headers=ADMIN).json()
+after_lever = slots_of("onelever")
+check("поддержка освобождает НАЗВАННЫЙ слот, а не все слоты установки",
+      spot.get("slots") == 1 and after_lever["occupied"] == before_lever - 1,
+      f"освобождено {spot.get('slots')}, занято {before_lever} -> "
+      f"{after_lever['occupied']}")
+# И ПОМЕТКА «ОСВОБОДИЛА ПОДДЕРЖКА» СТОИТ ТОЛЬКО У ТОГО, КОГО ОНА ОСВОБОДИЛА.
+# Пометка шла по `installation_id`, и один вызов переписывал причину и дату
+# КАЖДОМУ прошлому запуску этого тома: давно вытесненные обычной перезаявкой
+# поколения всплывали в списке доцеживающих с чужим словом. Слово рядом с
+# числом не имеет права спорить с числом (Б26bis).
+admin_marked = [row["start_id"] for slot in after_lever["slots"]
+                for row in slot["draining"] if row["fenced_by"] == "admin"]
+check("и только одно поколение подписано «освободила поддержка»",
+      len(admin_marked) == 1, f"подписаны: {admin_marked}")
+
+# ── S-20. ФОРМА /admin/instances ──────────────────────────────────────────
+shape = slots_of("normal")
+check("ответ описан слотами и несёт все поля формы",
+      {"org_id", "slot_count", "occupied", "slots", "generations_24h",
+       "epochs_unacked_24h", "slot_contention_24h", "window_seconds",
+       "meter_target_seconds", "pending_installations", "unbound_processes",
+       "unbound_granted"} <= set(shape), f"{sorted(shape)}")
+gone = [word for word in ("silent", "reclaimed", "held_places", "live_processes",
+                          "turnover", "alive_seconds")
+        if word in json.dumps(shape)]
+check("и ни одного слова удалённых механизмов", not gone, f"осталось: {gone}")
+check("занято считается по держателям слотов",
+      shape["occupied"] == sum(1 for row in shape["slots"] if row["holder"]),
+      f"{shape['occupied']}")
+# ЁМКОСТЬ БЕЗ ПРИВЯЗКИ НАЗВАНА ЧИСЛОМ, А НЕ ОСТАВЛЕНА В ЛОГЕ. Ключ без аренды в
+# окне покупает и не фенсится (бандла у него нет, квант ему бесполезен), но тег
+# слота у его строки пуст — значит агрегаты по слотам его не видят по
+# построению, и без этой пары чисел выданное не видно НИГДЕ. §2 Т1 обещает
+# «каждый обход виден числом».
+stray = issue("stray")
+stray_key = new_key()
+public.post("/v1/meter", json={"key": stray, "pubkey": stray_key, "nonce": "s"})
+stray_view = slots_of("stray")
+check("ёмкость, купленная без привязанной аренды, названа отдельным числом",
+      stray_view["unbound_processes"] == 1 and stray_view["unbound_granted"] > 0,
+      f"процессов {stray_view['unbound_processes']}, "
+      f"выдано {stray_view['unbound_granted']}")
+check("и у привязанного клиента это число ноль — оно не шум, а сигнал",
+      shape["unbound_processes"] == 0, f"{shape['unbound_processes']}")
+
+# ── S-22. АНОМАЛИИ СЧИТАЮТ ТЕМИ ЖЕ ЕДИНИЦАМИ, ЧТО ЛЕДЖЕР ──────────────────
+# Урок Б26bis: наблюдение и ограничитель, разошедшиеся в единицах, — это два
+# ответа на один вопрос.
+honest_org = issue("honest")
+honest_key = new_key()
+lease_as(honest_org, "H1", "vol-one", honest_key)
+meter_as(honest_org, honest_key)
+listed = {row["org_id"] for row in
+          admin.get("/admin/anomalies", headers=ADMIN).json().get("anomalies", [])}
+check("кольцо и клон тома в отчёте, один запуск без перезаявок — нет",
+      {"ring", "clone"} <= listed and "honest" not in listed,
+      f"в отчёте: {sorted(listed)}")
+# И ЭТО НЕ ЛОЖНАЯ ТРЕВОГА, А ОБЪЯВЛЕННЫЙ ПОРОГ: десять запусков за сутки на
+# тарифе в один контейнер, ни один из которых не подтвердил расхода, — это либо
+# кольцо, либо клиент, у которого контейнеры падают и он об этом не знает. И то
+# и другое мы обязаны увидеть первыми, а не прочесть в письме.
+check("а crash-loop честного клиента попадает в отчёт НАМЕРЕННО",
+      "restart" in listed,
+      "десять поколений без единого подтверждённого расхода — порог § 3.7")
+
+# ЧЕСТНАЯ РАСКАТКА — НЕ АНОМАЛИЯ, И ЭТО ДВЕ ОТДЕЛЬНЫЕ ПРИЧИНЫ СРАЗУ.
+# `epochs_unacked` джойнил `generations.epoch` на `meter.epoch`, а тег строки
+# леджера двигается только на СЛЕДУЮЩЕЙ покупке: поколение, подтвердившее
+# подписанным ack сто восемьдесят запросов, после своей единственной
+# разрешённой перезаявки читалось как «не подтвердило ничего». А порог
+# `slot_contention ≥ 1` срабатывал на той самой одной перезаявке, про которую
+# его же текст пишет «честный движок делает одну». Одна раскатка K8s (§4.4 —
+# «штатно, при каждом обновлении») клала клиента в отчёт с формулировкой
+# «кольцо или крэшлуп».
+rolled = issue("rolled")
+rolled_key, rolled_new = new_key(), new_key()
+lease_as(rolled, "R-OLD", "vol-one", rolled_key)
+meter_as(rolled, rolled_key)
+_secret = server.STORE.report_secret("rolled", rolled_key)
+_ack = {"consumed": 180, "slot_no": 1, "epoch": 1}
+_ack["signature"] = mac_report(_ack, bytes.fromhex(_secret))
+time.sleep(1.05)
+signed = public.post("/v1/meter", json={"key": rolled, "pubkey": rolled_key,
+                                        "nonce": "sig", "ack": _ack})
+check("подписанный ack принят и расход записан",
+      signed.status_code == 200
+      and server.STORE.billable("rolled")["acked"] == 180,
+      f"{signed.status_code}, acked={server.STORE.billable('rolled')['acked']}")
+lease_as(rolled, "R-NEW", "vol-one", rolled_new)   # новый под той же установки
+meter_as(rolled, rolled_new)
+# Новый под ещё не отчитывался, поэтому ОДНО поколение без подтверждения —
+# правда. Проверяется, что перезаявка вытесненного к нему НЕ прибавляет.
+unacked_before = slots_of("rolled")["epochs_unacked_24h"]
+lease_as(rolled, "R-OLD", "vol-one", rolled_key)   # вытесненный вернулся ОДИН раз
+rolled_view = slots_of("rolled")
+check("перезаявка не стирает подтверждённый расход поколения",
+      rolled_view["epochs_unacked_24h"] == unacked_before == 1,
+      f"epochs_unacked {unacked_before} -> {rolled_view['epochs_unacked_24h']} "
+      f"при подтверждённых 180 у вернувшегося")
+rolled_listed = {row["org_id"] for row in
+                 admin.get("/admin/anomalies", headers=ADMIN).json().get("anomalies", [])}
+check("и одна честная раскатка не попадает в аномалии",
+      "rolled" not in rolled_listed, f"в отчёте: {sorted(rolled_listed)}")
+
+# ОБЩИЙ PSEUDEX_START_ID БОЛЬШЕ НЕ СНИМАЕТ ФЕНСИНГ — ИМЯ ПОКОЛЕНИЯ ЧЕКАНИМ МЫ.
+#
+# Поколение искалось по одному клиентскому `start_id`, и шаг «это ещё один
+# воркер того же старта» отдавал нашедшему ТОТ ЖЕ слот и ТОТ ЖЕ эпох даром.
+# Пять контейнеров на пяти РАЗНЫХ томах, поднятых с одной переменной, были по
+# нашим записям одним поколением: все пятеро покупали одновременно, ни один не
+# был отфенсен, и §3.3 «на слоте покупает ровно одно поколение» переставало
+# быть верным от одной переменной окружения. Замер до правки: пять раз 200.
+#
+# Теперь заявка из-под ДРУГОЙ установки в чужое поколение не попадает — она
+# получает имя, которое чеканим мы, свой эпох и обычный фенсинг. Краснеет
+# возвратом `_generation_name` к тождеству.
+shared = issue("shared")
+shared_keys = [new_key() for _ in range(5)]
+for number, process in enumerate(shared_keys):
+    lease_as(shared, "ONE-START", f"vol-{number}", process)
+    meter_as(shared, process)                  # первый квант — внутри acquire()
+later = [meter_as(shared, process).status_code for process in shared_keys]
+check("общий start_id с РАЗНЫХ томов фенсится: покупает один, четверо — 409",
+      later.count(409) == 4 and later.count(200) == 1, f"{later}")
+holder_epoch = slots_of("shared")["slots"][0]["epoch"]
+check("и эпох поднят пять раз, а не остался единицей на всех",
+      holder_epoch == 5, f"эпох {holder_epoch}")
+shared_reasons = [row for row in
+                  admin.get("/admin/anomalies", headers=ADMIN).json().get("anomalies", [])
+                  if row["org_id"] == "shared"]
+check("а само событие названо: пять установок под одним именем старта",
+      bool(shared_reasons)
+      and shared_reasons[0]["installations_per_generation"] == 5,
+      f"{shared_reasons[:1]}")
+
+# ОСТАТОК, КОТОРЫЙ ЭТИМ НЕ ЗАКРЫВАЕТСЯ, НАЗВАН ЗДЕСЬ ЧИСЛОМ, А НЕ УМОЛЧАНИЕМ.
+# Контейнер, назвавший И чужой `start_id`, И чужой `installation_id`, неотличим
+# от восьмого воркера того же старта: сервер получает байты, а «я тот же
+# контейнер» — утверждение клиента (§1.2 ТЗ в применении к личности). Такие
+# покупают одновременно и после правки — это класс «параллелизм бесплатен,
+# объём оплачен» (§8.1), и он закрывается договором, а не техникой.
+twins = issue("twins")
+twin_keys = [new_key() for _ in range(3)]
+for process in twin_keys:
+    lease_as(twins, "SAME", "same-vol", process)
+twin_bought = [meter_as(twins, process).status_code for process in twin_keys]
+check("ОСТАТОК: тот же start_id И тот же том — одно поколение, все покупают",
+      twin_bought == [200] * 3,
+      "неотличимо от трёх воркеров одного контейнера; закрывает оферта §5bis")
+
+# ── ЧЕСТНАЯ РАСКАТКА НА emptyDir НЕ АНОМАЛИЯ ──────────────────────────────
+# `installations_per_slot` считал установки НА СЛОТ, а под на `emptyDir` — это
+# новый том, то есть новая установка на том же слоте. ТЗ §4.4 называет такую
+# раскатку штатной, и клиент, катящийся раз в день, попадал в аномалии каждый
+# день с формулировкой про клон тома. Аномалия, срабатывающая на поведении,
+# которое ТЗ объявило нормальным, — шум, а не наблюдение.
+ephemeral = issue("ephemeral")
+for number in range(3):
+    process = new_key()
+    lease_as(ephemeral, f"POD-{number}", f"ephemeral-{number}", process)
+    meter_as(ephemeral, process)               # первый квант — внутри acquire()
+    time.sleep(1.05)                           # потолок частоты — ровно секунда
+    meter_as(ephemeral, process, consumed=120)  # и подтверждённый расход
+listed_orgs = {row["org_id"] for row in
+               admin.get("/admin/anomalies", headers=ADMIN).json().get("anomalies", [])}
+check("три раскатки на новых томах подряд — ни одной аномалии",
+      "ephemeral" not in listed_orgs, f"в отчёте: {sorted(listed_orgs)}")
+
+# ТАБЛИЦА ПОКОЛЕНИЙ ЧИСТИТСЯ, А ДЕРЖАТЕЛЬ НИКОГДА НЕ ВЫЧИЩАЕТСЯ.
+# Строка пишется на КАЖДЫЙ старт контейнера, а `/admin/instances` читает их все;
+# крэшлуп ТЗ считает ожидаемым трафиком. Удалить строку держателя значило бы
+# забыть, чей это слот: `meter_if_allowed` перестал бы находить его положение.
+swept = issue("swept")
+sweep_key = new_key()
 for number in range(5):
-    process = generate_process_key().public
-    code = lease_as(carousel_key, f"c{number}", process)
-    if code == 200:
-        served.append(number)
-        release_as(carousel_key, f"c{number}", process)
-# БЫЛО: «упирается в остывший слот», обслужено 1 из 5. Стало: упирается в
-# бюджет перевыдач, обслужено 4 — и это ровно то число, которое замер даёт для
-# конфигурации «остывание 0 с, бюджет 3/ч». Потолок одновременно обслуживающих
-# контейнеров от этого не двинулся: он равен темпу (3/ч), умноженному на время
-# работы без связи с нами, а темп не изменился.
-check("карусель контейнеров упирается в бюджет перевыдач", len(served) == 4,
-      f"обслужено {len(served)} из 5 на тарифе в один инстанс")
-
-refusal = public.post("/v1/lease", json={
-    "key": carousel_key, "instance_id": "c9",
-    "pubkey": generate_process_key().public, "engine_version": "1.0.0"}).json()
-check("отказ называет работающий путь, а не только запрет",
-      "ТОМ ЖЕ ТОМЕ" in refusal.get("detail", ""), refusal.get("detail", "")[:90])
-check("и не путает «отпустил слот» с «молчит 0 с»",
-      "отпустил слот" in refusal.get("detail", ""), refusal.get("detail", "")[:110])
-
-# СТАРЫЙ ОБРАЗ НЕ ОБЕЩАЕТ ТОГО, ЧЕГО НЕ УМЕЕТ, И НЕ ПРОСИТ НЕВОЗМОЖНОГО.
-#
-# Контейнер на движке до 0.3.15 признака жизни не шлёт, поэтому про УБИТЫЙ
-# (никакого `/v1/release` не было) мы не знаем ничего: его слот занят до конца
-# аренды. «Остановите лишний контейнер» здесь — это Б26 буква в букву, совет
-# сделать то, что клиент уже сделал. Отказ обязан назвать срок и путь.
-legacy_key = admin.post("/admin/issue", json={"org_id": "legacy", "plan": "start"},
-                        headers=ADMIN).json()["key"]
-lease_as(legacy_key, "vol-legacy", generate_process_key().public, version="1.0.0")
-legacy_refusal = public.post("/v1/lease", json={
-    "key": legacy_key, "instance_id": "vol-second",
-    "pubkey": generate_process_key().public, "engine_version": "1.0.0"}).json()
-check("про движок без пульса сказано честно, с путём обновиться",
-      "не сообщает признак жизни" in legacy_refusal.get("detail", "")
-      and "pseudexctl upgrade" in legacy_refusal.get("detail", ""),
-      legacy_refusal.get("detail", "")[-140:])
-check("и «остановите лишний» про него НЕ печатается",
-      "остановите лишний" not in legacy_refusal.get("detail", "").lower(),
-      legacy_refusal.get("detail", "")[:140])
-check("зато назван срок, через который слот освободится сам",
-      "до конца аренды" in legacy_refusal.get("detail", ""),
-      legacy_refusal.get("detail", "")[:160])
-
-# ПЕРЕРАЗВЁРТЫВАНИЕ — ТОТ ЖЕ ТОМ, ТОТ ЖЕ `instance_id` — НЕ ЗАДЕТО ВОВСЕ, и
-# бюджета не тратит. Своя организация: в карусели единственный слот уже занят
-# другим контейнером, и вернуть его прежнему было бы дырой, а не удобством.
-redeploy_key = admin.post("/admin/issue", json={"org_id": "redeploy", "plan": "start"},
-                          headers=ADMIN).json()["key"]
-first = generate_process_key().public
-lease_as(redeploy_key, "vol-one", first)
-release_as(redeploy_key, "vol-one", first)
-redeploy = lease_as(redeploy_key, "vol-one", generate_process_key().public)
-check("переразвёртывание на том же томе поднимается сразу", redeploy == 200,
-      f"POST /v1/lease -> {redeploy}")
-
-# ── КОЛЬЦО «АРЕНДА → /v1/release → АРЕНДА» В ЕДИНИЦЕ, КОТОРАЯ ЧТО-ТО ЗНАЧИТ.
-#
-# Единица потолка — процесс, который может МАСКИРОВАТЬ ТРАФИК: запечатанный
-# бандл И выданный квант (Б26sexies §1). Пятый заход мерил АРЕНДЫ и получал
-# «кольцо прижато к 32», а замер вооружённых процессов дал ≥500 при
-# разрешённых 32: аренды отказывали, но ёмкость покупалась уже ПОСЛЕ них, и
-# ровно она вооружает. Поэтому здесь ходят обе ручки, и по настоящему HTTP.
-def meter_as(key: str, instance: str, pubkey: str):
-    return public.post("/v1/meter", json={
-        "key": key, "instance_id": instance, "pubkey": pubkey,
-        "nonce": secrets.token_urlsafe(12)})
-
-
-ring_key = admin.post("/admin/issue", json={"org_id": "ring", "plan": "start"},
-                      headers=ADMIN).json()["key"]
-# СНАЧАЛА МОЛЧА: кольцо мелет бандлы и НИ РАЗУ не покупает ёмкость. По
-# определению (1) это безобидно, и число это подтверждает, а не прячет.
-ring_keys = []
-for number in range(120):
-    process = generate_process_key().public
-    if lease_as(ring_key, "vol-ring", process, version="0.3.17") != 200:
-        break
-    release_as(ring_key, "vol-ring", process)
-    ring_keys.append(process)
-check("молчащее кольцо не ограничено — оно и есть редеплой на своём томе",
-      len(ring_keys) == 120, f"оборотов {len(ring_keys)}")
-armed_ring = [process for process in ring_keys
-              if meter_as(ring_key, "vol-ring", process).status_code == 200]
-check("но ВООРУЖИТЬ оно может ровно столько, сколько мест по тарифу",
-      len(armed_ring) == 32,
-      f"бандлов {len(ring_keys)}, из них с ёмкостью {len(armed_ring)} при 32 местах")
-ring_refusal = meter_as(ring_key, "vol-ring", ring_keys[-1]).json()
-check("и отказывает ЁМКОСТЬ кодом, который движок читает как ОТВЕТ",
-      ring_refusal.get("error") in _license_answer_codes,
-      f"{ring_refusal.get('error')!r} против {sorted(_license_answer_codes)}")
-check("а отказ называет, что именно произошло: ушёл и вернулся за ёмкостью",
-      "объявил, что остановлен" in ring_refusal.get("detail", "")
-      and "admin/release" in ring_refusal.get("detail", ""),
-      ring_refusal.get("detail", "")[:150])
-# ЭХО ПРИВЯЗАНО К КЛЮЧУ ПРОЦЕССА, А НЕ К ИНСТАНСУ, И ЭТО ВЕСЬ СМЫСЛ: всё
-# кольцо крутилось под ОДНИМ `instance_id`, поэтому инстансный учёт насчитал
-# бы одно событие вместо тридцати двух и прошёл бы мимо.
-ring_anomaly = [row for row in admin.get("/admin/anomalies", headers=ADMIN).json()
-                ["anomalies"] if row["org_id"] == "ring"]
-check("эхо ухода посчитано ПО КЛЮЧАМ и поднято в аномалии",
-      len(ring_anomaly) == 1 and ring_anomaly[0]["release_echoes"] == 32,
-      f"{[(row['org_id'], row.get('release_echoes')) for row in ring_anomaly]}")
-check("и причина названа словами, а не одним числом",
-      any("AFTER releasing" in reason for reason in ring_anomaly[0]["reasons"]),
-      str(ring_anomaly[0]["reasons"]))
-
-# ЧЕСТНЫЙ ВОРКЕР ПОКУПАЕТ ЁМКОСТЬ ПРИ ОТКРЫТОЙ АРЕНДЕ — НИ ЭХА, НИ АНОМАЛИИ.
-# Эта строка и есть цена всей правки: если она покраснеет, мы снова заперли
-# клиента, который просто работает (Б26quinquies).
-honest_key = admin.post("/admin/issue", json={"org_id": "honest", "plan": "start"},
-                        headers=ADMIN).json()["key"]
-honest_starts = 0
-for number in range(10):
-    process = generate_process_key().public
-    if lease_as(honest_key, "vol-honest", process, version="0.3.17") != 200:
-        break
-    if meter_as(honest_key, "vol-honest", process).status_code != 200:
-        break
-    honest_starts += 1
-    release_as(honest_key, "vol-honest", process)      # docker stop
-check("десять честных редеплоев с покупкой ёмкости — все проходят",
-      honest_starts == 10, f"прошло {honest_starts} из 10")
-# ИМЕННО ЭХО, А НЕ «НИ ОДНОЙ АНОМАЛИИ»: честный прогон без подписанных отчётов
-# честно попадает в `silent: N quanta served with no verified report` — это
-# другой сигнал и он верен. Проверяется то, что правка добавила.
-honest_anomaly = [row for row in admin.get("/admin/anomalies", headers=ADMIN).json()
-                  ["anomalies"] if row["org_id"] == "honest"]
-check("и ни одного эха: покупка при ОТКРЫТОЙ аренде — не уход",
-      all(row["release_echoes"] == 0 for row in honest_anomaly)
-      and not any("AFTER releasing" in reason
-                  for row in honest_anomaly for reason in row["reasons"]),
-      str([(row["org_id"], row["release_echoes"], row["reasons"])
-           for row in honest_anomaly]))
-
-# СЛОТ УПАВШЕГО КОНТЕЙНЕРА ОСВОБОЖДАЕТСЯ САМ (Б26). Контейнер не отпускал
-# ничего — он умер; раньше клиент ждал до суток и читал «остановите лишний
-# контейнер», которого нет.
-dead_key = admin.post("/admin/issue", json={"org_id": "dead", "plan": "start"},
-                      headers=ADMIN).json()["key"]
-lease_as(dead_key, "vol-dead", generate_process_key().public, version="0.3.16")
-blocked = public.post("/v1/lease", json={
-    "key": dead_key, "instance_id": "vol-fresh",
-    "pubkey": generate_process_key().public, "engine_version": "0.3.16"})
-check("пока прежний контейнер на связи, новый не поднимается",
-      blocked.status_code == 409, f"{blocked.status_code}")
-check("и отказ называет его и когда его слышали",
-      "vol-dead" in blocked.json().get("detail", "")
-      and "на связи" in blocked.json().get("detail", ""),
-      blocked.json().get("detail", "")[:100])
-# ЖИВОЙ ДЛЯ НАС — ЭТО ЕЩЁ T_alive ПОСЛЕ СМЕРТИ. Контейнер, убитый минуту
-# назад, стоит в этом отказе как работающий, поэтому «остановите лишний» обязан
-# ехать вместе со сроком: иначе клиент, у которого он уже мёртв, читает совет
-# сделать то, что он сделал, — Б26 в миниатюре.
-check("и называет срок на случай, если он уже мёртв",
-      "уже остановлен или упал" in blocked.json().get("detail", "")
-      and "мин молчания" in blocked.json().get("detail", ""),
-      blocked.json().get("detail", "")[:190])
-# ПОСТАРИТЬ ВСЕ ТРИ ОТМЕТКИ. Аренда обновляет и `process_reports` — секрет
-# отчётов чеканится на каждую, — поэтому одной таблицы мало: признак жизни
-# берётся МАКСИМУМОМ, и это ровно то, чего мы от него хотим.
-aged = time.time() - 1200
-server.STORE._conn.execute("UPDATE leases SET issued_at=? WHERE org_id='dead'", (aged,))
-server.STORE._conn.execute("UPDATE process_reports SET updated_at=? WHERE org_id='dead'", (aged,))
-server.STORE._conn.execute("UPDATE usage SET updated_at=? WHERE org_id='dead'", (aged,))
-server.STORE._conn.execute("UPDATE meter SET updated_at=? WHERE org_id='dead'", (aged,))
+    lease_as(swept, f"SW{number}", "vol-one", sweep_key if number == 4 else new_key())
+server.STORE._conn.execute("UPDATE generations SET last_lease_at=0 WHERE org_id=?",
+                           ("swept",))
 server.STORE._conn.commit()
-revived = lease_as(dead_key, "vol-fresh", generate_process_key().public, version="0.3.16")
-check("замолчавший 20 мин контейнер отдаёт слот новому", revived == 200,
-      f"POST /v1/lease -> {revived}")
-slots = admin.get("/admin/instances", params={"org_id": "dead"}, headers=ADMIN).json()
-check("кабинет показывает труп silent, а не работающим",
-      {row["instance_id"]: row["state"] for row in slots["instances"]}
-      == {"vol-dead": "released", "vol-fresh": "active"},
-      f"{[(row['instance_id'], row['state']) for row in slots['instances']]}")
-check("«занято» отдаётся числом, а не длиной списка",
-      slots["occupied"] == 1 and len(slots["instances"]) == 2,
-      f"occupied={slots['occupied']} строк={len(slots['instances'])}")
-check("остывания в ответе больше нет, есть срок признака жизни",
-      "cooldown_seconds" not in slots and slots["alive_seconds"] == 600.0
-      and slots["turnover_last_hour"] == 1,
-      f"{ {k: v for k, v in slots.items() if k != 'instances'} }")
-# ПОЧЕМУ МЕСТО ОСВОБОДИЛОСЬ — НА НАСТОЯЩЕМ ОТВЕТЕ, А НЕ НА ВЫДУМАННОМ.
-#
-# Витрина различает «вы остановили контейнер» и «мы забрали место у молчащего»
-# по полю `released_by` (`storefront/billing/slots.py::_state_of`), и охраняющая
-# это проверка витрины ездит на СОБРАННОМ ответе — то есть не может упасть от
-# того, что сервер поля не присылает. Он его и не присылал: клиенту, у которого
-# место отобрали, экран говорил «вы сами остановили». Здесь ответ НАСТОЯЩИЙ.
-_by_id = {row["instance_id"]: row for row in slots["instances"]}
-check("ответ /admin/instances называет ПРИЧИНУ освобождения",
-      _by_id["vol-dead"]["released_by"] == "silence"
-      and _by_id["vol-fresh"]["released_by"] == "",
-      f"{[(k, v.get('released_by')) for k, v in _by_id.items()]}")
-# И ЧИСЛА, ПО КОТОРЫМ ОТКАЗЫВАЮТ, ВИДНЫ ТАМ ЖЕ: живые процессы — это «работает
-# ли контейнер», занятые места — это то, что считает потолок тарифа. Ноль на
-# месте живых у работающего контейнера был вторым враньём вердикта.
-check("и числа процессов: живых у работающего, мест у обоих",
-      _by_id["vol-fresh"]["live_processes"] == 1
-      and _by_id["vol-dead"]["live_processes"] == 0
-      and _by_id["vol-dead"]["held_places"] >= 1,
-      f"{[(k, v.get('live_processes'), v.get('held_places')) for k, v in _by_id.items()]}")
+server.STORE.prune_leases(86400)
+left = server.STORE._fetchall(
+    "SELECT start_id FROM generations WHERE org_id=?", ("swept",))
+check("старые поколения вычищены, держатель остался",
+      [row[0] for row in left] == ["SW4"], f"{[row[0] for row in left]}")
+check("и держатель по-прежнему покупает ёмкость",
+      meter_as(swept, sweep_key).status_code == 200,
+      "иначе чистка забыла бы, чей это слот")
 
-# РЫЧАГ ПОДДЕРЖКИ — ЧЕРЕЗ РУЧКУ, А НЕ ЧЕРЕЗ МЕТОД. Место МОЛЧАЩЕГО ключа
-# держится до конца окна аренды (корректная остановка освобождает его сама), и
-# `POST /admin/release` — единственное, что освобождает такое место досрочно;
-# отказ по потолку процессов посылает клиента именно сюда. Раз это обещано в
-# отказе, проверяется оно через HTTP.
-_HELP_ORG, _HELP_ID = "helped", "vol-jam"
-help_key = admin.post("/admin/issue", json={"org_id": _HELP_ORG, "plan": "start"},
-                      headers=ADMIN).json()["key"]
-for _ in range(server.STORE.PROCESSES_PER_INSTANCE):
-    lease_as(help_key, _HELP_ID, generate_process_key().public, version="0.3.17")
-jammed = public.post("/v1/lease", json={
-    "key": help_key, "instance_id": _HELP_ID,
-    "pubkey": generate_process_key().public, "engine_version": "0.3.17"})
-check("потолок мест рабочих процессов отказывает и называет срок",
-      jammed.status_code == 409
-      and "все места заняты" in jammed.json().get("detail", "")
-      and "напишите в поддержку" in jammed.json().get("detail", ""),
-      f"{jammed.status_code} {jammed.json().get('detail', '')[:170]}")
-freed = admin.post("/admin/release",
-                   json={"org_id": _HELP_ORG, "instance_id": _HELP_ID}, headers=ADMIN)
-after = lease_as(help_key, _HELP_ID, generate_process_key().public, version="0.3.17")
-check("POST /admin/release освобождает места и клиент поднимается",
-      freed.status_code == 200 and after == 200,
-      f"release={freed.status_code} lease={after}")
-_help_rows = {row["instance_id"]: row for row in admin.get(
-    "/admin/instances", params={"org_id": _HELP_ORG}, headers=ADMIN).json()["instances"]}
-check("а причина на экране — admin, а не «вы сами остановили»",
-      _help_rows[_HELP_ID]["released_by"] == "admin",
-      f"{_help_rows[_HELP_ID].get('released_by')!r}")
-
-# УХОД НЕ ОТКАЗЫВАЕТСЯ НИКОГДА, А БЮДЖЕТ БЬЁТ ПО ДОПУСКУ.
-#
-# Здесь стоял 429 на `/v1/release`: бюджет считался освобождениями, и восемь
-# честных остановок одного и того же контейнера упирались в потолок. Клиент
-# при этом не получал НИЧЕГО — он всего лишь останавливал свой контейнер, — а
-# следующий его редеплой оказывался заблокирован его же аккуратностью.
-budget_key = admin.post("/admin/issue", json={"org_id": "budget", "plan": "start"},
-                        headers=ADMIN).json()["key"]
-leases, releases = [], []
-for number in range(8):
-    process = generate_process_key().public
-    leases.append(lease_as(budget_key, "b0", process, version="0.3.17"))
-    releases.append(release_as(budget_key, "b0", process))
-check("уход не отказывается НИ РАЗУ, сколько бы их ни было",
-      releases == [200] * 8, f"коды освобождений: {releases}")
-# ЗДЕСЬ СТОЯЛО `[200] * 4 + [409] * 4` — И ЭТО БЫЛ ЗАМЕР ЧЕСТНОГО РЕДЕПЛОЯ,
-# ПРИНЯТЫЙ ЗА ЗАМЕР КАРУСЕЛИ. Восемь кругов «аренда — release — аренда» под
-# ОДНИМ `instance_id` — это ровно то, что делает `docker compose up -d` и
-# `pseudexctl upgrade` на том же томе; пока свой собственный уход считался
-# вытеснением, пятый такой круг получал 409. Документированная команда
-# обновления не может стоить бюджета (Б26ter).
-check("восемь редеплоев на ТОМ ЖЕ томе проходят все",
-      leases == [200] * 8, f"коды аренд: {leases}")
-check("и не стоят ни одной единицы бюджета",
-      server.STORE.turnover_last_hour("budget") == 0,
-      f"перевыдач: {server.STORE.turnover_last_hour('budget')} (было 3 из 3)")
-# И ТО ЖЕ САМОЕ НА ТАРИФЕ, ГДЕ МЕСТ ВСЕГО ДВА, — ЗАМЕР, НАЗВАВШИЙ Б26quinquies.
-#
-# Восемь кругов выше проходили и тогда, когда честный уход места не освобождал:
-# на «старте» их 32, и до потолка круги просто не доходили. На пробном тарифе
-# (2 места, один воркер) тот же клиент запирался на ТРЕТЬЕМ `docker stop` — до
-# конца окна аренды, ~23 часа, чего в выпущенном 0.3.17 нет. Десять запусков
-# подряд, потому что «работает дважды» здесь и было дефектом.
-admin.post("/admin/plans", headers=ADMIN,
-           json={"code": "trial2", "max_instances": 1, "processes_per_instance": 2,
-                 "grant_size": 500, "quantum_min": 100, "quantum_max": 1000,
-                 "reserve_max": 2000, "actor": "ops:test"})
-trial_key = admin.post("/admin/issue", json={"org_id": "trial", "plan": "trial2"},
-                       headers=ADMIN).json()["key"]
-trial_codes = []
-for number in range(10):
-    process = generate_process_key().public
-    trial_codes.append(lease_as(trial_key, "vol-trial", process, version="0.3.17"))
-    if trial_codes[-1] != 200:
-        break
-    release_as(trial_key, "vol-trial", process)          # docker stop
-check("пробный тариф на два места: десять честных остановок подряд проходят",
-      trial_codes == [200] * 10, f"коды аренд: {trial_codes}")
-check("и ни одна не стоит единицы бюджета",
-      server.STORE.turnover_last_hour("trial") == 0,
-      f"перевыдач: {server.STORE.turnover_last_hour('trial')}")
-# ЧЕМ ТОГДА СВЯЗАН ТОТ ЖЕ ЦИКЛ У АТАКУЮЩЕГО: ТЕМ, ЧТО «УШЕДШИЙ» И
-# ПРОДОЛЖАЮЩИЙ РАБОТАТЬ СЛЫШЕН. Отпустивший слот процесс держит бандл до конца
-# аренды, и проверить его заявление нечем — но обслужить запрос сверх
-# предоплаченного кванта, не придя за ёмкостью, он не может
-# (`license.has_capacity`), а отметку ставим мы.
-loud_key = admin.post("/admin/issue", json={"org_id": "loud", "plan": "start"},
-                      headers=ADMIN).json()["key"]
-loud = generate_process_key().public
-lease_as(loud_key, "l0", loud, version="0.3.17")
-release_as(loud_key, "l0", loud)
-check("честно остановленный контейнер отдаёт слот сразу",
-      lease_as(loud_key, "l1", generate_process_key().public,
-               version="0.3.17") == 200,
-      "иначе редеплой на новом томе ждал бы на ровном месте")
-quiet_key = admin.post("/admin/issue", json={"org_id": "quiet", "plan": "start"},
-                       headers=ADMIN).json()["key"]
-quiet = generate_process_key().public
-lease_as(quiet_key, "q0", quiet, version="0.3.17")
-release_as(quiet_key, "q0", quiet)
-# Уход — 2 минуты назад, покупка ёмкости — сейчас: процесс работает.
-server.STORE._conn.execute(
-    "UPDATE leases SET released_at=? WHERE org_id='quiet'", (time.time() - 120,))
-server.STORE._conn.execute(
-    "INSERT OR REPLACE INTO meter (org_id, pubkey, first_seen, updated_at) "
-    "VALUES (?,?,?,?)", ("quiet", quiet, time.time() - 600, time.time()))
+# ── S-23. СЧЁТ НЕ СДВИНУЛСЯ: СЛОТ И ЭПОХ — ТЕГ, А НЕ ВХОД АРИФМЕТИКИ ──────
+# Леджер остался ПО ПРОЦЕССУ (§3bis.2): наследование остатка на слот прятало бы
+# обороты кольца и делало бы перезапуск платным. Проверяется буквально: тег
+# строки можно переписать любым, и `billable` не шелохнётся.
+billed_before = server.STORE.billable("rolled")
+server.STORE._conn.execute("UPDATE meter SET slot_no=99, epoch=99 WHERE org_id=?",
+                           ("rolled",))
 server.STORE._conn.commit()
-still_there = public.post("/v1/lease", json={
-    "key": quiet_key, "instance_id": "q1",
-    "pubkey": generate_process_key().public, "engine_version": "0.3.17"})
-check("а «ушедший» и продолжающий покупать ёмкость слота не отдаёт",
-      still_there.status_code == 409
-      and still_there.json().get("error") == "instance_limit",
-      f"{still_there.status_code} {str(still_there.json())[:110]}")
-
-# ОТОБРАННЫЙ КЛЮЧ ВСТАЁТ, А НЕ КОПИТСЯ — ЭТО ВИДНО ПО HTTP.
-#
-# 409 `instance_limit` лежит в `_ANSWER_CODES` каждого выпущенного движка, то
-# есть не берётся в grace: воркер выгружает бандл и перестаёт маскировать
-# (`/mask` 503). Пока продление отобранного ключа проходило, поколение, у
-# которого забрали места, продлевалось вечно — 128 живых аренд на тарифе в один
-# контейнер после трёх единиц бюджета.
-taken_key = admin.post("/admin/issue", json={"org_id": "taken", "plan": "start"},
-                       headers=ADMIN).json()["key"]
-taken = generate_process_key().public
-lease_as(taken_key, "t0", taken, version="0.3.17")
-# Контейнер замолчал 20 минут назад — а «замолчал» это ВСЕ отметки, включая
-# ту, что ставит сама аренда (`record_report_secret` чеканит секрет отчётов и
-# двигает `process_reports.updated_at`).
-aged_taken = time.time() - 1200
-server.STORE._conn.execute("UPDATE leases SET issued_at=? WHERE org_id='taken'",
-                           (aged_taken,))
-server.STORE._conn.execute(
-    "UPDATE process_reports SET updated_at=? WHERE org_id='taken'", (aged_taken,))
-server.STORE._conn.execute("UPDATE usage SET updated_at=? WHERE org_id='taken'",
-                           (aged_taken,))
+check("счёт считается по процессу — тег на него не влияет",
+      server.STORE.billable("rolled") == billed_before, f"{billed_before}")
+server.STORE._conn.execute("UPDATE meter SET slot_no=1 WHERE org_id=?", ("rolled",))
 server.STORE._conn.commit()
-lease_as(taken_key, "t1", generate_process_key().public, version="0.3.17")
-stood_down = public.post("/v1/lease", json={
-    "key": taken_key, "instance_id": "t0", "pubkey": taken,
-    "engine_version": "0.3.17"})
-check("продление отобранного ключа — 409 instance_limit, а не 200",
-      stood_down.status_code == 409
-      and stood_down.json().get("error") == "instance_limit",
-      f"{stood_down.status_code} {stood_down.json().get('error')}")
-check("и отказ говорит, ЧТО именно перешло к другому запуску и что делать",
-      "слот контейнера перешёл" in stood_down.json().get("detail", "")
-      and "Перезапустите контейнер" in stood_down.json().get("detail", ""),
-      stood_down.json().get("detail", "")[:130])
-# ОТДАН СЛОТ КОНТЕЙНЕРА, А НЕ МЕСТО ЭТОГО КЛЮЧА: место он держит сам до конца
-# окна аренды, потому что молчание мест не освобождает (Б26quinquies). Отказ,
-# который говорил «место уже отдано другому запуску», посылал клиента искать
-# чужой контейнер, которого нет.
-check("и не называет отданным место, которое этот же ключ и держит",
-      "место этого рабочего процесса уже отдано"
-      not in stood_down.json().get("detail", "")
-      and "держит до конца окна аренды" in stood_down.json().get("detail", ""),
-      stood_down.json().get("detail", "")[:200])
-check("этот код движок читает как ОТВЕТ, а не как наш сбой",
-      "instance_limit" in _license_answer_codes,
-      "иначе 409 ушёл бы в grace и контейнер работал бы ещё 72 ч")
+
+# ── S-24. СМЕНА ТАРИФА ────────────────────────────────────────────────────
+# ТАРИФ «work» В ЭТОМ ФАЙЛЕ УЖЕ ПРАВЛЕН ВЫШЕ (max_instances 9), поэтому здесь
+# берутся нетронутые: «Промышленный» (12) вниз до «Старта» (1).
+replan = issue("replan", "industrial")
+wide_count = server.STORE.instances_allowed("industrial")
+keys_by_slot = {}
+for number in range(4):
+    process = new_key()
+    got = lease_as(replan, f"P{number}", f"vol-{number}", process).json()
+    keys_by_slot[got["slot_no"]] = process
+    meter_as(replan, process)                  # первый квант — внутри acquire()
+admin.post("/admin/replan", json={"org_id": "replan", "plan": "start"}, headers=ADMIN)
+shrunk = slots_of("replan")
+# ВЫВОДЯТСЯ ПУСТЫЕ СЛОТЫ, А СРЕДИ ЗАНЯТЫХ — ТЕ, КОГО СЛЫШАЛИ РАНЬШЕ. Здесь
+# заняты все четыре, поэтому выживает последний заявленный, а не первый по
+# номеру: номер слота ничего не говорит о том, занят ли он.
+survivor_slot = shrunk["slots"][0]["slot_no"]
+retired_meter = meter_as(replan, keys_by_slot[min(keys_by_slot)])
+check("понижение тарифа оставляет РОВНО столько слотов, сколько по тарифу",
+      shrunk["slot_count"] == 1 and len(shrunk["slots"]) == 1,
+      f"слотов {len(shrunk['slots'])}, выжил {survivor_slot}")
+check("держатель выведенного слота отфенсен текстом про ТАРИФ, а не про соседа",
+      retired_meter.status_code == 409
+      and "тариф" in retired_meter.json().get("detail", "")
+      and "новый запуск" not in retired_meter.json().get("detail", ""),
+      retired_meter.json().get("detail", "")[:120])
+# СОВЕТ «ОСТАНОВИТЕ ОДИН КОНТЕЙНЕР» ЕДЕТ С ЧИСЛАМИ, ПО КОТОРЫМ ЕГО МОЖНО
+# ПРОВЕРИТЬ. Без них это Б26 в чистом виде: совет остановить то, чего клиент у
+# себя не находит.
+check("и отказ называет оба числа, а не советует на веру",
+      "допускает 1" in retired_meter.json().get("detail", "")
+      and "слышно 4" in retired_meter.json().get("detail", ""),
+      retired_meter.json().get("detail", "")[:120])
+check("а поля отказа не выдумывают держателя выведенного слота",
+      "holder_start_id" not in retired_meter.json(),
+      f"{sorted(retired_meter.json())}")
+
+# ── ПОНИЖЕНИЕ ТАРИФА НЕ ФЕНСИТ ТОГО, КТО ОСТАЛСЯ ОДИН ─────────────────────
+#
+# Выводились слоты с НОМЕРОМ выше потолка, а номер слота ничего не говорит о
+# том, занят ли он. Клиент поднимал три контейнера, два погасил, работающий
+# остался на слоте 3 — и переход на «Старт» отправлял ЕДИНСТВЕННЫЙ живой
+# контейнер в `fenced` текстом «остановите лишний контейнер», при том что
+# слоты 1 и 2 держали трупы, а лишнего контейнера не было ни одного. Это
+# дефект Б26, пришедший через тариф. Краснеет возвратом отбора в
+# `ensure_slots` к `slot_no > allowed`.
+lone = issue("lone", "industrial")
+lone_key = None
+for number in range(3):
+    process = new_key()
+    lone_slot = lease_as(lone, f"L{number}", f"vol-{number}", process).json()["slot_no"]
+    meter_as(lone, process)
+    lone_key = process                          # последний — тот, что остался жив
+    time.sleep(1.05)                            # отметки слотов обязаны различаться
+lone_meter_before = meter_as(lone, lone_key)    # живой продолжает говорить с нами
+check("живой контейнер — на верхнем слоте, два прежних молчат",
+      lone_slot == 3 and lone_meter_before.status_code == 200,
+      f"слот {lone_slot}, покупка {lone_meter_before.status_code}")
+admin.post("/admin/replan", json={"org_id": "lone", "plan": "start"}, headers=ADMIN)
+lone_view = slots_of("lone")
+time.sleep(1.05)
+lone_meter = meter_as(lone, lone_key)
+check("понижение тарифа оставляет слот тому, кого слышали позже всех",
+      lone_view["occupied"] == 1 and lone_view["slot_count"] == 1
+      and lone_view["slots"][0]["slot_no"] == lone_slot,
+      f"занято {lone_view['occupied']} из {lone_view['slot_count']}, "
+      f"слот {lone_view['slots'][0]['slot_no']} (живой был на {lone_slot})")
+check("и живой контейнер покупает дальше — понижение тарифа его не отфенсило",
+      lone_meter.status_code == 200,
+      f"{lone_meter.status_code} {lone_meter.json().get('detail', '')[:80]}")
+# И ВЫВЕДЕННЫЙ СЛОТ ТЕРЯЕТ ДЕРЖАТЕЛЯ СРАЗУ, А НЕ ПРИ ВОЗВРАТЕ ТАРИФА. Оставить
+# его значило бы показать слот занятым поколением, которому мы уже отказали в
+# новой ёмкости, — и после обратного повышения он приехал бы занятым трупом.
+check("занято не превышает нового тарифа ни на одну строку",
+      shrunk["occupied"] <= shrunk["slot_count"] == 1,
+      f"занято {shrunk['occupied']} из {shrunk['slot_count']}")
+admin.post("/admin/replan", json={"org_id": "replan", "plan": "industrial"},
+           headers=ADMIN)
+grown = slots_of("replan")
+check("повышение возвращает слоты свободными, а эпох не откатывается",
+      grown["slot_count"] == wide_count
+      and grown["slots"][0]["epoch"] >= shrunk["slots"][0]["epoch"],
+      f"слотов {grown['slot_count']} из {wide_count}, "
+      f"эпох {shrunk['slots'][0]['epoch']} -> {grown['slots'][0]['epoch']}")
+
+# ── S-12. СТАРЫЙ ДВИЖОК ПРОТИВ НОВОГО СЕРВЕРА ─────────────────────────────
+# Сервер НЕ ТРЕБУЕТ ПОЛЯ НИКОГДА (D-063): ошибка совместимости — это простой у
+# клиента. Движок без `start_id` ведётся в той же конструкции под синтетическим
+# поколением `legacy:<установка>`, поэтому он не заперт и не получает
+# бесплатного трафика.
+legacy = issue("legacy")
+legacy_codes = []
+for number in range(5):
+    process = new_key()
+    legacy_codes.append(lease_as(legacy, None, "vol-one", process,
+                                 version="1.0.0").status_code)
+    legacy_codes.append(meter_as(legacy, process).status_code)
+legacy_view = slots_of("legacy")
+check("движок без start_id не заперт: пять перезапусков, ни одного отказа",
+      set(legacy_codes) == {200}, f"коды {sorted(set(legacy_codes))}")
+check("все его перезапуски — ОДНО синтетическое поколение одной установки",
+      legacy_view["generations_24h"] == 1 and legacy_view["slots"][0]["epoch"] == 1,
+      f"поколений {legacy_view['generations_24h']}, "
+      f"эпох {legacy_view['slots'][0]['epoch']}")
+legacy_second = new_key()
+lease_as(legacy, None, "vol-two", legacy_second, version="1.0.0")
+check("а второй ТОМ на тарифе в один слот фенсит первый — и это не отказ аренды",
+      slots_of("legacy")["slots"][0]["epoch"] == 2,
+      "чужая установка берёт слот по ранжированию, аренде отвечают 200")
 
 
 # --- ОДНА ТОЧКА СПИСАНИЯ, И ОНА ЕСТЬ НА ОБОИХ ЛЕГАХ ----------------------
@@ -1148,9 +1729,9 @@ check("сводка по флоту отвечает на вопросы, рад
 # рассказывать себе, что клиентов втрое больше, чем есть.
 for _renewal in range(3):
     for _worker in ("age1metric-a", "age1metric-b"):
-        server.STORE.lease_if_allowed(
+        server.STORE.lease_generation(
             f"ls_metric_{_renewal}_{_worker}", "fleet-org", "start",
-            "fleet-inst", _worker, 86400, pubkey=_worker)
+            "start-metric", "fleet-inst", _worker, 86400, pubkey=_worker)
 fleet = server.STORE.fleet_totals(86400)
 check("шесть строк аренды — это один контейнер и два воркера",
       fleet["instances_serving"] >= 1 and fleet["processes_serving"] >= 2,
@@ -1158,9 +1739,9 @@ check("шесть строк аренды — это один контейнер
       f"воркеров={fleet['processes_serving']}")
 _by_pubkey = server.STORE.fleet_totals(86400)["processes_serving"]
 for _renewal in range(3, 6):
-    server.STORE.lease_if_allowed(
-        f"ls_metric_{_renewal}", "fleet-org", "start", "fleet-inst",
-        "age1metric-a", 86400, pubkey="age1metric-a")
+    server.STORE.lease_generation(
+        f"ls_metric_{_renewal}", "fleet-org", "start", "start-metric",
+        "fleet-inst", "age1metric-a", 86400, pubkey="age1metric-a")
 check("ещё три продления того же воркера флот не увеличивают",
       server.STORE.fleet_totals(86400)["processes_serving"] == _by_pubkey,
       f"{_by_pubkey} -> {server.STORE.fleet_totals(86400)['processes_serving']}")
@@ -1255,6 +1836,22 @@ no_reg = _lease_for("0.3.14").json()
 check("без реестра аренда идёт без блока version, но с bundle_format, и подпись сходится",
       "version" not in no_reg and no_reg.get("bundle_format") == server.BUNDLE_FORMAT
       and _signature_holds(no_reg), f"keys={sorted(k for k in no_reg if k != 'bundle')}")
+
+# ── S-21. СЛОТ, ЭПОХ И ЧИСЛО СЛОТОВ — ПОД ПОДПИСЬЮ, КАК БЛОК `version` ─────
+# Фенсинг-токен вне подписи — украшение: перехватчик переписал бы его, не тронув
+# подписи. А выпущенный движок проверяет подпись ПО ТОМУ, ЧТО ПОЛУЧИЛ, и лишние
+# ключи игнорирует, поэтому поля аддитивны и контракт остаётся третьим (D-063).
+check("slot_no/epoch/slot_count едут ПОД подписью и не поднимают контракт",
+      {"slot_no", "epoch", "slot_count"} <= set(no_reg)
+      and no_reg.get("lease_contract", server.LEASE_CONTRACT) == server.LEASE_CONTRACT
+      and _signature_holds(no_reg),
+      f"слот {no_reg.get('slot_no')} эпох {no_reg.get('epoch')} "
+      f"из {no_reg.get('slot_count')}")
+_forged = dict(no_reg)
+_forged["epoch"] = int(_forged["epoch"]) + 7
+check("и подмена эпоха в пути ломает подпись, а не проходит молча",
+      not _signature_holds(_forged),
+      "иначе клиент принял бы за наш любой номер, который ему подсунули")
 
 # 2. реестр есть; запрос в форме 0.3.14 (без nonce = контракт 2) → блок под подписью
 _registry.dump(_registry_doc(old_eol=None, old_announced=None), _reg_path)

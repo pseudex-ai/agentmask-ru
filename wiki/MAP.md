@@ -325,8 +325,8 @@ ladder (D-055): the signed `version` block of each lease is parsed once into
 after `deprecated_at`, a notice once per id), `lease_contract` is declared in
 the request (D-063), and a `bundle_format` above `SUPPORTED_BUNDLE_FORMAT` is
 `BundleFormatError` — «обновите движок», grace on renewal, its own code at start (D-064).
-- **API:** `explain`, `BundleFormatError`, `LicenseError`, `LicenseStatus`, `LicenseClient`
-- **Uses:** _release (generated), assets, bundle, measure · **Used by:** metering, proxy, service
+- **API:** `explain`, `BundleFormatError`, `LicenseError`, `LicenseStatus`, `Fenced`, `block_code`, `explain_fenced`, `should_reclaim`, `start_id`, `LicenseClient`
+- **Uses:** _release (generated), assets, bundle, measure · **Used by:** metering, operator, proxy, service
 - **Tests:** test_clock_freeze, test_localui, test_persona_defects, `licensing/test_admin_api.py`, `licensing/test_metering_attacks.py`; `e2e/gates.py` L1–L22
 - **Docs:** `docs/tz-license-packaging.md`, `docs/tz-tuning-in-lease.md`, `docs/staleness-and-rotation.md`, `docs/tz-offline-license.md` (design) · rules: INVARIANTS.md#lease
 
@@ -377,8 +377,8 @@ surfaces under the ADMIN token: `/status`, `/events`, `/stats`, `/stats.csv`,
 `release_verdict` is the `engine.release` block of `/status` and `/subscription`:
 the server's verdict on this version (D-055) with unix dates and the one
 upgrade command, `None` fields when the server said nothing.
-- **API:** `processes`, `memory`, `release_verdict`, `build_router`
-- **Uses:** audit, metrics, preflight, profiling, schema, sqlite_setup · **Used by:** proxy, service
+- **API:** `processes`, `memory`, `release_verdict`, `slot_state`, `build_router`
+- **Uses:** audit, license, metrics, preflight, profiling, schema, sqlite_setup · **Used by:** proxy, service
 - **Tests:** none direct · via service → test_localui, test_perf_masking (401 on token drift), test_detok_security
 - **Docs:** `docs/tz-local-ui.md` · rules: INVARIANTS.md#surfaces, INVARIANTS.md#audit
 
@@ -567,6 +567,7 @@ Run from `prototype/`; each loads the dev bundle itself.
 | `test_localui_renders.py` | the interface in a REAL browser (playwright + chromium): a 200 and a CSP header are not evidence it executed |
 | `test_persona_defects.py` | the five defects the 18.08.2026 persona run found and no corpus of ours did |
 | `test_preflight.py` | worker arithmetic against the cgroup limit; what happens when N does not fit; the contract with `entrypoint.sh` (including probe 2 → 6 and migrate 5) |
+| `test_slots_client.py` | клиентская половина слотов и поколений ПРОТИВ НАСТОЯЩЕГО СЕРВЕРА: перезапуск не заводит нового места, килл по памяти неотличим от обычного подъёма, отказ по фенсингу не гасит процесс — он доцеживает купленное и перезаявляется, а гасит его обычная проверка ёмкости (Б30) |
 | `test_schema.py` | the schema contract of a volume (D-058…D-060): fresh store stamped, legacy volume snapshotted and brought forward (snapshot opens with the same key), future volume refused untouched, no space refused before touching, the maxima equal `schema_lock.json` for the minor in `version.txt`, `probe` exits 2 and `migrate` brings a volume forward |
 | `test_pseudexctl.py` | the ops CLI: command shapes, doctor verdicts (incl. the version ladder), the rekey proof, `upgrade` (order, secrets never in argv, both rollback branches, dry-run leaves nothing) |
 | `test_collisions.py` | a substitute equal to a real value — both halves (backwards at mint, forwards via `minted_in`), and BOTH sides of the `pseudonym_scope` trade |
@@ -669,6 +670,7 @@ containers, never mocks, and are themselves audited.
 |---|---|
 | `e2e/gates.py` | L1–L25 (+L2b): lease, renewal, grace, revocation, vault encryption/migration/rekey, preflight, memory scan, tokens, billing counter (L12), the schema of the volume (L25 pre-versioned volume snapshotted and brought forward, L24 a future volume refused untouched with exit 6), against a local stand (`deploy/compose.local.yml`). `--only L4,L5` for a subset; `--image pseudex:compiled --skip-build` with `PSEUDEX_SIGNING_KEY` to reuse a build. ~15 min |
 | `e2e/pack_gates.py` | P1–P11 on the compiled image: no `/app/pseudex`, no docstrings (`grep -a`), parity with the source tree (P3 via `e2e/parity.py` on `dirty.json`), latency, stdlib-SQLite cannot open the volume (P9), no `sqlite3` import… Builds BOTH images unless `--skip-build` |
+| `e2e/slot_gates.py` | выпущенный образ против НОВОГО лицензионного сервера (ТЗ слотов §7.3, гейт закрытия платформенного релиза): PRE-1/PRE-2 + G-01…G-07 — холодный старт, перезапуски и экран занятости, SIGKILL, кольцо, потолок тарифа (Б30 с обеих сторон), смешанный флот, миграция тома. `--prove-red` собирает СЛОМАННЫЙ лицензионный образ и требует красноты: четыре мутации, и одна из них (отказ на аренде) роняет шесть гейтов из одиннадцати |
 | `e2e/parity.py` | P3: the compiled image detects EXACTLY what the source tree detects |
 | `e2e/audit_gates.py` | the gate over the gates: every NEGATIVE atom needs a POSITIVE atom over the same source; `--selftest` on 13 fixtures REFUSES to report unless it separates them. Runs in the battery as `62-gate-audit` |
 | `e2e/lint_tests.py` | mechanical gates against checks that cannot fail: swallowed failures, unreachable and duplicate checks |

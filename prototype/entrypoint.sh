@@ -94,11 +94,35 @@ if [ "$WORKERS" -lt 1 ]; then
     exit 4
 fi
 
-# One id per CONTAINER, so the licensing server can tell "eight workers of one
-# deployment" from "eight deployments".
-if [ -z "$PSEUDEX_INSTANCE_ID" ]; then
-    PSEUDEX_INSTANCE_ID="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-    export PSEUDEX_INSTANCE_ID
+# УСТАНОВКА — ЭТО ТОМ, А НЕ ЗАПУСК, И ЗДЕСЬ ОНА БОЛЬШЕ НЕ ЧЕКАНИТСЯ.
+#
+# Тут стояло `head -c 16 /dev/urandom`, и значение переменной побеждает
+# `AUDIT.installation_id()` в обоих плечах — то есть установка была заново
+# случайной при каждом старте контейнера. Два следствия, и оба дорогие:
+#
+#   * счёт. Сервер дедуплицирует отчёты по установке и СУММИРУЕТ разные:
+#     каждый перезапуск открывал новую строку с полным итогом тома, и клиент,
+#     перезапускавшийся ежедневно, оплачивал свой месяц пятнадцать раз
+#     (докстринг `audit.installation_id`, которым это и было починено — а эта
+#     строка чинить не давала);
+#   * слот. Возврат ТОЙ ЖЕ установки на свой слот — свидетельство личности,
+#     которое сильнее любого ранжирования; со случайным значением сервер такой
+#     ветки никогда не видит и вынужден гадать по отметкам.
+#
+# Установка теперь берётся из тома (`installation_id` рядом со счётчиками,
+# которые она называет), и переживает перезапуск ровно столько, сколько живут
+# данные, которые она идентифицирует. Явно заданная переменная по-прежнему
+# побеждает: стенды и гейты прикалывают её конфигурацией.
+
+# ЗАПУСК — ЭТО ПОКОЛЕНИЕ, И ОНО ЧЕКАНИТСЯ ЗДЕСЬ, ОДИН РАЗ ДО ФАН-АУТА.
+#
+# По той же причине, что оба токена ниже: N воркеров, каждый со своим
+# значением, — это N поколений на одном слоте, и они отфенсили бы друг друга на
+# покупке ёмкости. Контейнер был бы сломан тем сильнее, чем больше воркеров у
+# клиента. Один старт — одно значение — один эпох.
+if [ -z "$PSEUDEX_START_ID" ]; then
+    PSEUDEX_START_ID="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    export PSEUDEX_START_ID
 fi
 
 # The operator token gates /reveal and the whole log/statistics surface. It MUST
@@ -198,7 +222,7 @@ if ! PSEUDEX_ROLE=migrate ${PSEUDEX_SERVE_CMD:-./pseudex-serve}; then
 fi
 echo ""
 
-echo "pseudex: starting ${WORKERS} worker(s), instance ${PSEUDEX_INSTANCE_ID}"
+echo "pseudex: starting ${WORKERS} worker(s), start ${PSEUDEX_START_ID}, installation ${PSEUDEX_INSTANCE_ID:-из тома}"
 echo ""
 if [ "${PSEUDEX_ROLE:-sidecar}" = "proxy" ]; then
     echo "    ключ шлюза (Authorization: Bearer …) для /spans и /reveal:"

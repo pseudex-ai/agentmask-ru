@@ -36,7 +36,8 @@ from pseudex.envelope import (
     unmask_response,
 )
 from pseudex.license import (
-    ENGINE_VERSION, STATE_LEASED, LicenseClient, LicenseError, explain)
+    ENGINE_VERSION, FENCED, STATE_LEASED, LicenseClient, LicenseError, block_code,
+    explain, explain_fenced)
 from pseudex import metering
 from pseudex.maskcache import MaskCache
 from pseudex.operator import build_router
@@ -590,6 +591,9 @@ async def license_status() -> JSONResponse:
         "bundle_version": status.bundle_version, "last_error": status.last_error,
         "grace_left_s": (None if status.grace_left_seconds is None
                          else round(status.grace_left_seconds)),
+        # Те же поля и в том же смысле, что у сайдкара: два плеча, один ответ.
+        "slot_no": status.slot_no, "epoch": status.epoch,
+        "slot_count": status.slot_count, "fenced": status.fenced,
     }, status_code=200 if status.state == STATE_LEASED else 503)
 
 
@@ -676,12 +680,21 @@ async def chat_completions(request: Request):
     # transcript; the upstream call is I/O and should dominate wall time.
     if not LICENSE.is_serving():
         status = LICENSE.status()
+        # `status.code or "license_expired"` называло истёкшей лицензией и
+        # исчерпанную ёмкость, и вытесненное поколение — то есть отправляло
+        # оператора проверять оплату в двух случаях из трёх. Диагноз считает
+        # `block_code`, и он же считает его на сайдкаре.
+        code = block_code(status)
         raise HTTPException(
             status_code=503,
             detail={
-                "error": status.code or "license_expired",
+                "error": code,
                 "detail": "no valid detection lease" + f" (state={status.state})",
-                "license": {"state": status.state, "last_error": status.last_error},
+                "license": {"state": status.state, "last_error": status.last_error,
+                            "slot_no": status.slot_no, "epoch": status.epoch,
+                            "fenced": status.fenced},
+                "remedy": (explain_fenced(status.fenced) if code == FENCED
+                           else explain(code)),
             },
         )
     with stage("proxy.tenant"):

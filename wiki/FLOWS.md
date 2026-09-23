@@ -157,7 +157,7 @@ worker start (serve_main.py, role engine|proxy)
  │    ProcessKey = bundle.generate_process_key()          X25519, IN MEMORY, per process
  │    POST /v1/lease {key, instance_id, pubkey, engine_version, lease_contract, measure.build_measurement(), usage counters}
  │      server: registry.check(engine_version) → 426 unsupported_client ONLY past an eol announced ≥ 90 d ahead
- │              store.lease_if_allowed + record_lease(engine_version, lease_contract) → pack.build_plaintext (bulk + TUNING + canary + fingerprint + watermark)
+ │              store.admit_generation (слот по свидетельству личности, иначе ранжированием) + record_lease(engine_version, lease_contract) → pack.build_plaintext (bulk + TUNING + canary + fingerprint + watermark)
  │              → bundle.seal(to pubkey) → payload["bundle_format"], payload["version"] = registry.verdict(...) → bundle.sign_lease (Ed25519) → nonce_wrap
  │    client:   bundle.verify_lease(compiled-in LICENSE_PUBKEY from pseudex/_release.py)
  │              → bundle_format ≤ SUPPORTED_BUNDLE_FORMAT else BundleFormatError («обновите движок»)

@@ -232,15 +232,22 @@ def run_gate(name: str, fn, *args) -> None:
 
 # --- setup ---------------------------------------------------------------
 
-# The gates start SEVERAL containers in sequence — the startup-refusal gates
-# use disposable ones, and `docker rm -f` kills them without the graceful
-# shutdown that would release their instance slot. On the default one-instance
-# plan the healthy sidecar is then refused with `instance_limit`, and the whole
-# suite stops at SETUP with a failure that says nothing about the product.
+# THE STAND RUNS ON THE ONE-SLOT PLAN, AND THAT IS THE POINT (ТЗ §9.2, G-04).
 #
-# The limit itself is exercised by its own check in `licensing/store.py`; here
-# it is only in the way, so the stand's key gets headroom.
-_GATE_PLAN = "industrial"
+# It used to be "industrial", and the comment here said why: the gates start
+# SEVERAL containers in sequence, the startup-refusal gates use disposable ones,
+# and `docker rm -f` kills them without the graceful shutdown that would release
+# their instance slot — so on the one-instance plan the healthy sidecar was
+# refused with `instance_limit` and the suite stopped at SETUP. The stand was
+# buying headroom to walk past the product's own defect, which means no gate
+# ever ran against the plan most customers are on.
+#
+# Slots removed the reason: a container killed with SIGKILL holds nothing that
+# has to be released, the returning installation takes ITS OWN slot back by
+# identity, and a stranger takes the least recently heard one. Nothing is
+# refused on a lease. Keeping "industrial" here would hide a regression of
+# exactly that property, so the plan is the tightest one we sell.
+_GATE_PLAN = "start"
 
 
 def build_stand(image: str, workers: int, skip_build: bool) -> str:

@@ -2,15 +2,21 @@
 
 `test_slots.py` рисует экраны слотов по ответу `/admin/instances`. Раньше этот
 ответ был написан рукой — и в нём стояли поля, которых сервер не присылает
-(`released_by`) и числа, которых он в этом состоянии не даёт (`live_processes`
-у отобранного места). Проверка, собранная из полей, которых сервер никогда не
-шлёт, провалиться не может: она проверяет фантазию автора.
+(`released_by`) и числа, которых он в этом состоянии не даёт. Проверка,
+собранная из полей, которых сервер никогда не шлёт, провалиться не может: она
+проверяет фантазию автора.
 
 Поэтому ответы СНИМАЮТСЯ. Этот файл поднимает `python3 -m licensing.devserver`
 на свободном порту с временной базой, доводит организацию до каждого состояния
-НАСТОЯЩИМИ вызовами (`/v1/lease`, `/v1/usage`, `/v1/release`) — включая
-настоящее отобрание места у замолчавшего контейнера и настоящий отказ по
-потолку рабочих процессов — и печатает снятые тела в JSON.
+НАСТОЯЩИМИ вызовами (`/v1/lease`, `/v1/meter`, `/v1/usage`, `/v1/release`,
+`/admin/release`) — включая настоящий фенсинг с настоящим 409 — и печатает
+снятые тела в JSON.
+
+СОСТОЯНИЯ ДРУГИЕ, ПОТОМУ ЧТО ИХ БОЛЬШЕ НЕТ У СЕРВЕРА. `silent`, `reclaimed` и
+потолок рабочих процессов были суждениями о том, жив ли контейнер; сервер их не
+выносит и не отдаёт. Стенд доводит организацию до того, что существует:
+занятый слот, занятый слот с поколением, которое попрощалось, свободный слот с
+ДОЦЕЖИВАЮЩИМ поколением и просто свободный слот.
 
 ПОЧЕМУ ОТДЕЛЬНЫМ ПРОЦЕССОМ И ДРУГИМ ИНТЕРПРЕТАТОРОМ. Ключ процесса — это
 X25519-личность из `pseudex.bundle`; она живёт в окружении ДВИЖКА
@@ -18,10 +24,10 @@ X25519-личность из `pseudex.bundle`; она живёт в окруже
 `fastapi`. Витрина не имеет права зависеть от движка (MAP §6), поэтому связь
 между ними здесь ровно одна и та, что и в проде: JSON по HTTP.
 
-ПОЧЕМУ СНИМОК, А НЕ ЖИВОЙ ПРОКСИ. Занятость зависит от времени: при
-`PSEUDEX_ALIVE_SECONDS=3` живой контейнер замолкает раньше, чем браузер успеет
-открыть вторую страницу, и пять состояний не удержать в одном кадре. Снимок —
-это байты сервера в тот момент, когда все состояния существовали разом.
+ПОЧЕМУ СНИМОК, А НЕ ЖИВОЙ ПРОКСИ. Состояния слотов меняются на каждом вызове
+стенда, и пока браузер открывает вторую страницу, доцеживающее поколение может
+получить новое. Снимок — это байты сервера в тот момент, когда все четыре
+состояния существовали разом.
 
     prototype/.venv/bin/python storefront/test_slots_stand.py --out /tmp/slots.json
 """
@@ -42,15 +48,13 @@ _ENGINE = Path(__file__).resolve().parents[1] / "prototype"
 sys.path.insert(0, str(_ENGINE))
 from pseudex.bundle import generate_process_key  # noqa: E402
 
-# СРОКИ СТЕНДА. Молчание — три секунды вместо десяти минут, иначе состояние
-# «замолчал» стоило бы десяти минут ожидания на каждом прогоне; эхо и бюджет
-# перевыдач подняты, чтобы в одном часе поместились все переходы, которые
-# клиент делает за сутки. Все три — штатные переменные сервера, а не правка
-# кода: экран печатает то, что сервер назвал, и числа стенда видны на нём как
-# есть.
-ALIVE_SECONDS = 3.0
-ECHO_SECONDS = 20.0
-BUDGET_PER_HOUR = 6
+# СРОКОВ У СТЕНДА БОЛЬШЕ НЕТ, И ЭТО САМО ПО СЕБЕ РЕЗУЛЬТАТ. Прежний сжимал
+# `PSEUDEX_ALIVE_SECONDS` с десяти минут до трёх секунд, потому что иначе
+# состояние «замолчал» стоило бы десяти минут ожидания на прогон, и поднимал
+# эхо и бюджет перевыдач, чтобы в один час поместились переходы суток. Ни
+# одного из этих трёх сроков не существует: сервер не судит по молчанию, и
+# каждое состояние достигается ВЫЗОВОМ, а не ожиданием. Прогон стал короче на
+# все секунды, которые раньше уходили на сон.
 VERSION = "0.3.18"
 
 
@@ -74,9 +78,6 @@ class Stand:
             "PSEUDEX_LICENSE_PORT": str(self.port),
             "PSEUDEX_LICENSE_ADMIN_PORT": str(self.admin_port),
             "PSEUDEX_LEASE_TTL_SECONDS": "86400",
-            "PSEUDEX_ALIVE_SECONDS": str(ALIVE_SECONDS),
-            "PSEUDEX_RELEASE_ECHO_SECONDS": str(ECHO_SECONDS),
-            "PSEUDEX_RELEASE_BUDGET_PER_HOUR": str(BUDGET_PER_HOUR),
             "PSEUDEX_LOG_LEVEL": "WARNING",
         })
         self.log = open(log_path, "w")
@@ -114,6 +115,12 @@ class Stand:
         response.raise_for_status()
         return response.json()
 
+    def admin_post(self, path: str, body: dict) -> dict:
+        response = httpx.post(f"{self.admin_base}{path}", json=body, timeout=20.0,
+                              headers={"Authorization": f"Bearer {self.token}"})
+        response.raise_for_status()
+        return response.json()
+
     def issue(self, org_id: str, plan: str) -> str:
         response = httpx.post(f"{self.admin_base}/admin/issue", timeout=20.0,
                               json={"org_id": org_id, "plan": plan},
@@ -133,22 +140,52 @@ class Stand:
 class Worker:
     """ОДИН uvicorn-воркер: собственный ключ процесса, рождённый в памяти."""
 
-    def __init__(self, stand: Stand, key: str, instance_id: str) -> None:
+    def __init__(self, stand: Stand, key: str, instance_id: str,
+                 start_id: str) -> None:
         self.stand, self.key, self.instance_id = stand, key, instance_id
+        # ОДИН `start_id` НА ВСЕХ ВОРКЕРОВ СТАРТА — ровно так его чеканит
+        # `entrypoint.sh` до фан-аута. Случайный на процесс сделал бы из одного
+        # контейнера N поколений, и они отфенсили бы друг друга.
+        self.start_id = start_id
         self.process_key = generate_process_key()
         self.lease_id = None
         self.seq = 0
+        self.slot_no = None
+        self.epoch = None
 
     def lease(self) -> httpx.Response:
         body = {"key": self.key, "instance_id": self.instance_id,
+                "start_id": self.start_id,
                 "process_id": f"{self.instance_id}-{self.process_key.public[:8]}",
                 "pubkey": self.process_key.public, "engine_version": VERSION,
                 "lease_contract": 3, "lease_id": self.lease_id,
                 "nonce": uuid.uuid4().hex}
         response = httpx.post(f"{self.stand.base}/v1/lease", json=body, timeout=60.0)
         if response.status_code == 200:
-            self.lease_id = response.json().get("lease_id")
+            payload = response.json()
+            self.lease_id = payload.get("lease_id")
+            self.slot_no, self.epoch = payload.get("slot_no"), payload.get("epoch")
         return response
+
+    def meter(self) -> httpx.Response:
+        """`POST /v1/meter` — покупка кванта ёмкости с фенсинг-тегом в `ack`.
+
+        Именно ПОКУПКА, а не отчёт, даёт слоту `last_purchase_at` и оставляет
+        отфенсенному поколению полосу, которую экран называет словом «до».
+        """
+        body = {"key": self.key, "pubkey": self.process_key.public,
+                "nonce": uuid.uuid4().hex,
+                "ack": {"consumed": 0, "slot_no": self.slot_no,
+                        "epoch": self.epoch}}
+        answer = httpx.post(f"{self.stand.base}/v1/meter", json=body, timeout=20.0)
+        if answer.status_code == 429:
+            # ОДИН КВАНТ В СЕКУНДУ НА КЛЮЧ — это НАША полоса, а не потолок
+            # тарифа: честный движок приходит сюда раз в четыре минуты. Стенд её
+            # пережидает, а не отключает, иначе снятое тело описывало бы лимит
+            # частоты вместо фенсинга.
+            time.sleep(1.05)
+            answer = httpx.post(f"{self.stand.base}/v1/meter", json=body, timeout=20.0)
+        return answer
 
     def heartbeat(self) -> httpx.Response:
         """`POST /v1/usage` — пульс, который движок шлёт своим таймером."""
@@ -186,114 +223,103 @@ def _refusal(response: httpx.Response) -> dict:
             "detail": str(body.get("detail", ""))}
 
 
-def _container(stand: Stand, key: str, name: str, workers: int,
-               beat: bool) -> tuple[list[Worker], dict | None]:
+def _container(stand: Stand, key: str, name: str, start_id: str, workers: int,
+               buy: bool) -> tuple[list[Worker], dict | None]:
     """Поднять контейнер с `workers` воркерами. Отказ ВОЗВРАЩАЕТСЯ, а не глотается."""
     made: list[Worker] = []
     for _ in range(workers):
-        worker = Worker(stand, key, name)
+        worker = Worker(stand, key, name, start_id)
         response = worker.lease()
         if response.status_code != 200:
             return made, _refusal(response)
-        if beat:
-            worker.heartbeat()
+        worker.heartbeat()
+        if buy:
+            worker.meter()
         made.append(worker)
     return made, None
 
 
-def _four_states(stand: Stand) -> dict:
-    """ЧЕТЫРЕ СОСТОЯНИЯ КОНТЕЙНЕРА В ОДНОЙ ОРГАНИЗАЦИИ, все доведённые вызовами.
+def _slot_states(stand: Stand) -> dict:
+    """ЧЕТЫРЕ СОСТОЯНИЯ СЛОТА В ОДНОЙ ОРГАНИЗАЦИИ, все доведённые ВЫЗОВАМИ.
 
-    Порядок не произволен: место отбирают у того, кого дольше всех не слышали,
-    поэтому замолчавший первым (`vol-taken`) и становится отобранным, когда на
-    его место приходит следующий контейнер. Тариф «старт» — один контейнер,
-    иначе отбирать было бы нечего.
+    Тариф «Рабочий» — четыре слота, потому что показать надо и занятый, и
+    свободный разом. Ни одно состояние здесь не достигается ожиданием: молчание
+    больше ничего не значит, и это главная разница с прежним стендом.
+
+      слот 1 — занят, поколение покупает ёмкость (обычная жизнь);
+      слот 2 — занят, поколение попрощалось (`/v1/release` записан и НЕ читается
+               ни одним решением: слот всё ещё его);
+      слот 3 — свободен, но на нём ДОЦЕЖИВАЕТ поколение, у которого слот забрала
+               поддержка: экран обязан сказать про остаток «до», а не «оно
+               остановлено» — второго мы не знаем;
+      слот 4 — свободен и пуст.
     """
-    key = stand.issue("slotco", "start")
-    taken, refused = _container(stand, key, "vol-taken", 2, beat=True)
+    key = stand.issue("slotco", "work")
+    live, refused = _container(stand, key, "vol-live", "S-live", 2, buy=True)
     assert refused is None, refused
-    time.sleep(ALIVE_SECONDS + 0.4)          # его перестали слышать
+    polite, refused = _container(stand, key, "vol-polite", "S-polite", 1, buy=True)
+    assert refused is None, refused
+    for worker in polite:
+        worker.release()
+    drained, refused = _container(stand, key, "vol-drained", "S-drained", 1, buy=True)
+    assert refused is None, refused
 
-    # ОТБОР МЕСТА — НАСТОЯЩИЙ: этот допуск вытесняет молчащего, сервер
-    # закрывает его строки с `released_by='silence'` и списывает единицу.
-    gone, refused = _container(stand, key, "vol-gone", 1, beat=True)
-    assert refused is None, refused
-    for worker in gone:
-        worker.release()                     # а этот остановился САМ
-
-    dead, refused = _container(stand, key, "vol-dead", 1, beat=False)
-    assert refused is None, refused
-    time.sleep(ALIVE_SECONDS + 0.4)          # и замолчал
-
-    alive, refused = _container(stand, key, "vol-alive", 3, beat=True)
-    assert refused is None, refused
+    # РЫЧАГ ПОДДЕРЖКИ — НАСТОЯЩИЙ ВЫЗОВ: эпох слота поднят, держатель снят,
+    # поколение доцеживает купленное.
+    freed = stand.admin_post("/admin/release",
+                             {"org_id": "slotco", "instance_id": "vol-drained"})
+    assert freed.get("slots") == 1, freed
 
     snapshot, snapshot_at = _grab(stand, "slotco")
-    # ШЕСТОЙ КОНТЕЙНЕР ПРИ ЗАНЯТОМ СЛОТЕ — отказ, который клиент читает в логах
-    # своего движка, снятый тем же прогоном.
-    sixth = Worker(stand, key, "vol-sixth")
-    busy = _refusal(sixth.lease())
+    # И ОТКАЗ, КОТОРЫЙ ЭТО ПОКОЛЕНИЕ ПРОЧТЁТ В ЛОГАХ СВОЕГО ДВИЖКА, снятый тем
+    # же прогоном: 409 `fenced`, а не `instance_limit`.
+    fenced_by_admin = _refusal(drained[0].meter())
+    assert fenced_by_admin["status"] == 409, fenced_by_admin
 
-    # ОТОБРАННЫЙ ЕЩЁ РАБОТАЕТ. Это и есть случай, ради которого экран обязан
-    # назвать отбор отбором: его движок жив, отчитывается, и получит 409.
-    taken[0].heartbeat()
-    echo, echo_at = _grab(stand, "slotco")
-    renewal = _refusal(taken[0].lease())
-
-    return {"org_id": "slotco", "plan": "start", "holding": "vol-alive",
-            "silent": "vol-dead", "released": "vol-gone", "reclaimed": "vol-taken",
+    return {"org_id": "slotco", "plan": "work", "holding": "vol-live",
+            "released": "vol-polite", "draining": "vol-drained",
             "instances": snapshot, "instances_at": snapshot_at,
-            "instances_after_echo": echo, "instances_after_echo_at": echo_at,
             "usage": stand.admin_get("/admin/usage", {"org_id": "slotco"}),
             "chains": stand.admin_get("/admin/chains", {"org_id": "slotco"}),
-            "refusals": {"slot_busy": busy, "reclaimed_renewal": renewal},
-            "workers": {"alive": len(alive), "dead": len(dead)}}
+            "refusals": {"fenced_by_admin": fenced_by_admin},
+            "workers": {"live": len(live)}}
 
 
-def _process_ceiling(stand: Stand) -> dict:
-    """ПОТОЛОК РАБОЧИХ ПРОЦЕССОВ — настоящий: 32 воркера проходят, 33-й нет.
+def _fenced_by_claim(stand: Stand) -> dict:
+    """ПЕРЕЗАПУСК НА ТАРИФЕ В ОДИН СЛОТ: новое поколение фенсит предыдущее.
 
-    Отдельная организация, потому что потолок считается по ВСЕЙ организации:
-    молчащий ключ соседнего контейнера занял бы место в тех же тридцати двух и
-    отказ пришёл бы по другой причине.
+    Отдельная организация, потому что нужен ПОЛНЫЙ тариф: при свободном слоте
+    новый старт возьмёт свободный, и вытеснения не случится вовсе. Это тот
+    самый случай, ради которого вся конструкция и делалась, — OOM-килл и
+    `docker compose up -d` идут здесь одним путём.
     """
-    key = stand.issue("ceilco", "start")
-    workers, refused = _container(stand, key, "vol-big", 32, beat=True)
+    key = stand.issue("fenceco", "start")
+    first, refused = _container(stand, key, "vol-one", "S1", 1, buy=True)
     assert refused is None, refused
-    # ПУЛЬС ПЕРЕД СНИМКОМ И ПЕРЕД ПОСЛЕДНЕЙ ПОПЫТКОЙ, а не только при аренде:
-    # тридцать две аренды занимают около секунды, и при сроке молчания стенда
-    # первые ключи успевали замолкнуть — тогда отказ приходил бы по
-    # переоткрытию их мест, а снимок показывал бы меньше живых процессов, чем
-    # называет отказ. Круг повторяется, пока сервер не увидит их всеми живыми:
-    # предмет замера — момент, когда потолок ПОЛОН.
-    instances, at = {}, 0.0
-    for _ in range(3):
-        for worker in workers:
-            worker.heartbeat()
-        instances, at = _grab(stand, "ceilco")
-        if instances["instances"][0]["live_processes"] == len(workers):
-            break
-    assert instances["instances"][0]["live_processes"] == len(workers), instances
-    refused = _refusal(Worker(stand, key, "vol-big").lease())
-    assert refused["status"] == 409, refused
-    assert str(len(workers)) in refused["detail"], refused
-    return {"org_id": "ceilco", "plan": "start", "holding": "vol-big",
-            "admitted": len(workers),
-            "instances": instances, "instances_at": at,
-            "usage": stand.admin_get("/admin/usage", {"org_id": "ceilco"}),
-            "chains": stand.admin_get("/admin/chains", {"org_id": "ceilco"}),
-            "refusals": {"process_ceiling": refused}}
+    second, refused = _container(stand, key, "vol-one", "S2", 1, buy=True)
+    # ПЕРЕЗАПУСК ОБЯЗАН ПОДНИМАТЬСЯ, А НЕ ОТКАЗЫВАТЬСЯ: выпущенный 0.3.17 на
+    # этом же месте отвечал 409 на 6-м, 9-м и 3-м честном старте.
+    assert refused is None, refused
+    snapshot, snapshot_at = _grab(stand, "fenceco")
+    fenced = _refusal(first[0].meter())
+    assert fenced["status"] == 409 and fenced["error"] == "fenced", fenced
+    return {"org_id": "fenceco", "plan": "start", "holding": "vol-one",
+            "instances": snapshot, "instances_at": snapshot_at,
+            "usage": stand.admin_get("/admin/usage", {"org_id": "fenceco"}),
+            "chains": stand.admin_get("/admin/chains", {"org_id": "fenceco"}),
+            "refusals": {"fenced_by_claim": fenced},
+            "epochs": {"first": first[0].epoch, "second": second[0].epoch}}
 
 
 def collect(db_path: str, log_path: str) -> dict:
     stand = Stand(db_path, log_path)
     try:
-        return {"alive_seconds": ALIVE_SECONDS, "engine_version": VERSION,
-                "slots": _four_states(stand), "ceiling": _process_ceiling(stand),
+        return {"engine_version": VERSION,
+                "slots": _slot_states(stand), "fenced": _fenced_by_claim(stand),
                 # Флот называет организации сам: ручка их не перечисляет —
                 # она экономит round-trip, а не расширяет права.
                 "fleet": stand.admin_get("/admin/fleet",
-                                         {"org_ids": "slotco,ceilco"}),
+                                         {"org_ids": "slotco,fenceco"}),
                 "plans": stand.admin_get("/admin/plans", {})}
     finally:
         stand.stop()

@@ -145,31 +145,32 @@ def usage(org_id: str) -> dict[str, object]:
 
 
 def instances(org_id: str) -> dict[str, object]:
-    """Which containers the licensing server sees, and which of them hold a slot.
+    """Слоты тарифа: кто держит каждый и что на нём доцеживает.
 
-    The plan is sold in containers and the limit is enforced on them, but the
-    cabinet had nowhere to show them: a persona whose only slot was held by a
-    container they had already deleted read «остановите лишний контейнер или
-    перейдите на больший тариф» — asked to stop something that did not exist,
-    and offered a bigger plan as the remedy.
+    Отвечает СЛОТАМИ, а не контейнерами, и это разница по существу. Прежний
+    ответ нёс состояния `active`/`silent`/`released` — суждение о том, жив ли
+    контейнер, которого сервер вынести не может; на нём и сломались шесть
+    заходов. Теперь `slots[]` — строки, которые выдали МЫ: `holder` (поколение,
+    его том, версия, когда покупал ёмкость) и `draining` (поколения, которым
+    больше не продают ёмкость и которые доцеживают купленное).
 
-    THE LIST IS NOT THE COUNT. It carries every lease in the window: `active`
-    (holds a slot), `silent` (we stopped hearing it — the slot is already free)
-    and `released` (given back). «Сколько занято» is `occupied`, computed by the
-    same function that refuses a lease; `alive_seconds` is after how much
-    silence a slot frees itself, and `turnover_last_hour`/`turnover_budget` are
-    how many times the slot has already passed to a new container this hour.
-    `billing.slots` turns all of it into what the two screens draw.
+    СПИСОК — НЕ СЧЁТ. «Сколько занято» это `occupied`, число сервера: в списке
+    есть и свободные слоты. `billing.slots` превращает всё это в то, что рисуют
+    оба экрана.
     """
     return _get(INSTANCES, {"org_id": org_id})
 
 
 def release_instance(org_id: str, instance_id: str) -> bool:
-    """Give a slot back before its window expires.
+    """Освободить слоты, которые держит установка, которой больше нет.
 
-    A customer who recreated a volume is a NEW instance by construction, and in
-    production the window is a day — so without this they wait a day to run the
-    product they pay for.
+    Рычаг поддержки для редкого случая «клиент говорит, что контейнера нет, а
+    его слышали позже всех»: сервер поднимает эпох слота и снимает держателя.
+    Редкий он потому, что вернувшаяся установка забирает СВОЙ слот сама, без
+    нас, — и именно поэтому обычный клиент сюда больше не приходит.
+
+    Никого не гасит: отфенсенное поколение доцеживает купленную ёмкость и
+    останавливается само.
     """
     result = _post(RELEASE, {"org_id": org_id, "instance_id": instance_id})
     return bool(result.get("released"))

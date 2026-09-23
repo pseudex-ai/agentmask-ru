@@ -944,14 +944,20 @@ def _check_ops_console(client, admin_url: str, public_url: str,
           org.id in fleet_body and org.subscription.plan.title in fleet_body,
           f"org={org.id in fleet_body} plan={org.subscription.plan.title in fleet_body}")
 
-    # ДВА ПОЛЯ С ОДНИМ ИМЕНЕМ `instances`, И ЭТО ЛОВУШКА.
+    # ДВА СПИСКА С ПОХОЖИМ СМЫСЛОМ, И ЭТО ЛОВУШКА.
     #
-    # У `/admin/usage` это СЫРЫЕ СТРОКИ АРЕНД — по строке на каждую выдачу,
-    # вместе с освобождёнными, с потолком в сотню. Их количество не считает
-    # контейнеры: у клиента с одним контейнером колонка «занято по тарифу»
-    # показала бы «100 / 1» через сутки работы. У `/admin/fleet` и
-    # `/admin/instances` это ДЕРЖАЩИЕ СЛОТ, сгруппированные по `instance_id`, и
-    # только у них есть `state` и `last_lease`, которые рисует экран клиента.
+    # У `/admin/usage` в поле `instances` лежат СЫРЫЕ СТРОКИ АРЕНД — по строке
+    # на каждую выдачу, вместе с освобождёнными, с потолком в сотню. Их
+    # количество не считает контейнеры: у клиента с одним контейнером колонка
+    # «занято по тарифу» показала бы «100 / 1» через сутки работы. У
+    # `/admin/fleet` и `/admin/instances` теперь лежат СЛОТЫ (`slots`), и
+    # занятость — ЧИСЛО СЕРВЕРА (`occupied`), а не длина списка: в списке есть
+    # и свободные слоты, поэтому его длина всегда равна тарифу.
+    #
+    # ИМЯ ПОЛЯ СМЕНИЛОСЬ ВМЕСТЕ С КОНСТРУКЦИЕЙ, и это не косметика: место
+    # занимает больше не процесс, а СЛОТ, который выдаёт сервер. Экран,
+    # продолжавший читать `instances`, описывал бы мир, которого нет.
+    #
     # НАСТОЯЩАЯ АРЕНДА, иначе оба списка пусты и обе проверки ниже проходят
     # впустую: `all(...)` по пустому списку истинно, то есть проверка,
     # неспособная упасть. Ключ процесса генерируется в venv движка — витрина
@@ -971,14 +977,22 @@ def _check_ops_console(client, admin_url: str, public_url: str,
     fleet_rows = httpx.get(f"{admin_url}/admin/fleet",
                            params={"org_ids": org.id}, timeout=5,
                            headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}).json()["orgs"]
-    fleet_slots = fleet_rows[0]["instances"]
+    fleet_slots = fleet_rows[0]["slots"]
     raw_leases = httpx.get(f"{admin_url}/admin/usage", params={"org_id": org.id},
                            timeout=5,
                            headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}
                            ).json()["instances"]
-    check("флот считает контейнеры, а не строки аренд",
-          bool(fleet_slots) and all("state" in slot for slot in fleet_slots),
+    check("флот отдаёт слоты, и у каждого есть номер и держатель",
+          bool(fleet_slots)
+          and all("slot_no" in slot and "holder" in slot for slot in fleet_slots),
           f"поля={sorted(fleet_slots[0]) if fleet_slots else 'СЛОТОВ НЕТ — проверка пуста'}")
+    # ЗАНЯТОСТЬ — ЧИСЛО СЕРВЕРА, И ОНО НЕ ДЛИНА СПИСКА. Аренда выше взята одна,
+    # значит занят ровно один слот; проверка падает и когда сервер вернул длину
+    # списка (было бы равно тарифу), и когда он вернул ноль при живой аренде.
+    check("занятость считает держателей, а не длину списка",
+          fleet_rows[0]["occupied"] == 1
+          and fleet_rows[0]["slot_count"] >= fleet_rows[0]["occupied"],
+          f"занято={fleet_rows[0]['occupied']} слотов={fleet_rows[0]['slot_count']}")
     check("а сырые строки аренд остались там, где и были",
           bool(raw_leases) and all("state" not in row for row in raw_leases),
           f"поля={sorted(raw_leases[0]) if raw_leases else 'АРЕНД НЕТ — проверка пуста'}")

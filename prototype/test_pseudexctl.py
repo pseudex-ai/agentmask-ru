@@ -315,7 +315,13 @@ def check_doctor_verdicts() -> None:
                                "sunset_at": None, "notice": None,
                                "upgrade": "pseudexctl upgrade --to 0.3"}},
         "vault": {"on_disk": "encrypted"},
-        "license": {"state": "active"},
+        # МЕСТО ТАРИФА — ЧАСТЬ ЗДОРОВОГО ТЕЛА, а не необязательное украшение:
+        # движок этой версии против сервера этой версии всегда знает свой слот,
+        # и фикстура без него описывала бы пару, которой не бывает.
+        "license": {"state": "active", "serving": True,
+                    "slot": {"state": "holding", "slot_no": 1, "slot_count": 2,
+                             "epoch": 7, "fenced": None, "remedy": None,
+                             "band_left": 1840, "start_id": "s"}},
     })
 
     def marks(body: str) -> list[str]:
@@ -339,6 +345,31 @@ def check_doctor_verdicts() -> None:
     mixed["vault"]["on_disk"] = "mixed"
     check("оборванная миграция — предупреждение: перезапуск дошифрует",
           marks(json.dumps(mixed)) == [pseudexctl.WARN])
+
+    # МЕСТО ЗАНЯЛ БОЛЕЕ НОВЫЙ ЗАПУСК. Предупреждение, НЕ отказ: контейнер
+    # работает и остановится сам, а вердикт «сломано» отправил бы оператора
+    # чинить переразвёртывание.
+    fenced = json.loads(healthy)
+    fenced["license"]["slot"] = {
+        "state": "fenced", "slot_no": 1, "slot_count": 2, "epoch": 6,
+        "band_left": 1840, "remedy": "переразвёртывание — ничего делать не нужно",
+        "fenced": {"current_epoch": 7, "epoch": 6}, "start_id": "s"}
+    fenced_lines = pseudexctl._read_status(json.dumps(fenced))
+    check("вытеснение — предупреждение, а не отказ",
+          marks(json.dumps(fenced)) == [pseudexctl.WARN], str(marks(json.dumps(fenced))))
+    check("и оператор читает, кто вытеснил и сколько осталось купленного",
+          any("7" in what and "1840" in what for _m, what, _t in fenced_lines),
+          str([what for _m, what, _t in fenced_lines]))
+    check("и что делать — рядом с диагнозом",
+          any("ничего делать не нужно" in todo for _m, _w, todo in fenced_lines))
+
+    # СЕРВЕР СТАРШЕ ДВИЖКА — «НЕИЗВЕСТНО», а не «слот 1».
+    silent = json.loads(healthy)
+    silent["license"].pop("slot")
+    check("молчание сервера о слоте названо молчанием",
+          marks(json.dumps(silent)) == [pseudexctl.WARN]
+          and any("не назвал слот" in what
+                  for _m, what, _t in pseudexctl._read_status(json.dumps(silent))))
 
     unloaded = json.loads(healthy)
     unloaded["engine"]["assets_loaded"] = False
