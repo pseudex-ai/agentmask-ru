@@ -41,7 +41,7 @@ from pseudex import metering
 from pseudex.maskcache import MaskCache
 from pseudex.operator import build_router
 from pseudex.profiling import snapshot as profiling_snapshot, stage
-from pseudex.redact import StreamDetokenizer, residual_tokens
+from pseudex.redact import StreamDetokenizer, surviving_substitutes
 from pseudex.tenants import Tenant, Tenants
 from pseudex.vault import PSEUDONYM_SCOPES, Vault, count_values_since
 
@@ -764,7 +764,7 @@ def _residual_in(written: dict[str, object], restored: dict[str, object],
     BOTH ANSWERS, PAIRED PART BY PART, exactly as the sidecar's `_residual_for`
     does and for the same reason: asked of the restored half alone the signal
     fires on a CORRECT restoration whenever a real value happens to look like
-    one of our substitutes (`redact.residual_tokens`). Detokenization changes
+    one of our substitutes (`redact.surviving_substitutes`). Detokenization changes
     strings and never their number, so walking the two objects in step lines
     the pairs up by construction.
     """
@@ -777,7 +777,7 @@ def _residual_in(written: dict[str, object], restored: dict[str, object],
         content = message.get("content")
         if isinstance(content, str):
             said = before_message.get("content")
-            found.extend(residual_tokens(said if isinstance(said, str) else content,
+            found.extend(surviving_substitutes(said if isinstance(said, str) else content,
                                          content, vault, False))
         before_calls = before_message.get("tool_calls") or []
         for call_index, call in enumerate(message.get("tool_calls", []) or []):
@@ -793,7 +793,7 @@ def _residual_in(written: dict[str, object], restored: dict[str, object],
             # restoring side offers it only here (`_tool_windows`); a
             # signal that looked for less than the restorer did would go
             # quiet on exactly those.
-            found.extend(residual_tokens(asked if isinstance(asked, str) else arguments,
+            found.extend(surviving_substitutes(asked if isinstance(asked, str) else arguments,
                                          arguments, vault, True))
     return sorted(set(found))
 

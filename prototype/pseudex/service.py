@@ -30,7 +30,7 @@ text + keep the per-org vault + audit. Runs in the customer's contour.
   much a customer's own street or name may look like a substitute minted
   elsewhere. Both halves were once false and both were customer-visible: the
   signal fired on correct restorations and stayed quiet on a refused house
-  number (`redact.residual_tokens`).
+  number (`redact.surviving_substitutes`).
 
   `pseudonym_scope` («conversation» | «customer») is the SAME declaration on
   both legs and defaults to `PSEUDEX_PSEUDONYM_SCOPE`. A host whose agent has
@@ -81,7 +81,7 @@ from pseudex import metering
 from pseudex.maskcache import MaskCache
 from pseudex.operator import build_router
 from pseudex.profiling import snapshot as profiling_snapshot
-from pseudex.redact import residual_tokens, unmask_arguments, unmask_stream_chunk
+from pseudex.redact import surviving_substitutes, unmask_arguments, unmask_stream_chunk
 from pseudex.vault import PSEUDONYM_SCOPES, Vault, count_values_since
 
 # Without this the sidecar has NO logging configuration at all, so everything
@@ -375,7 +375,7 @@ def _minted_in(texts: list, vault: Vault, for_tool: bool) -> set:
     in the INPUT and gone from the OUTPUT is a real value the call resolved.
 
     EACH TEXT IS ITS OWN «WRITTEN» FORM, because nothing has been restored in it
-    yet: `residual_tokens` reads what the agent wrote and keeps what survived,
+    yet: `surviving_substitutes` reads what the agent wrote and keeps what survived,
     and here the two are one string — which is precisely «everything of ours
     standing in it», the count this subtraction needs.
 
@@ -386,7 +386,7 @@ def _minted_in(texts: list, vault: Vault, for_tool: bool) -> set:
     found: set = set()
     for text in texts:
         if isinstance(text, str):
-            found.update(residual_tokens(text, text, vault, for_tool))
+            found.update(surviving_substitutes(text, text, vault, for_tool))
     return found
 
 
@@ -913,7 +913,7 @@ def _unmask_arguments_for(arguments: list[str], org_id: str, conversation_id: st
     restored = [unmask_arguments(raw, vault) for raw in arguments]
     residual: list[str] = []
     for raw, text in zip(arguments, restored):
-        residual.extend(residual_tokens(raw, text, vault, True))
+        residual.extend(surviving_substitutes(raw, text, vault, True))
     residual = sorted(set(residual))
     disclosed = len(_minted_in(arguments, vault, True) - set(residual))
     return restored, residual, disclosed
@@ -940,7 +940,7 @@ def _residual_for(written: dict[str, object], restored: dict[str, object],
     `_response_parts` walks the two objects in the same order because
     detokenization changes strings and never their number or their legs, so the
     pairs line up by construction. Asked of the restored half alone, the signal
-    fired on correct restorations — see `residual_tokens`.
+    fired on correct restorations — see `surviving_substitutes`.
 
     IN THE CONVERSATION THE RESTORE RAN IN, or it is diagnosing a different
     engine: `_unmask_for` resolves through `_scoped`, and a wider view here
@@ -951,7 +951,7 @@ def _residual_for(written: dict[str, object], restored: dict[str, object],
     found: list[str] = []
     for (before, for_tool), (after, _leg) in zip(_response_parts(written),
                                                  _response_parts(restored)):
-        found.extend(residual_tokens(before, after, vault, for_tool))
+        found.extend(surviving_substitutes(before, after, vault, for_tool))
     return sorted(set(found))
 
 
@@ -990,7 +990,7 @@ def _unmask_chunk_leg(delta: str, carry: str, org_id: str, flush: bool, actor: s
     """Streaming detok on the worker thread, behind a minted-token gate (pentest F1). The
     minted tokens in the input (`before`) are computed ONCE — if there are none, the chunk
     cannot disclose a value, so it skips the shared-audit rate SUM and the audit; an
-    ordinary stream is mostly such chunks. `_minted_in` (residual_tokens) is COMPLETE — it
+    ordinary stream is mostly such chunks. `_minted_in` (surviving_substitutes) is COMPLETE — it
     catches reformatted numbers (a spaced phone token a bare token_re would miss). A chunk
     that carries a minted token pays the value-based cap (over → the _RATE_LIMITED
     sentinel) and, after resolving, records a counts-only row reusing `before`: a token

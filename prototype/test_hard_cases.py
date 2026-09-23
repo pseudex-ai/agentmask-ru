@@ -28,7 +28,8 @@ import tempfile
 import testkit
 from pseudex import morph_places
 from pseudex.detect_all import Detector
-from pseudex.redact import mask_text, residual_tokens, unmask_arguments, unmask_text
+from pseudex.redact import (mask_text, surviving_substitutes, unmask_arguments,
+                            unmask_text)
 from pseudex.vault import Vault
 
 _FAILURES: list[str] = []
@@ -531,9 +532,9 @@ def test_a_numbered_street_is_not_a_house(detector: Detector) -> None:
         back = json.loads(restored)
         if (back["house"] != "77" or back["flat"] != "113"
                 or "победиловск" not in back["street"].lower()
-                or residual_tokens(argument, restored, talk, True)):
+                or surviving_substitutes(argument, restored, talk, True)):
             wrong.append((argument, restored,
-                          residual_tokens(argument, restored, talk, True)))
+                          surviving_substitutes(argument, restored, talk, True)))
     check("поля street/house/flat возвращают настоящий адрес без остатка", not wrong, f"{wrong}")
 
 
@@ -624,7 +625,7 @@ def test_a_hyphen_glued_substitute_is_two_words(vault: Vault, detector: Detector
         restored = unmask_arguments(argument, talk)
         back = json.loads(restored)["address"]
         if "седого" not in back.lower() or "39" not in back:
-            leaked.append((agent, back, residual_tokens(argument, restored, talk, True)))
+            leaked.append((agent, back, surviving_substitutes(argument, restored, talk, True)))
     check("склеенная дефисом подмена разрешается, а не уезжает в инструмент",
           not leaked, f"{leaked}")
 

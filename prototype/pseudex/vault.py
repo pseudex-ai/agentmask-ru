@@ -938,6 +938,32 @@ def _street_stem(phrase: str) -> str:
     return parses[0].normal_form if parses else words[-1]
 
 
+def _wears_parts_in_role(token: str, stems: tuple[str, ...], numbers: tuple[str, ...],
+                         role: str) -> bool:
+    """Носит ли подмена эти части ИМЕННО В ЭТОЙ РОЛИ своего адреса.
+
+    `token_parts` держит части без роли — на прямом пути роль и не нужна, кусок
+    ищется как строка. Обратный, сообщающий вопрос без неё называет нашим не то:
+    поле `flat` с числом 26 находило подмену, у которой 26 стоит в НОМЕРЕ ДОМА.
+    Восстановление такую строку не трогает (оно роль проверяет), значит отказа
+    не было и докладывать не о чем.
+
+    Роль, которой у подмены нет вовсе, — это «нет», а не «может быть»: наши
+    подмены квартир не несут, и ни одно число под ключом `flat` не наше.
+    """
+    part = morph_places.split_roles(token).get(role, "")
+    if not part:
+        return False
+    if numbers and not stems:
+        # ЧИСЛО СРАВНИВАЕТСЯ С ЧИСЛОМ, И МОРФОЛОГИЯ ЗДЕСЬ НИ ПРИ ЧЁМ. Это самый
+        # частый вопрос этого слоя (номер дома под ключом схемы), а
+        # `signature_parts` разбирает фразу через pymorphy — на владельце,
+        # который и так уже стоил одного разбора адреса, второй не нужен.
+        return set(numbers) <= set(re.findall(r"\d+", part))
+    part_stems, part_numbers = morph_places.signature_parts(part)
+    return set(stems) <= set(part_stems) and set(numbers) <= set(part_numbers)
+
+
 _SETTLEMENT_MARKER_RE = morph_places.SETTLEMENT_MARKER_RE
 
 
@@ -3019,10 +3045,10 @@ class Vault:
     # ВОССТАНОВЛЕННОМ тексте, он поднимает тревогу на правильном ответе:
     # настоящая улица, случайно делящая основу с двумя нашими подменами,
     # отвечает «да» — 5 ложных тревог на 50 диалогах документированного
-    # клиента. Кто спрашивает — `redact.residual_tokens`, и он же проверяет,
+    # клиента. Кто спрашивает — `redact.surviving_substitutes`, и он же проверяет,
     # что фрагмент ВСЁ ЕЩЁ СТОИТ в ответе: разрешившийся из ответа исчез.
 
-    def place_fragment_is_ours(self, candidate: str) -> bool:
+    def place_fragment_is_ours(self, candidate: str, role: str = "") -> bool:
         """Хоть одна адресная подмена этого заказчика носит ВСЕ части этого
         фрагмента — «наше это слово (или число), или клиентское».
 
@@ -3030,12 +3056,31 @@ class Vault:
         без дома и НОМЕР ДОМА без улицы. Второй до сих пор отказывал молча — 22
         из 50 у документированного клиента, — потому что вопрос о нём вовсе не
         задавался: ключ с цифрами исключался как «отвечающий по всему
-        заказчику», а это про ОБЛАСТЬ, а не про единственность."""
+        заказчику», а это про ОБЛАСТЬ, а не про единственность.
+
+        РОЛЬ — ЧАСТЬ ВОПРОСА, А НЕ УКРАШЕНИЕ. `token_parts` держит части
+        подмены без роли, потому что на прямом пути роль не нужна: «47» ищется
+        как «47». Но спрошенный ролью, этот индекс отвечает НЕ О ТОМ: поле
+        `flat` с числом 26 находило подмену, у которой 26 — НОМЕР ДОМА, и
+        сигнал называл нашим значение, которое восстановление даже не пыталось
+        заменить (роль оно проверяет, см. `_restore_cued_numbers_spans`). Замер
+        документированного клиента: 10 из 21 ложных тревог — ровно этот класс,
+        квартиры, которых ни в одной подмене нет. Роль читается из имени поля
+        (`role_of_field`) или из подсказки в прозе («кв. 26»), и владелец
+        обязан носить кусок ИМЕННО В НЕЙ.
+        """
         stems, numbers = morph_places.signature_parts(candidate)
         parts = [*stems, *numbers]
         if not parts:
             return False
         owners, truncated = self._loc_parts_owners(parts)
+        if not truncated and owners and role:
+            # ПЕРВОГО ПОДХОДЯЩЕГО ХВАТАЕТ, и это не мелочь: вопрос «наше ли»
+            # не спрашивает, ЧЬЁ, а у распространённой основы владельцев до
+            # полусотни, и каждый стоит разбора адреса. Ответ «да» находится
+            # на первом; полный перебор платит только отрицательный ответ.
+            return any(_wears_parts_in_role(token, stems, numbers, role)
+                       for token in owners)
         # ДВА ЗАПРОСА, А НЕ ОДИН JOIN, И ЭТО РАЗНИЦА В ШЕСТЬСОТ РАЗ. Совмещённый
         # запрос `place_owner` идёт по `idx_tokens_namekey (customer=?)`, то есть
         # перебирает ВСЕ строки заказчика: 55 мс на 60 000 строк за одну основу.
@@ -3049,12 +3094,22 @@ class Vault:
         # поворачивает от потолка `_sole_place_owner`.
         return truncated or bool(owners)
 
-    def digit_fragment_is_ours(self, fragment: str) -> bool:
+    def digit_fragment_is_ours(self, fragment: str, entity_type: str | None = None,
+                               position: str | None = None) -> bool:
         """Цифры этого куска стоят внутри цифр хоть одной подмены этого
         заказчика — последние четыре цифры телефона, серия паспорта, группа
         СНИЛС. Тот же отбор, что у `digit_fragment_owner` (кусок строго короче
         значения, длины настоящего и подменного совпадают), без требования
         единственности.
+
+        ТИП И МЕСТО — ТО ЖЕ СУЖЕНИЕ, ЧТО У ВОССТАНОВЛЕНИЯ. `digit_fragment_owner`
+        никогда не спрашивает «стоит ли этот кусок хоть где-нибудь»: подсказка
+        говорит, ЧЕЙ это кусок и с какого он края («серия 4509» — начало
+        паспорта, «контрольное число 59» — конец СНИЛС). Спрошенный без
+        сужения, вопрос отвечает «да» почти на любые две цифры — телефон несёт
+        одиннадцать, и внутри них стоит половина двузначных чисел на свете.
+        Сигнал обязан спрашивать ровно то, что спросило восстановление, иначе
+        он докладывает об отказе, которого не было.
 
         СВОЙ ЗАПРОС С ПРЕДЕЛОМ, А НЕ ЧУЖОЙ БЕЗ НЕГО. `instr` по подстроке не
         ложится ни на один индекс, поэтому поиск куска — это перебор строк
@@ -3073,12 +3128,22 @@ class Vault:
                 (self._customer, len(digits), digits, _DIGIT_FRAGMENT_PROBE),
             ).fetchall()
         for token_digits, row_type, canonical, original in rows:
+            if entity_type is not None and row_type != entity_type:
+                continue
             value = _pick_value(row_type, canonical or "", original or "", True)
             real = "".join(ch for ch in value if ch.isdigit())
             # Разной длины — смещение не переносится, и восстановление такую
             # строку тоже пропускает; сообщать о ней было бы ложной тревогой.
-            if len(real) == len(token_digits):
+            if len(real) != len(token_digits):
+                continue
+            if position is None:
                 return True
+            start = token_digits.find(digits)
+            while start >= 0:
+                if ((position == "end" and start + len(digits) == len(token_digits))
+                        or (position == "start" and start == 0)):
+                    return True
+                start = token_digits.find(digits, start + 1)
         return False
 
     def date_reading_is_ours(self, reading: str) -> bool:
@@ -3868,7 +3933,7 @@ class Vault:
     def minted_tokens(self) -> tuple[str, ...]:
         """Все подмены, отчеканенные для этого клиента.
 
-        Нужна СУДЬЕ. `residual_tokens` отдаёт только те, что строковый поиск ещё
+        Нужна СУДЬЕ. `surviving_substitutes` отдаёт только те, что строковый поиск ещё
         находит в ответе, — то есть уже пойманные детерминированной проверкой; а
         вопрос к модели ровно про остальные: склонённую подмену, пересказанный
         адрес, число словами. Читает и ничего не чеканит: `/spans` и `peek_token`
@@ -3980,7 +4045,7 @@ class Vault:
         The price is the trade `#conversation-scope` already records: a bare
         street named in one dialogue and asked about in another no longer
         resolves and comes back as a residual token, VISIBLY
-        (`place_fragment_is_ours` → `redact.residual_tokens`), instead of
+        (`place_fragment_is_ours` → `redact.surviving_substitutes`), instead of
         answering with somebody else's street silently."""
         if entity_type != "LOC" or not name_key:
             return False

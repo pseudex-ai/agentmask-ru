@@ -948,8 +948,9 @@ The swap layer: tokenize spans on the way to the model (substitute inflected to
 the original's case), detokenize on the way back — prose in agreement, tool
 arguments verbatim in the agent's form. Streaming detokenizer with one carry per
 `choice.index`; `unmask_arguments` for buffered tool calls; `residual_tokens`
-for substitutes that failed to resolve.
-- **API:** `mask_text`, `is_own_substitute`, `vault_value`, `tokenize_span`, `unmask_text`, `unmask_stream_chunk`, `unmask_arguments`, `residual_tokens`, `StreamDetokenizer`
+(two arguments, the shape the benchmark's own gateway calls) and the leg-aware
+`surviving_substitutes` for substitutes that failed to resolve.
+- **API:** `mask_text`, `is_own_substitute`, `vault_value`, `tokenize_span`, `unmask_text`, `unmask_stream_chunk`, `unmask_arguments`, `residual_tokens`, `surviving_substitutes`, `StreamDetokenizer`
 - **Uses:** address, agent_form, assets, date_form, detect, morph_names, morph_places, normalize, profiling, translit, vault · **Used by:** envelope, proxy, service
 - **Tests:** test_argument_form, test_collisions, test_derived_forms, test_hard_cases, test_loop, test_names_morphology, test_product, test_prose_fragments, bench_masking, profile_latency; `bench/agentpii{2,3,4}`, `bench/agentrun/roundtrip.py`
 - **Docs:** `docs/how-it-works.md`, `docs/known-issues.md` (§0, §1, Б8, Б11, Б12) · rules: INVARIANTS.md#swap, INVARIANTS.md#streaming

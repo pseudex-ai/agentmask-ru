@@ -85,20 +85,32 @@ same org holding a substitute on the same street → the engine refuses rather
 than guessing, because guessing would put one customer's real address into
 another customer's tool call.
 
-**A refusal is never silent, whatever the fragment was.** What did not resolve
-comes back in `residual_tokens` (and as the count in the `X-Pseudex-Residual`
-header), with the substitute named — a street, a house number, a date the agent
-renotated, a group of digits cut out of a longer value. The status is still 200
-and the JSON is still well formed, so that list is the only way the callback can
-tell a restored value from a fake that reached the tool — treat a non-empty
+**A refusal is never silent, whatever the fragment was, on whichever leg it
+stood.** What did not resolve comes back in `residual_tokens` (and as the count
+in the `X-Pseudex-Residual` header), with the substitute named — a street, a
+house number, a date the agent renotated, a group of digits cut out of a longer
+value — and it is named the same way whether it stood in a tool call's arguments
+or in the assistant's own prose to the customer. The status is still 200 and the
+JSON is still well formed, so that list is the only way the callback can tell a
+restored value from a fake that reached the tool — treat a non-empty
 `residual_tokens` as "do not execute this tool call yet".
 
 **And the list is about the substitute, never about the answer.** It names only
-strings the MODEL wrote that the engine could not resolve and that are therefore
-still standing in what you are reading. A value that was restored correctly never
-appears there, even when the customer's own street or name happens to look like a
-substitute minted for another dialogue. That is what makes "do not execute" a
-rule you can act on rather than a warning to weigh.
+strings the MODEL wrote that the engine MINTED and could not resolve, and that
+are therefore still standing in what you are reading. A value that was restored
+correctly never appears there, even when the customer's own street or name
+happens to look like a substitute minted for another dialogue; and a value the
+engine never produced — an order quantity, a warehouse's own flat number — is
+not named at all, because the question asked is "did we mint this", not "does
+this look like something we mint".
+
+**The one case where that question has no clean answer is a bare number with no
+dialogue named.** «47» under a `house` key, with no `conversation_id` and no
+street beside it, is two digits: if several of your substitutes carry that house
+the engine cannot tell one of them from a number of your own, and it names it
+rather than staying silent about a possible fake. Passing `conversation_id`
+removes the ambiguity entirely — the dialogue that minted the substitute answers,
+and the list is empty.
 
 Same id as `/mask` (the one the callback already passes there, or nothing at all
 on both legs), and the same field on `/unmask_arguments` and `/unmask_chunk`.
