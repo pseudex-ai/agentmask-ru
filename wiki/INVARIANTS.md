@@ -168,6 +168,18 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   петрову» went to the model in the clear. Consider every name-tagged reading
   tied for first — unbounded costs 0.7pp NEREL precision («жене»→«Женя»).
   Pins: `test_hard_cases`, `test_persona_defects`.
+- **THE DICTIONARY IS THE CEILING, AND IT MUST NEVER BE FED FROM A BENCHMARK'S
+  POOLS.** 88% of everything that reaches the model on AgentMask-RU is a name
+  the gazetteer does not hold — ordinary surnames («Щербина», «Соколовский»)
+  as much as names of the peoples of Russia («Резеда», «Хадиджа») — and the
+  corpus that measures this is generated from `public/agentmask-ru/pools/`
+  (Wikidata, NEN). Pouring those pools into `licensing/data/` would print ~100%
+  and measure nothing. New names come from a source the pools do NOT hold
+  (ЕГРИП) and from suffix rules; the intersection with the pools is held out.
+  Б31 in `docs/known-issues.md` carries the sources and the numbers.
+  UNPINNED: no test can hold a rule about where data comes FROM; the pools are
+  a published file and the check is a reviewer reading the diff of
+  `licensing/data/`.
 - **A single-token NER person is kept unless the dictionary claims the word.**
   The gate demanded a known name or a Russian surname suffix and threw away
   Обама, Месси, Бейонсе. NEREL PERSON 80.6% → 91.5% at no precision cost; the
