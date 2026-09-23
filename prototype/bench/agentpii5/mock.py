@@ -62,7 +62,25 @@ from bench.agentpii5.tools import (NEW_REGISTRY, csv_row_path, expected_leaf_val
 # The tables the twelve new tools read. v4's thirteen stay exactly as they are.
 NEW_TABLES: tuple[str, ...] = (
     "kb_chunks", "documents", "bank_clients", "vehicles", "snils_records",
-    "calendar", "ticket_events", "emails", "patients")
+    "calendar", "ticket_events", "emails", "patients",
+    # The office suite. Three are READ and therefore seeded — the mailbox, the
+    # tracker's directory of people, the spreadsheet — and the rest are where
+    # the suite WRITES. `documents` is not repeated: `doc_append` writes into the
+    # store `doc_retrieve` and `file_read` already read, which is what makes
+    # «дописал → перечитал» a chain the corpus gets without a second table.
+    "mailbox", "tracker_users", "sheets", "issues", "cards", "memories",
+    "reminders", "events")
+# The Gmail search operators the mock accepts; anything else is the 400 Microsoft
+# Graph answers an unknown $search property with (`_mail_search`).
+MAIL_OPERATORS: tuple[str, ...] = (
+    "from", "to", "cc", "subject", "has", "label", "after", "before", "in")
+# A1 notation names columns A..Z here; a wider echo would need the AA.. form and
+# no case writes twenty-six columns of one person.
+SHEET_MAX_COLUMNS: int = 26
+# Whose calendar the invitation is sent FROM, and in which zone it is written.
+# Business filler: neither is personal data and neither is declared anywhere.
+ORGANIZER_EMAIL: str = "office@example.ru"
+CALENDAR_ZONE: str = "Europe/Moscow"
 # A value shorter than this is not indexed for tagging by VALUE: «7», «12» and
 # «41» occur in half the records of a seeded world, and a tag put on the wrong
 # record is worse than no tag — the observer would score a hop on someone
@@ -117,6 +135,16 @@ SCAN_SPACE_RATE: float = 0.03
 IDENTITY_STEM: int = 4
 IDENTITY_DIGITS: int = 6
 IDENTITY_DIGIT_TAIL: int = 10
+# HOW MUCH OF A WORD AN INFLECTION IS ALLOWED TO ADD, and it is the half the
+# first version left open. A four-letter stem that only had to be a PREFIX
+# admitted «букицев» and «букиский» against a seeded «букин» — a substitute the
+# gateway minted, resolving to the real person, on a family whose whole claim is
+# «подмена ничего не находит». Russian case endings are at most two letters past
+# the nominative («букин» → «букиным», «тарасов» → «тарасовой»), so a query word
+# that runs more than two letters past the stem it shares is a DIFFERENT word and
+# names nobody. Measured on the corpus's own draws: every declined form the
+# families produce still resolves, and the two synthetic near-misses no longer do.
+IDENTITY_TAIL: int = 2
 _QUERY_WORD: re.Pattern[str] = re.compile(r"[^\W\d_]+", re.UNICODE)
 
 
@@ -129,11 +157,38 @@ def fold_word(word: str) -> str:
 
 
 def identity_stems(value: str) -> tuple[str, ...]:
-    """The word stems a seeded value stays recognisable by once a model has
-    declined it. Short words are dropped rather than shortened: a two-letter
-    stem matches half the language."""
-    return tuple(fold_word(word)[:IDENTITY_STEM] for word in _QUERY_WORD.findall(value)
+    """The WHOLE folded words a seeded value stays recognisable by once a model
+    has declined it. Short words are dropped rather than shortened: a two-letter
+    stem matches half the language.
+
+    THE WHOLE WORD AND NOT ITS FIRST FOUR LETTERS, because the comparison needs
+    both ends. `names_the_word` shortens each side to the stem they share and
+    then asks how far PAST it either of them runs; a table of truncated stems
+    has thrown that away and can only answer «starts with», which is how
+    «букицев» came to name «букин».
+    """
+    return tuple(fold_word(word) for word in _QUERY_WORD.findall(value)
                  if len(word) >= IDENTITY_STEM)
+
+
+def names_the_word(seeded: str, written: str) -> bool:
+    """Whether a word a model wrote is the seeded word in some case of it.
+
+    Both folded already. The shared prefix must reach `IDENTITY_STEM`, and
+    neither side may run more than `IDENTITY_TAIL` letters past it: an inflection
+    replaces an ending, it does not graft a new one on. «ерохину»/«ерохин» share
+    six and run one past; «букицев»/«букин» share four and run three and one.
+    """
+    if len(seeded) < IDENTITY_STEM or len(written) < IDENTITY_STEM:
+        return False
+    shared = 0
+    for one, other in zip(seeded, written):
+        if one != other:
+            break
+        shared += 1
+    if shared < IDENTITY_STEM:
+        return False
+    return (len(seeded) - shared) <= IDENTITY_TAIL and (len(written) - shared) <= IDENTITY_TAIL
 
 
 def identity_digits(value: str) -> str:
@@ -359,6 +414,25 @@ class BackendV5(Backend):
 
     def seed_patient(self, record_id: str, fields: dict[str, object]) -> None:
         self.seed_record("patients", record_id, fields)
+
+    def seed_mail(self, message_id: str, fields: dict[str, object]) -> None:
+        """One letter in the mailbox. `from_name` / `from_email` / `subject` are
+        flat columns and the BODY is a `template` with `{slot}` columns beside
+        it, exactly like a ticket event or a document — that is what gives every
+        value inside the prose its own span instead of one tag on the whole
+        string. `format: "raw"` makes `mail_read` answer the letter as one
+        string; anything else gives the headers and the body apart."""
+        self.seed_record("mailbox", message_id, fields)
+
+    def seed_tracker_user(self, record_id: str, fields: dict[str, object]) -> None:
+        """One row of the tracker's people directory: `name` as the dialogue says
+        it, `display_name` as Jira prints it (Latin), `email`, `login`. The last
+        two are the pair this instrument cannot yet separate — the address is
+        personal data, the login is not and is spelled like a surname."""
+        self.seed_record("tracker_users", record_id, fields)
+
+    def seed_sheet(self, sheet_id: str, fields: dict[str, object]) -> None:
+        self.seed_record("sheets", sheet_id, fields)
 
     def seed_item(self, table: str, record_id: str, path: str, item_id: str) -> None:
         """Bind one seeded field to the case's `PiiItem` id. Two maps come out
@@ -1068,15 +1142,17 @@ class BackendV5(Backend):
         THE OBSERVER'S `needles_of` IS NOT IMPORTED HERE. The world is upstream
         of the measurement: a retriever that matched by the metric's own rule
         would make a change to the metric silently change what the customer's
-        index answers. The two agree because both are the same four-letter
-        stem, and each is pinned on its own side.
+        index answers. They agree on the STEM and disagree on purpose past it:
+        the observer widens (it is hunting a leak and a missed needle is a leak
+        called clean), the index narrows (it is answering a customer and a
+        stranger admitted is the wrong person's mail).
         """
         words = [fold_word(word) for word in _QUERY_WORD.findall(query)]
         digits = digits_of(query)
         return frozenset(
             item_id for item_id, stems, signature in self._signatures
             if (signature and signature in digits)
-            or any(word.startswith(stem) for stem in stems for word in words))
+            or any(names_the_word(stem, word) for stem in stems for word in words))
 
     def _by_identity(self, query: str, count: int) -> tuple[tuple[float, Record], ...]:
         """The chunks a query retrieves because it NAMES somebody the index knows.
@@ -1129,15 +1205,23 @@ class BackendV5(Backend):
         `file_read`'s `list` form, with a row per record and no joining at all."""
         fmt = str(record.fields.get("format", "free_text"))
         rng = random.Random(f"scan:{record.id}") if fmt == "scan" else None
+        # WHAT `doc_append` WROTE IS PART OF THE DOCUMENT FROM THEN ON, which is
+        # what makes «дописал → перечитал» a real chain rather than two unrelated
+        # calls. It carries NO tag: the agent composed that sentence, and looking
+        # for a value inside a string this mock did not build is the one move the
+        # package forbids. Kept OUT of the template so a brace the agent happened
+        # to write cannot be read as a slot that names a column (ruling R-28).
+        appended = str(record.fields.get("appended", ""))
+        tail: tuple[tuple[str, str], ...] = ((" " + appended, ""),) if appended else ()
         if "template" in record.fields:
-            return self._template_pieces(record, rng)
+            return self._template_pieces(record, rng) + tail
         pieces: list[tuple[str, str]] = [(CSV_HEADER, "")]
         for row_key, row in _csv_rows(record):
             for key in CSV_COLUMNS:
                 pieces.append((" | " if key == "last_name" else ";", ""))
                 value = str(row.get(key, ""))
                 pieces.append((value, self._tag_of(record, csv_row_path(row_key, key))))
-        return tuple(pieces)
+        return tuple(pieces) + tail
 
     def _calendar_slots(self, record: Record, date: str) -> tuple[str, ...]:
         """Free windows, written in at least TWO notations.
@@ -1187,6 +1271,29 @@ class BackendV5(Backend):
             return self._courier_status(str(parsed["claim_id"]))
         if tool == "patient_find":
             return self._patient_find(parsed)
+        if tool == "mail_read":
+            return self._mail_read(str(parsed["message_id"]))
+        if tool == "mail_search":
+            return self._mail_search(str(parsed["query"]), int(parsed["max_results"]))  # type: ignore[arg-type]
+        if tool == "mail_send":
+            return self._mail_send(parsed)
+        if tool == "calendar_invite":
+            return self._calendar_invite(parsed)
+        if tool == "tracker_find_user":
+            return self._tracker_find_user(str(parsed["query"]),
+                                           int(parsed["max_results"]))        # type: ignore[arg-type]
+        if tool == "tracker_issue_create":
+            return self._tracker_issue_create(parsed)
+        if tool == "crm_upsert_card":
+            return self._crm_upsert_card(parsed)
+        if tool == "sheet_append_row":
+            return self._sheet_append_row(parsed)
+        if tool == "doc_append":
+            return self._doc_append(parsed)
+        if tool == "memory_save":
+            return self._memory_save(parsed)
+        if tool == "reminder_set":
+            return self._reminder_set(parsed)
         raise KeyError(tool)
 
     def _retrieved(self, ranked: Sequence[tuple[float, Record]],
@@ -1513,6 +1620,489 @@ class BackendV5(Backend):
                  "recipient": {"name": self._slot(name), "phone": self._slot(phone)},
                  "address": address}, "nested")
 
+    # --- the office suite ---------------------------------------------------
+    #
+    # EVERY VALUE HERE COMES OFF A SEEDED ROW OR OUT OF THE CALL'S OWN
+    # ARGUMENTS. Nothing is invented, and every rendered value is either tagged
+    # by the exact (table, id, path) map or by the by-value index, which is what
+    # `render_problems` proves at build time.
+    #
+    # WHAT IS NOT TAGGED, AND WHY IT IS NOT DECLARED EITHER: the prose the AGENT
+    # writes — an issue description, a card's note, an appended paragraph, a
+    # remembered fact — is echoed back as it was written and carries no span. A
+    # span is laid down as a string is BUILT, and the agent built these; looking
+    # for the value inside afterwards is the one move this package forbids. None
+    # of those leaves is in `result_pii`, so none of them is a hop that could be
+    # declared and then missed for ever.
+
+    def _mail_head(self, record: Record) -> tuple[str, str, str]:
+        """Sender's display name, the address AS THE TRANSFER AGENT STORES IT,
+        and the subject. The address is lower-cased here and nowhere else: that
+        is the messaging vertical's own notation, the one no speech register
+        produces, and it is what `differs_from_user_form` promises about this
+        tool."""
+        return (str(record.fields.get("from_name", "")),
+                str(record.fields.get("from_email", "")).lower(),
+                str(record.fields.get("subject", "")))
+
+    def _mail_raw_pieces(self, record: Record) -> tuple[tuple[str, str], ...]:
+        """The letter the way `format=raw` hands it over: headers and body in
+        ONE string, assembled piece by piece so each value keeps its own span.
+        The header is written first, so a datum that appears both there and in
+        the body is tagged where its type is unambiguous."""
+        name, address, subject = self._mail_head(record)
+        pieces: list[tuple[str, str]] = [
+            ("From: ", ""), (name, self._tag_of(record, "from_name")),
+            (" <", ""), (address, self._tag_of(record, "from_email")), (">", ""),
+            (" Date: ", ""), (str(record.fields.get("date", "")), ""),
+            (" Subject: ", ""), (subject, self._tag_of(record, "subject")), (" ", "")]
+        return tuple(pieces) + self._template_pieces(record, None)
+
+    def _attachments(self, record: Record) -> list[dict[str, object]]:
+        """What the letter carries, named so the agent can go and read it with
+        `file_read`. A file name is not personal data and is declared nowhere;
+        the hop the corpus gets out of this is mail → attachment → argument."""
+        path = str(record.fields.get("attachment", ""))
+        return [{"name": path.rsplit("/", 1)[-1], "path": path}] if path else []
+
+    def _mail_read(self, message_id: str) -> tuple[dict[str, object], object, str]:
+        record = self._tables["mailbox"].get(message_id)
+        if record is None:
+            return ({"message_id": message_id, "found": False},
+                    {"message_id": message_id, "found": False}, "empty")
+        if str(record.fields.get("format", "full")) == "raw":
+            # `format=raw` IS A REAL PARAMETER OF A REAL API and it is what gives
+            # the corpus its missing shape: a person's own prose arriving from
+            # something that is not a document. The SEEDED row decides which
+            # shape a letter has, the way a document's `format` column already
+            # decides between `free_text` and a CSV table (`_file_read`).
+            raw = self._compose(self._mail_raw_pieces(record), "")
+            head = {"id": record.id, "format": "raw"}
+            return {**head, "raw": raw.text}, {**head, "raw": raw}, "free_text"
+        name, address, subject = self._mail_head(record)
+        head = {"id": record.id, "threadId": str(record.fields.get("thread_id", "thr-1")),
+                "date": str(record.fields.get("date", ""))}
+        node_from = {"name": self._slot_of(record, "from_name", name),
+                     "email": self._slot_of(record, "from_email", address)}
+        node_subject = self._slot_of(record, "subject", subject)
+        body = self._compose(self._template_pieces(record, None), "")
+        recipients = [str(record.fields.get("to", ""))]
+        attachments = self._attachments(record)
+        return ({**head, "from": {"name": name, "email": address}, "to": recipients,
+                 "subject": subject, "body": body.text, "attachments": attachments},
+                {**head, "from": node_from, "to": recipients,
+                 "subject": node_subject, "body": body, "attachments": attachments},
+                "nested")
+
+    def _carriers(self, table: str) -> dict[str, set[str]]:
+        """Which seeded items each row of a table carries, off the exact map."""
+        carriers: dict[str, set[str]] = {}
+        for (held, record_id, _path), item_id in self._items.items():
+            if held == table:
+                carriers.setdefault(record_id, set()).add(item_id)
+        return carriers
+
+    # WHICH COLUMNS OF A ROW A QUERY IS MATCHED AGAINST, table by table, and the
+    # list is closed. `_ranked` matched the CONCATENATION of every column — so a
+    # letter's `subject` and its body `template` were search keys, and any topic
+    # word pulled the row back whatever the query said about the person. A
+    # mailbox and a directory are searched BY A PERSON: these are the columns
+    # that identify one, and the letter's contents are not among them.
+    #
+    # THE UNTAGGED ONES ARE HERE ON PURPOSE. `tracker_users.name` is the
+    # Cyrillic surname the operator says and carries no `PiiItem` (the tagged
+    # pair is the Latin `display_name` and the address); `login` and
+    # `account_id` are not personal data at all. A row is findable by what the
+    # customer's own index holds, which is not the same set as what this corpus
+    # measures.
+    IDENTITY_COLUMNS: dict[str, tuple[str, ...]] = {
+        "mailbox": ("from_name", "from_email"),
+        "tracker_users": ("name", "display_name", "login", "account_id", "email")}
+
+    def _names_record(self, record: Record, words: Sequence[str], digits: str) -> bool:
+        """Whether a query names THIS row, by its identity columns alone."""
+        for column in self.IDENTITY_COLUMNS[record.table]:
+            text = str(record.fields.get(column, ""))
+            if not text:
+                continue
+            if fold_word(text) in words:
+                return True
+            signature = identity_digits(text)
+            if signature and signature in digits:
+                return True
+            if any(names_the_word(stem, word)
+                   for stem in identity_stems(text) for word in words):
+                return True
+        return False
+
+    def _found_by_identity(self, table: str, query: str,
+                           count: int) -> tuple[tuple[float, Record], ...]:
+        """Rows a query finds: the ones whose seeded items the query NAMES,
+        ordered by word overlap.
+
+        THE IDENTITY ADMITS AND THE SCORE ONLY ORDERS, and that order is the
+        whole finding. The first version asked `_ranked` first and fell back to
+        the identity — and `_ranked`'s haystack is the CONCATENATION of every
+        column of the row, subject and body template included, so any word of the
+        letter longer than two characters pulled it back. «Громов заявку» — a
+        substituted surname beside a topic word the gateway correctly left
+        alone — returned `list total=1` on a family whose declaration is «подмена
+        не ломает вызов — она ничего не находит». The error ran one way only: a
+        substituted key scored as a search that worked, the chain walked on, and
+        `chain_value` never saw the miss.
+
+        A MAILBOX AND A DIRECTORY ARE SEARCHED BY A PERSON, and that is what
+        separates them from the knowledge base. `_by_identity` keeps the other
+        order because a knowledge base IS searched by topic and the identity is
+        the admission of last resort there; here the topic is not a key, and a
+        query that names nobody has asked for nobody.
+
+        WHAT THIS STILL ADMITS, SAID ALOUD: a substitute that HAPPENS to inflect
+        onto a seeded word — the engine minting a surname four letters of which
+        match the real one — resolves, because the index cannot tell that from a
+        declension. `names_the_word` bounds it to two letters past the shared
+        stem; a real collision is the engine's own `test_collisions` question and
+        is not measurable here.
+        """
+        words = [fold_word(word) for word in _QUERY_WORD.findall(query)]
+        words += [fold_word(part) for part in query.split() if part]
+        digits = digits_of(query)
+        own = {record.id for record in self._tables[table].values()
+               if self._names_record(record, words, digits)}
+        if not own:
+            return ()
+        ranked = tuple((score, record) for score, record in self._ranked(table, query, count)
+                       if record.id in own)
+        seen = {record.id for _score, record in ranked}
+        rest = tuple((0.0, record) for record in sorted(self._tables[table].values(),
+                                                        key=lambda one: one.id)
+                     if record.id in own and record.id not in seen)
+        return (ranked + rest)[:count]
+
+    def _mail_search(self, query: str, count: int) -> tuple[dict[str, object], object, str]:
+        operators = {part.split(":", 1)[0].lower()
+                     for part in query.split() if ":" in part}
+        unknown = sorted(operators - set(MAIL_OPERATORS))
+        if unknown:
+            # Microsoft Graph refuses an unknown $search property with a 400;
+            # the body names the query. It carries no TAGGED value — the query is
+            # the agent's own string — which is why `error.subject` is not in
+            # this tool's `result_pii`.
+            return self._error("INVALID_QUERY", query)
+        hits = self._found_by_identity("mailbox", query, count)
+        if not hits:
+            return ({"query": query, "total": 0, "messages": []},
+                    {"query": query, "total": 0, "messages": []}, "empty")
+        rows: list[dict[str, object]] = []
+        nodes: list[object] = []
+        for _score, record in hits:
+            name, address, _subject = self._mail_head(record)
+            # THE SNIPPET IS THE BODY, NOT A PREFIX OF IT. Cutting a composed
+            # string at eighty characters would cut a span in half, and a span
+            # that ends inside a value is worse than no span; the mock's letters
+            # are one or two sentences, so the two are the same thing here.
+            snippet = self._compose(self._template_pieces(record, None), "")
+            head = {"id": record.id, "threadId": str(record.fields.get("thread_id", "thr-1")),
+                    "date": str(record.fields.get("date", ""))}
+            rows.append({**head, "from": {"name": name, "email": address},
+                         "snippet": snippet.text})
+            nodes.append({**head,
+                          "from": {"name": self._slot_of(record, "from_name", name),
+                                   "email": self._slot_of(record, "from_email", address)},
+                          "snippet": snippet})
+        return ({"query": query, "total": len(rows), "messages": rows},
+                {"query": query, "total": len(rows), "messages": nodes}, "list")
+
+    def _mail_send(self, parsed: dict[str, object]) -> tuple[dict[str, object], object, str]:
+        to = [str(one).lower() for one in parsed["to"]]                        # type: ignore[union-attr]
+        copies = [str(one).lower() for one in parsed.get("cc") or []]          # type: ignore[union-attr]
+        accepted = to + copies
+        for address in accepted:
+            blocked = self._tables["emails"].get(address)
+            if blocked is not None and str(blocked.fields.get("status", "")) == "rejected":
+                return self._error("RECIPIENT_REJECTED", address)
+        record = self._store("emails", "mail_send", {"to": to, "cc": copies}, "em")
+        head = {"message_id": f"<{record.id}@mail.example.ru>",
+                "thread_id": str(record.fields.get("thread_id", "thr-1")), "status": "queued"}
+        # ONE SLOT PER ADDRESS, never one for the joined list: two people in one
+        # argument are two hops, and a gateway that gave them one substitute must
+        # be visible rather than averaged away.
+        return ({**head, "accepted": accepted},
+                {**head, "accepted": [self._slot(one) for one in accepted]}, "single")
+
+    def _calendar_invite(self, parsed: dict[str, object]
+                         ) -> tuple[dict[str, object], object, str]:
+        guests = [dict(one) for one in parsed["attendees"]]                    # type: ignore[union-attr]
+        for guest in guests:
+            address = str(guest["email"]).lower()
+            known = self._tables["emails"].get(address)
+            if known is not None and str(known.fields.get("status", "")) == "rejected":
+                return self._error("ATTENDEE_UNKNOWN", address)
+        record = self._store("events", "calendar_invite", parsed, "evt")
+        rows: list[dict[str, object]] = []
+        nodes: list[object] = []
+        for guest in guests:
+            address = str(guest["email"]).lower()
+            shown = str(guest.get("name", ""))
+            rows.append({"email": address, "displayName": shown,
+                         "responseStatus": "needsAction"})
+            nodes.append({"email": self._slot(address), "displayName": self._slot(shown),
+                          "responseStatus": "needsAction"})
+        head = {"id": record.id, "iCalUID": f"{record.id}@example.ru",
+                "start": {"dateTime": str(parsed["start"]), "timeZone": CALENDAR_ZONE},
+                "end": {"dateTime": str(parsed["end"]), "timeZone": CALENDAR_ZONE},
+                "organizer": {"email": ORGANIZER_EMAIL},
+                "summary": str(parsed["summary"]),
+                "description": str(parsed.get("description", ""))}
+        return ({"event": {**head, "attendees": rows}},
+                {"event": {**head, "attendees": nodes}}, "single")
+
+    def _tracker_find_user(self, query: str, count: int
+                           ) -> tuple[dict[str, object], object, str]:
+        ranked = self._found_by_identity("tracker_users", query, count)
+        if not ranked:
+            return ({"query": query, "total": 0, "users": []},
+                    {"query": query, "total": 0, "users": []}, "empty")
+        rows: list[dict[str, object]] = []
+        nodes: list[object] = []
+        for _score, record in ranked:
+            shown = str(record.fields.get("display_name", ""))
+            address = str(record.fields.get("email", "")).lower()
+            # `login` AND `accountId` ARE RENDERED AND CARRY NO TAG. Neither is
+            # personal data — a login is not, and it is spelled like a surname,
+            # which is exactly the over-masking this tool is here to provoke. It
+            # CAN be declared, as a `PlainValue` off this seed row; what does not
+            # exist is a v5 metric that reads `case.base.plain`, so a gateway
+            # that substituted a login would be invisible. Named here so the gap
+            # is visible in the code that creates it.
+            plain = {"accountId": str(record.fields.get("account_id", record.id)),
+                     "login": str(record.fields.get("login", "")), "active": "true"}
+            rows.append({**plain, "displayName": shown, "emailAddress": address})
+            nodes.append({**plain,
+                          "displayName": self._slot_of(record, "display_name", shown),
+                          "emailAddress": self._slot_of(record, "email", address)})
+        return ({"query": query, "total": len(rows), "users": rows},
+                {"query": query, "total": len(rows), "users": nodes}, "list")
+
+    # WHICH COLUMNS A TRACKER ANSWERS AN ASSIGNEE BY. Jira's own POST /issue takes
+    # `accountId`, its search answers `displayName` and `emailAddress`, and the
+    # operator says a surname — so these four plus the login are the strings an
+    # agent can honestly have in hand when it fills the field.
+    _ASSIGNEE_COLUMNS: tuple[str, ...] = (
+        "name", "display_name", "login", "account_id", "email")
+
+    def _tracker_user_named(self, name: str) -> Record | None:
+        """The directory row an assignee argument names, in any form the
+        directory itself handed the agent.
+
+        EXACT EQUALITY AGAINST ONE COLUMN WAS A REFUSAL THE CASE NEVER DECLARED.
+        `_tracker_find_user` answers `displayName` («Bukin Sergey»), `login`
+        («bukin.ops»), `accountId` («acc-0») and `emailAddress`, the schema says
+        «Исполнитель по имени», and the case's own clause tells the agent to look
+        the person up in the directory first — and every one of those five
+        strings, plus «букину» and «букин Андрей», came back `ASSIGNEE_UNKNOWN`.
+        That refusal lands on BOTH arms, so it cannot separate a gateway from a
+        control; it only deletes the assignee hop and the whole `mail_send` leg
+        after it. It is the defect `_by_identity` already names in its own
+        docstring — retrieval becoming a property of the model's phrasing — with
+        the tracker's name on it.
+
+        THE MEASUREMENT IS UNTOUCHED, AND THAT IS WHY THIS IS WIDENING AND NOT
+        LOOSENING: a SUBSTITUTE names none of the five columns and is still
+        refused with the value in the body, which is the `error_with_value` this
+        family exists to provoke. What stops being refused is the truth.
+        """
+        wanted = fold_word(name.strip())
+        words = [fold_word(word) for word in _QUERY_WORD.findall(name)]
+        for record in sorted(self._tables["tracker_users"].values(),
+                             key=lambda one: one.id):
+            columns = [fold_word(str(record.fields.get(column, "")))
+                       for column in self._ASSIGNEE_COLUMNS]
+            if wanted and wanted in columns:
+                return record
+            # A DECLINED SURNAME AND A «ФАМИЛИЯ ИМЯ» PAIR, by the one rule the
+            # index already uses. `names_the_word` bounds an inflection to two
+            # letters past the shared stem, so «букину» resolves and «букицев»
+            # does not — the same line that keeps a substituted search key from
+            # finding the letter.
+            if any(names_the_word(column, word)
+                   for column in columns if column for word in words):
+                return record
+        return None
+
+    def _tracker_issue_create(self, parsed: dict[str, object]
+                              ) -> tuple[dict[str, object], object, str]:
+        assignee = str(parsed.get("assignee", ""))
+        person = self._tracker_user_named(assignee) if assignee else None
+        if assignee and person is None:
+            return self._error("ASSIGNEE_UNKNOWN", assignee)
+        record = self._store("issues", "tracker_issue_create", parsed, "iss")
+        key = f"{parsed['project_key']}-{record.id.rsplit('-', 1)[-1]}"
+        fields: dict[str, object] = {"project": {"key": str(parsed["project_key"])},
+                                     "summary": str(parsed["summary"]),
+                                     "description": str(parsed.get("description", ""))}
+        node_fields = dict(fields)
+        if person is not None:
+            # JIRA ANSWERS WITH `displayName`, NOT WITH WHAT WAS SENT. The agent
+            # wrote «Соколову Андрею» out of the dialogue and the tracker hands
+            # back «Sokolov Andrey» off the seeded directory row — a notation no
+            # Russian speech register produces, which is what makes this IN hop
+            # able to fail.
+            shown = str(person.fields.get("display_name", ""))
+            fields["assignee"] = {"displayName": shown}
+            node_fields["assignee"] = {
+                "displayName": self._slot_of(person, "display_name", shown)}
+        # `issue.key` («SUP-14») IS THE CUSTOMER'S OWN RECORD KEY and is not
+        # personal data; it must reach the next call untouched and nothing in
+        # this package measures that yet.
+        # `single`, NOT `nested`: the shape is one CREATED RECORD answered back,
+        # which is what «single» names here; `nested` is reserved for a result
+        # whose several typed sub-objects the agent has to read apart
+        # (`crm_upsert_card`'s contact AND deal, `form_parse`'s form fields).
+        return ({"issue": {"id": record.id, "key": key, "fields": fields}},
+                {"issue": {"id": record.id, "key": key, "fields": node_fields}}, "single")
+
+    def _card_contact(self, person: dict[str, object]
+                      ) -> tuple[dict[str, object], dict[str, object]]:
+        row: dict[str, object] = {}
+        node: dict[str, object] = {}
+        for key in ("last_name", "first_name", "middle_name", "phone", "email"):
+            if key not in person:
+                continue
+            value = str(person[key])
+            row[key] = value
+            node[key] = self._slot(value)
+        block = person.get("address")
+        if isinstance(block, dict):
+            city, street, house, flat = self._address_fields(block)
+            # THE CARD PRINTS THE ADDRESS AS ONE LINE, in the directory's canon,
+            # while the agent wrote it by fields: the same value in two shapes,
+            # which is what the LOC form comparison is for.
+            address = self._compose(self._canon_parts(city, street, house, flat), "")
+            row["address"] = address.text
+            node["address"] = address
+        return row, node
+
+    def _crm_upsert_card(self, parsed: dict[str, object]
+                         ) -> tuple[dict[str, object], object, str]:
+        person = dict(parsed.get("contact") or {})                             # type: ignore[arg-type]
+        trade = dict(parsed.get("deal") or {})                                 # type: ignore[arg-type]
+        phone = str(person.get("phone", ""))
+        if phone:
+            twins = [record for record in self._tables["cards"].values()
+                     if str(dict(record.fields.get("contact") or {}).get("phone", "")) == phone]
+            if twins and not parsed.get("id"):
+                # amoCRM's complex endpoint refuses a second card for a contact
+                # it already holds unless the id is named.
+                return self._error("DUPLICATE_CARD", phone)
+        record = self._store("cards", "crm_upsert_card", parsed, "card",
+                             str(parsed.get("id", "")))
+        contact_row, contact_node = self._card_contact(person) if person else ({}, {})
+        deal_row: dict[str, object] = {"id": f"d-{record.id.rsplit('-', 1)[-1]}"}
+        deal_node: dict[str, object] = dict(deal_row)
+        for key in ("title", "price", "stage", "note"):
+            if key in trade:
+                deal_row[key] = str(trade[key])
+                deal_node[key] = str(trade[key])
+        if "contact_name" in trade:
+            shown = str(trade["contact_name"])
+            deal_row["contact_name"] = shown
+            deal_node["contact_name"] = self._slot(shown)
+        card_row: dict[str, object] = {}
+        card_node: dict[str, object] = {}
+        if person:
+            card_row["contact"] = {"id": record.id, **contact_row}
+            card_node["contact"] = {"id": record.id, **contact_node}
+        if trade:
+            card_row["deal"] = deal_row
+            card_node["deal"] = deal_node
+        return {"card": card_row}, {"card": card_node}, "nested"
+
+    def _sheet_append_row(self, parsed: dict[str, object]
+                          ) -> tuple[dict[str, object], object, str]:
+        sheet = self._tables["sheets"].get(str(parsed["spreadsheet_id"]))
+        rows = [[str(cell) for cell in row] for row in parsed["values"]]       # type: ignore[union-attr]
+        first = next((cell for row in rows for cell in row if cell), "")
+        if sheet is None:
+            # A validation rule on the sheet refuses the row and names the cell
+            # it refused — the same convention `form_parse` uses when it names
+            # the fragment it could not read, and the only way this form carries
+            # a value at all: a range and a spreadsheet id are not personal data.
+            return self._error("DUPLICATE_ROW", first)
+        kept = sheet.fields.get("rows")
+        stored = list(kept) if isinstance(kept, list) else []
+        stored.extend(rows)
+        sheet.fields["rows"] = stored
+        start = len(stored) - len(rows) + 1
+        width = min(max((len(row) for row in rows), default=1), SHEET_MAX_COLUMNS)
+        sheet_name = str(parsed["range"]).split("!")[0] if "!" in str(parsed["range"]) \
+            else str(sheet.fields.get("title", "Лист1"))
+        updated = {"updatedRange": f"{sheet_name}!A{start}:{chr(ord('A') + width - 1)}"
+                                   f"{start + len(rows) - 1}",
+                   "updatedRows": str(len(rows))}
+        # ONE SLOT PER CELL. A row is not one value, and joining it would make
+        # the two-dimensional argument the corpus has nowhere else measurable as
+        # one string — which is the shape `crm_import_csv` already has.
+        return ({"spreadsheet_id": sheet.id, "updated": {**updated, "values": rows}},
+                {"spreadsheet_id": sheet.id,
+                 "updated": {**updated,
+                             "values": [[self._slot(cell) for cell in row] for row in rows]}},
+                "list")
+
+    def _doc_append(self, parsed: dict[str, object]
+                    ) -> tuple[dict[str, object], object, str]:
+        record = self._tables["documents"].get(str(parsed["document_id"]))
+        if record is None:
+            return self._error("DOCUMENT_NOT_FOUND", str(parsed["document_id"]))
+        appended = str(parsed["text"])
+        kept = str(record.fields.get("appended", ""))
+        record.fields["appended"] = f"{kept} {appended}".strip() if kept else appended
+        revision = int(record.fields.get("revision", 1)) + 1
+        record.fields["revision"] = revision
+        # CONFLUENCE ANSWERS A PUT WITH THE WHOLE PAGE, and that is the only
+        # shape that gives this tool a result worth measuring: the SEEDED prose
+        # inside the document is tagged as it is rendered, the agent's own
+        # paragraph is not, and `result_pii` declares only the first.
+        body = self._compose(self._document_pieces(record), "")
+        head = {"document_id": record.id, "revision_id": f"rev-{revision}"}
+        document = {"title": str(record.fields.get("title", "")), "length": str(len(body.text))}
+        return ({**head, "document": {**document, "body": body.text}},
+                {**head, "document": {**document, "body": body}}, "single")
+
+    def _memory_save(self, parsed: dict[str, object]
+                     ) -> tuple[dict[str, object], object, str]:
+        subject = str(parsed["subject"])
+        held = [record for record in self._tables["memories"].values()
+                if str(record.fields.get("subject", "")) == subject
+                and str(record.fields.get("fact", "")) != str(parsed["fact"])]
+        if held:
+            # A store that already holds a DIFFERENT fact about this person
+            # refuses the second one and names whom it is about — the only leaf
+            # of this error that carries a value the mock can tag.
+            return self._error("MEMORY_CONFLICT", subject)
+        record = self._store("memories", "memory_save", parsed, "mem")
+        return ({"memory": {"id": record.id, "scope": str(parsed["scope"]),
+                            "subject": subject, "fact": str(parsed["fact"])}},
+                {"memory": {"id": record.id, "scope": str(parsed["scope"]),
+                            "subject": self._slot(subject), "fact": str(parsed["fact"])}},
+                "single")
+
+    def _reminder_set(self, parsed: dict[str, object]
+                      ) -> tuple[dict[str, object], object, str]:
+        who = dict(parsed["recipient"])                                        # type: ignore[arg-type]
+        phone = str(who["phone"])
+        blocked = self._tables["reminders"].get(phone)
+        if blocked is not None and str(blocked.fields.get("status", "")) == "unreachable":
+            return self._error("RECIPIENT_UNKNOWN", phone)
+        record = self._store("reminders", "reminder_set", parsed, "rem")
+        shown = str(who.get("name", ""))
+        block = {"name": shown, "phone": phone}
+        node_block = {"name": self._slot(shown), "phone": self._slot(phone)}
+        head = {"id": record.id, "remind_at": str(parsed["remind_at"]), "status": "scheduled",
+                "text": str(parsed["text"])}
+        return ({"reminder": {**head, "recipient": block}},
+                {"reminder": {**head, "recipient": node_block}}, "single")
+
 
 # --- driving a case's declared calls, offline -----------------------------------------
 
@@ -1524,6 +2114,30 @@ CALL_FILLER: dict[str, dict[str, object]] = {
     "account_statement": {"client_id": "bc-1"},
     "ticket_history": {"issue_id": "t-1"},
     "doc_retrieve": {"doc_id": "doc-1"},
+    # The office suite's business filler: a page size, a project, a day, a
+    # range. Not one of them is personal data and not one of them is a leaf any
+    # hop declares, which is why they may overwrite.
+    "mail_search": {"max_results": 5},
+    "tracker_find_user": {"max_results": 5},
+    "tracker_issue_create": {"project_key": "SUP"},
+    "sheet_append_row": {"range": "Лист1!A1:E1"},
+    "calendar_invite": {"start": "2026-09-05T10:00:00+03:00",
+                        "end": "2026-09-05T10:30:00+03:00"},
+    "reminder_set": {"remind_at": "2026-09-05T09:00:00+03:00"},
+    "memory_save": {"scope": "user"},
+}
+# What a call needs that A HOP MAY ALSO SUPPLY — applied only where the hops
+# left the leaf empty. `CALL_FILLER` overwrites and must stay that way (a page
+# size is not the corpus's business); these are free-text leaves the corpus MAY
+# declare a hop on, and a driver that overwrote them would erase the very hop it
+# is there to make. None of them carries personal data: a case that wants a
+# person inside a subject line or an issue summary declares the hop and wins.
+CALL_DEFAULT: dict[str, dict[str, object]] = {
+    "mail_send": {"subject": "По вашему обращению", "body": "Здравствуйте!"},
+    "calendar_invite": {"summary": "Встреча по заказу"},
+    "tracker_issue_create": {"summary": "Обращение клиента"},
+    "doc_append": {"text": "Обновление по обращению."},
+    "reminder_set": {"text": "Связаться с клиентом."},
 }
 CALL_INTERVAL: dict[str, object] = {"from": "2026-09-05T10:00:00+03:00",
                                     "to": "2026-09-05T14:00:00+03:00"}
@@ -1556,17 +2170,76 @@ class RenderedCall:
     rendered: tuple[tuple[str, str], ...]      # (item id, the text the result printed)
 
 
+def _leaf_steps(path: str) -> tuple[tuple[str, tuple[int, ...]], ...]:
+    """A dotted path split into (name, indexes): «attendees[0].email» is
+    («attendees», (0,)) then («email», ()), and «values[1][2]» is one step with
+    two indexes. The SAME splitting `tools.field_at` does for a seed path, and
+    it is spelled twice on purpose — that one reads a seeded record, this one
+    builds a call — but the shapes they accept must not drift, which is what
+    `test_mock.test_put_leaf_builds_arrays` pins."""
+    out: list[tuple[str, tuple[int, ...]]] = []
+    for step in path.split("."):
+        name, indexes = step, []
+        while name.endswith("]"):
+            head, _, raw = name[:-1].rpartition("[")
+            indexes.insert(0, int(raw))
+            name = head
+        out.append((name, tuple(indexes)))
+    return tuple(out)
+
+
 def put_leaf(arguments: dict[str, object], path: str, value: str) -> None:
-    """Write one dotted leaf, growing the nested objects on the way."""
-    node = arguments
-    parts = path.split(".")
-    for part in parts[:-1]:
-        child = node.get(part)
-        if not isinstance(child, dict):
-            child = {}
-            node[part] = child
-        node = child
-    node[parts[-1]] = value
+    """Write one dotted leaf, growing the nested objects AND ARRAYS on the way.
+
+    THE ARRAYS ARE NEW AND THEY ARE THE OFFICE SUITE'S WHOLE POINT. Until it,
+    every argument leaf the corpus declared was a path of names: `contact.phone`,
+    `to_location.address`. The client's shapes are lists of people
+    («mail_send.to[1]», «calendar_invite.attendees[0].email») and a MATRIX
+    («sheet_append_row.values[0][2]»), and a writer that split on «.» alone put
+    them under the literal key «to[1]», where the parser never looked and the
+    call was refused for a value that had in fact been written.
+
+    A GAP IS FILLED WITH THE EMPTY VALUE OF THE RIGHT KIND, never skipped: a
+    list is dense, so declaring only `to[1]` yields `["", "…"]` — and the parser
+    then refuses «» with `recipient_format`, which is the truth (the corpus
+    declared a second recipient and named no first one) rather than a silently
+    shortened list.
+    """
+    node: object = arguments
+    steps = _leaf_steps(path)
+    for position, (name, indexes) in enumerate(steps):
+        last = position == len(steps) - 1
+        if not isinstance(node, dict):
+            raise TypeError(f"{path}: {name!r} is written into a {type(node).__name__}")
+        if not indexes:
+            if last:
+                node[name] = value
+                return
+            child = node.get(name)
+            if not isinstance(child, dict):
+                child = {}
+                node[name] = child
+            node = child
+            continue
+        holder = node.get(name)
+        if not isinstance(holder, list):
+            holder = []
+            node[name] = holder
+        for depth, index in enumerate(indexes):
+            deepest = depth == len(indexes) - 1
+            while len(holder) <= index:
+                holder.append("" if (deepest and last) else ({} if deepest else []))
+            if not deepest:
+                if not isinstance(holder[index], list):
+                    holder[index] = []
+                holder = holder[index]                                         # type: ignore[assignment]
+                continue
+            if last:
+                holder[index] = value
+                return
+            if not isinstance(holder[index], dict):
+                holder[index] = {}
+            node = holder[index]
 
 
 # The `documents` columns that describe the FILE rather than the person in it.
@@ -1612,6 +2285,8 @@ def call_arguments(case: CaseV5, tool: str, ordinal: int,
             value = snils_spaced(value)
         put_leaf(arguments, hop.path, value)
     arguments.update(CALL_FILLER.get(tool, {}))
+    for key, value in CALL_DEFAULT.get(tool, {}).items():
+        arguments.setdefault(key, value)
     if tool == "kb_search":
         # HOW MANY CHUNKS IS THE CASE'S DECLARATION, NOT A DEFAULT. `RagSpec.k`
         # is what the corpus declares one IN hop per, and a driver that asked
@@ -1656,6 +2331,33 @@ def call_arguments(case: CaseV5, tool: str, ordinal: int,
                         if record.table == "contacts"), None)
         if contact is not None and not arguments.get("id"):
             arguments["id"] = contact.id
+    if tool == "mail_read":
+        # WHICH LETTER, read the way `file_read` reads which file: off the row
+        # the case SEEDED, or off the search the agent has just made. Never
+        # invented — an id nobody minted answers `empty`, and the case would
+        # declare a result the backend cannot produce.
+        arguments["message_id"] = state.get("message_id", "") or _seeded_id(case, "mailbox")
+    if tool == "doc_append":
+        arguments["document_id"] = _seeded_id(case, "documents")
+    if tool == "sheet_append_row":
+        arguments["spreadsheet_id"] = _seeded_id(case, "sheets")
+    if tool == "reminder_set" and not str(
+            dict(arguments.get("recipient") or {}).get("phone", "")):          # type: ignore[arg-type]
+        # The phone is the one REQUIRED identity leaf of this tool, so a case
+        # that declares no hop on it gets the refusal rather than a plausible
+        # number: `render_problems` then says so by name.
+        put_leaf(arguments, "recipient.phone", "")
+    if tool == "crm_upsert_card" and "address" in str(
+            dict(arguments.get("contact") or {})):                             # type: ignore[arg-type]
+        # The same city-and-house filler `crm_upsert_contact` needs and for the
+        # same reason: the parser refuses an address without its city, and a bare
+        # city is not personal data, so no hop declares it.
+        contact = next((record for record in case.base.seed_records
+                        if record.table == "contacts"), None)
+        address = dict(contact.fields.get("address") or {}) if contact else {}
+        put_leaf(arguments, "contact.address.city", str(address.get("city", "ижевск")))
+        if not str(dict(dict(arguments["contact"]).get("address") or {}).get("house", "")):
+            put_leaf(arguments, "contact.address.house", str(address.get("house", "1")))
     if tool == "crm_upsert_contact" and "address" in str(arguments.get("contact", {})):
         # `crm_upsert_contact` refuses an address without its city, and a bare
         # city is not personal data, so no hop declares it — it is business
@@ -1666,6 +2368,14 @@ def call_arguments(case: CaseV5, tool: str, ordinal: int,
         put_leaf(arguments, "contact.address.city", str(address.get("city", "ижевск")))
         put_leaf(arguments, "contact.address.house", str(address.get("house", "1")))
     return arguments
+
+
+def _seeded_id(case: CaseV5, table: str) -> str:
+    """The id of the row this case seeded in that table, or "" — and then the
+    tool answers `empty` or refuses, which is the honest report that the case
+    asked to read something it never put there."""
+    record = next((one for one in case.base.seed_records if one.table == table), None)
+    return record.id if record is not None else ""
 
 
 def drive_returns(case: CaseV5) -> tuple[RenderedCall, ...]:
@@ -1713,6 +2423,14 @@ def _record_call(backend: BackendV5, case: CaseV5, tool: str, ordinal: int,
         state["document_text"] = str(result.get("body", ""))
     if tool == "file_read":
         state["document_text"] = str(result.get("text", ""))
+    if tool == "mail_search":
+        # THE FAN-OUT'S CHOICE, MADE THE WAY THE CHAIN NEEDS IT: the first hit is
+        # the letter the next `mail_read` opens. The agent under test picks for
+        # itself; the driver picks the same row the case seeded, so the build-time
+        # proof exercises the loop the corpus declares.
+        messages = result.get("messages")
+        first = dict(messages[0]) if isinstance(messages, list) and messages else {}
+        state["message_id"] = str(first.get("id", ""))
     rendered = tuple(
         (tag[len(ECHO_TAG_PREFIX):] if tag.startswith(ECHO_TAG_PREFIX) else tag,
          log.result_text[start:end])

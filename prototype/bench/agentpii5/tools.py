@@ -31,6 +31,7 @@ NOTHING HERE IMPORTS `pseudex`, and the parsers of the twelve new tools are
 taken from the documentation of the API each one mirrors: they accept exactly
 what it accepts, refuse with the documented rule's name and never repair.
 """
+import datetime as dt
 import re
 from dataclasses import replace
 
@@ -40,8 +41,9 @@ from bench.agentpii4.tools import (CSV_HEADER, REGISTRY as V4_REGISTRY, FieldSpe
                                    ToolSpec, parse_e164, parse_inn, parse_int, parse_iso_date,
                                    parse_name_word, parse_snils)
 from bench.agentpii5.contracts import (NEW_TOOL_NAMES, NEW_TOOL_RESULT_TYPES,
-                                       NEW_TOOL_RETURN_FORMS, RETURN_FORMS, TOOL_VERTICAL,
-                                       V4_TOOL_NAMES, VERTICALS, ReturnForm, ToolSpecV5)
+                                       NEW_TOOL_RETURN_FORMS, NO_SUITE, RETURN_FORMS, SUITES,
+                                       TOOL_SUITE, TOOL_VERTICAL, V4_TOOL_NAMES, VERTICALS,
+                                       ReturnForm, ToolSpecV5)
 
 Parsed = dict[str, object]
 
@@ -540,9 +542,771 @@ PATIENT_FIND = ToolSpec(
                 "patient.snils", "patient.phone"))
 
 
+
+
+# --- the office suite: eleven shapes an enterprise assistant actually has ------
+#
+# WHY THESE ELEVEN AND NOT A PRODUCT'S API. The names are generalised on purpose
+# (`mail_send`, not a vendor's endpoint): the corpus outlives any one deal and is
+# read again for the next customer, and a registry full of brand names would have
+# to be rewritten every time. Each `source` still cites the PUBLIC documentation
+# of the real APIs these mirror, because a parser invented rather than read would
+# refuse what the market accepts and accept what it refuses.
+#
+# WHAT THE MEASUREMENT SAID WAS MISSING, before any of this was written:
+#   · 708 IN/tool → OUT/tool_arg transitions in the corpus, NOT ONE from a
+#     `free_text` result. Prose reaches an argument only out of a DOCUMENT (413
+#     hops). «Read the letter → write the card» — the loop where a placeholder
+#     gateway scores zero — was not measured at all.
+#   · `messaging` had no reading tool and was EXEMPT from K16 for it.
+#   · EMAIL crosses as an IN/user hop 14 times in 1 736 cases, against 1 196
+#     declared EMAIL items: the type is declared everywhere and travels nowhere.
+#   · No argument anywhere takes a LIST of people, no argument takes TWO objects
+#     at once, and nothing at all is two-dimensional.
+#
+# THE LEAVES ARE DECLARED TIGHT. `build.result_pii_residue` refuses a
+# `result_pii` leaf no IN/tool hop crosses unless it is named in the frozen
+# `UNCROSSED_RESULT_PII`, so every leaf below is one the office families are
+# built to cross — a generous declaration here would be a new decorative claim
+# of exactly the kind that check exists to catch.
+
+MAIL_ID_RE = re.compile(r"msg-\d{1,6}")
+SHEET_ID_RE = re.compile(r"sh-\d{1,6}")
+MEMORY_ID_RE = re.compile(r"mem-\d{1,6}")
+# Jira's project key: a capital letter, then letters and digits, 2–10 in all
+# (Atlassian «What is an issue key»). The ISSUE key it mints — «ABC-123» — is the
+# customer's commonest NON-personal identifier and must survive the gateway
+# untouched.
+#
+# WHERE THAT CAN BE SAID, AND WHERE IT CANNOT — measured, not assumed. The
+# DECLARATION exists: v4's `schema.PlainValue` is exactly «not personal data,
+# must reach the tool byte-identical», it takes a message or a SEED locus, and
+# `Case.plain` holds it. What is missing is the SCORER: v4's report printed a
+# plain-value line, and no module of v5 reads `case.base.plain` at all — not
+# `metrics`, not `observe`, not `harness`, not `report`. So a corpus may declare
+# «ABC-123» today and nothing will tell anyone when the gateway substitutes it.
+# The `result_plain` column the 23.09 review named is the OTHER half, for a leaf
+# that appears only in a RESULT and has no locus to hang a `PlainValue` on.
+PROJECT_KEY_RE = re.compile(r"[A-Z][A-Z0-9]{1,9}")
+# A1 notation, optionally prefixed by a sheet name: «A1», «A1:C10», «Лист1!A1:C10»
+# (Sheets API «A1 notation»). Also a non-personal identifier that has to survive.
+SHEET_RANGE_RE = re.compile(r"(?:[^!]{1,40}!)?[A-Z]{1,3}\d{1,7}(?::[A-Z]{1,3}\d{1,7})?")
+PRICE_RE = re.compile(r"\d{1,9}(?:[.,]\d{1,2})?")
+DEAL_STAGES: tuple[str, ...] = ("new", "in_progress", "won", "lost")
+MEMORY_SCOPES: tuple[str, ...] = ("user", "org")
+MAIL_QUERY_LIMIT: int = 200
+MAIL_MAX_RESULTS: int = 50
+MAIL_MAX_RECIPIENTS: int = 20
+TRACKER_QUERY_LIMIT: int = 100
+TRACKER_MAX_RESULTS: int = 50
+TRACKER_DEFAULT_RESULTS: int = 10
+ISSUE_SUMMARY_LIMIT: int = 255
+ISSUE_TEXT_LIMIT: int = 20000
+CALENDAR_MAX_ATTENDEES: int = 25
+SHEET_MAX_ROWS: int = 50
+DOC_APPEND_LIMIT: int = 20000
+MEMORY_SUBJECT_LIMIT: int = 120
+MEMORY_FACT_LIMIT: int = 1000
+REMINDER_TEXT_LIMIT: int = 1000
+
+
+def _address_list(raw: object, tool: str, path: str) -> list[str] | Refusal:
+    """A recipient LIST, refused the way a submission agent refuses one.
+
+    THE FIRST ARGUMENT IN THE CORPUS THAT HOLDS SEVERAL PEOPLE AT ONCE.
+    `email_send.to` takes exactly one address; the only other «many people in one
+    argument» anywhere is `crm_segment_report.members[].name`. A list is what
+    makes the question «does the gateway keep a DIFFERENT substitute for each
+    person inside one array» askable at all.
+
+    NOTHING IS REPAIRED HERE. The address is stripped and handed on in the case
+    the agent wrote it; the transfer agent lower-cases what it stored, and that
+    lower-casing belongs to the RESULT — it is one of the notations the IN hop
+    is there to measure, and doing it in the parser would erase it.
+    """
+    if not isinstance(raw, list):
+        return Refusal(tool, path, "recipient_format", str(raw))
+    if not raw:
+        return Refusal(tool, path, "no_recipients", str(raw))
+    if len(raw) > MAIL_MAX_RECIPIENTS:
+        return Refusal(tool, path, "too_many_recipients", str(len(raw)))
+    out: list[str] = []
+    for index, one in enumerate(raw):
+        if not isinstance(one, str) or not EMAIL_RE.fullmatch(one.strip()):
+            return Refusal(tool, f"{path}[{index}]", "recipient_format", str(one))
+        out.append(one.strip())
+    return out
+
+
+def _mail_read_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "mail_read"
+    miss = v4tools._required(args, tool, "", ("message_id",))
+    if miss:
+        return miss
+    raw = str(args["message_id"]).strip()
+    if not MAIL_ID_RE.fullmatch(raw):
+        return Refusal(tool, "message_id", "id_format", raw)
+    return {"message_id": raw}
+
+
+MAIL_READ = ToolSpec(
+    name="mail_read",
+    source="Gmail API users.messages.get (format=full — payload.headers From/To/Subject, тело в parts[].body; format=raw — весь RFC 5322 одной строкой) / Microsoft Graph GET /me/messages/{id} (from.emailAddress{name,address}, body.content)",
+    schema=v4tools._schema(
+        "mail_read",
+        "Прочитать письмо по его идентификатору вида msg-1.",
+        {"message_id": {"type": "string", "description": "Идентификатор письма, например msg-3"}},
+        ("message_id",)),
+    fields=(FieldSpec("message_id", "plain", required=True),),
+    parse=_mail_read_parse, mutating=False,
+    # THE BODY IS THE POINT. `subject` and `body` are free prose written by a
+    # HUMAN and carrying their own personal data, which is the source form the
+    # corpus had nowhere: 413 of its prose-to-argument hops come out of a
+    # document and none out of a letter. `raw` is the same letter as one string,
+    # the way `format=raw` answers it, and the headers are its nested half.
+    result_pii=("from.name", "from.email", "subject", "body", "raw"))
+
+
+def _mail_search_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "mail_search"
+    miss = v4tools._required(args, tool, "", ("query", "max_results"))
+    if miss:
+        return miss
+    raw = args["query"]
+    if not isinstance(raw, str):
+        return Refusal(tool, "query", "not_a_string", str(raw))
+    query = raw.strip()
+    if not query:
+        return Refusal(tool, "query", "empty_query", str(raw))
+    if len(query) > MAIL_QUERY_LIMIT:
+        return Refusal(tool, "query", "too_long", query)
+    count = parse_int(args["max_results"], tool, "max_results", 1, MAIL_MAX_RESULTS)
+    if isinstance(count, Refusal):
+        return count
+    return {"query": query, "max_results": count}
+
+
+MAIL_SEARCH = ToolSpec(
+    name="mail_search",
+    source="Gmail API users.messages.list?q= (операторы поиска Gmail: from:, to:, subject:) / Microsoft Graph GET /me/messages?$search",
+    schema=v4tools._schema(
+        "mail_search",
+        "Найти письма запросом почтового поиска, например «from:client@mail.ru».",
+        {"query": {"type": "string",
+                   "description": "Запрос, до 200 символов, например from:grom@mail.ru"},
+         "max_results": {"type": "integer", "description": "Сколько писем вернуть, 1–50"}},
+        ("query", "max_results")),
+    # `query` IS `free`, NOT `identity`, and that is the shape the client asks
+    # for: the agent decides what to put in it — an address, a surname, a subject
+    # — and the gateway has to decide for itself whether what it sees is personal
+    # data. An `identity` leaf would tell it the answer in advance.
+    fields=(FieldSpec("query", "free", required=True),
+            FieldSpec("max_results", "plain", required=True)),
+    parse=_mail_search_parse, mutating=False,
+    # `error.subject` IS NOT DECLARED: the body of an unsupported-operator error
+    # echoes the QUERY, and a query is the agent's own string — the mock cannot
+    # tag a value inside it without searching for it. The form is still declared
+    # and still rendered; it simply promises no personal datum.
+    result_pii=("messages[].from.name", "messages[].from.email", "messages[].snippet"))
+
+
+def _mail_send_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "mail_send"
+    miss = v4tools._required(args, tool, "", ("to", "subject", "body"))
+    if miss:
+        return miss
+    to = _address_list(args["to"], tool, "to")
+    if isinstance(to, Refusal):
+        return to
+    copies: list[str] = []
+    if args.get("cc") not in (None, "", []):
+        cc = _address_list(args["cc"], tool, "cc")
+        if isinstance(cc, Refusal):
+            return cc
+        copies = cc
+    subject = v4tools.parse_text(args["subject"], tool, "subject", EMAIL_SUBJECT_LIMIT)
+    body = v4tools.parse_text(args["body"], tool, "body", EMAIL_BODY_LIMIT)
+    bad = v4tools._first(subject, body)
+    if bad:
+        return bad
+    return {"to": to, "cc": copies, "subject": subject, "body": body}
+
+
+MAIL_SEND = ToolSpec(
+    name="mail_send",
+    source="Gmail API users.messages.send (RFC 5322: заголовок To: — список адресов через запятую, Cc: — копии) / SMTP submission RFC 6409",
+    schema=v4tools._schema(
+        "mail_send",
+        "Отправить письмо одному или нескольким получателям. Тему и текст напиши своими словами.",
+        {"to": {"type": "array", "items": {"type": "string"},
+                "description": "Адреса получателей, до 20"},
+         "cc": {"type": "array", "items": {"type": "string"}, "description": "Копии"},
+         "subject": {"type": "string", "description": "Тема, до 200 символов"},
+         "body": {"type": "string", "description": "Текст письма, до 4000 символов"}},
+        ("to", "subject", "body")),
+    # `subject` and `body` are TEMPLATE hops (`contracts.TEMPLATE_FIELDS`): a
+    # person reads them, so they are judged for form and for leaks, never for
+    # equality. `to[]` and `cc[]` are identity leaves — one hop per address, so
+    # two people in one array are two hops and a gateway that gives them one
+    # substitute is visible.
+    fields=(FieldSpec("to[]", "identity", "EMAIL", "", required=True),
+            FieldSpec("cc[]", "identity", "EMAIL", ""),
+            FieldSpec("subject", "free", required=True),
+            FieldSpec("body", "free", required=True)),
+    parse=_mail_send_parse, mutating=True,
+    result_pii=("accepted[]", "error.subject"))
+
+
+def _calendar_invite_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "calendar_invite"
+    miss = v4tools._required(args, tool, "", ("summary", "attendees", "start", "end"))
+    if miss:
+        return miss
+    people = args["attendees"]
+    if not isinstance(people, list):
+        return Refusal(tool, "attendees", "attendee_format", str(people))
+    if not people:
+        return Refusal(tool, "attendees", "no_attendees", str(people))
+    if len(people) > CALENDAR_MAX_ATTENDEES:
+        return Refusal(tool, "attendees", "too_many_attendees", str(len(people)))
+    guests: list[dict[str, object]] = []
+    for index, one in enumerate(people):
+        block = v4tools._obj(one, tool, f"attendees[{index}]")
+        if isinstance(block, Refusal):
+            return block
+        address = block.get("email")
+        if not isinstance(address, str) or not EMAIL_RE.fullmatch(address.strip()):
+            return Refusal(tool, f"attendees[{index}].email", "attendee_format", str(address))
+        guest: dict[str, object] = {"email": address.strip()}
+        if block.get("name"):
+            shown = v4tools.parse_text(block["name"], tool, f"attendees[{index}].name", 120)
+            if isinstance(shown, Refusal):
+                return shown
+            guest["name"] = shown
+        guests.append(guest)
+    start = v4tools.parse_iso_datetime(args["start"], tool, "start")
+    end = v4tools.parse_iso_datetime(args["end"], tool, "end")
+    bad = v4tools._first(start, end)
+    if bad:
+        return bad
+    # COMPARED AS INSTANTS, NOT AS STRINGS. «10:00+03:00» sorts after
+    # «09:00+00:00» lexically and is an hour EARLIER; a string comparison would
+    # accept a backwards interval whenever the two offsets differ, which is what
+    # a calendar in two time zones looks like.
+    if dt.datetime.fromisoformat(str(start)) >= dt.datetime.fromisoformat(str(end)):
+        return Refusal(tool, "end", "interval_order", f"{start}..{end}")
+    summary = v4tools.parse_text(args["summary"], tool, "summary", 255)
+    if isinstance(summary, Refusal):
+        return summary
+    out: Parsed = {"summary": summary, "attendees": guests, "start": start, "end": end}
+    if args.get("description"):
+        text = v4tools.parse_text(args["description"], tool, "description", 4000)
+        if isinstance(text, Refusal):
+            return text
+        out["description"] = text
+    return out
+
+
+CALENDAR_INVITE = ToolSpec(
+    name="calendar_invite",
+    source="Google Calendar API events.insert (attendees[]{email,displayName}, start/end как {dateTime: RFC 3339, timeZone: IANA}) / Microsoft Graph POST /me/events",
+    schema=v4tools._schema(
+        "calendar_invite",
+        "Создать встречу и позвать участников. Повестку напиши своими словами.",
+        {"summary": {"type": "string", "description": "Название встречи"},
+         "attendees": {"type": "array", "description": "Участники, до 25",
+                       "items": {"type": "object",
+                                 "properties": {"email": {"type": "string"},
+                                                "name": {"type": "string"}}}},
+         "start": {"type": "string", "description": "Начало, ISO 8601 со смещением"},
+         "end": {"type": "string", "description": "Конец, ISO 8601 со смещением"},
+         "description": {"type": "string", "description": "Повестка"}},
+        ("summary", "attendees", "start", "end")),
+    fields=(FieldSpec("attendees[].email", "identity", "EMAIL", "", required=True),
+            FieldSpec("attendees[].name", "identity", "NAME", ""),
+            FieldSpec("summary", "free", required=True),
+            FieldSpec("description", "free")),
+    parse=_calendar_invite_parse, mutating=True,
+    result_pii=("event.attendees[].email", "event.attendees[].displayName",
+                "error.subject"))
+
+
+def _tracker_find_user_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "tracker_find_user"
+    miss = v4tools._required(args, tool, "", ("query",))
+    if miss:
+        return miss
+    raw = args["query"]
+    if not isinstance(raw, str):
+        return Refusal(tool, "query", "not_a_string", str(raw))
+    query = raw.strip()
+    if not query:
+        return Refusal(tool, "query", "empty_query", str(raw))
+    if len(query) > TRACKER_QUERY_LIMIT:
+        return Refusal(tool, "query", "too_long", query)
+    count = parse_int(args.get("max_results", TRACKER_DEFAULT_RESULTS), tool,
+                      "max_results", 1, TRACKER_MAX_RESULTS)
+    if isinstance(count, Refusal):
+        return count
+    return {"query": query, "max_results": count}
+
+
+TRACKER_FIND_USER = ToolSpec(
+    name="tracker_find_user",
+    source="Jira Cloud REST v3 GET /rest/api/3/user/search?query= (ОДНО поле, сопоставляется и с displayName, и с emailAddress) / YouTrack GET /api/users?query=",
+    schema=v4tools._schema(
+        "tracker_find_user",
+        "Найти сотрудника в трекере: имя, логин или почта — одним запросом.",
+        {"query": {"type": "string",
+                   "description": "Имя, логин или почта, до 100 символов"},
+         "max_results": {"type": "integer", "description": "Сколько вернуть, 1–50"}},
+        ("query",)),
+    # THE OPPOSITE OF `crm_find_contact`, WHICH IS WHY IT IS HERE. That tool
+    # splits the key into three TYPED fields (`query.phone` / `query.email` /
+    # `query.last_name`) and hands the gateway the answer; Jira takes one free
+    # field whose value may be a name, may be an e-mail, and may be a LOGIN —
+    # which is not personal data and is spelled like a surname. This is the one
+    # place in the corpus that tests the leak and the over-masking of one leaf
+    # at the same time.
+    fields=(FieldSpec("query", "free", required=True),
+            FieldSpec("max_results", "plain")),
+    parse=_tracker_find_user_parse, mutating=False,
+    # `users[].accountId` and `users[].login` are rendered and NOT in `result_pii`:
+    # they are not personal data, so V04/V06 would refuse them here. A login can
+    # still be DECLARED — `PlainValue` with the seed locus of this row — and it
+    # is scored by nothing: no v5 module reads `case.base.plain`. Until one does,
+    # a gateway that substitutes a login is invisible to this instrument.
+    result_pii=("users[].displayName", "users[].emailAddress"))
+
+
+def _tracker_issue_create_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "tracker_issue_create"
+    miss = v4tools._required(args, tool, "", ("project_key", "summary"))
+    if miss:
+        return miss
+    key = str(args["project_key"]).strip()
+    if not PROJECT_KEY_RE.fullmatch(key):
+        return Refusal(tool, "project_key", "project_key", key)
+    summary = args["summary"]
+    if not isinstance(summary, str):
+        return Refusal(tool, "summary", "not_a_string", str(summary))
+    if len(summary.strip()) > ISSUE_SUMMARY_LIMIT:
+        return Refusal(tool, "summary", "summary_too_long", summary)
+    out: Parsed = {"project_key": key, "summary": summary.strip()}
+    if args.get("description"):
+        text = v4tools.parse_text(args["description"], tool, "description", ISSUE_TEXT_LIMIT)
+        if isinstance(text, Refusal):
+            return text
+        out["description"] = text
+    if args.get("assignee"):
+        who = v4tools.parse_text(args["assignee"], tool, "assignee", 120)
+        if isinstance(who, Refusal):
+            return who
+        out["assignee"] = who
+    return out
+
+
+TRACKER_ISSUE_CREATE = ToolSpec(
+    name="tracker_issue_create",
+    source="Jira Cloud REST v3 POST /rest/api/3/issue (fields.project.key, fields.summary ≤ 255, fields.description, fields.assignee; ответ — {id, key, self})",
+    schema=v4tools._schema(
+        "tracker_issue_create",
+        "Завести задачу в трекере. Исполнителя укажи по имени, описание напиши своими словами.",
+        {"project_key": {"type": "string", "description": "Ключ проекта, например SUP"},
+         "summary": {"type": "string", "description": "Заголовок, до 255 символов"},
+         "description": {"type": "string", "description": "Описание"},
+         "assignee": {"type": "string", "description": "Исполнитель по имени"}},
+        ("project_key", "summary")),
+    # THE ASSIGNEE IS AN ARGUMENT, and that is the gap: `ticket_create` carries
+    # free text but names nobody, and the only assignee anywhere in the corpus
+    # arrives in a RESULT (`escalate_to_human.assignee.name`). `summary` and
+    # `description` are SUMMARY leaves — the agent retells the dialogue for
+    # another worker to read.
+    fields=(FieldSpec("assignee", "identity", "NAME", ""),
+            FieldSpec("summary", "free", required=True),
+            FieldSpec("description", "free"),
+            FieldSpec("project_key", "plain", required=True)),
+    parse=_tracker_issue_create_parse, mutating=True,
+    # `issue.key` («SUP-14») is deliberately absent from `result_pii`: it is the
+    # customer's own record key, not personal data, and what it needs is the
+    # plain-value scorer v5 does not have (see PROJECT_KEY_RE above).
+    result_pii=("issue.fields.assignee.displayName", "error.subject"))
+
+
+def _crm_upsert_card_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "crm_upsert_card"
+    contact_raw, deal_raw = args.get("contact"), args.get("deal")
+    if not contact_raw and not deal_raw:
+        return Refusal(tool, "", "empty_card", "")
+    out: Parsed = {}
+    if args.get("id"):
+        out["id"] = str(args["id"]).strip()
+    if contact_raw:
+        contact = v4tools._obj(contact_raw, tool, "contact")
+        if isinstance(contact, Refusal):
+            return contact
+        person: dict[str, object] = {}
+        for key in ("last_name", "first_name", "middle_name"):
+            if contact.get(key):
+                value = parse_name_word(contact[key], tool, f"contact.{key}")
+                if isinstance(value, Refusal):
+                    return value
+                person[key] = value
+        if contact.get("phone"):
+            phone = parse_e164(contact["phone"], tool, "contact.phone")
+            if isinstance(phone, Refusal):
+                return phone
+            person["phone"] = phone
+        if contact.get("email"):
+            address = str(contact["email"]).strip().lower()
+            if not EMAIL_RE.fullmatch(address):
+                return Refusal(tool, "contact.email", "email_format", address)
+            person["email"] = address
+        if contact.get("address"):
+            block = v4tools._obj(contact["address"], tool, "contact.address")
+            if isinstance(block, Refusal):
+                return block
+            miss = v4tools._required(block, tool, "contact.address", ("city", "street", "house"))
+            if miss:
+                return miss
+            house = v4tools.parse_house(block["house"], tool, "contact.address.house")
+            if isinstance(house, Refusal):
+                return house
+            flat: object = ""
+            if block.get("flat") not in ("", None):
+                flat = parse_int(block["flat"], tool, "contact.address.flat", 1, 2000)
+                if isinstance(flat, Refusal):
+                    return flat
+            person["address"] = {"city": str(block["city"]).strip().lower(),
+                                 "street": str(block["street"]).strip().lower(),
+                                 "house": house, "flat": str(flat) if flat != "" else ""}
+        if not person:
+            return Refusal(tool, "contact", "nothing_to_update", "")
+        out["contact"] = person
+    if deal_raw:
+        deal = v4tools._obj(deal_raw, tool, "deal")
+        if isinstance(deal, Refusal):
+            return deal
+        trade: dict[str, object] = {}
+        if deal.get("title"):
+            title = v4tools.parse_text(deal["title"], tool, "deal.title", 255)
+            if isinstance(title, Refusal):
+                return title
+            trade["title"] = title
+        if deal.get("price") not in (None, ""):
+            price = str(deal["price"]).strip()
+            if not PRICE_RE.fullmatch(price):
+                return Refusal(tool, "deal.price", "price_format", price)
+            trade["price"] = price
+        if deal.get("stage"):
+            stage = str(deal["stage"]).strip().lower()
+            if stage not in DEAL_STAGES:
+                return Refusal(tool, "deal.stage", "stage_unknown", stage)
+            trade["stage"] = stage
+        if deal.get("contact_name"):
+            shown = v4tools.parse_text(deal["contact_name"], tool, "deal.contact_name", 120)
+            if isinstance(shown, Refusal):
+                return shown
+            trade["contact_name"] = shown
+        if deal.get("note"):
+            note = v4tools.parse_text(deal["note"], tool, "deal.note", 4000)
+            if isinstance(note, Refusal):
+                return note
+            trade["note"] = note
+        if not trade:
+            return Refusal(tool, "deal", "nothing_to_update", "")
+        out["deal"] = trade
+    return out
+
+
+CRM_UPSERT_CARD = ToolSpec(
+    name="crm_upsert_card",
+    source="amoCRM POST /api/v4/leads/complex (сделка и _embedded.contacts[] ОДНИМ запросом) / Bitrix24 crm.deal.add с вложенным CONTACT",
+    schema=v4tools._schema(
+        "crm_upsert_card",
+        "Завести или обновить карточку: контакт и сделку одним вызовом. Комментарий напиши своими словами.",
+        {"id": {"type": "string", "description": "id карточки, если она уже есть"},
+         "contact": {"type": "object",
+                     "properties": {"last_name": {"type": "string"},
+                                    "first_name": {"type": "string"},
+                                    "middle_name": {"type": "string"},
+                                    "phone": {"type": "string", "description": "E.164"},
+                                    "email": {"type": "string"},
+                                    "address": {"type": "object",
+                                                "properties": {"city": {"type": "string"},
+                                                               "street": {"type": "string"},
+                                                               "house": {"type": "string"},
+                                                               "flat": {"type": "string"}},
+                                                "required": ["city", "street", "house"]}}},
+         "deal": {"type": "object",
+                  "properties": {"title": {"type": "string"},
+                                 "price": {"type": "string"},
+                                 "stage": {"type": "string",
+                                           "enum": ["new", "in_progress", "won", "lost"]},
+                                 "contact_name": {"type": "string"},
+                                 "note": {"type": "string"}}}},
+        ()),
+    # TWO OBJECTS IN ONE CALL, which nothing in the corpus had.
+    # `crm_upsert_contact` nests one level (`contact.address.*`); here a person
+    # and a deal travel together, and the same person is named TWICE — as
+    # `contact.last_name`/`first_name` and as `deal.contact_name` — so a gateway
+    # that mints two substitutes for one identity inside one argument is
+    # visible. It is also the second consumer of the mail loop: what the letter
+    # said goes here.
+    fields=(FieldSpec("id", "plain"),
+            FieldSpec("contact.last_name", "identity", "NAME", "surname"),
+            FieldSpec("contact.first_name", "identity", "NAME", "given"),
+            FieldSpec("contact.middle_name", "identity", "NAME", "patronymic"),
+            FieldSpec("contact.phone", "identity", "PHONE", "digits"),
+            FieldSpec("contact.email", "identity", "EMAIL", ""),
+            FieldSpec("contact.address.city", "identity", "LOC", "city"),
+            FieldSpec("contact.address.street", "identity", "LOC", "street"),
+            FieldSpec("contact.address.house", "identity", "LOC", "house"),
+            FieldSpec("contact.address.flat", "identity", "LOC", "flat"),
+            FieldSpec("deal.title", "free"),
+            FieldSpec("deal.price", "plain"),
+            FieldSpec("deal.stage", "enum"),
+            FieldSpec("deal.contact_name", "identity", "NAME", ""),
+            FieldSpec("deal.note", "free")),
+    parse=_crm_upsert_card_parse, mutating=True,
+    result_pii=("card.contact.last_name", "card.contact.first_name", "card.contact.phone",
+                "card.contact.email", "card.contact.address", "card.deal.contact_name",
+                "error.subject"))
+
+
+def _sheet_append_row_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "sheet_append_row"
+    miss = v4tools._required(args, tool, "", ("spreadsheet_id", "range", "values"))
+    if miss:
+        return miss
+    sheet = str(args["spreadsheet_id"]).strip()
+    if not SHEET_ID_RE.fullmatch(sheet):
+        return Refusal(tool, "spreadsheet_id", "id_format", sheet)
+    cells = str(args["range"]).strip()
+    if not SHEET_RANGE_RE.fullmatch(cells):
+        return Refusal(tool, "range", "range_format", cells)
+    rows = args["values"]
+    if not isinstance(rows, list) or not all(isinstance(row, list) for row in rows):
+        return Refusal(tool, "values", "not_a_matrix", str(rows))
+    if not rows:
+        return Refusal(tool, "values", "no_rows", str(rows))
+    if len(rows) > SHEET_MAX_ROWS:
+        return Refusal(tool, "values", "too_many_rows", str(len(rows)))
+    table: list[list[str]] = []
+    for row_index, row in enumerate(rows):
+        line: list[str] = []
+        for cell_index, cell in enumerate(row):
+            if not isinstance(cell, str):
+                return Refusal(tool, f"values[{row_index}][{cell_index}]",
+                               "cell_not_a_string", str(cell))
+            line.append(cell)
+        table.append(line)
+    return {"spreadsheet_id": sheet, "range": cells, "values": table}
+
+
+SHEET_APPEND_ROW = ToolSpec(
+    name="sheet_append_row",
+    source="Google Sheets API spreadsheets.values.append (range в A1-нотации, valueInputOption=USER_ENTERED, values[][]; ответ — updates{updatedRange, updatedRows})",
+    schema=v4tools._schema(
+        "sheet_append_row",
+        "Дописать строки в таблицу. Одна ячейка — одно целое значение.",
+        {"spreadsheet_id": {"type": "string", "description": "Идентификатор таблицы, например sh-1"},
+         "range": {"type": "string", "description": "Диапазон в A1-нотации, например Лист1!A1:E1"},
+         "values": {"type": "array", "description": "Строки таблицы, до 50",
+                    "items": {"type": "array", "items": {"type": "string"}}}},
+        ("spreadsheet_id", "range", "values")),
+    # THE ONE TWO-DIMENSIONAL ARGUMENT IN THE CORPUS. `crm_import_csv` passes a
+    # whole CSV as ONE container string; a path to a CELL exists only on the
+    # READING side (`csv_row_path`). Here the argument itself is a matrix.
+    #
+    # ONE CELL CARRIES A WHOLE VALUE, and the leaf therefore declares NO role:
+    # `spec_v5_for` erases every index, so `values[0][2]` and `values[3][0]`
+    # resolve to the SAME `FieldSpec`, and a role on it would claim that every
+    # cell of every column holds a surname. A spreadsheet row is written whole
+    # values anyway — «Громова Марина», «+7 916 402-11-87», «Ижевск, Клубная 85»
+    # — which is why the shape costs nothing to state honestly.
+    fields=(FieldSpec("spreadsheet_id", "plain", required=True),
+            FieldSpec("range", "plain", required=True),
+            FieldSpec("values[][]", "identity", "", "", required=True)),
+    parse=_sheet_append_row_parse, mutating=True,
+    # `updated.updatedRange` («Лист1!A4:E4») is NOT in `result_pii`: a range is
+    # not personal data and must survive the gateway untouched — the same class
+    # as an issue key, and the same missing scorer.
+    result_pii=("updated.values[][]", "error.subject"))
+
+
+def _doc_append_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "doc_append"
+    miss = v4tools._required(args, tool, "", ("document_id", "text"))
+    if miss:
+        return miss
+    document = str(args["document_id"]).strip()
+    if not DOC_ID_RE.fullmatch(document):
+        return Refusal(tool, "document_id", "id_format", document)
+    text = args["text"]
+    if not isinstance(text, str):
+        return Refusal(tool, "text", "not_a_string", str(text))
+    if not text.strip():
+        return Refusal(tool, "text", "empty_text", str(text))
+    if len(text) > DOC_APPEND_LIMIT:
+        return Refusal(tool, "text", "too_long", text)
+    return {"document_id": document, "text": text.strip()}
+
+
+DOC_APPEND = ToolSpec(
+    name="doc_append",
+    source="Google Docs API documents.batchUpdate с InsertTextRequest{location.index, text} / Confluence PUT /rest/api/content/{id} (тело страницы целиком)",
+    schema=v4tools._schema(
+        "doc_append",
+        "Дописать абзац в документ вида doc-1. Текст напиши своими словами.",
+        {"document_id": {"type": "string", "description": "Идентификатор документа, например doc-1"},
+         "text": {"type": "string", "description": "Что дописать, до 20000 символов"}},
+        ("document_id", "text")),
+    # LONG FREE TEXT ON THE WAY IN TO STORAGE. Reading documents is covered
+    # densely (524 IN/document hops, the `document` family, `doc_retrieve`);
+    # WRITING prose into one was covered by nothing. It writes into the same
+    # `documents` store `doc_retrieve` and `file_read` read, so «дописал →
+    # перечитал» is a chain the corpus gets for free — and «создание документа»
+    # is an append into a seeded empty one, which is why there is no `doc_create`.
+    fields=(FieldSpec("document_id", "plain", required=True),
+            FieldSpec("text", "free", required=True)),
+    parse=_doc_append_parse, mutating=True,
+    # THE WHOLE PAGE COMES BACK, which is Confluence's answer to a PUT and the
+    # only shape that gives this tool a measurable result: the SEEDED prose in
+    # the document is tagged as it is rendered, the agent's appended paragraph is
+    # not, and the leaf declares what can actually be observed.
+    result_pii=("document.body",))
+
+
+def _memory_save_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "memory_save"
+    miss = v4tools._required(args, tool, "", ("subject", "fact"))
+    if miss:
+        return miss
+    subject = args["subject"]
+    if not isinstance(subject, str) or not subject.strip():
+        return Refusal(tool, "subject", "empty_subject", str(subject))
+    if len(subject.strip()) > MEMORY_SUBJECT_LIMIT:
+        return Refusal(tool, "subject", "too_long", subject)
+    fact = args["fact"]
+    if not isinstance(fact, str) or not fact.strip():
+        return Refusal(tool, "fact", "empty_fact", str(fact))
+    if len(fact) > MEMORY_FACT_LIMIT:
+        return Refusal(tool, "fact", "too_long", fact)
+    scope = str(args.get("scope", "user")).strip().lower()
+    if scope not in MEMORY_SCOPES:
+        return Refusal(tool, "scope", "scope_unknown", scope)
+    return {"subject": subject.strip(), "fact": fact.strip(), "scope": scope}
+
+
+MEMORY_SAVE = ToolSpec(
+    name="memory_save",
+    source="Letta (MemGPT) POST /v1/agents/{id}/archival-memory {text} / OpenAI Assistants persistent store (факт кладётся строкой и живёт дольше разговора)",
+    schema=v4tools._schema(
+        "memory_save",
+        "Запомнить факт о человеке надолго — он переживёт этот разговор.",
+        {"subject": {"type": "string", "description": "О ком факт, например Громова Марина"},
+         "fact": {"type": "string", "description": "Сам факт, до 1000 символов"},
+         "scope": {"type": "string", "enum": ["user", "org"]}},
+        ("subject", "fact")),
+    # AGENT MEMORY AS A TOOL, which is a different axis from the `memory`
+    # family. That family measures the memory of the CONVERSATION — IN/memory is
+    # by definition «a value from the transcript» — and the risk here is the
+    # other one: a substitute written into an EXTERNAL store outlives the
+    # conversation that could have resolved it. Filed under `crm` because a fact
+    # about a person put into a long-lived store is a card by another name; the
+    # list of eleven verticals is closed and needs no twelfth for it.
+    fields=(FieldSpec("subject", "identity", "NAME", "", required=True),
+            FieldSpec("fact", "free", required=True),
+            FieldSpec("scope", "enum")),
+    parse=_memory_save_parse, mutating=True,
+    result_pii=("memory.subject", "error.subject"))
+
+
+def _reminder_set_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "reminder_set"
+    miss = v4tools._required(args, tool, "", ("remind_at", "text", "recipient"))
+    if miss:
+        return miss
+    when = v4tools.parse_iso_datetime(args["remind_at"], tool, "remind_at")
+    if isinstance(when, Refusal):
+        return when
+    text = args["text"]
+    if not isinstance(text, str) or not text.strip():
+        return Refusal(tool, "text", "empty_text", str(text))
+    if len(text) > REMINDER_TEXT_LIMIT:
+        return Refusal(tool, "text", "too_long", text)
+    who = v4tools._obj(args["recipient"], tool, "recipient")
+    if isinstance(who, Refusal):
+        return who
+    miss = v4tools._required(who, tool, "recipient", ("phone",))
+    if miss:
+        return miss
+    phone = parse_e164(who["phone"], tool, "recipient.phone")
+    if isinstance(phone, Refusal):
+        return phone
+    block: dict[str, object] = {"phone": phone}
+    if who.get("name"):
+        shown = v4tools.parse_text(who["name"], tool, "recipient.name", 120)
+        if isinstance(shown, Refusal):
+            return shown
+        block["name"] = shown
+    return {"remind_at": when, "text": text.strip(), "recipient": block}
+
+
+REMINDER_SET = ToolSpec(
+    name="reminder_set",
+    source="Google Tasks API tasks.insert (due в RFC 3339) / Todoist REST v2 POST /tasks с due_datetime — отложенное действие со своим номером",
+    schema=v4tools._schema(
+        "reminder_set",
+        "Поставить напоминание человеку на срок. Текст напиши своими словами — он придёт ему.",
+        {"remind_at": {"type": "string", "description": "Когда, ISO 8601 со смещением"},
+         "text": {"type": "string", "description": "Текст напоминания, до 1000 символов"},
+         "recipient": {"type": "object",
+                       "properties": {"name": {"type": "string"},
+                                      "phone": {"type": "string", "description": "E.164"}},
+                       "required": ["phone"]}},
+        ("remind_at", "text", "recipient")),
+    # `text` IS A TEMPLATE HOP: a human reads it. `notify_sms` and
+    # `send_template` already carry 303 OUT/template hops, but neither is a
+    # DEFERRED action with an identifier of its own — `callback_schedule` books a
+    # call and carries no text at all. Filed under `calendar` beside it rather
+    # than under messaging, which already gains three tools from this suite.
+    fields=(FieldSpec("recipient.phone", "identity", "PHONE", "digits", required=True),
+            FieldSpec("recipient.name", "identity", "NAME", ""),
+            FieldSpec("text", "free", required=True),
+            FieldSpec("remind_at", "plain", required=True)),
+    parse=_reminder_set_parse, mutating=True,
+    result_pii=("reminder.recipient.name", "reminder.recipient.phone", "error.subject"))
+
+
+# WHY NO FREE-TEXT ECHO IS DECLARED BELOW, and it is the same rule for all six.
+# A tool that echoes the PROSE THE AGENT WROTE — an issue description, a card's
+# note, an appended paragraph, a remembered fact, a reminder's text, a meeting's
+# agenda — returns a string whose personal values the mock cannot TAG: a span is
+# laid down as a string is BUILT (`Writer`/`Slot`), and the agent's sentence is
+# built by the agent. Finding the value inside it afterwards is the one thing
+# this package forbids (`prove_no_search_v5`), and declaring a leaf the mock can
+# never tag is exactly the defect R-27/R-41 chased out of `courier_status`: a
+# permanent miss charged to the gateway, held up by an assertion no measurement
+# could contradict.
+#
+# THOSE FIELDS ARE STILL MEASURED — on the OUT side, where they belong. Every one
+# of them is a `template` or `summary` hop (`contracts.TEMPLATE_FIELDS` /
+# `SUMMARY_FIELDS`), judged for form and scanned for leaks as the agent writes
+# it. What is not measured is the echo coming back, and that is a limit of the
+# instrument, stated here rather than papered over with a declaration.
+
+OFFICE_SPECS: tuple[ToolSpec, ...] = (
+    MAIL_READ, MAIL_SEARCH, MAIL_SEND, CALENDAR_INVITE, TRACKER_FIND_USER,
+    TRACKER_ISSUE_CREATE, CRM_UPSERT_CARD, SHEET_APPEND_ROW, DOC_APPEND,
+    MEMORY_SAVE, REMINDER_SET)
+
+
 NEW_SPECS: tuple[ToolSpec, ...] = (
     KB_SEARCH, DOC_RETRIEVE, FILE_READ, FORM_PARSE, BANK_CLIENT_FIND, ACCOUNT_STATEMENT,
-    VEHICLE_CHECK, SNILS_VERIFY, CALENDAR_FREE, EMAIL_SEND, TICKET_HISTORY, COURIER_STATUS, PATIENT_FIND)
+    VEHICLE_CHECK, SNILS_VERIFY, CALENDAR_FREE, EMAIL_SEND, TICKET_HISTORY, COURIER_STATUS,
+    PATIENT_FIND, *OFFICE_SPECS)
 NEW_REGISTRY: dict[str, ToolSpec] = {spec.name: spec for spec in NEW_SPECS}
 
 
@@ -601,7 +1365,14 @@ DIFFERS_FROM_USER_FORM: frozenset[str] = frozenset({
     "patient_find",
     "bank_client_find", "account_statement", "calendar_free", "ticket_history",
     "kb_search", "file_read", "form_parse", "crm_find_contact", "crm_import_csv",
-    "email_send"})
+    "email_send",
+    # The office suite's four. A mailbox lower-cases the address and writes the
+    # date in RFC 2822; Jira answers a Cyrillic query with a Latin `displayName`
+    # and a lower-case `emailAddress`; a spreadsheet gives every value back as a
+    # bare cell, stripped of the separators and the cases the speech had. None of
+    # these is a notation a user register produces, which is what V03 asks for
+    # and what makes the IN/tool hop of these four able to FAIL.
+    "mail_read", "mail_search", "tracker_find_user", "sheet_append_row"})
 
 
 def _form(form: str, example: str, paths: tuple[str, ...]) -> ReturnForm:
@@ -972,6 +1743,125 @@ RETURN_FORMS_BY_TOOL: dict[str, tuple[ReturnForm, ...]] = {
               '"birth_date":"1987-03-14"}]}',
               ("rows[].last_name", "rows[].first_name", "rows[].phone", "rows[].email",
                "rows[].birth_date")),),
+    # --- the office suite ----------------------------------------------------
+    # EVERY `error_with_value` BELOW ECHOES PERSONAL DATA, not an identifier.
+    # An error body whose subject is a document id or a cell range would leave
+    # `error.subject` declared in `result_pii` and crossed by nothing — the
+    # decorative declaration `build.result_pii_residue` exists to refuse. Where
+    # the real service names only the id, the mock names what it could not file
+    # instead, the way `form_parse` already names the fragment it could not read.
+    "mail_read": (
+        _form("nested",
+              '{"id":"msg-1","threadId":"thr-1","date":"Fri, 12 Sep 2026 10:14:02 +0300",'
+              '"from":{"name":"Громова Марина","email":"grom@mail.ru"},'
+              '"to":["office@example.ru"],"subject":"Доставка на Клубную",'
+              '"body":"Здравствуйте! Прошу перенести доставку на пятницу.",'
+              '"attachments":[{"name":"anketa.txt","path":"/mnt/in/anketa.txt"}]}',
+              ("from.name", "from.email", "subject", "body")),
+        # `format=raw` HANDS BACK THE WHOLE LETTER AS ONE STRING, headers and
+        # all — the shape the corpus had nowhere: prose carrying a person's own
+        # words, from a source that is not a document.
+        _form("free_text",
+              '{"id":"msg-2","format":"raw","raw":"From: Громова Марина <grom@mail.ru> '
+              'Subject: Доставка на Клубную Здравствуйте! Прошу перенести доставку."}',
+              ("raw",)),
+        _form("empty", '{"message_id":"msg-9","found":false}', ())),
+    "mail_search": (
+        _form("list",
+              '{"query":"from:grom@mail.ru","total":1,"messages":[{"id":"msg-1",'
+              '"threadId":"thr-1","date":"Fri, 12 Sep 2026 10:14:02 +0300",'
+              '"from":{"name":"Громова Марина","email":"grom@mail.ru"},'
+              '"snippet":"Здравствуйте! Прошу перенести доставку"}]}',
+              ("messages[].from.name", "messages[].from.email", "messages[].snippet")),
+        _form("empty", '{"query":"from:nobody@mail.ru","total":0,"messages":[]}', ()),
+        _form("error_with_value",
+              '{"error":{"code":"INVALID_QUERY","subject":"from:grom@mail.ru"}}', ())),
+    "mail_send": (
+        _form("single",
+              '{"message_id":"<em-1@mail.example.ru>","thread_id":"thr-1","status":"queued",'
+              '"accepted":["grom@mail.ru","bukin@mail.ru"]}',
+              ("accepted[]",)),
+        _form("error_with_value",
+              '{"error":{"code":"RECIPIENT_REJECTED","subject":"blocked@mail.ru"}}',
+              ("error.subject",))),
+    "calendar_invite": (
+        _form("single",
+              '{"event":{"id":"evt-1","iCalUID":"evt-1@example.ru",'
+              '"start":{"dateTime":"2026-09-05T09:30:00+04:00","timeZone":"Europe/Moscow"},'
+              '"end":{"dateTime":"2026-09-05T10:00:00+04:00","timeZone":"Europe/Moscow"},'
+              '"organizer":{"email":"office@example.ru"},"summary":"Встреча по заказу",'
+              '"attendees":[{"email":"grom@mail.ru","displayName":"Громова Марина",'
+              '"responseStatus":"needsAction"}],"description":"Обсудить перенос доставки"}}',
+              ("event.attendees[].email", "event.attendees[].displayName")),
+        _form("error_with_value",
+              '{"error":{"code":"ATTENDEE_UNKNOWN","subject":"grom@mail.ru"}}',
+              ("error.subject",))),
+    "tracker_find_user": (
+        # `login` AND `accountId` ARE RENDERED AND OUTSIDE `result_pii`: neither
+        # is personal data, and both must reach the next call untouched. They can
+        # be declared as `PlainValue` off this seed row; no v5 metric reads that
+        # field, so `test_tools` pins only that they are PRESENT in the result.
+        _form("list",
+              '{"query":"Громова","total":1,"users":[{"accountId":"5b10a2","login":"m.gromova",'
+              '"displayName":"Gromova Marina","emailAddress":"grom@mail.ru","active":"true"}]}',
+              ("users[].displayName", "users[].emailAddress")),
+        _form("empty", '{"query":"никто","total":0,"users":[]}', ())),
+    "tracker_issue_create": (
+        _form("single",
+              '{"issue":{"id":"10001","key":"SUP-14","fields":{"project":{"key":"SUP"},'
+              '"summary":"Перенести доставку Громовой Марине","description":"Клиент просит '
+              'пятницу.","assignee":{"displayName":"Sokolov Andrey"}}}}',
+              ("issue.fields.assignee.displayName",)),
+        _form("error_with_value",
+              '{"error":{"code":"ASSIGNEE_UNKNOWN","subject":"Соколов Андрей"}}',
+              ("error.subject",))),
+    "crm_upsert_card": (
+        _form("nested",
+              '{"card":{"contact":{"id":"c-77","last_name":"громова","first_name":"марина",'
+              '"middle_name":"борисовна","phone":"+79164021187","email":"grom@mail.ru",'
+              '"address":"г Ижевск, ул Клубная, д 85, кв 12"},"deal":{"id":"d-1",'
+              '"title":"Доставка","price":"1500.00","stage":"new",'
+              '"contact_name":"Громова Марина","note":"Просила перенести на пятницу"}}}',
+              ("card.contact.last_name", "card.contact.first_name", "card.contact.phone",
+               "card.contact.email", "card.contact.address", "card.deal.contact_name")),
+        _form("error_with_value",
+              '{"error":{"code":"DUPLICATE_CARD","subject":"+79164021187"}}',
+              ("error.subject",))),
+    "sheet_append_row": (
+        _form("list",
+              '{"spreadsheet_id":"sh-1","updated":{"updatedRange":"Лист1!A4:E4",'
+              '"updatedRows":"1","values":[["Громова Марина","+7 916 402-11-87",'
+              '"grom@mail.ru","г Ижевск, ул Клубная, д 85","1987-03-14"]]}}',
+              ("updated.values[][]",)),
+        _form("error_with_value",
+              '{"error":{"code":"DUPLICATE_ROW","subject":"Громова Марина"}}',
+              ("error.subject",))),
+    "doc_append": (
+        _form("single",
+              '{"document_id":"doc-1","revision_id":"rev-2","document":'
+              '{"title":"Анкета клиента","body":"Заявитель Громова Марина, телефон '
+              '+7 (916) 402-11-87. 12.09 просила перенести доставку на пятницу.",'
+              '"length":"420"}}',
+              ("document.body",)),
+        _form("error_with_value",
+              '{"error":{"code":"DOCUMENT_NOT_FOUND","subject":"doc-9"}}', ())),
+    "memory_save": (
+        _form("single",
+              '{"memory":{"id":"mem-1","scope":"user","subject":"Громова Марина",'
+              '"fact":"Просила звонить после 18:00 на +7 916 402-11-87"}}',
+              ("memory.subject",)),
+        _form("error_with_value",
+              '{"error":{"code":"MEMORY_CONFLICT","subject":"Громова Марина"}}',
+              ("error.subject",))),
+    "reminder_set": (
+        _form("single",
+              '{"reminder":{"id":"rem-1","remind_at":"2026-09-05T09:00:00+03:00",'
+              '"status":"scheduled","text":"Позвонить Громовой Марине про пятницу",'
+              '"recipient":{"name":"Громова Марина","phone":"+79164021187"}}}',
+              ("reminder.recipient.name", "reminder.recipient.phone")),
+        _form("error_with_value",
+              '{"error":{"code":"RECIPIENT_UNKNOWN","subject":"+79164021187"}}',
+              ("error.subject",))),
 }
 
 
@@ -993,7 +1883,12 @@ def _spec_v5(name: str) -> ToolSpecV5:
         base = NEW_REGISTRY[name]
     return ToolSpecV5(base=base, vertical=TOOL_VERTICAL[name],
                       return_forms=RETURN_FORMS_BY_TOOL[name],
-                      differs_from_user_form=name in DIFFERS_FROM_USER_FORM)
+                      differs_from_user_form=name in DIFFERS_FROM_USER_FORM,
+                      # READ FROM `contracts`, NEVER RESTATED HERE. `--slice
+                      # suite=office` and this registry must name the same set,
+                      # and a second table would be one drift away from a slice
+                      # that measures a tool the registry files elsewhere.
+                      suite=TOOL_SUITE.get(name, NO_SUITE))
 
 
 REGISTRY_V5: dict[str, ToolSpecV5] = {
@@ -1071,7 +1966,7 @@ def _walk(value: object, prefix: str, out: set[str]) -> None:
 
 
 def registry_problems(registry: dict[str, ToolSpecV5]) -> list[str]:
-    """Every violation of V01–V05 (`contracts.VERTICAL_RULES`), never the first
+    """Every violation of V01–V07 (`contracts.VERTICAL_RULES`), never the first
     one only — a reviewer needs the whole list to decide, and a checker that
     stops at the first problem makes a second one invisible until the first is
     fixed.
@@ -1129,6 +2024,11 @@ def registry_problems(registry: dict[str, ToolSpecV5]) -> list[str]:
         if dropped:
             problems.append(f"V04 {name}: contracts declares {dropped}, which this registry "
                             f"does not")
+        if spec.suite != NO_SUITE and spec.suite not in SUITES:
+            problems.append(f"V07 {name}: suite {spec.suite!r} is not in contracts.SUITES")
+        if spec.suite != TOOL_SUITE.get(name, NO_SUITE):
+            problems.append(f"V07 {name}: filed under suite {spec.suite!r}, contracts says "
+                            f"{TOOL_SUITE.get(name, NO_SUITE)!r}")
         if not spec.base.source:
             problems.append(f"V05 {name}: no source API cited")
         # THE PARSER IS EXERCISED, NOT INSPECTED. Every tool has at least one

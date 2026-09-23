@@ -180,13 +180,31 @@ def plain_column(text: str) -> pools.Rendered:
     return pools.Rendered(text, text, False, {})
 
 
-# The four families, imported LAST — see the module docstring for why.
+# ПД В ДВУМЕРНОЙ СТРУКТУРЕ И В ДЛИННОМ ТЕКСТЕ НА ЗАПИСЬ (2026-09-23). The
+# corpus's nearest thing to a spreadsheet row is `crm_import_csv(csv)` — one
+# string-container argument, fifteen cases — and it has no tool at all that PUTS
+# a long free text into a document: `doc_retrieve`, `file_read` and the whole
+# `document` family read, and nothing writes. `office` is `document` rather than
+# a chain because the values come out of an ATTACHMENT, which is the source the
+# customer's own assistants work from, and because `DocumentSpec.extract_to_tool`
+# is what makes `doc_extracted` count the write.
+#
+# TWELVE, AND THE NUMBER IS THE HEADROOM LEFT. `plan_a`'s four client families
+# take 52 of the 64 cases the corpus can still grow by (K01's ceiling of 1 800
+# and K02's 7% share floor on two 126-case families bite at the same number), and
+# twelve splits into six per sink — `MIN_TYPE_DENOMINATOR` cases each for
+# `sheet_append_row` and `doc_append`, which is what K07 asks of a tool the
+# corpus offers.
+OFFICE_COUNT: int = 12
+
+# The five families, imported LAST — see the module docstring for why.
 from bench.agentpii5.scenarios5 import (  # noqa: E402 - the cycle closes here on purpose
-    document, memory_anaphora, rag, user_in_loop)
+    document, memory_anaphora, office, rag, user_in_loop)
 
 PLAN_B: tuple[tuple[object, int], ...] = (
     (user_in_loop, LOOP_COUNT),
     (memory_anaphora, MEMORY_COUNT),
     (rag, RAG_COUNT),
     (document, DOCUMENT_COUNT),
+    (office, OFFICE_COUNT),
 )

@@ -85,11 +85,12 @@ SPEC_V4_ITEM_COUNTS: dict[str, int] = {
 SPEC_MIN_MULTI_CLUSTERS: int = 8
 SPEC_MIN_MULTI_IDENTITIES: int = 8
 SPEC_CASES_PER_MULTI: int = 3
-# §8.1 «Итого 44 инструмента, 11 вертикалей» — 43 until 23.09.2026, when the
+# §8.1 + §8.1bis «Итого 55 инструментов, 11 вертикалей» — 44 until 23.09.2026,
+# when §8.1bis ordered the OFFICE SUITE's eleven. 43 before that, until the
 # clinic's `patient_find` was added: §2 had ordered it from the first revision
 # («book, slots, patient_find») and §8.1's table had forgotten it, which left the
 # vertical with five WRITING tools and no IN/tool hop at all.
-SPEC_TOOL_COUNT: int = 44
+SPEC_TOOL_COUNT: int = 55
 SPEC_VERTICAL_COUNT: int = 11
 # §8.1's table, «форма возврата» column, verbatim. A tool may declare MORE (R-17:
 # a state-decided form is declared as all of them); it may never declare fewer.
@@ -100,6 +101,19 @@ SPEC_NEW_TOOL_FORMS: dict[str, tuple[str, ...]] = {
     "vehicle_check": ("single", "error_with_value"), "snils_verify": ("single", "empty"),
     "calendar_free": ("list",), "email_send": ("single",),
     "ticket_history": ("free_text",), "courier_status": ("nested",),
+    # §8.1bis, the office suite. Read off the SPEC's own table, so an edit to
+    # `contracts.NEW_TOOL_RETURN_FORMS` alone cannot move the target.
+    "mail_read": ("nested", "free_text", "empty"),
+    "mail_search": ("list", "empty", "error_with_value"),
+    "mail_send": ("single", "error_with_value"),
+    "calendar_invite": ("single", "error_with_value"),
+    "reminder_set": ("single", "error_with_value"),
+    "tracker_find_user": ("list", "empty"),
+    "tracker_issue_create": ("single", "error_with_value"),
+    "crm_upsert_card": ("nested", "error_with_value"),
+    "memory_save": ("single", "error_with_value"),
+    "sheet_append_row": ("list", "error_with_value"),
+    "doc_append": ("single", "error_with_value"),
 }
 # §8.1's table, «ПД в результате» column, for the eight rows that name TYPES
 # rather than prose. «суммы», «реквизиты», «шум скана», «всё, что в документе»
@@ -114,6 +128,15 @@ SPEC_NEW_TOOL_TYPES: dict[str, tuple[str, ...]] = {
     "calendar_free": ("NAME",),
     "email_send": ("EMAIL",),
     "courier_status": ("NAME", "PHONE", "LOC"),
+    # §8.1bis: only the rows whose «ПД в результате» names TYPES. «тело письма»,
+    # «сниппет», «документ целиком» are prose, not item types, and are left out
+    # rather than guessed at — the same rule the eight rows above follow.
+    "mail_send": ("EMAIL",),
+    "calendar_invite": ("EMAIL", "NAME"),
+    "reminder_set": ("NAME", "PHONE"),
+    "tracker_find_user": ("NAME", "EMAIL"),
+    "tracker_issue_create": ("NAME",),
+    "memory_save": ("NAME",),
 }
 # §3.6's list of v4 families, which §8.2 says are kept whole. v4 owns the
 # canonical tuple; restating twenty-two names here would make a rename of v4's

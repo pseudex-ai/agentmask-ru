@@ -173,14 +173,15 @@ def main() -> int:
     if set(c.IN_OWNERS) & set(c.OUT_OWNERS):
         failures.append("an owner is both IN and OUT")
 
-    # 4. tools: 31 kept + 13 new, every one in exactly one vertical. THIRTEEN,
-    # not §8.1's twelve: `patient_find` is the clinic's reading tool, ordered by
-    # §2 («book, slots, patient_find») and missing from §8.1's table, and its
-    # absence is why the vertical returned no personal data at all.
+    # 4. tools: 31 kept + 24 new, every one in exactly one vertical. Thirteen of
+    # the 24 are §8.1's — `patient_find` among them, the clinic's reading tool,
+    # ordered by §2 («book, slots, patient_find») and missing from §8.1's table,
+    # whose absence is why the vertical returned no personal data at all — and
+    # ELEVEN are the office suite (§8.1bis).
     if len(c.V4_TOOL_NAMES) != 31:
         failures.append(f"v4 registry has {len(c.V4_TOOL_NAMES)} tools, expected 31")
-    if len(c.NEW_TOOL_NAMES) != 13 or len(set(c.NEW_TOOL_NAMES)) != 13:
-        failures.append("13 distinct new tools expected")
+    if len(c.NEW_TOOL_NAMES) != 24 or len(set(c.NEW_TOOL_NAMES)) != 24:
+        failures.append(f"24 distinct new tools expected, got {len(set(c.NEW_TOOL_NAMES))}")
     if set(c.NEW_TOOL_NAMES) & set(c.V4_TOOL_NAMES):
         failures.append("a new tool name collides with v4")
     if set(c.TOOL_VERTICAL) != set(c.V4_TOOL_NAMES) | set(c.NEW_TOOL_NAMES):
@@ -202,6 +203,31 @@ def main() -> int:
     if len(c.RETURN_FORMS) != 8:
         failures.append("spec §8.1 names 8 return forms")
 
+    # 4bis. the SUITE axis. A suite is a slice ACROSS verticals — the customer's
+    # own shapes — and the checks below are what stop it turning into a twelfth
+    # vertical or into a second, disagreeing list of the same tools.
+    if not c.SUITES or len(set(c.SUITES)) != len(c.SUITES):
+        failures.append("SUITES must be a non-empty tuple of distinct names")
+    if c.NO_SUITE in c.SUITES:
+        failures.append("NO_SUITE is the absence of a suite and may not be one")
+    unknown = sorted({one for one in c.TOOL_SUITE.values()} - set(c.SUITES))
+    if unknown:
+        failures.append(f"TOOL_SUITE names suites that are not in SUITES: {unknown}")
+    outside = sorted(set(c.TOOL_SUITE) - (set(c.V4_TOOL_NAMES) | set(c.NEW_TOOL_NAMES)))
+    if outside:
+        failures.append(f"TOOL_SUITE names tools no registry holds: {outside}")
+    for suite in c.SUITES:
+        members = [name for name, one in c.TOOL_SUITE.items() if one == suite]
+        if not members:
+            failures.append(f"suite {suite!r} holds no tool")
+            continue
+        # THE WHOLE POINT OF THE AXIS: if a suite sat inside one vertical,
+        # `--slice vertical=…` would already answer it and this would be
+        # decoration. The office suite spans five.
+        if len({c.TOOL_VERTICAL[name] for name in members}) < 2:
+            failures.append(f"suite {suite!r} fits inside one vertical — "
+                            f"the vertical axis already isolates it")
+
     # 5. the leaf-owner table
     if c.hop_owner_of_leaf("send_template", "variables.name") != "template":
         failures.append("send_template.variables.name should be a template hop")
@@ -211,6 +237,21 @@ def main() -> int:
         failures.append("an ordinary leaf should be a tool_arg hop")
     if c.hop_owner_of_leaf("notify_sms", "number") != "tool_arg":
         failures.append("notify_sms.number is an argument, not the template text")
+    # The office suite's own leaves: what a PERSON reads is a template hop, what
+    # the agent RETELLS for a colleague is a summary hop, and the identity leaf
+    # beside them stays an ordinary argument.
+    if c.hop_owner_of_leaf("mail_send", "body") != "template":
+        failures.append("mail_send.body is read by a person — a template hop")
+    if c.hop_owner_of_leaf("reminder_set", "text") != "template":
+        failures.append("reminder_set.text reaches a person — a template hop")
+    if c.hop_owner_of_leaf("tracker_issue_create", "description") != "summary":
+        failures.append("tracker_issue_create.description is a retelling — a summary hop")
+    if c.hop_owner_of_leaf("crm_upsert_card", "deal.note") != "summary":
+        failures.append("crm_upsert_card.deal.note is a retelling — a summary hop")
+    if c.hop_owner_of_leaf("mail_send", "to[0]") != "tool_arg":
+        failures.append("mail_send.to[] is an address, not the letter a person reads")
+    if c.hop_owner_of_leaf("sheet_append_row", "values[0][2]") != "tool_arg":
+        failures.append("a spreadsheet cell is an ordinary argument leaf")
 
     # 6. Line is the public one
     line = c.Line("x", 3, 3)

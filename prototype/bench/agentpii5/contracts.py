@@ -108,10 +108,24 @@ FIELD_SEP: str = "\x1f"
 # table is closed and lives here, not in the observer.
 TEMPLATE_FIELDS: tuple[tuple[str, str], ...] = (
     ("send_template", "variables.*"), ("send_template", "text"),
-    ("notify_sms", "text"), ("email_send", "body"), ("email_send", "subject"))
+    ("notify_sms", "text"), ("email_send", "body"), ("email_send", "subject"),
+    # The office suite's two leaves a PERSON reads. `mail_send.body` is the
+    # letter the customer opens and `reminder_set.text` is the notification that
+    # reaches their phone; neither is compared for equality, both are judged for
+    # form and for leaks, which is what `template` means here.
+    ("mail_send", "subject"), ("mail_send", "body"), ("reminder_set", "text"))
 SUMMARY_FIELDS: tuple[tuple[str, str], ...] = (
     ("escalate_to_human", "summary"), ("crm_add_note", "text"),
-    ("ticket_create", "text"), ("ticket_create", "subject"))
+    ("ticket_create", "text"), ("ticket_create", "subject"),
+    # The office suite's free-text leaves the agent writes IN ITS OWN WORDS for
+    # another worker to read: an issue's summary and description, a card's note,
+    # the paragraph appended to a document, the fact put into long-term memory,
+    # the agenda of an invitation. A `summary` hop is retelling, not transport,
+    # so the value inside it is judged for form and never for equality — which
+    # is exactly what the client's «описание, несущее ПД» is.
+    ("tracker_issue_create", "summary"), ("tracker_issue_create", "description"),
+    ("crm_upsert_card", "deal.note"), ("doc_append", "text"),
+    ("memory_save", "fact"), ("calendar_invite", "description"))
 
 
 @dataclass(frozen=True)
@@ -572,10 +586,41 @@ VERTICALS: tuple[str, ...] = (
     "delivery", "directory", "clinic", "bank", "support", "calendar",
     "messaging", "government", "search", "files", "crm")
 V4_TOOL_NAMES: tuple[str, ...] = tuple(REGISTRY)          # 31, kept whole
+# A SUITE IS A SLICE ACROSS VERTICALS, NEVER A TWELFTH VERTICAL. An office
+# assistant's tools land in five different verticals — mail is `messaging`, an
+# invitation is `calendar`, a tracker is `support`, a card is `crm`, a sheet and
+# a document are `files` — so `--slice vertical=…` cannot isolate them and a new
+# vertical would both break the closed list of eleven and file a spreadsheet
+# under something other than «files», where it belongs by its return form.
+#
+# THE AXIS IS GENERAL, THE VALUE IS NOT. `office` is the first customer's shape
+# of work; the next customer gets their own suite name and the same machinery.
+# A tool belongs to at most one suite, and a tool named by no suite is filed
+# under "" — the great majority, and the reason this is a lookup with a default
+# rather than a required field on every spec.
+SUITES: tuple[str, ...] = ("office",)
+NO_SUITE: str = ""
 NEW_TOOL_NAMES: tuple[str, ...] = (
     "kb_search", "doc_retrieve", "file_read", "form_parse", "bank_client_find",
     "account_statement", "vehicle_check", "snils_verify", "calendar_free",
-    "email_send", "ticket_history", "courier_status", "patient_find")
+    "email_send", "ticket_history", "courier_status", "patient_find",
+    # --- the office suite (the first enterprise customer's own shapes) -------
+    # Named by SHAPE, never by product. The corpus outlives any one deal and is
+    # reused for the next customer; «форма → реальный продукт» is a separate
+    # note kept outside it. `mail_read` and `mail_search` are the leg the corpus
+    # had nowhere: of 708 IN/tool → OUT/tool_arg transitions not ONE starts in a
+    # `free_text` result, and a letter read and then written into a card is
+    # exactly where a placeholder gateway scores zero.
+    "mail_read", "mail_search", "mail_send", "calendar_invite",
+    "tracker_find_user", "tracker_issue_create", "crm_upsert_card",
+    "sheet_append_row", "doc_append", "memory_save", "reminder_set")
+# The suite a tool belongs to. Lookup, not a column: 44 of the 55 belong to none.
+TOOL_SUITE: dict[str, str] = {
+    "mail_read": "office", "mail_search": "office", "mail_send": "office",
+    "calendar_invite": "office", "tracker_find_user": "office",
+    "tracker_issue_create": "office", "crm_upsert_card": "office",
+    "sheet_append_row": "office", "doc_append": "office", "memory_save": "office",
+    "reminder_set": "office"}
 # The vertical of every v4 tool (a revision, spec §8.1) and of every new one
 # (spec §8.1 table). Closed here so two components cannot file one tool under
 # two verticals.
@@ -598,6 +643,17 @@ TOOL_VERTICAL: dict[str, str] = {
     "crm_import_csv": "files", "file_read": "files", "form_parse": "files",
     "crm_find_contact": "crm", "crm_upsert_contact": "crm", "crm_add_note": "crm",
     "crm_segment_report": "crm", "crm_merge_contacts": "crm",
+    # --- the office suite, filed by RETURN FORM rather than by product family --
+    # A letter is messaging; an invitation and a reminder are calendar work; a
+    # tracker is the support desk under another name; a two-dimensional sheet and
+    # a document are files, which is the vertical whose forms they wear; a card
+    # and a fact about a person saved for later are CRM. Nothing here asks for a
+    # twelfth vertical, and `test_contracts` pins that at eleven.
+    "mail_read": "messaging", "mail_search": "messaging", "mail_send": "messaging",
+    "calendar_invite": "calendar", "reminder_set": "calendar",
+    "tracker_find_user": "support", "tracker_issue_create": "support",
+    "crm_upsert_card": "crm", "memory_save": "crm",
+    "sheet_append_row": "files", "doc_append": "files",
 }
 # The return forms each NEW tool must declare (spec §8.1 table), and the PII
 # types its results carry. The tools component may add forms, never remove.
@@ -621,6 +677,30 @@ NEW_TOOL_RETURN_FORMS: dict[str, tuple[str, ...]] = {
     # answers an unknown insured person with an empty match set, not a fault,
     # and inventing a fault the API does not raise would measure our fiction.
     "patient_find": ("single", "empty"),
+    # --- the office suite ----------------------------------------------------
+    # `free_text` ON A READING TOOL IS THE WHOLE POINT. The corpus carries 708
+    # IN/tool → OUT/tool_arg transitions and not one of them starts in prose:
+    # the only free text that reaches an argument today comes from a DOCUMENT
+    # (413 hops, `file_read`/`form_parse`/`doc_retrieve`). A letter is the
+    # customer's commonest source of prose, messaging had ZERO reading tools —
+    # the vertical is exempt from K16 with the reason «only writes» — and the
+    # exemption goes the moment `mail_read` lands.
+    "mail_read": ("nested", "free_text", "empty"),
+    "mail_search": ("list", "empty", "error_with_value"),
+    "mail_send": ("single", "error_with_value"),
+    "calendar_invite": ("single", "error_with_value"),
+    # NO `error_with_value`: Jira's user search has no DOMAIN failure — an
+    # unknown person is an empty match set, not a fault — and the only error it
+    # answers is the documented refusal of a malformed query, which the package
+    # already records as that form through `Refusal.as_error`. Declaring it here
+    # too would ask the mock to render a body the API never writes.
+    "tracker_find_user": ("list", "empty"),
+    "tracker_issue_create": ("single", "error_with_value"),
+    "crm_upsert_card": ("nested", "error_with_value"),
+    "sheet_append_row": ("list", "error_with_value"),
+    "doc_append": ("single", "error_with_value"),
+    "memory_save": ("single", "error_with_value"),
+    "reminder_set": ("single", "error_with_value"),
 }
 NEW_TOOL_RESULT_TYPES: dict[str, tuple[str, ...]] = {
     "kb_search": ("NAME", "PHONE", "LOC"), "doc_retrieve": ("NAME", "PHONE", "LOC", "DOB", "EMAIL"),
@@ -636,6 +716,27 @@ NEW_TOOL_RESULT_TYPES: dict[str, tuple[str, ...]] = {
     # birth date in ISO, the СНИЛС with the ПФР separators, the phone in E.164
     # — three forms no speech register writes.
     "patient_find": ("NAME", "DOB", "SNILS", "PHONE"),
+    # --- the office suite ----------------------------------------------------
+    # EMAIL leads the mail tools because that is the gap the measurement found:
+    # EMAIL crosses the gateway as an IN/user hop 14 times in 1 736 cases while
+    # the corpus declares 1 196 EMAIL items — the type is DECLARED everywhere
+    # and CROSSED almost nowhere, and a mailbox is where it actually travels.
+    "mail_read": ("NAME", "EMAIL", "PHONE", "LOC"),
+    "mail_search": ("EMAIL", "NAME", "PHONE"),
+    "mail_send": ("EMAIL",),
+    "calendar_invite": ("EMAIL", "NAME"),
+    "tracker_find_user": ("NAME", "EMAIL"),
+    "tracker_issue_create": ("NAME",),
+    "crm_upsert_card": ("NAME", "PHONE", "EMAIL", "LOC"),
+    # A spreadsheet cell holds a WHOLE value, never a part of one: one column is
+    # the name, the next the phone, the next the address. That is why the sheet
+    # names four types and why its argument leaf declares no `role`.
+    "sheet_append_row": ("NAME", "PHONE", "EMAIL", "LOC"),
+    "doc_append": ("NAME", "PHONE", "LOC"),
+    # ONLY the subject: `memory.fact` is the agent's own sentence and the mock
+    # cannot tag a value inside a string it did not build (see `tools.py`).
+    "memory_save": ("NAME",),
+    "reminder_set": ("NAME", "PHONE"),
 }
 # Per-vertical coverage every registry must satisfy (spec §8.1 «Итого»).
 VERTICAL_RULES: tuple[str, ...] = (
@@ -645,6 +746,7 @@ VERTICAL_RULES: tuple[str, ...] = (
     "V04 every tool declares ≥ 1 return form and ≥ 1 result path carrying PII (result_pii non-empty) — a tool whose result carries nothing has no IN/tool hop to measure",
     "V05 every tool has a non-empty source and a strict parse that refuses a malformed argument with a documented rule name",
     "V06 every result_pii path is named by at least one declared ReturnForm.pii_paths — V04 checks the containment one way only (a form may not name a path result_pii does not), so a path declared in the union and in no form was measurable by nothing and deleting it broke nothing: five of the 142 lived that way",
+    "V07 every tool's suite is SUITES or NO_SUITE, and it is the one TOOL_SUITE names — the suite is the axis a customer's own shapes are read on, and two components filing one tool under two suites would make `--slice suite=office` mean two different sets",
 )
 
 
@@ -678,6 +780,14 @@ class ToolSpecV5:
     vertical: str                    # VERTICALS
     return_forms: tuple[ReturnForm, ...]
     differs_from_user_form: bool
+    # SUITES or NO_SUITE. A SECOND, CROSS-CUTTING AXIS, and it exists because
+    # the vertical could not answer the question a customer asks: «what do YOUR
+    # numbers say about MY tools». An office assistant's eleven shapes fall into
+    # five verticals, so `--slice vertical=messaging` measures a third of them
+    # and dilutes that third with SMS; `--slice suite=office` is exactly them.
+    # Default "" so the 44 that belong to no suite need no edit, and so a future
+    # customer's suite is one dict entry rather than a migration.
+    suite: str = NO_SUITE
 
 
 class ResultRenderer(Protocol):

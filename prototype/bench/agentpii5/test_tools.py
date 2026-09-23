@@ -1,4 +1,4 @@
-"""The v5 registry under test: the 43 tools, their forms, their strict parsers.
+"""The v5 registry under test: the 55 tools, their forms, their strict parsers.
 
 THE RULES ARE SHOWN FAILING. `registry_problems` is handed five broken copies
 of the registry — a vertical with no list, one with no error and no empty, one
@@ -19,8 +19,8 @@ from dataclasses import replace
 
 from bench.agentpii4.tools import CSV_HEADER, REGISTRY as V4_REGISTRY, Refusal
 from bench.agentpii5 import tools as v5tools
-from bench.agentpii5.contracts import (NEW_TOOL_NAMES, NEW_TOOL_RETURN_FORMS, TOOL_VERTICAL,
-                                       V4_TOOL_NAMES, VERTICALS)
+from bench.agentpii5.contracts import (NEW_TOOL_NAMES, NEW_TOOL_RETURN_FORMS, SUITES,
+                                       TOOL_SUITE, TOOL_VERTICAL, V4_TOOL_NAMES, VERTICALS)
 from bench.agentpii5.mock import snils_spaced
 from bench.agentpii5.test_mock import (FORM_TEXT, INN_ACTIVE, PHONE, SNILS_REVOKED,
                                        SNILS_UNSEEDED, SNILS_VALID, bare_world,
@@ -28,6 +28,8 @@ from bench.agentpii5.test_mock import (FORM_TEXT, INN_ACTIVE, PHONE, SNILS_REVOK
 from bench.agentpii5.tools import (NEW_REGISTRY, REGISTRY_V5,
                                    colliding_tool_names, generic_paths, registry_problems)
 
+SUITE_TOOLS: tuple[str, ...] = tuple(
+    name for name, suite in TOOL_SUITE.items() if suite == "office")
 CANON_ADDRESS = "г Ижевск, ул Пушкина, д 41, кв 7"
 COURIER_ADDRESS = "г. Ижевск, ул. Пушкина, д. 41, кв. 7"
 CANON_PHONE = "+7 (916) 402-11-87"
@@ -53,12 +55,28 @@ def test_no_pseudex() -> list[str]:
 
 def test_counts() -> list[str]:
     problems: list[str] = []
-    # 44, NOT §8.1's «≈ 43». The clinic's `patient_find` is the forty-fourth and
-    # it is the ТЗ's own: §2 lists the vertical as «book, slots, patient_find»
-    # while §8.1's table forgot to order it, which is how the vertical came to
-    # hold five tools that all WRITE and to return no personal data at all.
-    if len(REGISTRY_V5) != 44:
-        problems.append(f"{len(REGISTRY_V5)} tools, expected 44")
+    # 55: v4's 31, the thirteen of §8.1, and the OFFICE SUITE's eleven. The
+    # suite is the first enterprise customer's own shapes, generalised so the
+    # corpus outlives the deal — and it is measurable as a set through
+    # `--slice suite=office`, which the vertical could never answer because its
+    # eleven tools fall into five different verticals.
+    if len(REGISTRY_V5) != 55:
+        problems.append(f"{len(REGISTRY_V5)} tools, expected 55")
+    suited = sorted(name for name, spec in REGISTRY_V5.items() if spec.suite)
+    if len(suited) != len(SUITE_TOOLS) or set(suited) != set(SUITE_TOOLS):
+        problems.append(f"the office suite holds {suited}, expected {sorted(SUITE_TOOLS)}")
+    for name, spec in REGISTRY_V5.items():
+        if spec.suite and spec.suite not in SUITES:
+            problems.append(f"{name}: suite {spec.suite!r} is not in contracts.SUITES")
+        if spec.suite != TOOL_SUITE.get(name, ""):
+            problems.append(f"{name}: suite {spec.suite!r}, contracts says "
+                            f"{TOOL_SUITE.get(name, '')!r}")
+    # THE SUITE IS NOT A VERTICAL, AND THIS IS THE CHECK THAT SAYS SO. If its
+    # eleven tools all sat in one vertical, `--slice vertical=…` would already
+    # answer the customer's question and the axis would be decoration.
+    if len({REGISTRY_V5[name].vertical for name in SUITE_TOOLS}) < 5:
+        problems.append("the office suite fits inside fewer than five verticals — "
+                        "then the vertical axis would already isolate it")
     expected = set(V4_TOOL_NAMES) | set(NEW_TOOL_NAMES)
     if set(REGISTRY_V5) != expected:
         problems.append(f"missing {sorted(expected - set(REGISTRY_V5))}, "
@@ -228,6 +246,27 @@ GOOD_CALLS: tuple[tuple[str, dict[str, object]], ...] = (
     ("courier_status", {"claim_id": "clm-1"}),
     ("patient_find", {"phone": PHONE}),
     ("patient_find", {"snils": snils_spaced(SNILS_VALID)}),
+    # --- the office suite ----------------------------------------------------
+    ("mail_read", {"message_id": "msg-1"}),
+    ("mail_search", {"query": "from:grom@mail.ru", "max_results": 5}),
+    ("mail_send", {"to": ["grom@mail.ru", "bukin@mail.ru"], "cc": ["boss@corp.ru"],
+                   "subject": "Ответ", "body": "Здравствуйте!"}),
+    ("calendar_invite", {"summary": "Встреча",
+                         "attendees": [{"email": "grom@mail.ru", "name": "Громова Марина"}],
+                         "start": "2026-09-05T09:30:00+04:00",
+                         "end": "2026-09-05T10:00:00+04:00", "description": "Повестка"}),
+    ("tracker_find_user", {"query": "Соколов"}),
+    ("tracker_issue_create", {"project_key": "SUP", "summary": "Перенос",
+                              "description": "Клиент просит", "assignee": "Соколов Андрей"}),
+    ("crm_upsert_card", {"contact": {"last_name": "Громова", "phone": PHONE},
+                         "deal": {"title": "Доставка", "price": "1500.00", "stage": "new",
+                                  "contact_name": "Громова Марина", "note": "пятница"}}),
+    ("sheet_append_row", {"spreadsheet_id": "sh-1", "range": "Лист1!A1:E1",
+                          "values": [["Громова Марина", PHONE]]}),
+    ("doc_append", {"document_id": "doc-1", "text": "Дописано."}),
+    ("memory_save", {"subject": "Громова Марина", "fact": "Звонить после 18:00"}),
+    ("reminder_set", {"remind_at": "2026-09-05T09:00:00+03:00", "text": "Позвонить",
+                      "recipient": {"name": "Громова Марина", "phone": PHONE}}),
 )
 BAD_CALLS: tuple[tuple[str, dict[str, object], str], ...] = (
     ("kb_search", {"query": "   ", "k": 3}, "empty_query"),
@@ -267,6 +306,67 @@ BAD_CALLS: tuple[tuple[str, dict[str, object], str], ...] = (
     ("patient_find", {}, "exactly_one_key"),
     ("patient_find", {"phone": "89164021187"}, "phone_not_e164"),
     ("patient_find", {"snils": "112233445 95"}, "snils_format"),
+    # --- the office suite ----------------------------------------------------
+    ("mail_read", {"message_id": "msg_1"}, "id_format"),
+    ("mail_read", {}, "missing_required"),
+    ("mail_search", {"query": "   ", "max_results": 5}, "empty_query"),
+    ("mail_search", {"query": "x" * 201, "max_results": 5}, "too_long"),
+    ("mail_search", {"query": "from:grom@mail.ru", "max_results": 51}, "out_of_range"),
+    # THE LIST IS THE NEW SHAPE, so every way it can be wrong is named.
+    ("mail_send", {"to": "grom@mail.ru", "subject": "x", "body": "y"}, "recipient_format"),
+    ("mail_send", {"to": [], "subject": "x", "body": "y"}, "no_recipients"),
+    ("mail_send", {"to": ["a@b.ru"] * 21, "subject": "x", "body": "y"},
+     "too_many_recipients"),
+    ("mail_send", {"to": ["grom@mail"], "subject": "x", "body": "y"}, "recipient_format"),
+    ("mail_send", {"to": ["grom@mail.ru"], "cc": ["boss@corp"], "subject": "x", "body": "y"},
+     "recipient_format"),
+    ("mail_send", {"to": ["grom@mail.ru"], "subject": "x" * 201, "body": "y"}, "too_long"),
+    ("calendar_invite", {"summary": "x", "attendees": [], "start": "2026-09-05T09:30:00+04:00",
+                         "end": "2026-09-05T10:00:00+04:00"}, "no_attendees"),
+    ("calendar_invite", {"summary": "x", "attendees": [{"email": "grom@mail"}],
+                         "start": "2026-09-05T09:30:00+04:00",
+                         "end": "2026-09-05T10:00:00+04:00"}, "attendee_format"),
+    # THE INTERVAL IS COMPARED AS AN INSTANT, AND THIS PAIR IS THE PROOF: as
+    # strings «09:00+00:00» sorts BEFORE «10:00+04:00» and a string comparison
+    # would accept it, while as instants it is 09:00 UTC against 06:00 UTC — an
+    # hour backwards. A calendar in two time zones is where that happens.
+    ("calendar_invite", {"summary": "x", "attendees": [{"email": "grom@mail.ru"}],
+                         "start": "2026-09-05T09:00:00+00:00",
+                         "end": "2026-09-05T10:00:00+04:00"}, "interval_order"),
+    ("calendar_invite", {"summary": "x", "attendees": [{"email": "grom@mail.ru"}],
+                         "start": "05.09.2026 09:30", "end": "2026-09-05T10:00:00+04:00"},
+     "datetime_not_iso8601"),
+    ("tracker_find_user", {"query": "  "}, "empty_query"),
+    ("tracker_find_user", {"query": "x" * 101}, "too_long"),
+    ("tracker_find_user", {"query": "Соколов", "max_results": 0}, "out_of_range"),
+    ("tracker_issue_create", {"project_key": "sup", "summary": "x"}, "project_key"),
+    ("tracker_issue_create", {"project_key": "SUP", "summary": "x" * 256}, "summary_too_long"),
+    ("crm_upsert_card", {}, "empty_card"),
+    ("crm_upsert_card", {"contact": {"last_name": "Громова", "phone": "89164021187"}},
+     "phone_not_e164"),
+    ("crm_upsert_card", {"deal": {"price": "полторы тысячи"}}, "price_format"),
+    ("crm_upsert_card", {"deal": {"stage": "почти"}}, "stage_unknown"),
+    ("sheet_append_row", {"spreadsheet_id": "sh-1", "range": "Лист1", "values": [["x"]]},
+     "range_format"),
+    ("sheet_append_row", {"spreadsheet_id": "sh-1", "range": "A1", "values": ["x"]},
+     "not_a_matrix"),
+    ("sheet_append_row", {"spreadsheet_id": "sh-1", "range": "A1", "values": []}, "no_rows"),
+    ("sheet_append_row", {"spreadsheet_id": "sh-1", "range": "A1",
+                          "values": [["x"]] * 51}, "too_many_rows"),
+    ("sheet_append_row", {"spreadsheet_id": "sheet1", "range": "A1", "values": [["x"]]},
+     "id_format"),
+    ("doc_append", {"document_id": "doc_1", "text": "x"}, "id_format"),
+    ("doc_append", {"document_id": "doc-1", "text": "   "}, "empty_text"),
+    ("doc_append", {"document_id": "doc-1", "text": "x" * 20001}, "too_long"),
+    ("memory_save", {"subject": "  ", "fact": "x"}, "empty_subject"),
+    ("memory_save", {"subject": "Громова", "fact": "  "}, "empty_fact"),
+    ("memory_save", {"subject": "Громова", "fact": "x", "scope": "весь мир"}, "scope_unknown"),
+    ("reminder_set", {"remind_at": "05.09.2026", "text": "x",
+                      "recipient": {"phone": PHONE}}, "datetime_not_iso8601"),
+    ("reminder_set", {"remind_at": "2026-09-05T09:00:00+03:00", "text": "  ",
+                      "recipient": {"phone": PHONE}}, "empty_text"),
+    ("reminder_set", {"remind_at": "2026-09-05T09:00:00+03:00", "text": "x",
+                      "recipient": {"phone": "89164021187"}}, "phone_not_e164"),
 )
 
 
@@ -560,6 +660,150 @@ def test_empty_world_is_empty() -> list[str]:
     return []
 
 
+
+
+# --- the office suite: the notations read off a REAL render --------------------
+
+RFC2822_DATE = re.compile(r"[A-Z][a-z]{2}, \d{1,2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} [+-]\d{4}")
+
+
+def test_mail_notations() -> list[str]:
+    """The mailbox's own notations, which no speech register produces — the
+    whole of what `differs_from_user_form` promises about `mail_read`."""
+    problems: list[str] = []
+    letter = body("mail_read", {"message_id": "msg-1"})
+    sender = dict(letter["from"])                                              # type: ignore[arg-type]
+    # THE ADDRESS IS STORED MIXED-CASE AND ANSWERED LOWER-CASE. If the mock
+    # echoed what was written, the IN hop on an e-mail could not fail and the
+    # form line for EMAIL would be free marks for every gateway.
+    if sender["email"] != "grom@mail.ru":
+        problems.append(f"mail_read answered {sender['email']!r}, expected the lower-case form")
+    if not RFC2822_DATE.fullmatch(str(letter["date"])):
+        problems.append(f"mail_read answered the date {letter['date']!r}, expected RFC 2822")
+    if not REGISTRY_V5["mail_read"].differs_from_user_form:
+        problems.append("mail_read does not declare differs_from_user_form")
+    raw = body("mail_read", {"message_id": "msg-2"})
+    text = str(raw["raw"])
+    if "From: " not in text or "Subject: " not in text:
+        problems.append(f"the raw form is not an RFC 5322 source: {text[:80]!r}")
+    if "\n" in text:
+        # `writer._escape_free` refuses a control character inside a slot, so a
+        # composed string is one line — the same constraint `_document_pieces`
+        # carries, and the reason the headers are joined with spaces.
+        problems.append("the raw letter carries a newline, which no span survives")
+    return problems
+
+
+def test_the_missing_transition_has_a_source() -> list[str]:
+    """A letter's BODY is prose carrying several values, each with its own span.
+
+    THIS IS THE ONE THE CORPUS HAD NOWHERE. Of 708 IN/tool → OUT/tool_arg
+    transitions not one starts in a `free_text` result; prose reached an
+    argument only out of a document. A body with ONE span over the whole string
+    would be the same gap in a new coat, so the check is on the spans, not on
+    the text.
+    """
+    problems: list[str] = []
+    backend = seeded_world()
+    log = backend.call("mail_read", {"message_id": "msg-1"})
+    text = json.loads(log.result_text)
+    if "Клубная 85" not in str(text["body"]) or "+7 (916)" not in str(text["body"]):
+        problems.append(f"the letter's body carries no values: {text['body']!r}")
+    inside = {tag: log.result_text[start:end]
+              for tag, (start, end) in log.result_spans.items()}
+    if len(inside) < 4:
+        problems.append(f"the letter tagged {inside}, expected the sender and the address "
+                        f"in the header and two more inside the prose")
+    body_spans = [tag for tag, (start, _end) in log.result_spans.items()
+                  if start > log.result_text.index('"body"')]
+    if len(body_spans) < 2:
+        problems.append(f"only {body_spans} lie inside the prose; a body with one span over "
+                        f"the whole string is the gap this tool exists to close")
+    if "free_text" not in {one.form for one in REGISTRY_V5["mail_read"].return_forms}:
+        problems.append("mail_read does not declare free_text")
+    return problems
+
+
+def test_tracker_answers_latin_and_renders_a_login() -> list[str]:
+    """Jira's own notation, and the pair this package cannot yet separate."""
+    problems: list[str] = []
+    found = body("tracker_find_user", {"query": "Соколов", "max_results": 5})
+    user = dict(list(found["users"])[0])                                       # type: ignore[arg-type]
+    if user["displayName"] != "Sokolov Andrey":
+        problems.append(f"the tracker answered {user['displayName']!r}, expected the Latin form")
+    if user["emailAddress"] != "a.sokolov@corp.ru":
+        problems.append(f"the tracker answered {user['emailAddress']!r}, expected lower case")
+    # THE LOGIN IS RENDERED AND SCORED BY NOTHING, and that is the gap stated in
+    # code rather than in prose: it is not personal data, so `result_pii` may not
+    # hold it (V04/V06 would refuse). It CAN be declared — v4's `PlainValue`, off
+    # this row's seed locus — and no v5 module reads `case.base.plain`, so a
+    # gateway that substituted it would be invisible to this instrument.
+    if not user.get("login") or not user.get("accountId"):
+        problems.append("the tracker's non-personal identifiers are not even rendered")
+    declared = set(REGISTRY_V5["tracker_find_user"].base.result_pii)
+    if {"users[].login", "users[].accountId"} & declared:
+        problems.append("a login is not personal data and must not be declared as such")
+    return problems
+
+
+def test_sheet_is_two_dimensional() -> list[str]:
+    """The one argument in the corpus that is a MATRIX, echoed as one."""
+    problems: list[str] = []
+    backend = seeded_world()
+    log = backend.call("sheet_append_row", {
+        "spreadsheet_id": "sh-1", "range": "Лист1!A1:B1",
+        "values": [["Громова Марина", PHONE], ["Букин Сергей", "+79261234567"]]})
+    rows = json.loads(log.result_text)["updated"]["values"]
+    if not isinstance(rows, list) or not all(isinstance(row, list) for row in rows):
+        problems.append(f"the sheet echoed {rows!r}, which is not a matrix")
+    elif [len(row) for row in rows] != [2, 2]:
+        problems.append(f"the sheet echoed rows of {[len(row) for row in rows]}")
+    # ONE CELL IS ONE WHOLE VALUE, and the argument leaf therefore declares no
+    # role: `spec_v5_for` erases every index, so all cells share one FieldSpec
+    # and a role on it would claim every column holds a surname.
+    leaf = v5tools.spec_v5_for("sheet_append_row", "values[1][0]")
+    if leaf is None or leaf.path != "values[][]":
+        problems.append(f"a cell resolves to {leaf!r}, expected the values[][] leaf")
+    elif leaf.role:
+        problems.append(f"the cell leaf claims the role {leaf.role!r}")
+    return problems
+
+
+def test_card_carries_a_contact_and_a_deal() -> list[str]:
+    """Two different objects in ONE call — the shape nothing in v4 had."""
+    problems: list[str] = []
+    card = dict(body("crm_upsert_card", {
+        "contact": {"last_name": "Громова", "first_name": "Марина", "phone": PHONE,
+                    "address": {"city": "Ижевск", "street": "Клубная", "house": "85"}},
+        "deal": {"title": "Доставка", "stage": "new", "contact_name": "Громова Марина"}})["card"])
+    if "contact" not in card or "deal" not in card:
+        problems.append(f"the card came back as {sorted(card)}, expected both objects")
+        return problems
+    # THE SAME PERSON IS NAMED TWICE IN ONE ARGUMENT — as the contact's parts and
+    # as the deal's whole name — which is what makes «one identity, two
+    # substitutes inside one call» visible at all.
+    if not str(dict(card["deal"]).get("contact_name")):
+        problems.append("the deal does not name the person the contact names")
+    if str(dict(card["contact"]).get("address")) != "г Ижевск, ул Клубная, д 85":
+        problems.append(f"the card printed the address as "
+                        f"{dict(card['contact']).get('address')!r}, expected the canon line")
+    return problems
+
+
+def test_doc_append_is_read_back() -> list[str]:
+    """Write prose into a document, then read the document: one chain, two
+    tools, and the store they share is the one `doc_retrieve` already read."""
+    problems: list[str] = []
+    backend = seeded_world()
+    backend.call("doc_append", {"document_id": "doc-1", "text": "12.09 просила пятницу."})
+    again = json.loads(backend.call("doc_retrieve", {"doc_id": "doc-1"}).result_text)
+    if "12.09 просила пятницу." not in str(again["body"]):
+        problems.append(f"the appended paragraph is not in the document: {again['body']!r}")
+    if "Громова Марина" not in str(again["body"]):
+        problems.append("the document lost its seeded prose when it was appended to")
+    return problems
+
+
 CHECKS = (test_no_pseudex, test_counts, test_v4_kept, test_v4_tools_revised,
           test_v4_registry_is_widened,
           test_every_tool_has_form, test_vertical_rules, test_parsers_good_bad,
@@ -567,7 +811,10 @@ CHECKS = (test_no_pseudex, test_counts, test_v4_kept, test_v4_tools_revised,
           test_clinic_reads_a_card_back, test_bank_forms,
           test_ticket_history_free_text, test_calendar_notations, test_government_forms,
           test_kb_search_chunks, test_file_forms, test_courier_status_forms,
-          test_nested_address, test_file_read_scan_noise, test_empty_world_is_empty)
+          test_nested_address, test_file_read_scan_noise, test_empty_world_is_empty,
+          test_mail_notations, test_the_missing_transition_has_a_source,
+          test_tracker_answers_latin_and_renders_a_login, test_sheet_is_two_dimensional,
+          test_card_carries_a_contact_and_a_deal, test_doc_append_is_read_back)
 
 
 def main() -> int:

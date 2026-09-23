@@ -75,7 +75,7 @@ from bench.agentpii4.schema import Ladder, PiiItem, tier
 from bench.agentpii5 import contracts, form, metrics, observe
 from bench.agentpii5.contracts import (ArmRunV5, CaseV5, Line, MentionRecord, RunObservation,
                                        ToolResultRecord)
-from bench.agentpii5.form_tables import NAME_PARTICLES
+from bench.agentpii5.form_tables import NAME_PARTICLES, TRANSLIT_SIGNATURES
 from bench.agentpii5.metrics import parts_of
 from bench.agentpii5.schema import case_v5_from_json
 from bench.agentpii5.tools import REGISTRY_V5, expected_leaf_value, spec_v5_for
@@ -102,7 +102,26 @@ SINGLE_ARM_METRICS: tuple[str, ...] = tuple(
 _CYR_MAP = str.maketrans(
     "абвгдежзийклмнопрстуфхцчшщъыьэюя",
     "оевзыджлнпрбткмафухчцшщъисьэюягд")
-_LAT_MAP = str.maketrans("abcdefghijklmnopqrstuvwxyz", "ovezydjlnpbrtkmafuhcwsxqig")
+_LAT_ALPHABET: str = "abcdefghijklmnopqrstuvwxyz"
+_LAT_TARGET: str = "ovezydjlnpbrtkmafuhcwsxqig"
+_LAT_MAP = str.maketrans(_LAT_ALPHABET, _LAT_TARGET)
+# HOW MANY OTHER LATIN MAPS THERE ARE TO TRY, and why there has to be more than
+# one. A NAME the tracker's directory answers in is LATIN — «Polyakova
+# Valentina» — and `form.name_script` reads a Latin name's TRANSLITERATION
+# STANDARD off short markers («ya», «yu», «kh», «ts», a final «y», «shch»,
+# «iu», «ia», «cz», «e'»). One fixed letter map scrambles those markers away
+# and invents new ones: «Polyakova Valentina» (BGN, «ya») became «Amriokova
+# Soryktina» (nothing discriminating), and «Erohin Petr» (nothing) became
+# «Yumhin Aycu» (BGN, «yu»). The form comparison then said `script` differs and
+# the PERFECT gateway failed `answer_real` and `chain_form` on four of the
+# twelve `tracker` cases — a defect belonging entirely to the simulation, the
+# same class the digit-signature comment in `_fake_digits` already names.
+#
+# SO THE MAP IS CHOSEN, NOT FIXED: the first rotation whose result wears the
+# SAME standard as the value it replaces. Deterministic (no draw), bounded (25),
+# and applied ONCE to the surface, the canonical and every part together — a
+# per-string choice would hand one person two spellings.
+_LAT_SHIFTS: int = len(_LAT_ALPHABET)
 
 # The generic vocabulary an address wears. `pseudex` replaces the street NAME
 # and leaves «улица», «кв», «переулок» standing, and `observe.GENERIC_ROLES`
@@ -394,9 +413,29 @@ def pool_pick(word: str, gender: str, role: str, taken: frozenset[str]) -> tuple
     rotated = [pool[(start + step) % len(pool)] for step in range(len(pool))]
     for candidate in sorted(rotated, key=lambda one: abs(len(one) - len(word))):
         worn = worn_by_morphology(candidate, word.casefold(), gender)
-        if worn and _reads_alike(worn, word.casefold()):
+        if worn and _reads_alike(worn, word.casefold()) and not _swallows(word, candidate, worn):
             return candidate, worn
     return "", ""
+
+
+def _swallows(word: str, candidate: str, worn: str) -> bool:
+    """Whether the fake CONTAINS the real word, or the real word contains it.
+
+    «Анна» drew «Жанна» — a different lexeme, a different stem, the pool doing
+    exactly what it was asked — and the leak check reads the real value out of
+    the substitute, because it IS in there. `doc_masked` then printed «this
+    document leaked» about a document a right gateway had masked completely:
+    one case of 1800, invisible until the office suite put that draw in a
+    debugging tier.
+
+    THE PRODUCT MAKES THE SAME GUARD AT THE SAME MOMENT (`vault.py`, the
+    collision check at mint time), so this is the simulation catching up rather
+    than a rule invented for the instrument. Both directions, because a fake
+    the real value swallows («Анна» for «Жанна») is the same coincidence read
+    backwards.
+    """
+    real = word.casefold()
+    return any(real in one or one in real for one in (candidate.casefold(), worn.casefold()))
 
 
 def name_pool_map(items: Sequence[PiiItem]) -> dict[str, str]:
@@ -460,28 +499,79 @@ def _keep_tail(word: str) -> int:
     return 0
 
 
-def _fake_word(word: str) -> str:
-    """Same length, same script, same case class, different letters."""
+def _lat_map(shift: int) -> dict[int, int]:
+    """The Latin letter map rotated by `shift`, or the base map at 0. A rotation
+    that would leave a letter standing is not one: the substitute has to be a
+    different lexeme, and `_signature_shift` skips such a rotation rather than
+    this returning a map that half-works."""
+    target = _LAT_TARGET[shift:] + _LAT_TARGET[:shift]
+    return str.maketrans(_LAT_ALPHABET, target)
+
+
+def _lat_fixes_a_letter(shift: int) -> bool:
+    target = _LAT_TARGET[shift:] + _LAT_TARGET[:shift]
+    return any(one == other for one, other in zip(_LAT_ALPHABET, target))
+
+
+def _marker_spans(word: str, label: str) -> frozenset[int]:
+    """The letters of one word that CARRY its transliteration standard.
+
+    «Polyakova» is BGN because of the «ya» in the middle of it, and the middle
+    is exactly what `_keep_tail` scrambles. No letter map can be relied on to
+    put a digraph back — a rotation maps letters, not pairs — so the marker is
+    kept where it stands, the way the ending already is. Everything else still
+    changes, so the substitute is still a different lexeme: «Polyakova» →
+    «Amryakova», not «Polyakova».
+    """
+    if not label.startswith("latin:") or label == "latin:unknown":
+        return frozenset()
+    lowered = word.lower()
+    kept: set[int] = set()
+    for name, alternatives in TRANSLIT_SIGNATURES:
+        if name != label:
+            continue
+        for alternative in alternatives:
+            for kind, needle in alternative:
+                if kind == "fin":
+                    if lowered.endswith(needle):
+                        kept.update(range(len(word) - len(needle), len(word)))
+                    continue
+                start = lowered.find(needle)
+                while start >= 0:
+                    kept.update(range(start, start + len(needle)))
+                    start = lowered.find(needle, start + 1)
+    return frozenset(kept)
+
+
+def _fake_word(word: str, shift: int = 0, keep: frozenset[int] = frozenset()) -> str:
+    """Same length, same script, same case class, different letters — except at
+    the positions `keep` names, which are the ending and the transliteration
+    markers."""
+    lat = _LAT_MAP if shift == 0 else _lat_map(shift)
     out: list[str] = []
-    for char in word:
-        if not char.isalpha():
+    for position, char in enumerate(word):
+        if not char.isalpha() or position in keep:
             out.append(char)
             continue
         low = char.lower()
         if "а" <= low <= "я" or low == "ё":
             new = low.translate(_CYR_MAP)
         elif "a" <= low <= "z":
-            new = low.translate(_LAT_MAP)
+            new = low.translate(lat)
         else:
             new = low
         out.append(new.upper() if char.isupper() else new)
     return "".join(out)
 
 
-def _fake_stem(word: str) -> str:
-    """A different lexeme wearing the SAME ending."""
+def _fake_stem(word: str, shift: int = 0, label: str = "") -> str:
+    """A different lexeme wearing the SAME ending — and, for a Latin name, the
+    same transliteration markers."""
     tail = _keep_tail(word)
-    return _fake_word(word) if not tail else _fake_word(word[:-tail]) + word[-tail:]
+    keep = set(_marker_spans(word, label)) if label else set()
+    if tail:
+        keep.update(range(len(word) - tail, len(word)))
+    return _fake_word(word, shift, frozenset(keep))
 
 
 def _shift_digits(text: str, by: int) -> str:
@@ -518,13 +608,14 @@ def _fake_date(text: str) -> str:
                   re.sub(r"\b(19|20)\d{2}\b", year, text))
 
 
-def _fake_words(text: str) -> str:
+def _fake_words(text: str, shift: int = 0) -> str:
     """NAME, LOC and anything else: word for word, digits shifted, generic
     words left standing."""
     out: list[str] = []
     for token in _WORD.findall(text):
         if token.isalpha():
-            out.append(token if token.casefold() in _GENERIC_TOKENS else _fake_stem(token))
+            out.append(token if token.casefold() in _GENERIC_TOKENS
+                       else _fake_stem(token, shift))
         elif token.isdigit():
             out.append(_shift_digits(token, 3))
         else:
@@ -532,20 +623,48 @@ def _fake_words(text: str) -> str:
     return "".join(out)
 
 
-def _fake_name_words(text: str, fakes: dict[str, str]) -> str:
+def _fake_name_words(text: str, fakes: dict[str, str], shift: int = 0) -> str:
     """A NAME, word for word, out of the conversation's pool assignment — and
     out of `_fake_stem` for a word the pool could not mirror, which is where
-    `gram_case` keeps abstaining."""
+    `gram_case` keeps abstaining.
+
+    THE STANDARD IS READ OFF THE WHOLE STRING and handed down to each word:
+    «ya» in the surname is what makes «Polyakova Valentina» BGN, and a word
+    asked about itself would not know."""
+    label = form.name_script(text)
     out: list[str] = []
     for token in _WORD.findall(text):
         if token.isalpha():
             fake = fakes.get(token.casefold(), "")
-            out.append(_worn_case(fake, token) if fake else _fake_stem(token))
+            out.append(_worn_case(fake, token) if fake
+                       else _fake_stem(token, shift, label))
         elif token.isdigit():
             out.append(_shift_digits(token, 3))
         else:
             out.append(token)
     return "".join(out)
+
+
+def _signature_shift(texts: Sequence[str], mint_at: object) -> int:
+    """The first Latin map that leaves every one of these strings wearing the
+    transliteration standard it arrived in.
+
+    ZERO WHEN THE QUESTION DOES NOT ARISE, which is every Cyrillic name in the
+    corpus: `form.name_script` answers `cyrillic` on both sides whatever the
+    letters became, so the base map is chosen and nothing moves. The walk is for
+    the LATIN names the office suite introduced, and a value for which no
+    rotation works keeps the base map — a named miss beats a silent re-roll.
+    """
+    wanted = [form.name_script(one) for one in texts if one]
+    if not any(label.startswith("latin") or label == "mixed" for label in wanted):
+        return 0
+    for shift in range(_LAT_SHIFTS):
+        if shift and _lat_fixes_a_letter(shift):
+            continue
+        made = [mint_at(one, shift) for one in texts if one]            # type: ignore[operator]
+        if [form.name_script(one) for one in made] == wanted:
+            return shift
+    return 0
 
 
 def mint(pii_type: str, surface: str, canonical: str, parts: dict[str, str],
@@ -569,8 +688,13 @@ def mint(pii_type: str, surface: str, canonical: str, parts: dict[str, str],
         # value from, and it is the same for every word of it. The `gender`
         # part itself is a one-letter note, which `pool_pick` refuses, so it
         # keeps travelling through `_fake_stem` as it always did.
-        return (_fake_name_words(surface, fakes), _fake_name_words(canonical, fakes),
-                {role: _fake_name_words(value, fakes) for role, value in parts.items()})
+        shift = _signature_shift(
+            (surface, canonical, *parts.values()),
+            lambda one, at: _fake_name_words(one, fakes, at))
+        return (_fake_name_words(surface, fakes, shift),
+                _fake_name_words(canonical, fakes, shift),
+                {role: _fake_name_words(value, fakes, shift)
+                 for role, value in parts.items()})
     if pii_type == "EMAIL":
         # WHAT THE PRODUCT ACTUALLY MINTS (`pseudex/vault.py`): eight letters at
         # `example.ru`. Keeping the customer's domain would leave «yandex.ru»

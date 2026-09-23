@@ -23,7 +23,7 @@ from bench.agentpii4.tools import CSV_HEADER
 from bench.agentpii5.contracts import (ECHO_TAG_PREFIX, CaseV5, ForcedError, Hop,
                                        ReturnExpectation)
 from bench.agentpii5.scenarios5 import rag, retry_same_tool, user_in_loop
-from bench.agentpii5.mock import (BackendV5, render_problems, seed_backend_v5,
+from bench.agentpii5.mock import (BackendV5, put_leaf, render_problems, seed_backend_v5,
                                   snils_spaced)
 from bench.agentpii5.tools import ISSUE_ID_RE, REGISTRY_V5, generic_paths
 
@@ -181,6 +181,38 @@ def seeded_world() -> BackendV5:
         "snils": SNILS_VALID, "city": "Воронеж", "street": "Кольцовская", "house": "18",
         "flat": "44"})
     backend.seed_record("emails", "blocked@mail.ru", {"status": "rejected"})
+    backend.seed_record("reminders", PHONE_UNKNOWN, {"status": "unreachable"})
+    # --- the office suite ---------------------------------------------------
+    # THE LETTER IS SEEDED THE WAY A TICKET EVENT IS: flat header columns plus a
+    # `template` whose `{slot}`s name the columns beside it. That is what gives
+    # every value inside the body its own span; a body stored as one flat string
+    # would carry ONE tag for three people. `from_email` is stored the way the
+    # sender typed it and rendered lower-cased, which is the notation this
+    # vertical's IN hop exists to measure.
+    backend.seed_mail("msg-1", {
+        "from_name": "Громова Марина", "from_email": "Grom@Mail.ru",
+        "to": "office@example.ru", "thread_id": "thr-1",
+        "subject": "Доставка на Клубную", "format": "full",
+        "date": "Fri, 12 Sep 2026 10:14:02 +0300", "attachment": "/mnt/in/anketa.txt",
+        "phone": PHONE, "address": "Клубная 85, кв 12",
+        "template": "Здравствуйте! Прошу перенести доставку на {address}, "
+                    "телефон для связи {phone}."})
+    # `format: "raw"` is a real parameter of a real API and the second shape of
+    # the same tool: the whole letter as ONE string.
+    backend.seed_mail("msg-2", {
+        "from_name": "Букин Сергей", "from_email": "Bukin@Mail.ru",
+        "to": "office@example.ru", "thread_id": "thr-2",
+        "subject": "Вывоз", "format": "raw",
+        "date": "Sat, 13 Sep 2026 09:00:00 +0300",
+        "phone": "+79261234567",
+        "template": "Добрый день, мой телефон {phone}. Заберите, пожалуйста."})
+    # `name` as the dialogue says it, `display_name` as Jira prints it (Latin),
+    # and beside them the pair this instrument cannot separate yet: the address
+    # is personal data, the LOGIN is not and is spelled like a surname.
+    backend.seed_tracker_user("tu-1", {
+        "name": "Соколов Андрей", "display_name": "Sokolov Andrey",
+        "email": "A.Sokolov@Corp.ru", "login": "a.sokolov", "account_id": "5b10a2"})
+    backend.seed_sheet("sh-1", {"title": "Лист1", "rows": []})
     # ONE DATUM IN TWO PLACES KEEPS ONE ID: the client's phone sits in the CRM
     # card and inside the ticket history, and binding both to `i_phone` is what
     # tells the by-value index it is not ambiguous.
@@ -191,6 +223,20 @@ def seeded_world() -> BackendV5:
     backend.seed_item("kb_chunks", "kb-1", "name", "i_kb_name")
     backend.seed_item("documents", "doc-3", "name", "i_scan_name")
     backend.seed_item("documents", "doc-4", "last_name", "i_form_last")
+    # THE HEADER AND THE BODY CARRY DIFFERENT DATA ON PURPOSE. One item gets one
+    # span per result (`_used`), so a name written in both places would be tagged
+    # once and the letter would look like prose with a single value in it — the
+    # very shape the free-text source exists to avoid. The phone is shared with
+    # the CRM card the way `ticket_events/ev-1/phone` already is, which is what
+    # tells the by-value index the string is not ambiguous.
+    backend.seed_item("mailbox", "msg-1", "from_name", "i_mail_name")
+    backend.seed_item("mailbox", "msg-1", "from_email", "i_mail_from")
+    backend.seed_item("mailbox", "msg-1", "phone", "i_phone")
+    backend.seed_item("mailbox", "msg-1", "address", "i_mail_addr")
+    backend.seed_item("mailbox", "msg-2", "from_name", "i_mail2_name")
+    backend.seed_item("mailbox", "msg-2", "phone", "i_mail2_phone")
+    backend.seed_item("tracker_users", "tu-1", "display_name", "i_tracker_name")
+    backend.seed_item("tracker_users", "tu-1", "email", "i_tracker_mail")
     return backend
 
 
@@ -342,6 +388,69 @@ RENDERS: tuple[tuple[str, str, dict[str, object], str], ...] = (
     ("crm_upsert_contact", "single",
      {"id": "c-77", "contact": {"address": {"city": "Ижевск", "street": "Пушкина",
                                             "house": "41", "flat": "7"}}}, "full"),
+    # --- the office suite, LAST in the table on purpose -----------------------
+    # `doc_append` and `sheet_append_row` MUTATE the shared «full» world, and the
+    # rows above read the very document and the very tables they change. Put
+    # anywhere else, they would move another row's answer and the reader would
+    # be hunting a defect in the wrong tool.
+    ("mail_read", "nested", {"message_id": "msg-1"}, "full"),
+    ("mail_read", "free_text", {"message_id": "msg-2"}, "full"),
+    ("mail_read", "empty", {"message_id": "msg-9"}, "full"),
+    ("mail_search", "list", {"query": "from:grom@mail.ru", "max_results": 3}, "full"),
+    # THE ADDRESS IN THE EMPTY QUERY SHARES NO STEM WITH ANY SEEDED ITEM, and
+    # that is not fussiness: `identities_in` admits a row whose item's four-letter
+    # stem the query carries, and «nobody@MAIL.ru» carries the stem of the seeded
+    # «Grom@Mail.ru» — the empty form then came back as a list.
+    ("mail_search", "empty", {"query": "from:zzz@zzz.zz", "max_results": 3}, "full"),
+    ("mail_search", "error_with_value", {"query": "nope:x", "max_results": 3}, "full"),
+    ("mail_send", "single",
+     {"to": [EMAIL, "bukin@mail.ru"], "subject": "Ответ", "body": "Здравствуйте!"}, "full"),
+    ("mail_send", "error_with_value",
+     {"to": ["blocked@mail.ru"], "subject": "Ответ", "body": "Здравствуйте!"}, "full"),
+    ("calendar_invite", "single",
+     {"summary": "Встреча по заказу",
+      "attendees": [{"email": EMAIL, "name": "Громова Марина"}],
+      "start": "2026-09-05T09:30:00+04:00", "end": "2026-09-05T10:00:00+04:00",
+      "description": "Обсудить перенос доставки"}, "full"),
+    ("calendar_invite", "error_with_value",
+     {"summary": "Встреча", "attendees": [{"email": "blocked@mail.ru"}],
+      "start": "2026-09-05T09:30:00+04:00", "end": "2026-09-05T10:00:00+04:00"}, "full"),
+    ("tracker_find_user", "list", {"query": "Соколов", "max_results": 5}, "full"),
+    ("tracker_find_user", "empty", {"query": "щщщ ыыы ююю", "max_results": 5}, "full"),
+    ("tracker_issue_create", "single",
+     {"project_key": "SUP", "summary": "Перенести доставку",
+      "description": "Клиент просит пятницу.", "assignee": "Соколов Андрей"}, "full"),
+    ("tracker_issue_create", "error_with_value",
+     {"project_key": "SUP", "summary": "x", "assignee": "Неизвестный Кто"}, "full"),
+    ("crm_upsert_card", "nested",
+     {"contact": {"last_name": "Громова", "first_name": "Марина",
+                  "middle_name": "Борисовна", "phone": PHONE, "email": EMAIL,
+                  "address": {"city": "Ижевск", "street": "Клубная",
+                              "house": "85", "flat": "12"}},
+      "deal": {"title": "Доставка", "price": "1500.00", "stage": "new",
+               "contact_name": "Громова Марина", "note": "Просила пятницу"}}, "full"),
+    ("crm_upsert_card", "error_with_value",
+     {"contact": {"last_name": "Громова", "phone": PHONE}}, "full"),
+    ("sheet_append_row", "list",
+     {"spreadsheet_id": "sh-1", "range": "Лист1!A1:E1",
+      "values": [["Громова Марина", PHONE, EMAIL, "г Ижевск, ул Клубная, д 85",
+                  "1987-03-14"]]}, "full"),
+    ("sheet_append_row", "error_with_value",
+     {"spreadsheet_id": "sh-9", "range": "A1", "values": [["Громова Марина"]]}, "full"),
+    ("memory_save", "single",
+     {"subject": "Громова Марина", "fact": "Звонить после 18:00", "scope": "user"}, "full"),
+    ("memory_save", "error_with_value",
+     {"subject": "Громова Марина", "fact": "Звонить утром", "scope": "user"}, "full"),
+    ("reminder_set", "single",
+     {"remind_at": "2026-09-05T09:00:00+03:00", "text": "Позвонить клиенту",
+      "recipient": {"name": "Громова Марина", "phone": PHONE}}, "full"),
+    ("reminder_set", "error_with_value",
+     {"remind_at": "2026-09-05T09:00:00+03:00", "text": "Позвонить клиенту",
+      "recipient": {"name": "Никто", "phone": PHONE_UNKNOWN}}, "full"),
+    ("doc_append", "single",
+     {"document_id": "doc-1", "text": "12.09 просила перенести доставку на пятницу."}, "full"),
+    ("doc_append", "error_with_value",
+     {"document_id": "doc-9", "text": "нет такого документа"}, "full"),
     ("crm_add_note", "single",
      {"entity_id": "c-77", "note_type": "call_in",
       "text": "Клиент просит перенести доставку на пятницу."}, "full"),
@@ -806,6 +915,205 @@ def test_render_problems_refuses_an_unprovable_case() -> list[str]:
     return problems
 
 
+
+
+MAIL_LOOP_TEMPLATE = ("Здравствуйте! Прошу перенести доставку, "
+                      "телефон для связи {phone}.")
+
+
+def office_case() -> CaseV5:
+    """The client's loop, by hand: read a letter, write what it said into a card.
+
+    THIS IS THE TEMPLATE THE FAMILIES COPY, and it is a test because the shape
+    is the one nothing in the corpus had. Two things about it are load-bearing
+    and are exactly where a family will get it wrong:
+
+    * the letter's SEED carries flat header columns AND a `template` whose
+      `{slot}`s name the columns beside it — that is what gives the phone inside
+      the prose its own span, and a body stored as one flat string would carry
+      one tag over the whole letter;
+    * the IN hop's `path` is a leaf of `mail_read`'s declared `result_pii`
+      («from.email», «body»), because K17 reads the hop's path against that
+      tuple and `build.result_pii_residue` reads it the other way.
+    """
+    locus_mail = Locus("seed", -1, 0, 0, "msg-1", "from_email")
+    locus_phone = Locus("seed", -1, 0, 0, "msg-1", "phone")
+    items = (
+        PiiItem("m1", "EMAIL", "grom", "Grom@Mail.ru", "grom@mail.ru", {}, locus_mail,
+                "required", False, False),
+        # THE PARTS ARE THE CORPUS'S OWN CONVENTION, not decoration: a PHONE leaf
+        # declares `role="digits"`, so `tools.expected_leaf_value` reads
+        # `parts["digits"]` and a hand-built item without it fails V05 with «the
+        # item has no such part» — which is the build refusing a hand-over it
+        # cannot prove, exactly as it should.
+        PiiItem("m2", "PHONE", "grom", PHONE, PHONE, {"digits": PHONE[2:]}, locus_phone,
+                "required", False, False))
+    seeds = (SeedRecord("msg-1", "mailbox", {
+        "from_name": "Громова Марина", "from_email": "Grom@Mail.ru",
+        "to": "office@example.ru", "thread_id": "thr-1", "format": "full",
+        "subject": "Доставка", "date": "Fri, 12 Sep 2026 10:14:02 +0300",
+        "phone": PHONE, "template": MAIL_LOOP_TEMPLATE}, ("m1", "m2")),)
+    base = Case(
+        id="v5-office-1", kind="tool_chain", register="chat",
+        provenance=Provenance("synthetic", "hand", "test_mock", "case", "fixed", 1.0, "none"),
+        cluster="EMAIL:grom@mail.ru", conversation_id="conv-office", now=NOW,
+        messages=(Message("system", "Ты ассистент.", None, ""),
+                  Message("user", "Посмотри письмо и заведи карточку.", None, "")),
+        tools=("mail_read", "crm_upsert_card"), seed_records=seeds, pii=items,
+        plain=(), negatives=(),
+        expects=Expectation(("mail_read", "crm_upsert_card"), "grom", (), (), ()),
+        trace=(), note="")
+    hops = (
+        Hop("IN", "tool", "m1", 0, 1, "mail_read", 0, "", -1, "from.email", False),
+        Hop("IN", "tool", "m2", 1, 1, "mail_read", 0, "", -1, "body", False),
+        Hop("OUT", "tool_arg", "m1", 2, 1, "crm_upsert_card", 0, "", 0,
+            "contact.email", False),
+        Hop("OUT", "tool_arg", "m2", 3, 1, "crm_upsert_card", 0, "", 1,
+            "contact.phone", False),
+        Hop("IN", "tool", "m2", 4, 1, "crm_upsert_card", 0, "", -1,
+            "card.contact.phone", False),
+        Hop("OUT", "answer", "m2", 5, 1, "", -1, "", 4, "", False))
+    return CaseV5(
+        base=base, behaviour="sequential_chain", hops=hops,
+        returns=(ReturnExpectation("mail_read", 0, "nested", ("m1", "m2")),
+                 ReturnExpectation("crm_upsert_card", 0, "nested", ("m2",))),
+        forced=(), memory=(), pick=None, branch=None, loop=None, rag=None,
+        document=None, has_result=True, streaming=False, revised_from_v4=False)
+
+
+def test_the_office_loop_is_provable() -> list[str]:
+    """`render_problems` accepts the letter → card loop end to end.
+
+    IT IS THE BUILD-TIME PROOF, NOT A DEMONSTRATION: it seeds the real backend,
+    makes every declared call through `call_arguments` — which is where the
+    array-aware `put_leaf` and the seeded-id lookups are actually exercised —
+    and compares the rendered tags with what the case declared. A loop that
+    passes here is a loop whose every hop CAN be observed; one that does not is
+    a permanent miss charged to the gateway.
+    """
+    return render_problems(office_case())
+
+
+def test_the_office_loop_refuses_an_undeclared_leaf() -> list[str]:
+    """And the same proof, shown failing: a hop on a leaf the letter does not
+    return. A check that only ever sees a good case proves nothing."""
+    problems: list[str] = []
+    case = office_case()
+    # A RETURN NAMING AN ITEM THE LETTER CANNOT TAG.
+    named = replace(case, returns=(ReturnExpectation("mail_read", 0, "nested",
+                                                     ("m1", "m2", "m9")),
+                                   *case.returns[1:]))
+    if not render_problems(named):
+        problems.append("a return naming an item the letter cannot tag was accepted")
+    # AND A FORM THE TOOL DOES NOT ANSWER IN for this seeded letter: `msg-1`
+    # carries a template, so `mail_read` answers `nested`, never `free_text`.
+    formed = replace(case, returns=(ReturnExpectation("mail_read", 0, "free_text",
+                                                      ("m1", "m2")),
+                                    *case.returns[1:]))
+    if not render_problems(formed):
+        problems.append("a declared return form the tool does not answer in was accepted")
+    return problems
+
+
+def test_put_leaf_builds_arrays() -> list[str]:
+    """The writer of a call argument, shown the shapes the office suite brought.
+
+    WHY THIS IS A TEST AND NOT A COMMENT. Every argument leaf the corpus
+    declared before it was a path of NAMES, so a writer that split on «.» alone
+    was correct and untested. The client's shapes are a list of people and a
+    matrix, and under the old writer «to[1]» became a literal dict key — the
+    parser never looked there, the call was refused, and the refusal named a
+    value that had in fact been written.
+    """
+    problems: list[str] = []
+    built: dict[str, object] = {}
+    put_leaf(built, "to[1]", "b@mail.ru")
+    put_leaf(built, "to[0]", "a@mail.ru")
+    put_leaf(built, "attendees[0].email", "c@mail.ru")
+    put_leaf(built, "attendees[1].name", "Громова Марина")
+    put_leaf(built, "values[0][2]", PHONE)
+    put_leaf(built, "values[1][0]", "Букин Сергей")
+    put_leaf(built, "contact.address.street", "клубная")
+    expected: dict[str, object] = {
+        "to": ["a@mail.ru", "b@mail.ru"],
+        "attendees": [{"email": "c@mail.ru"}, {"name": "Громова Марина"}],
+        # A GAP IS FILLED WITH THE EMPTY VALUE OF THE RIGHT KIND, never skipped:
+        # a list is dense, and a silently shortened row would move every cell
+        # after it into another column.
+        "values": [["", "", PHONE], ["Букин Сергей"]],
+        "contact": {"address": {"street": "клубная"}}}
+    if built != expected:
+        problems.append(f"put_leaf built {built!r}, expected {expected!r}")
+    # AND THE PARSER AGREES WITH IT, which is the half a shape check cannot see:
+    # a writer that produced a plausible-looking object the tool refuses would
+    # pass the comparison above and fail every case.
+    for tool, filler in (("mail_send", {"subject": "x", "body": "y"}),
+                         ("sheet_append_row", {"spreadsheet_id": "sh-1", "range": "A1:C1"})):
+        arguments = {key: built[key] for key in ("to", "values") if key in built}
+        arguments = {**{k: v for k, v in arguments.items()
+                        if (k == "to") == (tool == "mail_send")}, **filler}
+        parsed = REGISTRY_V5[tool].base.parse(arguments)
+        if not isinstance(parsed, dict):
+            problems.append(f"{tool} refused what put_leaf built: {parsed}")
+    return problems
+
+
+def test_tracker_reads_a_declined_name() -> list[str]:
+    """«Соколову Андрею» finds the person «Соколов Андрей».
+
+    THE SAME ADMISSION THE KNOWLEDGE BASE NEEDED (F4.5), and the same measured
+    reason: an agent writes the dative after «назначь», word overlap matches
+    nothing, the declared hops do not happen and the gateway is charged for the
+    model's phrasing. The tracker's directory is searched the same way, and the
+    check is here because nothing else in the suite would notice if it stopped.
+    """
+    backend = seeded_world()
+    found = json.loads(backend.call(
+        "tracker_find_user", {"query": "Соколову Андрею", "max_results": 5}).result_text)
+    if int(found["total"]) != 0:
+        return []
+    backend = seeded_world()
+    backend.seed_item("tracker_users", "tu-1", "name", "i_tracker_said")
+    found = json.loads(backend.call(
+        "tracker_find_user", {"query": "Соколову Андрею", "max_results": 5}).result_text)
+    if int(found["total"]) == 0:
+        return ["a declined name finds nobody even when the row's own name is a seeded item"]
+    return []
+
+
+def test_office_letter_to_card_is_one_chain() -> list[str]:
+    """The loop the corpus had nowhere: a letter is READ, and what it carried is
+    written into a card and into a sheet.
+
+    THE CHECK IS ON THE TAGS, NOT ON THE TEXT. A value that reaches the card
+    untagged is a hop no observation can be made of — and 708 of the corpus's
+    IN/tool → OUT/tool_arg transitions already start somewhere else, so the
+    whole point of this leg is that its source and its consumer BOTH carry the
+    same item id.
+    """
+    problems: list[str] = []
+    backend = seeded_world()
+    read = backend.call("mail_read", {"message_id": "msg-1"})
+    letter = json.loads(read.result_text)
+    if "i_phone" not in read.result_spans:
+        problems.append("the letter's phone is not tagged, so nothing can be carried out of it")
+    phone = read.result_text[slice(*read.result_spans["i_phone"])] \
+        if "i_phone" in read.result_spans else ""
+    wrote = backend.call("crm_upsert_card", {
+        "contact": {"last_name": "Громова", "phone": PHONE},
+        "deal": {"title": "Из письма", "stage": "new",
+                 "note": f"Письмо от {letter['from']['email']}, телефон {phone}"}})
+    if "i_phone" not in wrote.result_spans:
+        problems.append(f"the card echoed no tagged value: "
+                        f"{sorted(wrote.result_spans)}")
+    filed = backend.call("sheet_append_row", {
+        "spreadsheet_id": "sh-1", "range": "Лист1!A1:B1",
+        "values": [["Громова Марина", PHONE]]})
+    if "i_phone" not in filed.result_spans:
+        problems.append(f"the spreadsheet cell carries no tag: {sorted(filed.result_spans)}")
+    return problems
+
+
 CHECKS = (test_retrieval_does_not_depend_on_the_wording,
           test_retrieval_is_by_seeded_identity,
           test_render_problems_refuses_an_unprovable_case,
@@ -814,7 +1122,9 @@ CHECKS = (test_retrieval_does_not_depend_on_the_wording,
           test_slot_tags_are_item_ids, test_ids_by_writes_only, test_snapshot_typed,
           test_each_form_renders, test_shape_check_can_fail,
           test_booked_ticket_is_readable, test_template_slot_names_are_refused_by_name,
-          test_scan_noise_is_seeded)
+          test_scan_noise_is_seeded, test_put_leaf_builds_arrays,
+          test_tracker_reads_a_declined_name, test_office_letter_to_card_is_one_chain,
+          test_the_office_loop_is_provable, test_the_office_loop_refuses_an_undeclared_leaf)
 
 
 def main() -> int:

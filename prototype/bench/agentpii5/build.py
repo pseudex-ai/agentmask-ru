@@ -1440,11 +1440,18 @@ def tier_mix_table(cases: Sequence[CaseV5], ladder: Ladder) -> list[str]:
 # состава, с которым срез сравнивать, не существует. СРАВНИВАТЬ СРЕЗ С ЯРУСОМ
 # НЕЛЬЗЯ, и имя — то место, где это видно без чтения кода.
 SLICE_PREFIX: str = "slice:"
-# Оси, по которым можно резать. Четыре, и две из них многозначны (случай трогает
-# несколько вертикалей и несёт несколько типов ПД) — для СРЕЗА это не помеха:
-# вопрос «попадает ли случай» имеет однозначный ответ, даже когда вопрос «какая
-# у него доля» не имеет.
-SLICE_AXES: tuple[str, ...] = ("register", "behaviour", "vertical", "pii_type")
+# Оси, по которым можно резать. Пять, и три из них многозначны (случай трогает
+# несколько вертикалей, несколько наборов и несёт несколько типов ПД) — для
+# СРЕЗА это не помеха: вопрос «попадает ли случай» имеет однозначный ответ,
+# даже когда вопрос «какая у него доля» не имеет.
+#
+# НАБОР (`suite`) — ПЯТАЯ, И ОНА ПОПЕРЁК ВЕРТИКАЛЕЙ. Инструменты одного клиента
+# лежат в пяти вертикалях сразу: почта — messaging, приглашение — calendar,
+# трекер — support, карточка — crm, таблица и документ — files. `--slice
+# vertical=messaging` возьмёт треть из них и разбавит её SMS; `--slice
+# suite=office` берёт ровно их. Ось общая, значение — нет: следующий клиент
+# получает своё имя набора и ту же механику.
+SLICE_AXES: tuple[str, ...] = ("register", "behaviour", "vertical", "pii_type", "suite")
 # Значение внутри клаузы разделяется вертикальной чертой: `register=voice_raw|voice_itn`
 # — «любой из». Через запятую идут РАЗНЫЕ оси и они складываются по И.
 SLICE_ANY: str = "|"
@@ -1486,6 +1493,16 @@ def case_slice_values(case: CaseV5, axis: str) -> frozenset[str]:
     if axis == "pii_type":
         crossed = {hop.item_id for hop in case.hops}
         return frozenset(item.type for item in case.base.pii if item.id in crossed)
+    if axis == "suite":
+        # ПО ХОПАМ, КАК И ВЕРТИКАЛЬ, И ПО ТОЙ ЖЕ ИЗМЕРЕННОЙ ПРИЧИНЕ. Случай,
+        # которому инструмент набора лишь ПРЕДЛОЖИЛИ в `base.tools` и который
+        # туда не ходил, попал бы в срез «покажи мне мои формы», ничего о них не
+        # измеряя, — и цифра, которую мы назовём клиенту, была бы разбавлена
+        # случаями, в которых его инструментов нет. Ровно эта болезнь уже
+        # ловилась на вертикали.
+        return frozenset(
+            c.TOOL_SUITE[hop.tool_name] for hop in case.hops
+            if hop.tool_name in c.TOOL_SUITE)
     raise ValueError(f"case_slice_values: нет оси {axis!r}; есть {SLICE_AXES}")
 
 
@@ -1722,7 +1739,50 @@ UNCROSSED_RESULT_PII: frozenset[str] = frozenset({
     "ticket_find.issues[].requester.name",
     "vehicle_check.registrations[].owner.last_name",
     "vehicle_check.registrations[].owner.first_name",
-    "vehicle_check.error.subject"})
+    "vehicle_check.error.subject",
+    # --- набор `office`, 23.09.2026: десять объявлений, которые этот корпус не
+    # пересекает, и причина у каждого класса своя.
+    #
+    # СЕМЬ `error.subject` — ТЕЛО ОШИБКИ, В КОТОРОЕ ПОПАДАЕТ ЗНАЧЕНИЕ. Оно
+    # достижимо ровно одним способом — `ForcedError`, а R10 разрешает его только
+    # семье `retry_same_tool`, и ни один из одиннадцати инструментов набора в ней
+    # не стоит. Объявление честное (API так и отвечает: amoCRM, Jira, Graph
+    # эхом возвращают отвергнутое значение), измерения за ним нет. Это тот же
+    # класс, что у уже замороженных `bank_client_find.error.subject`,
+    # `courier_status.error.subject`, `email_send.error.subject`,
+    # `form_parse.error.subject`, `snils_verify.error.subject` и
+    # `vehicle_check.error.subject` — шестой и седьмой прецедент, не новый.
+    "calendar_invite.error.subject",
+    "crm_upsert_card.error.subject",
+    "mail_send.error.subject",
+    "memory_save.error.subject",
+    "reminder_set.error.subject",
+    "sheet_append_row.error.subject",
+    "tracker_issue_create.error.subject",
+    # `mail_read.subject` — ТЕМА ПИСЬМА, И В ЭТОМ КОРПУСЕ ОНА НЕ ПД. Все 34 письма
+    # несут одну из четырёх тем-рубрик («Заявка на доставку», «Не приехал курьер»,
+    # «Перенос доставки», «Уточнение по заказу»): ни одна не называет человека, и
+    # хоп на ней мерил бы форму строки, в которой нечего терять. Объявление
+    # остаётся, потому что настоящая почта кладёт в тему и фамилию, и номер
+    # заказа; дать его этому корпусу нельзя дёшево — `_tag_of` отдаёт item ОДИН
+    # раз, поэтому фамилия в теме требует ВТОРОГО засеянного столбца с тем же
+    # значением, а он роняет by-value-метку обоих (`_ambiguous`). Названо в
+    # §8.1bis: «тема» в таблице — свойство API, а не этого корпуса.
+    "mail_read.subject",
+    # `crm_upsert_card.card.contact.{first,last}_name` — КАРТОЧКА ЗДЕСЬ БЕЗ ИМЕНИ
+    # КОНТАКТА, и это предел источника, а не забывчивость. Единственный источник
+    # карточки в корпусе — конверт письма, одна строка «Букин Сергей Иванович»;
+    # `mock.call_arguments` кладёт каноническое значение в тот лист, который
+    # назвал хоп, целиком, и `parse_name_word` отвергает целое имя в
+    # `contact.last_name` — что `render_problems` уже ловил (V01/V05). Имя
+    # проходит через ТУ ЖЕ карточку как `deal.contact_name` и пересечено; РАЗДЕЛЁННОЕ
+    # имя меряется там, где источник разделён (`crm_upsert_contact`, CSV семьи
+    # `office`). Дорастить корпус разделённым источником нельзя внутри полосы
+    # `CORPUS_SIZE_BAND_V5` — он ровно на потолке 1800. Тот же класс и та же
+    # пара, что у замороженных `crm_merge_contacts.contact.{first,last}_name` и
+    # `crm_add_note.entity.{first,last}_name`.
+    "crm_upsert_card.card.contact.first_name",
+    "crm_upsert_card.card.contact.last_name"})
 
 
 def result_pii_residue(cases: Sequence[CaseV5]) -> list[str]:

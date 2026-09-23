@@ -36,8 +36,8 @@ from bench.agentpii5.scenarios5.common import (  # noqa: F401 - re-exported for 
     answer_hop, arg_hop, full_name, grouped_card, iso_date, minted, seeded, spaced_snils,
     told, tool_hop, user_hop)
 from bench.agentpii5.scenarios5 import (  # noqa: I001 - see the docstring on the order
-    branching, fanout_pick, parallel, retry_same_tool, same_tool_other_target,
-    sequential_chain, single)
+    assistant_writes, branching, fanout_pick, mail_find, mail_loop, parallel, retry_same_tool,
+    same_tool_other_target, sequential_chain, single, tracker)
 
 # How many cases each family of this half builds. The §8.2 floors minus what the
 # revised v4 corpus already supplies: `sequential_chain` (149 revised after
@@ -67,6 +67,37 @@ FANOUT_COUNT: int = 40
 BRANCHING_COUNT: int = 50
 SINGLE_COUNT: int = 100
 
+# --- the client-form families (2026-09-23) ------------------------------------
+#
+# FOUR FAMILIES, ONE HOLE EACH, AND THE COUNTS ARE BOUND BY ARITHMETIC RATHER
+# THAN BY WISH. The corpus stands at 1 736 cases; `contracts.CORPUS_SIZE_BAND_V5`
+# caps it at 1 800 and K02 reads `retry_same_tool` and `memory_anaphora` as
+# shares — both sit on 126, and 126/1 800 is exactly the 7% floor. So the two
+# rules bite at the SAME number: sixty-four cases of headroom, not one more,
+# until `contracts.py` says otherwise. The four families below and `office` in
+# `plan_b` spend all sixty-four:
+#
+#   mail_loop        24  the head loop — прочитал письмо, положил в инструмент.
+#                        708 `IN/tool → OUT/tool_arg` transitions in the corpus
+#                        and not ONE of them out of a `free_text` result.
+#   mail_find        10  ПД как ключ поиска. EMAIL is an `IN/user` hop 14 times
+#                        against 1 196 EMAIL items, and no key-shaped tool of the
+#                        nine is a mailbox.
+#   tracker          12  одно ПОЛИМОРФНОЕ поле поиска, and an assignee named by
+#                        NAME — a person in an ARGUMENT, which the corpus has
+#                        nowhere.
+#   assistant_writes  6  постоянная память, отложенное напоминание, список
+#                        участников: three writes the registry has no tool for.
+#
+# EVERY NEW TOOL IS REACHED BY AT LEAST `MIN_TYPE_DENOMINATOR` CASES, which is
+# what the counts were solved for and not a happy accident: K07 refuses a tool
+# the corpus offers and never reaches, and «объявить и не покрыть» is the exact
+# defect class this round exists to close.
+MAIL_LOOP_COUNT: int = 24
+MAIL_FIND_COUNT: int = 10
+TRACKER_COUNT: int = 12
+ASSISTANT_COUNT: int = 6
+
 PLAN_A: tuple[tuple[object, int], ...] = (
     (retry_same_tool, RETRY_COUNT),
     (same_tool_other_target, OTHER_TARGET_COUNT),
@@ -75,4 +106,8 @@ PLAN_A: tuple[tuple[object, int], ...] = (
     (fanout_pick, FANOUT_COUNT),
     (branching, BRANCHING_COUNT),
     (single, SINGLE_COUNT),
+    (mail_loop, MAIL_LOOP_COUNT),
+    (mail_find, MAIL_FIND_COUNT),
+    (tracker, TRACKER_COUNT),
+    (assistant_writes, ASSISTANT_COUNT),
 )

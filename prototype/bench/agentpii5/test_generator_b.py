@@ -37,8 +37,15 @@ SEED: int = 4
 # Every family at its planned size. The families are built ONCE and shared by
 # every check: `document.build(4, 100)` is a second of work, and building it in
 # nine tests would make the suite slow enough that somebody stops running it.
+#
+# KEYED BY MODULE, NOT BY BEHAVIOUR (2026-09-23). `BEHAVIOURS` is a closed list
+# of eleven and the plan now holds five families of this half, so `office`
+# (`document`) and `document` share a behaviour — a map keyed by it kept ONLY
+# the last of the two, and every check below would have been reading twelve
+# cases while believing it read a hundred. The module's own name is what makes a
+# family a family here; the behaviour is what makes it comparable.
 BUILT: dict[str, list[CaseV5]] = {
-    module.BEHAVIOUR: module.build(SEED, count)          # type: ignore[attr-defined]
+    module.__name__.rsplit(".", 1)[-1]: module.build(SEED, count)   # type: ignore[attr-defined]
     for module, count in PLAN_B}
 ALL_CASES: list[CaseV5] = [case for cases in BUILT.values() for case in cases]
 
@@ -62,11 +69,12 @@ def test_no_pseudex() -> list[str]:
 def test_build_each_family() -> list[str]:
     """Every family builds its planned count, validates, and reaches a result."""
     problems: list[str] = []
-    for behaviour, cases in BUILT.items():
-        planned = dict((module.BEHAVIOUR, count)         # type: ignore[attr-defined]
-                       for module, count in PLAN_B)[behaviour]
-        if len(cases) != planned:
-            problems.append(f"{behaviour}: built {len(cases)}, planned {planned}")
+    planned = {module.__name__.rsplit(".", 1)[-1]: (module.BEHAVIOUR, count)   # type: ignore[attr-defined]
+               for module, count in PLAN_B}
+    for family, cases in BUILT.items():
+        behaviour, count = planned[family]
+        if len(cases) != count:
+            problems.append(f"{family}: built {len(cases)}, planned {count}")
         for case in cases:
             if case.behaviour != behaviour:
                 problems.append(f"{case.base.id}: behaviour {case.behaviour!r}")

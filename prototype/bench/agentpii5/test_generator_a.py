@@ -54,15 +54,31 @@ MIN_BRANCH_SHARE: float = 0.20
 
 
 def _build_all() -> dict[str, list[CaseV5]]:
-    """Every family at its planned count, once, from one seed."""
+    """Every family at its planned count, once, from one seed.
+
+    KEYED BY MODULE, NOT BY BEHAVIOUR (2026-09-23). `BEHAVIOURS` is a closed list
+    of eleven and this half now plans eleven families, four of them
+    `sequential_chain`; a map keyed by the behaviour kept only the LAST of each
+    and every check below would have read six cases where the plan orders a
+    hundred and twenty-two. The module's own name is what makes a family a
+    family; the behaviour is what makes it comparable, and `BEHAVIOUR_OF` keeps
+    the second answer beside the first. The seven families whose module is named
+    after its behaviour keep the key they always had.
+    """
     out: dict[str, list[CaseV5]] = {}
     for module, count in PLAN_A:
-        behaviour = getattr(module, "BEHAVIOUR")
-        out[behaviour] = getattr(module, "build")(SEED, count)
+        out[_family(module)] = getattr(module, "build")(SEED, count)
     return out
 
 
+def _family(module: object) -> str:
+    """The module's own short name — «mail_loop», «branching»."""
+    return getattr(module, "__name__").rsplit(".", 1)[-1]
+
+
 FAMILIES: dict[str, list[CaseV5]] = _build_all()
+BEHAVIOUR_OF: dict[str, str] = {
+    _family(module): getattr(module, "BEHAVIOUR") for module, _count in PLAN_A}
 CORPUS: tuple[CaseV5, ...] = tuple(case for cases in FAMILIES.values() for case in cases)
 
 
@@ -246,7 +262,17 @@ def _quota_problems(cases: Sequence[CaseV5]) -> list[str]:
     for case in cases:
         for tool in case.base.expects.reachable_tools:
             reach[tool] = reach.get(tool, 0) + 1
+    # THE TOOLS THIS HALF OFFERS, NOT EVERY TOOL THE REGISTRY GAINED. K07 is a
+    # CORPUS rule — `validate_corpus_v5` runs it over both halves and
+    # `build.py --check` is where it is answered — and this check is the half's
+    # own share of it: a tool generator_a never puts in front of an agent
+    # (`sheet_append_row` and `doc_append` live in `office`, which is `plan_b`)
+    # cannot be reached here, and demanding it would make this file red for work
+    # another file did correctly.
+    offered = {tool for module, _count in PLAN_A for tool in getattr(module, "TOOLS")}
     for tool in c.NEW_TOOL_NAMES:
+        if tool not in offered:
+            continue
         if reach.get(tool, 0) < c.MIN_TYPE_DENOMINATOR:
             problems.append(f"new tool {tool!r} is reachable in {reach.get(tool, 0)} cases, "
                             f"below MIN_TYPE_DENOMINATOR={c.MIN_TYPE_DENOMINATOR}")
@@ -299,38 +325,47 @@ def test_no_pseudex() -> list[str]:
 def test_build_each_family() -> list[str]:
     """Every module builds its planned count and every case is valid."""
     problems: list[str] = []
-    planned = {getattr(module, "BEHAVIOUR"): count for module, count in PLAN_A}
-    for behaviour, cases in FAMILIES.items():
-        if len(cases) != planned[behaviour]:
-            problems.append(f"{behaviour} built {len(cases)}, planned {planned[behaviour]}")
+    # SUMMED BY BEHAVIOUR, NEVER KEYED BY IT (2026-09-23). `BEHAVIOURS` is a
+    # closed list of eleven and this half now plans eleven families, so four of
+    # them are `sequential_chain`; a dict comprehension keyed by the behaviour
+    # kept only the LAST count of each, and the floor checks below would have
+    # been reading six cases where the plan orders a hundred and twelve.
+    planned = {_family(module): count for module, count in PLAN_A}
+    for family, cases in FAMILIES.items():
+        if len(cases) != planned[family]:
+            problems.append(f"{family} built {len(cases)}, planned {planned[family]}")
         ids = [case.base.id for case in cases]
         if len(set(ids)) != len(ids):
-            problems.append(f"{behaviour} has duplicate case ids")
-        if ids and ids[0] != f"{behaviour}-000":
-            problems.append(f"{behaviour} ids start at {ids[0]!r}, not "
-                            f"{behaviour + '-000'!r}")
+            problems.append(f"{family} has duplicate case ids")
+        # THE ID IS THE CASE's OWN `ctx.kind`, WHICH IS NOT THE FAMILY's NAME for
+        # the four families that share a behaviour: `mail_loop` streams under
+        # «sequential_chain:mail» so two families of one behaviour cannot collide
+        # in `corpus.v5.json`. What matters is that a family numbers from zero
+        # and that its ids are its own, which the two checks above already say.
+        if ids and not ids[0].endswith("-000"):
+            problems.append(f"{family} ids start at {ids[0]!r}, not at -000")
     problems.extend(_validation_problems(CORPUS)[:12])
     return problems
 
 
 def test_behaviour_specs() -> list[str]:
     problems: list[str] = []
-    for behaviour, cases in FAMILIES.items():
-        problems.extend(_behaviour_problems(behaviour, cases)[:6])
+    for family, cases in FAMILIES.items():
+        problems.extend(_behaviour_problems(BEHAVIOUR_OF[family], cases)[:6])
     return problems
 
 
 def test_type_quotas() -> list[str]:
     problems = _quota_problems(CORPUS)
-    for behaviour, cases in FAMILIES.items():
-        problems.extend(_vertical_problems(behaviour, cases))
+    for family, cases in FAMILIES.items():
+        problems.extend(_vertical_problems(family, cases))
     return problems
 
 
 def test_registers() -> list[str]:
     problems: list[str] = []
-    for behaviour, cases in FAMILIES.items():
-        problems.extend(_register_problems(behaviour, cases))
+    for family, cases in FAMILIES.items():
+        problems.extend(_register_problems(family, cases))
     return problems
 
 
@@ -374,7 +409,15 @@ def test_no_search() -> list[str]:
 def test_plan_a_matches_the_floors() -> list[str]:
     """`PLAN_A` tops the revised v4 corpus up to §8.2, and names real modules."""
     problems: list[str] = []
-    planned = {getattr(module, "BEHAVIOUR"): count for module, count in PLAN_A}
+    # SUMMED BY BEHAVIOUR, NEVER KEYED BY IT (2026-09-23). `BEHAVIOURS` is a
+    # closed list of eleven and this half now plans eleven families, so four of
+    # them are `sequential_chain`; a dict comprehension keyed by the behaviour
+    # kept only the LAST count of each, and the floor checks below would have
+    # been reading six cases where the plan orders a hundred and twelve.
+    planned: dict[str, int] = {}
+    for module, count in PLAN_A:
+        behaviour = getattr(module, "BEHAVIOUR")
+        planned[behaviour] = planned.get(behaviour, 0) + count
     # `single` IS PLANNED HERE AND THE CONSTANT DOES NOT SAY SO YET. R-50 made
     # the base loop an AUTHORED family: the revised v4 corpus supplies the
     # family's count and not its shape (379 of its 463 cases are v4's two-hop
@@ -414,7 +457,7 @@ def test_offered_tools_are_in_the_family_inventory() -> list[str]:
     problems: list[str] = []
     for module, _count in PLAN_A:
         inventory = set(getattr(module, "TOOLS"))
-        for case in FAMILIES[getattr(module, "BEHAVIOUR")]:
+        for case in FAMILIES[_family(module)]:
             extra = set(case.base.tools) - inventory
             if extra:
                 problems.append(f"{case.base.id} offers {sorted(extra)}, "
@@ -477,7 +520,13 @@ def test_import_orders() -> list[str]:
 # --- every check, shown to fail ---------------------------------------------------
 
 def _first_case(behaviour: str) -> CaseV5:
-    return FAMILIES[behaviour][0]
+    """One case of that behaviour, off the first family that carries it. Several
+    families may share a behaviour now, and the negatives below only need a case
+    the check under test accepts."""
+    for family, cases in FAMILIES.items():
+        if BEHAVIOUR_OF[family] == behaviour and cases:
+            return cases[0]
+    raise KeyError(f"no family of PLAN_A builds {behaviour!r}")
 
 
 def _broken(case: CaseV5, hops: tuple[Hop, ...]) -> CaseV5:

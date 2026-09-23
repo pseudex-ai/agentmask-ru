@@ -1133,6 +1133,7 @@ def test_a_tier_is_a_miniature_and_the_old_draw_is_refused() -> list[str]:
     if ladder_problems([case.base for case in CASES], fresh):
         problems.append(f"v4-проверка отказала новой лестнице: "
                         f"{ladder_problems([case.base for case in CASES], fresh)[:2]}")
+    by_nano = {case.base.id: case for case in CASES}
     # ОТРИЦАТЕЛЬНАЯ ПОЛОВИНА: прежняя жеребьёвка v4 на том же корпусе.
     stale = build_ladder([case.base for case in CASES], SEED)
     said = b.ladder_problems_v5(CASES, stale)
@@ -1140,8 +1141,22 @@ def test_a_tier_is_a_miniature_and_the_old_draw_is_refused() -> list[str]:
         problems.append("одноголосая лестница v4 признана миниатюрой корпуса")
     if not any("nano" in line and "register" in line for line in said):
         problems.append(f"проверка не назвала nano и регистр: {said[:3]}")
-    if not any("same_tool_other_target" in line for line in said):
-        problems.append(f"проверка не заметила семью, которой в nano нет: {said[:3]}")
+    # СЕМЬЯ, КОТОРОЙ В ЯРУСЕ НЕТ, — НЕГАТИВ ПОСТРОЕННЫЙ, А НЕ ВЫПРОШЕННЫЙ У
+    # ЖЕРЕБЬЁВКИ. Строка стояла на том, что в v4-шном nano нет
+    # `same_tool_other_target`; корпус вырос до 1800, тот же розыгрыш накрыл все
+    # одиннадцать поведений, и проверка покраснела, ничего не узнав о коде. Что
+    # она обязана доказать — что ось BEHAVIOUR читается так же, как register, —
+    # доказывается ярусом, из которого поведение УБРАНО, и это не зависит от
+    # размера корпуса.
+    gone = "same_tool_other_target"
+    without = [one for one in fresh.tiers["nano"] if by_nano[one].behaviour != gone]
+    filler = [case.base.id for case in CASES
+              if case.base.id not in set(fresh.tiers["nano"]) | set(fresh.tiers["holdout"])
+              and case.behaviour != gone][:len(fresh.tiers["nano"]) - len(without)]
+    stripped = replace(fresh, tiers={**fresh.tiers, "nano": tuple(without + filler)})
+    if not any(gone in line for line in b.ladder_problems_v5(CASES, stripped)):
+        problems.append(f"ярус без семьи {gone!r} принят: "
+                        f"{b.ladder_problems_v5(CASES, stripped)[:3]}")
     if ladder_problems([case.base for case in CASES], stale):
         problems.append("v4-проверка сама краснеет на своей же лестнице — тогда новая "
                         "проверка не доказывает, что видит больше")
@@ -1273,9 +1288,10 @@ def test_the_recut_did_not_move_the_holdout() -> list[str]:
     ЕГО ЦЕННОСТЬ В ТОМ, ЧТО ОН ОТЛОЖЕН ДО ТОГО, КАК КТО-ЛИБО ПОСМОТРЕЛ. Новый
     порядок мог бы сделать его пропорциональнее — и это был бы обмен
     единственного, за что холдаут держится, на украшение. Здесь же названа цена
-    этого решения: холдаут НЕ пропорционален по регистру (`clean` 48 из 347 —
-    13.8% против 5.6% в корпусе), и `tier_mix_table` печатает обе доли, чтобы
-    читатель холдаутного числа это видел.
+    этого решения: холдаут НЕ пропорционален по регистру (`clean` 50 из 359 —
+    13.9% против 5.7% в корпусе), и `tier_mix_table` печатает обе доли, чтобы
+    читатель холдаутного числа это видел. Числа — после перерезки 23.09 под
+    корпус 1800; перекос тот же, потому что жеребьёвка холдаута та же v4-шная.
     """
     problems: list[str] = []
     bases = [case.base for case in CASES]
@@ -1303,7 +1319,7 @@ def test_the_recut_did_not_move_the_holdout() -> list[str]:
         problems.append("холдаут несёт не все регистры — его пришлось бы перерисовать, "
                         "и это решение владельца, а не флага")
     printed = "\n".join(b.tier_mix_table(CASES, fresh))
-    if "clean 48" not in printed:
+    if "clean 50" not in printed:
         problems.append("таблица состава не называет перекос холдаута по clean")
     return problems
 
@@ -1393,7 +1409,11 @@ def test_the_result_pii_column_says_how_much_of_it_is_measured() -> list[str]:
     lines = b.result_pii_residue(CASES)
     if any("ОТКАЗ" in line for line in lines):
         problems.append(f"остаток разошёлся с замороженным списком: {lines[1:3]}")
-    if "151 объявлений" not in lines[0] or "106 держатся объявлением" not in lines[0]:
+    # 183 И 116, НЕ 151 И 106: набор `office` добавил одиннадцать инструментов и
+    # с ними 32 объявления, из которых корпус пересёк 22. Числа переписаны здесь
+    # ПОСЛЕ того, как `UNCROSSED_RESULT_PII` назвал каждое из десяти новых
+    # непересечённых поимённо — иначе рост остатка прошёл бы как рост корпуса.
+    if "183 объявлений" not in lines[0] or "116 держатся объявлением" not in lines[0]:
         problems.append(f"строка остатка не называет обе половины: {lines[0]}")
     # Отрицательная половина первая: объявление, которое НИКТО не пересекает и
     # которого нет в списке, — отказ. Так выглядело бы новое декоративное поле.
@@ -1482,6 +1502,70 @@ def test_a_slice_axis_reads_the_case_and_not_the_offer() -> list[str]:
             break
     return problems
 
+
+
+def test_the_suite_axis_is_a_slice_across_verticals() -> list[str]:
+    """Пятая ось среза — НАБОР, и три вещи о ней держат её честной.
+
+    ЗАЧЕМ ОНА ВООБЩЕ. Инструменты одного клиента лежат в пяти вертикалях сразу:
+    почта — messaging, приглашение — calendar, трекер — support, карточка — crm,
+    таблица и документ — files. `--slice vertical=messaging` возьмёт треть из
+    них и разбавит её SMS; вопрос «что ваши числа говорят о МОИХ инструментах»
+    ни одна прежняя ось не задаёт. Ось общая: следующий клиент получает своё имя
+    набора и ту же механику.
+
+    ПО ХОПАМ, А НЕ ПО `base.tools`, и ОБЕ половины проверки отрицательные.
+    Случай, которому инструмент набора лишь ПРЕДЛОЖИЛИ и который туда не ходил,
+    попал бы в срез, ничего о наборе не измеряя, — и цифра, которую мы назовём
+    клиенту, была бы разбавлена случаями, в которых его форм нет. Ровно эта
+    болезнь уже ловилась на вертикали, поэтому проверка построена так, чтобы
+    красить код, вернувшийся к объявлению.
+    """
+    problems: list[str] = []
+    if "suite" not in b.SLICE_AXES:
+        return ["оси suite нет в SLICE_AXES"]
+    suite = next(iter(c.SUITES))
+    members = [name for name, one in c.TOOL_SUITE.items() if one == suite]
+    if len({c.TOOL_VERTICAL[name] for name in members}) < 2:
+        problems.append(f"набор {suite!r} целиком внутри одной вертикали — "
+                        f"тогда его выделяет ось vertical и эта ось декоративна")
+    sample = next((case for case in CASES if case.hops), None)
+    if sample is None:
+        return problems + ["в корпусе нет случая с хопами — ось не на чем показать"]
+    # ПРЕДЛОЖИЛИ, НО НЕ ХОДИЛИ: инструмент набора дописан в `base.tools`, и срез
+    # обязан остаться пустым.
+    offered = replace(sample, base=replace(sample.base,
+                                           tools=(*sample.base.tools, members[0])))
+    if b.case_slice_values(offered, "suite"):
+        problems.append("срез по набору читает предложенные инструменты, а не хопы")
+    # ХОДИЛИ: один хоп переведён на инструмент набора, и срез обязан его взять.
+    walked = replace(sample, hops=(replace(sample.hops[0], tool_name=members[0]),
+                                   *sample.hops[1:]))
+    if b.case_slice_values(walked, "suite") != frozenset({suite}):
+        problems.append(f"случай, сходивший в {members[0]}, не попал в срез "
+                        f"{suite!r}: {b.case_slice_values(walked, 'suite')}")
+    # Случай, не трогавший ни одного инструмента набора, не принадлежит никакому.
+    if any(hop.tool_name in c.TOOL_SUITE for hop in sample.hops):
+        return problems
+    if b.case_slice_values(sample, "suite"):
+        problems.append("случай без инструментов набора попал в набор")
+    return problems
+
+
+def test_an_unknown_suite_is_refused_by_name() -> list[str]:
+    """Срез по набору, которого корпус не несёт, — ИМЕНОВАННЫЙ отказ.
+
+    Пустая выборка читается как «таких случаев нет», и человек идёт искать
+    дефект корпуса вместо опечатки; отказ обязан сказать, чего корпус не несёт,
+    и перечислить, что несёт (`SliceError`, та же дисциплина, что у вертикали).
+    """
+    try:
+        b.parse_slice("suite=нетакого", CASES)
+    except b.SliceError as error:
+        return [] if "suite" in str(error) else [f"отказ не называет ось: {error}"]
+    return ["срез по несуществующему набору не отказал"]
+
+
 CHECKS: tuple[Callable[[], list[str]], ...] = (
     test_the_authored_and_the_revised_halves_are_counted_apart,
     test_regenerating_the_ladder_needs_the_assertion,
@@ -1512,6 +1596,8 @@ CHECKS: tuple[Callable[[], list[str]], ...] = (
     test_the_recut_did_not_move_the_holdout,
     test_a_slice_is_repeatable_and_never_reads_the_holdout,
     test_a_slice_axis_reads_the_case_and_not_the_offer,
+    test_the_suite_axis_is_a_slice_across_verticals,
+    test_an_unknown_suite_is_refused_by_name,
     test_the_result_pii_column_says_how_much_of_it_is_measured)
 
 
