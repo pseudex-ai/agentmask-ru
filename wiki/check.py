@@ -428,7 +428,7 @@ def check_index(lines: list[str]) -> list[Finding]:
     return findings
 
 
-PIN_RE = re.compile(r"`((?:licensing/|storefront/|e2e/|wiki/|deploy/)?(?:test_\w+|vault_test|bench_masking|gates|pack_gates|audit_gates|lint_tests|parity|check)(?:\.py|\.sh)?)")
+PIN_RE = re.compile(r"`((?:licensing/|storefront/|e2e/|wiki/|deploy/|bench/(?:\w+/)*)?(?:test_\w+|vault_test|bench_masking|gates|pack_gates|audit_gates|lint_tests|parity|check)(?:\.py|\.sh)?)")
 
 
 FN_PIN_RE = re.compile(r"`([\w/]+)` \(((?:`\w+`(?:, )?)+)\)")
@@ -585,8 +585,18 @@ def selftest() -> None:
     # 1. a path that does not exist
     m = [l.replace("`pseudex/normalize.py`", "`pseudex/normalise.py`", 1) for l in map_lines]
     expect(m, "does not exist", "renamed module path")
-    # 2. a Uses edge removed
-    m = [l.replace("- **Uses:** assets · **Used by:** detect_all, vault", "- **Uses:** — · **Used by:** detect_all, vault", 1) for l in map_lines]
+    # 2. a Uses edge removed. ADDRESSED BY THE ENTRY, NOT BY THE WHOLE LINE: the
+    # mutation used to quote `normalize`'s Used-by list verbatim, so the day a new
+    # importer appeared (redact) the replacement matched nothing, the copy was not
+    # broken at all, and the selftest failed with «was NOT caught» — a red that
+    # says the CHECKER is broken while the checker was fine.
+    m = list(map_lines)
+    for i, line in enumerate(m):
+        if line.startswith("- **Uses:**") and "`pseudex/normalize.py`" in "".join(m[max(0, i - 6):i]):
+            m[i] = re.sub(r"\*\*Uses:\*\* [^·]+", "**Uses:** — ", line, count=1)
+            break
+    else:
+        raise AssertionError("selftest: no Uses line under pseudex/normalize.py")
     expect(m, "Uses differs", "dropped Uses edge")
     # 3. a fake API name
     m = [l.replace("- **API:** `normalize`", "- **API:** `normalize`, `denormalize`", 1) for l in map_lines]

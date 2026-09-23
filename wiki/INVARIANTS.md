@@ -984,6 +984,30 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   found by reading the code. `LevelVerdict.comparable`, `absent_required`, the
   call level and `Case.negatives` exist because of it. Pins:
   `e2e/audit_gates.py` (the mechanical version, `--selftest`).
+- **A PROVIDER BLIP IS NOT A VERDICT OF THE ARM.** A dropped connection is a
+  fact about the provider; written as `gateway_5xx` or `harness_error` it becomes
+  a NUMBER OF THE RUN. `ConnectionError` is an `OSError`, so the arm guards
+  swallowed it before the triple-level retry could see it, and the CONTROL arms
+  went through v4's guard, which still does. `arm_verdict` and `_guarded_control`
+  raise a blip out of every arm; a case that blips through all its attempts is
+  `terminated: transport`, excluded from the denominators and counted on its own
+  line, and the run goes on. The harness's OWN deadline is NOT a blip —
+  `asyncio.TimeoutError is TimeoutError` on 3.11+, so retrying it would charge
+  three caps for one hung arm. Pins: `bench/agentpii5/test_harness.py`,
+  `bench/agentpii5/test_harness_stream.py`.
+- **THE FREE FIELD OF A RUN IS CHECKED AGAINST THE WHOLE CORPUS, NEVER THE
+  SELECTION.** `--label` and `--note` are written by a person from memory, and
+  the registry they land in lives in the repository for ever. Checked against the
+  run's own cases only, a real value of a case the run did not touch — a holdout
+  one included — passes verbatim: proven by writing one and running `--ids` on
+  another case. Refusal before the run, scrubbing after it (a run that spent
+  money may not lose its row). Pins: `bench/agentpii5/test_harness.py`,
+  `bench/agentpii5/test_runinfo.py`.
+- **AN INTERRUPTED RUN IS A ROW, NOT A CRASH.** The registry must keep the row of
+  a run that spent money and stopped; such a run never wrote a meta file, so
+  every reader that demands one dies on the first Ctrl-C in the history.
+  `quarantine` skips those rows OUT LOUD when the registry names them and still
+  refuses a directory named by hand. Pins: `bench/agentpii5/test_quarantine.py`.
 - **Every NEGATIVE atom needs a POSITIVE atom over THE SAME SOURCE.** `P1`
   proved the absence of four strings and would have passed grepping a missing
   file; `L12` asserted `requests > 0` after twelve calls. Lambdas are walked;
