@@ -1,0 +1,118 @@
+{
+  "answer_optional_only": {
+    "printable": true,
+    "why": ""
+  },
+  "answer_real": {
+    "printable": true,
+    "why": ""
+  },
+  "chain_form": {
+    "printable": true,
+    "why": ""
+  },
+  "chain_value": {
+    "printable": true,
+    "why": ""
+  },
+  "consistency": {
+    "printable": true,
+    "why": ""
+  },
+  "coverage": {
+    "printable": true,
+    "why": ""
+  },
+  "doc_extracted": {
+    "printable": true,
+    "why": ""
+  },
+  "doc_masked": {
+    "printable": true,
+    "why": ""
+  },
+  "end_to_end": {
+    "printable": true,
+    "why": ""
+  },
+  "form_hIN": {
+    "printable": true,
+    "why": ""
+  },
+  "form_hOUT": {
+    "printable": true,
+    "why": ""
+  },
+  "leak": {
+    "printable": true,
+    "why": ""
+  },
+  "memory_consistency": {
+    "printable": true,
+    "why": ""
+  },
+  "multi_all_out": {
+    "printable": true,
+    "why": ""
+  },
+  "multi_consistency": {
+    "printable": true,
+    "why": ""
+  },
+  "out_absent": {
+    "printable": true,
+    "why": ""
+  },
+  "overmask": {
+    "printable": true,
+    "why": ""
+  },
+  "rag_identity_kept": {
+    "printable": true,
+    "why": ""
+  },
+  "rag_masked": {
+    "printable": true,
+    "why": ""
+  },
+  "residual": {
+    "printable": true,
+    "why": ""
+  },
+  "retry_form": {
+    "printable": true,
+    "why": ""
+  },
+  "rewrite_ratio_v5": {
+    "printable": true,
+    "why": ""
+  },
+  "round_trip": {
+    "printable": true,
+    "why": ""
+  },
+  "round_trip_repaired": {
+    "printable": true,
+    "why": ""
+  },
+  "shared_block_answer": {
+    "printable": true,
+    "why": ""
+  },
+  "stability": {
+    "printable": true,
+    "why": ""
+  },
+  "stream_fidelity": {
+    "printable": true,
+    "why": ""
+  },
+  "toolresult_masked": {
+    "printable": true,
+    "why": ""
+  },
+  "typed": {
+    "printable": true,
+    "why": ""
+  }
+}

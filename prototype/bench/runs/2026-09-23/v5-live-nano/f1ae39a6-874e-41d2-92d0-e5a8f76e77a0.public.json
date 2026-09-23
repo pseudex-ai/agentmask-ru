@@ -1,0 +1,88 @@
+{
+  "benchmark": "agentpii5",
+  "cases": 30,
+  "corpus_digest": "c5000348df91fd43fe3c8b5f1957751bc706f3c4cdb73f01ed9e0544a688b783",
+  "generated_at": "2026-09-23T07:18:53.196131+00:00",
+  "incomplete": true,
+  "incomplete_reasons": [
+    "судья не откалиброван: размеченных 0 < 300 · сырое согласие 0.00 < 0.85 · κ 0.00 < 0.7 · нет κ по типам · расхождение повторов 1.00 > 0.1"
+  ],
+  "lines": {
+    "consistency": {
+      "certified": null,
+      "ci_high": 0.9985118256087333,
+      "ci_low": 0.7131106033327792,
+      "hits": 16,
+      "name": "consistency",
+      "rate": 0.9411764705882353,
+      "total": 17
+    },
+    "coverage": {
+      "certified": null,
+      "ci_high": 0.9997611812765976,
+      "ci_low": 0.9485569204601154,
+      "hits": 105,
+      "name": "coverage",
+      "rate": 0.9905660377358491,
+      "total": 106
+    },
+    "end_to_end": {
+      "certified": null,
+      "ci_high": 0.4401038163554045,
+      "ci_low": 0.25395700070297744,
+      "hits": 37,
+      "name": "end_to_end",
+      "rate": 0.3425925925925926,
+      "total": 108
+    },
+    "leak": {
+      "certified": 0.9721339987547098,
+      "ci_high": 1.0,
+      "ci_low": 0.9657978327236496,
+      "hits": 106,
+      "name": "leak",
+      "rate": 1.0,
+      "total": 106
+    },
+    "overmask": {
+      "certified": 0.9049661471446958,
+      "ci_high": 1.0,
+      "ci_low": 0.8842966917779722,
+      "hits": 30,
+      "name": "overmask",
+      "rate": 1.0,
+      "total": 30
+    },
+    "round_trip": {
+      "certified": null,
+      "ci_high": 0.4418588006161128,
+      "ci_low": 0.22942108750235585,
+      "hits": 27,
+      "name": "round_trip",
+      "rate": 0.32926829268292684,
+      "total": 82
+    },
+    "stability": {
+      "certified": null,
+      "ci_high": 0.9985118256087333,
+      "ci_low": 0.7131106033327792,
+      "hits": 16,
+      "name": "stability",
+      "rate": 0.9411764705882353,
+      "total": 17
+    },
+    "typed": {
+      "certified": null,
+      "ci_high": 0.9912295032964729,
+      "ci_low": 0.7649652268254092,
+      "hits": 26,
+      "name": "typed",
+      "rate": 0.9285714285714286,
+      "total": 28
+    }
+  },
+  "lines_withheld": 21,
+  "repeats": 1,
+  "schema": 1,
+  "tier": "nano"
+}

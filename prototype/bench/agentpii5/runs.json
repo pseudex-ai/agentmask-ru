@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "runs": [
+    {
+      "run_id": "f1ae39a6-874e-41d2-92d0-e5a8f76e77a0",
+      "benchmark": "agentpii5",
+      "started": "2026-09-23T06:53:39.157421+00:00",
+      "finished": "2026-09-23T07:18:53.491190+00:00",
+      "state": "finished",
+      "tier": "nano",
+      "cases": 30,
+      "repeats": 1,
+      "triples_done": 30,
+      "transport_terminated": 0,
+      "model": "claude-haiku-4-5-20251001",
+      "judge_model": "claude-sonnet-5",
+      "concurrency": 2,
+      "corpus_digest": "c5000348df91fd43fe3c8b5f1957751bc706f3c4cdb73f01ed9e0544a688b783",
+      "ladder_digest": "313313019b32dc6eba6eb2a49b4a66db380c9b39fa6ee688be9dcb0f8bd12910",
+      "label": "первый платный дым v5",
+      "note": "подписка, потолок 20, дерево грязное: идут два воркфлоу",
+      "ceiling_usd": 20.0,
+      "spent_usd": 3.952373,
+      "wall_s": 1511.5,
+      "verdict": "НЕПОЛНЫЙ: судья не откалиброван",
+      "worktree": "грязно 68e58eb104fe (main): 20 файлов — к коммиту не привязан",
+      "run_dir": "/Users/igor/Projects/Obscura/prototype/bench/runs/2026-09-23/v5-live-nano",
+      "provider": {
+        "provider": "anthropic",
+        "base_url": "https://api.anthropic.com",
+        "shape": "messages",
+        "key_env": [
+          "ANTHROPIC_API_KEY",
+          "ANTHROPIC_AUTH_TOKEN"
+        ],
+        "key_present": false,
+        "models": [
+          {
+            "role": "agent",
+            "provider": "anthropic",
+            "model_id": "claude-haiku-4-5-20251001",
+            "price": {
+              "input_usd_per_mtok": 1.0,
+              "output_usd_per_mtok": 5.0,
+              "as_of": "2026-06-24",
+              "source": "прайс-лист Anthropic (skill claude-api, таблица моделей)"
+            },
+            "unpriced_reason": ""
+          },
+          {
+            "role": "judge",
+            "provider": "anthropic",
+            "model_id": "claude-sonnet-5",
+            "price": {
+              "input_usd_per_mtok": 2.0,
+              "output_usd_per_mtok": 10.0,
+              "as_of": "2026-06-24",
+              "source": "прайс-лист Anthropic (skill claude-api, таблица моделей)"
+            },
+            "unpriced_reason": ""
+          }
+        ]
+      },
+      "gateway": {
+        "mode": "inprocess",
+        "base_url": null,
+        "engine_version": null,
+        "image_digest": null,
+        "learned_from": null
+      }
+    }
+  ]
+}
